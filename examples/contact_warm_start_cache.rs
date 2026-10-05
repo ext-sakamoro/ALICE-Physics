@@ -31,9 +31,8 @@
 //!    `ContactManifold::add_or_update` (preserved across frames when a point
 //!    matches) but never read back into that solve -- it is a second,
 //!    parallel ledger `step()` does not consult.
-//! 2. Project memory (`feedback_wm_v01_v05_physics_determinism`,
-//!    2026-09-30) already investigated reviving this exact cache into the
-//!    CPU step loop and the user ruled against it: doing so would make
+//! 2. Reviving this exact cache into the CPU step loop was already
+//!    investigated (2026-09-30) and decided against: doing so would make
 //!    simulation results depend on `ContactCache` state that is explicitly
 //!    *excluded* from `serialize_state`/`deserialize_state` snapshot
 //!    coverage, which breaks the bit-exact rollback property the World

@@ -622,7 +622,7 @@ fn capacity_zero_queue_drops_every_submit() {
     assert_eq!(format!("{p:?}"), format!("{:?}", pipeline::<4, 1>()));
 }
 
-/// Backlog `pipeline-degenerate-config-panics` (1/2): measured current
+/// Open issue `pipeline-degenerate-config-panics` (1/2): measured current
 /// behaviour, pinned so the fix has a red to turn green. Zero-sized const
 /// generics reach `% 0` (`src/pipeline.rs` `RingBuffer::push` /
 /// `is_full`, `MetricPipeline::process_event` / `get_slot`). Whether this
@@ -666,7 +666,7 @@ fn zero_sized_const_generics_currently_panic_with_divide_by_zero() {
     }));
 }
 
-/// Backlog `pipeline-degenerate-config-panics` (2/2): `MetricPipeline::new`
+/// Open issue `pipeline-degenerate-config-panics` (2/2): `MetricPipeline::new`
 /// passes `alpha` through unvalidated. `alpha = 0` gives `gamma = 1`,
 /// `ln_gamma = 0`, and the first histogram sample with `|v| > 1` computes
 /// `ln(v) / 0 = +inf`, whose `ceil() as i32` saturates to `i32::MAX`; adding

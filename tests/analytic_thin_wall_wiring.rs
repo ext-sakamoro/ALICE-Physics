@@ -66,7 +66,7 @@
 //!   `thin_fraction() == 0` (explicit early return for `sampled_count == 0`),
 //!   `has_thin_walls() == false`.
 //!
-//! ## Three root-cause fixes (2026-10-03, Backlog — previously "current
+//! ## Three root-cause fixes (2026-10-03 — previously "current
 //! behaviour, not changed, design decision out of scope")
 //!
 //! * `ThinWallConfig::for_nozzle(nozzle_mm)` with `nozzle_mm <= 0` used to
@@ -172,7 +172,7 @@ fn for_nozzle_matches_double_closed_form() {
 #[test]
 #[should_panic(expected = "nozzle_mm must be positive")]
 fn for_nozzle_zero_diameter_now_fails_fast() {
-    // 2026-10-03 root-cause fix (Backlog): a zero (or negative) nozzle
+    // 2026-10-03 root-cause fix: a zero (or negative) nozzle
     // diameter used to silently produce `min_thickness_mm == 0`, which
     // disabled thin-wall detection entirely (`has_thin_walls()` always
     // `false`, regardless of actual geometry) with no panic and no `Err`.
@@ -235,7 +235,7 @@ fn measure_thickness_at_extreme_coordinates_does_not_panic() {
         result.is_ok(),
         "extreme-magnitude surface point must not panic: {result:?}"
     );
-    // 2026-10-03 root-cause fix (Backlog): at this magnitude the f32 ULP
+    // 2026-10-03 root-cause fix: at this magnitude the f32 ULP
     // (~64) swallows the 0.01mm inward start_offset_mm entirely, so `px`
     // after the initial inward step used to be bit-identical to
     // `surface_point.x.to_f32()` — the function then reported
@@ -411,8 +411,7 @@ fn sample_surface_points_extreme_aabb_does_not_panic() {
 #[test]
 fn sample_surface_points_step_smaller_than_ulp_terminates() {
     // ⚠️ This is the exact trap found while authoring this file and fixed
-    // at the root 2026-10-03 (Backlog, `project_alice_world_model_phase4_design_confirmed`
-    // sibling fix): near `x ≈ 1e9` the `f32` ULP is 64 (`2^(29-23)`), so
+    // at the root 2026-10-03 (sibling fix): near `x ≈ 1e9` the `f32` ULP is 64 (`2^(29-23)`), so
     // `x += 1.0_f32` was a no-op and `while x <= xmax` never advanced —
     // this AABB (range 2mm, step 1mm — a 3-sample grid by any reasonable
     // count) used to hang indefinitely. `sample_surface_points` now drives

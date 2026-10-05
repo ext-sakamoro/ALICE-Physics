@@ -1,6 +1,6 @@
 name: Security & Hygiene
 
-# canonical CI template: [[reference_alice_ci_canonical_template]]
+# canonical CI template
 # ALICE-SDF v1.7.7 (commit 52d26f9) を base に ALICE-Physics 用に調整
 #
 # 目的:
@@ -93,7 +93,7 @@ jobs:
 
       # EmbarkStudios/cargo-deny-action@v2 は Docker container 内で稼働し、
       # /github/workspace のみ mount するため sibling path dep が見えず fail する
-      # 直接 install で回避 (canonical [[reference_alice_ci_canonical_template]] 罠 #1)
+      # 直接 install で回避
       - name: Install cargo-deny
         run: cargo install --locked cargo-deny
 

@@ -82,7 +82,7 @@ impl ThinWallConfig {
     /// If `nozzle_mm <= 0`. A non-positive nozzle diameter has no physical
     /// meaning, and `min_thickness_mm = nozzle_mm × 2` of zero silently
     /// disabled thin-wall detection entirely (`has_thin_walls()` would
-    /// never return `true`, regardless of actual geometry) — Backlog
+    /// never return `true`, regardless of actual geometry) — fixed
     /// 2026-10-03, `for_nozzle` silent footgun. Failing fast here is a
     /// behaviour change for any caller that was (accidentally or not)
     /// passing zero; no in-repo caller does (`grep -rn
@@ -195,7 +195,7 @@ pub fn measure_thickness_at(
     // call queries the surface itself again, not a point just inside it.
     // The old code did not notice and reported `Some(start_offset_mm)` on
     // the very first loop iteration — a thickness unrelated to any real
-    // opposite-face distance (Backlog 2026-10-03, `measure_thickness_at`
+    // opposite-face distance (fixed 2026-10-03, `measure_thickness_at`
     // silent footgun). Detecting "did not actually move" and reporting
     // `None` (cannot reliably measure here) matches this function's
     // existing `None` contract ("ray did not hit an opposite surface") —
@@ -335,8 +335,7 @@ pub fn sample_surface_points(
     // ⚠️ `while coord <= max { coord += step }` (the previous shape here)
     // never terminates once `step` is smaller than the `f32` ULP at `coord`'s
     // magnitude (`coord += step` becomes a no-op) — hit empirically at
-    // `coord ≈ 1e9`, `step = 1` (ULP ≈ 64 there), see
-    // `feedback_thin_wall_root_cause_fixes` / Backlog 2026-10-03. Fixed at
+    // `coord ≈ 1e9`, `step = 1` (ULP ≈ 64 there), 2026-10-03. Fixed at
     // the root: the number of steps per axis is computed once as an integer
     // (`axis_steps`, `f64` headroom so the count itself doesn't fall prey to
     // the same `f32`-ULP rounding at extreme magnitudes) and the loops below

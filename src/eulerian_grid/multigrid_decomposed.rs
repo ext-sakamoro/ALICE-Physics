@@ -1784,8 +1784,8 @@ mod tests {
     #[cfg(feature = "std")]
     const MGD_TIMEOUT: &str = "ALICE_PHYSICS_MGD_TIMEOUT_SECS";
     #[cfg(feature = "std")]
-    const MGD_WORKER: &str =
-        "eulerian_grid::multigrid_decomposed::tests::a_banded_process_rank_worker";
+    const MGD_CHILD: &str =
+        "eulerian_grid::multigrid_decomposed::tests::a_banded_process_rank_child";
 
     #[cfg(feature = "std")]
     fn mgd_env<V: std::str::FromStr>(name: &str) -> V {
@@ -1841,7 +1841,7 @@ mod tests {
     /// it wrote.
     #[cfg(feature = "std")]
     #[test]
-    fn a_banded_process_rank_worker() {
+    fn a_banded_process_rank_child() {
         use std::io::{Read, Write};
         use std::net::{TcpListener, TcpStream};
         use std::time::{Duration, Instant};
@@ -1961,7 +1961,7 @@ mod tests {
                 } else {
                     Command::new(&exe)
                 };
-                cmd.args(["--exact", MGD_WORKER, "--test-threads=1", "--nocapture"])
+                cmd.args(["--exact", MGD_CHILD, "--test-threads=1", "--nocapture"])
                     .env(MGD_RANK, rank.to_string())
                     .env(MGD_RANKS, ranks.to_string())
                     .env(MGD_SIDE, n.to_string())

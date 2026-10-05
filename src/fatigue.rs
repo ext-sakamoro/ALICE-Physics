@@ -201,7 +201,7 @@ pub(crate) fn cycles_to_failure(curve: &SnCurve, stress_mpa: Fix128) -> u64 {
 ///
 /// Provisional: the low-cycle boundary depends on the material and the
 /// stress ratio, so this single constant is a placeholder for a per-curve
-/// field of `SnCurve` (Backlog `fatigue-low-cycle-bound-per-material`).
+/// field of `SnCurve` (open issue `fatigue-low-cycle-bound-per-material`).
 pub(crate) const BASQUIN_LOW_CYCLE_BOUND: u64 = 1_000;
 
 /// Why the Basquin inverse (`StructuralSolver::fatigue_strength_mpa`) could

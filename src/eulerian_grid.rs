@@ -1432,7 +1432,7 @@ pub fn project_pressure_multigrid(
 /// reads exactly the six face neighbours — each of which differs from the
 /// centre in a single index, so each has the *opposite* parity. The cells read
 /// and the cells written by one sweep are disjoint, so the cells of a colour
-/// may be visited in any order, split across any number of workers, for a
+/// may be visited in any order, split across any number of threads, for a
 /// result that is identical bit for bit. `Fix128` addition is a group
 /// operation mod 2¹²⁸ (`tests/reduction_order_independence.rs`), so no rounding
 /// enters through the partitioning either.
@@ -1911,7 +1911,7 @@ fn gather_slabs_to_root<T: RankTransport>(transport: &mut T, bounds: &[(usize, u
 /// Every rank must start from the same `grid` (the field is the input to the
 /// decomposition, not something a rank derives). The gather lands on rank 0, so
 /// rank 0 is the only rank that writes `grid` back; the others leave their copy
-/// untouched, which `cross_process_rank1_worker` asserts from inside the one
+/// untouched, which `cross_process_rank1_child` asserts from inside the one
 /// process that is actually a non-root rank.
 ///
 /// Each rank still holds a full-length buffer, for the reason
@@ -2296,7 +2296,7 @@ impl SlabStorage {
         }
     }
 
-    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's pressure band actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         SlabBytes {
@@ -2565,7 +2565,7 @@ impl SlabFaces {
         self.k0..end
     }
 
-    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's face arrays actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         let values = self.u.capacity() + self.v.capacity() + self.w.capacity();
@@ -2674,7 +2674,7 @@ impl SlabStencil {
         (k - self.k0) * self.plane
     }
 
-    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes this rank's stencil actually allocated.
     pub(crate) fn bytes(&self) -> SlabBytes {
         SlabBytes {
@@ -2815,7 +2815,7 @@ impl LocalSlabTransport {
         &self.slabs[rank]
     }
 
-    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     /// Bytes every rank's band allocated here, rank by rank.
     pub(crate) fn bytes(&self) -> Vec<SlabBytes> {
         self.slabs.iter().map(SlabStorage::bytes).collect()
@@ -3290,7 +3290,7 @@ impl SlabFaceConditions {
     /// # Panics
     ///
     /// When `k` is not an owned layer, or `(i, j)` is not a face of one.
-    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_u(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i <= self.nx && j < self.ny, "({i}, {j}) is not an X-face");
         let at = self.owned_base(k, u_plane(self.nx, self.ny)) + i + (self.nx + 1) * j;
@@ -3298,7 +3298,7 @@ impl SlabFaceConditions {
     }
 
     /// See [`SlabFaceConditions::set_u`].
-    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_v(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i < self.nx && j <= self.ny, "({i}, {j}) is not a Y-face");
         let at = self.owned_base(k, v_plane(self.nx, self.ny)) + i + self.nx * j;
@@ -3307,7 +3307,7 @@ impl SlabFaceConditions {
 
     /// See [`SlabFaceConditions::set_u`]. Z-faces run one past the owned
     /// layers, so `k` may be `k1`.
-    // ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+    // ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
     pub(crate) fn set_w(&mut self, i: usize, j: usize, k: usize, bc: FaceBc) {
         assert!(i < self.nx && j < self.ny, "({i}, {j}) is not a Z-face");
         assert!(
@@ -3662,7 +3662,7 @@ pub(crate) fn enforce_slab_face_boundaries_on_rank<C: PlaneChannel>(
 ///
 /// When a plane is left in flight at the end, which would mean a rank sent one
 /// that no rank was going to read.
-// ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
+// ALLOW-UNWIRED: wiring debt eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
 pub(crate) fn enforce_slab_face_boundaries_over(
     faces: &mut [SlabFaces],
     cond: &[SlabFaceConditions],
@@ -5887,7 +5887,7 @@ mod tests {
 
     /// Environment variables the parent sets when it re-executes this binary as
     /// rank 1; the presence of `XPROC_ROLE` is what tells
-    /// `cross_process_rank1_worker` that it is the child.
+    /// `cross_process_rank1_child` that it is the child.
     #[cfg(feature = "std")]
     const XPROC_ROLE: &str = "ALICE_PHYSICS_XPROC_ROLE";
     /// Loopback port rank 0 is listening on.
@@ -5903,11 +5903,11 @@ mod tests {
     /// libtest name of the child entry point, passed to the re-executed binary
     /// as `--exact`.
     ///
-    /// Renaming `cross_process_rank1_worker` without updating this would make
+    /// Renaming `cross_process_rank1_child` without updating this would make
     /// libtest match nothing and exit 0, so the parent checks for a child that
     /// exits before connecting and says so rather than waiting out its deadline.
     #[cfg(feature = "std")]
-    const XPROC_WORKER: &str = "eulerian_grid::tests::cross_process_rank1_worker";
+    const XPROC_CHILD: &str = "eulerian_grid::tests::cross_process_rank1_child";
 
     /// Iterations both ranks run; the same count the in-process oracles use.
     #[cfg(feature = "std")]
@@ -6188,7 +6188,7 @@ mod tests {
     /// libtest will dispatch to.
     #[cfg(feature = "std")]
     #[test]
-    fn cross_process_rank1_worker() {
+    fn cross_process_rank1_child() {
         let Ok(role) = std::env::var(XPROC_ROLE) else {
             return;
         };
@@ -6239,7 +6239,7 @@ mod tests {
         let exe = std::env::current_exe().expect("path of this test binary");
 
         let mut child = Command::new(exe)
-            .args(["--exact", XPROC_WORKER, "--test-threads=1"])
+            .args(["--exact", XPROC_CHILD, "--test-threads=1"])
             .env(XPROC_ROLE, "rank1")
             .env(XPROC_PORT, port.to_string())
             .env(XPROC_SIZE, n.to_string())
@@ -6261,13 +6261,13 @@ mod tests {
                 Err(e) => panic!("accepting rank 1 failed: {e}"),
             }
             // A child that exits without connecting is not a slow child. The
-            // likeliest cause is that `XPROC_WORKER` no longer names a test, in
+            // likeliest cause is that `XPROC_CHILD` no longer names a test, in
             // which case libtest ran nothing and exited 0 — say so rather than
             // sitting out the deadline and reporting a timeout.
             if let Some(status) = child.try_wait().expect("poll rank 1") {
                 panic!(
                     "rank 1 exited ({status}) without connecting: does \
-                     `{XPROC_WORKER}` still name a test?"
+                     `{XPROC_CHILD}` still name a test?"
                 );
             }
             assert!(
@@ -6604,7 +6604,7 @@ mod tests {
 
     /// Environment rank 0 sets when it re-executes this binary as rank 1 or
     /// rank 2 of a three-rank solve; the presence of `XPROC3_RANK` is what tells
-    /// `cross_process_three_rank_worker` that it is a child.
+    /// `cross_process_three_rank_child` that it is a child.
     #[cfg(feature = "std")]
     const XPROC3_RANK: &str = "ALICE_PHYSICS_XPROC3_RANK";
     /// Loopback port on which rank 0 is waiting for this child.
@@ -6620,12 +6620,12 @@ mod tests {
     /// libtest name of the three-rank child entry point, passed to the
     /// re-executed binary as `--exact`.
     ///
-    /// Same hazard as `XPROC_WORKER`, and handled the same way: a filter that
+    /// Same hazard as `XPROC_CHILD`, and handled the same way: a filter that
     /// matches nothing makes libtest run no test and exit 0, so a child that
     /// exits before connecting is reported against this constant by name
     /// instead of being waited out as a timeout.
     #[cfg(feature = "std")]
-    const XPROC3_WORKER: &str = "eulerian_grid::tests::cross_process_three_rank_worker";
+    const XPROC3_CHILD: &str = "eulerian_grid::tests::cross_process_three_rank_child";
 
     /// Iterations all three ranks run.
     #[cfg(feature = "std")]
@@ -6797,7 +6797,7 @@ mod tests {
                     if let Some(status) = kid.try_wait().expect("poll a child rank") {
                         panic!(
                             "rank {} exited ({status}) before rank {rank} connected: does \
-                             `{XPROC3_WORKER}` still name a test?",
+                             `{XPROC3_CHILD}` still name a test?",
                             slot + 1,
                         );
                     }
@@ -6876,7 +6876,7 @@ mod tests {
     /// returns at once — the tests below are what ask for a child rank.
     #[cfg(feature = "std")]
     #[test]
-    fn cross_process_three_rank_worker() {
+    fn cross_process_three_rank_child() {
         use std::io::{Read, Write};
         use std::net::{TcpListener, TcpStream};
 
@@ -6971,7 +6971,7 @@ mod tests {
                         .expect("the bound loopback address")
                         .port();
                     Command::new(&exe)
-                        .args(["--exact", XPROC3_WORKER, "--test-threads=1"])
+                        .args(["--exact", XPROC3_CHILD, "--test-threads=1"])
                         .env(XPROC3_RANK, (slot + 1).to_string())
                         .env(XPROC3_PORT, port.to_string())
                         .env(XPROC3_SIZE, n.to_string())
@@ -8598,11 +8598,11 @@ mod tests {
     /// libtest name of the child entry point, passed to the re-executed binary as
     /// `--exact`.
     ///
-    /// Renaming `cross_process_slab_rank_worker` without updating this would make
+    /// Renaming `cross_process_slab_rank_child` without updating this would make
     /// libtest match nothing and exit 0, so the accept loops below report a child
     /// that exits before connecting instead of waiting out their deadline.
     #[cfg(feature = "std")]
-    const XSLAB_WORKER: &str = "eulerian_grid::tests::cross_process_slab_rank_worker";
+    const XSLAB_CHILD: &str = "eulerian_grid::tests::cross_process_slab_rank_child";
 
     /// Iterations every rank runs.
     #[cfg(feature = "std")]
@@ -8875,7 +8875,7 @@ mod tests {
     /// for a child rank.
     #[cfg(feature = "std")]
     #[test]
-    fn cross_process_slab_rank_worker() {
+    fn cross_process_slab_rank_child() {
         use std::io::{Read, Write};
         use std::net::{TcpListener, TcpStream};
 
@@ -9002,7 +9002,7 @@ mod tests {
                     if let Some(status) = kid.try_wait().expect("poll a child rank") {
                         panic!(
                             "rank {} exited ({status}) before connecting: does \
-                             `{XSLAB_WORKER}` still name a test?",
+                             `{XSLAB_CHILD}` still name a test?",
                             slot + 1,
                         );
                     }
@@ -9062,7 +9062,7 @@ mod tests {
             .local_addr()
             .expect("the bound loopback address")
             .port();
-        // Bound before any child is spawned, for the reason the worker gives.
+        // Bound before any child is spawned, for the reason the child gives.
         let mine = TcpListener::bind(("127.0.0.1", 0)).expect("bind rank 0's data port");
         let my_port = mine.local_addr().expect("the bound address").port();
         let exe = std::env::current_exe().expect("path of this test binary");
@@ -9071,7 +9071,7 @@ mod tests {
             kids: (1..ranks)
                 .map(|rank| {
                     let mut cmd = Command::new(&exe);
-                    cmd.args(["--exact", XSLAB_WORKER, "--test-threads=1"])
+                    cmd.args(["--exact", XSLAB_CHILD, "--test-threads=1"])
                         .env(XSLAB_RANK, rank.to_string())
                         .env(XSLAB_RANKS, ranks.to_string())
                         .env(XSLAB_BROKER, broker_port.to_string())

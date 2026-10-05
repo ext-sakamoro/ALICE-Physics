@@ -1640,8 +1640,7 @@ pub struct Mat3Fix {
 /// them into one `None` was measured to mislead. The same crate already learned
 /// this for the conjugate gradient, where `pᵀKp ≤ 0` was reported uniformly as
 /// "under-constrained" until it was split into a null space (add constraints) and
-/// a rounding floor (revisit the preconditioner or the tolerance) — see
-/// `feedback_fixedpoint_iterative_solver_thresholds`. During this type's own
+/// a rounding floor (revisit the preconditioner or the tolerance). During this type's own
 /// development a budget that was merely too small was read as a degeneracy and
 /// cost a round of diagnosis, which is the same failure one layer up.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

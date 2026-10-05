@@ -191,7 +191,7 @@ class OracleParse(unittest.TestCase):
 
 
 class DefectIdFormat(unittest.TestCase):
-    def test_an_id_with_a_worker_part_and_one_without_are_both_defect_ids(self):
+    def test_an_id_with_and_without_a_sub_part_are_both_defect_ids(self):
         self.assertTrue(oracle.DEFECT_ID_RE.fullmatch("AUD-A-S1W6-014"))
         self.assertTrue(oracle.DEFECT_ID_RE.fullmatch("AUD-A-S34-030"))
 

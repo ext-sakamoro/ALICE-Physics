@@ -56,8 +56,7 @@ fn reset_world_then_same_initial_state_two_runs_bit_identical() {
 /// `drifting_body` / `loose_sleep_config` 用の scene (`tests/wm08_state_coverage.rs::drifting_world`
 /// と同じ構成原理) — 重力ゼロ + 緩い sleep 閾値 + 閾値未満の微小運動
 /// この構成でないと `idle_frames` が軌道に出ず、reset oracle が空振りする
-/// (既定 / 静止 scene では `idle_frames` を失っても byte 一致してしまう、
-/// `project_alice_world_model_mvp_plan` §3 Phase 2 完了判定の注記)
+/// (既定 / 静止 scene では `idle_frames` を失っても byte 一致してしまう)
 fn drifting_body() -> RigidBody {
     let mut body = RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE);
     body.velocity = Vec3Fix::new(Fix128::from_ratio(1, 4), Fix128::ZERO, Fix128::ZERO);
@@ -122,8 +121,7 @@ fn idle_frames_matters_in_the_reset_oracle_scene() {
 }
 
 /// 本命 — `reset_world()` は idle_frames が軌道に出る scene でも 2 回連続で
-/// bit 一致する (doctrine WM-07、`project_alice_world_model_mvp_plan` §3
-/// Phase 2 の「reset 冪等」oracle)
+/// bit 一致する (doctrine WM-07 の「reset 冪等」oracle)
 ///
 /// ⚠️ **reset の前に world を「汚す」** (別の drifting body を走らせて
 /// islands / sleep_data に idle_frames を蓄積させてから `reset_world` を
@@ -223,7 +221,7 @@ fn rollback_accepts_population_replayed_to_match_snapshot() {
     assert_eq!(dst.bodies[1].position, src.bodies[1].position);
 }
 
-/// 本命 — count は一致しているが population が違う場合は拒否する (ys-1f の穴)
+/// 本命 — count は一致しているが population が違う場合は拒否する
 ///
 /// `remove_body(0)` (swap_remove) + `add_body` で count は元の 2 に戻るが、
 /// index 0 の body は mass 1 → mass 99 に変わっている (= 別の body)
@@ -276,7 +274,7 @@ fn rollback_rejects_population_mismatch_despite_matching_count() {
 }
 
 /// rollback した先で joint が removed index を跨いで remap される経路でも
-/// bit-exact (ys-1f oracle 候補 (3))
+/// bit-exact
 ///
 /// 4 body (0,1,2,3) + joint(2,3) を数 step 進めた時点を snapshot に取る
 /// 「直進」はそのまま `remove_body(0)` (swap_remove、`remap_joint_indices`

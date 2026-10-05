@@ -831,7 +831,7 @@ impl SolverConfig {
     /// `tests/analytic_linear_elastic_fem.rs`, and the rejection above is pinned
     /// by `config_rejects_a_stagnation_fraction_that_can_never_fire` in
     /// `coupled_iteration`. Neither of them asserts that the **default**
-    /// `fraction` is below one; see the Backlog.
+    /// `fraction` is below one; that is tracked separately.
     ///
     /// # Errors
     ///

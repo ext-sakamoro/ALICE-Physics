@@ -42,8 +42,7 @@
 //! ⚠️ That last check is a **string match over `src/*.rs`, not a reachability
 //! analysis**: one doc comment mentioning the other type turns it red, and a
 //! real conversion routed through a third module would leave it green. Treat
-//! it as a tripwire on the obvious case, not as proof of disjointness
-//! (Backlog has this noted).
+//! it as a tripwire on the obvious case, not as proof of disjointness.
 //!
 //! ⚠️ **Measured: they are not joined through the geometry either.** A shared
 //! SDF would couple the two layers without copying any field — the fluid would

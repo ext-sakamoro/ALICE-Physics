@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Land the commits of the current worktree on main.
+"""Land the local commits on main.
 
-Run from a worktree whose HEAD sits on top of an origin/main base. The script
+Run from a checkout whose HEAD sits on top of an origin/main base. The script
 
   1. checks the commits: author and committer identity, no internal vocabulary
      in the messages (the docs_lint word list and private-name hashes), a
@@ -65,7 +65,7 @@ OS_CODE_RE = re.compile(r"cfg\((?:[^)]*\b)?(windows|unix|target_os|target_arch|t
 SIGNATURE_RE = re.compile(r"Co-Authored-By:|^\s*Generated with\b|\U0001F916", re.I | re.M)
 NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
 NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
-NO_RUN_TIMEOUT = 600  # seconds without any run for the pushed SHA
+NO_RUN_TIMEOUT = 1800  # seconds without any run for the pushed SHA (the GitHub queue can be slow)
 MAX_ATTEMPTS = 5
 
 
@@ -242,7 +242,7 @@ class Lander:
 
     def check_commits(self) -> list[str]:
         if self.git("status", "--porcelain"):
-            raise LandError("the worktree has uncommitted changes")
+            raise LandError("the checkout has uncommitted changes")
         shas = self.commits()
         if not shas:
             raise LandError(f"nothing to land: HEAD has no commit beyond {self.upstream()} (compared nothing)")

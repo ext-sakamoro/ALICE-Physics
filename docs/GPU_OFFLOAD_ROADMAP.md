@@ -1,7 +1,7 @@
 # GPU Offload Roadmap — Data-driven scope decision
 
 **Status**: 2026-07-06 initial version
-**Source data**: `benches/stage_breakdown.rs` (differential workload measurement, MacBook M2 Max)
+**Source data**: `benches/stage_breakdown.rs` (differential workload measurement, arm64 laptop)
 
 ## Question
 
@@ -121,7 +121,7 @@ Absent that evidence, the Phase 3 stages are premature optimisation.
 
 #### Gate 2: >30% of frame time in narrow-phase + PGS ✅
 
-Initial `--quick` measurements (MacBook M2 Max):
+Initial `--quick` measurements (arm64 laptop):
 
 | N | `pile_no_collider` | `pile_with_collider` | delta | delta / total |
 |---|---|---|---|---|

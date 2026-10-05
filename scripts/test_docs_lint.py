@@ -170,6 +170,60 @@ class Vocabulary(unittest.TestCase):
         self.assertTrue(any("README_JP.md: missing" in x for x in e), e)
 
 
+class DevelopmentVocabulary(unittest.TestCase):
+    """How the work was organised: in the documents and in every other tracked file."""
+
+    def test_an_english_word_next_to_japanese_is_found(self):
+        # `\b` sees no boundary between "worker" and "が"; this is the case that slipped through
+        e = errors({"README_JP.md": README + "3 件とも thin_wall workerが見つけた\n"})
+        self.assertTrue(any("agent process `worker`" in x for x in e), e)
+        e = errors({"README_JP.md": README + "詳細はBacklogに記録\n"})
+        self.assertTrue(any("internal tracker `Backlog`" in x for x in e), e)
+
+    def test_worktree_and_multi_agent_words(self):
+        for text, hit in (("each change was made in a worktree", "worktree"),
+                          ("a multi-agent setup", "multi-agent"),
+                          ("マルチエージェントで並列化", "マルチエージェント"),
+                          ("エージェントが測定", "エージェント")):
+            e = errors({"README.md": README + text + "\n"})
+            self.assertTrue(any(f"agent process `{hit}`" in x for x in e), (text, e))
+
+    def test_a_git_worktree_command_is_not_a_description(self):
+        wf = "jobs:\n  x:\n    steps:\n      - run: git worktree add /tmp/base origin/main\n"
+        self.assertEqual(errors({".github/workflows/x.yml": wf}), [])
+
+    def test_physics_words_that_share_letters_are_not_flagged(self):
+        # a numerical integrator and a CCD agent radius are physics, not process
+        src = "// the integrator's order\n// zero agent radius still converges\nlet reference_temp_k = 1;\nproject_pressure_multigrid();\n"
+        self.assertEqual(errors({"src/a.rs": src}), [])
+
+    def test_vocabulary_is_checked_in_every_tracked_file(self):
+        for rel, text, label in (("src/a.rs", "// see the Backlog\n", "internal tracker"),
+                                 ("docs/ROADMAP.md", "worker 5 本で実施\n", "agent process"),
+                                 ("tests/b.rs", "// (ys-08 判断)\n", "session name"),
+                                 ("examples/c.rs", "//! user 裁定: 追加しない\n", "instruction source"),
+                                 ("src/d.rs", "/// oracle: `sakamoro-ff`'s derivation\n", "session name")):
+            e = errors({rel: text})
+            self.assertTrue(any(x.startswith(f"{rel}:1: {label}") for x in e), (rel, e))
+
+    def test_private_note_names(self):
+        for text in ("// see [[feedback_degenerate_case_as_silent_wrong_answer]]",
+                     "//! `feedback_mms_degree_blind_on_structured_lattice` measured",
+                     "# canonical CI template: [[reference_alice_ci_canonical_template]]",
+                     "/// (`project_alice_physics_world_auditor_engine_gaps`)",
+                     "// `memory/feedback_x.md`"):
+            e = errors({"src/a.rs": text + "\n"})
+            self.assertTrue(any("internal note" in x or "internal tracker" in x for x in e), (text, e))
+
+    def test_the_files_that_define_the_vocabulary_are_exempt(self):
+        e = errors({"scripts/test_land.py": "msg = 'found by the worker'\n"})
+        self.assertEqual(e, [])
+
+    def test_tree_vocabulary_compared_something(self):
+        _, counts = dl.check(tree({"src/a.rs": "fn a() {}\n"}))
+        self.assertGreater(counts["tree vocabulary"], 0)
+
+
 class Changelog(unittest.TestCase):
     def test_duplicate_version(self):
         e = errors({"CHANGELOG.md": CHANGELOG + "\n## [1.3.0] - 2026-09-16\n"})

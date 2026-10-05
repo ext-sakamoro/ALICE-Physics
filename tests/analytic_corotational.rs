@@ -1588,8 +1588,8 @@ fn centre_node(mesh: &SdfTetMesh) -> u32 {
 /// `F` is affine on the boundary and perturbed by one loaded node, so a stress
 /// shift that is the same tensor everywhere puts nearly no force on an interior
 /// node. **That mechanism is not verified**; what is measured is the invisibility.
-/// Finding a bias large enough to converge *and* exceed `1e-6 mm` is in the
-/// Backlog, not done here.
+/// Finding a bias large enough to converge *and* exceed `1e-6 mm` is an open
+/// issue, not done here.
 ///
 /// ⚠️ Two of the five rows red for reasons that are not this test's subject (a
 /// scene that will not converge at all), so **this test does not separate causes

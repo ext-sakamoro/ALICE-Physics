@@ -130,7 +130,7 @@ Result: **0 matches** for the P1 module-internal namespaces. `alice_physics::sol
 ## Roadmap wiring
 
 - v1.0 Item B progress: Iterations 1 + 2 complete, 5 iterations planned (Iter 3–6 + a user-decision cycle for `solver_tgs*`).
-- Snapshot integrity: `docs/PUBLIC_API_SNAPSHOT.txt` regenerated on Mac aarch64 (matches CI runner platform per `feedback_ci_public_api_platform_drift`).
+- Snapshot integrity: `docs/PUBLIC_API_SNAPSHOT.txt` regenerated on aarch64 (matches the CI runner platform).
 - CI enforcement: `.github/workflows/security-audit.yml` `public-api-diff` job continues to enforce diff-must-be-empty against this new baseline.
 
 ## Related

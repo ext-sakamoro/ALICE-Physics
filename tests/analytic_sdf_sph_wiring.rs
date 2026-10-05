@@ -8,7 +8,7 @@
 //! - density of an isolated particle `rho = m W_poly6(0, h) = 315 m / (64 pi h^3)`
 //!
 //! NOTE: the sign / density normalisation of the pressure force is not
-//! pinned here; see the Backlog entry `sdf_sph pressure force`.
+//! pinned here; it is tracked as the open issue `sdf_sph pressure force`.
 
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]

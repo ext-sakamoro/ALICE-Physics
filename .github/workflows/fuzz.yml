@@ -1,6 +1,5 @@
 name: Fuzz
 
-# canonical CI template: [[reference_alice_ci_canonical_template]]
 # ALICE-SDF v1.7.7 (commit 52d26f9) を base に ALICE-Physics 用に調整
 #
 # 目的:

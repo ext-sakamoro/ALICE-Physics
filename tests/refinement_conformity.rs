@@ -6,8 +6,7 @@
 //! share a face and only one of them splits an edge of that face, the shared
 //! face is replaced by two half-faces on one side and stays whole on the other.
 //! The mesh then no longer partitions the domain along matching faces, which is
-//! the variational crime described in
-//! `feedback_patch_test_blind_to_nonconforming_faces` — and which a patch test
+//! a variational crime — and one which a patch test
 //! is measured to be blind to (3.6e-15 MPa on a mesh with 576 non-conforming
 //! interior faces).
 //!

@@ -30,8 +30,6 @@
 //! requires it to miss the closed form by orders of magnitude. Without that
 //! pair, an implementation that quietly fell back to linear elasticity would
 //! pass everything here.
-//! (Mechanism of a vacuous exactness oracle:
-//! `feedback_exactness_oracle_vacuous_on_structured_lattice`.)
 //!
 //! # The closed form
 //!
@@ -485,8 +483,7 @@ fn neo_hookean_uniaxial_tension_matches_the_closed_form() {
     // (2) ⚠️ **The teeth were re-measured, not assumed.** Dropping to `n = 1`
     //     was checked against the mutations this oracle carries
     //     (A3 / B1 / B2 / C3 / D1 / D3); the per-mutation red counts at `n = 2`
-    //     and `n = 1` are recorded in
-    //     `memory/feedback_hyperelastic_on_high_order_elements.md`. ⚠️ A
+    //     and `n = 1` were recorded when the size was chosen. ⚠️ A
     //     mutation that stopped going red, **or went red in fewer tests**, sends
     //     the oracle back to `n = 2`.
     //
@@ -630,8 +627,7 @@ fn mooney_rivlin_uniaxial_tension_matches_the_closed_form() {
     // (2) ⚠️ **The teeth were re-measured, not assumed.** Dropping to `n = 1`
     //     was checked against the mutations this oracle carries
     //     (A3 / B1 / B2 / C3 / D1 / D3); the per-mutation red counts at `n = 2`
-    //     and `n = 1` are recorded in
-    //     `memory/feedback_hyperelastic_on_high_order_elements.md`. ⚠️ A
+    //     and `n = 1` were recorded when the size was chosen. ⚠️ A
     //     mutation that stopped going red, **or went red in fewer tests**, sends
     //     the oracle back to `n = 2`.
     //
@@ -705,8 +701,7 @@ fn neo_hookean_uniaxial_compression_matches_the_closed_form() {
     // (2) ⚠️ **The teeth were re-measured, not assumed.** Dropping to `n = 1`
     //     was checked against the mutations this oracle carries
     //     (A3 / B1 / B2 / C3 / D1 / D3); the per-mutation red counts at `n = 2`
-    //     and `n = 1` are recorded in
-    //     `memory/feedback_hyperelastic_on_high_order_elements.md`. ⚠️ A
+    //     and `n = 1` were recorded when the size was chosen. ⚠️ A
     //     mutation that stopped going red, **or went red in fewer tests**, sends
     //     the oracle back to `n = 2`.
     //
@@ -757,7 +752,7 @@ fn neo_hookean_uniaxial_compression_matches_the_closed_form() {
 /// the whole file stays green. That is measured: the mutation survived the
 /// first six oracles and is caught only here. It is the same shape as the
 /// `F⁻ᵀ` omission that once passed every test in this crate
-/// (`feedback_piola_objectivity_oracle`), reproduced and then closed.
+/// reproduced here and then closed.
 ///
 /// ⚠️ `cos` and `sin` of the angle are **not binary exact**, so the prescribed
 /// data carries a rounding of its own — the test asserts `cos² + sin² = 1` to
@@ -952,8 +947,7 @@ fn uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form() {
 /// uniform rescaling of the internal force (the equilibrium this scene solves
 /// is `f_mat(u) = 0`, which is scale free). The measured teeth are recorded
 /// against the mutation ids `P3-ONLY-B-quadrature-weight-replaced-by-uniform`
-/// and `P3-ONLY-C-transpose-the-piola-scatter` in
-/// `memory/feedback_hyperelastic_on_high_order_elements.md`.
+/// and `P3-ONLY-C-transpose-the-piola-scatter`.
 ///
 /// ⚠️ This test asserts **no expected value** — only that two implementations
 /// agree. That is not an exception to "do not build the expectation by calling

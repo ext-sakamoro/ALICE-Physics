@@ -30,8 +30,6 @@
 //! requires it to miss the closed form by orders of magnitude. Without that
 //! pair, an implementation that quietly fell back to linear elasticity would
 //! pass everything here.
-//! (Mechanism of a vacuous exactness oracle:
-//! `feedback_exactness_oracle_vacuous_on_structured_lattice`.)
 //!
 //! # The closed form
 //!
@@ -679,7 +677,7 @@ fn neo_hookean_uniaxial_compression_matches_the_closed_form() {
 /// the whole file stays green. That is measured: the mutation survived the
 /// first six oracles and is caught only here. It is the same shape as the
 /// `F⁻ᵀ` omission that once passed every test in this crate
-/// (`feedback_piola_objectivity_oracle`), reproduced and then closed.
+/// reproduced here and then closed.
 ///
 /// ⚠️ `cos` and `sin` of the angle are **not binary exact**, so the prescribed
 /// data carries a rounding of its own — the test asserts `cos² + sin² = 1` to

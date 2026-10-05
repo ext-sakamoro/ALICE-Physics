@@ -33,7 +33,7 @@
 //! here rather than assumed** (`cubic_field_is_beyond_p2`). An oracle that only
 //! ever sees the element it was written for cannot tell "correct" from
 //! "vacuous" — and for *this* degree the trap is wide open, because
-//! `feedback_mms_degree_blind_on_structured_lattice` measured that on a uniform
+//! it has been measured that on a uniform
 //! Kuhn lattice even **P1** reproduces any polynomial of degree ≤ 3 at the nodes.
 //! A cubic field is exactly the degree where that blindness peaks, so every
 //! exactness oracle below runs on a **perturbed** lattice.
@@ -78,8 +78,7 @@ const AMPLITUDE: f64 = 1.0e-5;
 /// ⚠️ **The asymmetry is the point.** P3 exactness on a cubic field is a property
 /// of the *function space*, so it survives any mesh. P1's and P2's agreement on a
 /// uniform lattice is an artefact of the *lattice*, so it does not. Perturbing
-/// separates them. (Mechanism:
-/// `feedback_mms_degree_blind_on_structured_lattice`.)
+/// separates them.
 const JITTER: f64 = 0.25;
 
 /// What "exactly" means here, in mm.
@@ -571,8 +570,7 @@ fn cubic_field_is_exact_on_cubic_elements() {
 /// Without this, `cubic_field_is_exact_on_cubic_elements` could be passing
 /// because the field is easy rather than because the element is cubic. For this
 /// degree that is not a hypothetical: on a **uniform** Kuhn lattice both P1 and
-/// P2 return a cubic field exactly at the nodes
-/// (`feedback_mms_degree_blind_on_structured_lattice`), so the entire difference
+/// P2 return a cubic field exactly at the nodes, so the entire difference
 /// between the three elements here rests on [`JITTER`] being non-zero.
 #[test]
 fn cubic_field_is_beyond_p2() {

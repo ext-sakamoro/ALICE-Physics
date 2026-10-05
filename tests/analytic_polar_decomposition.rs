@@ -31,8 +31,7 @@
 //!
 //! Each test below states a property that follows from the *definition* of the
 //! polar decomposition rather than from a numeric coincidence, because a
-//! coincidence can hold for a wrong implementation
-//! (`feedback_green_is_not_evidence_three_mechanisms`, mechanism A). The
+//! coincidence can hold for a wrong implementation. The
 //! sharpest is `shear_is_where_gram_schmidt_and_polar_disagree`: orthonormalising
 //! the columns also produces an orthogonal factor, and on a rotation it produces
 //! the *same* one, so a Gram-Schmidt implementation would pass most of these
@@ -502,9 +501,8 @@ fn shear_is_where_gram_schmidt_and_polar_disagree() {
 ///
 /// `det F < 0` means the element has been turned inside out. The nearest
 /// orthogonal matrix is then a reflection with `det = −1`, and returning it
-/// would silently flip every stress component — the failure mode
-/// `feedback_patch_test_blind_to_nonconforming_faces` describes for `.abs()`,
-/// one layer up.
+/// would silently flip every stress component — the same failure mode as an
+/// `.abs()` that hides a sign, one layer up.
 #[test]
 fn inverted_deformation_is_rejected() {
     for (name, f) in [
@@ -544,8 +542,7 @@ fn inverted_deformation_is_rejected() {
 /// This is the test an absolute floor fails, and the one `det.is_zero()` fails
 /// too: `Mat3Fix::inverse` only rejects an exactly zero determinant, so a nearly
 /// flat `F` comes back with an enormous inverse and the iteration diverges
-/// (`feedback_fixedpoint_iterative_solver_thresholds` — a fixed absolute
-/// threshold always breaks somewhere).
+/// (a fixed absolute threshold always breaks somewhere).
 ///
 /// `det` scales as the cube of the matrix, so the scale-free quantity is
 /// `|det F| / ‖F‖³`. Scaling `F` by `k` must leave accept/reject alone.
@@ -697,8 +694,7 @@ fn reference_higham(f: Mat3Fix, coefficient: Fix128, settle_bound: Fix128) -> (M
 /// that the loose bound "cannot be caught", then that the bound "is not
 /// load-bearing for accuracy". Both came from reading gradient one and stopping.
 /// **A destruction test needs the fault caught somewhere in the set, and the set
-/// has to be looked at before the conclusion is written** — the same shape as
-/// `feedback_oracle_scene_hits_verifier_limit`.
+/// has to be looked at before the conclusion is written**.
 ///
 /// ⚠️ **"Drop the final step" is not a usable fault at all**, measured at 0 ulp
 /// everywhere and necessarily so: the iteration stops *because* the last step moved

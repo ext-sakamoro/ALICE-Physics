@@ -3,7 +3,6 @@
 //! 決定論 lockstep が physics engine の core value なので、serialize/deserialize 経路で
 //! 1 bit でもズレたら panic / 状態不整合 / lockstep desync に直結
 //!
-//! canonical CI template [[reference_alice_ci_canonical_template]] 罠 catalog #10 準拠
 //! (scene 内部フォーマット直接 fuzz で panic ゼロ + roundtrip bit-exact 保証)
 //!
 //! 起こり得る危険:

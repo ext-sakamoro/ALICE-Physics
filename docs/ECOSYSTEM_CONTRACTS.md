@@ -127,7 +127,7 @@ alice-physics = "1"
 
 **Status**: no current alice-physics dependency (`rg 'alice_physics::' ~/ALICE-Kinematics` returns 0 hits).
 
-**Planned integration** (per L1 Physical Intent roadmap, [[project_alice_lol_ir_roadmap]]):
+**Planned integration** (per the L1 Physical Intent roadmap):
 - 8-byte Intent packet bridge: `IntentNode::Physical` → `PhysicsWorld` action.
 - Requires new API on alice-physics: `PhysicsWorld::apply_intent(&mut self, packet: PhysicalIntent)`.
 - Scheduled for **post-1.0** (target: 1.1 or 1.2 semver-minor).

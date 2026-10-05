@@ -59,8 +59,7 @@ const AMPLITUDE: f64 = 1.0e-3;
 /// property of the *function space*, so it survives any mesh. P1's was an
 /// artefact of the *lattice*, so it does not. Perturbing separates them.
 /// (`tests/p2_oracle_design.rs` measures the same separation from the
-/// convergence-rate side; the mechanism is recorded in
-/// `feedback_mms_degree_blind_on_structured_lattice`.)
+/// convergence-rate side.)
 const JITTER: f64 = 0.25;
 
 /// What "exactly" means here, in mm.

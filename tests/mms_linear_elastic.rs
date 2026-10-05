@@ -37,9 +37,9 @@
 //! of degree ≤ 3 has no fourth derivative, so the nodal values come out exact and
 //! the oracle measures nothing.
 //!
-//! That is the same shape of failure as
-//! `feedback_patch_test_blind_to_nonconforming_faces` — machine-epsilon green
-//! from an instrument that does not reach the property — with a different cause,
+//! That is the same shape of failure as a patch test on non-conforming faces
+//! — machine-epsilon green from an instrument that does not reach the property
+//! — with a different cause,
 //! and it generalises: **the blind degree depends on the mesh, so the element
 //! order is not the only thing that sets the degree an MMS needs.**
 //!

@@ -32,7 +32,7 @@
 //! An `f64` control runs the same permutation test so the suite shows its own
 //! teeth: if the `f64` case ever stopped differing, the generator would have
 //! stopped producing values that can disagree, and the `Fix128` greens would
-//! mean nothing (`feedback_green_is_not_evidence_three_mechanisms`, mechanism A).
+//! mean nothing.
 //!
 //! Author: Moroya Sakamoto
 

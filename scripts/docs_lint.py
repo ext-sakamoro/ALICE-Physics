@@ -16,10 +16,13 @@ checked mechanically:
                 `[Unreleased]`, each Keep a Changelog category at most once
                 and no emoji status markers
 
+The development-process, tracker, instruction-source and device vocabulary is
+also checked in the text of every other tracked file (docs/ROADMAP.md, comments,
+workflows, generated ledgers); private names are checked in every file path and
+text.
+
 Released sections are history and are not rewritten, so the per-category and
-emoji checks apply to `[Unreleased]` only. docs/ROADMAP.md is not linted yet:
-its existing text is kept as it is, and a gate that is red on day one checks
-nothing new.
+emoji checks apply to `[Unreleased]` only.
 
 Every check must compare at least one item; a check that compared nothing
 fails, so a renamed file or heading cannot turn the gate into a no-op.
@@ -40,14 +43,38 @@ DOCS = ("README.md", "README_JP.md", "docs/MODULES.md", "CHANGELOG.md")
 # (label, pattern). Common English words such as "memory" and "session" are
 # matched only in their internal-process phrasings, so "memory footprint" or a
 # netcode "session" are not flagged.
+# English words written next to Japanese text: `\b` sees no boundary between
+# "worker" and "が" (both are word characters), so ASCII-letter boundaries are used
+A = r"(?<![A-Za-z])"
+Z = r"(?![A-Za-z])"
+
+
+def words(*alts: str) -> str:
+    return A + "(?:" + "|".join(alts) + ")" + Z
+
+
 FORBIDDEN = [
-    ("agent process", re.compile(r"\bworkers?\b|ワーカー|\bsubagents?\b|調停役|並走\s*session|他\s*session|session\s*名")),
-    ("session name", re.compile(r"\bys-[0-9a-f]{2}\b|\bsakamoro-[0-9a-f]{2}\b")),
-    ("internal tracker", re.compile(r"\bBacklog\b|memory\s*(?:側|化|に|へ|file)")),
-    ("instruction source", re.compile(r"user\s*(?:指示|裁定|指摘)")),
-    ("device", re.compile(r"\bJetson\b|\bMac\s?mini\b|\bMacBook\b|Raspberry\s*Pi|EAC-4000|reCamera")),
+    ("agent process", re.compile(words(r"workers?", r"subagents?", r"multi[- ]?agents?")
+                                 # `git worktree add` is a command, not a description of how the work was done
+                                 + r"|(?<!git )" + words(r"worktrees?")
+                                 + r"|ワーカー|マルチエージェント|エージェント|調停役|並走\s*session|他\s*session|session\s*名")),
+    ("session name", re.compile(r"(?<![A-Za-z0-9])(?:ys|sakamoro)-[0-9a-f]{2}(?![A-Za-z0-9])")),
+    ("internal tracker", re.compile(words(r"Backlog") + r"|memory\s*(?:側|化|に|へ|file)|(?<![A-Za-z0-9_])memory/")),
+    # names of private notes: `[[snake_case]]` links and the note-file prefixes
+    ("internal note", re.compile(r"\[\[[a-z0-9]+_[a-z0-9_]+\]\]"
+                                 r"|(?<![A-Za-z0-9_])(?:feedback|discipline|success|handoff)_[a-z0-9_]{4,}"
+                                 r"|(?<![A-Za-z0-9_])(?:project|reference)_alice_[a-z0-9_]+")),
+    ("instruction source", re.compile(r"user\s*(?:指示|裁定|指摘|判断)")),
+    ("device", re.compile(words(r"Jetson", r"Mac\s?mini", r"MacBook") + r"|Raspberry\s*Pi|EAC-4000|reCamera")),
     ("private address", re.compile(r"\b100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b|\b192\.168\.\d{1,3}\.\d{1,3}\b|\b10\.\d{1,3}\.\d{1,3}\.\d{1,3}\b")),
 ]
+
+# Labels checked in the text of every tracked file, not only the public documents:
+# how the work was organised does not belong in comments, ledgers or the roadmap
+# either. Addresses stay document-only (dotted numbers occur in data files).
+TREE_LABELS = ("agent process", "session name", "internal tracker", "internal note", "instruction source", "device")
+# These files define and test the vocabulary, so they spell it out
+TREE_VOCAB_EXEMPT = {"scripts/docs_lint.py", "scripts/test_docs_lint.py", "scripts/test_land.py"}
 
 # Names of unrelated private projects and of internal infrastructure are not written
 # here in plain text: this file
@@ -180,6 +207,7 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
     # the text of every tracked file, not only the four documents. Generated
     # ledgers, comments, workflows and scripts are published too.
     counts["tree files"] = 0
+    counts["tree vocabulary"] = 0
     for rel in tree_files(root):
         counts["tree files"] += 1
         for name in private_names(" ".join(re.split(r"[/_.\-]+", rel))):
@@ -192,6 +220,13 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
         for i, line in enumerate(text.splitlines(), 1):
             for name in private_names(line):
                 errors.append(f"{rel}:{i}: private or internal name (`{name}`)")
+            if rel in TREE_VOCAB_EXEMPT:
+                continue
+            counts["tree vocabulary"] += 1
+            for label, pat in FORBIDDEN:
+                if label in TREE_LABELS:
+                    for m in pat.finditer(line):
+                        errors.append(f"{rel}:{i}: {label} `{m.group(0)}`")
 
     for name, c in counts.items():
         if c == 0:

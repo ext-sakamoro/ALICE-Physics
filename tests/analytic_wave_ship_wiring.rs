@@ -261,7 +261,7 @@ fn spectrum_density_extreme_magnitude_does_not_panic_and_decays() {
     // at mult=100_000 / 1_000_000 it floors to the smallest representable
     // positive value (Fix128::from_raw(0, 1), approx 5.42e-20) instead of
     // true zero. Both are non-blocking fixed-point rounding artifacts at
-    // the resolution floor (recorded in the Backlog), not a sign flip or
+    // the resolution floor (recorded as known), not a sign flip or
     // an unbounded blow-up -- the only thing asserted here is "bounded",
     // not "nonnegative" or "monotonic".
     for mult in [10_000, 100_000, 1_000_000] {

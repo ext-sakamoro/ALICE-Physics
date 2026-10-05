@@ -9,7 +9,7 @@
 //! This example is that caller.
 //!
 //! This file is about the **collection API** (`Vec<Box<dyn PhysicsModifier>>`
-//! add/remove/count/mutate) -- it is unrelated to this crate's Backlog
+//! add/remove/count/mutate) -- it is unrelated to this crate's open
 //! research question of whether individual modifiers (thermal / phase_change
 //! / pressure / erosion / fracture) can read each other's fields (resolved
 //! elsewhere as "no shared `Fix128` coupling layer needed"). No modifier here

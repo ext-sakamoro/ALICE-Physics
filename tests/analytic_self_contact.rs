@@ -108,7 +108,7 @@
 //!    `assert_exact_triple_products` が明示的に落ちます**
 //!
 //! よって: **係数は厳密に構成し、根の分離は区間で挟む** `Mul` の丸めは独立判断として
-//! Backlog に残し、本 file の blocker にしません
+//! 別途扱い、本 file の blocker にしません
 //!
 //! # ⚠️ 実装への申し送り — 一貫性は構成上達成する
 //!
@@ -136,7 +136,7 @@ use alice_physics::cloth::Cloth;
 use alice_physics::math::{Fix128, Vec3Fix};
 
 // ---------------------------------------------------------------------------
-// 厳密性の前提 (ys-08 判断 (iii): 係数を厳密に構成し、溢れたら明示的に落とす)
+// 厳密性の前提 (方針 (iii): 係数を厳密に構成し、溢れたら明示的に落とす)
 // ---------------------------------------------------------------------------
 
 /// 座標が `2^-16` の整数倍かつ `|v| < 2^10` であることを要求する
@@ -669,7 +669,7 @@ fn ccd_coplanarity_cubic_is_constructed_exactly_and_its_root_is_bracketed() {
         );
     }
 
-    // 根の分離は厳密値でなく **区間で挟む** (ys-08 判断 (ii))
+    // 根の分離は厳密値でなく **区間で挟む** (方針 (ii))
     let lo = Fix128::from_ratio(3, 8);
     let hi = Fix128::from_ratio(7, 16);
     assert!(coplanarity_det(lo) < Fix128::ZERO, "oracle: 区間左端で負");
@@ -1151,7 +1151,7 @@ fn the_particle_pair_minimum_is_attained_by_two_pinned_vertices() {
 ///
 /// ⚠️ **「厚くすれば安全」は逆です** これは `src/cloth.rs` の doc が書いている使用条件
 /// (接触厚は局所辺長の半分未満) を実測で pin する test で、`ClothConfig` に実行時の
-/// guard を入れるかは別判断として Backlog にあります
+/// guard を入れるかは別判断として未決です
 ///
 /// ⚠️ **これは欠陥が続くことを assert する test です** rigid impact zone 等で破綻域まで
 /// 扱えるようになったら **red になるのが正しい挙動**で、その時は削除せず不等号を逆に
@@ -1322,7 +1322,7 @@ fn edge_edge_separation(
 /// ⚠️ **ON の ALL 違反件数は base の 0 から 2 に増えています** 隠さず記録します: frame
 /// 掃過修復が保証するのは **非貫通** (`gap ≥ 0`) であって `thickness` の確保ではなく、
 /// 貫通対を距離 0 に置くので**定義上 `thickness` 違反になります** `thickness` まで詰める
-/// には clamp しながら収束させる設計が要り、本 task の範囲外です (Backlog 起票済)
+/// には clamp しながら収束させる設計が要り、本 test の範囲外です (未対応)
 #[test]
 fn self_collision_improves_the_edge_edge_separation_it_constrains() {
     let radius = default_radius();

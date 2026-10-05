@@ -16,8 +16,7 @@
 //! input is refused" is worth nothing if the input would be refused anyway by
 //! something further down, so the reason the refusal happens is pinned by the
 //! variant, not just by `is_err()`. The mutation evidence for the guards
-//! themselves is recorded in
-//! `memory/feedback_hyperelastic_on_high_order_elements.md`.
+//! themselves was recorded separately.
 //!
 //! Author: Moroya Sakamoto
 

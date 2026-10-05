@@ -17,7 +17,7 @@ on:
     inputs:
       scope:
         # 例: "--file src/solver.rs -F update_velocities -F raycast"  空 = 通常の core 16 shard × 2 feature
-        # Mac local は他 session の cargo build と競合してメモリ不足 / timeout で測定が壊れる (2026-09-15)
+        # local では並行する cargo build と競合してメモリ不足 / timeout で測定が壊れる (2026-09-15)
         # ため、関数限定の measurement は GH runner で行う (mutants-scoped job 1 本、shard job は skip)
         description: 'cargo mutants の対象限定引数 (--file / -F)、空なら週次と同じ core shard'
         required: false

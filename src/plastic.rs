@@ -104,7 +104,7 @@ impl PlasticModel {
 
     /// Override the hardening law, leaving every other parameter unchanged.
     // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (hardening_type is a pub field, the solver sets nothing but the from_fdm_material default), oracle src/plastic.rs tests::with_hardening_back_stress_matches_radial_return_closed_form
+    // ALLOW-UNWIRED: wiring debt structural-pub-crate-residue (hardening_type is a pub field, the solver sets nothing but the from_fdm_material default), oracle src/plastic.rs tests::with_hardening_back_stress_matches_radial_return_closed_form
     #[allow(dead_code)]
     #[must_use]
     pub(crate) const fn with_hardening(mut self, ht: HardeningType) -> Self {

@@ -12,8 +12,8 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 
 ## 🎉 現在位置 (2026-09-30): 4 課題の第 2 increment を landing
 
-⚠️ **番号で呼ばない** — 記録には「壁 N/4」が 2 組あり一致しません (詳細は memory
-`project_alice_physics_research_walls` § 番号の曖昧性) 話題名で参照してください
+⚠️ **番号で呼ばない** — 記録には「壁 N/4」が 2 組あり一致しません
+話題名で参照してください
 
 | 課題 | commit | 到達点 |
 |---|---|---|
@@ -75,15 +75,15 @@ oracle は `tests/analytic_vehicle_dynamics.rs` (4 輪ロックの停止距離 `
 
 ### 第 63 increment (2026-10-03、配線作業 第 21 件 — 並列 5 件で wiring-status / oracle-status を処理)
 
-user 指示「`docs/wiring-status.md` / `docs/oracle-status.md` を worker で並列処理」を、担当 file を固定した 5 本 (構造材料 / キャラ・SDF / 流体・熱・電磁 / その他 / oracle 棚卸し) で実施した 各 worker は専用 worktree で commit まで、push・docs・公開 API snapshot は調停役が統合した baseline **78 行退役** (実配線 78、巻き込み 0) 公開 API は**追加のみ 6 関数** (`PhysicsWorld::sdf_ccd_hits` / `SdfCharacter::locomotion_context` / `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` が pub 化 / `rope_attach::solve_rope_attachments_two_way`) 追加 oracle は約 560 本、変異試験は約 900 件で、生存は全て理由つきの等価変異
-⚠️ **worker が見つけて直した既存欠陥 (全て実測の後、oracle を先に書いて red → green)**:
+`docs/wiring-status.md` / `docs/oracle-status.md` の処理を、担当 file を固定した並行 5 件 (構造材料 / キャラ・SDF / 流体・熱・電磁 / その他 / oracle 棚卸し) で実施し、docs・公開 API snapshot は統合時にまとめた baseline **78 行退役** (実配線 78、巻き込み 0) 公開 API は**追加のみ 6 関数** (`PhysicsWorld::sdf_ccd_hits` / `SdfCharacter::locomotion_context` / `interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume}` が pub 化 / `rope_attach::solve_rope_attachments_two_way`) 追加 oracle は約 560 本、変異試験は約 900 件で、生存は全て理由つきの等価変異
+⚠️ **見つけて直した既存欠陥 (全て実測の後、oracle を先に書いて red → green)**:
 - **符号・向き**: `csf_body_force` が外向き (表面張力は曲率中心を向く、Young-Laplace の内外圧差 −1.96 → +1.95 / 閉形式 +1.94) / `sdf_sph` の圧力力が引力で ρ_i で割られていなかった (過圧の 2 粒子が +329 で近づく、運動量ずれ 3e4〜1.9e5、粘性の大きさ 688.9 → 1.73) / event の trigger exit が enter の trigger_body と other_body を入れ替えていた
 - **数値**: `math_util::cbrt_fix` が 1e6 以上・1e-6 未満で未収束 (n=1e9 で 29701.8、真値 1000) / `beam_stress` と `mass_properties` の `from_ratio(1, 12)` 等の丸め (質量 12 の箱の Ixx が 20 − 80 ulp、FoS がちょうど 2 でも `is_safe=false`) / PLIC の `truncated_cube_volume` が 4×4×4 標本の階段関数 (f=0.001 で体積 0) → Scardovelli–Zaleski の閉形式 (最悪誤差 3.5e-18) / `buoyancy_zone` の 4π/3 が 4.1888 (相対誤差 2.3e-6) / `fluid` の poly6・spiky に 1/π が無い (密度が π 倍)
 - **幾何**: `ray_march_sdf` が非単位 direction で貫通 / `AdaptiveSdfEvaluator` の法線が local 空間のまま / `sdf_manifold` の 4 点縮約が面積最大でない・偶数 grid が非対称・`max_contacts=0` で 1 件返す / `IkTargetSet` の weight 2 が行き過ぎ / ragdoll の joint anchor が全て body 中心で bone が 0 に潰れる・質量分率の合計 0.958 / vehicle が地面より下の車輪の suspension 力を失う
 - **契約・資源**: `particle` の cap 判定が反転し死んだ slot が再利用されない・`spread_angle` が cone 角でない / `sim_field` の splat が y/z の範囲を x のセルサイズから導出 / `scene_io` の JSON が不正値を default に丸める (body_a=-1 → 0、joint_type=257 → 1) / `deformable` が静的 body に代用質量 1e6 / `print_orientation::optimize_grid` が負の step で終了しない / `Fluid::new_block` が spacing ≤ 0 で OOM
 - **doc と実装の食い違い (doc を実装に合わせた)**: vehicle の「トルク曲線・Ackermann」/ `rope_attach` の「body も補正される」/ `warp_risk` の k / `creep_longterm` の n / `AdaptiveConfig::refinement_samples` が未使用
 `rigid_rotation_produces_zero_stress` は理由文の「共回転定式化が入った commit で外す」が `solve_corotational` で成立していたので `#[ignore]` を外して共回転 solver に向けた (期待値 1e-9 MPa は不変、相棒 test は `solve` の特徴づけとして残す) `#[ignore]` 理由文 7 件を実測で更新 oracle-status の「Pending 27」は未実装でなく、意図した red 3・実行が長い/診断用 24・理由なし 0 だった(第 20 件の生成器修正で分類)
-⚠️ **user 判断待ち (直していない・Backlog 起票済み)**: `VivParameters` への流体減衰 (field 追加は breaking) / `rope_attach` の旧関数の署名変更・非推奨化 (非破壊の `_two_way` を追加済み) / `sdf_sph` の密度拘束の λ 分母 (ρ0² で割らない、拘束が実質不活性、割ると崩壊/発散) / 180° 剛体回転が増分 ≥ 2 で `Inverted` / ragdoll・`AdaptiveConfig` の公開 field / `support_volume::estimate_region_volume` の配分規則 / Z=0 断面・E=0 の silent な安全判定 / `eulerian_grid` の公開 API / `BroadphaseHybrid`
+⚠️ **未対応 (別途判断)**: `VivParameters` への流体減衰 (field 追加は breaking) / `rope_attach` の旧関数の署名変更・非推奨化 (非破壊の `_two_way` を追加済み) / `sdf_sph` の密度拘束の λ 分母 (ρ0² で割らない、拘束が実質不活性、割ると崩壊/発散) / 180° 剛体回転が増分 ≥ 2 で `Inverted` / ragdoll・`AdaptiveConfig` の公開 field / `support_volume::estimate_region_volume` の配分規則 / Z=0 断面・E=0 の silent な安全判定 / `eulerian_grid` の公開 API / `BroadphaseHybrid`
 
 ### 第 62 increment (2026-10-03、配線作業 第 9f 件 — rollback netcode の予測と照合)
 
@@ -139,7 +139,7 @@ canonical 化、`u_plus` もこちらへ切替、挙動変化なし) oracle:
 
 `compute_sdf_force` の `Attract` 分岐は `dist` が Fix128 の表現域境界付近 (`~4.6e18`) の時
 `strength * dist_fix.abs()` が mod-2^128 wrap し、`min(wrapped, max_force)` が `max_force`
-を保証しない状態だった (ROADMAP 第 45 increment で発見・記録、Backlog として保留)
+を保証しない状態だった (ROADMAP 第 45 increment で発見・記録、保留)
 `Fix128::checked_mul` で overflow を検出し、overflow 時は `max_force` を直接返すよう修正
 (overflow する積は必ず `max_force` より大きい) 旧挙動を pin していた regression test を
 正しい挙動を pin するものに置き換え、変異試験 (fix を revert して red を確認) で歯を確認
@@ -179,9 +179,9 @@ kinematic bodyが動的bodyを押すsceneで衝突検出との配線順序も確
 
 ### 第 54 increment (2026-10-03、配線作業 第 19 件 — `smoke_fire`/`rope`/`contact_cache`/`math`/`wave_ship` 未配線 32 item)
 
-worker 5 本、全て src 無変更 変異: smoke_fire 7/8 (equivalent mutant 1)、rope 4/5 (equivalent mutant 1)、contact_cache 9/9、math (arm64 host 上では atan/dot_simd/length_squared_simd のみ実行可能、3/3 red、x86_64+simd gate の 4 item はこの host では compile されずクロスコンパイル確認のみ)、wave_ship 11/12 (equivalent mutant 1) baseline 35 行退役 (実配線 32、名前衝突の巻き込み 3 = `src/cloth.rs`/`src/deformable.rs`/`src/fluid.rs` の `step_with_sdf`、Backlog 記録済)
-⚠️ **contact_cache は既存 2026-09-30 user 裁定「CPU `step()` には復活させない」の確認が必須だった** — `ContactCache` の warm-start 7 item は `PhysicsWorld::step()` から一度も読まれず、実 warm-start は別機構 (`ContactConstraint::cached_lambda`) 裁定の範囲外 (`step()` を一切呼ばない standalone example) として配線
-⚠️ worker 実測 (未修正、Backlog 記録済): `smoke_fire::reaction_rate_kg_per_m3_s` は温度/気体定数のみ guard し密度の符号は無検証 (負の gas_constant で exp_fix 飽和まで到達) / `raycast::sweep_sphere` と `ccd::sphere_sphere_toi` が意味論重複 / **`wave_ship::Jonswap::spectrum_density` の正規化定数が JONSWAP peak-enhancement 補正 `(1-0.287·ln(gamma))` を欠き、既定 `north_sea()` (gamma=3.3) で moment から回復する Hs が公称値の約 1.235 倍になる** (DNV-RP-C205 予測値と 0.12% 差で一致、欠落補正が原因と確認済、修正は既定出力を変える semver 相当の判断につき user 裁定待ち) / 同 far-tail が Fix128 解像度限界で floor noise (符号バグではない)
+並行 5 件、全て src 無変更 変異: smoke_fire 7/8 (equivalent mutant 1)、rope 4/5 (equivalent mutant 1)、contact_cache 9/9、math (arm64 host 上では atan/dot_simd/length_squared_simd のみ実行可能、3/3 red、x86_64+simd gate の 4 item はこの host では compile されずクロスコンパイル確認のみ)、wave_ship 11/12 (equivalent mutant 1) baseline 35 行退役 (実配線 32、名前衝突の巻き込み 3 = `src/cloth.rs`/`src/deformable.rs`/`src/fluid.rs` の `step_with_sdf`)
+⚠️ **contact_cache は既存 2026-09-30 の方針「CPU `step()` には復活させない」の確認が必須だった** — `ContactCache` の warm-start 7 item は `PhysicsWorld::step()` から一度も読まれず、実 warm-start は別機構 (`ContactConstraint::cached_lambda`) 方針の範囲外 (`step()` を一切呼ばない standalone example) として配線
+⚠️ 測定のみ実施、修正は未対応: `smoke_fire::reaction_rate_kg_per_m3_s` は温度/気体定数のみ guard し密度の符号は無検証 (負の gas_constant で exp_fix 飽和まで到達) / `raycast::sweep_sphere` と `ccd::sphere_sphere_toi` が意味論重複 / **`wave_ship::Jonswap::spectrum_density` の正規化定数が JONSWAP peak-enhancement 補正 `(1-0.287·ln(gamma))` を欠き、既定 `north_sea()` (gamma=3.3) で moment から回復する Hs が公称値の約 1.235 倍になる** (DNV-RP-C205 予測値と 0.12% 差で一致、欠落補正が原因と確認済、修正は既定出力を変える semver 相当の判断につき未対応 (別途判断)) / 同 far-tail が Fix128 解像度限界で floor noise (符号バグではない)
 
 ### 第 50 increment (2026-10-03、配線作業 第 9 件 (F3c/F3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
 
@@ -194,10 +194,10 @@ baseline 退役 10 行 (`decompose_sdf` / `DecompositionResult` / `corner` / `co
 
 ### 第 49 increment (2026-10-03、配線作業 第 18 件 — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` 未配線)
 
-worker 5 本 (`cubic_elastic_fem` 9 item / `compound` 8 item + `box_collider::axis_aligned` / `raycast` 9 item / `ccd` 7 item / `solver_tgs` 残 9 item 中 8 item) 変異: cubic_elastic_fem 9/9、compound 13/14 (1 件は軸整列回転のみの test では不可視だった真の oracle gap、対角 120 度回転 test 追加で解消)、raycast 22/22 (初回 3 件生存、カプセル接線・t=0 境界・両キャップ命中の scene 追加で解消)、ccd 15/19 (4 件 equivalent mutant)
+並行 5 件 (`cubic_elastic_fem` 9 item / `compound` 8 item + `box_collider::axis_aligned` / `raycast` 9 item / `ccd` 7 item / `solver_tgs` 残 9 item 中 8 item) 変異: cubic_elastic_fem 9/9、compound 13/14 (1 件は軸整列回転のみの test では不可視だった真の oracle gap、対角 120 度回転 test 追加で解消)、raycast 22/22 (初回 3 件生存、カプセル接線・t=0 境界・両キャップ命中の scene 追加で解消)、ccd 15/19 (4 件 equivalent mutant)
 ⚠️ **`compound.rs` は別の作業 (F3b-1, `dafc824`〜`b9472f6`) と同時並行で配線** — rebase で両者を統合 (`add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`child_world_aabb` は別の作業 が `PhysicsWorld::add_compound_body` 経由で先行配線済、本 batch は残る `compute_aabb`/`overlapping_children`/`world_aabb` を含む全 8 item + 自身の example で独立に配線、両方が共存しても矛盾なし)
-⚠️⚠️ **`solver_tgs` 残 9 item は user 裁定「本実装」により skeleton を撤去**: `ccd::adaptive_toi_substeps` が `solver_tgs::adaptive_substeps_for_ccd` を実際に呼ぶように実装 (旧実装は `speculative_contact` の有無だけで定数を返す skeleton だった)、`solve_oriented_islands_serial`/`_parallel` を `dispatch_islands`/`par_dispatch_islands` 経由に書き換え (無挙動変更)、`step_tgs` に `ImpulseCache::sweep()` を配線、新規 `PhysicsWorld::{tgs_cache_stats, reset_tgs_cache_stats}` + `TgsCacheStats` (`#[non_exhaustive]`) で warm-start 診断を公開 API 化 (snapshot +78/−0) ⚠️ **`par_dispatch_islands` 自体は未達** — 唯一の呼出元候補 `step_tgs` が常に serial 固定で、parallel 経路に繋ぐには `ImpulseCache` の island 単位 split/merge という別の設計変更が要るため保留 (Backlog 記録)
-baseline 44 行退役 (実配線 38、名前衝突の巻き込み 6 = `quadratic_elastic_fem.rs::corner_count`/`element_count`/`element_nodes` + `bvh.rs::BvhStats`/`bvh.rs::stats`/`sdf_adaptive.rs::stats`、Backlog 記録済)
+⚠️⚠️ **`solver_tgs` 残 9 item は方針「本実装」により skeleton を撤去**: `ccd::adaptive_toi_substeps` が `solver_tgs::adaptive_substeps_for_ccd` を実際に呼ぶように実装 (旧実装は `speculative_contact` の有無だけで定数を返す skeleton だった)、`solve_oriented_islands_serial`/`_parallel` を `dispatch_islands`/`par_dispatch_islands` 経由に書き換え (無挙動変更)、`step_tgs` に `ImpulseCache::sweep()` を配線、新規 `PhysicsWorld::{tgs_cache_stats, reset_tgs_cache_stats}` + `TgsCacheStats` (`#[non_exhaustive]`) で warm-start 診断を公開 API 化 (snapshot +78/−0) ⚠️ **`par_dispatch_islands` 自体は未達** — 唯一の呼出元候補 `step_tgs` が常に serial 固定で、parallel 経路に繋ぐには `ImpulseCache` の island 単位 split/merge という別の設計変更が要るため保留
+baseline 44 行退役 (実配線 38、名前衝突の巻き込み 6 = `quadratic_elastic_fem.rs::corner_count`/`element_count`/`element_nodes` + `bvh.rs::BvhStats`/`bvh.rs::stats`/`sdf_adaptive.rs::stats`)
 
 ### 第 48 increment (2026-10-03、配線作業 第 9 件 (F3b-1) — compound body と凸包の質量特性)
 
@@ -209,8 +209,8 @@ baseline 退役 11 行 (`compound::{add_box,add_capsule,add_sphere,add_convex_hu
 
 ### 第 47 increment (2026-10-03、配線作業 第 17 件 — `prestressed`/`piezoelectric`/`rolling_contact`/`sdf_force` 未配線 28 item)
 
-worker 4 本、全て src 無変更 変異: prestressed 7/7 (実装) + 2/5 (guard、3 件は Fix128::Div のゼロ除算契約と算術等価)、piezoelectric 11/12 red (permittivity 単独配線変異は voltage_from_force/force_from_voltage が残る限り推移的到達性で観測不能)、rolling_contact 14/14、sdf_force 15/17 (生存 2 件は算術的に等価、`contain` の境界 off-by-one は dist=0 で push が恒等的に 0 になる式の性質、`apply_sdf_force_fields` の is_static skip は inv_mass=0 と同一条件の性能最適化) baseline 28 行退役 (実配線 27、名前衝突の巻き込み 1 = `force.rs::with_affected_bodies`、Backlog 記録済) production entry point: `examples/prestressed_joints_and_cables.rs` / `examples/piezoelectric_materials.rs` / `examples/rolling_contact_fatigue.rs` / `examples/sdf_force_fields.rs`
-⚠️ worker 実測 (未修正、Backlog): rolling_contact.rs は f32 ベースで engineering module family の他 (fatigue/laminate_failure) の Fix128 決定論と不整合 / sdf_force の `attract` は `min(strength*|dist|, max_force)` clamp が Fix128 の表現域境界付近 (`|dist| ~ 4.6e18`) で `strength*dist_fix` 自体が mod-2^128 wrap するため `min()` が意図した値と比較できず破られる (通常の大距離 1e9 等では問題なし)
+並行 4 件、全て src 無変更 変異: prestressed 7/7 (実装) + 2/5 (guard、3 件は Fix128::Div のゼロ除算契約と算術等価)、piezoelectric 11/12 red (permittivity 単独配線変異は voltage_from_force/force_from_voltage が残る限り推移的到達性で観測不能)、rolling_contact 14/14、sdf_force 15/17 (生存 2 件は算術的に等価、`contain` の境界 off-by-one は dist=0 で push が恒等的に 0 になる式の性質、`apply_sdf_force_fields` の is_static skip は inv_mass=0 と同一条件の性能最適化) baseline 28 行退役 (実配線 27、名前衝突の巻き込み 1 = `force.rs::with_affected_bodies`) production entry point: `examples/prestressed_joints_and_cables.rs` / `examples/piezoelectric_materials.rs` / `examples/rolling_contact_fatigue.rs` / `examples/sdf_force_fields.rs`
+⚠️ 測定のみ実施、修正は未対応: rolling_contact.rs は f32 ベースで engineering module family の他 (fatigue/laminate_failure) の Fix128 決定論と不整合 / sdf_force の `attract` は `min(strength*|dist|, max_force)` clamp が Fix128 の表現域境界付近 (`|dist| ~ 4.6e18`) で `strength*dist_fix` 自体が mod-2^128 wrap するため `min()` が意図した値と比較できず破られる (通常の大距離 1e9 等では問題なし)
 
 ### 第 40 increment (2026-10-03、配線作業 第 9 件 (F3a) — 凸形状どうしの GJK/EPA narrow-phase)
 
@@ -222,27 +222,27 @@ baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 
 
 ### 第 46 increment (2026-10-03、配線作業 第 16 件 — `material`/`replay`/`multi_world`/`sdf_fem_mesh` 未配線 34 item)
 
-worker 4 本、全て src 無変更 変異: material 8/8、replay 7/10+3等価、multi_world 18/18、sdf_fem_mesh 10/10 baseline 34 行退役 ⚠️ **CI red 1 件発見・修正** (`b01848c`): full feature set clippy のみで型推論曖昧性、`collect::<BTreeSet<i64>>()` で解消 + preflight に同 feature set の clippy step を追加 (drift 恒久対処) ⚠️ sdf_fem_mesh worker 実測: `generate()`/`generate_marching_tets()` の境界判定不一致 (Backlog)
+並行 4 件、全て src 無変更 変異: material 8/8、replay 7/10+3等価、multi_world 18/18、sdf_fem_mesh 10/10 baseline 34 行退役 ⚠️ **CI red 1 件発見・修正** (`b01848c`): full feature set clippy のみで型推論曖昧性、`collect::<BTreeSet<i64>>()` で解消 + preflight に同 feature set の clippy step を追加 (drift 恒久対処) ⚠️ sdf_fem_mesh の測定: `generate()`/`generate_marching_tets()` の境界判定不一致 (未対応)
 
 ### 第 45 increment (2026-10-03、配線作業 第 15 件 — `thin_wall` 未配線 7 item)
 
-worker 1 本、src 無変更 変異 11/11 (実装) + 7/7 (配線) red baseline 7 行退役 ⚠️ worker 実測 (未修正、Backlog): `sample_surface_points` の無限ループ (極端 AABB + f32 ULP)、`measure_thickness_at`/`for_nozzle(0.0)` の silent footgun 2 件
+1 件、src 無変更 変異 11/11 (実装) + 7/7 (配線) red baseline 7 行退役 ⚠️ 測定のみ実施、修正は未対応: `sample_surface_points` の無限ループ (極端 AABB + f32 ULP)、`measure_thickness_at`/`for_nozzle(0.0)` の silent footgun 2 件
 
 ### 第 44 increment (2026-10-03、配線作業 第 14 件 — `non_newtonian`/`laminate_failure`/`filter` 未配線 29 item)
 
-worker 3 本、全て src 無変更 変異: non_newtonian 10/10 実装 + 1/1 配線、laminate_failure 8/8、filter 23/23 (harness の mtime 偽陽性を worker 自身が検出・再検証) baseline 31 行退役 (実配線 28 + 名前衝突 1 `anisotropic::FailureCriterion` + 重複 2)
+並行 3 件、全て src 無変更 変異: non_newtonian 10/10 実装 + 1/1 配線、laminate_failure 8/8、filter 23/23 (harness の mtime 偽陽性を検出・再検証) baseline 31 行退役 (実配線 28 + 名前衝突 1 `anisotropic::FailureCriterion` + 重複 2)
 
 ### 第 43 increment (2026-10-03、配線作業 第 13 件 — `animation_blend` 未配線 11 item)
 
-worker 1 本、src 無変更 example 1 本が state-machine (go_animated/go_powered/go_ragdoll/update/lerp 等) 全 11 item を駆動 変異 22/22 red (lerp 単独変異は update 内部の sibling 呼出で推移的配線を確認済) baseline 11 行退役 + 名前衝突 4 行 (physics2d::lerp / dynamic_bvh・sim_modifier・vehicle::update、Backlog 記録)
+1 件、src 無変更 example 1 本が state-machine (go_animated/go_powered/go_ragdoll/update/lerp 等) 全 11 item を駆動 変異 22/22 red (lerp 単独変異は update 内部の sibling 呼出で推移的配線を確認済) baseline 11 行退役 + 名前衝突 4 行 (physics2d::lerp / dynamic_bvh・sim_modifier・vehicle::update)
 
 ### 第 42 increment (2026-10-03、配線作業 第 13 件 — `analytics_bridge` 未配線 11 item、features = std,analytics)
 
-worker 1 本、src 無変更 example 1 本が percentile reader + recorder 全 11 item を駆動、oracle は自前 nearest-rank + DDSketch256 契約窓 + HyperLogLog12 線形カウント式の再実装 変異 11/11 red baseline 11 行退役
+1 件、src 無変更 example 1 本が percentile reader + recorder 全 11 item を駆動、oracle は自前 nearest-rank + DDSketch256 契約窓 + HyperLogLog12 線形カウント式の再実装 変異 11/11 red baseline 11 行退役
 
 ### 第 41 increment (2026-10-03、配線作業 第 12 件 — `hyperelastic`/`compressible`/`interpolation`/`articulation` 未配線 47 item)
 
-worker 4 本、全て src 無変更 変異 red: hyperelastic 11/12 (silicone_soft の c2 1 ULP が観測不能)、compressible 実装 11/12 + 配線 10/12 (2 件は module 内 sibling 経由の別経路)、interpolation 11/12 (slerp の冗長 guard)、articulation 12/13 (apply_motors の force.is_zero() が算術等価) baseline 47 行退役 + motor::set_position_target (articulation example から真の呼出)
+並行 4 件、全て src 無変更 変異 red: hyperelastic 11/12 (silicone_soft の c2 1 ULP が観測不能)、compressible 実装 11/12 + 配線 10/12 (2 件は module 内 sibling 経由の別経路)、interpolation 11/12 (slerp の冗長 guard)、articulation 12/13 (apply_motors の force.is_zero() が算術等価) baseline 47 行退役 + motor::set_position_target (articulation example から真の呼出)
 
 ### 第 39 increment (2026-10-03、配線作業 第 9 件 (F2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
 
@@ -250,24 +250,24 @@ worker 4 本、全て src 無変更 変異 red: hyperelastic 11/12 (silicone_sof
 ⚠️ **oracle が既存の欠陥を 2 つ検出**: ① `HeightField::collide_sphere` が斜面で**垂直距離**を使っており球を `r·(1/cosθ − 1)` 埋めていた (傾き 1/2 で 0.0142 の誤差) ⇒ 法線方向の距離 (`Δy·n_y`) に ② 幅 0 の高さ場の `get_height` が `width − 1` の u32 underflow で panic (空の高さ場 / 間隔 0 は面なしとして None)
 oracle は解析解: 床 / 傾いた平面 / 斜面の高さ場 / 谷の三角形面の「法線方向に `r − d` だけ押し出される」閉形式 (1 substep の世界、重力 0) + 重力下の静止高さ + 2 平面の角 + 一次 query (`from_point_normal` の Hessian 形、双線形補間、斜面の法線、capsule / box の貫入深さ) 変異 **16/16 red** (初回 12/16、生存 4 件は per-body 半径 = 既定半径で区別できない / 境界 index / 空の `get_height` 直接呼び出し / `step_parallel` を呼ぶ test が無かった → test を足して red) + 配線変異 (example を外すと未配線に戻る)
 baseline 退役 19 行 (実配線 19、巻き込み 0): plane 7 / heightfield 7 / trimesh 5 呼出元は `examples/static_colliders.rs`
-⚠️ 既知の近似: `TriMesh::collide_aabb` は「中心への最近点が box の範囲内」を要件にするため、急な斜面で厳密な SAT より浅い貫入を見逃す (Backlog) 平面は両面 (背面に中心がある球はその側に保持される) 位置補正のみで摩擦は無い (斜面では滑る) `compound` と凸形状どうしの GJK/EPA は F3
+⚠️ 既知の近似: `TriMesh::collide_aabb` は「中心への最近点が box の範囲内」を要件にするため、急な斜面で厳密な SAT より浅い貫入を見逃す (未対応) 平面は両面 (背面に中心がある球はその側に保持される) 位置補正のみで摩擦は無い (斜面では滑る) `compound` と凸形状どうしの GJK/EPA は F3
 
 ### 第 38 increment (2026-10-03、配線作業 第 11 件 — `filament_db`/`linear_elastic_fem`/`neural`/`query` 未配線 51 item)
 
-worker 4 本、全て src 無変更 (既存 pub/pub(crate) item に example 経由の入口を追加するだけで配線) 変異 red: filament_db 15/15、linear_elastic_fem 20/20、neural 11/12 (hard_tanh 境界が等価)、query 14/15 (capsule_cast tie-break が近似等価) baseline 51 行退役 + 名前衝突 2 行 (motor/fluid_netcode の `compute`、Backlog)
+並行 4 件、全て src 無変更 (既存 pub/pub(crate) item に example 経由の入口を追加するだけで配線) 変異 red: filament_db 15/15、linear_elastic_fem 20/20、neural 11/12 (hard_tanh 境界が等価)、query 14/15 (capsule_cast tie-break が近似等価) baseline 51 行退役 + 名前衝突 2 行 (motor/fluid_netcode の `compute`)
 
 
 ### 第 37 increment (2026-10-03、配線作業 TGS 裁定 (A) — `SolverBackend` で TGS family を `PhysicsWorld` の選択可能 solver に配線)
 
-user 裁定 (A): `solver_tgs.rs` + hook 5 file (5268 行、pub(crate)、v1.0 で privatize) を `pub(crate)` のまま `#[non_exhaustive] SolverBackend { Xpbd, Tgs }` で配線 既定 `Xpbd` は構造的に無変更 既存の `Pgs6DofOrientedHooks`/`solve_oriented_islands_serial` (実装済み未呼出) を `step_tgs()` から呼ぶ oracle 13 本、変異 10/10 red baseline 6 行退役 ⚠️ **残 gap**: TGS は joint / kinematic target / SDF collider を解かない (rustdoc に明記、新 ソルバー実装が要るため今回は配線のみ)
+方針 A を採用: `solver_tgs.rs` + hook 5 file (5268 行、pub(crate)、v1.0 で privatize) を `pub(crate)` のまま `#[non_exhaustive] SolverBackend { Xpbd, Tgs }` で配線 既定 `Xpbd` は構造的に無変更 既存の `Pgs6DofOrientedHooks`/`solve_oriented_islands_serial` (実装済み未呼出) を `step_tgs()` から呼ぶ oracle 13 本、変異 10/10 red baseline 6 行退役 ⚠️ **残 gap**: TGS は joint / kinematic target / SDF collider を解かない (rustdoc に明記、新 ソルバー実装が要るため今回は配線のみ)
 
 ### 第 36 increment (2026-10-03、配線作業 第 9 件 — `debug_render`/`sdf_destruction`/`gpu_sdf` 未配線 41 item、`eulerian_grid` 分散 primitive 14 件を負債 marker)
 
-worker 4 本 (debug_render 13/13 red、sdf_destruction 14/14 red (worker 自身が cap/drain 境界の穴を発見・閉じた)、gpu_sdf 18/18 red、eulerian_grid は trigger 2a で停止・報告のみ) ⚠️ eulerian_grid の分散 primitive 14 件は user 裁定「新規 pub は追加しない」で `ALLOW-UNWIRED` 10 件 + baseline 退役 4 件 + `set_v_solid`/`set_w_solid` 配線 baseline 退役 61 行、新規公開面 0 ⚠️ **TGS family (`solver_tgs*`、5268 行) は user 裁定 (A) 配線する で着手中** (別 worker、進行中)
+並行 4 件 (debug_render 13/13 red、sdf_destruction 14/14 red (cap/drain 境界の穴を発見・閉じた)、gpu_sdf 18/18 red、eulerian_grid は trigger 2a で停止・報告のみ) ⚠️ eulerian_grid の分散 primitive 14 件は方針「新規 pub は追加しない」で `ALLOW-UNWIRED` 10 件 + baseline 退役 4 件 + `set_v_solid`/`set_w_solid` 配線 baseline 退役 61 行、新規公開面 0 ⚠️ **TGS family (`solver_tgs*`、5268 行) は方針 A (配線する) で着手中** (進行中)
 
 ### 第 35 increment (2026-10-03、配線作業 第 7-8 件 — `anomaly`/`pipeline`/`privacy`/`profiling`/`maxwell_fdtd`/`sketch`/`transient_thermal`/`joint` 8 module、未配線 171 item)
 
-worker 8 本、各 module に example 経由の production 入口 + oracle + 退化入力 test 変異 red: anomaly 48/48、pipeline 32/32、privacy 実装 46/47 + 配線 21/26 (生存は等価/guard 限界)、profiling 32/32、maxwell_fdtd 20/20、sketch 実装 31/31 + 配線 16/17 (生存 1 は構造的観測不能)、transient_thermal 15/15、joint 25/25 baseline 退役 135 行 + 名前衝突 5 行 (Backlog) ⚠️ `DDSketch::quantile` の doc 誤り (`α` → 正しくは `2α/(1+α)`) を修正、oracle 差替で ignore 解消 ⚠️ 残 2 件: joint の wrap-to-zero 二乗 / `solve_joints_breakable` が `PhysicsWorld::step` から未配線 (設計判断、user 裁定待ち)
+並行 8 件、各 module に example 経由の production 入口 + oracle + 退化入力 test 変異 red: anomaly 48/48、pipeline 32/32、privacy 実装 46/47 + 配線 21/26 (生存は等価/guard 限界)、profiling 32/32、maxwell_fdtd 20/20、sketch 実装 31/31 + 配線 16/17 (生存 1 は構造的観測不能)、transient_thermal 15/15、joint 25/25 baseline 退役 135 行 + 名前衝突 5 行 ⚠️ `DDSketch::quantile` の doc 誤り (`α` → 正しくは `2α/(1+α)`) を修正、oracle 差替で ignore 解消 ⚠️ 残 2 件: joint の wrap-to-zero 二乗 / `solve_joints_breakable` が `PhysicsWorld::step` から未配線 (設計判断、未対応)
 
 ### 第 34 increment (2026-10-03、配線作業 第 9 件 (F1) — 形状つき body: `Shape` と `PhysicsWorld::add_shaped_body`)
 
@@ -279,24 +279,24 @@ baseline 退役 13 行 (実配線 13、巻き込み 0): box / cone / cylinder / 
 
 ### 第 33 increment (2026-10-03、配線作業 第 6 件 — `PhysicsWorld` API 44 本 / `multiphase` VOF・level-set / 構造 4 module の `allow(dead_code)` 撤去)
 
-`solver.rs` の 44 本を `examples/world_api_tour.rs` + oracle 32 本で配線 (`wake_body` の範囲外 index を無視に) `multiphase::advect_vof_rigid` + `VofScheme`、`cfd_solver::LevelSetReinit` + `StepOptions::with_level_set_reinit` + `StepError::ZeroReinitCount` (既定は `step` と bit 一致) oracle 21 本 `buckling` / `creep_longterm` / `fatigue` / `plastic` の module 全体 allow を撤去し `CREEP_FROZEN_AT` を凍結 guard に、残余 9 本は負債 marker 変異 red: multiphase 27/28 (生存 1 は `sweeps` の 1 周収束)、構造 19/19、guard 2/2、数式修正 12/12 (退化入力を `Err` にして guard 撤去を red に) baseline 退役 71 行 (実配線 55、名前衝突 10、guard 判定 1、dead_code 5) ⚠️ 数式 2 件を同時に修正: `snap_through_load_n` の 2 乗則 → 3 乗則 (golden 1302 N が誤った法則を pin していた)、`stress_at_cycles` の wrap する Newton → 閉形式 + 範囲 `Err` ⚠️ 残: TGS family (`solver_tgs*`、5 268 行、`pub(crate)`、PhysicsWorld から未接続) の扱いは user 裁定待ち
+`solver.rs` の 44 本を `examples/world_api_tour.rs` + oracle 32 本で配線 (`wake_body` の範囲外 index を無視に) `multiphase::advect_vof_rigid` + `VofScheme`、`cfd_solver::LevelSetReinit` + `StepOptions::with_level_set_reinit` + `StepError::ZeroReinitCount` (既定は `step` と bit 一致) oracle 21 本 `buckling` / `creep_longterm` / `fatigue` / `plastic` の module 全体 allow を撤去し `CREEP_FROZEN_AT` を凍結 guard に、残余 9 本は負債 marker 変異 red: multiphase 27/28 (生存 1 は `sweeps` の 1 周収束)、構造 19/19、guard 2/2、数式修正 12/12 (退化入力を `Err` にして guard 撤去を red に) baseline 退役 71 行 (実配線 55、名前衝突 10、guard 判定 1、dead_code 5) ⚠️ 数式 2 件を同時に修正: `snap_through_load_n` の 2 乗則 → 3 乗則 (golden 1302 N が誤った法則を pin していた)、`stress_at_cycles` の wrap する Newton → 閉形式 + 範囲 `Err` ⚠️ 残: TGS family (`solver_tgs*`、5 268 行、`pub(crate)`、PhysicsWorld から未接続) の扱いは未対応 (別途判断)
 
 ### 第 32 increment (2026-10-03、壁 4 — multigrid を rank ごとの別 process で回して実測、段階 4b)
 
 段階 4a の banded driver を、rank ごとの **別 process** (この test binary を再実行、port は親が仲介、rank 同士は loopback socket) で回す harness を足した 各 process は `MacGrid` を持たず、seed の式から自分の faces だけを作り、自分が書いた field (圧力と face 速度) の order-independent な畳み込みを出力する 全 rank の畳み込みの和が単一 process の解のそれと一致する (index 重みつきなので値の位置違いも別の値になる)
 oracle: 16³ / 2・3 process と 32³ / 4 process で単一 process と bit 一致 / cycle 数が違えば不一致 (比較が違う field を区別できる) 変異 4/4 red
-**実測 (Mac mini M2 Pro 32 GiB、release、8 process、6 cycles、開放 scene)**: 256³ (1.7e7 cell) wall **2.0 s**、peak RSS **0.58 GiB**/rank、単一 process は 7.5 s で **bit 一致を確認** 256×256×512 (3.4e7) 3.6 s、1.16 GiB/rank 512×512×256 (6.7e7) **8.2 s**、2.3 GiB/rank (計 18.4 GiB) 時間もメモリも規模にほぼ線形
+**実測 (arm64 / 32 GiB、release、8 process、6 cycles、開放 scene)**: 256³ (1.7e7 cell) wall **2.0 s**、peak RSS **0.58 GiB**/rank、単一 process は 7.5 s で **bit 一致を確認** 256×256×512 (3.4e7) 3.6 s、1.16 GiB/rank 512×512×256 (6.7e7) **8.2 s**、2.3 GiB/rank (計 18.4 GiB) 時間もメモリも規模にほぼ線形
 ⚠️ **512³ (1.34e8 cell) は実測していない**: 1 cell あたり約 277 B で計 37 GiB となりこの機 (32 GiB) に載らない 6.7e7 の実測から線形外挿すると 6 cycles で約 16 s だが**外挿**であり、より大きい機か 1 cell あたりのメモリ削減 (コンダクタンスが `[i64; 6]` で 48 B) が要る 単一 process の見積り「1 step 約 23 分」との比較は、同じ cycle 数・同じ機での実測ではないので**参考値**
 未着手: 1 cell あたりのメモリ削減 / 複数ホスト / FMG / 集約した粗 level の並列化
 
 ### 第 31 increment (2026-10-02、配線作業 第 5 件 — `coupled_field` / `coupled_iteration` の配線)
 
-`reconcile_weighted` (整数重みの厳密和 + 除算 1 回、順序非依存) を新設して `add_assign` / `scale_div` / `same_grid_as` を配線、`step_thermoplastic` を `run_sub_iteration` に乗せ替えて緩和を `blend_from` に、CG の残差 norm を `residual_norm_l2_checked` に (wrap は `FemError::ResidualNormUnfaithful` で拒否) oracle 7 + 3 本 変異 red 6 / 等価 3 / 歯なし 1 (床の導出 sweep、Backlog) baseline 退役 19 行 (実配線 13、負債 marker 6) ⚠️ 残: `EquilibrationScale` の消費者 = CG の停止 norm の equilibrate (床側、別 task、golden 再生成を伴う)、`best_residual` の report 化は 2.0.0 列
+`reconcile_weighted` (整数重みの厳密和 + 除算 1 回、順序非依存) を新設して `add_assign` / `scale_div` / `same_grid_as` を配線、`step_thermoplastic` を `run_sub_iteration` に乗せ替えて緩和を `blend_from` に、CG の残差 norm を `residual_norm_l2_checked` に (wrap は `FemError::ResidualNormUnfaithful` で拒否) oracle 7 + 3 本 変異 red 6 / 等価 3 / 歯なし 1 (床の導出 sweep、未対応) baseline 退役 19 行 (実配線 13、負債 marker 6) ⚠️ 残: `EquilibrationScale` の消費者 = CG の停止 norm の equilibrate (床側、別 task、golden 再生成を伴う)、`best_residual` の report 化は 2.0.0 列
 
 
 ### 第 30 increment (2026-10-02、配線作業 第 4 件 — RANS k-ε / k-ω と可変粘性拡散の配線)
 
-`TurbulenceModel::{Smagorinsky, DynamicSmagorinsky, KEpsilon, KOmega, Prescribed}` を caller 所有の `RansState` に持たせて `CfdSolver::step_rans` で回し (`ys-1f` 裁定: `CfdSolver` に field を足すのは major なので状態は外に置く、反力の先例と同列)、`(k, ε)` の輸送 (production → 点 source → 調和平均の陽的拡散 → semi-Lagrangian 移流) と、新設 `diffuse_velocity_variable` (`∇·(ν∇u)` の MAC 形、edge は調和平均) で ν_t 場を運動量に届けた (`ys-1f` 相談: proxy では配線変異が恒等) 拡散数 `> 1/6` は `DiffusionUnstable` で拒否、clamp 発火は `TurbulenceSummary.clamped` で可視 oracle 13 本 (減衰閉形式 1 次収束 / 一様せん断 P/ε → 2.0909 / 2 層 Couette 1e-12 / 対数層恒等式 / 拒否) 変異 15/15 red (配線 6 + 実装 9) baseline 退役 11 行 (全部実配線) ⚠️ 残: 壁 model と RANS の壁 BC (`wall_k_epsilon` の Dirichlet) は未結合 (zero-gradient)、channel の対数則再現は CI 外の validation
+`TurbulenceModel::{Smagorinsky, DynamicSmagorinsky, KEpsilon, KOmega, Prescribed}` を caller 所有の `RansState` に持たせて `CfdSolver::step_rans` で回し (`CfdSolver` に field を足すのは major なので状態は外に置く、反力の先例と同列)、`(k, ε)` の輸送 (production → 点 source → 調和平均の陽的拡散 → semi-Lagrangian 移流) と、新設 `diffuse_velocity_variable` (`∇·(ν∇u)` の MAC 形、edge は調和平均) で ν_t 場を運動量に届けた (proxy では配線変異が恒等) 拡散数 `> 1/6` は `DiffusionUnstable` で拒否、clamp 発火は `TurbulenceSummary.clamped` で可視 oracle 13 本 (減衰閉形式 1 次収束 / 一様せん断 P/ε → 2.0909 / 2 層 Couette 1e-12 / 対数層恒等式 / 拒否) 変異 15/15 red (配線 6 + 実装 9) baseline 退役 11 行 (全部実配線) ⚠️ 残: 壁 model と RANS の壁 BC (`wall_k_epsilon` の Dirichlet) は未結合 (zero-gradient)、channel の対数則再現は CI 外の validation
 
 追記 (2026-10-05): 壁 BC を結合した `WallModel` 指定時に、壁接セルへ Launder–Spalding の壁関数値 (値固定)、壁から 1 dx の界面の拡散係数に対数則の `κ u_τ dx` (調和平均だと `0.75 κ u_τ dx`)、2 番目のセルの壁法線勾配に `u_τ/(κ · 3dx/2)` (中心差分だと対数分布で 21 % 過大、dx に依らない) Couette 流 (ny = 8、y⁺ ≈ 137) で壁から 1 つ目の非固定セルの `k√C_μ/u_τ²` / `εκy/u_τ³` が k-ε 1.027 / 1.021、k-ω 0.976 / 1.002 (修正前は ν_t が発散、壁 BC のみでは 1.33 / 1.44) oracle `tests/analytic_rans_wall_function.rs` ⚠️ 残: WallModel 無しの k-ε / k-ω に壁 BC は無い (低 Re 壁処理は未実装)
 
@@ -325,7 +325,7 @@ oracle: rank を thread にして loopback socket で結んだ rank が、**単�
 
 ### 第 24 increment (2026-10-02、World Auditor engine gap 3 点 — `reset_world()` / 型付き観測 API / rollback population fingerprint)
 
-壁 1〜4 (連続体 solver の正しさ) とは直交する軸 (symbolic World Auditor が engine に要求する「遷移関数として使える性質」、`project_alice_physics_world_auditor_engine_gaps` 参照) MVP 優先 gap 4 点のうち gap #5 (checksum) は着手時点で既存 commit `c5e314b` により解決済と判明、残り 3 点を実装
+壁 1〜4 (連続体 solver の正しさ) とは直交する軸 (symbolic World Auditor が engine に要求する「遷移関数として使える性質」) MVP 優先 gap 4 点のうち gap #5 (checksum) は着手時点で既存 commit `c5e314b` により解決済と判明、残り 3 点を実装
 
 | 到達点 | 内容 |
 |---|---|
@@ -377,7 +377,7 @@ oracle 5 本 (bit 一致 / halo を iteration ごとにすると不一致 / 何�
 ### 第 19 increment (2026-10-02、共回転 FEM の超弾性に consistent tangent)
 
 `CorotationalConfig::with_consistent_tangent` を追加した (opt-in、既定は従来どおり) 閉形式の接線を matrix-free で CG に渡す全 Newton で、Neo-Hookean 200 N は 181 step から 3 step、2000 N は 758 step から 4 step (release の実測) 修正 Newton との根の差は 1e-9 mm 台、増分独立性は 6.5e-13 mm
-⚠️ Backlog の「修正 Newton は 2000 N で収束しない」は誤りで、実測では単調に収縮して 758 step で `Ok` だった (問題は速度) 超弾性の小ひずみの極限が線形と `μ/3` ずれる件は第 21 increment で解消 P2 / P3 と動的への接続は未着手
+⚠️ 「修正 Newton は 2000 N で収束しない」という以前の記録は誤りで、実測では単調に収縮して 758 step で `Ok` だった (問題は速度) 超弾性の小ひずみの極限が線形と `μ/3` ずれる件は第 21 increment で解消 P2 / P3 と動的への接続は未着手
 
 ### 第 18 increment (2026-10-02、反力 `reactions()` を P2 / P3 に)
 
@@ -457,11 +457,11 @@ GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigri
 | **壁 3 確定** | `af05769` `04e8259` `2340e65` `398017d` `517f808` | ⚠️⚠️ **`src gap` 2 → 0 かつ「完全強連成は名乗らない」が確定** 熱弾性 (温度 → 応力) の一方向連成が residual に入った ⚠️ **先に oracle 側の欠陥を潰したのが決定的** (旧 oracle は温度場を作って一様性を assert した後 `solve` に渡していなかったので、実装しても red のままだった) ⚠️ **4 仮説の否定を `Fix128` で測り直しても判定不変** ⇒ **逆向き連成 / monolithic solver を作らない判断が固定小数点でも正当化された** (作れば「より正しいと言える根拠がない実装」が残る) |
 | **壁 4 slab 局所化** | `de53740` `1f40727` `17d75d3` | 2 プロセス → 3 プロセスの越境分割を bit 一致で固定し、slab 局所の記憶域で **1 プロセスの footprint を 9.50 → 1.302 GiB (7.3 分の 1)** ⚠️ **halo 幅の誤りは「読んだ位置で abort」** (値比較でなく要求が通らないことで分かる) |
 
-### ⚠️⚠️ 壁 4 の訂正 2 件 (調停役が自分の誤りを実測で正した)
+### ⚠️⚠️ 壁 4 の訂正 2 件 (実測による訂正)
 
 | 誤り | 実測 | 影響 |
 |---|---|---|
-| 「1e8 cells = **6.0 GiB**」 | ⚠️ **9.78 GiB** (Mac mini / RAM 32 GiB で実走、max RSS) harness が `MacGrid` の 4 配列しか数えておらず **mask / 逆対角 / 右辺の 3 本 (3.8 GiB) を落としていた** | 分散が要件という結論を**強める** |
+| 「1e8 cells = **6.0 GiB**」 | ⚠️ **9.78 GiB** (RAM 32 GiB の機で実走、max RSS) harness が `MacGrid` の 4 配列しか数えておらず **mask / 逆対角 / 右辺の 3 本 (3.8 GiB) を落としていた** | 分散が要件という結論を**強める** |
 | 「R=8 で合計 **8.42 GiB** ⇒ **1 台に載る**」 | ⚠️⚠️ **合計 10.42 GiB** per-cell で `pressure` の 16 B を落として 86 B と計算していた (正しくは 102 B) ⚠️ **さらに合計が rank 数で割れると暗黙に仮定していた** — halo が重なるので**全長 1 本 (9.50 GiB) より 3% 多い** | ⚠️ **slab 局所化が解くのは「1 プロセスが載るか」で、「1 台に載るか」は台数でしか解けない** |
 
 ⚠️ **手段と目的を取り違えた形** 「footprint を縮める」は達成したが、目的 (1 台に 1e8) は**この手段では達成できない**
@@ -503,7 +503,7 @@ GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigri
 
 #### ⚠️ 同日中の修正 — 保存則を書き込み先の不変量に合わせた
 
-初版 (`bb2ffd0`) は `deposit_plastic_heat` の台帳を一律 `V_cell` で立てていたが、**書き込み先の `diffuse` が保存するのは別の量**だった peer (`ys-6d`) の指摘 → 私が独立に再現 → `ys-1f` が代数で確定
+初版 (`bb2ffd0`) は `deposit_plastic_heat` の台帳を一律 `V_cell` で立てていたが、**書き込み先の `diffuse` が保存するのは別の量**だった 独立に再現し、代数で確定
 
 | 置いた場所 | 一律和 `Σ T` | lumped 和 `Σ 2⁻ᵇ T` |
 |---|---|---|
@@ -522,7 +522,7 @@ GS を使うには `step_multigrid(dt, 0)` `step_adaptive` は自動で multigri
 
 ⚠️ **mirror ghost は load-bearing** `tests/analytic_coupled_field.rs` が `cos(k x)` を離散作用素の厳密固有モードとして pin しており、これは mirror でのみ成立する ⇒ **copy ghost に替える案 (B) は oracle を壊すので選べない** (この確認で A/B の選択が閉じた)
 
-⚠️ **未決で残す**: `CoupledField::diffuse` (mirror) と `ScalarField3D::diffuse` (copy) は **幾何が同一で ghost だけ違う** ので保存量が入れ替わる 揃えると `ScalarField3D` も閉形式固有モードを得るが、production consumer 5 module (`pressure` / `fracture` / `thermal` / `phase_change` / `erosion`) と `determinism_golden_f32.rs` の golden 再 pin (6 環境) が動く ⇒ **本 increment の範囲外、user 裁定待ち**
+⚠️ **未決で残す**: `CoupledField::diffuse` (mirror) と `ScalarField3D::diffuse` (copy) は **幾何が同一で ghost だけ違う** ので保存量が入れ替わる 揃えると `ScalarField3D` も閉形式固有モードを得るが、production consumer 5 module (`pressure` / `fracture` / `thermal` / `phase_change` / `erosion`) と `determinism_golden_f32.rs` の golden 再 pin (6 環境) が動く ⇒ **本 increment の範囲外、未対応 (別途判断)**
 
 #### 本 increment で測った 3 件 (実装前は未測定)
 
@@ -631,11 +631,11 @@ snapshot **+42 / −21** 削除はすべて `ElastoplasticIncrementRequest` が 
 
 #### ⚠️⚠️ まず記録の訂正 — 「適応 remeshing は閉じた」は適合性のことだった
 
-[[project_alice_physics_wall2_high_order_and_remeshing]] と本 ROADMAP の既存記述は `tests/refinement_conformity.rs` の `#[ignore]` 0 件を根拠に「適応 remeshing は閉じた」としていた ⚠️ **その 4 本 (`the_scenes_start_conforming` / `uniform_refinement_stays_conforming` / `graded_refinement_stays_conforming` / `propagation_costs_elements_and_the_count_is_bounded`) は全て「面の共有 = 適合性」の test で、解の誤差で駆動する適応の test は 1 本も無かった**
+本 ROADMAP の既存記述は `tests/refinement_conformity.rs` の `#[ignore]` 0 件を根拠に「適応 remeshing は閉じた」としていた ⚠️ **その 4 本 (`the_scenes_start_conforming` / `uniform_refinement_stays_conforming` / `graded_refinement_stays_conforming` / `propagation_costs_elements_and_the_count_is_bounded`) は全て「面の共有 = 適合性」の test で、解の誤差で駆動する適応の test は 1 本も無かった**
 
 ⇒ 閉じていたのは決定 (b) Rivara の伝播 = **適応の前提** 実測で欠けていたもの 4 件: 誤差推定子 0 件 / marking 0 件 / 細分の production caller 0 件 (`tests/` のみ) / ⚠️ **細分の判定が private `edge_to_split` の辺長なので呼び出し側から要素を指名できない**
 
-⚠️ **「局所細分が適合性を保つ」(✅ 閉) と「解の誤差で駆動する適応」(⛔ 開) は別の読みで、欠けているものが違う** [[feedback_de_facto_satisfied_overstates_half_a_condition]] と同型
+⚠️ **「局所細分が適合性を保つ」(✅ 閉) と「解の誤差で駆動する適応」(⛔ 開) は別の読みで、欠けているものが違う**
 
 #### 入ったもの
 
@@ -715,7 +715,7 @@ snapshot **+42 / −21** 削除はすべて `ElastoplasticIncrementRequest` が 
 - 修正 (挙動変化、golden 再 pin): damping を frame 単位化 (default で重力が効いていなかった) / XPBD λ 累積 (iteration 依存剛性) / sphere contact normal 逆向き / substep 毎 collision detection + contact λ 累積 (5 m/s 衝突が 700 m/s になっていた)
 - 修正 (bit 互換): `Fix128::sqrt` digit recurrence 50× / MSRV 1.70.0 → **1.85** 実証 + `resolver = "3"` / `crate-type` cdylib+staticlib / `panic = "unwind"` / SIMD dead code 除去 / README perf 表実測化 / lib.rs claim
 - **規律**: 解析解 oracle test を default config で必須 (substeps / iterations を変えて結果不変を assert)、golden hash は「変化検出」であって「正しさ」ではない
-- 1.2.0 内で完了 (旧 Backlog): engineering oracle 3 batch (thermal/fatigue 5 + solid 34 + fluid 39、src bug 8 + 9 件修正) / `iterations` 既定 1 (Small Steps) / contact solver の ALICE-TRT 3.2.0 parity 同期 / det_math atan2・acos・asin・tan・tanh / `Fix128::checked_div` / FFI panic 隔離 31 fn / loom model test / replay + alice-db 実動作化
+- 1.2.0 内で完了: engineering oracle 3 batch (thermal/fatigue 5 + solid 34 + fluid 39、src bug 8 + 9 件修正) / `iterations` 既定 1 (Small Steps) / contact solver の ALICE-TRT 3.2.0 parity 同期 / det_math atan2・acos・asin・tan・tanh / `Fix128::checked_div` / FFI panic 隔離 31 fn / loom model test / replay + alice-db 実動作化
 - 残: oracle 未着手 module (`rolling_contact` / `fracture` / `sdf_destruction` / `soft_body_cut` / `layer_adhesion` / `warp_risk` / `kinematic_loop` / `sdf_force` / `anisotropic_friction` / `physics2d` / `fluid_netcode` 他 utility) / mutation score ≥ 80 % (core 6 + a* 5 module) / default damping 0.99 再考 / module 階層分け (core vs 教科書 wrapper)
 
 ### 2.0 に送る semver-breaking 設計 (1.x では doc のみ、実装は 2.0 branch)
@@ -921,7 +921,7 @@ commit `f1b4209` / crates.io: `alice-physics = "0.14.0-preview.7"`
 Phase 1+2+F 完了、以降は最重量の B に集中:
 
 - **B Iteration 1 (priority modules 調査、2026-09-13 完了)** — `netcode_prediction` / `character_state` / `character` / `sdf_character` / `sdf_sph` / `sdf_wind_field` / `sdf_fem_mesh` の 7 module (53 pub item) を survey、**全て clean な public API と判定**、`pub(crate)` 格下げ候補 0 見つかった 詳細は [`docs/PUB_AUDIT_ITERATION_1.md`](PUB_AUDIT_ITERATION_1.md) 参照
-- **B Iteration 2 (P1 solver internals 調査、2026-09-13 完了)** — 9 module 127 pub item を survey (`solver` / `contact_cache` / `dynamic_bvh` / `solver_tgs` / `solver_tgs_hooks` / `solver_tgs_hooks_6dof` / `solver_tgs_hooks_6dof_oriented` / `solver_tgs_hooks_6dof_scoped` / `solver_tgs_hooks_6dof_oriented_scoped`)、**4 items pub(crate) 格下げ実施** (`NULL_NODE` / `DynamicNode` / `MAX_MANIFOLD_POINTS` / `tangent_frame`、2 commit)、snapshot 20,201 → 20,179 items (−22)、`solver_tgs*` extension mechanism 6 module 60+ items は **architectural decision required** で deferred (Option A: feature-gate / Option B: keep pub + unstable caveat / Option C: pub(crate) 全撤去 の 3 択、user 判断待ち) 詳細は [`docs/PUB_AUDIT_ITERATION_2.md`](PUB_AUDIT_ITERATION_2.md) 参照
+- **B Iteration 2 (P1 solver internals 調査、2026-09-13 完了)** — 9 module 127 pub item を survey (`solver` / `contact_cache` / `dynamic_bvh` / `solver_tgs` / `solver_tgs_hooks` / `solver_tgs_hooks_6dof` / `solver_tgs_hooks_6dof_oriented` / `solver_tgs_hooks_6dof_scoped` / `solver_tgs_hooks_6dof_oriented_scoped`)、**4 items pub(crate) 格下げ実施** (`NULL_NODE` / `DynamicNode` / `MAX_MANIFOLD_POINTS` / `tangent_frame`、2 commit)、snapshot 20,201 → 20,179 items (−22)、`solver_tgs*` extension mechanism 6 module 60+ items は **architectural decision required** で deferred (Option A: feature-gate / Option B: keep pub + unstable caveat / Option C: pub(crate) 全撤去 の 3 択、未対応 (別途判断)) 詳細は [`docs/PUB_AUDIT_ITERATION_2.md`](PUB_AUDIT_ITERATION_2.md) 参照
 - **B Iteration 3 (P2 math / BVH / spatial 調査、2026-09-13 完了)** — 3 module 108 pub item を survey (`math` / `bvh` / `spatial`)、**8 items pub(crate) 格下げ実施** (math: `pack_pair` / `select_fix128` / `select_vec3`、bvh: `morton_code` / `point_to_morton` / `ESCAPE_NONE` / `MAX_PRIMS_PER_LEAF` / `BroadphaseHybrid`、2 commit `dc32236` + `3f0d12c`)、snapshot 20,179 → 20,155 items (−24)、`BvhStats` は `LinearBvh::stats()` の return type leak で格下げ不可 (keep pub)、`spatial` は全 pub items が prelude commitment + 内部 cross-module 利用で保護 (0 downgrades)、`CachedContactPoint` field visibility は **v1.0-rc.1 で `#[non_exhaustive]` 化検討** として resolved 詳細は [`docs/PUB_AUDIT_ITERATION_3.md`](PUB_AUDIT_ITERATION_3.md) 参照
 - **B Iteration 4 (P3 CFD 内部 調査、2026-09-13 完了)** — 4 module 58 pub item を survey (`eulerian_grid` / `multiphase` / `interface_capture` / `turbulence`)、**31 items pub(crate) 格下げ実施** (eulerian_grid 6 + multiphase 4 + interface_capture 3 + turbulence 18、4 commit `1d72044` + `72da7f2` + `0612a51` + `32acdce`)、snapshot 20,155 → 20,064 items (−91、reserved RANS/wall-function/PLIC 全 auto-impl 削減)、cross-module internal helpers (`MacGrid`/`Grid3d` leak 経由 + `project_pressure`/`g2p_velocity`/`sample_*`/`trilinear_*`/`fast_sweeping_reinit`/`SMAGORINSKY_CS` 等) は keep pub (v1.0-rc.1 で design 判断)、4 module に module-level or item-level `#[allow(dead_code)]` + "Integration status" 明記 詳細は [`docs/PUB_AUDIT_ITERATION_4.md`](PUB_AUDIT_ITERATION_4.md) 参照
 - **B Iteration 5 (P4 structural 内部 調査、2026-09-13 完了)** — 5 module 65 pub item を survey (`beam_stress` / `plastic` / `buckling` / `fatigue` / `creep_longterm`)、**30 items pub(crate) 格下げ実施** (beam_stress 1 + plastic 9 + buckling 6 + fatigue 7 + creep_longterm 7、5 commit `4374397` + `7a0e7f5` + `4052faa` + `cd87aef` + `19d017f`)、reserved RANS/WLF/PLIC 相似の "downstream 0 で future integration 待ち" pattern が structural にも存在 (`StressTensor` / `KEpsilonState`-analog `WlfConstants` / `FatigueReport` 等)、4 module に module-level `#![allow(dead_code)]` + "Integration status" doc note、keep pub: Bamboo downstream 使用 (`BeamAnalysis` / `CrossSection` / `LoadCase`) + structural_solver 内部使用 (`PlasticModel` / `NortonCreep` / `analyze_column` / `ColumnBucklingReport` / `SnCurve` / `miner_damage` / `FindleyParameters` / `predict_strain`) 詳細は [`docs/PUB_AUDIT_ITERATION_5.md`](PUB_AUDIT_ITERATION_5.md) 参照
@@ -951,7 +951,7 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 
 ### ✅ v1.1.0 (2026-09-15、f32/f64 module 30 個の cross-platform bit-exact 化 = 案 B)
 
-- 3 案 (A 全面 Fix128 化 / B libm 排除 / C crate 分離) から B を採用 (memory `project_alice_physics_det_f32_plan`)
+- 3 案 (A 全面 Fix128 化 / B libm 排除 / C crate 分離) から B を採用
 - `det_math` module (f32 8 関数 + f64 3 関数、IEEE-exact な基本演算 + bit 操作のみ) を追加、production 16 + test 4 site の `libm` 呼出を置換、`clippy.toml` `disallowed-methods` で再混入を CI red 化
 - `tests/determinism_golden_f32.rs` 13 scenario / 29 module を aarch64 で pin、x86_64 (Rosetta) / wasm32 local 一致 → CI 6 platform
 - README「Determinism scope」3 tier → 1 tier、残る境界は user closure と ALICE-SDF evaluator (alice-sdf 側で `det_math` 整合を別途、案 A は `Real for Fix128` 経由で 2.0 向け)
@@ -1027,7 +1027,7 @@ Phase 1+2+F 完了、以降は最重量の B に集中:
 - ⚠️ **アーキをまたいだ fold 値の直接突合はしていない** 各機で「分散 == その機の単一プロセス解」を確認したのみ (test が fold 値を出力しないため)
 - ⚠️ **律速は並列度でなく反復数のまま** 1 step を実用精度まで解くには GS の反復数が `O(n²)` で増えるので、越境 slab を multigrid に適用するのが次の軸 (第 6 increment の記録と同じ)
 
-### 壁 1〜4 の到達点と残件 — `origin/main = bf14216` で実測 (2026-10-02、`ys-6d`、既存行は書き換えていない)
+### 壁 1〜4 の到達点と残件 — `origin/main = bf14216` で実測 (2026-10-02、既存行は書き換えていない)
 
 ⚠️ **壁名はすべて複合語なので、語ごとに要求を分解して現況を当てる** 「壁 N を越えた / 越えていない」の 2 値で語ると、達成済の半分が見えなくなる (または未達側だけを見て「何も進んでいない」とも言える)
 

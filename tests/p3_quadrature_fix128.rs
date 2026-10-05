@@ -10,8 +10,7 @@
 //! # ⚠️ No degree-2-or-higher rule can be fully dyadic, so "pick the rational
 //! rule" is not available
 //!
-//! `feedback_dyadic_constants_beat_rational_ones_in_fixed_point` records that
-//! what a binary fixed-point type holds exactly is the **dyadic** rationals —
+//! What a binary fixed-point type holds exactly is the **dyadic** rationals —
 //! denominator a power of two — and that `1/6` is in the same position as `√5`.
 //! For quadrature on a tetrahedron that observation has a sharp consequence,
 //! which `no_tetrahedron_rule_of_degree_two_or_more_can_be_fully_dyadic` below
@@ -69,8 +68,8 @@
 //!
 //! `f64` carries 53 bits of mantissa and `Fix128` carries 64 bits of fraction,
 //! so a difference of a few ulps is *invisible* through `to_f64`; every row of
-//! the table above would print `0.000e0`. Same instrument mistake as
-//! `feedback_fixedpoint_newton_drifts_at_rounding_floor`.
+//! the table above would print `0.000e0`. Same instrument mistake as in
+//! `tests/p2_quadrature_fix128.rs`.
 //!
 //! The reference moments are rounded to nearest from exact rational arithmetic
 //! **off-line**, not derived here with `Fix128` division — otherwise the
@@ -388,8 +387,7 @@ fn cubic_shape_values(l: &[Fix128; 4]) -> [Fix128; 20] {
 ///
 /// A dyadic rational round-trips through multiplication by its denominator with
 /// **zero** ulp of error; a rational with an odd factor in the denominator does
-/// not. This is the whole content of
-/// `feedback_dyadic_constants_beat_rational_ones_in_fixed_point`, and the reason
+/// not. That is the reason
 /// the rule above fixes its abscissae on `1/16`, `1/8`, `5/16`, `3/8`, `1/2` and
 /// `5/8` rather than on the values a textbook rule would use.
 #[test]

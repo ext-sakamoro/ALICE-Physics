@@ -16,8 +16,7 @@
 //! `#[cfg(all(feature = "simd", target_arch = "x86_64"))]` on the whole
 //! function, same as `cross_simd`/`dot_batch_4`. They do not exist at all
 //! without that feature+arch combination. This file mirrors that exact gate
-//! (not a 5/2 split) so it compiles everywhere; see the worker's final
-//! report for why the commissioning brief had it wrong.
+//! (not a 5/2 split) so it compiles everywhere.
 //!
 //! # Closed forms (every expected value is derived here, never by calling
 //! the function under test for its own expected side)

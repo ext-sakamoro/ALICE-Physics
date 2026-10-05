@@ -53,7 +53,7 @@
 //! `f64` carries 53 bits of mantissa and `Fix128` carries 64 bits of fraction,
 //! so a difference of a few ulps is *invisible* through `to_f64`. Reporting
 //! these errors as decimals would print `0.000e0` for every row and prove
-//! nothing (see `feedback_fixedpoint_newton_drifts_at_rounding_floor`: the same
+//! nothing (the same
 //! mistake was made in this crate ten commits ago and produced a retracted
 //! "bit-identical" claim).
 
@@ -352,8 +352,8 @@ fn quadrature_error_per_monomial_in_ulps() {
 /// the strict inequality that holds over the integers is rounded away. In exact
 /// integer arithmetic `r² ≤ 5·2¹²⁸ < (r+1)²` does hold — verified off-line
 /// against `isqrt(5 << 128)`, which the golden below equals with **zero** ulp of
-/// error. This is the same shape as the retracted "bit-identical" claim in
-/// `feedback_fixedpoint_newton_drifts_at_rounding_floor`: a bit-level statement
+/// error. This is the same shape as an earlier retracted "bit-identical"
+/// claim: a bit-level statement
 /// measured through an instrument coarser than the bits.
 #[test]
 fn sqrt_five_and_the_irrational_abscissae_are_pinned() {

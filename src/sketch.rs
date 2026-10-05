@@ -478,8 +478,8 @@ macro_rules! impl_ddsketch {
             /// guarantee on the mid-point is `α`; on the edge it is
             /// `2α/(1+α)` (worst case, measured: ~1.98% at `α = 0.01`), not
             /// `α` itself — a caller reading this doc as an `α`-accurate
-            /// quantile estimator (program 第 7 件 `sketch` worker finding,
-            /// Backlog `sketch-quantile-edge-vs-midpoint`) was getting up to
+            /// quantile estimator (open issue
+            /// `sketch-quantile-edge-vs-midpoint`) was getting up to
             /// 2× the documented error.
             pub fn quantile(&self, q: f64) -> f64 {
                 if self.count == 0 {

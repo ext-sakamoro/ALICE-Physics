@@ -22,8 +22,7 @@
 //! not a non-default scene — see
 //! `default_poissons_ratio_ignored_by_from_filament_would_be_invisible_on_fdm`
 //! for why that last gap matters
-//! ([[feedback_physics_analytic_oracle_rule_2026_09_15]] /
-//! `default-valued-argument-makes-its-wiring-mutation-identity`).
+//! (`default-valued-argument-makes-its-wiring-mutation-identity`).
 //!
 //! Author: Moroya Sakamoto
 

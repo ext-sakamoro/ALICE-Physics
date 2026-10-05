@@ -30,7 +30,7 @@ readme = "README.md"
 features = ["std", "simd", "parallel", "ffi", "gpu-solver-bridge"]
 rustdoc-args = ["--cfg", "docsrs"]
 
-# cargo-machete false-positive suppression (canonical [[reference_alice_ci_canonical_template]] 罠 #3)
+# cargo-machete false-positive suppression
 # js-sys: wasm feature 用 optional dep、machete が feature-gated 依存を検出不能
 [package.metadata.cargo-machete]
 ignored = ["js-sys"]
@@ -214,8 +214,8 @@ required-features = ["std"]
 # have a real caller (examples/joint_limits_and_breaking.rs). wiring_guard
 # matches bare identifiers across files, so joint.rs's caller silently
 # "resolved" joint_extra.rs's own with_break_force too, even though it had
-# zero real callers of its own -- a name-collision false positive recorded in
-# the project Backlog. See examples/joint_extra_wiring.rs's module doc for
+# zero real callers of its own -- a name-collision false positive.
+# See examples/joint_extra_wiring.rs's module doc for
 # the full closed-form derivation.
 [[example]]
 name = "joint_extra_wiring"
@@ -519,7 +519,7 @@ required-features = ["std"]
 # with_modifier -- only the module's own #[cfg(test)] unit tests called in,
 # which the guard does not count). This is the Vec<Box<dyn PhysicsModifier>>
 # collection API itself (push/pop/count/mutate-by-index), distinct from this
-# crate's separate, already-resolved Backlog question of whether individual
+# crate's separate, already-resolved question of whether individual
 # modifiers (thermal/phase_change/pressure/erosion/fracture) can read each
 # other's fields.
 [[example]]

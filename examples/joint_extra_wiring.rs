@@ -15,8 +15,7 @@
 //! caller in `examples/joint_limits_and_breaking.rs`, and the guard matches
 //! bare identifiers across files, so that caller silently "resolves"
 //! `joint_extra.rs`'s own `WeldJoint::with_break_force` too, even though it
-//! had zero real callers of its own. See the project Backlog entry for the
-//! name-collision backstory.
+//! had zero real callers of its own.
 //!
 //! ```bash
 //! cargo run --example joint_extra_wiring --features std

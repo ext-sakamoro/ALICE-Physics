@@ -35,7 +35,7 @@
 //! `docs/PUBLIC_API_SNAPSHOT.txt`), not a purely-additive wiring change.
 //! The repo has an existing precedent for declining to do this silently
 //! (`CHANGELOG.md`, `eulerian_grid` cross-process primitives: "新規 pub
-//! facade は semver 判断 ... user 裁定: 新規 pub は追加しない、
+//! facade は semver 判断 ... 方針: 新規 pub は追加しない、
 //! ALLOW-UNWIRED debt marker で現状維持"). This file follows the same
 //! precedent and leaves those four as unresolved wiring debt pending
 //! that decision, rather than promoting the type's visibility itself.

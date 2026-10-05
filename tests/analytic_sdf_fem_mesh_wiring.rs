@@ -252,7 +252,7 @@ fn generate_marching_tets_matches_generate_exactly_when_nothing_crosses() {
 }
 
 /// ⚠️ Found while building the oracle above, and reported rather than fixed
-/// (out of scope for this wiring pass — see the worker report): drop the
+/// (out of scope for this wiring pass): drop the
 /// padding, so every lattice corner sits *exactly on* the shape's boundary
 /// (distance `== 0.0`), and the two generators go from agreeing to
 /// disagreeing in the direction the module doc does not describe.

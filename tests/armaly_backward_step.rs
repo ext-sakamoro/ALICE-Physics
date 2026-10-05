@@ -1456,9 +1456,8 @@ fn reattachment_lengthens_under_grid_refinement() {
 // Layer 1 — the comparison against Gartling (1990) at Re = 800
 // ===========================================================================
 
-/// Gartling (1990), `Re = 800`, normalised to `H = 1`. Transcribed in
-/// `memory/reference_armaly_gartling_values.md`, where each value is recorded
-/// with the sources that agree on it; only the ones that agree to the last
+/// Gartling (1990), `Re = 800`, normalised to `H = 1`. Each value was
+/// transcribed with the sources that agree on it; only the ones that agree to the last
 /// printed digit are used as targets here.
 ///
 /// Lower-wall reattachment. Three independent transcriptions agree

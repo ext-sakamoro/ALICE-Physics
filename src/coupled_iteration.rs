@@ -463,7 +463,7 @@ impl EquilibrationScale {
     /// The other order — `scale_up` then `scale_down` — is exact whenever the
     /// intermediate stays in range, which is why a solver equilibrates its
     /// operator and right-hand side rather than its solution.
-    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
+    // ALLOW-UNWIRED: wiring debt `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub fn round_trip_bound(self) -> Fix128 {
         if self.exponent == 0 {
@@ -798,7 +798,7 @@ impl ContractionMonitor {
     }
 
     /// Best (smallest) residual norm seen.
-    // ALLOW-UNWIRED: wiring debt Backlog 2.0.0 列 (`SubIterationReport` に field を足せるまで report に載せられない), oracle tests/analytic_added_mass_coupling.rs (best_residual)
+    // ALLOW-UNWIRED: wiring debt 2.0.0 列 (`SubIterationReport` に field を足せるまで report に載せられない), oracle tests/analytic_added_mass_coupling.rs (best_residual)
     #[must_use]
     pub const fn best_residual(&self) -> Fix128 {
         self.best

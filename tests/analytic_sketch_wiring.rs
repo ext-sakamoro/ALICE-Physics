@@ -684,7 +684,7 @@ fn ddsketch_quantiles_are_the_bucket_edge_within_gamma_of_the_order_statistic() 
 /// deliver it (see the module doc of this file). Measured 2026-10-03:
 /// `quantile` returns the bucket's lower edge, not the paper's mid-point
 /// estimator, so its honest guarantee is `2α/(1+α)` (doc'd on the function,
-/// Backlog `sketch-quantile-edge-vs-midpoint`), not `α` itself. 527 of 1000
+/// open issue `sketch-quantile-edge-vs-midpoint`), not `α` itself. 527 of 1000
 /// quantiles over a naive `α` bound confirmed the edge form is needed; 0
 /// violate the doubled bound.
 #[test]

@@ -111,7 +111,7 @@ fn main() {
     // reduction the existing oracle test checks -- here the peak-enhancement
     // factor does not cancel out of the formula, so this exercises it.)
     //
-    // NOTE (finding, not a wiring bug -- see Backlog): the textbook identity
+    // NOTE (finding, not a wiring bug -- tracked separately): the textbook identity
     // `Hs = 4*sqrt(m0)` only holds as coded here when gamma = 1. The
     // standard JONSWAP normalisation (DNV-RP-C205 eq. 3.5.7; also Goda,
     // *Random Seas and Design of Maritime Structures*) applies a correction

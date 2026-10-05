@@ -944,8 +944,8 @@ fn face_conditions_round_trip_and_agree_with_the_solid_flag() {
 // ⚠️ **It does not verify the wall treatment of advection.** `v = 0`, so no
 // back-trace ever crosses a wall, and the field is uniform along the flow, so
 // a back-trace that leaves the inlet would read the right value even if it
-// clamped to the interior instead of reading the `Inflow` face. The Backlog
-// item "CFD の移流に壁の扱いが無い (接線 no-slip は粘性項のみ)" is **not**
+// clamped to the interior instead of reading the `Inflow` face. The open
+// issue "CFD の移流に壁の扱いが無い (接線 no-slip は粘性項のみ)" is **not**
 // closed by this file. M14 of the table below is the demonstration: it stays
 // green, and that is the correct outcome, not a hole.
 //

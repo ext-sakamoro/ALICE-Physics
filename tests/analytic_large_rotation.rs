@@ -70,8 +70,7 @@ fn node_index(nx: usize, ny: usize, i: usize, j: usize, k: usize) -> u32 {
 ///
 /// Every face diagonal Kuhn's subdivision produces runs between that face's
 /// `(0,0)` and `(1,1)` corners, which both cubes sharing the face agree on, so
-/// the mesh is conforming for any `nx, ny, nz` (see
-/// `feedback_patch_test_blind_to_nonconforming_faces`).
+/// the mesh is conforming for any `nx, ny, nz`.
 fn kuhn_box(nx: usize, ny: usize, nz: usize, h: f32) -> SdfTetMesh {
     let mut mesh = SdfTetMesh::default();
     for k in 0..=nz {
@@ -269,7 +268,7 @@ fn rigid_rotation_produces_zero_stress() {
         // displacement is interpolated linearly, so at t = 1/2 the deformation
         // gradient is diag(0, 0, 1) and the polar factor does not exist
         // (`RotationFailed { cause: Inverted }`, measured for 2, 4 and 8
-        // increments; recorded in the Backlog as a candidate defect).
+        // increments; recorded as a candidate defect).
         let mesh = kuhn_box(2, 1, 1, 3.0);
         let bc = prescribe_rigid_rotation(&mesh, turn);
         let out = solve_corotational(&mesh, &pla(), &bc, &corotational_config(1))
@@ -310,7 +309,7 @@ fn rigid_rotation_produces_zero_stress() {
 
 /// The red above is the small-strain approximation and **nothing else**.
 ///
-/// Per `feedback_prose_oracle_verified_by_red_2026_09_28`, when an oracle reds
+/// When an oracle reds
 /// the first suspect is the oracle. This test removes that suspicion by
 /// predicting the failing number in closed form: if the measured stress matches
 /// `2λ(c−1) + 2μ(c−1)` component by component, the solver is doing small-strain

@@ -807,7 +807,7 @@ where
 /// its own `aux` slot. Determinism of the aggregate `Vec<R>` is preserved
 /// because `rayon`'s `par_iter().zip().map().collect()` over indexed
 /// (slice-backed) iterators always reassembles results in source order,
-/// independent of which worker thread executed which island.
+/// independent of which thread executed which island.
 ///
 /// # Panics
 /// Panics when `aux.len() != islands.len()`.

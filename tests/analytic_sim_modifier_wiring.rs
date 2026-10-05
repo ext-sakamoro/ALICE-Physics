@@ -5,7 +5,7 @@
 //!
 //! This file is about the **collection API** on `ModifiedSdf` (a
 //! `Vec<Box<dyn PhysicsModifier>>` with add/remove/count/mutate), not about
-//! this crate's Backlog research question of whether individual modifiers
+//! this crate's research question of whether individual modifiers
 //! (thermal / phase_change / pressure / erosion / fracture) can read each
 //! other's fields -- that is a separate, already-resolved question. No
 //! modifier below reads another modifier's state.
