@@ -321,7 +321,6 @@ fn aabb_is_centered_and_at_least_the_closed_form_half_extent() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-001: Torus::aabb is not tight along the symmetry axis (R=5, r=1, identity: Y half extent 6, closed form r = 1)"]
 fn aabb_half_extent_along_symmetry_axis_is_minor_radius() {
     let t = Torus::new(Vec3Fix::ZERO, fx(5.0), fx(1.0));
     let bb = t.aabb();

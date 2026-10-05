@@ -10,7 +10,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::collider::{Support, AABB};
+use crate::collider::{hypot3, Support, AABB};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 /// Cylinder collider
@@ -59,29 +59,24 @@ impl Cylinder {
         }
     }
 
-    /// Compute world-space AABB enclosing this cylinder
+    /// The smallest world-axis box enclosing this cylinder.
+    ///
+    /// With the turned axes `u = R·(r, 0, 0)`, `a = R·(0, h, 0)`,
+    /// `w = R·(0, 0, r)`, the half-extent on world axis `i` is
+    /// `|a_i| + √(u_i² + w_i²)`: the end discs sit at `±a` and a disc of radius
+    /// `r` in the plane spanned by `u`, `w` reaches `√(u_i² + w_i²)` along `i`
+    /// (for a unit rotation, `|â_i|·h + r·√(1 − â_i²)`).
     #[must_use]
     pub fn aabb(&self) -> AABB {
-        // Local Y axis in world space
-        let local_y = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
-        let world_y = self.rotation.rotate_vec(local_y);
-
-        // The cylinder extends half_height along world_y
-        let axis_extent = Vec3Fix::new(
-            (world_y.x * self.half_height).abs(),
-            (world_y.y * self.half_height).abs(),
-            (world_y.z * self.half_height).abs(),
-        );
-
-        // Conservative radial extent on each world axis
-        let radial_extent = Vec3Fix::new(self.radius, self.radius, self.radius);
-
+        let r = self.rotation;
+        let u = r.rotate_vec(Vec3Fix::new(self.radius, Fix128::ZERO, Fix128::ZERO));
+        let a = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, self.half_height, Fix128::ZERO));
+        let w = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.radius));
         let total = Vec3Fix::new(
-            axis_extent.x + radial_extent.x,
-            axis_extent.y + radial_extent.y,
-            axis_extent.z + radial_extent.z,
+            a.x.abs() + hypot3(u.x, w.x, Fix128::ZERO),
+            a.y.abs() + hypot3(u.y, w.y, Fix128::ZERO),
+            a.z.abs() + hypot3(u.z, w.z, Fix128::ZERO),
         );
-
         AABB::new(self.center - total, self.center + total)
     }
 
@@ -187,11 +182,11 @@ mod tests {
     fn test_cylinder_aabb() {
         let cyl = Cylinder::new(Vec3Fix::from_int(5, 0, 0), Fix128::from_int(2), Fix128::ONE);
         let aabb = cyl.aabb();
-        // Y-up: axis_extent=(0,2,0), radial=(1,1,1), total=(1,3,1)
+        // Y-up: half-extent |a_i| hh + r sqrt(1 - a_i^2) = (1, 2, 1)
         assert_eq!(aabb.min.x.hi, 4); // 5 - 1
         assert_eq!(aabb.max.x.hi, 6); // 5 + 1
-        assert_eq!(aabb.min.y.hi, -3); // 0 - 3
-        assert_eq!(aabb.max.y.hi, 3); // 0 + 3
+        assert_eq!(aabb.min.y.hi, -2); // 0 - 2
+        assert_eq!(aabb.max.y.hi, 2); // 0 + 2
     }
 
     #[test]

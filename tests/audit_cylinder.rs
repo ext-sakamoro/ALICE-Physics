@@ -270,8 +270,9 @@ fn aabb_encloses_every_rim_point_and_obeys_the_conservative_formula() {
 fn aabb_is_exact_for_the_unrotated_cylinder() {
     let c = Cylinder::new(v3(5.0, 0.0, 0.0), fx(2.0), fx(1.0));
     let bb = c.aabb();
-    assert_eq!(arr(bb.min), [4.0, -3.0, -1.0]);
-    assert_eq!(arr(bb.max), [6.0, 3.0, 1.0]);
+    // half-extent |a_i| hh + r sqrt(1 - a_i^2) with a = +Y: (r, hh, r) = (1, 2, 1)
+    assert_eq!(arr(bb.min), [4.0, -2.0, -1.0]);
+    assert_eq!(arr(bb.max), [6.0, 2.0, 1.0]);
 }
 
 #[test]

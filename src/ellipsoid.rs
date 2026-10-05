@@ -16,7 +16,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::collider::{Support, AABB};
+use crate::collider::{hypot3, Support, AABB};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 
 /// Ellipsoid collider
@@ -70,27 +70,22 @@ impl Ellipsoid {
         max
     }
 
-    /// Compute world-space AABB enclosing this ellipsoid
+    /// The smallest world-axis box enclosing this ellipsoid.
+    ///
+    /// With the turned semi-axes `e_j = R·(r_j ê_j)`, the half-extent on world
+    /// axis `i` is `√(Σ_j e_{j,i}²) = √(Σ_j R_ij² r_j²)`: the support of the
+    /// ellipsoid along `ê_i`.
     #[must_use]
     pub fn aabb(&self) -> AABB {
-        // Transform each local axis scaled by its radius to world space
-        let local_x = Vec3Fix::new(self.radii.x, Fix128::ZERO, Fix128::ZERO);
-        let local_y = Vec3Fix::new(Fix128::ZERO, self.radii.y, Fix128::ZERO);
-        let local_z = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.radii.z);
-
-        let world_x = self.rotation.rotate_vec(local_x);
-        let world_y = self.rotation.rotate_vec(local_y);
-        let world_z = self.rotation.rotate_vec(local_z);
-
-        // For an ellipsoid, the extent on each world axis is:
-        // sqrt(wx_i^2 + wy_i^2 + wz_i^2) per component i
-        // Conservative approximation using abs sums:
+        let r = self.rotation;
+        let ex = r.rotate_vec(Vec3Fix::new(self.radii.x, Fix128::ZERO, Fix128::ZERO));
+        let ey = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, self.radii.y, Fix128::ZERO));
+        let ez = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.radii.z));
         let extent = Vec3Fix::new(
-            world_x.x.abs() + world_y.x.abs() + world_z.x.abs(),
-            world_x.y.abs() + world_y.y.abs() + world_z.y.abs(),
-            world_x.z.abs() + world_y.z.abs() + world_z.z.abs(),
+            hypot3(ex.x, ey.x, ez.x),
+            hypot3(ex.y, ey.y, ez.y),
+            hypot3(ex.z, ey.z, ez.z),
         );
-
         AABB::new(self.center - extent, self.center + extent)
     }
 
