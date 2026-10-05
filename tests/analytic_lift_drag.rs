@@ -312,7 +312,16 @@ fn lift_is_odd_and_drag_even_in_the_effective_angle() {
 fn angles_outside_minus_pi_pi_are_wrapped() {
     // Documented: any α is wrapped into (−π, π] before evaluation.
     let s = surface(WING);
-    for alpha in [7.0, -9.5, 100.0] {
+    // 2π + 0.1 lands on the attached branch and −2π − 0.3 on the transition
+    // only after wrapping; unwrapped, both would read as the flat plate.
+    for alpha in [
+        7.0,
+        -9.5,
+        100.0,
+        2.0 * PI + 0.1,
+        -2.0 * PI - 0.3,
+        4.0 * PI + 0.2,
+    ] {
         let (rl, rd) = ref_coeffs(WING, alpha);
         rel_close(&format!("C_L({alpha})"), cl(&s, alpha), rl, 1e-8);
         rel_close(&format!("C_D({alpha})"), cd(&s, alpha), rd, 1e-8);
