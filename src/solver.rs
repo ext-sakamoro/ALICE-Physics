@@ -606,6 +606,11 @@ impl ContactConstraint {
 /// Pre-solve hooks and contact modifiers run once over the
 /// tick's contacts before the solve (`tests/analytic_tgs_backend_coverage.rs`).
 ///
+/// The world's [`Joint`]s are solved inside the TGS substep loop: after each
+/// substep's impulse solve, the same position-level joint projection the XPBD
+/// substep runs is applied and its correction is added to the bodies' linear
+/// and angular velocities (`tests/analytic_tgs_joints_in_substep.rs`).
+///
 /// * Requires the `std` feature (`solver_tgs` is `std`-gated, same as the
 ///   rest of the TGS family). Selecting `Tgs` in a build without `std`
 ///   is **not** silently ignored at the type level — the variant still
@@ -2959,42 +2964,83 @@ impl PhysicsWorld {
             }
         }
     }
-    /// Static colliders and joints for the TGS path, with their positional
-    /// corrections carried into the velocities (see `step_tgs` Phase 3.2):
-    /// a static contact removes the approaching velocity, a joint correction
-    /// adds `Δx / dt` and the angular velocity of its rotation change.
+    /// Static colliders for the TGS path, with their positional correction
+    /// carried into the velocities (see `step_tgs` Phase 3.2): a static
+    /// contact pushes the body out and removes the velocity into the surface.
     #[cfg(feature = "std")]
-    fn tgs_position_corrections(&mut self, dt: Fix128) {
-        if self.joints.is_empty() && self.static_colliders.is_empty() {
-            return;
-        }
+    fn tgs_static_corrections(&mut self) {
         if !self.static_colliders.is_empty() {
             self.resolve_static_collisions(true);
         }
-        if self.joints.is_empty() {
-            return;
-        }
-        let before: Vec<(Vec3Fix, QuatFix)> = self
-            .bodies
+    }
+
+    /// The bodies the world's joints refer to, ascending and without
+    /// repeats (indices past the body list are left out).
+    #[cfg(feature = "std")]
+    fn jointed_bodies(&self) -> Vec<usize> {
+        let n = self.bodies.len();
+        let mut out: Vec<usize> = self
+            .joints
             .iter()
-            .map(|b| (b.position, b.rotation))
+            .flat_map(|j| {
+                let (a, b) = j.bodies();
+                [a, b]
+            })
+            .filter(|&i| i < n)
             .collect();
-        self.solve_joints_dispatch(dt);
-        let inv_dt = Fix128::ONE / dt;
-        for (body, (p0, q0)) in self.bodies.iter_mut().zip(before) {
-            if body.body_type == BodyType::Static {
-                continue;
-            }
-            if body.position != p0 {
-                match (body.position - p0).checked_scale(inv_dt) {
-                    Some(dv) => body.velocity = body.velocity + dv,
-                    None => self.overflow_detected = true,
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// One TGS substep's joint solve: copies the jointed bodies' TGS state to
+    /// the world bodies, applies the joint projection
+    /// ([`Self::solve_joints_dispatch`], the call the XPBD substep makes) and
+    /// writes the result back, adding each correction to the velocity as the
+    /// XPBD velocity update would: `Δx / h` to the linear velocity and the
+    /// angular velocity of the rotation change to the angular one. TGS keeps
+    /// its velocities across substeps, so without the carry a corrected body
+    /// would keep the velocity that took it off the constraint.
+    #[cfg(feature = "std")]
+    fn tgs_project_joints(
+        &mut self,
+        tgs_bodies: &mut [crate::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState],
+        jointed: &[usize],
+        sub_dt: Fix128,
+    ) {
+        use crate::solver_tgs_backend::tgs_to_body;
+        for &i in jointed {
+            tgs_to_body(&tgs_bodies[i], &mut self.bodies[i]);
+        }
+        let before: Vec<(Vec3Fix, QuatFix)> = jointed
+            .iter()
+            .map(|&i| (self.bodies[i].position, self.bodies[i].rotation))
+            .collect();
+        self.solve_joints_dispatch(sub_dt);
+        let inv_dt = Fix128::ONE / sub_dt;
+        for (&i, (p0, q0)) in jointed.iter().zip(before) {
+            let body = &mut self.bodies[i];
+            if body.is_dynamic() {
+                if body.position != p0 {
+                    match (body.position - p0).checked_scale(inv_dt) {
+                        Some(dv) => body.velocity = body.velocity + dv,
+                        None => self.overflow_detected = true,
+                    }
+                }
+                if body.rotation != q0 {
+                    body.angular_velocity =
+                        body.angular_velocity + angular_from_rotations(body.rotation, q0, inv_dt);
                 }
             }
-            if body.rotation != q0 {
-                body.angular_velocity =
-                    body.angular_velocity + angular_from_rotations(body.rotation, q0, inv_dt);
-            }
+            let state = &mut tgs_bodies[i];
+            state.position = [body.position.x, body.position.y, body.position.z];
+            state.orientation = body.rotation;
+            state.linear_velocity = [body.velocity.x, body.velocity.y, body.velocity.z];
+            state.angular_velocity = [
+                body.angular_velocity.x,
+                body.angular_velocity.y,
+                body.angular_velocity.z,
+            ];
         }
     }
 
@@ -3006,8 +3052,8 @@ impl PhysicsWorld {
     /// per-island impulse-based Gauss-Seidel instead of XPBD position
     /// projection. Joints, static colliders, contact filters, kinematic
     /// targets and SDF colliders are all handled — see [`SolverBackend`]'s
-    /// notes for the joint and filter handling, Phase 3.2 below for the
-    /// joints and static colliders, and
+    /// notes for the joint solve and filter handling, Phase 3.2 below for the
+    /// static colliders, and
     /// [`Self::advance_kinematic_targets_for_tgs`] /
     /// [`Self::resolve_sdf_collisions`] for the last two.
     #[cfg(feature = "std")]
@@ -3182,16 +3228,45 @@ impl PhysicsWorld {
             velocity_iters: self.config.iterations.max(1) as u32,
             ..crate::solver_tgs::TgsConfig::default()
         };
-        solve_oriented_islands_serial(
-            &mut tgs_bodies,
-            &mut tgs_contacts,
-            &mut tgs_joints,
-            &islands,
-            &mut self.tgs_impulse_cache,
-            cfg,
-            &tgs_cfg,
-            dt,
-        );
+        if self.joints.is_empty() {
+            solve_oriented_islands_serial(
+                &mut tgs_bodies,
+                &mut tgs_contacts,
+                &mut tgs_joints,
+                &islands,
+                &mut self.tgs_impulse_cache,
+                cfg,
+                &tgs_cfg,
+                dt,
+            );
+        } else {
+            // The world's joints (`Joint`: ball, hinge, fixed, slider, spring,
+            // D6, cone-twist) are solved inside the substep loop: after each
+            // substep's impulse solve and position advance, the joint
+            // projection the XPBD substep runs is applied to the jointed
+            // bodies and carried into their velocities. The loop splits `dt`
+            // exactly as `tgs_step` does, so each island sees the same
+            // substep sequence it would in a single call.
+            let one_substep = crate::solver_tgs::TgsConfig {
+                substeps: 1,
+                ..tgs_cfg
+            };
+            let sub_dt = dt * Fix128::from_f32(1.0 / tgs_cfg.substeps as f32);
+            let jointed = self.jointed_bodies();
+            for _ in 0..tgs_cfg.substeps {
+                solve_oriented_islands_serial(
+                    &mut tgs_bodies,
+                    &mut tgs_contacts,
+                    &mut tgs_joints,
+                    &islands,
+                    &mut self.tgs_impulse_cache,
+                    cfg,
+                    &one_substep,
+                    sub_dt,
+                );
+                self.tgs_project_joints(&mut tgs_bodies, &jointed, sub_dt);
+            }
+        }
         // Every contact for this tick has now been visited (each contact's
         // warm-start entry was `take`n in `begin_substep` and re-`set` in
         // `end_substep` for every sub-step above) — evict any cache entry
@@ -3206,16 +3281,13 @@ impl PhysicsWorld {
             tgs_to_body(state, body);
         }
 
-        // Phase 3.2: The world's joints and static colliders. Both are
-        // position-level corrections (the same calls `substep` makes); TGS
-        // owns velocities, so each correction also updates the velocity: a
-        // static contact removes the velocity into the surface, a joint
-        // correction adds `Δx / dt` and the angular velocity of its rotation
-        // change (what XPBD's `update_velocities` does for every positional
-        // correction). Without that a body
-        // resting on a plane keeps the velocity gravity gave it and sinks
-        // again next tick, and a pendulum gains energy every tick.
-        self.tgs_position_corrections(dt);
+        // Phase 3.2: The world's static colliders. A static contact is a
+        // position-level correction (the call `substep` makes); TGS owns
+        // velocities, so it also removes the velocity into the surface.
+        // Without that a body resting on a plane keeps the velocity gravity
+        // gave it and sinks again next tick. (The joints were solved inside
+        // the substep loop above.)
+        self.tgs_static_corrections();
 
         // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
         // per-substep gravity/impulse integration does not apply the global
