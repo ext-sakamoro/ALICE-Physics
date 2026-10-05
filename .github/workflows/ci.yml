@@ -94,6 +94,15 @@ jobs:
         # (actionlint syntax-check; two pushes were red on this, 2026-09-15)
         run: 'cargo test --lib --features "ffi" "ffi::"'
 
+      # The WebAssembly and Python bindings were compiled by no CI step: the
+      # wasm unit tests run natively, the Python module (an extension module
+      # that links against the interpreter at import time) is type-checked
+      - name: Test (WebAssembly binding, lib)
+        run: 'cargo test --lib --features "wasm" "wasm::"'
+
+      - name: Check (Python binding)
+        run: cargo check --lib --features "python"
+
       - name: Build (FFI) + assert cdylib / staticlib artifacts
         shell: bash
         run: |

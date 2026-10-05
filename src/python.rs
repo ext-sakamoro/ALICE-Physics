@@ -12,8 +12,11 @@
 //! | L4 | `#[repr(C)]` FrameInput (20 bytes) | Direct buffer cast |
 
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2};
+use pyo3::exceptions::{PyIndexError, PyValueError};
 use pyo3::prelude::*;
 
+use crate::binding_api;
+use crate::joint::{BallJoint, FixedJoint, HingeJoint, Joint, SliderJoint, SpringJoint};
 use crate::math::{Fix128, Vec3Fix};
 use crate::netcode::{
     DefaultInputApplicator, DeterministicSimulation, FrameInput, NetcodeConfig, SimulationChecksum,
@@ -370,6 +373,314 @@ impl PyPhysicsWorld {
 
     fn __repr__(&self) -> String {
         format!("<PhysicsWorld bodies={}>", self.inner.bodies.len())
+    }
+
+    // ------------------------------------------------------------------
+    // Collision radius, shapes, static colliders, joints. A refused
+    // argument raises `ValueError` (see `binding_api` for the checks), an
+    // unknown body / index raises `IndexError`.
+    // ------------------------------------------------------------------
+
+    /// Set a body's collision sphere radius (finite and positive).
+    fn set_collision_radius(&mut self, body_id: usize, radius: f64) -> PyResult<()> {
+        self.check_body(body_id)?;
+        ok_or_value(
+            binding_api::set_collision_radius(&mut self.inner, body_id, radius),
+            "radius must be finite and positive",
+        )
+    }
+
+    /// Drop a body's own collision radius (it falls back to the world default).
+    fn clear_collision_radius(&mut self, body_id: usize) -> PyResult<()> {
+        self.check_body(body_id)?;
+        binding_api::clear_collision_radius(&mut self.inner, body_id);
+        Ok(())
+    }
+
+    /// Add a dynamic body with a collision shape and return its index.
+    ///
+    /// `kind`: 0 box (half extents a, b, c), 1 cylinder (radius a, half
+    /// height b), 2 cone (radius a, half height b), 3 ellipsoid (radii a, b,
+    /// c), 4 wedge (width a, height b, depth c), 5 torus (major a, minor b).
+    /// Mass and inertia come from `density`.
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (kind, a, b, c, density, x, y, z))]
+    fn add_shaped_body(
+        &mut self,
+        kind: u32,
+        a: f64,
+        b: f64,
+        c: f64,
+        density: f64,
+        x: f64,
+        y: f64,
+        z: f64,
+    ) -> PyResult<usize> {
+        let shape = some_or_value(binding_api::shape(kind, a, b, c), "invalid shape")?;
+        let p = some_or_value(binding_api::vec3(x, y, z), "position must be finite")?;
+        some_or_value(
+            binding_api::add_shaped_body(&mut self.inner, shape, density, p),
+            "density must be finite and positive and the shape must have a mass",
+        )
+    }
+
+    /// Give an existing body a collision shape (its mass is unchanged).
+    fn set_body_shape(
+        &mut self,
+        body_id: usize,
+        kind: u32,
+        a: f64,
+        b: f64,
+        c: f64,
+    ) -> PyResult<()> {
+        self.check_body(body_id)?;
+        let shape = some_or_value(binding_api::shape(kind, a, b, c), "invalid shape")?;
+        ok_or_value(
+            binding_api::set_body_shape(&mut self.inner, body_id, shape),
+            "invalid shape",
+        )
+    }
+
+    /// Add the static plane `normal · p = offset` and return its index.
+    fn add_static_plane(&mut self, nx: f64, ny: f64, nz: f64, offset: f64) -> PyResult<usize> {
+        let n = some_or_value(binding_api::vec3(nx, ny, nz), "normal must be finite")?;
+        some_or_value(
+            binding_api::add_static_plane(&mut self.inner, n, offset),
+            "normal must be non-zero and offset finite",
+        )
+    }
+
+    /// Add a static height field from a NumPy (depth, width) array of heights
+    /// (`x` along columns) spaced `spacing` apart from the min corner `origin`.
+    fn add_static_heightfield(
+        &mut self,
+        heights: PyReadonlyArray2<f64>,
+        spacing: f64,
+        origin: (f64, f64, f64),
+    ) -> PyResult<usize> {
+        let a = heights.as_array();
+        let (depth, width) = a.dim();
+        let flat: Vec<f64> = a.iter().copied().collect();
+        let o = some_or_value(
+            binding_api::vec3(origin.0, origin.1, origin.2),
+            "origin must be finite",
+        )?;
+        let (w, d) = match (u32::try_from(width), u32::try_from(depth)) {
+            (Ok(w), Ok(d)) => (w, d),
+            _ => return Err(PyValueError::new_err("height field too large")),
+        };
+        some_or_value(
+            binding_api::add_static_heightfield(&mut self.inner, &flat, w, d, spacing, o),
+            "height field needs at least 2 × 2 finite heights and a positive spacing",
+        )
+    }
+
+    /// Add a static triangle mesh from a NumPy (N, 3) vertex array and a flat
+    /// list of vertex indices (three per triangle).
+    fn add_static_trimesh(
+        &mut self,
+        vertices: PyReadonlyArray2<f64>,
+        indices: Vec<u32>,
+    ) -> PyResult<usize> {
+        let a = vertices.as_array();
+        if a.dim().1 != 3 {
+            return Err(PyValueError::new_err("vertices must have shape (N, 3)"));
+        }
+        let flat: Vec<f64> = a.iter().copied().collect();
+        some_or_value(
+            binding_api::add_static_trimesh(&mut self.inner, &flat, &indices),
+            "mesh needs finite vertices and a non-empty index list of whole triangles within range",
+        )
+    }
+
+    /// Remove static collider `index` (later colliders shift down by one).
+    fn remove_static_collider(&mut self, index: usize) -> PyResult<()> {
+        if binding_api::remove_static_collider(&mut self.inner, index) {
+            Ok(())
+        } else {
+            Err(PyIndexError::new_err("static collider index out of range"))
+        }
+    }
+
+    /// Number of static colliders.
+    fn static_collider_count(&self) -> usize {
+        self.inner.static_collider_count()
+    }
+
+    /// Add a ball-and-socket joint (anchors in body-local coordinates) and
+    /// return its index.
+    fn add_ball_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchor_a: Vec3Arg,
+        anchor_b: Vec3Arg,
+    ) -> PyResult<usize> {
+        let j = Joint::Ball(BallJoint::new(body_a, body_b, v3(anchor_a)?, v3(anchor_b)?));
+        self.add_joint_checked(j)
+    }
+
+    /// Add a hinge joint (anchors and axes in body-local coordinates; axes
+    /// non-zero) and return its index.
+    fn add_hinge_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchor_a: Vec3Arg,
+        anchor_b: Vec3Arg,
+        axis_a: Vec3Arg,
+        axis_b: Vec3Arg,
+    ) -> PyResult<usize> {
+        let j = Joint::Hinge(HingeJoint::new(
+            body_a,
+            body_b,
+            v3(anchor_a)?,
+            v3(anchor_b)?,
+            unit(axis_a)?,
+            unit(axis_b)?,
+        ));
+        self.add_joint_checked(j)
+    }
+
+    /// Add a fixed joint; `relative_rotation` is `(x, y, z, w)` (normalised,
+    /// non-zero). Returns its index.
+    fn add_fixed_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchor_a: Vec3Arg,
+        anchor_b: Vec3Arg,
+        relative_rotation: (f64, f64, f64, f64),
+    ) -> PyResult<usize> {
+        let (x, y, z, w) = relative_rotation;
+        let q = some_or_value(
+            binding_api::unit_quat(x, y, z, w),
+            "rotation must be finite and non-zero",
+        )?;
+        let j = Joint::Fixed(FixedJoint::new(
+            body_a,
+            body_b,
+            v3(anchor_a)?,
+            v3(anchor_b)?,
+            q,
+        ));
+        self.add_joint_checked(j)
+    }
+
+    /// Add a slider joint along `axis` (body A local, non-zero) and return its
+    /// index.
+    fn add_slider_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        axis: Vec3Arg,
+        anchor_a: Vec3Arg,
+        anchor_b: Vec3Arg,
+    ) -> PyResult<usize> {
+        let j = Joint::Slider(SliderJoint::new(
+            body_a,
+            body_b,
+            unit(axis)?,
+            v3(anchor_a)?,
+            v3(anchor_b)?,
+        ));
+        self.add_joint_checked(j)
+    }
+
+    /// Add a spring (rest length and damping not negative, stiffness
+    /// positive) and return its index.
+    #[allow(clippy::too_many_arguments)]
+    fn add_spring_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchor_a: Vec3Arg,
+        anchor_b: Vec3Arg,
+        rest_length: f64,
+        stiffness: f64,
+        damping: f64,
+    ) -> PyResult<usize> {
+        let rest = some_or_value(
+            binding_api::non_negative(rest_length),
+            "rest_length must be finite and not negative",
+        )?;
+        let k = some_or_value(
+            binding_api::positive(stiffness),
+            "stiffness must be finite and positive",
+        )?;
+        let c = some_or_value(
+            binding_api::non_negative(damping),
+            "damping must be finite and not negative",
+        )?;
+        let j = Joint::Spring(SpringJoint::new(
+            body_a,
+            body_b,
+            v3(anchor_a)?,
+            v3(anchor_b)?,
+            rest,
+            k,
+            c,
+        ));
+        self.add_joint_checked(j)
+    }
+
+    /// Remove joint `index` (the last joint moves into `index`).
+    fn remove_joint(&mut self, index: usize) -> PyResult<()> {
+        if binding_api::remove_joint(&mut self.inner, index) {
+            Ok(())
+        } else {
+            Err(PyIndexError::new_err("joint index out of range"))
+        }
+    }
+
+    /// Number of joints.
+    fn joint_count(&self) -> usize {
+        self.inner.joint_count()
+    }
+}
+
+/// A Python `(x, y, z)` tuple argument.
+type Vec3Arg = (f64, f64, f64);
+
+fn v3(v: Vec3Arg) -> PyResult<Vec3Fix> {
+    some_or_value(binding_api::vec3(v.0, v.1, v.2), "vector must be finite")
+}
+
+fn unit(v: Vec3Arg) -> PyResult<Vec3Fix> {
+    some_or_value(v3(v)?.try_normalize(), "axis must be non-zero")
+}
+
+fn some_or_value<T>(v: Option<T>, msg: &str) -> PyResult<T> {
+    v.ok_or_else(|| PyValueError::new_err(msg.to_string()))
+}
+
+fn ok_or_value(ok: bool, msg: &str) -> PyResult<()> {
+    if ok {
+        Ok(())
+    } else {
+        Err(PyValueError::new_err(msg.to_string()))
+    }
+}
+
+impl PyPhysicsWorld {
+    fn check_body(&self, body_id: usize) -> PyResult<()> {
+        if body_id < self.inner.bodies.len() {
+            Ok(())
+        } else {
+            Err(PyIndexError::new_err("body_id out of range"))
+        }
+    }
+
+    /// Add a joint, telling an unknown body (`IndexError`) from a joint
+    /// between a body and itself (`ValueError`).
+    fn add_joint_checked(&mut self, joint: Joint) -> PyResult<usize> {
+        let (a, b) = joint.bodies();
+        self.check_body(a)?;
+        self.check_body(b)?;
+        some_or_value(
+            binding_api::add_joint(&mut self.inner, joint),
+            "a joint needs two different bodies",
+        )
     }
 }
 

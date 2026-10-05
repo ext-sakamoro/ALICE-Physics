@@ -23,7 +23,9 @@
 
 use wasm_bindgen::prelude::*;
 
+use crate::binding_api;
 use crate::collider::Sphere;
+use crate::joint::{BallJoint, FixedJoint, HingeJoint, Joint, SliderJoint, SpringJoint};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::raycast::{ray_sphere, Ray};
 use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
@@ -447,6 +449,215 @@ impl WasmPhysicsWorld {
 
         result
     }
+
+    // ------------------------------------------------------------------
+    // Collision radius, shapes, static colliders, joints. Indices come back
+    // as `number`, or `undefined` when an argument is refused (see
+    // `binding_api` for the checks); setters return `false` instead.
+    // ------------------------------------------------------------------
+
+    /// Set a body's collision sphere radius (finite and positive).
+    #[wasm_bindgen(js_name = "setCollisionRadius")]
+    pub fn set_collision_radius(&mut self, body_id: usize, radius: f64) -> bool {
+        binding_api::set_collision_radius(&mut self.inner, body_id, radius)
+    }
+
+    /// Drop a body's own collision radius (it falls back to the world default).
+    #[wasm_bindgen(js_name = "clearCollisionRadius")]
+    pub fn clear_collision_radius(&mut self, body_id: usize) -> bool {
+        binding_api::clear_collision_radius(&mut self.inner, body_id)
+    }
+
+    /// Add a dynamic body with a collision shape (`kind` and sizes as in the
+    /// C ABI's `AlicePhysicsShape`: 0 box, 1 cylinder, 2 cone, 3 ellipsoid,
+    /// 4 wedge, 5 torus); mass and inertia come from `density`.
+    #[wasm_bindgen(js_name = "addShapedBody")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_shaped_body(
+        &mut self,
+        kind: u32,
+        a: f64,
+        b: f64,
+        c: f64,
+        density: f64,
+        x: f64,
+        y: f64,
+        z: f64,
+    ) -> Option<u32> {
+        let shape = binding_api::shape(kind, a, b, c)?;
+        let p = binding_api::vec3(x, y, z)?;
+        binding_api::add_shaped_body(&mut self.inner, shape, density, p)
+            .and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Give an existing body a collision shape (its mass is unchanged).
+    #[wasm_bindgen(js_name = "setBodyShape")]
+    pub fn set_body_shape(&mut self, body_id: usize, kind: u32, a: f64, b: f64, c: f64) -> bool {
+        match binding_api::shape(kind, a, b, c) {
+            Some(s) => binding_api::set_body_shape(&mut self.inner, body_id, s),
+            None => false,
+        }
+    }
+
+    /// Add the static plane `normal · p = offset`.
+    #[wasm_bindgen(js_name = "addStaticPlane")]
+    pub fn add_static_plane(&mut self, nx: f64, ny: f64, nz: f64, offset: f64) -> Option<u32> {
+        let n = binding_api::vec3(nx, ny, nz)?;
+        binding_api::add_static_plane(&mut self.inner, n, offset)
+            .and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Add a static height field (`width × depth` heights, row-major, `x`
+    /// fastest) from the min corner `(ox, oy, oz)`.
+    #[wasm_bindgen(js_name = "addStaticHeightField")]
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_static_heightfield(
+        &mut self,
+        heights: &[f64],
+        width: u32,
+        depth: u32,
+        spacing: f64,
+        ox: f64,
+        oy: f64,
+        oz: f64,
+    ) -> Option<u32> {
+        let o = binding_api::vec3(ox, oy, oz)?;
+        binding_api::add_static_heightfield(&mut self.inner, heights, width, depth, spacing, o)
+            .and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Add a static triangle mesh (`vertices` as `x, y, z` triples, three
+    /// indices per triangle).
+    #[wasm_bindgen(js_name = "addStaticTriMesh")]
+    pub fn add_static_trimesh(&mut self, vertices: &[f64], indices: &[u32]) -> Option<u32> {
+        binding_api::add_static_trimesh(&mut self.inner, vertices, indices)
+            .and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Remove static collider `index` (later colliders shift down by one).
+    #[wasm_bindgen(js_name = "removeStaticCollider")]
+    pub fn remove_static_collider(&mut self, index: usize) -> bool {
+        binding_api::remove_static_collider(&mut self.inner, index)
+    }
+
+    /// Number of static colliders.
+    #[wasm_bindgen(js_name = "staticColliderCount")]
+    pub fn static_collider_count(&self) -> usize {
+        self.inner.static_collider_count()
+    }
+
+    /// Add a ball-and-socket joint. `anchors` = `[ax, ay, az, bx, by, bz]`
+    /// (body-local).
+    #[wasm_bindgen(js_name = "addBallJoint")]
+    pub fn add_ball_joint(&mut self, body_a: usize, body_b: usize, anchors: &[f64]) -> Option<u32> {
+        let (aa, ab) = binding_api::two_vec3(anchors)?;
+        let j = Joint::Ball(BallJoint::new(body_a, body_b, aa, ab));
+        binding_api::add_joint(&mut self.inner, j).and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Add a hinge joint. `anchors` = `[ax, ay, az, bx, by, bz]`, `axes` =
+    /// `[axis_a…, axis_b…]` (body-local, non-zero).
+    #[wasm_bindgen(js_name = "addHingeJoint")]
+    pub fn add_hinge_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchors: &[f64],
+        axes: &[f64],
+    ) -> Option<u32> {
+        let (aa, ab) = binding_api::two_vec3(anchors)?;
+        let (xa, xb) = binding_api::two_vec3(axes)?;
+        let j = Joint::Hinge(HingeJoint::new(
+            body_a,
+            body_b,
+            aa,
+            ab,
+            xa.try_normalize()?,
+            xb.try_normalize()?,
+        ));
+        binding_api::add_joint(&mut self.inner, j).and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Add a fixed joint. `anchors` = `[ax, ay, az, bx, by, bz]`,
+    /// `relative_rotation` = `[x, y, z, w]` (normalised, non-zero).
+    #[wasm_bindgen(js_name = "addFixedJoint")]
+    pub fn add_fixed_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchors: &[f64],
+        relative_rotation: &[f64],
+    ) -> Option<u32> {
+        let (aa, ab) = binding_api::two_vec3(anchors)?;
+        let [x, y, z, w] = <[f64; 4]>::try_from(relative_rotation).ok()?;
+        let j = Joint::Fixed(FixedJoint::new(
+            body_a,
+            body_b,
+            aa,
+            ab,
+            binding_api::unit_quat(x, y, z, w)?,
+        ));
+        binding_api::add_joint(&mut self.inner, j).and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Add a slider joint along `axis` = `[x, y, z]` (body A local, non-zero).
+    /// `anchors` = `[ax, ay, az, bx, by, bz]`.
+    #[wasm_bindgen(js_name = "addSliderJoint")]
+    pub fn add_slider_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        axis: &[f64],
+        anchors: &[f64],
+    ) -> Option<u32> {
+        let [x, y, z] = <[f64; 3]>::try_from(axis).ok()?;
+        let (aa, ab) = binding_api::two_vec3(anchors)?;
+        let j = Joint::Slider(SliderJoint::new(
+            body_a,
+            body_b,
+            binding_api::vec3(x, y, z)?.try_normalize()?,
+            aa,
+            ab,
+        ));
+        binding_api::add_joint(&mut self.inner, j).and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Add a spring. `anchors` = `[ax, ay, az, bx, by, bz]`; rest length and
+    /// damping not negative, stiffness positive.
+    #[wasm_bindgen(js_name = "addSpringJoint")]
+    pub fn add_spring_joint(
+        &mut self,
+        body_a: usize,
+        body_b: usize,
+        anchors: &[f64],
+        rest_length: f64,
+        stiffness: f64,
+        damping: f64,
+    ) -> Option<u32> {
+        let (aa, ab) = binding_api::two_vec3(anchors)?;
+        let j = Joint::Spring(SpringJoint::new(
+            body_a,
+            body_b,
+            aa,
+            ab,
+            binding_api::non_negative(rest_length)?,
+            binding_api::positive(stiffness)?,
+            binding_api::non_negative(damping)?,
+        ));
+        binding_api::add_joint(&mut self.inner, j).and_then(|i| u32::try_from(i).ok())
+    }
+
+    /// Remove joint `index` (the last joint moves into `index`).
+    #[wasm_bindgen(js_name = "removeJoint")]
+    pub fn remove_joint(&mut self, index: usize) -> bool {
+        binding_api::remove_joint(&mut self.inner, index)
+    }
+
+    /// Number of joints.
+    #[wasm_bindgen(js_name = "jointCount")]
+    pub fn joint_count(&self) -> usize {
+        self.inner.joint_count()
+    }
 }
 
 // ============================================================================
@@ -603,5 +814,135 @@ mod tests {
         // Ray pointing away from body
         let result = world.raycast(0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 50.0, 1.0);
         assert!(result.is_empty(), "Should miss body at x=100");
+    }
+
+    /// oracle: the WebAssembly calls do what the Rust API calls with the
+    /// same values do — the worlds stay bit-identical through 30 steps.
+    #[test]
+    fn binding_calls_match_the_rust_api_bit_for_bit() {
+        use crate::plane_collider::PlaneCollider;
+        use crate::shape::Shape;
+        use crate::static_collider::StaticCollider;
+        let f = Fix128::from_f64;
+        let mut w = WasmPhysicsWorld::new();
+        let mut r = PhysicsWorld::new(PhysicsConfig::default());
+        w.add_static_body(0.0, 0.0, 0.0);
+        w.add_dynamic_body(2.0, 0.0, 0.0, 1.0);
+        r.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        r.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(2, 0, 0),
+            Fix128::ONE,
+        ));
+
+        assert!(w.set_collision_radius(1, 0.5));
+        r.set_body_collision_radius(1, f(0.5));
+        assert_eq!(
+            w.add_shaped_body(0, 0.5, 0.5, 0.5, 2.0, 5.0, 3.0, 0.0),
+            Some(2)
+        );
+        let cube = Shape::Box {
+            half_extents: Vec3Fix::new(f(0.5), f(0.5), f(0.5)),
+        };
+        r.add_shaped_body(&cube, f(2.0), Vec3Fix::from_int(5, 3, 0))
+            .unwrap();
+        assert_eq!(w.add_static_plane(0.0, 2.0, 0.0, -1.0), Some(0));
+        r.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+            Vec3Fix::UNIT_Y,
+            -Fix128::ONE,
+        )));
+        assert_eq!(
+            w.add_ball_joint(0, 1, &[0.0, 0.0, 0.0, -2.0, 0.0, 0.0]),
+            Some(0)
+        );
+        r.add_joint(Joint::Ball(BallJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::from_int(-2, 0, 0),
+        )));
+        assert_eq!(w.add_spring_joint(1, 2, &[0.0; 6], 3.0, 50.0, 0.5), Some(1));
+        r.add_joint(Joint::Spring(SpringJoint::new(
+            1,
+            2,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            f(3.0),
+            f(50.0),
+            f(0.5),
+        )));
+        assert_eq!((w.joint_count(), w.static_collider_count()), (2, 1));
+
+        for _ in 0..30 {
+            w.step(1.0 / 60.0);
+            r.step(Fix128::from_ratio(1, 60));
+        }
+        for (a, b) in w.inner.bodies.iter().zip(&r.bodies) {
+            assert_eq!(
+                (a.position, a.velocity, a.rotation),
+                (b.position, b.velocity, b.rotation)
+            );
+        }
+        assert_eq!(w.inner.joints, r.joints);
+    }
+
+    /// Refused arguments return `None` / `false` and leave the world as it was.
+    #[test]
+    fn binding_calls_refuse_bad_arguments_without_touching_the_world() {
+        let mut w = WasmPhysicsWorld::new();
+        w.add_static_body(0.0, 0.0, 0.0);
+        w.add_dynamic_body(2.0, 0.0, 0.0, 1.0);
+        assert!(!w.set_collision_radius(1, 0.0));
+        assert!(!w.set_collision_radius(9, 1.0));
+        assert!(!w.clear_collision_radius(9));
+        assert_eq!(
+            w.add_shaped_body(9, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0),
+            None
+        );
+        assert_eq!(
+            w.add_shaped_body(0, 1.0, 1.0, 1.0, -1.0, 0.0, 0.0, 0.0),
+            None
+        );
+        assert!(
+            !w.set_body_shape(1, 5, 1.0, 2.0, 0.0),
+            "torus minor >= major"
+        );
+        assert_eq!(w.add_static_plane(0.0, 0.0, 0.0, 0.0), None);
+        assert_eq!(
+            w.add_static_heightfield(&[0.0; 3], 2, 2, 1.0, 0.0, 0.0, 0.0),
+            None
+        );
+        assert_eq!(w.add_static_trimesh(&[0.0; 9], &[0, 1, 3]), None);
+        assert!(!w.remove_static_collider(0));
+        assert_eq!(w.add_ball_joint(1, 1, &[0.0; 6]), None, "self joint");
+        assert_eq!(
+            w.add_ball_joint(0, 1, &[0.0; 5]),
+            None,
+            "five anchor values"
+        );
+        assert_eq!(
+            w.add_hinge_joint(0, 1, &[0.0; 6], &[0.0; 6]),
+            None,
+            "zero axes"
+        );
+        assert_eq!(
+            w.add_fixed_joint(0, 1, &[0.0; 6], &[0.0; 4]),
+            None,
+            "zero rotation"
+        );
+        assert_eq!(
+            w.add_slider_joint(0, 1, &[0.0, 0.0, 0.0], &[0.0; 6]),
+            None,
+            "zero axis"
+        );
+        assert_eq!(
+            w.add_spring_joint(0, 1, &[0.0; 6], 1.0, 0.0, 0.0),
+            None,
+            "stiffness 0"
+        );
+        assert!(!w.remove_joint(0));
+        assert_eq!(
+            (w.body_count(), w.joint_count(), w.static_collider_count()),
+            (2, 0, 0)
+        );
     }
 }

@@ -10,6 +10,8 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::binding_api;
+use crate::joint::{BallJoint, FixedJoint, HingeJoint, Joint, SliderJoint, SpringJoint};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
@@ -116,6 +118,7 @@ pub unsafe extern "C" fn alice_physics_string_free(s: *mut std::os::raw::c_char)
 
 /// C-compatible 3D vector (f64 for FFI boundary, converted to Fix128 internally)
 #[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AliceVec3 {
     /// X component
     pub x: f64,
@@ -127,6 +130,7 @@ pub struct AliceVec3 {
 
 /// C-compatible quaternion
 #[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct AliceQuat {
     /// X component (imaginary i)
     pub x: f64,
@@ -983,6 +987,422 @@ pub extern "C" fn alice_physics_version() -> *const std::os::raw::c_char {
 // Tests
 // ============================================================================
 
+// ============================================================================
+// Collision radius, shapes, static colliders, joints
+// ============================================================================
+
+/// A collision shape for [`alice_physics_body_add_shaped`] /
+/// [`alice_physics_body_set_shape`]. `kind` picks the shape and `a`, `b`, `c`
+/// its sizes (unused sizes are ignored):
+///
+/// | kind | shape     | a            | b           | c          |
+/// |------|-----------|--------------|-------------|------------|
+/// | 0    | box       | half x       | half y      | half z     |
+/// | 1    | cylinder  | radius       | half height |            |
+/// | 2    | cone      | radius       | half height |            |
+/// | 3    | ellipsoid | radius x     | radius y    | radius z   |
+/// | 4    | wedge     | width        | height      | depth      |
+/// | 5    | torus     | major radius | minor radius|            |
+///
+/// Every used size must be finite and positive; a torus needs
+/// `minor < major`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AlicePhysicsShape {
+    /// Shape kind (0 box … 5 torus, see the table above).
+    pub kind: u32,
+    /// First size.
+    pub a: f64,
+    /// Second size.
+    pub b: f64,
+    /// Third size.
+    pub c: f64,
+}
+
+impl AlicePhysicsShape {
+    fn to_shape(&self) -> Option<crate::shape::Shape> {
+        binding_api::shape(self.kind, self.a, self.b, self.c)
+    }
+}
+
+fn vec3_arg(v: &AliceVec3) -> Option<Vec3Fix> {
+    binding_api::vec3(v.x, v.y, v.z)
+}
+
+fn index_result(r: Option<usize>) -> u32 {
+    r.and_then(|i| u32::try_from(i).ok()).unwrap_or(u32::MAX)
+}
+
+/// Set a body's collision sphere radius. Returns 1 on success, 0 for a null
+/// world, an unknown body or a radius that is not finite and positive.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_set_collision_radius(
+    world: *mut PhysicsWorld,
+    body_id: u32,
+    radius: f64,
+) -> u8 {
+    ffi_guard(0, || match world.as_mut() {
+        Some(w) => u8::from(binding_api::set_collision_radius(
+            w,
+            body_id as usize,
+            radius,
+        )),
+        None => 0,
+    })
+}
+
+/// Drop a body's own collision radius; it falls back to the world default.
+/// Returns 1 on success, 0 for a null world or an unknown body.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_clear_collision_radius(
+    world: *mut PhysicsWorld,
+    body_id: u32,
+) -> u8 {
+    ffi_guard(0, || match world.as_mut() {
+        Some(w) => u8::from(binding_api::clear_collision_radius(w, body_id as usize)),
+        None => 0,
+    })
+}
+
+/// Add a dynamic body with a collision shape; its mass and inertia come from
+/// `density`. Returns the body index, or `u32::MAX` for a null world, an
+/// invalid shape, a density that is not finite and positive, or a
+/// non-finite position.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_add_shaped(
+    world: *mut PhysicsWorld,
+    shape: AlicePhysicsShape,
+    density: f64,
+    position: AliceVec3,
+) -> u32 {
+    ffi_guard(u32::MAX, || {
+        let Some(w) = world.as_mut() else {
+            return u32::MAX;
+        };
+        let (Some(s), Some(p)) = (shape.to_shape(), vec3_arg(&position)) else {
+            return u32::MAX;
+        };
+        index_result(binding_api::add_shaped_body(w, s, density, p))
+    })
+}
+
+/// Give an existing body a collision shape (its mass is unchanged). Returns 1
+/// on success, 0 for a null world, an unknown body or an invalid shape.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_set_shape(
+    world: *mut PhysicsWorld,
+    body_id: u32,
+    shape: AlicePhysicsShape,
+) -> u8 {
+    ffi_guard(0, || {
+        let (Some(w), Some(s)) = (world.as_mut(), shape.to_shape()) else {
+            return 0;
+        };
+        u8::from(binding_api::set_body_shape(w, body_id as usize, s))
+    })
+}
+
+/// Add the static plane `normal · p = offset` (the normal is normalised).
+/// Returns the static collider index, or `u32::MAX` for a null world, a zero
+/// or non-finite normal, or a non-finite offset.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_static_add_plane(
+    world: *mut PhysicsWorld,
+    normal: AliceVec3,
+    offset: f64,
+) -> u32 {
+    ffi_guard(u32::MAX, || {
+        let (Some(w), Some(n)) = (world.as_mut(), vec3_arg(&normal)) else {
+            return u32::MAX;
+        };
+        index_result(binding_api::add_static_plane(w, n, offset))
+    })
+}
+
+/// Add a static height field: `width × depth` heights (row-major, `x`
+/// fastest, both at least 2) spaced `spacing` apart from the min corner
+/// `origin`. Returns the static collider index, or `u32::MAX` for a null
+/// pointer, a size below 2, a non-positive spacing or a non-finite value.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+/// `heights` must point to `width * depth` readable `f64`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_static_add_heightfield(
+    world: *mut PhysicsWorld,
+    heights: *const f64,
+    width: u32,
+    depth: u32,
+    spacing: f64,
+    origin: AliceVec3,
+) -> u32 {
+    ffi_guard(u32::MAX, || {
+        let (Some(w), Some(o)) = (world.as_mut(), vec3_arg(&origin)) else {
+            return u32::MAX;
+        };
+        let Some(count) = (width as usize).checked_mul(depth as usize) else {
+            return u32::MAX;
+        };
+        if heights.is_null() || count == 0 {
+            return u32::MAX;
+        }
+        let hs = std::slice::from_raw_parts(heights, count);
+        index_result(binding_api::add_static_heightfield(
+            w, hs, width, depth, spacing, o,
+        ))
+    })
+}
+
+/// Add a static triangle mesh: `vertices` holds `vertex_count` `x, y, z`
+/// triples, `indices` holds `index_count` vertex indices (three per
+/// triangle). Returns the static collider index, or `u32::MAX` for a null
+/// pointer, an empty mesh, an index count that is not a multiple of 3, an
+/// index past the last vertex or a non-finite coordinate.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+/// `vertices` must point to `3 * vertex_count` readable `f64` and `indices`
+/// to `index_count` readable `u32`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_static_add_trimesh(
+    world: *mut PhysicsWorld,
+    vertices: *const f64,
+    vertex_count: u32,
+    indices: *const u32,
+    index_count: u32,
+) -> u32 {
+    ffi_guard(u32::MAX, || {
+        let Some(w) = world.as_mut() else {
+            return u32::MAX;
+        };
+        if vertices.is_null() || indices.is_null() || vertex_count == 0 || index_count == 0 {
+            return u32::MAX;
+        }
+        let Some(coords) = (vertex_count as usize).checked_mul(3) else {
+            return u32::MAX;
+        };
+        let vs = std::slice::from_raw_parts(vertices, coords);
+        let is = std::slice::from_raw_parts(indices, index_count as usize);
+        index_result(binding_api::add_static_trimesh(w, vs, is))
+    })
+}
+
+/// Remove static collider `index`; later colliders shift down by one.
+/// Returns 1 on success, 0 for a null world or an unknown index.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_static_remove(world: *mut PhysicsWorld, index: u32) -> u8 {
+    ffi_guard(0, || match world.as_mut() {
+        Some(w) => u8::from(binding_api::remove_static_collider(w, index as usize)),
+        None => 0,
+    })
+}
+
+/// Number of static colliders (0 for a null world).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_static_count(world: *const PhysicsWorld) -> u32 {
+    ffi_guard(0, || match world.as_ref() {
+        Some(w) => u32::try_from(w.static_collider_count()).unwrap_or(u32::MAX),
+        None => 0,
+    })
+}
+
+unsafe fn add_joint_ffi(world: *mut PhysicsWorld, make: impl FnOnce() -> Option<Joint>) -> u32 {
+    ffi_guard(u32::MAX, || {
+        let Some(w) = world.as_mut() else {
+            return u32::MAX;
+        };
+        match make() {
+            Some(j) => index_result(binding_api::add_joint(w, j)),
+            None => u32::MAX,
+        }
+    })
+}
+
+/// Add a ball-and-socket joint: `anchor_a` on body A meets `anchor_b` on body
+/// B (both in body-local coordinates). Returns the joint index, or `u32::MAX`
+/// for a null world, an unknown body, `body_a == body_b` or a non-finite
+/// anchor.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_joint_add_ball(
+    world: *mut PhysicsWorld,
+    body_a: u32,
+    body_b: u32,
+    anchor_a: AliceVec3,
+    anchor_b: AliceVec3,
+) -> u32 {
+    add_joint_ffi(world, || {
+        Some(Joint::Ball(BallJoint::new(
+            body_a as usize,
+            body_b as usize,
+            vec3_arg(&anchor_a)?,
+            vec3_arg(&anchor_b)?,
+        )))
+    })
+}
+
+/// Add a hinge joint: the anchors meet and `axis_a` (body A local) stays
+/// aligned with `axis_b` (body B local). Returns the joint index or
+/// `u32::MAX` (see [`alice_physics_joint_add_ball`]; the axes must also be
+/// non-zero).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_joint_add_hinge(
+    world: *mut PhysicsWorld,
+    body_a: u32,
+    body_b: u32,
+    anchor_a: AliceVec3,
+    anchor_b: AliceVec3,
+    axis_a: AliceVec3,
+    axis_b: AliceVec3,
+) -> u32 {
+    add_joint_ffi(world, || {
+        Some(Joint::Hinge(HingeJoint::new(
+            body_a as usize,
+            body_b as usize,
+            vec3_arg(&anchor_a)?,
+            vec3_arg(&anchor_b)?,
+            vec3_arg(&axis_a)?.try_normalize()?,
+            vec3_arg(&axis_b)?.try_normalize()?,
+        )))
+    })
+}
+
+/// Add a fixed (weld) joint: the anchors meet and body B keeps the rotation
+/// `relative_rotation` relative to body A (normalised; must be non-zero).
+/// Returns the joint index or `u32::MAX` (see
+/// [`alice_physics_joint_add_ball`]).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_joint_add_fixed(
+    world: *mut PhysicsWorld,
+    body_a: u32,
+    body_b: u32,
+    anchor_a: AliceVec3,
+    anchor_b: AliceVec3,
+    relative_rotation: AliceQuat,
+) -> u32 {
+    add_joint_ffi(world, || {
+        let q = &relative_rotation;
+        Some(Joint::Fixed(FixedJoint::new(
+            body_a as usize,
+            body_b as usize,
+            vec3_arg(&anchor_a)?,
+            vec3_arg(&anchor_b)?,
+            binding_api::unit_quat(q.x, q.y, q.z, q.w)?,
+        )))
+    })
+}
+
+/// Add a slider (prismatic) joint along `axis` (body A local, normalised;
+/// must be non-zero). Returns the joint index or `u32::MAX` (see
+/// [`alice_physics_joint_add_ball`]).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_joint_add_slider(
+    world: *mut PhysicsWorld,
+    body_a: u32,
+    body_b: u32,
+    axis: AliceVec3,
+    anchor_a: AliceVec3,
+    anchor_b: AliceVec3,
+) -> u32 {
+    add_joint_ffi(world, || {
+        Some(Joint::Slider(SliderJoint::new(
+            body_a as usize,
+            body_b as usize,
+            vec3_arg(&axis)?.try_normalize()?,
+            vec3_arg(&anchor_a)?,
+            vec3_arg(&anchor_b)?,
+        )))
+    })
+}
+
+/// Add a spring between the anchors with rest length `rest_length`,
+/// `stiffness` and `damping` (rest length and damping finite and not
+/// negative, stiffness finite and positive). Returns the joint index or
+/// `u32::MAX` (see [`alice_physics_joint_add_ball`]).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_joint_add_spring(
+    world: *mut PhysicsWorld,
+    body_a: u32,
+    body_b: u32,
+    anchor_a: AliceVec3,
+    anchor_b: AliceVec3,
+    rest_length: f64,
+    stiffness: f64,
+    damping: f64,
+) -> u32 {
+    add_joint_ffi(world, || {
+        Some(Joint::Spring(SpringJoint::new(
+            body_a as usize,
+            body_b as usize,
+            vec3_arg(&anchor_a)?,
+            vec3_arg(&anchor_b)?,
+            binding_api::non_negative(rest_length)?,
+            binding_api::positive(stiffness)?,
+            binding_api::non_negative(damping)?,
+        )))
+    })
+}
+
+/// Remove joint `index`. The last joint moves into `index` (its index
+/// changes). Returns 1 on success, 0 for a null world or an unknown index.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_joint_remove(world: *mut PhysicsWorld, index: u32) -> u8 {
+    ffi_guard(0, || match world.as_mut() {
+        Some(w) => u8::from(binding_api::remove_joint(w, index as usize)),
+        None => 0,
+    })
+}
+
+/// Number of joints (0 for a null world).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_joint_count(world: *const PhysicsWorld) -> u32 {
+    ffi_guard(0, || match world.as_ref() {
+        Some(w) => u32::try_from(w.joint_count()).unwrap_or(u32::MAX),
+        None => 0,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1458,6 +1878,381 @@ mod tests {
             // garbage state
             let junk = [0xFFu8; 13];
             assert_eq!(alice_physics_state_deserialize(world, junk.as_ptr(), 13), 0);
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    // ---- collision radius, shapes, static colliders, joints ----------
+
+    fn v(x: f64, y: f64, z: f64) -> AliceVec3 {
+        AliceVec3 { x, y, z }
+    }
+
+    fn fx(x: f64) -> Fix128 {
+        Fix128::from_f64(x)
+    }
+
+    fn vf(x: f64, y: f64, z: f64) -> Vec3Fix {
+        Vec3Fix::new(fx(x), fx(y), fx(z))
+    }
+
+    /// Two bodies in a fresh world, and the same world built through the
+    /// Rust API, for bit-for-bit comparison.
+    unsafe fn twin_worlds() -> (*mut PhysicsWorld, PhysicsWorld) {
+        let world = alice_physics_world_create();
+        alice_physics_body_add_static(world, v(0.0, 0.0, 0.0));
+        alice_physics_body_add_dynamic(world, v(2.0, 0.0, 0.0), 1.0);
+        let mut rust = PhysicsWorld::new(SolverConfig::default());
+        rust.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        rust.add_body(RigidBody::new_dynamic(vf(2.0, 0.0, 0.0), Fix128::ONE));
+        (world, rust)
+    }
+
+    fn same_state(a: &PhysicsWorld, b: &PhysicsWorld) {
+        assert_eq!(a.bodies.len(), b.bodies.len());
+        for (x, y) in a.bodies.iter().zip(&b.bodies) {
+            assert_eq!(
+                (
+                    x.position,
+                    x.velocity,
+                    x.rotation,
+                    x.inv_mass,
+                    x.inv_inertia
+                ),
+                (
+                    y.position,
+                    y.velocity,
+                    y.rotation,
+                    y.inv_mass,
+                    y.inv_inertia
+                )
+            );
+        }
+        assert_eq!(a.joints, b.joints);
+        assert_eq!(a.static_collider_count(), b.static_collider_count());
+    }
+
+    /// oracle: each binding call does what the Rust API call with the same
+    /// values does — the worlds stay bit-identical through 30 steps.
+    #[test]
+    fn binding_calls_match_the_rust_api_bit_for_bit() {
+        unsafe {
+            let (world, mut rust) = twin_worlds();
+            let w = &mut *world;
+
+            assert_eq!(alice_physics_body_set_collision_radius(world, 1, 0.5), 1);
+            rust.set_body_collision_radius(1, fx(0.5));
+
+            let cube = AlicePhysicsShape {
+                kind: 0,
+                a: 0.5,
+                b: 0.5,
+                c: 0.5,
+            };
+            let id = alice_physics_body_add_shaped(world, cube, 2.0, v(5.0, 3.0, 0.0));
+            assert_eq!(id, 2);
+            let rust_cube = crate::shape::Shape::Box {
+                half_extents: vf(0.5, 0.5, 0.5),
+            };
+            rust.add_shaped_body(&rust_cube, fx(2.0), vf(5.0, 3.0, 0.0))
+                .unwrap();
+
+            let cyl = AlicePhysicsShape {
+                kind: 1,
+                a: 0.25,
+                b: 1.0,
+                c: 0.0,
+            };
+            assert_eq!(alice_physics_body_set_shape(world, 1, cyl), 1);
+            let rust_cyl = crate::shape::Shape::Cylinder {
+                radius: fx(0.25),
+                half_height: Fix128::ONE,
+            };
+            assert!(rust.set_body_shape(1, &rust_cyl));
+
+            assert_eq!(
+                alice_physics_static_add_plane(world, v(0.0, 2.0, 0.0), -1.0),
+                0
+            );
+            rust.add_static_collider(crate::static_collider::StaticCollider::Plane(
+                crate::plane_collider::PlaneCollider::new(Vec3Fix::UNIT_Y, -Fix128::ONE),
+            ));
+
+            assert_eq!(
+                alice_physics_joint_add_ball(world, 0, 1, v(0.0, 0.0, 0.0), v(-2.0, 0.0, 0.0)),
+                0
+            );
+            rust.add_joint(Joint::Ball(BallJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                vf(-2.0, 0.0, 0.0),
+            )));
+            assert_eq!(
+                alice_physics_joint_add_spring(
+                    world,
+                    1,
+                    2,
+                    v(0.0, 0.0, 0.0),
+                    v(0.0, 0.0, 0.0),
+                    3.0,
+                    50.0,
+                    0.5
+                ),
+                1
+            );
+            rust.add_joint(Joint::Spring(SpringJoint::new(
+                1,
+                2,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                fx(3.0),
+                fx(50.0),
+                fx(0.5),
+            )));
+            assert_eq!(alice_physics_joint_count(world), 2);
+            assert_eq!(alice_physics_static_count(world), 1);
+
+            let dt = Fix128::from_ratio(1, 60);
+            for _ in 0..30 {
+                assert_eq!(alice_physics_world_step(world, 1.0 / 60.0), 1);
+                rust.step(dt);
+            }
+            same_state(w, &rust);
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    /// oracle: hinge / fixed / slider joints and the mesh colliders reach
+    /// the world with the values given (axes normalised, rotation
+    /// normalised), and removal shifts or swaps as documented.
+    #[test]
+    fn joint_and_static_constructors_store_what_was_passed() {
+        unsafe {
+            let (world, _) = twin_worlds();
+            alice_physics_body_add_dynamic(world, v(0.0, 5.0, 0.0), 1.0);
+            let h = alice_physics_joint_add_hinge(
+                world,
+                0,
+                1,
+                v(0.0, 0.0, 0.0),
+                v(1.0, 0.0, 0.0),
+                v(0.0, 0.0, 3.0),
+                v(0.0, 0.0, 1.0),
+            );
+            let f = alice_physics_joint_add_fixed(
+                world,
+                0,
+                2,
+                v(0.0, 0.0, 0.0),
+                v(0.0, 0.0, 0.0),
+                AliceQuat {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    w: 2.0,
+                },
+            );
+            let s = alice_physics_joint_add_slider(
+                world,
+                1,
+                2,
+                v(2.0, 0.0, 0.0),
+                v(0.0, 0.0, 0.0),
+                v(0.0, 0.0, 0.0),
+            );
+            assert_eq!((h, f, s), (0, 1, 2));
+            let w = &*world;
+            match w.joints[0] {
+                Joint::Hinge(j) => {
+                    assert_eq!((j.body_a, j.body_b), (0, 1));
+                    assert_eq!(j.local_axis_a, Vec3Fix::UNIT_Z);
+                    assert_eq!(j.local_anchor_b, vf(1.0, 0.0, 0.0));
+                }
+                other => panic!("expected a hinge, got {other:?}"),
+            }
+            match w.joints[1] {
+                Joint::Fixed(j) => assert_eq!(j.relative_rotation, QuatFix::IDENTITY),
+                other => panic!("expected a fixed joint, got {other:?}"),
+            }
+            match w.joints[2] {
+                Joint::Slider(j) => assert_eq!(j.local_axis, Vec3Fix::UNIT_X),
+                other => panic!("expected a slider, got {other:?}"),
+            }
+            assert_eq!(alice_physics_joint_remove(world, 0), 1);
+            assert_eq!(alice_physics_joint_count(world), 2);
+            let w = &*world;
+            assert!(
+                matches!(w.joints[0], Joint::Slider(_)),
+                "the last joint moves into the hole"
+            );
+
+            let heights = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5];
+            assert_eq!(
+                alice_physics_static_add_heightfield(
+                    world,
+                    heights.as_ptr(),
+                    3,
+                    2,
+                    1.0,
+                    v(0.0, 0.0, 0.0)
+                ),
+                0
+            );
+            let verts = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+            let idx = [0u32, 1, 2];
+            assert_eq!(
+                alice_physics_static_add_trimesh(world, verts.as_ptr(), 3, idx.as_ptr(), 3),
+                1
+            );
+            assert_eq!(alice_physics_static_count(world), 2);
+            assert_eq!(alice_physics_static_remove(world, 0), 1);
+            assert_eq!(alice_physics_static_count(world), 1);
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    /// Every refused argument returns the sentinel and leaves the world as
+    /// it was; nothing panics (a panic would have set the error slot).
+    #[test]
+    fn binding_calls_refuse_bad_arguments_without_touching_the_world() {
+        unsafe {
+            let (world, _) = twin_worlds();
+            alice_physics_clear_last_error();
+            let nan = f64::NAN;
+            let null: *mut PhysicsWorld = std::ptr::null_mut();
+            let unit = AlicePhysicsShape {
+                kind: 0,
+                a: 1.0,
+                b: 1.0,
+                c: 1.0,
+            };
+            let q1 = AliceQuat {
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+                w: 1.0,
+            };
+            let o = v(0.0, 0.0, 0.0);
+
+            for r in [0.0, -1.0, nan, f64::INFINITY] {
+                assert_eq!(
+                    alice_physics_body_set_collision_radius(world, 1, r),
+                    0,
+                    "radius {r}"
+                );
+            }
+            assert_eq!(alice_physics_body_set_collision_radius(world, 9, 1.0), 0);
+            assert_eq!(alice_physics_body_set_collision_radius(null, 0, 1.0), 0);
+            assert_eq!(alice_physics_body_clear_collision_radius(world, 9), 0);
+
+            let bad_shapes = [
+                AlicePhysicsShape { kind: 6, ..unit },
+                AlicePhysicsShape { a: 0.0, ..unit },
+                AlicePhysicsShape { c: nan, ..unit },
+                AlicePhysicsShape {
+                    kind: 5,
+                    a: 1.0,
+                    b: 1.0,
+                    c: 0.0,
+                },
+            ];
+            for s in bad_shapes {
+                assert_eq!(alice_physics_body_add_shaped(world, s, 1.0, o), u32::MAX);
+                assert_eq!(alice_physics_body_set_shape(world, 1, s), 0);
+            }
+            assert_eq!(alice_physics_body_add_shaped(world, unit, 0.0, o), u32::MAX);
+            assert_eq!(
+                alice_physics_body_add_shaped(world, unit, 1.0, v(nan, 0.0, 0.0)),
+                u32::MAX
+            );
+            assert_eq!(alice_physics_body_set_shape(world, 9, unit), 0);
+
+            assert_eq!(alice_physics_static_add_plane(world, o, 0.0), u32::MAX);
+            assert_eq!(
+                alice_physics_static_add_plane(world, v(0.0, 1.0, 0.0), nan),
+                u32::MAX
+            );
+            let hs = [0.0; 4];
+            assert_eq!(
+                alice_physics_static_add_heightfield(world, hs.as_ptr(), 1, 4, 1.0, o),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_static_add_heightfield(world, hs.as_ptr(), 2, 2, 0.0, o),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_static_add_heightfield(world, std::ptr::null(), 2, 2, 1.0, o),
+                u32::MAX
+            );
+            let vs = [0.0; 9];
+            assert_eq!(
+                alice_physics_static_add_trimesh(world, vs.as_ptr(), 3, [0u32, 1, 3].as_ptr(), 3),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_static_add_trimesh(world, vs.as_ptr(), 3, [0u32, 1].as_ptr(), 2),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_static_add_trimesh(world, vs.as_ptr(), 0, [0u32, 1, 2].as_ptr(), 3),
+                u32::MAX
+            );
+            assert_eq!(alice_physics_static_remove(world, 0), 0);
+
+            assert_eq!(
+                alice_physics_joint_add_ball(world, 1, 1, o, o),
+                u32::MAX,
+                "self joint"
+            );
+            assert_eq!(
+                alice_physics_joint_add_ball(world, 0, 9, o, o),
+                u32::MAX,
+                "unknown body"
+            );
+            assert_eq!(
+                alice_physics_joint_add_ball(world, 0, 1, v(nan, 0.0, 0.0), o),
+                u32::MAX
+            );
+            assert_eq!(
+                alice_physics_joint_add_hinge(world, 0, 1, o, o, o, v(0.0, 0.0, 1.0)),
+                u32::MAX,
+                "zero axis"
+            );
+            assert_eq!(
+                alice_physics_joint_add_fixed(world, 0, 1, o, o, AliceQuat { w: 0.0, ..q1 }),
+                u32::MAX,
+                "zero rotation"
+            );
+            assert_eq!(
+                alice_physics_joint_add_slider(world, 0, 1, o, o, o),
+                u32::MAX,
+                "zero axis"
+            );
+            assert_eq!(
+                alice_physics_joint_add_spring(world, 0, 1, o, o, 1.0, 0.0, 0.0),
+                u32::MAX,
+                "stiffness 0"
+            );
+            assert_eq!(
+                alice_physics_joint_add_spring(world, 0, 1, o, o, -1.0, 1.0, 0.0),
+                u32::MAX,
+                "rest < 0"
+            );
+            assert_eq!(alice_physics_joint_add_ball(null, 0, 1, o, o), u32::MAX);
+            assert_eq!(alice_physics_joint_remove(world, 0), 0);
+            assert_eq!(alice_physics_joint_count(null), 0);
+            assert_eq!(alice_physics_static_count(null), 0);
+
+            let w = &*world;
+            assert_eq!(w.bodies.len(), 2);
+            assert!(w.joints.is_empty());
+            assert_eq!(w.static_collider_count(), 0);
+            assert!(
+                alice_physics_last_error().is_null(),
+                "a refusal must not come from a caught panic"
+            );
             alice_physics_world_destroy(world);
         }
     }

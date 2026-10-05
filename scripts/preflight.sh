@@ -143,6 +143,10 @@ cargo test --lib --features "$NATIVE"
 step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
 
+step "cargo test --lib (wasm module) + cargo check (python)"
+cargo test --lib --features "wasm" "wasm::"
+cargo check --lib --features "python"
+
 step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
 cargo test --lib --features "neural,replay,analytics"
 
