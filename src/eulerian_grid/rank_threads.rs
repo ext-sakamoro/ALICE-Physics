@@ -119,12 +119,11 @@ fn mesh(ranks: usize) -> Vec<Vec<Option<MemoryLink>>> {
     let mut links: Vec<Vec<Option<MemoryLink>>> = (0..ranks)
         .map(|_| (0..ranks).map(|_| None).collect())
         .collect();
-    for a in 0..ranks {
-        for b in a + 1..ranks {
-            let (to_b, to_a) = MemoryLink::pair();
-            links[a][b] = Some(to_b);
-            links[b][a] = Some(to_a);
-        }
+    let pairs = (0..ranks).flat_map(|a| (a + 1..ranks).map(move |b| (a, b)));
+    for (a, b) in pairs {
+        let (to_b, to_a) = MemoryLink::pair();
+        links[a][b] = Some(to_b);
+        links[b][a] = Some(to_a);
     }
     links
 }
