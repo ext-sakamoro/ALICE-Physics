@@ -115,6 +115,7 @@ were introduced during that release window.
 - `scripts/land.py`: 作業 worktree の commit を main に取り込む script commit の検査 (author・公開語彙・`src/` 変更時の CHANGELOG 行)、`--fast` preflight、CI・scripts・Cargo・bindings に触れる変更は `ci/<id>` branch の CI を待つ、最新の main へ rebase (生成物の衝突は main 側を取って再生成)、生成物の再生成と検査、main が動いたら再試行 `.gitattributes` で `CHANGELOG.md` を union merge にした
 - `pair_potential::{PairPotential, LennardJones, Morse, Coulomb, Yukawa, Truncated, ShiftMode, PairPotentialError, COULOMB_CONSTANT, lorentz_berthelot}`: 対ポテンシャル `U(r)` と動径力 `F = −dU/dr` Lennard-Jones 12-6、Morse (`D(1 − e^{−a(r−r_e)})² − D`、最小 `−D`)、Coulomb (`electromagnetic` の点電荷と同じ定数 `8.99e9` と符号規約)、遮蔽 Coulomb (Yukawa、`e^{−r/λ}`) カットオフは明示の `ShiftMode` (なし / energy shift / force shift) 混合則は Lorentz–Berthelot `r ≤ 0` と固定小数点の範囲外は `Err` `Fix128` のみで `no_std` でも使える
 - `molecular_dynamics::{VelocityVerlet, PeriodicBox, PairForces, MdError, pair_forces_cell_list, pair_forces_all_pairs}`: 点粒子の速度 Verlet (NVE)、直方体の周期境界と最小像規約、セル幅 `r_c` 以上のセルリスト (密度一定で O(N)) 固定小数点の加算は厳密なので力の和は対の順序に依らず、セルリストと全対和は bit 一致 運動エネルギー・ポテンシャルエネルギー・運動量・瞬時温度 `2K/(k_B(3N−3))` (`k_B` は引数) 箱の辺が `2 r_c` 未満は `Err`、失敗した step は状態を変えない
+- `tests/js/bindings.test.mjs` と `scripts/run_js_binding_tests.sh`: wasm-pack で作った package を Node から呼び、静的平面・高さ場への着地 (半径の高さで止まる)、ball ジョイントの腕の長さ、同じ呼び出しで bit 一致、不正な値の拒否を検査 CI に job `js-binding` を追加
 
 ### Changed
 
