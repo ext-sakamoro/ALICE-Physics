@@ -1410,6 +1410,12 @@ pub struct PhysicsWorld {
     // ── Integrated Subsystems ──────────────────────────────────────────
     /// Joint constraints (solved each substep alongside distance/contact)
     pub joints: Vec<Joint>,
+    /// Joint motors (one-axis PD controllers), applied every substep by
+    /// [`Self::step`]; see [`Self::add_joint_motor`]
+    joint_motors: Vec<crate::motor::JointMotor>,
+    /// Three-axis rotation motors `(joint index, controller)`, applied every
+    /// substep by [`Self::step`]; see [`Self::add_joint_motor_3d`]
+    joint_motors_3d: Vec<(usize, crate::motor::PdController3D)>,
     /// Force fields applied at the start of each step
     pub force_fields: Vec<ForceFieldInstance>,
     /// Contact and trigger event collector
@@ -1570,6 +1576,8 @@ impl PhysicsWorld {
             #[cfg(feature = "gpu-solver-bridge")]
             gpu_solver_bridge: None,
             joints: Vec::new(),
+            joint_motors: Vec::new(),
+            joint_motors_3d: Vec::new(),
             force_fields: Vec::new(),
             events: EventCollector::new(),
             islands: IslandManager::new(0, SleepConfig::default()),
@@ -1890,6 +1898,25 @@ impl PhysicsWorld {
             .retain(|c| c.body_a != idx && c.body_b != idx);
         self.contact_constraints
             .retain(|c| c.body_a != idx && c.body_b != idx);
+        if !self.joint_motors.is_empty() || !self.joint_motors_3d.is_empty() {
+            // Motors follow their joint: new index of each kept joint, `None`
+            // for a joint dropped with the body.
+            let mut next = 0;
+            let joint_map: Vec<Option<usize>> = self
+                .joints
+                .iter()
+                .map(|j| {
+                    let (a, b) = j.bodies();
+                    if a != idx && b != idx {
+                        next += 1;
+                        Some(next - 1)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            self.remap_motor_joints(|j| joint_map.get(j).copied().flatten());
+        }
         self.joints.retain(|j| {
             let (a, b) = j.bodies();
             a != idx && b != idx
@@ -2067,11 +2094,181 @@ impl PhysicsWorld {
     }
 
     /// Remove a joint by index (swap-remove), returns the removed joint
+    ///
+    /// Motors follow their joint: a motor on the removed joint is removed with
+    /// it, and a motor on the last joint (moved into `idx`) is re-pointed to
+    /// `idx`.
     pub fn remove_joint(&mut self, idx: usize) -> Option<Joint> {
         if idx >= self.joints.len() {
             return None;
         }
+        let last = self.joints.len() - 1;
+        self.remap_motor_joints(|j| {
+            if j == idx {
+                None
+            } else if j == last {
+                Some(idx)
+            } else {
+                Some(j)
+            }
+        });
         Some(self.joints.swap_remove(idx))
+    }
+
+    /// Re-point (or drop, on `None`) every motor's joint index through `map`.
+    fn remap_motor_joints(&mut self, map: impl Fn(usize) -> Option<usize>) {
+        self.joint_motors.retain_mut(|m| match map(m.joint_index) {
+            Some(j) => {
+                m.joint_index = j;
+                true
+            }
+            None => false,
+        });
+        self.joint_motors_3d
+            .retain_mut(|(joint, _)| match map(*joint) {
+                Some(j) => {
+                    *joint = j;
+                    true
+                }
+                None => false,
+            });
+    }
+
+    // ── Joint motors ──────────────────────────────────────────────────
+
+    /// Attach a one-axis PD motor to joint `joint_index`, returns the motor
+    /// index.
+    ///
+    /// The motor is applied by [`Self::step`] every substep (see
+    /// [`crate::motor::apply_motors`] for the generalised coordinate per joint
+    /// type: the twist angle for a hinge, the centre distance otherwise). The
+    /// controller is used as given, so a controller still in
+    /// [`crate::motor::MotorMode::Off`] does nothing until a target is set
+    /// ([`Self::set_joint_motor_velocity_target`] / [`Self::joint_motor_mut`]).
+    /// Motors follow their joint through [`Self::remove_joint`] and
+    /// [`Self::remove_body`]; a motor whose index no longer names a joint
+    /// (after editing the public `joints` field directly) does nothing.
+    pub fn add_joint_motor(
+        &mut self,
+        joint_index: usize,
+        controller: crate::motor::PdController,
+    ) -> usize {
+        self.joint_motors
+            .push(crate::motor::JointMotor::new(joint_index, controller));
+        self.joint_motors.len() - 1
+    }
+
+    /// The motor added as `motor` by [`Self::add_joint_motor`], for changing its
+    /// gains or targets between steps.
+    #[must_use]
+    pub fn joint_motor_mut(&mut self, motor: usize) -> Option<&mut crate::motor::JointMotor> {
+        self.joint_motors.get_mut(motor)
+    }
+
+    /// Switch motor `motor` to velocity mode with `target` (rad/s for a hinge,
+    /// m/s along the centre line otherwise). Returns `false` if there is no
+    /// such motor.
+    pub fn set_joint_motor_velocity_target(&mut self, motor: usize, target: Fix128) -> bool {
+        match self.joint_motors.get_mut(motor) {
+            Some(m) => {
+                m.controller.set_velocity_target(target);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Turn motor `motor` off (it applies no force until a target is set
+    /// again). Returns `false` if there is no such motor.
+    pub fn disable_joint_motor(&mut self, motor: usize) -> bool {
+        match self.joint_motors.get_mut(motor) {
+            Some(m) => {
+                m.controller.disable();
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Attach a three-axis rotation motor with per-axis gains `kp` / `kd` and
+    /// torque cap `max_torque` to joint `joint_index`, returns its index.
+    ///
+    /// The motor starts `Off`; [`Self::set_joint_motor_3d_rotation_target`]
+    /// drives the joint's relative rotation `rotation_b * rotation_a⁻¹` to a
+    /// target (see [`crate::motor::PdController3D::compute_torque`]). It
+    /// follows its joint through removals like [`Self::add_joint_motor`].
+    pub fn add_joint_motor_3d(
+        &mut self,
+        joint_index: usize,
+        kp: Vec3Fix,
+        kd: Vec3Fix,
+        max_torque: Fix128,
+    ) -> usize {
+        self.joint_motors_3d.push((
+            joint_index,
+            crate::motor::PdController3D::new(kp, kd, max_torque),
+        ));
+        self.joint_motors_3d.len() - 1
+    }
+
+    /// The controller of rotation motor `motor` ([`Self::add_joint_motor_3d`]).
+    #[must_use]
+    pub fn joint_motor_3d_mut(
+        &mut self,
+        motor: usize,
+    ) -> Option<&mut crate::motor::PdController3D> {
+        self.joint_motors_3d.get_mut(motor).map(|(_, c)| c)
+    }
+
+    /// Drive rotation motor `motor` to the relative rotation `target`
+    /// (position mode). Returns `false` if there is no such motor.
+    pub fn set_joint_motor_3d_rotation_target(&mut self, motor: usize, target: QuatFix) -> bool {
+        match self.joint_motors_3d.get_mut(motor) {
+            Some((_, c)) => {
+                c.set_rotation_target(target);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// Apply every joint motor for one (sub)step of length `dt`.
+    ///
+    /// A sleeping body a motor moves is woken with its island, otherwise the
+    /// motor's velocity change would be discarded by the sleep skip in
+    /// `integrate_positions`. A motor whose output is zero does not wake
+    /// anything, so a motor resting at its target lets the joint sleep.
+    fn apply_joint_motors(&mut self, dt: Fix128) {
+        if self.joint_motors.is_empty() && self.joint_motors_3d.is_empty() {
+            return;
+        }
+        let mut asleep: Vec<(usize, Vec3Fix, Vec3Fix)> = Vec::new();
+        let n = self.bodies.len();
+        let pairs = self
+            .joint_motors
+            .iter()
+            .map(|m| m.joint_index)
+            .chain(self.joint_motors_3d.iter().map(|(j, _)| *j));
+        for j in pairs {
+            if let Some(joint) = self.joints.get(j) {
+                let (a, b) = joint.bodies();
+                for x in [a, b] {
+                    if x < n && self.islands.is_sleeping(x) {
+                        asleep.push((x, self.bodies[x].velocity, self.bodies[x].angular_velocity));
+                    }
+                }
+            }
+        }
+        crate::motor::apply_motors(&self.joint_motors, &self.joints, &mut self.bodies, dt);
+        crate::motor::apply_motors_3d(&self.joint_motors_3d, &self.joints, &mut self.bodies, dt);
+        for (x, v, w) in asleep {
+            let body = &self.bodies[x];
+            if (body.velocity != v || body.angular_velocity != w)
+                && x < self.islands.sleep_data.len()
+            {
+                self.islands.wake_island(x);
+            }
+        }
     }
 
     /// Number of joints
@@ -2693,7 +2890,8 @@ impl PhysicsWorld {
     /// 1. Begin event frame
     /// 2. Apply force fields to body velocities
     /// 3. Detect collisions (BVH broad-phase + sphere narrow-phase)
-    /// 4. Substep loop (integrate, solve constraints + joints, update velocities)
+    /// 4. Substep loop (joint motors, integrate, solve constraints + joints,
+    ///    update velocities)
     /// 5. Update sleeping states
     /// 6. End event frame (generates end-of-contact events)
     ///
@@ -3217,6 +3415,9 @@ impl PhysicsWorld {
         if !self.force_fields.is_empty() {
             apply_force_fields(&self.force_fields, &mut self.bodies, dt);
         }
+        // Joint motors: once per tick with the full `dt`, like the force
+        // fields (TGS owns its sub-stepping, see the method doc).
+        self.apply_joint_motors(dt);
         self.advance_kinematic_targets_for_tgs(dt);
 
         // Phase 2: Collision detection once for the whole tick (not
@@ -3522,6 +3723,8 @@ impl PhysicsWorld {
 
     /// Single substep
     fn substep(&mut self, dt: Fix128) {
+        // 0. Joint motors act as external forces / torques of this substep.
+        self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
 
@@ -3559,6 +3762,7 @@ impl PhysicsWorld {
     /// Single substep with batched constraint solving
     #[cfg(feature = "parallel")]
     fn substep_batched(&mut self, dt: Fix128) {
+        self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
 
@@ -4713,6 +4917,7 @@ impl PhysicsWorld {
         bridge: &mut B,
         dt: Fix128,
     ) {
+        self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
 
