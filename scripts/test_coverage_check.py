@@ -73,15 +73,9 @@ def run(root: Path, exempt: dict[str, str] | None = None, write_status: bool = T
     """`write_status` regenerates docs/coverage/status.md first, so the cases that
     are not about that file do not need to keep it in step."""
     out, err = io.StringIO(), io.StringIO()
-    saved = dict(cc.MARKER_EXEMPT)
-    try:
-        cc.MARKER_EXEMPT.clear()
-        cc.MARKER_EXEMPT.update(exempt or {})
-        with redirect_stdout(out), redirect_stderr(err):
-            code = cc.main(["--root", str(root), *(["--write-status"] if write_status else [])])
-    finally:
-        cc.MARKER_EXEMPT.clear()
-        cc.MARKER_EXEMPT.update(saved)
+    with redirect_stdout(out), redirect_stderr(err):
+        code = cc.main(["--root", str(root), *(["--write-status"] if write_status else [])],
+                       exempt=dict(exempt or {}))
     return code, out.getvalue(), err.getvalue()
 
 
