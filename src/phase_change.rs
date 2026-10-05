@@ -10,6 +10,7 @@
 //!
 //! Each cell tracks: temperature, phase state, and a latent-heat buffer.
 //! Transitions use the enthalpy method (Voller & Cross 1981; Carslaw &
+// LIMITATION(COV-THERM-069): with the heat capacity normalised to 1 the latent heats are in kelvin-equivalent units
 //! Jaeger ch. XI for the Stefan problem): with the heat capacity normalised
 //! to 1 the latent heats are in kelvin-equivalent units, and each `update`
 //! moves temperature above a transition point into the buffer (or releases

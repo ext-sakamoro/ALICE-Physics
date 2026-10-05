@@ -340,6 +340,7 @@ pub fn transient_step_1d(temperatures: &mut [f32], material: &ThermalMaterial, d
 /// (I − r/2 · L) T_new = (I + r/2 · L) T_old
 /// ```
 ///
+// LIMITATION(COV-THERM-010): where `r = α(T_i) · dt / dx²` and `L` is the 1-D Laplacian stencil
 /// where `r = α(T_i) · dt / dx²` and `L` is the 1-D Laplacian
 /// stencil, is solved by the Thomas algorithm (tridiagonal LU) in
 /// `O(N)` time. Compared to [`transient_step_1d`] this is
