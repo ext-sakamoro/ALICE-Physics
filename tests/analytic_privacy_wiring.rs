@@ -9,7 +9,11 @@
 //!   `Σ + ε ≤ ε_max` (equality accepted), `is_exhausted` is `Σ ≥ ε_max`,
 //!   `query_count` is the number of accepted spends, and `reset` reproduces
 //!   `PrivacyBudget::new(ε_max)` bit for bit.
-//! * **xorshift**: the test carries its own copy of the three-shift step
+//! * **xorshift**: the test carries its own copy of the seed scramble (one
+//!   splitmix64 step: add `0x9E37_79B9_7F4A_7C15`, then
+//!   `z ^= z >> 30; z *= 0xBF58_476D_1CE4_E5B9; z ^= z >> 27;
+//!   z *= 0x94D0_49BB_1331_11EB; z ^= z >> 31`, from Steele, Lea and Flood,
+//!   OOPSLA 2014, and Vigna's `splitmix64.c`), of the three-shift step
 //!   (`x ^= x << 13; x ^= x >> 7; x ^= x << 17`) and of `U = (x >> 11)·2⁻⁵³`,
 //!   so every draw of the library generator is predicted from the seed. For
 //!   `next_f64_range(lo, hi)` with `hi − lo` a power of two the product is
@@ -69,15 +73,37 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 // Test-side generator copy (independent of the library's method bodies)
 // ---------------------------------------------------------------------------
 
-/// The test's own xorshift64 step and uniform mapping.
+/// The test's own splitmix64 step (golden-gamma add, then the finaliser),
+/// written out from the published constants (Steele, Lea, Flood, OOPSLA 2014;
+/// Vigna, `splitmix64.c`), not taken from the library.
+fn splitmix64_ref(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+/// The test's own seed scramble, xorshift64 step and uniform mapping.
 struct RefRng(u64);
 
 impl RefRng {
-    const NONZERO_SEED: u64 = 0x853c_49e6_748f_ea9b;
+    /// State used when the scrambled seed would be zero (xorshift cannot
+    /// leave the all-zero state).
+    const NONZERO_STATE: u64 = 0x853c_49e6_748f_ea9b;
+    /// The one seed whose splitmix64 image is zero, found by inverting the
+    /// finaliser step by step (xor-shift inverse, modular inverse of each
+    /// multiplier, minus the golden gamma) in a separate computation.
+    const ZERO_IMAGE_SEED: u64 = 0x61c8_8646_80b5_83eb;
     const TWO_POW_MINUS_53: f64 = 1.0 / 9_007_199_254_740_992.0;
 
     fn new(seed: u64) -> Self {
-        Self(if seed == 0 { Self::NONZERO_SEED } else { seed })
+        let z = splitmix64_ref(seed);
+        Self(if z == 0 { Self::NONZERO_STATE } else { z })
+    }
+
+    /// Start from a raw xorshift state, bypassing the seed scramble.
+    fn from_state(state: u64) -> Self {
+        Self(state)
     }
 
     fn step(&mut self) -> u64 {
@@ -283,7 +309,8 @@ fn budget_degenerate_inputs() {
 /// `next_f64_range(lo, hi)` equals `(hi − lo)·U + lo` from the seed when the
 /// width is a power of two, and stays in `[lo, hi)`; `next_bool(p)` is
 /// `U < p`; the same seed reproduces the sequence, different seeds differ,
-/// seed 0 is remapped to the documented constant.
+/// the seed is scrambled by splitmix64 and the one seed that scrambles to
+/// zero is remapped to the documented non-zero state.
 #[test]
 fn xorshift_range_and_bool_follow_the_seed() {
     let ranges = [
@@ -352,14 +379,26 @@ fn xorshift_range_and_bool_follow_the_seed() {
     }
     assert_eq!(same, 0, "seeds 99 and 100 must not collide in 64 draws");
 
-    // Seed 0 is remapped to the non-zero constant.
+    // The test's splitmix64 against published values: Vigna's reference
+    // `splitmix64.c` seeded with 0 outputs 0xE220_A839_7B1D_CDAF first, and
+    // the seed found by inverting the finaliser maps to zero.
+    assert_eq!(splitmix64_ref(0), 0xe220_a839_7b1d_cdaf);
+    assert_eq!(splitmix64_ref(RefRng::ZERO_IMAGE_SEED), 0);
+
+    // Seed 0 is an ordinary seed now: its state is splitmix64(0), not zero.
     let mut zero = XorShift64::new(0);
-    let mut remapped = XorShift64::new(RefRng::NONZERO_SEED);
+    let mut rf = RefRng::from_state(0xe220_a839_7b1d_cdaf);
     for _ in 0..16 {
-        assert_eq!(
-            bits(zero.next_f64_range(0.0, 1.0)),
-            bits(remapped.next_f64_range(0.0, 1.0))
-        );
+        assert_eq!(bits(zero.next_f64_range(0.0, 1.0)), bits(rf.uniform()));
+    }
+    // The one seed that scrambles to zero is remapped to the non-zero state,
+    // so the generator never sits in the xorshift fixed point 0.
+    let mut remapped = XorShift64::new(RefRng::ZERO_IMAGE_SEED);
+    let mut rf = RefRng::from_state(RefRng::NONZERO_STATE);
+    for _ in 0..16 {
+        let got = remapped.next_u64();
+        assert_ne!(got, 0);
+        assert_eq!(got, rf.step());
     }
 }
 

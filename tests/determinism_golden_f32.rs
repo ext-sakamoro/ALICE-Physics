@@ -292,7 +292,7 @@ fn golden_sdf_destruction() {
 // 5. privacy — Laplace (ln) + randomized response (exp), fixed seeds
 // ---------------------------------------------------------------------------
 
-const GOLDEN_PRIVACY: &str = "77fa76a6a8b314f7321712495ccc22b7f13bc559f67a143a029a9b9600b40be7";
+const GOLDEN_PRIVACY: &str = "3d55a1ff0dc76b1d26dc6ed5fa3a86277361dee009ef8e7ba4a8c327c6ca5548";
 
 #[test]
 fn golden_privacy() {

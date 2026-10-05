@@ -39,12 +39,31 @@ pub struct XorShift64 {
 
 impl XorShift64 {
     /// Create a new PRNG with given seed
+    ///
+    /// The seed is scrambled with one splitmix64 step before it becomes the
+    /// xorshift state, so nearby seeds (1, 2, 3, ...) start from unrelated
+    /// states and their first draws are not correlated or tiny
+    /// (AUD-A-S4W3-030). Without this, a small seed is a state with only a few
+    /// low bits set and the first outputs of every small seed are below 1e-6.
+    ///
+    /// The step is the splitmix64 output function: add the golden gamma
+    /// `0x9E37_79B9_7F4A_7C15`, then the finaliser
+    /// `z ^= z >> 30; z *= 0xBF58_476D_1CE4_E5B9; z ^= z >> 27;
+    /// z *= 0x94D0_49BB_1331_11EB; z ^= z >> 31` (wrapping). Source: G. L.
+    /// Steele Jr., D. Lea, C. H. Flood, "Fast splittable pseudorandom number
+    /// generators", OOPSLA 2014, with the constants of S. Vigna's reference
+    /// implementation `splitmix64.c` (<https://prng.di.unimi.it/splitmix64.c>).
+    ///
+    /// xorshift cannot leave the all-zero state. splitmix64 is a bijection on
+    /// `u64`, so exactly one seed scrambles to zero; that seed is mapped to
+    /// the fixed non-zero state `0x853C_49E6_748F_EA9B`, so the state is never
+    /// zero for any seed.
     #[inline]
     #[must_use]
     pub const fn new(seed: u64) -> Self {
-        // Ensure non-zero state
+        let z = crate::sketch::splitmix64(seed);
         Self {
-            state: if seed == 0 { 0x853c49e6748fea9b } else { seed },
+            state: if z == 0 { 0x853c49e6748fea9b } else { z },
         }
     }
 
