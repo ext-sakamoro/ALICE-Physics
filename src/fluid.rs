@@ -11,6 +11,7 @@
 //! 4. Apply viscosity and vorticity confinement
 //! 5. Update velocities
 //!
+// LIMITATION(COV-CFD-088): Known limitation: the density constraint is nearly inert
 //! # Known limitation: the density constraint is nearly inert
 //!
 //! The constraint multiplier `lambda = -C / (sum |grad W|^2 + eps)` divides by the raw kernel

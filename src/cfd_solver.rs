@@ -21,6 +21,7 @@
 //! 6. Reinit level set (fast sweeping, every reinit_every_n steps)
 //! ```
 //!
+// LIMITATION(COV-CFD-026): This is a first-order operator-splitting scheme; adequate for engineering demos and validation tests. Higher-order RK3 time stepping is a future upgrade.
 //! This is a first-order operator-splitting scheme; adequate for engineering
 //! demos and validation tests. Higher-order RK3 time stepping is a future
 //! upgrade. The pressure projection of [`CfdSolver::step`] is multigrid when
@@ -97,6 +98,7 @@ pub enum AdvectionScheme {
 /// | variant | per-iteration cost | stops | reports |
 /// |---|---|---|---|
 /// | `RedBlackGs` | one sweep | fixed `sweeps` | nothing |
+// LIMITATION(COV-CFD-071): nothing; refused off a power-of-two grid
 /// | `Multigrid` | one W-cycle (grid-independent rate) | fixed `cycles` | nothing; refused off a power-of-two grid |
 /// | `Jacobi` | one matrix-vector product | fixed `iterations` | nothing |
 /// | `BiCgStab` | ~7 dot products + 2 operator applications | `‖r‖_∞ < tolerance` or `max_iterations` | [`BicgstabStats`] |
@@ -104,6 +106,7 @@ pub enum AdvectionScheme {
 /// | `BandedGs` | as `DecomposedGs`, every rank holding only its band | fixed `sweeps` | nothing; bit-identical to `RedBlackGs` |
 /// | `DecomposedMultigrid` | one W-cycle, over `ranks` `z` slabs, every rank holding only its band | fixed `cycles` | nothing; bit-identical to `Multigrid`; refused off a power-of-two grid |
 ///
+// LIMITATION(COV-CFD-075): The fixed-count solvers never say whether they converged; on a large grid a short count leaves a smooth divergence of order one.
 /// ⚠️ The fixed-count solvers never say whether they converged; on a large
 /// grid a short count leaves a smooth divergence of order one. `BiCgStab` is
 /// the only one that returns a verdict.
@@ -550,6 +553,7 @@ pub enum TurbulenceModel {
     /// grid strain, clamped to `[0.05, 0.25]`; under uniform strain the ratio
     /// is exactly one and the step is bit-identical to
     /// [`TurbulenceModel::Smagorinsky`]. This is the ratio form of
+    // LIMITATION(COV-CFD-044): This is the ratio form of `turbulence::dynamic_smagorinsky_cs`, not the Germano least-squares procedure.
     /// `turbulence::dynamic_smagorinsky_cs`, not the Germano least-squares
     /// procedure.
     DynamicSmagorinsky,
@@ -573,6 +577,7 @@ pub enum TurbulenceModel {
     /// the wall cell (21 % too steep on a log profile, independently of
     /// `dx`).
     ///
+    // LIMITATION(COV-CFD-052): only that interface and that cell are replaced; from the third cell on the ordinary discretisation stands, and a cell with walls in reach on both sides (a three-cell gap) keeps the finite difference.
     /// ⚠️ Limitation: only that interface and that cell are replaced; from
     /// the third cell on the ordinary discretisation stands, and a cell with
     /// walls in reach on both sides (a three-cell gap) keeps the finite
