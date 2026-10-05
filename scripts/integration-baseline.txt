@@ -108,7 +108,6 @@ src/plastic.rs::NortonCreep::petg_room_temp
 src/plastic.rs::PlasticModel::with_hardening
 src/replay.rs::ReplayPlayer::body_count
 src/replay.rs::ReplayRecorder::flush
-src/scene_io.rs::PhysicsConfig::new
 src/sdf_collider.rs::SdfCollider::new_dynamic
 src/sdf_collider.rs::SdfCollider::update_cache
 src/sim_modifier.rs::SingleModifiedSdf
@@ -134,10 +133,8 @@ src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
 src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
 src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
-src/support_volume.rs::SupportConfig::speed
 src/torus.rs::Torus::aabb
 src/torus.rs::Torus::surface_area
-src/vehicle.rs::Vehicle::new_default
 src/wedge.rs::Wedge::aabb
 src/wedge.rs::Wedge::with_rotation
 unindexed: src/sketch.rs::BINS
