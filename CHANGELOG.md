@@ -99,6 +99,9 @@ were introduced during that release window.
 - `spherical_terrain::{SphericalHeightField, SurfaceHeight, central_gravity}` / `sdf_collider::SdfUnion` / `SdfCharacter::{apply_central_gravity, step_on_sphere}`: 球面世界の地面を方向ごとの高さで与える距離場 (傾きの上限を宣言すると基準球の外で 1-Lipschitz)、2 つの距離場の和、中心向きの一定重力、大円に沿う移動 (弧長 = 速さ × 時間、歩ける傾斜では接触を up 方向に解くので重力で斜面を下らず、skin の厚みの中で上下に揺れない) example `spherical_planet_walk`
 - `PhysicsWorld::{set_sleep_skip, sleep_skip, stage_work}` / `StageWork`: `step` の sleep skip の切り替えと、直前の step の段階ごとの作業量 (積分した body 数 / broad-phase の primitive と候補 pair 数 / sleep 判定数 など)
 - `benches/world_scale.rs`: 10k / 100k body、休止率 0 / 90 / 99 %、sleep skip 有効 / 無効の 1 step の時間
+- C ABI (`--features ffi`): `alice_physics_body_{set,clear}_collision_radius` / `alice_physics_body_add_shaped` / `alice_physics_body_set_shape` (`AlicePhysicsShape`: box・cylinder・cone・ellipsoid・wedge・torus) / `alice_physics_static_{add_plane,add_heightfield,add_trimesh,remove,count}` / `alice_physics_joint_{add_ball,add_hinge,add_fixed,add_slider,add_spring,remove,count}` `include/alice_physics.h`・`bindings/AlicePhysics.h`・Unity の `bindings/AlicePhysics.cs` に宣言
+- WebAssembly (`--features wasm`) と Python (`--features python`) の `PhysicsWorld` に同じ集合 (衝突半径・形状・静的コライダー・ジョイント) を追加 不正な値 (有限でない・正でない大きさ、範囲外の body、同じ body 同士のジョイント、壊れたメッシュ) は 3 つのバインディングとも同じ規則で拒否する (C は `0` / `UINT32_MAX`、WebAssembly は `false` / `undefined`、Python は `ValueError` / `IndexError`)
+- `AliceVec3` / `AliceQuat` (C ABI の値型) に `Clone` / `Copy` / `Debug` / `PartialEq`
 
 ### Changed
 

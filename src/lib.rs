@@ -330,6 +330,8 @@ pub mod det_math {
         fn powf64(x: f64, y: f64) -> f64;
     }
 }
+#[cfg(any(feature = "ffi", feature = "wasm", feature = "python"))]
+mod binding_api;
 pub mod dynamic_bvh;
 #[cfg(feature = "std")]
 pub mod dynamic_fem;

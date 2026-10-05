@@ -170,6 +170,53 @@ uint8_t alice_physics_state_deserialize(AlicePhysicsWorld* world, const uint8_t*
 void alice_physics_state_free(uint8_t* data, uint32_t len);
 
 /* ========================================================================== */
+/* Collision radius, shapes, static colliders, joints                          */
+/* ========================================================================== */
+
+/** Collision shape. kind: 0 box (half extents a, b, c), 1 cylinder (radius a,
+ *  half height b), 2 cone (radius a, half height b), 3 ellipsoid (radii a, b,
+ *  c), 4 wedge (width a, height b, depth c), 5 torus (major radius a, minor
+ *  radius b < a). Every used size must be finite and positive. */
+typedef struct {
+    uint32_t kind;
+    double a;
+    double b;
+    double c;
+} AlicePhysicsShape;
+
+/** Set a body's collision sphere radius (finite, > 0). Returns 1 on success. */
+uint8_t alice_physics_body_set_collision_radius(AlicePhysicsWorld* world, uint32_t body_id, double radius);
+/** Drop a body's own collision radius (falls back to the world default). Returns 1 on success. */
+uint8_t alice_physics_body_clear_collision_radius(AlicePhysicsWorld* world, uint32_t body_id);
+/** Add a dynamic body with a shape; mass and inertia from density. Returns body index or UINT32_MAX. */
+uint32_t alice_physics_body_add_shaped(AlicePhysicsWorld* world, AlicePhysicsShape shape, double density, AliceVec3 position);
+/** Give an existing body a collision shape (mass unchanged). Returns 1 on success. */
+uint8_t alice_physics_body_set_shape(AlicePhysicsWorld* world, uint32_t body_id, AlicePhysicsShape shape);
+
+/** Add the static plane normal . p = offset. Returns static collider index or UINT32_MAX. */
+uint32_t alice_physics_static_add_plane(AlicePhysicsWorld* world, AliceVec3 normal, double offset);
+/** Add a static height field: width * depth heights (row-major, x fastest, both >= 2). */
+uint32_t alice_physics_static_add_heightfield(AlicePhysicsWorld* world, const double* heights, uint32_t width, uint32_t depth, double spacing, AliceVec3 origin);
+/** Add a static triangle mesh: vertex_count x,y,z triples and index_count indices (3 per triangle). */
+uint32_t alice_physics_static_add_trimesh(AlicePhysicsWorld* world, const double* vertices, uint32_t vertex_count, const uint32_t* indices, uint32_t index_count);
+/** Remove static collider index (later colliders shift down). Returns 1 on success. */
+uint8_t alice_physics_static_remove(AlicePhysicsWorld* world, uint32_t index);
+/** Number of static colliders. */
+uint32_t alice_physics_static_count(const AlicePhysicsWorld* world);
+
+/** Joints: anchors and axes are body-local. Each returns the joint index, or
+ *  UINT32_MAX for an unknown body, body_a == body_b, or an invalid value. */
+uint32_t alice_physics_joint_add_ball(AlicePhysicsWorld* world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b);
+uint32_t alice_physics_joint_add_hinge(AlicePhysicsWorld* world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b, AliceVec3 axis_a, AliceVec3 axis_b);
+uint32_t alice_physics_joint_add_fixed(AlicePhysicsWorld* world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b, AliceQuat relative_rotation);
+uint32_t alice_physics_joint_add_slider(AlicePhysicsWorld* world, uint32_t body_a, uint32_t body_b, AliceVec3 axis, AliceVec3 anchor_a, AliceVec3 anchor_b);
+uint32_t alice_physics_joint_add_spring(AlicePhysicsWorld* world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b, double rest_length, double stiffness, double damping);
+/** Remove joint index; the last joint moves into index. Returns 1 on success. */
+uint8_t alice_physics_joint_remove(AlicePhysicsWorld* world, uint32_t index);
+/** Number of joints. */
+uint32_t alice_physics_joint_count(const AlicePhysicsWorld* world);
+
+/* ========================================================================== */
 /* Version                                                                     */
 /* ========================================================================== */
 

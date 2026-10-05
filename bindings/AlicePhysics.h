@@ -99,6 +99,34 @@ uint8_t* alice_physics_state_serialize(const AlicePhysicsWorldHandle world, uint
 uint8_t  alice_physics_state_deserialize(AlicePhysicsWorldHandle world, const uint8_t* data, uint32_t len);
 void     alice_physics_state_free(uint8_t* data, uint32_t len);
 
+// --- Collision radius, shapes, static colliders, joints ---
+// kind: 0 box (a,b,c half extents), 1 cylinder (a radius, b half height),
+// 2 cone (a radius, b half height), 3 ellipsoid (a,b,c radii),
+// 4 wedge (a width, b height, c depth), 5 torus (a major, b minor < a)
+struct AlicePhysicsShape {
+    uint32_t kind;
+    double a;
+    double b;
+    double c;
+};
+
+uint8_t  alice_physics_body_set_collision_radius(AlicePhysicsWorldHandle world, uint32_t body_id, double radius);
+uint8_t  alice_physics_body_clear_collision_radius(AlicePhysicsWorldHandle world, uint32_t body_id);
+uint32_t alice_physics_body_add_shaped(AlicePhysicsWorldHandle world, AlicePhysicsShape shape, double density, AliceVec3 position);
+uint8_t  alice_physics_body_set_shape(AlicePhysicsWorldHandle world, uint32_t body_id, AlicePhysicsShape shape);
+uint32_t alice_physics_static_add_plane(AlicePhysicsWorldHandle world, AliceVec3 normal, double offset);
+uint32_t alice_physics_static_add_heightfield(AlicePhysicsWorldHandle world, const double* heights, uint32_t width, uint32_t depth, double spacing, AliceVec3 origin);
+uint32_t alice_physics_static_add_trimesh(AlicePhysicsWorldHandle world, const double* vertices, uint32_t vertex_count, const uint32_t* indices, uint32_t index_count);
+uint8_t  alice_physics_static_remove(AlicePhysicsWorldHandle world, uint32_t index);
+uint32_t alice_physics_static_count(const AlicePhysicsWorldHandle world);
+uint32_t alice_physics_joint_add_ball(AlicePhysicsWorldHandle world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b);
+uint32_t alice_physics_joint_add_hinge(AlicePhysicsWorldHandle world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b, AliceVec3 axis_a, AliceVec3 axis_b);
+uint32_t alice_physics_joint_add_fixed(AlicePhysicsWorldHandle world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b, AliceQuat relative_rotation);
+uint32_t alice_physics_joint_add_slider(AlicePhysicsWorldHandle world, uint32_t body_a, uint32_t body_b, AliceVec3 axis, AliceVec3 anchor_a, AliceVec3 anchor_b);
+uint32_t alice_physics_joint_add_spring(AlicePhysicsWorldHandle world, uint32_t body_a, uint32_t body_b, AliceVec3 anchor_a, AliceVec3 anchor_b, double rest_length, double stiffness, double damping);
+uint8_t  alice_physics_joint_remove(AlicePhysicsWorldHandle world, uint32_t index);
+uint32_t alice_physics_joint_count(const AlicePhysicsWorldHandle world);
+
 // --- Version ---
 const char* alice_physics_version();
 

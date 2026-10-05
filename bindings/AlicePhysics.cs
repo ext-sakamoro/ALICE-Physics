@@ -72,6 +72,20 @@ namespace AlicePhysics
         public static readonly AliceQuat Identity = new AliceQuat(0, 0, 0, 1);
     }
 
+    /// <summary>
+    /// Collision shape. kind: 0 box (half extents a, b, c), 1 cylinder (radius a,
+    /// half height b), 2 cone (radius a, half height b), 3 ellipsoid (radii a, b, c),
+    /// 4 wedge (width a, height b, depth c), 5 torus (major radius a, minor radius b &lt; a).
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AlicePhysicsShape
+    {
+        public uint kind;
+        public double a;
+        public double b;
+        public double c;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct AlicePhysicsConfig
     {
@@ -138,6 +152,24 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern IntPtr alice_physics_state_serialize(IntPtr world, out uint len);
         [DllImport(DLL)] public static extern byte alice_physics_state_deserialize(IntPtr world, IntPtr data, uint len);
         [DllImport(DLL)] public static extern void alice_physics_state_free(IntPtr data, uint len);
+
+        // Collision radius, shapes, static colliders, joints
+        [DllImport(DLL)] public static extern byte alice_physics_body_set_collision_radius(IntPtr world, uint bodyId, double radius);
+        [DllImport(DLL)] public static extern byte alice_physics_body_clear_collision_radius(IntPtr world, uint bodyId);
+        [DllImport(DLL)] public static extern uint alice_physics_body_add_shaped(IntPtr world, AlicePhysicsShape shape, double density, AliceVec3 position);
+        [DllImport(DLL)] public static extern byte alice_physics_body_set_shape(IntPtr world, uint bodyId, AlicePhysicsShape shape);
+        [DllImport(DLL)] public static extern uint alice_physics_static_add_plane(IntPtr world, AliceVec3 normal, double offset);
+        [DllImport(DLL)] public static extern uint alice_physics_static_add_heightfield(IntPtr world, double[] heights, uint width, uint depth, double spacing, AliceVec3 origin);
+        [DllImport(DLL)] public static extern uint alice_physics_static_add_trimesh(IntPtr world, double[] vertices, uint vertexCount, uint[] indices, uint indexCount);
+        [DllImport(DLL)] public static extern byte alice_physics_static_remove(IntPtr world, uint index);
+        [DllImport(DLL)] public static extern uint alice_physics_static_count(IntPtr world);
+        [DllImport(DLL)] public static extern uint alice_physics_joint_add_ball(IntPtr world, uint bodyA, uint bodyB, AliceVec3 anchorA, AliceVec3 anchorB);
+        [DllImport(DLL)] public static extern uint alice_physics_joint_add_hinge(IntPtr world, uint bodyA, uint bodyB, AliceVec3 anchorA, AliceVec3 anchorB, AliceVec3 axisA, AliceVec3 axisB);
+        [DllImport(DLL)] public static extern uint alice_physics_joint_add_fixed(IntPtr world, uint bodyA, uint bodyB, AliceVec3 anchorA, AliceVec3 anchorB, AliceQuat relativeRotation);
+        [DllImport(DLL)] public static extern uint alice_physics_joint_add_slider(IntPtr world, uint bodyA, uint bodyB, AliceVec3 axis, AliceVec3 anchorA, AliceVec3 anchorB);
+        [DllImport(DLL)] public static extern uint alice_physics_joint_add_spring(IntPtr world, uint bodyA, uint bodyB, AliceVec3 anchorA, AliceVec3 anchorB, double restLength, double stiffness, double damping);
+        [DllImport(DLL)] public static extern byte alice_physics_joint_remove(IntPtr world, uint index);
+        [DllImport(DLL)] public static extern uint alice_physics_joint_count(IntPtr world);
 
         // Version
         [DllImport(DLL)] public static extern IntPtr alice_physics_version();
