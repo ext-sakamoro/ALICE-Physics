@@ -103,6 +103,10 @@ name = "hpc_scale_probe"
 required-features = ["std"]
 
 [[example]]
+name = "distributed_pressure_projection"
+required-features = ["std"]
+
+[[example]]
 name = "cloth_simulation"
 required-features = ["std"]
 

@@ -201,6 +201,10 @@ pub enum PressureSolverError {
     NonPositiveTolerance,
     /// A slab decomposition was asked for with zero ranks.
     ZeroRanks,
+    /// [`crate::eulerian_grid::project_pressure_distributed`] was given a
+    /// solver that is not a slab decomposition (`DecomposedGs`, `BandedGs` or
+    /// `DecomposedMultigrid`).
+    NotDecomposed,
 }
 
 impl core::fmt::Display for PressureSolverError {
@@ -217,6 +221,7 @@ impl core::fmt::Display for PressureSolverError {
             ),
             Self::NonPositiveTolerance => write!(f, "the BiCGStab tolerance must be positive"),
             Self::ZeroRanks => write!(f, "a slab decomposition needs at least one rank"),
+            Self::NotDecomposed => write!(f, "the solver is not a slab decomposition"),
         }
     }
 }
