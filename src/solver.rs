@@ -2618,6 +2618,17 @@ impl PhysicsWorld {
     /// 6. End event frame (generates end-of-contact events)
     ///
     /// Deterministic: same inputs always produce same outputs.
+    ///
+    /// # Limitation: joints
+    ///
+    /// - `step` solves the joints once per substep, after and outside the
+    ///   `iterations` loop that solves distance and contact constraints.
+    /// - Joint compliance is therefore exact XPBD with respect to substeps:
+    ///   each substep's single solve starts from `λ = 0`, so a compliant joint
+    ///   under a constant load `F` settles at the stretch `F · compliance`
+    ///   whatever `iterations` is.
+    /// - Convergence of a rigid joint chain depends on `substeps` only, not on
+    ///   `iterations`.
     pub fn step(&mut self, dt: Fix128) {
         // Guard: non-positive dt produces no physics update
         if dt <= Fix128::ZERO {
