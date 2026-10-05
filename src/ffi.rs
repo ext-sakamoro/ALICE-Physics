@@ -183,7 +183,7 @@ pub struct AliceBodyInfo {
 // ============================================================================
 
 impl AliceVec3 {
-    fn to_vec3fix(&self) -> Vec3Fix {
+    fn to_vec3fix(self) -> Vec3Fix {
         Vec3Fix::new(
             Fix128::from_f64(self.x),
             Fix128::from_f64(self.y),
@@ -1020,7 +1020,7 @@ pub struct AlicePhysicsShape {
 }
 
 impl AlicePhysicsShape {
-    fn to_shape(&self) -> Option<crate::shape::Shape> {
+    fn to_shape(self) -> Option<crate::shape::Shape> {
         binding_api::shape(self.kind, self.a, self.b, self.c)
     }
 }
