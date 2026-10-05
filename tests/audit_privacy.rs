@@ -2,10 +2,11 @@
 //!
 //! Expected values come from the closed forms of the mechanisms (Laplace CDF and
 //! moments, randomized-response likelihood ratios, the composition rule of the
-//! budget, Marsaglia's xorshift64 step) and from seeded Monte Carlo runs whose
-//! tolerances are set from the binomial / sampling standard errors. The
-//! mechanism-level privacy claims (epsilon of a configured mechanism) are
-//! computed from the stated output probabilities, not from the implementation.
+//! budget, the splitmix64 seed scramble and Marsaglia's xorshift64 step) and
+//! from seeded Monte Carlo runs whose tolerances are set from the binomial /
+//! sampling standard errors. The mechanism-level privacy claims (epsilon of a
+//! configured mechanism) are computed from the stated output probabilities,
+//! not from the implementation.
 //!
 //! Author: Moroya Sakamoto
 
@@ -40,7 +41,10 @@ fn inv_right(y: u64, s: u32) -> u64 {
     }
     x
 }
-/// splitmix64 finalizer, used only to turn small integers into well-mixed seeds.
+/// splitmix64 step (golden-gamma add, then the finaliser), written out from
+/// the published constants (Steele, Lea, Flood, OOPSLA 2014; Vigna,
+/// `splitmix64.c`): the seed scramble of `XorShift64::new`, and a way to turn
+/// small integers into well-mixed seeds.
 fn splitmix(x: u64) -> u64 {
     let mut z = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
     z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -50,29 +54,51 @@ fn splitmix(x: u64) -> u64 {
 fn inv_step(y: u64) -> u64 {
     inv_left(inv_right(inv_left(y, 17), 7), 13)
 }
+/// Inverse of `splitmix`: undo each xor-shift, multiply by the inverse of each
+/// multiplier mod 2^64 (0x96DE_1B17_3F11_9089 and 0x3196_42B2_D24D_8EC3,
+/// computed separately with python3 `pow(m, -1, 2**64)` and checked below by
+/// the round trip), then subtract the golden gamma.
+fn inv_splitmix(y: u64) -> u64 {
+    let mut z = inv_right(y, 31);
+    z = inv_right(z.wrapping_mul(0x3196_42b2_d24d_8ec3), 27);
+    z = inv_right(z.wrapping_mul(0x96de_1b17_3f11_9089), 30);
+    z.wrapping_sub(0x9e37_79b9_7f4a_7c15)
+}
 
 // ------------------------------------------------------------------ generator
 
 #[test]
-fn xorshift_matches_marsaglia_step_and_the_known_first_output() {
-    // seed 1: 1 -> 8193 -> 8257 -> 1082269761 (hand computed)
+fn xorshift_is_the_marsaglia_step_applied_to_the_scrambled_seed() {
+    // The Marsaglia step itself, on a raw state: 1 -> 8193 -> 8257 ->
+    // 1082269761 (hand computed).
     assert_eq!(step(1), 1_082_269_761);
+    // The seed is scrambled by one splitmix64 step before it becomes the
+    // state (AUD-A-S4W3-030). splitmix64(0) = 0xE220_A839_7B1D_CDAF is the
+    // first output of Vigna's reference `splitmix64.c` seeded with 0;
+    // splitmix64(1) = 0x910A_2DEC_8902_5CC1 and the Marsaglia step of it,
+    // 0x7274_658B_CB6F_4838, were computed in a separate python3 one-off from
+    // the published constants.
+    assert_eq!(splitmix(0), 0xe220_a839_7b1d_cdaf);
+    assert_eq!(splitmix(1), 0x910a_2dec_8902_5cc1);
+    assert_eq!(step(0x910a_2dec_8902_5cc1), 0x7274_658b_cb6f_4838);
     let mut r = XorShift64::new(1);
-    assert_eq!(r.next_u64(), 1_082_269_761);
-    let mut s = 0x1234_5678_9abc_def0u64;
-    let mut r = XorShift64::new(s);
+    assert_eq!(r.next_u64(), 0x7274_658b_cb6f_4838);
+    let seed = 0x1234_5678_9abc_def0u64;
+    let mut s = splitmix(seed);
+    let mut r = XorShift64::new(seed);
     for _ in 0..100 {
         s = step(s);
         assert_eq!(r.next_u64(), s);
     }
-    // inverse sanity of the helper
-    for &y in &[1u64, 0xdead_beef_cafe_f00d, u64::MAX] {
+    // inverse sanity of the helpers
+    for &y in &[0u64, 1, 0xdead_beef_cafe_f00d, u64::MAX] {
         assert_eq!(step(inv_step(y)), y);
+        assert_eq!(splitmix(inv_splitmix(y)), y);
+        assert_eq!(inv_splitmix(splitmix(y)), y);
     }
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-030: XorShift64::new does not scramble the seed, so the first draws of a small seed are tiny: all of the seeds 1..=100 give a first uniform draw below 1e-6 (seed 42: 2.5e-9), and LaplaceNoise::with_seed(1.0, 1.0, 42) returns a first sample of -19.1 where P(X < -19.1) = 2.5e-9"]
 fn first_draw_of_a_small_seed_is_not_an_extreme_outlier() {
     let tiny = (1u64..=100)
         .filter(|&s| XorShift64::new(s).next_f64() < 1e-6)
@@ -198,9 +224,13 @@ fn laplace_privatize_is_symmetric_about_the_value_and_int_rounding_matches() {
 #[test]
 #[ignore = "known defect: AUD-A-S4W3-025: LaplaceNoise::sample can return -inf: the uniform draw U = 0 (reachable, probability 2^-53, constructible with a chosen seed) gives ln(1 - 2|U - 1/2|) = ln(0)"]
 fn laplace_sample_is_always_finite_even_when_the_uniform_draw_is_zero() {
-    // seed whose first xorshift output has its top 53 bits equal to 0
-    let seed = inv_step(1);
-    assert_eq!(step(seed) >> 11, 0);
+    // seed whose first xorshift output has its top 53 bits equal to 0: the
+    // state before the step is inv_step(1), and the seed is the preimage of
+    // that state under the splitmix64 scramble of `XorShift64::new`
+    let state = inv_step(1);
+    let seed = inv_splitmix(state);
+    assert_eq!(splitmix(seed), state);
+    assert_eq!(step(splitmix(seed)) >> 11, 0);
     let mut noise = LaplaceNoise::with_seed(1.0, 1.0, seed);
     let x = noise.sample();
     assert!(x.is_finite(), "sample = {x}");
