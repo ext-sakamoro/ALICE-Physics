@@ -31,6 +31,7 @@ pub struct FractureConfig {
     pub fracture_toughness: f32,
     /// Crack width (SDF subtraction thickness)
     pub crack_width: f32,
+    // LIMITATION(COV-FRACT-060): a finished crack stays carved into the SDF and keeps occupying its slot
     /// Maximum number of cracks (growing and finished: a finished crack stays
     /// carved into the SDF and keeps occupying its slot)
     pub max_cracks: usize,
@@ -203,6 +204,7 @@ impl FractureModifier {
 
                             // Perpendicular to gradient (crack runs along stress contour)
                             let (dx, dy, dz) = if glen > 1e-5 {
+                                // LIMITATION(COV-FRACT-057): Cross with up vector for horizontal crack tendency
                                 // Cross with up vector for horizontal crack tendency
                                 let cx = gy.mul_add(0.0, -(gz * 1.0));
                                 let cy = gz.mul_add(0.0, -(gx * 0.0));

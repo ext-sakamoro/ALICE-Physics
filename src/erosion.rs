@@ -20,6 +20,7 @@
 //! | `Ablation` | 2 | 1 | kinetic-energy flux |
 //!
 //! Solid-particle erosion measurements give `n ≈ 2–3` (Finnie 1960,
+// LIMITATION(COV-FRACT-085): so `Wind` / `Water` are game-tuned rather than validated
 //! Bitter 1963), so `Wind` / `Water` are game-tuned rather than validated;
 //! `exposure` is re-read every frame and decays with a fixed `5 /s` when the
 //! caller stops supplying it. Making `n`, the prefactor and the exposure
