@@ -6,9 +6,6 @@
 # definition for (macro_rules bodies); they have no level, the same ratchet
 # applies to them.
 src/box_collider.rs::OrientedBox::surface_area
-src/buckling.rs::SnapThroughError
-src/buckling.rs::plate_buckling_mpa
-src/buckling.rs::snap_through_load_n
 src/bvh.rs::BroadphaseHybrid
 src/bvh.rs::BroadphaseHybrid::build_dynamic
 src/bvh.rs::BroadphaseHybrid::clear_dynamic
@@ -71,13 +68,6 @@ src/eulerian_grid.rs::project_pressure_slab_local_on_rank
 src/eulerian_grid/multigrid_decomposed.rs::multigrid_slab_bounds
 src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_banded_on_rank
 src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_decomposed_on_rank
-src/fatigue.rs::BASQUIN_LOW_CYCLE_BOUND
-src/fatigue.rs::FatigueRangeError
-src/fatigue.rs::FatigueReport
-src/fatigue.rs::SnCurve::aluminum_a5052
-src/fatigue.rs::SnCurve::steel_sus304
-src/fatigue.rs::analyze_spectrum
-src/fatigue.rs::stress_at_cycles
 src/joint.rs::BallJoint::with_compliance
 src/joint.rs::HingeJoint::with_compliance
 src/linear_elastic_fem.rs::ThermalExpansion::new

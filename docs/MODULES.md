@@ -179,9 +179,9 @@ this file or listed twice, or when a linked example or test does not exist.
 | `quadratic_elastic_fem` | FEM on ten-node quadratic (P2) tetrahedra |  | [`quadratic_mesh_edge_nodes`](../examples/quadratic_mesh_edge_nodes.rs) | standalone |
 | `cubic_elastic_fem` | FEM on twenty-node cubic (P3) tetrahedra |  | [`cubic_elastic_fem_topology`](../examples/cubic_elastic_fem_topology.rs) | standalone |
 | `dynamic_fem` | transient FEM with a mass matrix and Newmark-β time stepping | std | [`dynamic_fem_cantilever`](../examples/dynamic_fem_cantilever.rs) | standalone |
-| `structural_solver` | time-stepping driver combining beam, plasticity, creep, fatigue and buckling; creep presets for PLA only, other materials need `with_creep` |  | [`structural_pla_shelf_creep`](../examples/structural_pla_shelf_creep.rs), [`structural_creep_per_material`](../examples/structural_creep_per_material.rs) | standalone |
+| `structural_solver` | time-stepping driver combining beam, plasticity, creep, fatigue and buckling; creep presets for PLA only, other materials need `with_creep`; S-N curve per material (SUS304 / A5052 presets, FDM rule otherwise), `with_sn_curve` overrides |  | [`structural_pla_shelf_creep`](../examples/structural_pla_shelf_creep.rs), [`structural_creep_per_material`](../examples/structural_creep_per_material.rs), [`structural_fatigue_buckling_per_material`](../examples/structural_fatigue_buckling_per_material.rs) | standalone |
 | `beam_stress` | beam sections, load cases, deflection and safety factor |  | [`beam_end_condition_min_fos`](../examples/beam_end_condition_min_fos.rs) | standalone |
-| `buckling` | Euler / Johnson column, plate and snap-through buckling |  |  | standalone |
+| `buckling` | Euler / Johnson column, plate and snap-through buckling |  | [`structural_fatigue_buckling_per_material`](../examples/structural_fatigue_buckling_per_material.rs) | standalone |
 | `plastic` | von Mises yield, hardening and Norton creep |  |  | standalone |
 | `hyperelastic` | neo-Hookean, Mooney-Rivlin and Yeoh models |  | [`hyperelastic_material_presets`](../examples/hyperelastic_material_presets.rs) | standalone |
 | `anisotropic` | orthotropic materials with Hill and Tsai-Wu failure |  | [`anisotropic_failure_analysis`](../examples/anisotropic_failure_analysis.rs) | standalone |
@@ -194,7 +194,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `vibration_wall` | thin-wall resonance against printer excitation |  | [`vibration_wall_resonance`](../examples/vibration_wall_resonance.rs) | standalone |
 | `damping_rayleigh` | Rayleigh damping and two-mode fitting |  | [`damping_rayleigh_fit`](../examples/damping_rayleigh_fit.rs) | standalone |
 | `creep_longterm` | Findley creep and time-temperature superposition |  |  | standalone |
-| `fatigue` | Basquin S-N curves and Miner's rule |  |  | unused (standalone 6 of 13 items) |
+| `fatigue` | Basquin S-N curves and Miner's rule |  | [`structural_fatigue_buckling_per_material`](../examples/structural_fatigue_buckling_per_material.rs) | standalone |
 | `thermal_stress` | thermal stress in constrained parts |  | [`thermal_stress_envelope`](../examples/thermal_stress_envelope.rs) | standalone |
 | `transient_thermal` | 1D transient conduction with temperature-dependent properties | std | [`transient_thermal_materials`](../examples/transient_thermal_materials.rs) | standalone |
 | `rolling_contact` | Hertzian rolling contact stress and fatigue life | std | [`rolling_contact_fatigue`](../examples/rolling_contact_fatigue.rs) | standalone |

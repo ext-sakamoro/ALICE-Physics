@@ -991,6 +991,26 @@ impl core::marker::Unpin for alice_physics::buckling::BucklingRegime
 impl core::marker::UnsafeUnpin for alice_physics::buckling::BucklingRegime
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::buckling::BucklingRegime
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::buckling::BucklingRegime
+#[non_exhaustive] pub enum alice_physics::buckling::SnapThroughError
+pub alice_physics::buckling::SnapThroughError::NegativeRise
+pub alice_physics::buckling::SnapThroughError::NonPositiveSpan
+pub alice_physics::buckling::SnapThroughError::NonPositiveStiffness
+impl core::clone::Clone for alice_physics::buckling::SnapThroughError
+pub fn alice_physics::buckling::SnapThroughError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::buckling::SnapThroughError
+impl core::cmp::PartialEq for alice_physics::buckling::SnapThroughError
+pub fn alice_physics::buckling::SnapThroughError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::buckling::SnapThroughError
+pub fn alice_physics::buckling::SnapThroughError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::buckling::SnapThroughError
+impl core::marker::StructuralPartialEq for alice_physics::buckling::SnapThroughError
+impl core::marker::Freeze for alice_physics::buckling::SnapThroughError
+impl core::marker::Send for alice_physics::buckling::SnapThroughError
+impl core::marker::Sync for alice_physics::buckling::SnapThroughError
+impl core::marker::Unpin for alice_physics::buckling::SnapThroughError
+impl core::marker::UnsafeUnpin for alice_physics::buckling::SnapThroughError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::buckling::SnapThroughError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::buckling::SnapThroughError
 pub struct alice_physics::buckling::ColumnBucklingReport
 pub alice_physics::buckling::ColumnBucklingReport::critical_load_n: alice_physics::math::Fix128
 pub alice_physics::buckling::ColumnBucklingReport::critical_stress_mpa: alice_physics::math::Fix128
@@ -3533,13 +3553,58 @@ impl core::marker::UnsafeUnpin for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::TriggerEvent
 pub mod alice_physics::fatigue
+#[non_exhaustive] pub enum alice_physics::fatigue::FatigueRangeError
+pub alice_physics::fatigue::FatigueRangeError::BelowLowCycleBound
+pub alice_physics::fatigue::FatigueRangeError::BelowLowCycleBound::bound: u64
+pub alice_physics::fatigue::FatigueRangeError::BelowLowCycleBound::cycles: u64
+pub alice_physics::fatigue::FatigueRangeError::NonPositiveExponent
+pub alice_physics::fatigue::FatigueRangeError::ZeroCycles
+impl core::clone::Clone for alice_physics::fatigue::FatigueRangeError
+pub fn alice_physics::fatigue::FatigueRangeError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::fatigue::FatigueRangeError
+impl core::cmp::PartialEq for alice_physics::fatigue::FatigueRangeError
+pub fn alice_physics::fatigue::FatigueRangeError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::fatigue::FatigueRangeError
+pub fn alice_physics::fatigue::FatigueRangeError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::fatigue::FatigueRangeError
+impl core::marker::StructuralPartialEq for alice_physics::fatigue::FatigueRangeError
+impl core::marker::Freeze for alice_physics::fatigue::FatigueRangeError
+impl core::marker::Send for alice_physics::fatigue::FatigueRangeError
+impl core::marker::Sync for alice_physics::fatigue::FatigueRangeError
+impl core::marker::Unpin for alice_physics::fatigue::FatigueRangeError
+impl core::marker::UnsafeUnpin for alice_physics::fatigue::FatigueRangeError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::fatigue::FatigueRangeError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::fatigue::FatigueRangeError
+#[non_exhaustive] pub struct alice_physics::fatigue::FatigueReport
+pub alice_physics::fatigue::FatigueReport::damage: alice_physics::math::Fix128
+pub alice_physics::fatigue::FatigueReport::is_safe: bool
+pub alice_physics::fatigue::FatigueReport::safety_factor: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::fatigue::FatigueReport
+pub fn alice_physics::fatigue::FatigueReport::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::fatigue::FatigueReport
+impl core::cmp::PartialEq for alice_physics::fatigue::FatigueReport
+pub fn alice_physics::fatigue::FatigueReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::fatigue::FatigueReport
+pub fn alice_physics::fatigue::FatigueReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::fatigue::FatigueReport
+impl core::marker::StructuralPartialEq for alice_physics::fatigue::FatigueReport
+impl core::marker::Freeze for alice_physics::fatigue::FatigueReport
+impl core::marker::Send for alice_physics::fatigue::FatigueReport
+impl core::marker::Sync for alice_physics::fatigue::FatigueReport
+impl core::marker::Unpin for alice_physics::fatigue::FatigueReport
+impl core::marker::UnsafeUnpin for alice_physics::fatigue::FatigueReport
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::fatigue::FatigueReport
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::fatigue::FatigueReport
 pub struct alice_physics::fatigue::SnCurve
 pub alice_physics::fatigue::SnCurve::endurance_cycles: u64
 pub alice_physics::fatigue::SnCurve::endurance_stress_mpa: alice_physics::math::Fix128
 pub alice_physics::fatigue::SnCurve::fatigue_exponent_m: u32
 pub alice_physics::fatigue::SnCurve::ultimate_tensile_mpa: alice_physics::math::Fix128
 impl alice_physics::fatigue::SnCurve
+pub fn alice_physics::fatigue::SnCurve::aluminum_a5052() -> Self
+pub fn alice_physics::fatigue::SnCurve::for_material(&alice_physics::filament_db::MaterialProperties) -> Self
 pub fn alice_physics::fatigue::SnCurve::from_fdm_material(&alice_physics::filament_db::MaterialProperties) -> Self
+pub fn alice_physics::fatigue::SnCurve::steel_sus304() -> Self
 impl core::clone::Clone for alice_physics::fatigue::SnCurve
 pub fn alice_physics::fatigue::SnCurve::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::fatigue::SnCurve
@@ -16281,10 +16346,15 @@ pub alice_physics::structural_solver::StructuralSolver::state: alice_physics::pl
 pub alice_physics::structural_solver::StructuralSolver::step_count: u64
 impl alice_physics::structural_solver::StructuralSolver
 pub fn alice_physics::structural_solver::StructuralSolver::creep_modelled(&self) -> bool
+pub fn alice_physics::structural_solver::StructuralSolver::fatigue_spectrum_report(&self, &[alice_physics::fatigue::SpectrumEntry]) -> alice_physics::fatigue::FatigueReport
+pub fn alice_physics::structural_solver::StructuralSolver::fatigue_strength_mpa(&self, u64) -> core::result::Result<alice_physics::math::Fix128, alice_physics::fatigue::FatigueRangeError>
 pub fn alice_physics::structural_solver::StructuralSolver::new(alice_physics::beam_stress::CrossSection, alice_physics::beam_stress::LoadCase, alice_physics::filament_db::MaterialProperties) -> Self
+pub fn alice_physics::structural_solver::StructuralSolver::plate_buckling_mpa(&self, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::math::Fix128
 pub fn alice_physics::structural_solver::StructuralSolver::run(&mut self, u64) -> alice_physics::structural_solver::StructuralHistory
+pub fn alice_physics::structural_solver::StructuralSolver::snap_through_load_n(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::buckling::SnapThroughError>
 pub fn alice_physics::structural_solver::StructuralSolver::step(&mut self) -> alice_physics::structural_solver::StructuralReport
 pub fn alice_physics::structural_solver::StructuralSolver::with_creep(self, alice_physics::creep_longterm::FindleyParameters, alice_physics::plastic::NortonCreep) -> Self
+pub fn alice_physics::structural_solver::StructuralSolver::with_sn_curve(self, alice_physics::fatigue::SnCurve) -> Self
 impl core::clone::Clone for alice_physics::structural_solver::StructuralSolver
 pub fn alice_physics::structural_solver::StructuralSolver::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::structural_solver::StructuralSolver
