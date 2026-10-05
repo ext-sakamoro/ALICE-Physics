@@ -23,15 +23,7 @@ src/cone.rs::Cone::aabb
 src/cone.rs::Cone::surface_area
 src/cone.rs::Cone::with_rotation
 src/coupled_iteration.rs::ContractionMonitor::best_residual
-src/coupled_iteration.rs::EquilibrationScale
-src/coupled_iteration.rs::EquilibrationScale::IDENTITY
-src/coupled_iteration.rs::EquilibrationScale::MAX_EXPONENT
-src/coupled_iteration.rs::EquilibrationScale::covering
-src/coupled_iteration.rs::EquilibrationScale::exponent
-src/coupled_iteration.rs::EquilibrationScale::factor
 src/coupled_iteration.rs::EquilibrationScale::round_trip_bound
-src/coupled_iteration.rs::EquilibrationScale::scale_down
-src/coupled_iteration.rs::EquilibrationScale::scale_up
 src/creep_longterm.rs::FindleyParameters::petg_25c_moderate
 src/cylinder.rs::Cylinder::aabb
 src/cylinder.rs::Cylinder::surface_area

@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 19 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 130 |
+| standalone | a Rust API that only examples call | 131 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -73,7 +73,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `compressible` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `convex_decompose` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `coupled_field` | standalone | 0 / 0 / 0 / 42 / 0 | — |
-| `coupled_iteration` | standalone | 0 / 0 / 0 / 16 / 10 | — |
+| `coupled_iteration` | standalone | 0 / 0 / 0 / 24 / 2 | — |
 | `creep_longterm` | standalone | 0 / 0 / 0 / 9 / 1 | — |
 | `crowd_force` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |
@@ -110,6 +110,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `layer_adhesion` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `lift_drag` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `linear_elastic_fem` | standalone (step 1 of 126 items) | 1 / 0 / 0 / 124 / 1 | C ABI, Python, WebAssembly |
+| `linear_solver` | standalone | 0 / 0 / 0 / 40 / 0 | — |
 | `math_util` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `maxwell_fdtd` | standalone | 0 / 0 / 0 / 29 / 0 | — |
 | `metric` | standalone (step 5 of 13 items) | 5 / 0 / 0 / 8 / 0 | C ABI, Python, WebAssembly |
