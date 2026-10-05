@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 108 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2236 |
+| L0 | not reached by any non-test code, examples included | 100 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2284 |
 | live | reached without examples (crate-internal roots or a binding) | 423 |
-| | **total** | **2767** |
+| | **total** | **2807** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 24 unwired items.
 
-### L0 here but not in the baseline (81)
+### L0 here but not in the baseline (73)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -37,15 +37,7 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/cone.rs::Cone::surface_area`
 - `src/cone.rs::Cone::with_rotation`
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
-- `src/coupled_iteration.rs::EquilibrationScale`
-- `src/coupled_iteration.rs::EquilibrationScale::IDENTITY`
-- `src/coupled_iteration.rs::EquilibrationScale::MAX_EXPONENT`
-- `src/coupled_iteration.rs::EquilibrationScale::covering`
-- `src/coupled_iteration.rs::EquilibrationScale::exponent`
-- `src/coupled_iteration.rs::EquilibrationScale::factor`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
-- `src/coupled_iteration.rs::EquilibrationScale::scale_down`
-- `src/coupled_iteration.rs::EquilibrationScale::scale_up`
 - `src/cylinder.rs::Cylinder::aabb`
 - `src/cylinder.rs::Cylinder::surface_area`
 - `src/ellipsoid.rs::Ellipsoid::aabb`
@@ -111,7 +103,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (108)
+## L0 — unreached (100)
 
 - `src/box_collider.rs::OrientedBox::surface_area`
 - `src/bvh.rs::BroadphaseHybrid`
@@ -131,15 +123,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cone.rs::Cone::surface_area`
 - `src/cone.rs::Cone::with_rotation`
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
-- `src/coupled_iteration.rs::EquilibrationScale`
-- `src/coupled_iteration.rs::EquilibrationScale::IDENTITY`
-- `src/coupled_iteration.rs::EquilibrationScale::MAX_EXPONENT`
-- `src/coupled_iteration.rs::EquilibrationScale::covering`
-- `src/coupled_iteration.rs::EquilibrationScale::exponent`
-- `src/coupled_iteration.rs::EquilibrationScale::factor`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
-- `src/coupled_iteration.rs::EquilibrationScale::scale_down`
-- `src/coupled_iteration.rs::EquilibrationScale::scale_up`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/cylinder.rs::Cylinder::aabb`
 - `src/cylinder.rs::Cylinder::surface_area`
@@ -263,7 +247,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2236)
+## L1 — example-only (2284)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -299,7 +283,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/convex_decompose.rs`: `DecomposeConfig`, `DecompositionResult`, `decompose_sdf`
 - `src/convex_mesh_builder.rs`: `HullMesh`, `build_convex_hull`, `build_hull_mesh`, `compute_centroid`
 - `src/coupled_field.rs`: `CoupledField`, `CoupledField::add`, `CoupledField::add_assign`, `CoupledField::as_mut_slice`, `CoupledField::as_slice`, `CoupledField::blend_from`, `CoupledField::cell_count`, `CoupledField::cell_size`, `CoupledField::clamp`, `CoupledField::clear`, `CoupledField::contains`, `CoupledField::copy_from_f32`, `CoupledField::decay`, `CoupledField::decay_toward`, `CoupledField::diffuse`, `CoupledField::fill`, `CoupledField::get`, `CoupledField::gradient`, `CoupledField::index`, `CoupledField::max`, `CoupledField::max_value`, `CoupledField::min`, `CoupledField::nx`, `CoupledField::ny`, `CoupledField::nz`, `CoupledField::same_grid_as`, `CoupledField::sample`, `CoupledField::scale_div`, `CoupledField::set`, `CoupledField::splat`, `CoupledField::sum`, `CoupledField::try_matching`, `CoupledField::try_new`, `CoupledField::try_new_filled`, `CoupledField::write_to_f32`, `CoupledFieldError`, `CoupledScalar`, `TemperatureRise`, `TemperatureRise::field`, `TemperatureRise::from_absolute`, `reconcile_mean`, `reconcile_weighted`
-- `src/coupled_iteration.rs`: `ConfigFault`, `ContractionMonitor`, `ContractionMonitor::new`, `ContractionMonitor::observe`, `ContractionMonitor::observed_ratio`, `ContractionMonitor::sweeps`, `CoupledIterationError`, `L2_TERM_FLOOR`, `MonitorVerdict`, `SubIterationConfig`, `SubIterationConfig::new`, `SubIterationConfig::validate`, `SubIterationReport`, `residual_norm_inf`, `residual_norm_l2_checked`, `run_sub_iteration`
+- `src/coupled_iteration.rs`: `ConfigFault`, `ContractionMonitor`, `ContractionMonitor::new`, `ContractionMonitor::observe`, `ContractionMonitor::observed_ratio`, `ContractionMonitor::sweeps`, `CoupledIterationError`, `EquilibrationScale`, `EquilibrationScale::IDENTITY`, `EquilibrationScale::MAX_EXPONENT`, `EquilibrationScale::covering`, `EquilibrationScale::exponent`, `EquilibrationScale::factor`, `EquilibrationScale::scale_down`, `EquilibrationScale::scale_up`, `L2_TERM_FLOOR`, `MonitorVerdict`, `SubIterationConfig`, `SubIterationConfig::new`, `SubIterationConfig::validate`, `SubIterationReport`, `residual_norm_inf`, `residual_norm_l2_checked`, `run_sub_iteration`
 - `src/creep_longterm.rs`: `CREEP_FROZEN_AT`, `FindleyParameters`, `FindleyParameters::pla_25c_moderate`, `FindleyParameters::strain_at`, `WlfConstants`, `WlfConstants::universal`, `effective_time_at_temp`, `predict_strain`, `wlf_shift_factor`
 - `src/crowd_force.rs`: `CrowdForceError`, `InteractionParams`, `NeighborSearch`, `Pedestrian`, `SocialForce`, `SocialForce::anisotropy_weight`, `SocialForce::driving_force`, `SocialForce::new`, `SocialForce::pair_forces`, `SocialForce::step`, `SocialForce::total_forces`, `SocialForce::wall_force`, `WallSegment`
 - `src/cubic_elastic_fem.rs`: `AdaptiveCubicSolution`, `CubicMesh`, `CubicMesh::corner_count`, `CubicMesh::edge_node_count`, `CubicMesh::edge_nodes`, `CubicMesh::element_count`, `CubicMesh::element_nodes`, `CubicMesh::face_node`, `CubicMesh::face_node_count`, `CubicMesh::from_tet_mesh`, `CubicMesh::interior_node_positions_are_exact`, `CubicMesh::node_count`, `CubicMesh::node_position`, `reactions`, `shape_values`, `solve_adaptive_cubic`, `solve_cubic`, `solve_cubic_hyperelastic`
@@ -342,6 +326,11 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/lift_drag.rs`: `AeroCoefficients`, `AeroLoad`, `LiftDragError`, `LiftDragParams`, `LiftDragSurface`, `LiftDragSurface::apply`, `LiftDragSurface::coefficients`, `LiftDragSurface::lift_slope_per_rad`, `LiftDragSurface::load`, `LiftDragSurface::new`, `LiftDragSurface::params`, `THIN_AIRFOIL_LIFT_SLOPE`
 - `src/linear_elastic_fem.rs`: `AdaptiveConfig`, `AdaptiveConfig::bulk_fraction`, `AdaptiveConfig::linear`, `AdaptiveConfig::max_refine_passes`, `AdaptiveConfig::max_rounds`, `AdaptiveConfig::try_new`, `AdaptiveSolution`, `Axis`, `Axis::ALL`, `Axis::index`, `BoundaryConditions`, `BoundaryConditions::add_load`, `BoundaryConditions::fix`, `BoundaryConditions::load_count`, `BoundaryConditions::loads`, `BoundaryConditions::new`, `BoundaryConditions::prescribe`, `BoundaryConditions::prescribe_all`, `BoundaryConditions::prescribed`, `BoundaryConditions::prescribed_count`, `CorotationalConfig`, `CorotationalConfig::consistent_tangent`, `CorotationalConfig::hyperelastic`, `CorotationalConfig::increments`, `CorotationalConfig::linear`, `CorotationalConfig::newton_iterations`, `CorotationalConfig::newton_tolerance`, `CorotationalConfig::polar_iterations`, `CorotationalConfig::try_new`, `CorotationalConfig::with_consistent_tangent`, `CorotationalConfig::with_hyperelastic`, `CorotationalSolution`, `DiagonalStats`, `ElasticMaterial`, `ElasticMaterial::default_poissons_ratio`, `ElasticMaterial::from_filament`, `ElasticMaterial::lame`, `ElasticMaterial::new`, `ElasticMaterial::poissons_ratio`, `ElasticMaterial::with_poisson`, `ElasticMaterial::youngs_modulus_mpa`, `ElastoplasticConfig`, `ElastoplasticConfig::try_new`, `ElastoplasticIncrement`, `ElastoplasticIncrement::commit`, `ElastoplasticIncrement::newton_iterations`, `ElastoplasticIncrementRequest`, `ElastoplasticIncrementRequest::factor`, `ElastoplasticIncrementRequest::new`, `ElastoplasticIncrementRequest::softening`, `ElastoplasticIncrementRequest::thermal`, `ElastoplasticIncrementRequest::with_thermal`, `ElastoplasticProblem`, `ElastoplasticProblem::step`, `ElastoplasticProblem::try_new`, `ElastoplasticProblem::virgin_state`, `ElastoplasticSolution`, `ElastoplasticState`, `ElastoplasticState::displacements`, `ElastoplasticState::dissipation`, `ElastoplasticState::equivalent_plastic_strain`, `ElastoplasticState::newton_iterations`, `FemError`, `FemSolution`, `FemSolution::max_von_mises_mpa`, `PlasticHeating`, `PlasticHeating::taylor_quinney`, `PlasticHeating::temperature_rise`, `PlasticHeating::try_new`, `PlasticHeating::volumetric_heat_capacity_mpa_per_k`, `RESIDUAL_NORM_FLOOR`, `SolverConfig`, `SolverConfig::max_iterations`, `SolverConfig::preconditioner`, `SolverConfig::relative_tolerance`, `SolverConfig::stagnation_min_improvement`, `SolverConfig::stagnation_min_window`, `SolverConfig::stagnation_window_fraction`, `SolverConfig::try_new`, `SolverConfig::with_preconditioner`, `SolverConfig::with_stagnation`, `SolverConfig::with_stagnation_fraction`, `StressTensor`, `StressTensor::complementary_energy_density`, `StressTensor::hydrostatic`, `StressTensor::von_mises`, `ThermalExpansion`, `ThermalExpansion::alpha_per_k`, `ThermalExpansion::field`, `ThermalExpansion::from_rise`, `ThermalSoftening`, `ThermalSoftening::hardening_per_k`, `ThermalSoftening::none`, `ThermalSoftening::try_new`, `ThermalSoftening::yield_per_k`, `ThermoplasticCoupling`, `ThermoplasticCoupling::relaxation`, `ThermoplasticCoupling::residual_floor_fraction`, `ThermoplasticCoupling::try_new`, `ThermoplasticIncrement`, `adaptive_refinement_loop`, `corner_indicators_squared`, `corotational_reactions`, `deposit_increment_heat`, `deposit_plastic_heat`, `error_indicators_squared`, `hyperelastic_volumetric_modulus`, `mark_bulk`, `plastic_temperature_rise`, `reactions`, `solve`, `solve_adaptive`, `solve_corotational`, `solve_elastoplastic`, `solve_with_eigenstrain`, `step_thermoplastic`, `stiffness_diagonal_stats`
 - `src/linear_elastic_fem/consistent_tangent.rs`: `StepReport`, `TangentField`, `TangentField::apply`, `TangentField::at`, `backtrack`, `newton_krylov_step`, `newton_step`
+- `src/linear_solver.rs`: `BREAKDOWN_RELATIVE`, `BreakdownKind`, `DenseMatrix`, `DenseMatrix::dim`, `DenseMatrix::get`, `DenseMatrix::try_new`, `FnOperator`, `FnOperator::new`, `KrylovConfig`, `KrylovConfig::DEFAULT_RESTART`, `KrylovConfig::DEFAULT_STAGNATION_WINDOW`, `KrylovConfig::try_new`, `KrylovConfig::with_absolute_tolerance`, `KrylovConfig::with_restart`, `KrylovConfig::with_stagnation_window`, `KrylovConfigFault`, `KrylovSolution`, `KrylovStats`, `LinearOperator`, `LinearSolverError`, `Preconditioner`
+- `src/linear_solver/bicgstab.rs`: `bicgstab`
+- `src/linear_solver/equilibrate.rs`: `BlockEquilibration`, `BlockEquilibration::block_count`, `BlockEquilibration::dim`, `BlockEquilibration::equilibrate_diagonal`, `BlockEquilibration::scale`, `BlockEquilibration::try_new`, `BlockEquilibration::unscaled`, `BlockScale`, `KrylovMethod`, `solve_equilibrated`
+- `src/linear_solver/gmres.rs`: `gmres`
+- `src/linear_solver/precond.rs`: `BlockJacobiPreconditioner`, `BlockJacobiPreconditioner::from_dense`, `IdentityPreconditioner`, `IdentityPreconditioner::new`, `JacobiPreconditioner`, `JacobiPreconditioner::from_dense`, `JacobiPreconditioner::from_diagonal`
 - `src/mass_properties.rs`: `MassProperties`, `MassProperties::ZERO`, `box_mass_properties`, `capsule_mass_properties`, `convex_hull_mass_properties`, `cylinder_mass_properties`, `principal_axes`, `sphere_mass_properties`, `translate_inertia`
 - `src/material.rs`: `MaterialTable::combine`, `MaterialTable::is_empty`, `MaterialTable::len`, `MaterialTable::register_concrete`, `MaterialTable::register_ice`, `MaterialTable::register_metal`, `MaterialTable::register_rubber`, `MaterialTable::register_wood`, `MaterialTable::set_pair_override`, `PhysicsMaterial::with_combine_rules`, `PhysicsMaterial::with_static_friction`
 - `src/math.rs`: `Fix128::NEG_ONE`, `Fix128::add_simd`, `Fix128::atan`, `Fix128::ceil`, `Fix128::checked_div`, `Fix128::cos`, `Fix128::exp`, `Fix128::floor`, `Fix128::ln`, `Fix128::powf_pos`, `Fix128::sin`, `Fix128::sub_simd`, `Mat3Fix`, `Mat3Fix::IDENTITY`, `Mat3Fix::ZERO`, `Mat3Fix::determinant`, `Mat3Fix::diagonal`, `Mat3Fix::from_cols`, `Mat3Fix::inverse`, `Mat3Fix::max_abs_component`, `Mat3Fix::mul_mat`, `Mat3Fix::mul_vec`, `Mat3Fix::polar_rotation`, `Mat3Fix::polar_rotation_steps`, `Mat3Fix::scale`, `Mat3Fix::transpose`, `PolarError`, `SIMD_WIDTH`, `Vec3Fix::cross_simd`, `Vec3Fix::dot_batch_4`, `Vec3Fix::dot_simd`, `Vec3Fix::length_squared_simd`, `simd_width`
