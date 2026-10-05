@@ -73,7 +73,11 @@
 //! the whole array is cleared on every build), while a crowd domain is planar
 //! and can be long (a corridor of hundreds of metres). The cells here are
 //! `cutoff · (1 + 2⁻²⁰)` wide, so the rounding of `x / cell` cannot push a pair
-//! at distance `cutoff` two cells apart (for coordinates below `2⁴³` cells).
+//! at distance `cutoff` two cells apart (for coordinates below `2⁴³` cells)
+//! whatever the rounding direction of `Fix128` division and multiplication.
+//! With the current truncating `1/cell` the margin is not needed (a search of
+//! 5.6·10⁶ near-boundary pairs found no pair two cells apart without it); it
+//! keeps the guarantee independent of that rounding.
 //! Walls are summed directly (there are few of them) with the same cutoff on
 //! the distance `d_iW` from the centre to the segment.
 //!
@@ -387,6 +391,8 @@ impl SocialForce {
     ) -> (Vec2Fix, Vec2Fix) {
         let diff = a.position - b.position;
         let d2 = diff.length_squared();
+        // Explicit, although `Fix128` division by 0 returns 0 and would give
+        // n = 0 too: the result must not depend on that convention.
         if d2.is_zero() {
             return (Vec2Fix::ZERO, Vec2Fix::ZERO);
         }
