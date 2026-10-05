@@ -2,7 +2,8 @@
 //! ReplayPlayer}` (`std,replay` feature — `wiring_guard`: `src/replay.rs`
 //! had zero production callers for `close` (both types), `frame_count`,
 //! `get_position`, `get_velocity`, `record_frame`, `record_positions` and
-//! `scan_positions`).
+//! `scan_positions`; `ReplayRecorder::flush` and `ReplayPlayer::body_count`
+//! are reached below as well).
 //!
 //! Two bodies are driven through four frames with hand-assigned, exactly
 //! `f32`-representable integer positions and velocities (no
@@ -51,6 +52,21 @@ fn vel1(k: i64) -> (f32, f32, f32) {
 
 const FRAMES: i64 = 4;
 
+/// Total size of the regular files under `path` (recursively).
+fn dir_bytes(path: &std::path::Path) -> u64 {
+    let mut total = 0;
+    for entry in std::fs::read_dir(path).expect("read_dir") {
+        let entry = entry.expect("dir entry");
+        let meta = entry.metadata().expect("metadata");
+        total += if meta.is_dir() {
+            dir_bytes(&entry.path())
+        } else {
+            meta.len()
+        };
+    }
+    total
+}
+
 fn main() {
     println!("[replay] hand-built 2-body / {FRAMES}-frame recording via record_frame");
 
@@ -87,9 +103,24 @@ fn main() {
         count, FRAMES as u64,
         "frame_count must equal calls to record_frame"
     );
+    // `flush` pushes the frames buffered in memory to disk while the
+    // recorder stays open (a second handle cannot open the store meanwhile:
+    // the writer holds its lock). What it is observable by is the bytes on
+    // disk: the store grows on the flush.
+    let before = dir_bytes(&full_path);
+    recorder.flush().expect("ReplayRecorder::flush");
+    let after = dir_bytes(&full_path);
+    println!("[replay] bytes on disk before / after flush: {before} / {after}");
+    assert!(
+        after > before,
+        "flush must write the buffered frames ({before} -> {after})"
+    );
     recorder.close().expect("ReplayRecorder::close");
 
     let player = ReplayPlayer::open(&full_path, 2).expect("ReplayPlayer::open");
+    // `body_count` is the count the player was opened with (it is not read
+    // from the recording).
+    assert_eq!(player.body_count(), 2);
     for k in 0..FRAMES {
         let frame = k as u64;
         let got0 = player
