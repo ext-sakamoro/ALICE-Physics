@@ -1263,6 +1263,11 @@ pub struct PhysicsWorld {
     /// `contact_constraints`; an index past the end counts as kept)
     #[cfg(feature = "std")]
     contact_discarded: Vec<bool>,
+    /// Pre-solve normal velocity `v̄_n` of each contact constraint in the
+    /// current substep (indexed like `contact_constraints`), recorded by
+    /// [`Self::update_velocities`] before it derives the post-solve
+    /// velocities; the restitution target is `−e v̄_n`
+    contact_pre_vn: Vec<Fix128>,
     /// v0.11.0: installed GPU solver bridge for automatic contact-solve
     /// routing. When `Some`, every call to [`Self::step`] /
     /// [`Self::substep`] transparently routes contact-solve through the
@@ -1435,6 +1440,7 @@ impl PhysicsWorld {
             contact_modifiers: Vec::new(),
             #[cfg(feature = "std")]
             contact_discarded: Vec::new(),
+            contact_pre_vn: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
             gpu_solver_bridge: None,
             joints: Vec::new(),
@@ -3691,6 +3697,18 @@ impl PhysicsWorld {
         // (bool の OR は結合的・可換なので rayon の実行順に依存しない)
         let overflow = core::sync::atomic::AtomicBool::new(false);
 
+        // --- Phase 0: Record the pre-solve normal velocity v̄_n per contact ---
+        // `velocity` still holds the substep's predicted velocity (gravity
+        // applied in `integrate_positions`, untouched by the position solve),
+        // so this is the approach velocity before any constraint acted.
+        self.contact_pre_vn.clear();
+        for constraint in &self.contact_constraints {
+            let relative =
+                self.bodies[constraint.body_a].velocity - self.bodies[constraint.body_b].velocity;
+            self.contact_pre_vn
+                .push(relative.dot(constraint.contact.normal));
+        }
+
         // --- Phase 1: Derive velocities from position/rotation changes ---
         #[cfg(feature = "parallel")]
         {
@@ -3745,6 +3763,11 @@ impl PhysicsWorld {
         }
 
         // --- Phase 2: Apply restitution and friction at contacts ---
+        // Restitution threshold of Müller et al. 2020 (below): an approach
+        // slower than `2 |g| h` is a resting contact and gets `e = 0`, so
+        // resting bodies do not bounce on the gravity of one substep
+        // (the same rule as the 2D solver).
+        let restitution_threshold = self.config.gravity.length() * dt * Fix128::from_int(2);
         let num_contacts = self.contact_constraints.len();
         for i in 0..num_contacts {
             let constraint = self.contact_constraints[i];
@@ -3773,11 +3796,28 @@ impl PhysicsWorld {
             let relative_vel = body_a.velocity - body_b.velocity;
             let vn = relative_vel.dot(n);
 
-            // Restitution: apply bounce on separating velocity
-            if vn < Fix128::ZERO {
-                let restitution = constraint.restitution;
-                // delta_vn = -(1 + e) * vn
-                let delta_vn = -(Fix128::ONE + restitution) * vn;
+            // Restitution (Müller, Macklin, Chentanez, Jeschke, Kim,
+            // "Detailed Rigid Body Simulation with Extended Position Based
+            // Dynamics", SCA 2020, eq. (34)): the target normal velocity is
+            // `max(−e v̄_n, 0)` with `v̄_n` the pre-solve normal velocity. The
+            // post-solve `vn` only reflects how far into the substep the
+            // bodies first touched (`vn = −gap / h`), so reversing `vn`
+            // itself made the bounce depend on that phase. The correction is
+            // one-sided (only raises `vn` to the target), as in the 2D solver.
+            let pre_vn = self.contact_pre_vn.get(i).copied().unwrap_or(vn);
+            let restitution = if pre_vn < -restitution_threshold {
+                constraint.restitution
+            } else {
+                Fix128::ZERO
+            };
+            let target = -restitution * pre_vn;
+            let target = if target.is_negative() {
+                Fix128::ZERO
+            } else {
+                target
+            };
+            if vn < target {
+                let delta_vn = target - vn;
                 let impulse_n = n * delta_vn;
                 let inv_w = Fix128::ONE / w_sum;
                 self.bodies[constraint.body_a].velocity =
@@ -6667,8 +6707,11 @@ mod tests {
 
     /// Phase 1 は velocity を (position - prev) * inv_dt で上書きするので、
     /// 速度 v を与えるには prev_position = position - v * dt を仕込む (dt = 1/4 固定)
+    /// 反発は pre-solve の法線速度 v̄_n を使うので `velocity` にも同じ v を入れる
+    /// (拘束が位置を動かさなかった substep = pre と post が一致する場合)
     fn give_velocity(world: &mut PhysicsWorld, idx: usize, v: Vec3Fix) {
         let b = &mut world.bodies[idx];
+        b.velocity = v;
         b.prev_position = b.position - v * r(1, 4);
         b.prev_rotation = b.rotation;
     }
