@@ -26,6 +26,7 @@
 #![allow(dead_code)]
 #![allow(rustdoc::broken_intra_doc_links)]
 
+use crate::gyroscopic::FreeRotation;
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver_tgs::{BodyLike, ContactLike, JointLike};
 
@@ -150,6 +151,30 @@ impl Body6DofOrientedState {
         ];
         // Orientation: standard quaternion integration.
         self.orientation = integrate_orientation(self.orientation, self.angular_velocity, sub_dt);
+    }
+
+    /// [`Self::advance`] for a body whose free rotation over this sub-step was
+    /// already integrated by [`crate::gyroscopic::split_free_rotation`]:
+    /// the orientation becomes the split's end orientation `free.rotation`,
+    /// followed by the rotation the constraint solve added on top of the
+    /// split's velocity (`ω − free.omega`, first-order rule). Without contact
+    /// or joint impulses that difference is zero and the split's orientation
+    /// is used as is.
+    pub(crate) fn advance_split(&mut self, sub_dt: Fix128, free: FreeRotation) {
+        if !self.is_dynamic {
+            return;
+        }
+        self.position = [
+            self.position[0] + self.linear_velocity[0] * sub_dt,
+            self.position[1] + self.linear_velocity[1] * sub_dt,
+            self.position[2] + self.linear_velocity[2] * sub_dt,
+        ];
+        let correction = v_sub(self.angular_velocity, from_vec3fix(free.omega));
+        self.orientation = if correction == V_ZERO {
+            free.rotation
+        } else {
+            integrate_orientation(free.rotation, correction, sub_dt)
+        };
     }
 
     /// Rotate a body-local vector into the world frame.
@@ -352,6 +377,9 @@ pub(crate) struct Pgs6DofOrientedHooks<'a> {
     /// Tunable projected Gauss-Seidel parameters for the oriented solve.
     pub(crate) cfg: Pgs6DofOrientedConfig,
     restitution_bias: Vec<Fix128>,
+    /// Per body, the free rotation of the current sub-step computed in
+    /// `begin_substep` (`None`: no gyroscopic response, old path).
+    free_rotation: Vec<Option<FreeRotation>>,
 }
 
 impl<'a> Pgs6DofOrientedHooks<'a> {
@@ -366,6 +394,7 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
         cfg: Pgs6DofOrientedConfig,
     ) -> Self {
         let n = contacts.len();
+        let nb = bodies.len();
         Self {
             bodies,
             contacts,
@@ -373,6 +402,7 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
             cache,
             cfg,
             restitution_bias: vec![Fix128::ZERO; n],
+            free_rotation: vec![None; nb],
         }
     }
 
@@ -521,16 +551,23 @@ impl<'a> Pgs6DofOrientedHooks<'a> {
 impl TgsHooks for Pgs6DofOrientedHooks<'_> {
     fn begin_substep(&mut self, sub_dt: Fix128) {
         let dv = v_scale(self.cfg.gravity, sub_dt);
-        for body in self.bodies.iter_mut() {
+        for (body, free) in self.bodies.iter_mut().zip(self.free_rotation.iter_mut()) {
+            *free = None;
             if body.is_dynamic {
                 body.linear_velocity = v_add(body.linear_velocity, dv);
-                // Gyroscopic term ω × Iω (implicit, see `crate::gyroscopic`)
-                body.angular_velocity = from_vec3fix(crate::gyroscopic::gyroscopic_omega(
+                // Free rotation with the gyroscopic term ω × Iω, by the
+                // symplectic splitting (see `crate::gyroscopic`): the solve
+                // below sees the split's end velocity, `end_substep` applies
+                // the split's orientation.
+                *free = crate::gyroscopic::split_free_rotation(
                     to_vec3fix(body.angular_velocity),
                     body.orientation,
                     to_vec3fix(body.inv_inertia_local),
                     sub_dt,
-                ));
+                );
+                if let Some(f) = free {
+                    body.angular_velocity = from_vec3fix(f.omega);
+                }
             }
         }
         for i in 0..self.contacts.len() {
@@ -746,8 +783,11 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
 
     fn end_substep(&mut self, sub_dt: Fix128) {
         // Advance position + orientation for every dynamic body.
-        for body in self.bodies.iter_mut() {
-            body.advance(sub_dt);
+        for (body, free) in self.bodies.iter_mut().zip(self.free_rotation.iter()) {
+            match free {
+                Some(f) => body.advance_split(sub_dt, *f),
+                None => body.advance(sub_dt),
+            }
         }
         for contact in self.contacts.iter() {
             self.cache.set(
@@ -962,6 +1002,48 @@ mod tests {
             Fix128::from_f32(1.0 / 60.0),
         );
         assert!(bodies[0].linear_velocity[1].to_f32() > 3.5);
+    }
+
+    /// oracle: with no solve change the split's orientation is used as is;
+    /// with a solve change `Δω = (0, 0, a)` from an identity free rotation
+    /// the first-order rule gives `normalize(1 + ½ h a k)`, a turn about `z`
+    /// by `2·atan(h a / 2)`.
+    #[test]
+    fn advance_split_applies_the_solve_change_on_top_of_the_free_rotation() {
+        let h = Fix128::from_ratio(1, 8);
+        let mut body = Body6DofOrientedState {
+            is_dynamic: true,
+            inv_mass: Fix128::ONE,
+            ..Body6DofOrientedState::default()
+        };
+        let turned = QuatFix::from_axis_angle(
+            Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO),
+            Fix128::from_ratio(1, 3),
+        );
+        let free = FreeRotation {
+            rotation: turned,
+            omega: Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO),
+        };
+        body.angular_velocity = from_vec3fix(free.omega);
+        body.advance_split(h, free);
+        assert_eq!(body.orientation, turned);
+
+        let free = FreeRotation {
+            rotation: QuatFix::IDENTITY,
+            omega: Vec3Fix::ZERO,
+        };
+        body.orientation = QuatFix::IDENTITY;
+        body.angular_velocity = [Fix128::ZERO, Fix128::ZERO, Fix128::from_int(2)];
+        body.advance_split(h, free);
+        let want = 0.125_f64; // atan(h a / 2) = atan(1/8)
+        let got =
+            crate::det_math::atan2_64(body.orientation.z.to_f64(), body.orientation.w.to_f64());
+        assert!(
+            (got - crate::det_math::atan64(want)).abs() < 1e-15,
+            "{got} vs {}",
+            crate::det_math::atan64(want)
+        );
+        assert!(body.orientation.x.is_zero() && body.orientation.y.is_zero());
     }
 
     #[test]
