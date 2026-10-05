@@ -31,6 +31,7 @@
 //! no exponent, so a quantity keeps about `64 + log₂|x|` significant bits.
 //! Scaled to order 1, every state variable keeps about 64 bits; in SI the same
 //! flow mixes `p ≈ 10⁵ Pa` with `ρ ≈ 1 kg/m³` and a `Δt` of microseconds, and
+// LIMITATION(COV-SHOCK-087): a strong rarefaction drives `p` towards 0, where an SI value would keep only the bits above `2⁻⁶⁴` (a pressure of `10⁻¹⁰ Pa` keeps ≈ 31)
 //! a strong rarefaction drives `p` towards 0, where an SI value would keep
 //! only the bits above `2⁻⁶⁴` (a pressure of `10⁻¹⁰ Pa` keeps ≈ 31). The range
 //! (±9.2e18) is never the issue in this module; precision near zero is. This
@@ -101,6 +102,7 @@
 //!
 //! # Positivity
 //!
+// LIMITATION(COV-SHOCK-079): A stage that would leave `ρ ≤ 0` or `p ≤ 0` in a cell returns [`EulerError::NonPositiveDensity`] / [`EulerError::NonPositivePressure`] with the cell index, and the state is not changed
 //! A stage that would leave `ρ ≤ 0` or `p ≤ 0` in a cell returns
 //! [`EulerError::NonPositiveDensity`] / [`EulerError::NonPositivePressure`]
 //! with the cell index, and the state is not changed (all stages are computed
