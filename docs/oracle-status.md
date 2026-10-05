@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4586 |
-| 🔴 Red by design | 208 |
+| 🟢 Not ignored (run by CI) | 4592 |
+| 🔴 Red by design | 206 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4819** |
+| **Total** | **4823** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (208)
+## 🔴 Red by design (206)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -104,7 +104,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `huge_stress_must_not_wrap_to_safe` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-004: sigma1 = 3.2e9 MPa で sigma1^2 が 2^63 を超え wrap、Tsai-Hill FI = -3.6e12 (負)
 - `impact_with_inverted_radius_range_does_not_panic` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-010: destruction_from_impact panics (f32::clamp assertion) when min_radius > max_radi…
 - `in_contact_is_false_on_the_frame_the_contact_ends` (audit_solver.rs) — known defect: AUD-A-S1W2-003: observe_body.in_contact is true on the frame of an End event (any contact event …
-- `inactive_modifier_is_skipped_by_the_single_wrapper` (audit_sim_modifier.rs) — known defect: AUD-A-S5W3-007: SingleModifiedSdf ignores PhysicsModifier::is_active (an inactive +100 modifier …
 - `invalid_parameters_do_not_produce_non_finite_output` (audit_privacy.rs) — known defect: AUD-A-S4W3-024: parameters that make a mechanism meaningless are accepted silently: Laplace with…
 - `joint_solve_through_a_reference_bridge_matches_the_cpu_solve` (audit_solver.rs) — known defect: AUD-A-S1W2-006: solve_joints_with_bridge writes back positions only; the rotation corrections of…
 - `k_epsilon_point_source_is_one_explicit_euler_step_from_the_start_of_the_step_state` (audit_cfd_solver_rans.rs) — known defect: AUD-A-S1W4-009: the k-eps point source is documented as `explicit` (advance_epsilon: `one explic…
@@ -172,7 +171,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `rigid_weld_closes_a_small_angular_error_in_one_projection` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-013: solve_weld's angular effective inverse mass is |inv_inertia| (vector norm, sqrt(…
 - `rotation_error_magnitude_equals_the_angle_for_a_quarter_turn` (audit_motor.rs) — known defect: AUD-A-S5W2-002: the in-code comment calls the position error \"axis-angle\" but the controller u…
 - `sampled_points_stay_inside_the_aabb` (audit_thin_wall.rs) — known defect: AUD-A-S2W1-006: sample_surface_points returns points beyond aabb_max (ceil in axis_steps): x=5 >…
-- `scaled_shape_with_negative_scale_is_still_a_support_function` (audit_collider.rs) — known defect: AUD-A-S3W3-017: ScaledShape::support returns scale * inner.support(d) with no sign handling, so …
 - `self_referential_ball_joint_with_distinct_anchors_is_a_free_body` (audit_c_joint.rs) — known defect: AUD-A-S34-010: `solve_ball_joint` with `BallJoint(a, a)` and distinct local anchors (1,0,0) / (-…
 - `separating_normal_velocity_is_not_reversed_by_the_contact` (audit_rope.rs) — known defect: AUD-A-S3W1-004: resolve_sdf_collisions sets v_n' = -0.1 v_n unconditionally, reversing a separat…
 - `separation_load_for_c_above_one_is_not_negative` (audit_prestressed.rs) — known defect: AUD-A-S1W6-001: separation_load_n(1000, C=1.2) returns -5000 (negative load, no clamp/guard for …
@@ -283,7 +281,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4586)
+## 🟢 Not ignored (4592)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -317,11 +315,11 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_query_wiring.rs` | 25 |
 | `audit_cfd_solver.rs` | 25 |
 | `audit_character.rs` | 25 |
+| `audit_collider.rs` | 25 |
 | `audit_heightfield.rs` | 25 |
 | `audit_joint_extra.rs` | 25 |
 | `analytic_compound_wiring.rs` | 24 |
 | `analytic_transient_thermal_wiring.rs` | 24 |
-| `audit_collider.rs` | 24 |
 | `analytic_compound.rs` | 23 |
 | `analytic_convex_contact.rs` | 23 |
 | `analytic_kepler.rs` | 23 |
@@ -354,6 +352,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_rolling_contact_wiring.rs` | 19 |
 | `analytic_tgs_wiring.rs` | 19 |
 | `audit_privacy.rs` | 19 |
+| `audit_sim_modifier.rs` | 19 |
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
 | `analytic_hyperelastic_wiring.rs` | 18 |
@@ -366,7 +365,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_bvh.rs` | 18 |
 | `audit_eulerian_grid.rs` | 18 |
 | `audit_hyperelastic.rs` | 18 |
-| `audit_sim_modifier.rs` | 18 |
 | `audit_wave_ship.rs` | 18 |
 | `analytic_acoustic_wave_wiring.rs` | 17 |
 | `analytic_anomaly_wiring.rs` | 17 |
@@ -605,6 +603,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
 | `analytic_contact_friction_cap.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
+| `analytic_sdf_dynamic_collider_pose.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `audit_c_joint_extra.rs` | 4 |
 | `audit_c_laminate.rs` | 4 |
