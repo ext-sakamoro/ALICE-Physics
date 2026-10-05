@@ -603,6 +603,9 @@ impl ContactConstraint {
 /// `tests/analytic_tgs_wiring.rs`'s joint tests for both backends' measured
 /// bands).
 ///
+/// Pre-solve hooks and contact modifiers run once over the
+/// tick's contacts before the solve (`tests/analytic_tgs_backend_coverage.rs`).
+///
 /// * Requires the `std` feature (`solver_tgs` is `std`-gated, same as the
 ///   rest of the TGS family). Selecting `Tgs` in a build without `std`
 ///   is **not** silently ignored at the type level — the variant still
@@ -3001,10 +3004,12 @@ impl PhysicsWorld {
     /// every sub-step — the TGS family owns its own sub-stepping internally
     /// via [`crate::solver_tgs::tgs_step`]), and bodies are advanced by
     /// per-island impulse-based Gauss-Seidel instead of XPBD position
-    /// projection. Joints, kinematic targets and SDF colliders are all
-    /// handled — see [`SolverBackend`]'s notes for the joint solve, and
+    /// projection. Joints, static colliders, contact filters, kinematic
+    /// targets and SDF colliders are all handled — see [`SolverBackend`]'s
+    /// notes for the joint and filter handling, Phase 3.2 below for the
+    /// joints and static colliders, and
     /// [`Self::advance_kinematic_targets_for_tgs`] /
-    /// [`Self::resolve_sdf_collisions`] for the other two.
+    /// [`Self::resolve_sdf_collisions`] for the last two.
     #[cfg(feature = "std")]
     fn step_tgs(&mut self, dt: Fix128) {
         use crate::solver_tgs::{build_islands, DistanceRef};
@@ -3056,6 +3061,13 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
 
+        // Phase 2.7: Pre-solve hooks and contact modifiers, once over the
+        // tick's contact set (the same pre-pass `substep` runs over each
+        // substep's set). A modifier's result is written back to the
+        // constraint and read by `contact_to_tgs` below; a vetoed contact is
+        // left out of the TGS contact list.
+        self.apply_contact_filters();
+
         // Phase 3: Convert to the TGS body/contact representation, solve
         // every island, convert back.
         let n = self.bodies.len();
@@ -3074,10 +3086,19 @@ impl PhysicsWorld {
         // `build_islands` below rejects it before anything is solved.
         let id_of = |i: usize| ids.get(i).copied().unwrap_or(u64::MAX);
         let mut contact_ordinals = std::collections::BTreeMap::new();
+        // Contacts vetoed by a hook or a modifier (`apply_contact_filters`
+        // above) are not solved, as in the XPBD contact solve. The key is
+        // taken before the veto is applied, so vetoing one contact of a pair
+        // does not shift the ordinal (and so the warm-start entry) of the
+        // pair's other contacts. A modified contact is converted from the
+        // values the modifier wrote back. (Sensor pairs never reach
+        // `contact_constraints`: detection reports them as triggers.)
+        let discarded = &self.contact_discarded;
         let mut tgs_contacts: Vec<_> = self
             .contact_constraints
             .iter()
-            .map(|c| {
+            .enumerate()
+            .filter_map(|(i, c)| {
                 // Orient every contact from the lower stable id to the higher
                 // one. Detection orders a pair by index, and `swap_remove`
                 // can flip the index order of two bodies whose ids did not
@@ -3107,7 +3128,10 @@ impl PhysicsWorld {
                     ia.max(ib),
                     &mut contact_ordinals,
                 );
-                contact_to_tgs(c, &self.bodies, key)
+                if discarded.get(i).copied().unwrap_or(false) {
+                    return None;
+                }
+                Some(contact_to_tgs(c, &self.bodies, key))
             })
             .collect();
         let joint_refs: Vec<DistanceRef<'_>> = self
