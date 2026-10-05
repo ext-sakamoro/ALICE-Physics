@@ -69,14 +69,16 @@ def tree(root: Path, table: str | None = GOOD, src: str | None = SRC, tests: str
     return root
 
 
-def run(root: Path, exempt: dict[str, str] | None = None) -> tuple[int, str, str]:
+def run(root: Path, exempt: dict[str, str] | None = None, write_status: bool = True) -> tuple[int, str, str]:
+    """`write_status` regenerates docs/coverage/status.md first, so the cases that
+    are not about that file do not need to keep it in step."""
     out, err = io.StringIO(), io.StringIO()
     saved = dict(cc.MARKER_EXEMPT)
     try:
         cc.MARKER_EXEMPT.clear()
         cc.MARKER_EXEMPT.update(exempt or {})
         with redirect_stdout(out), redirect_stderr(err):
-            code = cc.main(["--root", str(root)])
+            code = cc.main(["--root", str(root), *(["--write-status"] if write_status else [])])
     finally:
         cc.MARKER_EXEMPT.clear()
         cc.MARKER_EXEMPT.update(saved)
@@ -238,10 +240,127 @@ class Locale(Fixture):
         tree(self.root, table=GOOD + item("COV-TST-004", "missing", "非 ASCII の根拠 σ_y"), newline="\r\n")
         env = dict(os.environ, LC_ALL="C", LANG="C", PYTHONIOENCODING="", PYTHONCOERCECLOCALE="0")
         env.pop("PYTHONUTF8", None)
-        r = subprocess.run([sys.executable, "-X", "utf8=0", str(HERE / "coverage_check.py"), "--root", str(self.root)],
-                           capture_output=True, env=env)
-        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
-        self.assertIn(b"coverage: ok", r.stdout)
+        cmd = [sys.executable, "-X", "utf8=0", str(HERE / "coverage_check.py"), "--root", str(self.root)]
+        # the status doc written under this locale must read back the same under it
+        for extra in (["--write-status"], []):
+            r = subprocess.run(cmd + extra, capture_output=True, env=env)
+            self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace"))
+            self.assertIn(b"coverage: ok", r.stdout)
+
+
+COVERED = TESTS + """
+// covers: COV-TST-003
+#[test]
+fn closes_three() {}
+"""
+
+
+class Covers(Fixture):
+    """test -> table: a test that runs and covers an item forces the table to say so."""
+
+    def test_a_running_test_covering_a_missing_item_is_red(self):
+        self.assertRed("tests/t.rs::closes_three runs and covers COV-TST-003, whose status is still missing",
+                       tests=COVERED)
+
+    def test_updating_the_table_turns_it_green(self):
+        table = GOOD.replace(item("COV-TST-003", "missing", "nothing"),
+                             item("COV-TST-003", "implemented+oracle", "tests/t.rs::closes_three"))
+        out = self.assertGreen(tests=COVERED, table=table)
+        self.assertIn("covers links: 1;", out)
+
+    def test_implemented_no_oracle_is_not_enough_either(self):
+        table = GOOD.replace(item("COV-TST-003", "missing", "nothing"),
+                             item("COV-TST-003", "implemented-no-oracle", "src/m.rs:6"))
+        self.assertRed("whose status is still implemented-no-oracle", tests=COVERED, table=table)
+
+    def test_an_ignored_covering_test_does_not_force_the_update(self):
+        ignored = TESTS + '\n// covers: COV-TST-003\n#[test]\n#[ignore = "src gap: COV-TST-003"]\nfn ahead() {}\n'
+        self.assertGreen(tests=ignored)
+
+    def test_attributes_and_doc_comments_may_sit_between(self):
+        t = TESTS + "\n// covers: COV-TST-003\n/// the closed form\n#[test]\n#[cfg(not(miri))]\nfn closes_three() {}\n"
+        self.assertRed("closes_three runs and covers COV-TST-003", tests=t)
+
+    def test_several_ids_on_one_line(self):
+        t = TESTS + "\n// covers: COV-TST-001, COV-TST-003\n#[test]\nfn both() {}\n"
+        self.assertRed("both runs and covers COV-TST-003", tests=t)
+
+    def test_an_unknown_id_is_red(self):
+        self.assertRed("covers COV-TST-099, which is no item", tests=TESTS + "\n// covers: COV-TST-099\n#[test]\nfn x() {}\n")
+
+    def test_covers_on_a_fn_that_is_not_a_test_is_red(self):
+        self.assertRed("which is not a #[test] fn", tests=TESTS + "\n// covers: COV-TST-001\nfn helper() {}\n")
+
+    def test_covers_not_followed_by_a_fn_is_red(self):
+        self.assertRed("is not followed by a fn", tests=TESTS + "\n// covers: COV-TST-001\nconst X: u8 = 1;\n")
+
+    def test_a_malformed_list_is_red(self):
+        self.assertRed("comma-separated", tests=TESTS + "\n// covers: COV-TST-001 and more\n#[test]\nfn x() {}\n")
+
+    def test_prose_that_says_covers_is_not_a_link(self):
+        self.assertGreen(tests="//! The unit tests already\n//! covers: the empty case\n" + TESTS)
+
+    def test_covers_in_a_src_unit_test(self):
+        src = SRC + "#[cfg(test)]\nmod tests {\n    // covers: COV-TST-003\n    #[test]\n    fn unit() {}\n}\n"
+        self.assertRed("src/m.rs::unit runs and covers COV-TST-003", src=src)
+
+
+class SrcGap(Fixture):
+    AHEAD = TESTS + '\n#[test]\n#[ignore = "src gap: COV-TST-001: not implemented yet"]\nfn ahead() {}\n'
+
+    def test_an_ignore_left_on_an_implemented_item_is_red(self):
+        self.assertRed("still ignored as `src gap: COV-TST-001`, but COV-TST-001 is implemented+oracle",
+                       tests=self.AHEAD)
+
+    def test_an_ignore_on_a_missing_item_is_the_oracle_ahead(self):
+        out = self.assertGreen(tests=self.AHEAD.replace("COV-TST-001", "COV-TST-003"))
+        self.assertIn("src gap oracles: 1", out)
+
+    def test_an_ignore_naming_no_item_is_red(self):
+        self.assertRed("which is no item", tests=self.AHEAD.replace("COV-TST-001", "COV-TST-077"))
+
+
+class SymbolEvidence(Fixture):
+    def test_a_source_symbol_is_evidence(self):
+        table = GOOD.replace('"src/m.rs:6 / tests/t.rs::runs"', '"src/m.rs::straight / tests/t.rs::runs"')
+        self.assertGreen(table=table)
+
+    def test_a_symbol_the_file_does_not_define_is_red(self):
+        table = GOOD.replace('"src/m.rs:6 / tests/t.rs::runs"', '"src/m.rs::curved / tests/t.rs::runs"')
+        self.assertRed("src/m.rs::curved, which is not a #[test] fn there", table=table)
+
+    def test_tests_still_need_a_test_fn(self):
+        table = GOOD.replace("tests/t.rs::runs", "tests/t.rs::nothing")
+        self.assertRed("tests/t.rs::nothing, which is not a #[test] fn there", table=table)
+
+
+class StatusDoc(Fixture):
+    def test_a_missing_status_doc_is_red(self):
+        code, _, err = run(tree(self.root), write_status=False)
+        self.assertEqual(code, 1)
+        self.assertIn("docs/coverage/status.md is missing", err)
+
+    def test_write_then_check_round_trips_and_a_table_edit_makes_it_stale(self):
+        tree(self.root)
+        self.assertEqual(run(self.root)[0], 0)
+        self.assertEqual(run(self.root, write_status=False)[0], 0)
+        text = (self.root / "docs/coverage/status.md").read_text(encoding="utf-8")
+        self.assertIn("| `docs/coverage/tst.toml` | 3 | 1 | 0 | 1 | 1 | 0 |", text)
+        self.assertIn("| element | 3 | 1 | 0 | 1 | 1 | 0 |", text)
+        t = self.root / "docs/coverage/tst.toml"
+        t.write_text(t.read_text(encoding="utf-8").replace('"missing"', '"out-of-scope"', 1), encoding="utf-8")
+        code, _, err = run(self.root, write_status=False)
+        self.assertEqual(code, 1)
+        self.assertIn("docs/coverage/status.md is stale", err)
+
+    def test_every_table_gets_a_row_and_a_total(self):
+        tree(self.root)
+        (self.root / "docs/coverage/two.toml").write_text(item("COV-TWO-001", "missing", "nothing"), encoding="utf-8")
+        self.assertEqual(run(self.root)[0], 0)
+        text = (self.root / "docs/coverage/status.md").read_text(encoding="utf-8")
+        self.assertIn("| `docs/coverage/two.toml` | 1 | 0 | 0 | 0 | 1 | 0 |", text)
+        self.assertIn("| **total** | 4 | 1 | 0 | 1 | 2 | 0 |", text)
+        self.assertIn("## `docs/coverage/two.toml`", text)
 
 
 class RealRepo(unittest.TestCase):

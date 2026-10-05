@@ -16,12 +16,27 @@ status. The tables are written by hand; this script keeps them honest:
   * `partial` <-> `LIMITATION(<id>)` comments in src/, both ways: a partial item
     has at least one comment (unless listed in MARKER_EXEMPT with a reason), and
     every comment names an existing partial item
+  * test -> table: a `// covers: COV-X-NNN[, ...]` line just above a test fn says
+    the test checks that capability. A test that runs and covers an item whose
+    status is still `missing` / `implemented-no-oracle` fails (update the table
+    when the capability lands); a covered id must exist; `covers` must sit on a
+    #[test] fn. A test ignored with `src gap: COV-X-NNN` is the oracle written
+    ahead of the implementation, and fails once the item is `implemented+oracle`
+    (remove the ignore)
+  * `src/x.rs::name` in `evidence` may name any item defined in that file (fn,
+    struct, enum, trait, const, ...), which survives edits that move lines
+  * docs/coverage/status.md, the per-table and per-axis counts, matches the
+    tables (`--write-status` regenerates it)
+
+Tables are added per domain (docs/coverage/<domain>.toml, ids COV-<DOMAIN>-NNN);
+nothing here names a domain.
 
 Every check must compare something: no table, a table without items, or no
 source file to scan for comments is a failure, not a pass.
 
-  python3 scripts/coverage_check.py            # exit 1 on any finding
-  python3 scripts/coverage_check.py --root DIR # another tree (used by the tests)
+  python3 scripts/coverage_check.py                 # exit 1 on any finding
+  python3 scripts/coverage_check.py --write-status  # regenerate docs/coverage/status.md
+  python3 scripts/coverage_check.py --root DIR      # another tree (used by the tests)
 """
 
 from __future__ import annotations
@@ -45,6 +60,18 @@ REQUIRED_KEYS = ("id", "axis", "item", "source", "status", "evidence", "oracle_c
 REF_RE = re.compile(r"(?<![\w/.-])((?:src|tests)/[\w/.-]+?\.rs)(?:::([A-Za-z_]\w*)|:(\d+))?")
 LIMITATION_RE = re.compile(r"^((?:src|tests)/[\w/.-]+?\.rs):(\d+) '(.+)'$", re.S)
 MARKER_RE = re.compile(r"LIMITATION\(([^)]*)\)")
+COVERS_RE = re.compile(r"^\s*//[/!]?\s*covers:\s*(COV-.*)$")
+FN_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+([A-Za-z_]\w*)")
+SRC_GAP_RE = re.compile(r"^src gap:\s*(COV-[A-Z]+-\d{3})\b")
+STATUS_DOC = "docs/coverage/status.md"
+# statuses a test that runs may not leave an item in
+NOT_YET = ("missing", "implemented-no-oracle")
+
+
+def defines(lines: list[str], name: str) -> bool:
+    pat = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+|async\s+|const\s+)*"
+                     r"(?:fn|struct|enum|trait|const|static|type|mod|union|macro_rules!)\s+" + re.escape(name) + r"\b")
+    return any(pat.match(ln) for ln in lines)
 
 # Partial items whose LIMITATION comment cannot be placed in the source yet,
 # with the reason. Each entry must name a partial item that has no comment;
@@ -70,10 +97,12 @@ def _flatten(text: str) -> str:
 
 
 class Checker:
-    def __init__(self, root: Path, exempt: dict[str, str] | None = None):
+    def __init__(self, root: Path, exempt: dict[str, str] | None = None, write_status: bool = False):
         self.root = root
         self.exempt = MARKER_EXEMPT if exempt is None else exempt
         self.errors: list[str] = []
+        self.write_status = write_status
+        self.n_covers = self.n_src_gaps = 0
         self._tests: dict[str, dict[str, dict]] = {}
         self._lines: dict[str, list[str]] = {}
         self._parse_tests = _load_test_parser()
@@ -140,6 +169,8 @@ class Checker:
                 self.err(f"{where}: evidence {path}:{line} is past the end ({len(lines)} lines)")
             if fn is not None:
                 t = self._tests_in(path).get(fn)
+                if t is None and path.startswith("src/") and defines(lines, fn):
+                    continue  # a symbol of the source, not a test
                 if t is None:
                     self.err(f"{where}: evidence names test {path}::{fn}, which is not a #[test] fn there")
                 cited_tests.append((path, fn, t))
@@ -179,6 +210,76 @@ class Checker:
                     found.setdefault(m.group(1), []).append(f"{f.relative_to(self.root).as_posix()}:{n}")
         return found
 
+    # ---- test -> table
+    def _rust_files(self) -> list[Path]:
+        return sorted(list((self.root / "src").rglob("*.rs")) + list((self.root / "tests").rglob("*.rs")))
+
+    def scan_covers(self) -> list[tuple[str, str, int, str]]:
+        """(file, test fn, line of the comment, id) for every `// covers:` line."""
+        out: list[tuple[str, str, int, str]] = []
+        for f in self._rust_files():
+            text = f.read_text(encoding="utf-8")
+            if "covers:" not in text:
+                continue
+            rel = f.relative_to(self.root).as_posix()
+            lines = text.splitlines()
+            for n, ln in enumerate(lines):
+                m = COVERS_RE.match(ln)
+                if not m:
+                    continue
+                ids = ID_RE.findall(m.group(1))
+                if not ids or ID_RE.sub("", m.group(1)).strip(" ,"):
+                    self.err(f"{rel}:{n + 1}: `covers:` takes ids of the form {ID_RE.pattern}, comma-separated")
+                    continue
+                fn = None
+                for nxt in lines[n + 1:n + 40]:
+                    fm = FN_RE.match(nxt)
+                    if fm:
+                        fn = fm.group(1)
+                        break
+                    if nxt.strip() and not nxt.strip().startswith(("#", "//", ")", "]", '"')):
+                        break
+                if fn is None:
+                    self.err(f"{rel}:{n + 1}: `covers:` is not followed by a fn")
+                    continue
+                out += [(rel, fn, n + 1, i) for i in ids]
+        return out
+
+    def check_covers(self, status_of: dict) -> int:
+        links = self.scan_covers()
+        for rel, fn, line, iid in links:
+            where = f"{rel}:{line}"
+            if iid not in status_of:
+                self.err(f"{where}: covers {iid}, which is no item in docs/coverage/")
+                continue
+            t = self._tests_in(rel).get(fn)
+            if t is None:
+                self.err(f"{where}: covers {iid} on `{fn}`, which is not a #[test] fn")
+                continue
+            if not t["is_ignored"] and status_of[iid] in NOT_YET:
+                self.err(f"{where}: {rel}::{fn} runs and covers {iid}, whose status is still "
+                         f"{status_of[iid]}: update the table (implemented+oracle, or partial with its limitation)")
+        return len(links)
+
+    def check_src_gaps(self, status_of: dict) -> int:
+        n = 0
+        for f in self._rust_files():
+            if "src gap: COV-" not in f.read_text(encoding="utf-8"):
+                continue
+            rel = f.relative_to(self.root).as_posix()
+            for t in self._tests_in(rel).values():
+                m = SRC_GAP_RE.match(t["ignore_reason"]) if t["is_ignored"] else None
+                if not m:
+                    continue
+                n += 1
+                iid = m.group(1)
+                if iid not in status_of:
+                    self.err(f"{rel}::{t['name']}: ignored as `src gap: {iid}`, which is no item in docs/coverage/")
+                elif status_of[iid] == "implemented+oracle":
+                    self.err(f"{rel}::{t['name']}: still ignored as `src gap: {iid}`, but {iid} is "
+                             "implemented+oracle: remove the ignore (or correct the table)")
+        return n
+
     def run(self) -> tuple[list[tuple[str, dict]], dict[str, list[str]]]:
         items = self.load_items()
         seen: dict[str, str] = {}
@@ -210,7 +311,48 @@ class Checker:
         for iid in self.exempt:
             if status_of.get(iid) != "partial":
                 self.err(f"{iid}: exemption names no partial item")
+        self.n_covers = self.check_covers(status_of)
+        self.n_src_gaps = self.check_src_gaps(status_of)
+        if items:
+            want = status_text(items)
+            p = self.root / STATUS_DOC
+            have = p.read_text(encoding="utf-8").replace("\r\n", "\n") if p.is_file() else None
+            if self.write_status:
+                p.write_text(want, encoding="utf-8", newline="\n")
+            elif have != want:
+                self.err(f"{STATUS_DOC} is {'missing' if have is None else 'stale'}: "
+                         "run `python3 scripts/coverage_check.py --write-status`")
         return items, markers
+
+
+def status_text(items: list[tuple[str, dict]]) -> str:
+    """docs/coverage/status.md: counts per table, then per axis inside each table."""
+    head = "| " + " | ".join(STATUSES) + " |"
+    rule = "|" + "---:|" * len(STATUSES)
+    out = ["# Coverage status", "",
+           "Generated from docs/coverage/*.toml by `python3 scripts/coverage_check.py --write-status`;",
+           "do not edit by hand. Each table lists the capabilities a field expects, with what the",
+           "crate has today.", "",
+           "| table | items " + head, "|---|---:" + rule]
+    tables: dict[str, list[dict]] = {}
+    for rel, it in items:
+        tables.setdefault(rel, []).append(it)
+    total = Counter()
+    for rel, its in sorted(tables.items()):
+        cnt = Counter(it.get("status") for it in its)
+        total += cnt
+        out.append(f"| `{rel}` | {len(its)} | " + " | ".join(str(cnt[s]) for s in STATUSES) + " |")
+    if len(tables) > 1:
+        out.append(f"| **total** | {sum(len(v) for v in tables.values())} | "
+                   + " | ".join(str(total[s]) for s in STATUSES) + " |")
+    for rel, its in sorted(tables.items()):
+        out += ["", f"## `{rel}`", "", "| axis | items " + head, "|---|---:" + rule]
+        axes: dict[str, Counter] = {}
+        for it in its:
+            axes.setdefault(str(it.get("axis", "")), Counter())[it.get("status")] += 1
+        for ax, cnt in sorted(axes.items()):
+            out.append(f"| {ax} | {sum(cnt.values())} | " + " | ".join(str(cnt[s]) for s in STATUSES) + " |")
+    return "\n".join(out) + "\n"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -221,8 +363,9 @@ def main(argv: list[str] | None = None) -> int:
         pass
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--root", default=str(HERE.parent))
+    ap.add_argument("--write-status", action="store_true", help=f"regenerate {STATUS_DOC}")
     args = ap.parse_args(argv)
-    c = Checker(Path(args.root))
+    c = Checker(Path(args.root), write_status=args.write_status)
     items, markers = c.run()
     if c.errors:
         for e in c.errors:
@@ -238,6 +381,7 @@ def main(argv: list[str] | None = None) -> int:
     n_markers = sum(len(v) for v in markers.values())
     print(f"LIMITATION comments: {n_markers} in src/ for {len(markers)} items; "
           f"exempt: {len(c.exempt)}" + "".join(f"\n  {k}: {v}" for k, v in sorted(c.exempt.items())))
+    print(f"covers links: {c.n_covers}; src gap oracles: {c.n_src_gaps}")
     print("coverage: ok")
     return 0
 

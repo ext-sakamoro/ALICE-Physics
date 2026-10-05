@@ -48,6 +48,7 @@ GENERATED = (
     "docs/oracle-status.md",
     "docs/wiring-status.md",
     "docs/PUBLIC_API_SNAPSHOT.txt",
+    "docs/coverage/status.md",
 )
 # hand-written, with a generated column (Integration) that the regeneration
 # rewrites: a conflict is merged with that column blanked, never dropped
@@ -215,6 +216,7 @@ class Lander:
         self.sh("python3", "scripts/scip_reach.py", "--write", "docs/integration-status.md")
         self.sh("python3", "scripts/gen-oracle-status.py")
         self.sh("python3", "scripts/gen-wiring-status.py")
+        self.sh("python3", "scripts/coverage_check.py", "--write-status")
         self.regenerate_public_api()
 
     def regenerate_public_api(self) -> None:
@@ -231,7 +233,8 @@ class Lander:
                     ["python3", "scripts/docs_lint.py", "--check"],
                     ["python3", "scripts/scip_reach.py", "--check-baseline"],
                     ["python3", "scripts/gen-oracle-status.py", "--check"],
-                    ["python3", "scripts/wiring_guard.py"]):
+                    ["python3", "scripts/wiring_guard.py"],
+                    ["python3", "scripts/coverage_check.py"]):
             self.sh(*cmd)
         self.check_changelog()
 
