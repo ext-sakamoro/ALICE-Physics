@@ -1045,7 +1045,7 @@ axis = "visual"
 item = "smoke density field fed by the soot source and advected by the flow (with dissipation)"
 source = "Fedkiw-Stam-Jensen 2001; Houdini Pyro; EmberGen"
 status = "missing"
-evidence = "煤の発生速度を場に積む口が無い src/smoke_fire.rs:105 CfdSolver が運ぶのは温度だけ (src/cfd_solver.rs:2721) 受動スカラー輸送は COV-CFD-066"
+evidence = "煤の発生速度を場に積む口が無い src/smoke_fire.rs:105 CfdSolver が運ぶのは温度だけ (src/cfd_solver.rs:2726) 受動スカラー輸送は COV-CFD-066"
 oracle_candidate = "一様流で移流した煙の総量 = 煤の発生量の時間積分"
 limitation = ""
 
