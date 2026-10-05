@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 145 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2089 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2091 |
 | live | reached without examples (crate-internal roots or a binding) | 351 |
-| | **total** | **2585** |
+| | **total** | **2587** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -331,7 +331,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2089)
+## L1 — example-only (2091)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -469,7 +469,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/solver_tgs.rs`: `AdaptiveSubStepConfig`, `HasVelocity`, `ImpulseCache::reset_stats`, `ImpulseCache::stats`, `ImpulseCacheStats`, `ImpulseCacheStats::hit_rate`, `adaptive_substeps_for`, `adaptive_substeps_for_ccd`
 - `src/spatial.rs`: `SpatialGrid`, `SpatialGrid::build`, `SpatialGrid::clear`, `SpatialGrid::hash`, `SpatialGrid::insert`, `SpatialGrid::new`, `SpatialGrid::query_neighbors_into`
 - `src/spherical_terrain.rs`: `SphericalHeightField`, `SphericalHeightField::center`, `SphericalHeightField::new`, `SphericalHeightField::radial_height`, `SphericalHeightField::radius`, `SphericalHeightField::surface_radius`, `SphericalHeightField::with_max_slope`, `SphericalHeightField::with_normal_step`, `central_gravity`
-- `src/structural_solver.rs`: `StructuralHistory`, `StructuralReport`, `StructuralSolver`, `StructuralSolver::new`, `StructuralSolver::run`, `StructuralSolver::step`
+- `src/structural_solver.rs`: `StructuralHistory`, `StructuralReport`, `StructuralSolver`, `StructuralSolver::creep_modelled`, `StructuralSolver::new`, `StructuralSolver::run`, `StructuralSolver::step`, `StructuralSolver::with_creep`
 - `src/support_volume.rs`: `OverhangRegion`, `SupportConfig`, `SupportConfig::quality`, `SupportVolumeReport`, `SupportVolumeReport::filament_length_m`, `SupportVolumeReport::is_nontrivial`, `estimate_region_volume`, `estimate_support_volume`
 - `src/surface_tension_csf.rs`: `SIGMA_MERCURY_AIR`, `SIGMA_PLA_AIR`, `SIGMA_STEEL_ARGON`, `SIGMA_WATER_AIR`, `compute_csf_field`, `csf_body_force`, `interface_normal`, `smeared_delta`
 - `src/thermal.rs`: `HeatSource`, `ThermalConfig`, `ThermalModifier`, `ThermalModifier::add_heat_point`, `ThermalModifier::apply_heat_at`, `ThermalModifier::new`, `ThermalModifier::temperature_at`
