@@ -110,6 +110,8 @@ were introduced during that release window.
 - `atmosphere::{Isa1976, AtmosphereState, IsaError}`: U.S. Standard Atmosphere 1976 の対流圏 (0〜11 km、減率 6.5 K/km) と成層圏下部 (11〜20 km、等温) 高度 (ジオポテンシャル / 幾何) から温度・圧力・密度・音速を返す 範囲外は clamp せず `Err` `Fix128` のみで `no_std` でも使える
 - `lift_drag::{LiftDragSurface, LiftDragParams, LiftDragError, AeroCoefficients, AeroLoad, THIN_AIRFOIL_LIFT_SLOPE}`: 翼面の揚力・抗力 迎角は圧力中心の速度 (`v + ω × r`) と風の差から求め、揚力傾斜に揚力線の有限翼補正 `a₀ / (1 + a₀/(π e AR))`、抗力に誘導抗力 `C_L²/(π e AR)`、失速後は遷移幅を経て平板 (`2 sin α cos α`, `C_D0 + 2 sin² α`) へ連続につなぐ 力は圧力中心に impulse で掛ける
 - `rotor::{Rotor, RotorParams, RotorSpin, RotorError, RotorLoad, hover_induced_velocity_m_s, ideal_hover_power_w}`: 静止推力モデル `T = C_T ρ n² D⁴` / `Q = C_Q ρ n² D⁵`、機体への反トルク `−s Q â`、ホバリングの誘起速度 `√(T/(2ρA))` と理想パワー `T v_i` 前進流入による推力低下は含まない
+- `kepler::{solve_kepler, OrbitalElements, StateVector, KeplerError}` ほか: 楕円軌道の二体問題 Kepler 方程式 `M = E − e sin E` (bracket 付き Newton、初期値 Danby)、真・離心・平均近点角の相互変換、軌道要素 ↔ 状態ベクトル (円軌道・赤道軌道の退化は規約を明記)、時間伝播、周期 `2π√(a³/μ)`、vis-viva、比エネルギー・比角運動量、J2 による昇交点・近点引数の永年移動 `e ≥ 1` は `Err` 天体定数は持たない
+- `nbody::{DirectSum, VelocityVerlet, NBodyError, kinetic_energy, total_momentum}`: N 体の相互重力 (直接和 `O(N²)`、Plummer softening、対ごとに 1 回計算して作用反作用で加算) と kick–drift–kick の leapfrog `DirectSum::step_world` は半 kick・`PhysicsWorld::step`・半 kick で world の body に掛ける (重力 0・減衰 1 の時に standalone と同じ 2 次精度)
 
 ### Changed
 
