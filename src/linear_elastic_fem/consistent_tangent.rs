@@ -249,6 +249,7 @@ struct Truncated {
 /// returns what it has** instead of failing: the tangent is not positive
 /// definite everywhere, and a Newton step built from the iterate before the
 /// curvature turned negative is still a descent direction.
+// LIMITATION(COV-FEM-065): Preconditioned conjugate gradient that **stops on negative curvature and returns what it has** instead of failing
 fn truncated_cg<A>(
     b: &[Fix128],
     is_free: &[bool],
@@ -547,6 +548,7 @@ where
 /// **strictly below** `before`, as `u` moved on the free rows. `norm_at` returns
 /// the residual norm at a trial point, or `None` when the point is refused (an
 /// inverted element); a refused or non-improving trial halves the step.
+// LIMITATION(COV-FEM-056): The largest `α = 2⁻ᵏ` (`k ≤ BACKTRACKS`) for which `u + α δ` has a residual **strictly below** `before`
 pub(super) fn backtrack<F>(
     before: Fix128,
     u: &[Fix128],

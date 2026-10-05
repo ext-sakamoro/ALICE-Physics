@@ -63,6 +63,10 @@ step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が�
 python3 scripts/test_wiring_guard.py
 python3 scripts/wiring_guard.py
 
+step "coverage tables (docs/coverage/*.toml = src/ LIMITATION comments + tests)"
+python3 scripts/test_coverage_check.py
+python3 scripts/coverage_check.py
+
 step "status generators oracle (docs/wiring-status.md / docs/oracle-status.md の生成器)"
 python3 scripts/test_gen_status.py
 

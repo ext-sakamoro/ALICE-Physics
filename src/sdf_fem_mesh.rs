@@ -37,6 +37,7 @@
 //!   16 mm. Use [`generate_marching_tets`] when the surface matters.
 //! - Edge-based refinement ([`SdfTetMesh::refine_by_max_edge_length`]) is not
 //!   Delaunay refinement; aspect ratio can drift.
+// LIMITATION(COV-FEM-115): Edge-based refinement ([`SdfTetMesh::refine_by_max_edge_length`]) is not Delaunay refinement; aspect ratio can drift.
 //! - [`generate_marching_tets`] warps lattice corners onto the surface when a
 //!   zero crossing lands within `SNAP_CELL_FRACTION * cell` of them, which is
 //!   what keeps element quality from degrading under refinement. It moves the

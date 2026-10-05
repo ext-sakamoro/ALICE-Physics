@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Added
 
+- `docs/coverage/fem.toml` / `scripts/coverage_check.py`: 固体 FEM の網羅表 (教科書・参照実装・標準ベンチマークの範囲に対する 133 項目、状態は implemented+oracle / implemented-no-oracle / partial / missing / out-of-scope) と、その検査器 (引用した test と src 行の実在、oracle が ignore されていないこと、partial と src の `LIMITATION(<id>)` コメントの双方向対応、比較 0 件で fail) preflight と CI の test job (全 OS) で実行
 - `PhysicsWorld::{snapshot_world, from_world_snapshot, restore_world}` / `WorldSnapshotError` / `PhysicsWorld::{WORLD_SNAPSHOT_MAGIC, WORLD_SNAPSHOT_VERSION}`: `step` が読む全状態 (物体、拘束、ジョイント、静的・SDF collider の姿勢、形状、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、XPBD / TGS の warm-start、overflow flag) を版付きの 1 blob + checksum に保存し、新しい world または既存の world に復元する 復元後の step は元と bit 一致 SDF の場・hook・modifier・GPU bridge はコードなので保存せず、復元先の個数と一致しなければ `Err` 既存の `serialize_state` / `deserialize_state` は変更なし
 - `PhysicsWorld::step_n(n, dt)`: `step(dt)` を `n` 回 (Python の `step_n` / WASM の `stepN` はこれを呼ぶ形に変更、挙動は同じ)
 - `shape_raycast` / `PhysicsWorld::{cast_ray, cast_ray_all, cast_ray_any, ray_caster}` / `WorldRayCaster` / `RayFilter` / `RayTarget` / `WorldRayHit`: 外接球でなく実形状に当たる world 単位の ray クエリ (箱・円柱・円錐・楕円体・くさび・トーラス・compound の球 / カプセル / 箱 / 凸包・平面・高さ場・三角形メッシュ・SDF)、最近接 / 全件 / any、layer mask と除外 body・sensor・static・SDF の切り替え、BVH による候補の絞り込み
