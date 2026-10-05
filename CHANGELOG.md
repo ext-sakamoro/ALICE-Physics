@@ -105,6 +105,7 @@ were introduced during that release window.
 - `docs/integration-levels.md` (`scripts/integration_levels.py`): 公開モジュールを item が実際にどこから呼ばれるか (step / world API / binding / standalone / unused、`examples/` からの呼び出しは数えない) で区分した一覧と、C ABI の各関数を C ヘッダ・`bindings/AlicePhysics.h`・Unity・Unreal Engine プラグインが宣言 / 呼び出しているかの表 README の要約表と `docs/MODULES.md` の Integration 列は CI がこの計測と突き合わせる 利用側が宣言しない関数は `scripts/abi-consumer-gaps.txt` に理由付きで載っていなければ CI が失敗する
 - Unreal Engine プラグインの `UAlicePhysicsWorldComponent` に衝突半径・形状・静的コライダー (平面・高さ場・三角形メッシュ)・ジョイント (ball・hinge・fixed・slider・spring)・body の位置 / 速度 / 反発 / 摩擦の設定・センサー body・`StepSimulationN`・`SetWorldSubsteps`・エラー文字列と版の取得を追加 (UE のビルド環境が無いため型検査は代替ヘッダで行った)
 - `sdf_ccd::sphere_trace_sdf_field` / `sdf_collider::{collide_point_sdf_field, collide_sphere_sdf_field, SdfQuery, ClosureSdfQuery, SdfFrame}` / `SdfCollider::frame`: `SdfCollider` (`Box<dyn SdfField>`、`'static + Send + Sync`) を作らずに、借用した場 (局所変数を捕捉する closure 等) で sphere trace と点・球の判定ができる 姿勢は `SdfFrame` で渡す `SdfField` は変更なし (全実装が blanket impl で `SdfQuery` になる) 既存の `sphere_trace_sdf` / `collide_point_sdf` / `collide_sphere_sdf` は新関数に委譲し、結果は bit 一致
+- `sdf_collider::{DistanceSdfQuery, FD_NORMAL_BASE_EPS}`: 距離 closure だけから `SdfQuery` を作る 法線は crate 内の中心差分 (`ModifiedSdf` / `SingleModifiedSdf` / `DestructibleSdf` と同じ式・同じ step で bit 一致) で求め、呼び出し側が差分法を持たなくてよい closure は `'static` / `Send` / `Sync` 不要 (`std` feature 必須) 3 wrapper の差分法は 1 つの helper に集約 (法線は変更前と bit 一致)
 
 ### Changed
 

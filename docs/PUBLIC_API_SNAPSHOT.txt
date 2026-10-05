@@ -14104,6 +14104,24 @@ impl<D, N> core::marker::Unpin for alice_physics::sdf_collider::ClosureSdfQuery<
 impl<D, N> core::marker::UnsafeUnpin for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::marker::UnsafeUnpin, N: core::marker::UnsafeUnpin
 impl<D, N> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::panic::unwind_safe::RefUnwindSafe, N: core::panic::unwind_safe::RefUnwindSafe
 impl<D, N> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::panic::unwind_safe::UnwindSafe, N: core::panic::unwind_safe::UnwindSafe
+pub struct alice_physics::sdf_collider::DistanceSdfQuery<D>
+impl<D> alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::ops::function::Fn(f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::DistanceSdfQuery<D>::new(D) -> Self
+impl<D: core::clone::Clone> core::clone::Clone for alice_physics::sdf_collider::DistanceSdfQuery<D>
+pub fn alice_physics::sdf_collider::DistanceSdfQuery<D>::clone(&self) -> Self
+impl<D: core::fmt::Debug> core::fmt::Debug for alice_physics::sdf_collider::DistanceSdfQuery<D>
+pub fn alice_physics::sdf_collider::DistanceSdfQuery<D>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<D: core::marker::Copy> core::marker::Copy for alice_physics::sdf_collider::DistanceSdfQuery<D>
+impl<D> alice_physics::sdf_collider::SdfQuery for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::ops::function::Fn(f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::DistanceSdfQuery<D>::query_distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::DistanceSdfQuery<D>::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<D> core::marker::Freeze for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::marker::Freeze
+impl<D> core::marker::Send for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::marker::Send
+impl<D> core::marker::Sync for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::marker::Sync
+impl<D> core::marker::Unpin for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::marker::Unpin
+impl<D> core::marker::UnsafeUnpin for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::marker::UnsafeUnpin
+impl<D> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::panic::unwind_safe::RefUnwindSafe
+impl<D> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::panic::unwind_safe::UnwindSafe
 pub struct alice_physics::sdf_collider::SdfCollider
 pub alice_physics::sdf_collider::SdfCollider::body_index: usize
 pub alice_physics::sdf_collider::SdfCollider::field: alloc::boxed::Box<dyn alice_physics::sdf_collider::SdfField>
@@ -14161,6 +14179,7 @@ impl<A, B> core::marker::Unpin for alice_physics::sdf_collider::SdfUnion<A, B> w
 impl<A, B> core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::marker::UnsafeUnpin, B: core::marker::UnsafeUnpin
 impl<A, B> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::panic::unwind_safe::RefUnwindSafe, B: core::panic::unwind_safe::RefUnwindSafe
 impl<A, B> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfUnion<A, B> where A: core::panic::unwind_safe::UnwindSafe, B: core::panic::unwind_safe::UnwindSafe
+pub const alice_physics::sdf_collider::FD_NORMAL_BASE_EPS: f32
 pub const alice_physics::sdf_collider::SDF_STATIC: usize
 pub trait alice_physics::sdf_collider::SdfField: core::marker::Send + core::marker::Sync
 pub fn alice_physics::sdf_collider::SdfField::distance(&self, f32, f32, f32) -> f32
@@ -14196,6 +14215,9 @@ pub fn alice_physics::sdf_collider::SdfQuery::query_normal(&self, f32, f32, f32)
 impl<D, N> alice_physics::sdf_collider::SdfQuery for alice_physics::sdf_collider::ClosureSdfQuery<D, N> where D: core::ops::function::Fn(f32, f32, f32) -> f32, N: core::ops::function::Fn(f32, f32, f32) -> (f32, f32, f32)
 pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::query_distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdfQuery<D, N>::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<D> alice_physics::sdf_collider::SdfQuery for alice_physics::sdf_collider::DistanceSdfQuery<D> where D: core::ops::function::Fn(f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::DistanceSdfQuery<D>::query_distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_collider::DistanceSdfQuery<D>::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<T: alice_physics::sdf_collider::SdfField + ?core::marker::Sized> alice_physics::sdf_collider::SdfQuery for T
 pub fn T::query_distance(&self, f32, f32, f32) -> f32
 pub fn T::query_normal(&self, f32, f32, f32) -> (f32, f32, f32)
