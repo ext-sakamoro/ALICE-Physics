@@ -39,7 +39,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use crate::sdf_collider::{fd_normal_step, SdfField};
+use crate::sdf_collider::{fd_normal, SdfField, FD_NORMAL_BASE_EPS};
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -93,7 +93,7 @@ impl ModifiedSdf {
         Self {
             original,
             modifiers: Vec::new(),
-            normal_eps: 0.001,
+            normal_eps: FD_NORMAL_BASE_EPS,
         }
     }
 
@@ -157,17 +157,13 @@ impl SdfField for ModifiedSdf {
 
     #[inline]
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
-        let e = fd_normal_step(self.normal_eps, x, y, z);
-        let dx = self.eval_distance(x + e, y, z) - self.eval_distance(x - e, y, z);
-        let dy = self.eval_distance(x, y + e, z) - self.eval_distance(x, y - e, z);
-        let dz = self.eval_distance(x, y, z + e) - self.eval_distance(x, y, z - e);
-
-        let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
-        if len < 1e-10 {
-            (0.0, 1.0, 0.0)
-        } else {
-            (dx / len, dy / len, dz / len)
-        }
+        fd_normal(
+            |a, b, c| self.eval_distance(a, b, c),
+            self.normal_eps,
+            x,
+            y,
+            z,
+        )
     }
 
     fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) {
@@ -197,7 +193,7 @@ impl<M: PhysicsModifier> SingleModifiedSdf<M> {
         Self {
             original,
             modifier,
-            normal_eps: 0.001,
+            normal_eps: FD_NORMAL_BASE_EPS,
         }
     }
 
@@ -221,17 +217,13 @@ impl<M: PhysicsModifier> SdfField for SingleModifiedSdf<M> {
 
     #[inline]
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
-        let e = fd_normal_step(self.normal_eps, x, y, z);
-        let dx = self.eval_distance(x + e, y, z) - self.eval_distance(x - e, y, z);
-        let dy = self.eval_distance(x, y + e, z) - self.eval_distance(x, y - e, z);
-        let dz = self.eval_distance(x, y, z + e) - self.eval_distance(x, y, z - e);
-
-        let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
-        if len < 1e-10 {
-            (0.0, 1.0, 0.0)
-        } else {
-            (dx / len, dy / len, dz / len)
-        }
+        fd_normal(
+            |a, b, c| self.eval_distance(a, b, c),
+            self.normal_eps,
+            x,
+            y,
+            z,
+        )
     }
 
     fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) {

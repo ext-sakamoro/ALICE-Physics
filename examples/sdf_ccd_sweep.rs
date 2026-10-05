@@ -13,6 +13,11 @@
 //! = 0.89; `collide_point_sdf_field` / `collide_sphere_sdf_field` test a point
 //! inside it and a sphere overlapping it.
 //!
+//! The same wall from its distance alone: `DistanceSdfQuery` takes only the
+//! distance closure and derives the normal by central differences, so the
+//! sweep gives the same t (the march reads only the distance) and a normal
+//! within 1e-3 of (-1, 0, 0).
+//!
 //! ```bash
 //! cargo run --release --example sdf_ccd_sweep --features std
 //! ```
@@ -24,8 +29,8 @@ use alice_physics::sdf_ccd::{
     ray_march_sdf, sphere_trace_sdf, sphere_trace_sdf_field, SdfCcdConfig,
 };
 use alice_physics::sdf_collider::{
-    collide_point_sdf_field, collide_sphere_sdf_field, ClosureSdf, ClosureSdfQuery, SdfCollider,
-    SdfFrame,
+    collide_point_sdf_field, collide_sphere_sdf_field, ClosureSdf, ClosureSdfQuery,
+    DistanceSdfQuery, SdfCollider, SdfFrame,
 };
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
@@ -128,4 +133,17 @@ fn main() {
         overlap.depth.to_f32()
     );
     assert!((overlap.depth.to_f32() - 0.15).abs() < 1e-4);
+
+    // The wall from its distance alone: the normal comes from central
+    // differences of the closure.
+    let distance_only = DistanceSdfQuery::new(|x: f32, _y: f32, _z: f32| x.abs() - half);
+    let fd = sphere_trace_sdf_field(start, disp, r, &distance_only, &moved, &cfg)
+        .expect("distance-only wall hit");
+    assert_eq!(fd.t, toi.t);
+    let (nx, ny, nz) = fd.normal.to_f32();
+    println!(
+        "[sdf_ccd] distance-only wall: t = {:.5}, normal = ({nx:.4}, {ny:.4}, {nz:.4})",
+        fd.t.to_f32()
+    );
+    assert!((nx + 1.0).abs() < 1e-3 && ny.abs() < 1e-3 && nz.abs() < 1e-3);
 }

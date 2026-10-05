@@ -201,6 +201,73 @@ where
     }
 }
 
+/// A distance closure alone as an [`SdfQuery`]; the normal is the crate's
+/// central-difference gradient of that closure.
+///
+/// For a field with no analytic gradient (a height map, a blend of
+/// primitives, anything sampled): the normal is the one
+/// [`ModifiedSdf`](crate::sim_modifier::ModifiedSdf) and
+/// [`DestructibleSdf`](crate::sdf_destruction::DestructibleSdf) compute for
+/// their own fields, bit for bit. At `(x, y, z)` with step
+/// `e = max(FD_NORMAL_BASE_EPS, 1e-4 * max(|x|, |y|, |z|))` it is
+/// `(f(x+e)-f(x-e), f(y+e)-f(y-e), f(z+e)-f(z-e))` normalised (six
+/// evaluations; the step scales with the coordinates so it keeps resolving
+/// far from the origin). As with [`ClosureSdfQuery`] the closure need not be
+/// `'static`, `Send` or `Sync`.
+///
+/// Degenerate input: where the six samples give a gradient of length below
+/// `1e-10` (the centre of a sphere, a constant field) the normal is
+/// `(0, 1, 0)`. A NaN or infinite distance among the samples (or a
+/// non-finite query point) gives a NaN normal; the distance is returned as
+/// the closure gives it.
+///
+/// Requires the `std` feature (the normal needs `f32::sqrt`).
+///
+/// ```
+/// use alice_physics::sdf_collider::{DistanceSdfQuery, SdfQuery};
+///
+/// let radius = 2.0_f32; // a local, borrowed by the closure
+/// let sdf = DistanceSdfQuery::new(|x: f32, y: f32, z: f32| {
+///     (x * x + y * y + z * z).sqrt() - radius
+/// });
+/// assert_eq!(sdf.query_distance(3.0, 0.0, 0.0), 1.0);
+/// let (nx, ny, nz) = sdf.query_normal(3.0, 0.0, 0.0);
+/// assert!((nx - 1.0).abs() < 1e-3 && ny.abs() < 1e-3 && nz.abs() < 1e-3);
+/// ```
+#[cfg(feature = "std")]
+#[derive(Clone, Copy, Debug)]
+pub struct DistanceSdfQuery<D> {
+    distance_fn: D,
+}
+
+#[cfg(feature = "std")]
+impl<D> DistanceSdfQuery<D>
+where
+    D: Fn(f32, f32, f32) -> f32,
+{
+    /// Wrap a distance closure.
+    #[must_use]
+    pub fn new(distance_fn: D) -> Self {
+        Self { distance_fn }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<D> SdfQuery for DistanceSdfQuery<D>
+where
+    D: Fn(f32, f32, f32) -> f32,
+{
+    #[inline]
+    fn query_distance(&self, x: f32, y: f32, z: f32) -> f32 {
+        (self.distance_fn)(x, y, z)
+    }
+
+    #[inline]
+    fn query_normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+        fd_normal(&self.distance_fn, FD_NORMAL_BASE_EPS, x, y, z)
+    }
+}
+
 /// Union of two fields: `min(a, b)`, with the normal of whichever is nearer.
 ///
 /// On a tie the first operand wins. The union of two exact distance fields
@@ -255,6 +322,39 @@ impl<A: SdfField, B: SdfField> SdfField for SdfUnion<A, B> {
 pub(crate) fn fd_normal_step(base_eps: f32, x: f32, y: f32, z: f32) -> f32 {
     let scale = x.abs().max(y.abs()).max(z.abs());
     base_eps.max(1.0e-4 * scale)
+}
+
+/// Base step of the central-difference SDF normal, used near the origin
+/// (see [`DistanceSdfQuery`]; farther out the step grows with the
+/// coordinate magnitude).
+pub const FD_NORMAL_BASE_EPS: f32 = 1.0e-3;
+
+/// Central-difference normal of the distance `f` at `(x, y, z)`: step
+/// [`fd_normal_step`]`(base_eps, ..)`, the three axis differences
+/// normalised, `(0, 1, 0)` when their length is below `1e-10`, NaN when a
+/// sample is not finite. The one formula behind [`DistanceSdfQuery`] and
+/// the normals of `ModifiedSdf`, `SingleModifiedSdf` and `DestructibleSdf`.
+#[cfg(feature = "std")]
+#[inline]
+#[must_use]
+pub(crate) fn fd_normal<F: Fn(f32, f32, f32) -> f32>(
+    f: F,
+    base_eps: f32,
+    x: f32,
+    y: f32,
+    z: f32,
+) -> (f32, f32, f32) {
+    let e = fd_normal_step(base_eps, x, y, z);
+    let dx = f(x + e, y, z) - f(x - e, y, z);
+    let dy = f(x, y + e, z) - f(x, y - e, z);
+    let dz = f(x, y, z + e) - f(x, y, z - e);
+
+    let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
+    if len < 1e-10 {
+        (0.0, 1.0, 0.0)
+    } else {
+        (dx / len, dy / len, dz / len)
+    }
 }
 
 // ============================================================================

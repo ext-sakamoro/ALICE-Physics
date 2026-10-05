@@ -17,14 +17,12 @@
 
 use crate::collider::Contact;
 use crate::math::{Fix128, QuatFix, Vec3Fix};
-use crate::sdf_collider::{fd_normal_step, SdfField};
+use crate::sdf_collider::{fd_normal, SdfField, FD_NORMAL_BASE_EPS};
 use core::fmt;
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
 
-/// Epsilon for SDF normal computation via central differences
-const NORMAL_EPS: f32 = 0.001;
 #[cfg(not(feature = "std"))]
 use alloc::sync::Arc;
 #[cfg(not(feature = "std"))]
@@ -310,17 +308,13 @@ impl SdfField for DestructibleSdf {
 
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
         // Central difference gradient on the destructed SDF
-        let eps = fd_normal_step(NORMAL_EPS, x, y, z);
-        let dx = self.distance(x + eps, y, z) - self.distance(x - eps, y, z);
-        let dy = self.distance(x, y + eps, z) - self.distance(x, y - eps, z);
-        let dz = self.distance(x, y, z + eps) - self.distance(x, y, z - eps);
-
-        let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
-        if len < 1e-10 {
-            (0.0, 1.0, 0.0)
-        } else {
-            (dx / len, dy / len, dz / len)
-        }
+        fd_normal(
+            |a, b, c| self.distance(a, b, c),
+            FD_NORMAL_BASE_EPS,
+            x,
+            y,
+            z,
+        )
     }
 }
 

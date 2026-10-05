@@ -35,7 +35,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `material` | step | 14 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
-| `sdf_collider` | step | 18 / 0 / 0 / 13 / 2 | C ABI, Python, WebAssembly |
+| `sdf_collider` | step | 18 / 0 / 0 / 17 / 2 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 4 / 2 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
