@@ -1,6 +1,7 @@
 //! Whole-world snapshot: every piece of [`PhysicsWorld`] state that
 //! [`PhysicsWorld::step`] reads, in one versioned blob with one checksum.
 //!
+// LIMITATION(COV-ENGINE-011): keeps only the per-body motion and sleep state and expects the caller to rebuild joints, colliders, force fields, materials and so on by replay.
 //! [`PhysicsWorld::serialize_state`] (rollback netcode) keeps only the
 //! per-body motion and sleep state and expects the caller to rebuild
 //! joints, colliders, force fields, materials and so on by replay. This
@@ -1479,6 +1480,7 @@ impl PhysicsWorld {
     /// applied from outside `step`, and cloth / fluid / FEM / vehicle state lives
     /// in its own types. Save them next to the world snapshot.
     ///
+    // LIMITATION(COV-ENGINE-012): Known difference: the union-find of `islands` is rebuilt from the joints.
     /// Known difference: the union-find of `islands` is rebuilt from the joints. After a
     /// `remove_joint` between two steps, the original still carries that union
     /// until the next `step` resets it, while the restored world does not; the

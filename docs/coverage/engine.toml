@@ -1,0 +1,1417 @@
+# Engine foundation coverage of ALICE-Physics (determinism, state, network
+# synchronisation, world management, bindings, diagnostics, game-engine
+# interfaces and the non-physics helpers), against an external reference frame.
+#
+# What this table is: every capability that the references on deterministic
+# simulation and networked physics (Gaffer on Games: Fix Your Timestep,
+# Floating Point Determinism, Deterministic Lockstep, Snapshot Interpolation,
+# Snapshot Compression, State Synchronization; GGPO rollback; Photon Quantum),
+# the engine feature lists of Box2D, Rapier, PhysX, Havok and Jolt
+# (serialization, debug renderer, profiler, events, bindings, multi-threading),
+# Bullet serialization, the literature behind the non-physics helpers
+# (HyperLogLog, DDSketch, Count-Min, differential privacy, robust anomaly
+# detection, metric pipelines) and standard engine benchmarks expect, one
+# [[item]] per capability, with what the crate has today. The rows are written
+# by hand: the axes and the items come from the reference frame, not from the
+# modules that exist, so a missing capability is visible instead of absent.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - the physical laws and their solvers: the table of each field
+#   - collision detection, queries, collision filtering, contact events,
+#     triggers, contact hooks, sleeping, substeps and kinematic bodies: the
+#     rigid table (COV-RIGID-002, 012, 052, 088 to 090, 093 to 102)
+#   - cross-platform bit-exact stepping and the fixed-point number itself:
+#     COV-RIGID-014 and COV-NUM-072 to 074, 082, 083 (the golden-hash benchmark
+#     on several platforms lives there); here only the float subsystems,
+#     iteration order, threads, SIMD and the WebAssembly target
+#   - co-simulation (FMI, a coupled participant rolled back and stepped through
+#     the C ABI): the coupling table (COV-COUPLE-085, 086); the whole-world
+#     snapshot it uses is counted here as an engine capability
+#   - distributed parallel numerics (rank transport, all-reduce): the
+#     numerical-foundation table (COV-NUM-066 to 071)
+#   - sensor models: the sensor table
+#   - character controllers, vehicle scenario replay and robot descriptions:
+#     the multibody table (COV-MBD-056, 073, 103 to 114)
+#   - temperature heat maps and grid streamlines: COV-THERM-089, COV-CFD-096
+#   - route choice and navigation of crowds: decided here as not a capability of
+#     a physics engine (reference engines ship navigation as a separate AI
+#     product), so no row; the local avoidance law stays in the particle table
+#     (COV-PART-098)
+#   - network transport (sockets, reliability, NAT traversal) is not a physics
+#     engine capability and has no row
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-ENGINE-NNN) / axis / item / source (book, paper, article or
+# reference-engine feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`). "(推測)" marks a row
+# whose status rests on a search that may have missed a synonym.
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-ENGINE-001"
+axis = "determinism"
+item = "seeded portable PRNG with independent streams (bit-identical on every platform)"
+source = "O'Neill 2014, PCG; Photon Quantum deterministic RNG; Gaffer on Games, Floating Point Determinism"
+status = "implemented+oracle"
+evidence = "src/rng.rs:22 / tests/analytic_rng_wiring.rs::stream_matches_the_pcg32_reference_vector / tests/analytic_rng_wiring.rs::streams_differ_but_are_reproducible"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-002"
+axis = "determinism"
+item = "distribution sampling in fixed point (unbiased bounded integers, uniform range, Gaussian, unit direction)"
+source = "O'Neill 2014 (bounded rejection); Box-Muller; Photon Quantum FPMath random"
+status = "implemented+oracle"
+evidence = "src/rng.rs:164 / tests/analytic_rng_wiring.rs::bounded_is_uniform_chi_square / tests/analytic_rng_wiring.rs::bounded_equals_independent_rejection_replay / Gaussian と direction は src/rng.rs::test_direction_vector のみで分布の突合は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-003"
+axis = "determinism"
+item = "RNG state saved and restored as bytes (part of a snapshot or a rollback)"
+source = "Photon Quantum (RNG in the frame state); GGPO save_game_state"
+status = "missing"
+evidence = "src/rng.rs:22 の state / inc は private で、to_bytes / from_bytes も無い (Clone でのメモリ内複製のみ) world の snapshot にも入らない"
+oracle_candidate = "RNG を snapshot に含めて巻き戻し後の draw 列が一致する"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-004"
+axis = "determinism"
+item = "iteration order independent of hash-map order (canonical sort of islands and pairs)"
+source = "Gaffer on Games, Deterministic Lockstep; Box2D v3 determinism; Jolt cross-platform determinism"
+status = "implemented+oracle"
+evidence = "src/solver_tgs.rs:401 / src/solver_tgs.rs::islands_attach_static_neighbours_and_sort_canonically / contact cache の HashMap は索引のみで走査は Vec 順 (src/contact_cache.rs:266)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-005"
+axis = "determinism"
+item = "parallel step gives the same bits for any thread count"
+source = "Jolt (deterministic multi-threaded simulation); PhysX enhanced determinism; Rapier (parallel + enhanced-determinism)"
+status = "implemented-no-oracle"
+evidence = "src/solver.rs:3396 の doc (Determinism contract) tests/integration_physics.rs::test_step_parallel_self_determinism は既定 pool で 2 回走らせるだけで thread 数を変えない 変えて比べるのは fuzz target (fuzz/fuzz_targets/fuzz_step_parity.rs) のみで CI の test ではない"
+oracle_candidate = "rayon の pool を 1 / 2 / 8 thread にして step_parallel の結果を bit 比較"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-006"
+axis = "determinism"
+item = "parallel and serial step give the same bits"
+source = "Jolt (same result single- and multi-threaded); Photon Quantum"
+status = "missing"
+evidence = "src は「It is **not** bit-identical to [`Self::step`] once two constraints share a body」と書く (src/solver.rs:3390) lockstep の peer 全員が同じ経路を使う前提"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-007"
+axis = "determinism"
+item = "SIMD kernels bit-identical to the scalar path"
+source = "Gaffer on Games, Floating Point Determinism (instruction-set differences); Box2D v3 SIMD determinism"
+status = "implemented+oracle"
+evidence = "src/math.rs:1320 / src/math.rs::test_dot_simd_fractional_bit_exact (CI の `cargo test --lib --features simd` で x86_64 runner が実行) / tests/analytic_math_wiring.rs::dot_simd_matches_scalar_dot_on_integer_and_fractional_vectors world の step で simd を使うのは sdf_collider だけ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-008"
+axis = "determinism"
+item = "float (f32 / f64) subsystems reproducible across platforms (pinned hashes of the field, statistics and privacy modules)"
+source = "Gaffer on Games, Floating Point Determinism; IEEE 754 basic operations"
+status = "implemented+oracle"
+evidence = "tests/determinism_golden_f32.rs::golden_privacy / tests/determinism_golden_f32.rs::golden_sketch / tests/determinism_golden_f32.rs::golden_stats_state_family (CI の 5 OS と wasm32-wasip1 で実行) Fix128 の step 自体は COV-NUM-073 / COV-RIGID-014、効果層の破砕は COV-FRACT-080"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-009"
+axis = "determinism"
+item = "large-world coordinates: a scene translated far from the origin steps bit-identically (no origin rebasing needed)"
+source = "Unreal Engine large world coordinates; Jolt double-precision mode; PhysX origin shift"
+status = "implemented-no-oracle"
+evidence = "Q64.64 の整数部 64 bit (src/math.rs:51) で原点移動の API は不要 (推測) world を大きく平行移動して step を突合する test は無い (crowd_force の並進不変 test のみ)"
+oracle_candidate = "同じ scene を 2^40 m 平行移動して全 step の相対位置が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-010"
+axis = "determinism"
+item = "numeric health flag: overflow during a step is reported (sticky, survives rollback)"
+source = "Photon Quantum (determinism checks); Jolt (NaN / overflow asserts)"
+status = "implemented+oracle"
+evidence = "src/solver.rs:5408 / tests/wm01_overflow_is_not_silent.rs::washing_step_is_reported_as_undecided / tests/wm01_flag_survives_rollback.rs::rolling_back_an_overflowed_branch_keeps_undecided"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-011"
+axis = "state"
+item = "compact rollback state of the world (per-body motion and sleep, magic and version, restore bit-identical)"
+source = "GGPO save_game_state / load_game_state; Jolt StateRecorder (SaveState / RestoreState)"
+status = "partial"
+evidence = "src/solver.rs:5466 / tests/wm08_state_coverage.rs::rollback_then_continue_is_bit_identical / tests/wm08_prev_state_coverage.rs::rollback_while_asleep_then_wake_is_bit_identical / tests/wm07_reset_and_rollback_contract.rs::rollback_rejects_population_mismatch_despite_matching_count / tests/wm07_rollback_event_parity.rs::rollback_then_continue_reproduces_the_same_contact_events"
+oracle_candidate = ""
+limitation = "src/solver/world_snapshot.rs:5 'keeps only the per-body motion and sleep state and expects the caller to rebuild joints, colliders, force fields, materials and so on by replay.'"
+
+[[item]]
+id = "COV-ENGINE-012"
+axis = "state"
+item = "whole-world snapshot and restore (every field the step reads; later steps bit-identical; branching)"
+source = "Jolt StateRecorder (full state); Bullet btDefaultSerializer; PhysX binary serialization (PxCollection)"
+status = "partial"
+evidence = "src/solver/world_snapshot.rs:1502 / src/solver/world_snapshot.rs:1717 / tests/world_snapshot_v2.rs::restored_world_matches_the_original_after_every_later_step / tests/world_snapshot_v2.rs::branches_are_independent / tests/sleep_skip_snapshot.rs::restoring_into_a_world_with_parked_bodies_matches_a_fresh_world SDF field・hook・GPU bridge は code なので数だけ照合 連成の巻き戻しとしての使い方は連成の表 (COV-COUPLE-085)"
+oracle_candidate = ""
+limitation = "src/solver/world_snapshot.rs:1484 'Known difference: the union-find of `islands` is rebuilt from the joints.'"
+
+[[item]]
+id = "COV-ENGINE-013"
+axis = "state"
+item = "snapshot integrity: checksum, truncation, dangling index and unknown tag rejected without touching the world"
+source = "Bullet .bullet file DNA validation; PhysX serialization (collection validation); fuzzing of untrusted state"
+status = "implemented+oracle"
+evidence = "src/solver/world_snapshot.rs:64 / tests/world_snapshot_v2.rs::every_single_byte_flip_after_the_header_is_a_checksum_mismatch / tests/world_snapshot_v2.rs::every_truncation_is_rejected_as_truncated / tests/world_snapshot_v2.rs::joint_referring_past_the_bodies_is_rejected / tests/world_snapshot_v2.rs::huge_count_is_truncated_not_an_allocation"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-014"
+axis = "state"
+item = "format version in every blob and file (explicit rejection of other versions)"
+source = "Bullet serialization (version in the file header); PhysX binary serialization version check"
+status = "implemented+oracle"
+evidence = "src/solver/world_snapshot.rs:1415 / src/solver.rs:5429 / tests/world_snapshot_v2.rs::header_errors / tests/analytic_scene_io_wiring.rs::current_version_is_one_and_is_what_the_file_records"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-015"
+axis = "state"
+item = "reading blobs and files written by an older format version (migration)"
+source = "Bullet (reads files of older versions through the DNA); USD schema versioning"
+status = "missing"
+evidence = "world snapshot は「A blob of another version is rejected」(src/solver/world_snapshot.rs:1413)、rollback blob も v1 / v2 を拒否 (src/solver.rs:5429 の doc)"
+oracle_candidate = "v1 の blob を v2 実装で読み、移行後の step が v1 実装の継続と一致"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-016"
+axis = "state"
+item = "snapshot of state that lives outside the world (cloth, fluid grids, FEM, vehicles, motors, character controllers)"
+source = "Jolt StateRecorder (constraints and characters); Photon Quantum (whole frame state)"
+status = "missing"
+evidence = "src は「cloth / fluid / FEM / vehicle state lives in its own types. Save them next to the world snapshot.」と書く (src/solver/world_snapshot.rs:1480) 粒子流体の位置・速度だけは COV-ENGINE-039"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-017"
+axis = "state"
+item = "scene file in a binary and a text (JSON) format with exact fixed-point round trip"
+source = "Bullet .bullet files; PhysX RepX (XML) and binary; Box2D JSON (RUBE)"
+status = "implemented+oracle"
+evidence = "src/scene_io.rs:288 / src/scene_io.rs:435 / tests/analytic_scene_io_wiring.rs::json_round_trip_is_exact_including_extreme_limbs / tests/analytic_scene_io_wiring.rs::binary_layout_is_byte_exact / tests/analytic_scene_io_wiring.rs::every_strict_prefix_of_a_binary_file_is_an_error"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-018"
+axis = "state"
+item = "build a world from a scene file and capture a world into a scene (library API)"
+source = "Bullet btBulletWorldImporter; PhysX PxSerialization::createCollectionFromBinary"
+status = "missing"
+evidence = "scene_io に PhysicsWorld との変換関数は無い (raw → Fix128 の変換は cfg(test) のみ src/scene_io.rs:192) 例 examples/scene_snapshot_roundtrip.rs が手で組み立てている"
+oracle_candidate = "scene → world → step → scene が world snapshot の結果と一致"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-019"
+axis = "state"
+item = "complete scene description (collision shapes, static colliders, materials, angular velocity, every joint kind, force fields)"
+source = "Bullet .bullet (shapes, constraints); PhysX RepX; glTF KHR_physics_rigid_bodies"
+status = "missing"
+evidence = "SerializedBody は位置・速度・回転・質量・種別だけ (src/scene_io.rs:91)、joint は 5 種 (src/scene_io.rs:106) 形状・材料・角速度・static collider・力場は持たない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-020"
+axis = "state"
+item = "import and export of a standard scene format (glTF physics extension, USD Physics)"
+source = "Khronos glTF KHR_physics_rigid_bodies; OpenUSD UsdPhysics schema"
+status = "missing"
+evidence = "gltf / usd の語は src に 0 件 (推測) robot 記述 (URDF / MJCF) は COV-MBD-073"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-021"
+axis = "state"
+item = "trajectory recording to a time-series store and playback (per frame, per body)"
+source = "Bullet / PyBullet state logging; MuJoCo rollout recording"
+status = "implemented+oracle"
+evidence = "src/replay.rs:120 (feature replay) / tests/audit_replay.rs::random_trajectory_round_trips_bit_exact_through_flush_boundaries / tests/audit_c_replay.rs::playback_reproduces_an_independent_rerun_of_the_world / known defect: tests/audit_replay.rs::recorded_position_equals_the_engine_state_for_integers_above_2_pow_24 (記録は f32)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-022"
+axis = "state"
+item = "input log recording and re-simulation of the general world (replay by re-running inputs)"
+source = "GGPO sync test / replays; Photon Quantum replay; Gaffer on Games, Deterministic Lockstep"
+status = "missing"
+evidence = "入力列を記録する型は src に 0 件 (InputLog / record_input で検索、推測) 車両 scenario の入力再生は COV-MBD-056"
+oracle_candidate = "netcode の FrameInput 列を保存し、新しい world で再生して checksum 列が一致"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-023"
+axis = "network"
+item = "deterministic lockstep: identical inputs on every peer give identical state (input-only synchronisation)"
+source = "Gaffer on Games, Deterministic Lockstep; Photon Quantum"
+status = "implemented+oracle"
+evidence = "src/netcode.rs:365 / src/netcode.rs::test_deterministic_two_sims / src/netcode.rs::test_different_inputs_different_checksums"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-024"
+axis = "network"
+item = "compact fixed-size input packet (movement, actions, aim) with an exact byte round trip"
+source = "Gaffer on Games, Deterministic Lockstep (input packets); GGPO add_local_input"
+status = "implemented+oracle"
+evidence = "src/netcode.rs:63 / src/netcode.rs::test_frame_input_serialization"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-025"
+axis = "network"
+item = "bounded snapshot history for rollback (save, load by frame, drop the oldest)"
+source = "GGPO save_game_state ring; Photon Quantum frame buffer"
+status = "implemented+oracle"
+evidence = "src/netcode.rs:466 / src/netcode.rs::test_snapshot_rollback / src/netcode.rs::test_multiple_snapshots"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-026"
+axis = "network"
+item = "state checksum covering every saved byte (desync detection)"
+source = "GGPO sync test; Photon Quantum checksum; Gaffer on Games, Deterministic Lockstep"
+status = "implemented+oracle"
+evidence = "src/netcode.rs:202 / tests/wm08_checksum_coverage.rs::checksum_covers_angular_velocity / tests/wm08_checksum_coverage.rs::checksum_covers_velocity_low_word / src/netcode.rs::test_checksum_verify (frame 履歴と remote 値の照合)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-027"
+axis = "network"
+item = "desync localisation (which body or field first differs between peers)"
+source = "Photon Quantum (checksum dump / desync diff); GGPO sync test logs"
+status = "missing"
+evidence = "checksum は world 全体で 1 個の u64 (src/netcode.rs:179) body 単位の hash や差分 dump は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-028"
+axis = "network"
+item = "automatic rollback and re-simulation when a late remote input differs from the predicted one"
+source = "GGPO (ggpo_advance_frame, rollback on misprediction); Photon Quantum predict / verify"
+status = "missing"
+evidence = "load_snapshot の後の再前進は呼び手に任される (src/netcode.rs:486) 入力の確定・予測の区別も無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-029"
+axis = "network"
+item = "prediction of remote inputs (repeat the last confirmed input) until they arrive"
+source = "GGPO input prediction; Photon Quantum predicted frames"
+status = "missing"
+evidence = "advance_frame は渡された入力だけを使う (src/netcode.rs:426)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-030"
+axis = "network"
+item = "configurable input delay (local inputs applied N frames later)"
+source = "GGPO frame delay; Gaffer on Games, Deterministic Lockstep (playout delay buffer)"
+status = "missing"
+evidence = "NetcodeConfig に遅延の field は無い (src/netcode.rs:244)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-031"
+axis = "network"
+item = "time synchronisation between peers (frame advantage, slowing the leading peer)"
+source = "GGPO time sync (frame advantage); Valve Source networking"
+status = "missing"
+evidence = "frame advantage・time sync の語は src に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-032"
+axis = "network"
+item = "client-side prediction with server reconciliation (rewind to the authoritative state, replay the retained inputs)"
+source = "Valve Source multiplayer networking (prediction); Gambetta, Fast-Paced Multiplayer"
+status = "implemented+oracle"
+evidence = "src/netcode_prediction.rs:157 / tests/analytic_netcode_prediction.rs::reconcile_replays_the_inputs_after_the_authoritative_tick / tests/analytic_netcode_prediction.rs::the_checked_reconcile_reports_a_gap_inside_the_buffer"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-033"
+axis = "network"
+item = "visual smoothing of a correction (error offset decayed over frames instead of a snap)"
+source = "Gaffer on Games, State Synchronization (visual smoothing); Valve Source (prediction error smoothing)"
+status = "missing"
+evidence = "reconcile は補正後の snapshot を返すだけ (src/netcode_prediction.rs:157)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-034"
+axis = "network"
+item = "state synchronisation of rigid bodies (quantised position, orientation and velocity packets)"
+source = "Gaffer on Games, State Synchronization and Snapshot Compression"
+status = "missing"
+evidence = "量子化の語は src に 0 件 (推測) rigid body の状態送信は serialize_state の全 byte のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-035"
+axis = "network"
+item = "delta compression of rigid-body state against an acknowledged baseline"
+source = "Gaffer on Games, Snapshot Compression (delta against baseline); Quake 3 networking"
+status = "missing"
+evidence = "差分圧縮は粒子流体だけ (COV-ENGINE-040) rigid body の baseline 差分は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-036"
+axis = "network"
+item = "interest management and priority accumulator (send the most relevant bodies first within a bandwidth budget)"
+source = "Gaffer on Games, State Synchronization (priority accumulator); Unreal network relevancy"
+status = "missing"
+evidence = "relevancy・priority の語は netcode に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-037"
+axis = "network"
+item = "snapshot interpolation of remote entities with a jitter buffer"
+source = "Gaffer on Games, Snapshot Interpolation; Valve Source entity interpolation"
+status = "missing"
+evidence = "時刻付き受信 buffer は無い 補間は自分の 2 step 間だけ (COV-ENGINE-046)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-038"
+axis = "network"
+item = "dead reckoning / extrapolation of remote bodies between updates"
+source = "IEEE 1278 DIS dead reckoning; Gaffer on Games, Snapshot Interpolation (extrapolation)"
+status = "missing"
+evidence = "dead reckoning の語は src に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-039"
+axis = "network"
+item = "fluid particle state snapshot, restore and checksum for rollback"
+source = "Photon Quantum (large state rollback); Gaffer on Games, Snapshot Compression"
+status = "implemented+oracle"
+evidence = "src/fluid_netcode.rs:27 / tests/audit_fluid_netcode.rs::restore_returns_what_was_captured_bit_for_bit_including_extremes / tests/audit_fluid_netcode.rs::checksum_depends_on_every_byte_of_the_state / known defect: tests/audit_fluid_netcode.rs::checksum_distinguishes_where_the_position_stream_ends / known defect: tests/audit_fluid_netcode.rs::restore_rejects_a_snapshot_whose_buffer_no_longer_matches_its_checksum"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-040"
+axis = "network"
+item = "fluid particle delta compression (changed particles above a threshold, bounded error on apply)"
+source = "Gaffer on Games, Snapshot Compression"
+status = "implemented+oracle"
+evidence = "src/fluid_netcode.rs:107 / tests/audit_fluid_netcode.rs::apply_at_zero_threshold_reproduces_the_new_state_exactly / tests/audit_fluid_netcode.rs::apply_error_is_bounded_by_tau_per_component"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-041"
+axis = "world"
+item = "several independent worlds stepped together (sequentially or in parallel, bit-identical)"
+source = "PhysX multiple PxScene; Box2D multiple b2World; Jolt multiple PhysicsSystem"
+status = "implemented+oracle"
+evidence = "src/multi_world.rs:27 / tests/audit_multi_world.rs::step_all_equals_independent_steps / tests/analytic_multi_world_wiring.rs::step_all_parallel_is_bit_identical_to_step_all"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-042"
+axis = "world"
+item = "moving a body from one world to another with its whole state"
+source = "PhysX (actor removal and re-insertion across scenes); Unreal world partition hand-off"
+status = "implemented+oracle"
+evidence = "src/multi_world.rs:94 / tests/audit_multi_world.rs::transfer_keeps_body_state_except_position / tests/audit_multi_world.rs::failed_transfer_is_atomic / known defect: tests/audit_multi_world.rs::transfer_preserves_material / known defect: tests/audit_multi_world.rs::transfer_preserves_collision_filter"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-043"
+axis = "world"
+item = "portal transform between two worlds (position mapping both ways)"
+source = "Portal-style world linking (game engine practice)"
+status = "implemented+oracle"
+evidence = "src/multi_world.rs:37 / tests/audit_multi_world.rs::portal_round_trips_both_ways / tests/audit_multi_world.rs::portal_preserves_distances"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-044"
+axis = "world"
+item = "portal that also turns velocity and orientation and transfers a body automatically when it crosses"
+source = "Portal-style world linking (game engine practice)"
+status = "missing"
+evidence = "transform_a_to_b は位置だけを写し、transfer は速度を回さない (tests/audit_multi_world.rs::transfer_keeps_body_state_except_position) 通過の検出は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-045"
+axis = "world"
+item = "fixed-timestep accumulator (frame time to a whole number of steps plus a blend factor, spiral-of-death clamp)"
+source = "Gaffer on Games, Fix Your Timestep!; Unity FixedUpdate; Unreal physics substepping"
+status = "missing"
+evidence = "accumulator は doc の例にだけ現れる (src/interpolation.rs:10) Unreal plugin は TickComponent の可変 DeltaTime をそのまま step に渡す (unreal-plugin/Source/AlicePhysics/Private/AlicePhysicsComponent.cpp)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-046"
+axis = "world"
+item = "render interpolation of positions between the previous and the current step"
+source = "Gaffer on Games, Fix Your Timestep! (interpolation); Unity Rigidbody interpolation"
+status = "implemented+oracle"
+evidence = "src/interpolation.rs:78 / tests/audit_interpolation.rs::position_blend_endpoints_and_quarter_point_per_axis / tests/audit_interpolation.rs::lerp_is_affine_and_exact_on_dyadic_inputs"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-047"
+axis = "world"
+item = "render interpolation of orientations (slerp at constant angular velocity)"
+source = "Shoemake 1985, Animating Rotation with Quaternion Curves; Unity Rigidbody interpolation"
+status = "partial"
+evidence = "src/interpolation.rs:189 / tests/audit_interpolation.rs::slerp_takes_the_short_way_for_negative_dot / known defect: tests/audit_interpolation.rs::slerp_has_constant_angular_velocity"
+oracle_candidate = ""
+limitation = "src/interpolation.rs:185 'Uses NLERP (normalized linear interpolation) which is deterministic'"
+
+[[item]]
+id = "COV-ENGINE-048"
+axis = "world"
+item = "world reset to an empty world reproducing a fresh run bit for bit"
+source = "Jolt PhysicsSystem re-init; Gymnasium env.reset"
+status = "implemented+oracle"
+evidence = "src/solver.rs:1549 / tests/wm07_reset_and_rollback_contract.rs::reset_world_is_bit_identical_in_a_scene_where_idle_frames_matters / tests/wm07_reset_and_rollback_contract.rs::reset_world_clears_population_and_overflow_flag"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-049"
+axis = "world"
+item = "body removal with every reference remapped (swap-remove)"
+source = "Box2D b2DestroyBody; PhysX PxScene::removeActor"
+status = "implemented+oracle"
+evidence = "src/solver.rs:1797 / tests/wm07_reset_and_rollback_contract.rs::rollback_then_replaying_a_body_removal_remaps_joints_bit_exact"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-050"
+axis = "world"
+item = "stable body handles across removal (generational ids)"
+source = "Rapier RigidBodyHandle (generational arena); Jolt BodyID (sequence number)"
+status = "missing"
+evidence = "body は Vec の index で、remove_body は末尾を詰める swap-remove (src/solver.rs:1797) 呼び手の保持する index が別の body を指しうる"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-051"
+axis = "world"
+item = "per-step work counters and population statistics (bodies, awake bodies, broad-phase pairs, cache hits)"
+source = "PhysX PxSimulationStatistics; Jolt PhysicsSystem statistics"
+status = "implemented+oracle"
+evidence = "src/solver.rs:2106 / src/solver.rs:1915 / tests/sleep_skip.rs::skip_off_visits_every_body / tests/analytic_world_api.rs::static_body_leaves_active_body_count_after_the_first_step"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-052"
+axis = "api"
+item = "core library without the standard library (no_std + alloc)"
+source = "Rapier (no_std support); embedded targets"
+status = "implemented-no-oracle"
+evidence = "CI の `cargo rustc --lib --no-default-features --crate-type rlib` で build のみ no_std 構成で test は走らない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-053"
+axis = "api"
+item = "C ABI for host engines (world, bodies, shaped bodies, joints, static colliders, batches, rollback state)"
+source = "PhysX C++ SDK; JoltC; Box2D C API"
+status = "implemented+oracle"
+evidence = "src/ffi.rs:221 / src/ffi.rs:906 / src/ffi.rs::binding_calls_match_the_rust_api_bit_for_bit / src/ffi.rs::ffi_contract_gravity_fall_deterministic"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-054"
+axis = "api"
+item = "no unwinding across the C ABI (panic caught, sentinel returned, last error message)"
+source = "Rust FFI guidelines (catch_unwind at extern \"C\"); JoltC error handling"
+status = "implemented+oracle"
+evidence = "src/ffi.rs:64 / src/ffi.rs:87 / src/ffi.rs::ffi_guard_turns_panic_into_sentinel_and_message / src/ffi.rs::hostile_inputs_return_sentinels_without_unwinding"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-055"
+axis = "api"
+item = "argument validation shared by every binding (non-finite sizes, bad ids, self joints, malformed meshes refused)"
+source = "PhysX parameter validation (PX_CHECK); Rapier JS argument checks"
+status = "implemented+oracle"
+evidence = "src/binding_api.rs:28 / src/ffi.rs::binding_calls_refuse_bad_arguments_without_touching_the_world / src/wasm.rs::binding_calls_refuse_bad_arguments_without_touching_the_world"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-056"
+axis = "api"
+item = "library version query through the C ABI"
+source = "PhysX PX_PHYSICS_VERSION; JoltC version"
+status = "implemented+oracle"
+evidence = "src/ffi.rs:977 / src/ffi.rs::version_string_matches_cargo_pkg_version"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-057"
+axis = "api"
+item = "C headers and host bindings kept in step with the exported functions"
+source = "cbindgen; JoltC generated header"
+status = "implemented-no-oracle"
+evidence = "scripts/integration_levels.py の --check が header 2 本・Unity C#・Unreal plugin の宣言と src/ffi.rs の関数名を突合 (CI) 引数の型までは見ない Rust の test ではない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-058"
+axis = "api"
+item = "spatial queries through the C ABI (raycast, shape cast, overlap)"
+source = "PhysX PxScene::raycast; JoltC NarrowPhaseQuery"
+status = "missing"
+evidence = "src/ffi.rs の extern \"C\" 関数 50 本に raycast / query は無い (src/ffi.rs:270 以降を列挙)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-059"
+axis = "api"
+item = "contact and trigger events through the C ABI"
+source = "PhysX PxSimulationEventCallback; JoltC ContactListener"
+status = "missing"
+evidence = "event を返す extern \"C\" 関数は無い sensor body の追加 (src/ffi.rs:509) はあるが結果を取り出せない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-060"
+axis = "api"
+item = "whole-world snapshot through the C ABI"
+source = "Jolt StateRecorder via JoltC"
+status = "missing"
+evidence = "C ABI は rollback blob (src/ffi.rs:906) だけ snapshot_world は呼べない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-061"
+axis = "api"
+item = "Unity bindings (C# P/Invoke declarations of the C ABI)"
+source = "Unity native plug-ins; Unity Physics / Havok packages"
+status = "implemented-no-oracle"
+evidence = "bindings/AlicePhysics.cs (DllImport) Unity 上で動かす test は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-062"
+axis = "api"
+item = "Unity engine component (MonoBehaviour that steps the world on FixedUpdate and syncs transforms; package)"
+source = "Unity native plug-ins; Unity Physics / Havok packages"
+status = "missing"
+evidence = "MonoBehaviour の語は bindings/ に 0 件 C# は宣言と薄い wrapper だけ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-063"
+axis = "api"
+item = "Unreal Engine plugin (actor component with Blueprint functions)"
+source = "Unreal Engine plugins; Chaos physics"
+status = "implemented-no-oracle"
+evidence = "unreal-plugin/Source/AlicePhysics/Public/AlicePhysicsComponent.h (UAlicePhysicsWorldComponent) Unreal 上で動かす test は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-064"
+axis = "api"
+item = "Python bindings (world, shaped bodies, joints, static colliders, NumPy batch arrays, GIL released while stepping, lockstep class)"
+source = "PyBullet; MuJoCo Python bindings; Rapier (no Python)"
+status = "implemented-no-oracle"
+evidence = "src/python.rs:33 / src/python.rs:698 CI は `cargo check --lib --features python` だけで、Python から呼ぶ test も src/python.rs の unit test も走らない"
+oracle_candidate = "Python から step して Rust API と bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-065"
+axis = "api"
+item = "full-precision state readout to Python (fixed-point limbs or f64, angular velocity included)"
+source = "MuJoCo (qpos / qvel); PyBullet getBasePositionAndOrientation / getBaseVelocity"
+status = "missing"
+evidence = "states() は f32 を経由した (N,10) で角速度を含まない (src/python.rs:349)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-066"
+axis = "api"
+item = "Python package build and distribution (wheel, pyproject)"
+source = "maturin; PyPI wheels of PyBullet / MuJoCo"
+status = "missing"
+evidence = "pyproject.toml は repo に無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-067"
+axis = "api"
+item = "reinforcement-learning environment interface (reset, step, observation, reward, vectorised envs)"
+source = "Gymnasium API; MuJoCo / Brax environments"
+status = "missing"
+evidence = "gym / observation の語は src に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-068"
+axis = "api"
+item = "WebAssembly / JavaScript bindings (world, bodies, batch typed arrays, rollback state)"
+source = "rapier.js; Box2D wasm ports"
+status = "implemented+oracle"
+evidence = "src/wasm.rs:45 / src/wasm.rs::binding_calls_match_the_rust_api_bit_for_bit / src/wasm.rs::test_state_serialization"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-069"
+axis = "api"
+item = "WebAssembly target bit-identical to native"
+source = "Gaffer on Games, Floating Point Determinism; rapier.js cross-platform determinism"
+status = "implemented+oracle"
+evidence = "tests/determinism_golden.rs::determinism_cascade / tests/determinism_golden_f32.rs::golden_sketch (CI の wasm-test job が wasm32-wasip1 に build し wasmtime で実行、ブラウザでの実行は無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-070"
+axis = "api"
+item = "ray queries from JavaScript"
+source = "rapier.js castRay"
+status = "partial"
+evidence = "src/wasm.rs:401 / src/wasm.rs::test_raycast_miss"
+oracle_candidate = ""
+limitation = "src/wasm.rs:397 'Tests against all bodies as spheres of `body_radius`.'"
+
+[[item]]
+id = "COV-ENGINE-071"
+axis = "api"
+item = "GPU solver offload interface with a bit-exactness contract and divergence report"
+source = "PhysX GPU rigid bodies; Jolt (CPU only)"
+status = "implemented+oracle"
+evidence = "src/gpu_bridge.rs:85 (feature gpu-solver-bridge) / tests/audit_gpu_bridge.rs::trait_object_and_divergence_report_round_trip / tests/audit_gpu_bridge.rs::filtered_upload_writes_lambda_back_to_the_original_slot / known defect: tests/audit_gpu_bridge.rs::contact_upload_keeps_slot_alignment_with_a_sensor_in_slot_zero"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-072"
+axis = "api"
+item = "GPU solver backend inside the crate"
+source = "PhysX GPU rigid bodies"
+status = "missing"
+evidence = "trait だけで backend は持たない (src/gpu_bridge.rs:13)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-073"
+axis = "api"
+item = "batched SDF query buffers for a GPU dispatch (layout, workgroup count, CPU reference execution)"
+source = "WebGPU compute dispatch; PhysX GPU narrow phase"
+status = "implemented+oracle"
+evidence = "src/gpu_sdf.rs:89 / tests/analytic_gpu_sdf_wiring.rs::test_execute_batch_cpu_matches_unit_sphere_closed_form / tests/audit_gpu_sdf.rs::num_workgroups_is_ceiling_division_including_empty_and_exact_multiples / known defect: tests/audit_gpu_sdf.rs::per_query_radius_contributes_to_penetration"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-074"
+axis = "api"
+item = "GPU execution of the SDF queries inside the crate"
+source = "WebGPU compute dispatch"
+status = "missing"
+evidence = "src は「Actual GPU execution requires ALICE-SDF's wgpu/vulkan backend.」と書き、WGSL は placeholder (src/gpu_sdf.rs:378)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-075"
+axis = "diagnostics"
+item = "backend-agnostic debug draw buffer (lines, points, boxes, spheres, arrows, axes)"
+source = "Bullet btIDebugDraw; Jolt DebugRenderer; Box2D b2Draw"
+status = "implemented+oracle"
+evidence = "src/debug_render.rs:157 / tests/audit_debug_render.rs::aabb_wireframe_is_the_twelve_edges_of_the_box / tests/audit_debug_render.rs::sphere_rings_lie_on_the_sphere_in_three_orthogonal_planes / known defect: tests/audit_debug_render.rs::arrow_records_head_geometry_besides_the_shaft"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-076"
+axis = "diagnostics"
+item = "debug draw of body bounds, centres, velocities and local axes"
+source = "PhysX PxVisualizationParameter (eBODY_AXES, eBODY_LIN_VELOCITY, eCOLLISION_AABBS); Bullet DBG_DrawAabb"
+status = "implemented+oracle"
+evidence = "src/debug_render.rs:310 / tests/analytic_debug_render_wiring.rs::draw_aabbs_emits_the_broadphase_box_of_every_body_with_a_radius / tests/audit_debug_render.rs::velocity_arrow_goes_from_the_body_by_its_velocity_for_dynamic_bodies_only / tests/audit_debug_render.rs::axes_flag_draws_three_arrows_per_body_at_the_body_pose / known defect: tests/audit_debug_render.rs::draw_aabbs_flag_draws_something"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-077"
+axis = "diagnostics"
+item = "debug draw of contact points and normals"
+source = "PhysX eCONTACT_POINT / eCONTACT_NORMAL; Bullet DBG_DrawContactPoints"
+status = "implemented+oracle"
+evidence = "src/debug_render.rs:346 / tests/audit_debug_render.rs::contact_points_and_normal_arrow_follow_the_contact"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-078"
+axis = "diagnostics"
+item = "debug draw of joints"
+source = "PhysX eJOINT_LOCAL_FRAMES / eJOINT_LIMITS; Bullet DBG_DrawConstraints"
+status = "implemented+oracle"
+evidence = "src/debug_render.rs:358 / tests/audit_debug_render.rs::distance_constraint_is_a_cyan_line_between_the_body_centers / known defect: tests/audit_debug_render.rs::draw_joints_also_draws_the_world_joint_list (world の joint 一覧は描かれない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-079"
+axis = "diagnostics"
+item = "debug draw of the real collision shapes (box, capsule, convex hull, mesh, height field) as wireframes"
+source = "Bullet btIDebugDraw::drawShape; Jolt DebugRenderer::DrawShape; PhysX eCOLLISION_SHAPES"
+status = "missing"
+evidence = "body は半径の立方体として描かれ形状を見ない (src/debug_render.rs:326)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-080"
+axis = "diagnostics"
+item = "debug draw of the broad-phase tree nodes"
+source = "Bullet DBG_DrawAabb (broadphase); Jolt BroadPhase draw"
+status = "missing"
+evidence = "flag draw_bvh はあるが debug_draw_world は読まない (src/debug_render.rs:130)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-081"
+axis = "diagnostics"
+item = "debug colouring of islands and sleep state"
+source = "Jolt DrawBodies (sleeping colour); Box2D b2Draw (sleeping colour)"
+status = "missing"
+evidence = "色は static / dynamic の 2 値のみ (src/debug_render.rs:319)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-082"
+axis = "diagnostics"
+item = "contact force arrows and friction cones"
+source = "PhysX eCONTACT_FORCE; Jolt DrawContactPoints"
+status = "implemented+oracle"
+evidence = "src/contact_viz.rs:135 / tests/analytic_contact_viz_wiring.rs::contact_arrows_normalize_5_12_13_triangle / tests/analytic_contact_viz_wiring.rs::friction_cones_very_large_mu_boundary_half_angle_approaches_half_pi"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-083"
+axis = "diagnostics"
+item = "flow arrows and streamlines from particle velocities"
+source = "ParaView glyphs and stream tracer; VTK vtkStreamTracer"
+status = "implemented+oracle"
+evidence = "src/flow_viz.rs:190 / tests/audit_flow_viz.rs::single_particle_gives_single_arrow_with_closed_form / tests/audit_flow_viz.rs::uniform_flow_traces_straight_euler_lines / known defect: tests/audit_flow_viz.rs::streamline_tracing_is_scale_covariant 格子の速度場の streamline は COV-CFD-096"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-084"
+axis = "diagnostics"
+item = "contact stress heat map on an axis-aligned slice"
+source = "PhysX PVD contact visualisation; ParaView slice"
+status = "implemented+oracle"
+evidence = "src/heatmap.rs:105 / tests/audit_heatmap.rs::stress_matches_linear_falloff_sum_on_every_slice_axis / known defect: tests/audit_heatmap.rs::stress_map_is_covariant_under_uniform_scaling_of_the_scene 温度の slice は COV-THERM-089"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-085"
+axis = "diagnostics"
+item = "colour map from scalar values to RGBA (viridis-like, monotone luminance)"
+source = "van der Walt and Smith 2015, viridis; Matplotlib colormaps"
+status = "implemented+oracle"
+evidence = "src/heatmap.rs:211 / tests/audit_heatmap.rs::colormap_stops_match_the_documented_viridis_colours_within_one_level / tests/audit_heatmap.rs::colormap_luminance_is_monotone_in_value"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-086"
+axis = "diagnostics"
+item = "remote visual debugger or recorded debug stream (frame capture viewed in a separate tool)"
+source = "PhysX Visual Debugger (PVD); Jolt Viewer (recorded streams); Rapier testbed"
+status = "missing"
+evidence = "記録・転送の仕組みは無い (推測) debug draw はその frame の buffer だけ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-087"
+axis = "diagnostics"
+item = "profiler container (per-stage tick accumulators, averages, last values, summary)"
+source = "Jolt Profiler; PhysX PxProfilerCallback; Box2D b2Profile"
+status = "implemented+oracle"
+evidence = "src/profiling.rs:100 / tests/analytic_profiling_wiring.rs::entry_matches_independent_fold_on_every_prefix / tests/analytic_profiling_wiring.rs::profiler_summary_lists_each_stage_once_with_its_average / known defect: tests/audit_profiling.rs::entry_total_never_decreases_on_overflow"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-088"
+axis = "diagnostics"
+item = "per-stage timing recorded by the world step itself"
+source = "Box2D b2Profile (filled by b2World::Step); Jolt JPH_PROFILE scopes"
+status = "missing"
+evidence = "PhysicsProfiler を参照するのは src/lib.rs の re-export だけで step は記録しない (src/profiling.rs:100) 仕事量の計数は COV-ENGINE-051"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-089"
+axis = "diagnostics"
+item = "world energy diagnostic (total kinetic and potential energy, drift per step)"
+source = "PhysX / MuJoCo energy (mjData.energy); Bullet debug energy"
+status = "missing"
+evidence = "world に energy を返す関数は無い (推測) telemetry は呼び手が drift を渡す (COV-ENGINE-124)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-090"
+axis = "game-engine"
+item = "event callbacks invoked by the step (listener objects) in addition to polling"
+source = "PhysX PxSimulationEventCallback; Jolt ContactListener; Box2D b2ContactListener"
+status = "missing"
+evidence = "event は step 後に取り出す polling のみ (src/solver.rs:2172) 接触 event の中身は COV-RIGID-088、hook は COV-RIGID-090"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-091"
+axis = "game-engine"
+item = "per-body user data (an opaque value the host attaches to a body)"
+source = "Box2D b2BodyDef::userData; PhysX PxActor::userData; Rapier user_data"
+status = "missing"
+evidence = "RigidBody に user data の field は無い (user_data は動的 BVH の proxy 内部用 src/dynamic_bvh.rs:48)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-092"
+axis = "game-engine"
+item = "sleep and wake notifications"
+source = "PhysX onSleep / onWake; Jolt BodyActivationListener"
+status = "missing"
+evidence = "event の種類は接触 begin / persist / end と trigger だけ (src/event.rs:17) 眠りそのものは COV-RIGID-093"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-093"
+axis = "game-engine"
+item = "contact reports filtered by a force or impulse threshold"
+source = "PhysX contact report threshold (PxPairFlag::eNOTIFY_THRESHOLD_FORCE_FOUND)"
+status = "missing"
+evidence = "ContactEvent に閾値の設定は無い (src/event.rs:28)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-094"
+axis = "auxiliary"
+item = "cardinality estimation (HyperLogLog with small-range correction, mergeable)"
+source = "Flajolet et al. 2007; Heule et al. 2013 (HLL++); Apache DataSketches HLL"
+status = "implemented+oracle"
+evidence = "src/sketch.rs:348 / tests/analytic_sketch_wiring.rs::hyperloglog_registers_match_the_reference_and_the_estimate_is_within_three_sigma / tests/audit_sketch.rs::hll_error_stays_within_four_sigma_across_the_estimator_switch / tests/audit_sketch.rs::hll_merge_is_a_register_max_and_idempotent"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-095"
+axis = "auxiliary"
+item = "relative-error quantile sketch (DDSketch, mergeable)"
+source = "Masson, Rim and Lee 2019, DDSketch"
+status = "implemented+oracle"
+evidence = "src/sketch.rs:605 / tests/analytic_sketch_wiring.rs::ddsketch_quantile_meets_the_edge_estimator_bound / tests/audit_sketch.rs::ddsketch_merge_equals_the_sketch_of_the_union_stream / known defect: tests/audit_sketch.rs::ddsketch_relative_error_holds_below_the_first_bucket"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-096"
+axis = "auxiliary"
+item = "frequency estimation (Count-Min sketch with error bound and confidence, mergeable)"
+source = "Cormode and Muthukrishnan 2005"
+status = "implemented+oracle"
+evidence = "src/sketch.rs:746 / tests/analytic_sketch_wiring.rs::count_min_estimate_is_the_row_minimum_of_the_reference_table / tests/analytic_sketch_wiring.rs::count_min_error_bound_and_confidence_are_the_documented_closed_forms / known defect: tests/audit_sketch.rs::countmin_total_does_not_overflow_when_counters_saturate"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-097"
+axis = "auxiliary"
+item = "heavy hitters (top-k most frequent keys)"
+source = "Metwally et al. 2005 (Space-Saving); Apache DataSketches frequent items"
+status = "implemented+oracle"
+evidence = "src/sketch.rs:754 / tests/analytic_sketch_wiring.rs::heavy_hitters_top_lists_the_k_most_frequent_keys_in_descending_order / tests/audit_sketch.rs::heavy_hitters_do_not_evict_on_a_tie"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-098"
+axis = "auxiliary"
+item = "rank-error quantile sketches (KLL, t-digest)"
+source = "Karnin, Lang and Liberty 2016 (KLL); Dunning t-digest; Apache DataSketches KLL"
+status = "missing"
+evidence = "quantile は DDSketch だけ (src/sketch.rs:605)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-099"
+axis = "auxiliary"
+item = "set-operation sketches (union, intersection, difference of distinct sets)"
+source = "Apache DataSketches Theta; Dasgupta et al. 2016"
+status = "missing"
+evidence = "HLL の merge (和集合) のみ 積・差は無い (src/sketch.rs:133)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-100"
+axis = "auxiliary"
+item = "sketch serialisation (bytes for merging across processes)"
+source = "Apache DataSketches serialisation format"
+status = "missing"
+evidence = "to_bytes / from_bytes は sketch.rs に 0 件 (merge は同一プロセス内の値のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-101"
+axis = "auxiliary"
+item = "randomness source of the privacy mechanisms unpredictable to an adversary"
+source = "Dwork and Roth 2014, Algorithmic Foundations of Differential Privacy; Google DP library (secure noise)"
+status = "partial"
+evidence = "src/privacy.rs:37 / tests/audit_privacy.rs::from_entropy_seed_is_not_recoverable_from_the_clock / tests/audit_privacy.rs::first_draw_of_a_small_seed_is_not_an_extreme_outlier"
+oracle_candidate = ""
+limitation = "src/privacy.rs:35 'Not cryptographically secure, but fast and sufficient for noise injection.'"
+
+[[item]]
+id = "COV-ENGINE-102"
+axis = "auxiliary"
+item = "Laplace mechanism (scale = sensitivity / epsilon)"
+source = "Dwork, McSherry, Nissim and Smith 2006; Dwork and Roth 2014 ch.3"
+status = "implemented+oracle"
+evidence = "src/privacy.rs:145 / tests/audit_privacy.rs::laplace_scale_is_sensitivity_over_epsilon_and_gives_exactly_epsilon_density_ratio / tests/audit_privacy.rs::laplace_samples_follow_the_laplace_cdf_moments_and_tails / known defect: tests/audit_privacy.rs::laplace_sample_is_always_finite_even_when_the_uniform_draw_is_zero"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-103"
+axis = "auxiliary"
+item = "floating-point-safe noise sampling (snapping mechanism against the low-order-bit attack)"
+source = "Mironov 2012, On Significance of the Least Significant Bits for Differential Privacy"
+status = "missing"
+evidence = "Laplace は f64 の逆変換で sampling (src/privacy.rs:145) snapping の語は 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-104"
+axis = "auxiliary"
+item = "randomized response for one bit with an unbiased proportion estimate"
+source = "Warner 1965; Dwork and Roth 2014 ch.3"
+status = "implemented+oracle"
+evidence = "src/privacy.rs:218 / tests/audit_privacy.rs::randomized_response_report_probabilities_match_truth_or_coin / tests/audit_privacy.rs::estimate_proportion_recovers_the_true_rate_from_noisy_reports"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-105"
+axis = "auxiliary"
+item = "RAPPOR encoding (Bloom filter, permanent and instantaneous randomized response)"
+source = "Erlingsson, Pihur and Korolova 2014, RAPPOR"
+status = "implemented+oracle"
+evidence = "src/privacy.rs:314 / tests/audit_privacy.rs::rappor_per_bit_report_probabilities_follow_the_two_stage_response / known defect: tests/audit_privacy.rs::rappor_default_params_epsilon_is_about_two"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-106"
+axis = "auxiliary"
+item = "RAPPOR decoding (estimating value frequencies from a population of reports)"
+source = "Erlingsson, Pihur and Korolova 2014 (decoding by regression); Fanti et al. 2016"
+status = "missing"
+evidence = "Rappor は privatize だけで集計・復号は無い (src/privacy.rs:314)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-107"
+axis = "auxiliary"
+item = "privacy budget with sequential composition (spend, refuse overspend)"
+source = "Dwork and Roth 2014 ch.3 (composition theorems)"
+status = "implemented+oracle"
+evidence = "src/privacy.rs:420 / tests/audit_privacy.rs::budget_sequential_composition_sums_epsilons_and_refuses_overspend / tests/audit_privacy.rs::budget_never_lets_spent_epsilon_decrease"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-108"
+axis = "auxiliary"
+item = "advanced composition and Renyi / zero-concentrated DP accounting"
+source = "Dwork, Rothblum and Vadhan 2010; Mironov 2017 (Renyi DP); Bun and Steinke 2016 (zCDP); OpenDP"
+status = "missing"
+evidence = "budget は ε の単純和だけ (src/privacy.rs:443)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-109"
+axis = "auxiliary"
+item = "Gaussian mechanism ((epsilon, delta)-DP)"
+source = "Dwork and Roth 2014 appendix A; Balle and Wang 2018 (analytic Gaussian)"
+status = "missing"
+evidence = "Gaussian noise の型は privacy.rs に無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-110"
+axis = "auxiliary"
+item = "exponential mechanism (private selection)"
+source = "McSherry and Talwar 2007"
+status = "missing"
+evidence = "exponential mechanism の語は 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-111"
+axis = "auxiliary"
+item = "aggregation of noisy reports (sum, mean, standard error)"
+source = "Dwork and Roth 2014 ch.3; Google DP library BoundedMean"
+status = "implemented+oracle"
+evidence = "src/privacy.rs:498 / tests/audit_privacy.rs::aggregator_standard_error_equals_the_empirical_spread_of_the_mean / tests/audit_privacy.rs::aggregator_sum_mean_count_and_reset"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-112"
+axis = "auxiliary"
+item = "streaming median over a sliding window"
+source = "Hampel 1974; Hampel filter"
+status = "implemented+oracle"
+evidence = "src/anomaly.rs:41 / tests/audit_anomaly.rs::streaming_median_equals_brute_force_after_every_push / tests/audit_anomaly.rs::streaming_median_recovers_after_a_nan_leaves_the_window"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-113"
+axis = "auxiliary"
+item = "MAD (median absolute deviation) outlier detector"
+source = "Hampel 1974; Leys et al. 2013"
+status = "implemented+oracle"
+evidence = "src/anomaly.rs:238 / tests/audit_anomaly.rs::mad_matches_brute_force_median_mad_verdict_and_score / known defect: tests/audit_anomaly.rs::values_that_fill_the_window_are_not_anomalous_when_mad_is_zero"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-114"
+axis = "auxiliary"
+item = "EWMA control-chart detector"
+source = "Roberts 1959; Montgomery, Introduction to Statistical Quality Control ch.9"
+status = "implemented+oracle"
+evidence = "src/anomaly.rs:436 / tests/audit_anomaly.rs::ewma_step_response_matches_closed_form / tests/audit_anomaly.rs::ewma_variance_bias_on_iid_noise_matches_theory"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-115"
+axis = "auxiliary"
+item = "z-score detector with Welford running moments"
+source = "Welford 1962"
+status = "implemented+oracle"
+evidence = "src/anomaly.rs:598 / tests/audit_anomaly.rs::zscore_matches_two_pass_mean_variance"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-116"
+axis = "auxiliary"
+item = "combined detectors (any / consensus verdict, score, anomaly callback)"
+source = "ensemble anomaly detection practice"
+status = "implemented+oracle"
+evidence = "src/anomaly.rs:742 / tests/analytic_anomaly_wiring.rs::composite_verdict_is_or_of_three_and_consensus_is_and / tests/analytic_anomaly_wiring.rs::callback_fires_exactly_at_the_spike_with_score_inf_and_expected_median / known defect: tests/audit_anomaly.rs::composite_score_matches_verdict_during_warm_up"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-117"
+axis = "auxiliary"
+item = "change-point detection (CUSUM, Page-Hinkley)"
+source = "Page 1954; Montgomery ch.9 (CUSUM)"
+status = "missing"
+evidence = "CUSUM の語は src に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-118"
+axis = "auxiliary"
+item = "seasonal baselines (Holt-Winters, STL decomposition)"
+source = "Holt 1957 / Winters 1960; Cleveland et al. 1990 (STL)"
+status = "missing"
+evidence = "季節性の語は src に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-119"
+axis = "auxiliary"
+item = "multivariate anomaly detection (Mahalanobis distance, isolation forest)"
+source = "Mahalanobis 1936; Liu, Ting and Zhou 2008 (isolation forest)"
+status = "missing"
+evidence = "detector は全て 1 変数 (src/anomaly.rs:288)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-120"
+axis = "auxiliary"
+item = "metric aggregation (counter, gauge, histogram, distinct count) with a registry and snapshots"
+source = "Prometheus metric types; OpenTelemetry metrics data model; StatsD"
+status = "implemented+oracle"
+evidence = "src/pipeline.rs:342 / src/pipeline.rs:506 / tests/analytic_pipeline_wiring.rs::counter_and_gauge_fold_exactly / tests/audit_pipeline.rs::snapshot_reports_counter_gauge_counts_and_quantiles_within_alpha / known defect: tests/audit_pipeline.rs::pipeline_histogram_with_alpha_one_percent_keeps_quantiles_for_values_above_fifty"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-121"
+axis = "auxiliary"
+item = "distinct metric names kept apart in the aggregation slots"
+source = "Prometheus (one series per name and label set)"
+status = "partial"
+evidence = "src/pipeline.rs:390 / tests/audit_pipeline.rs::pipeline_routes_each_metric_to_its_own_slot_and_get_slot_is_exact / known defect: tests/audit_pipeline.rs::pipeline_colliding_metric_names_do_not_corrupt_each_other"
+oracle_candidate = ""
+limitation = "src/pipeline.rs:399 'Hash collision - process into existing slot anyway (approximation)'"
+
+[[item]]
+id = "COV-ENGINE-122"
+axis = "auxiliary"
+item = "concurrent ingestion (producer and consumer on different threads without locks)"
+source = "Lamport 1983 (single-producer single-consumer queue); LMAX Disruptor"
+status = "missing"
+evidence = "RingBuffer は「Lock-free single-producer single-consumer」を名乗るが push / pop は &mut self で atomic を持たない (src/pipeline.rs:36)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-123"
+axis = "auxiliary"
+item = "metric export in a standard format (Prometheus exposition, OpenTelemetry protocol)"
+source = "Prometheus exposition format; OTLP"
+status = "missing"
+evidence = "export の語は pipeline.rs に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-124"
+axis = "auxiliary"
+item = "simulation telemetry percentiles (step time, contacts, energy drift, distinct colliding pairs)"
+source = "Jolt / PhysX profiling statistics; DDSketch and HLL use"
+status = "implemented+oracle"
+evidence = "src/analytics_bridge.rs:10 (feature analytics) / tests/analytic_analytics_bridge_wiring.rs::telemetry_scenario_matches_closed_form_percentiles_and_total_steps / tests/audit_analytics_bridge.rs::decade_ladder_percentiles 呼び手が値を渡す (world の step からは自動で流れない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-125"
+axis = "auxiliary"
+item = "telemetry and anomaly detectors fed from the world step automatically"
+source = "Jolt / PhysX profiling statistics"
+status = "missing"
+evidence = "PhysicsTelemetry・detector を呼ぶ箇所は solver.rs に 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-126"
+axis = "auxiliary"
+item = "simulation metrics persisted to a time-series store (step, bodies, contacts, energy) and range queries"
+source = "time-series database practice (InfluxDB, Prometheus TSDB)"
+status = "implemented+oracle"
+evidence = "src/db_bridge.rs:16 (feature replay) / tests/analytic_db_bridge_wiring.rs::record_step_round_trips_exactly_through_all_three_series / tests/audit_db_bridge.rs::flushed_metrics_survive_reopen / known defect: tests/audit_db_bridge.rs::gapped_series_returns_exactly_the_recorded_pairs"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-127"
+axis = "auxiliary"
+item = "deterministic fixed-point neural-network inference for controllers (ternary weights)"
+source = "Ma et al. 2024 (BitNet b1.58 ternary weights); Photon Quantum deterministic AI"
+status = "implemented+oracle"
+evidence = "src/neural.rs:239 (feature neural) / tests/analytic_neural_wiring.rs::deterministic_network_forward_matches_hand_derived_layers / tests/audit_neural.rs::ternary_matvec_is_linear_in_the_input / known defect: tests/audit_neural.rs::matvec_output_is_the_exact_product_of_the_integer_sum_and_the_scale"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-128"
+axis = "benchmark"
+item = "rollback k frames and replay the same inputs: identical state and checksum"
+source = "GGPO sync test; Photon Quantum"
+status = "implemented+oracle"
+evidence = "src/netcode.rs::test_snapshot_rollback (30 frame) / tests/wm08_state_coverage.rs::rollback_then_continue_is_bit_identical"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-129"
+axis = "benchmark"
+item = "late corrected input: rollback, re-simulate with the corrected input, match a peer that had it on time"
+source = "GGPO (rollback on misprediction); Photon Quantum"
+status = "missing"
+evidence = "既存の save_snapshot / load_snapshot / advance_frame (src/netcode.rs:486) だけで組めるが test は無い"
+oracle_candidate = "2 つの DeterministicSimulation で 10 frame 遅れの入力を巻き戻して当て直し、全 frame の checksum が一致"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-130"
+axis = "benchmark"
+item = "two peers with random inputs over many frames agree on every checksum"
+source = "Gaffer on Games, Deterministic Lockstep"
+status = "implemented-no-oracle"
+evidence = "src/netcode.rs::test_deterministic_two_sims は固定入力 乱数入力・長時間の場面は無い"
+oracle_candidate = "DeterministicRng で入力列を作り 2 peer を 10^4 frame 回して checksum 列を比較"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-131"
+axis = "benchmark"
+item = "parallel step with 1, 2 and 8 threads gives the same hash"
+source = "Jolt determinism tests"
+status = "missing"
+evidence = "COV-ENGINE-005 の evidence 参照"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-132"
+axis = "benchmark"
+item = "translated scene (far from the origin) keeps every relative position bit-identical"
+source = "Unreal Engine large world coordinates"
+status = "missing"
+evidence = "COV-ENGINE-009 の evidence 参照"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-133"
+axis = "benchmark"
+item = "snapshot round trip in the middle of a run, continued stepping identical to the original"
+source = "Jolt StateRecorder tests"
+status = "implemented+oracle"
+evidence = "tests/world_snapshot_v2.rs::restored_world_matches_the_original_after_every_later_step / tests/world_snapshot_v2.rs::empty_world_round_trips"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-134"
+axis = "benchmark"
+item = "step time of 10^4 and 10^5 bodies"
+source = "Jolt performance test (ragdolls, pyramids); PhysX snippets benchmarks; Bullet benchmark demos"
+status = "implemented-no-oracle"
+evidence = "benches/world_scale.rs (criterion、10_000 と 100_000) / benches/stage_breakdown.rs 参照値と回帰の閾値は無く CI でも測らない"
+oracle_candidate = "参照値要確認 (他 engine の同 scene の数値)"
+limitation = ""
+
+[[item]]
+id = "COV-ENGINE-135"
+axis = "benchmark"
+item = "untrusted state and scene input never panics (fuzzed blobs and files)"
+source = "cargo-fuzz practice; Bullet file validation"
+status = "implemented+oracle"
+evidence = "fuzz/fuzz_targets/fuzz_deterministic_roundtrip.rs / tests/world_snapshot_v2.rs::every_single_byte_flip_after_the_header_is_a_checksum_mismatch / tests/analytic_scene_io_wiring.rs::a_header_claiming_four_billion_entries_ends_in_an_error"
+oracle_candidate = ""
+limitation = ""

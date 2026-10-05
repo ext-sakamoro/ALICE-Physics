@@ -181,6 +181,7 @@ pub fn lerp_fix128(a: Fix128, b: Fix128, t: Fix128) -> Fix128 {
 
 /// Spherical linear interpolation for quaternions
 ///
+// LIMITATION(COV-ENGINE-047): Uses NLERP (normalized linear interpolation) which is deterministic
 /// Uses NLERP (normalized linear interpolation) which is deterministic
 /// and provides near-identical results to SLERP for interpolation.
 /// NLERP is preferred for fixed-point as it avoids acos/sin.
