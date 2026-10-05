@@ -631,9 +631,11 @@ pub enum SolverBackend {
 }
 
 /// The broad-phase [`PhysicsWorld`] uses to find the pairs of bodies whose
-/// collision spheres may touch.
+/// colliders may touch.
 ///
-/// Every kind hands its candidates (pairs whose sphere boxes may overlap) to the
+/// A body's box is the closed-form world box of its collider when it carries a
+/// shape or a compound, and the cube of its collision sphere otherwise. Every
+/// kind hands its candidates (pairs whose boxes may overlap) to the
 /// same exact narrow-phase in ascending pair order, and a pair whose boxes do not
 /// meet has no contact, so a world steps to **bit-identical** results whichever
 /// it uses; they differ in cost. Set with [`PhysicsWorld::set_broadphase`].
@@ -730,7 +732,8 @@ struct ParkCache {
     /// by one ulp in fixed point).
     angular_velocity: Vec3Fix,
     radius: Option<Fix128>,
-    /// Recorded for a `BodyType::Static` body (only position and radius matter).
+    /// Recorded for a `BodyType::Static` body (only position and radius matter,
+    /// and the rotation when the body carries a collider: it turns the box).
     static_kind: bool,
 }
 
@@ -1688,8 +1691,9 @@ impl PhysicsWorld {
 
     /// Give an existing body a convex `shape` as its collider: its collision radius
     /// becomes the shape's bounding radius about the centre of mass, and a pair of
-    /// bodies that both carry a shape is decided by the shapes ([`crate::collider::contact`])
-    /// instead of by the bounding spheres. Returns `false` for an out-of-range index.
+    /// bodies of which either carries a shape is decided by the shape
+    /// ([`crate::collider::contact`]; against a body without one, by its collision
+    /// sphere) instead of by the bounding spheres. Returns `false` for an out-of-range index.
     ///
     /// The body's position is taken as the shape's **centre of mass** (see
     /// [`crate::shape`]); its mass and inertia are not changed — use
@@ -1704,32 +1708,46 @@ impl PhysicsWorld {
         true
     }
 
-    /// Whether the colliders of two bodies overlap: GJK on their shapes when both
-    /// carry one ([`Self::set_body_shape`], [`Self::add_shaped_body`]), otherwise the
-    /// test of their collision spheres. `false` for an index that is not a body or a
-    /// body without a collider. Touching exactly counts as overlapping for shapes
-    /// (GJK's convention) and as clear for spheres (the contact generation's).
+    /// Whether the colliders of two bodies overlap, the same way the contact
+    /// generation decides it: GJK on their shapes when both carry one
+    /// ([`Self::set_body_shape`], [`Self::add_shaped_body`]), GJK on the shape and
+    /// the other body's collision sphere when one does, otherwise the test of
+    /// their collision spheres. `false` for an index that is not a body or a body
+    /// without a collider. Touching exactly counts as overlapping when a shape is
+    /// involved (GJK's convention) and as clear for two spheres (the contact
+    /// generation's).
     #[must_use]
     pub fn colliders_overlap(&self, a: usize, b: usize) -> bool {
         let (Some(body_a), Some(body_b)) = (self.bodies.get(a), self.bodies.get(b)) else {
             return false;
         };
         let collider = |i: usize| self.body_colliders.get(i).and_then(Option::as_ref);
-        if let (Some(ca), Some(cb)) = (collider(a), collider(b)) {
-            return crate::body_collider::colliders_meet(
-                ca,
-                (body_a.position, body_a.rotation),
-                cb,
-                (body_b.position, body_b.rotation),
-            );
-        }
         let radius = |i: usize| self.body_collision_radii.get(i).copied().flatten();
-        match (radius(a), radius(b)) {
-            (Some(ra), Some(rb)) => {
-                let reach = ra + rb;
-                (body_a.position - body_b.position).length_squared() < reach * reach
-            }
-            _ => false,
+        let pose_a = (body_a.position, body_a.rotation);
+        let pose_b = (body_b.position, body_b.rotation);
+        match (collider(a), collider(b)) {
+            (Some(ca), Some(cb)) => crate::body_collider::colliders_meet(ca, pose_a, cb, pose_b),
+            (Some(ca), None) => radius(b).is_some_and(|rb| {
+                crate::body_collider::collider_meets_sphere(
+                    ca,
+                    pose_a,
+                    crate::collider::Sphere::new(body_b.position, rb),
+                )
+            }),
+            (None, Some(cb)) => radius(a).is_some_and(|ra| {
+                crate::body_collider::collider_meets_sphere(
+                    cb,
+                    pose_b,
+                    crate::collider::Sphere::new(body_a.position, ra),
+                )
+            }),
+            (None, None) => match (radius(a), radius(b)) {
+                (Some(ra), Some(rb)) => {
+                    let reach = ra + rb;
+                    (body_a.position - body_b.position).length_squared() < reach * reach
+                }
+                _ => false,
+            },
         }
     }
 
@@ -2232,8 +2250,10 @@ impl PhysicsWorld {
     ///
     /// Every body is tested as its **bounding sphere** (its collision radius), even
     /// when it carries a shape or a compound, and static colliders and SDF
-    /// colliders are not tested. [`Self::cast_ray`] tests the actual geometry (see
-    /// [`crate::shape_raycast`]).
+    /// colliders are not tested. This differs from the contacts, which a shaped
+    /// body makes with its shape: a ray can hit the bounding sphere of a body
+    /// that nothing touches there. [`Self::cast_ray`] tests the actual geometry
+    /// (see [`crate::shape_raycast`]).
     #[must_use]
     pub fn raycast(
         &self,
@@ -2870,8 +2890,7 @@ impl PhysicsWorld {
                     self.park.parked_list.push(i);
                     if recached || self.park.proxies[i].is_none() {
                         self.park.remove_proxy(i, &mut self.stage_work);
-                        let half = Vec3Fix::new(r, r, r);
-                        let aabb = AABB::from_center_half(self.bodies[i].position, half);
+                        let aabb = self.broadphase_box(i, r);
                         self.park.proxies[i] = Some(self.park.tree.insert(aabb, i as u32));
                         self.park.proxy_live += 1;
                         self.stage_work.tree_inserts += 1;
@@ -2904,6 +2923,8 @@ impl PhysicsWorld {
                 if !body.is_static() {
                     return (false, false);
                 }
+                // A collider's box turns with the body; a sphere cube does not.
+                let has_collider = self.body_colliders.get(i).is_some_and(Option::is_some);
                 let c = ParkCache {
                     position: body.position,
                     rotation: body.rotation,
@@ -2915,7 +2936,8 @@ impl PhysicsWorld {
                     Some(old)
                         if old.static_kind
                             && old.position == c.position
-                            && old.radius == radius =>
+                            && old.radius == radius
+                            && (old.rotation == c.rotation || !has_collider) =>
                     {
                         (true, false)
                     }
@@ -5082,6 +5104,39 @@ impl PhysicsWorld {
         self.broadphase_hybrid = BroadphaseHybrid::new();
     }
 
+    /// The box the broad-phase keeps for body `i`, whose collision radius is
+    /// `radius`: the closed-form world box of its collider when it carries one
+    /// ([`crate::body_collider::BodyCollider::world_aabb`]), clipped to the cube
+    /// of the collision sphere, otherwise that cube. Both contain the body's
+    /// position, so the clip is never empty. Every pair the narrow-phase can
+    /// report has overlapping boxes: a pair involving a collider is decided by
+    /// GJK on the collider (and on the plain side's sphere), which lies inside
+    /// these boxes.
+    fn broadphase_box(&self, i: usize, radius: Fix128) -> AABB {
+        let pos = self.bodies[i].position;
+        let cube = AABB::from_center_half(pos, Vec3Fix::new(radius, radius, radius));
+        match self.body_colliders.get(i).and_then(Option::as_ref) {
+            Some(collider) => {
+                let tight = collider.world_aabb(pos, self.bodies[i].rotation);
+                let max = |x: Fix128, y: Fix128| if x > y { x } else { y };
+                let min = |x: Fix128, y: Fix128| if x < y { x } else { y };
+                AABB {
+                    min: Vec3Fix::new(
+                        max(tight.min.x, cube.min.x),
+                        max(tight.min.y, cube.min.y),
+                        max(tight.min.z, cube.min.z),
+                    ),
+                    max: Vec3Fix::new(
+                        min(tight.max.x, cube.max.x),
+                        min(tight.max.y, cube.max.y),
+                        min(tight.max.z, cube.max.z),
+                    ),
+                }
+            }
+            None => cube,
+        }
+    }
+
     /// The sorted candidate pairs of bodies whose boxes may overlap, from the
     /// primitives (body index + tight box) of every body with a collision radius.
     fn broadphase_pairs(&mut self, primitives: Vec<BvhPrimitive>) -> Vec<(u32, u32)> {
@@ -5166,7 +5221,10 @@ impl PhysicsWorld {
 
     /// Detect collisions between bodies with collision radii.
     ///
-    /// Uses BVH broad-phase with Morton codes and sphere-sphere narrow-phase.
+    /// The broad-phase boxes are the collider's tight world box for a body that
+    /// carries one and the cube of the collision sphere otherwise; the
+    /// narrow-phase is exact sphere-sphere for two plain bodies and GJK/EPA for a
+    /// pair involving a collider (the plain side as its sphere).
     /// Generates contact constraints and events automatically.
     /// Bodies without a collision radius are skipped.
     #[allow(clippy::too_many_lines, clippy::items_after_statements)]
@@ -5183,11 +5241,8 @@ impl PhysicsWorld {
         for k in 0..count {
             let i = self.stage_body(k);
             if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
-                let pos = self.bodies[i].position;
-                let half = Vec3Fix::new(radius, radius, radius);
-                let aabb = AABB::from_center_half(pos, half);
                 primitives.push(BvhPrimitive {
-                    aabb,
+                    aabb: self.broadphase_box(i, radius),
                     index: i as u32,
                     morton: 0,
                 });
@@ -5277,15 +5332,21 @@ impl PhysicsWorld {
             // real overlaps. Same `dist < combined_radius` decision (both sides
             // exact for |delta| < 2^31), same contact order.
             let dist_sq = delta.length_squared();
-            // A pair of shaped bodies is decided by the shapes, which can overlap with
-            // coincident centres; the sphere path cannot give such a pair a normal.
-            let colliders = self
-                .body_colliders
-                .get(a)
-                .and_then(Option::as_ref)
-                .zip(self.body_colliders.get(b).and_then(Option::as_ref));
-            if dist_sq >= combined_radius * combined_radius
-                || (dist_sq.is_zero() && colliders.is_none())
+            // A pair involving a collider is decided by GJK on the collider, with
+            // the other body's collider or, for a plain body, its sphere; such a
+            // pair can overlap with coincident centres, where the sphere path
+            // cannot give a normal. Its early out is the overlap of the two
+            // broad-phase boxes (the collider's tight box, the plain body's
+            // sphere cube), which contain everything GJK looks at.
+            let collider_a = self.body_colliders.get(a).and_then(Option::as_ref);
+            let collider_b = self.body_colliders.get(b).and_then(Option::as_ref);
+            if collider_a.is_none() && collider_b.is_none() {
+                if dist_sq >= combined_radius * combined_radius || dist_sq.is_zero() {
+                    continue;
+                }
+            } else if !self
+                .broadphase_box(a, radius_a)
+                .intersects(&self.broadphase_box(b, radius_b))
             {
                 continue;
             }
@@ -5315,15 +5376,30 @@ impl PhysicsWorld {
                 continue;
             }
 
-            // The bounding spheres overlap, which is necessary but not sufficient for
-            // two convex solids to: let the shapes decide.
-            if let Some((collider_a, collider_b)) = colliders {
-                if let Some(contact) = crate::body_collider::contact_between(
-                    collider_a,
-                    (self.bodies[a].position, self.bodies[a].rotation),
-                    collider_b,
-                    (self.bodies[b].position, self.bodies[b].rotation),
-                ) {
+            // The boxes overlap, which is necessary but not sufficient for the
+            // solids to: let the shapes decide.
+            if collider_a.is_some() || collider_b.is_some() {
+                let pose_a = (self.bodies[a].position, self.bodies[a].rotation);
+                let pose_b = (self.bodies[b].position, self.bodies[b].rotation);
+                let hit = match (collider_a, collider_b) {
+                    (Some(ca), Some(cb)) => {
+                        crate::body_collider::contact_between(ca, pose_a, cb, pose_b)
+                    }
+                    (Some(ca), None) => crate::body_collider::contact_with_sphere(
+                        ca,
+                        pose_a,
+                        crate::collider::Sphere::new(pose_b.0, radius_b),
+                        true,
+                    ),
+                    (None, Some(cb)) => crate::body_collider::contact_with_sphere(
+                        cb,
+                        pose_b,
+                        crate::collider::Sphere::new(pose_a.0, radius_a),
+                        false,
+                    ),
+                    (None, None) => None,
+                };
+                if let Some(contact) = hit {
                     if contact.depth > Fix128::ZERO {
                         let rel_vel = (velocity_of(a) - velocity_of(b)).dot(contact.normal);
                         results.push(ContactInfo {

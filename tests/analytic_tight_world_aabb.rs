@@ -946,3 +946,80 @@ fn a_transformed_compound_supports_with_its_farthest_child() {
         }
     }
 }
+
+// ------------------------------------------------------------------ world broad-phase boxes
+
+/// The box of every scene body from its pieces' support points along the six
+/// axes (the same support functions the brute-force contacts use), the union over
+/// a compound's children.
+fn support_boxes(scene: &Scene) -> Vec<(V, V)> {
+    scene
+        .pieces
+        .iter()
+        .map(|pieces| {
+            let mut lo = [f64::INFINITY; 3];
+            let mut hi = [f64::NEG_INFINITY; 3];
+            for p in pieces {
+                for k in 0..3 {
+                    let mut d = [0.0; 3];
+                    d[k] = 1.0;
+                    hi[k] = hi[k].max(arr(p.support(v3(d)))[k]);
+                    d[k] = -1.0;
+                    lo[k] = lo[k].min(arr(p.support(v3(d)))[k]);
+                }
+            }
+            (lo, hi)
+        })
+        .collect()
+}
+
+/// With the collider boxes in the world broad-phase, the hybrid hands over exactly
+/// the pairs whose support boxes overlap (fewer than before: 614 with the
+/// bounding-sphere cubes), and every broad-phase, under `step` and
+/// `step_parallel`, finds exactly the brute-force contacts.
+#[test]
+fn the_world_broadphase_uses_the_collider_boxes() {
+    use alice_physics::solver::Broadphase;
+    let scene = mixed_scene();
+    let boxes = support_boxes(&scene);
+    let (mut tight, mut nearest) = (0u64, f64::INFINITY);
+    for a in 0..boxes.len() {
+        for b in a + 1..boxes.len() {
+            let mut all = true;
+            for k in 0..3 {
+                let gap = (boxes[a].0[k] - boxes[b].1[k]).max(boxes[b].0[k] - boxes[a].1[k]);
+                nearest = nearest.min(gap.abs());
+                all &= gap < 0.0;
+            }
+            tight += u64::from(all);
+        }
+    }
+    assert!(nearest > 1e-9, "a pair of boxes touches within {nearest}");
+    let want = brute_contact_pairs(&scene);
+    type StepFn = fn(&mut PhysicsWorld);
+    #[cfg_attr(not(feature = "parallel"), allow(unused_mut))]
+    let mut steps: Vec<(&str, StepFn)> = vec![("step", |w| w.step(fx(1.0 / 60.0)))];
+    #[cfg(feature = "parallel")]
+    steps.push(("step_parallel", |w| w.step_parallel(fx(1.0 / 60.0))));
+    for (what, step) in steps {
+        for bp in [Broadphase::Bvh, Broadphase::DynamicTree, Broadphase::Hybrid] {
+            let mut s = mixed_scene();
+            s.world.config.substeps = 1;
+            s.world.set_broadphase(bp);
+            step(&mut s.world);
+            if bp == Broadphase::Hybrid {
+                assert_eq!(s.world.stage_work().broadphase_pairs, tight, "{what}");
+                assert!(tight < 614, "{tight}");
+            }
+            let mut got: Vec<(usize, usize)> = s
+                .world
+                .contact_constraints
+                .iter()
+                .map(|c| (c.body_a.min(c.body_b), c.body_a.max(c.body_b)))
+                .collect();
+            got.sort_unstable();
+            got.dedup();
+            assert_eq!(got, want, "{what} {bp:?}");
+        }
+    }
+}

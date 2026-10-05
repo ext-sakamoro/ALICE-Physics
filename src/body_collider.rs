@@ -10,7 +10,7 @@
 //! Author: Moroya Sakamoto
 
 use crate::box_collider::OrientedBox;
-use crate::collider::{contact, gjk, Contact, Support, AABB};
+use crate::collider::{contact, gjk, Contact, Sphere, Support, AABB};
 use crate::compound::{CompoundChild, CompoundShape, ShapeRef};
 use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 #[cfg(feature = "std")]
@@ -338,6 +338,67 @@ pub(crate) fn colliders_meet(
             .iter()
             .any(|(pb, box_b)| box_a.intersects(box_b) && gjk(pa, pb).colliding)
     })
+}
+
+/// The deepest contact between a collider and a plain sphere (a body that has a
+/// collision radius but no collider): GJK/EPA on every piece of the collider whose
+/// box meets the sphere's box, with the sphere as its own support. When
+/// `collider_is_a` the collider is body A and the normal points from the sphere to
+/// the collider; otherwise the sphere is body A and the normal points from the
+/// collider to the sphere (B to A either way, the [`Contact`] contract).
+pub(crate) fn contact_with_sphere(
+    collider: &BodyCollider,
+    (position, rotation): (Vec3Fix, QuatFix),
+    sphere: Sphere,
+    collider_is_a: bool,
+) -> Option<Contact> {
+    let r = sphere.radius;
+    let sphere_box = AABB::from_center_half(sphere.center, Vec3Fix::new(r, r, r));
+    if !collider
+        .world_aabb(position, rotation)
+        .intersects(&sphere_box)
+    {
+        return None;
+    }
+    let mut deepest: Option<Contact> = None;
+    for (piece, piece_box) in collider.pieces(position, rotation, &sphere_box) {
+        if !piece_box.intersects(&sphere_box) {
+            continue;
+        }
+        let hit = if collider_is_a {
+            contact(&piece, &sphere)
+        } else {
+            contact(&sphere, &piece)
+        };
+        if let Some(hit) = hit {
+            if deepest.is_none_or(|d| hit.depth > d.depth) {
+                deepest = Some(hit);
+            }
+        }
+    }
+    deepest
+}
+
+/// Whether any piece of a collider meets a plain sphere (GJK; touching counts).
+pub(crate) fn collider_meets_sphere(
+    collider: &BodyCollider,
+    (position, rotation): (Vec3Fix, QuatFix),
+    sphere: Sphere,
+) -> bool {
+    let r = sphere.radius;
+    let sphere_box = AABB::from_center_half(sphere.center, Vec3Fix::new(r, r, r));
+    if !collider
+        .world_aabb(position, rotation)
+        .intersects(&sphere_box)
+    {
+        return false;
+    }
+    collider
+        .pieces(position, rotation, &sphere_box)
+        .iter()
+        .any(|(piece, piece_box)| {
+            piece_box.intersects(&sphere_box) && gjk(piece, &sphere).colliding
+        })
 }
 
 /// The unit quaternion of a rotation matrix (Shepperd's method: the largest of the

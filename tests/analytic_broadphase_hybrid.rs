@@ -13,9 +13,9 @@
 //!   field of every body equal under `Bvh`, `DynamicTree` and `Hybrid` after each
 //!   step;
 //! - the candidate count of the hybrid equals the brute-force count of pairs of
-//!   bodies whose sphere boxes overlap and that are not both static (closed form:
-//!   `|p_a − p_b|_k < r_a + r_b` on every axis, `r` the collision radius), and
-//!   the other two hand over at least that many;
+//!   bodies whose boxes overlap and that are not both static (closed form:
+//!   `|p_a − p_b|_k < h_a,k + h_b,k` on every axis, `h` the sphere radius or a
+//!   shaped box's half-extents), and the other two hand over at least that many;
 //! - a snapshot keeps the choice (`snapshot_world` / `restore_world`, tag 2) and a
 //!   restored hybrid world continues exactly like one that never stopped;
 //! - switching between the three kinds mid-run changes nothing.
@@ -224,8 +224,9 @@ fn hybrid_mostly_static_1000_is_bit_identical_to_bvh_and_tree() {
     check(Kind::MostlyStatic, 1000, 30);
 }
 
-/// The hybrid's candidates on one step of spheres are exactly the brute-force
-/// pairs whose sphere boxes overlap and that are not both static.
+/// The hybrid's candidates on one step are exactly the brute-force pairs whose
+/// boxes (sphere cubes, the shaped boxes' own boxes) overlap and that are not
+/// both static.
 #[test]
 fn hybrid_candidates_are_the_brute_force_box_overlaps() {
     for kind in [Kind::Uniform, Kind::Mixed, Kind::MostlyStatic] {
@@ -236,13 +237,14 @@ fn hybrid_candidates_are_the_brute_force_box_overlaps() {
             b.velocity = Vec3Fix::ZERO;
         }
         let n = w.bodies.len();
-        // half-extent of each body's box: its collision radius, which for the
-        // shaped 0.4×0.3×0.5 box is the bounding radius √(0.4² + 0.3² + 0.5²)
+        // half-extents of each body's box: the sphere cube, or for the shaped
+        // 0.4×0.3×0.5 box (unrotated at the start) its own half-extents, the
+        // closed-form box of its collider
         let half = |i: usize| -> [f64; 3] {
             if matches!(kind, Kind::Mixed) && i % 50 == 0 {
                 [3.0; 3]
             } else if !(matches!(kind, Kind::MostlyStatic) && i % 20 != 0) && i % 5 == 4 {
-                [0.5f64.sqrt(); 3]
+                [0.4, 0.3, 0.5]
             } else {
                 [0.5; 3]
             }

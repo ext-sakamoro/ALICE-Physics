@@ -281,6 +281,8 @@ were introduced during that release window.
 ### Fixed
 
 - **Behavior change:** `physics2d::PhysicsWorld2D::check_collision_2d` が capsule–capsule / capsule–polygon / edge–polygon / edge–capsule の接触を返す (従来は `None` で互いにすり抜けていた) 各形状を芯 (線分または凸多角形) と半径に分け、芯が離れていれば最近接点間の距離から、重なっていれば両芯の辺法線での最小重なり量に半径を足して深さを求め、法線は body_a → body_b edge 同士は面積を持たないため意図的に接触しない (`Shape2D::Edge` の doc に明記)
+- **Behavior change:** 形状 (shape / compound) を持つ body と形状を持たない球 body の接触は、形状と球の GJK/EPA で判定する (従来は形状の外接球どうしで判定していた) `PhysicsWorld::colliders_overlap` も同じ規則になる 形状を持つ body の broad-phase の箱は形状の閉形式の world box (外接球の立方体との共通部分) になり、候補 pair が減る (箱 0.4×0.3×0.5 と球 r=0.5 の 150 body で厳密な箱重なり 219 → 173) 休止中の static body は回転が変わると箱を作り直す `PhysicsWorld::raycast` は従来どおり外接球との交差 (形状に当てるのは `cast_ray`)
+- 形状を持つ body の上に置いた球が外接球の上でなく形状の面に乗る (箱の上面 + 半径で静止、従来は外接球の内側から押し出されて飛ばされることがあった)
 - `math::powf_pos` の整数指数部の上限 64 を撤廃した (64 以下の結果は不変) (AUD-A-S1W5-021)
 - `compressible::{riemann_invariants, stagnation_pressure_ratio}` が γ = 1 の等温極限を扱う (AUD-A-S1W5-007)
 - `coupled_iteration` / `creep_longterm` / `non_newtonian` / `wind_zone` / `anisotropic_friction` で二乗・冪の途中に `Fix128` が wrap していた (AUD-A-S3W3-011 / S2W1-003 / S2W2-002 / S3W3-001 / S2W3-002)
