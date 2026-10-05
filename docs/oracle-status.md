@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4338 |
+| 🟢 Not ignored (run by CI) | 4346 |
 | 🔴 Red by design | 200 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4562** |
+| **Total** | **4570** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -274,7 +274,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4338)
+## 🟢 Not ignored (4346)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -333,6 +333,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_print_pipeline_solver.rs` | 20 |
 | `audit_torus.rs` | 20 |
 | `analytic_compressible_wiring.rs` | 19 |
+| `analytic_debug_render_wiring.rs` | 19 |
 | `analytic_elastoplastic_fem.rs` | 19 |
 | `analytic_heatmap_wiring.rs` | 19 |
 | `analytic_laminate_wiring.rs` | 19 |
@@ -357,7 +358,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_acoustic_wave_wiring.rs` | 17 |
 | `analytic_anomaly_wiring.rs` | 17 |
 | `analytic_ccd_wiring.rs` | 17 |
-| `analytic_debug_render_wiring.rs` | 17 |
 | `analytic_gpu_sdf_wiring.rs` | 17 |
 | `analytic_interpolation_wiring.rs` | 17 |
 | `analytic_modal_wiring.rs` | 17 |
@@ -424,6 +424,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_kinematic_loop_wiring.rs` | 13 |
 | `analytic_math_wiring.rs` | 13 |
 | `analytic_physics.rs` | 13 |
+| `analytic_pressure_solvers.rs` | 13 |
 | `analytic_rans.rs` | 13 |
 | `analytic_sdf_ccd_wiring.rs` | 13 |
 | `analytic_sim_modifier_wiring.rs` | 13 |
@@ -478,7 +479,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_linear_elastic_fem_wiring_additional.rs` | 10 |
 | `analytic_particle_landing.rs` | 10 |
 | `analytic_physics2d_wiring.rs` | 10 |
-| `analytic_pressure_solvers.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
 | `audit_buckling.rs` | 10 |
 | `audit_compressible.rs` | 10 |
@@ -590,6 +590,7 @@ Per-file counts (the test names are in `tests/`):
 | `refinement_conformity.rs` | 4 |
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
+| `analytic_shape_with_rotation_wiring.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
 | `audit_c_coupled_field.rs` | 3 |
 | `audit_c_hyperelastic.rs` | 3 |
