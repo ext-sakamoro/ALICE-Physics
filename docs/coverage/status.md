@@ -10,11 +10,12 @@ crate has today.
 | `docs/coverage/fem.toml` | 133 | 36 | 0 | 6 | 88 | 3 |
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
 | `docs/coverage/num.toml` | 92 | 22 | 0 | 5 | 64 | 1 |
+| `docs/coverage/orbit.toml` | 109 | 23 | 4 | 3 | 79 | 0 |
 | `docs/coverage/part.toml` | 119 | 26 | 2 | 3 | 88 | 0 |
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 873 | 205 | 10 | 42 | 612 | 4 |
+| **total** | 982 | 228 | 14 | 45 | 691 | 4 |
 
 ## `docs/coverage/cfd.toml`
 
@@ -86,6 +87,25 @@ crate has today.
 | representation | 12 | 7 | 0 | 3 | 1 | 1 |
 | stationary | 1 | 0 | 0 | 0 | 1 | 0 |
 | time_integration | 14 | 0 | 0 | 0 | 14 | 0 |
+
+## `docs/coverage/orbit.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| attitude | 6 | 0 | 0 | 0 | 6 | 0 |
+| benchmark | 13 | 3 | 0 | 0 | 10 | 0 |
+| elements | 7 | 2 | 0 | 1 | 4 | 0 |
+| frames-time | 7 | 0 | 0 | 0 | 7 | 0 |
+| maneuver | 9 | 0 | 1 | 0 | 8 | 0 |
+| n-body integration | 12 | 3 | 1 | 1 | 7 | 0 |
+| n-body law | 7 | 4 | 0 | 1 | 2 | 0 |
+| output | 3 | 0 | 1 | 0 | 2 | 0 |
+| perturbation | 12 | 1 | 1 | 0 | 10 | 0 |
+| propagation | 7 | 1 | 0 | 0 | 6 | 0 |
+| restricted three-body | 6 | 0 | 0 | 0 | 6 | 0 |
+| surface gravity | 8 | 4 | 0 | 0 | 4 | 0 |
+| targeting | 3 | 0 | 0 | 0 | 3 | 0 |
+| two-body | 9 | 5 | 0 | 0 | 4 | 0 |
 
 ## `docs/coverage/part.toml`
 
