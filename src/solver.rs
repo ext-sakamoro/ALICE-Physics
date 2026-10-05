@@ -2956,6 +2956,44 @@ impl PhysicsWorld {
             }
         }
     }
+    /// Static colliders and joints for the TGS path, with their positional
+    /// corrections carried into the velocities (see `step_tgs` Phase 3.2):
+    /// a static contact removes the approaching velocity, a joint correction
+    /// adds `Δx / dt` and the angular velocity of its rotation change.
+    #[cfg(feature = "std")]
+    fn tgs_position_corrections(&mut self, dt: Fix128) {
+        if self.joints.is_empty() && self.static_colliders.is_empty() {
+            return;
+        }
+        if !self.static_colliders.is_empty() {
+            self.resolve_static_collisions(true);
+        }
+        if self.joints.is_empty() {
+            return;
+        }
+        let before: Vec<(Vec3Fix, QuatFix)> = self
+            .bodies
+            .iter()
+            .map(|b| (b.position, b.rotation))
+            .collect();
+        self.solve_joints_dispatch(dt);
+        let inv_dt = Fix128::ONE / dt;
+        for (body, (p0, q0)) in self.bodies.iter_mut().zip(before) {
+            if body.body_type == BodyType::Static {
+                continue;
+            }
+            if body.position != p0 {
+                match (body.position - p0).checked_scale(inv_dt) {
+                    Some(dv) => body.velocity = body.velocity + dv,
+                    None => self.overflow_detected = true,
+                }
+            }
+            if body.rotation != q0 {
+                body.angular_velocity =
+                    body.angular_velocity + angular_from_rotations(body.rotation, q0, inv_dt);
+            }
+        }
+    }
 
     /// `SolverBackend::Tgs` body of [`Self::step`]. Mirrors `step`'s phase
     /// numbering so the two are easy to diff, but is a genuinely different
@@ -3144,6 +3182,17 @@ impl PhysicsWorld {
             tgs_to_body(state, body);
         }
 
+        // Phase 3.2: The world's joints and static colliders. Both are
+        // position-level corrections (the same calls `substep` makes); TGS
+        // owns velocities, so each correction also updates the velocity: a
+        // static contact removes the velocity into the surface, a joint
+        // correction adds `Δx / dt` and the angular velocity of its rotation
+        // change (what XPBD's `update_velocities` does for every positional
+        // correction). Without that a body
+        // resting on a plane keeps the velocity gravity gave it and sinks
+        // again next tick, and a pendulum gains energy every tick.
+        self.tgs_position_corrections(dt);
+
         // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
         // per-substep gravity/impulse integration does not apply the global
         // `damping` factor, so this still needs to run here).
@@ -3259,7 +3308,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.resolve_static_collisions();
+            self.resolve_static_collisions(false);
         }
 
         // 2. Solve constraints (sequential). Hooks and modifiers run once per
@@ -3296,7 +3345,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.resolve_static_collisions();
+            self.resolve_static_collisions(false);
         }
 
         // 2. Solve constraints (batched)
@@ -4372,7 +4421,7 @@ impl PhysicsWorld {
             self.resolve_sdf_collisions();
         }
         if !self.static_colliders.is_empty() {
-            self.resolve_static_collisions();
+            self.resolve_static_collisions(false);
         }
 
         // 2. Solve constraints (sequential). Distance stays CPU;
@@ -4702,7 +4751,14 @@ impl PhysicsWorld {
     ///
     /// The sphere is the body's collision radius, or the world's default
     /// ([`Self::set_sdf_collision_radius`]) for a body without one.
-    fn resolve_static_collisions(&mut self) {
+    ///
+    /// `remove_approach`: also drop the part of the body's velocity that
+    /// points into the surface (an inelastic contact). The XPBD substep
+    /// passes `false` — its `update_velocities` turns the push into velocity
+    /// — and the TGS path passes `true`, because TGS keeps the velocity it
+    /// integrated and a pushed-out body would otherwise keep falling into
+    /// the surface.
+    fn resolve_static_collisions(&mut self, remove_approach: bool) {
         let default_radius = self.sdf_collision_radius;
         let count = self.stage_count();
         for k in 0..count {
@@ -4720,6 +4776,12 @@ impl PhysicsWorld {
             for collider in &self.static_colliders {
                 if let Some(contact) = collider.collide_sphere(body.position, radius) {
                     body.position = body.position + contact.normal * contact.depth;
+                    if remove_approach {
+                        let vn = body.velocity.dot(contact.normal);
+                        if vn < Fix128::ZERO {
+                            body.velocity = body.velocity - contact.normal * vn;
+                        }
+                    }
                 }
             }
         }
