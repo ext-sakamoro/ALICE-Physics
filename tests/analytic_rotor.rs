@@ -164,6 +164,28 @@ fn load_directions_and_reaction_torque_sign() {
     rel_close("τ_y", off.torque.y.to_f64(), -q, TOL);
     assert_eq!(off.application_point, v3(0.2, 0.0, 0.0));
 
+    // `apply` carries both moments: Δω = I⁻¹ (r × T ŷ + τ_reaction) dt
+    // (sphere inertia I = 0.4 m, identity rotation).
+    let mut spun = body;
+    let dt = 0.01;
+    Rotor::new(p)
+        .unwrap()
+        .apply(&mut spun, fx(RHO), fx(n), fx(dt))
+        .unwrap();
+    rel_close(
+        "Δω_z (r × F)",
+        spun.angular_velocity.z.to_f64(),
+        0.2 * t * dt / 0.4,
+        1e-9,
+    );
+    rel_close(
+        "Δω_y (reaction)",
+        spun.angular_velocity.y.to_f64(),
+        -q * dt / 0.4,
+        1e-9,
+    );
+    rel_close("Δv_y", spun.velocity.y.to_f64(), t * dt, 1e-9);
+
     // Body rolled 90° about +z: the axis +y becomes −x.
     let mut rolled = body;
     rolled.set_rotation(QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI));
