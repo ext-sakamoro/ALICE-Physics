@@ -39,9 +39,11 @@
 //! (the inverse of the universal profile, which is what a wall model needs
 //! and what this module lacked until 2026-10-02), `y_plus`, `u_plus` and
 //! `wall_k_epsilon` — through `CfdSolver::step_with_options` with a
-//! `WallModel`. The k-ε / k-ω transport state and the dynamic Smagorinsky
-//! coefficient are not yet reached from a solver step; each carries its own
-//! `ALLOW-DEAD` note.
+//! `WallModel`. The k-ε / k-ω transport (`KEpsilonState` /
+//! `KOmegaState`) and the dynamic Smagorinsky coefficient run in
+//! `CfdSolver::step_rans`; with a `WallModel` that step also imposes
+//! `wall_k_epsilon` on the wall-adjacent cells (the Launder–Spalding wall
+//! function), without one `k` and `ε` have no wall boundary condition.
 
 use crate::math::Fix128;
 
