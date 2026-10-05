@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4497 |
+| 🟢 Not ignored (run by CI) | 4529 |
 | 🔴 Red by design | 208 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4729** |
+| **Total** | **4761** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -282,7 +282,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4497)
+## 🟢 Not ignored (4529)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -324,6 +324,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_convex_contact.rs` | 23 |
 | `analytic_kepler.rs` | 23 |
 | `audit_linear_elastic_fem.rs` | 23 |
+| `analytic_pair_potential.rs` | 22 |
 | `analytic_reactions.rs` | 22 |
 | `audit_fluid_netcode.rs` | 22 |
 | `audit_force.rs` | 22 |
@@ -491,6 +492,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_db_bridge_wiring.rs` | 10 |
 | `analytic_fsi_advanced_wiring.rs` | 10 |
 | `analytic_linear_elastic_fem_wiring_additional.rs` | 10 |
+| `analytic_molecular_dynamics.rs` | 10 |
 | `analytic_particle_landing.rs` | 10 |
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |

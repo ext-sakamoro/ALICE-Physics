@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 108 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2176 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2223 |
 | live | reached without examples (crate-internal roots or a binding) | 423 |
-| | **total** | **2707** |
+| | **total** | **2754** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -263,7 +263,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2176)
+## L1 — example-only (2223)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -348,6 +348,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `YeeGrid`, `YeeGrid::charge`, `YeeGrid::component_dims`, `YeeGrid::courant`, `YeeGrid::current`, `YeeGrid::dims`, `YeeGrid::div_b`, `YeeGrid::div_e`, `YeeGrid::div_j`, `YeeGrid::gauss_residual`, `YeeGrid::get`, `YeeGrid::interior_node_dims`, `YeeGrid::is_absorbing`, `YeeGrid::max_abs_div_b`, `YeeGrid::max_abs_field`, `YeeGrid::max_abs_gauss_residual`, `YeeGrid::new`, `YeeGrid::new_with_absorber`, `YeeGrid::set`, `YeeGrid::set_charge`, `YeeGrid::set_current`, `YeeGrid::step`, `YeeGrid::total_charge`, `cfl_limit_3d`, `loss_coefficients`, `theoretical_pml_reflection`
 - `src/metric.rs`: `MetricError`, `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::new`, `MetricWeights::norm`, `MetricWeights::weights`
 - `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
+- `src/molecular_dynamics.rs`: `MdError`, `PairForces`, `PeriodicBox`, `PeriodicBox::cubic`, `PeriodicBox::lengths`, `PeriodicBox::minimum_image`, `PeriodicBox::new`, `PeriodicBox::wrap`, `VelocityVerlet`, `VelocityVerlet::forces`, `VelocityVerlet::instantaneous_temperature`, `VelocityVerlet::kinetic_energy`, `VelocityVerlet::masses`, `VelocityVerlet::momentum`, `VelocityVerlet::new`, `VelocityVerlet::periodic_box`, `VelocityVerlet::positions`, `VelocityVerlet::potential`, `VelocityVerlet::potential_energy`, `VelocityVerlet::step`, `VelocityVerlet::total_energy`, `VelocityVerlet::velocities`, `pair_forces_all_pairs`, `pair_forces_cell_list`
 - `src/motor.rs`: `MotorMode`, `PdController`, `PdController::compute`, `PdController::new`, `PdController::set_position_target`, `shortest_arc`
 - `src/multi_world.rs`: `MultiWorld`, `MultiWorld::add_world`, `MultiWorld::new`, `MultiWorld::step_all`, `MultiWorld::step_all_parallel`, `MultiWorld::total_body_count`, `MultiWorld::transfer_body`, `MultiWorld::world_count`, `Portal`, `Portal::new`, `Portal::transform_a_to_b`, `Portal::transform_b_to_a`
 - `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
@@ -356,6 +357,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/netcode_prediction.rs`: `PredictedInput`, `PredictionBuffer`, `PredictionBuffer::drop_acknowledged`, `PredictionBuffer::head_snapshot`, `PredictionBuffer::inputs`, `PredictionBuffer::is_empty`, `PredictionBuffer::len`, `PredictionBuffer::new`, `PredictionBuffer::push`, `ReconcileError`, `Snapshot`, `reconcile`, `reconcile_checked`
 - `src/neural.rs`: `Activation`, `ControllerConfig`, `ControllerOutput`, `DeterministicNetwork`, `DeterministicNetwork::forward`, `DeterministicNetwork::input_size`, `DeterministicNetwork::new`, `DeterministicNetwork::num_layers`, `DeterministicNetwork::output_size`, `FEATURES_PER_BODY`, `FixedTernaryWeight`, `FixedTernaryWeight::from_ternary_weight`, `FixedTernaryWeight::from_ternary_weight_with_scale`, `FixedTernaryWeight::in_features`, `FixedTernaryWeight::out_features`, `FixedTernaryWeight::scale`, `RagdollController`, `RagdollController::compute`, `RagdollController::config`, `RagdollController::network`, `RagdollController::new`, `fix128_hard_tanh`, `fix128_leaky_relu`, `fix128_relu`, `fix128_tanh_approx`, `fix128_ternary_matvec`
 - `src/non_newtonian.rs`: `Bingham`, `Bingham::flows_under_stress`, `Bingham::stress`, `Carreau`, `Carreau::viscosity`, `Carreau::viscosity_with_index`, `HerschelBulkley`, `HerschelBulkley::stress`, `PowerLaw`, `PowerLaw::apparent_viscosity`, `PowerLaw::newtonian`, `PowerLaw::shear_thickening`, `PowerLaw::shear_thinning`, `PowerLaw::stress`
+- `src/pair_potential.rs`: `COULOMB_CONSTANT`, `Coulomb`, `Coulomb::new`, `Coulomb::with_constant`, `LennardJones`, `LennardJones::epsilon`, `LennardJones::new`, `LennardJones::sigma`, `Morse`, `Morse::harmonic_force_constant`, `Morse::new`, `PairPotential`, `PairPotentialError`, `ShiftMode`, `Truncated`, `Truncated::cutoff`, `Truncated::inner`, `Truncated::mode`, `Truncated::new`, `Yukawa`, `Yukawa::new`, `Yukawa::with_constant`, `lorentz_berthelot`
 - `src/particle.rs`: `LandingEvent`, `LandingTarget`, `Particle`, `Particle::new`, `ParticleEmitter`, `ParticleEmitter::new`, `ParticleSystem`, `ParticleSystem::add_emitter`, `ParticleSystem::alive_count`, `ParticleSystem::apply_force_field`, `ParticleSystem::new`, `ParticleSystem::step`, `ParticleSystem::step_with_landing`
 - `src/phase_change.rs`: `Phase`, `PhaseChangeConfig`, `PhaseChangeModifier`, `PhaseChangeModifier::apply_heat_at`, `PhaseChangeModifier::new`, `PhaseChangeModifier::phase_at`, `PhaseChangeModifier::temperature_at`
 - `src/physics2d.rs`: `BodyType2D`, `Contact2D`, `Joint2D`, `PhysicsConfig2D`, `PhysicsWorld2D`, `PhysicsWorld2D::add_body`, `PhysicsWorld2D::add_joint`, `PhysicsWorld2D::check_collision_2d`, `PhysicsWorld2D::new`, `PhysicsWorld2D::remove_body`, `PhysicsWorld2D::step`, `RigidBody2D`, `RigidBody2D::apply_force`, `RigidBody2D::apply_impulse`, `RigidBody2D::apply_impulse_at_point`, `RigidBody2D::is_static_or_kinematic`, `RigidBody2D::new_dynamic`, `RigidBody2D::new_kinematic`, `RigidBody2D::new_static`, `RigidBody2D::world_point`, `Shape2D`, `Vec2Fix`, `Vec2Fix::ONE`, `Vec2Fix::UNIT_X`, `Vec2Fix::UNIT_Y`, `Vec2Fix::ZERO`, `Vec2Fix::cross_scalar`, `Vec2Fix::distance_to`, `Vec2Fix::dot`, `Vec2Fix::from_int`, `Vec2Fix::length`, `Vec2Fix::length_squared`, `Vec2Fix::lerp`, `Vec2Fix::new`, `Vec2Fix::normalize`, `Vec2Fix::perpendicular`, `Vec2Fix::rotate`, `Vec2Fix::scale`, `solve_joints_2d`
