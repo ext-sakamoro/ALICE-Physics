@@ -27,8 +27,8 @@
 //! - `Material shrinkage ratio` — higher → worse.
 //! - `ΔT` between print temperature and chamber temperature.
 //!
-//! Empirical fit to the documented case
-//! "280×250×5 mm PLA plate peeled off unheated bed" (2026-02 incident):
+//! Empirical fit to the case
+//! "280×250×5 mm PLA plate on an unheated bed":
 //! this scenario returns a `Critical` category (score > 0.75).
 //!
 //! # References
