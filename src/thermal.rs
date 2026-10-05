@@ -74,6 +74,7 @@ pub enum HeatSource {
         y: f32,
         /// Position Z (world space)
         z: f32,
+        // LIMITATION(COV-THERM-040): Heat power (degrees/second at center)
         /// Heat power (degrees/second at center)
         power: f32,
         /// Influence radius

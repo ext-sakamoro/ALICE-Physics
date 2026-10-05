@@ -1,0 +1,1093 @@
+# Heat transfer and phase change coverage of ALICE-Physics, against an external
+# reference frame.
+#
+# What this table is: every capability that the standard textbooks
+# (Incropera-DeWitt, Fundamentals of Heat and Mass Transfer; Carslaw-Jaeger,
+# Conduction of Heat in Solids; Modest, Radiative Heat Transfer; Crank, Free and
+# Moving Boundary Problems), reference implementations (Abaqus heat transfer,
+# COMSOL Heat Transfer Module) and standard benchmarks (semi-infinite erfc
+# solution, Fourier-series plane wall, one- and two-phase Stefan problems,
+# lumped capacitance, parallel-plate radiation exchange, NAFEMS T1-T4) expect of
+# a heat transfer code, one [[item]] per capability, with what the crate has
+# today. The rows are written by hand: the axes and the items come from the
+# reference frame, not from the modules that exist, so a missing capability is
+# visible instead of absent.
+#
+# Implementations counted here: the engineering conduction solver
+# (transient_thermal), the fixed-point coupling field (coupled_field), the
+# thermal side of the thermo-mechanical coupling (linear_elastic_fem) and the
+# grid of the SDF thermal / phase-change modifiers (thermal, phase_change,
+# sim_field). Rows that rely on the SDF modifier grid say so in `evidence`; it
+# is a separate line of implementation from transient_thermal and is not
+# counted for the engineering-solver rows.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - temperature transport inside a fluid (advection, Boussinesq buoyancy,
+#     conduction in the fluid, turbulent heat flux): cfd.toml. Conjugate
+#     coupling between a solid and a fluid temperature is here.
+#   - the mechanical side of thermal stress (thermal eigenstrain in FE,
+#     temperature-dependent constitutive laws in FE): fem.toml; closed-form
+#     thermal stress of bars, bilayers and plates: struct.toml. The thermal
+#     side (which temperature reaches the mechanics, heat from plastic work) is
+#     here.
+#   - chemistry of combustion (Arrhenius rates): the chemistry table; flow-side
+#     heat release and fire plumes: multiphase.toml. Only the receiving end
+#     (a reaction heat source in the conduction solver) is here.
+#   - interface flow of a phase change (Stefan flow, evaporation mass transfer,
+#     boiling flow at a heated wall): multiphase.toml. Latent heat, the Stefan
+#     problem, the enthalpy method and the boiling / condensation heat-transfer
+#     correlations are here.
+#   - thermal property data of materials (k, rho, c_p, emissivity values): the
+#     materials table. The property models (constant / polynomial /
+#     temperature-dependent evaluation) are here.
+#   - cooling and warping of 3D-printed parts: the additive-manufacturing
+#     table. The heat solvers those would use are here.
+#   - general linear / time-integration components (tridiagonal solve, ODE
+#     integrators, sub-iteration driver): num.toml.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source
+#                          states; `limitation` quotes it, and the source carries
+#                          a `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field, or nothing to apply
+#                          it to (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-THERM-NNN) / axis / item / source (book, chapter, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Chapter numbers are not yet checked
+# against a specific edition either.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-THERM-001"
+axis = "conduction"
+item = "1-D transient conduction, explicit finite volume"
+source = "Carslaw-Jaeger, Conduction of Heat in Solids ch.3; Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5 (finite-difference method); Abaqus heat transfer DC1D2"
+status = "implemented+oracle"
+evidence = "src/transient_thermal.rs:290 / tests/engineering_oracles.rs::transient_thermal_explicit_euler_matches_cosine_eigenmode_decay / tests/audit_transient_thermal.rs::explicit_step_at_the_stable_dt_obeys_the_maximum_principle"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-002"
+axis = "conduction"
+item = "1-D transient conduction, Crank-Nicolson (implicit, second order in time)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Crank-Nicolson 1947"
+status = "implemented+oracle"
+evidence = "src/transient_thermal.rs:362 / tests/engineering_oracles.rs::transient_thermal_crank_nicolson_matches_cosine_eigenmode_decay / tests/audit_transient_thermal.rs::crank_nicolson_is_second_order_and_explicit_euler_first_order_in_time / tests/engineering_oracles.rs::transient_thermal_explicit_and_crank_nicolson_agree_on_the_same_rod module doc の「Deferred to future work: implicit / Crank-Nicolson integration, 3-D grid variant」(src/transient_thermal.rs:33) は実装と食い違う (どちらも既にある)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-003"
+axis = "conduction"
+item = "backward (implicit) Euler / theta-method for conduction"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5 (implicit form); Abaqus heat transfer heat transfer time integration (backward difference)"
+status = "missing"
+evidence = "陰解法は Crank-Nicolson のみ (src/transient_thermal.rs:362) 後退 Euler は無い"
+oracle_candidate = "強い初期不連続での CN の振動と後退 Euler の単調性の比較"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-004"
+axis = "conduction"
+item = "3-D transient conduction, explicit finite volume"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Abaqus heat transfer DC3D8"
+status = "implemented+oracle"
+evidence = "src/transient_thermal.rs:580 / tests/audit_transient_thermal.rs::explicit_3d_step_reduces_to_the_1d_step_for_a_field_varying_only_in_x / tests/audit_transient_thermal.rs::explicit_3d_step_at_the_stable_dt_obeys_the_maximum_principle / tests/analytic_transient_thermal_wiring.rs::explicit_step_3d_spreads_exactly_r_times_the_seven_point_stencil SDF 効果層の src/sim_field.rs:268 (ScalarField3D、copy ghost) と src/coupled_field.rs:516 (Fix128、mirror ghost) は別系統で数えない (別行)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-005"
+axis = "conduction"
+item = "3-D implicit (Crank-Nicolson / backward Euler) conduction"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Abaqus heat transfer DC3D4 / DC3D8 transient"
+status = "missing"
+evidence = "3-D は陽解法のみ (src/transient_thermal.rs:580) 陰解法には疎行列ソルバが要る"
+oracle_candidate = "3-D 立方体の cos モード減衰を dt >> CFL で"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-006"
+axis = "conduction"
+item = "axisymmetric / radial (cylindrical, spherical) conduction"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3 and ch.5; Carslaw-Jaeger, Conduction of Heat in Solids ch.7 and ch.9; Abaqus heat transfer DCAX4"
+status = "missing"
+evidence = "円柱・球座標の solver は無い (推測: radial / cylindrical / spherical で熱の該当 0 件)"
+oracle_candidate = "長い円柱の第 1 種 Bessel 固有モード減衰"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-007"
+axis = "conduction"
+item = "steady-state conduction solve (Laplace / Poisson with sources)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3 and ch.4; Abaqus heat transfer steady-state heat transfer step"
+status = "missing"
+evidence = "定常の直接解法は無い (陽解法を収束まで回すしかない、src/transient_thermal.rs:646 の CFL に縛られる)"
+oracle_candidate = "一様発熱の平板の放物線分布 q L²/(2k)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-008"
+axis = "conduction"
+item = "finite-element conduction on an unstructured (tetrahedral) mesh"
+source = "Abaqus heat transfer DC3D4 / DC3D10; COMSOL Heat Transfer Module heat transfer in solids; Lewis et al., Fundamentals of the Finite Element Method for Heat and Fluid Flow"
+status = "missing"
+evidence = "熱伝導は直交格子のみ 四面体メッシュ (src/sdf_fem_mesh.rs) 上の熱の要素は無い (推測: FEM の熱は温度場を CoupledField から sample するだけ)"
+oracle_candidate = "パッチテスト (線形温度場の厳密再現)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-009"
+axis = "conduction"
+item = "temperature-dependent conductivity, density and specific heat (conservative update)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.2 (property variation); Abaqus heat transfer temperature-dependent CONDUCTIVITY / SPECIFIC HEAT"
+status = "implemented+oracle"
+evidence = "src/transient_thermal.rs:41 / src/transient_thermal.rs:256 (調和平均の面熱伝導率) / tests/audit_transient_thermal.rs::explicit_step_conserves_enthalpy_with_temperature_dependent_conductivity / tests/audit_transient_thermal.rs::explicit_3d_step_conserves_enthalpy_with_temperature_dependent_conductivity / tests/audit_transient_thermal.rs::explicit_3d_step_uses_the_harmonic_mean_face_conductivity 校正範囲外で k < 0 になる既知欠陥 tests/audit_transient_thermal.rs::diffusivity_is_never_negative_outside_the_calibrated_range (AUD-A-S2W2-016)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-010"
+axis = "conduction"
+item = "implicit step with temperature-dependent properties (nonlinear, Picard)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Crank, The Mathematics of Diffusion (variable diffusivity)"
+status = "partial"
+evidence = "src/transient_thermal.rs:461 / tests/audit_transient_thermal.rs::nonlinear_crank_nicolson_result_satisfies_the_trapezoidal_residual / tests/analytic_transient_thermal_wiring.rs::nonlinear_crank_nicolson_differs_from_linear_on_a_temperature_dependent_preset 陰解法は α(T_i) に Laplacian を掛ける形で、陽解法の保存形 ∇·(k∇T)/(ρc_p) と違う (推測: k(T) が変わると k'(T)|∇T|² の項を落とし熱収支が閉じない)"
+oracle_candidate = "k(T) が線形の棒で Kirchhoff 変換した厳密解と突合、熱収支の保存"
+limitation = "src/transient_thermal.rs:344 'where `r = α(T_i) · dt / dx²` and `L` is the 1-D Laplacian stencil'"
+
+[[item]]
+id = "COV-THERM-011"
+axis = "conduction"
+item = "spatially varying material (multi-material domain, composite wall)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3 (composite wall); Abaqus heat transfer section assignment per region"
+status = "missing"
+evidence = "solver は配列全体に 1 つの ThermalMaterial を取る (src/transient_thermal.rs:290) 調和平均は温度依存のためだけに使われる"
+oracle_candidate = "2 層壁の定常温度分布 (熱抵抗の直列)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-012"
+axis = "conduction"
+item = "anisotropic conductivity tensor"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.2; Carslaw-Jaeger, Conduction of Heat in Solids ch.1 (anisotropic solids); Abaqus heat transfer ORTHO / ANISO conductivity"
+status = "missing"
+evidence = "熱伝導率はスカラーのみ (推測: anisotrop / orthotrop の熱の該当 0 件、src/anisotropic.rs は機械側)"
+oracle_candidate = "主軸を回した直交異方の 1-D 問題を回転不変性で"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-013"
+axis = "conduction"
+item = "non-uniform (stretched) grid spacing"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.4 (finite-difference method); Patankar, Numerical Heat Transfer and Fluid Flow ch.4"
+status = "missing"
+evidence = "transient_thermal は一様な dx のみ (src/transient_thermal.rs:290) ScalarField3D は軸ごとの一様間隔"
+oracle_candidate = "伸張格子での cos モード減衰の 2 次収束"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-014"
+axis = "conduction"
+item = "explicit stability limit (Fourier-number CFL bound)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5 (stability criterion)"
+status = "implemented+oracle"
+evidence = "src/transient_thermal.rs:671 / src/transient_thermal.rs:646 / tests/analytic_transient_thermal_wiring.rs::stability_bounds_match_dx2_over_2_and_6_max_alpha / tests/audit_transient_thermal.rs::explicit_step_at_the_stable_dt_obeys_the_maximum_principle 上限を超えた dt は黙って増幅する (tests/analytic_transient_thermal_wiring.rs::explicit_step_above_the_stability_bound_amplifies_silently)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-015"
+axis = "conduction"
+item = "discrete heat balance of the update (conservation)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.2 (energy conservation); Patankar, Numerical Heat Transfer and Fluid Flow ch.3"
+status = "implemented+oracle"
+evidence = "tests/audit_transient_thermal.rs::constant_property_schemes_conserve_the_temperature_sum / tests/audit_transient_thermal.rs::explicit_step_conserves_enthalpy_with_temperature_dependent_conductivity / tests/analytic_coupled_field.rs::the_mirror_ghost_conserves_the_dual_weighted_sum_and_not_the_plain_one"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-016"
+axis = "conduction"
+item = "deterministic (fixed-point) conduction step for coupling"
+source = "Carslaw-Jaeger, Conduction of Heat in Solids ch.3 (eigenfunction solution)"
+status = "implemented+oracle"
+evidence = "src/coupled_field.rs:516 (Fix128、mirror ghost、一様な rate) / tests/analytic_coupled_field.rs::diffusion_matches_the_closed_form_discrete_decay / tests/analytic_coupled_field.rs::diffusion_converges_to_the_analytic_exponential_at_second_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-017"
+axis = "conduction"
+item = "adaptive time stepping with error control"
+source = "Abaqus heat transfer DELTMX (maximum temperature change per increment); COMSOL Heat Transfer Module time-dependent solver (BDF with error control)"
+status = "missing"
+evidence = "dt は呼び手が決める (推測: 誤差推定による dt 制御は 0 件)"
+oracle_candidate = "ステップ倍化の誤差推定が実誤差を上から抑えること"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-018"
+axis = "conduction"
+item = "temperature-dependent property models (constant, polynomial, linear-in-T)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer appendix A (property tables); Abaqus heat transfer temperature-dependent property tables"
+status = "implemented+oracle"
+evidence = "src/transient_thermal.rs:41 / tests/analytic_transient_thermal_wiring.rs::every_preset_accessor_matches_the_hand_formula / tests/analytic_transient_thermal_wiring.rs::beyond_calibrated_range_the_fits_extrapolate_without_clamp (表形式の区分線形補間は無い、材料の値そのものは材料データの表)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-019"
+axis = "boundary condition"
+item = "adiabatic / insulated (zero-flux Neumann)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.2 (boundary conditions); Carslaw-Jaeger, Conduction of Heat in Solids ch.3"
+status = "implemented+oracle"
+evidence = "src/transient_thermal.rs:30 / src/transient_thermal.rs:561 / tests/engineering_oracles.rs::transient_thermal_explicit_euler_matches_cosine_eigenmode_decay / tests/audit_transient_thermal.rs::explicit_3d_step_at_the_stable_dt_obeys_the_maximum_principle"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-020"
+axis = "boundary condition"
+item = "prescribed temperature (Dirichlet)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.2; Abaqus heat transfer BOUNDARY (temperature, degree of freedom 11)"
+status = "missing"
+evidence = "solver の境界は零流束のみ (src/transient_thermal.rs:30) 温度の固定は無い"
+oracle_candidate = "半無限体の表面温度ステップ (erfc 解)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-021"
+axis = "boundary condition"
+item = "prescribed heat flux (non-zero Neumann)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.2; Abaqus heat transfer DFLUX / CFLUX"
+status = "missing"
+evidence = "境界の熱流束を与える API は無い (src/transient_thermal.rs:30)"
+oracle_candidate = "一定熱流束の半無限体の表面温度 2q√(αt/π)/k"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-022"
+axis = "boundary condition"
+item = "convective (Robin) boundary h(T - T_inf)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.2 and ch.3; Abaqus heat transfer FILM"
+status = "missing"
+evidence = "表面の対流境界は無い SDF 効果層の cooling_rate (src/thermal.rs:35) は全 cell を体積一様に周囲温度へ緩和するもので表面条件ではない (src/sim_field.rs:322)"
+oracle_candidate = "対流のある平板の非定常 (第 1 項近似、Bi を振る)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-023"
+axis = "boundary condition"
+item = "radiative boundary eps sigma (T^4 - T_sur^4)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.1 and ch.12; Abaqus heat transfer RADIATE"
+status = "missing"
+evidence = "module doc が「radiation-only boundary conditions」を未対応と書く (src/transient_thermal.rs:37) SDF 効果層の「Radiation cooling rate」(src/thermal.rs:34) は線形の緩和で T⁴ 則ではない"
+oracle_candidate = "放射のみで冷える集中定数体の閉形式 (逆 3 乗の時間依存)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-024"
+axis = "boundary condition"
+item = "combined convection and radiation (linearised radiation coefficient)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.1 (h_r)"
+status = "missing"
+evidence = "対流・放射どちらの境界も無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-025"
+axis = "boundary condition"
+item = "interface (contact) thermal resistance between two bodies or layers"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3 (contact resistance); Abaqus heat transfer GAPCON"
+status = "missing"
+evidence = "接触熱抵抗・ギャップコンダクタンスは無い (推測: contact resistance / gap conductance で 0 件)"
+oracle_candidate = "2 層壁の界面温度ジャンプ q R_tc"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-026"
+axis = "boundary condition"
+item = "time-varying boundary values T(t), q(t), h(t)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Abaqus heat transfer AMPLITUDE"
+status = "missing"
+evidence = "境界値そのものが無い"
+oracle_candidate = "表面温度が正弦の半無限体 (減衰する温度波、Carslaw-Jaeger ch.2)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-027"
+axis = "boundary condition"
+item = "periodic boundary"
+source = "Carslaw-Jaeger, Conduction of Heat in Solids ch.3"
+status = "missing"
+evidence = "周期境界は無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-028"
+axis = "boundary condition"
+item = "embedded boundary of a body given by a signed distance"
+source = "COMSOL Heat Transfer Module heat transfer in solids with immersed geometry"
+status = "missing"
+evidence = "格子上の熱伝導は SDF の物体境界を見ない (推測: src/thermal.rs:281 は格子全体を拡散させ、温度は SDF の変形にだけ使う)"
+oracle_candidate = "SDF 球の中の定常解"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-029"
+axis = "closed-form conduction"
+item = "lumped capacitance (Newton cooling) of a body"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5 (lumped capacitance method)"
+status = "implemented+oracle"
+evidence = "src/sim_field.rs:322 を SDF 効果層が使う (src/thermal.rs:281) / tests/engineering_oracles_fluid.rs::thermal_modifier_uniform_field_obeys_newton_cooling / tests/analytic_thermal_wiring.rs::cooling_relaxes_toward_ambient_exponentially rate は hA/(ρcV) を呼び手が与える (h・面積・体積からの構成は無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-030"
+axis = "closed-form conduction"
+item = "Biot-number validity check for the lumped model"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5 (Bi < 0.1)"
+status = "missing"
+evidence = "Biot 数の判定・計算は無い (推測: biot で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-031"
+axis = "closed-form conduction"
+item = "plane wall steady conduction and thermal-resistance networks (series / parallel)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3"
+status = "missing"
+evidence = "熱抵抗の閉形式は無い (推測: thermal resistance で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-032"
+axis = "closed-form conduction"
+item = "radial steady conduction in cylinders and spheres, critical insulation radius"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3"
+status = "missing"
+evidence = "円筒・球殻の熱抵抗の閉形式は無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-033"
+axis = "closed-form conduction"
+item = "steady conduction with uniform internal heat generation (wall, cylinder, sphere)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3"
+status = "missing"
+evidence = "発熱付き定常の閉形式は無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-034"
+axis = "closed-form conduction"
+item = "semi-infinite solid transient solutions (step temperature, constant flux, convection)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Carslaw-Jaeger, Conduction of Heat in Solids ch.2"
+status = "missing"
+evidence = "erfc 解の関数は無い (推測: erfc / semi-infinite で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-035"
+axis = "closed-form conduction"
+item = "transient plane wall / cylinder / sphere with convection (exact series, one-term approximation)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Carslaw-Jaeger, Conduction of Heat in Solids ch.3"
+status = "missing"
+evidence = "Fourier 級数解・第 1 項近似の関数は無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-036"
+axis = "closed-form conduction"
+item = "multidimensional transient product solutions"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-037"
+axis = "closed-form conduction"
+item = "conduction shape factors for two-dimensional steady geometries"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.4"
+status = "missing"
+evidence = "形状係数の表は無い (推測: shape factor の熱の該当 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-038"
+axis = "closed-form conduction"
+item = "contact temperature of two semi-infinite bodies brought into contact"
+source = "Carslaw-Jaeger, Conduction of Heat in Solids ch.2; Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-039"
+axis = "heat source"
+item = "volumetric heat generation q''' (W/m^3) in the conduction solver"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3; Abaqus heat transfer BODYFLUX"
+status = "missing"
+evidence = "transient_thermal の更新式に源項の引数が無い (src/transient_thermal.rs:290)"
+oracle_candidate = "一様発熱の平板の定常放物線分布"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-040"
+axis = "heat source"
+item = "point and box heat sources on the grid"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3; Abaqus heat transfer CFLUX / BODYFLUX"
+status = "partial"
+evidence = "src/thermal.rs:68 / tests/analytic_thermal_wiring.rs::point_source_deposits_power_dt_times_the_smoothstep_weight / tests/analytic_thermal_wiring.rs::volume_source_heats_exactly_the_nodes_inside_its_box SDF 効果層の格子だけ、出力は温度の変化率で W にも ρc_p にも結び付かない"
+oracle_candidate = "点熱源の 3-D 定常解 q/(4πkr)"
+limitation = "src/thermal.rs:78 'Heat power (degrees/second at center)'"
+
+[[item]]
+id = "COV-THERM-041"
+axis = "heat source"
+item = "plastic dissipation as heat (Taylor-Quinney)"
+source = "Taylor-Quinney 1934; Simo-Miehe 1992 (thermoplasticity)"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:3575 / src/linear_elastic_fem.rs:3765 / tests/analytic_plastic_dissipation.rs::temperature_rise_is_taylor_quinney_work_over_heat_capacity / tests/analytic_plastic_dissipation.rs::depositing_the_heat_conserves_the_total_energy / tests/analytic_plastic_dissipation.rs::the_deposited_heat_survives_diffusion_in_the_dual_ledger"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-042"
+axis = "heat source"
+item = "Joule (resistive) heating from an electric current or field"
+source = "COMSOL Heat Transfer Module electromagnetic heating; Abaqus heat transfer coupled thermal-electrical (Joule heat)"
+status = "missing"
+evidence = "電磁場から熱への連成は無い (src/maxwell_fdtd.rs:132 が scope 外と明記)"
+oracle_candidate = "一様電流の導線の定常温度上昇 (I²R と放熱の釣り合い)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-043"
+axis = "heat source"
+item = "reaction heat as a source in the conduction solver"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3 (generation); COMSOL Heat Transfer Module heat transfer with reactions"
+status = "missing"
+evidence = "反応熱の閉形式 src/smoke_fire.rs:99 は熱伝導の solver に渡す口が無い (化学そのものは化学の表)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-044"
+axis = "heat source"
+item = "frictional heating at a sliding contact"
+source = "Abaqus heat transfer GAPHEAT / frictional heat generation; Blok flash temperature"
+status = "missing"
+evidence = "摩擦熱の計算は無い SDF 効果層の apply_heat_at (src/thermal.rs:152) は doc で摩擦を例に挙げるが量は呼び手が与える"
+oracle_candidate = "Jaeger の移動熱源による閃光温度"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-045"
+axis = "heat source"
+item = "moving heat source (Rosenthal, laser / weld / deposition track)"
+source = "Rosenthal 1946; Goldak double-ellipsoid; Carslaw-Jaeger ch.10 (moving sources)"
+status = "missing"
+evidence = "移動熱源のモデルは無い (推測: rosenthal / goldak で 0 件)"
+oracle_candidate = "Rosenthal の準定常 3-D 解"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-046"
+axis = "heat source"
+item = "thermoelastic heating and cooling (Kelvin effect, thermoelastic damping)"
+source = "Biot 1956 (thermoelasticity); Zener (thermoelastic damping)"
+status = "missing"
+evidence = "体積変化による温度変化の項は無い (推測)"
+oracle_candidate = "断熱一軸引張の ΔT = −α T σ/(ρc_p)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-047"
+axis = "convection (closed form)"
+item = "dimensionless groups (Re, Pr, Nu, Gr, Ra, Bi, Fo, Pe)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.6"
+status = "missing"
+evidence = "熱伝達の無次元数の helper は無い (Prandtl は乱流の turbulent Prandtl のみ、src/cfd_solver.rs / src/turbulence.rs)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-048"
+axis = "convection (closed form)"
+item = "forced convection over a flat plate (laminar, turbulent, mixed)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.7"
+status = "missing"
+evidence = "相関式は無い (推測: nusselt で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-049"
+axis = "convection (closed form)"
+item = "forced convection across a cylinder and a sphere (Churchill-Bernstein, Hilpert, Whitaker, Ranz-Marshall)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.7"
+status = "missing"
+evidence = "無い (推測: churchill / hilpert / ranz で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-050"
+axis = "convection (closed form)"
+item = "tube banks"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.7"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-051"
+axis = "convection (closed form)"
+item = "internal flow, fully developed laminar (Nu = 3.66 / 4.36)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.8"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-052"
+axis = "convection (closed form)"
+item = "internal flow, turbulent (Dittus-Boelter, Gnielinski)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.8"
+status = "missing"
+evidence = "無い (推測: dittus / gnielinski で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-053"
+axis = "convection (closed form)"
+item = "entry-length effects and mean (bulk) temperature along a duct"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.8"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-054"
+axis = "convection (closed form)"
+item = "free convection on vertical and horizontal plates (Churchill-Chu)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.9"
+status = "missing"
+evidence = "無い (推測: grashof / rayleigh number で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-055"
+axis = "convection (closed form)"
+item = "free convection from cylinders, spheres and in enclosures"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.9"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-056"
+axis = "convection (closed form)"
+item = "pool boiling correlations (Rohsenow nucleate boiling, Zuber critical heat flux)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.10"
+status = "missing"
+evidence = "沸騰の相関式は無い (src/phase_change.rs:59 は SDF 効果層の相転移温度) 壁面での沸騰の流れの模擬は多相流の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-057"
+axis = "convection (closed form)"
+item = "film condensation (Nusselt)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.10"
+status = "missing"
+evidence = "無い (推測: condens の該当は SDF 効果層の相状態名のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-058"
+axis = "convection (closed form)"
+item = "conjugate heat transfer (solid conduction coupled to a fluid temperature at an interface)"
+source = "Abaqus heat transfer / COMSOL Heat Transfer Module conjugate heat transfer; OpenFOAM chtMultiRegionFoam"
+status = "missing"
+evidence = "流体の温度 (src/cfd_solver.rs:870) と固体の熱伝導は互いを読まない (tests/coupling_channel_inventory.rs::fluid_temperature_moves_the_fluid_and_not_the_thermal_field)"
+oracle_candidate = "流体と固体の 2 層の定常 (界面の熱流束連続)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-059"
+axis = "radiation"
+item = "blackbody emission (Stefan-Boltzmann, Planck, Wien)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.12; Modest, Radiative Heat Transfer ch.1"
+status = "missing"
+evidence = "無い (推測: stefan-boltzmann / planck / blackbody で 0 件)"
+oracle_candidate = "Planck 分布の全波長積分 = σT⁴"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-060"
+axis = "radiation"
+item = "gray / diffuse surface properties (emissivity, absorptivity, Kirchhoff law)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.12; Modest, Radiative Heat Transfer (radiative properties of surfaces)"
+status = "missing"
+evidence = "放射率の概念が無い (推測: emissiv で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-061"
+axis = "radiation"
+item = "view factors, closed-form catalogue with reciprocity and summation rules"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.13; Modest, Radiative Heat Transfer (view factors)"
+status = "missing"
+evidence = "形態係数は無い (推測: view factor で 0 件)"
+oracle_candidate = "平行な同軸円板の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-062"
+axis = "radiation"
+item = "view factors computed numerically (ray casting, hemicube, contour integration)"
+source = "Modest, Radiative Heat Transfer (view factors); Abaqus heat transfer cavity radiation"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-063"
+axis = "radiation"
+item = "radiation exchange between two surfaces (parallel plates, concentric cylinders)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.13"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-064"
+axis = "radiation"
+item = "gray diffuse enclosure, net radiation (radiosity) method"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.13; Modest, Radiative Heat Transfer (radiative exchange between gray surfaces); Abaqus heat transfer cavity radiation"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "3 面の閉空間の放射度方程式"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-065"
+axis = "radiation"
+item = "radiation shields"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.13"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-066"
+axis = "radiation"
+item = "participating media (radiative transfer equation, Beer-Lambert, P1, discrete ordinates)"
+source = "Modest, Radiative Heat Transfer (RTE, P1, DOM)"
+status = "missing"
+evidence = "無い (推測: beer / ordinates / rte の熱の該当 0 件)"
+oracle_candidate = "灰色平板層の透過率 exp(−κL)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-067"
+axis = "radiation"
+item = "spectral / band radiation models (gas bands, non-gray surfaces)"
+source = "Modest, Radiative Heat Transfer (spectral models)"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-068"
+axis = "radiation"
+item = "environmental and solar radiation load"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.12"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-069"
+axis = "phase change"
+item = "enthalpy method for an isothermal (pure-substance) phase change with latent heat"
+source = "Crank, Free and Moving Boundary Problems (enthalpy method); Voller-Cross 1981; Carslaw-Jaeger, Conduction of Heat in Solids ch.11"
+status = "partial"
+evidence = "src/phase_change.rs:183 (融解・沸騰の 2 段の潜熱 buffer) / tests/engineering_oracles_fluid.rs::phase_change_enthalpy_plateau_and_conservation / src/phase_change.rs::test_vaporization_transition SDF 効果層の格子で、固相・液相の比熱は同じ 1"
+oracle_candidate = "単一 cell の加熱で plateau と保存 (既存)、物理単位の比熱を相ごとに"
+limitation = "src/phase_change.rs:14 'with the heat capacity normalised to 1 the latent heats are in kelvin-equivalent units'"
+
+[[item]]
+id = "COV-THERM-070"
+axis = "phase change"
+item = "phase-dependent specific heat and conductivity (solid vs liquid)"
+source = "Crank, Free and Moving Boundary Problems; Abaqus heat transfer LATENT HEAT with temperature-dependent properties"
+status = "missing"
+evidence = "相ごとの物性は無い (比熱は 1 に正規化、src/phase_change.rs:63)"
+oracle_candidate = "2 相 Stefan (相ごとに α が違う)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-071"
+axis = "phase change"
+item = "mushy zone (solidus-liquidus range, liquid fraction as a function of temperature)"
+source = "Crank, Free and Moving Boundary Problems; Voller-Prakash 1987; Abaqus heat transfer LATENT HEAT (solidus, liquidus)"
+status = "missing"
+evidence = "融解は単一温度のみ (推測: solidus / liquidus / mushy で 0 件)"
+oracle_candidate = "線形な液相率での合金凝固 (lever rule)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-072"
+axis = "phase change"
+item = "phase change in the engineering conduction solver (physical units, k(T), rho cp(T))"
+source = "Abaqus heat transfer LATENT HEAT; COMSOL Heat Transfer Module phase change material"
+status = "missing"
+evidence = "transient_thermal は潜熱を持たず、module doc が相変化を未対応と書く (src/transient_thermal.rs:36)"
+oracle_candidate = "1 相 Stefan の Neumann 解"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-073"
+axis = "phase change"
+item = "apparent / effective heat capacity method"
+source = "Crank, Free and Moving Boundary Problems; COMSOL Heat Transfer Module apparent heat capacity"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-074"
+axis = "phase change"
+item = "sharp-interface front tracking (moving boundary, level-set Stefan)"
+source = "Crank, Free and Moving Boundary Problems (front tracking)"
+status = "missing"
+evidence = "界面を追跡する Stefan の解法は無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-075"
+axis = "phase change"
+item = "undercooling and nucleation delay"
+source = "Crank, Free and Moving Boundary Problems; Kurz-Fisher, Fundamentals of Solidification"
+status = "missing"
+evidence = "無い (推測: undercool / nucleat の熱の該当 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-076"
+axis = "phase change"
+item = "sublimation and ablation (surface recession driven by heat flux)"
+source = "Crank, Free and Moving Boundary Problems; ablation heat-shield models"
+status = "missing"
+evidence = "熱流束で後退する表面は無い (src/erosion.rs は流体侵食)"
+oracle_candidate = "準定常アブレーションの後退速度 q/(ρL)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-077"
+axis = "phase change"
+item = "solidification time closed forms (Chvorinov rule, Neumann solution of casting)"
+source = "Chvorinov 1940; Flemings, Solidification Processing"
+status = "missing"
+evidence = "無い (推測: chvorinov で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-078"
+axis = "fin / heat exchanger"
+item = "straight fin of uniform cross-section (tip conditions, efficiency, effectiveness)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3"
+status = "missing"
+evidence = "フィンの閉形式は無い (推測)"
+oracle_candidate = "先端断熱フィンの cosh 分布"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-079"
+axis = "fin / heat exchanger"
+item = "annular and pin fins, fin arrays (overall surface efficiency)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-080"
+axis = "fin / heat exchanger"
+item = "overall heat-transfer coefficient with fouling"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.11"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-081"
+axis = "fin / heat exchanger"
+item = "log-mean temperature difference (LMTD) with correction factor"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.11"
+status = "missing"
+evidence = "無い (推測: lmtd で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-082"
+axis = "fin / heat exchanger"
+item = "effectiveness-NTU method"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.11"
+status = "missing"
+evidence = "無い (推測: ntu の熱の該当 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-083"
+axis = "coupling (thermal side)"
+item = "temperature rise above a stress-free reference handed to the mechanical solve"
+source = "Abaqus heat transfer sequentially coupled thermal-stress analysis; Boley-Weiner, Theory of Thermal Stresses"
+status = "implemented+oracle"
+evidence = "src/coupled_field.rs:810 / tests/analytic_temperature_rise.rs::the_stress_follows_the_rise_not_the_absolute_temperature / tests/analytic_temperature_rise.rs::only_the_difference_of_the_two_temperatures_reaches_the_solve (温度ひずみの機械側の行は fem.toml)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-084"
+axis = "coupling (thermal side)"
+item = "two-way thermo-mechanical coupling driven to a fixed point (heat from plastic work, softening from temperature)"
+source = "Abaqus heat transfer fully coupled temperature-displacement; Simo-Miehe 1992"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:5024 / tests/analytic_thermoplastic_coupling.rs::the_fixed_point_does_not_depend_on_the_relaxation / tests/analytic_thermoplastic_coupling.rs::solving_the_mechanics_at_the_returned_rise_reproduces_the_increment increment の中で熱伝導は解かない (推測: step_thermoplastic 内に diffuse の呼び出し 0 件、断熱の扱い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-085"
+axis = "coupling (thermal side)"
+item = "reconciling two owners of one temperature field"
+source = "Abaqus heat transfer co-simulation field mapping"
+status = "implemented+oracle"
+evidence = "src/coupled_field.rs:898 / src/coupled_field.rs:945 / tests/analytic_coupled_field.rs::reconcile_gives_the_two_temperature_owners_one_field / tests/analytic_coupled_field.rs::reconcile_is_independent_of_participant_order 既定の modifier chain は 2 つの温度場を自動では合わせない (tests/coupling_channel_inventory.rs::a_point_has_two_temperatures_and_stepping_does_not_close_the_gap)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-086"
+axis = "coupling (thermal side)"
+item = "conduction during a coupled thermo-mechanical increment (non-adiabatic coupling)"
+source = "Abaqus heat transfer fully coupled temperature-displacement (transient heat equation)"
+status = "missing"
+evidence = "熱塑性連成 (src/linear_elastic_fem.rs:5024) は塑性仕事を格子に置くだけで、同じ increment の中で熱を拡散させない (推測)"
+oracle_candidate = "熱の拡散時間と荷重時間の比を振った断熱 / 等温の両極限"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-087"
+axis = "coupling (thermal side)"
+item = "thermoelectric effects (Seebeck, Peltier, Thomson)"
+source = "COMSOL Heat Transfer Module thermoelectric effect; Abaqus heat transfer coupled thermal-electrical"
+status = "missing"
+evidence = "無い (推測: seebeck / peltier で 0 件)"
+oracle_candidate = "Peltier 素子の COP 閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-088"
+axis = "coupling (thermal side)"
+item = "thermal contact between moving rigid bodies (conductance across a contact patch)"
+source = "Abaqus heat transfer GAPCON / thermal contact; Yovanovich contact conductance"
+status = "missing"
+evidence = "剛体の接触と熱は繋がっていない (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-089"
+axis = "output"
+item = "temperature field slice (heat map) output"
+source = "Abaqus heat transfer NT11 field output; COMSOL Heat Transfer Module temperature plot"
+status = "implemented+oracle"
+evidence = "src/heatmap.rs:156 / tests/analytic_heatmap_wiring.rs::generate_temperature_heatmap_closed_form_gradient"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-090"
+axis = "output"
+item = "heat-flux vector output q = -k grad T"
+source = "Abaqus heat transfer HFL field output"
+status = "missing"
+evidence = "温度勾配 (src/sim_field.rs:203 / src/coupled_field.rs:455) はあるが熱伝導率を掛けた熱流束の出力は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-091"
+axis = "output"
+item = "heat rate through a boundary and global energy balance report"
+source = "Abaqus heat transfer RFL / energy output; Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.1 (energy balance)"
+status = "missing"
+evidence = "境界を通る熱量・全体の熱収支の出力は無い (保存は test 側で測る)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-092"
+axis = "benchmark"
+item = "cosine eigenmode decay of an insulated rod"
+source = "Carslaw-Jaeger, Conduction of Heat in Solids ch.3"
+status = "implemented+oracle"
+evidence = "tests/engineering_oracles.rs::transient_thermal_explicit_euler_matches_cosine_eigenmode_decay / tests/engineering_oracles.rs::transient_thermal_crank_nicolson_matches_cosine_eigenmode_decay / tests/engineering_oracles_fluid.rs::thermal_modifier_cosine_mode_decays_at_the_conduction_rate"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-093"
+axis = "benchmark"
+item = "grid and time-step convergence order of the conduction schemes"
+source = "Roache, Verification and Validation in Computational Science and Engineering"
+status = "implemented+oracle"
+evidence = "tests/audit_transient_thermal.rs::crank_nicolson_is_second_order_and_explicit_euler_first_order_in_time / tests/analytic_coupled_field.rs::diffusion_converges_to_the_analytic_exponential_at_second_order"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-094"
+axis = "benchmark"
+item = "method of manufactured solutions with a source term"
+source = "Roache; Salari-Knupp 2000"
+status = "missing"
+evidence = "源項を渡せないので MMS が組めない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-095"
+axis = "benchmark"
+item = "semi-infinite solid with a step in surface temperature (erfc solution)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5; Carslaw-Jaeger, Conduction of Heat in Solids ch.2"
+status = "missing"
+evidence = "Dirichlet 境界が無いので組めない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-096"
+axis = "benchmark"
+item = "plane wall with a sudden change of surface temperature (Fourier series)"
+source = "Carslaw-Jaeger, Conduction of Heat in Solids ch.3"
+status = "missing"
+evidence = "Dirichlet 境界が無いので組めない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-097"
+axis = "benchmark"
+item = "plane wall cooled by convection (Heisler / one-term solution)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.5"
+status = "missing"
+evidence = "対流境界が無いので組めない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-098"
+axis = "benchmark"
+item = "one-phase Stefan problem (Neumann similarity solution)"
+source = "Crank, Free and Moving Boundary Problems; Carslaw-Jaeger, Conduction of Heat in Solids ch.11"
+status = "missing"
+evidence = "固定温度境界と物理単位の潜熱が要る (参照値要確認)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-099"
+axis = "benchmark"
+item = "two-phase Stefan problem (Neumann solution)"
+source = "Crank, Free and Moving Boundary Problems; Carslaw-Jaeger, Conduction of Heat in Solids ch.11"
+status = "missing"
+evidence = "相ごとの物性が要る (参照値要確認)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-100"
+axis = "benchmark"
+item = "steady slab with uniform heat generation (parabolic profile)"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.3"
+status = "missing"
+evidence = "源項と固定温度境界が要る"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-101"
+axis = "benchmark"
+item = "two-surface radiation exchange between parallel plates"
+source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer ch.13"
+status = "missing"
+evidence = "放射が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-102"
+axis = "benchmark"
+item = "NAFEMS standard thermal benchmarks T1-T4"
+source = "NAFEMS, The Standard NAFEMS Benchmarks (thermal); 問題設定と参照値は参照値要確認"
+status = "missing"
+evidence = "対流・放射・固定温度の境界と 2-D / 3-D の定常 solver が無いので組めない"
+oracle_candidate = ""
+limitation = ""
