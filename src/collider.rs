@@ -24,7 +24,9 @@ pub struct CollisionResult {
     pub colliding: bool,
     /// Penetration depth (if colliding)
     pub depth: Fix128,
-    /// Collision normal (from A to B)
+    /// Collision normal, pointing from B toward A (the same contract as
+    /// [`Contact::normal`]): translating A by `depth · normal` separates the
+    /// shapes. For the plane queries A is the sphere / box and B the plane.
     pub normal: Vec3Fix,
     /// Contact point on shape A
     pub point_a: Vec3Fix,

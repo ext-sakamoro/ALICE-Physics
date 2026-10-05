@@ -32,13 +32,17 @@ pub struct ContactEvent {
     pub body_b: usize,
     /// Event type
     pub event_type: ContactEventType,
-    /// Contact normal (A to B)
+    /// Contact normal, unit length, pointing from `body_b` toward `body_a`
+    /// (the crate-wide [`Contact::normal`](crate::collider::Contact::normal)
+    /// contract): moving `body_a` along `+normal` separates the pair.
+    /// Zero for [`ContactEventType::End`].
     pub normal: Vec3Fix,
     /// Contact point (world space)
     pub point: Vec3Fix,
     /// Penetration depth
     pub depth: Fix128,
-    /// Relative velocity along normal at contact point
+    /// Relative velocity along the normal, `(v_a − v_b) · normal`: negative
+    /// while the bodies approach each other
     pub relative_velocity: Fix128,
 }
 
@@ -102,6 +106,12 @@ impl EventCollector {
     }
 
     /// Report a contact between two bodies
+    ///
+    /// `normal` points from `body_b` toward `body_a` as given here. The event
+    /// stores the pair as `(min, max)`; when that swaps the bodies the normal
+    /// is negated so it still points from the event's `body_b` toward its
+    /// `body_a`. `relative_velocity` (`(v_a − v_b) · normal`) and `depth` are
+    /// unchanged by the swap.
     pub fn report_contact(
         &mut self,
         body_a: usize,
@@ -112,6 +122,8 @@ impl EventCollector {
         relative_velocity: Fix128,
     ) {
         let pair = normalize_pair(body_a, body_b);
+        // B→A of the stored pair: negate when the pair was swapped.
+        let normal = if pair.0 == body_a { normal } else { -normal };
         let was_active = self.prev_pairs.binary_search(&pair).is_ok();
         // Collision detection runs once per substep since 1.2.0; a pair is
         // reported once per frame (first substep that sees it).
