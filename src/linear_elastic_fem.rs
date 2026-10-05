@@ -4153,6 +4153,7 @@ pub fn solve_elastoplastic(
 /// `7.4e-4`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
+// LIMITATION(COV-FEM-045): `σ_y(T) = σ_y₀ · max(0, 1 − w_y · ΔT)` and `H(T) = H₀ · max(0, 1 − w_h · ΔT)`
 pub struct ThermalSoftening {
     yield_per_k: Fix128,
     hardening_per_k: Fix128,

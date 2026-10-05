@@ -38,6 +38,7 @@
 //! formed. The same Jacobi-preconditioned conjugate gradient runs on it.
 //!
 //! # Why `β = 1/4, γ = 1/2` is fixed rather than configurable
+// LIMITATION(COV-FEM-073): # Why `β = 1/4, γ = 1/2` is fixed rather than configurable
 //!
 //! Three reasons, and the first is specific to this crate's arithmetic.
 //!

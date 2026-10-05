@@ -2202,6 +2202,7 @@ pub struct AdaptiveCubicSolution {
 /// round, so the conforming guarantee of that refinement carries over unchanged.
 /// The error indicator is the P1 stress-recovery estimator applied to the
 /// element's centroid stress (see `corner_indicators_squared`).
+// LIMITATION(COV-FEM-111): The error indicator is the P1 stress-recovery estimator applied to the element's centroid stress
 ///
 /// ⚠️ `boundary_for` receives the **cubic mesh**, not the corner mesh: a
 /// higher-order boundary condition has to constrain the edge (and face) nodes of

@@ -1,0 +1,1367 @@
+# Solid finite-element coverage of ALICE-Physics, against an external reference frame.
+#
+# What this table is: every capability that the standard textbooks (Bathe,
+# Belytschko-Liu-Moran, Simo-Hughes, Zienkiewicz-Taylor, Wriggers), reference
+# implementations (Abaqus, LS-DYNA, Code_Aster, MOOSE) and standard benchmarks
+# expect of a solid FE code, one [[item]] per capability, with what the crate has
+# today. The rows are written by hand: the axis and the items come from the
+# reference frame, not from the modules that exist, so a missing capability is
+# visible instead of absent. Closed-form modules (beam_stress, modal, buckling,
+# ...) and other discretisations (cloth / deformable XPBD) are not counted as FE
+# capabilities.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented in FE, and at least one non-ignored test
+#                          checks it against an independent reference
+#   implemented-no-oracle  implemented in FE, no such test
+#   partial                implemented in FE with a restriction that the source
+#                          states; `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented in FE
+#   out-of-scope           not an FE capability, or nothing to apply it to (reason
+#                          in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-FEM-NNN) / axis / item / source (book, chapter, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-FEM-001"
+axis = "element"
+item = "truss / cable (2-node bar)"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus T3D2; LS-DYNA truss"
+status = "missing"
+evidence = "FE の棒要素は無い src/prestressed.rs は bolt / cable の閉形式 (tests/engineering_oracles_solid.rs::prestressed_parabolic_cable_matches_irvine)"
+oracle_candidate = "静定 3 部材トラスの節点変位閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-002"
+axis = "element"
+item = "Euler-Bernoulli beam element"
+source = "Bathe, Finite Element Procedures ch.5; Zienkiewicz-Taylor, The Finite Element Method vol.2"
+status = "missing"
+evidence = "src/beam_stress.rs は閉形式のみ、FE 梁要素は無い"
+oracle_candidate = "片持ち梁先端たわみ PL^3/3EI を Hermite 3 次 1 要素で厳密"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-003"
+axis = "element"
+item = "Timoshenko beam (shear-deformable, locking-free)"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus B31"
+status = "missing"
+evidence = "FE 梁要素は無い (src/beam_stress.rs は閉形式)"
+oracle_candidate = "厚肉片持ち PL^3/3EI + PL/(kGA)、細長比を振って shear locking が無いこと"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-004"
+axis = "element"
+item = "plate (Kirchhoff / Mindlin)"
+source = "Zienkiewicz-Taylor, The Finite Element Method vol.2; Bathe, Finite Element Procedures ch.5"
+status = "missing"
+evidence = "FE 板要素は無い src/modal.rs の板は閉形式"
+oracle_candidate = "Navier 解 (単純支持矩形板の中心たわみ)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-005"
+axis = "element"
+item = "shell (MITC / S4R 系)"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus S4R; LS-DYNA Belytschko-Tsay"
+status = "missing"
+evidence = "shell 要素は無い src/cloth.rs は XPBD の三角形で応力テンソルを作らない (別系統)"
+oracle_candidate = "Scordelis-Lo roof / pinched cylinder / twisted beam (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-006"
+axis = "element"
+item = "2D plane stress"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus CPS"
+status = "missing"
+evidence = "2D 固体要素は無い (src/laminate.rs の plane stress は積層板理論の閉形式)"
+oracle_candidate = "NAFEMS LE1 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-007"
+axis = "element"
+item = "2D plane strain"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus CPE"
+status = "missing"
+evidence = "2D 固体要素は無い"
+oracle_candidate = "Lame 厚肉円筒 (内圧) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-008"
+axis = "element"
+item = "axisymmetric solid"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus CAX"
+status = "missing"
+evidence = "軸対称要素は無い"
+oracle_candidate = "Lame 円筒 / 厚肉球殻内圧の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-009"
+axis = "element"
+item = "3D tet4 (P1, constant strain)"
+source = "Bathe, Finite Element Procedures ch.5"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:1 / tests/analytic_linear_elastic_fem.rs::patch_test_uniaxial_tension_is_exact / tests/analytic_linear_elastic_fem.rs::patch_test_simple_shear_is_exact"
+oracle_candidate = "(既存) patch test / MMS 次数"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-010"
+axis = "element"
+item = "3D tet10 (P2)"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus C3D10"
+status = "implemented+oracle"
+evidence = "src/quadratic_elastic_fem.rs:1 / tests/analytic_quadratic_fem.rs::quadratic_field_is_exact_on_quadratic_elements"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-011"
+axis = "element"
+item = "3D tet20 (P3)"
+source = "Bathe, Finite Element Procedures ch.5 (高次 Lagrange 要素)"
+status = "implemented+oracle"
+evidence = "src/cubic_elastic_fem.rs:1 / tests/analytic_cubic_fem.rs::cubic_field_is_exact_on_cubic_elements / 既知の欠陥 tests/audit_cubic_elastic_fem.rs::solve_cubic_never_reports_ok_for_a_body_nothing_holds (ignore = \"known defect: AUD-A-S2W1-008: solve_cubic returns Ok (u ~ 1e11 mm, relative_residual 0) for a body with no constraints ...\")"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-012"
+axis = "element"
+item = "3D hex8 (trilinear)"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus C3D8; LS-DYNA solid"
+status = "missing"
+evidence = "要素は tet のみ src/sdf_fem_mesh.rs:1160 で六面体を tet に分割する"
+oracle_candidate = "hex の patch test / Cook 膜の 3D 版"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-013"
+axis = "element"
+item = "3D hex20 / hex27"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus C3D20"
+status = "missing"
+evidence = "六面体要素は無い"
+oracle_candidate = "二次場の patch test"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-014"
+axis = "element"
+item = "wedge / pyramid"
+source = "Abaqus C3D6"
+status = "missing"
+evidence = "src/sdf_fem_mesh.rs:941 で wedge を tet に分割する (要素としては無い)"
+oracle_candidate = "patch test"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-015"
+axis = "element"
+item = "incompatible modes (Wilson / C3D8I)"
+source = "Zienkiewicz-Taylor, The Finite Element Method; Abaqus C3D8I"
+status = "missing"
+evidence = "六面体要素が無いので対象も無い"
+oracle_candidate = "板厚 1 要素の片持ち曲げ"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-016"
+axis = "element"
+item = "curved isoparametric P2 / P3 (曲辺)"
+source = "Bathe, Finite Element Procedures ch.5"
+status = "missing"
+evidence = "P2 / P3 の辺節点は直線辺上に置かれる (src/quadratic_elastic_fem.rs:44 'On a straight-edged tetrahedron the Jacobian is constant') 曲辺の幾何を入れる経路は無い"
+oracle_candidate = "曲面境界の厚肉円筒で P2 の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-017"
+axis = "element"
+item = "mixed u-p / hybrid (incompressible)"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.8; Simo-Hughes, Computational Inelasticity; Abaqus C3D10H"
+status = "missing"
+evidence = "混合要素は無い 体積ロッキングの実測は tests/locking_p1.rs::volumetric_locking_by_poisson_ratio"
+oracle_candidate = "nu -> 0.5 の片持ちで FEM / 梁理論 -> 1、内圧厚肉球"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-018"
+axis = "integration"
+item = "full integration (exact on straight tets)"
+source = "Bathe, Finite Element Procedures ch.5"
+status = "implemented+oracle"
+evidence = "src/quadratic_elastic_fem.rs:42 (Hammer-Stroud 4 点) / src/cubic_elastic_fem.rs:33 / tests/p2_quadrature_fix128.rs::quadrature_error_per_monomial_in_ulps / tests/p3_quadrature_fix128.rs::the_dyadic_rule_is_exact_to_degree_five_and_falls_off_a_cliff_at_six"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-019"
+axis = "integration"
+item = "reduced integration"
+source = "Bathe, Finite Element Procedures ch.5; Abaqus C3D8R"
+status = "missing"
+evidence = "低減積分は無い (tet のみ、hex 導入時に必要)"
+oracle_candidate = "固有値解析で spurious mode の数"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-020"
+axis = "integration"
+item = "selective reduced integration"
+source = "Zienkiewicz-Taylor, The Finite Element Method; Belytschko-Liu-Moran, Nonlinear Finite Elements ch.8"
+status = "missing"
+evidence = "選択的低減積分は無い"
+oracle_candidate = "nu -> 0.5 で locking が消えること"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-021"
+axis = "integration"
+item = "B-bar"
+source = "Simo-Hughes, Computational Inelasticity; Hughes 1980"
+status = "missing"
+evidence = "B-bar は無い"
+oracle_candidate = "非圧縮片持ち"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-022"
+axis = "integration"
+item = "F-bar (finite strain)"
+source = "de Souza Neto-Peric-Owen, Computational Methods for Plasticity; Abaqus"
+status = "missing"
+evidence = "F-bar は無い"
+oracle_candidate = "非圧縮 neo-Hookean の拘束圧縮"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-023"
+axis = "integration"
+item = "hourglass control"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.8; LS-DYNA"
+status = "out-of-scope"
+evidence = "低減積分要素が無いので対象が無い (低減積分 hex を入れたら missing に戻す)"
+oracle_candidate = "hourglass エネルギー / 内部エネルギー比"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-024"
+axis = "material"
+item = "linear isotropic elasticity"
+source = "Bathe, Finite Element Procedures ch.6"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:266 / tests/analytic_linear_elastic_fem.rs::lame_parameters_and_material_validation"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-025"
+axis = "material"
+item = "orthotropic elasticity in FE"
+source = "Abaqus elastic type engineering constants; MOOSE solid mechanics"
+status = "missing"
+evidence = "FE は等方のみ (src/linear_elastic_fem.rs:46 'Isotropic material only.') src/anisotropic.rs の直交異方は閉形式で FE に入っていない"
+oracle_candidate = "回転した直交異方の patch test / 一軸引張の見かけ E(theta)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-026"
+axis = "material"
+item = "general anisotropic elasticity (21 constants)"
+source = "Abaqus anisotropic elasticity"
+status = "missing"
+evidence = "一般異方性は無い"
+oracle_candidate = "回転 patch test"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-027"
+axis = "material"
+item = "neo-Hookean"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.5; Abaqus"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:136 / tests/analytic_quadratic_hyperelastic.rs::neo_hookean_uniaxial_tension_matches_the_closed_form"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-028"
+axis = "material"
+item = "Mooney-Rivlin"
+source = "Abaqus"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:142 / tests/analytic_quadratic_hyperelastic.rs::mooney_rivlin_uniaxial_tension_matches_the_closed_form"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-029"
+axis = "material"
+item = "Yeoh (FE path)"
+source = "Abaqus"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:150 / tests/audit_c_hyperelastic.rs::yeoh_consistent_tangent_converges_like_exact_newton (FE 解を独立な 3x3 Newton と突合) / tests/analytic_corotational.rs::the_consistent_tangent_solves_mooney_rivlin_and_yeoh 一軸の閉形式 oracle は無い (tests/analytic_quadratic_hyperelastic.rs:169)"
+oracle_candidate = "一軸引張: sigma_tt = 0 を 1 次元 Newton で解いた参照値と FE の比較"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-030"
+axis = "material"
+item = "Ogden"
+source = "Abaqus; LS-DYNA MAT_77"
+status = "missing"
+evidence = "src/hyperelastic.rs:17 'Ogden — not implemented'"
+oracle_candidate = "一軸 / 等二軸"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-031"
+axis = "material"
+item = "Arruda-Boyce / Gent"
+source = "Abaqus"
+status = "missing"
+evidence = "モデルは無い (src/hyperelastic.rs の Arruda は文献名のみ)"
+oracle_candidate = "一軸の locking stretch"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-032"
+axis = "material"
+item = "compressible volumetric completion"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.5"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:428 / tests/analytic_quadratic_hyperelastic.rs::a_negative_volumetric_modulus_is_refused"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-033"
+axis = "material"
+item = "J2 plasticity, linear isotropic hardening (3D FE)"
+source = "Simo-Hughes, Computational Inelasticity ch.3"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:4094 / tests/analytic_elastoplastic_fem.rs::uniaxial_tension_follows_the_bilinear_curve / tests/analytic_elastoplastic_fem.rs::simple_shear_follows_the_j2_closed_form"
+oracle_candidate = "(既存)"
+limitation = "src/linear_elastic_fem.rs:4078 'Small strain and small displacement (no geometric nonlinearity), P1 only, bilinear isotropic hardening only, quasi-static (no rate or inertia).'"
+
+[[item]]
+id = "COV-FEM-034"
+axis = "material"
+item = "J2 kinematic hardening (3D FE)"
+source = "Simo-Hughes, Computational Inelasticity ch.3; Abaqus; MOOSE solid mechanics"
+status = "missing"
+evidence = "FE は非対応 (src/linear_elastic_fem.rs:4080 'Not supported: softening (`H < 0` is rejected), kinematic hardening') src/plastic.rs:59 の Kinematic は 1D の return mapping で FE ではない"
+oracle_candidate = "一軸繰返しの Bauschinger 効果 (反転降伏応力の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-035"
+axis = "material"
+item = "combined hardening / Chaboche (3D FE)"
+source = "Simo-Hughes, Computational Inelasticity; Chaboche 2008; Abaqus"
+status = "missing"
+evidence = "FE は非対応 (src/linear_elastic_fem.rs:4080) src/plastic.rs:66 の Combined は 1D で等分のみ"
+oracle_candidate = "ratcheting / 繰返し安定ループ"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-036"
+axis = "material"
+item = "nonlinear isotropic hardening (Voce / power / table)"
+source = "Abaqus plastic table"
+status = "missing"
+evidence = "硬化は bilinear のみ (src/linear_elastic_fem.rs:4078)"
+oracle_candidate = "一軸引張曲線の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-037"
+axis = "material"
+item = "softening with regularization"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements; de Borst"
+status = "missing"
+evidence = "src/linear_elastic_fem.rs:3441 で負の硬化係数を拒否する"
+oracle_candidate = "1D 棒の局所化とメッシュ依存"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-038"
+axis = "material"
+item = "Drucker-Prager"
+source = "Abaqus; MOOSE solid mechanics; de Souza Neto-Peric-Owen, Computational Methods for Plasticity"
+status = "missing"
+evidence = "モデルは無い"
+oracle_candidate = "三軸圧縮の降伏点閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-039"
+axis = "material"
+item = "Mohr-Coulomb"
+source = "Abaqus; Code_Aster"
+status = "missing"
+evidence = "モデルは無い"
+oracle_candidate = "strip footing の Prandtl 支持力"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-040"
+axis = "material"
+item = "Cam-clay"
+source = "Abaqus; Code_Aster"
+status = "missing"
+evidence = "モデルは無い"
+oracle_candidate = "等方圧密の e-ln p 線"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-041"
+axis = "material"
+item = "finite-strain plasticity F = Fe Fp"
+source = "Simo-Hughes, Computational Inelasticity ch.9; Abaqus"
+status = "missing"
+evidence = "src/linear_elastic_fem.rs:4080 'finite-strain `F = Fe·Fp`' を非対応と明記"
+oracle_candidate = "有限ひずみ単純せん断 / necking bar"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-042"
+axis = "material"
+item = "linear viscoelasticity (Prony / generalized Maxwell)"
+source = "Abaqus viscoelastic; LS-DYNA"
+status = "missing"
+evidence = "FE 経路は無い src/creep_longterm.rs は 1D Findley の閉形式"
+oracle_candidate = "応力緩和 sigma(t) = eps0 sum g_i exp(-t/tau_i)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-043"
+axis = "material"
+item = "viscoplasticity / creep in FE"
+source = "Simo-Hughes, Computational Inelasticity ch.1; Abaqus creep"
+status = "missing"
+evidence = "FE 経路は無い src/plastic.rs:313 の Norton creep は 1D"
+oracle_candidate = "一軸 Norton 定常クリープ速度"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-044"
+axis = "material"
+item = "continuum damage (Lemaitre / Mazars)"
+source = "Abaqus; Code_Aster"
+status = "missing"
+evidence = "損傷場は無い (src/fatigue.rs は Miner 則の寿命和)"
+oracle_candidate = "一軸 damage 曲線"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-045"
+axis = "material"
+item = "temperature-dependent material properties"
+source = "Abaqus; MOOSE solid mechanics"
+status = "partial"
+evidence = "src/linear_elastic_fem.rs:4136 ThermalSoftening (降伏応力と硬化係数の温度依存) / tests/analytic_thermoplastic_softening.rs E(T) / nu(T) は無い"
+oracle_candidate = "一様加熱した拘束棒で E(T) を入れた拘束応力"
+limitation = "src/linear_elastic_fem.rs:4138 '`σ_y(T) = σ_y₀ · max(0, 1 − w_y · ΔT)` and `H(T) = H₀ · max(0, 1 − w_h · ΔT)`'"
+
+[[item]]
+id = "COV-FEM-046"
+axis = "material"
+item = "Mullins effect / hyper-viscoelasticity"
+source = "Abaqus"
+status = "missing"
+evidence = "モデルは無い"
+oracle_candidate = "繰返し一軸の応力軟化"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-047"
+axis = "kinematics"
+item = "small strain"
+source = "Bathe, Finite Element Procedures ch.6"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:1522 / tests/analytic_linear_elastic_fem.rs::patch_test_uniaxial_tension_is_exact"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-048"
+axis = "kinematics"
+item = "co-rotational"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.4; Crisfield"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:2876 / tests/analytic_corotational.rs::boundary_rigid_rotation_leaves_the_interior_unstressed / 既知の欠陥 tests/audit_c_linear_elastic_fem.rs::rigid_half_turn_in_an_even_number_of_increments_is_stress_free (ignore = \"known defect: AUD-A-S34-030: `solve_corotational` applies a rigid 180 degree rotation in an even number of increments ...\")"
+oracle_candidate = "Mattiasson 大たわみ片持ち (BM-10)"
+limitation = "src/linear_elastic_fem.rs:2786 'Strain within the rotated frame is still small-strain, so this buys large *rotation*, not large *stretch*.'"
+
+[[item]]
+id = "COV-FEM-049"
+axis = "kinematics"
+item = "total Lagrangian (hyperelastic)"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.4; Bathe, Finite Element Procedures ch.6"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem/consistent_tangent.rs:1 / tests/analytic_hyperelastic_mms_order.rs::p2_error_decreases_between_two_levels / tests/analytic_quadratic_hyperelastic.rs::neo_hookean_uniaxial_tension_matches_the_closed_form"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-050"
+axis = "kinematics"
+item = "updated Lagrangian"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.4; Bathe, Finite Element Procedures ch.6"
+status = "missing"
+evidence = "updated Lagrangian は無い"
+oracle_candidate = "超弾性で TL と同じ解になる対の test"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-051"
+axis = "kinematics"
+item = "hypoelastic objective rates (Jaumann / Green-Naghdi)"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.5; LS-DYNA"
+status = "missing"
+evidence = "objective rate は無い"
+oracle_candidate = "単純せん断の Jaumann 振動 (Dienes 1979)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-052"
+axis = "nonlinear"
+item = "full Newton-Raphson (consistent tangent)"
+source = "Bathe, Finite Element Procedures ch.8"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem/consistent_tangent.rs:457 / src/linear_elastic_fem.rs:2161 / tests/audit_c_hyperelastic.rs::neo_hookean_consistent_tangent_converges_like_exact_newton / tests/analytic_hyperelastic_mms_order.rs::the_newton_krylov_step_converges_where_the_modified_one_does_not"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-053"
+axis = "nonlinear"
+item = "modified Newton"
+source = "Bathe, Finite Element Procedures ch.8"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:2112 / tests/analytic_corotational.rs::the_answer_does_not_depend_on_the_newton_budget"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-054"
+axis = "nonlinear"
+item = "inexact Newton / Jacobian-free Newton-Krylov"
+source = "Knoll-Keyes 2004; MOOSE solid mechanics"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem/consistent_tangent.rs:438 / tests/analytic_hyperelastic_mms_order.rs::the_newton_krylov_step_does_not_move_the_fixed_point"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-055"
+axis = "nonlinear"
+item = "quasi-Newton (BFGS)"
+source = "Bathe, Finite Element Procedures ch.8; Abaqus"
+status = "missing"
+evidence = "BFGS は無い"
+oracle_candidate = "Newton と同じ固定点、反復数の比較"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-056"
+axis = "nonlinear"
+item = "line search"
+source = "Bathe, Finite Element Procedures ch.8; Belytschko-Liu-Moran, Nonlinear Finite Elements ch.6"
+status = "partial"
+evidence = "src/linear_elastic_fem/consistent_tangent.rs:547 (残差が減る最大の 2^-k を選ぶ backtrack のみ、Wolfe 条件 / エネルギー line search は無い)"
+oracle_candidate = "snap-back 手前の負荷で残差の単調減少"
+limitation = "src/linear_elastic_fem/consistent_tangent.rs:547 'The largest `α = 2⁻ᵏ` (`k ≤ BACKTRACKS`) for which `u + α δ` has a residual **strictly below** `before`'"
+
+[[item]]
+id = "COV-FEM-057"
+axis = "nonlinear"
+item = "load / displacement incrementation"
+source = "Bathe, Finite Element Procedures ch.8"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:4094 (load_path) / tests/analytic_elastoplastic_fem.rs::unloading_is_elastic_and_leaves_the_residual_strain"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-058"
+axis = "nonlinear"
+item = "automatic increment cutback"
+source = "Abaqus automatic incrementation"
+status = "missing"
+evidence = "自動の増分縮小は無い (NotConverged で終わる)"
+oracle_candidate = "収束失敗 -> 増分半減で通る scene"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-059"
+axis = "nonlinear"
+item = "arc-length (Riks / Crisfield)"
+source = "Bathe, Finite Element Procedures ch.8; Abaqus static Riks"
+status = "missing"
+evidence = "弧長法は無い"
+oracle_candidate = "浅いアーチの snap-through (src/buckling.rs の閉形式と比較) / Williams toggle"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-060"
+axis = "tangent"
+item = "algorithmic consistent tangent (J2)"
+source = "Simo-Hughes, Computational Inelasticity ch.3"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:3864 / tests/analytic_elastoplastic_fem.rs::uniaxial_tension_follows_the_bilinear_curve"
+oracle_candidate = "二次収束率の実測 (未 pin)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-061"
+axis = "tangent"
+item = "hyperelastic consistent tangent (symmetric)"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.6"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem/consistent_tangent.rs:25 / src/linear_elastic_fem/consistent_tangent.rs::the_tangent_is_symmetric / tests/audit_c_hyperelastic.rs::mooney_rivlin_consistent_tangent_converges_like_exact_newton"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-062"
+axis = "tangent"
+item = "non-symmetric tangent: follower load"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements; Abaqus"
+status = "missing"
+evidence = "追従荷重は無く、線形解法は対称前提の CG (src/linear_elastic_fem.rs:1377)"
+oracle_candidate = "Beck の柱 (非保存力) / 内圧で膨らむ球の圧力-体積"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-063"
+axis = "tangent"
+item = "non-symmetric tangent: non-associated flow"
+source = "Simo-Hughes, Computational Inelasticity; Abaqus unsymmetric solver"
+status = "missing"
+evidence = "非関連流れ則のモデル自体が無い"
+oracle_candidate = "Drucker-Prager 非関連の三軸 (psi != phi)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-064"
+axis = "tangent"
+item = "non-symmetric tangent: frictional contact"
+source = "Wriggers, Computational Contact Mechanics"
+status = "missing"
+evidence = "FE の摩擦接触が無い"
+oracle_candidate = "摩擦滑りするブロック (Coulomb の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-065"
+axis = "tangent"
+item = "indefinite tangent handling"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.6"
+status = "partial"
+evidence = "src/linear_elastic_fem/consistent_tangent.rs:248 負曲率で CG を打ち切る"
+oracle_candidate = "座屈後経路 (弧長法と併用)"
+limitation = "src/linear_elastic_fem/consistent_tangent.rs:248 'Preconditioned conjugate gradient that **stops on negative curvature and returns what it has** instead of failing'"
+
+[[item]]
+id = "COV-FEM-066"
+axis = "linear_solver"
+item = "conjugate gradient (matrix-free, SPD)"
+source = "Bathe, Finite Element Procedures ch.8"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:1377 / tests/analytic_linear_elastic_fem.rs::preconditioner_does_not_change_the_answer"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-067"
+axis = "linear_solver"
+item = "Jacobi preconditioner"
+source = "Bathe, Finite Element Procedures ch.8"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:692 / tests/analytic_linear_elastic_fem.rs::preconditioner_does_not_change_the_answer / tests/analytic_dynamic_fem.rs::the_jacobi_preconditioned_path_reaches_the_same_closed_form"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-068"
+axis = "linear_solver"
+item = "IC / ILU / AMG / multigrid preconditioning for solids"
+source = "Bathe, Finite Element Procedures; MOOSE solid mechanics (PETSc PC)"
+status = "missing"
+evidence = "固体の前処理は None / Jacobi のみ (src/linear_elastic_fem.rs:692)"
+oracle_candidate = "細分しても反復数が h に依らないこと"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-069"
+axis = "linear_solver"
+item = "sparse direct (Cholesky / LDL^T)"
+source = "Bathe, Finite Element Procedures ch.8; Abaqus; Code_Aster"
+status = "missing"
+evidence = "直接法は無い (src/linear_elastic_fem.rs:28 'The global system is never assembled')"
+oracle_candidate = "小規模問題で CG と一致"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-070"
+axis = "linear_solver"
+item = "non-symmetric Krylov (GMRES / BiCGSTAB) for solids"
+source = "Abaqus unsymmetric solver; MOOSE solid mechanics (PETSc KSP)"
+status = "missing"
+evidence = "固体の非対称 Krylov は無い (src の BiCGSTAB は src/cfd_solver.rs の圧力用)"
+oracle_candidate = "TAN-03 から TAN-05 の前提"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-071"
+axis = "linear_solver"
+item = "global sparse assembly (CSR)"
+source = "Bathe, Finite Element Procedures ch.12"
+status = "missing"
+evidence = "全体行列は組まない設計 (src/linear_elastic_fem.rs:28)"
+oracle_candidate = "LS-04 の前提"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-072"
+axis = "dynamics"
+item = "Newmark average acceleration"
+source = "Bathe, Finite Element Procedures ch.9"
+status = "implemented+oracle"
+evidence = "src/dynamic_fem.rs:21 / tests/analytic_dynamic_fem.rs::a_single_free_degree_of_freedom_tracks_the_closed_form_step_response / tests/analytic_dynamic_fem.rs::the_axial_bar_reaches_its_peak_at_the_closed_form_wave_transit_time"
+oracle_candidate = "(既存)"
+limitation = "src/dynamic_fem.rs:82 'P1 only.'"
+
+[[item]]
+id = "COV-FEM-073"
+axis = "dynamics"
+item = "general Newmark (beta, gamma configurable)"
+source = "Bathe, Finite Element Procedures ch.9"
+status = "partial"
+evidence = "src/dynamic_fem.rs:40 beta = 1/4, gamma = 1/2 固定"
+oracle_candidate = "SDOF の周期伸びの閉形式 (beta, gamma 依存)"
+limitation = "src/dynamic_fem.rs:40 '# Why `β = 1/4, γ = 1/2` is fixed rather than configurable'"
+
+[[item]]
+id = "COV-FEM-074"
+axis = "dynamics"
+item = "HHT-alpha"
+source = "Abaqus implicit dynamics"
+status = "missing"
+evidence = "HHT は無い"
+oracle_candidate = "SDOF の数値減衰比の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-075"
+axis = "dynamics"
+item = "generalized-alpha (Chung-Hulbert)"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements; MOOSE solid mechanics"
+status = "missing"
+evidence = "generalized-alpha は無い"
+oracle_candidate = "SDOF の数値減衰 (rho_inf 指定)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-076"
+axis = "dynamics"
+item = "explicit central difference"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.6; LS-DYNA"
+status = "missing"
+evidence = "FE の陽解法は無い (src/deformable.rs は XPBD で別系統)"
+oracle_candidate = "棒の波動伝播 / 安定時間刻み L_min / c"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-077"
+axis = "dynamics"
+item = "consistent mass"
+source = "Bathe, Finite Element Procedures ch.9"
+status = "implemented+oracle"
+evidence = "src/dynamic_fem.rs:246 / tests/analytic_dynamic_fem.rs::the_two_mass_distributions_differ_by_the_closed_form_ratio"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-078"
+axis = "dynamics"
+item = "lumped mass"
+source = "Bathe, Finite Element Procedures ch.9"
+status = "implemented+oracle"
+evidence = "src/dynamic_fem.rs:246 / tests/analytic_dynamic_fem.rs::the_two_mass_distributions_differ_by_the_closed_form_ratio"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-079"
+axis = "dynamics"
+item = "Rayleigh damping in FE"
+source = "Bathe, Finite Element Procedures ch.9; Chopra"
+status = "missing"
+evidence = "FE に減衰項は無い (src/dynamic_fem.rs:76 'No damping. There is no `C u'` term') src/damping_rayleigh.rs は閉形式 (tests/engineering_oracles_solid.rs::damping_rayleigh_matches_chopra)"
+oracle_candidate = "SDOF 減衰自由振動の対数減衰率"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-080"
+axis = "dynamics"
+item = "time-dependent load f(t)"
+source = "Bathe, Finite Element Procedures ch.9; Abaqus amplitude"
+status = "missing"
+evidence = "src/dynamic_fem.rs:78 'The load is fixed at construction.'"
+oracle_candidate = "調和加振の定常応答 (動的応答倍率)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-081"
+axis = "dynamics"
+item = "nonlinear transient (hyperelastic / plastic)"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements ch.6"
+status = "missing"
+evidence = "src/dynamic_fem.rs:80 'the co-rotational and hyperelastic paths there are static and are not reused here'"
+oracle_candidate = "弾塑性棒の衝撃"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-082"
+axis = "dynamics"
+item = "P2 / P3 transient"
+source = "Bathe, Finite Element Procedures ch.9"
+status = "missing"
+evidence = "src/dynamic_fem.rs:82 'P1 only.'"
+oracle_candidate = "棒の軸振動固有周期の次数収束"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-083"
+axis = "eigen"
+item = "FE modal analysis (K phi = omega^2 M phi)"
+source = "Bathe, Finite Element Procedures ch.10-11; Abaqus frequency"
+status = "missing"
+evidence = "FE の固有値解析は無い src/modal.rs は閉形式"
+oracle_candidate = "片持ち梁 1 次 omega = 1.875^2 sqrt(EI/(rho A L^4)) / 自由立方体の剛体 6 モード"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-084"
+axis = "eigen"
+item = "linear buckling (K + lambda K_G)"
+source = "Bathe, Finite Element Procedures ch.6; Abaqus buckle"
+status = "missing"
+evidence = "幾何剛性 K_G は無い src/buckling.rs は閉形式 (Euler / Johnson)"
+oracle_candidate = "Euler P_cr = pi^2 EI / (KL)^2 (端条件 4 種)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-085"
+axis = "eigen"
+item = "prestressed frequency"
+source = "Abaqus perturbation step"
+status = "missing"
+evidence = "初期応力を含む固有値解析は無い"
+oracle_candidate = "張力弦の基本振動数 sqrt(T/(rho A)) / 2L"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-086"
+axis = "constraint"
+item = "Dirichlet (nonzero prescribed)"
+source = "Bathe, Finite Element Procedures ch.4"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:508 / tests/analytic_linear_elastic_fem.rs::patch_test_hydrostatic_is_exact / tests/analytic_dynamic_fem.rs::a_non_zero_prescribed_displacement_is_held_exactly"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-087"
+axis = "constraint"
+item = "linear MPC / tie / hanging-node constraint"
+source = "Abaqus equation / tie; Code_Aster"
+status = "missing"
+evidence = "境界条件は prescribe と節点荷重のみ (src/linear_elastic_fem.rs:491) tests/hanging_node_effect.rs::constraining_the_hanging_node_to_its_parent_edge_closes_the_tear は test 内で値を直接与えている"
+oracle_candidate = "hanging node の patch test を API 経由で"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-088"
+axis = "constraint"
+item = "Lagrange multiplier constraints"
+source = "Bathe, Finite Element Procedures ch.3; Wriggers, Computational Contact Mechanics"
+status = "missing"
+evidence = "FE の未定乗数拘束は無い"
+oracle_candidate = "鞍点系の patch test"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-089"
+axis = "constraint"
+item = "penalty constraints"
+source = "Bathe, Finite Element Procedures ch.3"
+status = "missing"
+evidence = "FE の penalty 拘束は無い"
+oracle_candidate = "penalty -> 無限大で Dirichlet に O(1/k) で収束"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-090"
+axis = "constraint"
+item = "rigid / distributing coupling (RBE2 / RBE3)"
+source = "Abaqus coupling; Code_Aster"
+status = "missing"
+evidence = "結合拘束は無い"
+oracle_candidate = "剛体面にモーメントを入れた片持ち"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-091"
+axis = "constraint"
+item = "periodic boundary conditions (homogenization)"
+source = "Abaqus; MOOSE solid mechanics"
+status = "missing"
+evidence = "周期境界は無い"
+oracle_candidate = "層状材の Voigt / Reuss 境界 (src/bimaterial.rs の閉形式と比較)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-092"
+axis = "load"
+item = "nodal concentrated load"
+source = "Bathe, Finite Element Procedures ch.4"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:535 / tests/analytic_reactions.rs::the_reactions_balance_the_applied_load"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-093"
+axis = "load"
+item = "distributed surface traction (consistent load)"
+source = "Bathe, Finite Element Procedures ch.4"
+status = "missing"
+evidence = "traction の API は無く呼び出し側が整合荷重を節点荷重に積分する (tests/mms_linear_elastic.rs::consistent_load_reduces_to_a_quarter_for_a_constant_force / tests/analytic_quadratic_fem.rs::p2_traction_puts_nothing_on_the_corners) 適応細分で分配し直せない (src/linear_elastic_fem.rs:5435)"
+oracle_candidate = "一様引張棒 (P1 / P2 / P3 の角点配分)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-094"
+axis = "load"
+item = "body force (gravity / centrifugal)"
+source = "Bathe, Finite Element Procedures ch.4"
+status = "missing"
+evidence = "体積力の API は無く MMS test が節点荷重に積分して渡す (tests/mms_linear_elastic.rs::source_term_mms_converges_at_the_p1_rate)"
+oracle_candidate = "自重片持ち wL^4/8EI / 回転円盤"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-095"
+axis = "load"
+item = "follower pressure"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements; Abaqus follower load"
+status = "missing"
+evidence = "追従圧力は無い"
+oracle_candidate = "内圧で膨らむ neo-Hookean 球の圧力-半径閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-096"
+axis = "load"
+item = "thermal eigenstrain (P1)"
+source = "Bathe, Finite Element Procedures ch.6"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:1568 / tests/analytic_thermoelastic.rs::fully_constrained_heating_is_hydrostatic_compression / tests/analytic_thermoelastic.rs::free_thermal_expansion_is_affine_and_stress_free"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-097"
+axis = "load"
+item = "thermal eigenstrain (P2 / P3)"
+source = "Bathe, Finite Element Procedures ch.6"
+status = "missing"
+evidence = "src/quadratic_elastic_fem.rs / src/cubic_elastic_fem.rs に温度ひずみの入力は無い"
+oracle_candidate = "二次温度場の自由膨張"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-098"
+axis = "load"
+item = "initial stress / prestress field"
+source = "Abaqus initial conditions stress"
+status = "missing"
+evidence = "FE の初期応力は無い (src/prestressed.rs は閉形式)"
+oracle_candidate = "初期応力で平衡した無負荷状態の保持"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-099"
+axis = "contact"
+item = "deformable vs rigid (SDF) contact in FE"
+source = "Wriggers, Computational Contact Mechanics; Abaqus"
+status = "missing"
+evidence = "src/linear_elastic_fem.rs:49 'no contact' src/deformable.rs の SDF 衝突は XPBD で別系統"
+oracle_candidate = "Hertz 球-平面 (src/rolling_contact.rs の閉形式と比較)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-100"
+axis = "contact"
+item = "node-to-surface normal contact"
+source = "Wriggers, Computational Contact Mechanics; Abaqus"
+status = "missing"
+evidence = "FE の接触は無い"
+oracle_candidate = "2 ブロック押し付けの一様接触圧"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-101"
+axis = "contact"
+item = "surface-to-surface / mortar contact"
+source = "Wriggers, Computational Contact Mechanics; MOOSE solid mechanics"
+status = "missing"
+evidence = "mortar 接触は無い"
+oracle_candidate = "contact patch test (Taylor-Papadopoulos)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-102"
+axis = "contact"
+item = "Coulomb friction in FE contact"
+source = "Wriggers, Computational Contact Mechanics"
+status = "missing"
+evidence = "FE の摩擦接触は無い"
+oracle_candidate = "斜面ブロック / Cattaneo-Mindlin 部分滑り"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-103"
+axis = "contact"
+item = "self-contact in FE"
+source = "Wriggers, Computational Contact Mechanics; LS-DYNA"
+status = "missing"
+evidence = "FE の自己接触は無い (src/cloth.rs の頂点-面 / 辺-辺は XPBD で別系統)"
+oracle_candidate = "折り畳んだ板の非貫通"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-104"
+axis = "contact"
+item = "Hertz contact (closed form reference)"
+source = "Johnson, Contact Mechanics"
+status = "out-of-scope"
+evidence = "閉形式で FE の機能ではない (src/rolling_contact.rs) CT-01 の参照値として使う"
+oracle_candidate = "—"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-105"
+axis = "fracture"
+item = "LEFM stress intensity / J-integral"
+source = "Abaqus contour integral; Code_Aster"
+status = "missing"
+evidence = "応力拡大係数 / J 積分は無い (src/fillet_stress.rs は応力集中係数の閉形式)"
+oracle_candidate = "中央き裂板 K = sigma sqrt(pi a) / J = K^2 / E'"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-106"
+axis = "fracture"
+item = "XFEM"
+source = "Abaqus; Code_Aster"
+status = "missing"
+evidence = "XFEM は無い"
+oracle_candidate = "中央き裂板の K"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-107"
+axis = "fracture"
+item = "cohesive zone elements"
+source = "Abaqus cohesive elements"
+status = "missing"
+evidence = "cohesive 要素は無い"
+oracle_candidate = "DCB (Mode I) の荷重-変位閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-108"
+axis = "fracture"
+item = "phase-field fracture"
+source = "MOOSE solid mechanics"
+status = "missing"
+evidence = "phase-field は無い"
+oracle_candidate = "1D 棒の一様き裂解"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-109"
+axis = "fracture"
+item = "heuristic SDF fracture (visual effects)"
+source = "(参照体系外)"
+status = "out-of-scope"
+evidence = "src/fracture.rs:1 / src/sdf_destruction.rs は CSG 減算による演出で連続体力学ではない"
+oracle_candidate = "—"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-110"
+axis = "adaptivity"
+item = "Zienkiewicz-Zhu recovery indicator (P1)"
+source = "Zienkiewicz-Taylor, The Finite Element Method ch.13"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:5167 / tests/analytic_adaptive_refinement.rs::an_exact_solution_has_indicators_of_exactly_zero / tests/analytic_adaptive_refinement.rs::the_energy_norm_is_what_the_indicator_measures"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-111"
+axis = "adaptivity"
+item = "recovery indicator for P2 / P3"
+source = "Zienkiewicz-Taylor, The Finite Element Method ch.13"
+status = "partial"
+evidence = "src/quadratic_elastic_fem.rs:1827 / src/cubic_elastic_fem.rs:2217 要素重心の応力に P1 の回復推定を当てる"
+oracle_candidate = "既知解で有効性指数 -> 1"
+limitation = "src/quadratic_elastic_fem.rs:1827 'The error indicator is the P1 stress-recovery estimator applied to the element's centroid stress'"
+
+[[item]]
+id = "COV-FEM-112"
+axis = "adaptivity"
+item = "h-adaptivity (bulk marking)"
+source = "Zienkiewicz-Taylor, The Finite Element Method; Dorfler 1996"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:5446 / tests/analytic_adaptive_refinement.rs::adaptive_refinement_beats_uniform_per_degree_of_freedom / tests/analytic_adaptive_refinement_high_order.rs::the_total_indicator_falls_for_quadratic / 既知の欠陥 tests/audit_linear_elastic_fem.rs::mark_bulk_carries_at_least_theta_times_total_even_at_ulp_scale (ignore = \"known defect: AUD-A-S1W3-002: mark_bulk truncates total*theta ...\")"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-113"
+axis = "adaptivity"
+item = "p / hp adaptivity"
+source = "Zienkiewicz-Taylor, The Finite Element Method; Szabo-Babuska"
+status = "missing"
+evidence = "P1 / P2 / P3 は別の入口で、要素次数の混在は無い"
+oracle_candidate = "L 字角特異の指数収束"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-114"
+axis = "adaptivity"
+item = "goal-oriented error estimation (DWR)"
+source = "Becker-Rannacher 2001"
+status = "missing"
+evidence = "DWR は無い"
+oracle_candidate = "点変位の有効性指数"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-115"
+axis = "adaptivity"
+item = "mesh quality under refinement (Delaunay refinement)"
+source = "Bathe, Finite Element Procedures; Shewchuk"
+status = "partial"
+evidence = "src/sdf_fem_mesh.rs:38 最長辺分割で Delaunay 細分ではない / 既知の欠陥 tests/audit_sdf_fem_mesh.rs::refinement_keeps_every_element_positively_wound (ignore = \"known defect: AUD-A-S2W3-012: try_refine_conforming / try_refine_marked emit children with mixed winding ...\")"
+oracle_candidate = "細分後の最小二面角の下限"
+limitation = "src/sdf_fem_mesh.rs:38 'Edge-based refinement ([`SdfTetMesh::refine_by_max_edge_length`]) is not Delaunay refinement; aspect ratio can drift.'"
+
+[[item]]
+id = "COV-FEM-116"
+axis = "output"
+item = "element stress / von Mises"
+source = "Bathe, Finite Element Procedures ch.6"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:644 / tests/analytic_linear_elastic_fem.rs::von_mises_matches_closed_form"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-117"
+axis = "output"
+item = "nodal stress recovery as output (SPR / averaging)"
+source = "Zienkiewicz-Taylor, The Finite Element Method ch.13"
+status = "missing"
+evidence = "回復応力は誤差指標の内部でのみ作られ、公開 API は無い (src/linear_elastic_fem.rs:5128)"
+oracle_candidate = "線形応力場で節点値が厳密"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-118"
+axis = "output"
+item = "reaction forces"
+source = "Bathe, Finite Element Procedures ch.4"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:1827 / tests/analytic_reactions.rs::the_reactions_balance_the_applied_load / tests/analytic_reactions.rs::p3_linear_face_reaction_is_the_small_strain_traction"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-119"
+axis = "output"
+item = "element strain energy density"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements; Abaqus element energy output"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:628 / tests/analytic_adaptive_refinement.rs::the_energy_norm_matches_its_closed_forms"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-120"
+axis = "output"
+item = "principal stresses / directions"
+source = "Abaqus"
+status = "missing"
+evidence = "応力テンソルに主応力の API は無い"
+oracle_candidate = "対角応力の固有値が厳密"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-121"
+axis = "output"
+item = "global energy balance output (external work = internal energy + dissipation)"
+source = "Belytschko-Liu-Moran, Nonlinear Finite Elements; Abaqus whole-model energy output"
+status = "missing"
+evidence = "全体のエネルギー収支の出力は無い (塑性散逸は tests/analytic_plastic_dissipation.rs で個別に測る)"
+oracle_candidate = "Clapeyron: 1/2 f^T u = U"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-122"
+axis = "benchmark"
+item = "patch test"
+source = "Zienkiewicz-Taylor, The Finite Element Method; MacNeal-Harder 1985"
+status = "implemented+oracle"
+evidence = "tests/analytic_linear_elastic_fem.rs::patch_test_uniaxial_tension_is_exact / tests/analytic_linear_elastic_fem.rs::patch_test_hydrostatic_is_exact / tests/analytic_linear_elastic_fem.rs::patch_test_simple_shear_is_exact"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-123"
+axis = "benchmark"
+item = "method of manufactured solutions (convergence order)"
+source = "Roache, Verification and Validation"
+status = "implemented+oracle"
+evidence = "tests/mms_linear_elastic.rs::zero_source_mms_converges_at_the_p1_rate / tests/analytic_hyperelastic_mms_order.rs::p2_error_decreases_between_two_levels"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-124"
+axis = "benchmark"
+item = "cantilever convergence against beam theory"
+source = "Bathe, Finite Element Procedures"
+status = "implemented+oracle"
+evidence = "tests/analytic_fem_convergence.rs::cantilever_converges_from_below"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-125"
+axis = "benchmark"
+item = "locking characterisation"
+source = "MacNeal-Harder 1985"
+status = "implemented+oracle"
+evidence = "tests/locking_p1.rs::volumetric_locking_by_poisson_ratio / tests/locking_p1.rs::bending_stiffness_excess_by_elements_through_thickness / tests/analytic_quadratic_fem.rs::quadratic_elements_relieve_volumetric_locking"
+oracle_candidate = "(既存)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-126"
+axis = "benchmark"
+item = "Cook's membrane"
+source = "Cook 1974"
+status = "missing"
+evidence = "ベンチは無い"
+oracle_candidate = "上隅の鉛直変位を薄板 tet で (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-127"
+axis = "benchmark"
+item = "Scordelis-Lo / pinched cylinder / twisted beam"
+source = "MacNeal-Harder 1985"
+status = "missing"
+evidence = "ベンチは無い (shell 要素が前提)"
+oracle_candidate = "各問題の参照変位 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-128"
+axis = "benchmark"
+item = "NAFEMS LE1 / LE10"
+source = "NAFEMS standard benchmarks"
+status = "missing"
+evidence = "ベンチは無い"
+oracle_candidate = "LE10 は 3D tet で実行可能 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-129"
+axis = "benchmark"
+item = "NAFEMS nonlinear (NL series)"
+source = "NAFEMS standard benchmarks"
+status = "missing"
+evidence = "ベンチは無い"
+oracle_candidate = "NL1 (弾塑性要素単体の負荷経路) (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-130"
+axis = "benchmark"
+item = "Euler buckling by FE"
+source = "Bathe, Finite Element Procedures ch.6"
+status = "missing"
+evidence = "FE では解けない (閉形式は tests/engineering_oracles_solid.rs::buckling_euler_and_johnson_regimes_match_shigley)"
+oracle_candidate = "P_cr の端条件 4 種"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-131"
+axis = "benchmark"
+item = "Mattiasson large-deflection cantilever"
+source = "Mattiasson 1981"
+status = "missing"
+evidence = "ベンチは無い (co-rotational / total Lagrangian で実行可能)"
+oracle_candidate = "PL^2/EI を振った先端変位の表値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-132"
+axis = "benchmark"
+item = "Lame thick cylinder / sphere (3D FE)"
+source = "Timoshenko-Goodier"
+status = "missing"
+evidence = "ベンチは無い"
+oracle_candidate = "sigma_r, sigma_theta の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-FEM-133"
+axis = "benchmark"
+item = "Kirsch hole by FE"
+source = "Kirsch 1898"
+status = "missing"
+evidence = "FE の比較は無い (閉形式は tests/engineering_oracles_solid.rs::fillet_stress_kirsch_and_inglis_exact)"
+oracle_candidate = "応力集中係数 3 への収束"
+limitation = ""
