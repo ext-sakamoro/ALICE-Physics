@@ -1,0 +1,1428 @@
+# Vehicle and robot multibody (MBD) coverage of ALICE-Physics, against an
+# external reference frame.
+#
+# What this table is: every capability that the standard texts (Pacejka, Tire
+# and Vehicle Dynamics; Gillespie, Fundamentals of Vehicle Dynamics;
+# Featherstone, Rigid Body Dynamics Algorithms; Siciliano et al., Robotics:
+# Modelling, Planning and Control; Shabana, Dynamics of Multibody Systems),
+# reference tools (MuJoCo, Drake, Chrono::Vehicle, CarSim) and standard
+# benchmarks (steady-state cornering and the understeer gradient, ISO 3888 lane
+# change, ISO 7401 step steer, four-bar and slider-crank kinematics, Andrews'
+# squeezing mechanism, PUMA 560 inverse dynamics, hover thrust balance) expect
+# of vehicles, robots, ragdolls, characters and rotorcraft built from rigid
+# bodies, one [[item]] per capability, with what the crate has today. The rows
+# are written by hand: the axes and the items come from the reference frame,
+# not from the modules that exist, so a missing capability is visible instead of
+# absent.
+#
+# Boundary with the other tables (one capability lives in one table only):
+#   - joints, joint motors (the PD law), gear / rack / pulley joints, closed
+#     loops as a position constraint, the articulated-body algorithm, CRBA,
+#     RNEA, Baumgarte position correction and the double pendulum belong to the
+#     rigid-body table (COV-RIGID-*); rows here that depend on them cite the id
+#   - aerodynamic laws (lift / drag coefficients, atmosphere) belong to the
+#     environment table; the rotor thrust law and the vehicle's own drag / lift
+#     use are here
+#   - sensors, state estimation and learned or neural control laws belong to
+#     the sensing table
+#   - ropes, cloth and soft bodies belong to the SOFT table
+#   - boats and buoyancy belong to the environment table
+# A capability built from several existing parts without a test is
+# `implemented-no-oracle`; a benchmark that can be assembled from existing
+# functions but has no test is `missing` with the recipe in `evidence`.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-MBD-NNN) / axis / item / source (book, chapter, standard or
+# reference-tool feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-MBD-001"
+axis = "tyre"
+item = "brush (Fiala) tyre model with combined slip on the friction ellipse"
+source = "Pacejka, Tire and Vehicle Dynamics ch.3 (brush model); Gillespie, Fundamentals of Vehicle Dynamics ch.10"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/tire.rs:55 src/vehicle_dynamics/tire.rs::brush_pure_lateral_matches_fiala_closed_form src/vehicle_dynamics/tire.rs::brush_combined_slip_matches_closed_form src/vehicle_dynamics/tire.rs::brush_locked_wheel_is_exactly_minus_mu_kinetic_fz"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-002"
+axis = "tyre"
+item = "Magic Formula pure-slip curves F = D sin(C atan(B s - E (B s - atan B s)))"
+source = "Pacejka, Tire and Vehicle Dynamics ch.4 (Magic Formula); Chrono::Vehicle / CarSim tyre models"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/tire.rs:67 src/vehicle_dynamics/tire.rs::mf_matches_pacejka_formula_on_slip_grid src/vehicle_dynamics/tire.rs::mf_pure_slip_equals_d_sin_formula"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-003"
+axis = "tyre"
+item = "Magic Formula combined slip (weighting functions G_xa, G_yk)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.4.3 (combined slip)"
+status = "partial"
+evidence = "純すべり曲線を摩擦楕円へ半径方向に射影するだけで、重み関数による結合は無い src/vehicle_dynamics/tire.rs:211 src/vehicle_dynamics/tire.rs::mf_combined_slip_is_scaled_onto_the_ellipse"
+oracle_candidate = "同じ κ, α で重み関数の結合と楕円射影の差を測る (係数は原典の例、参照値要確認)"
+limitation = "src/vehicle_dynamics/tire.rs:63 'Pacejka Magic Formula (pure-slip curves, combined by the friction ellipse).'"
+
+[[item]]
+id = "COV-MBD-004"
+axis = "tyre"
+item = "full Magic Formula coefficient set (load-dependent B, C, D, E via dfz, horizontal / vertical shifts, .tir parameter files)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.4.3 (MF 5.2 / 6.1); Chrono::Vehicle TMeasy / Pacejka"
+status = "missing"
+evidence = "係数は B, C, E の 6 個だけで D = μ F_z (src/vehicle_dynamics/tire.rs:67)、shift と荷重依存の係数は無い"
+oracle_candidate = "原典の係数表で F_y(α, F_z) の曲線族を突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-005"
+axis = "tyre"
+item = "tyre load sensitivity (cornering stiffness and peak friction vs normal load)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.1, ch.4; Gillespie, Fundamentals of Vehicle Dynamics ch.10"
+status = "missing"
+evidence = "brush の傾きは荷重に依らない (src/vehicle_dynamics/tire.rs:50)、MF も D = μ F_z で μ は荷重に依らない"
+oracle_candidate = "荷重 2 倍で横力が 2 倍未満になることを測る"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-006"
+axis = "tyre"
+item = "self-aligning moment M_z (pneumatic trail)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.3.2, ch.4; Gillespie, Fundamentals of Vehicle Dynamics ch.10"
+status = "missing"
+evidence = "出力は縦力と横力だけ (src/vehicle_dynamics/tire.rs:39)"
+oracle_candidate = "brush の pneumatic trail t = a/3 (小すべり) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-007"
+axis = "tyre"
+item = "overturning moment M_x and rolling-resistance moment M_y from the tyre model"
+source = "Pacejka, Tire and Vehicle Dynamics ch.4.3"
+status = "missing"
+evidence = "出力は縦力と横力だけ (src/vehicle_dynamics/tire.rs:39)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-008"
+axis = "tyre"
+item = "camber thrust (inclination angle)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.3, ch.4; Gillespie, Fundamentals of Vehicle Dynamics ch.10"
+status = "missing"
+evidence = "camber / inclination の語は src/vehicle_dynamics と src/vehicle.rs で 0 件、車輪は路面法線に対して直立の扱い"
+oracle_candidate = "brush の camber 剛性で F_y = C_γ γ (小角)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-009"
+axis = "tyre"
+item = "transient tyre: relaxation length (first-order lag of slip)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.7, ch.8"
+status = "missing"
+evidence = "slip は毎 sweep 現在の接点速度から計算 (src/vehicle_dynamics/mod.rs:694)、relaxation の語は 0 件"
+oracle_candidate = "操舵ステップで横力が σ / v の時定数で立ち上がる閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-010"
+axis = "tyre"
+item = "slip definition with a low-speed velocity floor (stand-still stability)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.2 (low-speed slip); Chrono::Vehicle"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:98 src/vehicle_dynamics/mod.rs::lateral_friction_does_not_overshoot_at_low_speed src/vehicle_dynamics/mod.rs::friction_never_reverses_contact_velocity"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-011"
+axis = "tyre"
+item = "rigid-ring / flexible-belt tyre for short-wavelength road inputs (SWIFT, FTire)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.9, ch.10"
+status = "missing"
+evidence = "タイヤは接点 1 点の力の法則のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-012"
+axis = "tyre"
+item = "tyre vertical compliance and enveloping of road unevenness (contact patch, not a single ray)"
+source = "Pacejka, Tire and Vehicle Dynamics ch.10; Chrono::Vehicle"
+status = "missing"
+evidence = "接地は 1 本の ray probe で、タイヤ半径方向の剛性も無い (src/vehicle_dynamics/mod.rs:615)"
+oracle_candidate = "段差乗り越えの接点力"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-013"
+axis = "tyre"
+item = "tyre thermal state, wear, and inflation pressure acting on stiffness / grip"
+source = "Pacejka, Tire and Vehicle Dynamics ch.1; FTire"
+status = "missing"
+evidence = "空気圧は hydroplaning の判定にだけ使う (src/vehicle_dynamics/mod.rs:87)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-014"
+axis = "tyre"
+item = "rolling resistance force C_rr F_z"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.4; Wong, Theory of Ground Vehicles ch.1"
+status = "partial"
+evidence = "src/vehicle_dynamics/mod.rs:1046 tests/analytic_vehicle_dynamics.rs::rolling_resistance_coast_down_is_linear src/vehicle_dynamics/mod.rs::rolling_resistance_never_reverses_the_roll"
+oracle_candidate = "車輪 spin にも転がり抵抗モーメントを掛けた時の惰行の閉形式"
+limitation = "src/vehicle_dynamics/mod.rs:655 'it does not act on the spin'"
+
+[[item]]
+id = "COV-MBD-015"
+axis = "suspension"
+item = "spring-damper suspension per wheel (progressive rate, bump stop, separate bump / rebound damping)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.5; Chrono::Vehicle suspension templates"
+status = "partial"
+evidence = "src/vehicle_dynamics/mod.rs:618 tests/vehicle_dynamics_degenerate.rs::heavy_chassis_settles_at_closed_form_ride_height tests/vehicle_dynamics_degenerate.rs::light_chassis_settles_at_closed_form_ride_height tests/analytic_vehicle_wiring.rs::progressive_rate_and_bump_stop_add_to_the_spring tests/analytic_vehicle_wiring.rs::damping_resists_velocity_with_separate_bump_and_rebound_rates"
+oracle_candidate = "硬いばね・粗い dt で安定限界 (ω_n dt)² + 2 c dt / m < 4 を境に発散 / 収束が切り替わることを測る"
+limitation = "src/vehicle_dynamics/mod.rs:624 'The suspension is coupled explicitly, one impulse per frame.'"
+
+[[item]]
+id = "COV-MBD-016"
+axis = "suspension"
+item = "suspension and tyre forces applied at each contact point (pitch, roll and load transfer emerge)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2, ch.3"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:8 tests/analytic_vehicle_dynamics.rs::braking_load_transfer_to_front_axle tests/analytic_vehicle_dynamics.rs::braking_pitches_nose_down_through_contact_points src/vehicle_dynamics/mod.rs::contact_force_gives_arm_torque"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-017"
+axis = "suspension"
+item = "anti-roll bar"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.7, ch.8"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:635 src/vehicle_dynamics/mod.rs::anti_roll_loads_the_compressed_side tests/analytic_vehicle_wiring.rs::anti_roll_bar_acts_on_the_compression_difference"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-018"
+axis = "suspension"
+item = "suspension kinematics (camber / toe change with travel; double wishbone, MacPherson, multilink linkages)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.7; Chrono::Vehicle suspension templates; CarSim kinematics tables"
+status = "missing"
+evidence = "ばねは up 方向の 1 軸の力で、リンク機構と姿勢変化は無い"
+oracle_candidate = "double wishbone の camber gain の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-019"
+axis = "suspension"
+item = "roll centre, anti-dive and anti-squat geometry"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.7"
+status = "missing"
+evidence = "サスペンションのリンク幾何が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-020"
+axis = "suspension"
+item = "suspension as joints of the multibody model (wheel carrier as a body)"
+source = "Shabana, Dynamics of Multibody Systems ch.3; Chrono::Vehicle"
+status = "missing"
+evidence = "車輪は spin の状態だけで剛体として world に入らない (ray probe + 力の法則)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-021"
+axis = "suspension"
+item = "unsprung mass dynamics (wheel hop, two-mass quarter car)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.5"
+status = "missing"
+evidence = "車輪の状態は spin と接地情報だけで、上下方向の質量と自由度が無い (src/vehicle_dynamics/mod.rs:103)"
+oracle_candidate = "quarter car の 2 つの固有振動数"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-022"
+axis = "steering"
+item = "Ackermann steering geometry (inner / outer wheel angles)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.6"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:559 src/vehicle_dynamics/mod.rs::ackermann_matches_closed_form tests/analytic_vehicle_dynamics.rs::low_speed_turning_radius_matches_wheelbase_over_tan_delta tests/analytic_vehicle_dynamics.rs::low_speed_turning_radius_with_ackermann_beats_parallel_steering"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-023"
+axis = "steering"
+item = "steering system dynamics (rack ratio, column compliance, steering torque from the aligning moment)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.8; CarSim steering system"
+status = "missing"
+evidence = "操舵入力は車輪角に直接写像する (操舵系の慣性・剛性・反力は無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-024"
+axis = "steering"
+item = "rear-wheel and counter-phase four-wheel steering"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.6"
+status = "missing"
+evidence = "Ackermann は前輪だけに掛かり、後輪を操舵可能にすると前輪と同じ角で同相に切れる (src/vehicle_dynamics/mod.rs:559) (推測)"
+oracle_candidate = "低速の逆相 4WS で旋回半径が縮む閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-025"
+axis = "powertrain"
+item = "engine full-throttle torque curve with rev limiter"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2; CarSim powertrain"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/powertrain.rs:13 src/vehicle_dynamics/powertrain.rs::torque_curve_linear_between_points src/vehicle_dynamics/powertrain.rs::rev_limiter_caps_speed_per_gear tests/analytic_vehicle_dynamics.rs::gear_top_speed_converges_to_rev_limit"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-026"
+axis = "powertrain"
+item = "gearbox ratios, final drive and manual shifting"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/powertrain.rs:29 src/vehicle_dynamics/powertrain.rs::total_ratio_is_gear_times_final_drive src/vehicle_dynamics/powertrain.rs::shift_clamps_at_both_ends"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-027"
+axis = "powertrain"
+item = "engine braking with the throttle closed"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/powertrain.rs:186 src/vehicle_dynamics/powertrain.rs::engine_brake_opposes_spin_and_scales_with_rpm src/vehicle_dynamics/powertrain.rs::partial_throttle_blends_drive_and_brake"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-028"
+axis = "powertrain"
+item = "engine rotational inertia and clutch / torque converter (engine speed as a state)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2; Chrono::Vehicle powertrain"
+status = "missing"
+evidence = "engine rpm は駆動輪の spin からの運動学的な換算で、状態を持たない (src/vehicle_dynamics/powertrain.rs:157)"
+oracle_candidate = "発進時のクラッチ滑りのエネルギー収支"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-029"
+axis = "powertrain"
+item = "automatic gear shifting (shift schedule)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2; CarSim powertrain"
+status = "missing"
+evidence = "変速は shift_up / shift_down の手動のみ (src/vehicle_dynamics/powertrain.rs:212)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-030"
+axis = "powertrain"
+item = "open differential"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/powertrain.rs:20 src/vehicle_dynamics/mod.rs::open_differential_splits_torque tests/analytic_vehicle_dynamics.rs::launch_within_grip_follows_drive_torque"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-031"
+axis = "powertrain"
+item = "locked differential (shared spin)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/powertrain.rs:20 src/vehicle_dynamics/mod.rs::locked_differential_shares_spin"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-032"
+axis = "powertrain"
+item = "limited-slip differential (clutch, viscous, Torsen)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2; Chrono::Vehicle driveline"
+status = "missing"
+evidence = "Differential は Open と Locked の 2 種のみ (src/vehicle_dynamics/powertrain.rs:20)"
+oracle_candidate = "片輪低 μ の発進で LSD のトルク比 (bias ratio)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-033"
+axis = "powertrain"
+item = "all-wheel drive centre differential, front / rear torque split and torque vectoring"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2"
+status = "missing"
+evidence = "駆動トルクは 1 本の axle_torque を駆動輪に分けるだけで、前後配分の機構は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-034"
+axis = "powertrain"
+item = "electric traction motor (torque-speed envelope, regenerative braking)"
+source = "Chrono::Vehicle electric powertrain; CarSim EV powertrain"
+status = "missing"
+evidence = "動力源は内燃機関のトルク曲線のみ"
+oracle_candidate = "定トルク域・定出力域の境の速度"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-035"
+axis = "powertrain"
+item = "wheel spin dynamics I w' = T_drive - T_brake - F_x r with an implicit tyre slope"
+source = "Pacejka, Tire and Vehicle Dynamics ch.1; Gillespie, Fundamentals of Vehicle Dynamics ch.2"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:648 src/vehicle_dynamics/mod.rs::longitudinal_friction_does_not_overshoot_the_wheel_speed tests/analytic_vehicle_dynamics.rs::launch_beyond_grip_is_limited_by_rear_axle_load tests/vehicle_dynamics_degenerate.rs::airborne_driven_wheels_spin_up_freely"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-036"
+axis = "powertrain"
+item = "driveline torsional compliance (half-shaft wind-up, shuffle)"
+source = "Chrono::Vehicle driveline; CarSim driveline"
+status = "missing"
+evidence = "駆動系は剛 (ねじり剛性の状態が無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-037"
+axis = "brakes"
+item = "brake torque per axle, Coulomb brake, wheel lock"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:49 tests/analytic_vehicle_dynamics.rs::stopping_distance_dry_locked_wheels src/vehicle_dynamics/mod.rs::large_brake_locks_in_one_frame_and_holds src/vehicle_dynamics/mod.rs::brake_reduces_spin_without_reversal"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-038"
+axis = "brakes"
+item = "handbrake on the rear wheels"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.3"
+status = "implemented-no-oracle"
+evidence = "src/vehicle_dynamics/mod.rs:55 test は入力の clamp だけ (tests/vehicle_dynamics_degenerate.rs::out_of_range_inputs_clamp_to_the_boundary)"
+oracle_candidate = "旋回中に後輪だけ lock した時の yaw"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-039"
+axis = "brakes"
+item = "anti-lock braking (slip-target modulation)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.3; Bosch Automotive Handbook (ABS)"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:40 tests/analytic_vehicle_dynamics.rs::abs_keeps_wheels_rolling_and_respects_peak_grip_bound src/vehicle_dynamics/mod.rs::abs_holds_target_slip tests/analytic_vehicle_dynamics.rs::braking_with_steering_yaws_only_with_abs"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-040"
+axis = "brakes"
+item = "load-dependent brake force distribution (proportioning valve, electronic brake-force distribution)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.3"
+status = "missing"
+evidence = "前後の最大ブレーキトルクは固定値 (src/vehicle_dynamics/mod.rs:49)"
+oracle_candidate = "理想制動力配分曲線との比較"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-041"
+axis = "brakes"
+item = "traction control (drive-torque reduction on wheel spin)"
+source = "Bosch Automotive Handbook (TCS)"
+status = "missing"
+evidence = "駆動側の slip 制御は無い (ABS は制動側のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-042"
+axis = "brakes"
+item = "electronic stability control (yaw moment from individual wheel brakes)"
+source = "Bosch Automotive Handbook (ESC)"
+status = "missing"
+evidence = "個別輪の制動による yaw 制御は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-043"
+axis = "brakes"
+item = "brake thermal fade and hydraulic dynamics"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.3"
+status = "missing"
+evidence = "ブレーキトルクはペダル入力に比例する静的な値"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-044"
+axis = "aero-road"
+item = "aerodynamic drag and lift with wind (relative air velocity)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.4; Hucho, Aerodynamics of Road Vehicles"
+status = "partial"
+evidence = "src/vehicle_dynamics/mod.rs:659 tests/analytic_vehicle_dynamics.rs::cross_wind_force_follows_relative_velocity_squared tests/analytic_vehicle_dynamics.rs::cross_wind_on_the_road_is_carried_by_lateral_tyre_force src/vehicle_dynamics/mod.rs::wind_sets_relative_air_speed"
+oracle_candidate = "前後の downforce 配分と pitching moment を入れた時の前後輪荷重"
+limitation = "src/vehicle_dynamics/mod.rs:659 '**Aerodynamics** at the centre of mass'"
+
+[[item]]
+id = "COV-MBD-045"
+axis = "aero-road"
+item = "road surface geometry (plane, slope, height field, triangle mesh, SDF)"
+source = "Chrono::Vehicle terrain; CarSim road"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/surface.rs:28 src/vehicle_dynamics/surface.rs::heightfield_linear_oblique_matches_closed_form src/vehicle_dynamics/surface.rs::trimesh_quad_matches_closed_form src/vehicle_dynamics/surface.rs::sdf_sphere_matches_closed_form src/vehicle_dynamics/surface.rs::incline_vertical_probe_matches_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-046"
+axis = "aero-road"
+item = "weather-dependent grip (dry, wet, snow, ice)"
+source = "Wong, Theory of Ground Vehicles (4th ed.) Table 1.3"
+status = "partial"
+evidence = "src/vehicle_dynamics/surface.rs:172 tests/analytic_vehicle_dynamics.rs::stopping_distance_wet_and_ratio_to_dry tests/analytic_vehicle_dynamics.rs::stopping_distance_ice_and_ratio_to_dry src/vehicle_dynamics/surface.rs::weather_table_ratios_are_exact"
+oracle_candidate = "路面ごとに静止 / 動摩擦の比を分けた時の制動距離"
+limitation = "src/vehicle_dynamics/surface.rs:168 'One factor scales static and kinetic coefficients alike'"
+
+[[item]]
+id = "COV-MBD-047"
+axis = "aero-road"
+item = "hydroplaning (Horne onset speed and grip loss)"
+source = "Horne-Joyner, NASA TN D-2056; SAE 650145"
+status = "partial"
+evidence = "src/vehicle_dynamics/surface.rs:225 src/vehicle_dynamics/surface.rs::horne_onset_speed_matches_f64 tests/analytic_vehicle_dynamics.rs::hydroplaning_reduces_deceleration_only_above_onset_speed"
+oracle_candidate = ""
+limitation = "src/vehicle_dynamics/surface.rs:185 'Hydroplaning loss (a model, not a measured law)'"
+
+[[item]]
+id = "COV-MBD-048"
+axis = "aero-road"
+item = "parked car holds on a slope below the static limit and slides above it"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.3"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/mod.rs:719 tests/analytic_vehicle_dynamics.rs::slope_below_static_friction_holds_the_car tests/analytic_vehicle_dynamics.rs::slope_above_static_friction_slides_with_kinetic_deceleration src/vehicle_dynamics/mod.rs::braked_car_holds_on_slope"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-049"
+axis = "aero-road"
+item = "deformable terrain and off-road traction (Bekker-Wong soil, sinkage)"
+source = "Wong, Theory of Ground Vehicles ch.2; Chrono::Vehicle SCM terrain"
+status = "missing"
+evidence = "路面は剛体の幾何のみ"
+oracle_candidate = "Bekker の圧力-沈下式の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-050"
+axis = "aero-road"
+item = "road roughness input (ISO 8608 road profile PSD)"
+source = "ISO 8608; Gillespie ch.5"
+status = "missing"
+evidence = "路面の不整を生成する機能は無い (height field は任意の形を受けるだけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-051"
+axis = "vehicle"
+item = "simple ray-cast vehicle (forces summed at the centre of mass)"
+source = "Bullet raycast vehicle; PhysX vehicle (simple)"
+status = "partial"
+evidence = "src/vehicle.rs:44 tests/analytic_vehicle_wiring.rs::spring_force_is_stiffness_times_compression tests/analytic_vehicle_wiring.rs::drive_force_is_torque_over_radius_split_across_driven_grounded_wheels"
+oracle_candidate = ""
+limitation = "src/vehicle.rs:8 'forces are summed and applied at the centre of mass as one impulse, so the wheels do not produce yaw or load transfer by themselves.'"
+
+[[item]]
+id = "COV-MBD-052"
+axis = "vehicle"
+item = "per-axle or per-wheel tyre parameters"
+source = "Chrono::Vehicle tyre per wheel; CarSim tyre per axle"
+status = "missing"
+evidence = "タイヤのモデルは全輪共通 (src/vehicle_dynamics/mod.rs:84)"
+oracle_candidate = "前後で C_α を変えた時のアンダーステア勾配"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-053"
+axis = "vehicle"
+item = "trailers and articulated vehicles (tow hitch)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.6; CarSim / TruckSim"
+status = "missing"
+evidence = "連結車の機能は無い (trailer / hitch の語は 0 件)"
+oracle_candidate = "牽引車 + 1 軸 trailer の低速 off-tracking の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-054"
+axis = "vehicle"
+item = "two-wheelers (bicycle, motorcycle)"
+source = "Meijaard et al. 2007, Proc. R. Soc. A (Whipple benchmark); Cossalter, Motorcycle Dynamics"
+status = "missing"
+evidence = "二輪車のモデルは無い"
+oracle_candidate = "Whipple 自転車の固有値 vs 速度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-055"
+axis = "vehicle"
+item = "tracked vehicles"
+source = "Wong, Theory of Ground Vehicles ch.4; Chrono::Vehicle tracked"
+status = "missing"
+evidence = "装軌車のモデルは無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-056"
+axis = "vehicle"
+item = "multi-vehicle scenario runner with deterministic recording and replay"
+source = "CarSim / IPG CarMaker scenario runner"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/scenario.rs:241 tests/analytic_vehicle_scenario.rs::replay_round_trip_is_bit_exact tests/analytic_vehicle_scenario.rs::separated_cars_together_equal_each_alone_bitwise tests/analytic_vehicle_scenario.rs::replay_detects_one_bit_input_change_and_missing_restore"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-057"
+axis = "vehicle"
+item = "longitudinal gap metrics (time to collision, time headway, stopping-distance meter)"
+source = "ISO 15622 (time gap definition); Gillespie ch.3"
+status = "implemented+oracle"
+evidence = "src/vehicle_dynamics/scenario.rs:61 tests/analytic_vehicle_scenario.rs::ttc_and_headway_closed_form_on_values tests/analytic_vehicle_scenario.rs::ttc_on_the_runner_matches_closed_form tests/analytic_vehicle_scenario.rs::stopping_distance_meter_matches_locked_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-058"
+axis = "vehicle"
+item = "driver model (path and speed following with preview)"
+source = "CarSim driver model; MacAdam 1981 preview driver"
+status = "missing"
+evidence = "入力は open-loop の DriverInput 列か呼び手の closure だけで、経路追従の模型は無い"
+oracle_candidate = "定常円で横偏差が 0 に収束"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-059"
+axis = "formulation"
+item = "Lagrange-multiplier DAE formulation for closed loops (index-3 / index-1)"
+source = "Shabana, Dynamics of Multibody Systems ch.3, ch.5; Haug, Computer-Aided Kinematics and Dynamics of Mechanical Systems"
+status = "missing"
+evidence = "閉ループは位置の射影 (src/kinematic_loop.rs:9 の Baumgarte 風の位置補正) と距離拘束で扱い、乗数を持つ DAE は無い (位置の閉ループ自体は COV-RIGID-034)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-060"
+axis = "formulation"
+item = "constraint drift control for multibody DAEs (Baumgarte on the index-1 form, coordinate projection, GGL)"
+source = "Shabana, Dynamics of Multibody Systems ch.5; Bauchau, Flexible Multibody Dynamics ch.12"
+status = "missing"
+evidence = "DAE の形が無いので対応する安定化も無い (最大座標の solver の位置補正は COV-RIGID-043)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-061"
+axis = "formulation"
+item = "coordinate partitioning and null-space (minimal-coordinate) projection for loops"
+source = "Shabana, Dynamics of Multibody Systems ch.5; Wehage-Haug 1982"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-062"
+axis = "formulation"
+item = "implicit integrators for stiff multibody systems (HHT-a, generalized-a, BDF)"
+source = "Arnold-Bruls 2007 (generalized-a for MBS); MuJoCo / Drake integrators"
+status = "missing"
+evidence = "MBS 用の陰的積分器は無い (ABA の積分は semi-implicit Euler、src/articulation.rs:1011)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-063"
+axis = "formulation"
+item = "flexible multibody bodies (floating frame of reference, ANCF)"
+source = "Shabana, Dynamics of Multibody Systems ch.5-7; Bauchau"
+status = "missing"
+evidence = "柔軟体を多体系の 1 要素として扱う定式化は無い"
+oracle_candidate = "片持ち回転梁 (spin-up beam) の参照解 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-064"
+axis = "formulation"
+item = "kinematic analysis of mechanisms (position / velocity / acceleration from the constraint Jacobian)"
+source = "Haug ch.3; Norton, Design of Machinery ch.4-7"
+status = "missing"
+evidence = "拘束 Jacobian を組んで解く運動学解析は無い (four-bar の組立は円の交点の閉形式のみ)"
+oracle_candidate = "four-bar の出力角速度の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-065"
+axis = "formulation"
+item = "loop closure with orientation (spatial mechanisms, gear meshing)"
+source = "Haug ch.4; IFToMM MBD benchmarks"
+status = "missing"
+evidence = "閉ループは位置のみで、姿勢は揃えない (src/kinematic_loop.rs:20)"
+oracle_candidate = "Bricard 機構"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-066"
+axis = "mechanism"
+item = "planar four-bar assembly (circle intersection, open / crossed branch, rejects lengths that cannot close)"
+source = "Norton, Design of Machinery ch.4"
+status = "implemented+oracle"
+evidence = "src/kinematic_loop.rs:178 tests/analytic_kinematic_loop_wiring.rs::try_four_bar_linkage_crank_rocker_matches_circle_intersection_closed_form tests/analytic_kinematic_loop_wiring.rs::try_four_bar_linkage_dir_negative_branch_matches_closed_form tests/analytic_kinematic_loop_wiring.rs::try_four_bar_linkage_d_less_than_diff_is_rejected"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-067"
+axis = "mechanism"
+item = "four-bar driven through a crank revolution (rocker angle follows the Freudenstein relation)"
+source = "Norton ch.4; Freudenstein 1955"
+status = "implemented-no-oracle"
+evidence = "src/kinematic_loop.rs:145 回して確かめているのはリンク長の保持だけ (tests/engineering_oracles_misc.rs::kinematic_loop_four_bar_preserves_link_lengths_under_solver)"
+oracle_candidate = "crank 角を回して rocker 角を Freudenstein の式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-068"
+axis = "mechanism"
+item = "slider-crank mechanism (piston position vs crank angle)"
+source = "Norton ch.4"
+status = "missing"
+evidence = "builder は無い (src/kinematic_loop.rs:6 の doc が例に挙げるだけ)、距離拘束と slider joint で組めるかは未確認 (推測)"
+oracle_candidate = "x(θ) = r cosθ + sqrt(l² - r² sin²θ)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-069"
+axis = "mechanism"
+item = "cam-follower contact"
+source = "Norton ch.8"
+status = "missing"
+evidence = "cam の語は 0 件"
+oracle_candidate = "円板 cam の揚程曲線"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-070"
+axis = "mechanism"
+item = "gear trains and planetary gear sets (sun-ring-carrier)"
+source = "Norton ch.9-10"
+status = "missing"
+evidence = "2 体の歯車拘束 (COV-RIGID-026) はあるが、多段・遊星の構成は無い"
+oracle_candidate = "Willis の式 (遊星の速度比)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-071"
+axis = "mechanism"
+item = "belt and chain drives"
+source = "Norton ch.9"
+status = "missing"
+evidence = "無い (pulley joint COV-RIGID-028 は 2 体のロープ長拘束)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-072"
+axis = "robot-kinematics"
+item = "forward kinematics from joint coordinates (q to link poses)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.2; Featherstone, Rigid Body Dynamics Algorithms ch.4"
+status = "missing"
+evidence = "src/articulation.rs:137 は現在の body の回転から子の位置を伝えるだけで、関節角を読まない"
+oracle_candidate = "2 リンク平面アームの手先位置の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-073"
+axis = "robot-kinematics"
+item = "robot description (Denavit-Hartenberg parameters, URDF / MJCF import)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.2; ROS URDF; MuJoCo MJCF"
+status = "missing"
+evidence = "DH / URDF / MJCF の語は 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-074"
+axis = "robot-kinematics"
+item = "geometric Jacobian and velocity kinematics"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.3"
+status = "missing"
+evidence = "manipulator の Jacobian は無い (src/ で Jacobian を持つのは FEM と線形ソルバのみ)"
+oracle_candidate = "2 リンクの J の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-075"
+axis = "robot-kinematics"
+item = "analytic inverse kinematics (two-bone limb, wrist-partitioned 6-DOF arm)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.2.12"
+status = "missing"
+evidence = "IK 解法は crate 内に無い (src/ik_physics_bridge.rs:6 は外部の solver を前提とする)"
+oracle_candidate = "two-bone の余弦定理"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-076"
+axis = "robot-kinematics"
+item = "numerical inverse kinematics (Jacobian pseudo-inverse, damped least squares)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.3.7; Buss 2004"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-077"
+axis = "robot-kinematics"
+item = "heuristic inverse kinematics (FABRIK, cyclic coordinate descent)"
+source = "Aristidou-Lasenby 2011 (FABRIK)"
+status = "missing"
+evidence = "無い (src/ik_physics_bridge.rs:7 は外部 crate の FABRIK を例示)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-078"
+axis = "robot-kinematics"
+item = "redundancy resolution and joint limits in IK (null-space projection)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.3.5"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-079"
+axis = "robot-kinematics"
+item = "manipulability and singularity analysis"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.3.3; Yoshikawa 1985"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-080"
+axis = "robot-dynamics"
+item = "forward dynamics driven by joint torques (actuated manipulator)"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.7; Siciliano et al., Robotics: Modelling, Planning and Control ch.7"
+status = "missing"
+evidence = "ABA (COV-RIGID-039) は関節トルクを入力に取らない (src/articulation.rs:1013)、motor は速度を直接書く"
+oracle_candidate = "1 リンクに一定トルクで θ'' = τ / I"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-081"
+axis = "robot-dynamics"
+item = "gravity compensation torque g(q)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.7, ch.8"
+status = "missing"
+evidence = "逆動力学 (COV-RIGID-042) が無いので g(q) も無い"
+oracle_candidate = "2 リンクの静的保持トルクの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-082"
+axis = "robot-dynamics"
+item = "end-effector external wrench mapped to joint torques (J^T F)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.3.8"
+status = "missing"
+evidence = "Jacobian が無いので無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-083"
+axis = "robot-dynamics"
+item = "floating-base articulated robot in ground contact (legged / humanoid)"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.9; MuJoCo; Drake"
+status = "missing"
+evidence = "ABA の solve は接触を含まない (src/articulation.rs で contact の語は doc の 3 件のみ) (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-084"
+axis = "robot-control"
+item = "joint-space PD control on every joint of a chain"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.8.3"
+status = "partial"
+evidence = "src/articulation.rs:172 tests/audit_articulation.rs::hinge_motor_drives_the_hinge_angle tests/analytic_articulation_wiring.rs::apply_motors_drives_a_linked_body_toward_its_target 単一軸の PD 則は COV-RIGID-030"
+oracle_candidate = "ball joint の chain で各関節角が目標へ収束"
+limitation = "src/articulation.rs:168 'Every other joint type keeps the centre-to-centre distance as its generalised coordinate'"
+
+[[item]]
+id = "COV-MBD-085"
+axis = "robot-control"
+item = "computed-torque control (feedback linearisation)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.8.5"
+status = "missing"
+evidence = "逆動力学が無いので無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-086"
+axis = "robot-control"
+item = "operational-space and impedance control"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.8.6, ch.9; Khatib 1987"
+status = "missing"
+evidence = "無い (目標点へ引く mouse joint は COV-RIGID-029)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-087"
+axis = "robot-control"
+item = "PID with integral action and anti-windup"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.8.3"
+status = "missing"
+evidence = "src/motor.rs:23 は P と D のみ"
+oracle_candidate = "定常外乱下で積分が偏差を 0 にする"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-088"
+axis = "robot-control"
+item = "trajectory generation (trapezoidal velocity, quintic polynomial, minimum jerk)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.4"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-089"
+axis = "actuator"
+item = "DC motor electromechanical model (torque constant, back-EMF, winding resistance, current limit)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.5.3"
+status = "missing"
+evidence = "back-EMF / torque constant の語は 0 件、関節の motor は PD 則の力だけ"
+oracle_candidate = "定電圧での無負荷速度と拘束トルクの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-090"
+axis = "actuator"
+item = "gearbox reduction with reflected inertia and efficiency"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.5.3; Featherstone, Rigid Body Dynamics Algorithms ch.9"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-091"
+axis = "actuator"
+item = "backlash and joint friction (Coulomb + viscous) at actuated joints"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.8; Armstrong-Helouvry 1994"
+status = "missing"
+evidence = "関節の摩擦・ガタは無い (joint の damping は spring joint のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-092"
+axis = "actuator"
+item = "series elastic actuator"
+source = "Pratt-Williamson 1995"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-093"
+axis = "ragdoll"
+item = "humanoid ragdoll preset with anthropometric segment masses"
+source = "Winter, Biomechanics and Motor Control of Human Movement ch.4; Dempster 1955"
+status = "implemented+oracle"
+evidence = "src/ragdoll.rs:222 tests/analytic_ragdoll_wiring.rs::body_masses_add_up_to_mass_kg tests/analytic_ragdoll_wiring.rs::presets_have_the_documented_height_mass_and_shared_fractions"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-094"
+axis = "ragdoll"
+item = "ragdoll joints keep the bones attached (anchors at the joint positions)"
+source = "PhysX / Bullet ragdoll setup"
+status = "implemented+oracle"
+evidence = "src/ragdoll.rs:354 tests/analytic_ragdoll_wiring.rs::joint_anchors_coincide_at_the_joint_position tests/analytic_ragdoll_wiring.rs::bones_keep_their_spacing_without_gravity"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-095"
+axis = "ragdoll"
+item = "anatomical joint limits (swing cones, twist ranges, knee / elbow hinge ranges)"
+source = "Winter ch.4; PhysX articulation joint limits"
+status = "missing"
+evidence = "RagdollBuilder は Ball と Hinge を limit なしで張る (src/ragdoll.rs:354)、module doc (src/ragdoll.rs:4) が挙げる cone-twist は使われていない"
+oracle_candidate = "膝が逆に曲がらないこと"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-096"
+axis = "ragdoll"
+item = "segment inertia tensors from anthropometric radii of gyration"
+source = "Winter ch.4; Dempster 1955"
+status = "missing"
+evidence = "各 bone は RigidBody::new (src/ragdoll.rs:262) の既定の球の慣性"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-097"
+axis = "ragdoll"
+item = "articulated-tree ragdoll for the reduced-coordinate solver"
+source = "Featherstone, Rigid Body Dynamics Algorithms ch.7"
+status = "implemented+oracle"
+evidence = "src/articulation.rs:248 tests/audit_articulation.rs::ragdoll_joint_anchors_coincide_at_build_time tests/analytic_articulation_wiring.rs::build_ragdoll_matches_its_documented_hierarchy"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-098"
+axis = "ragdoll"
+item = "animation and ragdoll pose blending (lerp + slerp, timed transitions)"
+source = "Unity / Unreal ragdoll blending; Shoemake 1985 (slerp)"
+status = "implemented+oracle"
+evidence = "src/animation_blend.rs:266 tests/audit_animation_blend.rs::pose_lerp_rotation_has_constant_angular_velocity tests/audit_animation_blend.rs::transition_moves_at_speed_times_dt_and_clamps tests/audit_animation_blend.rs::a_zero_dt_update_does_not_cancel_a_started_transition (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-099"
+axis = "ragdoll"
+item = "keyframe animation clip sampling (slerp, hold / clamp / wrap)"
+source = "Shoemake 1985"
+status = "implemented+oracle"
+evidence = "src/animation_blend.rs:124 tests/audit_animation_blend.rs::clip_sample_rotation_follows_the_slerp_arc tests/audit_animation_blend.rs::clip_sample_time_handling_hold_clamp_and_wrap"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-100"
+axis = "ragdoll"
+item = "active (powered) ragdoll: joint motors track an animation pose"
+source = "Geijtenbeek et al. 2013; PhysX articulation drives"
+status = "missing"
+evidence = "Powered mode は目標姿勢を返すだけで、physics に力を掛ける経路が無い (src/animation_blend.rs:282 を読む code は 0 件)"
+oracle_candidate = "1 関節の目標角追従"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-101"
+axis = "ragdoll"
+item = "steering ragdoll bones toward IK targets in the world"
+source = "Unity / Unreal physical animation"
+status = "partial"
+evidence = "src/ik_physics_bridge.rs:82 tests/analytic_ik_physics_bridge_wiring.rs::a_ragdoll_hand_is_steered_to_its_target tests/analytic_ik_physics_bridge_wiring.rs::repeated_passes_converge_geometrically"
+oracle_candidate = "力ベースの追従で質量比を変えても目標に届くこと"
+limitation = "src/ik_physics_bridge.rs:14 'The MVP is purely kinematic: the correction is Baumgarte-style position stabilisation, not force-based tracking.'"
+
+[[item]]
+id = "COV-MBD-102"
+axis = "ragdoll"
+item = "balance and get-up controllers (ZMP, SIMBICON)"
+source = "Yin et al. 2007 (SIMBICON); Vukobratovic (ZMP)"
+status = "missing"
+evidence = "無い (学習済み制御則の推論は別の表の担当)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-103"
+axis = "character"
+item = "capsule collide-and-slide character controller"
+source = "Fauerby 2003 (improved collision detection and response); PhysX character controller"
+status = "implemented+oracle"
+evidence = "src/character.rs:153 tests/audit_character.rs::slide_along_an_oblique_contact_matches_the_collide_and_slide_closed_form tests/audit_character.rs::free_move_translates_exactly_by_the_displacement tests/audit_character.rs::displacement_shorter_than_skin_width_is_not_discarded (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-104"
+axis = "character"
+item = "character collision against rigid-body shapes"
+source = "PhysX character controller (capsule vs shapes)"
+status = "partial"
+evidence = "src/character.rs:280 tests/audit_character.rs::head_on_static_body_stops_one_skin_before_the_inflated_sphere tests/audit_character.rs::capsule_bottom_does_not_sink_into_a_static_body_it_lands_on (known defect)"
+oracle_candidate = "箱の上に着地した capsule の底面の高さ"
+limitation = "src/character.rs:279 'Sweep the character capsule against rigid bodies (simplified sphere approximation)'"
+
+[[item]]
+id = "COV-MBD-105"
+axis = "character"
+item = "character blocked by dynamic bodies"
+source = "PhysX character controller"
+status = "missing"
+evidence = "sweep は動的 body を飛ばす (src/character.rs:299)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-106"
+axis = "character"
+item = "character pushes dynamic bodies"
+source = "PhysX character controller (onShapeHit)"
+status = "implemented+oracle"
+evidence = "src/character.rs:430 tests/analytic_character_wiring.rs::compute_push_impulses_momentum_conserving_single_overlap tests/analytic_character_wiring.rs::compute_push_impulses_ignores_static_bodies"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-107"
+axis = "character"
+item = "stair stepping"
+source = "PhysX character controller (step offset)"
+status = "implemented+oracle"
+evidence = "src/character.rs:41 tests/audit_character.rs::stair_step_lifts_by_step_height_and_advances_the_full_displacement_when_clear tests/audit_character.rs::stair_snap_down_settles_the_character_on_the_ledge tests/audit_character.rs::step_height_limit_blocks_obstacles_taller_than_step_height (known defect)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-108"
+axis = "character"
+item = "walkable slope limit"
+source = "PhysX character controller (slope limit)"
+status = "implemented+oracle"
+evidence = "src/character.rs:39 tests/audit_character.rs::slope_limit_decides_grounded_on_a_tilted_sdf_plane tests/audit_character.rs::max_slope_angle_is_compared_through_its_cosine"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-109"
+axis = "character"
+item = "sliding down slopes steeper than the limit (motion, not only the state)"
+source = "PhysX character controller (non-walkable mode)"
+status = "missing"
+evidence = "Sliding は状態の名前だけ (src/character_state.rs:31)、controller 側で斜面に沿って滑らせる code は無い (推測)"
+oracle_candidate = "摩擦なし斜面で g sinθ"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-110"
+axis = "character"
+item = "moving platforms (character inherits the platform velocity)"
+source = "PhysX character controller"
+status = "implemented+oracle"
+evidence = "src/character.rs:470 tests/audit_character.rs::platform_velocity_is_added_to_the_next_displacement tests/analytic_character_wiring.rs::get_platform_velocity_reports_ground_body_velocity_then_clears"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-111"
+axis = "character"
+item = "locomotion state machine (grounded, airborne, crouched, swimming, sliding)"
+source = "Unity / Unreal character movement"
+status = "implemented+oracle"
+evidence = "src/character_state.rs:105 tests/analytic_character_state_wiring.rs::transition_table_rows_are_independent_of_current_state tests/analytic_character_state_wiring.rs::slope_threshold_is_strict"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-112"
+axis = "character"
+item = "jump with a prescribed apex height (launch velocity sqrt(2 g h))"
+source = "Unity / Unreal character movement"
+status = "missing"
+evidence = "jump は状態遷移の入力だけで、跳躍の速度を与える API は無い (推測)"
+oracle_candidate = "頂点高さの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-113"
+axis = "character"
+item = "SDF-field character controller (push-out along the field normal)"
+source = "Quilez SDF techniques; ALICE-SDF field queries"
+status = "partial"
+evidence = "src/sdf_character.rs:273 tests/analytic_sdf_character_up_axis.rs::a_clamped_push_lands_in_the_analytic_free_band tests/analytic_sdf_character_up_axis.rs::landing_removes_the_velocity_into_the_surface_and_keeps_the_tangent tests/analytic_sdf_character_up_axis.rs::one_unclamped_push_overshoots_the_free_pocket_into_the_next_sheet"
+oracle_candidate = ""
+limitation = "src/sdf_character.rs:32 'Step 3 treats the sample as a true distance.'"
+
+[[item]]
+id = "COV-MBD-114"
+axis = "character"
+item = "arbitrary up axis and spherical-world gravity for characters"
+source = "spherical world (planet) character movement"
+status = "implemented+oracle"
+evidence = "src/sdf_character.rs:457 tests/analytic_sdf_character_up_axis.rs::every_direction_on_the_sphere_is_grounded_with_a_radial_up_axis tests/analytic_sdf_character_up_axis.rs::step_on_a_sphere_world_rests_at_the_surface_with_zero_radial_velocity"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-115"
+axis = "rotor"
+item = "rotor thrust and shaft torque from C_T and C_Q"
+source = "Leishman, Principles of Helicopter Aerodynamics ch.2; McCormick, Aerodynamics of V/STOL Flight"
+status = "partial"
+evidence = "src/rotor.rs:151 tests/analytic_rotor.rs::thrust_and_torque_follow_the_coefficient_laws tests/analytic_rotor.rs::speed_for_thrust_inverts_the_thrust_law"
+oracle_candidate = ""
+limitation = "src/rotor.rs:13 'The coefficients are constants: this is a **static thrust model**.'"
+
+[[item]]
+id = "COV-MBD-116"
+axis = "rotor"
+item = "thrust and torque variation with advance ratio and forward flight (inflow)"
+source = "Leishman ch.2-3; propeller C_T(J) charts"
+status = "missing"
+evidence = "src/rotor.rs:14 軸流入・前進飛行による推力の変化は扱わない"
+oracle_candidate = "C_T(J) の直線近似と静推力の比"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-117"
+axis = "rotor"
+item = "momentum theory in hover (induced velocity, ideal power)"
+source = "Leishman ch.2"
+status = "implemented+oracle"
+evidence = "src/rotor.rs:323 tests/analytic_rotor.rs::disk_area_induced_velocity_and_ideal_power"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-118"
+axis = "rotor"
+item = "rotor reaction torque and the moment of an off-centre thrust on the airframe"
+source = "Leishman ch.2; Mahony et al. 2012 (multirotor modelling)"
+status = "implemented+oracle"
+evidence = "src/rotor.rs:268 tests/analytic_rotor.rs::load_directions_and_reaction_torque_sign tests/analytic_rotor.rs::world_reaction_torque_spins_the_body_backwards"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-119"
+axis = "rotor"
+item = "blade element momentum theory"
+source = "Leishman ch.3"
+status = "missing"
+evidence = "翼素の語は 0 件"
+oracle_candidate = "一様流入の BEMT と運動量理論の一致"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-120"
+axis = "rotor"
+item = "rotor speed dynamics (motor and rotor inertia, speed-controller lag)"
+source = "Mahony et al. 2012"
+status = "missing"
+evidence = "回転数は入力で、状態を持たない"
+oracle_candidate = "1 次遅れの時定数"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-121"
+axis = "rotor"
+item = "multirotor control allocation (mixer from collective thrust and body torques to rotor speeds)"
+source = "Mahony et al. 2012; PX4 mixer"
+status = "missing"
+evidence = "rotor 1 本ごとに推力から回転数を逆算する関数だけ (src/rotor.rs:249)"
+oracle_candidate = "4 rotor の allocation 行列の逆"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-122"
+axis = "rotor"
+item = "ground effect and vortex ring state"
+source = "Leishman ch.5; Cheeseman-Bennett 1955"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Cheeseman-Bennett の地面効果比"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-123"
+axis = "rotor"
+item = "rotor gyroscopic moments, blade flapping and rotor drag (H-force)"
+source = "Leishman ch.4; Mahony et al. 2012"
+status = "missing"
+evidence = "無い (rotor の角運動量を機体に持たせない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-124"
+axis = "benchmark"
+item = "linear bicycle model steady-state yaw rate with the understeer gradient"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.6"
+status = "implemented+oracle"
+evidence = "tests/analytic_vehicle_dynamics.rs::linear_bicycle_model_steady_yaw_rate"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-125"
+axis = "benchmark"
+item = "steady-state circular test through the non-linear range (steer angle vs lateral acceleration)"
+source = "ISO 4138; Gillespie ch.6"
+status = "missing"
+evidence = "test は無い (一定舵角で速度を上げる方式なら既存の DriverInput 列で組める)"
+oracle_candidate = "線形域の勾配が上の行の K と一致し、限界で飽和すること"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-126"
+axis = "benchmark"
+item = "double lane change"
+source = "ISO 3888-1 / -2"
+status = "missing"
+evidence = "経路追従の driver model が無いので組めない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-127"
+axis = "benchmark"
+item = "step-steer transient response (yaw-rate rise time, overshoot)"
+source = "ISO 7401"
+status = "missing"
+evidence = "test は無い (open-loop 入力で組める)"
+oracle_candidate = "線形 2 自由度モデルの yaw rate 応答の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-128"
+axis = "benchmark"
+item = "straight-line braking distance from the friction coefficient"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.3"
+status = "implemented+oracle"
+evidence = "tests/analytic_vehicle_dynamics.rs::stopping_distance_dry_locked_wheels tests/analytic_vehicle_scenario.rs::stopping_distance_meter_matches_locked_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-129"
+axis = "benchmark"
+item = "traction-limited launch acceleration"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.2"
+status = "implemented+oracle"
+evidence = "tests/analytic_vehicle_dynamics.rs::launch_beyond_grip_is_limited_by_rear_axle_load"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-130"
+axis = "benchmark"
+item = "static rollover threshold t / 2h and wheel lift-off in steady cornering"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.9"
+status = "missing"
+evidence = "test は無い"
+oracle_candidate = "a_y / g = t / 2h で内輪の荷重が 0"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-131"
+axis = "benchmark"
+item = "lateral load transfer in steady cornering (roll-stiffness distribution)"
+source = "Gillespie, Fundamentals of Vehicle Dynamics ch.7"
+status = "missing"
+evidence = "test は無い (anti-roll と接点の力は上の行で個別に検証)"
+oracle_candidate = "ΔF_z = m a_y h / t の前後配分"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-132"
+axis = "benchmark"
+item = "hover: thrust equal to weight holds the altitude in the world"
+source = "Leishman ch.2 (hover trim)"
+status = "partial"
+evidence = "tests/analytic_rotor.rs::world_hover_characterization_of_the_current_discretization tests/analytic_rotor.rs::world_rotor_below_hover_speed_sinks_at_the_net_acceleration 物理的な期待値の test は src gap の ignore (analytic_rotor.rs の world_hover_holds_altitude)、frame 頭の外力と substep 重力の分割は COV-RIGID-004 と同根"
+oracle_candidate = ""
+limitation = "src/rotor.rs:56 'exactly `T = m g` rises by `g dt² (s − 1) / (2 s)` per frame'"
+
+[[item]]
+id = "COV-MBD-133"
+axis = "benchmark"
+item = "quadrotor attitude and position response (hover trim, step response)"
+source = "Mahony et al. 2012"
+status = "missing"
+evidence = "allocation と rotor の動特性が無いので組めない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MBD-134"
+axis = "benchmark"
+item = "PUMA 560 inverse dynamics"
+source = "Armstrong-Khatib-Burdick 1986; Corke 1996 (parameter set)"
+status = "missing"
+evidence = "逆動力学 (COV-RIGID-042) が無い"
+oracle_candidate = "原典の関節トルク (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-135"
+axis = "benchmark"
+item = "two-link planar arm (closed-form inverse dynamics and computed-torque tracking)"
+source = "Siciliano et al., Robotics: Modelling, Planning and Control ch.7.3"
+status = "missing"
+evidence = "関節トルク入力の順動力学も逆動力学も無い"
+oracle_candidate = "2 リンクの M(q), C(q, q'), g(q) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-136"
+axis = "benchmark"
+item = "Andrews' squeezing mechanism"
+source = "Schiehlen, Multibody Systems Handbook (1990); Hairer-Wanner test set"
+status = "missing"
+evidence = "DAE の定式化が無い"
+oracle_candidate = "原典の関節角の時刻歴 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-137"
+axis = "benchmark"
+item = "IFToMM multibody benchmarks (double four-bar with redundant constraints, Bricard mechanism)"
+source = "IFToMM Technical Committee for Multibody Dynamics, library of benchmark problems"
+status = "missing"
+evidence = "冗長拘束と空間閉ループの扱いが無い"
+oracle_candidate = "原典のエネルギー保存の許容 (参照値要確認)"
+limitation = ""

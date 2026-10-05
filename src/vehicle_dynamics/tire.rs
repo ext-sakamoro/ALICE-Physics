@@ -59,6 +59,7 @@ pub struct BrushTire {
     pub cornering_stiffness: Fix128,
 }
 
+// LIMITATION(COV-MBD-003): Pacejka Magic Formula (pure-slip curves, combined by the friction ellipse).
 /// Pacejka Magic Formula (pure-slip curves, combined by the friction ellipse).
 ///
 /// `F = D sin(C atan(B s − E (B s − atan(B s))))` with `D = μ_static F_z`.

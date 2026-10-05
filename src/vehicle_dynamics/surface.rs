@@ -164,6 +164,7 @@ impl RoadCondition {
     /// *Theory of Ground Vehicles* (4th ed., 2008), Table 1.3: asphalt dry
     /// 0.8–0.9, asphalt wet 0.5–0.7, hard-packed snow 0.2, ice 0.1, each
     /// divided by the dry mid value 0.85 and rounded (wet 0.71 → 0.7,
+    // LIMITATION(COV-MBD-046): One factor scales static and kinetic coefficients alike
     /// snow 0.235 → 0.24, ice 0.118 → 0.12). One factor scales static and
     /// kinetic coefficients alike (the table's sliding/peak ratios differ by
     /// a few per cent between surfaces; that difference is not modelled).
@@ -180,6 +181,7 @@ impl RoadCondition {
     /// Effective grip at a contact moving at `speed` (m/s) with tyre
     /// inflation `tyre_pressure_kpa`: material × weather × hydroplaning loss.
     ///
+    // LIMITATION(COV-MBD-047): Hydroplaning loss (a model, not a measured law)
     /// Hydroplaning loss (a model, not a measured law): on a wet road with
     /// `water_depth_mm ≥` [`HYDROPLANING_MIN_DEPTH_MM`] and
     /// `|speed| > V_p =` [`hydroplaning_onset_speed`]`(p)`, the factor is

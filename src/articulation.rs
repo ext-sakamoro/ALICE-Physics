@@ -164,6 +164,7 @@ impl ArticulatedBody {
     ///   about the hinge axis (`crate::joint::compute_twist_angle`), the same
     ///   quantity `solve_hinge_joint`'s own angle-limit step reads, and the motor
     ///   drives the bodies' `angular_velocity`, not their linear `velocity`.
+    // LIMITATION(COV-MBD-084): Every other joint type keeps the centre-to-centre distance as its generalised coordinate
     /// - Every other joint type keeps the centre-to-centre distance as its
     ///   generalised coordinate (unchanged from before this method gained the
     ///   hinge case above), since only the hinge's single rotational DOF has an

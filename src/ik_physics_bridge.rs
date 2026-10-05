@@ -10,6 +10,7 @@
 //! `inv_mass == 0`, are held fixed; the correction is not otherwise
 //! weighted by mass).
 //!
+// LIMITATION(COV-MBD-101): The MVP is purely kinematic: the correction is Baumgarte-style position stabilisation, not force-based tracking.
 //! The MVP is purely kinematic: the correction is Baumgarte-style
 //! position stabilisation, not force-based tracking. Downstream
 //! systems that need PD-controlled joint motors can layer

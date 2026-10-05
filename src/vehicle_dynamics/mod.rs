@@ -620,6 +620,7 @@ impl DynamicVehicle {
     ///    `(v + ω × r)·up` (bump coefficient while compressing, rebound while
     ///    extending, `damping` when either is 0).
     ///
+    // LIMITATION(COV-MBD-015): The suspension is coupled explicitly, one impulse per frame.
     ///    The suspension is coupled explicitly, one impulse per frame. For a
     ///    wheel carrying the mass share `m_share` (≈ `m / wheel count` in
     ///    heave, `I / (N d²)` for a pitch or roll mode of inertia `I` with
@@ -650,9 +651,11 @@ impl DynamicVehicle {
     ///    wheels from one solve ("Friction solve"), then rolling resistance
     ///    `C_rr F_z` against `v_x` on rolling free wheels, clamped by the
     ///    effective mass `m_x = 1/(m⁻¹ + (r×x)·I⁻¹(r×x))` so that it never
+    // LIMITATION(COV-MBD-014): it does not act on the spin
     ///    reverses `v_x` (it does not act on the spin). The stored
     ///    `longitudinal_force` / `lateral_force` are the applied friction
     ///    impulses divided by `dt`.
+    // LIMITATION(COV-MBD-044): **Aerodynamics** at the centre of mass
     /// 7. **Aerodynamics** at the centre of mass: `v_rel = v − w` (`w` is the
     ///    wind of `env.wind` when its shape contains the chassis position),
     ///    drag `−½ ρ C_dA |v_rel| v_rel`, lift `½ ρ C_lA |v_rel|²` along `up`.
