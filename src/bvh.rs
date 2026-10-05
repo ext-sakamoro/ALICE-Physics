@@ -728,119 +728,325 @@ pub struct BvhStats {
 }
 
 // ---------------------------------------------------------------------------
-// Turn D next-step: Hybrid broadphase (hash grid × BVH)
+// Hybrid broadphase: static BVH + sparse hash grid + large-body BVH
 // ---------------------------------------------------------------------------
 
-/// Hybrid broadphase that layers a hash grid for dynamic bodies over
-/// a BVH for static geometry (Turn D 本命 next-step, skill §11 5' 案).
-///
-/// # Rationale
-/// Dynamic bodies churn AABBs every frame, so paying `O(N log N)` for
-/// a full BVH rebuild wastes cycles. A hash grid rebuild is `O(N)`
-/// per frame, and the static-body BVH only pays its cost once at
-/// scene load. Combined, per-frame broad-phase work drops from
-/// `O(N_total log N_total)` to `O(N_dynamic + log N_static)` per
-/// query.
-///
-/// # Determinism
-/// Both layers must be iterated in canonical index order — hash grid
-/// buckets are drained ordered by `body_id`, BVH walks use the flat
-/// node array in stackless traversal order. See
-/// `deterministic-physics-lockstep-discipline` skill §1 経路 5.
-///
-/// # Status
-/// Skeleton API committed as part of Turn D next-step to freeze the
-/// crate-internal surface so downstream integration (island builder,
-/// CCD pair generation) can start compiling against a stable signature.
-/// The hash grid slot and per-frame refit / rebuild policy are
-/// scheduled for the follow-up commit; unit tests in this module
-/// cover the current signature.
-#[allow(dead_code)] // Intentional stability stub — only exercised by unit tests
-pub(crate) struct BroadphaseHybrid {
-    /// BVH holding static bodies (built once at scene load, refit
-    /// only if terrain deforms).
-    pub(crate) static_bvh: LinearBvh,
-    /// Hash grid holding dynamic body index → world position, rebuilt
-    /// every frame (`clear` + `insert_dynamic` loop) in `O(N_dynamic)`.
-    pub(crate) dynamic_grid: crate::spatial::SpatialGrid,
+/// Raw signed 128-bit value of a [`Fix128`] (integer part in the high 64 bits).
+#[inline]
+const fn fix_raw(v: Fix128) -> i128 {
+    ((v.hi as i128) << 64) | (v.lo as i128)
 }
 
-#[allow(dead_code)] // Intentional stability stub — only exercised by unit tests
+/// Grid coordinate of `v` for cells of raw size `2^shift`, clamped to `i64`.
+///
+/// Clamping is monotone, so two boxes whose cell ranges overlap before the
+/// clamp still overlap after it: a far-away body can only share a cell with
+/// more bodies (a larger candidate set), never miss one.
+#[inline]
+fn cell_coord(v: Fix128, shift: u32) -> i64 {
+    let c = fix_raw(v) >> shift;
+    if c > i64::MAX as i128 {
+        i64::MAX
+    } else if c < i64::MIN as i128 {
+        i64::MIN
+    } else {
+        c as i64
+    }
+}
+
+/// Largest axis extent of `aabb` in raw units (saturating, 0 for an inverted box).
+#[inline]
+fn raw_extent(aabb: &AABB) -> u128 {
+    let axis = |lo: Fix128, hi: Fix128| -> u128 {
+        match fix_raw(hi).checked_sub(fix_raw(lo)) {
+            Some(d) if d > 0 => d as u128,
+            Some(_) => 0,
+            None => u128::MAX,
+        }
+    };
+    axis(aabb.min.x, aabb.max.x)
+        .max(axis(aabb.min.y, aabb.max.y))
+        .max(axis(aabb.min.z, aabb.max.z))
+}
+
+/// Largest number of grid cells a body may occupy along one axis; bodies
+/// wider than this go to the large-body layer instead of the grid.
+const HYBRID_MAX_CELLS_PER_AXIS: u32 = 3;
+
+/// Broad-phase that splits the bodies of a frame into three layers:
+///
+/// - **static** bodies go into a [`LinearBvh`] that is rebuilt only when the
+///   static set changes (a body added, removed or moved, detected by comparing
+///   the staged set with the one the BVH was built from);
+/// - **small dynamic** bodies go into a sparse hash grid (cell coordinates
+///   sorted, no dense array), rebuilt every frame in `O(N log N)`; the cell
+///   size is chosen every frame as the smallest power of two at or above the
+///   median extent of the dynamic bodies;
+/// - **large dynamic** bodies (wider than [`HYBRID_MAX_CELLS_PER_AXIS`]
+///   cells) go into a per-frame [`LinearBvh`], so a few big bodies neither
+///   inflate the cell size for everyone nor occupy hundreds of cells.
+///
+/// [`Self::query_pairs`] reports every pair of staged bodies whose boxes
+/// overlap (inclusive, [`AABB::intersects`]) and that are not both static,
+/// as `(smaller id, larger id)` sorted ascending. The set is exact: every
+/// candidate from any layer is checked against the exact boxes before it is
+/// reported, so the result does not depend on the cell size or on BVH
+/// quantisation, only the work does.
+///
+/// # Per-frame flow
+/// 1. [`Self::clear_dynamic`]
+/// 2. [`Self::insert_dynamic`] for every body with a collision box
+///    (`is_static` routes it to the static layer)
+/// 3. [`Self::build_dynamic`]
+/// 4. [`Self::query_pairs`]
+///
+/// # Determinism
+/// Cell coordinates are integer shifts of the raw fixed-point value, grid
+/// entries are sorted by `(cell, slot)`, both BVHs walk a flat node array in
+/// a fixed order, and the output is sorted; the result is a pure function of
+/// the staged bodies and does not depend on their insertion order.
+///
+/// Not yet wired into `PhysicsWorld` (the world broadphase enum gains a
+/// variant for it in a later change); only the unit tests below drive it.
+// ALLOW-DEAD: world wiring of the hybrid broadphase lands in a later change
+#[allow(dead_code)]
+pub(crate) struct BroadphaseHybrid {
+    /// Static bodies staged this frame, in insertion order.
+    staged_static: Vec<(u32, AABB)>,
+    /// Dynamic bodies staged this frame, in insertion order.
+    staged_dynamic: Vec<(u32, AABB)>,
+    /// The static set `static_bvh` was built from (BVH primitive index = position).
+    static_set: Vec<(u32, AABB)>,
+    /// BVH over `static_set`.
+    static_bvh: LinearBvh,
+    /// How many times the static BVH has been rebuilt.
+    static_rebuilds: u64,
+    /// Raw cell size is `2^cell_shift` (raw units: 2^64 = one world unit).
+    cell_shift: u32,
+    /// Small dynamic bodies: id, box, cell of the min corner.
+    small: Vec<(u32, AABB, [i64; 3])>,
+    /// Grid entries `(cell, index into small)`, sorted.
+    entries: Vec<([i64; 3], u32)>,
+    /// Large dynamic bodies: id, box (BVH primitive index = position).
+    large: Vec<(u32, AABB)>,
+    /// BVH over `large`, rebuilt every frame.
+    large_bvh: LinearBvh,
+}
+
+// ALLOW-DEAD: world wiring of the hybrid broadphase lands in a later change
+#[allow(dead_code)]
 impl BroadphaseHybrid {
-    /// Construct a hybrid broadphase over a pre-built static BVH and
-    /// an empty dynamic hash grid parametrised by `cell_size` +
-    /// `grid_dim`. Callers refresh the dynamic side once per frame by
-    /// calling [`Self::clear_dynamic`] followed by
-    /// [`Self::insert_dynamic`] for each active dynamic body.
+    /// An empty broad-phase; the cell size is chosen per frame from the bodies.
     #[must_use]
-    pub fn new(static_bvh: LinearBvh, cell_size: Fix128, grid_dim: usize) -> Self {
+    pub fn new() -> Self {
         Self {
-            static_bvh,
-            dynamic_grid: crate::spatial::SpatialGrid::new(cell_size, grid_dim),
+            staged_static: Vec::new(),
+            staged_dynamic: Vec::new(),
+            static_set: Vec::new(),
+            static_bvh: LinearBvh::build(Vec::new()),
+            static_rebuilds: 0,
+            cell_shift: 64,
+            small: Vec::new(),
+            entries: Vec::new(),
+            large: Vec::new(),
+            large_bvh: LinearBvh::build(Vec::new()),
         }
     }
 
-    /// Insert a dynamic body's index / position pair into the hash
-    /// grid slot. Call once per active dynamic body per frame, after
-    /// [`Self::clear_dynamic`].
-    pub fn insert_dynamic(&mut self, body_id: usize, pos: Vec3Fix) {
-        self.dynamic_grid.insert(body_id, pos);
+    /// Stage one body for this frame. `is_static` bodies form the static
+    /// layer; call after [`Self::clear_dynamic`], once per body.
+    pub fn insert_dynamic(&mut self, body_id: u32, aabb: AABB, is_static: bool) {
+        if is_static {
+            self.staged_static.push((body_id, aabb));
+        } else {
+            self.staged_dynamic.push((body_id, aabb));
+        }
     }
 
-    /// Clear the dynamic hash grid ahead of a per-frame refresh.
-    /// The static BVH is not touched.
+    /// Forget the bodies staged for the previous frame. The static BVH is
+    /// kept; it is rebuilt by [`Self::build_dynamic`] only if the static set
+    /// staged next differs from the one it was built from.
     pub fn clear_dynamic(&mut self) {
-        self.dynamic_grid.clear();
+        self.staged_static.clear();
+        self.staged_dynamic.clear();
     }
 
-    /// Finalise the dynamic hash grid after all `insert_dynamic`
-    /// calls for the current frame. This runs the CSR prefix-sum
-    /// pass so subsequent [`Self::query_pairs`] invocations see the
-    /// freshly inserted bodies.
-    ///
-    /// The recommended per-frame flow is:
-    /// 1. [`Self::clear_dynamic`]
-    /// 2. `insert_dynamic(body_id, pos)` for each active dynamic body
-    /// 3. [`Self::build_dynamic`]
-    /// 4. `query_pairs(&aabb, |idx| …)` any number of times
+    /// Finish the frame: rebuild the static BVH if the static set changed,
+    /// pick the cell size, split the dynamic bodies into grid and large
+    /// layers, and sort the grid entries.
     pub fn build_dynamic(&mut self) {
-        self.dynamic_grid.build();
+        if self.staged_static != self.static_set {
+            self.static_set.clone_from(&self.staged_static);
+            self.static_bvh = Self::bvh_over(&self.static_set);
+            self.static_rebuilds += 1;
+        }
+
+        self.cell_shift = Self::auto_cell_shift(&self.staged_dynamic);
+        let shift = self.cell_shift;
+        // A body wider than this spans more than HYBRID_MAX_CELLS_PER_AXIS cells.
+        let large_above: u128 = if shift + 2 >= 127 {
+            u128::MAX
+        } else {
+            u128::from(HYBRID_MAX_CELLS_PER_AXIS - 1) << shift
+        };
+
+        self.small.clear();
+        self.entries.clear();
+        self.large.clear();
+        for &(id, aabb) in &self.staged_dynamic {
+            if raw_extent(&aabb) > large_above {
+                self.large.push((id, aabb));
+                continue;
+            }
+            let lo = [
+                cell_coord(aabb.min.x, shift),
+                cell_coord(aabb.min.y, shift),
+                cell_coord(aabb.min.z, shift),
+            ];
+            let hi = [
+                cell_coord(aabb.max.x, shift).max(lo[0]),
+                cell_coord(aabb.max.y, shift).max(lo[1]),
+                cell_coord(aabb.max.z, shift).max(lo[2]),
+            ];
+            let slot = self.small.len() as u32;
+            self.small.push((id, aabb, lo));
+            for x in lo[0]..=hi[0] {
+                for y in lo[1]..=hi[1] {
+                    for z in lo[2]..=hi[2] {
+                        self.entries.push(([x, y, z], slot));
+                    }
+                }
+            }
+        }
+        self.entries.sort_unstable();
+        self.large_bvh = Self::bvh_over(&self.large);
     }
 
-    /// Query overlap against `q_aabb`, forwarding to both the static
-    /// BVH (over `u32` primitive indices) and the dynamic hash grid
-    /// (over `usize` body indices, cast to `u32`). Callers receive a
-    /// unified callback per candidate; deduplication is left to the
-    /// caller if the two index spaces overlap.
-    ///
-    /// # Determinism
-    /// - `LinearBvh::query_callback` walks the flat node array in
-    ///   fixed traversal order.
-    /// - The hash grid pass uses the AABB centre as the neighbour
-    ///   query position; `query_neighbors_into` iterates its cell
-    ///   window in `dx / dy / dz` nested-loop order.
-    /// - Both traversals are pure functions of the inputs, so the
-    ///   emitted callback sequence is bit-exact under lockstep /
-    ///   rollback dispatch (skill §1 経路 5).
-    pub fn query_pairs<F>(&self, q_aabb: &AABB, mut callback: F)
-    where
-        F: FnMut(u32),
-    {
-        // 1. Static BVH pass.
-        self.static_bvh.query_callback(q_aabb, &mut callback);
+    /// Every pair of staged bodies whose boxes overlap and that are not both
+    /// static, written to `out` as `(smaller id, larger id)` in ascending
+    /// order. Returns the number of candidate pairs whose exact boxes were
+    /// compared (the broad-phase work, `>= out.len()`).
+    pub fn query_pairs(&self, out: &mut Vec<(u32, u32)>) -> u64 {
+        out.clear();
+        let mut tested: u64 = 0;
+        let push = |a: u32, b: u32, out: &mut Vec<(u32, u32)>| {
+            if a != b {
+                out.push(if a < b { (a, b) } else { (b, a) });
+            }
+        };
 
-        // 2. Dynamic hash grid pass, keyed on the query AABB centre.
-        let center = Vec3Fix::new(
-            (q_aabb.min.x + q_aabb.max.x).half(),
-            (q_aabb.min.y + q_aabb.max.y).half(),
-            (q_aabb.min.z + q_aabb.max.z).half(),
-        );
-        let mut neighbors: Vec<usize> = Vec::new();
-        self.dynamic_grid
-            .query_neighbors_into(center, Fix128::ZERO, &mut neighbors);
-        for idx in neighbors {
-            callback(idx as u32);
+        // 1. Small × small: pairs sharing a cell, reported only in the cell
+        //    holding the min corner of the two boxes' intersection, so each
+        //    pair is checked once without a dedup pass.
+        let entries = &self.entries;
+        let mut start = 0;
+        while start < entries.len() {
+            let cell = entries[start].0;
+            let mut end = start + 1;
+            while end < entries.len() && entries[end].0 == cell {
+                end += 1;
+            }
+            for i in start..end {
+                let (id_a, aabb_a, lo_a) = &self.small[entries[i].1 as usize];
+                for e in &entries[i + 1..end] {
+                    let (id_b, aabb_b, lo_b) = &self.small[e.1 as usize];
+                    let owner = [
+                        lo_a[0].max(lo_b[0]),
+                        lo_a[1].max(lo_b[1]),
+                        lo_a[2].max(lo_b[2]),
+                    ];
+                    if owner != cell {
+                        continue;
+                    }
+                    tested += 1;
+                    if aabb_a.intersects(aabb_b) {
+                        push(*id_a, *id_b, out);
+                    }
+                }
+            }
+            start = end;
         }
+
+        // 2. Small × large.
+        for (id_a, aabb_a, _) in &self.small {
+            self.large_bvh.query_callback(aabb_a, |p| {
+                let (id_b, aabb_b) = &self.large[p as usize];
+                tested += 1;
+                if aabb_a.intersects(aabb_b) {
+                    push(*id_a, *id_b, out);
+                }
+            });
+        }
+
+        // 3. Large × large (each unordered pair once: higher BVH index only).
+        for (k, (id_a, aabb_a)) in self.large.iter().enumerate() {
+            self.large_bvh.query_callback(aabb_a, |p| {
+                if (p as usize) <= k {
+                    return;
+                }
+                let (id_b, aabb_b) = &self.large[p as usize];
+                tested += 1;
+                if aabb_a.intersects(aabb_b) {
+                    push(*id_a, *id_b, out);
+                }
+            });
+        }
+
+        // 4. Dynamic × static (static × static pairs are never reported).
+        if !self.static_set.is_empty() {
+            let small = self.small.iter().map(|(id, aabb, _)| (id, aabb));
+            let large = self.large.iter().map(|(id, aabb)| (id, aabb));
+            for (id_a, aabb_a) in small.chain(large) {
+                self.static_bvh.query_callback(aabb_a, |p| {
+                    let (id_b, aabb_b) = &self.static_set[p as usize];
+                    tested += 1;
+                    if aabb_a.intersects(aabb_b) {
+                        push(*id_a, *id_b, out);
+                    }
+                });
+            }
+        }
+
+        out.sort_unstable();
+        // A body staged twice (same id) would otherwise appear twice.
+        out.dedup();
+        tested
+    }
+
+    /// A BVH over `set`, primitive index = position in `set`.
+    fn bvh_over(set: &[(u32, AABB)]) -> LinearBvh {
+        LinearBvh::build(
+            set.iter()
+                .enumerate()
+                .map(|(k, &(_, aabb))| BvhPrimitive {
+                    aabb,
+                    index: k as u32,
+                    morton: 0,
+                })
+                .collect(),
+        )
+    }
+
+    /// `shift` such that the raw cell size `2^shift` is the smallest power of
+    /// two at or above the median extent of `bodies` (the largest extent when
+    /// the median is zero, one world unit when every extent is zero).
+    fn auto_cell_shift(bodies: &[(u32, AABB)]) -> u32 {
+        let mut extents: Vec<u128> = bodies.iter().map(|(_, aabb)| raw_extent(aabb)).collect();
+        if extents.is_empty() {
+            return 64;
+        }
+        let mid = extents.len() / 2;
+        let (_, &mut median, _) = extents.select_nth_unstable(mid);
+        let size = if median > 0 {
+            median
+        } else {
+            extents.iter().copied().max().unwrap_or(0)
+        };
+        if size == 0 {
+            return 64;
+        }
+        // smallest s with 2^s >= size, kept below the i128 sign bit
+        (128 - (size - 1).leading_zeros()).min(125)
     }
 }
 
@@ -1055,82 +1261,364 @@ mod tests {
         );
     }
 
-    /// `BroadphaseHybrid` must invoke the callback for both static
-    /// BVH hits and dynamic hash grid neighbours (Turn D 5' 案 の
-    /// hash grid × BVH union pair 生成 検証).
-    ///
-    /// The dynamic side needs the `clear → insert → build → query`
-    /// handshake — `SpatialGrid::insert` only records counts, and the
-    /// CSR flat buffer is finalised in `SpatialGrid::build`. Without
-    /// `build_dynamic()` the query returns nothing because
-    /// `cell_offsets` is still zero-initialised.
-    #[test]
-    fn broadphase_hybrid_reports_static_and_dynamic_candidates() {
-        // Static BVH: one primitive at (10, 0, 0).
-        let prims = vec![BvhPrimitive {
-            aabb: AABB::new(Vec3Fix::from_int(10, 0, 0), Vec3Fix::from_int(11, 1, 1)),
-            index: 42,
-            morton: 0,
-        }];
-        let static_bvh = LinearBvh::build(prims);
+    // ---------------------------------------------------------------------
+    // BroadphaseHybrid oracles
+    // ---------------------------------------------------------------------
 
-        let mut hybrid = BroadphaseHybrid::new(static_bvh, Fix128::from_int(2), 16);
+    /// One staged body: id, box, static flag.
+    type Body = (u32, AABB, bool);
 
-        // Insert a dynamic body at (0, 0, 0).
-        hybrid.insert_dynamic(7, Vec3Fix::from_int(0, 0, 0));
-        // Insert a dynamic body far away that must not be reported for
-        // a query near the origin.
-        hybrid.insert_dynamic(99, Vec3Fix::from_int(100, 0, 0));
-        // Finalise the CSR layout so `query_pairs` sees the insertions.
-        hybrid.build_dynamic();
+    /// Deterministic 64-bit LCG (Knuth MMIX constants).
+    struct Lcg(u64);
+    impl Lcg {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            self.0 >> 33
+        }
+        /// Uniform in `[0, side)` with a resolution of 1/1000.
+        fn coord(&mut self, side: i64) -> Fix128 {
+            Fix128::from_ratio((self.next() % (side as u64 * 1000)) as i64, 1000)
+        }
+        fn point(&mut self, side: i64) -> Vec3Fix {
+            Vec3Fix::new(self.coord(side), self.coord(side), self.coord(side))
+        }
+    }
 
-        // Query an AABB centred at the origin — the near dynamic body
-        // (7) should be reported. The static primitive (42) sits at
-        // (10, 0, 0) and does not overlap this query.
-        let q = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
-        let mut hits: Vec<u32> = Vec::new();
-        hybrid.query_pairs(&q, |idx| hits.push(idx));
-        assert!(
-            hits.contains(&7),
-            "near dynamic body (7) must be reported, got {hits:?}"
+    fn ball(center: Vec3Fix, half_milli: i64) -> AABB {
+        let h = Fix128::from_ratio(half_milli, 1000);
+        AABB::from_center_half(center, Vec3Fix::new(h, h, h))
+    }
+
+    /// Side of a cube holding `n` bodies about `spacing_milli / 1000` units apart.
+    fn side_for(n: usize, spacing_milli: i64) -> i64 {
+        let mut k = 1i64;
+        while k * k * k < n as i64 {
+            k += 1;
+        }
+        ((k * spacing_milli + 999) / 1000).max(1)
+    }
+
+    /// `n` dynamic boxes of half-size 0.5, spread out (a few overlaps).
+    fn scene_uniform(n: usize, seed: u64) -> Vec<Body> {
+        let mut r = Lcg(seed);
+        let side = side_for(n, 1600);
+        (0..n as u32)
+            .map(|i| (i, ball(r.point(side), 500), false))
+            .collect()
+    }
+
+    /// `n` dynamic boxes packed densely over a wide static floor.
+    fn scene_pile(n: usize, seed: u64) -> Vec<Body> {
+        let mut r = Lcg(seed);
+        let side = side_for(n, 900);
+        let mut v: Vec<Body> = (1..=n as u32)
+            .map(|i| (i, ball(r.point(side), 500), false))
+            .collect();
+        let floor = AABB::new(
+            Vec3Fix::new(
+                Fix128::from_int(-5),
+                Fix128::from_int(-1),
+                Fix128::from_int(-5),
+            ),
+            Vec3Fix::new(
+                Fix128::from_int(side + 5),
+                Fix128::from_ratio(1, 10),
+                Fix128::from_int(side + 5),
+            ),
         );
+        v.push((0, floor, true));
+        v
+    }
 
-        // Now query near the static primitive; it must be reported.
-        let q2 = AABB::new(Vec3Fix::from_int(9, 0, 0), Vec3Fix::from_int(12, 1, 1));
-        let mut hits2: Vec<u32> = Vec::new();
-        hybrid.query_pairs(&q2, |idx| hits2.push(idx));
+    /// As `scene_uniform`, but every 50th body has half-size 3 (2 % large).
+    fn scene_mixed(n: usize, seed: u64) -> Vec<Body> {
+        let mut r = Lcg(seed);
+        let side = side_for(n, 1600);
+        (0..n as u32)
+            .map(|i| {
+                let half = if i % 50 == 7 { 3000 } else { 500 };
+                (i, ball(r.point(side), half), false)
+            })
+            .collect()
+    }
+
+    /// 95 % static boxes, 5 % dynamic, densely packed.
+    fn scene_mostly_static(n: usize, seed: u64) -> Vec<Body> {
+        let mut r = Lcg(seed);
+        let side = side_for(n, 1100);
+        (0..n as u32)
+            .map(|i| (i, ball(r.point(side), 500), i % 20 != 3))
+            .collect()
+    }
+
+    /// `scene_uniform` with two bodies thrown 10^12 units away (one pair of
+    /// them overlapping each other far from everything else).
+    fn scene_far_outlier(n: usize, seed: u64) -> Vec<Body> {
+        let mut v = scene_uniform(n, seed);
+        let far = Fix128::from_int(1_000_000_000_000);
+        v[0].1 = ball(Vec3Fix::new(far, -far, far), 500);
+        v[1].1 = ball(Vec3Fix::new(far + Fix128::from_ratio(1, 2), -far, far), 500);
+        v
+    }
+
+    /// Exact reference: overlapping pairs not both static, sorted.
+    fn brute_force(bodies: &[Body]) -> Vec<(u32, u32)> {
+        let mut out = Vec::new();
+        for (k, a) in bodies.iter().enumerate() {
+            for b in &bodies[k + 1..] {
+                if (a.2 && b.2) || a.0 == b.0 || !a.1.intersects(&b.1) {
+                    continue;
+                }
+                out.push((a.0.min(b.0), a.0.max(b.0)));
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    fn stage(h: &mut BroadphaseHybrid, bodies: &[Body]) {
+        h.clear_dynamic();
+        for &(id, aabb, st) in bodies {
+            h.insert_dynamic(id, aabb, st);
+        }
+        h.build_dynamic();
+    }
+
+    /// Stage `bodies`, query, and return `(pairs, tested)`.
+    fn run(h: &mut BroadphaseHybrid, bodies: &[Body]) -> (Vec<(u32, u32)>, u64) {
+        stage(h, bodies);
+        let mut out = Vec::new();
+        let tested = h.query_pairs(&mut out);
+        (out, tested)
+    }
+
+    /// Structural bounds after `build_dynamic`: no body occupies more than
+    /// 27 cells (3 per axis), and the grid holds no more than 27 entries per
+    /// small body, whatever the coordinates (sparse grid, no dense array).
+    fn assert_grid_bounds(h: &BroadphaseHybrid, label: &str) {
+        let mut per_slot = vec![0usize; h.small.len()];
+        for &(_, s) in &h.entries {
+            per_slot[s as usize] += 1;
+        }
+        let worst = per_slot.iter().copied().max().unwrap_or(0);
+        assert!(worst <= 27, "{label}: a body occupies {worst} cells (> 27)");
         assert!(
-            hits2.contains(&42),
-            "static primitive (42) must be reported, got {hits2:?}"
+            h.entries.len() <= 27 * h.small.len(),
+            "{label}: {} grid entries for {} small bodies",
+            h.entries.len(),
+            h.small.len()
         );
     }
 
-    /// `BroadphaseHybrid::clear_dynamic` must reset the hash grid so
-    /// subsequent queries no longer return previously inserted
-    /// dynamic bodies.
+    type SceneFn = fn(usize, u64) -> Vec<Body>;
+    const SCENES: [(&str, SceneFn); 5] = [
+        ("uniform", scene_uniform),
+        ("pile", scene_pile),
+        ("mixed", scene_mixed),
+        ("mostly_static", scene_mostly_static),
+        ("far_outlier", scene_far_outlier),
+    ];
+
+    /// The reported pairs equal the brute-force exact overlap set (no missed
+    /// pair, no extra pair) on every scene at 100 and 1000 bodies, and the
+    /// work stays within a small multiple of the output: candidate pairs
+    /// compared `<= 6 * (pairs + bodies)`. With a cell size taken from the
+    /// largest body, or with the large bodies left in the grid, the mixed
+    /// scene compares tens of times more candidates and fails the bound.
     #[test]
-    fn broadphase_hybrid_clear_dynamic_drops_previous_bodies() {
-        let prims = vec![BvhPrimitive {
-            aabb: AABB::new(Vec3Fix::from_int(100, 0, 0), Vec3Fix::from_int(101, 1, 1)),
-            index: 0,
-            morton: 0,
-        }];
-        let static_bvh = LinearBvh::build(prims);
-        let mut hybrid = BroadphaseHybrid::new(static_bvh, Fix128::from_int(2), 16);
+    fn hybrid_pairs_equal_brute_force_and_work_is_bounded() {
+        for (name, scene) in SCENES {
+            for (n, seed) in [(100usize, 0x5eed_0001u64), (1000, 0x5eed_0002)] {
+                let bodies = scene(n, seed);
+                let mut h = BroadphaseHybrid::new();
+                let (pairs, tested) = run(&mut h, &bodies);
+                let expected = brute_force(&bodies);
+                let label = format!("{name} n={n}");
+                assert!(!expected.is_empty(), "{label}: scene has no overlaps");
+                let missed: Vec<_> = expected
+                    .iter()
+                    .filter(|p| pairs.binary_search(p).is_err())
+                    .collect();
+                assert!(
+                    missed.is_empty(),
+                    "{label}: missed {} pairs, e.g. {:?}",
+                    missed.len(),
+                    &missed[..missed.len().min(4)]
+                );
+                assert_eq!(
+                    pairs, expected,
+                    "{label}: pair set differs from brute force"
+                );
+                assert!(
+                    tested >= pairs.len() as u64,
+                    "{label}: tested {tested} < pairs"
+                );
+                let bound = 6 * (pairs.len() as u64 + n as u64);
+                assert!(
+                    tested <= bound,
+                    "{label}: compared {tested} candidates (bound {bound}, {} pairs)",
+                    pairs.len()
+                );
+                assert_grid_bounds(&h, &label);
+            }
+        }
+    }
 
-        hybrid.insert_dynamic(5, Vec3Fix::from_int(0, 0, 0));
-        hybrid.build_dynamic();
-        hybrid.clear_dynamic();
-        // Rebuild after clear so the CSR layout reflects the empty grid.
-        hybrid.build_dynamic();
+    /// The mixed scene routes exactly its 2 % large bodies to the large-body
+    /// layer and keeps the cell size at the small bodies' scale.
+    #[test]
+    fn hybrid_routes_large_bodies_out_of_the_grid() {
+        let bodies = scene_mixed(1000, 0x5eed_0003);
+        let mut h = BroadphaseHybrid::new();
+        stage(&mut h, &bodies);
+        let mut large: Vec<u32> = h.large.iter().map(|&(id, _)| id).collect();
+        large.sort_unstable();
+        let expected: Vec<u32> = (0..1000u32).filter(|i| i % 50 == 7).collect();
+        assert_eq!(large, expected);
+        assert_eq!(h.small.len(), 1000 - expected.len());
+        // small extent is exactly 1 unit -> cell 2^64 raw = 1 unit
+        assert_eq!(h.cell_shift, 64);
+    }
 
-        let q = AABB::new(Vec3Fix::from_int(-1, -1, -1), Vec3Fix::from_int(1, 1, 1));
-        let mut hits: Vec<u32> = Vec::new();
-        hybrid.query_pairs(&q, |idx| hits.push(idx));
-        assert!(
-            !hits.contains(&5),
-            "clear_dynamic must drop the body (5), got {hits:?}"
+    /// The cell size is the smallest power of two at or above the median
+    /// body extent, for several body scales (so it follows the bodies, not a
+    /// constant and not the largest body).
+    #[test]
+    fn hybrid_cell_size_follows_the_median_extent() {
+        // (half-size in thousandths, expected cell shift)
+        for (half_milli, shift) in [(500i64, 64u32), (250, 63), (1000, 65), (3000, 67), (40, 61)] {
+            let mut r = Lcg(0x5eed_0004);
+            let mut bodies: Vec<Body> = (0..200u32)
+                .map(|i| (i, ball(r.point(20), half_milli), false))
+                .collect();
+            // a few much larger bodies must not move the cell size
+            for b in bodies.iter_mut().take(5) {
+                b.1 = ball(r.point(20), half_milli * 10);
+            }
+            let mut h = BroadphaseHybrid::new();
+            stage(&mut h, &bodies);
+            assert_eq!(h.cell_shift, shift, "half {half_milli}/1000");
+            let cell = 1u128 << h.cell_shift;
+            let median = 2 * (u128::from(half_milli as u64) << 64) / 1000;
+            assert!(
+                cell >= median && cell < 2 * median + 2,
+                "cell {cell} median {median}"
+            );
+        }
+    }
+
+    /// Adding, removing or moving a static body is detected: the static BVH
+    /// is rebuilt (once per change) and the pairs stay exact; an unchanged
+    /// static set is not rebuilt.
+    #[test]
+    fn hybrid_detects_static_set_changes() {
+        let mut bodies = scene_mostly_static(1000, 0x5eed_0005);
+        let mut h = BroadphaseHybrid::new();
+        let check = |h: &mut BroadphaseHybrid, bodies: &[Body], label: &str| {
+            let (pairs, _) = run(h, bodies);
+            assert_eq!(pairs, brute_force(bodies), "{label}");
+        };
+        check(&mut h, &bodies, "initial");
+        assert_eq!(h.static_rebuilds, 1);
+        check(&mut h, &bodies, "unchanged");
+        assert_eq!(
+            h.static_rebuilds, 1,
+            "unchanged static set must not rebuild"
         );
+
+        // move a static body onto a dynamic one
+        let dyn_center = bodies[3].1.min;
+        let st = bodies
+            .iter()
+            .position(|b| b.2 && !b.1.intersects(&bodies[3].1))
+            .unwrap();
+        bodies[st].1 = AABB::new(dyn_center, bodies[3].1.max);
+        check(&mut h, &bodies, "moved static");
+        assert_eq!(h.static_rebuilds, 2);
+        let a = bodies[st].0.min(3);
+        let b = bodies[st].0.max(3);
+        assert!(
+            run(&mut h, &bodies).0.contains(&(a, b)),
+            "moved static must touch body 3"
+        );
+
+        // add a static body overlapping dynamic body 23
+        bodies.push((5000, bodies[23].1, true));
+        check(&mut h, &bodies, "added static");
+        assert_eq!(h.static_rebuilds, 3);
+
+        // remove it again
+        bodies.pop();
+        check(&mut h, &bodies, "removed static");
+        assert_eq!(h.static_rebuilds, 4);
+
+        // a dynamic body turning static is a static-set change too
+        bodies[43].2 = true;
+        check(&mut h, &bodies, "dynamic became static");
+        assert_eq!(h.static_rebuilds, 5);
+    }
+
+    /// Identical input gives an identical pair sequence, from a fresh or a
+    /// reused instance, and the insertion order does not matter.
+    #[test]
+    fn hybrid_is_deterministic_and_order_independent() {
+        for (name, scene) in SCENES {
+            let bodies = scene(1000, 0x5eed_0006);
+            let (a, ta) = run(&mut BroadphaseHybrid::new(), &bodies);
+            let mut reused = BroadphaseHybrid::new();
+            let _ = run(&mut reused, &scene_uniform(300, 1));
+            let (b, tb) = run(&mut reused, &bodies);
+            assert_eq!(a, b, "{name}: reused instance");
+            assert_eq!(ta, tb, "{name}: reused instance work");
+            let mut rev = bodies.clone();
+            rev.reverse();
+            let (c, _) = run(&mut BroadphaseHybrid::new(), &rev);
+            assert_eq!(a, c, "{name}: reversed insertion order");
+        }
+    }
+
+    /// Degenerate inputs: empty, one body, all bodies at one point (with and
+    /// without extent), and boxes at ±4·10^18 units (near the Fix128 range).
+    #[test]
+    fn hybrid_degenerate_inputs() {
+        let mut h = BroadphaseHybrid::new();
+        let (p, t) = run(&mut h, &[]);
+        assert!(p.is_empty() && t == 0);
+
+        let one = [(9u32, ball(Vec3Fix::from_int(1, 2, 3), 500), false)];
+        let (p, _) = run(&mut h, &one);
+        assert!(p.is_empty());
+
+        for half in [0i64, 500] {
+            let at: Vec<Body> = (0..100u32)
+                .map(|i| (i, ball(Vec3Fix::from_int(7, -7, 7), half), i % 10 == 0))
+                .collect();
+            let (p, _) = run(&mut h, &at);
+            assert_eq!(p, brute_force(&at), "all at one point, half {half}");
+            assert!(!p.is_empty());
+            assert_grid_bounds(&h, "one point");
+        }
+
+        let big = 4_000_000_000_000_000_000i64;
+        let mut huge: Vec<Body> = Vec::new();
+        let mut r = Lcg(0x5eed_0007);
+        for i in 0..60u32 {
+            let base = match i % 3 {
+                0 => Vec3Fix::from_int(big, big, big),
+                1 => Vec3Fix::from_int(-big, big, -big),
+                _ => Vec3Fix::from_int(0, 0, 0),
+            };
+            let c = base + r.point(4);
+            huge.push((i, ball(c, 500), i % 7 == 0));
+        }
+        let (p, _) = run(&mut h, &huge);
+        assert_eq!(p, brute_force(&huge), "huge coordinates");
+        assert!(!p.is_empty());
+        assert_grid_bounds(&h, "huge coordinates");
     }
 
     /// `refit_leaves` must preserve the flat tree structure (node
