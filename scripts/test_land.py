@@ -291,6 +291,59 @@ class Landing(unittest.TestCase):
         with self.assertRaisesRegex(land.LandError, "signature"):
             self.r.lander().land()
 
+    def test_a_rewritten_changelog_line_does_not_come_back(self):
+        # the base still carries `merge=union` (Repo default): the old wording must not survive
+        cl = "# Changelog\n\n## [Unreleased]\n\n- start\n- old wording\n"
+        self.r.push_upstream({"CHANGELOG.md": cl}, "docs: changelog")
+        git(self.r.work, "pull", "-q", "--rebase", "origin", "main")
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": cl.replace("old wording", "new wording")}, "fix: b")
+        self.r.push_upstream({"CHANGELOG.md": cl + "- theirs\n"}, "fix: elsewhere")
+        sha = self.r.lander().land()
+        self.assertEqual(self.r.origin_head(), sha)
+        text = (self.r.work / "CHANGELOG.md").read_text()
+        self.assertIn("- new wording", text)
+        self.assertIn("- theirs", text)
+        self.assertNotIn("old wording", text)
+        self.assertNotIn("<<<<<<<", text)
+
+    def test_both_sides_rewriting_the_same_line_stops(self):
+        cl = "# Changelog\n\n## [Unreleased]\n\n- start\n- old wording\n"
+        self.r.push_upstream({"CHANGELOG.md": cl}, "docs: changelog")
+        git(self.r.work, "pull", "-q", "--rebase", "origin", "main")
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": cl.replace("old wording", "mine")}, "fix: b")
+        self.r.push_upstream({"CHANGELOG.md": cl.replace("old wording", "theirs")}, "fix: elsewhere")
+        upstream_head = self.r.origin_head()
+        with self.assertRaisesRegex(land.LandError, "both sides changed the same lines"):
+            self.r.lander().land()
+        self.assertEqual(self.r.origin_head(), upstream_head)
+        self.assertFalse((self.r.work / ".git" / "rebase-merge").exists(), "the rebase was aborted")
+
+    def test_merge_conflict_hunks(self):
+        add_add = "a\n<<<<<<< o\nx\n||||||| b\n=======\ny\n>>>>>>> t\nz\n"
+        self.assertEqual(land.merge_conflict_hunks(add_add), "a\nx\ny\nz\n")
+        rewrite_vs_add = "<<<<<<< o\nnew\n||||||| b\nold\n=======\nold\nmore\n>>>>>>> t\n"
+        self.assertEqual(land.merge_conflict_hunks(rewrite_vs_add), "new\nmore\n")
+        add_vs_rewrite = "<<<<<<< o\nold\nmore\n||||||| b\nold\n=======\nnew\n>>>>>>> t\n"
+        self.assertEqual(land.merge_conflict_hunks(add_vs_rewrite), "more\nnew\n")
+        with self.assertRaises(land.LandError):
+            land.merge_conflict_hunks("<<<<<<< o\nm\n||||||| b\nold\n=======\nt\n>>>>>>> t\n")
+
+    def test_a_ci_ref_that_already_holds_head_is_not_pushed_again(self):
+        commit(self.r.work, {"scripts/x.py": "print(1)\n"}, "ci: x")
+        git(self.r.work, "push", "-q", "origin", "HEAD:refs/heads/ci/T-1")
+        lander = self.r.lander()
+        pushes = []
+        real_git = lander.git
+
+        def spy(*a, check=True):
+            if a and a[0] == "push" and any(x.startswith("HEAD:refs/heads/ci/") for x in a):
+                pushes.append(a)
+            return real_git(*a, check=check)
+        lander.git = spy
+        lander.land()
+        self.assertEqual(pushes, [], "the earlier ci/T-1 push is reused, not repeated")
+        self.assertIn("wait_ci ci/T-1", lander.calls)
+
     def test_union_merged_changelog_with_a_repeated_line_fails(self):
         cl = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- start\n"
         self.r.push_upstream({"CHANGELOG.md": cl}, "docs: changelog layout")
@@ -354,13 +407,16 @@ class Landing(unittest.TestCase):
 class WaitCi(unittest.TestCase):
     """wait_ci against a scripted run list (no network)."""
 
-    def lander(self, answers):
+    def lander(self, answers, at="abc"):
         class L(land.Lander):
             def git(self, *a, check=True):
                 return "git@github.com:o/r.git"
 
             def list_runs(self, slug, ref):
                 return answers.pop(0) if answers else []
+
+            def remote_sha(self, ref):
+                return at
         lnd = L(Path("."), "T", log=lambda *_: None)
         lnd.poll_seconds = 0
         return lnd
@@ -380,6 +436,26 @@ class WaitCi(unittest.TestCase):
         try:
             with self.assertRaisesRegex(land.LandError, "no ci.yml run"):
                 self.lander([]).wait_ci("main", "abc")
+        finally:
+            land.NO_RUN_TIMEOUT = old
+
+    def test_a_push_that_did_not_reach_the_ref_fails_at_once(self):
+        # with no run and the ref elsewhere there is nothing to wait for: not 30 minutes of polling
+        with self.assertRaisesRegex(land.LandError, "points at def1234, not abc"):
+            self.lander([[]] * 3, at="def1234567").wait_ci("ci/x", "abc")
+
+    def test_a_ref_that_holds_the_sha_keeps_waiting_for_a_late_run(self):
+        late = {"headSha": "abc", "databaseId": 7, "status": "completed", "conclusion": "success"}
+        self.lander([[], [], [], [late]]).wait_ci("ci/x", "abc")
+
+    def test_the_timeout_shows_what_gh_listed(self):
+        other = {"headSha": "fff0000", "databaseId": 9, "status": "completed", "conclusion": "success",
+                 "createdAt": "2026-10-05T12:19:24Z", "event": "push"}
+        old = land.NO_RUN_TIMEOUT
+        land.NO_RUN_TIMEOUT = -1
+        try:
+            with self.assertRaisesRegex(land.LandError, r"fff0000 push completed/success created 2026-10-05T12:19:24Z"):
+                self.lander([[other]]).wait_ci("ci/x", "abc")
         finally:
             land.NO_RUN_TIMEOUT = old
 

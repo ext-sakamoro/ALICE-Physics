@@ -12,9 +12,10 @@ on:
 permissions:
   contents: read
 
-# the check only reads the tree, so runs can be cancelled by a newer push
+# one group per workflow: workflows that share a group cancel each other when the
+# same push starts both; a newer push still cancels the older run of the same workflow
 concurrency:
-  group: status-docs-main
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

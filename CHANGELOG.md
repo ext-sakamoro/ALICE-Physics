@@ -229,6 +229,9 @@ were introduced during that release window.
 - **Behavior change:** `YeeGrid::with_materials` は安定条件 3S² ≤ ε_min μ_min を検査し、真空の map でも S > 1/√3 は Err になる (`new()` 単独は従来どおり) `gauss_residual` は `div_d − ρ` に変わった (材料なしでは bit 同一) σ > 0 では ρ が伝導電流を追わないため非保存
 - `scripts/docs_lint.py` が開発運用の語・内部メモ名・機材名の検査も全 tracked file の本文 (ROADMAP・コメント・workflow を含む) に広げ、英単語は英字の境界で判定するようにした (日本語が直後に続く語も対象) commit message の検査 (`scripts/land.py`) も同じ規則を使う 既存の該当記述を書き換えた
 - `scripts/land.py`: `ci/<id>` branch の CI が発火するまでの待ち時間を 10 分から 30 分に延ばした
+- `scripts/land.py`: CHANGELOG の衝突を union merge でなく 3-way merge で解く 片側が既存行を書き換え、もう片側が行を足した場合は書き換え後の行と足された行だけを残し、両側が同じ行を書き換えた場合は止まる `.gitattributes` の `merge=union` を削除し、rebase は属性を読まずに行う (書き換え前の行が残る問題の修正)
+- `scripts/land.py`: CI run が無い間は push 先の ref が push した SHA を指しているかを確かめ、指していなければ待たずに止まる 待ち切れた時は `gh run list` の内容 (SHA・event・状態・作成時刻) を表示する `ci/<id>` が既に HEAD を指していれば push し直さずにその run の結果を使う (途中で止まった取り込みの再開)
+- Oracle Status / Wiring Status の workflow の concurrency group を workflow ごとに分けた (同じ push で起動した 2 本が互いを打ち切っていた)
 - 別プロセスで動く分散 test の子 test 名を `*_child` に揃えた (挙動は同じ)
 
 ### Deprecated

@@ -52,10 +52,11 @@ GENERATED = (
 # hand-written, with a generated column (Integration) that the regeneration
 # rewrites: a conflict is merged with that column blanked, never dropped
 SEMI_GENERATED = ("docs/MODULES.md",)
-# append-only lists: a conflict keeps the lines of both sides (the union merge),
-# done here rather than through .gitattributes so that it also holds in a clone
-# or on a base without that file; changelog_problems() then catches a clash
-UNION = ("CHANGELOG.md",)
+# lists that both sides mostly add to: a conflict is merged by merge_append(),
+# which keeps lines both sides added and a line one side rewrote, and stops when
+# both sides changed the same lines. A union merge is not used: it keeps the old
+# and the new version of a rewritten line side by side
+APPEND_ONLY = ("CHANGELOG.md",)
 # changes whose failures have been OS / runner / toolchain specific
 CI_LANE_RE = re.compile(
     r"^(\.github/|scripts/|Cargo\.(toml|lock)$|bindings/|fuzz/|deny\.toml$|rust-toolchain|include/"
@@ -66,6 +67,7 @@ SIGNATURE_RE = re.compile(r"Co-Authored-By:|^\s*Generated with\b|\U0001F916", re
 NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
 NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
 NO_RUN_TIMEOUT = 1800  # seconds without any run for the pushed SHA (the GitHub queue can be slow)
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MAX_ATTEMPTS = 5
 
 
@@ -81,9 +83,51 @@ def lane_of(paths: list[str], added: str = "") -> str:
     return "direct"
 
 
+def is_subsequence(short: list[str], long: list[str]) -> bool:
+    it = iter(long)
+    return all(any(x == y for y in it) for x in short)
+
+
+def merge_conflict_hunks(merged: str) -> str:
+    """Resolve the conflict hunks of `git merge-file --diff3` output for an
+    append-only list. A hunk where one side only added lines to the base (the base
+    is a subsequence of it) becomes the other side followed by those added lines,
+    so a line the other side rewrote keeps only its new version; both sides adding
+    to an empty base keeps both. Anything else raises LandError."""
+    out: list[str] = []
+    lines = merged.splitlines(keepends=True)
+    i = 0
+    while i < len(lines):
+        if not lines[i].startswith("<<<<<<< "):
+            out.append(lines[i])
+            i += 1
+            continue
+        parts: dict[str, list[str]] = {"ours": [], "base": [], "theirs": []}
+        cur = "ours"
+        i += 1
+        while not lines[i].startswith(">>>>>>> "):
+            if lines[i].startswith("||||||| "):
+                cur = "base"
+            elif lines[i].startswith("=======") and lines[i].strip() == "=======":
+                cur = "theirs"
+            else:
+                parts[cur].append(lines[i])
+            i += 1
+        i += 1
+        ours, base, theirs = parts["ours"], parts["base"], parts["theirs"]
+        if is_subsequence(base, theirs):
+            out += ours + [x for x in theirs if x not in base]
+        elif is_subsequence(base, ours):
+            out += [x for x in ours if x not in base] + theirs
+        else:
+            first = next((x for x in base if x.strip()), "").strip()
+            raise LandError(f"both sides changed the same lines (not only additions): {first[:80]}")
+    return "".join(out)
+
+
 def changelog_problems(text: str) -> list[str]:
-    """Inside [Unreleased]: no line twice and no heading twice. The union merge
-    of CHANGELOG.md keeps both sides silently, so this is where it shows."""
+    """Inside [Unreleased]: no line twice and no heading twice (two sides adding
+    the same line both survive merge_append)."""
     m = re.search(r"^## \[Unreleased\]\n(.*?)(?=^## \[|\Z)", text, re.M | re.S)
     if not m:
         return ["CHANGELOG.md: no [Unreleased] section (compared nothing)"]
@@ -200,8 +244,16 @@ class Lander:
     def list_runs(self, slug: str, ref: str) -> list[dict]:
         out = subprocess.run(
             ["gh", "run", "list", "--repo", slug, "--workflow", "ci.yml", "--branch", ref, "--limit", "20",
-             "--json", "headSha,databaseId,status,conclusion"], capture_output=True, text=True)
-        return json.loads(out.stdout or "[]") if out.returncode == 0 else []
+             "--json", "headSha,databaseId,status,conclusion,createdAt,event"], capture_output=True, text=True)
+        if out.returncode != 0:
+            self.last_list_error = out.stderr.strip()
+            return []
+        return json.loads(out.stdout or "[]")
+
+    def remote_sha(self, ref: str) -> str:
+        """The commit `ref` points at on the remote now ("" when it does not exist)."""
+        out = self.git("ls-remote", self.remote, f"refs/heads/{ref}", check=False).split()
+        return out[0] if out else ""
 
     def wait_ci(self, ref: str, sha: str) -> None:
         """Wait for the ci.yml run of `sha` on `ref`; raise unless it succeeds."""
@@ -209,11 +261,24 @@ class Lander:
         m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", repo)
         slug = m.group(1) if m else repo
         started = time.monotonic()
+        self.last_list_error = ""
         for _ in range(180):
-            runs = [r for r in self.list_runs(slug, ref) if r["headSha"] == sha]
-            if not runs and time.monotonic() - started > NO_RUN_TIMEOUT:
-                raise LandError(f"no ci.yml run for {sha[:7]} on {ref} after {NO_RUN_TIMEOUT // 60} minutes "
-                                "(push failed, or the workflow did not trigger): not treated as success")
+            seen = self.list_runs(slug, ref)
+            runs = [r for r in seen if r["headSha"] == sha]
+            if not runs:
+                # no run yet: either GitHub has not created it, or the push never reached the ref
+                at = self.remote_sha(ref)
+                if at != sha:
+                    raise LandError(f"{ref} on {self.remote} points at {at[:7] or 'nothing'}, not {sha[:7]}: "
+                                    "the push did not reach it, or the ref moved (no CI run to wait for)")
+                if time.monotonic() - started > NO_RUN_TIMEOUT:
+                    listing = "\n    ".join(f"{r.get('headSha', '')[:7]} {r.get('event', '')} {r.get('status', '')}"
+                                            f"/{r.get('conclusion', '')} created {r.get('createdAt', '')} "
+                                            f"run {r.get('databaseId', '')}" for r in seen) or "(none)"
+                    raise LandError(f"no ci.yml run for {sha[:7]} on {ref} after {NO_RUN_TIMEOUT // 60} minutes, "
+                                    f"although {ref} holds it (the workflow did not trigger, or GitHub is slow): "
+                                    f"not treated as success. `gh run list` for {ref}:\n    {listing}"
+                                    + (f"\n  gh error: {self.last_list_error}" if self.last_list_error else ""))
             if runs and runs[0]["status"] == "completed":
                 c = runs[0]["conclusion"]
                 if c != "success":
@@ -268,29 +333,35 @@ class Lander:
     def rebase(self) -> None:
         """Rebase on the upstream with a fixed committer; settle ledger conflicts."""
         # --force-rebase replays every commit, so each one gets the fixed committer
-        r = subprocess.run(["git", *self.ident_cfg, "rebase", "--force-rebase", self.upstream()],
+        # attributes are read from the empty tree: a base that still carries
+        # `CHANGELOG.md merge=union` must not merge it behind merge_append()'s back
+        # write the empty tree object EMPTY_TREE names (mktree reads the entries from stdin)
+        subprocess.run(["git", "mktree"], cwd=self.root, input="", capture_output=True, text=True)
+        r = subprocess.run(["git", *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "rebase", "--force-rebase",
+                            self.upstream()],
                            cwd=self.root, capture_output=True, text=True)
         while r.returncode != 0:
             conflicted = [p for p in self.git("diff", "--name-only", "--diff-filter=U").splitlines() if p]
             if not conflicted:
                 self.git("rebase", "--abort", check=False)
                 raise LandError(f"rebase failed: {r.stderr.strip()}")
-            other = [p for p in conflicted if p not in GENERATED and p not in SEMI_GENERATED and p not in UNION]
+            other = [p for p in conflicted if p not in GENERATED and p not in SEMI_GENERATED and p not in APPEND_ONLY]
             if other:
                 self.git("rebase", "--abort", check=False)
                 raise LandError(f"rebase conflict outside the generated ledgers: {other}")
             for p in conflicted:
                 if p in SEMI_GENERATED:
                     self.merge_semi(p)
-                elif p in UNION:
-                    self.merge_stages(p, union=True)
+                elif p in APPEND_ONLY:
+                    self.merge_append(p)
                 else:
                     self.git("checkout", "--ours", "--", p)   # main's copy; regenerated after the rebase
                 self.git("add", "--", p)
-            r = subprocess.run(["git", *self.ident_cfg, "-c", "core.editor=true", "rebase", "--continue"],
+            r = subprocess.run(["git", *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "-c", "core.editor=true",
+                                "rebase", "--continue"],
                                cwd=self.root, capture_output=True, text=True)
 
-    def merge_stages(self, path: str, *, union: bool = False, transform=lambda t: t) -> bool:
+    def merge_stages(self, path: str, *, diff3: bool = False, transform=lambda t: t) -> bool:
         """3-way merge of the conflict stages of `path` (main, base, branch) after
         `transform`; writes the result and returns whether it merged cleanly."""
         import tempfile
@@ -304,10 +375,21 @@ class Lander:
                 f = Path(d) / f"{n}"
                 f.write_text(stages[n], encoding="utf-8")
                 files.append(str(f))
-            cmd = ["git", "merge-file", "-p", *(["--union"] if union else []), *files]
+            cmd = ["git", "merge-file", "-p", *(["--diff3"] if diff3 else []), *files]
             r = subprocess.run(cmd, capture_output=True, text=True)
         (self.root / path).write_text(r.stdout, encoding="utf-8")
         return r.returncode == 0
+
+    def merge_append(self, path: str) -> None:
+        """3-way merge of an append-only list; conflict hunks go to merge_conflict_hunks()."""
+        if self.merge_stages(path, diff3=True):
+            return
+        p = self.root / path
+        try:
+            p.write_text(merge_conflict_hunks(p.read_text(encoding="utf-8")), encoding="utf-8")
+        except LandError as e:
+            self.git("rebase", "--abort", check=False)
+            raise LandError(f"{path}: {e}") from None
 
     def merge_semi(self, path: str) -> None:
         """3-way merge of a hand-written file with its generated column blanked
@@ -346,14 +428,21 @@ class Lander:
                 self.log(f"dry run: would push {sha[:7]} to {ref} and wait for its CI")
             else:
                 existing = self.git("ls-remote", self.remote, f"refs/heads/{ref}").split()
+                if existing and existing[0] == sha:
+                    # an earlier run of this script pushed the same commit and stopped while
+                    # waiting: wait for (or take the result of) that run instead of pushing again
+                    self.log(f"{ref} already holds {sha[:7]}: reusing its CI run")
+                    self.wait_ci(ref, sha)
+                    existing = None
                 if existing:
                     self.git("fetch", "-q", self.remote, existing[0], check=False)
                     r = subprocess.run(["git", "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root)
                     if r.returncode != 0 and not self.owns_ref(existing[0]) and not self.replace_ci:
                         raise LandError(f"{ref} holds other commits; pick another --id, or pass --replace-ci "
                                         "if it is your own earlier attempt (e.g. amended after a red CI)")
-                self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
-                self.wait_ci(ref, sha)
+                if existing is not None:
+                    self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
+                    self.wait_ci(ref, sha)
         verified_base = self.git("merge-base", "HEAD", self.upstream())
         for attempt in range(1, MAX_ATTEMPTS + 1):
             self.fetch()
