@@ -33,8 +33,12 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::collider::Contact;
+use alice_physics::heightfield::HeightField;
 use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics::plane_collider::PlaneCollider;
 use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics::static_collider::StaticCollider;
+use alice_physics::trimesh::{TriMesh, Triangle};
 use alice_physics::{ContactModifier, SolverBackend};
 
 const DT: f64 = 1.0 / 60.0;
@@ -65,6 +69,92 @@ fn g_and_beta() -> (f64, f64) {
 /// the frame damping `beta`, after `t` seconds.
 fn damped_displacement(a: f64, beta: f64, t: f64) -> f64 {
     (a / beta) * t - (a / (beta * beta)) * (1.0 - (-beta * t).exp())
+}
+
+// ---------------------------------------------------------------------------
+// Static colliders
+// ---------------------------------------------------------------------------
+
+fn quad_floor() -> StaticCollider {
+    let a = v3(-5.0, 0.0, -5.0);
+    let b = v3(-5.0, 0.0, 5.0);
+    let c = v3(5.0, 0.0, 5.0);
+    let d = v3(5.0, 0.0, -5.0);
+    StaticCollider::TriMesh(TriMesh::from_triangles(vec![
+        Triangle::new(a, b, c),
+        Triangle::new(a, c, d),
+    ]))
+}
+
+fn floors() -> [(&'static str, StaticCollider); 3] {
+    [
+        (
+            "plane",
+            StaticCollider::Plane(PlaneCollider::new(Vec3Fix::UNIT_Y, Fix128::ZERO)),
+        ),
+        (
+            "height field",
+            StaticCollider::HeightField(HeightField::flat(
+                11,
+                11,
+                Fix128::ONE,
+                v3(-5.0, 0.0, -5.0),
+                Fix128::ZERO,
+            )),
+        ),
+        ("triangle mesh", quad_floor()),
+    ]
+}
+
+/// A sphere of radius `r = 0.5` dropped from `0.5 m` above a floor comes to
+/// rest on it: the static equilibrium of a body on a surface is a height of
+/// `r` and a contact that supplies `m g dt` of upward impulse per frame, so
+/// the vertical velocity stops changing.
+///
+/// Tolerances: the body may sink below `r` by at most `2e-2` (the TGS contact
+/// keeps a slop of `5e-3` and corrects the rest over a few frames) and float
+/// above it by at most `5e-3`; over the last 30 frames the vertical velocity
+/// stays within `5 %` of `g·dt` (a contact missing for one frame would leave
+/// `g·dt` there, a body falling through would reach several `g·dt`).
+#[test]
+fn a_body_rests_on_a_plane_a_height_field_and_a_triangle_mesh() {
+    let (g, _) = g_and_beta();
+    let r = 0.5;
+    for k in 0..3 {
+        for substeps in [4, 8] {
+            let (name, floor) = floors().into_iter().nth(k).expect("floor");
+            let mut w = PhysicsWorld::new(tgs(substeps));
+            w.add_static_collider(floor);
+            let b = w.add_body_with_radius(
+                RigidBody::new_dynamic(v3(0.3, 1.0, -0.2), Fix128::ONE),
+                fx(r),
+            );
+            let mut max_vy_late: f64 = 0.0;
+            let mut lowest: f64 = f64::MAX;
+            for n in 0..180 {
+                w.step(fx(DT));
+                let body = w.get_body(b).expect("body");
+                if n >= 60 {
+                    lowest = lowest.min(body.position.y.to_f64());
+                }
+                if n >= 150 {
+                    max_vy_late = max_vy_late.max(body.velocity.y.to_f64().abs());
+                }
+            }
+            let y = w.get_body(b).expect("body").position.y.to_f64();
+            assert!(
+                lowest > r - 2e-2 && y < r + 5e-3,
+                "{name}, substeps {substeps}: rest height {y:.5} (lowest {lowest:.5}), \
+                 closed form {r}"
+            );
+            assert!(
+                max_vy_late < 5e-2 * g * DT,
+                "{name}, substeps {substeps}: vertical velocity {max_vy_late:.3e} at rest \
+                 (g·dt = {:.3e})",
+                g * DT
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -181,4 +271,49 @@ fn an_absolute_friction_modifier_sets_the_sliding_deceleration() {
             "substeps {substeps}: without the modifier v(1 s) = {v_material:.5}"
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// World integration: removing a body mid-simulation
+// ---------------------------------------------------------------------------
+
+/// Removing a body that rests on a plane moves the last body, which also
+/// rests on the plane but is three times heavier, into its index. The moved
+/// body must stay at rest: the contact state the TGS solve carries from frame
+/// to frame must follow the bodies, not their indices.
+#[test]
+fn removing_a_resting_body_does_not_disturb_the_body_moved_into_its_index() {
+    let (g, _) = g_and_beta();
+    let mut w = PhysicsWorld::new(tgs(8));
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        Vec3Fix::UNIT_Y,
+        Fix128::ZERO,
+    )));
+    let light = w.add_body_with_radius(
+        RigidBody::new_dynamic(v3(-2.0, 0.5, 0.0), Fix128::ONE),
+        fx(0.5),
+    );
+    let heavy = w.add_body_with_radius(
+        RigidBody::new_dynamic(v3(2.0, 0.5, 0.0), Fix128::from_int(3)),
+        fx(0.5),
+    );
+    for _ in 0..120 {
+        w.step(fx(DT));
+    }
+    assert_eq!(heavy, 1);
+    assert!(w.remove_body(light).is_some());
+    let mut max_vy: f64 = 0.0;
+    let mut lowest: f64 = f64::MAX;
+    for _ in 0..30 {
+        w.step(fx(DT));
+        let b = w.get_body(light).expect("moved body");
+        max_vy = max_vy.max(b.velocity.y.to_f64().abs());
+        lowest = lowest.min(b.position.y.to_f64());
+    }
+    assert!(
+        max_vy < 5e-2 * g * DT,
+        "the moved body's vertical velocity reached {max_vy:.3e} (g·dt = {:.3e})",
+        g * DT
+    );
+    assert!(lowest > 0.5 - 2e-2, "the moved body sank to {lowest:.5}");
 }

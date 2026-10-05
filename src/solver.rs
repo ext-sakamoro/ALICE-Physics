@@ -603,7 +603,9 @@ impl ContactConstraint {
 /// `tests/analytic_tgs_wiring.rs`'s joint tests for both backends' measured
 /// bands).
 ///
-/// Pre-solve hooks and contact modifiers run once over the
+/// Static colliders (plane / height field / triangle
+/// mesh) are frictionless, inelastic contacts with an immovable body in the
+/// impulse solve, and pre-solve hooks and contact modifiers run once over the
 /// tick's contacts before the solve (`tests/analytic_tgs_backend_coverage.rs`).
 ///
 /// * Requires the `std` feature (`solver_tgs` is `std`-gated, same as the
@@ -2886,15 +2888,86 @@ impl PhysicsWorld {
         }
     }
 
+    /// The contacts of the bodies with the static colliders, for the TGS
+    /// solve: appends one immovable body at index `bodies.len()` to
+    /// `tgs_bodies` and, for every non-static, non-sensor body whose
+    /// collision sphere (its radius, or the world's default as in
+    /// [`Self::resolve_static_collisions`]) touches a collider, a contact
+    /// between that body (A) and the immovable one (B). The contact acts at
+    /// the sphere's deepest point, along the collider's normal, with the
+    /// collider's depth, and is frictionless and inelastic: the same
+    /// response the XPBD path gives by pushing the sphere out along the
+    /// normal. Nothing is appended when the world has no static collider.
+    #[cfg(feature = "std")]
+    fn tgs_static_contacts(
+        &self,
+        tgs_bodies: &mut Vec<crate::solver_tgs_hooks_6dof_oriented::Body6DofOrientedState>,
+        tgs_contacts: &mut Vec<crate::solver_tgs_hooks_6dof_oriented::ContactOriented>,
+    ) {
+        use crate::solver_tgs_backend::tangent_basis;
+        use crate::solver_tgs_hooks_6dof_oriented::{Body6DofOrientedState, ContactOriented};
+        // Stable IDs of static-collider contacts: bit 62 set (contacts use the
+        // low IDs, distance joints set bit 63), then `body · colliders + k`.
+        const STATIC_ID_TAG: u64 = 1 << 62;
+        if self.static_colliders.is_empty() {
+            return;
+        }
+        let n = self.bodies.len();
+        let ground = n;
+        tgs_bodies.push(Body6DofOrientedState {
+            stable_id: n as u64,
+            ..Body6DofOrientedState::default()
+        });
+        let nc = self.static_colliders.len() as u64;
+        let default_radius = self.sdf_collision_radius;
+        for (i, body) in self.bodies.iter().enumerate() {
+            if body.is_static() || body.is_sensor {
+                continue;
+            }
+            let radius = self
+                .body_collision_radii
+                .get(i)
+                .and_then(|r| *r)
+                .unwrap_or(default_radius);
+            for (k, collider) in self.static_colliders.iter().enumerate() {
+                let Some(contact) = collider.collide_sphere(body.position, radius) else {
+                    continue;
+                };
+                // `contact.normal` points from the surface toward the body (A);
+                // the TGS normal points from A into B.
+                let normal = -contact.normal;
+                let (t1, t2) = tangent_basis(normal);
+                let r_a = normal * radius;
+                tgs_contacts.push(ContactOriented {
+                    body_a: i,
+                    body_b: ground,
+                    stable_id: STATIC_ID_TAG | ((i as u64) * nc + k as u64),
+                    normal: [normal.x, normal.y, normal.z],
+                    tangent1: [t1.x, t1.y, t1.z],
+                    tangent2: [t2.x, t2.y, t2.z],
+                    r_a: [r_a.x, r_a.y, r_a.z],
+                    r_b: [Fix128::ZERO; 3],
+                    penetration: contact.depth,
+                    friction: Fix128::ZERO,
+                    restitution: Fix128::ZERO,
+                    accum_normal: Fix128::ZERO,
+                    accum_tangent1: Fix128::ZERO,
+                    accum_tangent2: Fix128::ZERO,
+                });
+            }
+        }
+    }
+
     /// `SolverBackend::Tgs` body of [`Self::step`]. Mirrors `step`'s phase
     /// numbering so the two are easy to diff, but is a genuinely different
     /// algorithm: contacts are detected once per full `dt` (not re-detected
     /// every sub-step — the TGS family owns its own sub-stepping internally
     /// via [`crate::solver_tgs::tgs_step`]), and bodies are advanced by
     /// per-island impulse-based Gauss-Seidel instead of XPBD position
-    /// projection. Distance joints, contact filters, kinematic targets and
-    /// SDF colliders are handled — see [`SolverBackend`]'s notes for the
-    /// distance-joint and filter handling, and
+    /// projection. Distance joints, static colliders, contact filters,
+    /// kinematic targets and SDF colliders are handled — see
+    /// [`SolverBackend`]'s notes for the distance-joint, static-collider and
+    /// filter handling, and
     /// [`Self::advance_kinematic_targets_for_tgs`] /
     /// [`Self::resolve_sdf_collisions`] for the other two.
     #[cfg(feature = "std")]
@@ -2977,6 +3050,11 @@ impl PhysicsWorld {
             .filter(|&(i, _)| !self.contact_discarded.get(i).copied().unwrap_or(false))
             .map(|(i, c)| contact_to_tgs(c, &self.bodies, i as u64))
             .collect();
+        // Static colliders (plane / height field / triangle mesh) take part in
+        // the impulse solve as contacts against one extra immovable body at
+        // index `n`, so they get the same per-substep normal impulse, warm
+        // start and position correction as a contact with a static body.
+        self.tgs_static_contacts(&mut tgs_bodies, &mut tgs_contacts);
         let joint_refs: Vec<DistanceRef<'_>> = self
             .distance_constraints
             .iter()
@@ -3045,7 +3123,9 @@ impl PhysicsWorld {
         // would resurrect the old, stale impulse as a warm-start "hit"
         // instead of correctly starting from zero.
         self.tgs_impulse_cache.sweep();
-        debug_assert_eq!(tgs_bodies.len(), n);
+        // `tgs_bodies` may hold the static-collider body after the `n` world
+        // bodies; `zip` stops at the world's own.
+        debug_assert!(tgs_bodies.len() >= n);
         for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
             tgs_to_body(state, body);
         }
