@@ -45,6 +45,7 @@ this file or listed twice, or when a linked example or test does not exist.
 |--------|---------|---------|---------|-------------|
 | `math` | `Fix128` (I64F64), `Vec3Fix`, `QuatFix`, `Mat3Fix`, CORDIC trigonometry, optional SSE2 paths |  | [`math_simd_and_transcendentals`](../examples/math_simd_and_transcendentals.rs) | step |
 | `math_util` | `Fix128` transcendentals and solvers (`exp_fix`, `cbrt_fix`, `pow_int`, root finding) |  | [`math_util_roots_powers`](../examples/math_util_roots_powers.rs) | standalone |
+| `linear_solver` | general Krylov solvers on `Fix128`: restarted GMRES(m) and BiCGStab, Jacobi / block Jacobi preconditioning, mandatory block equilibration for coupled systems |  | [`linear_solver_krylov`](../examples/linear_solver_krylov.rs) | standalone |
 | `det_math` | re-export of `alice-det-math`: deterministic `sin`, `exp`, `ln`, `powf`, … for `f32` / `f64` |  |  | — |
 | `metric` | the norm a distance is measured in (`‖·‖₁`, `‖·‖₂`, `‖·‖∞` mixes) and conversion to Euclidean bounds |  | [`metric_clearance_bounds`](../examples/metric_clearance_bounds.rs) | standalone (step 5 of 13 items) |
 | `rng` | PCG-XSH-RR deterministic random number generator |  | [`rng_streams_and_bounded`](../examples/rng_streams_and_bounded.rs) | standalone |

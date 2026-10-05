@@ -389,6 +389,7 @@ pub mod lift_drag;
 /// built at all without the type it consumes.
 #[cfg(feature = "std")]
 pub mod linear_elastic_fem;
+pub mod linear_solver;
 pub mod mass_properties;
 pub mod material;
 pub mod math;

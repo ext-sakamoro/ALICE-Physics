@@ -412,7 +412,6 @@ impl EquilibrationScale {
     ///
     /// Returns [`ConfigFault::ScaleOutOfRange`] if `magnitude` needs an
     /// exponent above [`EquilibrationScale::MAX_EXPONENT`].
-    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     pub fn covering(magnitude: Fix128) -> Result<Self, ConfigFault> {
         if magnitude <= Fix128::ZERO {
             return Ok(Self::IDENTITY);
@@ -430,7 +429,6 @@ impl EquilibrationScale {
     }
 
     /// The exponent, where the factor is `2^exponent`.
-    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub const fn exponent(self) -> u32 {
         self.exponent
@@ -444,14 +442,12 @@ impl EquilibrationScale {
 
     /// Divide by the factor. An arithmetic shift, so the only loss is the
     /// `exponent` low bits that shift off the bottom.
-    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub const fn scale_down(self, value: Fix128) -> Fix128 {
         value.shr_bits(self.exponent)
     }
 
     /// Multiply by the factor. Exact, provided the result stays in range.
-    // ALLOW-UNWIRED: wiring debt Backlog `residual_norm_l2_equilibrated` (CG の停止 norm を equilibrate する別 task), oracle tests/analytic_coupled_wiring.rs
     #[must_use]
     pub fn scale_up(self, value: Fix128) -> Fix128 {
         value * self.factor()
