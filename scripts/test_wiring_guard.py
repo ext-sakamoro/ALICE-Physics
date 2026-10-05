@@ -469,28 +469,26 @@ class Robustness(unittest.TestCase):
 
         body = "".join(f"pub fn f{i}() {{ if true {{ g{i}(); }} }}\nfn g{i}() {{}}\n" for i in range(20000))
         r = crate({"src/lib.rs": LIB, "src/a.rs": body, "src/b.rs": "pub fn x() {}\n"})
-        # ⚠️ monotonic, not time(): wall clock steps (machine sleep, NTP) make a
-        # time-based gate report an elapsed time it never spent, and the failure
-        # looks like a performance regression rather than a clock jump. Measured
-        # on 2026-10-02: this assertion read 943 s while the whole 79-test suite
-        # finished in 4.7 s.
-        t0 = time.monotonic()
+        # ⚠️ CPU time of this process, not elapsed time: the check runs in-process,
+        # so a quadratic regression shows up here, while other processes' load
+        # does not (elapsed time read 34-37 s at load average 41-52 with 5 s of
+        # CPU), nor do wall clock steps (machine sleep, NTP: one read 943 s)
+        t0 = time.process_time()
         vs = wg.check(r)
-        self.assertLess(time.monotonic() - t0, 30)
+        self.assertLess(time.process_time() - t0, 30)
         self.assertEqual(len([v for v in vs if v.kind == "unwired"]), 20001)
 
     def test_a_pathological_header_without_a_terminator_does_not_hang(self):
         import time
 
         r = crate({"src/lib.rs": LIB, "src/a.rs": "pub fn a\n" * 5000, "src/b.rs": "pub fn x() {}\n"})
-        # ⚠️ monotonic, not time(): wall clock steps (machine sleep, NTP) make a
-        # time-based gate report an elapsed time it never spent, and the failure
-        # looks like a performance regression rather than a clock jump. Measured
-        # on 2026-10-02: this assertion read 943 s while the whole 79-test suite
-        # finished in 4.7 s.
-        t0 = time.monotonic()
+        # ⚠️ CPU time of this process, not elapsed time: the check runs in-process,
+        # so a quadratic regression shows up here, while other processes' load
+        # does not (elapsed time read 34-37 s at load average 41-52 with 5 s of
+        # CPU), nor do wall clock steps (machine sleep, NTP: one read 943 s)
+        t0 = time.process_time()
         wg.check(r)
-        self.assertLess(time.monotonic() - t0, 30)
+        self.assertLess(time.process_time() - t0, 30)
 
     def test_no_src_directory_is_an_empty_scan(self):
         self.assertIn("empty_scan", kinds(wg.check(crate({"README.md": "x\n"}))))
