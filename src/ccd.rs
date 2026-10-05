@@ -322,8 +322,7 @@ fn slab_test(
 /// `crate::solver_tgs::adaptive_substeps_for_ccd` (crate-internal since
 /// v0.14.0-preview.8) with the speculative contact TOI so that
 /// fast-moving pairs receive extra sub-steps proportional to their own
-/// speed. This prevents tunneling through thin walls (see
-/// `deterministic-physics-lockstep-discipline` skill §11.1 CCD).
+/// speed. This prevents tunneling through thin walls.
 ///
 /// # Behavior
 ///
