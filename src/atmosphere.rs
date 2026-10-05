@@ -30,6 +30,7 @@
 //! `0 ≤ H ≤ 20 000 m`. Outside it the call returns
 //! [`IsaError::AltitudeOutOfRange`]; it does not clamp, because a clamped
 //! value would be a plausible-looking density at the wrong altitude. The
+// LIMITATION(COV-ACOUS-013): layers above 20 km (with a positive lapse rate) and the table below sea level are not modelled.
 //! layers above 20 km (with a positive lapse rate) and the table below sea
 //! level are not modelled.
 //!
