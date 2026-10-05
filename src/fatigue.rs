@@ -40,18 +40,27 @@
 //!
 //! # Integration status
 //!
-//! `SnCurve`, `SnCurve::from_fdm_material`, `SpectrumEntry`, and
-//! `miner_damage` are wired into `structural_solver.rs`; `INFINITE_LIFE`
-//! and `cycles_to_failure` are crate-internal and reached through
-//! `miner_damage`. The metal presets (`steel_sus304` / `aluminum_a5052`),
-//! the Basquin inverse `stress_at_cycles`, and the `FatigueReport` +
-//! `analyze_spectrum` wrapper have no consumer in the beam life loop (it
-//! accumulates `miner_damage` per step and its report types are not
-//! `#[non_exhaustive]`); they carry `ALLOW-UNWIRED` debt markers and their
-//! closed-form oracles are unit tests in this module.
+//! `SnCurve`, `SpectrumEntry`, and `miner_damage` are wired into
+//! `structural_solver.rs`. `StructuralSolver::new` selects the curve with
+//! [`SnCurve::for_material`]: the metal presets ([`SnCurve::steel_sus304`] /
+//! [`SnCurve::aluminum_a5052`]) for the crate's `MaterialProperties::sus304()`
+//! / `a5052()` presets (sheet-metal category and the preset name), and
+//! [`SnCurve::from_fdm_material`] for every other material.
+//! `StructuralSolver::with_sn_curve` overrides the selection. The Basquin
+//! inverse `stress_at_cycles` is reached through
+//! `StructuralSolver::fatigue_strength_mpa` and the `analyze_spectrum`
+//! wrapper through `StructuralSolver::fatigue_spectrum_report`, both
+//! evaluated on the solver's selected curve. `INFINITE_LIFE` and
+//! `cycles_to_failure` are crate-internal and reached through
+//! `miner_damage`.
 
-use crate::filament_db::MaterialProperties;
+use crate::filament_db::{MaterialCategory, MaterialProperties};
 use crate::math::Fix128;
+
+/// Name carried by `MaterialProperties::sus304()`.
+const SUS304_PRESET_NAME: &str = "SUS304";
+/// Name carried by `MaterialProperties::a5052()`.
+const A5052_PRESET_NAME: &str = "A5052";
 
 // ============================================================================
 // SnCurve
@@ -90,13 +99,29 @@ impl SnCurve {
         }
     }
 
+    /// Curve for `material`: [`Self::steel_sus304`] for the crate's SUS304
+    /// preset and [`Self::aluminum_a5052`] for its A5052 preset (both
+    /// identified by the sheet-metal category and the preset name, as
+    /// `MaterialProperties::sus304()` / `a5052()` carry them), and
+    /// [`Self::from_fdm_material`] for every other material, sheet metals
+    /// with another name included.
+    #[must_use]
+    pub fn for_material(material: &MaterialProperties) -> Self {
+        if material.category == MaterialCategory::SheetMetal {
+            if material.name == SUS304_PRESET_NAME {
+                return Self::steel_sus304();
+            }
+            if material.name == A5052_PRESET_NAME {
+                return Self::aluminum_a5052();
+            }
+        }
+        Self::from_fdm_material(material)
+    }
+
     /// Austenitic stainless steel preset (SUS304 grade): `UTS = 505 MPa`,
     /// `S_e = 240 MPa` (`0.475 · UTS`), `N_e = 10⁷`, `m = 10`.
-    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (no steel MaterialProperties for the solver to select it), oracle src/fatigue.rs tests::sus304_preset_basquin_life_at_300_mpa_is_1073741_cycles
-    #[allow(dead_code)]
     #[must_use]
-    pub(crate) fn steel_sus304() -> Self {
+    pub fn steel_sus304() -> Self {
         Self {
             ultimate_tensile_mpa: Fix128::from_int(505),
             endurance_stress_mpa: Fix128::from_int(240),
@@ -107,11 +132,8 @@ impl SnCurve {
 
     /// Aluminum A5052 preset: `UTS = 230 MPa`, `S_e = 92 MPa` (`0.4 · UTS`),
     /// `N_e = 5·10⁶`, `m = 6`.
-    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (no aluminum MaterialProperties for the solver to select it), oracle src/fatigue.rs tests::a5052_preset_miner_sum_matches_hand_calculation
-    #[allow(dead_code)]
     #[must_use]
-    pub(crate) fn aluminum_a5052() -> Self {
+    pub fn aluminum_a5052() -> Self {
         Self {
             ultimate_tensile_mpa: Fix128::from_int(230),
             endurance_stress_mpa: Fix128::from_int(92),
@@ -180,12 +202,15 @@ pub(crate) fn cycles_to_failure(curve: &SnCurve, stress_mpa: Fix128) -> u64 {
 /// field of `SnCurve` (Backlog `fatigue-low-cycle-bound-per-material`).
 pub(crate) const BASQUIN_LOW_CYCLE_BOUND: u64 = 1_000;
 
-/// Why [`stress_at_cycles`] could not answer.
+/// Why the Basquin inverse (`StructuralSolver::fatigue_strength_mpa`) could
+/// not answer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum FatigueRangeError {
+#[non_exhaustive]
+pub enum FatigueRangeError {
     /// `cycles == 0` has no stress on the S–N curve.
     ZeroCycles,
-    /// Below [`BASQUIN_LOW_CYCLE_BOUND`], outside the law's range.
+    /// Below the low-cycle bound (currently 1 000 cycles for every curve),
+    /// outside the law's range.
     BelowLowCycleBound {
         /// The cycle count asked for.
         cycles: u64,
@@ -216,9 +241,6 @@ pub(crate) enum FatigueRangeError {
 /// [`FatigueRangeError::BelowLowCycleBound`] under
 /// [`BASQUIN_LOW_CYCLE_BOUND`], [`FatigueRangeError::NonPositiveExponent`]
 /// for a curve with `fatigue_exponent_m == 0`.
-// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (design-allowable query, the life loop only accumulates damage), oracle src/fatigue.rs tests::stress_at_cycles_inverts_basquin_for_sus304_and_a5052
-#[allow(dead_code)]
 pub(crate) fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Result<Fix128, FatigueRangeError> {
     if cycles == 0 {
         return Err(FatigueRangeError::ZeroCycles);
@@ -278,27 +300,23 @@ pub fn miner_damage(spectrum: &[SpectrumEntry], curve: &SnCurve) -> Fix128 {
     d
 }
 
-/// Cumulative damage report for one stress spectrum (crate-internal; only
-/// constructed by `analyze_spectrum`, which carries the debt marker).
-// ALLOW-DEAD: return type of the ALLOW-UNWIRED analyze_spectrum below, never constructed by a crate caller
-#[allow(dead_code)]
+/// Cumulative damage report for one stress spectrum, returned by
+/// `StructuralSolver::fatigue_spectrum_report`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct FatigueReport {
+#[non_exhaustive]
+pub struct FatigueReport {
     /// Total damage `D`.
-    pub(crate) damage: Fix128,
+    pub damage: Fix128,
     /// True iff `damage < 1` (part is expected to survive the spectrum).
-    pub(crate) is_safe: bool,
+    pub is_safe: bool,
     /// Safety factor `1 / D` — the multiplier by which the entire spectrum
     /// could be repeated before failure. Reported as the sentinel
     /// `Fix128::from_int(i64::MAX >> 8)` for zero damage.
-    pub(crate) safety_factor: Fix128,
+    pub safety_factor: Fix128,
 }
 
 /// Miner's rule over the whole spectrum, packaged as a [`FatigueReport`]
 /// (`damage` is exactly [`miner_damage`], crate-internal).
-// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (the life loop accumulates per-step miner_damage, a per-step is_safe is meaningless), oracle src/fatigue.rs tests::a5052_preset_miner_sum_matches_hand_calculation
-#[allow(dead_code)]
 #[must_use]
 pub(crate) fn analyze_spectrum(spectrum: &[SpectrumEntry], curve: &SnCurve) -> FatigueReport {
     let damage = miner_damage(spectrum, curve);
