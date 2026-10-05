@@ -447,9 +447,10 @@ fn isotropic_scene(backend: SolverBackend) -> PhysicsWorld {
 /// Golden hashes of `isotropic_scene` after 60 frames, recorded with the
 /// solver without the gyroscopic term (the XPBD value re-recorded after the
 /// pre-solve restitution and static friction of the contact response, which
-/// change the colliding pair; the term itself leaves every body of this scene
-/// on its previous path).
-const GOLDEN_ISOTROPIC_XPBD: u64 = 0x1d53_e05b_bd28_c55f;
+/// change the colliding pair, and again for the exact-logarithm velocity
+/// re-derivation, which changes every spinning XPBD body; the term itself
+/// leaves every body of this scene on its previous path).
+const GOLDEN_ISOTROPIC_XPBD: u64 = 0xa78f_4abf_b26c_12be;
 const GOLDEN_ISOTROPIC_TGS: u64 = 0x107a_2c02_798b_e9f5;
 
 /// oracle: `I_b = s·1 ⇒ ω × (s ω) = 0`, so adding the term must leave every
@@ -472,7 +473,7 @@ fn d_isotropic_and_exempt_bodies_are_bit_identical_to_before() {
 }
 
 #[cfg(feature = "parallel")]
-const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0x1d53_e05b_bd28_c55f;
+const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0xa78f_4abf_b26c_12be;
 
 #[cfg(feature = "parallel")]
 #[test]
@@ -743,10 +744,10 @@ fn f_joint_change_of_omega_reaches_the_angular_velocity() {
 /// oracle: `ω = 0 ⇒ ω × Iω = 0`, so an asymmetric body at rest stays at
 /// rest, like an isotropic one. Compared with the closed form to rounding,
 /// not bit for bit: XPBD derives the velocity of a body without gyroscopic
-/// response from `q·q_prev⁻¹ · 2/h`, which turns the rounding of `q` into a
-/// residue of about `10³` ulp (`~5e-17 rad/s`) even for an isotropic body at
-/// rest, and an asymmetric body then carries that residue through the
-/// splitting instead. Bound: `|ω| ≤ 1e-12 rad/s` and every component of `q`
+/// response from `q·q_prev⁻¹` (scaled by `≈ 2/h`), which turns the rounding
+/// of `q` into a residue of about `10³` ulp (`~5e-17 rad/s`) even for an
+/// isotropic body at rest, and an asymmetric body then carries that residue
+/// through the splitting instead. Bound: `|ω| ≤ 1e-12 rad/s` and every component of `q`
 /// within `1e-12` of its initial value after 10 frames.
 #[test]
 fn f_zero_omega_stays_at_rest() {

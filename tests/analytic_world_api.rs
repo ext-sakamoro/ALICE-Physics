@@ -326,13 +326,14 @@ fn with_rotation_sets_rotation_and_prev_rotation() {
 }
 
 /// Oracle (default config): the frame-end angular velocity is
-/// `ω' * damping * angular_damping`, where `ω'` is the velocity derived
-/// from the integrated rotation, `ω_{k} = (2/h) sin(ω_{k-1} h / 2)` per
-/// substep. Hence `angular_damping = 0` gives exactly zero, `= 2` gives
-/// exactly twice the `= 1` body (doubling is exact in fixed point), and the
-/// `= 1` body reads `0.99 * ω'` with `1 - 8 h^2 / 24 ≤ ω' / ω ≤ 1`, i.e.
-/// within `1.3e-6` of `0.99` for `ω = 1`, `h = 1/512` (CORDIC error is far
-/// smaller); the oracle allows `1e-5`.
+/// `ω' * damping * angular_damping`, where `ω'` is the velocity derived from
+/// the integrated rotation by the exact logarithm of the rotation, so a free
+/// isotropic spin keeps `ω' = ω`. Hence `angular_damping = 0` gives exactly
+/// zero, `= 2` gives exactly twice the `= 1` body (doubling is exact in fixed
+/// point), and the `= 1` body reads `0.99 ω = 0.99` for `ω = 1`. Tolerance:
+/// the predicted rotation uses CORDIC `sin_cos` (absolute error `≤ 2⁻⁴⁸` on
+/// `sin(h/2)`, i.e. `2⁻⁴⁸ / (h/2) = 2⁻³⁸ ≈ 3.6e-12` relative per substep at
+/// `h = 1/512`), over 8 substeps `≤ 3e-11`; the oracle allows `1e-10`.
 #[test]
 fn with_angular_damping_scales_frame_end_angular_velocity() {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());
@@ -357,8 +358,7 @@ fn with_angular_damping_scales_frame_end_angular_velocity() {
     assert_eq!(w0, Vec3Fix::ZERO, "angular_damping 0 zeroes the spin");
     assert_eq!(w2, w1 + w1, "angular_damping 2 is exactly twice 1");
     let err = (w1.y - r(99, 100)).abs().to_f64();
-    assert!(err < 1e-5, "ω_y = {} (want 0.99 ± 1.3e-6)", w1.y.to_f64());
-    assert!(w1.y < r(99, 100), "sin(θ/2) < θ/2 so ω' < ω");
+    assert!(err < 1e-10, "ω_y = {} (want 0.99 ± 1e-10)", w1.y.to_f64());
     assert_eq!((w1.x, w1.z), (Fix128::ZERO, Fix128::ZERO));
 }
 
