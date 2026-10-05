@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **47 baseline items** — Permitted violations, ratchet in place
+🟡 **40 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (47 permitted)
+## 📋 Baseline (40 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -19,18 +19,15 @@ Must resolve or remove from baseline to reduce ratchet.
 |------|----------------|
 | `src/eulerian_grid.rs` | 10 |
 | `src/bvh.rs` | 5 |
-| `src/cloth_fluid.rs` | 4 |
 | `src/fatigue.rs` | 4 |
 | `src/motor.rs` | 4 |
 | `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
-| `src/plastic.rs` | 3 |
 | `src/buckling.rs` | 2 |
+| `src/plastic.rs` | 2 |
 | `src/solver_tgs.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented_scoped.rs` | 2 |
-| `src/convex_mesh_builder.rs` | 1 |
 | `src/creep_longterm.rs` | 1 |
-| `src/mass_properties.rs` | 1 |
 | `src/solver_tgs_hooks.rs` | 1 |
 | `src/solver_tgs_hooks_6dof.rs` | 1 |
 
@@ -46,7 +43,7 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (40)
+### Unwired Items (33)
 
 ```
 unwired src/buckling.rs::plate_buckling_mpa
@@ -55,11 +52,6 @@ unwired src/bvh.rs::build_dynamic
 unwired src/bvh.rs::clear_dynamic
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
-unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid
-unwired src/cloth_fluid.rs::apply_cloth_boundary_to_fluid_with_residual
-unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth
-unwired src/cloth_fluid.rs::apply_fluid_forces_to_cloth_with_residual
-unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
@@ -75,13 +67,11 @@ unwired src/fatigue.rs::aluminum_a5052
 unwired src/fatigue.rs::analyze_spectrum
 unwired src/fatigue.rs::steel_sus304
 unwired src/fatigue.rs::stress_at_cycles
-unwired src/mass_properties.rs::cylinder_mass_properties
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
 unwired src/plastic.rs::petg_room_temp
-unwired src/plastic.rs::uniaxial_x
 unwired src/plastic.rs::with_hardening
 unwired src/solver_tgs.rs::par_dispatch_islands
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
