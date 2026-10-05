@@ -815,6 +815,42 @@ fn angular_from_rotations(rotation: QuatFix, prev_rotation: QuatFix, inv_dt: Fix
     }
 }
 
+/// Kind tags for [`tgs_cache_key`]: contacts and distance constraints share
+/// one warm-start cache.
+#[cfg(feature = "std")]
+const TGS_KEY_CONTACT: u64 = 0;
+#[cfg(feature = "std")]
+const TGS_KEY_DISTANCE: u64 = 1;
+
+/// Warm-start cache key for the `ordinal`-th entry of kind `tag` joining the
+/// bodies with stable ids `a` → `b` this tick (`ordinals` counts per pair and
+/// is reset every tick by the caller creating it afresh).
+///
+/// The four words are mixed with the SplitMix64 finaliser, so the key is a
+/// deterministic function of what the entry joins — never of where it sits
+/// in a vector. Two distinct entries collide with probability about
+/// `n² / 2⁶⁵` per tick for `n` entries.
+#[cfg(feature = "std")]
+fn tgs_cache_key(
+    tag: u64,
+    a: u64,
+    b: u64,
+    ordinals: &mut std::collections::BTreeMap<(u64, u64), u64>,
+) -> u64 {
+    let slot = ordinals.entry((a, b)).or_insert(0);
+    let ordinal = *slot;
+    *slot += 1;
+    let mut h: u64 = 0x9E37_79B9_7F4A_7C15;
+    for w in [tag, a, b, ordinal] {
+        h ^= w;
+        h = h.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        h = (h ^ (h >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        h = (h ^ (h >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        h ^= h >> 31;
+    }
+    h
+}
+
 /// Snapshot of [`SolverBackend::Tgs`]'s per-frame warm-start impulse cache
 /// effectiveness, returned by [`PhysicsWorld::tgs_cache_stats`].
 ///
@@ -1277,6 +1313,17 @@ pub struct PhysicsWorld {
     /// Unused (and empty) while `config.solver_backend` is `Xpbd`.
     #[cfg(feature = "std")]
     tgs_impulse_cache: crate::solver_tgs::ImpulseCache,
+    /// Per-body identity that survives `remove_body`'s `swap_remove` (the
+    /// index does not). The TGS warm-start cache keys contacts and distance
+    /// constraints by these, so a reorder of `bodies` cannot hand one
+    /// contact's cached impulse to another. Kept parallel to `bodies` by
+    /// [`Self::sync_body_stable_ids`], which also covers bodies pushed onto
+    /// the public `bodies` field directly.
+    #[cfg(feature = "std")]
+    body_stable_ids: Vec<u64>,
+    /// The next id [`Self::sync_body_stable_ids`] hands out.
+    #[cfg(feature = "std")]
+    next_body_stable_id: u64,
     /// Skip parked sleeping bodies in `step` (see [`StageWork`]).
     sleep_skip: bool,
     /// Parked bodies, their tree and caches.
@@ -1396,6 +1443,10 @@ impl PhysicsWorld {
             kinematic_substeps_left: 0,
             #[cfg(feature = "std")]
             tgs_impulse_cache: crate::solver_tgs::ImpulseCache::new(),
+            #[cfg(feature = "std")]
+            body_stable_ids: Vec::new(),
+            #[cfg(feature = "std")]
+            next_body_stable_id: 0,
             sleep_skip: true,
             park: ParkState::default(),
             park_generation: 0,
@@ -1483,6 +1534,19 @@ impl PhysicsWorld {
         self.gpu_solver_bridge.is_some()
     }
 
+    /// Bring `body_stable_ids` to `bodies.len()`: drop ids past the end and
+    /// give every body without one a fresh id. Bodies keep their id for as
+    /// long as they live; ids are never reused.
+    #[cfg(feature = "std")]
+    fn sync_body_stable_ids(&mut self) {
+        let n = self.bodies.len();
+        self.body_stable_ids.truncate(n);
+        while self.body_stable_ids.len() < n {
+            self.body_stable_ids.push(self.next_body_stable_id);
+            self.next_body_stable_id += 1;
+        }
+    }
+
     /// Add rigid body, returns index
     pub fn add_body(&mut self, body: RigidBody) -> usize {
         let idx = self.bodies.len();
@@ -1492,6 +1556,8 @@ impl PhysicsWorld {
         self.body_colliders.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
         self.islands.resize(idx + 1);
+        #[cfg(feature = "std")]
+        self.sync_body_stable_ids();
         idx
     }
 
@@ -1507,6 +1573,8 @@ impl PhysicsWorld {
         self.body_colliders.push(None);
         self.body_filters.push(CollisionFilter::DEFAULT);
         self.islands.resize(idx + 1);
+        #[cfg(feature = "std")]
+        self.sync_body_stable_ids();
         idx
     }
 
@@ -1687,11 +1755,17 @@ impl PhysicsWorld {
             a != idx && b != idx
         });
 
+        // Bring the ids level with `bodies` before both lose `idx` together
+        // (a body pushed onto the public field has no id yet).
+        #[cfg(feature = "std")]
+        self.sync_body_stable_ids();
         let removed = self.bodies.swap_remove(idx);
         self.body_materials.swap_remove(idx);
         self.body_collision_radii.swap_remove(idx);
         self.body_colliders.swap_remove(idx);
         self.body_filters.swap_remove(idx);
+        #[cfg(feature = "std")]
+        self.body_stable_ids.swap_remove(idx);
 
         // 2. Remap references from `last` -> `idx` in all remaining constraints and joints
         if idx != last {
@@ -2953,38 +3027,76 @@ impl PhysicsWorld {
             .enumerate()
             .map(|(i, b)| body_to_tgs(b, i as u64))
             .collect();
+        // Warm-start keys name a contact / constraint by what it joins, not
+        // by its position in a vector: the stable ids of its two bodies and
+        // its ordinal among the entries that join the same pair this tick.
+        self.sync_body_stable_ids();
+        let ids = &self.body_stable_ids;
+        // An out-of-range index (a hand-built constraint) gets a sentinel;
+        // `build_islands` below rejects it before anything is solved.
+        let id_of = |i: usize| ids.get(i).copied().unwrap_or(u64::MAX);
+        let mut contact_ordinals = std::collections::BTreeMap::new();
         let mut tgs_contacts: Vec<_> = self
             .contact_constraints
             .iter()
-            .enumerate()
-            .map(|(i, c)| contact_to_tgs(c, &self.bodies, i as u64))
+            .map(|c| {
+                // Orient every contact from the lower stable id to the higher
+                // one. Detection orders a pair by index, and `swap_remove`
+                // can flip the index order of two bodies whose ids did not
+                // change; without this the same contact would come back
+                // reversed (opposite normal and tangent basis) and miss.
+                let (ia, ib) = (id_of(c.body_a), id_of(c.body_b));
+                let flipped;
+                let c = if ia > ib {
+                    flipped = ContactConstraint {
+                        body_a: c.body_b,
+                        body_b: c.body_a,
+                        contact: Contact {
+                            depth: c.contact.depth,
+                            normal: -c.contact.normal,
+                            point_a: c.contact.point_b,
+                            point_b: c.contact.point_a,
+                        },
+                        ..*c
+                    };
+                    &flipped
+                } else {
+                    c
+                };
+                let key = tgs_cache_key(
+                    TGS_KEY_CONTACT,
+                    ia.min(ib),
+                    ia.max(ib),
+                    &mut contact_ordinals,
+                );
+                contact_to_tgs(c, &self.bodies, key)
+            })
             .collect();
         let joint_refs: Vec<DistanceRef<'_>> = self
             .distance_constraints
             .iter()
             .map(|joint| DistanceRef { joint })
             .collect();
-        // Joint stable IDs share `self.tgs_impulse_cache` with contact
-        // stable IDs (`i as u64` above, starting at 0) — the top bit
-        // reserves a disjoint ID space for joints so a joint can never
-        // warm-start from (or evict) a contact's cached impulse, and
-        // vice versa.
-        const JOINT_ID_TAG: u64 = 1 << 63;
+        // Joints share `self.tgs_impulse_cache` with contacts; the kind tag
+        // in the key keeps the two apart.
+        let mut joint_ordinals = std::collections::BTreeMap::new();
         let mut tgs_joints: Vec<crate::solver_tgs_hooks_6dof_oriented::JointOriented> = self
             .distance_constraints
             .iter()
-            .enumerate()
-            .map(
-                |(i, j)| crate::solver_tgs_hooks_6dof_oriented::JointOriented {
-                    body_a: j.body_a,
-                    body_b: j.body_b,
-                    stable_id: (i as u64) | JOINT_ID_TAG,
-                    local_anchor_a: [j.local_anchor_a.x, j.local_anchor_a.y, j.local_anchor_a.z],
-                    local_anchor_b: [j.local_anchor_b.x, j.local_anchor_b.y, j.local_anchor_b.z],
-                    target_distance: j.target_distance,
-                    accum: Fix128::ZERO,
-                },
-            )
+            .map(|j| crate::solver_tgs_hooks_6dof_oriented::JointOriented {
+                body_a: j.body_a,
+                body_b: j.body_b,
+                stable_id: tgs_cache_key(
+                    TGS_KEY_DISTANCE,
+                    id_of(j.body_a),
+                    id_of(j.body_b),
+                    &mut joint_ordinals,
+                ),
+                local_anchor_a: [j.local_anchor_a.x, j.local_anchor_a.y, j.local_anchor_a.z],
+                local_anchor_b: [j.local_anchor_b.x, j.local_anchor_b.y, j.local_anchor_b.z],
+                target_distance: j.target_distance,
+                accum: Fix128::ZERO,
+            })
             .collect();
 
         // `build_islands` only errs when a contact/joint references a body
@@ -5344,6 +5456,8 @@ impl PhysicsWorld {
             self.body_materials.push(crate::material::DEFAULT_MATERIAL);
         }
         self.body_materials.truncate(n);
+        #[cfg(feature = "std")]
+        self.sync_body_stable_ids();
         // ⚠️ `IslandManager::new` は sleep_data を既定 (Awake / idle_frames 0) に
         // 戻すので、**この後に blob から復元する** 順序を逆にすると復元が消える
         self.islands = IslandManager::new(n, self.islands.config);
@@ -5405,6 +5519,27 @@ impl core::fmt::Debug for PhysicsWorld {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    /// oracle: the key is a function of (kind, ids, ordinal) only. Entries
+    /// of one pair get distinct keys in arrival order, a second pass with a
+    /// fresh counter reproduces them, and kind or direction separate keys.
+    #[test]
+    fn tgs_cache_key_separates_ordinal_kind_and_pair() {
+        let mut ord = std::collections::BTreeMap::new();
+        let k0 = tgs_cache_key(TGS_KEY_CONTACT, 3, 7, &mut ord);
+        let k1 = tgs_cache_key(TGS_KEY_CONTACT, 3, 7, &mut ord);
+        let other = tgs_cache_key(TGS_KEY_CONTACT, 3, 8, &mut ord);
+        assert_ne!(k0, k1, "two entries of one pair must not share a key");
+        let mut again = std::collections::BTreeMap::new();
+        assert_eq!(tgs_cache_key(TGS_KEY_CONTACT, 3, 7, &mut again), k0);
+        assert_eq!(tgs_cache_key(TGS_KEY_CONTACT, 3, 7, &mut again), k1);
+        let mut fresh = std::collections::BTreeMap::new();
+        assert_ne!(tgs_cache_key(TGS_KEY_DISTANCE, 3, 7, &mut fresh), k0);
+        let mut fresh = std::collections::BTreeMap::new();
+        assert_ne!(tgs_cache_key(TGS_KEY_CONTACT, 7, 3, &mut fresh), k0);
+        assert_ne!(other, k0);
+        assert_eq!(ord.get(&(3, 7)), Some(&2));
+    }
 
     #[test]
     fn test_rigid_body_creation() {
