@@ -184,6 +184,21 @@ solve for any number of ranks. This has been measured on one host only (up to
 eight processes over loopback TCP). Runs across several hosts have not been
 done, and there is no MPI backend.
 
+Not every module is wired into `PhysicsWorld`. The table counts public modules by where their
+items are actually called from; calls from `examples/` do not count. CI measures it with
+`scripts/integration_levels.py`; each module's label is in the Integration column of
+[`docs/MODULES.md`](docs/MODULES.md) and the details are in
+[`docs/integration-levels.md`](docs/integration-levels.md).
+
+<!-- integration-levels: summary -->
+| How a module is used | Modules |
+|----------------------|--------:|
+| step: runs when `PhysicsWorld` steps | 19 |
+| world API: used through another `PhysicsWorld` method | 7 |
+| binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 120 |
+| unused: no caller outside tests | 3 |
+
 ## Vehicle dynamics
 
 `vehicle_dynamics::DynamicVehicle` is a car model in which each wheel acts on
@@ -297,9 +312,17 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 |--------|-------|-------|
 | C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi`; builds `cdylib` and `staticlib` |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | P/Invoke over the C ABI |
-| Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | plugin around the C ABI |
-| Python | `src/python.rs` | `--features python`; `PhysicsWorld` and `DeterministicSimulation` classes with NumPy batch APIs |
-| WebAssembly | [`web/`](web/) | `--features wasm`; a Three.js viewer built with `wasm-pack` |
+| Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | Blueprint component over part of the C ABI |
+| Python | `src/python.rs` | `--features python`; `PhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and `DeterministicSimulation` classes, NumPy batch APIs |
+| WebAssembly | [`web/`](web/) | `--features wasm`; `WasmPhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and a Three.js viewer built with `wasm-pack` |
+
+The bindings cover what you need to build and step a scene (bodies, collision radius and shapes,
+static colliders, joints, impulses, state serialization), not every module: the standalone modules
+in the table above are Rust only. CI checks the C ABI against its consumers
+(`scripts/integration_levels.py`): the C header, `bindings/AlicePhysics.h` and the Unity bindings
+declare every exported function; the Unreal Engine component wraps part of them, and the functions
+it does not wrap are listed with the reason in
+[`docs/integration-levels.md`](docs/integration-levels.md).
 
 ```sh
 cargo build --release --features ffi

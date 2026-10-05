@@ -59,6 +59,19 @@ typedef struct {
     uint8_t is_sensor;
 } AliceBodyInfo;
 
+/** Raw Fix128 value: the solver's own 128-bit fixed-point bits (integer part hi, fraction lo). */
+typedef struct {
+    int64_t hi;
+    uint64_t lo;
+} AliceFix128Raw;
+
+/** Raw Fix128 3-vector, for byte-for-byte determinism checks across hosts. */
+typedef struct {
+    AliceFix128Raw x;
+    AliceFix128Raw y;
+    AliceFix128Raw z;
+} AliceVec3Fix128Raw;
+
 /** Opaque physics world handle */
 typedef void AlicePhysicsWorld;
 
@@ -79,7 +92,7 @@ void alice_physics_world_destroy(AlicePhysicsWorld* world);
 void alice_physics_world_step(AlicePhysicsWorld* world, double dt);
 
 /** Step the simulation N times with fixed dt (batch stepping, amortizes FFI overhead). */
-void alice_physics_world_step_n(AlicePhysicsWorld* world, double dt, uint32_t steps);
+uint8_t alice_physics_world_step_n(AlicePhysicsWorld* world, double dt, uint32_t steps);
 
 /** Get the number of bodies in the world. */
 uint32_t alice_physics_world_body_count(const AlicePhysicsWorld* world);
@@ -99,6 +112,9 @@ uint32_t alice_physics_body_add_sensor(AlicePhysicsWorld* world, AliceVec3 posit
 
 /** Get body info snapshot. Returns 1 on success, 0 on failure. */
 uint8_t alice_physics_body_get_info(const AlicePhysicsWorld* world, uint32_t body_id, AliceBodyInfo* out);
+
+/** Body position as raw Fix128 bits (compare hi / lo exactly across platforms). Returns 1 on success. */
+uint8_t alice_physics_body_get_position_fix128_raw(const AlicePhysicsWorld* world, uint32_t body_id, AliceVec3Fix128Raw* out);
 
 /** Get body position. Returns 1 on success. */
 uint8_t alice_physics_body_get_position(const AlicePhysicsWorld* world, uint32_t body_id, AliceVec3* out);
