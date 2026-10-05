@@ -395,6 +395,7 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
                 slot.process(&event);
                 return;
             }
+            // LIMITATION(COV-ENGINE-121): Hash collision - process into existing slot anyway (approximation)
             // Hash collision - process into existing slot anyway (approximation)
             slot.process(&event);
         } else {
