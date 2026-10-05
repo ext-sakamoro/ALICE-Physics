@@ -18,8 +18,13 @@
 //!   rotation about the major and the minor axis is stable;
 //! - (d) for isotropic inertia `ω × Iω = 0`, so the term must change nothing,
 //!   checked against a golden recorded before the term existed;
-//! - (e) the rotational kinetic energy `½ ωᵀ I ω` is constant, and an implicit
-//!   discretisation may only lose it, never gain it;
+//! - (e) the rotational kinetic energy `½ ωᵀ I ω` is constant. On
+//!   `SolverBackend::Tgs` the free rotation is integrated by the second-order
+//!   symplectic splitting of Dullweber, Leimkuhler and McLachlan (1997): its
+//!   energy error is of order `h²` and does not drift (the bound is derived
+//!   from the splitting's leading error term). On `SolverBackend::Xpbd` the
+//!   term is still the implicit one-Newton-step form, which may only lose
+//!   energy;
 //! - (f) degenerate inputs (zero `ω`, zero / infinite inertia, a huge `ω`) do
 //!   not panic and give the result stated on each test.
 //!
@@ -131,7 +136,12 @@ fn energy(b: &RigidBody, inertia: [f64; 3]) -> f64 {
 // (a) conservation of world angular momentum
 // ============================================================================
 
-/// oracle: torque-free ⇒ `dL/dt = 0` exactly. A first-order method has a
+/// oracle: torque-free ⇒ `dL/dt = 0` exactly. On `Tgs` every sub-flow of
+/// the splitting turns the body by `+θ` and `L_b` by `−θ` about the same
+/// axis, so `R L_b` is unchanged up to rounding: the only error left is the
+/// f64 evaluation of `L` here (a few ulp, `~1e-15`) plus fixed-point rounding
+/// (`2⁻⁶⁴` per operation, ~10⁵ operations); the bound used is `1e-12`.
+/// On `Xpbd` (implicit one-Newton-step term) a first-order method has a
 /// global error `≤ T · h · |ω|² · κ` relative to `|L|` (`κ = I_max / I_min`
 /// bounds the body-frame rate of `L_b`, `|dL_b/dt| = |ω × L_b|`), here
 /// `2 · (1/480) · 1.3² · 3 ≈ 0.021`; the bound used is 0.03. A solver without
@@ -153,7 +163,12 @@ fn a_world_angular_momentum_is_conserved_for_asymmetric_body() {
             worst = worst.max(norm(sub(l, l0)) / norm(l0));
         }
         eprintln!("(a) {backend:?} {e:?}: max |L - L0| / |L0| = {worst:.3e}");
-        if worst >= 0.03 {
+        let bound = if backend == SolverBackend::Tgs {
+            1e-12
+        } else {
+            0.03
+        };
+        if worst >= bound {
             bad.push(format!(
                 "(a) {backend:?} {e:?}: world angular momentum drifted by {worst:.3e} of |L0| \
                  (closed form: constant)"
@@ -224,6 +239,56 @@ fn b_symmetric_top_precesses_at_closed_form_rate() {
         }
     }
     assert!(bad.is_empty(), "{bad:#?}");
+}
+
+/// Precession angle error (rad) of the symmetric top of
+/// `b_symmetric_top_precesses_at_closed_form_rate` after 2 s on `Tgs`.
+fn tgs_precession_error(substeps: usize) -> f64 {
+    let inertia = [1.0, 1.0, 2.0];
+    let omega = [0.2, 0.0, 1.0];
+    let big_omega = (inertia[2] - inertia[0]) / inertia[0] * omega[2];
+    let frames = 120;
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps,
+        ..cfg(SolverBackend::Tgs)
+    });
+    w.add_body(free_body(inertia, omega));
+    let mut angle = 0.0f64;
+    let mut prev = body_omega(&w.bodies[0]);
+    for _ in 0..frames {
+        w.step(fx(FRAME_DT));
+        let wb = body_omega(&w.bodies[0]);
+        let d = atan2_64(wb[1], wb[0]) - atan2_64(prev[1], prev[0]);
+        let d = (d + std::f64::consts::PI).rem_euclid(2.0 * std::f64::consts::PI)
+            - std::f64::consts::PI;
+        angle += d;
+        prev = wb;
+    }
+    angle - big_omega * frames as f64 * FRAME_DT
+}
+
+/// oracle: the Strang composition is second order, so halving `h` divides
+/// the precession error by 4 (a first-order composition such as
+/// `R₁(h) R₂(h) R₃(h)` divides it by 2). Accepted ratio band `[3, 5]` for
+/// `substeps` 4 → 8 → 16; the errors (`~1e-5 … 1e-6` rad) are far above the
+/// rounding floor (`~1e-12` rad), so the ratio is not noise.
+#[test]
+fn b_tgs_precession_error_is_second_order() {
+    let errs: Vec<f64> = [4usize, 8, 16]
+        .iter()
+        .map(|&n| tgs_precession_error(n))
+        .collect();
+    eprintln!("(b) Tgs precession error at substeps 4/8/16: {errs:?}");
+    for k in 0..2 {
+        let ratio = errs[k] / errs[k + 1];
+        assert!(
+            (3.0..=5.0).contains(&ratio),
+            "(b) Tgs: precession error ratio {ratio:.3} at substeps {} → {} \
+             (second order: 4), errors {errs:?}",
+            4 << k,
+            8 << k
+        );
+    }
 }
 
 // ============================================================================
@@ -426,7 +491,7 @@ fn d_isotropic_scene_is_bit_identical_under_step_parallel() {
 // (e) kinetic energy never grows
 // ============================================================================
 
-/// oracle: torque-free ⇒ `E = ½ ωᵀ I ω` constant. The implicit step solves
+/// oracle (`Xpbd`, implicit term): torque-free ⇒ `E = ½ ωᵀ I ω` constant. The implicit step solves
 /// `I(ω₂ − ω₁) = −h ω₂ × Iω₂`; dotting with `ω₂` gives
 /// `ω₂ᵀ I ω₂ = ω₂ᵀ I ω₁ ≤ √(ω₂ᵀIω₂ · ω₁ᵀIω₁)`, i.e. `E₂ ≤ E₁`. A forward-Euler
 /// step instead gains `½ h² |I^{-½}(ω × Iω)|²`-order energy every step. The
@@ -435,11 +500,14 @@ fn d_isotropic_scene_is_bit_identical_under_step_parallel() {
 /// residual's energy contribution is second order in it). Run at
 /// `|ω| ≈ 10 rad/s` so `|ω| h ≈ 0.02`.
 #[test]
-fn e_rotational_energy_does_not_grow() {
+fn e_xpbd_rotational_energy_does_not_grow() {
     let inertia = [1.0, 2.0, 3.0];
     let omega = [6.0, -5.0, 4.0];
     let mut bad = Vec::new();
-    for (backend, e) in entries() {
+    for (backend, e) in entries()
+        .into_iter()
+        .filter(|(b, _)| *b != SolverBackend::Tgs)
+    {
         let mut w = one_body_world(backend, free_body(inertia, omega));
         let e0 = energy(&w.bodies[0], inertia);
         let mut prev = e0;
@@ -461,6 +529,168 @@ fn e_rotational_energy_does_not_grow() {
         }
     }
     assert!(bad.is_empty(), "{bad:#?}");
+}
+
+/// Largest `|E − E0| / E0` over `frames` frames on `Tgs`.
+fn tgs_worst_energy_error(
+    inertia: [f64; 3],
+    omega: [f64; 3],
+    substeps: usize,
+    frames: usize,
+) -> f64 {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps,
+        ..cfg(SolverBackend::Tgs)
+    });
+    w.add_body(free_body(inertia, omega));
+    let e0 = energy(&w.bodies[0], inertia);
+    let mut worst = 0.0f64;
+    for _ in 0..frames {
+        w.step(fx(FRAME_DT));
+        worst = worst.max((energy(&w.bodies[0], inertia) - e0).abs() / e0);
+    }
+    worst
+}
+
+/// oracle (`Tgs`): a symplectic second-order method conserves a modified
+/// energy `H̃ = H + h² K + O(h⁴)`, so `|E(t) − E0| ≤ 2 h² max|K|`: the error
+/// is bounded (no drift) and divides by 4 when `h` halves. Asymmetric body
+/// `I = (1, 2, 3)`, `ω = (6, −5, 4)`, 2 s: the ratio of the worst energy error
+/// at `substeps` 4 → 8 → 16 must lie in `[3, 5]`. A dissipative or first-order
+/// step drifts by `O(h)` and gives a ratio near 2.
+#[test]
+fn e_tgs_energy_error_is_second_order() {
+    let errs: Vec<f64> = [4usize, 8, 16]
+        .iter()
+        .map(|&n| tgs_worst_energy_error([1.0, 2.0, 3.0], [6.0, -5.0, 4.0], n, 120))
+        .collect();
+    eprintln!("(e) Tgs worst |ΔE|/E0 at substeps 4/8/16: {errs:?}");
+    for k in 0..2 {
+        let ratio = errs[k] / errs[k + 1];
+        assert!(
+            (3.0..=5.0).contains(&ratio),
+            "(e) Tgs: energy error ratio {ratio:.3} at substeps {} → {} (second order: 4), \
+             errors {errs:?}",
+            4 << k,
+            8 << k
+        );
+    }
+}
+
+/// oracle (`Tgs`): thin rod `I = (0.02, 1, 1)`, `ω_b = (30, 40, 0)`
+/// (`|ω| = 50`), 10 s at `h = 1/480`. The rod is a symmetric top
+/// (`I₂ = I₃ = I⊥`): `H₁` commutes with `H₂ + H₃`, so the outer half-steps
+/// `R₁(h/2)` add only `O(h⁴)`, and the leading energy error comes from the
+/// inner composition `R₂(h/2) R₃(h) R₂(h/2)`. By the
+/// Baker–Campbell–Hausdorff formula its modified Hamiltonian is
+/// `H₂ + H₃ + h² (c₁ {H₂,{H₂,H₃}} + c₂ {H₃,{H₃,H₂}})` with
+/// `|c₁| + |c₂| = 1/24 + 1/12 = 1/8`. With the Lie–Poisson bracket
+/// `{H₂,{H₂,H₃}} = ±L₂² (L₁² − L₃²) / I⊥³` (and `2 ↔ 3`),
+/// `|L₂² (L₁² − L₃²)| ≤ |L⊥|⁴/4 + L₁² |L⊥|²` where `L₁` and `|L⊥|` are
+/// invariants of the symmetric top. Hence
+///
+/// ```text
+/// |ΔE| / E0 ≤ (h²/4) (|L⊥|⁴/4 + L₁² |L⊥|²) / (I⊥³ E0) ≈ 8.6e-4
+/// ```
+///
+/// The implicit one-Newton-step term loses about 99 % of `E` on this scene.
+#[test]
+fn e_tgs_thin_rod_energy_stays_in_second_order_band() {
+    let inertia: [f64; 3] = [0.02, 1.0, 1.0];
+    let omega_b: [f64; 3] = [30.0, 40.0, 0.0];
+    let h = FRAME_DT / SUBSTEPS as f64;
+    let l1 = inertia[0] * omega_b[0];
+    let (l2, l3) = (inertia[1] * omega_b[1], inertia[2] * omega_b[2]);
+    let lp2 = l2 * l2 + l3 * l3;
+    let e0 = 0.5
+        * (inertia[0] * omega_b[0] * omega_b[0]
+            + inertia[1] * omega_b[1] * omega_b[1]
+            + inertia[2] * omega_b[2] * omega_b[2]);
+    let i_perp: f64 = inertia[1];
+    let bound = h * h / 4.0 * (lp2 * lp2 / 4.0 + l1 * l1 * lp2) / (i_perp * i_perp * i_perp * e0);
+    let worst = tgs_worst_energy_error(inertia, omega_b, SUBSTEPS, 600);
+    eprintln!("(e) Tgs thin rod: worst |ΔE|/E0 = {worst:.3e}, bound {bound:.3e}");
+    assert!(
+        worst <= bound,
+        "(e) Tgs thin rod: energy error {worst:.3e} exceeds the second-order bound {bound:.3e}"
+    );
+}
+
+/// Rotation vector (axis · angle, world frame) of the unit quaternion `d`,
+/// with the sign of `w` folded so the angle is at most π.
+fn rotation_vector(d: QuatFix) -> [f64; 3] {
+    let (x, y, z, w) = (d.x.to_f64(), d.y.to_f64(), d.z.to_f64(), d.w.to_f64());
+    let (x, y, z, w) = if w < 0.0 {
+        (-x, -y, -z, -w)
+    } else {
+        (x, y, z, w)
+    };
+    let s = (x * x + y * y + z * z).sqrt();
+    if s == 0.0 {
+        return [0.0; 3];
+    }
+    let angle = 2.0 * atan2_64(s, w);
+    [x / s * angle, y / s * angle, z / s * angle]
+}
+
+/// oracle (`Tgs`, contact): kinematics `q̇ = ½ ω q` holds whatever the forces,
+/// so the orientation change over the run must equal `∫ ω dt`. An
+/// anisotropic ball spinning about its (principal, vertical) axis is dropped
+/// with a horizontal velocity onto a static sphere; friction changes `ω`
+/// inside the solve, and that change must reach the orientation on top of
+/// the split's free rotation. Compared: the summed per-frame rotation vectors
+/// of `q_{n+1} q_n⁻¹` against the trapezoid sum of `ω dt`. Error budget: the
+/// trapezoid rule is exact for `ω` linear in time; a jump `Δω` inside a frame
+/// (contact onset) costs at most `½ dt |Δω|`, and composing non-parallel
+/// rotations costs `O(dt² |ω|²)` per frame; with `|Δω| ≤ 4 rad/s` and
+/// `|ω| ≤ 4 rad/s` the sum stays below `0.05 + 60 · dt² · 16 ≈ 0.08` rad.
+/// An orientation that ignored the solve's velocity altogether would miss the
+/// rolling about `z` (1.4 rad here). Dropping only the within-sub-step part of
+/// the change costs `h |Δω_total|` (about `3e-3` rad here, below this
+/// oracle's resolution); that part is pinned by the unit test
+/// `advance_split_applies_the_solve_change_on_top_of_the_free_rotation`.
+#[test]
+fn f_tgs_contact_change_of_omega_reaches_the_orientation() {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        gravity: v3(0.0, -10.0, 0.0),
+        substeps: SUBSTEPS,
+        solver_backend: SolverBackend::Tgs,
+        ..PhysicsConfig::default()
+    });
+    let ground = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+    w.set_body_collision_radius(ground, fx(10.0));
+    let mut ball = free_body([0.4, 0.5, 0.6], [0.0, 1.0, 0.0]);
+    ball.position = v3(0.0, 11.0, 0.0);
+    ball.velocity = v3(3.0, 0.0, 0.0);
+    let ball = w.add_body(ball);
+    w.set_body_collision_radius(ball, Fix128::ONE);
+    let mut from_q = [0.0f64; 3];
+    let mut from_w = [0.0f64; 3];
+    let mut q = w.bodies[ball].rotation;
+    let mut om = to_f(w.bodies[ball].angular_velocity);
+    for _ in 0..60 {
+        w.step(fx(FRAME_DT));
+        let q2 = w.bodies[ball].rotation;
+        let om2 = to_f(w.bodies[ball].angular_velocity);
+        let rv = rotation_vector(q2.mul(q.conjugate()));
+        for k in 0..3 {
+            from_q[k] += rv[k];
+            from_w[k] += 0.5 * (om[k] + om2[k]) * FRAME_DT;
+        }
+        q = q2;
+        om = om2;
+    }
+    let err = norm(sub(from_q, from_w));
+    eprintln!("(f) Tgs contact: Σ rotation {from_q:?}, ∫ω dt {from_w:?}, |diff| {err:.3e}");
+    assert!(
+        from_w[2].abs() > 1.0,
+        "(f) Tgs contact: the scene must roll (∫ω_z dt = {:.3})",
+        from_w[2]
+    );
+    assert!(
+        err < 0.08,
+        "(f) Tgs contact: orientation change {from_q:?} differs from ∫ω dt {from_w:?} by {err:.3e}"
+    );
 }
 
 // ============================================================================
@@ -502,9 +732,11 @@ fn f_zero_omega_matches_isotropic_twin_bit_for_bit() {
 /// infinite moment has no gyroscopic response); covered bit-for-bit by
 /// `d_isotropic_and_exempt_bodies_are_bit_identical_to_before`. Here: a huge
 /// `|ω| ≈ 2.7e6 rad/s` on an asymmetric body must not panic, must keep the
-/// orientation a unit quaternion, and must not gain energy (the bound of (e)),
-/// whether the term is applied or skipped because its products leave the
-/// fixed-point range.
+/// orientation a unit quaternion, and on `Xpbd` must not gain energy (the
+/// bound of (e)), whether the term is applied or skipped because its products
+/// leave the fixed-point range. On `Tgs` (splitting, `h|ω| ≈ 6e3`, far outside
+/// the asymptotic regime) `|L|` must stay constant to rounding and `E` inside
+/// the interval that constant `|L|` allows.
 #[test]
 fn f_huge_omega_does_not_panic_or_gain_energy() {
     let inertia = [1.0, 2.0, 3.0];
@@ -512,6 +744,7 @@ fn f_huge_omega_does_not_panic_or_gain_energy() {
     for (backend, e) in entries() {
         let mut w = one_body_world(backend, free_body(inertia, omega));
         let e0 = energy(&w.bodies[0], inertia);
+        let l0 = norm(world_l(&w.bodies[0], inertia));
         for _ in 0..3 {
             advance(&mut w, e);
         }
@@ -525,10 +758,23 @@ fn f_huge_omega_does_not_panic_or_gain_energy() {
         let en = energy(b, inertia);
         eprintln!("(f) {backend:?} {e:?}: |q| = {qn}, E/E0 = {}", en / e0);
         assert!((qn - 1.0).abs() < 1e-6, "{backend:?} {e:?}: |q| = {qn}");
-        assert!(
-            en <= e0 * (1.0 + 1e-9),
-            "{backend:?} {e:?}: E/E0 = {}",
-            en / e0
-        );
+        if backend == SolverBackend::Tgs {
+            // the splitting conserves `|L_b|` to rounding, which confines
+            // `E` to `[|L|²/(2 I_max), |L|²/(2 I_min)]`
+            let l = norm(world_l(b, inertia));
+            let rel = (l - l0).abs() / l0;
+            let (lo, hi) = (l0 * l0 / (2.0 * 3.0), l0 * l0 / 2.0);
+            assert!(rel < 1e-12, "{backend:?} {e:?}: |L| changed by {rel:.3e}");
+            assert!(
+                en >= lo * (1.0 - 1e-12) && en <= hi * (1.0 + 1e-12),
+                "{backend:?} {e:?}: E = {en} outside [{lo}, {hi}]"
+            );
+        } else {
+            assert!(
+                en <= e0 * (1.0 + 1e-9),
+                "{backend:?} {e:?}: E/E0 = {}",
+                en / e0
+            );
+        }
     }
 }
