@@ -277,6 +277,7 @@ impl DestructibleSdf {
             return;
         }
 
+        // LIMITATION(COV-FRACT-076): Keep only the most recent 32 destructions
         // Keep only the most recent 32 destructions
         // A more sophisticated implementation would merge overlapping volumes
         let drain_count = self.destructions.len() - 32;

@@ -1,0 +1,1126 @@
+# Fracture, damage and wear (FRACT) coverage of ALICE-Physics, against an
+# external reference frame.
+#
+# What this table is: every capability that the standard texts (Anderson,
+# Fracture Mechanics; Tada-Paris-Irwin, The Stress Analysis of Cracks Handbook;
+# Lemaitre, A Course on Damage Mechanics; Belytschko et al. on XFEM;
+# Bourdin-Francfort-Marigo on the variational / phase-field approach; Archard
+# 1953 on wear), reference implementations (Abaqus XFEM, cohesive elements and
+# VCCT; LS-DYNA material failure and element erosion; Houdini RBD fracture and
+# NVIDIA Blast for real-time destruction) and standard benchmarks (centre-cracked
+# plate, double cantilever beam, Kalthoff-Winkler impact, three-point bending,
+# pin-on-disc wear) expect, one [[item]] per capability, with what the crate has
+# today. The axes and the items come from that reference frame, not from the
+# modules that exist.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - handbook stress intensity factors and the closed-form integration of the
+#     Paris law are in the struct table (COV-STRUCT-059 / 060); here are the
+#     numerical evaluation of K / J / G and crack growth driven by it
+#   - the fem table has one coarse row per family (COV-FEM-105 LEFM K / J,
+#     106 XFEM, 107 cohesive elements, 108 phase-field fracture, 044 continuum
+#     damage Lemaitre / Mazars, 109 heuristic SDF fracture out of scope for FE).
+#     This table does not repeat those rows: it splits each family into its
+#     parts and names the parent fem id in `evidence`. FE elements, meshing and
+#     the nonlinear solver themselves are in the fem table
+#   - cutting cloth and soft bodies as a geometric operation (plane cut, applying
+#     the cut, blade paths, tearing by edge strain) is in the soft table
+#     (COV-SOFT-074 to 077); here are the failure criteria that decide where and
+#     when material separates
+#   - breakable joints are in the rigid table (COV-RIGID-031), breakable rope
+#     attachments in the soft table (COV-SOFT-031)
+#   - surface recession driven by a heat flux (thermal ablation) is in the therm
+#     table (COV-THERM-076); fatigue life by S-N / Miner and creep rupture are in
+#     the struct table
+#   - erosion as a terrain-generation tool (procedural heightfield shaping) is in
+#     the environment / engine tables; here is erosion as material removal by a
+#     physical agent, including on SDF terrain
+#   - the SDF effect layer (src/fracture.rs, src/erosion.rs,
+#     src/sdf_destruction.rs) is counted here, with "効果層" in `evidence`; it is
+#     not a continuum model and its rows are separate from the mechanics rows
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-FRACT-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-FRACT-001"
+axis = "lefm"
+item = "stress intensity factor from crack-face displacements (displacement correlation / extrapolation)"
+source = "Anderson, Fracture Mechanics ch.12 (computational fracture mechanics); Abaqus contour integral output"
+status = "missing"
+evidence = "FE の K 抽出は無い (grep 0 件、親 COV-FEM-105) src/fillet_stress.rs は応力集中係数 K_t の閉形式で K ではない"
+oracle_candidate = "中央き裂板の K_I を Tada の式と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-002"
+axis = "lefm"
+item = "quarter-point singular crack-tip elements (1/sqrt(r) field)"
+source = "Anderson, Fracture Mechanics ch.12; Barsoum 1976"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-105、P2 四面体はあるが辺中点の移動は無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-003"
+axis = "lefm"
+item = "J-integral by the equivalent domain integral"
+source = "Anderson, Fracture Mechanics ch.3 and ch.12; Rice 1968; Shih-Moran-Nakamura 1986"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-105)"
+oracle_candidate = "経路独立性 (2 つの領域で同じ J) と J = K²/E' の突合"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-004"
+axis = "lefm"
+item = "energy release rate by virtual crack extension / compliance derivative"
+source = "Anderson, Fracture Mechanics ch.2 (energy release rate) and ch.12; Parks 1974"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-105)"
+oracle_candidate = "DCB の G をはり理論の閉形式と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-005"
+axis = "lefm"
+item = "virtual crack closure technique (VCCT) with mode partition"
+source = "Anderson, Fracture Mechanics ch.12; Rybicki-Kanninen 1977; Abaqus VCCT"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-105)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-006"
+axis = "lefm"
+item = "mixed-mode K_I / K_II / K_III separation (interaction integral)"
+source = "Anderson, Fracture Mechanics ch.2 (mixed-mode) and ch.12; Yau-Wang-Corten 1980"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-105)"
+oracle_candidate = "斜めき裂の K_I, K_II を閉形式と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-007"
+axis = "lefm"
+item = "T-stress and constraint parameters"
+source = "Anderson, Fracture Mechanics ch.3 (constraint); Larsson-Carlsson 1973"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-008"
+axis = "lefm"
+item = "K / J along a 3-D crack front"
+source = "Anderson, Fracture Mechanics ch.12; Abaqus contour integral on 3-D fronts"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-105)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-009"
+axis = "lefm"
+item = "J with thermal strain, body force and crack-face traction terms"
+source = "Anderson, Fracture Mechanics ch.12"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-010"
+axis = "lefm"
+item = "elastic-plastic fracture: J for a plastic body, CTOD, HRR field"
+source = "Anderson, Fracture Mechanics ch.3"
+status = "missing"
+evidence = "grep 0 件 (FE の塑性は COV-FEM 側にあるが破壊パラメータの評価は無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-011"
+axis = "lefm"
+item = "fracture criterion K >= K_Ic (or G >= G_c) with a material toughness"
+source = "Anderson, Fracture Mechanics ch.2 and ch.7 (toughness testing)"
+status = "missing"
+evidence = "toughness を K の単位で持つ材料データは無い 効果層の fracture_toughness は応力の閾値 (src/fracture.rs:30)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-012"
+axis = "lefm"
+item = "resistance curve (R-curve) and stable tearing"
+source = "Anderson, Fracture Mechanics ch.2 and ch.3"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-013"
+axis = "lefm"
+item = "interface crack between dissimilar materials (oscillatory K, phase angle)"
+source = "Anderson, Fracture Mechanics ch.2; Hutchinson-Suo 1992"
+status = "missing"
+evidence = "src/bimaterial.rs の module doc は界面き裂の文献を挙げるが K の関数は無い (src/bimaterial.rs:38)、閉形式の接着強度は COV-STRUCT-123"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-014"
+axis = "crack-growth"
+item = "fatigue crack growth by numerical integration of the Paris law with K(a) re-evaluated as the crack grows"
+source = "Anderson, Fracture Mechanics ch.10; Paris-Erdogan 1963"
+status = "missing"
+evidence = "da/dN の積分は無い (grep 0 件、閉形式積分は COV-STRUCT-059)"
+oracle_candidate = "Y 一定で閉形式寿命と一致、K(a) 再評価で Y 変化の効きを見る"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-015"
+axis = "crack-growth"
+item = "crack growth laws beyond Paris: threshold ΔK_th, Forman / NASGRO, R-ratio dependence"
+source = "Anderson, Fracture Mechanics ch.10; Forman 1967; NASGRO equation"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-016"
+axis = "crack-growth"
+item = "load-interaction effects: crack closure, overload retardation (Wheeler, Elber)"
+source = "Anderson, Fracture Mechanics ch.10; Elber 1970; Wheeler 1972"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-017"
+axis = "crack-growth"
+item = "crack growth direction: maximum tangential stress (MTS) criterion"
+source = "Anderson, Fracture Mechanics ch.2; Erdogan-Sih 1963"
+status = "missing"
+evidence = "K_I / K_II が無いので方向基準も無い 効果層の向きは応力勾配から決める (行 COV-FRACT-057)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-018"
+axis = "crack-growth"
+item = "crack growth direction: maximum energy release rate / minimum strain energy density (Sih)"
+source = "Anderson, Fracture Mechanics ch.2; Sih 1974"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-019"
+axis = "crack-growth"
+item = "quasi-static crack advance with geometry update (remesh or enrichment update) and load re-solve"
+source = "Anderson, Fracture Mechanics ch.12; Abaqus XFEM crack propagation"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-105 / 106)"
+oracle_candidate = "片側き裂板の進展経路"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-020"
+axis = "crack-growth"
+item = "cycle jump / fatigue damage in a continuum (crack initiation life from a damage variable)"
+source = "Lemaitre, A Course on Damage Mechanics (fatigue damage); Lemaitre-Desmorat"
+status = "missing"
+evidence = "src/fatigue.rs は S-N と Miner の閉形式 (COV-STRUCT-046 / 049) で場の損傷ではない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-021"
+axis = "discrete-crack"
+item = "XFEM Heaviside enrichment for a crack cutting elements"
+source = "Belytschko-Black 1999; Moes-Dolbow-Belytschko 1999; Abaqus XFEM"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-106)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-022"
+axis = "discrete-crack"
+item = "XFEM crack-tip branch-function enrichment and enriched quadrature"
+source = "Moes-Dolbow-Belytschko 1999; Belytschko et al. 2009 review"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-106)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-023"
+axis = "discrete-crack"
+item = "level-set description of the crack (two level sets) for tracking without remeshing"
+source = "Stolarska et al. 2001"
+status = "missing"
+evidence = "level set は流体の界面だけ (COV-MULTIPHASE 側)、き裂の level set は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-024"
+axis = "discrete-crack"
+item = "phantom-node / GFEM element splitting"
+source = "Hansbo-Hansbo 2004; Song-Areias-Belytschko 2006"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-106)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-025"
+axis = "discrete-crack"
+item = "cohesive zone with a bilinear traction-separation law"
+source = "Dugdale 1960; Barenblatt 1962; Camanho-Davila 2002; Abaqus cohesive elements"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-107)"
+oracle_candidate = "DCB の荷重-変位曲線を LEFM と比較 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-026"
+axis = "discrete-crack"
+item = "exponential / polynomial cohesive laws (Xu-Needleman, PPR)"
+source = "Xu-Needleman 1994; Park-Paulino-Roesler 2009"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-107)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-027"
+axis = "discrete-crack"
+item = "mixed-mode cohesive damage initiation and propagation (Benzeggagh-Kenane)"
+source = "Benzeggagh-Kenane 1996; Camanho-Davila 2002"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-107)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-028"
+axis = "discrete-crack"
+item = "inserting cohesive interfaces on the fly where a criterion is met"
+source = "Camacho-Ortiz 1996; Pandolfi-Ortiz"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-107)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-029"
+axis = "discrete-crack"
+item = "delamination of laminates (interlaminar cohesive / VCCT)"
+source = "Abaqus composite delamination; Camanho-Davila 2002"
+status = "missing"
+evidence = "積層板の層間応力も無い (COV-STRUCT-085)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-030"
+axis = "discrete-crack"
+item = "element deletion / erosion when a failure criterion is reached"
+source = "LS-DYNA MAT_ADD_EROSION; Abaqus element deletion"
+status = "missing"
+evidence = "grep 0 件 (FE 要素を消す経路は無い)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-031"
+axis = "discrete-crack"
+item = "node splitting / remeshing along the crack path"
+source = "Anderson, Fracture Mechanics ch.12; Bouchard et al. 2003"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-032"
+axis = "discrete-crack"
+item = "peridynamics (bond-based / state-based) fracture"
+source = "Silling 2000; Silling et al. 2007"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-033"
+axis = "discrete-crack"
+item = "lattice / bonded-particle (DEM) fracture with breakable bonds"
+source = "Potyondy-Cundall 2004 (BPM)"
+status = "missing"
+evidence = "粒子間の結合破断は無い (粒子法は COV-PART 側、DEM の接触則のみ) (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-034"
+axis = "phase-field"
+item = "phase-field fracture with the AT2 functional"
+source = "Bourdin-Francfort-Marigo 2000; Miehe-Hofacker-Welschinger 2010"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-108)"
+oracle_candidate = "1D 棒の均一解 / 単一き裂の Γ-収束"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-035"
+axis = "phase-field"
+item = "AT1 functional with an elastic threshold"
+source = "Pham-Amor-Marigo-Maurini 2011"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-108)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-036"
+axis = "phase-field"
+item = "tension-compression split of the strain energy (spectral, volumetric-deviatoric)"
+source = "Miehe et al. 2010 (spectral); Amor-Marigo-Maurini 2009 (vol-dev)"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-108)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-037"
+axis = "phase-field"
+item = "irreversibility (history field or bound-constrained solve)"
+source = "Miehe et al. 2010; Gerasimov-De Lorenzis 2019"
+status = "missing"
+evidence = "grep 0 件 (親 COV-FEM-108)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-038"
+axis = "phase-field"
+item = "staggered / alternate-minimisation and monolithic solvers for the coupled problem"
+source = "Bourdin 2000; Gerasimov-De Lorenzis 2016"
+status = "missing"
+evidence = "連成の反復枠組み (COV-NUM 側) はあるが phase field の場は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-039"
+axis = "phase-field"
+item = "length scale calibrated to strength (l from G_c, E, σ_c)"
+source = "Tanné et al. 2018"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-040"
+axis = "phase-field"
+item = "dynamic phase-field fracture"
+source = "Borden et al. 2012"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-041"
+axis = "damage"
+item = "scalar isotropic damage variable in an FE solve (effective stress, D in [0,1])"
+source = "Lemaitre, A Course on Damage Mechanics ch.1-2; Kachanov 1958"
+status = "missing"
+evidence = "連続体損傷は COV-FEM-044 (Lemaitre / Mazars の構成則) が親、FE 側に損傷変数は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-042"
+axis = "damage"
+item = "porous ductile damage (Gurson-Tvergaard-Needleman)"
+source = "Gurson 1977; Tvergaard-Needleman 1984; Abaqus porous metal plasticity"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-043"
+axis = "damage"
+item = "Johnson-Cook failure strain (triaxiality, rate, temperature) with cumulative damage"
+source = "Johnson-Cook 1985; LS-DYNA MAT_015"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-044"
+axis = "damage"
+item = "anisotropic (tensor) damage"
+source = "Lemaitre, A Course on Damage Mechanics (anisotropic damage); Murakami 1988"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-045"
+axis = "damage"
+item = "damage-plasticity for quasi-brittle materials (concrete damaged plasticity)"
+source = "Lubliner et al. 1989; Lee-Fenves 1998; Abaqus CDP"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-046"
+axis = "damage"
+item = "strain softening (negative tangent) in the material update"
+source = "Lemaitre, A Course on Damage Mechanics; Bazant-Planas, Fracture and Size Effect"
+status = "missing"
+evidence = "FE の硬化係数は負を拒否する (src/linear_elastic_fem.rs:3469)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-047"
+axis = "damage"
+item = "crack band regularisation (energy per element size)"
+source = "Bazant-Oh 1983"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "要素寸法を変えて散逸エネルギーが G_f に一致"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-048"
+axis = "damage"
+item = "nonlocal integral and gradient-enhanced damage regularisation"
+source = "Pijaudier-Cabot-Bazant 1987; Peerlings et al. 1996"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-049"
+axis = "damage"
+item = "size effect and statistical strength (Weibull) of brittle parts"
+source = "Bazant-Planas, Fracture and Size Effect; Weibull 1951"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-050"
+axis = "dynamic-fracture"
+item = "crack speed governed by the dynamic energy balance, bounded by the Rayleigh wave speed"
+source = "Anderson, Fracture Mechanics ch.4 (dynamic fracture); Freund, Dynamic Fracture Mechanics"
+status = "missing"
+evidence = "効果層のき裂は設定値の一定速度で伸びる (行 COV-FRACT-058)、速度を力学から決める経路は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-051"
+axis = "dynamic-fracture"
+item = "dynamic stress intensity factor and rate-dependent toughness"
+source = "Anderson, Fracture Mechanics ch.4"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-052"
+axis = "dynamic-fracture"
+item = "crack branching"
+source = "Anderson, Fracture Mechanics ch.4; Ravi-Chandar-Knauss 1984"
+status = "missing"
+evidence = "効果層のき裂は種から 1 本の直線で、分岐しない (src/fracture.rs:248)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-053"
+axis = "dynamic-fracture"
+item = "dynamic crack arrest"
+source = "Anderson, Fracture Mechanics ch.4"
+status = "missing"
+evidence = "効果層の停止は長さ上限だけ (行 COV-FRACT-058)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-054"
+axis = "effect-layer-fracture"
+item = "accumulated stress field fed by impact splats (effect layer)"
+source = "Houdini / game destruction practice (impact-driven damage maps)"
+status = "implemented+oracle"
+evidence = "効果層 src/fracture.rs:146 / tests/analytic_fracture_wiring.rs::splat_follows_the_smoothstep_closed_form_on_every_node / tests/analytic_fracture_wiring.rs::stress_is_additive_signed_and_interpolated"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-055"
+axis = "effect-layer-fracture"
+item = "diffusion and decay of the stress field between steps (effect layer)"
+source = "explicit diffusion and exponential decay (closed form)"
+status = "implemented+oracle"
+evidence = "効果層 src/fracture.rs:306 / tests/analytic_fracture_wiring.rs::update_diffuses_then_decays_with_the_closed_form / tests/engineering_oracles_misc.rs::fracture_stress_field_total_decays_exponentially_and_peak_diffuses"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-056"
+axis = "effect-layer-fracture"
+item = "crack initiation where the stress field exceeds a threshold (effect layer)"
+source = "threshold-based crack seeding (game destruction practice)"
+status = "implemented+oracle"
+evidence = "効果層 src/fracture.rs:163 / tests/analytic_fracture_wiring.rs::seed_threshold_is_strict_and_per_node / tests/analytic_fracture_wiring.rs::one_hot_node_seeds_one_crack_that_grows_then_stops / tests/analytic_fracture_wiring.rs::seeds_closer_than_ten_crack_widths_are_suppressed 閾値は応力で K ではない (行 COV-FRACT-011)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-057"
+axis = "effect-layer-fracture"
+item = "crack orientation from the stress field (effect layer)"
+source = "heuristic: perpendicular to the stress gradient"
+status = "partial"
+evidence = "効果層 src/fracture.rs:208 / tests/analytic_fracture_wiring.rs::crack_direction_follows_the_stress_gradient / tests/analytic_fracture_wiring.rs::small_gradients_still_orient_the_crack_and_tiny_ones_use_the_hash_direction 向きは勾配と鉛直軸の外積なので常に水平面内"
+oracle_candidate = ""
+limitation = "src/fracture.rs:208 'Cross with up vector for horizontal crack tendency'"
+
+[[item]]
+id = "COV-FRACT-058"
+axis = "effect-layer-fracture"
+item = "crack growth at a set speed with arrest at a maximum length (effect layer)"
+source = "kinematic crack growth (game destruction practice)"
+status = "implemented+oracle"
+evidence = "効果層 src/fracture.rs:248 / tests/engineering_oracles_misc.rs::fracture_crack_length_grows_linearly_and_arrests_at_max_length / tests/analytic_fracture_wiring.rs::growth_clamps_at_max_length_and_the_tip_is_measured_from_the_start"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-059"
+axis = "effect-layer-fracture"
+item = "carving cracks into the SDF by capsule subtraction (effect layer)"
+source = "CSG subtraction, capsule SDF (closed form)"
+status = "implemented+oracle"
+evidence = "効果層 src/fracture.rs:277 / tests/engineering_oracles_misc.rs::fracture_capsule_subtraction_matches_segment_distance_closed_form / tests/analytic_fracture_wiring.rs::oblique_crack_matches_the_point_to_segment_distance / tests/analytic_fracture_wiring.rs::modify_distance_subtracts_the_capsule_only_inside_material"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-060"
+axis = "effect-layer-fracture"
+item = "number of cracks per field (cap, slot reuse of finished cracks)"
+source = "real-time budget practice"
+status = "partial"
+evidence = "効果層 src/fracture.rs:37 / tests/analytic_fracture_wiring.rs::max_cracks_caps_the_total_including_finished_cracks / tests/analytic_fracture_wiring.rs::cap_applies_inside_one_scan_too"
+oracle_candidate = ""
+limitation = "src/fracture.rs:35 'a finished crack stays carved into the SDF and keeps occupying its slot'"
+
+[[item]]
+id = "COV-FRACT-061"
+axis = "effect-layer-fracture"
+item = "effect-layer crack initiation driven by an elastic stress field (from FE or the rigid contact solve)"
+source = "coupling practice (stress from the mechanics model rather than a painted field)"
+status = "missing"
+evidence = "効果層の応力場は拡散方程式で弾性体の応力ではない (src/fracture.rs:305)、FE の応力を渡す経路は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-062"
+axis = "effect-layer-fracture"
+item = "contact impulses of the world step routed into fracture / destruction automatically"
+source = "Blast / PhysX destruction (impact damage from contact reports)"
+status = "missing"
+evidence = "apply_stress_at / destruction_from_impact の src 内 caller は 0 件 (lib.rs の re-export のみ)、呼び手が渡す"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-063"
+axis = "effect-layer-fracture"
+item = "fracture reading the distance composed by earlier modifiers in the chain"
+source = "modifier composition"
+status = "implemented+oracle"
+evidence = "効果層 tests/coupling_channel_inventory.rs::chain_order_matters_materially_only_because_of_fracture"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-064"
+axis = "effect-layer-fracture"
+item = "crack interaction, coalescence and branching in the effect layer"
+source = "game destruction practice"
+status = "missing"
+evidence = "近接した種を抑えるだけで、き裂どうしは相互作用しない (src/fracture.rs:192)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-065"
+axis = "fragmentation"
+item = "Voronoi pre-fracture of a solid into convex pieces"
+source = "Houdini Voronoi Fracture; NVIDIA Blast authoring"
+status = "missing"
+evidence = "module doc は Voronoi-like と書くが分割は無い (src/fracture.rs:13)、き裂は SDF から体積を引くだけ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-066"
+axis = "fragmentation"
+item = "runtime fracture at the impact point (local Voronoi / pattern placement)"
+source = "Mueller-Chentanez-Kim 2013 (real-time dynamic fracture with volumetric approximate convex decompositions)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-067"
+axis = "fragmentation"
+item = "fragments become rigid bodies with mass, centre of mass and inertia from their volume"
+source = "Blast / Houdini RBD fracture"
+status = "missing"
+evidence = "SDF から引いた体積は消えるだけで body は作られない (src/sdf_destruction.rs:11) (推測、body を作る caller 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-068"
+axis = "fragmentation"
+item = "detection of detached islands after carving"
+source = "Blast support graph; connected-component labelling"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-069"
+axis = "fragmentation"
+item = "support / bond graph with bond health and stress solve between chunks"
+source = "NVIDIA Blast (support graph, stress solver)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-070"
+axis = "fragmentation"
+item = "fragment size distribution from energy (Grady, Weibull / Mott)"
+source = "Grady-Kipp 1985; Mott 1947"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-071"
+axis = "fragmentation"
+item = "debris lifetime, sleeping and culling of small fragments"
+source = "game destruction practice"
+status = "missing"
+evidence = "衝突 filter に DEBRIS 層の定数があるだけ (src/filter.rs:122)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-072"
+axis = "csg-destruction"
+item = "subtracting destruction volumes (sphere, box, cylinder, custom SDF) from an SDF, sharp or smooth"
+source = "CSG on signed distance fields (Quilez; Hart 1996)"
+status = "implemented+oracle"
+evidence = "効果層 src/sdf_destruction.rs:250 / tests/audit_sdf_destruction.rs::sharp_subtraction_is_max_of_original_and_negated_shape_for_rotated_shapes / tests/audit_sdf_destruction.rs::smooth_subtraction_matches_the_quadratic_smooth_max / tests/analytic_sdf_destruction_wiring.rs::sphere_cube_cylinder_craters_all_read_back_as_their_radius_at_center / tests/engineering_oracles_misc.rs::sdf_destruction_sphere_crater_removes_a_hemisphere"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-073"
+axis = "csg-destruction"
+item = "impact crater sized by the impact speed"
+source = "game destruction practice"
+status = "implemented+oracle"
+evidence = "効果層 src/sdf_destruction.rs:342 / tests/audit_sdf_destruction.rs::impact_crater_is_centred_on_point_b_and_uses_the_speed_magnitude / tests/analytic_sdf_destruction_wiring.rs::destruction_from_impact_clamps_abs_speed_times_scale_into_the_radius_range / tests/audit_sdf_destruction.rs::impact_with_inverted_radius_range_does_not_panic (known defect AUD-A-S5W3-010)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-074"
+axis = "csg-destruction"
+item = "explosion crater (smooth sphere)"
+source = "game destruction practice"
+status = "implemented+oracle"
+evidence = "効果層 src/sdf_destruction.rs:359 / tests/audit_sdf_destruction.rs::explosion_is_a_smooth_sphere_at_the_centre / tests/analytic_sdf_destruction_wiring.rs::destruction_from_explosion_builds_a_sphere_with_the_requested_smoothing"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-075"
+axis = "csg-destruction"
+item = "projectile bore (cylinder along the shot direction)"
+source = "game destruction practice"
+status = "implemented+oracle"
+evidence = "効果層 src/sdf_destruction.rs:369 / tests/engineering_oracles_misc.rs::sdf_destruction_projectile_bore_matches_capped_cylinder_closed_form / tests/audit_sdf_destruction.rs::projectile_bore_end_caps_sit_at_entry_and_entry_plus_depth_for_a_unit_direction / tests/audit_sdf_destruction.rs::projectile_centre_does_not_depend_on_the_length_of_the_direction (known defect AUD-A-S5W3-011) / tests/audit_sdf_destruction.rs::projectile_direction_near_the_pole_is_not_snapped_to_it (known defect AUD-A-S5W3-012)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-076"
+axis = "csg-destruction"
+item = "keeping evaluation bounded as destruction volumes accumulate (merge, bake into a field)"
+source = "SDF sculpting practice (baking edits into a sparse grid)"
+status = "partial"
+evidence = "効果層 src/sdf_destruction.rs:274 / tests/analytic_sdf_destruction_wiring.rs::optimize_above_the_cap_drops_exactly_the_oldest_overflow_and_is_idempotent / tests/audit_sdf_destruction.rs::optimize_does_not_restore_material_carved_by_disjoint_craters (known defect AUD-A-S5W3-009: 古い volume を捨てると掘った形が戻る)"
+oracle_candidate = ""
+limitation = "src/sdf_destruction.rs:281 'Keep only the most recent 32 destructions'"
+
+[[item]]
+id = "COV-FRACT-077"
+axis = "csg-destruction"
+item = "collision normals of the carved SDF"
+source = "central differences on the SDF"
+status = "implemented+oracle"
+evidence = "効果層 src/sdf_destruction.rs:310 / tests/audit_sdf_destruction.rs::normal_points_toward_the_crater_centre_inside_a_carved_region / tests/audit_sdf_destruction.rs::normal_is_accurate_far_from_the_origin / tests/analytic_sdf_distance_query.rs::four_entry_points_are_bit_identical_to_the_reference_formula"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-078"
+axis = "csg-destruction"
+item = "bodies colliding against the carved SDF in the world step"
+source = "SDF collider"
+status = "implemented-no-oracle"
+evidence = "DestructibleSdf は SdfField を実装するので SDF collider に渡せる (src/sdf_destruction.rs:288) 掘った穴に body が落ちる world の test は無い (推測)"
+oracle_candidate = "穴の縁で静止する球の高さを閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-079"
+axis = "csg-destruction"
+item = "crater size from impact energy and material strength (crater scaling laws)"
+source = "Holsapple 1993 (pi-scaling)"
+status = "missing"
+evidence = "半径は速度に係数を掛けて clamp するだけで、エネルギー・材料強度は入らない (行 COV-FRACT-073)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-080"
+axis = "csg-destruction"
+item = "bit-identical replay of effect-layer fracture and destruction"
+source = "lockstep determinism"
+status = "implemented+oracle"
+evidence = "効果層 tests/determinism_golden_f32.rs::golden_fracture / tests/determinism_golden_f32.rs::golden_sdf_destruction"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-081"
+axis = "erosion-wear"
+item = "Archard sliding wear law (V = k F s / H)"
+source = "Archard 1953"
+status = "missing"
+evidence = "grep 0 件 (wear / Archard)"
+oracle_candidate = "pin-on-disc の摩耗深さ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-082"
+axis = "erosion-wear"
+item = "wear depth applied to the contact geometry (worn profile changes the contact)"
+source = "Podra-Andersson 1999 (FE wear simulation)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-083"
+axis = "erosion-wear"
+item = "fretting wear and energy-based wear (dissipated friction energy)"
+source = "Fouvry et al. 1996"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-084"
+axis = "erosion-wear"
+item = "erosion rate law per agent (wind, water, chemical, ablation) with hardness and depth cap"
+source = "empirical rate laws"
+status = "implemented+oracle"
+evidence = "効果層 src/erosion.rs:181 / tests/analytic_erosion_wiring.rs::rate_laws_per_type_match_the_documented_table / tests/analytic_erosion_wiring.rs::rate_is_linear_in_exposure_and_proportional_to_one_minus_hardness / tests/analytic_erosion_wiring.rs::depth_is_capped_at_max_depth_and_exposure_decays_exponentially"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-085"
+axis = "erosion-wear"
+item = "solid-particle impact erosion calibrated to measurement (velocity exponent n of about 2-3)"
+source = "Finnie 1960; Bitter 1963"
+status = "partial"
+evidence = "効果層 src/erosion.rs:11 / tests/analytic_erosion_wiring.rs::rate_laws_per_type_match_the_documented_table"
+oracle_candidate = ""
+limitation = "src/erosion.rs:24 'so `Wind` / `Water` are game-tuned rather than validated'"
+
+[[item]]
+id = "COV-FRACT-086"
+axis = "erosion-wear"
+item = "impact-angle dependence of erosion (ductile vs brittle response)"
+source = "Finnie 1960; Bitter 1963"
+status = "missing"
+evidence = "exposure は面の向きと流れの内積で、衝突角による材料応答の違いは無い (src/erosion.rs:164)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-087"
+axis = "erosion-wear"
+item = "exposure from the SDF surface normal facing the flow"
+source = "geometric exposure"
+status = "implemented+oracle"
+evidence = "効果層 src/erosion.rs:129 / tests/analytic_erosion_wiring.rs::windward_faces_of_a_sphere_get_exposure_one_and_leeward_faces_zero / tests/analytic_erosion_wiring.rs::flow_direction_sets_which_side_is_exposed_and_is_normalised"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-088"
+axis = "erosion-wear"
+item = "smoothing of the erosion field and its application to the SDF"
+source = "diffusion (closed form)"
+status = "implemented+oracle"
+evidence = "効果層 src/erosion.rs:230 / tests/analytic_erosion_wiring.rs::smoothing_spreads_erosion_without_changing_its_total / tests/analytic_erosion_wiring.rs::erosion_at_samples_trilinearly_and_modify_distance_adds_it"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-089"
+axis = "erosion-wear"
+item = "erosion driven by the flow solver (wall shear stress or near-wall velocity from CFD)"
+source = "Oka et al. 2005; erosion post-processing in Fluent / OpenFOAM"
+status = "missing"
+evidence = "流速は config の定数で、exposure は呼び手が毎 frame 渡す (src/erosion.rs:25)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-090"
+axis = "erosion-wear"
+item = "hydraulic erosion with sediment transport (capacity, deposition, channel formation)"
+source = "Musgrave-Kolb-Mace 1989; Mei-Decaudin-Hu 2007; stream-power law"
+status = "missing"
+evidence = "Water は Wind の 1.5 倍の係数だけで、module doc の gravity channeling は rate に入らない (src/erosion.rs:44)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-091"
+axis = "erosion-wear"
+item = "thermal weathering of slopes (talus angle relaxation)"
+source = "Musgrave-Kolb-Mace 1989"
+status = "missing"
+evidence = "grep 0 件 (talus)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-092"
+axis = "erosion-wear"
+item = "erosion applied to an SDF terrain as material removal"
+source = "SDF modifiers"
+status = "implemented-no-oracle"
+evidence = "ErosionModifier は任意の SdfField に掛かる (src/erosion.rs:131) 地形 SDF で回した test は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-093"
+axis = "erosion-wear"
+item = "cavitation erosion"
+source = "Franc-Michel, Fundamentals of Cavitation"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-094"
+axis = "erosion-wear"
+item = "electrochemical corrosion (rate from potential / current density, pitting)"
+source = "Jones, Principles and Prevention of Corrosion"
+status = "missing"
+evidence = "Chemical は速度に依らない一様な速度則だけ (行 COV-FRACT-084)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-095"
+axis = "cutting"
+item = "cutting force from a separation criterion (fracture toughness or specific cutting energy)"
+source = "Atkins, The Science and Engineering of Cutting; Merchant 1945"
+status = "missing"
+evidence = "切断は平面で粒子を分けるだけで、力や仕事の基準は無い (幾何は COV-SOFT-074〜077)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-096"
+axis = "cutting"
+item = "tearing criterion for membranes from an energy release rate (not only an edge-strain threshold)"
+source = "Rivlin-Thomas 1953 (tearing energy)"
+status = "missing"
+evidence = "引き裂きの幾何と strain 閾値は COV-SOFT-077 (missing)、エネルギー基準も無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-097"
+axis = "benchmark"
+item = "centre-cracked plate under tension: K_I against the handbook (finite-width correction)"
+source = "Tada-Paris-Irwin, The Stress Analysis of Cracks Handbook"
+status = "missing"
+evidence = "FE の K 抽出が無い (行 COV-FRACT-001)"
+oracle_candidate = "Tada の補正係数と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-098"
+axis = "benchmark"
+item = "single-edge-notched tension / bending specimen"
+source = "Tada-Paris-Irwin, The Stress Analysis of Cracks Handbook; ASTM E399"
+status = "missing"
+evidence = "FE の K 抽出が無い (行 COV-FRACT-001)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-099"
+axis = "benchmark"
+item = "double cantilever beam: G against beam theory and cohesive load-displacement"
+source = "Anderson, Fracture Mechanics ch.2; ASTM D5528"
+status = "missing"
+evidence = "G の評価が無い (行 COV-FRACT-004)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-100"
+axis = "benchmark"
+item = "compact tension (CT) specimen K_Ic"
+source = "ASTM E399"
+status = "missing"
+evidence = "(行 COV-FRACT-001)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-101"
+axis = "benchmark"
+item = "Kalthoff-Winkler edge-impact crack angle"
+source = "Kalthoff-Winkler 1987"
+status = "missing"
+evidence = "動的破壊の解法が無い (行 COV-FRACT-050)"
+oracle_candidate = "き裂角 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-102"
+axis = "benchmark"
+item = "three-point bending: failure load of a notched beam (concrete / quasi-brittle)"
+source = "RILEM TC-50 FMC; Bazant-Planas"
+status = "missing"
+evidence = "軟化と正則化が無い (行 COV-FRACT-047)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-103"
+axis = "benchmark"
+item = "inclined crack in a plate: mixed-mode K and kink angle"
+source = "Tada-Paris-Irwin, The Stress Analysis of Cracks Handbook; Erdogan-Sih 1963"
+status = "missing"
+evidence = "(行 COV-FRACT-006)"
+oracle_candidate = "MTS の初期進展角 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-104"
+axis = "benchmark"
+item = "fatigue crack growth curve a(N) against closed-form Paris integration"
+source = "Anderson, Fracture Mechanics ch.10"
+status = "missing"
+evidence = "(行 COV-FRACT-014)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-105"
+axis = "benchmark"
+item = "pin-on-disc wear depth against Archard"
+source = "Archard 1953; ASTM G99"
+status = "missing"
+evidence = "(行 COV-FRACT-081)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-FRACT-106"
+axis = "benchmark"
+item = "phase-field 1-D bar: homogeneous solution and peak stress"
+source = "Pham et al. 2011"
+status = "missing"
+evidence = "(行 COV-FRACT-034)"
+oracle_candidate = ""
+limitation = ""
