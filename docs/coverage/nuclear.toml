@@ -1,0 +1,1339 @@
+# Nuclear and radiation coverage of ALICE-Physics, against an external
+# reference frame.
+# 実装が無い分野の範囲宣言
+#
+# What this table is: a declaration of the field's extent for a field the crate
+# does not implement yet (radioactive decay, interaction of ionising radiation
+# with matter, radiation transport, shielding, neutron transport and reactor
+# physics, fusion reaction rates, dosimetry, detector response). It lists every
+# capability that the standard texts (Lamarsh-Baratta, Introduction to Nuclear
+# Engineering; Duderstadt-Hamilton, Nuclear Reactor Analysis; Knoll, Radiation
+# Detection and Measurement; Attix, Introduction to Radiological Physics and
+# Radiation Dosimetry; Chilton-Shultis-Faw, Principles of Radiation
+# Shielding; Lewis-Miller, Computational Methods of Neutron Transport),
+# reference data and implementations (NIST XCOM / ESTAR / PSTAR, ENDF, MCNP,
+# OpenMC, Geant4, Serpent, ORIGEN), dose standards (ICRP Publications 72, 74,
+# 103, 116; ICRU Reports 57, 85) and standard benchmarks (exponential decay
+# over half-lives, the two-member Bateman chain, narrow-beam attenuation in
+# lead, the critical radius of a bare homogeneous sphere, the Godiva
+# criticality benchmark, the prompt jump of point kinetics) expect of a
+# nuclear and radiation code, one [[item]] per capability. Nearly every row is
+# missing: the table fixes the scope before any nuclear or radiation law is
+# written in this crate, so that each law has a place decided in advance. The
+# rows are written by hand: the axes and the items come from the reference
+# frame, not from the modules that exist.
+#
+# The only row that is not missing is the exponential decay law, which the
+# generic field operation `ScalarField3D::decay` (src/sim_field.rs) computes
+# when the decay constant is passed as its rate; it is implemented-no-oracle
+# because no test drives it with a half-life.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - transport of visible light and other non-ionising optical radiation
+#     (Beer-Lambert of a light beam, radiance transport, Monte Carlo photon
+#     transport for light, discrete ordinates for light, diffusion
+#     approximation of light): the optics table (COV-OPTICS-062, 064, 067,
+#     070, 114). Here ionising radiation (X-rays, gamma rays, charged
+#     particles, neutrons); the transport methods appear here as rows for
+#     ionising radiation and cite the optics ids.
+#   - heat transfer by thermal radiation, and heat conduction solvers: the
+#     thermal table (COV-THERM-066 participating media, 039 volumetric heat
+#     generation as the receiver of deposited energy). Here the deposition of
+#     radiation energy itself.
+#   - plasma physics of fusion devices (confinement, magnetohydrodynamics,
+#     heating, transport in a plasma): the plasma table. Here the nuclear
+#     reaction rates, reaction energetics and the Lawson energy balance.
+#   - generic Monte Carlo estimators, eigenvalue solvers (power iteration),
+#     ODE integrators and the matrix exponential: the numerical-methods table
+#     (COV-NUM-040 power iteration, 045 general ODE interface, 051 implicit
+#     integration, 087 stiff ODE benchmark). At the time of writing that table
+#     has no row for generic Monte Carlo estimators or the matrix exponential;
+#     the nuclear uses of both are rows here.
+#   - the deterministic random number generator and its state: the engine
+#     table (COV-ENGINE-001, 003). Here the sampling laws of decay and
+#     transport built on it.
+#   - first-order decay of a chemical reactant: the chemistry table
+#     (COV-CHEM-102). Here radioactive decay.
+#   - material data in general (densities, compositions): the materials table.
+#     Shielding-material compositions are a row here only as the input the
+#     radiation laws consume.
+#   - the sensor framework (noise, seeds, update rates): the sensing table
+#     (COV-SENSE-001, 002). Here the radiation detector response model.
+#   - ray intersection with geometry: the rigid-body table (COV-RIGID-096).
+#
+# Search notes: "decay" (damping, wind shelter ramp, pressure recovery, the
+# generic field decay), "gamma" (ratio of specific heats, the JONSWAP
+# peak-enhancement factor), "alpha" and "beta" (coefficient names),
+# "cross-section" (beam and shape sections), "fusion" (latent heat of fusion,
+# a powder-bed process name), "attenuat" (wind sheltering, absorbing layer of
+# the field solver), "critical" (critical damping and critical loads),
+# "buckling" (column buckling), "k_eff" (an equivalent spring stiffness),
+# "reactor" (a well-mixed combustion reactor), "secular" (orbital secular
+# drift), "resonance" (structural vibration), "Poisson" (Poisson's ratio and
+# the Poisson equation), "detector" (anomaly and stagnation detectors),
+# "spectrum" (ocean waves and fatigue loading), "diffusion" (heat and field
+# diffusion) and "inverse-square" (gravity and electromagnetic forces) match
+# other meanings only. The words nuclear, neutron, half-life, radioactive,
+# dose, shield, fission, isotope, Bateman, becquerel, sievert, Compton,
+# photoelectric, photon, Bethe, stopping power, Bragg, Breit-Wigner, lethargy,
+# kinetics, delayed, reactivity, criticality, xenon, burnup, Lawson, Gamow,
+# barn, Avogadro, electron, proton, buildup, albedo, free path, Monte Carlo
+# and dead time have no match in src/.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`).
+#
+# keys: id (COV-NUCLEAR-NNN) / axis / item / source (book, chapter, paper,
+# standard or reference-implementation feature; no quoted text) / status /
+# evidence (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate /
+# limitation (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Sources name books by
+# topic, not by chapter number. Ids of other tables cited in `evidence` and
+# above (COV-OPTICS-*, COV-THERM-*, COV-NUM-*, COV-ENGINE-*, COV-CHEM-*,
+# COV-SENSE-*, COV-RIGID-*) are those of the tables as written at the time of
+# this table.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-NUCLEAR-001"
+axis = "foundation"
+item = "nuclear units and constants (MeV, barn, atomic mass unit, Avogadro number) with conversions to SI"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (atomic and nuclear physics); CODATA recommended values"
+status = "missing"
+evidence = "無い (src 0 件: barn / avogadro / MeV / electron) 物理定数の置き場は無い"
+oracle_candidate = "1 u · c² と MeV の換算、1 barn = 1e-28 m² の往復が bit で戻ること"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-002"
+axis = "foundation"
+item = "nuclear mass, mass defect and binding energy (semi-empirical mass formula), Q-value of a reaction"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (atomic and nuclear physics); Krane, Introductory Nuclear Physics (nuclear models)"
+status = "missing"
+evidence = "無い (src 0 件: mass defect / binding energy)"
+oracle_candidate = "Weizsäcker 式の B/A の最大位置 (鉄付近) と既知の Q 値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-003"
+axis = "foundation"
+item = "nuclide data library (half-lives, decay modes, branching ratios, emission energies; ENSDF-style)"
+source = "ENSDF / NUBASE evaluations; OpenMC depletion chain files; ORIGEN decay library"
+status = "missing"
+evidence = "無い (src 0 件: isotope / nuclide 相当の型)"
+oracle_candidate = "読み込んだ値と原典の表の突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-004"
+axis = "decay"
+item = "exponential decay law N(t) = N0 exp(-lambda t), half-life and mean life (lambda = ln 2 / T_half)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radioactivity); Krane, Introductory Nuclear Physics (radioactive decay)"
+status = "implemented-no-oracle"
+evidence = "src/sim_field.rs:314 `ScalarField3D::decay` が格子上の量を exp(-rate·dt) 倍する (f32、SDF 効果層の汎用場) rate = λ として渡せば分布する放射能の指数崩壊になる 半減期からの換算・崩壊数・単位は無い src/sim_field.rs::test_decay は rate·dt = 1 の汎用の検査で、半減期を入れた検査は無い"
+oracle_candidate = "dt を分割しても N(t) が同じ (半減期 T で 1/2、2T で 1/4) 窓の積分で崩壊数 N0(1-e^{-λt}) と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-005"
+axis = "decay"
+item = "activity A = lambda N, specific activity and units (Bq, Ci)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radioactivity); ICRU Report 85 (quantities and units)"
+status = "missing"
+evidence = "無い (src 0 件: becquerel / activity)"
+oracle_candidate = "質量から原子数 (Avogadro) → 比放射能、Ra-226 の 1 g ≈ 1 Ci の定義との突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-006"
+axis = "decay"
+item = "two-member decay chain (parent-daughter Bateman solution) and time of maximum daughter activity"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radioactive decay chains); Bateman 1910"
+status = "missing"
+evidence = "無い (src 0 件: bateman)"
+oracle_candidate = "閉形式 N2(t) と t_max = ln(λ2/λ1)/(λ2-λ1) を数値積分と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-007"
+axis = "decay"
+item = "general n-member chain with branching (Bateman closed form for distinct constants)"
+source = "Bateman 1910; Cetnar 2006 (general solution with repeated constants); ORIGEN chain model"
+status = "missing"
+evidence = "無い (src 0 件: bateman) 汎用の ODE 積分も無い (数値の表 COV-NUM-045 / 051 missing)"
+oracle_candidate = "3 段連鎖の閉形式と細かい刻みの陰解法の突合、λ が等しい極限の連続性"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-008"
+axis = "decay"
+item = "secular equilibrium (long-lived parent: daughter activity equals parent activity)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radioactive equilibrium); Knoll, Radiation Detection and Measurement (calibration sources)"
+status = "missing"
+evidence = "無い (src の secular は src/kepler.rs の軌道要素の永年変化の別語義だけ)"
+oracle_candidate = "λ1 << λ2 で A2/A1 → 1 に漸近する時定数 1/λ2"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-009"
+axis = "decay"
+item = "transient equilibrium and no-equilibrium cases (A2/A1 = lambda2 / (lambda2 - lambda1))"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radioactive equilibrium); Mo-99 / Tc-99m generator"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Mo-99/Tc-99m の比が λ2/(λ2-λ1) に漸近 (崩壊定数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-010"
+axis = "decay"
+item = "production under constant irradiation: build-up to saturation activity A = R (1 - exp(-lambda t)) and decay after the end"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (activation); Knoll, Radiation Detection and Measurement (activation foils)"
+status = "missing"
+evidence = "無い 源項付きの減衰は src/sim_field.rs:322 `decay_toward` (目標値への指数緩和) で形は作れるが、生成率・照射終了後の扱いは無い (推測)"
+oracle_candidate = "照射 1 半減期で飽和の 1/2、終了後の減衰と連続"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-011"
+axis = "decay"
+item = "depletion / decay system solved by a matrix exponential (CRAM, Padé) for stiff chains"
+source = "Pusa 2010 (CRAM); ORIGEN-S; OpenMC depletion"
+status = "missing"
+evidence = "無い (src 0 件: matrix exp / expm) 数値の表に行列指数関数の行も無い"
+oracle_candidate = "2 段連鎖の閉形式と、λ 比 1e12 の硬い連鎖で負の数密度が出ないこと"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-012"
+axis = "decay"
+item = "stochastic decay: Poisson-distributed counts, exponential waiting times, seeded and deterministic"
+source = "Knoll, Radiation Detection and Measurement (counting statistics); Geant4 radioactive decay module"
+status = "missing"
+evidence = "無い 一様乱数と ln は src/rng.rs:22 `DeterministicRng` (エンジン表 COV-ENGINE-001) と Fix128::ln にあるが、崩壊時刻・計数の抽出は無い (src の poisson は Poisson 比・Poisson 方程式の別語義だけ)"
+oracle_candidate = "多数試行の平均崩壊時刻 = 1/λ、計数の分散 = 平均 (χ² で検定)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-013"
+axis = "decay"
+item = "decay heat after shutdown (Way-Wigner, ANS-5.1 standard)"
+source = "ANSI/ANS-5.1; Way-Wigner 1948; Duderstadt-Hamilton, Nuclear Reactor Analysis (decay heat)"
+status = "missing"
+evidence = "無い (src 0 件: decay heat 相当、src の decay は減衰 damping の別語義)"
+oracle_candidate = "Way-Wigner の P/P0 ≈ 0.066 t^-0.2 との突合 (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-014"
+axis = "decay"
+item = "alpha decay energetics (Q-value, recoil sharing) and the Geiger-Nuttall relation"
+source = "Krane, Introductory Nuclear Physics (alpha decay); Gamow 1928"
+status = "missing"
+evidence = "無い (src の alpha は係数名の別語義だけ)"
+oracle_candidate = "反跳で α の運動エネルギーが Q·(A-4)/A になること"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-015"
+axis = "decay"
+item = "beta decay spectrum shape (Fermi theory, endpoint energy, mean energy about one third of endpoint)"
+source = "Krane, Introductory Nuclear Physics (beta decay); ICRU 56"
+status = "missing"
+evidence = "無い (src の beta は係数名の別語義だけ)"
+oracle_candidate = "許容遷移のスペクトルの平均エネルギーと endpoint の比 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-016"
+axis = "decay"
+item = "gamma emission lines and intensities per decay (photons per disintegration), internal conversion"
+source = "Knoll, Radiation Detection and Measurement (gamma sources); ENSDF"
+status = "missing"
+evidence = "無い (src の gamma は比熱比・JONSWAP の係数の別語義だけ)"
+oracle_candidate = "Cs-137 の 662 keV の放出率と放射能から光子放出率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-017"
+axis = "photon"
+item = "photoelectric absorption cross section (Z and energy scaling, absorption edges)"
+source = "Knoll, Radiation Detection and Measurement (gamma-ray interactions); NIST XCOM"
+status = "missing"
+evidence = "無い (src 0 件: photoelectric / photon)"
+oracle_candidate = "K 端の前後で μ/ρ が跳ぶ位置と XCOM の表 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-018"
+axis = "photon"
+item = "Compton scattering kinematics (scattered photon energy vs angle, Compton edge)"
+source = "Knoll, Radiation Detection and Measurement (Compton scattering); Lamarsh-Baratta, Introduction to Nuclear Engineering (interaction of radiation with matter)"
+status = "missing"
+evidence = "無い (src 0 件: compton)"
+oracle_candidate = "E' = E / (1 + (E/mc²)(1-cosθ)) と Compton 端 2E²/(mc²+2E)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-019"
+axis = "photon"
+item = "Klein-Nishina differential and total cross section"
+source = "Klein-Nishina 1929; Geant4 G4KleinNishinaCompton; Evans, The Atomic Nucleus"
+status = "missing"
+evidence = "無い (src 0 件: klein / nishina)"
+oracle_candidate = "低エネルギーで Thomson 断面積 8πr_e²/3 に漸近、角度積分 = 全断面積"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-020"
+axis = "photon"
+item = "pair production (threshold 1.022 MeV, nuclear and electron field) and annihilation photons"
+source = "Knoll, Radiation Detection and Measurement (pair production); NIST XCOM"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "閾値以下で断面積 0、消滅光子 2 本 × 511 keV"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-021"
+axis = "photon"
+item = "coherent (Rayleigh) scattering of X- and gamma-rays and form factors"
+source = "Hubbell 1975 (atomic form factors); NIST XCOM"
+status = "missing"
+evidence = "無い (src の rayleigh は Rayleigh 減衰の別語義だけ、光の Rayleigh 散乱は光学表)"
+oracle_candidate = "XCOM の coherent 欄と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-022"
+axis = "photon"
+item = "total mass attenuation coefficient mu/rho from tabulated data with log-log interpolation"
+source = "NIST XCOM; Hubbell-Seltzer (NISTIR 5632)"
+status = "missing"
+evidence = "無い (src 0 件: attenuation coefficient 相当、src の attenuat は風の遮蔽と PML の別語義だけ)"
+oracle_candidate = "表の節点で一致、節点間は log-log 補間の単調性"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-023"
+axis = "photon"
+item = "mixture rule for compounds (mu/rho by mass fractions)"
+source = "NIST XCOM (mixtures); Attix, Introduction to Radiological Physics and Radiation Dosimetry"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "水 = H と O の質量分率和を XCOM の水と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-024"
+axis = "photon"
+item = "mass energy-absorption coefficient mu_en/rho"
+source = "Hubbell-Seltzer (NISTIR 5632); Attix (energy transfer and absorption)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "μ_en ≤ μ_tr ≤ μ の順序、空気の表との突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-025"
+axis = "photon"
+item = "half-value layer and tenth-value layer"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radiation shielding); NCRP Report 147"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "HVL = ln2/μ、TVL = ln10/μ の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-026"
+axis = "photon"
+item = "fluorescence X-rays and Auger electrons after photoabsorption (fluorescence yield)"
+source = "Krause 1979 (fluorescence yields); Geant4 atomic deexcitation"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "K 殻の蛍光収率の Z 依存 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-027"
+axis = "charged"
+item = "Bethe-Bloch stopping power of heavy charged particles (mean excitation energy I)"
+source = "Bethe 1930; ICRU 49; NIST PSTAR / ASTAR"
+status = "missing"
+evidence = "無い (src 0 件: bethe / stopping power)"
+oracle_candidate = "PSTAR の水中陽子の阻止能と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-028"
+axis = "charged"
+item = "shell, density-effect and Barkas corrections to the stopping power"
+source = "ICRU 49; Sternheimer 1984 (density effect)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "高エネルギーで density effect を入れた時の相対論的上昇の抑制"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-029"
+axis = "charged"
+item = "CSDA range from the stopping power and the Bragg peak"
+source = "ICRU 49; NIST PSTAR (CSDA range); Bortfeld 1997"
+status = "missing"
+evidence = "無い (src 0 件: bragg)"
+oracle_candidate = "∫dE/S と PSTAR の CSDA 飛程 (参照値要確認)、深さ線量の極大位置"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-030"
+axis = "charged"
+item = "empirical range-energy relations (alpha in air, Bragg-Kleeman rule)"
+source = "Knoll, Radiation Detection and Measurement (heavy charged particle ranges)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Bragg-Kleeman で空気から他の物質への飛程換算"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-031"
+axis = "charged"
+item = "electron collision and radiative stopping power, bremsstrahlung yield (ESTAR)"
+source = "ICRU 37; NIST ESTAR"
+status = "missing"
+evidence = "無い (src 0 件: electron)"
+oracle_candidate = "臨界エネルギー (衝突 = 放射) の Z 依存 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-032"
+axis = "charged"
+item = "electron and beta practical range (Katz-Penfold) and beta transmission"
+source = "Katz-Penfold 1952; Knoll, Radiation Detection and Measurement (beta particles)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Katz-Penfold の経験式の値域内での単調性"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-033"
+axis = "charged"
+item = "multiple Coulomb scattering (Highland formula, Moliere theory)"
+source = "Highland 1975; PDG Review of Particle Physics (passage of particles through matter)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "θ0 の厚さ依存が Highland 式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-034"
+axis = "charged"
+item = "energy-loss and range straggling (Bohr, Landau, Vavilov)"
+source = "Bohr 1915; Landau 1944; Vavilov 1957; PDG review"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "厚い吸収体で Gauss (Bohr 分散) に漸近"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-035"
+axis = "charged"
+item = "Bragg additivity for compounds and linear energy transfer (LET)"
+source = "ICRU 49; ICRU 16 (LET)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "化合物の阻止能 = 質量分率和"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-036"
+axis = "neutron"
+item = "microscopic and macroscopic cross sections (Sigma = N sigma), mean free path, reaction rate density Sigma phi"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (interaction of neutrons with matter); Duderstadt-Hamilton, Nuclear Reactor Analysis (neutron interactions)"
+status = "missing"
+evidence = "無い (src 0 件: neutron / barn、src の cross-section は梁の断面の別語義だけ)"
+oracle_candidate = "Σ = ρ N_A σ / A と平均自由行程 1/Σ"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-037"
+axis = "neutron"
+item = "1/v absorption law and thermal cross sections"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (neutron cross sections)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "σ(E) √E が一定"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-038"
+axis = "neutron"
+item = "single-level Breit-Wigner resonance"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (resonance cross sections); Breit-Wigner 1936"
+status = "missing"
+evidence = "無い (src 0 件: breit / wigner、src の resonance は構造振動の別語義だけ)"
+oracle_candidate = "共鳴ピークの高さと半値幅 Γ の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-039"
+axis = "neutron"
+item = "Doppler broadening of resonances with temperature"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (Doppler broadening); NJOY BROADR"
+status = "missing"
+evidence = "無い (src 0 件: doppler)"
+oracle_candidate = "ψ(x, ξ) の面積保存 (広がっても積分が変わらない)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-040"
+axis = "neutron"
+item = "elastic scattering kinematics (alpha = ((A-1)/(A+1))^2, mean lethargy gain xi)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (neutron moderation); Duderstadt-Hamilton, Nuclear Reactor Analysis (slowing down)"
+status = "missing"
+evidence = "無い (src 0 件: lethargy)"
+oracle_candidate = "ξ の閉形式、水素で ξ = 1、2 MeV → 熱までの平均衝突回数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-041"
+axis = "neutron"
+item = "slowing down in infinite media (slowing-down density, Fermi age, resonance escape probability)"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (slowing down); Lamarsh-Baratta, Introduction to Nuclear Engineering (Fermi age)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "水素の無限媒質で φ(E) ∝ 1/E"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-042"
+axis = "neutron"
+item = "thermal neutron spectrum (Maxwellian) and spectrum-averaged cross sections (Westcott g-factor)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (thermal neutrons); Westcott 1960"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Maxwell 分布の平均が 1/v 断面積で √π/2 倍になること"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-043"
+axis = "neutron"
+item = "evaluated nuclear data access (ENDF / ACE point-wise cross sections, temperature)"
+source = "ENDF-6 formats manual; OpenMC / MCNP ACE libraries; NJOY"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "読み込んだ点列の再構成値と原典 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-044"
+axis = "neutron"
+item = "neutron activation of materials and foil activation for flux measurement"
+source = "Knoll, Radiation Detection and Measurement (neutron detection by activation); Lamarsh-Baratta, Introduction to Nuclear Engineering (activation)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "飽和放射能 σφN と照射・冷却・計数の時間補正"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-045"
+axis = "neutron"
+item = "secondary gamma production by neutron capture and inelastic scattering"
+source = "MCNP coupled neutron-photon mode; ENDF MF12-16"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "水素捕獲の 2.2 MeV 線の生成率が捕獲率に一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-046"
+axis = "transport"
+item = "narrow-beam attenuation of ionising radiation I = I0 exp(-mu x) (uncollided beam)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radiation shielding); Knoll, Radiation Detection and Measurement (gamma attenuation)"
+status = "missing"
+evidence = "無い (src 0 件: beer、光のビーム透過は光学表 COV-OPTICS-064 で missing)"
+oracle_candidate = "厚さを分割して積んでも透過率が積になる"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-047"
+axis = "transport"
+item = "point isotropic source in an attenuating medium (uncollided flux S exp(-mu r) / 4 pi r^2)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radiation shielding)"
+status = "missing"
+evidence = "無い (src の inverse-square は重力・電磁・力場の別語義だけ)"
+oracle_candidate = "μ = 0 で逆 2 乗、球殻を貫く数が r に依らない"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-048"
+axis = "transport"
+item = "build-up factors (Taylor, Berger, geometric-progression fitting) for broad-beam geometry"
+source = "ANSI/ANS-6.4.3; Harima 1986 (G-P fitting); Chilton-Shultis-Faw, Principles of Radiation Shielding"
+status = "missing"
+evidence = "無い (src 0 件: buildup)"
+oracle_candidate = "B(μx→0) = 1、G-P 式の係数表との突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-049"
+axis = "transport"
+item = "extended sources in closed form (line, disk, slab, volume; Sievert integral)"
+source = "Rockwell, Reactor Shielding Design Manual; Chilton-Shultis-Faw"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "円盤線源の軸上 uncollided 束の閉形式と数値積分の突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-050"
+axis = "transport"
+item = "linear Boltzmann transport equation (angular flux, scattering kernel, sources) as a solver formulation"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (neutron transport); Lewis-Miller, Computational Methods of Neutron Transport"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "純吸収体で uncollided 解と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-051"
+axis = "transport"
+item = "Monte Carlo: free-flight sampling (distance = -ln(xi) / Sigma_t) and collision type sampling"
+source = "Lux-Koblinger, Monte Carlo Particle Transport Methods; MCNP theory manual; OpenMC"
+status = "missing"
+evidence = "無い (src 0 件: free path / monte carlo) 決定的な一様乱数と等方方向の抽出は src/rng.rs:22 / src/rng.rs:97 (`next_direction`) にある (エンジン表 COV-ENGINE-001)"
+oracle_candidate = "飛行距離の平均 = 1/Σ_t、平板の uncollided 透過率 = exp(-Σ_t x)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-052"
+axis = "transport"
+item = "Monte Carlo: scattering angle and energy sampling (isotropic CM, Klein-Nishina by Kahn's method)"
+source = "Kahn 1954; Lux-Koblinger; Geant4 physics reference"
+status = "missing"
+evidence = "無い 等方方向は src/rng.rs:97 にあるが、散乱角の分布からの抽出は無い"
+oracle_candidate = "抽出した角度のヒストグラムと Klein-Nishina の微分断面積の χ²"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-053"
+axis = "transport"
+item = "Monte Carlo: geometry tracking through cells and surfaces (surface tracking, delta / Woodcock tracking)"
+source = "Woodcock 1965; MCNP / OpenMC geometry (CSG cells); Serpent delta tracking"
+status = "missing"
+evidence = "無い 形状への ray の交差は src/raycast.rs と SDF にあるが、粒子の物質領域の追跡は無い (交差そのものは剛体表 COV-RIGID-096)"
+oracle_candidate = "delta tracking と surface tracking の透過率が統計誤差内で一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-054"
+axis = "transport"
+item = "Monte Carlo tallies (track length, collision, surface current) with relative error and figure of merit"
+source = "MCNP theory manual (tallies and statistics); OpenMC tallies"
+status = "missing"
+evidence = "無い (src の tally 相当の型は無い、推測)"
+oracle_candidate = "track length と collision 推定量が同じ平均、誤差が 1/√N で減る"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-055"
+axis = "transport"
+item = "Monte Carlo variance reduction (implicit capture, Russian roulette and splitting, weight windows, source biasing)"
+source = "MCNP theory manual (variance reduction); ADVANTG / CADIS"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "分散低減の有無で平均が一致、FOM が上がる"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-056"
+axis = "transport"
+item = "coupled photon-electron transport (condensed history, secondary electron and bremsstrahlung)"
+source = "EGSnrc; PENELOPE; Geant4 standard electromagnetic physics"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "電子の深さ線量と EGS の参照 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-057"
+axis = "transport"
+item = "diffusion approximation (Fick's law, D = 1 / (3 Sigma_tr), transport correction, extrapolation distance)"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (diffusion theory); Lamarsh-Baratta, Introduction to Nuclear Engineering (neutron diffusion)"
+status = "missing"
+evidence = "無い 汎用の拡散の格子 step は src/sim_field.rs:268 (`ScalarField3D::diffuse`、SDF 効果層) と src/transient_thermal.rs:579 (熱) にあるが、吸収・源・真空境界 (外挿距離) を持つ中性子の拡散は無い (光の拡散近似は光学表 COV-OPTICS-062)"
+oracle_candidate = "無限媒質の点源の解 S exp(-r/L)/(4πDr) と拡散距離 L = √(D/Σ_a)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-058"
+axis = "transport"
+item = "discrete ordinates (S_N) with angular quadrature sets and source iteration"
+source = "Lewis-Miller; PARTISN / DENOVO; Carlson 1953"
+status = "missing"
+evidence = "無い (光の DO と熱の DO は光学表 COV-OPTICS-070 と熱表 COV-THERM-066)"
+oracle_candidate = "平板の S_N で uncollided 解と散乱比 c の収束率 (spectral radius = c)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-059"
+axis = "transport"
+item = "spherical harmonics (P_N) and simplified P_N"
+source = "Lewis-Miller; Brantley-Larsen 2000 (SP_N)"
+status = "missing"
+evidence = "無い (src 0 件: spherical harmonic)"
+oracle_candidate = "P1 が拡散近似に一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-060"
+axis = "transport"
+item = "multigroup energy treatment (group constants by flux-weighted condensation)"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (multigroup); NJOY GROUPR"
+status = "missing"
+evidence = "無い (src 0 件: multigroup / energy group)"
+oracle_candidate = "1 群に縮約した反応率が連続エネルギーの反応率に一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-061"
+axis = "transport"
+item = "method of characteristics for transport in heterogeneous lattices"
+source = "Askew 1972; OpenMOC; MPACT"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "単一の燃料ピンセルで MC と k_inf を突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-062"
+axis = "transport"
+item = "adjoint transport and importance functions"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (adjoint flux and perturbation theory); Lewis-Miller"
+status = "missing"
+evidence = "無い (src の adjoint は連成の別語義、推測)"
+oracle_candidate = "前進と随伴の検出器応答が一致 (相反定理)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-063"
+axis = "transport"
+item = "radiation albedo and streaming through ducts, gaps and skyshine"
+source = "Chilton-Shultis-Faw; NCRP Report 151 (skyshine)"
+status = "missing"
+evidence = "無い (src 0 件: albedo)"
+oracle_candidate = "直線ダクトの uncollided 透過の幾何因子"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-064"
+axis = "shielding"
+item = "point-kernel integration over a volume source with build-up (QAD / MicroShield style)"
+source = "QAD-CGGP; MicroShield; Chilton-Shultis-Faw"
+status = "missing"
+evidence = "無い (src 0 件: shield)"
+oracle_candidate = "点線源 1 個に退化させた時に閉形式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-065"
+axis = "shielding"
+item = "shield thickness design for a target dose rate (inversion of attenuation with build-up)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radiation shielding); NCRP Report 147"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "B = 1 で x = ln(D0/D)/μ と一致、B 付きで単調に厚くなる"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-066"
+axis = "shielding"
+item = "multilayer shields (Broder / Kalos build-up for layered media)"
+source = "Broder 1962; Kalos 1956; Chilton-Shultis-Faw"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "同じ物質の 2 層が 1 層と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-067"
+axis = "shielding"
+item = "neutron removal cross-section method for fast-neutron shielding"
+source = "Chilton-Shultis-Faw (removal theory); Rockwell"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "水素の多い層で除去断面積の積が成り立つ厚さ範囲"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-068"
+axis = "shielding"
+item = "shielding material compositions and densities (concrete, lead, water, polyethylene, steel)"
+source = "PNNL-15870 (compendium of material composition data); ANSI/ANS-6.4"
+status = "missing"
+evidence = "無い 材料データの置き場は材料表"
+oracle_candidate = "組成の質量分率の和 = 1"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-069"
+axis = "shielding"
+item = "energy deposition in a shield as a volumetric heat source"
+source = "Chilton-Shultis-Faw (shield heating); MCNP F6 heating tally"
+status = "missing"
+evidence = "無い 受け手の体積発熱も熱表 COV-THERM-039 で missing"
+oracle_candidate = "吸収されたエネルギー = 入射 - 透過 - 反射 の収支"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-070"
+axis = "shielding"
+item = "dose rate behind a shield placed in a scene (receptor positions taken from bodies in the world)"
+source = "MicroShield; game and training simulators of radiation fields (feature class)"
+status = "missing"
+evidence = "無い 物体の位置と ray 交差 (src/raycast.rs) はあるが線源・受け手・遮蔽の型は無い"
+oracle_candidate = "遮蔽を挟む / 外すで線量率が exp(-μx) 倍だけ変わる"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-071"
+axis = "reactor"
+item = "one-group diffusion equation with a fission source (steady state, k-eigenvalue form)"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (one-speed diffusion); Lamarsh-Baratta, Introduction to Nuclear Engineering (reactor theory)"
+status = "missing"
+evidence = "無い (src 0 件: neutron / fission / criticality)"
+oracle_candidate = "均質裸炉で基本モードの k が閉形式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-072"
+axis = "reactor"
+item = "geometric buckling and critical size of bare reactors (slab, sphere, infinite cylinder, finite cylinder, cube)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (bare reactors); Duderstadt-Hamilton, Nuclear Reactor Analysis"
+status = "missing"
+evidence = "無い (src の buckling は柱の座屈の別語義だけ)"
+oracle_candidate = "球 B² = (π/R̃)²、円柱 (2.405/R̃)² + (π/H̃)² の臨界寸法"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-073"
+axis = "reactor"
+item = "material buckling, k_infinity and k_eff with non-leakage probabilities"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (reactor theory); Duderstadt-Hamilton, Nuclear Reactor Analysis"
+status = "missing"
+evidence = "無い (src の k_eff はばねの等価剛性の別語義だけ)"
+oracle_candidate = "k_eff = k_inf / (1 + L²B²) (1 群)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-074"
+axis = "reactor"
+item = "four-factor formula (eta, f, p, epsilon)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (the four-factor formula)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "均質系の f = Σ_aF/Σ_a の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-075"
+axis = "reactor"
+item = "six-factor formula (fast and thermal non-leakage)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering; Duderstadt-Hamilton, Nuclear Reactor Analysis"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "P_FNL P_TNL → 1 で 4 因子に戻る"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-076"
+axis = "reactor"
+item = "two-group and multigroup diffusion eigenvalue problems (power iteration on the fission source)"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (multigroup diffusion); PARCS / DYN3D"
+status = "missing"
+evidence = "無い 汎用の冪乗法は数値の表 COV-NUM-040 で missing"
+oracle_candidate = "2 群均質無限系の k_inf の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-077"
+axis = "reactor"
+item = "reflected reactor and reflector savings"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (reflected reactors); Duderstadt-Hamilton, Nuclear Reactor Analysis"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "反射体付き平板の臨界条件の超越方程式の解"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-078"
+axis = "reactor"
+item = "fission energy release and power-flux relation (P = kappa Sigma_f phi V)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (fission energy); Duderstadt-Hamilton, Nuclear Reactor Analysis"
+status = "missing"
+evidence = "無い (src の fusion は融解潜熱と粉末造形の別語義だけ、fission は src 0 件)"
+oracle_candidate = "200 MeV/fission で 1 W ≈ 3.1e10 fissions/s (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-079"
+axis = "reactor"
+item = "subcritical multiplication of an external source (M = 1 / (1 - k))"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (subcritical multiplication); Knoll, Radiation Detection and Measurement (source-range counting)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1/M 曲線の外挿が k = 1 で 0"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-080"
+axis = "reactor"
+item = "point kinetics with six delayed-neutron groups"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (the time-dependent reactor); Keepin, Physics of Nuclear Kinetics"
+status = "missing"
+evidence = "無い (src 0 件: kinetics / delayed / reactivity) 汎用 ODE 積分も無い (数値の表 COV-NUM-045)"
+oracle_candidate = "1 群近似の閉形式 (即発跳躍 + 安定周期) と硬い積分の突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-081"
+axis = "reactor"
+item = "prompt jump approximation and stable period"
+source = "Keepin, Physics of Nuclear Kinetics; Ott-Neuhold, Introductory Nuclear Reactor Dynamics"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "P1/P0 = β/(β-ρ) と点動特性の数値解"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-082"
+axis = "reactor"
+item = "inhour equation (reactivity-period relation)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (inhour equation); Keepin"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "inhour の根と点動特性の漸近周期が一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-083"
+axis = "reactor"
+item = "reactivity feedback (fuel Doppler, moderator temperature and void coefficients)"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis (reactivity feedback); Ott-Neuhold"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "負の温度係数で出力が有界に収束 (Nordheim-Fuchs)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-084"
+axis = "reactor"
+item = "neutronic-thermal coupling of a core (fuel temperature from power, feedback to cross sections)"
+source = "Todreas-Kazimi, Nuclear Systems; PARCS / RELAP coupling"
+status = "missing"
+evidence = "無い 熱伝導の solver は熱表、連成の枠組みは連成表と数値の表 (COV-NUM-059 以降) の範囲"
+oracle_candidate = "1 点の燃料温度モデルで定常の出力と温度が自己無撞着"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-085"
+axis = "reactor"
+item = "xenon-135 and samarium-149 poisoning (equilibrium and post-shutdown xenon transient)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (fission product poisoning); Duderstadt-Hamilton, Nuclear Reactor Analysis"
+status = "missing"
+evidence = "無い (src 0 件: xenon)"
+oracle_candidate = "停止後の Xe 極大時刻の閉形式 (崩壊定数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-086"
+axis = "reactor"
+item = "burnup / depletion coupled to the flux (transport-depletion predictor-corrector)"
+source = "ORIGEN; OpenMC depletion; Serpent burnup"
+status = "missing"
+evidence = "無い (src 0 件: burnup / depletion)"
+oracle_candidate = "1 核種の吸収燃焼の閉形式 N0 exp(-σφt)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-087"
+axis = "reactor"
+item = "control rod worth (integral and differential worth curves, perturbation theory)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (control rods); Duderstadt-Hamilton, Nuclear Reactor Analysis (perturbation theory)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "sin² の積分価値曲線の形 (1 群・一様)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-088"
+axis = "fusion"
+item = "fusion cross sections and the Gamow factor (D-T, D-D, D-He3)"
+source = "Bosch-Hale 1992; Atzeni-Meyer-ter-Vehn, The Physics of Inertial Fusion"
+status = "missing"
+evidence = "無い (src 0 件: gamow / tritium / deuterium)"
+oracle_candidate = "Bosch-Hale の S 因子 fit を表の値と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-089"
+axis = "fusion"
+item = "Maxwellian reactivity <sigma v>(T) (Bosch-Hale parameterisation)"
+source = "Bosch-Hale 1992; NRL Plasma Formulary"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "D-T の ⟨σv⟩ 極大温度 (参照値要確認)、数値の Maxwell 平均との突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-090"
+axis = "fusion"
+item = "reaction energy release and product energies (D-T: 14.1 MeV neutron, 3.5 MeV alpha)"
+source = "Krane (nuclear reactions); NRL Plasma Formulary"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "運動量保存から n と α のエネルギー分配 = 質量の逆比"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-091"
+axis = "fusion"
+item = "fusion power density from densities and <sigma v>"
+source = "Wesson, Tokamaks; Freidberg, Plasma Physics and Fusion Energy"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "P = n_D n_T ⟨σv⟩ E (同種なら 1/2 の因子)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-092"
+axis = "fusion"
+item = "Lawson criterion, triple product and ignition condition (energy balance with confinement time)"
+source = "Lawson 1957; Wesson, Tokamaks; Freidberg"
+status = "missing"
+evidence = "無い (src 0 件: lawson)"
+oracle_candidate = "n τ_E の閾値の温度依存の最小位置 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-093"
+axis = "fusion"
+item = "neutron wall loading and material damage indicators (dpa, helium production)"
+source = "Freidberg; Norgett-Robinson-Torrens 1975 (NRT dpa)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "NRT 式の閾値以下で dpa = 0"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-094"
+axis = "dose"
+item = "absorbed dose (Gy) and dose rate from energy deposition per mass"
+source = "ICRU Report 85; Attix"
+status = "missing"
+evidence = "無い (src 0 件: dose / gray 相当)"
+oracle_candidate = "1 J/kg = 1 Gy、点で積分した付与エネルギーと突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-095"
+axis = "dose"
+item = "kerma and charged-particle equilibrium (collision kerma from photon fluence and mu_en/rho)"
+source = "Attix (kerma); ICRU Report 85"
+status = "missing"
+evidence = "無い (src の kerma 相当は Ackermann の部分一致だけ)"
+oracle_candidate = "CPE 下で D = K_col"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-096"
+axis = "dose"
+item = "exposure (C/kg, roentgen) and air kerma"
+source = "ICRU Report 85; Attix"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "W_air/e による換算 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-097"
+axis = "dose"
+item = "equivalent dose with radiation weighting factors w_R"
+source = "ICRP Publication 103"
+status = "missing"
+evidence = "無い (src 0 件: sievert / equivalent dose)"
+oracle_candidate = "中性子の w_R のエネルギー連続関数の区間境界での連続性"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-098"
+axis = "dose"
+item = "effective dose with tissue weighting factors w_T"
+source = "ICRP Publication 103"
+status = "missing"
+evidence = "無い (src 0 件: effective dose)"
+oracle_candidate = "w_T の和 = 1"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-099"
+axis = "dose"
+item = "fluence-to-dose conversion coefficients (photons, neutrons, electrons)"
+source = "ICRP Publication 116; ICRP Publication 74"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "表の値の補間と原典 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-100"
+axis = "dose"
+item = "operational quantities (ambient dose equivalent H*(10), personal dose equivalent Hp(10))"
+source = "ICRU Report 57; ICRP Publication 74"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "H*(10)/Φ の表の補間 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-101"
+axis = "dose"
+item = "committed dose from intake (ingestion and inhalation dose coefficients)"
+source = "ICRP Publication 72; ICRP Publication 119"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "摂取量 × 線量係数 (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-102"
+axis = "dose"
+item = "gamma dose-rate constant of a point source (dose rate at 1 m per unit activity)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radiation protection); NCRP Report 147"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Γ A / r² の逆 2 乗、Co-60 / Cs-137 の Γ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-103"
+axis = "dose"
+item = "accumulated dose from a decaying source over an exposure interval"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radiation protection)"
+status = "missing"
+evidence = "無い 減衰の部品は src/sim_field.rs:314 だけ"
+oracle_candidate = "∫Ḋ0 e^{-λt} dt = Ḋ0 (1-e^{-λT})/λ"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-104"
+axis = "dose"
+item = "dose field over a scene and dose accumulated along a moving receptor's path"
+source = "MicroShield / VISIPLAN (planning tools, feature class)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "静止した受け手に退化させて点線源の閉形式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-105"
+axis = "detector"
+item = "counting statistics (Poisson and Gaussian limits, propagation of error, background subtraction)"
+source = "Knoll, Radiation Detection and Measurement (counting statistics)"
+status = "missing"
+evidence = "無い (src の count は反復回数・計数器の別語義だけ)"
+oracle_candidate = "差の計数の分散 = 和"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-106"
+axis = "detector"
+item = "dead time (paralysable and non-paralysable models)"
+source = "Knoll, Radiation Detection and Measurement (dead time)"
+status = "missing"
+evidence = "無い (src 0 件: dead time)"
+oracle_candidate = "真の率 → 観測率の 2 モデルの閉形式、低率で一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-107"
+axis = "detector"
+item = "detection efficiency (geometric solid angle and intrinsic efficiency)"
+source = "Knoll, Radiation Detection and Measurement (general properties of detectors)"
+status = "missing"
+evidence = "無い (src の detector は異常検知・停滞検知の別語義だけ)"
+oracle_candidate = "点線源と円板検出器の立体角の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-108"
+axis = "detector"
+item = "pulse-height spectrum of a gamma detector (photopeak, Compton continuum and edge, escape peaks)"
+source = "Knoll, Radiation Detection and Measurement (scintillation and semiconductor gamma spectroscopy); Geant4 / MCNP F8 tally"
+status = "missing"
+evidence = "無い (src の spectrum は波・疲労の別語義だけ)"
+oracle_candidate = "Compton 端の位置が閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-109"
+axis = "detector"
+item = "energy resolution (Gaussian broadening, FWHM scaling with energy)"
+source = "Knoll, Radiation Detection and Measurement (energy resolution)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "畳み込み後もピーク面積が保存"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-110"
+axis = "detector"
+item = "gas-filled detector response (W-value, ionisation chamber current, Geiger-Muller plateau)"
+source = "Knoll, Radiation Detection and Measurement (ionisation chambers, Geiger-Muller counters)"
+status = "missing"
+evidence = "無い (src 0 件: ioniz / ionis)"
+oracle_candidate = "電離箱電流 = 付与エネルギー / W × e"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-111"
+axis = "detector"
+item = "detection limits (Currie critical level, minimum detectable activity)"
+source = "Currie 1968; Knoll, Radiation Detection and Measurement"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "L_C / L_D の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-112"
+axis = "detector"
+item = "simulated radiation sensor in the world (count rate from sources, shielding and noise, seeded)"
+source = "game and training radiation simulators (feature class); sensing table for the sensor framework"
+status = "missing"
+evidence = "無い センサの枠 (雑音・seed) は src/sensors.rs にある (センサ表 COV-SENSE-001 / 002) が、放射線の受け手は無い"
+oracle_candidate = "同じ seed で同じ計数列、平均計数 = 期待値"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-113"
+axis = "benchmark"
+item = "exponential decay over many half-lives (N(t)/N0 = 2^(-t/T))"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (radioactivity)"
+status = "missing"
+evidence = "部品は src/sim_field.rs:314 (COV-NUCLEAR-004) だが半減期を入れた test は無い"
+oracle_candidate = "既存の ScalarField3D::decay で rate = ln2/T、t = 1..10 T で 2^{-n} と突合 (新規実装なし)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-114"
+axis = "benchmark"
+item = "two-member Bateman chain (parent-daughter activity and time of maximum)"
+source = "Bateman 1910; ORIGEN verification"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "閉形式 vs 細刻みの陰解法"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-115"
+axis = "benchmark"
+item = "narrow-beam attenuation of photons in lead (mu at 0.662 and 1.25 MeV)"
+source = "NIST XCOM (lead)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "XCOM の鉛の μ/ρ で透過率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-116"
+axis = "benchmark"
+item = "critical radius of a bare homogeneous sphere (one-group diffusion)"
+source = "Lamarsh-Baratta, Introduction to Nuclear Engineering (bare reactors); Duderstadt-Hamilton, Nuclear Reactor Analysis"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "R̃ = π / B_m の閉形式と数値固有値解の突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-117"
+axis = "benchmark"
+item = "Godiva bare HEU sphere criticality (ICSBEP HEU-MET-FAST-001)"
+source = "ICSBEP Handbook HEU-MET-FAST-001; OpenMC / MCNP validation suites"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "k_eff ≈ 1 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-118"
+axis = "benchmark"
+item = "prompt jump of point kinetics after a step reactivity insertion"
+source = "Keepin; Ott-Neuhold"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "β/(β-ρ) の跳躍と inhour の周期"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-119"
+axis = "benchmark"
+item = "uncollided and total flux from a point source in an infinite medium (diffusion kernel)"
+source = "Duderstadt-Hamilton, Nuclear Reactor Analysis; Lamarsh-Baratta, Introduction to Nuclear Engineering"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "S exp(-r/L)/(4πDr) と数値解の突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-120"
+axis = "benchmark"
+item = "Monte Carlo slab transmission against the analytic uncollided fraction"
+source = "Lux-Koblinger; MCNP primer problems"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "純吸収平板で透過率 exp(-Σx) と統計誤差内で一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-121"
+axis = "benchmark"
+item = "Compton edge and backscatter peak energies of Cs-137 and Co-60"
+source = "Knoll, Radiation Detection and Measurement (gamma spectra)"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "閉形式 (Compton 端 = E·2α/(1+2α)) と抽出スペクトルの端の位置"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-122"
+axis = "benchmark"
+item = "proton Bragg peak depth in water (CSDA range)"
+source = "NIST PSTAR; ICRU 49"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "PSTAR の水中飛程 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUCLEAR-123"
+axis = "benchmark"
+item = "shielding benchmark experiments (SINBAD) and criticality validation suites (ICSBEP)"
+source = "OECD/NEA SINBAD; ICSBEP Handbook"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "代表 1 件の測定と計算の比 (参照値要確認)"
+limitation = ""
