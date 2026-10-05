@@ -28,6 +28,7 @@
 //!
 //! # Fields that are not exact distance fields
 //!
+// LIMITATION(COV-MBD-113): Step 3 treats the sample as a true distance.
 //! Step 3 treats the sample as a true distance. For a field with
 //! `|∇f| = L > 1` — gyroid walls and many other implicit surfaces are in
 //! that class — the sample **overstates** the penetration by up to `L`,

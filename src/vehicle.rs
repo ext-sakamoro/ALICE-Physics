@@ -4,6 +4,7 @@
 //!
 //! The ground is the horizontal plane `y = VehicleConfig::ground_height`;
 //! height fields, triangle meshes and SDF surfaces are not read. All wheel
+// LIMITATION(COV-MBD-051): forces are summed and applied at the centre of mass as one impulse, so the wheels do not produce yaw or load transfer by themselves.
 //! forces are summed and applied at the centre of mass as one impulse, so
 //! the wheels do not produce yaw or load transfer by themselves. For
 //! stopping distances, cornering, wheel spin, ABS, tyre models, road

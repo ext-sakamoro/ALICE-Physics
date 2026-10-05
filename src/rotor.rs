@@ -9,6 +9,7 @@
 //!
 //! with `n` the rotation speed in revolutions per second, `D` the diameter
 //! and `C_T`, `C_Q` the (dimensionless) thrust and torque coefficients.
+// LIMITATION(COV-MBD-115): The coefficients are constants: this is a **static thrust model**.
 //! The coefficients are constants: this is a **static thrust model**. The
 //! fall of thrust with axial inflow (advance ratio `J = V / (n D)`) and with
 //! forward flight is not modelled, so the values are those of a rotor in
@@ -51,6 +52,7 @@
 //! form as [`RigidBody::add_force`] and the world's force fields, while the
 //! world spreads gravity over its substeps. The velocity at frame boundaries
 //! is exact, but within a frame the two do not overlap: a body held at
+// LIMITATION(COV-MBD-132): exactly `T = m g` rises by `g dt² (s − 1) / (2 s)` per frame
 //! exactly `T = m g` rises by `g dt² (s − 1) / (2 s)` per frame (`s`
 //! substeps), about 0.73 m in 10 s at 60 Hz with 8 substeps.
 //!

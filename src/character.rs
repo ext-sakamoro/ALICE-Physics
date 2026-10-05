@@ -275,6 +275,7 @@ impl CharacterController {
         }
     }
 
+    // LIMITATION(COV-MBD-104): Sweep the character capsule against rigid bodies (simplified sphere approximation)
     /// Sweep the character capsule against rigid bodies (simplified sphere approximation)
     fn sweep_against_bodies(
         &self,
