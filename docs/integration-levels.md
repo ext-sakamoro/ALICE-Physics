@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 19 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 129 |
+| standalone | a Rust API that only examples call | 130 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -75,6 +75,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `coupled_field` | standalone | 0 / 0 / 0 / 42 / 0 | — |
 | `coupled_iteration` | standalone | 0 / 0 / 0 / 16 / 10 | — |
 | `creep_longterm` | standalone | 0 / 0 / 0 / 9 / 1 | — |
+| `crowd_force` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `db_bridge` | standalone | 0 / 0 / 0 / 8 / 0 | — |
