@@ -213,6 +213,7 @@ were introduced during that release window.
 - **Behavior change:** `StructuralSolver` の疲労損傷は material ごとの S-N 曲線で計算される (SUS304 / A5052 は金属の曲線、他の material は従来のまま) 疲労・座屈を選ぶ API を追加した (`with_sn_curve` / `fatigue_strength_mpa` / `fatigue_spectrum_report` / `plate_buckling_mpa` / `snap_through_load_n`)
 - `scripts/docs_lint.py` が非公開名の照合を README / MODULES / CHANGELOG から、全 tracked file のパスと本文 (生成物・コメント・workflow・script を含む) に広げた
 - integration-status / oracle-status / wiring-status の workflow は台帳を commit せず、push された tree で作り直して差分があれば失敗するだけにした (台帳の再生成は `scripts/land.py` が取り込み時に行う)
+- **Behavior change:** `CfdSolver::step_rans` で k-ε / k-ω を `WallModel` と併用した場合 (WallModel 指定時のみ) に、壁に接するセルの `k` / `ε` を Launder–Spalding の壁関数値 `k = u_τ²/√C_μ`、`ε = u_τ³/(κ y_p)` (`y_p = dx/2`) に固定し、壁から 1 dx の界面の運動量拡散係数を対数則の値 `κ u_τ dx` に、壁から 2 番目のセルの壁法線方向の速度勾配を対数則の `u_τ/(κ · 3dx/2)` にした (従来は `k` / `ε` に壁境界条件が無く、平行平板 Couette 流で ν_t が発散して `DiffusionUnstable` で停止していた) WallModel 無しの k-ε / k-ω、`Prescribed`、LES の経路は不変 WallModel 無しでは `k` / `ε` に壁境界条件が掛からない (低 Re の壁処理も壁関数も無い) ことを doc に制限として明記
 
 ### Deprecated
 

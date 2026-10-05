@@ -33,7 +33,7 @@ use crate::eulerian_grid::{
     project_pressure_bicgstab, project_pressure_decomposed, project_pressure_jacobi,
     project_pressure_multigrid, project_pressure_multigrid_decomposed, sample_u_range,
     sample_u_trilinear, sample_v_range, sample_v_trilinear, sample_w_range, sample_w_trilinear,
-    BicgstabStats, HaloSchedule, MacGrid, ParticleScatter,
+    BicgstabStats, FaceBc, HaloSchedule, MacGrid, ParticleScatter,
 };
 use crate::interface_capture::fast_sweeping_reinit;
 use crate::math::{Fix128, Vec3Fix};
@@ -42,7 +42,7 @@ use crate::surface_tension_csf::{compute_csf_field, SIGMA_WATER_AIR};
 use crate::turbulence::{
     dynamic_smagorinsky_cs, friction_velocity_checked, smagorinsky_eddy_viscosity,
     smagorinsky_eddy_viscosity_with, strain_rate_magnitude, wall_k_epsilon, y_plus, KEpsilonState,
-    KOmegaState, KE_SIGMA_EPS, KE_SIGMA_K, KW_BETA_STAR, KW_SIGMA, SMAGORINSKY_CS,
+    KOmegaState, KE_SIGMA_EPS, KE_SIGMA_K, KW_BETA_STAR, KW_SIGMA, SMAGORINSKY_CS, VON_KARMAN,
 };
 
 /// W-cycles of the multigrid projection [`CfdSolver::step`] runs by default.
@@ -418,8 +418,10 @@ impl std::error::Error for StepError {}
 /// `resting_faces` instead, so that a channel whose spanwise faces are all at
 /// rest still reports the one friction velocity its streamwise faces share
 /// (`u_tau_min == u_tau_max` there). `k` and `ε` are the wall-consistent
-/// values of `turbulence::wall_k_epsilon` at the first face centre —
-/// what a RANS step would take as its wall boundary condition.
+/// values of `turbulence::wall_k_epsilon` at the first face centre. A
+/// k-ε / k-ω step of [`CfdSolver::step_rans`] with a [`WallModel`] imposes
+/// the same formulas on the wall-adjacent cells, from the cell-centred
+/// velocity (see [`TurbulenceModel::KEpsilon`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct WallShearSummary {
@@ -555,11 +557,42 @@ pub enum TurbulenceModel {
     /// `P_k = ν_t |S|²`, the explicit point sources of `k` and `ε`, explicit
     /// diffusion with `ν_mol + ν_t / σ`, then semi-Lagrangian advection, in
     /// that order; `ν_t = C_μ k² / ε`.
+    ///
+    /// With a [`WallModel`] in the [`StepOptions`], the cells with a no-slip
+    /// wall face then take the Launder–Spalding (1974) wall-function values
+    /// `k = u_τ²/√C_μ`, `ε = u_τ³/(κ y_p)` at `y_p = dx/2`, `u_τ` the
+    /// friction velocity of the cell-centred speed relative to the wall
+    /// (fixed values, replacing what the transport gave those cells; the mean
+    /// over the faces for a corner cell). Two more pieces of the log layer
+    /// come with it, because the first cells off the wall are not resolved:
+    /// the momentum diffusion takes `ν_t = κ u_τ dx` (the log-layer value at
+    /// the interface height) on the interface one cell from the wall instead
+    /// of the harmonic mean of the two cells (`0.75 κ u_τ dx` there), and the
+    /// production of the second cell from the wall reads the wall-normal
+    /// gradient `u_τ / (κ · 3dx/2)` instead of the centred difference across
+    /// the wall cell (21 % too steep on a log profile, independently of
+    /// `dx`).
+    ///
+    /// ⚠️ Limitation: only that interface and that cell are replaced; from
+    /// the third cell on the ordinary discretisation stands, and a cell with
+    /// walls in reach on both sides (a three-cell gap) keeps the finite
+    /// difference.
+    ///
+    /// ⚠️ Limitation: **without a [`WallModel`] no boundary condition acts on
+    /// `k` or `ε` at a wall** — there is neither a low-Reynolds-number wall
+    /// treatment nor a wall function, only the zero flux of the cell
+    /// diffusion. The closure is then a high-Reynolds-number model run to the
+    /// wall, which it does not describe.
     KEpsilon,
     /// Wilcox (1988) k-ω on the same `(k, ε)` storage: each cell is converted
     /// to `ω = ε / (β* k)`, advanced with `dk/dt = P − β* k ω`,
     /// `dω/dt = α (ω/k) P − β ω²` (`α = 5/9`, `β = 3/40`, `σ = 2`) and
     /// converted back; `ν_t = k / ω`.
+    ///
+    /// The wall treatment is that of [`TurbulenceModel::KEpsilon`], on the
+    /// same `(k, ε)` storage, so the wall cells hold
+    /// `ω = ε/(β* k) = u_τ/(√β* κ y_p)` with a [`WallModel`] and **no wall
+    /// boundary condition on `k` or `ω` without one** (the same limitation).
     KOmega,
     /// The eddy viscosity the state was built from
     /// ([`RansState::prescribed`]) as given, cell by cell; nothing is
@@ -1198,6 +1231,17 @@ impl CfdSolver {
     /// advanced by one step; the eddy viscosity used comes back in
     /// [`RansReport::eddy_viscosity`].
     ///
+    /// For the transport closures the [`WallModel`] of `options` is also the
+    /// wall function of `(k, ε)`: with it, the wall-adjacent cells are set
+    /// to `k = u_τ²/√C_μ`, `ε = u_τ³/(κ y_p)` after the transport, the
+    /// interface one cell from the wall diffuses momentum with `κ u_τ dx`,
+    /// and the second cell's production reads the log-law gradient (see
+    /// [`TurbulenceModel::KEpsilon`]; only that interface and that cell).
+    /// ⚠️ Limitation: without a [`WallModel`], **`k` and `ε` (or `ω`) have no
+    /// wall boundary condition** — no low-Reynolds-number wall treatment and
+    /// no wall function — so a k-ε / k-ω run against a no-slip wall without
+    /// one is not a modelled wall-bounded flow.
+    ///
     /// # Errors
     ///
     /// Everything [`Self::step_with_options`] refuses, plus
@@ -1269,9 +1313,15 @@ impl CfdSolver {
         self.grid.enforce_face_boundaries();
         let (wall_summary, turbulence_summary) = match turbulence {
             Some((run, state)) => {
-                let (production_max, clamped) = self.advance_rans(state, run, dt_s);
+                let (production_max, clamped) = self.advance_rans(state, run, dt_s, wall);
                 let nu_mol = self.dynamic_viscosity_pas / self.density_kg_m3;
-                let ws = self.diffuse_velocity_variable(nu_mol, &run.nu_t, dt_s, wall);
+                let log_layer_edges = wall.is_some()
+                    && matches!(
+                        run.model,
+                        TurbulenceModel::KEpsilon | TurbulenceModel::KOmega
+                    );
+                let ws =
+                    self.diffuse_velocity_variable(nu_mol, &run.nu_t, dt_s, wall, log_layer_edges);
                 let (k_min, k_max, epsilon_min, epsilon_max) = match run.model {
                     TurbulenceModel::KEpsilon | TurbulenceModel::KOmega => (
                         min_of(&state.k),
@@ -2802,7 +2852,14 @@ impl CfdSolver {
     /// the off-diagonals from central differences of the cell-centred
     /// velocity, one-sided on the domain edge (so a linear shear has the same
     /// strain in every cell, edge rows included).
-    fn cell_strain(&self) -> Vec<Fix128> {
+    ///
+    /// With `log_layer = Some(ν_mol)` (the wall function of a k-ε / k-ω step),
+    /// the wall-normal derivative of a tangential component in a cell one
+    /// cell away from a no-slip wall (its neighbour towards the wall touches
+    /// it, the cell itself does not) is the log-law gradient at the cell
+    /// centre, see [`Self::log_layer_gradient`]; every other derivative, and
+    /// every cell further out, keeps the finite difference.
+    fn cell_strain(&self, log_layer: Option<Fix128>) -> Vec<Fix128> {
         let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
         let dx = self.grid.dx;
         let two = Fix128::from_int(2);
@@ -2826,12 +2883,44 @@ impl CfdSolver {
                     let s11 = (self.grid.u(i + 1, j, k) - self.grid.u(i, j, k)) / dx;
                     let s22 = (self.grid.v(i, j + 1, k) - self.grid.v(i, j, k)) / dx;
                     let s33 = (self.grid.w(i, j, k + 1) - self.grid.w(i, j, k)) / dx;
-                    let du_dy = derivative(&|jj| self.cell_velocity_clamped(i, jj, k).0, j, ny);
-                    let du_dz = derivative(&|kk| self.cell_velocity_clamped(i, j, kk).0, k, nz);
-                    let dv_dx = derivative(&|ii| self.cell_velocity_clamped(ii, j, k).1, i, nx);
-                    let dv_dz = derivative(&|kk| self.cell_velocity_clamped(i, j, kk).1, k, nz);
-                    let dw_dx = derivative(&|ii| self.cell_velocity_clamped(ii, j, k).2, i, nx);
-                    let dw_dy = derivative(&|jj| self.cell_velocity_clamped(i, jj, k).2, j, ny);
+                    let fd = [
+                        // (component, axis, finite difference)
+                        (
+                            0,
+                            1,
+                            derivative(&|jj| self.cell_velocity_clamped(i, jj, k).0, j, ny),
+                        ),
+                        (
+                            0,
+                            2,
+                            derivative(&|kk| self.cell_velocity_clamped(i, j, kk).0, k, nz),
+                        ),
+                        (
+                            1,
+                            0,
+                            derivative(&|ii| self.cell_velocity_clamped(ii, j, k).1, i, nx),
+                        ),
+                        (
+                            1,
+                            2,
+                            derivative(&|kk| self.cell_velocity_clamped(i, j, kk).1, k, nz),
+                        ),
+                        (
+                            2,
+                            0,
+                            derivative(&|ii| self.cell_velocity_clamped(ii, j, k).2, i, nx),
+                        ),
+                        (
+                            2,
+                            1,
+                            derivative(&|jj| self.cell_velocity_clamped(i, jj, k).2, j, ny),
+                        ),
+                    ];
+                    let [du_dy, du_dz, dv_dx, dv_dz, dw_dx, dw_dy] = fd.map(|(c, a, d)| {
+                        log_layer
+                            .and_then(|nu| self.log_layer_gradient(i, j, k, c, a, nu))
+                            .unwrap_or(d)
+                    });
                     let s12 = half * (du_dy + dv_dx);
                     let s13 = half * (du_dz + dw_dx);
                     let s23 = half * (dv_dz + dw_dy);
@@ -2841,6 +2930,146 @@ impl CfdSolver {
             }
         }
         out
+    }
+
+    /// The velocity of the wall on face `positive` (`+axis` side when true)
+    /// of cell `(i, j, k)` along `axis`, if that face is a no-slip
+    /// [`FaceBc::Wall`]; `None` for any other condition (slip walls included).
+    fn wall_face_velocity(
+        &self,
+        i: usize,
+        j: usize,
+        k: usize,
+        axis: usize,
+        positive: bool,
+    ) -> Option<Vec3Fix> {
+        let step = usize::from(positive);
+        let bc = match axis {
+            0 => self.grid.u_bc(i + step, j, k),
+            1 => self.grid.v_bc(i, j + step, k),
+            _ => self.grid.w_bc(i, j, k + step),
+        };
+        match bc {
+            FaceBc::Wall { velocity } => Some(velocity),
+            _ => None,
+        }
+    }
+
+    /// `(speed tangential to a face of normal axis, relative velocity)` of the
+    /// cell-centred velocity of `(i, j, k)` against `wall`. The speed leaves
+    /// out the `axis` component and is exact (no square root) when only one
+    /// tangential component is non-zero.
+    fn tangential_relative(
+        &self,
+        i: usize,
+        j: usize,
+        k: usize,
+        axis: usize,
+        wall: Vec3Fix,
+    ) -> (Fix128, [Fix128; 3]) {
+        let (uc, vc, wc) = self.grid.cell_velocity(i, j, k);
+        let rel = [uc - wall.x, vc - wall.y, wc - wall.z];
+        let (a, b) = match axis {
+            0 => (rel[1], rel[2]),
+            1 => (rel[0], rel[2]),
+            _ => (rel[0], rel[1]),
+        };
+        let speed = if a.is_zero() {
+            b.abs()
+        } else if b.is_zero() {
+            a.abs()
+        } else {
+            (a * a + b * b).sqrt()
+        };
+        (speed, rel)
+    }
+
+    /// The log-law gradient `∂u_c/∂x_axis` at the centre of cell `(i, j, k)`
+    /// when that cell is the second from a no-slip wall normal to `axis`:
+    /// its neighbour towards the wall has the wall face, the cell itself
+    /// has none on that side. The cell centre is `y = 3dx/2` from the wall,
+    /// and with `u_τ` the friction velocity of the neighbour's speed relative
+    /// to the wall (`friction_velocity` at `y_p = dx/2`, the same value the
+    /// wall function gives that cell) the gradient of the speed is
+    /// `u_τ / (κ y)`, distributed over the tangential components in
+    /// proportion to the neighbour's relative velocity, signed so that the
+    /// speed grows away from the wall.
+    ///
+    /// The centred difference across the wall cell would read
+    /// `u_τ ln 5 / (2 κ dx)` from a log profile there, 21 % above
+    /// `u_τ / (κ · 3dx/2)`, independently of `dx`: the log layer is
+    /// self-similar, so refining the grid does not shrink the error of the
+    /// first cell off the wall. Only that cell is replaced; from the third
+    /// cell on the finite difference stands.
+    ///
+    /// `None` when `c == axis`, when no wall is in reach, when walls are in
+    /// reach on both sides (a three-cell-wide gap; the finite difference is
+    /// kept), or when the spacing or `nu` is not positive.
+    fn log_layer_gradient(
+        &self,
+        i: usize,
+        j: usize,
+        k: usize,
+        c: usize,
+        axis: usize,
+        nu: Fix128,
+    ) -> Option<Fix128> {
+        let dx = self.grid.dx;
+        if c == axis || dx <= Fix128::ZERO || nu <= Fix128::ZERO {
+            return None;
+        }
+        let dims = [self.grid.nx, self.grid.ny, self.grid.nz];
+        let idx = [i, j, k][axis];
+        let shifted = |delta_up: bool| -> (usize, usize, usize) {
+            let mut p = [i, j, k];
+            if delta_up {
+                p[axis] += 1;
+            } else {
+                p[axis] -= 1;
+            }
+            (p[0], p[1], p[2])
+        };
+        let lower = (idx >= 1 && self.wall_face_velocity(i, j, k, axis, false).is_none())
+            .then(|| {
+                let (a, b, cc) = shifted(false);
+                self.wall_face_velocity(a, b, cc, axis, false)
+                    .map(|w| ((a, b, cc), w))
+            })
+            .flatten();
+        let upper = (idx + 1 < dims[axis]
+            && self.wall_face_velocity(i, j, k, axis, true).is_none())
+        .then(|| {
+            let (a, b, cc) = shifted(true);
+            self.wall_face_velocity(a, b, cc, axis, true)
+                .map(|w| ((a, b, cc), w))
+        })
+        .flatten();
+        let (((a, b, cc), wall), towards_positive) = match (lower, upper) {
+            (Some(l), None) => (l, false),
+            (None, Some(u)) => (u, true),
+            _ => return None,
+        };
+        let (speed, rel) = self.tangential_relative(a, b, cc, axis, wall);
+        if speed.is_zero() {
+            return Some(Fix128::ZERO);
+        }
+        let u_tau = friction_velocity_checked(speed, dx.half(), nu);
+        let y = dx + dx.half();
+        let g = u_tau / (VON_KARMAN * y);
+        let along = if rel[c] == speed {
+            g
+        } else if rel[c] == Fix128::ZERO - speed {
+            Fix128::ZERO - g
+        } else {
+            g * rel[c] / speed
+        };
+        // The speed relative to the wall grows away from it: along +axis for a
+        // wall below, along −axis for a wall above.
+        Some(if towards_positive {
+            Fix128::ZERO - along
+        } else {
+            along
+        })
     }
 
     /// Mean of the six neighbours' values (a missing neighbour on the domain
@@ -2876,7 +3105,7 @@ impl CfdSolver {
         }
         let (nu_t, cs_min, cs_max) = match model {
             TurbulenceModel::Smagorinsky | TurbulenceModel::DynamicSmagorinsky => {
-                let strain = self.cell_strain();
+                let strain = self.cell_strain(None);
                 let mut nu_t = vec![Fix128::ZERO; cells];
                 let mut cs_all = Vec::with_capacity(cells);
                 for k in 0..nz {
@@ -2941,22 +3170,30 @@ impl CfdSolver {
 
     /// One transport step of the k-ε / k-ω field: production from the
     /// current strain and `run.nu_t`, the explicit point sources, explicit
-    /// diffusion with `ν_mol + ν_t / σ`, then semi-Lagrangian advection.
+    /// diffusion with `ν_mol + ν_t / σ`, then semi-Lagrangian advection,
+    /// then — with a wall model — the wall-function values of
+    /// [`Self::impose_wall_k_epsilon`] on the cells with a no-slip wall face.
     /// Returns `(largest production, cells clamped)`; the LES and prescribed
     /// closures transport nothing and return zeros.
+    ///
+    /// ⚠️ Limitation: with `wall == None` no wall boundary condition is
+    /// applied to `k` or `ε` (no low-Reynolds-number wall treatment, no wall
+    /// function); the only wall effect is that no diffusive flux crosses a
+    /// solid face.
     fn advance_rans(
         &mut self,
         state: &mut RansState,
         run: &TurbulenceRun,
         dt_s: Fix128,
+        wall: Option<&WallModel>,
     ) -> (Fix128, u32) {
         let (sigma_k, sigma_second) = match run.model {
             TurbulenceModel::KEpsilon => (KE_SIGMA_K, KE_SIGMA_EPS),
             TurbulenceModel::KOmega => (KW_SIGMA, KW_SIGMA),
             _ => return (Fix128::ZERO, 0),
         };
-        let strain = self.cell_strain();
         let nu_mol = self.dynamic_viscosity_pas / self.density_kg_m3;
+        let strain = self.cell_strain(wall.map(|_| nu_mol));
         let mut production_max = Fix128::ZERO;
         let mut clamped = 0u32;
         {
@@ -3029,7 +3266,82 @@ impl CfdSolver {
         );
         state.k = k_adv;
         state.epsilon = e_adv;
+        if wall.is_some() {
+            self.impose_wall_k_epsilon(state, nu_mol);
+        }
         (production_max, clamped)
+    }
+
+    /// The Launder–Spalding (1974) wall function of the `(k, ε)` transport:
+    /// every cell with a no-slip [`crate::eulerian_grid::FaceBc::Wall`] face
+    /// is given the log-layer equilibrium values at its centre,
+    /// `y_p = dx/2` from the wall,
+    ///
+    /// ```text
+    /// u_rel = u_τ · u⁺(y_p u_τ / ν)      (inverted by `friction_velocity`)
+    /// k_P   = u_τ² / √C_μ
+    /// ε_P   = u_τ³ / (κ y_p)             (ω_P = ε_P / (β* k_P) = u_τ / (√β* κ y_p))
+    /// ```
+    ///
+    /// with `u_rel` the speed of the cell-centred velocity relative to the
+    /// wall's, tangential to the face (the normal component is dropped).
+    /// This is the fixed-value form: the cell's transported `(k, ε)` are
+    /// replaced, not its production and dissipation. A cell with several
+    /// wall faces (a corner) takes the arithmetic mean of the per-face
+    /// values. A wall the fluid does not move against gives `u_τ = 0` and so
+    /// `k = ε = 0` there (`ν_t = 0`). Slip walls are not walls here: they
+    /// exert no shear.
+    ///
+    /// The values are those of the log region; in a cell whose `y⁺` lies in
+    /// the viscous sublayer `u_τ` comes from the linear branch of the
+    /// profile and the same two formulas are used, which is not the
+    /// near-wall asymptotics of `k` and `ε` (no low-Reynolds-number damping
+    /// is modelled).
+    fn impose_wall_k_epsilon(&self, state: &mut RansState, nu_mol: Fix128) {
+        let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
+        let y_p = self.grid.dx.half();
+        if y_p <= Fix128::ZERO || nu_mol <= Fix128::ZERO {
+            return;
+        }
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let mut walls = 0i64;
+                    let mut k_sum = Fix128::ZERO;
+                    let mut e_sum = Fix128::ZERO;
+                    for (axis, positive) in [
+                        (0, false),
+                        (0, true),
+                        (1, false),
+                        (1, true),
+                        (2, false),
+                        (2, true),
+                    ] {
+                        let Some(velocity) = self.wall_face_velocity(i, j, k, axis, positive)
+                        else {
+                            continue;
+                        };
+                        let (u_rel, _) = self.tangential_relative(i, j, k, axis, velocity);
+                        let u_tau = friction_velocity_checked(u_rel, y_p, nu_mol);
+                        let (kw, ew) = wall_k_epsilon(u_tau, y_p);
+                        walls += 1;
+                        k_sum = k_sum + kw;
+                        e_sum = e_sum + ew;
+                    }
+                    if walls > 0 {
+                        let c = self.cell_index(i, j, k);
+                        if walls == 1 {
+                            state.k[c] = k_sum;
+                            state.epsilon[c] = e_sum;
+                        } else {
+                            let n = Fix128::from_int(walls);
+                            state.k[c] = k_sum / n;
+                            state.epsilon[c] = e_sum / n;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Explicit diffusion of a cell-centred scalar with a cell-wise
@@ -3135,6 +3447,7 @@ impl CfdSolver {
         nu_t: &[Fix128],
         dt_s: Fix128,
         wall: Option<&WallModel>,
+        log_layer_edges: bool,
     ) -> Option<WallShearSummary> {
         let (nx, ny, nz) = (self.grid.nx, self.grid.ny, self.grid.nz);
         let dx = self.grid.dx;
@@ -3204,6 +3517,78 @@ impl CfdSolver {
             };
             (lo, hi)
         };
+        // The same pairs as cell coordinates (clamped as `cell` clamps).
+        type C3 = (usize, usize, usize);
+        let clamp = |c: C3| -> C3 { (c.0.min(nx - 1), c.1.min(ny - 1), c.2.min(nz - 1)) };
+        let x_cells = |i: usize, j: usize, k: usize| -> [C3; 2] {
+            let lo = if i > 0 { (i - 1, j, k) } else { (i, j, k) };
+            let hi = if i < nx { (i, j, k) } else { (i - 1, j, k) };
+            [clamp(lo), clamp(hi)]
+        };
+        let y_cells = |i: usize, j: usize, k: usize| -> [C3; 2] {
+            let lo = if j > 0 { (i, j - 1, k) } else { (i, j, k) };
+            let hi = if j < ny { (i, j, k) } else { (i, j - 1, k) };
+            [clamp(lo), clamp(hi)]
+        };
+        let z_cells = |i: usize, j: usize, k: usize| -> [C3; 2] {
+            let lo = if k > 0 { (i, j, k - 1) } else { (i, j, k) };
+            let hi = if k < nz { (i, j, k) } else { (i, j, k - 1) };
+            [clamp(lo), clamp(hi)]
+        };
+        let log_nu = |c: C3| -> Fix128 { nu_mol + two * nu_t[c.0 + nx * (c.1 + ny * c.2)] };
+        // No-slip wall faces of every cell, `[−x, +x, −y, +y, −z, +z]`,
+        // gathered once (only needed with the wall function on).
+        let wall_faces: Vec<[bool; 6]> = if log_layer_edges {
+            let mut out = Vec::with_capacity(nx * ny * nz);
+            for k in 0..nz {
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let mut f = [false; 6];
+                        for (slot, flag) in f.iter_mut().enumerate() {
+                            *flag = self
+                                .wall_face_velocity(i, j, k, slot / 2, slot % 2 == 1)
+                                .is_some();
+                        }
+                        out.push(f);
+                    }
+                }
+            }
+            out
+        } else {
+            Vec::new()
+        };
+        let wall_beyond = |c: C3, axis: usize, positive: bool| -> bool {
+            wall_faces[c.0 + nx * (c.1 + ny * c.2)][2 * axis + usize::from(positive)]
+        };
+        // The edge between the `near` pair and the `far` pair one cell away
+        // along `axis` (`forward` = towards +axis). With the wall function on,
+        // an edge one cell from a no-slip wall (both cells of the pair beyond
+        // it, or both before it, touching the wall on the far side) takes the
+        // log-layer value at its own height, `ν_t = κ u_τ dx = 2 ν_t,P` of the
+        // wall cell whose `ν_t,P = κ u_τ dx/2`, instead of the harmonic mean
+        // (which gives `0.75 κ u_τ dx` there). Otherwise the harmonic mean.
+        let edge = |near: [C3; 2], far: [C3; 2], axis: usize, forward: bool| -> Fix128 {
+            if log_layer_edges {
+                let far_wall = far.iter().all(|&c| wall_beyond(c, axis, forward));
+                let near_wall = near.iter().all(|&c| wall_beyond(c, axis, !forward));
+                if far_wall && !near_wall {
+                    return harmonic2(log_nu(far[0]), log_nu(far[1]));
+                }
+                if near_wall && !far_wall {
+                    return harmonic2(log_nu(near[0]), log_nu(near[1]));
+                }
+            }
+            Self::edge_nu(
+                (
+                    cell(near[0].0, near[0].1, near[0].2),
+                    cell(near[1].0, near[1].1, near[1].2),
+                ),
+                Some((
+                    cell(far[0].0, far[0].1, far[0].2),
+                    cell(far[1].0, far[1].1, far[1].2),
+                )),
+            )
+        };
 
         // u faces
         let mut u_next = self.grid.u.clone();
@@ -3220,6 +3605,7 @@ impl CfdSolver {
                         acc = acc + cell(i, j, k) * (self.grid.u(i + 1, j, k) - center);
                     }
                     let near = x_pair(i, j, k);
+                    let near_c = x_cells(i, j, k);
                     // y neighbours: edge at y = j dx (down) and (j + 1) dx (up)
                     match self.grid.u_wall_across_y(i, j, k, false) {
                         Some(w) => {
@@ -3228,7 +3614,7 @@ impl CfdSolver {
                         }
                         None if j > 0 => {
                             acc = acc
-                                + Self::edge_nu(near, Some(x_pair(i, j - 1, k)))
+                                + edge(near_c, x_cells(i, j - 1, k), 1, false)
                                     * (self.grid.u(i, j - 1, k) - center);
                         }
                         None => {}
@@ -3240,7 +3626,7 @@ impl CfdSolver {
                         }
                         None if j + 1 < ny => {
                             acc = acc
-                                + Self::edge_nu(near, Some(x_pair(i, j + 1, k)))
+                                + edge(near_c, x_cells(i, j + 1, k), 1, true)
                                     * (self.grid.u(i, j + 1, k) - center);
                         }
                         None => {}
@@ -3252,7 +3638,7 @@ impl CfdSolver {
                         }
                         None if k > 0 => {
                             acc = acc
-                                + Self::edge_nu(near, Some(x_pair(i, j, k - 1)))
+                                + edge(near_c, x_cells(i, j, k - 1), 2, false)
                                     * (self.grid.u(i, j, k - 1) - center);
                         }
                         None => {}
@@ -3264,7 +3650,7 @@ impl CfdSolver {
                         }
                         None if k + 1 < nz => {
                             acc = acc
-                                + Self::edge_nu(near, Some(x_pair(i, j, k + 1)))
+                                + edge(near_c, x_cells(i, j, k + 1), 2, true)
                                     * (self.grid.u(i, j, k + 1) - center);
                         }
                         None => {}
@@ -3291,6 +3677,7 @@ impl CfdSolver {
                         acc = acc + cell(i, j, k) * (self.grid.v(i, j + 1, k) - center);
                     }
                     let near = y_pair(i, j, k);
+                    let near_c = y_cells(i, j, k);
                     match self.grid.v_wall_across_x(i, j, k, false) {
                         Some(w) => {
                             let ghost = across_wall(w.y, center, &mut extra);
@@ -3298,7 +3685,7 @@ impl CfdSolver {
                         }
                         None if i > 0 => {
                             acc = acc
-                                + Self::edge_nu(near, Some(y_pair(i - 1, j, k)))
+                                + edge(near_c, y_cells(i - 1, j, k), 0, false)
                                     * (self.grid.v(i - 1, j, k) - center);
                         }
                         None => {}
@@ -3310,7 +3697,7 @@ impl CfdSolver {
                         }
                         None if i + 1 < nx => {
                             acc = acc
-                                + Self::edge_nu(near, Some(y_pair(i + 1, j, k)))
+                                + edge(near_c, y_cells(i + 1, j, k), 0, true)
                                     * (self.grid.v(i + 1, j, k) - center);
                         }
                         None => {}
@@ -3322,7 +3709,7 @@ impl CfdSolver {
                         }
                         None if k > 0 => {
                             acc = acc
-                                + Self::edge_nu(near, Some(y_pair(i, j, k - 1)))
+                                + edge(near_c, y_cells(i, j, k - 1), 2, false)
                                     * (self.grid.v(i, j, k - 1) - center);
                         }
                         None => {}
@@ -3334,7 +3721,7 @@ impl CfdSolver {
                         }
                         None if k + 1 < nz => {
                             acc = acc
-                                + Self::edge_nu(near, Some(y_pair(i, j, k + 1)))
+                                + edge(near_c, y_cells(i, j, k + 1), 2, true)
                                     * (self.grid.v(i, j, k + 1) - center);
                         }
                         None => {}
@@ -3361,6 +3748,7 @@ impl CfdSolver {
                         acc = acc + cell(i, j, k) * (self.grid.w(i, j, k + 1) - center);
                     }
                     let near = z_pair(i, j, k);
+                    let near_c = z_cells(i, j, k);
                     match self.grid.w_wall_across_x(i, j, k, false) {
                         Some(w) => {
                             let ghost = across_wall(w.z, center, &mut extra);
@@ -3368,7 +3756,7 @@ impl CfdSolver {
                         }
                         None if i > 0 => {
                             acc = acc
-                                + Self::edge_nu(near, Some(z_pair(i - 1, j, k)))
+                                + edge(near_c, z_cells(i - 1, j, k), 0, false)
                                     * (self.grid.w(i - 1, j, k) - center);
                         }
                         None => {}
@@ -3380,7 +3768,7 @@ impl CfdSolver {
                         }
                         None if i + 1 < nx => {
                             acc = acc
-                                + Self::edge_nu(near, Some(z_pair(i + 1, j, k)))
+                                + edge(near_c, z_cells(i + 1, j, k), 0, true)
                                     * (self.grid.w(i + 1, j, k) - center);
                         }
                         None => {}
@@ -3392,7 +3780,7 @@ impl CfdSolver {
                         }
                         None if j > 0 => {
                             acc = acc
-                                + Self::edge_nu(near, Some(z_pair(i, j - 1, k)))
+                                + edge(near_c, z_cells(i, j - 1, k), 1, false)
                                     * (self.grid.w(i, j - 1, k) - center);
                         }
                         None => {}
@@ -3404,7 +3792,7 @@ impl CfdSolver {
                         }
                         None if j + 1 < ny => {
                             acc = acc
-                                + Self::edge_nu(near, Some(z_pair(i, j + 1, k)))
+                                + edge(near_c, z_cells(i, j + 1, k), 1, true)
                                     * (self.grid.w(i, j + 1, k) - center);
                         }
                         None => {}
