@@ -64,7 +64,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 /// Halo width a 7-point stencil needs.
-const HALO: usize = 1;
+pub(super) const HALO: usize = 1;
 
 const BELOW_MISSING: &str =
     "an open z face of an owned cell needs the layer below, which this rank's band does not hold";
@@ -415,8 +415,6 @@ fn level_dims(nx: usize, ny: usize, nz: usize) -> Vec<(usize, usize, usize)> {
 /// These are not the Gauss-Seidel decomposition's `slab_bounds`: the finest
 /// bounds are a multiple of `2^h` so that the transfers stay rank-local (see
 /// [`layout`]). `None` when an extent is not a power of two.
-// ALLOW-UNWIRED: stage 4a of the distributed multigrid — read by the process-per-rank
-// harness (stage 4b) and by the oracle, which build each rank's faces from it.
 pub(crate) fn multigrid_slab_bounds(
     nx: usize,
     ny: usize,
@@ -458,8 +456,6 @@ pub(crate) fn multigrid_slab_bounds(
 ///
 /// When `faces` does not describe the layers the decomposition gives `my_rank`, or
 /// `pressure` does not hold the band the first sweep reads.
-// ALLOW-UNWIRED: stage 4a of the distributed multigrid — the banded driver the
-// process-per-rank harness (stage 4b) calls; the oracle runs it over threads.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn project_pressure_multigrid_banded_on_rank<T, F>(
     faces: &mut SlabFaces,

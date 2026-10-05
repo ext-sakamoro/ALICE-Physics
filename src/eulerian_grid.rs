@@ -51,9 +51,11 @@
 //! (`project_pressure_bicgstab`, reporting [`BicgstabStats`]) — from
 //! `CfdSolver::step_with_pressure_solver`, which is where a caller picks one
 //! and is refused instead of silently given another. `p2g_normalized` is
-//! reached from `CfdSolver::step_flip`. The distributed solvers
-//! (`project_pressure_decomposed*`, `project_pressure_slab_local*`) are still
-//! crate-internal; their transports are the open item.
+//! reached from `CfdSolver::step_flip`. The rank-local drivers of the slab
+//! decompositions (`project_pressure_decomposed_on_rank`,
+//! `project_pressure_slab_local_on_rank`, the banded multigrid one) are reached
+//! from [`project_pressure_distributed`], which runs one rank per thread over
+//! the byte-stream transports; the transports themselves stay crate-internal.
 //!
 //! # Face mask — walls inside the projection
 //!
@@ -101,9 +103,10 @@
 //! net boundary flux is zero, and the relaxation will drift instead of
 //! converging.
 
-// The distributed pressure solvers (`project_pressure_decomposed*`,
-// `project_pressure_slab_local*`) and their transports are reached from the
-// cross-process tests only; `cfd_solver` wires the single-process family.
+// Parts of the distributed pressure solvers (the slab-local face-condition
+// pipeline and the working-set accounting) are reached from the cross-process
+// tests only; `cfd_solver` wires the single-process family and
+// `project_pressure_distributed` the rank-local drivers.
 // ALLOW-DEAD: distributed solvers are crate-internal until their transports go public
 #![allow(dead_code)]
 
@@ -1073,6 +1076,11 @@ pub fn project_pressure(grid: &mut MacGrid, dt_s: Fix128, density_kg_m3: Fix128,
 mod multigrid_decomposed;
 pub(crate) use multigrid_decomposed::project_pressure_multigrid_decomposed;
 
+#[cfg(feature = "std")]
+mod rank_threads;
+#[cfg(feature = "std")]
+pub use rank_threads::project_pressure_distributed;
+
 /// Number of red-black Gauss-Seidel iterations before restriction.
 const MG_PRE_SMOOTH: u32 = 1;
 /// Number of red-black Gauss-Seidel iterations after prolongation.
@@ -1723,39 +1731,46 @@ pub(crate) fn project_pressure_banded(
         &mut transport,
     );
 
-    // Write each rank's owned layers back: the pressure from its band, the
-    // X / Y faces of its layers, and the Z faces it wrote (its layers plus the
-    // domain's top face when its band ends there).
+    // Write each rank's owned layers back.
     for (r, rank_faces) in faces.iter().enumerate() {
-        let (k0, k1) = rank_faces.owned();
-        for k in k0..k1 {
-            let layer = transport
-                .slab(r)
-                .layer(k)
-                .expect("a rank's own layer is resident in its band");
-            grid.pressure[k * plane..(k + 1) * plane].copy_from_slice(layer);
-            let (u, _) = rank_faces.u_layer(k);
-            for j in 0..ny {
-                for i in 0..=nx {
-                    let ix = grid.idx_u(i, j, k);
-                    grid.u[ix] = u[i + (nx + 1) * j];
-                }
-            }
-            let (v, _) = rank_faces.v_layer(k);
-            for j in 0..=ny {
-                for i in 0..nx {
-                    let ix = grid.idx_v(i, j, k);
-                    grid.v[ix] = v[i + nx * j];
-                }
+        write_band_back(grid, rank_faces, transport.slab(r));
+    }
+}
+
+/// Copy what one rank of a slab-local solve owns back into `grid`: the pressure
+/// of its owned layers from its band, the X / Y faces of those layers, and the
+/// Z faces it wrote (its layers plus the domain's top face when its band ends
+/// there).
+fn write_band_back(grid: &mut MacGrid, rank_faces: &SlabFaces, band: &SlabStorage) {
+    let (nx, ny) = (grid.nx, grid.ny);
+    let plane = cell_plane(nx, ny);
+    let (k0, k1) = rank_faces.owned();
+    for k in k0..k1 {
+        let layer = band
+            .layer(k)
+            .expect("a rank's own layer is resident in its band");
+        grid.pressure[k * plane..(k + 1) * plane].copy_from_slice(layer);
+        let (u, _) = rank_faces.u_layer(k);
+        for j in 0..ny {
+            for i in 0..=nx {
+                let ix = grid.idx_u(i, j, k);
+                grid.u[ix] = u[i + (nx + 1) * j];
             }
         }
-        for k in rank_faces.w_written() {
-            let (w, _) = rank_faces.w_layer(k);
-            for j in 0..ny {
-                for i in 0..nx {
-                    let ix = grid.idx_w(i, j, k);
-                    grid.w[ix] = w[i + nx * j];
-                }
+        let (v, _) = rank_faces.v_layer(k);
+        for j in 0..=ny {
+            for i in 0..nx {
+                let ix = grid.idx_v(i, j, k);
+                grid.v[ix] = v[i + nx * j];
+            }
+        }
+    }
+    for k in rank_faces.w_written() {
+        let (w, _) = rank_faces.w_layer(k);
+        for j in 0..ny {
+            for i in 0..nx {
+                let ix = grid.idx_w(i, j, k);
+                grid.w[ix] = w[i + nx * j];
             }
         }
     }
@@ -1907,7 +1922,6 @@ fn gather_slabs_to_root<T: RankTransport>(transport: &mut T, bounds: &[(usize, u
 // deliberately mirrors so the two drivers stay comparable; `my_rank` is the
 // whole difference between them.
 #[allow(clippy::too_many_arguments)]
-// ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
 pub(crate) fn project_pressure_decomposed_on_rank<T: RankTransport>(
     grid: &mut MacGrid,
     dt_s: Fix128,
@@ -3883,7 +3897,6 @@ impl<S: std::io::Read + std::io::Write> PlaneChannel for SlabSocketTransport<S> 
 // deliberately mirrors so the two drivers stay comparable; `my_rank` is the
 // whole difference between them, as it is between the two full-length drivers.
 #[allow(clippy::too_many_arguments)]
-// ALLOW-UNWIRED: wiring debt Backlog eulerian-grid-cross-process-primitive-residue (true multi-OS-process primitive, examples/ cannot reach pub(crate) and the single-process DecomposedGs/BandedGs path never needs it), oracle src/eulerian_grid.rs tests (cross-process harness)
 pub(crate) fn project_pressure_slab_local_on_rank<T: SlabTransport>(
     faces: &mut SlabFaces,
     dt_s: Fix128,

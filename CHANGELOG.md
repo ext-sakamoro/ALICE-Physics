@@ -47,6 +47,7 @@ were introduced during that release window.
 - `CfdSolver::step_with_pressure_solver` / `PressureSolver::{RedBlackGs, Multigrid, Jacobi, BiCgStab}` / `ProjectionReport` / `BicgstabStats`: 圧力解法を選び、走れない入力は grid を変えずに `PressureSolverError` で拒否する
 - `eulerian_grid::project_pressure_multigrid` / `CfdSolver::step_multigrid`: 2 冪格子の幾何 multigrid 圧力射影
 - `PressureSolver::{DecomposedGs, BandedGs}` / `PressureSolverError::ZeroRanks`: z slab 分割の圧力解法 (単一プロセス解と bit 一致)、`BandedGs` は帯 + halo だけを持つ (464³ で 1 プロセスあたり 9.50 GiB → 1.30 GiB)
+- `eulerian_grid::project_pressure_distributed` / `PressureSolverError::NotDecomposed`: `DecomposedGs` / `BandedGs` / `DecomposedMultigrid` を 1 rank 1 スレッドで実行し、rank 間は halo 層をバイト列のメッセージとしてだけ受け渡す (各 rank は分散実行時の 1 プロセスと同じ状態だけを持つ) 結果は rank 数によらず `project_pressure` / `project_pressure_multigrid` と bit 一致
 - `turbulence::friction_velocity` / `cfd_solver::{StepOptions, WallModel}` / `CfdSolver::step_with_options` / `StepReport` / `WallShearSummary`: 対数則の壁関数
 - `CfdSolver::step_rans` / `TurbulenceModel` / `RansState` / `RansReport`: Smagorinsky / dynamic Smagorinsky / k-ε / k-ω と可変粘性の運動量拡散 (`turbulence::smagorinsky_eddy_viscosity_with` も追加)
 - `CfdSolver::step_flip` / `step_flip_with`: FLIP / PIC の粒子経路 (粒子が領域全体を満たす場合のみ、自由表面は未対応)
