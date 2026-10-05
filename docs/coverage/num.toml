@@ -232,7 +232,7 @@ axis = "stationary"
 item = "Jacobi / Gauss-Seidel / SOR / SSOR as general solvers"
 source = "Saad, Iterative Methods for Sparse Linear Systems ch.4; PETSc KSPRICHARDSON + PCSOR"
 status = "missing"
-evidence = "汎用の定常反復は無い src/eulerian_grid.rs:3940 (Jacobi) / src/eulerian_grid.rs:1448 (赤黒 Gauss-Seidel) は MAC 格子の圧力専用 (pub(crate))"
+evidence = "汎用の定常反復は無い src/eulerian_grid.rs::project_pressure_jacobi (Jacobi) / src/eulerian_grid.rs:1448 (赤黒 Gauss-Seidel) は MAC 格子の圧力専用 (pub(crate))"
 oracle_candidate = "1D Poisson で反復行列のスペクトル半径の閉形式 cos(pi h) と収束率を突合"
 limitation = ""
 
