@@ -174,10 +174,10 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 <!-- integration-levels: summary -->
 | 使われ方 | モジュール数 |
 |----------|-------------:|
-| step: `PhysicsWorld` の step で実行される | 18 |
-| world API: `PhysicsWorld` の他のメソッドから使われる | 7 |
+| step: `PhysicsWorld` の step で実行される | 17 |
+| world API: `PhysicsWorld` の他のメソッドから使われる | 6 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 132 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 134 |
 | unused: テスト以外に呼び出し元がない | 1 |
 
 ## 車両運動
