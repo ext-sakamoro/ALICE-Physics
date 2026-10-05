@@ -11,14 +11,6 @@ unwired src/bvh.rs::clear_dynamic
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
 unwired src/creep_longterm.rs::petg_25c_moderate
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_over
-unwired src/eulerian_grid.rs::set_u
-unwired src/eulerian_grid.rs::set_v
-unwired src/eulerian_grid.rs::set_w
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
