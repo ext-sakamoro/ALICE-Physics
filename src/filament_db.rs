@@ -199,6 +199,7 @@ impl MaterialProperties {
     /// E(θ) = E_xy · cos²(θ) + E_z · sin²(θ)
     ///
     /// At θ = 0 (pure XY load) returns `youngs_modulus_gpa`; at θ = π/2
+    // LIMITATION(COV-MAT-035): This is a first-order engineering approximation; use `anisotropic.rs` (Phase B1) for the full Hill / Tsai-Wu criterion.
     /// (pure Z load) returns `youngs_z()`. This is a first-order engineering
     /// approximation; use `anisotropic.rs` (Phase B1) for the full Hill /
     /// Tsai-Wu criterion.

@@ -1,0 +1,1308 @@
+# Material models and material data (MAT) coverage of ALICE-Physics, against an
+# external reference frame.
+#
+# What this table is: every capability that the standard texts (Ashby, Materials
+# Selection in Mechanical Design; Holzapfel, Nonlinear Solid Mechanics;
+# Lemaitre-Chaboche, Mechanics of Solid Materials; Ferry, Viscoelastic
+# Properties of Polymers; Bird-Armstrong-Hassager, Dynamics of Polymeric
+# Liquids), the property databases (MatWeb, NIST, ASM handbooks), reference
+# implementations (Abaqus and LS-DYNA material model lists, PhysX and Box2D
+# material combine modes) and the standard material tests (uniaxial tension,
+# Treloar uniaxial / equibiaxial / pure shear, Maxwell stress relaxation, WLF
+# shift, Johnson-Cook flow stress) expect of a code that describes what a
+# material is, one [[item]] per capability, with what the crate has today. The
+# rows are written by hand: the axes and the items come from the reference
+# frame, not from the modules that exist, so a missing capability is visible
+# instead of absent.
+#
+# Two kinds of rows live here: closed-form constitutive laws (a stress, a
+# viscosity or a yield function evaluated at one material point) and material
+# data (the numbers a law is fed with, their units, sources and lookup).
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - solving a constitutive law inside finite elements (stress update,
+#     consistent tangent, FE paths of hyperelasticity / J2 plasticity /
+#     thermal softening): the FEM table (COV-FEM-024 to COV-FEM-046). Here the
+#     closed form of the same law; the FE row is cited in `evidence`.
+#   - closed-form structural results that consume material data (creep laws
+#     Norton / Findley / WLF / Arrhenius rate COV-STRUCT-063 to 071, S-N
+#     fatigue curves and their presets COV-STRUCT-046 to 062, lamina Q / ABD /
+#     ply failure criteria / micromechanics bounds COV-STRUCT-072 to 089 and
+#     COV-STRUCT-082 for the maximum-stress check of src/anisotropic.rs,
+#     constrained thermal stress COV-STRUCT-128): the structural table.
+#   - how a print process uses the data (build-direction derating of the
+#     orthotropic constants COV-AM-053, bridging limits, warp, unknown names in
+#     the print pipeline COV-AM-083): the AM table. The filament data itself
+#     and its lookup are here.
+#   - contact solving with the combined coefficients (combine rules as used by
+#     the world COV-RIGID-086, static and kinetic coefficients COV-RIGID-080,
+#     the anisotropic friction law COV-RIGID-082, rolling friction
+#     COV-RIGID-084): the rigid table. Here the finer rules of the material
+#     table itself (rule priority, pair overrides, per-body coefficients) and
+#     the coefficient data.
+#   - generalised-Newtonian and viscoelastic flow inside a solver: the fluid
+#     (COV-CFD-063 / 064) and multiphase tables. The rheological laws are here.
+#   - heat conduction with temperature-dependent properties (COV-THERM-009) and
+#     the property model forms constant / polynomial / linear-in-T
+#     (COV-THERM-018), emissivity (COV-THERM-060), anisotropic conductivity
+#     (COV-THERM-012): the heat-transfer table. The thermal property data is
+#     here.
+#   - dispersive and nonlinear electromagnetic media (COV-EM-044 to 051): the
+#     EM table; piezoelectric element equations (COV-COUPLE-040 / 041): the
+#     coupling table. Static property data is here.
+#   - gas viscosity of air (Sutherland, COV-ENV-012), caloric and species
+#     thermodynamic data of gases (COV-CHEM-004 / 005): those tables.
+#   - biological tissue laws (COV-BIO-047 and following, Casson blood
+#     COV-BIO-080): the biomechanics table. Failure strain of Johnson-Cook
+#     (COV-FRACT-043): the fracture table.
+#
+# Data rows: a test that pins a preset to the literal it was written with, or
+# checks only physical invariants (yield below tensile, positive density), is a
+# regression check, not an oracle; such a row is `implemented-no-oracle` until a
+# test compares the value with the cited source.
+#
+# Search notes (words that hit something else): `cross` (vector cross product),
+# `johnson` (Johnson contact mechanics and buckling), `toughness`
+# (src/fracture.rs uses it for a stress threshold of the effect layer),
+# `roughness` (collision sound), `relaxation` (solver relaxation), `kelvin`
+# (the unit), `Voigt` (Voigt notation, and the Voigt bound in
+# src/bimaterial.rs).
+#
+# Ids of other tables are the ones in those tables when this table was written.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented (a source statement that a
+#                          capability is absent is quoted in `evidence`)
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-MAT-NNN) / axis / item / source (book, chapter, paper, database
+# or reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-MAT-001"
+axis = "database"
+item = "registry of material records with lookup by id and by name, and filtering by class"
+source = "Ashby, Materials Selection in Mechanical Design ch.4-5 (material databases); MatWeb search; Granta / Ansys Materials"
+status = "implemented+oracle"
+evidence = "src/filament_db.rs:461 tests/audit_filament_db.rs::db_container_semantics tests/analytic_filament_db_wiring.rs::by_category_matches_an_independent_refilter_for_every_category 件数の上限は tests/audit_filament_db.rs::filament_db_try_register_refuses_past_the_u16_id_range"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-002"
+axis = "database"
+item = "one record per material across physics (mechanical, thermal, rheological, electromagnetic and contact data linked by one id)"
+source = "Ashby ch.4 (material attributes); Granta MI record structure; Abaqus *MATERIAL with several property options"
+status = "missing"
+evidence = "同じ材料が別の型に分かれ名前の文字列でだけ繋がる: 機械 (src/filament_db.rs:101)・熱 (src/transient_thermal.rs:87)・CTE (src/bimaterial.rs:81、名前で引く)・接触 (src/material.rs:148、別 id)・超弾性 (src/hyperelastic.rs:134)・クリープ (src/creep_longterm.rs:76) id は FilamentId と MaterialId の 2 系統 (型は同じ u16 だが対応表は無い)"
+oracle_candidate = "PLA の全物性を 1 つの id から引けること"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-003"
+axis = "database"
+item = "units carried with each value (dimension-checked quantities or a unit field)"
+source = "NIST SP 811 (SI units); MatWeb unit conversion; pint / uom style unit types"
+status = "missing"
+evidence = "単位は field 名の接尾辞と doc の表だけ (src/filament_db.rs:14) module ごとに単位系が違う (filament_db は GPa・MPa・g/cm³、超弾性は MPa、transient_thermal は SI の f32、non_newtonian は Pa)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-004"
+axis = "database"
+item = "unit conversion constants for the stored engineering units"
+source = "NIST SP 811 Appendix B (conversion factors)"
+status = "implemented+oracle"
+evidence = "src/filament_db.rs:52 tests/audit_filament_db.rs::unit_constants_exact tests/analytic_filament_db_wiring.rs::unit_conversion_constants_are_exact_pure_integers 小数の datasheet 値は from_ratio の切り捨てで 1 ulp 下がる (known defect tests/audit_filament_db.rs::density_si_of_decimal_datasheet_values_is_exact)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-005"
+axis = "database"
+item = "source and provenance per value (reference, test standard, condition)"
+source = "Ashby ch.4; MatWeb datasheet references; ASTM E1309 / ISO 10303-45 material data exchange"
+status = "missing"
+evidence = "出典は module doc の一覧だけ (src/filament_db.rs:30)、値ごとの出典・試験条件の field は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-006"
+axis = "database"
+item = "validity range of a fitted property (temperature range) enforced or reported"
+source = "Incropera-DeWitt property tables (stated ranges); NIST REFPROP range checks"
+status = "missing"
+evidence = "範囲は doc の文だけ (src/transient_thermal.rs:140) 範囲外は黙って外挿する (tests/analytic_transient_thermal_wiring.rs::beyond_calibrated_range_the_fits_extrapolate_without_clamp が現状を固定)"
+oracle_candidate = "範囲外で Err か flag を返すこと"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-007"
+axis = "database"
+item = "lookup by name reports an unknown name instead of substituting another material"
+source = "MatWeb / Granta lookup semantics"
+status = "missing"
+evidence = "CTE の表は未知の名前を PLA の値で返す (src/bimaterial.rs:94) 一括 pipeline の同型は COV-AM-083"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-008"
+axis = "database"
+item = "material selection by performance index (E^1/2 / rho, sigma_y / rho, ...) and property charts"
+source = "Ashby ch.5-6 (material indices, selection charts); Granta Selector"
+status = "missing"
+evidence = "絞り込みは分類だけ (src/filament_db.rs:571) (推測: index / selection で 0 件)"
+oracle_candidate = "梁の軽量化指標 E^1/2/rho で preset を並べた順序"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-009"
+axis = "database"
+item = "statistical design values (mean, scatter, A- / B-basis allowables)"
+source = "MMPDS / CMH-17 (A- and B-basis allowables); Ashby ch.4 (property ranges)"
+status = "missing"
+evidence = "値は 1 点だけで散らばりを持たない (推測: basis / allowable / scatter で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-010"
+axis = "database"
+item = "environmental conditioning of properties (moisture uptake, ageing, UV)"
+source = "ASTM D618 conditioning; Ashby ch.4 (environmental resistance)"
+status = "missing"
+evidence = "吸湿は doc の注記のみ (src/filament_db.rs:343)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-011"
+axis = "data"
+item = "FDM thermoplastic data (E, yield, tensile strength, density, Tg, process temperature, shrinkage, Z / XY ratio) for 8 filaments"
+source = "MatWeb datasheets; filament manufacturer technical data sheets; Ultimaker Cura material profiles"
+status = "implemented-no-oracle"
+evidence = "src/filament_db.rs:235 tests/audit_filament_db.rs::preset_table_regression_pin_and_registration_order (書いた値の固定) tests/audit_filament_db.rs::preset_physical_invariants_and_documented_ranges (降伏 <= 引張 等の不変量) 原典の値との照合は無い"
+oracle_candidate = "PLA・ABS の E / 引張強さを MatWeb の範囲と照合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-012"
+axis = "data"
+item = "sheet-metal data (SUS304, A5052)"
+source = "ASM Metals Handbook vol.1-2; JIS G4304 / H4000"
+status = "implemented-no-oracle"
+evidence = "src/filament_db.rs:411 tests/audit_filament_db.rs::preset_table_regression_pin_and_registration_order 原典の値との照合は無い"
+oracle_candidate = "SUS304 の E・耐力を ASM と照合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-013"
+axis = "data"
+item = "general engineering metals (structural and stainless steels, cast iron, aluminium and copper alloys, titanium) as mechanical records"
+source = "ASM Metals Handbook vol.1-2; MatWeb"
+status = "missing"
+evidence = "機械物性の記録は板金 2 種だけ 熱物性の preset (steel_1018 / aluminum_6061 / titanium_ti6al4v、src/transient_thermal.rs:146) は別の型で機械物性を持たない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-014"
+axis = "data"
+item = "photopolymer resin data (SLA / DLP)"
+source = "resin manufacturer datasheets; Gibson-Rosen-Stucker ch.4"
+status = "missing"
+evidence = "分類だけあり preset は無い (src/filament_db.rs:80)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-015"
+axis = "data"
+item = "sintered powder data (SLS / MJF polyamide, metal powder bed)"
+source = "EOS / HP material datasheets; Gibson-Rosen-Stucker ch.5"
+status = "missing"
+evidence = "分類だけあり preset は無い (src/filament_db.rs:82)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-016"
+axis = "data"
+item = "elastomer constants (hyperelastic presets for TPU, silicone, natural rubber)"
+source = "Treloar 1944 data; NinjaFlex / Ecoflex datasheets; Boyce-Arruda 2000"
+status = "implemented-no-oracle"
+evidence = "src/hyperelastic.rs:164 tests/audit_hyperelastic.rs::presets_carry_their_documented_constants (書いた値の固定) natural_rubber は「~1 MPa に scale した」値で文献の fit そのものではない"
+oracle_candidate = "Treloar の一軸データとの残差 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-017"
+axis = "data"
+item = "unidirectional fibre-composite ply data (CFRP, GFRP)"
+source = "Jones, Mechanics of Composite Materials ch.2 tables; CMH-17"
+status = "implemented-no-oracle"
+evidence = "強度の preset は src/laminate_failure.rs (破壊基準は COV-STRUCT-078) tests/analytic_laminate_failure_wiring.rs::cfrp_ud_matches_the_published_t300_5208_strengths は書いた値の固定 単層の剛性 (E1, E2, G12, nu12) の preset は無い (src/laminate.rs の Ply は呼び手が値を渡す)"
+oracle_candidate = "T300/5208 の剛性を Jones の表と照合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-018"
+axis = "data"
+item = "ceramics and glasses"
+source = "Ashby ch.4 tables; MatWeb"
+status = "missing"
+evidence = "(推測: alumina / zirconia / soda-lime / glass の材料記録は 0 件、glass は Tg の語義のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-019"
+axis = "data"
+item = "wood (orthotropic constants with moisture and grain direction)"
+source = "Forest Products Laboratory, Wood Handbook ch.5; EN 338 strength classes"
+status = "missing"
+evidence = "register_wood は摩擦と反発の 2 値だけ (src/material.rs:347)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-020"
+axis = "data"
+item = "concrete, masonry and soil (compressive strength, E from f_c, Mohr-Coulomb parameters)"
+source = "Eurocode 2 Table 3.1; ACI 318; Das, Principles of Geotechnical Engineering"
+status = "missing"
+evidence = "register_concrete は摩擦と反発の 2 値だけ (src/material.rs:372)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-021"
+axis = "data"
+item = "liquid property data (water, oils, glycerol: density and viscosity with temperature)"
+source = "CRC Handbook of Chemistry and Physics; IAPWS-2008 viscosity of water"
+status = "missing"
+evidence = "水の 1 点の定数だけ (CfdSolver の既定 src/cfd_solver.rs:917) SPH の water_like の粘性は人工粘性の係数で物性ではない (src/sdf_sph.rs:81)"
+oracle_candidate = "20 °C と 80 °C の水の粘性 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-022"
+axis = "data"
+item = "gas property presets (specific gas constant and ratio of specific heats)"
+source = "NIST Chemistry WebBook; Anderson, Modern Compressible Flow ch.1"
+status = "implemented-no-oracle"
+evidence = "src/compressible.rs の air と helium (R, gamma) tests/audit_compressible.rs::presets_match_documented_constants は書いた値の固定 (R = R_u / M との照合は無い) c_p・c_v は COV-CHEM-004、粘性は COV-ENV-012"
+oracle_candidate = "R = 8.314 / M の照合"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-023"
+axis = "data"
+item = "Poisson's ratio stored per material entry"
+source = "MatWeb datasheets; Ashby ch.4"
+status = "missing"
+evidence = "記録に Poisson 比が無い (src/linear_elastic_fem.rs:305)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-024"
+axis = "data"
+item = "default Poisson's ratio per material class when the entry has none"
+source = "Ashby ch.4 (typical ranges per class)"
+status = "implemented-no-oracle"
+evidence = "src/linear_elastic_fem.rs:351 doc が「一次資料と照合していない」と書く 順序だけの test (tests/analytic_linear_elastic_fem_wiring_additional.rs)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-025"
+axis = "data"
+item = "temperature dependence of mechanical data (E(T), yield(T), strength near Tg)"
+source = "Ashby ch.4; polymer DMA data; MMPDS elevated-temperature curves"
+status = "missing"
+evidence = "Tg の 20 °C 以内で警告する flag だけ (src/thermal_stress.rs:21) FE の熱軟化は呼び手が係数を渡す (COV-FEM-045、行 COV-MAT-072)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-026"
+axis = "data"
+item = "strain-rate dependence of mechanical data"
+source = "Johnson-Cook 1983 (rate term); Cowper-Symonds constants; split-Hopkinson data"
+status = "missing"
+evidence = "(推測: strain rate / Cowper / Hopkinson で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-027"
+axis = "elasticity"
+item = "isotropic constants: E and nu to Lame lambda and mu"
+source = "Sadd, Elasticity ch.4; Abaqus *ELASTIC, TYPE=ISOTROPIC"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:379 tests/analytic_linear_elastic_fem.rs::lame_parameters_and_material_validation FE の線形弾性は COV-FEM-024"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-028"
+axis = "elasticity"
+item = "admissible range of isotropic constants (E > 0, -1 < nu < 1/2) and overflow near the limits"
+source = "Sadd ch.4 (positive definiteness); Ting-Chen 2005 (auxetic range)"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:266 tests/analytic_linear_elastic_fem.rs::lame_parameters_and_material_validation"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-029"
+axis = "elasticity"
+item = "full conversion table among E, nu, G, K, lambda and the P-wave modulus M"
+source = "Sadd ch.4 table of elastic moduli; Mavko et al., The Rock Physics Handbook"
+status = "missing"
+evidence = "lame() の 2 値だけ (src/linear_elastic_fem.rs:379) (推測: bulk modulus / p-wave の関数は 0 件、超弾性の体積弾性率は別の意味)"
+oracle_candidate = "(K, G) -> (E, nu) -> (K, G) の往復"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-030"
+axis = "elasticity"
+item = "orthotropic engineering constants (9 constants) as a material record"
+source = "Jones ch.2; Abaqus *ELASTIC, TYPE=ENGINEERING CONSTANTS"
+status = "implemented-no-oracle"
+evidence = "src/anisotropic.rs:58 記録としての検査は無い FDM からの持ち上げは COV-AM-053"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-031"
+axis = "elasticity"
+item = "reciprocity and positive definiteness of orthotropic constants (nu_ij / E_i = nu_ji / E_j, Lempriere bounds)"
+source = "Jones ch.2.4; Lempriere 1968"
+status = "missing"
+evidence = "field は pub で検査する関数が無い (src/anisotropic.rs:58)"
+oracle_candidate = "nu_LT = 0.9 を拒否すること"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-032"
+axis = "elasticity"
+item = "orthotropic 6x6 compliance and stiffness matrices"
+source = "Jones ch.2.3; Abaqus *ELASTIC, TYPE=ORTHOTROPIC"
+status = "missing"
+evidence = "(推測: compliance / stiffness matrix で 0 件、2-D の平面応力 Q は COV-STRUCT-072)"
+oracle_candidate = "C = S^-1 の照合"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-033"
+axis = "elasticity"
+item = "transversely isotropic elasticity (5 constants)"
+source = "Jones ch.2; Abaqus engineering constants"
+status = "missing"
+evidence = "(推測: transversely で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-034"
+axis = "elasticity"
+item = "off-axis Young's modulus of an orthotropic material in a principal plane"
+source = "Jones eq. 2.85; Vinson-Sierakowski"
+status = "implemented+oracle"
+evidence = "src/anisotropic.rs:122 tests/audit_anisotropic.rs::e_at_angle_lt_matches_jones_2_85_for_a_strongly_orthotropic_ply tests/analytic_anisotropic_wiring.rs::e_at_angle_lt_generic_twenty_degree_angle_second_material"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-035"
+axis = "elasticity"
+item = "directional modulus and strength of a printed part from the Z / XY ratio (cos2 / sin2 mixing)"
+source = "Ahn et al. 2002 (FDM anisotropy); Gibson-Rosen-Stucker ch.13"
+status = "partial"
+evidence = "src/filament_db.rs:207 tests/analytic_filament_db_wiring.rs::yield_and_youngs_at_angle_quarter_pi_matches_an_independent_f32_trig_oracle doc は Reuss 型と書くが式は Voigt 型 (known defect tests/audit_filament_db.rs::youngs_at_angle_is_a_lower_bound_reuss_form)"
+oracle_candidate = "E08 の変換式との差を 45° で"
+limitation = "src/filament_db.rs:203 'This is a first-order engineering approximation; use `anisotropic.rs` (Phase B1) for the full Hill / Tsai-Wu criterion.'"
+
+[[item]]
+id = "COV-MAT-036"
+axis = "elasticity"
+item = "off-axis shear modulus and Poisson's ratio G(theta), nu(theta)"
+source = "Jones eq. 2.86-2.88"
+status = "missing"
+evidence = "E(theta) だけ (src/anisotropic.rs:122)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-037"
+axis = "elasticity"
+item = "general anisotropic elasticity (21 constants) and rotation of the stiffness tensor (Bond matrix)"
+source = "Ting, Anisotropic Elasticity ch.2; Abaqus *ELASTIC, TYPE=ANISOTROPIC"
+status = "missing"
+evidence = "(推測: bond / 21 定数で 0 件) FE 側は COV-FEM-026"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-038"
+axis = "elasticity"
+item = "elastic constants from wave speeds or from a lattice (acoustic and homogenised estimates)"
+source = "Mavko et al. ch.4; Hashin-Shtrikman bounds"
+status = "missing"
+evidence = "(推測: hashin / wave speed から定数を出す関数は 0 件) Voigt / Reuss の積層の境界は COV-STRUCT-086"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-039"
+axis = "hyperelasticity"
+item = "strain-energy density of Neo-Hookean, Mooney-Rivlin and Yeoh in principal stretches"
+source = "Holzapfel ch.6.5; Ogden, Non-Linear Elastic Deformations ch.4"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:215 tests/audit_hyperelastic.rs::strain_energy_matches_independent_f64_energy tests/analytic_hyperelastic_wiring.rs::strain_energy_density_matches_the_closed_form_for_every_preset_and_stretch"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-040"
+axis = "hyperelasticity"
+item = "Neo-Hookean uniaxial Cauchy stress (incompressible)"
+source = "Holzapfel ch.7.2; Treloar 1975"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:247 tests/audit_hyperelastic.rs::uniaxial_cauchy_stress_closed_forms tests/engineering_oracles_solid.rs::hyperelastic_uniaxial_stress_matches_closed_forms FE 経路は COV-FEM-027"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-041"
+axis = "hyperelasticity"
+item = "Mooney-Rivlin uniaxial Cauchy stress (incompressible)"
+source = "Mooney 1940; Rivlin-Saunders 1951; Holzapfel ch.6.5"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:247 tests/audit_hyperelastic.rs::uniaxial_cauchy_stress_closed_forms tests/engineering_oracles_solid.rs::hyperelastic_stress_is_derivative_of_strain_energy FE 経路は COV-FEM-028"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-042"
+axis = "hyperelasticity"
+item = "Yeoh uniaxial Cauchy stress (incompressible)"
+source = "Yeoh 1990; Holzapfel ch.6.5"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:247 tests/audit_hyperelastic.rs::uniaxial_cauchy_stress_is_lambda_times_dw_dlambda tests/analytic_hyperelastic_wiring.rs::uniaxial_cauchy_stress_matches_the_closed_form_for_every_preset_and_stretch FE 経路は COV-FEM-029"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-043"
+axis = "hyperelasticity"
+item = "equibiaxial and planar (pure shear) Cauchy stress"
+source = "Treloar 1944 (three deformation modes); Holzapfel ch.7.2"
+status = "implemented-no-oracle"
+evidence = "専用の関数は無いが tensor 則 (src/hyperelastic.rs:428) で J = 1 の F = diag(l, l, 1/l^2) / diag(l, 1, 1/l) を渡し sigma_11 - sigma_33 を取れば組める 一軸の同じ組み方は tests/audit_hyperelastic.rs::tensor_uniaxial_difference_equals_scalar_uniaxial_stress で突合済、等二軸・平面の突合は無い 伸びの不変量だけは tests/analytic_hyperelastic_wiring.rs::equibiaxial_matches_the_closed_form_invariants"
+oracle_candidate = "Neo-Hookean 等二軸 sigma = mu (l^2 - l^-4) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-044"
+axis = "hyperelasticity"
+item = "simple shear stresses of an isotropic hyperelastic law (normal-stress differences)"
+source = "Holzapfel ch.7.2 (simple shear); Rivlin 1948"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:428 tests/audit_hyperelastic.rs::simple_shear_stresses_match_textbook"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-045"
+axis = "hyperelasticity"
+item = "small-strain consistency (initial shear modulus, E = 3 mu_0 for incompressibility)"
+source = "Holzapfel ch.6.5; Ogden ch.4.3"
+status = "implemented+oracle"
+evidence = "src/hyperelastic.rs:283 tests/audit_hyperelastic.rs::small_strain_shear_modulus_closed_forms_and_agrees_with_moduli tests/analytic_hyperelastic_wiring.rs::small_strain_limit_matches_three_times_the_uniaxial_stress_slope"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-046"
+axis = "hyperelasticity"
+item = "Ogden model (real-exponent principal-stretch series)"
+source = "Ogden 1972; Abaqus *HYPERELASTIC, OGDEN"
+status = "missing"
+evidence = "src が未実装と書く (src/hyperelastic.rs:17) FE 側は COV-FEM-030"
+oracle_candidate = "Ogden N=3 の Treloar fit の一軸 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-047"
+axis = "hyperelasticity"
+item = "Arruda-Boyce eight-chain and Gent (limiting chain extensibility)"
+source = "Arruda-Boyce 1993; Gent 1996; Abaqus *HYPERELASTIC, ARRUDA-BOYCE"
+status = "missing"
+evidence = "Arruda は文献名のみ (推測: gent で 0 件、tangent の部分一致を除く) FE 側は COV-FEM-031"
+oracle_candidate = "Gent の一軸が lambda_m で発散すること"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-048"
+axis = "hyperelasticity"
+item = "generalised Rivlin polynomial (Mooney-Rivlin 3, 5, 9 parameters) and reduced polynomial of order N"
+source = "Rivlin-Saunders 1951; Abaqus *HYPERELASTIC, POLYNOMIAL / REDUCED POLYNOMIAL"
+status = "missing"
+evidence = "2 定数の Mooney-Rivlin と 3 次の Yeoh だけ (src/hyperelastic.rs:134)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-049"
+axis = "hyperelasticity"
+item = "isochoric / volumetric split of the strain energy (J^-2/3 modified invariants)"
+source = "Flory 1961; Holzapfel ch.6.4; Abaqus compressible hyperelasticity"
+status = "missing"
+evidence = "src が分けないと書く (src/hyperelastic.rs:410) 圧縮性の付け足しは COV-FEM-032"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-050"
+axis = "hyperelasticity"
+item = "total strain energy consistent with the compressible stress (dW_total / dF = P)"
+source = "Holzapfel ch.6.2 (hyperelastic potential)"
+status = "missing"
+evidence = "strain_energy_density は体積項を持たず (src/hyperelastic.rs:215) cauchy_stress の potential になっていない"
+oracle_candidate = "数値微分 dW/dF と P の照合"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-051"
+axis = "hyperelasticity"
+item = "parameter identification from test data (least squares on uniaxial, biaxial, planar data)"
+source = "Ogden-Saccomandi-Sgura 2004; Abaqus hyperelastic test data evaluation"
+status = "missing"
+evidence = "(推測: fit / calibrate で 0 件) preset の値は手で与えたもの"
+oracle_candidate = "Treloar データへの Neo-Hookean fit の mu (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-052"
+axis = "hyperelasticity"
+item = "Drucker stability check of a parameter set"
+source = "Abaqus hyperelastic material evaluation (Drucker stability); Holzapfel ch.6.10"
+status = "missing"
+evidence = "負の C2 を持つ natural_rubber preset を検査する関数は無い (推測: drucker / stability で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-053"
+axis = "viscoelasticity"
+item = "Maxwell element: stress relaxation sigma(t) = E eps0 exp(-t/tau)"
+source = "Ferry ch.1; Findley-Lai-Onaran ch.5"
+status = "missing"
+evidence = "(推測: relaxation modulus / Maxwell 要素で 0 件、maxwell は電磁の FDTD だけ)"
+oracle_candidate = "既存の exp_fix だけで組める 指数緩和の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-054"
+axis = "viscoelasticity"
+item = "Kelvin-Voigt element: creep eps(t) = sigma0 / E (1 - exp(-t/tau))"
+source = "Ferry ch.1; Findley-Lai-Onaran ch.5"
+status = "missing"
+evidence = "(推測: 0 件) 高分子のクリープは Findley の冪則だけ (COV-STRUCT-064)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-055"
+axis = "viscoelasticity"
+item = "standard linear solid (Zener) and Burgers four-element model"
+source = "Findley-Lai-Onaran ch.5; Lakes, Viscoelastic Materials ch.2"
+status = "missing"
+evidence = "(推測: zener / burgers で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-056"
+axis = "viscoelasticity"
+item = "generalised Maxwell (Prony series) relaxation modulus"
+source = "Ferry ch.3; Abaqus *VISCOELASTIC, TIME=PRONY"
+status = "missing"
+evidence = "(推測: prony で 0 件) FE 経路は COV-FEM-042"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-057"
+axis = "viscoelasticity"
+item = "Boltzmann superposition (hereditary integral) for an arbitrary strain history"
+source = "Ferry ch.1; Christensen, Theory of Viscoelasticity ch.1"
+status = "missing"
+evidence = "(推測: hereditary / convolution で 0 件)"
+oracle_candidate = "ramp-and-hold の応力の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-058"
+axis = "viscoelasticity"
+item = "dynamic moduli E', E'' and loss tangent from a Prony series"
+source = "Ferry ch.3; Lakes ch.3"
+status = "missing"
+evidence = "(推測: storage / loss modulus で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-059"
+axis = "viscoelasticity"
+item = "interconversion between creep compliance and relaxation modulus"
+source = "Park-Schapery 1999; Ferry ch.3"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-060"
+axis = "viscoelasticity"
+item = "time-temperature superposition applied to a relaxation spectrum (shifted Prony / master curve)"
+source = "Ferry ch.11; Abaqus *TRS"
+status = "missing"
+evidence = "WLF の時間シフトはクリープの冪則にだけ掛かる (COV-STRUCT-065) 緩和スペクトルが無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-061"
+axis = "viscoelasticity"
+item = "nonlinear viscoelasticity (Schapery single-integral)"
+source = "Schapery 1969; Findley-Lai-Onaran ch.7"
+status = "missing"
+evidence = "(推測: schapery で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-062"
+axis = "plasticity"
+item = "von Mises (J2) equivalent stress of a stress tensor"
+source = "Lemaitre-Chaboche ch.5; Simo-Hughes ch.2"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:644 tests/audit_linear_elastic_fem.rs::von_mises_and_hydrostatic_closed_forms"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-063"
+axis = "plasticity"
+item = "Tresca yield function"
+source = "Lemaitre-Chaboche ch.5; Hill, The Mathematical Theory of Plasticity"
+status = "missing"
+evidence = "(推測: tresca で 0 件)"
+oracle_candidate = "純せん断で von Mises と Tresca の比 2/sqrt(3)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-064"
+axis = "plasticity"
+item = "Drucker-Prager yield function"
+source = "Drucker-Prager 1952; Abaqus *DRUCKER PRAGER"
+status = "missing"
+evidence = "(推測: drucker で 0 件) FE は COV-FEM-038"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-065"
+axis = "plasticity"
+item = "Mohr-Coulomb yield function"
+source = "Lemaitre-Chaboche ch.5; Abaqus *MOHR COULOMB"
+status = "missing"
+evidence = "(推測: mohr で 0 件) FE は COV-FEM-039"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-066"
+axis = "plasticity"
+item = "Hill 1948 anisotropic yield function"
+source = "Hill 1948; Abaqus *POTENTIAL (Hill)"
+status = "implemented+oracle"
+evidence = "src/anisotropic.rs:396 (src/anisotropic.rs:314 経由) tests/audit_anisotropic.rs::index_is_one_at_each_uniaxial_and_shear_allowable tests/audit_anisotropic.rs::isotropic_normal_states_reduce_to_von_mises 強度 0 を無制限と読む (known defect tests/audit_anisotropic.rs::zero_strength_with_nonzero_stress_is_not_safe)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-067"
+axis = "plasticity"
+item = "advanced anisotropic yield functions (Barlat Yld91 / Yld2000, Hosford)"
+source = "Barlat et al. 2003; LS-DYNA *MAT_133"
+status = "missing"
+evidence = "(推測: barlat / hosford で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-068"
+axis = "plasticity"
+item = "combined isotropic and kinematic hardening with a mixing fraction"
+source = "Simo-Hughes ch.3; Abaqus combined hardening"
+status = "partial"
+evidence = "src/plastic.rs:68 src/plastic.rs::combined_hardening_between_iso_and_kin tests/audit_plastic.rs::radial_return_split_between_isotropic_and_kinematic_matches_closed_form FE は COV-FEM-035"
+oracle_candidate = "混合率を変えた時の Bauschinger の逆降伏応力"
+limitation = "src/plastic.rs:67 'Combined isotropic + kinematic (equal split).'"
+
+[[item]]
+id = "COV-MAT-069"
+axis = "plasticity"
+item = "linear isotropic hardening (one-dimensional return mapping)"
+source = "Simo-Hughes ch.1-2"
+status = "implemented+oracle"
+evidence = "src/plastic.rs:185 src/plastic.rs::isotropic_hardening_raises_next_yield tests/audit_plastic.rs::stress_exactly_at_yield_is_elastic 3-D の FE は COV-FEM-033"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-070"
+axis = "plasticity"
+item = "linear kinematic hardening (Prager, Bauschinger effect)"
+source = "Simo-Hughes ch.3; Prager 1956"
+status = "implemented+oracle"
+evidence = "src/plastic.rs:185 src/plastic.rs::kinematic_hardening_bauschinger_reversal src/plastic.rs::with_hardening_back_stress_matches_radial_return_closed_form FE は COV-FEM-034"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-071"
+axis = "plasticity"
+item = "nonlinear isotropic hardening (Voce saturation, Swift / Ludwik power law, Ramberg-Osgood)"
+source = "Lemaitre-Chaboche ch.6; Abaqus *PLASTIC, HARDENING=TABULAR / Voce"
+status = "missing"
+evidence = "(推測: voce / swift / ludwik / ramberg で 0 件) 硬化は線形だけ FE は COV-FEM-036"
+oracle_candidate = "Voce の飽和応力"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-072"
+axis = "plasticity"
+item = "linear thermal softening of yield stress and hardening modulus"
+source = "Lemaitre-Chaboche ch.6 (temperature-dependent parameters); Johnson-Cook thermal term (linearised)"
+status = "implemented+oracle"
+evidence = "src/linear_elastic_fem.rs:4157 tests/analytic_thermoplastic_softening.rs::softening_lowers_the_yield_stress_by_the_fraction_it_is_given tests/analytic_thermoplastic_softening.rs::softening_the_hardening_modulus_changes_only_the_slope FE の温度依存物性は COV-FEM-045"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-073"
+axis = "plasticity"
+item = "hardening modulus derived from the material record"
+source = "Ashby ch.4; ASM stress-strain curves"
+status = "partial"
+evidence = "src/plastic.rs:96 tests/audit_plastic.rs::from_fdm_material_closed_forms_for_every_preset (H = 0.05 E の固定) 板金にも同じ比が掛かり SUS304 は H = 10 GPa (field doc の mild steel の目安 1.5 GPa の約 7 倍、src/plastic.rs:83)"
+oracle_candidate = "SUS304 の硬化係数を ASM の応力-ひずみ曲線と照合 (参照値要確認)"
+limitation = "src/plastic.rs:93 'Defaults to isotropic hardening with `H = 0.05 · E` (typical elastic-plastic ratio for polymers).'"
+
+[[item]]
+id = "COV-MAT-074"
+axis = "plasticity"
+item = "Armstrong-Frederick / Chaboche nonlinear kinematic hardening"
+source = "Armstrong-Frederick 1966; Chaboche 2008; Abaqus *PLASTIC, HARDENING=COMBINED"
+status = "missing"
+evidence = "Chaboche は参考文献名のみ (推測) FE は COV-FEM-035"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-075"
+axis = "plasticity"
+item = "Johnson-Cook flow stress (strain, strain-rate and temperature terms)"
+source = "Johnson-Cook 1983; LS-DYNA *MAT_015"
+status = "missing"
+evidence = "(推測: johnson-cook で 0 件、johnson は接触力学の別語義) 破壊ひずみは COV-FRACT-043"
+oracle_candidate = "OFHC 銅の流動応力 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-076"
+axis = "plasticity"
+item = "rate-dependent plasticity (Cowper-Symonds, Perzyna overstress)"
+source = "Cowper-Symonds 1957; Perzyna 1966; LS-DYNA *MAT_024"
+status = "missing"
+evidence = "(推測: cowper / perzyna で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-077"
+axis = "plasticity"
+item = "engineering to true stress-strain conversion of a tensile curve"
+source = "ASTM E8 / E646; Dieter, Mechanical Metallurgy ch.8"
+status = "missing"
+evidence = "(推測: true stress / engineering stress で 0 件)"
+oracle_candidate = "一様伸びまでの sigma_t = sigma_e (1 + eps_e)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-078"
+axis = "damage-fracture data"
+item = "fracture toughness data (K_Ic, G_c) per material"
+source = "Anderson, Fracture Mechanics ch.7; ASTM E399"
+status = "missing"
+evidence = "材料記録に K_Ic は無い src/fracture.rs の fracture_toughness は効果層の応力しきい値で K ではない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-079"
+axis = "damage-fracture data"
+item = "elongation at break, reduction of area and impact energy (Charpy / Izod)"
+source = "ASTM E8 / E23 / D256; MatWeb"
+status = "missing"
+evidence = "(推測: elongation は filament_db の doc の語のみ、charpy / izod で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-080"
+axis = "damage-fracture data"
+item = "continuum damage parameters (Lemaitre S, s; Johnson-Cook D1-D5) as material data"
+source = "Lemaitre-Chaboche ch.7; Johnson-Cook 1985"
+status = "missing"
+evidence = "(推測: 0 件) 損傷則そのものは COV-FEM-044 / COV-FRACT-043"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-081"
+axis = "thermal data"
+item = "thermal property presets with temperature dependence (k, c_p, rho for steel, aluminium, titanium, PLA)"
+source = "Incropera-DeWitt Appendix A; MatWeb"
+status = "implemented-no-oracle"
+evidence = "src/transient_thermal.rs:146 tests/analytic_transient_thermal_wiring.rs::steel_1018_properties_at_300k_match_hand_literals (書いた値の固定) 式の形は COV-THERM-018"
+oracle_candidate = "Incropera の 300 K と 600 K の値と照合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-082"
+axis = "thermal data"
+item = "tabulated property versus temperature with interpolation"
+source = "Abaqus *CONDUCTIVITY with temperature dependence (tabular); NIST tables"
+status = "missing"
+evidence = "式の形は定数・2 次多項式・線形だけ (src/transient_thermal.rs:41)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-083"
+axis = "thermal data"
+item = "linear thermal expansion coefficient data per material"
+source = "MatWeb; ASM Metals Handbook; Incropera Appendix A"
+status = "implemented-no-oracle"
+evidence = "src/bimaterial.rs:81 tests/audit_bimaterial.rs::published_cte_table_matches_the_documented_values (書いた値の固定) 未知の名前の扱いは 行 COV-MAT-007"
+oracle_candidate = "SUS304 / A5052 の CTE を ASM と照合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-084"
+axis = "thermal data"
+item = "temperature-dependent expansion (instantaneous versus secant CTE)"
+source = "Abaqus *EXPANSION (secant definition); ASM"
+status = "missing"
+evidence = "CTE は 1 値 (推測: secant / instantaneous で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-085"
+axis = "thermal data"
+item = "melting point, solidus / liquidus and latent heat data of real materials"
+source = "CRC Handbook; ASM; Incropera Appendix A"
+status = "missing"
+evidence = "相変化は正規化した単位の汎用値 (src/phase_change.rs:62) 材料記録は Tg と造形温度だけ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-086"
+axis = "thermal data"
+item = "thermal properties attached to the filament / sheet-metal records"
+source = "Ashby ch.4; Granta MI"
+status = "missing"
+evidence = "MaterialProperties に k・c_p が無い (src/filament_db.rs:101) 熱の preset は PLA 以外のフィラメントを持たない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-087"
+axis = "electromagnetic data"
+item = "static relative permittivity, permeability and conductivity data of common materials (metals, FR4, water, glass, ferrite)"
+source = "CRC Handbook; Pozar, Microwave Engineering Appendix; openEMS / Meep material libraries"
+status = "missing"
+evidence = "真空だけ (src/maxwell_fdtd.rs:373) cell ごとの材料の仕組みは COV-EM-038"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-088"
+axis = "electromagnetic data"
+item = "piezoelectric constants presets (d33, relative permittivity, stiffness) for PZT-5A, quartz, PVDF"
+source = "IEEE Std 176; manufacturer datasheets"
+status = "implemented-no-oracle"
+evidence = "src/piezoelectric.rs:43 tests/audit_piezoelectric.rs::presets_carry_published_constants_and_the_given_geometry (書いた値の固定) 素子の式は COV-COUPLE-040、tensor は COV-COUPLE-041"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-089"
+axis = "electromagnetic data"
+item = "temperature coefficient of electrical resistivity"
+source = "CRC Handbook; IEC 60028 (copper)"
+status = "missing"
+evidence = "(推測: resistivity で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-090"
+axis = "electromagnetic data"
+item = "dispersion and magnetisation-curve parameters per material (Debye / Drude / Lorentz poles, B-H data)"
+source = "Taflove-Hagness ch.9; Jiles-Atherton 1986"
+status = "missing"
+evidence = "材料の数値が無い 媒質の解法は COV-EM-044 / 045 / 046 / 051"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-091"
+axis = "rheology"
+item = "power-law (Ostwald-de Waele) fluid with an arbitrary flow index"
+source = "Bird-Stewart-Lightfoot ch.8; Chhabra-Richardson ch.1"
+status = "partial"
+evidence = "src/non_newtonian.rs:51 tests/audit_non_newtonian.rs::shear_thinning_stress_matches_k_rate_to_the_one_over_n tests/engineering_oracles_fluid.rs::non_newtonian_bingham_herschel_bulkley_and_power_law_closed_forms 流動指数は整数 n か 1/n だけ"
+oracle_candidate = "n = 0.4 の流動曲線"
+limitation = "src/non_newtonian.rs:24 'The power-law and Carreau structs store their exponent as an integer'"
+
+[[item]]
+id = "COV-MAT-092"
+axis = "rheology"
+item = "apparent viscosity eta = tau / gamma-dot of a generalised-Newtonian law"
+source = "Bird-Armstrong-Hassager vol.1 ch.4"
+status = "implemented+oracle"
+evidence = "src/non_newtonian.rs:135 tests/audit_non_newtonian.rs::apparent_viscosity_follows_the_power_law_exponent_minus_one"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-093"
+axis = "rheology"
+item = "Carreau viscosity with a fractional power-law index"
+source = "Carreau 1972; Bird-Armstrong-Hassager vol.1 ch.4"
+status = "implemented+oracle"
+evidence = "src/non_newtonian.rs:173 tests/engineering_oracles_fluid.rs::non_newtonian_carreau_fractional_index_matches_closed_form tests/audit_non_newtonian.rs::carreau_fractional_and_integer_paths_agree_at_integer_half_exponents 流れへの組み込みは COV-CFD-063"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-094"
+axis = "rheology"
+item = "Bingham plastic (yield stress plus plastic viscosity)"
+source = "Bingham 1917; Chhabra-Richardson ch.1"
+status = "implemented+oracle"
+evidence = "src/non_newtonian.rs:218 tests/audit_non_newtonian.rs::bingham_is_affine_in_rate_above_zero tests/analytic_non_newtonian_wiring.rs::flows_under_stress_boundary_is_strict_greater_than"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-095"
+axis = "rheology"
+item = "Herschel-Bulkley (yield stress plus power law)"
+source = "Herschel-Bulkley 1926; Chhabra-Richardson ch.1"
+status = "partial"
+evidence = "src/non_newtonian.rs:248 tests/audit_non_newtonian.rs::herschel_bulkley_minus_yield_is_the_power_law_term 指数は整数だけで shear-thinning (n < 1) の HB は組めない"
+oracle_candidate = "n = 0.5 の HB の流動曲線"
+limitation = "src/non_newtonian.rs:254 'Integer exponent.'"
+
+[[item]]
+id = "COV-MAT-096"
+axis = "rheology"
+item = "Cross and Carreau-Yasuda viscosity"
+source = "Cross 1965; Yasuda 1981; Ansys Fluent / Polyflow viscosity models"
+status = "missing"
+evidence = "(推測: yasuda で 0 件、cross は外積の別語義のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-097"
+axis = "rheology"
+item = "Sisko and Ellis viscosity"
+source = "Sisko 1958; Bird-Armstrong-Hassager vol.1 ch.4"
+status = "missing"
+evidence = "(推測: sisko / ellis で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-098"
+axis = "rheology"
+item = "regularised yield-stress laws (Papanastasiou, bi-viscous)"
+source = "Papanastasiou 1987; Frigaard-Nouar 2005"
+status = "missing"
+evidence = "Bingham は降伏未満で無流動の判定だけ (src/non_newtonian.rs:218) 流れへの組み込みは COV-MULTIPHASE-058"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-099"
+axis = "rheology"
+item = "temperature dependence of viscosity (Arrhenius, WLF for melts, Andrade / Vogel for liquids)"
+source = "Bird-Armstrong-Hassager vol.1 ch.5; Ferry ch.11; Vogel-Fulcher-Tammann"
+status = "missing"
+evidence = "粘性の式に温度の引数が無い (推測: 0 件) WLF は creep の時間シフトだけ (COV-STRUCT-065)"
+oracle_candidate = "PLA 溶融粘度の 200 °C と 220 °C の比 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-100"
+axis = "rheology"
+item = "viscoelastic fluid laws: upper-convected Maxwell / Oldroyd-B steady shear and first normal-stress difference"
+source = "Bird-Armstrong-Hassager vol.1 ch.7; Oldroyd 1950"
+status = "missing"
+evidence = "(推測: oldroyd / normal stress で 0 件) 流れの solver 側は COV-CFD-064"
+oracle_candidate = "定常せん断の N1 = 2 eta lambda gamma-dot^2"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-101"
+axis = "rheology"
+item = "thixotropy (structure-parameter models)"
+source = "Mewis-Wagner 2009; Moore 1959"
+status = "missing"
+evidence = "(推測: thixotrop で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-102"
+axis = "rheology"
+item = "extensional viscosity (Trouton ratio)"
+source = "Bird-Armstrong-Hassager vol.1 ch.3"
+status = "missing"
+evidence = "(推測: trouton / extensional で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-103"
+axis = "contact material"
+item = "per-material friction and restitution presets (metal, wood, rubber, ice, concrete)"
+source = "PhysX PxMaterial; Unity PhysicMaterial presets"
+status = "implemented-no-oracle"
+evidence = "src/material.rs:338 tests/analytic_material_wiring.rs::register_metal_wood_rubber_ice_concrete_match_documented_constants (書いた値の固定) 材料ごとの 1 値で、組の測定値ではない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-104"
+axis = "contact material"
+item = "rule chosen when the two materials name different combine rules (priority Max > Multiply > Average > Min)"
+source = "PhysX PxCombineMode priority"
+status = "implemented+oracle"
+evidence = "src/material.rs:388 tests/audit_material.rs::combine_without_override_uses_dynamic_friction_and_priority_max_multiply_average_min tests/analytic_material_wiring.rs::combine_rule_priority_crosses_presets_correctly tests/audit_material.rs::friction_and_restitution_choose_their_rules_independently 4 規則そのものは COV-RIGID-086"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-105"
+axis = "contact material"
+item = "pair-specific override of the combined coefficients"
+source = "Bullet / Havok material pair tables; Unity contact pair modification"
+status = "implemented+oracle"
+evidence = "src/material.rs:229 tests/audit_material.rs::pair_override_is_symmetric_update_in_place_and_wins_over_rules tests/analytic_material_wiring.rs::set_pair_override_takes_precedence_and_is_order_independent_at_both_call_sites"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-106"
+axis = "contact material"
+item = "per-body friction and restitution that stand in for the default material"
+source = "Box2D b2Shape friction / restitution; Rapier collider coefficients"
+status = "implemented+oracle"
+evidence = "src/solver.rs:2349 (既定 material の body だけ body の値を読み、material を持つ body は material が優先) tests/audit_solver.rs::combined_material_reads_default_material_bodies_values tests/audit_solver.rs::combined_material_ignores_body_values_of_a_body_with_a_material"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-107"
+axis = "contact material"
+item = "geometric-mean mixing of friction (sqrt(mu_a mu_b)) and max mixing of restitution"
+source = "Box2D b2MixFriction / b2MixRestitution"
+status = "missing"
+evidence = "規則は Average / Min / Max / Multiply の 4 つ (src/material.rs:30) 反発の Max は組めるが摩擦の幾何平均は無い"
+oracle_candidate = "mu = 0.04 と 1 の組が 0.2 になること"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-108"
+axis = "contact material"
+item = "measured coefficient data for material pairs (steel-steel, rubber-asphalt, PTFE-steel, dry and lubricated)"
+source = "Bhushan, Introduction to Tribology ch.4 tables; CRC Handbook friction tables"
+status = "missing"
+evidence = "組の値を入れる仕組み (src/material.rs:229) はあるが組のデータは無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-109"
+axis = "contact material"
+item = "anisotropic friction presets (tyre-asphalt, ski-snow, skate-ice)"
+source = "Pacejka (tyre friction ellipse); ski tribology data"
+status = "implemented-no-oracle"
+evidence = "src/anisotropic_friction.rs:50 tests/audit_anisotropic_friction.rs::preset_tables_are_pinned (書いた値の固定) 法則は COV-RIGID-082"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-110"
+axis = "contact material"
+item = "validation of coefficient ranges (mu >= 0, 0 <= e <= 1)"
+source = "PhysX PxMaterial parameter checks"
+status = "missing"
+evidence = "負の摩擦や 1 を超える値をそのまま受ける (tests/analytic_material_wiring.rs::negative_and_greater_than_one_friction_coefficients_are_accepted_as_is が現状を固定)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-111"
+axis = "contact material"
+item = "velocity-dependent coefficient of restitution"
+source = "Johnson, Contact Mechanics ch.11; Thornton 1997"
+status = "missing"
+evidence = "反発は 1 値 (しきい値以下は跳ねない COV-RIGID-077) (推測: 速度依存の式は 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-112"
+axis = "contact material"
+item = "velocity-dependent friction (Stribeck curve)"
+source = "Armstrong-Helouvry 1994; Bhushan ch.4"
+status = "missing"
+evidence = "(推測: stribeck で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-113"
+axis = "contact material"
+item = "load, pressure and temperature dependence of the friction coefficient"
+source = "Bhushan ch.4; Persson, Sliding Friction"
+status = "missing"
+evidence = "(推測: 0 件) タイヤの荷重感度は車両の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-114"
+axis = "contact material"
+item = "surface roughness parameters and their effect on friction and contact stiffness (Greenwood-Williamson)"
+source = "Greenwood-Williamson 1966; ISO 4287 (Ra, Rq)"
+status = "missing"
+evidence = "(推測: roughness は衝突音の別語義のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-115"
+axis = "benchmark"
+item = "uniaxial tension of an elastic-linear-hardening bar, loading and unloading (bilinear curve and residual strain)"
+source = "Simo-Hughes ch.1 (1-D example); ASTM E8"
+status = "implemented+oracle"
+evidence = "src/plastic.rs:185 src/plastic.rs::plastic_strain_accumulates_across_steps src/plastic.rs::plastic_loading_isotropic FE 版は COV-FEM-033"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-116"
+axis = "benchmark"
+item = "Treloar rubber data: uniaxial, equibiaxial and pure-shear fits"
+source = "Treloar 1944; Ogden 1972"
+status = "missing"
+evidence = "データとの突合が無い (行 COV-MAT-051)"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-117"
+axis = "benchmark"
+item = "Maxwell stress relaxation after a strain step"
+source = "Ferry ch.1"
+status = "missing"
+evidence = "緩和の則が無い (行 COV-MAT-053)"
+oracle_candidate = "既存の exp_fix で組める 閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-118"
+axis = "benchmark"
+item = "Johnson-Cook flow stress of OFHC copper / 4340 steel"
+source = "Johnson-Cook 1983"
+status = "missing"
+evidence = "JC 則が無い (行 COV-MAT-075)"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-119"
+axis = "benchmark"
+item = "rheometer flow curve of a polymer melt (Carreau fit, zero-shear viscosity)"
+source = "Bird-Armstrong-Hassager vol.1 ch.4; manufacturer rheology data"
+status = "missing"
+evidence = "Carreau の式はある (行 COV-MAT-093) が測定データとの突合は無い"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-120"
+axis = "benchmark"
+item = "off-axis tensile test of a unidirectional ply (E(theta) against data)"
+source = "Jones ch.2; Pagano-Halpin 1968"
+status = "missing"
+evidence = "式の突合はある (行 COV-MAT-034) が試験データとの比較は無い"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-121"
+axis = "benchmark"
+item = "single-element / material-point verification across all laws (Abaqus-style material driver)"
+source = "Abaqus Verification Guide (single-element tests); MOOSE material point tests"
+status = "missing"
+evidence = "材料点の共通の駆動関数は無い (各則は個別の関数)"
+oracle_candidate = ""
+limitation = ""
