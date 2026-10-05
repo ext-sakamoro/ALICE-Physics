@@ -2708,6 +2708,11 @@ impl PhysicsWorld {
         self.update_sleep_states();
         self.park.active = false;
 
+        // Phase 4.5: Leave every SDF collider attached to a body at that
+        // body's final pose, which is what the queries between steps
+        // (`sdf_contacts`, `sdf_ccd_hits`, the shape casts) read.
+        self.sync_sdf_colliders();
+
         // Phase 5: End event frame
         self.events.end_frame();
     }
@@ -2776,6 +2781,7 @@ impl PhysicsWorld {
     /// derivation gives an unchanged rotation, an idle verdict on that velocity,
     /// and no static / SDF collider touching it. A contact with an awake body
     /// wakes it during the step like any sleeping body ([`ParkState::unpark`]).
+    /// Nothing is parked while an SDF collider is attached to a body.
     fn park_begin(&mut self, dt: Fix128, substep_dt: Fix128) {
         self.park.active = false;
         let n = self.bodies.len();
@@ -2789,6 +2795,13 @@ impl PhysicsWorld {
         // step and there is nothing to skip.
         let cfg = self.islands.config;
         if !(Vec3Fix::ZERO.length() < cfg.linear_threshold) {
+            self.park.clear_counted(&mut self.stage_work);
+            return;
+        }
+        // A collider attached to a body moves with it during the step, after
+        // this check has passed a parked body as clear of it: no parking while
+        // such a collider is in the world.
+        if self.sdf_colliders.iter().any(|c| c.body_index < n) {
             self.park.clear_counted(&mut self.stage_work);
             return;
         }
@@ -2967,6 +2980,10 @@ impl PhysicsWorld {
         {
             let collider = self.body_colliders.get(i).and_then(Option::as_ref);
             for sdf in &self.sdf_colliders {
+                // Its own field never moves it (`resolve_sdf_collisions`).
+                if sdf.body_index == i {
+                    continue;
+                }
                 if sdf_contact_of(collider, body, self.sdf_collision_radius, sdf).is_some() {
                     return false;
                 }
@@ -3360,6 +3377,11 @@ impl PhysicsWorld {
         // Phase 4: Update sleeping (identical call to `step`).
         self.islands.update_sleep(&self.bodies);
 
+        // Phase 4.5: Leave every SDF collider attached to a body at that
+        // body's final pose, which is what the queries between steps
+        // (`sdf_contacts`, `sdf_ccd_hits`, the shape casts) read.
+        self.sync_sdf_colliders();
+
         // Phase 5: End event frame (identical call to `step`).
         self.events.end_frame();
     }
@@ -3446,6 +3468,11 @@ impl PhysicsWorld {
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
+
+        // Phase 4.5: Leave every SDF collider attached to a body at that
+        // body's final pose, which is what the queries between steps
+        // (`sdf_contacts`, `sdf_ccd_hits`, the shape casts) read.
+        self.sync_sdf_colliders();
 
         // Phase 5: End event frame
         self.events.end_frame();
@@ -4616,6 +4643,11 @@ impl PhysicsWorld {
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
 
+        // Phase 4.5: Leave every SDF collider attached to a body at that
+        // body's final pose, which is what the queries between steps
+        // (`sdf_contacts`, `sdf_ccd_hits`, the shape casts) read.
+        self.sync_sdf_colliders();
+
         // Phase 5: End event frame
         self.events.end_frame();
     }
@@ -4763,10 +4795,23 @@ impl PhysicsWorld {
     }
 
     /// Add an SDF collider to the world
-    pub fn add_sdf_collider(&mut self, collider: SdfCollider) -> usize {
+    ///
+    /// A collider attached to a body ([`SdfCollider::new_dynamic`]) is placed
+    /// at that body's current pose when the body exists, and follows the body
+    /// from then on: every step copies the body's pose into it before SDF
+    /// overlap is resolved and again at the end of the step.
+    pub fn add_sdf_collider(&mut self, mut collider: SdfCollider) -> usize {
+        collider.sync_to_body(&self.bodies);
         let idx = self.sdf_colliders.len();
         self.sdf_colliders.push(collider);
         idx
+    }
+
+    /// Copy each body's pose into the SDF colliders attached to it
+    /// ([`crate::sdf_collider::sync_dynamic_sdf_colliders`]); static colliders
+    /// are not touched.
+    fn sync_sdf_colliders(&mut self) {
+        crate::sdf_collider::sync_dynamic_sdf_colliders(&mut self.sdf_colliders, &self.bodies);
     }
 
     /// Remove an SDF collider by index
@@ -4791,6 +4836,9 @@ impl PhysicsWorld {
     /// When `parallel` feature is enabled, bodies are processed in parallel via Rayon.
     #[cfg(feature = "std")]
     fn resolve_sdf_collisions(&mut self) {
+        // A collider attached to a body is resolved at that body's current
+        // (predicted) pose.
+        self.sync_sdf_colliders();
         let sdf_colliders = &self.sdf_colliders;
         let colliders = &self.body_colliders;
         let collision_radius = self.sdf_collision_radius;
@@ -4801,6 +4849,10 @@ impl PhysicsWorld {
             }
             let collider = colliders.get(idx).and_then(Option::as_ref);
             for sdf in sdf_colliders {
+                // A body is never pushed out of its own field.
+                if sdf.body_index == idx {
+                    continue;
+                }
                 if let Some(contact) = sdf_contact_of(collider, body, collision_radius, sdf) {
                     body.position = body.position + contact.normal * contact.depth;
                 }
@@ -4849,6 +4901,10 @@ impl PhysicsWorld {
     /// anything. A body with a shape or a compound is tested as that collider, any
     /// other body as a sphere of [`sdf_collision_radius`](Self::sdf_collision_radius);
     /// static bodies, sensors and an SDF attached to the body itself are skipped.
+    /// An SDF attached to a body is queried at the pose it was given when it was
+    /// added or at the end of the last step; after moving a body by hand, call
+    /// [`crate::sdf_collider::sync_dynamic_sdf_colliders`] on
+    /// [`sdf_colliders`](Self::sdf_colliders) first.
     #[cfg(feature = "std")]
     #[must_use]
     pub fn sdf_contacts(&self) -> Vec<(usize, crate::collider::Contact)> {
