@@ -1,0 +1,962 @@
+# Additive-manufacturing process physics (AM) coverage of ALICE-Physics, against
+# an external reference frame.
+#
+# What this table is: every capability that the standard textbook
+# (Gibson-Rosen-Stucker, Additive Manufacturing Technologies), the FDM process
+# reviews (Turner-Strong-Gold 2014, Turner-Gold 2015), the classic process
+# models (Jacobs 1992 working curve, Rosenthal 1946 moving heat source),
+# reference implementations (Ultimaker Cura, PrusaSlicer, Simufact Additive,
+# Ansys Additive feature lists) and standard benchmarks (warp cantilever, bridge
+# length, overhang angle, interlayer tensile strength against build angle, resin
+# working curve, NIST AM-Bench, NIST test artifact) expect of a code that
+# predicts how a part behaves while and because it is printed, one [[item]] per
+# capability, with what the crate has today. The rows are written by hand: the
+# axes and the items come from the reference frame, not from the modules that
+# exist, so a missing capability is visible instead of absent.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - heat conduction solvers, boundary conditions and the moving heat source as
+#     a solver: the heat-transfer table. Here only how a print process uses
+#     them (bead cooling, interlayer history, bed temperature, melt pool).
+#   - closed-form structural results (beam deflection, constrained thermal
+#     stress, bilayer mismatch stress, fillet stress concentration, plate
+#     resonance of a thin printed wall): the structural table. The print
+#     pipeline calls them; they are cited, not counted.
+#   - finite-element thermo-elasticity (thermal eigenstrain) and orthotropic FE:
+#     the FEM table (COV-FEM-096 / COV-FEM-025), cited where a process row
+#     would need it.
+#   - material constitutive models and property data (filament presets,
+#     orthotropic constants as material models, failure criteria such as Hill
+#     and Tsai-Wu): the materials table. Here only how a print process uses the
+#     data (build-direction derating, shrinkage in warp, bridging limits).
+#   - non-Newtonian flow as a fluid model: the fluid table; the nozzle pressure
+#     drop of a melt is here.
+#   - layer adhesion, thin-wall detection and warp risk are counted here (the
+#     structural table names them as process effects).
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented (a source statement that a
+#                          capability is absent is quoted in `evidence`)
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-AM-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-AM-001"
+axis = "orientation"
+item = "build orientation that maximises strength along a load direction (layer-strength anisotropy)"
+source = "Gibson-Rosen-Stucker, Additive Manufacturing Technologies (part orientation, anisotropy); Ultimaker Cura / PrusaSlicer orientation tools"
+status = "partial"
+evidence = "src/print_orientation.rs:211 tests/engineering_oracles_solid.rs::print_orientation_analytical_optimum_reaches_plane_for_y_loads tests/analytic_print_orientation_wiring.rs::in_plane_loads_cannot_be_improved_and_z_loads_gain_the_full_anisotropy 層内 (raster 方向) の異方性は持たない"
+oracle_candidate = "層内の raster 角も含めた強度 (Hill / Tsai-Wu の軸外) との比較"
+limitation = "src/print_orientation.rs:11 'For an FDM material the strength depends only on the angle `θ` between the load direction and the layer stacking axis (Z of the print bed):'"
+
+[[item]]
+id = "COV-AM-002"
+axis = "orientation"
+item = "discrete search over candidate orientations"
+source = "Gibson-Rosen-Stucker (orientation optimisation); PrusaSlicer / Cura auto-orient"
+status = "implemented+oracle"
+evidence = "src/print_orientation.rs:249 tests/analytic_print_orientation_wiring.rs::grid_optimum_equals_an_independent_brute_force tests/analytic_print_orientation_wiring.rs::coarse_grid_is_never_better_than_the_analytical_optimum"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-003"
+axis = "orientation"
+item = "orientation constrained by overhang (reject candidates that need support)"
+source = "Gibson-Rosen-Stucker (support-aware orientation); PrusaSlicer / Cura overhang threshold"
+status = "missing"
+evidence = "src 自身が未提供と書く (src/print_orientation.rs:29)"
+oracle_candidate = "立方体を 45° 回転させた時の overhang 面積の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-AM-004"
+axis = "orientation"
+item = "orientation minimising support volume"
+source = "Gibson-Rosen-Stucker; Ansys Additive / Simufact Additive orientation optimisation"
+status = "missing"
+evidence = "support_volume は向きを入力に取らない (src/support_volume.rs:195、overhang 領域は外から渡す)"
+oracle_candidate = "半球の凸面下向き / 上向きで support 体積の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-AM-005"
+axis = "orientation"
+item = "orientation minimising build height / number of layers / build time"
+source = "Gibson-Rosen-Stucker (build time); slicer print-time estimate"
+status = "missing"
+evidence = "(推測: build height / layer count の関数は 0 件)"
+oracle_candidate = "直方体の各面を下にした時の層数"
+limitation = ""
+
+[[item]]
+id = "COV-AM-006"
+axis = "orientation"
+item = "orientation minimising surface roughness (staircase / cusp height)"
+source = "Campbell-Martorelli-Lee 2002 (surface roughness vs build angle); Pandey et al. (cusp height)"
+status = "missing"
+evidence = "(推測: staircase / cusp / roughness で 0 件)"
+oracle_candidate = "Ra = (t/4)|cos θ| の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-007"
+axis = "orientation"
+item = "multi-objective orientation (weighted / Pareto over strength, support, time, roughness)"
+source = "Ansys Additive build orientation; Simufact Additive; Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "目的は強度 1 つだけ (src/print_orientation.rs:249)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-008"
+axis = "orientation"
+item = "build-plate contact area and stability of a candidate orientation (convex-hull facets)"
+source = "PrusaSlicer place-on-face; Cura lay flat"
+status = "missing"
+evidence = "(推測: 凸包の面で置く関数は 0 件)"
+oracle_candidate = "立方体・円柱の安定な面の数"
+limitation = ""
+
+[[item]]
+id = "COV-AM-009"
+axis = "geometry check"
+item = "overhang detection from geometry (surface normal vs critical angle)"
+source = "Gibson-Rosen-Stucker (support strategies); PrusaSlicer / Cura overhang threshold"
+status = "missing"
+evidence = "overhang 領域は上流が作る前提 (src/support_volume.rs:108)"
+oracle_candidate = "球の下半分で臨界角を超える面積の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-AM-010"
+axis = "geometry check"
+item = "critical self-supporting angle per material / process"
+source = "Gibson-Rosen-Stucker; overhang angle test specimens"
+status = "missing"
+evidence = "45° は doc の記述のみで値を持つ型が無い (src/support_volume.rs:108)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-011"
+axis = "geometry check"
+item = "minimum wall thickness at given surface points (ray along the inward normal)"
+source = "Gibson-Rosen-Stucker (design for AM, minimum feature); slicer thin-wall detection"
+status = "implemented+oracle"
+evidence = "src/thin_wall.rs:165 tests/engineering_oracles_solid.rs::thin_wall_thickness_matches_slab_and_shell_geometry tests/analytic_thin_wall_wiring.rs::measure_thickness_at_stepped_slab_thin_side_matches_closed_form tests/audit_thin_wall.rs::point_slightly_outside_surface_is_not_reported_as_a_hairline_wall (known defect AUD-A-S2W1-005)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-012"
+axis = "geometry check"
+item = "minimum printable wall from the nozzle diameter"
+source = "slicer guidance (two extrusion widths)"
+status = "implemented+oracle"
+evidence = "src/thin_wall.rs:92 tests/analytic_thin_wall_wiring.rs::for_nozzle_matches_double_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-013"
+axis = "geometry check"
+item = "automatic surface sampling of the whole part for the thickness check"
+source = "slicer thin-wall detection; Ansys Additive printability check"
+status = "partial"
+evidence = "src/thin_wall.rs:301 tests/audit_thin_wall.rs::grid_pipeline_on_solid_sphere_measures_diameter tests/audit_thin_wall.rs::grid_pipeline_detects_thin_plate_parallel_to_scan_axis (known defect AUD-A-S2W1-004)"
+oracle_candidate = "X 軸に平行な薄板 (既存の known defect test)"
+limitation = "src/thin_wall.rs:313 'Extract approximate surface points from a grid AABB by finding sign changes between adjacent cells along the X axis.'"
+
+[[item]]
+id = "COV-AM-014"
+axis = "geometry check"
+item = "local thickness by maximal inscribed sphere / medial axis"
+source = "Dougherty-Kunzelmann local thickness; Materialise Magics wall thickness analysis"
+status = "missing"
+evidence = "厚さは法線方向の ray だけ (src/thin_wall.rs:165)"
+oracle_candidate = "斜めに切った板で ray と内接球の差"
+limitation = ""
+
+[[item]]
+id = "COV-AM-015"
+axis = "geometry check"
+item = "minimum gap / clearance and small-hole check"
+source = "design for AM guidelines (minimum clearance, hole diameter)"
+status = "missing"
+evidence = "(推測: clearance / gap / hole で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-016"
+axis = "geometry check"
+item = "trapped volume (uncured resin / unsintered powder) and drain-hole check"
+source = "Gibson-Rosen-Stucker (vat photopolymerisation, powder bed fusion design rules)"
+status = "missing"
+evidence = "(推測: trapped / drain で 0 件)"
+oracle_candidate = "中空球の内側体積"
+limitation = ""
+
+[[item]]
+id = "COV-AM-017"
+axis = "geometry check"
+item = "build-volume fit check"
+source = "slicer bed-size check"
+status = "missing"
+evidence = "(推測: build volume で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-018"
+axis = "geometry check"
+item = "bridge span against a per-material maximum length"
+source = "Gibson-Rosen-Stucker (bridging); slicer bridge settings"
+status = "implemented+oracle"
+evidence = "src/bridging.rs:118 経験値の表 (src/filament_db.rs の bridging_distance_mm) tests/engineering_oracles_solid.rs::bridging_span_geometry_exact tests/analytic_bridging_wiring.rs::doc_material_table_limits_are_the_safety_boundary"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-019"
+axis = "geometry check"
+item = "bridge detection from geometry (horizontal spans between anchors)"
+source = "slicer bridge detection"
+status = "missing"
+evidence = "span は上流が作る前提 (src/bridging.rs:24)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-020"
+axis = "geometry check"
+item = "sag of an unsupported bridge strand (gravity, cooling)"
+source = "bridging test specimens; catenary / beam sag of a cooling strand"
+status = "missing"
+evidence = "許容長の表だけでたわみの計算は無い (src/bridging.rs:118)"
+oracle_candidate = "冷却中の strand を両端固定梁とみなしたたわみ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-021"
+axis = "support"
+item = "support volume from overhang area and height (base / bulk / interface layers)"
+source = "Gibson-Rosen-Stucker (support strategies); Bambu Studio / PrusaSlicer support material settings"
+status = "implemented+oracle"
+evidence = "src/support_volume.rs:170 tests/analytic_support_volume_wiring.rs::quality_estimate_matches_the_hand_derivation tests/default_configs.rs::support_config_default_column_volume_matches_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-022"
+axis = "support"
+item = "filament length and mass consumed by a deposited volume"
+source = "slicer filament usage estimate"
+status = "implemented+oracle"
+evidence = "src/support_volume.rs:195 support の体積だけ (部品本体の体積からは出さない) tests/analytic_support_volume_wiring.rs::quality_estimate_matches_the_hand_derivation tests/analytic_support_volume_wiring.rs::filament_length_in_metres_is_millimetres_over_a_thousand"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-023"
+axis = "support"
+item = "support structure generation (grid / lines / tree, contact points)"
+source = "Cura tree support; PrusaSlicer organic supports; Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "体積の見積りだけで形状は作らない (src/support_volume.rs:195)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-024"
+axis = "support"
+item = "support contact area, removal force and surface scar"
+source = "Gibson-Rosen-Stucker (support removal); slicer interface / Z distance settings"
+status = "missing"
+evidence = "(推測: removal / scar で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-025"
+axis = "support"
+item = "supports for metal powder bed (heat conduction path, anchoring against distortion)"
+source = "Gibson-Rosen-Stucker (PBF supports); Ansys Additive / Simufact Additive support optimisation"
+status = "missing"
+evidence = "(推測: 金属 AM の support は 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-026"
+axis = "support"
+item = "supports for vat photopolymerisation (peel force per support, tip size)"
+source = "Gibson-Rosen-Stucker (vat photopolymerisation); resin slicer support settings"
+status = "missing"
+evidence = "(推測: peel / resin support で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-027"
+axis = "thermal history"
+item = "cooling of a deposited bead (convection to air, conduction to the layer below)"
+source = "Turner-Strong-Gold FDM review (2014, heat transfer of the road); Costa-Duarte-Covas 2015"
+status = "missing"
+evidence = "熱伝導の solver は境界が零流束のみ (src/transient_thermal.rs) で、ビードの冷却モデルは無い"
+oracle_candidate = "1 本の road の集中定数冷却 T(t) = T∞ + (T0 − T∞) e^(−t/τ)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-028"
+axis = "thermal history"
+item = "reheating of earlier layers by the next layer, interlayer temperature history"
+source = "Costa-Duarte-Covas 2015; Turner-Strong-Gold 2014; Simufact Additive / Ansys Additive thermal history"
+status = "missing"
+evidence = "(推測: interlayer / reheat で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-029"
+axis = "thermal history"
+item = "layer time and minimum layer time (cooling between layers)"
+source = "slicer minimum layer time; Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "(推測: layer time で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-030"
+axis = "thermal history"
+item = "part-cooling fan as forced convection on the bead"
+source = "Turner-Strong-Gold 2014; slicer fan settings"
+status = "missing"
+evidence = "(推測: 冷却ファンの対流モデルは 0 件、fan の語は振動源の表だけ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-031"
+axis = "thermal history"
+item = "heated bed as a boundary temperature of the part"
+source = "Gibson-Rosen-Stucker (build platform); Wang et al. 2007 (warp model)"
+status = "missing"
+evidence = "src/warp_risk.rs:86 の bed_temp_c は analyze_warp_risk で読まれない"
+oracle_candidate = "ベッド温度を変えても warp の値が変わることの確認"
+limitation = ""
+
+[[item]]
+id = "COV-AM-032"
+axis = "thermal history"
+item = "temperature field of a moving point / line source along a track (metal AM)"
+source = "Rosenthal 1946; Goldak double ellipsoid; Simufact Additive / Ansys Additive thermal"
+status = "missing"
+evidence = "移動熱源そのものは熱の表で missing、造形側の使い方も無い (推測: rosenthal / goldak で 0 件)"
+oracle_candidate = "Rosenthal の準定常 3-D 解"
+limitation = ""
+
+[[item]]
+id = "COV-AM-033"
+axis = "thermal history"
+item = "build-scale thermal simulation with layer-by-layer material activation"
+source = "Ansys Additive / Simufact Additive (layer activation); Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "(推測: element birth / activation で 0 件) FE の温度ひずみは COV-FEM-096 (P1)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-034"
+axis = "thermal history"
+item = "cooling rate and solidification of the melt pool (metal microstructure input)"
+source = "Gibson-Rosen-Stucker (PBF metallurgy); NIST AM-Bench melt pool measurements"
+status = "missing"
+evidence = "(推測: melt pool / cooling rate で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-035"
+axis = "warp and residual stress"
+item = "warp risk screening of a footprint (material shrinkage, stiffness, size, temperature difference)"
+source = "Wang et al. 2007 (FDM warp deformation model); PrusaSlicer warping knowledge base"
+status = "partial"
+evidence = "src/warp_risk.rs:162 tests/analytic_warp_risk_wiring.rs::score_matches_the_closed_form_on_a_grid tests/analytic_warp_risk_wiring.rs::every_category_is_reachable_with_its_own_recommendation"
+oracle_candidate = "Wang の反りモデルとの比較 (参照値要確認)"
+limitation = "src/warp_risk.rs:149 'Score formula (empirical, fit to typical FDM outcomes):'"
+
+[[item]]
+id = "COV-AM-036"
+axis = "warp and residual stress"
+item = "in-plane residual force per width from cooling shrinkage (E α ΔT h)"
+source = "Wang et al. 2007; Timoshenko-Goodier (thermal stress)"
+status = "partial"
+evidence = "src/warp_risk.rs:162 tests/analytic_warp_risk_wiring.rs::score_matches_the_closed_form_on_a_grid"
+oracle_candidate = "層高 h を入力にした閉形式"
+limitation = "src/warp_risk.rs:206 'Engineering figure: F/mm ≈ E · α · ΔT · h (h taken as 1mm reference)'"
+
+[[item]]
+id = "COV-AM-037"
+axis = "warp and residual stress"
+item = "warp deflection / curl magnitude of a layered part"
+source = "Wang et al. 2007; Timoshenko 1925 bilayer curvature applied layer by layer"
+status = "missing"
+evidence = "doc は Wang の反りモデルを引くが変形量は出さない (src/warp_risk.rs:36)"
+oracle_candidate = "片持ち試験片の反り量 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-038"
+axis = "warp and residual stress"
+item = "layer-by-layer shrinkage residual stress (analytical layered model)"
+source = "Wang et al. 2007; Xia-Lu-Tryggvason (layered deposition stress)"
+status = "missing"
+evidence = "(推測: 層ごとの残留応力の関数は 0 件) 拘束された部品の熱応力 (1 層、閉形式) は構造の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-039"
+axis = "warp and residual stress"
+item = "inherent strain method for distortion of metal AM parts"
+source = "Ueda inherent strain; Liang et al. (modified inherent strain); Simufact Additive / Ansys Additive"
+status = "missing"
+evidence = "(推測: inherent strain で 0 件)"
+oracle_candidate = "NIST AM-Bench の bridge 試験片の変形 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-040"
+axis = "warp and residual stress"
+item = "bed adhesion against the warp force (first-layer peel-off)"
+source = "Wang et al. 2007; slicer first-layer / adhesion guidance"
+status = "missing"
+evidence = "付着強度を持たず score と比べる相手が無い (src/warp_risk.rs:162)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-041"
+axis = "warp and residual stress"
+item = "effect of brim / raft / mouse ears on adhesion"
+source = "slicer brim / raft settings"
+status = "missing"
+evidence = "推奨文の文字列だけ (src/warp_risk.rs:162)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-042"
+axis = "warp and residual stress"
+item = "cure shrinkage distortion of vat photopolymer parts"
+source = "Gibson-Rosen-Stucker (vat photopolymerisation); Jacobs 1992"
+status = "missing"
+evidence = "(推測: resin の収縮モデルは 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-043"
+axis = "warp and residual stress"
+item = "stress release on removal from the build plate / support cutting (metal)"
+source = "Simufact Additive / Ansys Additive (baseplate removal)"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-044"
+axis = "layer adhesion"
+item = "across-layer (build-direction) strength from a constant anisotropy ratio"
+source = "Turner-Gold FDM review; Ahn et al. 2002 (anisotropic FDM strength)"
+status = "implemented+oracle"
+evidence = "src/layer_adhesion.rs:77 tests/audit_layer_adhesion.rs::allowables_all_presets_match_closed_form tests/engineering_oracles_misc.rs::layer_adhesion_isotropic_limit_ordering_and_fos_identity"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-045"
+axis = "layer adhesion"
+item = "factor of safety of an applied stress against the layered strength envelope"
+source = "Ahn et al. 2002; Gibson-Rosen-Stucker (design for AM)"
+status = "implemented+oracle"
+evidence = "src/layer_adhesion.rs:135 tests/audit_layer_adhesion.rs::fos_four_components_all_presets_closed_form tests/analytic_layer_adhesion_wiring.rs::min_fos_equals_componentwise_minimum_of_independent_calc tests/audit_layer_adhesion.rs::fos_is_never_below_one_when_applied_is_below_allowable (known defect AUD-A-S1W5-030)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-046"
+axis = "layer adhesion"
+item = "across-layer shear strength"
+source = "Ahn et al. 2002; Turner-Gold FDM review"
+status = "partial"
+evidence = "src/layer_adhesion.rs:77 tests/audit_layer_adhesion.rs::across_layer_shear_lies_between_z_tension_ratio_and_in_layer_shear"
+oracle_candidate = "層間せん断試験 (short-beam shear) の値 (参照値要確認)"
+limitation = "src/layer_adhesion.rs:19 '**Across-layer shear (Z-XY plane)** — intermediate; empirical factor `~ (1 + anisotropy_z_ratio) / 2`.'"
+
+[[item]]
+id = "COV-AM-047"
+axis = "layer adhesion"
+item = "strength envelope for an arbitrary print orientation"
+source = "Ahn et al. 2002; Gibson-Rosen-Stucker"
+status = "partial"
+evidence = "src/layer_adhesion.rs:77 tests/audit_print_pipeline_solver.rs::effective_strength_is_the_xy_flat_envelope"
+oracle_candidate = ""
+limitation = "src/layer_adhesion.rs:38 'Only the \"standard flat\" orientation (layers along XY, growing +Z) is currently supported; other orientations should be obtained by applying a rotation before calling this module.'"
+
+[[item]]
+id = "COV-AM-048"
+axis = "layer adhesion"
+item = "weld strength as a function of interface temperature history and time (polymer reptation / healing)"
+source = "Wool-O'Connor 1981 (crack healing); Seppala-Migler 2017; Turner-Strong-Gold 2014"
+status = "missing"
+evidence = "層間強度は温度・時間に依らない定数比 (src/layer_adhesion.rs:77)、(推測: reptation / healing で 0 件)"
+oracle_candidate = "界面温度が一定の時の t^(1/4) 則"
+limitation = ""
+
+[[item]]
+id = "COV-AM-049"
+axis = "layer adhesion"
+item = "neck growth between adjacent beads (viscous sintering)"
+source = "Bellehumeur et al. 2004 (Frenkel / Pokluda neck growth); Costa-Duarte-Covas"
+status = "missing"
+evidence = "(推測: neck / sintering の関数は 0 件)"
+oracle_candidate = "Frenkel の y² = (3Γ / 2ηa) t (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-050"
+axis = "layer adhesion"
+item = "mesostructure effect on properties (layer height, road width, air gap, void fraction)"
+source = "Ahn et al. 2002; Sood-Ohdar-Mahapatra 2010"
+status = "missing"
+evidence = "(推測: air gap / void で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-051"
+axis = "layer adhesion"
+item = "in-plane anisotropy from raster angle (laminate analogy)"
+source = "Ahn et al. 2002; Casavola et al. 2016 (CLT for FDM)"
+status = "missing"
+evidence = "印刷部品の直交異方は層内で等方 (src/anisotropic.rs:91 tests/audit_anisotropic.rs::fdm_in_plane_is_isotropic_for_every_angle) 積層理論そのものは構造の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-052"
+axis = "layer adhesion"
+item = "infill density / pattern effect on stiffness and strength"
+source = "Gibson-Ashby cellular solids; slicer infill patterns"
+status = "missing"
+evidence = "(推測: infill は support の密度だけ)"
+oracle_candidate = "Gibson-Ashby の E/Es = C (ρ/ρs)²"
+limitation = ""
+
+[[item]]
+id = "COV-AM-053"
+axis = "layer adhesion"
+item = "orthotropic printed-part constants lifted from filament data (build-direction derating)"
+source = "Ahn et al. 2002; Jones, Mechanics of Composite Materials"
+status = "implemented+oracle"
+evidence = "src/anisotropic.rs:91 tests/audit_anisotropic.rs::from_fdm_material_constants_follow_the_documented_rules tests/audit_anisotropic.rs::strength_from_fdm_follows_the_documented_ratios"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-054"
+axis = "extrusion and bead"
+item = "bead cross-section geometry from layer height and extrusion width"
+source = "Turner-Strong-Gold 2014; PrusaSlicer extrusion width (stadium cross-section)"
+status = "missing"
+evidence = "(推測: bead / road の断面は 0 件)"
+oracle_candidate = "stadium 断面積 w·h − h²(1 − π/4)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-055"
+axis = "extrusion and bead"
+item = "volumetric flow balance between filament feed and deposited bead"
+source = "Turner-Strong-Gold 2014"
+status = "missing"
+evidence = "体積から filament 長を出すのは support の見積りだけ (src/support_volume.rs:195)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-056"
+axis = "extrusion and bead"
+item = "liquefier and nozzle pressure drop (power-law melt flow)"
+source = "Bellini et al. 2004; Turner-Strong-Gold 2014; Hagen-Poiseuille for a power-law fluid"
+status = "missing"
+evidence = "(推測: nozzle の圧力損失は 0 件) 非ニュートンの閉形式は流体の表"
+oracle_candidate = "べき乗則流体の円管流量の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-AM-057"
+axis = "extrusion and bead"
+item = "maximum volumetric flow limited by melting in the hot end"
+source = "Go-Hart 2017 (rate limits of FDM); Turner-Strong-Gold 2014"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-058"
+axis = "extrusion and bead"
+item = "die swell at the nozzle exit"
+source = "Turner-Strong-Gold 2014; Tanner 1970"
+status = "missing"
+evidence = "(推測: die swell で 0 件)"
+oracle_candidate = "Newton 流体の swell 比 ≈ 1.13 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-059"
+axis = "extrusion and bead"
+item = "filament buckling in the feeder (soft filaments)"
+source = "Venkataraman et al. 2000 (filament buckling criterion)"
+status = "missing"
+evidence = "(推測: 0 件) 柱の Euler 座屈の閉形式は構造の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-060"
+axis = "extrusion and bead"
+item = "extrusion pressure lag (melt compressibility, pressure advance)"
+source = "Turner-Strong-Gold 2014; firmware pressure advance"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-061"
+axis = "extrusion and bead"
+item = "print time from deposited volume and a constant throughput"
+source = "slicer print-time estimate"
+status = "partial"
+evidence = "src/support_volume.rs:195 support の体積だけ tests/analytic_support_volume_wiring.rs::quality_estimate_matches_the_hand_derivation"
+oracle_candidate = ""
+limitation = "src/support_volume.rs:56 'Extrusion throughput used for coarse time estimation (mm³ per minute).'"
+
+[[item]]
+id = "COV-AM-062"
+axis = "extrusion and bead"
+item = "print time from toolpath kinematics (acceleration, jerk, travel)"
+source = "slicer time estimate (Cura / PrusaSlicer firmware-aware)"
+status = "missing"
+evidence = "(推測: toolpath で 0 件)"
+oracle_candidate = "台形速度則の 1 直線の時間"
+limitation = ""
+
+[[item]]
+id = "COV-AM-063"
+axis = "vat photopolymerisation"
+item = "cure depth from exposure (Jacobs working curve)"
+source = "Jacobs 1992 (Rapid Prototyping & Manufacturing); Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "SLA の材料区分は将来の拡張 (src/filament_db.rs:80)、(推測: jacobs / cure で 0 件)"
+oracle_candidate = "Cd = Dp ln(E / Ec)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-064"
+axis = "vat photopolymerisation"
+item = "exposure time per layer and over-cure between layers"
+source = "Jacobs 1992; Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-065"
+axis = "vat photopolymerisation"
+item = "separation (peel) force from the vat"
+source = "Gibson-Rosen-Stucker (bottom-up vat); Stefan adhesion"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = "Stefan の分離力の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-AM-066"
+axis = "vat photopolymerisation"
+item = "post-cure property and dimension change"
+source = "Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "(推測: post-cure の関数は 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-067"
+axis = "powder bed fusion"
+item = "volumetric energy density of the scan (P / (v h t))"
+source = "Gibson-Rosen-Stucker (PBF process parameters)"
+status = "missing"
+evidence = "粉末の材料区分は将来の拡張 (src/filament_db.rs:82)、(推測: energy density で 0 件)"
+oracle_candidate = "定義式そのもの"
+limitation = ""
+
+[[item]]
+id = "COV-AM-068"
+axis = "powder bed fusion"
+item = "melt-pool dimensions and process window (width, depth, keyhole / lack-of-fusion limits)"
+source = "Rosenthal 1946; King et al. 2014 (keyhole threshold); NIST AM-Bench"
+status = "missing"
+evidence = "(推測: melt pool で 0 件)"
+oracle_candidate = "Rosenthal の溶融幅 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-069"
+axis = "powder bed fusion"
+item = "effective properties of the powder bed (packing density, conductivity)"
+source = "Gibson-Rosen-Stucker; Zehner-Schlunder"
+status = "missing"
+evidence = "(推測: packing / powder conductivity で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-070"
+axis = "powder bed fusion"
+item = "porosity prediction (lack of fusion, keyhole)"
+source = "Gibson-Rosen-Stucker; Tang-Pistorius-Beuth 2017 (lack-of-fusion criterion)"
+status = "missing"
+evidence = "(推測: porosity で 0 件)"
+oracle_candidate = "重なり条件 (h/W)² + (L/D)² ≤ 1 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-071"
+axis = "powder bed fusion"
+item = "densification and shrinkage of sintered polymer powder (SLS / MJF)"
+source = "Gibson-Rosen-Stucker (polymer sintering); Frenkel viscous sintering"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-072"
+axis = "slicer interface"
+item = "slicing a solid into layer contours"
+source = "Gibson-Rosen-Stucker (data processing); Cura / PrusaSlicer slicing"
+status = "missing"
+evidence = "(推測: layer contour の生成は 0 件)"
+oracle_candidate = "球の層ごとの断面円の半径"
+limitation = ""
+
+[[item]]
+id = "COV-AM-073"
+axis = "slicer interface"
+item = "toolpath generation (perimeters, infill patterns)"
+source = "Cura / PrusaSlicer path planning"
+status = "missing"
+evidence = "(推測: toolpath / perimeter で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-074"
+axis = "slicer interface"
+item = "adaptive layer height (cusp-height control)"
+source = "Dolenc-Makela 1994; PrusaSlicer variable layer height"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-075"
+axis = "slicer interface"
+item = "physical quantities attached to each path (flow, speed, temperature) for downstream analysis"
+source = "Simufact Additive / Ansys Additive (G-code / scan-path import)"
+status = "missing"
+evidence = "(推測: path 単位の量は 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-076"
+axis = "slicer interface"
+item = "G-code / 3MF / scan-path input and output"
+source = "3MF Consortium core specification; RepRap G-code"
+status = "missing"
+evidence = "pipeline の doc は 3MF 出力前に呼ぶと書くが入出力は無い (src/print_pipeline_solver.rs:4)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-077"
+axis = "post-processing"
+item = "annealing: dimensional change and crystallinity of printed polymers"
+source = "Gibson-Rosen-Stucker (post-processing); annealing studies of PLA"
+status = "missing"
+evidence = "(推測: anneal は金属材料の注記のみ)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-078"
+axis = "post-processing"
+item = "annealing: recovery of interlayer strength"
+source = "Seppala-Migler 2017; annealing studies of FDM parts"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-079"
+axis = "post-processing"
+item = "stress relief / HIP of metal AM parts"
+source = "Gibson-Rosen-Stucker (post-processing of metal parts)"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-080"
+axis = "post-processing"
+item = "dimensional compensation (scaling the model by shrinkage)"
+source = "slicer shrinkage compensation; Gibson-Rosen-Stucker"
+status = "missing"
+evidence = "収縮率は warp の score にだけ使われる (src/warp_risk.rs:162)"
+oracle_candidate = "1 + ε の拡大率で冷却後の寸法が狙い値になること"
+limitation = ""
+
+[[item]]
+id = "COV-AM-081"
+axis = "pipeline"
+item = "one-shot printability report combining the checks"
+source = "Ansys Additive printability check; slicer pre-flight warnings"
+status = "implemented+oracle"
+evidence = "src/print_pipeline_solver.rs:194 構成要素の結果と一致すること tests/audit_print_pipeline_solver.rs::warp_result_matches_open_air_environment_and_drives_safety tests/audit_print_pipeline_solver.rs::orientation_matches_sub_analysis tests/analytic_bridging_wiring.rs::pipeline_itemises_unsafe_spans_with_length_limit_and_height_difference"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-082"
+axis = "pipeline"
+item = "print environment (enclosure, chamber and bed temperature) given to the report"
+source = "slicer printer profiles; Ansys Additive process parameters"
+status = "missing"
+evidence = "warp は常に開放型 PLA の環境で評価 (src/print_pipeline_solver.rs:204)、入力に環境の欄が無い"
+oracle_candidate = "密閉型 ABS で score が下がること"
+limitation = ""
+
+[[item]]
+id = "COV-AM-083"
+axis = "pipeline"
+item = "unknown material name reported instead of a silent substitute"
+source = "slicer material profile lookup"
+status = "missing"
+evidence = "見つからない名前は PLA に置き換わる (src/print_pipeline_solver.rs:176)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-AM-084"
+axis = "benchmark"
+item = "warp test specimen (cantilever / curl specimen)"
+source = "Wang et al. 2007; warp test specimens"
+status = "missing"
+evidence = "変形量を出す機能が無い (COV-AM-037)"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-AM-085"
+axis = "benchmark"
+item = "bridge-length test specimen"
+source = "bridging test specimens (slicer calibration)"
+status = "missing"
+evidence = "許容長は経験値の表 (src/bridging.rs:118)"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-AM-086"
+axis = "benchmark"
+item = "overhang-angle test specimen"
+source = "overhang test specimens (slicer calibration)"
+status = "missing"
+evidence = "overhang の検出が無い"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-AM-087"
+axis = "benchmark"
+item = "interlayer tensile strength against build orientation (0 / 45 / 90 deg specimens)"
+source = "Ahn et al. 2002; ASTM D638 specimens printed at several build angles"
+status = "missing"
+evidence = "既存の混合則 (src/print_orientation.rs:154) を測定値と比べる test が無い"
+oracle_candidate = "既存機能だけで回せる 文献の 0 / 45 / 90° 強度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-AM-088"
+axis = "benchmark"
+item = "resin working curve (cure depth against log exposure)"
+source = "Jacobs 1992"
+status = "missing"
+evidence = "硬化深さのモデルが無い"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-AM-089"
+axis = "benchmark"
+item = "NIST AM-Bench (melt pool, residual stress and distortion of the bridge specimen)"
+source = "NIST AM-Bench 2018 / 2022"
+status = "missing"
+evidence = "金属 AM の熱・変形モデルが無い"
+oracle_candidate = "参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-AM-090"
+axis = "benchmark"
+item = "dimensional accuracy test artifact"
+source = "NIST AM test artifact (Moylan et al. 2014)"
+status = "missing"
+evidence = "(推測: 0 件)"
+oracle_candidate = "参照値要確認"
+limitation = ""

@@ -15,6 +15,7 @@
 //!   forces travel through a continuous extrusion path.
 //! - **Across-layer normal (Z tension)** — reduced to the layer-bond strength
 //!   `σ_z = σ_iso × anisotropy_z_ratio` (0.6–0.9 for common FDM materials).
+// LIMITATION(COV-AM-046): **Across-layer shear (Z-XY plane)** — intermediate; empirical factor `~ (1 + anisotropy_z_ratio) / 2`.
 //! - **Across-layer shear (Z-XY plane)** — intermediate; empirical factor
 //!   `~ (1 + anisotropy_z_ratio) / 2`.
 //!
@@ -33,6 +34,7 @@ use crate::math::Fix128;
 
 /// How the part is laid down on the build plate.
 ///
+// LIMITATION(COV-AM-047): Only the "standard flat" orientation (layers along XY, growing +Z) is currently supported; other orientations should be obtained by applying a rotation before calling this module.
 /// Only the "standard flat" orientation (layers along XY, growing +Z) is
 /// currently supported; other orientations should be obtained by applying
 /// a rotation before calling this module.

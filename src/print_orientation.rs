@@ -7,6 +7,7 @@
 //!
 //! # Approach
 //!
+// LIMITATION(COV-AM-001): For an FDM material the strength depends only on the angle `θ` between the load direction and the layer stacking axis (Z of the print bed):
 //! For an FDM material the strength depends only on the angle `θ` between
 //! the load direction and the layer stacking axis (Z of the print bed):
 //!
