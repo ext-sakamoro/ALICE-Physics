@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4529 |
+| 🟢 Not ignored (run by CI) | 4557 |
 | 🔴 Red by design | 208 |
-| ⏱ Gated (runtime / diagnostic / manual) | 24 |
+| ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4761** |
+| **Total** | **4790** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -252,7 +252,7 @@ when the lock is not committed), re-check whether the defect remains.
 |--------|------|-------|-------------|----------|--------|
 | AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.2.0-beta.3 | ✅ same |
 
-## ⏱ Gated (24)
+## ⏱ Gated (25)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -260,6 +260,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `adaptive_cubic_beats_uniform_per_node` (analytic_adaptive_refinement_high_order.rs) — runtime: about 40 s in release (P3 reference at two uniform passes, a uniform coarse solve and a six-round ada…
 - `adaptive_quadratic_beats_uniform_per_node` (analytic_adaptive_refinement_high_order.rs) — runtime: about 2 s in release, measured 2026-10-03 (P2 reference at two uniform passes, a uniform coarse solve…
 - `amplification_growth_is_problem_size_or_element_shape` (mesh_to_fem_stress.rs) — diagnostic: run when the amplification threshold is in question
+- `bottleneck_specific_flow_matches_experiments_in_order_of_magnitude` (analytic_crowd_force.rs) — runtime: about 30 s in release (2 widths, 40 pedestrians, up to 15000 Fix128 steps each); run by run_ignored.p…
 - `cantilever_order_estimates_agree` (analytic_fem_convergence.rs) — 12,800 tets at cell 0.25 (about 1 s in release, measured 2026-10-03); run with --release, see the doc comment
 - `cantilever_without_preconditioner` (analytic_fem_convergence.rs) — 12,800 tets at cell 0.25 (about 1 s in release, measured 2026-10-03); the A/B partner of the test above
 - `cavity_gap_to_ghia_shrinks_with_resolution` (analytic_cfd_wall_bc.rs) — resolution sweep: three cavity runs to t = 30, minutes in a debug build
@@ -282,7 +283,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4529)
+## 🟢 Not ignored (4557)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -300,6 +301,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_coupled_iteration.rs` | 34 |
 | `engineering_oracles_solid.rs` | 34 |
 | `audit_math.rs` | 29 |
+| `analytic_crowd_force.rs` | 28 |
 | `audit_raycast.rs` | 28 |
 | `audit_trimesh.rs` | 28 |
 | `analytic_static_collider.rs` | 27 |

@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 108 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2223 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2236 |
 | live | reached without examples (crate-internal roots or a binding) | 423 |
-| | **total** | **2754** |
+| | **total** | **2767** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -263,7 +263,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2223)
+## L1 — example-only (2236)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -301,6 +301,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/coupled_field.rs`: `CoupledField`, `CoupledField::add`, `CoupledField::add_assign`, `CoupledField::as_mut_slice`, `CoupledField::as_slice`, `CoupledField::blend_from`, `CoupledField::cell_count`, `CoupledField::cell_size`, `CoupledField::clamp`, `CoupledField::clear`, `CoupledField::contains`, `CoupledField::copy_from_f32`, `CoupledField::decay`, `CoupledField::decay_toward`, `CoupledField::diffuse`, `CoupledField::fill`, `CoupledField::get`, `CoupledField::gradient`, `CoupledField::index`, `CoupledField::max`, `CoupledField::max_value`, `CoupledField::min`, `CoupledField::nx`, `CoupledField::ny`, `CoupledField::nz`, `CoupledField::same_grid_as`, `CoupledField::sample`, `CoupledField::scale_div`, `CoupledField::set`, `CoupledField::splat`, `CoupledField::sum`, `CoupledField::try_matching`, `CoupledField::try_new`, `CoupledField::try_new_filled`, `CoupledField::write_to_f32`, `CoupledFieldError`, `CoupledScalar`, `TemperatureRise`, `TemperatureRise::field`, `TemperatureRise::from_absolute`, `reconcile_mean`, `reconcile_weighted`
 - `src/coupled_iteration.rs`: `ConfigFault`, `ContractionMonitor`, `ContractionMonitor::new`, `ContractionMonitor::observe`, `ContractionMonitor::observed_ratio`, `ContractionMonitor::sweeps`, `CoupledIterationError`, `L2_TERM_FLOOR`, `MonitorVerdict`, `SubIterationConfig`, `SubIterationConfig::new`, `SubIterationConfig::validate`, `SubIterationReport`, `residual_norm_inf`, `residual_norm_l2_checked`, `run_sub_iteration`
 - `src/creep_longterm.rs`: `CREEP_FROZEN_AT`, `FindleyParameters`, `FindleyParameters::pla_25c_moderate`, `FindleyParameters::strain_at`, `WlfConstants`, `WlfConstants::universal`, `effective_time_at_temp`, `predict_strain`, `wlf_shift_factor`
+- `src/crowd_force.rs`: `CrowdForceError`, `InteractionParams`, `NeighborSearch`, `Pedestrian`, `SocialForce`, `SocialForce::anisotropy_weight`, `SocialForce::driving_force`, `SocialForce::new`, `SocialForce::pair_forces`, `SocialForce::step`, `SocialForce::total_forces`, `SocialForce::wall_force`, `WallSegment`
 - `src/cubic_elastic_fem.rs`: `AdaptiveCubicSolution`, `CubicMesh`, `CubicMesh::corner_count`, `CubicMesh::edge_node_count`, `CubicMesh::edge_nodes`, `CubicMesh::element_count`, `CubicMesh::element_nodes`, `CubicMesh::face_node`, `CubicMesh::face_node_count`, `CubicMesh::from_tet_mesh`, `CubicMesh::interior_node_positions_are_exact`, `CubicMesh::node_count`, `CubicMesh::node_position`, `reactions`, `shape_values`, `solve_adaptive_cubic`, `solve_cubic`, `solve_cubic_hyperelastic`
 - `src/damping_rayleigh.rs`: `RayleighCoefficients`, `RayleighCoefficients::damping_ratio`, `RayleighCoefficients::fit_two_modes`, `hz_to_omega`, `omega_to_hz`
 - `src/db_bridge.rs`: `PhysicsMetricsSink`, `PhysicsMetricsSink::flush`, `PhysicsMetricsSink::open`, `PhysicsMetricsSink::query_bodies`, `PhysicsMetricsSink::query_contacts`, `PhysicsMetricsSink::query_energy`, `PhysicsMetricsSink::record_energy`, `PhysicsMetricsSink::record_step`
