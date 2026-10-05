@@ -2157,7 +2157,6 @@ impl CorotationalConfig {
     /// Without a law from [`Self::with_hyperelastic`] there is nothing to
     /// differentiate, and [`solve_corotational`] refuses the configuration with
     /// [`FemError::InvalidConfig`] rather than ignoring the request.
-    // ALLOW-UNWIRED: public opt-in for downstream solvers, the production caller chooses the tangent
     #[must_use]
     pub const fn with_consistent_tangent(mut self) -> Self {
         self.consistent_tangent = true;
