@@ -7277,6 +7277,89 @@ impl core::marker::Unpin for alice_physics::maxwell_fdtd::Component
 impl core::marker::UnsafeUnpin for alice_physics::maxwell_fdtd::Component
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::maxwell_fdtd::Component
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::maxwell_fdtd::Component
+pub enum alice_physics::maxwell_fdtd::MaterialError
+pub alice_physics::maxwell_fdtd::MaterialError::AbsorberOverlap
+pub alice_physics::maxwell_fdtd::MaterialError::AbsorberOverlap::component: alice_physics::maxwell_fdtd::Component
+pub alice_physics::maxwell_fdtd::MaterialError::AbsorberOverlap::index: (usize, usize, usize)
+pub alice_physics::maxwell_fdtd::MaterialError::CourantViolated
+pub alice_physics::maxwell_fdtd::MaterialError::CourantViolated::courant: alice_physics::math::Fix128
+pub alice_physics::maxwell_fdtd::MaterialError::CourantViolated::eps_min: alice_physics::math::Fix128
+pub alice_physics::maxwell_fdtd::MaterialError::CourantViolated::mu_min: alice_physics::math::Fix128
+pub alice_physics::maxwell_fdtd::MaterialError::DimensionMismatch
+pub alice_physics::maxwell_fdtd::MaterialError::DimensionMismatch::lattice: (usize, usize, usize)
+pub alice_physics::maxwell_fdtd::MaterialError::DimensionMismatch::map: (usize, usize, usize)
+pub alice_physics::maxwell_fdtd::MaterialError::NegativeConductivity
+pub alice_physics::maxwell_fdtd::MaterialError::NegativeConductivity::cell: (usize, usize, usize)
+pub alice_physics::maxwell_fdtd::MaterialError::NonPositivePermeability
+pub alice_physics::maxwell_fdtd::MaterialError::NonPositivePermeability::cell: (usize, usize, usize)
+pub alice_physics::maxwell_fdtd::MaterialError::NonPositivePermittivity
+pub alice_physics::maxwell_fdtd::MaterialError::NonPositivePermittivity::cell: (usize, usize, usize)
+impl core::clone::Clone for alice_physics::maxwell_fdtd::MaterialError
+pub fn alice_physics::maxwell_fdtd::MaterialError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::maxwell_fdtd::MaterialError
+impl core::cmp::PartialEq for alice_physics::maxwell_fdtd::MaterialError
+pub fn alice_physics::maxwell_fdtd::MaterialError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::maxwell_fdtd::MaterialError
+impl core::fmt::Debug for alice_physics::maxwell_fdtd::MaterialError
+pub fn alice_physics::maxwell_fdtd::MaterialError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::maxwell_fdtd::MaterialError
+pub fn alice_physics::maxwell_fdtd::MaterialError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::maxwell_fdtd::MaterialError
+impl core::marker::StructuralPartialEq for alice_physics::maxwell_fdtd::MaterialError
+impl core::marker::Freeze for alice_physics::maxwell_fdtd::MaterialError
+impl core::marker::Send for alice_physics::maxwell_fdtd::MaterialError
+impl core::marker::Sync for alice_physics::maxwell_fdtd::MaterialError
+impl core::marker::Unpin for alice_physics::maxwell_fdtd::MaterialError
+impl core::marker::UnsafeUnpin for alice_physics::maxwell_fdtd::MaterialError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::maxwell_fdtd::MaterialError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::maxwell_fdtd::MaterialError
+pub struct alice_physics::maxwell_fdtd::Material
+pub alice_physics::maxwell_fdtd::Material::eps_r: alice_physics::math::Fix128
+pub alice_physics::maxwell_fdtd::Material::mu_r: alice_physics::math::Fix128
+pub alice_physics::maxwell_fdtd::Material::sigma: alice_physics::math::Fix128
+impl alice_physics::maxwell_fdtd::Material
+pub const alice_physics::maxwell_fdtd::Material::VACUUM: Self
+pub const fn alice_physics::maxwell_fdtd::Material::dielectric(alice_physics::math::Fix128) -> Self
+pub const fn alice_physics::maxwell_fdtd::Material::new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::maxwell_fdtd::Material::refractive_index(&self) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::maxwell_fdtd::Material
+pub fn alice_physics::maxwell_fdtd::Material::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::maxwell_fdtd::Material
+impl core::cmp::PartialEq for alice_physics::maxwell_fdtd::Material
+pub fn alice_physics::maxwell_fdtd::Material::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::maxwell_fdtd::Material
+pub fn alice_physics::maxwell_fdtd::Material::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::maxwell_fdtd::Material
+impl core::marker::StructuralPartialEq for alice_physics::maxwell_fdtd::Material
+impl core::marker::Freeze for alice_physics::maxwell_fdtd::Material
+impl core::marker::Send for alice_physics::maxwell_fdtd::Material
+impl core::marker::Sync for alice_physics::maxwell_fdtd::Material
+impl core::marker::Unpin for alice_physics::maxwell_fdtd::Material
+impl core::marker::UnsafeUnpin for alice_physics::maxwell_fdtd::Material
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::maxwell_fdtd::Material
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::maxwell_fdtd::Material
+pub struct alice_physics::maxwell_fdtd::MaterialMap
+impl alice_physics::maxwell_fdtd::MaterialMap
+pub const fn alice_physics::maxwell_fdtd::MaterialMap::dims(&self) -> (usize, usize, usize)
+pub fn alice_physics::maxwell_fdtd::MaterialMap::fill(&mut self, [usize; 3], [usize; 3], alice_physics::maxwell_fdtd::Material)
+pub fn alice_physics::maxwell_fdtd::MaterialMap::get(&self, usize, usize, usize) -> alice_physics::maxwell_fdtd::Material
+pub fn alice_physics::maxwell_fdtd::MaterialMap::set(&mut self, usize, usize, usize, alice_physics::maxwell_fdtd::Material)
+pub fn alice_physics::maxwell_fdtd::MaterialMap::vacuum(usize, usize, usize) -> Self
+impl core::clone::Clone for alice_physics::maxwell_fdtd::MaterialMap
+pub fn alice_physics::maxwell_fdtd::MaterialMap::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::maxwell_fdtd::MaterialMap
+impl core::cmp::PartialEq for alice_physics::maxwell_fdtd::MaterialMap
+pub fn alice_physics::maxwell_fdtd::MaterialMap::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::maxwell_fdtd::MaterialMap
+pub fn alice_physics::maxwell_fdtd::MaterialMap::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::maxwell_fdtd::MaterialMap
+impl core::marker::Freeze for alice_physics::maxwell_fdtd::MaterialMap
+impl core::marker::Send for alice_physics::maxwell_fdtd::MaterialMap
+impl core::marker::Sync for alice_physics::maxwell_fdtd::MaterialMap
+impl core::marker::Unpin for alice_physics::maxwell_fdtd::MaterialMap
+impl core::marker::UnsafeUnpin for alice_physics::maxwell_fdtd::MaterialMap
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::maxwell_fdtd::MaterialMap
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::maxwell_fdtd::MaterialMap
 pub struct alice_physics::maxwell_fdtd::YeeGrid
 impl alice_physics::maxwell_fdtd::YeeGrid
 pub fn alice_physics::maxwell_fdtd::YeeGrid::charge(&self, usize, usize, usize) -> alice_physics::math::Fix128
@@ -7285,8 +7368,10 @@ pub const fn alice_physics::maxwell_fdtd::YeeGrid::courant(&self) -> alice_physi
 pub fn alice_physics::maxwell_fdtd::YeeGrid::current(&self, alice_physics::maxwell_fdtd::Component, usize, usize, usize) -> alice_physics::math::Fix128
 pub const fn alice_physics::maxwell_fdtd::YeeGrid::dims(&self) -> (usize, usize, usize)
 pub fn alice_physics::maxwell_fdtd::YeeGrid::div_b(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::YeeGrid::div_d(&self, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::maxwell_fdtd::YeeGrid::div_e(&self, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::maxwell_fdtd::YeeGrid::div_j(&self, usize, usize, usize) -> alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::YeeGrid::effective_material(&self, alice_physics::maxwell_fdtd::Component, usize, usize, usize) -> alice_physics::maxwell_fdtd::Material
 pub fn alice_physics::maxwell_fdtd::YeeGrid::gauss_residual(&self, usize, usize, usize) -> alice_physics::math::Fix128
 pub fn alice_physics::maxwell_fdtd::YeeGrid::get(&self, alice_physics::maxwell_fdtd::Component, usize, usize, usize) -> alice_physics::math::Fix128
 pub const fn alice_physics::maxwell_fdtd::YeeGrid::interior_node_dims(&self) -> (usize, usize, usize)
@@ -7301,6 +7386,7 @@ pub fn alice_physics::maxwell_fdtd::YeeGrid::set_charge(&mut self, usize, usize,
 pub fn alice_physics::maxwell_fdtd::YeeGrid::set_current(&mut self, alice_physics::maxwell_fdtd::Component, usize, usize, usize, alice_physics::math::Fix128)
 pub fn alice_physics::maxwell_fdtd::YeeGrid::step(&mut self)
 pub fn alice_physics::maxwell_fdtd::YeeGrid::total_charge(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::maxwell_fdtd::YeeGrid::with_materials(self, &alice_physics::maxwell_fdtd::MaterialMap) -> core::result::Result<Self, alice_physics::maxwell_fdtd::MaterialError>
 impl core::clone::Clone for alice_physics::maxwell_fdtd::YeeGrid
 pub fn alice_physics::maxwell_fdtd::YeeGrid::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::maxwell_fdtd::YeeGrid

@@ -78,13 +78,14 @@ were introduced during that release window.
 - `coupled_field::reconcile_weighted`: 重み付きの場の統合 (等重みは `reconcile_mean` と bit 一致)
 - `maxwell_fdtd`: source-free Yee FDTD の Maxwell 場 solver (正規化単位 c = ε₀ = μ₀ = Δx = 1)
 - `maxwell_fdtd` に電流密度・電荷密度の source、`∇·E` / `gauss_residual` / `max_abs_gauss_residual`、split-field PML と `Absorber` (使わない格子は算術も確保量も不変)
+- `maxwell_fdtd::{Material, MaterialMap, MaterialError}` / `YeeGrid::{with_materials, effective_material, div_d}`: cell ごとの等方材料 (比誘電率・比透磁率・電気伝導率) E 辺は周囲 cell の算術平均 (ε, σ)、H 面は両側 cell の調和平均 (μ)、更新は Taflove 3 章の `C_a` / `C_b` 真空の sample は従来の更新式のまま通るので、材料を渡さない格子と真空の map を渡した格子は従来と bit 一致 不正な値・寸法不一致・Courant 条件 `3S² ≤ ε_min μ_min` の違反・吸収層と重なる非真空 sample は `Err` 材料のある格子の `gauss_residual` は `∇·(εE) − ρ`
 - `Fix128::ln`
 - **`metric` module — a distance can now say which norm it was measured in.** `MetricWeights` is a non-negative combination of `‖·‖₁` / `‖·‖₂` / `‖·‖∞` (`MetricError::NotConvex` for negative weights) with exact `lipschitz()` and `minimum()`
 - `AABB::from_metric_ball(center, radius, metric)`: the tight box of a metric ball
 - `DynamicAabbTree::metric`: the metric its `margin` is measured in (Euclidean by default, which leaves every proxy box bit-identical)
 - examples (剛体・衝突): `world_api_tour` / `character_controller` / `rope_pin_constraints` / `contact_warm_start_cache` / `compound_shapes` / `spatial_raycast_queries` / `continuous_collision_detection` / `spatial_queries` / `collision_filter_categories`
 - examples (剛体・制御): `multi_world_management` / `articulated_body_chain` / `animation_blend_state_machine` / `substep_interpolation` / `joint_limits_and_breaking` / `material_registry_presets` / `debug_render_primitives` / `tgs_solver_backend`
-- examples (流体・場): `pressure_solvers` / `wall_model` / `turbulence_closures` / `sealed_box_adaptive_dt` / `flip_scatter` / `vof_level_set_transport` / `wind_zone_forces` / `acoustic_wave_propagation` / `smoke_fire_combustion` / `wave_ship_spectrum` / `maxwell_sources_and_absorber`
+- examples (流体・場): `pressure_solvers` / `wall_model` / `turbulence_closures` / `sealed_box_adaptive_dt` / `flip_scatter` / `vof_level_set_transport` / `wind_zone_forces` / `acoustic_wave_propagation` / `smoke_fire_combustion` / `wave_ship_spectrum` / `maxwell_sources_and_absorber` / `maxwell_dielectric_slab`
 - examples (工学・材料): `prestressed_joints_and_cables` / `piezoelectric_materials` / `rolling_contact_fatigue` / `non_newtonian_rheology` / `laminate_failure_criteria` / `hyperelastic_material_presets` / `compressible_gas_dynamics` / `transient_thermal_materials` / `filament_database_properties`
 - examples (FEM・mesh): `linear_elastic_fem_config_diagnostics` / `cubic_elastic_fem_topology` / `support_reactions` / `adaptive_refinement_high_order` / `thermal_softening_bar` / `temperature_reconciliation` / `sdf_fem_mesh_generation` / `thin_wall_detection` / `heatmap_visualization`
 - examples (その他): `sdf_force_fields` / `sdf_destruction_events` / `gpu_sdf_batch_queries` / `audio_physics_events` / `math_simd_and_transcendentals` / `neural_ternary_controller` / `analytics_bridge_telemetry` / `replay_recording` / `hpc_scale_probe`
