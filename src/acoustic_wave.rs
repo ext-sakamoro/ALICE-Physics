@@ -20,6 +20,7 @@
 //!
 //! # Scope
 //!
+// LIMITATION(COV-ACOUS-001): 1-D uniform grid, reflective ends.
 //! - 1-D uniform grid, reflective ends. 2-D / 3-D solvers, absorbing
 //!   boundaries, spectral / DG discretisations, and coupled fluid–
 //!   structure interaction are future work.

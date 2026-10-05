@@ -6,6 +6,7 @@
 //!
 //! # Output
 //!
+// LIMITATION(COV-ACOUS-085): This module does NOT generate audio samples. It computes parameters that an audio engine can use to trigger and modulate sounds.
 //! This module does NOT generate audio samples. It computes parameters
 //! that an audio engine can use to trigger and modulate sounds.
 //!
