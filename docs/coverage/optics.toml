@@ -1,0 +1,1258 @@
+# Optics coverage of ALICE-Physics, against an external reference frame.
+#
+# What this table is: a declaration of the field's extent for a field the crate
+# does not implement yet. It lists every capability that the standard texts
+# (Hecht, Optics; Born-Wolf, Principles of Optics; Saleh-Teich, Fundamentals of
+# Photonics; Pharr-Jakob-Humphreys, Physically Based Rendering; Chandrasekhar,
+# Radiative Transfer), reference implementations (Zemax OpticStudio, Code V,
+# LightTools, Mitsuba, PBRT) and standard benchmarks (Snell refraction and the
+# critical angle, the Brewster angle, the thin lens equation, Newton's rings,
+# single-slit diffraction, Beer-Lambert decay, the white furnace test, the
+# Rayleigh lambda^-4 law) expect of an optics code, one [[item]] per capability.
+# Nearly every row is missing: the table fixes the scope before any optics
+# module is written, so that a later move of optical laws into this crate can
+# decide where each one goes. The rows are written by hand: the axes and the
+# items come from the reference frame, not from the modules that exist.
+#
+# Optics here means light models that do not solve Maxwell's equations on a grid
+# or mesh: geometric optics, closed-form wave optics, scattering in closed form,
+# radiative transfer of radiance, surface optical properties and light-matter
+# interaction. Rendering itself (GPU shaders, SDF drawing) belongs to the
+# rendering crate outside this repository; it is not counted, and rendering
+# rows here are about the physical model of light only.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - numerical solution of Maxwell's equations (FDTD, FEM, MoM), including the
+#     numerical Fresnel reflection, dielectric slab, Mie sphere and physical
+#     optics rows: the electromagnetics table. Closed forms of the same physics
+#     are rows here and cite the electromagnetics ids in `evidence`.
+#   - heat transfer by thermal radiation (blackbody emission, emissivity, view
+#     factors, radiosity exchange, radiative heat flux in the energy equation
+#     through P1 / discrete ordinates, gas band models): the thermal table.
+#     Here the transport of radiance itself (beam attenuation, phase functions,
+#     single and multiple scattering, Monte Carlo light transport); a row that
+#     uses a thermal-table capability cites its id instead of repeating it.
+#   - intersection of rays with collision geometry (raycast, shape cast): the
+#     rigid-body table. Here only what light does at the hit (reflection,
+#     refraction, transport).
+#   - the geometry of a scanning range sensor: the sensing table. Its
+#     radiometric return model is a row here.
+#   - ray tracing of sound: the acoustics table.
+#   - forces of light on bodies as a coupled problem: the coupling table; the
+#     closed-form radiation pressure law is a row here.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`).
+#
+# keys: id (COV-OPTICS-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Ids of other tables cited
+# in `evidence` (COV-EM-*, COV-THERM-*, COV-RIGID-*) are those of the tables as
+# written at the time of this table.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-OPTICS-001"
+axis = "geometric"
+item = "ray representation for optics (origin, direction, wavelength, radiance / power carried by the ray)"
+source = "Born-Wolf ch.3; Zemax OpticStudio sequential ray trace; PBRT ch.2-3"
+status = "missing"
+evidence = "src/raycast.rs:20 は原点と方向だけで波長・運ぶ量を持たない (推測: wavelength / radiance で src 0 件)"
+oracle_candidate = "ray の保存量 (n² で割った放射輝度) が界面で不変になること"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-002"
+axis = "geometric"
+item = "Snell's law of refraction at an interface (vector form)"
+source = "Hecht, Optics ch.4; Born-Wolf ch.1.5"
+status = "missing"
+evidence = "無い (推測: snell で src 0 件、refract は電磁の解法の doc だけ) 光線と形状の交差は src/raycast.rs:20 / src/raycast.rs:59 (法線付き) / src/shape_raycast.rs:894 / src/trimesh.rs:416 にあるが、屈折・反射の方向を作る code は無い (交差そのものは剛体表 COV-RIGID-096)"
+oracle_candidate = "n1 sinθ1 = n2 sinθ2 を任意角で突合、屈折ベクトルが入射面内にあること"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-003"
+axis = "geometric"
+item = "specular reflection direction at a surface"
+source = "Hecht, Optics ch.4; PBRT ch.8"
+status = "missing"
+evidence = "無い (推測: reflect で当たるのは境界条件・鏡映の別語義だけ、hit の法線 src/raycast.rs:59 はあるが反射方向を返す関数が無い)"
+oracle_candidate = "入射角 = 反射角、反射ベクトルの長さ保存"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-004"
+axis = "geometric"
+item = "total internal reflection and the critical angle"
+source = "Hecht, Optics ch.4.7"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "θc = arcsin(n2/n1) を境に屈折解が消えること"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-005"
+axis = "geometric"
+item = "sequential ray trace through a stack of surfaces (spheres, planes, aspheres)"
+source = "Zemax / Code V sequential mode; Smith, Modern Optical Engineering ch.10"
+status = "missing"
+evidence = "無い 光線と形状の交差は src/raycast.rs:20 / src/raycast.rs:59 (法線付き) / src/shape_raycast.rs:894 / src/trimesh.rs:416 にあるが、屈折・反射の方向を作る code は無い (交差そのものは剛体表 COV-RIGID-096)"
+oracle_candidate = "単レンズの近軸焦点距離を薄レンズ式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-006"
+axis = "geometric"
+item = "non-sequential ray trace (rays split at each interface, stray light)"
+source = "LightTools / Zemax non-sequential mode"
+status = "missing"
+evidence = "無い (世界の ray query src/shape_raycast.rs:894 は最初の交差だけ返す)"
+oracle_candidate = "ガラス平板の多重反射の総透過を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-007"
+axis = "geometric"
+item = "aspheric and conic surfaces (sag equation)"
+source = "Smith, Modern Optical Engineering ch.13; Zemax surface types"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "放物面鏡が軸上平行光を 1 点に集めること"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-008"
+axis = "geometric"
+item = "Fermat's principle / eikonal equation (optical path length)"
+source = "Born-Wolf ch.3.1-3.3"
+status = "missing"
+evidence = "無い (推測: optical path で src 0 件、eikonal は level set 再初期化の別語義)"
+oracle_candidate = "光路長の停留を 2 媒質の屈折で確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-009"
+axis = "geometric"
+item = "graded-index media (curved rays, ray equation in n(r))"
+source = "Born-Wolf ch.3.2; Saleh-Teich ch.1.3"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "放物型 GRIN の周期 (閉形式) と数値の光線経路"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-010"
+axis = "geometric"
+item = "atmospheric refraction and mirage (n from temperature / pressure)"
+source = "Born-Wolf ch.3.2; Edlén formula"
+status = "missing"
+evidence = "大気の状態は src/atmosphere.rs:94 にあるが屈折率への換算と曲がる光線は無い (推測)"
+oracle_candidate = "成層大気の見かけの高度補正を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-011"
+axis = "imaging"
+item = "thin lens and spherical mirror imaging equation (1/s + 1/s' = 1/f, magnification)"
+source = "Hecht, Optics ch.5.2-5.4"
+status = "missing"
+evidence = "無い (推測: lens で src 0 件、focal は軌道の焦点の別語義)"
+oracle_candidate = "物体距離の掃引で像距離と倍率を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-012"
+axis = "imaging"
+item = "thick lens and lensmaker's equation (principal planes)"
+source = "Hecht, Optics ch.6.1"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "両凸厚レンズの主点位置"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-013"
+axis = "imaging"
+item = "paraxial ray transfer matrices (ABCD) for free space, lenses, mirrors, interfaces"
+source = "Saleh-Teich ch.1.4; Siegman, Lasers ch.15"
+status = "missing"
+evidence = "無い (推測: abcd で当たるのは変数名だけ)"
+oracle_candidate = "行列積の行列式 = n1/n2、系の焦点距離が -1/C"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-014"
+axis = "imaging"
+item = "cardinal points and effective focal length of a lens system"
+source = "Smith, Modern Optical Engineering ch.2"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "2 枚の薄レンズの合成焦点距離"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-015"
+axis = "imaging"
+item = "stops and pupils (aperture stop, entrance / exit pupil, f-number, NA, vignetting)"
+source = "Smith, Modern Optical Engineering ch.6"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "f 数と NA の関係 NA ≈ 1/(2N)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-016"
+axis = "imaging"
+item = "Seidel (third-order) aberrations: spherical, coma, astigmatism, field curvature, distortion"
+source = "Born-Wolf ch.5; Welford, Aberrations of Optical Systems"
+status = "missing"
+evidence = "無い (推測: aberration で src 0 件)"
+oracle_candidate = "単レンズの球面収差係数を閉形式 (Welford) と突合、参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-017"
+axis = "imaging"
+item = "chromatic aberration (longitudinal and lateral) and achromatic doublets"
+source = "Hecht, Optics ch.6.3; Smith ch.10"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "色消し条件 V1 f1 + V2 f2 = 0"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-018"
+axis = "imaging"
+item = "wavefront aberration and Zernike polynomials, optical path difference maps"
+source = "Born-Wolf ch.9; Zemax analysis features"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Zernike の直交性と defocus 項の係数"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-019"
+axis = "imaging"
+item = "spot diagram and RMS spot size"
+source = "Zemax / Code V analysis features"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "完全な放物面鏡の軸上 spot が 0"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-020"
+axis = "imaging"
+item = "point spread function and MTF / OTF"
+source = "Goodman, Introduction to Fourier Optics ch.6; Zemax analysis features"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "円形開口の回折限界 MTF (閉形式) と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-021"
+axis = "imaging"
+item = "camera model with depth of field and lens distortion (thin lens camera)"
+source = "PBRT ch.5 (camera models); Brown-Conrady distortion"
+status = "missing"
+evidence = "無い (推測: camera で src 0 件)"
+oracle_candidate = "錯乱円の直径を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-022"
+axis = "dispersion"
+item = "refractive index model n(λ): Sellmeier equation"
+source = "Saleh-Teich ch.5.5; Born-Wolf ch.2.3"
+status = "missing"
+evidence = "無い (推測: sellmeier で src 0 件)"
+oracle_candidate = "BK7 型の係数で n(λ) を表引き値と突合、参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-023"
+axis = "dispersion"
+item = "refractive index model n(λ): Cauchy formula and Abbe number"
+source = "Hecht, Optics ch.3.5"
+status = "missing"
+evidence = "無い (推測: cauchy は応力の Cauchy だけに当たる、abbe で src 0 件)"
+oracle_candidate = "Abbe 数 V = (n_d − 1)/(n_F − n_C)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-024"
+axis = "dispersion"
+item = "complex refractive index and absorbing media (n + iκ, absorption coefficient 4πκ/λ)"
+source = "Born-Wolf ch.14; Saleh-Teich ch.5.5"
+status = "missing"
+evidence = "電磁の解法側には電気伝導率 σ の cell 材料 src/maxwell_fdtd.rs:362 があるが (電磁表)、光学定数としての複素屈折率は無い"
+oracle_candidate = "κ から α = 4πκ/λ、金属の垂直反射率"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-025"
+axis = "dispersion"
+item = "group index, group velocity and group-velocity dispersion"
+source = "Saleh-Teich ch.5.6"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "Sellmeier 式からの n_g = n − λ dn/dλ"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-026"
+axis = "dispersion"
+item = "dispersion of a prism (minimum deviation, angular spread)"
+source = "Hecht, Optics ch.5.5"
+status = "missing"
+evidence = "無い (推測: prism で当たるのは形状・関節の別語義だけ)"
+oracle_candidate = "最小偏角の式から n を逆算"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-027"
+axis = "dispersion"
+item = "birefringence and uniaxial crystals (ordinary / extraordinary rays)"
+source = "Born-Wolf ch.15; Saleh-Teich ch.6.3"
+status = "missing"
+evidence = "無い (電磁の解法側の異方性テンソルは電磁表 COV-EM-048 で missing)"
+oracle_candidate = "方解石の o / e 光線の分離角、参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-028"
+axis = "dispersion"
+item = "temperature dependence of the refractive index (thermo-optic coefficient dn/dT)"
+source = "Saleh-Teich ch.5.5; Zemax thermal analysis"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "dn/dT による焦点移動"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-029"
+axis = "interference"
+item = "two-beam interference (Young's double slit, fringe spacing)"
+source = "Hecht, Optics ch.9.3"
+status = "missing"
+evidence = "無い (推測: interferen で当たるのは別語義の 1 件だけ)"
+oracle_candidate = "縞間隔 λL/d"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-030"
+axis = "interference"
+item = "thin-film interference and multilayer stacks (Airy formulas, transfer matrix)"
+source = "Born-Wolf ch.1.6, ch.7.6; Macleod, Thin-Film Optical Filters"
+status = "missing"
+evidence = "無い 電磁の数値解としての誘電体 slab (Fabry-Pérot) は電磁表 COV-EM-103 で missing"
+oracle_candidate = "4 分の 1 波長反射防止膜の反射率 0 条件、多層膜の転送行列"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-031"
+axis = "interference"
+item = "Newton's rings"
+source = "Hecht, Optics ch.9.4"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "第 m 暗環の半径 √(mλR)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-032"
+axis = "interference"
+item = "Michelson / Mach-Zehnder interferometer (path difference, visibility)"
+source = "Hecht, Optics ch.9.8"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "鏡の移動と縞の数"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-033"
+axis = "interference"
+item = "Fabry-Pérot etalon (finesse, free spectral range, Airy transmission)"
+source = "Hecht, Optics ch.9.6; Saleh-Teich ch.7.1"
+status = "missing"
+evidence = "無い (閉形式) 電磁の数値の slab は電磁表 COV-EM-103"
+oracle_candidate = "finesse F = π√R/(1−R) と FSR = c/2nd"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-034"
+axis = "interference"
+item = "coherence (temporal and spatial, coherence length, partial coherence)"
+source = "Born-Wolf ch.10; Saleh-Teich ch.12"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "スペクトル幅とコヒーレンス長 λ²/Δλ"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-035"
+axis = "diffraction"
+item = "Huygens-Fresnel principle and Fresnel-Kirchhoff diffraction integral (numerical)"
+source = "Born-Wolf ch.8.2-8.3; Goodman ch.3"
+status = "missing"
+evidence = "無い (推測: diffract で src 0 件)"
+oracle_candidate = "円形開口の軸上強度 (閉形式) と数値積分"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-036"
+axis = "diffraction"
+item = "Fraunhofer diffraction by a single slit (sinc² pattern)"
+source = "Hecht, Optics ch.10.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "第 1 零点 sinθ = λ/a"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-037"
+axis = "diffraction"
+item = "Fraunhofer diffraction by a circular aperture (Airy disk, Rayleigh criterion)"
+source = "Hecht, Optics ch.10.2.5; Born-Wolf ch.8.5"
+status = "missing"
+evidence = "無い (推測: airy は Airy 関数の語でも 0 件)"
+oracle_candidate = "第 1 暗環 1.22λ/D"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-038"
+axis = "diffraction"
+item = "Fresnel (near-field) diffraction: straight edge, Fresnel zones, Cornu spiral"
+source = "Hecht, Optics ch.10.3"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "直線端の強度の最大 (閉形式の Fresnel 積分)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-039"
+axis = "diffraction"
+item = "Fourier optics and angular spectrum propagation (FFT-based)"
+source = "Goodman, Introduction to Fourier Optics ch.3-5"
+status = "missing"
+evidence = "無い (推測: fft で当たるのは別語義)"
+oracle_candidate = "Gauss ビームの自由伝播を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-040"
+axis = "diffraction"
+item = "diffraction gratings (grating equation, orders, resolving power, blaze)"
+source = "Hecht, Optics ch.10.2.8; Born-Wolf ch.8.6"
+status = "missing"
+evidence = "無い (推測: diffract で src 0 件、grating は integrating の部分一致だけ)"
+oracle_candidate = "格子方程式 d(sinθm − sinθi) = mλ、分解能 mN"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-041"
+axis = "diffraction"
+item = "Bragg diffraction (crystals, volume gratings)"
+source = "Born-Wolf ch.8.7; Saleh-Teich ch.7.1"
+status = "missing"
+evidence = "無い (推測: bragg で src 0 件)"
+oracle_candidate = "2d sinθ = mλ"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-042"
+axis = "diffraction"
+item = "Talbot effect and Fresnel number regimes"
+source = "Goodman ch.4"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Talbot 距離 2d²/λ"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-043"
+axis = "polarisation"
+item = "polarisation state representation (Jones vectors)"
+source = "Saleh-Teich ch.6.1; Hecht ch.8"
+status = "missing"
+evidence = "無い (推測: polariz で src 0 件、jones は Lennard-Jones だけ)"
+oracle_candidate = "直線・円偏光の内積と強度"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-044"
+axis = "polarisation"
+item = "Jones matrices of polarisers, wave plates and rotators"
+source = "Saleh-Teich ch.6.1"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Malus の法則 I = I0 cos²θ、λ/4 板で直線 → 円"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-045"
+axis = "polarisation"
+item = "Stokes parameters and Mueller calculus (partial polarisation)"
+source = "Born-Wolf ch.10.8; Hecht ch.8.12"
+status = "missing"
+evidence = "無い (推測: mueller で src 0 件、stokes は Navier-Stokes だけ)"
+oracle_candidate = "偏光度の保存と無偏光の Mueller 行列"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-046"
+axis = "polarisation"
+item = "polarisation-dependent Fresnel transmission and polarisation ray tracing"
+source = "Chipman, Polarized Light and Optical Systems; Zemax polarisation ray trace"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Brewster 角での p 偏光透過 1"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-047"
+axis = "polarisation"
+item = "optical activity and Faraday rotation"
+source = "Saleh-Teich ch.6.4"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "回転角 = Verdet 定数 × B × L"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-048"
+axis = "interface"
+item = "Fresnel amplitude and power coefficients (s and p, any angle of incidence)"
+source = "Born-Wolf ch.1.5.2; Hecht ch.4.6"
+status = "missing"
+evidence = "閉形式は無い (推測: fresnel で src 0 件) 電磁の数値解としての垂直入射反射は電磁表 COV-EM-102 (tests/analytic_fdtd_materials.rs)"
+oracle_candidate = "R + T = 1 (エネルギー保存) と垂直入射 ((n1−n2)/(n1+n2))²"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-049"
+axis = "interface"
+item = "Brewster angle"
+source = "Hecht, Optics ch.8.6"
+status = "missing"
+evidence = "無い (推測: brewster で src 0 件)"
+oracle_candidate = "tanθB = n2/n1 で r_p = 0"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-050"
+axis = "interface"
+item = "Fresnel reflection of absorbing media (metals, complex n)"
+source = "Born-Wolf ch.14.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "金属の主入射角と反射率の最小"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-051"
+axis = "interface"
+item = "Schlick approximation and its error against the exact Fresnel term"
+source = "Schlick 1994; PBRT ch.8.2"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "全角度で厳密 Fresnel との差の上限"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-052"
+axis = "interface"
+item = "evanescent wave and frustrated total internal reflection"
+source = "Hecht, Optics ch.4.7.1; Saleh-Teich ch.6.2"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "侵入深さ λ/(2π√(n1²sin²θ − n2²))"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-053"
+axis = "gaussian-beam"
+item = "Gaussian beam propagation (waist, Rayleigh range, Gouy phase, q parameter)"
+source = "Saleh-Teich ch.3; Siegman, Lasers ch.17"
+status = "missing"
+evidence = "無い (推測: gaussian beam / waist で src 0 件)"
+oracle_candidate = "w(z) = w0√(1+(z/zR)²)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-054"
+axis = "gaussian-beam"
+item = "ABCD law for the complex beam parameter (focusing a Gaussian beam)"
+source = "Siegman, Lasers ch.20"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "薄レンズ後の waist 位置と大きさ"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-055"
+axis = "gaussian-beam"
+item = "higher-order modes (Hermite-Gauss, Laguerre-Gauss) and M² beam quality"
+source = "Saleh-Teich ch.3.3; ISO 11146"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "モード次数と M² = 2n+1"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-056"
+axis = "gaussian-beam"
+item = "optical resonator stability and modes (g1 g2 criterion)"
+source = "Siegman, Lasers ch.19"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "0 ≤ g1g2 ≤ 1 の境界"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-057"
+axis = "scattering"
+item = "Rayleigh scattering cross-section (λ⁻⁴ dependence) and phase function"
+source = "Bohren-Huffman, Absorption and Scattering of Light by Small Particles ch.5; van de Hulst"
+status = "missing"
+evidence = "無い (推測: rayleigh で当たるのは Rayleigh 減衰の別語義だけ)"
+oracle_candidate = "断面積の λ⁻⁴ 依存と (1+cos²θ) 位相関数の規格化"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-058"
+axis = "scattering"
+item = "Mie scattering series in closed form (Q_ext, Q_sca, asymmetry g)"
+source = "Bohren-Huffman ch.4; van de Hulst ch.9"
+status = "missing"
+evidence = "閉形式の級数は無い (推測: mie で src 0 件) 電磁の数値解としての球の散乱は電磁表 COV-EM-106"
+oracle_candidate = "大粒子極限 Q_ext → 2 (消散の逆説)、小粒子極限が Rayleigh に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-059"
+axis = "scattering"
+item = "anomalous diffraction and geometric-optics limits of scattering"
+source = "van de Hulst ch.11"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "van de Hulst の Q_ext(ρ) 式"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-060"
+axis = "scattering"
+item = "Henyey-Greenstein and other analytic phase functions"
+source = "Henyey-Greenstein 1941; PBRT ch.11.3"
+status = "missing"
+evidence = "無い (推測: henyey / phase function で src 0 件)"
+oracle_candidate = "位相関数の規格化と平均 cosθ = g"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-061"
+axis = "scattering"
+item = "single-scattering approximation in a slab or along a beam"
+source = "Chandrasekhar, Radiative Transfer ch.1; Ishimaru, Wave Propagation and Scattering in Random Media"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "光学的に薄い媒質で散乱光が τ に比例"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-062"
+axis = "scattering"
+item = "multiple scattering and diffusion approximation (diffusion coefficient, reduced albedo)"
+source = "Ishimaru ch.9; Jensen et al. 2001 (dipole BSSRDF)"
+status = "missing"
+evidence = "無い (熱伝達としての P1 近似は熱表 COV-THERM-066)"
+oracle_candidate = "半無限媒質の拡散反射率 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-063"
+axis = "scattering"
+item = "sky colour and aerial perspective (Rayleigh + Mie atmosphere)"
+source = "Nishita et al. 1993; Bruneton-Neyret 2008"
+status = "missing"
+evidence = "大気は src/atmosphere.rs:94 の ISA だけで散乱の model は無い"
+oracle_candidate = "天頂の透過率を光学的厚さの閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-064"
+axis = "radiative-transfer"
+item = "Beer-Lambert attenuation of a collimated beam (transmittance exp(−∫σ_t ds))"
+source = "Chandrasekhar, Radiative Transfer ch.1; PBRT ch.11.1"
+status = "missing"
+evidence = "無い (推測: beer / attenuat / extinction の光の該当 0 件、sdf_wind_field の減衰は風の別語義)"
+oracle_candidate = "一様媒質の透過率 exp(−σ_t L) と不均一媒質の数値積分の収束"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-065"
+axis = "radiative-transfer"
+item = "radiative transfer equation in radiance form (absorption, out- and in-scattering, emission)"
+source = "Chandrasekhar, Radiative Transfer ch.1; Pharr-Jakob-Humphreys, PBRT ch.11, ch.14"
+status = "missing"
+evidence = "無い 熱伝達のエネルギー式に入る放射源項 (P1 / 離散座標) は熱表 COV-THERM-066 の範囲で、ここは放射輝度の輸送"
+oracle_candidate = "等方散乱の半無限媒質のアルベドを Chandrasekhar の H 関数と突合、参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-066"
+axis = "radiative-transfer"
+item = "absorption and scattering coefficients, single-scattering albedo, optical thickness"
+source = "Modest, Radiative Heat Transfer ch.1; PBRT ch.11.1"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "σ_t = σ_a + σ_s と ω = σ_s/σ_t の整合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-067"
+axis = "radiative-transfer"
+item = "Monte Carlo photon transport (free-path sampling, Russian roulette)"
+source = "Wang-Jacques MCML 1995; PBRT ch.14"
+status = "missing"
+evidence = "無い (推測: photon / monte carlo で src 0 件)"
+oracle_candidate = "MCML の半無限 slab の拡散反射率、参照値要確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-068"
+axis = "radiative-transfer"
+item = "delta tracking / null-collision sampling in heterogeneous media"
+source = "Woodcock 1965; Novák et al. 2018"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "一様多数格子で解析透過率と一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-069"
+axis = "radiative-transfer"
+item = "participating media with emission (hot gas, flames as light sources)"
+source = "PBRT ch.11; Modest ch.10"
+status = "missing"
+evidence = "無い (熱放射の熱伝達は熱表 COV-THERM-066 / 067)"
+oracle_candidate = "等温の光学的に厚い媒質が黒体放射輝度に近づく"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-070"
+axis = "radiative-transfer"
+item = "discrete ordinates / spherical harmonics for light transport"
+source = "Chandrasekhar ch.2-3; Modest ch.16-17"
+status = "missing"
+evidence = "熱伝達としての実装の行は熱表 COV-THERM-066 (ここに別行は作らない)、光学の放射輝度場としても無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-071"
+axis = "reflectance"
+item = "BRDF definition, reciprocity and energy conservation checks"
+source = "Nicodemus 1977; PBRT ch.8 (BSDF)"
+status = "missing"
+evidence = "無い (推測: brdf / bsdf で src 0 件)"
+oracle_candidate = "Helmholtz 相反性と半球アルベド ≤ 1"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-072"
+axis = "reflectance"
+item = "Lambertian diffuse reflection"
+source = "PBRT ch.8.3"
+status = "missing"
+evidence = "無い (推測: lambert で src 0 件)"
+oracle_candidate = "半球積分 ρ と cosθ 則"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-073"
+axis = "reflectance"
+item = "microfacet BRDF (Cook-Torrance, GGX / Trowbridge-Reitz, Beckmann, Smith masking)"
+source = "Walter et al. 2007; Heitz 2014; PBRT ch.9"
+status = "missing"
+evidence = "無い (推測: microfacet / ggx で src 0 件)"
+oracle_candidate = "白い炉テスト (粗さを掃引して透過損失を確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-074"
+axis = "reflectance"
+item = "rough dielectric BSDF (transmission through rough interfaces)"
+source = "Walter et al. 2007; Mitsuba roughdielectric"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "滑らかな極限で厳密 Fresnel + Snell に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-075"
+axis = "reflectance"
+item = "BSSRDF and subsurface scattering"
+source = "Jensen et al. 2001; PBRT ch.15"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "dipole の拡散反射率を MC 輸送と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-076"
+axis = "reflectance"
+item = "surface roughness parameters (RMS height and slope) mapped to scattering"
+source = "Beckmann-Spizzichino 1963; Stover, Optical Scattering"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Rayleigh の粗さ基準 4πσcosθ/λ"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-077"
+axis = "reflectance"
+item = "measured BRDF data and parametric fits (MERL / tabulated)"
+source = "Matusik et al. 2003; Mitsuba measured BSDF"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-078"
+axis = "reflectance"
+item = "physically based material parameter sets (base colour, metallic, roughness, IOR)"
+source = "Burley 2012; OpenPBR / glTF PBR"
+status = "missing"
+evidence = "無い (推測: roughness は衝突音、metallic は bimaterial の別語義だけ)"
+oracle_candidate = "金属 = 1 で拡散 0、白い炉テスト"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-079"
+axis = "reflectance"
+item = "white furnace test for BSDFs and media"
+source = "PBRT test suite; Mitsuba tests"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "非吸収で放射輝度 1 が保たれる"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-080"
+axis = "spectral"
+item = "spectral representation of light (sampled spectra, wavelength sampling)"
+source = "PBRT ch.4.4-4.6; Mitsuba spectral variants"
+status = "missing"
+evidence = "無い (推測: spectral で当たるのは波浪スペクトル等の別語義)"
+oracle_candidate = "スペクトルの積分量が sampling 数で収束"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-081"
+axis = "spectral"
+item = "blackbody / Planck spectral radiance as a light-source spectrum"
+source = "Planck law; PBRT ch.4.4"
+status = "missing"
+evidence = "無い 黒体放射そのもの (Stefan-Boltzmann / Planck / Wien) の行は熱表 COV-THERM-059 で、ここは光源スペクトルとしての使い方"
+oracle_candidate = "Planck の積分 = σT⁴/π"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-082"
+axis = "spectral"
+item = "CIE colour matching functions, XYZ and sRGB conversion"
+source = "CIE 1931; PBRT ch.4.6"
+status = "missing"
+evidence = "無い (推測: cie / xyz で src 0 件)"
+oracle_candidate = "等エネルギースペクトルが白色点 E に写る"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-083"
+axis = "spectral"
+item = "photometric quantities (luminous flux, illuminance, luminance, luminous efficacy)"
+source = "CIE photometry; Hecht ch.3.3"
+status = "missing"
+evidence = "無い (推測: lumen / lux / candela で src 0 件)"
+oracle_candidate = "555 nm で 683 lm/W"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-084"
+axis = "spectral"
+item = "radiometric quantities (flux, irradiance, intensity, radiance) and their conversions"
+source = "Pharr-Jakob-Humphreys, PBRT ch.4.1; McCluney, Introduction to Radiometry"
+status = "missing"
+evidence = "無い (推測: irradiance / radiance で src 0 件)"
+oracle_candidate = "点光源の照度の逆 2 乗則と cosθ 則"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-085"
+axis = "spectral"
+item = "dispersion in rendering (wavelength-dependent refraction, rainbows)"
+source = "PBRT ch.4; Nussenzveig, The Theory of the Rainbow"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "虹の角 (Descartes の最小偏角) を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-086"
+axis = "spectral"
+item = "fluorescence (absorption-emission spectral shift, quantum yield)"
+source = "Lakowicz, Principles of Fluorescence Spectroscopy ch.1; Mitsuba / PBRT extensions"
+status = "missing"
+evidence = "無い (推測: fluoresc で src 0 件)"
+oracle_candidate = "放出エネルギー ≤ 吸収エネルギー × 量子収率"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-087"
+axis = "light-matter"
+item = "radiation pressure and optical force on absorbing / reflecting bodies"
+source = "Jackson ch.7.1; Saleh-Teich ch.13"
+status = "missing"
+evidence = "無い (推測: radiation pressure で src 0 件) 剛体への力は連成表の範囲だが光の運動量としての閉形式も無い"
+oracle_candidate = "完全反射面の圧力 2I/c、吸収面 I/c"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-088"
+axis = "light-matter"
+item = "solar sail and photon thrust on rigid bodies"
+source = "McInnes, Solar Sailing ch.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "姿勢角による推力 cos²θ 則"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-089"
+axis = "light-matter"
+item = "absorbed optical power as a heat source"
+source = "Modest ch.1; Incropera ch.12"
+status = "missing"
+evidence = "熱の効果層には放射冷却率 src/thermal.rs:35 があるが、入射光の吸収を熱源にする経路は無い (受け手の熱源は熱表の範囲)"
+oracle_candidate = "吸収率 × 照度 = 表面熱流束、定常温度上昇の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-090"
+axis = "light-matter"
+item = "photothermal / laser heating with Gaussian beam profile"
+source = "Carslaw-Jaeger (moving / Gaussian source); Saleh-Teich ch.3"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Gauss 熱源下の半無限体の中心温度上昇"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-091"
+axis = "light-matter"
+item = "optical tweezers (gradient and scattering forces, Rayleigh regime)"
+source = "Ashkin 1986; Saleh-Teich ch.13"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Rayleigh 粒子の勾配力の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-092"
+axis = "light-matter"
+item = "photoelastic effect (stress-induced birefringence, fringe order)"
+source = "Dally-Riley, Experimental Stress Analysis ch.13"
+status = "missing"
+evidence = "無い (推測: photoelast で src 0 件)"
+oracle_candidate = "円板の圧縮の等色線を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-093"
+axis = "light-matter"
+item = "nonlinear optics (second-harmonic generation, Kerr effect)"
+source = "Boyd, Nonlinear Optics ch.1-2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-094"
+axis = "elements"
+item = "prisms (deviation, dispersion, total internal reflection prisms)"
+source = "Hecht, Optics ch.5.5"
+status = "missing"
+evidence = "無い (推測: prism で当たるのは形状・関節の別語義だけ)"
+oracle_candidate = "直角プリズムの全反射"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-095"
+axis = "elements"
+item = "step-index optical fibre: numerical aperture and acceptance angle (ray picture)"
+source = "Saleh-Teich ch.9.1; Hecht ch.5.6"
+status = "missing"
+evidence = "無い (推測: fiber / fibre で当たるのは複合材の繊維だけ)"
+oracle_candidate = "NA = √(n1² − n2²)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-096"
+axis = "elements"
+item = "fibre modal dispersion and V-number (ray / mode count estimate)"
+source = "Saleh-Teich ch.9.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "V < 2.405 で単一 mode"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-097"
+axis = "elements"
+item = "graded-index fibre ray paths"
+source = "Saleh-Teich ch.9.1"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "放物型 GRIN の周期"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-098"
+axis = "elements"
+item = "mirrors and reflector design (parabolic, elliptical, off-axis)"
+source = "Smith, Modern Optical Engineering ch.13"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "楕円鏡の焦点間の結像"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-099"
+axis = "elements"
+item = "light guides and illumination optics (non-imaging, étendue conservation)"
+source = "Winston-Miñano-Benítez, Nonimaging Optics ch.2-3; LightTools"
+status = "missing"
+evidence = "無い (推測: etendue で src 0 件)"
+oracle_candidate = "CPC の受光角 1/sinθ の集光限界"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-100"
+axis = "elements"
+item = "beam splitters, filters and coatings (as elements in a trace)"
+source = "Zemax coating and element features"
+status = "missing"
+evidence = "無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-101"
+axis = "light-transport"
+item = "rendering equation and path tracing (unbiased Monte Carlo light transport)"
+source = "Kajiya 1986; PBRT ch.13-14"
+status = "missing"
+evidence = "無い 光線と形状の交差 src/shape_raycast.rs:894 は世界の query として剛体表 COV-RIGID-096 にあるが、光の輸送は無い"
+oracle_candidate = "Cornell box 型の閉じた拡散箱で放射照度の閉形式 (一様放射の箱)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-102"
+axis = "light-transport"
+item = "importance sampling and multiple importance sampling"
+source = "Veach 1997; PBRT ch.13.10"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "分散が既知の積分で推定量が不偏"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-103"
+axis = "light-transport"
+item = "bidirectional path tracing / photon mapping / caustics"
+source = "Veach 1997; Jensen 2001, Realistic Image Synthesis Using Photon Mapping"
+status = "missing"
+evidence = "無い (推測: caustic / photon で src 0 件)"
+oracle_candidate = "集光レンズ下の caustic の照度を幾何光学と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-104"
+axis = "light-transport"
+item = "radiosity (diffuse interreflection for light)"
+source = "Cohen-Wallace, Radiosity and Realistic Image Synthesis"
+status = "missing"
+evidence = "無い 熱放射の radiosity 法は熱表 COV-THERM-064 (ここは光の可視波長の使い方、別行の解法は作らない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-105"
+axis = "light-transport"
+item = "shadow and visibility for direct illumination"
+source = "PBRT ch.12"
+status = "missing"
+evidence = "可視判定に使える any query は src/shape_raycast.rs:894 の caster にあるが、直接照明の計算は無い"
+oracle_candidate = "面光源の半影の照度 (形態係数の閉形式) と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-106"
+axis = "light-transport"
+item = "lidar return intensity model (reflectance, incidence angle, atmospheric attenuation)"
+source = "Wagner 2010 (lidar radiometry); Kashani et al. 2015"
+status = "missing"
+evidence = "lidar は src/sensors.rs:120 / src/sensors.rs:138 が距離と hit だけを返し、戻り強度は無い (幾何の走査はセンサ表の範囲)"
+oracle_candidate = "Lambert 面の戻り強度 ∝ ρ cosθ / R²"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-107"
+axis = "light-transport"
+item = "camera / image sensor radiometric model (exposure, irradiance to pixel value)"
+source = "PBRT ch.5.4; EMVA 1288"
+status = "missing"
+evidence = "無い (推測: camera で src 0 件)"
+oracle_candidate = "露光の逆 2 乗則と f 数の 2 乗則"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-108"
+axis = "benchmark"
+item = "Snell refraction and critical angle at a planar interface"
+source = "Hecht ch.4"
+status = "missing"
+evidence = "無い (屈折が無い)"
+oracle_candidate = "θc = arcsin(n2/n1) の両側で屈折解の有無が切り替わる"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-109"
+axis = "benchmark"
+item = "Brewster angle (p-polarised reflectance vanishes)"
+source = "Hecht ch.8.6"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "tanθB = n2/n1"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-110"
+axis = "benchmark"
+item = "thin lens imaging equation over a sweep of object distances"
+source = "Hecht ch.5.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1/s + 1/s' = 1/f と倍率"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-111"
+axis = "benchmark"
+item = "Newton's rings radii"
+source = "Hecht ch.9.4"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "√(mλR)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-112"
+axis = "benchmark"
+item = "single-slit Fraunhofer pattern"
+source = "Hecht ch.10.2"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "sinc² と零点位置"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-113"
+axis = "benchmark"
+item = "Airy disk first dark ring"
+source = "Born-Wolf ch.8.5"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1.22λ/D"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-114"
+axis = "benchmark"
+item = "Beer-Lambert decay in a homogeneous slab"
+source = "Chandrasekhar ch.1"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "exp(−σ_t L)"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-115"
+axis = "benchmark"
+item = "white furnace test (non-absorbing closed scene keeps radiance)"
+source = "PBRT / Mitsuba test suites"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "放射輝度 1 の保存"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-116"
+axis = "benchmark"
+item = "Rayleigh scattering λ⁻⁴ ratio between two wavelengths"
+source = "Bohren-Huffman ch.5"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "(λ1/λ2)⁴"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-117"
+axis = "benchmark"
+item = "quarter-wave anti-reflection coating"
+source = "Macleod, Thin-Film Optical Filters ch.3"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "n_c = √(n0 ns) で R = 0"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-118"
+axis = "benchmark"
+item = "Gaussian beam focusing by a thin lens"
+source = "Siegman ch.17"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "q パラメータの変換"
+limitation = ""
+
+[[item]]
+id = "COV-OPTICS-119"
+axis = "benchmark"
+item = "MCML semi-infinite slab diffuse reflectance"
+source = "Wang-Jacques MCML 1995"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "参照値要確認"
+limitation = ""
