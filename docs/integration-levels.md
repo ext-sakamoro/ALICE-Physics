@@ -12,22 +12,20 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 19 |
-| world API | used through another `PhysicsWorld` method | 7 |
+| step | runs when `PhysicsWorld` steps | 18 |
+| world API | used through another `PhysicsWorld` method | 6 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 131 |
+| standalone | a Rust API that only examples call | 133 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
-| `box_collider` | step | 3 / 2 / 0 / 3 / 1 | C ABI, Python, WebAssembly |
-| `bvh` | step | 16 / 1 / 0 / 4 / 6 | C ABI, Python, WebAssembly |
-| `collider` | step | 19 / 1 / 0 / 2 / 2 | C ABI, Python, WebAssembly |
-| `compound` | step | 8 / 2 / 0 / 8 / 3 | C ABI, Python, WebAssembly |
-| `cone` | step | 3 / 2 / 0 / 2 / 3 | C ABI, Python, WebAssembly |
+| `bvh` | step | 21 / 2 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
+| `collider` | step | 20 / 1 / 0 / 2 / 2 | C ABI, Python, WebAssembly |
+| `cone` | step | 5 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
+| `cylinder` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `ellipsoid` | step | 4 / 2 / 0 / 0 / 1 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 9 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
@@ -38,14 +36,14 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_collider` | step | 18 / 0 / 0 / 17 / 2 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `wedge` | step | 4 / 2 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
+| `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
+| `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | — |
-| `cylinder` | world API (step 2 of 7 items) | 2 / 3 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
+| `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
-| `shape` | world API (step 4 of 9 items) | 4 / 5 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
+| `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `solver` | world API (step 28 of 141 items) | 28 / 78 / 7 / 27 / 1 | C ABI, Python, WebAssembly |
-| `torus` | world API (step 2 of 7 items) | 2 / 3 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -60,6 +58,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `audio_physics` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `beam_stress` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `bimaterial` | standalone | 0 / 0 / 0 / 9 / 0 | — |
+| `box_collider` | standalone (step 3, world API 2 of 9 items) | 3 / 2 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
@@ -70,6 +69,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cloth` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `cloth_fluid` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `collision_mesh_gen` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `compound` | standalone (step 8, world API 2 of 21 items) | 8 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `compressible` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `convex_decompose` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `coupled_field` | standalone | 0 / 0 / 0 / 42 / 0 | — |
