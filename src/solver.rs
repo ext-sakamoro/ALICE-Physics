@@ -874,6 +874,56 @@ fn tgs_cache_key(
     h
 }
 
+/// Predict a dynamic body's rotation over one substep `dt`.
+///
+/// A body with a gyroscopic response is advanced by the symplectic splitting
+/// of [`crate::gyroscopic::split_free_rotation`]: its rotation and angular
+/// velocity become the split's end state, and the split is returned so that
+/// `update_velocities` can rebuild `ω` from it. Any other body (isotropic,
+/// at rest, infinite moments) turns about `ω` by `|ω| dt`, as before.
+#[inline]
+fn predict_rotation(body: &mut RigidBody, dt: Fix128) -> Option<crate::gyroscopic::FreeRotation> {
+    let split = crate::gyroscopic::split_free_rotation(
+        body.angular_velocity,
+        body.rotation,
+        body.inv_inertia,
+        dt,
+    );
+    match split {
+        Some(f) => {
+            body.angular_velocity = f.omega;
+            body.rotation = f.rotation;
+        }
+        None => {
+            // single sqrt via normalize_with_length
+            let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
+            if !ang_speed.is_zero() {
+                let delta_rot = QuatFix::from_axis_angle(axis, ang_speed * dt);
+                body.rotation = delta_rot.mul(body.rotation).normalize();
+            }
+        }
+    }
+    split
+}
+
+/// Angular velocity at the end of a substep. A body predicted by the
+/// splitting keeps the split's end velocity plus the rotation the position
+/// solve added beyond the split's end orientation (zero when no constraint
+/// turned it); any other body derives `ω` from its rotation change, as
+/// [`angular_from_rotations`] always did.
+#[inline]
+fn derived_angular_velocity(
+    body: &RigidBody,
+    free: Option<crate::gyroscopic::FreeRotation>,
+    inv_dt: Fix128,
+) -> Vec3Fix {
+    match free {
+        Some(f) if body.rotation == f.rotation => f.omega,
+        Some(f) => f.omega + angular_from_rotations(body.rotation, f.rotation, inv_dt),
+        None => angular_from_rotations(body.rotation, body.prev_rotation, inv_dt),
+    }
+}
+
 /// Snapshot of [`SolverBackend::Tgs`]'s per-frame warm-start impulse cache
 /// effectiveness, returned by [`PhysicsWorld::tgs_cache_stats`].
 ///
@@ -1329,6 +1379,11 @@ pub struct PhysicsWorld {
     /// [`Self::update_velocities`] before it derives the post-solve
     /// velocities; the restitution target is `−e v̄_n`
     contact_pre_vn: Vec<Fix128>,
+    /// Free rotation of each body in the current substep, written by
+    /// `integrate_positions` and read by `update_velocities` (indexed like
+    /// `bodies`; `None`: no gyroscopic response). Transient: rebuilt every
+    /// substep, so it carries no state across steps.
+    free_rotation: Vec<Option<crate::gyroscopic::FreeRotation>>,
     /// v0.11.0: installed GPU solver bridge for automatic contact-solve
     /// routing. When `Some`, every call to [`Self::step`] /
     /// [`Self::substep`] transparently routes contact-solve through the
@@ -1504,6 +1559,7 @@ impl PhysicsWorld {
             #[cfg(feature = "std")]
             contact_discarded: Vec::new(),
             contact_pre_vn: Vec::new(),
+            free_rotation: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
             gpu_solver_bridge: None,
             joints: Vec::new(),
@@ -3584,6 +3640,12 @@ impl PhysicsWorld {
         // `self` に書けないので Atomic で受けて関数末尾で flag に畳み込む
         // (bool の OR は結合的・可換なので rayon の実行順に依存しない)
         let overflow = core::sync::atomic::AtomicBool::new(false);
+        // Free rotation of this substep per body (`None`: no gyroscopic
+        // response, the rotation is predicted from `ω` as before); read back
+        // by `update_velocities` in the same substep.
+        let mut free = core::mem::take(&mut self.free_rotation);
+        free.clear();
+        free.resize(self.bodies.len(), None);
         #[cfg(feature = "parallel")]
         {
             let gravity = self.config.gravity;
@@ -3597,8 +3659,9 @@ impl PhysicsWorld {
             self.stage_work.integrated += self.unparked_count();
             self.bodies
                 .par_iter_mut()
+                .zip(free.par_iter_mut())
                 .enumerate()
-                .for_each(|(i, body)| {
+                .for_each(|(i, (body, free))| {
                     if parked.get(i).copied().unwrap_or(false) {
                         return;
                     }
@@ -3654,22 +3717,10 @@ impl PhysicsWorld {
                         None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                     }
 
-                    // Gyroscopic term ω × Iω (implicit, see `crate::gyroscopic`)
-                    body.angular_velocity = crate::gyroscopic::gyroscopic_omega(
-                        body.angular_velocity,
-                        body.rotation,
-                        body.inv_inertia,
-                        dt,
-                    );
-
-                    // Predict rotation (single sqrt via normalize_with_length)
-                    let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
-                    if !ang_speed.is_zero() {
-                        let angle = ang_speed * dt;
-                        let delta_rot = QuatFix::from_axis_angle(axis, angle);
-                        body.rotation = delta_rot.mul(body.rotation).normalize();
-                    }
+                    // Predict rotation, with the gyroscopic term ω × Iω
+                    *free = predict_rotation(body, dt);
                 });
+            self.free_rotation = free;
         }
 
         #[cfg(not(feature = "parallel"))]
@@ -3728,22 +3779,10 @@ impl PhysicsWorld {
                     None => self.overflow_detected = true,
                 }
 
-                // Gyroscopic term ω × Iω (implicit, see `crate::gyroscopic`)
-                self.bodies[i].angular_velocity = crate::gyroscopic::gyroscopic_omega(
-                    self.bodies[i].angular_velocity,
-                    self.bodies[i].rotation,
-                    self.bodies[i].inv_inertia,
-                    dt,
-                );
-
-                // Predict rotation (single sqrt via normalize_with_length)
-                let (axis, ang_speed) = self.bodies[i].angular_velocity.normalize_with_length();
-                if !ang_speed.is_zero() {
-                    let angle = ang_speed * dt;
-                    let delta_rot = QuatFix::from_axis_angle(axis, angle);
-                    self.bodies[i].rotation = delta_rot.mul(self.bodies[i].rotation).normalize();
-                }
+                // Predict rotation, with the gyroscopic term ω × Iω
+                free[i] = predict_rotation(&mut self.bodies[i], dt);
             }
+            self.free_rotation = free;
         }
 
         // ⚠️ 受け皿を sticky flag に畳み込む (1 度立ったら落ちない)
@@ -3829,6 +3868,7 @@ impl PhysicsWorld {
                 &[]
             };
             self.stage_work.velocity_bodies += self.unparked_count();
+            let free: &[Option<crate::gyroscopic::FreeRotation>] = &self.free_rotation;
             self.bodies
                 .par_iter_mut()
                 .enumerate()
@@ -3846,8 +3886,9 @@ impl PhysicsWorld {
                     // Angular velocity from rotation change:
                     // delta_q = rotation * prev_rotation^-1
                     // angular_velocity = 2 * delta_q.xyz / dt  (when delta_q.w > 0)
-                    body.angular_velocity =
-                        angular_from_rotations(body.rotation, body.prev_rotation, inv_dt);
+                    // (split bodies: the split's ω plus the solve's change)
+                    let f = free.get(i).copied().flatten();
+                    body.angular_velocity = derived_angular_velocity(body, f, inv_dt);
                 });
         }
 
@@ -3867,9 +3908,11 @@ impl PhysicsWorld {
                     Some(v) => body.velocity = v,
                     None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                 }
-                // Angular velocity from rotation change
-                body.angular_velocity =
-                    angular_from_rotations(body.rotation, body.prev_rotation, inv_dt);
+                // Angular velocity from rotation change (split bodies: the
+                // split's ω plus the solve's change)
+                let f = self.free_rotation.get(i).copied().flatten();
+                let body = &mut self.bodies[i];
+                body.angular_velocity = derived_angular_velocity(body, f, inv_dt);
             }
         }
 
