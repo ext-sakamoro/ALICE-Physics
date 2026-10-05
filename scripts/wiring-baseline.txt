@@ -1,5 +1,4 @@
 # wiring-guard baseline: 既存の違反 (ラチェット) 新規は fail、解消したら行を消す
-dead_code src/bvh.rs 2
 dead_code src/solver_tgs.rs 1
 dead_code src/solver_tgs_hooks.rs 1
 dead_code src/solver_tgs_hooks_6dof.rs 1
