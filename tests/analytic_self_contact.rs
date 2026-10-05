@@ -42,8 +42,7 @@
 //! (`0.038967 = (0.1396·√2)²` は `shrink(59, 60)` から決まる定数) solver が何をしても
 //! 動かないので、その不等号は構造的に成立しません ⚠️ **極値を assert する test は、
 //! 「極値を取る要素が実験条件で動くか」を件数の反 vacuous check とは別に確かめること**
-//! 詳細は `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` の doc と
-//! `[[feedback_cloth_self_contact_metric_measures_the_driver]]`
+//! 詳細は `the_particle_pair_minimum_is_attained_by_two_pinned_vertices` の doc
 //!
 //! ⚠️ **構造的事実を pin しているのは
 //! `particle_distance_spring_cannot_see_the_closed_form_crossing`** (閉形式なので恒久に真)
@@ -1053,8 +1052,7 @@ fn self_collision_toggle_changes_the_result_in_a_scene_that_self_intersects() {
 /// **自己接触 ON が OFF より悪い**状態になりました (頂点-面 5 件 + 辺-辺 1 件に触られた頂点が
 /// `(Σ_vf)/5 + (Σ_ee)/1` を受けて辺-辺が 5 倍過大評価される) **本 test がそれを捕まえた
 /// 唯一の test です** 目標 oracle の貫通数は 0 のままでした
-/// 詳細 `src/cloth.rs` の `solve_self_collision` の doc と
-/// `[[feedback_cloth_edge_edge_two_jacobi_passes_compete]]`
+/// 詳細 `src/cloth.rs` の `solve_self_collision` の doc
 #[test]
 fn self_collision_improves_the_vertex_face_separation_it_constrains() {
     let radius = default_radius();

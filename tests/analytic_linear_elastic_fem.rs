@@ -23,8 +23,7 @@
 //! because the generator drops every cube that straddles the surface, so its
 //! domain is not the box the closed form is written for (a 20 mm box at 4 mm
 //! cells meshes only the inner 16 mm). That is a mesher property and would be
-//! measured here as if it were solver error
-//! ([[feedback_oracle_scene_hits_verifier_limit]]). Kuhn's 6-tet subdivision,
+//! measured here as if it were solver error. Kuhn's 6-tet subdivision,
 //! used below, conforms across every shared face because the diagonal it
 //! induces on a face depends only on that face's own corners.
 //!
