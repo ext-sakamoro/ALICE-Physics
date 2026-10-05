@@ -56,14 +56,14 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 28 of 141 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 28 of 148 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 9 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
 | `material` | per-pair friction and restitution with combine rules |  | [`material_registry_presets`](../examples/material_registry_presets.rs) | step |
 | `filter` | collision layers, masks and groups |  |  | standalone (step 3 of 18 items) |
 | `force` | force fields: wind, gravity wells, drag, buoyancy, vortex, explosion, magnetic dipole |  | [`particle_emitter_forces`](../examples/particle_emitter_forces.rs) | step |
-| `motor` | 1D / 3D PD controllers for joint motors |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | unused (standalone 6 of 15 items) |
+| `motor` | 1D / 3D PD controllers for joint motors |  | [`articulated_body_chain`](../examples/articulated_body_chain.rs) | step |
 | `sleeping` | sleep detection and union-find islands |  |  | step |
 | `event` | begin / persist / end contact and trigger events |  | [`world_events_and_islands`](../examples/world_events_and_islands.rs) | step |
 | `interpolation` | world snapshots and quaternion blending for rendering between steps |  | [`substep_interpolation`](../examples/substep_interpolation.rs) | standalone (step 1 of 19 items) |

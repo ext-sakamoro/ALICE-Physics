@@ -63,15 +63,6 @@ src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_decomposed
 src/joint.rs::BallJoint::with_compliance
 src/joint.rs::HingeJoint::with_compliance
 src/linear_elastic_fem.rs::ThermalExpansion::new
-src/motor.rs::JointMotor
-src/motor.rs::JointMotor::new
-src/motor.rs::PdController3D
-src/motor.rs::PdController3D::compute_torque
-src/motor.rs::PdController3D::new
-src/motor.rs::PdController3D::set_rotation_target
-src/motor.rs::PdController::disable
-src/motor.rs::PdController::set_velocity_target
-src/motor.rs::apply_motors
 src/plastic.rs::NortonCreep::petg_room_temp
 src/plastic.rs::PlasticModel::with_hardening
 src/replay.rs::ReplayPlayer::body_count

@@ -12569,6 +12569,8 @@ pub fn alice_physics::solver::PhysicsWorld::add_contact_with_material(&mut self,
 pub fn alice_physics::solver::PhysicsWorld::add_distance_constraint(&mut self, alice_physics::solver::DistanceConstraint)
 pub fn alice_physics::solver::PhysicsWorld::add_force_field(&mut self, alice_physics::force::ForceFieldInstance) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::joint::Joint) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_joint_motor(&mut self, usize, alice_physics::motor::PdController) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
@@ -12591,6 +12593,7 @@ pub fn alice_physics::solver::PhysicsWorld::contact_forces(&self, alice_physics:
 pub fn alice_physics::solver::PhysicsWorld::contact_friction_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
 pub fn alice_physics::solver::PhysicsWorld::contact_friction_cones(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::FrictionCone>
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
+pub fn alice_physics::solver::PhysicsWorld::disable_joint_motor(&mut self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
 pub fn alice_physics::solver::PhysicsWorld::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
 pub fn alice_physics::solver::PhysicsWorld::end_frame(&mut self)
@@ -12599,6 +12602,8 @@ pub fn alice_physics::solver::PhysicsWorld::get_body_mut(&mut self, usize) -> co
 pub const fn alice_physics::solver::PhysicsWorld::gpu_solver_bridge_installed(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::PdController3D>
+pub fn alice_physics::solver::PhysicsWorld::joint_motor_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::JointMotor>
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
@@ -12622,6 +12627,8 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, 
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
+pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics::math::QuatFix) -> bool
+pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics::math::Fix128) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
@@ -17327,6 +17334,8 @@ pub fn alice_physics::solver::PhysicsWorld::add_contact_with_material(&mut self,
 pub fn alice_physics::solver::PhysicsWorld::add_distance_constraint(&mut self, alice_physics::solver::DistanceConstraint)
 pub fn alice_physics::solver::PhysicsWorld::add_force_field(&mut self, alice_physics::force::ForceFieldInstance) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::joint::Joint) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_joint_motor(&mut self, usize, alice_physics::motor::PdController) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
@@ -17349,6 +17358,7 @@ pub fn alice_physics::solver::PhysicsWorld::contact_forces(&self, alice_physics:
 pub fn alice_physics::solver::PhysicsWorld::contact_friction_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
 pub fn alice_physics::solver::PhysicsWorld::contact_friction_cones(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::FrictionCone>
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
+pub fn alice_physics::solver::PhysicsWorld::disable_joint_motor(&mut self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
 pub fn alice_physics::solver::PhysicsWorld::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
 pub fn alice_physics::solver::PhysicsWorld::end_frame(&mut self)
@@ -17357,6 +17367,8 @@ pub fn alice_physics::solver::PhysicsWorld::get_body_mut(&mut self, usize) -> co
 pub const fn alice_physics::solver::PhysicsWorld::gpu_solver_bridge_installed(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::PdController3D>
+pub fn alice_physics::solver::PhysicsWorld::joint_motor_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::JointMotor>
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
@@ -17380,6 +17392,8 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, 
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
+pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics::math::QuatFix) -> bool
+pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics::math::Fix128) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
@@ -22870,6 +22884,8 @@ pub fn alice_physics::solver::PhysicsWorld::add_contact_with_material(&mut self,
 pub fn alice_physics::solver::PhysicsWorld::add_distance_constraint(&mut self, alice_physics::solver::DistanceConstraint)
 pub fn alice_physics::solver::PhysicsWorld::add_force_field(&mut self, alice_physics::force::ForceFieldInstance) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_joint(&mut self, alice_physics::joint::Joint) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_joint_motor(&mut self, usize, alice_physics::motor::PdController) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_joint_motor_3d(&mut self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_pre_solve_hook(&mut self, alice_physics::solver::PreSolveHook)
 pub fn alice_physics::solver::PhysicsWorld::add_sdf_collider(&mut self, alice_physics::sdf_collider::SdfCollider) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_shaped_body(&mut self, &alice_physics::shape::Shape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
@@ -22892,6 +22908,7 @@ pub fn alice_physics::solver::PhysicsWorld::contact_forces(&self, alice_physics:
 pub fn alice_physics::solver::PhysicsWorld::contact_friction_arrows(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
 pub fn alice_physics::solver::PhysicsWorld::contact_friction_cones(&self, alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::contact_viz::FrictionCone>
 pub fn alice_physics::solver::PhysicsWorld::deserialize_state(&mut self, &[u8]) -> bool
+pub fn alice_physics::solver::PhysicsWorld::disable_joint_motor(&mut self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
 pub fn alice_physics::solver::PhysicsWorld::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
 pub fn alice_physics::solver::PhysicsWorld::end_frame(&mut self)
@@ -22900,6 +22917,8 @@ pub fn alice_physics::solver::PhysicsWorld::get_body_mut(&mut self, usize) -> co
 pub const fn alice_physics::solver::PhysicsWorld::gpu_solver_bridge_installed(&self) -> bool
 pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::PdController3D>
+pub fn alice_physics::solver::PhysicsWorld::joint_motor_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::JointMotor>
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
@@ -22923,6 +22942,8 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, 
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
 pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
+pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics::math::QuatFix) -> bool
+pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics::math::Fix128) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
