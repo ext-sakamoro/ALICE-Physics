@@ -24,6 +24,7 @@
 //! of cycles (typical steel behaviour). Polymers do **not** have a true
 //! endurance limit — for these `S_e` is defined as the stress that survives
 //! `10⁶` cycles, with continued log-linear degradation past that point. This
+// LIMITATION(COV-STRUCT-047): currently applies the "true endurance" cutoff to all materials for simplicity
 //! module currently applies the "true endurance" cutoff to all materials for
 //! simplicity; refine at Phase E4 if creep-fatigue interaction matters.
 //!
@@ -77,6 +78,7 @@ pub struct SnCurve {
     /// for polymers, 1e7 for steels, but treated as the practical "infinite
     /// life" reference).
     pub endurance_cycles: u64,
+    // LIMITATION(COV-STRUCT-046): Basquin exponent m (integer)
     /// Basquin exponent m (integer). Larger m ⇒ steeper curve ⇒ more sensitive
     /// to small stress increases. Polymers 5, aluminum 6, steel 10.
     pub fatigue_exponent_m: u32,

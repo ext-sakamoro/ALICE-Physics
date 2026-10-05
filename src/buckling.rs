@@ -251,6 +251,7 @@ pub(crate) fn plate_buckling_mpa(
 /// whose source could not be reconstructed (a square law with a constant
 /// coefficient arises for arches with bending stiffness, not for an `E A`
 /// truss); the unit test of that version pinned the wrong law as a golden
+// LIMITATION(COV-STRUCT-044): The shallow approximation is good to `O((h/a)²)`
 /// value. The shallow approximation is good to `O((h/a)²)`; the exact
 /// `P(y) = 2 E A (L₀/L(y) − 1) · y/L(y)` is what the unit tests compare
 /// against.

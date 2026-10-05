@@ -1,0 +1,1398 @@
+# Structural closed-form and strength-of-materials coverage of ALICE-Physics,
+# against an external reference frame.
+#
+# What this table is: every capability that the standard texts (Roark's
+# Formulas for Stress and Strain; Timoshenko-Gere, Theory of Elastic
+# Stability; Shigley, Mechanical Engineering Design; Peterson's Stress
+# Concentration Factors; Jones, Mechanics of Composite Materials; Blevins,
+# Formulas for Natural Frequency and Mode Shape) and their standard check
+# values (cantilever tip deflection, Euler load, Kirsch hole K_t = 3, the ABD
+# matrix of a [0/90]s laminate) expect of a closed-form structural toolkit, one
+# [[item]] per capability, with what the crate has today. The rows are written
+# by hand: the axes and the items come from the reference frame, not from the
+# modules that exist, so a missing capability is visible instead of absent.
+#
+# Boundary with the other tables (one capability lives in one table only):
+#   - discretised (finite-element) beams, plates, shells, modal and buckling
+#     analysis belong to the FEM table; here only closed forms and theory
+#     solutions
+#   - constitutive models and material data (orthotropic elasticity, J2
+#     plasticity, viscoelastic laws, presets) belong to the MAT table; the
+#     creep and fatigue laws used as closed-form life models are here
+#   - numerical crack growth (stress intensity by FE, J-integral, propagation
+#     solvers) belongs to the FRACT table; handbook stress intensity factors
+#     and the closed-form Paris integration are here
+#   - additive-manufacturing process effects (warping, layer adhesion,
+#     wall-thickness detection, print orientation) belong to the AM table
+#   - Hertz contact stress is here; the rigid-body and FE tables cite it as an
+#     out-of-scope reference
+#   - vortex-induced vibration (aeroelasticity) is fluid-structure coupling and
+#     not counted here
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test
+#                          checks it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented (a source statement that a
+#                          capability is absent is quoted in `evidence`)
+#   out-of-scope           not a structural closed-form capability (reason in
+#                          `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-STRUCT-NNN) / axis / item / source (book, chapter, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Chapter numbers are those the sources
+# in src/ cite; the others name the book only.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-STRUCT-001"
+axis = "section"
+item = "area, second moment, section modulus of standard sections (rectangle, circle, hollow rectangle, hollow circle, I)"
+source = "Roark's Formulas for Stress and Strain appendix (section properties); Shigley, Mechanical Engineering Design (beam sections)"
+status = "implemented+oracle"
+evidence = "src/beam_stress.rs:59 tests/engineering_oracles_solid.rs::beam_stress_section_properties_match_roark_appendix tests/analytic_beam_stress_wiring.rs::section_properties_match_roark_appendix_a"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-002"
+axis = "section"
+item = "radius of gyration r = sqrt(I/A)"
+source = "Timoshenko-Gere, Theory of Elastic Stability (columns); Shigley, Mechanical Engineering Design"
+status = "implemented+oracle"
+evidence = "src/buckling.rs:59 tests/audit_buckling.rs::radius_of_gyration_matches_closed_forms_for_every_section"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-003"
+axis = "section"
+item = "both principal axes, product of inertia, weak-axis bending of unsymmetric sections"
+source = "Roark's Formulas for Stress and Strain (unsymmetric bending)"
+status = "missing"
+evidence = "I は水平軸まわりの 1 つだけ (src/beam_stress.rs:156) 座屈も同じ軸を使う既知の欠陥 tests/audit_buckling.rs::critical_load_does_not_depend_on_how_the_rectangle_is_labelled (known defect AUD-A-S2W2-006)"
+oracle_candidate = "長方形 b≠h の弱軸 I_min = h b^3/12 と Mohr 円の主軸"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-004"
+axis = "section"
+item = "T, channel, angle and arbitrary polygonal sections"
+source = "Roark's Formulas for Stress and Strain appendix"
+status = "missing"
+evidence = "CrossSection は 5 種のみ (src/beam_stress.rs:59)"
+oracle_candidate = "T 断面の図心と I の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-005"
+axis = "section"
+item = "torsion constant J of non-circular sections"
+source = "Roark's Formulas for Stress and Strain (torsion of non-circular sections); Saint-Venant"
+status = "missing"
+evidence = "J は torsional_frequency_hz の呼び手入力 (src/modal.rs:194)、断面から J を求める関数は無い"
+oracle_candidate = "長方形 J = β b t^3 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-006"
+axis = "section"
+item = "shear centre and warping constant of thin-walled open sections"
+source = "Timoshenko-Gere (torsional buckling); Vlasov"
+status = "missing"
+evidence = "grep 0 件 (shear center / warping constant)"
+oracle_candidate = "溝形断面の剪断中心 e = 3b^2/(h+6b) (等厚、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-007"
+axis = "section"
+item = "plastic section modulus and shape factor"
+source = "Roark's Formulas for Stress and Strain; plastic design (Neal)"
+status = "missing"
+evidence = "grep 0 件 (plastic modulus / shape factor)"
+oracle_candidate = "長方形 Z_p = b h^2/4、形状係数 1.5"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-008"
+axis = "section"
+item = "transformed (composite) section of two materials"
+source = "Roark's Formulas for Stress and Strain; Gere, Mechanics of Materials (composite beams)"
+status = "missing"
+evidence = "grep 0 件 bimaterial.rs は Voigt / Reuss の弾性率境界のみで断面の変換は無い"
+oracle_candidate = "鋼板で補強した木梁の中立軸"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-009"
+axis = "beam"
+item = "Euler-Bernoulli beam: max moment, fibre stress M c / I and max deflection for cantilever and simply supported, point and uniform load"
+source = "Roark's Formulas for Stress and Strain ch.8 Table 8.1; Shigley, Mechanical Engineering Design (beam deflection tables); ベンチ: 片持ち梁の先端たわみ PL^3/3EI"
+status = "implemented+oracle"
+evidence = "src/beam_stress.rs:328 tests/engineering_oracles_solid.rs::beam_stress_cantilever_end_load_matches_roark tests/engineering_oracles_solid.rs::beam_stress_simply_supported_uniform_load_matches_roark tests/analytic_beam_stress_wiring.rs::analyze_matches_roark_for_all_four_load_cases"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-010"
+axis = "beam"
+item = "factor of safety against yield for bending"
+source = "Shigley, Mechanical Engineering Design (static failure)"
+status = "implemented+oracle"
+evidence = "src/beam_stress.rs:475 tests/analytic_beam_stress_wiring.rs::overloaded_beam_fos_is_yield_over_stress tests/analytic_beam_stress_wiring.rs::factor_of_safety_equal_to_the_threshold_is_safe"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-011"
+axis = "beam"
+item = "statically indeterminate beams (fixed-fixed, propped cantilever)"
+source = "Roark's Formulas for Stress and Strain Table 8.1"
+status = "missing"
+evidence = "LoadCase は片持ちと単純支持の 4 種のみ (src/beam_stress.rs:248)"
+oracle_candidate = "両端固定・中央集中荷重 δ = PL^3/192EI"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-012"
+axis = "beam"
+item = "arbitrary load position, several loads, superposition (Macaulay / singularity functions)"
+source = "Roark's Formulas for Stress and Strain; Shigley, Mechanical Engineering Design (singularity functions)"
+status = "missing"
+evidence = "荷重は中央または先端の 1 点か全長等分布のみ (src/beam_stress.rs:248)"
+oracle_candidate = "単純支持・非中央集中荷重の最大たわみ位置"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-013"
+axis = "beam"
+item = "deflection curve, slope and moment diagram along the span"
+source = "Roark's Formulas for Stress and Strain"
+status = "missing"
+evidence = "最大値だけを返す (src/beam_stress.rs:328)"
+oracle_candidate = "片持ち等分布 w(x) = q x^2 (6L^2 - 4Lx + x^2)/24EI"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-014"
+axis = "beam"
+item = "continuous beams over several supports (three-moment equation)"
+source = "Roark's Formulas for Stress and Strain; Timoshenko, Strength of Materials"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "等スパン 2 径間連続梁の中間支点モーメント wL^2/8"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-015"
+axis = "beam"
+item = "beam on elastic foundation (Hetenyi)"
+source = "Hetenyi, Beams on Elastic Foundation; Roark's Formulas for Stress and Strain"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "無限長梁の集中荷重 w = P beta/2k"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-016"
+axis = "beam"
+item = "transverse shear stress distribution tau = V Q / (I b)"
+source = "Roark's Formulas for Stress and Strain; Shigley, Mechanical Engineering Design"
+status = "missing"
+evidence = "曲げ応力のみ (src/beam_stress.rs:518)"
+oracle_candidate = "長方形断面の最大せん断応力 1.5 V/A"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-017"
+axis = "beam"
+item = "Timoshenko beam (shear deformation) deflection"
+source = "Timoshenko, Strength of Materials; Roark's Formulas for Stress and Strain"
+status = "missing"
+evidence = "grep 0 件 (shear deformation / shear correction)"
+oracle_candidate = "片持ち先端たわみ PL^3/3EI + PL/(kGA)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-018"
+axis = "beam"
+item = "large-deflection elastica (closed form / elliptic integrals)"
+source = "Frisch-Fay, Flexible Bars; Bisshopp-Drucker"
+status = "missing"
+evidence = "小たわみ前提のみ (src/beam_stress.rs:325)"
+oracle_candidate = "先端集中荷重の片持ち梁の先端変位 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-019"
+axis = "beam"
+item = "curved beams (Winkler-Bach) and rings"
+source = "Roark's Formulas for Stress and Strain ch. curved beams; Shigley, Mechanical Engineering Design (curved members)"
+status = "missing"
+evidence = "grep 0 件 (curved beam / Winkler)"
+oracle_candidate = "矩形断面曲がり梁の内縁応力"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-020"
+axis = "beam"
+item = "energy methods (Castigliano, unit load) for deflection"
+source = "Shigley, Mechanical Engineering Design (energy methods); Timoshenko, Strength of Materials"
+status = "missing"
+evidence = "grep 0 件 (Castigliano)"
+oracle_candidate = "L 字フレーム先端の変位"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-021"
+axis = "beam"
+item = "statically determinate trusses and frames by equilibrium (method of joints)"
+source = "Hibbeler, Structural Analysis"
+status = "missing"
+evidence = "grep 0 件 (剛性法による骨組は FEM の表の範囲)"
+oracle_candidate = "3 部材トラスの部材力"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-022"
+axis = "beam"
+item = "combined loading: principal stresses, Mohr's circle, von Mises / Tresca equivalent stress of a closed-form stress state"
+source = "Shigley, Mechanical Engineering Design (combined stresses, failure theories); Roark's Formulas for Stress and Strain"
+status = "missing"
+evidence = "閉形式の合成は無い (src/linear_elastic_fem.rs の StressTensor は FE の要素応力用)"
+oracle_candidate = "曲げ + ねじりの軸の von Mises 応力"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-023"
+axis = "torsion"
+item = "circular shaft torsion: shear stress T r / J and twist T L / (G J)"
+source = "Roark's Formulas for Stress and Strain (torsion); Shigley, Mechanical Engineering Design"
+status = "missing"
+evidence = "ねじり応力・ねじれ角の関数は無い (modal.rs の torsional_frequency_hz は固有振動数のみ)"
+oracle_candidate = "中空丸軸の最大せん断応力"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-024"
+axis = "torsion"
+item = "Saint-Venant torsion of non-circular solid sections (rectangle, ellipse)"
+source = "Timoshenko-Goodier, Theory of Elasticity (torsion); Roark's Formulas for Stress and Strain"
+status = "missing"
+evidence = "grep 0 件 (Saint-Venant)"
+oracle_candidate = "楕円断面の最大せん断応力 2T/(pi a b^2)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-025"
+axis = "torsion"
+item = "thin-walled closed sections (Bredt-Batho)"
+source = "Roark's Formulas for Stress and Strain; Megson, Aircraft Structures"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "矩形管の q = T/(2A)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-026"
+axis = "torsion"
+item = "thin-walled open sections with restrained warping (Vlasov)"
+source = "Vlasov, Thin-Walled Elastic Beams; Timoshenko-Gere"
+status = "missing"
+evidence = "grep 0 件 (warping は造形の反りの意味でのみ出現)"
+oracle_candidate = "I 形片持ちのねじり角"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-027"
+axis = "plate-shell"
+item = "Kirchhoff plate bending: rectangular plate under uniform pressure (Navier / Levy)"
+source = "Timoshenko-Woinowsky-Krieger, Theory of Plates and Shells; Roark (flat plates)"
+status = "missing"
+evidence = "板の閉形式は振動数 (src/modal.rs:145) と座屈 (src/buckling.rs:213) のみ、たわみ・応力は無い"
+oracle_candidate = "正方形単純支持板の中央たわみ (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-028"
+axis = "plate-shell"
+item = "circular plates under uniform pressure (clamped / simply supported)"
+source = "Roark, flat plates; Timoshenko-Woinowsky-Krieger"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "周辺固定円板の中央たわみ q a^4/(64 D)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-029"
+axis = "plate-shell"
+item = "Mindlin (thick) plate correction"
+source = "Mindlin 1951; Reddy, Theory and Analysis of Elastic Plates"
+status = "missing"
+evidence = "grep 0 件 (Mindlin)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-030"
+axis = "plate-shell"
+item = "thin-walled pressure vessels: hoop and axial stress of cylinder and sphere"
+source = "Roark's Formulas for Stress and Strain (shells of revolution); Shigley, Mechanical Engineering Design"
+status = "missing"
+evidence = "grep 0 件 (hoop / pressure vessel、src/pressure.rs の internal_pressure は SDF の見た目の膨張)"
+oracle_candidate = "sigma_h = p r / t、sigma_a = p r / 2t"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-031"
+axis = "plate-shell"
+item = "Lame thick-walled cylinder and sphere"
+source = "Timoshenko-Goodier, Theory of Elasticity; Shigley, Mechanical Engineering Design"
+status = "missing"
+evidence = "grep 0 件 (FE による Lame は FEM の表のベンチ行)"
+oracle_candidate = "内圧厚肉円筒の sigma_r, sigma_theta"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-032"
+axis = "plate-shell"
+item = "press / shrink fit contact pressure"
+source = "Shigley, Mechanical Engineering Design (press and shrink fits)"
+status = "missing"
+evidence = "grep 0 件 (shrink fit / interference)"
+oracle_candidate = "同材 2 円筒の接触圧"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-033"
+axis = "plate-shell"
+item = "rotating disks and rings (centrifugal stress)"
+source = "Timoshenko-Goodier, Theory of Elasticity; Shigley, Mechanical Engineering Design"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "中実回転円板の中心応力 (3+nu) rho omega^2 b^2/8"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-034"
+axis = "plate-shell"
+item = "membrane shells of revolution and the cylindrical-shell edge effect"
+source = "Timoshenko-Woinowsky-Krieger; Flugge, Stresses in Shells"
+status = "missing"
+evidence = "grep 0 件 (シェルの閉形式)"
+oracle_candidate = "端部固定円筒の曲げ境界層 beta = (3(1-nu^2))^(1/4)/sqrt(R t)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-035"
+axis = "buckling"
+item = "Euler column load for four end conditions"
+source = "Timoshenko-Gere, Theory of Elastic Stability ch.1 Table 2-1; ベンチ: Euler 座屈荷重"
+status = "implemented+oracle"
+evidence = "src/beam_stress.rs:410 tests/analytic_beam_stress_wiring.rs::euler_load_follows_each_end_condition_factor tests/audit_c_buckling.rs::euler_load_for_every_documented_end_condition"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-036"
+axis = "buckling"
+item = "Johnson parabola for intermediate columns and the Euler-Johnson transition slenderness"
+source = "Shigley, Mechanical Engineering Design (columns); Johnson 1899"
+status = "implemented+oracle"
+evidence = "src/buckling.rs:122 tests/engineering_oracles_solid.rs::buckling_euler_and_johnson_regimes_match_shigley tests/audit_buckling.rs::critical_stress_matches_euler_and_johnson_closed_forms tests/audit_buckling.rs::critical_load_does_not_depend_on_how_the_rectangle_is_labelled (known defect AUD-A-S2W2-006)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-037"
+axis = "buckling"
+item = "eccentric column (secant formula) and beam-column amplification"
+source = "Timoshenko-Gere, Theory of Elastic Stability ch.1; Shigley, Mechanical Engineering Design (secant formula)"
+status = "missing"
+evidence = "grep 0 件 (secant)"
+oracle_candidate = "secant 式 sigma_max = P/A (1 + e c/r^2 sec(L/2r sqrt(P/AE)))"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-038"
+axis = "buckling"
+item = "initially crooked columns (Ayrton-Perry) and design column curves"
+source = "Timoshenko-Gere, Theory of Elastic Stability; Eurocode 3 (column curves)"
+status = "missing"
+evidence = "grep 0 件 (Perry / imperfection)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-039"
+axis = "buckling"
+item = "lateral-torsional buckling of beams"
+source = "Timoshenko-Gere, Theory of Elastic Stability (lateral buckling of beams)"
+status = "missing"
+evidence = "grep 0 件 (lateral-torsional)"
+oracle_candidate = "単純支持 I 梁の等モーメント M_cr"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-040"
+axis = "buckling"
+item = "torsional and flexural-torsional buckling of columns"
+source = "Timoshenko-Gere, Theory of Elastic Stability (torsional buckling)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-041"
+axis = "buckling"
+item = "plate buckling under uniaxial compression, sigma_cr = k pi^2 E / (12 (1 - nu^2)) (t/b)^2"
+source = "Timoshenko-Gere, Theory of Elastic Stability ch.8"
+status = "implemented+oracle"
+evidence = "src/buckling.rs:213 k は呼び手入力 (端条件の表は無い) tests/audit_buckling.rs::plate_buckling_matches_timoshenko_and_scales_as_documented tests/analytic_structural_fatigue_buckling_wiring.rs::plate_buckling_uses_the_material_modulus"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-042"
+axis = "buckling"
+item = "plate buckling under shear and bending, and post-buckling effective width (von Karman / Winter)"
+source = "Timoshenko-Gere, Theory of Elastic Stability ch.9; AISI effective width"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-043"
+axis = "buckling"
+item = "cylindrical shell under axial compression and external pressure (classical load, knock-down factor), ring buckling"
+source = "Timoshenko-Gere, Theory of Elastic Stability ch.11; NASA SP-8007"
+status = "missing"
+evidence = "module doc は {TG} ch.11 を参照するが関数は無い (src/buckling.rs:26)"
+oracle_candidate = "古典座屈応力 E t / (R sqrt(3(1-nu^2)))"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-044"
+axis = "buckling"
+item = "snap-through of a shallow two-bar (von Mises) truss"
+source = "Bazant-Cedolin, Stability of Structures (two-bar truss)"
+status = "partial"
+evidence = "src/buckling.rs:270 tests/audit_buckling.rs::snap_through_matches_the_exact_two_bar_truss_maximum 厳密解 P(y) は test 側にだけある"
+oracle_candidate = ""
+limitation = "src/buckling.rs:255 'The shallow approximation is good to `O((h/a)²)`'"
+
+[[item]]
+id = "COV-STRUCT-045"
+axis = "buckling"
+item = "energy (Rayleigh-Ritz) estimates and Southwell plot"
+source = "Timoshenko-Gere, Theory of Elastic Stability (energy method)"
+status = "missing"
+evidence = "grep 0 件 (Southwell)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-046"
+axis = "fatigue"
+item = "stress-life (S-N) curve, Basquin power law"
+source = "Shigley, Mechanical Engineering Design (fatigue); Suresh, Fatigue of Materials"
+status = "partial"
+evidence = "src/fatigue.rs:163 tests/audit_c_fatigue.rs::default_curve_life_at_twice_the_endurance_stress_is_31250_cycles UTS を使わない既知の欠陥 tests/audit_fatigue.rs::static_failure_at_ultimate_strength_is_one_cycle (known defect AUD-A-S4W2-006)"
+oracle_candidate = ""
+limitation = "src/fatigue.rs:82 'Basquin exponent m (integer)'"
+
+[[item]]
+id = "COV-STRUCT-047"
+axis = "fatigue"
+item = "endurance limit (infinite life below S_e)"
+source = "Shigley, Mechanical Engineering Design (endurance limit)"
+status = "partial"
+evidence = "src/fatigue.rs:164 tests/analytic_structural_solver_wiring.rs::stress_below_the_endurance_limit_does_no_fatigue_damage"
+oracle_candidate = ""
+limitation = "src/fatigue.rs:28 'currently applies the \"true endurance\" cutoff to all materials for simplicity'"
+
+[[item]]
+id = "COV-STRUCT-048"
+axis = "fatigue"
+item = "fatigue strength at a given life (Basquin inverse)"
+source = "Shigley, Mechanical Engineering Design"
+status = "implemented+oracle"
+evidence = "src/fatigue.rs:246 tests/analytic_structural_fatigue_buckling_wiring.rs::fatigue_strength_inverts_basquin_per_material"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-049"
+axis = "fatigue"
+item = "Palmgren-Miner linear damage over a stress spectrum"
+source = "Miner 1945; Shigley (cumulative damage)"
+status = "implemented+oracle"
+evidence = "src/fatigue.rs:292 tests/engineering_oracles.rs::fatigue_miner_damage_matches_basquin_closed_form tests/analytic_structural_fatigue_buckling_wiring.rs::spectrum_report_is_miner_sum_on_the_selected_curve"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-050"
+axis = "fatigue"
+item = "mean-stress correction: modified Goodman"
+source = "Shigley, Mechanical Engineering Design (fluctuating stresses)"
+status = "missing"
+evidence = "平均応力の入力が無い (SpectrumEntry は振幅と回数のみ src/fatigue.rs:285)"
+oracle_candidate = "sigma_a/S_e + sigma_m/S_ut = 1/n"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-051"
+axis = "fatigue"
+item = "mean-stress correction: Gerber parabola"
+source = "Shigley, Mechanical Engineering Design"
+status = "missing"
+evidence = "grep 0 件 (Gerber)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-052"
+axis = "fatigue"
+item = "mean-stress correction: Soderberg line"
+source = "Shigley, Mechanical Engineering Design"
+status = "missing"
+evidence = "grep 0 件 (Soderberg)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-053"
+axis = "fatigue"
+item = "Smith-Watson-Topper and Morrow mean-stress parameters"
+source = "Dowling, Mechanical Behavior of Materials"
+status = "missing"
+evidence = "grep 0 件 (SWT / Morrow)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-054"
+axis = "fatigue"
+item = "endurance-limit modifying factors (Marin: surface, size, load, temperature, reliability)"
+source = "Shigley, Mechanical Engineering Design (Marin factors)"
+status = "missing"
+evidence = "S_e は UTS の固定比 (src/fatigue.rs:93)、補正係数は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-055"
+axis = "fatigue"
+item = "strain-life (epsilon-N, Coffin-Manson) low-cycle fatigue"
+source = "Dowling; Suresh, Fatigue of Materials"
+status = "missing"
+evidence = "1000 回未満は Basquin 逆関数が拒否するだけ (src/fatigue.rs:205)、ε-N 曲線は無い"
+oracle_candidate = "Coffin-Manson 式の逆算 (材料定数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-056"
+axis = "fatigue"
+item = "rainflow cycle counting of a load history"
+source = "ASTM E1049"
+status = "missing"
+evidence = "grep 0 件 (rainflow)"
+oracle_candidate = "ASTM E1049 の例題履歴の計数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-057"
+axis = "fatigue"
+item = "nonlinear damage accumulation and load-sequence effects"
+source = "Fatemi-Yang review; Marco-Starkey"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-058"
+axis = "fatigue"
+item = "multiaxial fatigue (equivalent stress, critical plane)"
+source = "Socie-Marquis, Multiaxial Fatigue"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-059"
+axis = "fatigue"
+item = "fatigue crack growth life by the Paris law (closed-form integration)"
+source = "Paris-Erdogan 1963; Anderson, Fracture Mechanics"
+status = "missing"
+evidence = "grep 0 件 (Paris は人名として別文脈のみ)"
+oracle_candidate = "中央き裂の a_0→a_c の寿命積分"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-060"
+axis = "fatigue"
+item = "stress intensity factor handbook solutions and critical crack size (K_I = Y sigma sqrt(pi a))"
+source = "Tada-Paris-Irwin, The Stress Analysis of Cracks Handbook"
+status = "missing"
+evidence = "grep 0 件 (src/fracture.rs は SDF の視覚的破砕で K を持たない)"
+oracle_candidate = "無限板中央き裂 K_I = sigma sqrt(pi a)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-061"
+axis = "fatigue"
+item = "rolling-contact fatigue life from the Hertz peak pressure"
+source = "Johnson, Contact Mechanics; Basquin"
+status = "implemented+oracle"
+evidence = "src/rolling_contact.rs:146 tests/engineering_oracles_misc.rs::rolling_contact_basquin_life_matches_power_law tests/audit_rolling_contact.rs::doc_exponent_range_9_to_10_is_expressible_in_pa_f32 (known defect AUD-A-S4W2-008)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-062"
+axis = "fatigue"
+item = "rolling bearing L10 life (Lundberg-Palmgren, ISO 281)"
+source = "ISO 281; Harris, Rolling Bearing Analysis"
+status = "missing"
+evidence = "grep 0 件 (L10)"
+oracle_candidate = "L10 = (C/P)^3 (玉軸受)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-063"
+axis = "creep"
+item = "Norton power-law secondary creep"
+source = "Norton 1929; Findley-Lai-Onaran (creep)"
+status = "partial"
+evidence = "src/plastic.rs:314 tests/engineering_oracles_solid.rs::plastic_norton_creep_matches_power_law tests/audit_plastic.rs::integrate_is_a_sigma_n_dt_for_each_exponent"
+oracle_candidate = ""
+limitation = "src/plastic.rs:266 'Stored as integer for numerical stability (Fix128 lacks `.powf`)'"
+
+[[item]]
+id = "COV-STRUCT-064"
+axis = "creep"
+item = "Findley power-law transient creep"
+source = "Findley-Lai-Onaran, Creep and Relaxation of Nonlinear Viscoelastic Materials ch.4-5"
+status = "partial"
+evidence = "src/creep_longterm.rs:267 tests/engineering_oracles_solid.rs::creep_longterm_findley_and_wlf_match_closed_forms tests/audit_creep_longterm.rs::findley_power_law_for_each_documented_integer_exponent"
+oracle_candidate = ""
+limitation = "src/creep_longterm.rs:14 '`n` is an **integer** here'"
+
+[[item]]
+id = "COV-STRUCT-065"
+axis = "creep"
+item = "time-temperature superposition (WLF shift)"
+source = "Williams-Landel-Ferry 1955"
+status = "implemented+oracle"
+evidence = "src/creep_longterm.rs:210 tests/audit_creep_longterm.rs::above_tg_matches_wlf_closed_form tests/audit_c_creep_longterm.rs::strain_far_above_tg_does_not_collapse_to_the_elastic_strain (known defect AUD-A-S34-031)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-066"
+axis = "creep"
+item = "Larson-Miller parameter (creep rupture time-temperature)"
+source = "Larson-Miller 1952; Dowling"
+status = "missing"
+evidence = "grep 0 件 (Larson)"
+oracle_candidate = "LMP = T (C + log t_r)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-067"
+axis = "creep"
+item = "creep rupture life (Monkman-Grant) and tertiary creep damage (Kachanov-Rabotnov)"
+source = "Monkman-Grant 1956; Kachanov 1958"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-068"
+axis = "creep"
+item = "Arrhenius temperature dependence of the creep rate (activation energy)"
+source = "Dowling; Frost-Ashby deformation maps"
+status = "missing"
+evidence = "Norton 係数は温度を持たない (src/plastic.rs:260)、温度は WLF の時間シフトのみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-069"
+axis = "creep"
+item = "primary creep with time- or strain-hardening under varying stress"
+source = "Findley-Lai-Onaran; Penny-Marriott, Design for Creep"
+status = "missing"
+evidence = "Norton は前進 Euler の定常速度のみ (src/plastic.rs:314)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-070"
+axis = "creep"
+item = "stress relaxation at constant strain (e.g. bolt preload loss)"
+source = "Penny-Marriott, Design for Creep"
+status = "missing"
+evidence = "grep 0 件 (締結の緩和は無い)"
+oracle_candidate = "Norton 緩和の閉形式 sigma(t)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-071"
+axis = "creep"
+item = "creep deflection of beams and creep buckling"
+source = "Penny-Marriott; Odqvist"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-072"
+axis = "laminate"
+item = "lamina reduced stiffness Q and rotated Q-bar"
+source = "Jones, Mechanics of Composite Materials ch.2"
+status = "implemented+oracle"
+evidence = "src/laminate.rs:95 tests/engineering_oracles_solid.rs::laminate_angle_ply_transformation_matches_jones tests/audit_laminate.rs::q_bar_45_degree_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-073"
+axis = "laminate"
+item = "classical laminate theory ABD matrix"
+source = "Jones, Mechanics of Composite Materials ch.4; Reddy ch.3; ベンチ: 積層板 [0/90]s の ABD"
+status = "implemented+oracle"
+evidence = "src/laminate.rs:213 tests/engineering_oracles_solid.rs::laminate_cross_ply_abd_matches_jones tests/audit_c_laminate.rs::symmetric_quasi_isotropic_stack_has_zero_b_and_clt_a_and_d tests/audit_c_laminate.rs::symmetric_stack_b_is_exactly_zero_as_documented (known defect AUD-A-S34-050)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-074"
+axis = "laminate"
+item = "mid-plane strains and curvatures from N, M (inverse ABD)"
+source = "Jones, Mechanics of Composite Materials ch.4"
+status = "missing"
+evidence = "ABD を組むだけで逆行列・応答の関数は無い (src/laminate.rs:172)"
+oracle_candidate = "[0/90]s に N_x を掛けた eps_x = a11 N_x"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-075"
+axis = "laminate"
+item = "ply-by-ply stress and strain recovery"
+source = "Jones, Mechanics of Composite Materials ch.4"
+status = "missing"
+evidence = "grep 0 件 (StressState は呼び手が直接与える src/laminate_failure.rs:140)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-076"
+axis = "laminate"
+item = "laminate effective engineering constants (E_x, E_y, G_xy, nu_xy)"
+source = "Jones, Mechanics of Composite Materials ch.4; Barbero ch.6"
+status = "missing"
+evidence = "grep 0 件 (src/anisotropic.rs の e_at_angle は単層の軸外弾性率)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-077"
+axis = "laminate"
+item = "thermal and hygroscopic force / moment resultants, residual curvature of unsymmetric laminates"
+source = "Jones, Mechanics of Composite Materials ch.4; Hyer, Stress Analysis of Fiber-Reinforced Composites"
+status = "missing"
+evidence = "src/laminate.rs:26 'Full 3-D thermal / hygroscopic effects are not included.'"
+oracle_candidate = "[0/90] の冷却後曲率"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-078"
+axis = "laminate"
+item = "Tsai-Wu failure index"
+source = "Tsai-Wu 1971; Jones, Mechanics of Composite Materials ch.2"
+status = "implemented+oracle"
+evidence = "src/laminate_failure.rs:216 tests/engineering_oracles_solid.rs::laminate_failure_uniaxial_strengths_lie_on_the_envelope tests/audit_c_laminate_failure.rs::tsai_wu_matches_the_documented_polynomial_on_combined_states"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-079"
+axis = "laminate"
+item = "Tsai-Hill failure index"
+source = "Jones, Mechanics of Composite Materials ch.2"
+status = "implemented+oracle"
+evidence = "src/laminate_failure.rs:254 tests/audit_laminate_failure.rs::tsai_hill_matches_formula_on_grid_and_is_one_at_strengths tests/audit_laminate_failure.rs::huge_stress_must_not_wrap_to_safe (known defect AUD-A-S4W2-004)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-080"
+axis = "laminate"
+item = "Hashin four-mode failure"
+source = "Hashin 1980"
+status = "implemented+oracle"
+evidence = "src/laminate_failure.rs:293 tests/engineering_oracles_solid.rs::laminate_failure_hashin_modes_at_uniaxial_strengths tests/audit_laminate_failure.rs::hashin_mode_matches_hashin_1980_on_grid_away_from_boundary"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-081"
+axis = "laminate"
+item = "Puck inter-fibre failure modes A / B / C"
+source = "Puck-Schurmann 1998"
+status = "implemented+oracle"
+evidence = "src/laminate_failure.rs:366 tests/audit_laminate_failure.rs::puck_mode_matches_documented_rule_on_grid tests/audit_laminate_failure.rs::puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension (known defect AUD-A-S4W2-005)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-082"
+axis = "laminate"
+item = "maximum-stress criterion"
+source = "Jones, Mechanics of Composite Materials ch.2"
+status = "implemented+oracle"
+evidence = "src/anisotropic.rs の直交異方材 (FailureCriterion::MaximumStress src/anisotropic.rs:346) tests/analytic_anisotropic_wiring.rs::max_stress_shear_only_over_threshold_failure_report_fields_exact"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-083"
+axis = "laminate"
+item = "maximum-strain criterion"
+source = "Jones, Mechanics of Composite Materials ch.2"
+status = "missing"
+evidence = "grep 0 件 (max strain)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-084"
+axis = "laminate"
+item = "first-ply and last-ply failure (progressive ply discount)"
+source = "Jones, Mechanics of Composite Materials ch.4; Barbero"
+status = "missing"
+evidence = "破壊基準は単層の応力状態に対してのみ、積層板の荷重から層ごとに回す経路は無い"
+oracle_candidate = "[0/90]s 一軸引張の FPF 荷重"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-085"
+axis = "laminate"
+item = "through-thickness and interlaminar stresses / 3-D failure criteria"
+source = "Pagano-Pipes free-edge; Hashin 3-D"
+status = "missing"
+evidence = "src/laminate_failure.rs:27 'through-thickness `σ₃ / τ₁₃ / τ₂₃` is future work'"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-086"
+axis = "laminate"
+item = "rule of mixtures, Voigt (parallel) and Reuss (series) bounds"
+source = "Jones, Mechanics of Composite Materials ch.3"
+status = "implemented+oracle"
+evidence = "src/bimaterial.rs:108 tests/engineering_oracles_solid.rs::bimaterial_rule_of_mixtures_and_thermal_mismatch"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-087"
+axis = "laminate"
+item = "Halpin-Tsai and other micromechanics estimates of transverse / shear moduli"
+source = "Jones, Mechanics of Composite Materials ch.3"
+status = "missing"
+evidence = "grep 0 件 (Halpin)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-088"
+axis = "laminate"
+item = "sandwich panels (face / core bending and shear, face wrinkling)"
+source = "Zenkert, An Introduction to Sandwich Construction"
+status = "missing"
+evidence = "grep 0 件 (sandwich)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-089"
+axis = "laminate"
+item = "bending, buckling and vibration of laminated plates with the D matrix"
+source = "Whitney, Structural Analysis of Laminated Anisotropic Plates; Reddy"
+status = "missing"
+evidence = "D 行列はあるが板の解析に使う関数は無い"
+oracle_candidate = "特殊直交積層単純支持板の座屈 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-090"
+axis = "stress-concentration"
+item = "circular hole in an infinite plate (Kirsch, K_t = 3)"
+source = "Kirsch 1898; Peterson's Stress Concentration Factors (Pilkey); ベンチ: Kirsch 孔の Kt=3"
+status = "implemented+oracle"
+evidence = "src/fillet_stress.rs:45 tests/engineering_oracles_solid.rs::fillet_stress_kirsch_and_inglis_exact"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-091"
+axis = "stress-concentration"
+item = "elliptical hole (Inglis)"
+source = "Inglis 1913; Peterson's Stress Concentration Factors (Pilkey)"
+status = "implemented+oracle"
+evidence = "src/fillet_stress.rs:58 tests/engineering_oracles_solid.rs::fillet_stress_kirsch_and_inglis_exact tests/audit_fillet_stress.rs::inglis_exact_and_monotonic"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-092"
+axis = "stress-concentration"
+item = "stepped round shaft with shoulder fillet in bending"
+source = "Peterson's Stress Concentration Factors (Pilkey) (stepped bars); Norton, Machine Design ch.4"
+status = "partial"
+evidence = "src/fillet_stress.rs:78 tests/engineering_oracles_solid.rs::fillet_stress_peterson_fits_invariants 既知の欠陥 tests/audit_fillet_stress.rs::shoulder_bending_at_d_over_d_two_matches_documented_table (AUD-A-S1W5-001) / tests/audit_fillet_stress.rs::shoulder_bending_is_continuous_in_fillet_radius (AUD-A-S1W5-003)"
+oracle_candidate = ""
+limitation = "src/fillet_stress.rs:89 'Piecewise-linear approximation of Peterson chart (Norton Fig 4-36)'"
+
+[[item]]
+id = "COV-STRUCT-093"
+axis = "stress-concentration"
+item = "stepped round shaft with shoulder fillet in axial load and torsion"
+source = "Peterson's Stress Concentration Factors (Pilkey) (stepped bars)"
+status = "missing"
+evidence = "module doc は axial / torsion も挙げるが関数は bending のみ (src/fillet_stress.rs:17)"
+oracle_candidate = "Peterson 図表の値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-094"
+axis = "stress-concentration"
+item = "U-notch in a bar under axial load"
+source = "Peterson's Stress Concentration Factors (Pilkey) (notches); Pilkey Table 2-8"
+status = "partial"
+evidence = "src/fillet_stress.rs:122 tests/audit_fillet_stress.rs::u_notch_formula_exact_values tests/audit_fillet_stress.rs::u_notch_kt_never_below_one (known defect AUD-A-S1W5-004)"
+oracle_candidate = ""
+limitation = "src/fillet_stress.rs:120 'Beyond `h/r = 10` the linear extrapolation is invalid.'"
+
+[[item]]
+id = "COV-STRUCT-095"
+axis = "stress-concentration"
+item = "finite-width plate with a hole, V-notches, grooved shafts, keyways, threads"
+source = "Peterson's Stress Concentration Factors (Pilkey)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "有限幅板の円孔 K_t (Heywood、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-096"
+axis = "stress-concentration"
+item = "notch sensitivity q and fatigue notch factor K_f (Peterson / Neuber)"
+source = "Shigley, Mechanical Engineering Design (notch sensitivity); Peterson's Stress Concentration Factors (Pilkey)"
+status = "missing"
+evidence = "grep 0 件 (notch sensitivity) 疲労側も K_t を使わない"
+oracle_candidate = "K_f = 1 + q (K_t - 1)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-097"
+axis = "stress-concentration"
+item = "Neuber rule for notch-root plasticity"
+source = "Neuber 1961; Dowling"
+status = "missing"
+evidence = "module 題名に Neuber とあるが関数は無い (src/fillet_stress.rs:1)"
+oracle_candidate = "K_t^2 S e = sigma eps"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-098"
+axis = "contact-stress"
+item = "Hertz point contact of two spheres (and sphere on flat): contact radius, peak pressure, depth of max shear"
+source = "Johnson, Contact Mechanics ch.4; Roark (contact stresses)"
+status = "implemented+oracle"
+evidence = "src/rolling_contact.rs:44 最大せん断深さは 0.48 a の固定比 tests/engineering_oracles_misc.rs::rolling_contact_hertz_sphere_sphere_matches_johnson tests/audit_rolling_contact.rs::hertz_matches_textbook_closed_form_on_cases"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-099"
+axis = "contact-stress"
+item = "Hertz line contact of cylinders"
+source = "Johnson, Contact Mechanics; Roark"
+status = "missing"
+evidence = "grep 0 件 (球対のみ)"
+oracle_candidate = "平行円筒の接触半幅 b"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-100"
+axis = "contact-stress"
+item = "general (elliptical) Hertz point contact of curved bodies"
+source = "Johnson, Contact Mechanics; Harris"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-101"
+axis = "vibration"
+item = "single-DOF spring-mass natural frequency"
+source = "Rao, Mechanical Vibrations; Blevins"
+status = "implemented+oracle"
+evidence = "src/modal.rs:44 tests/engineering_oracles_solid.rs::modal_single_dof_matches_rao"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-102"
+axis = "vibration"
+item = "uniform beam, first bending mode (cantilever, simply supported, clamped-clamped)"
+source = "Blevins, Formulas for Natural Frequency and Mode Shape Table 8-1"
+status = "implemented+oracle"
+evidence = "src/modal.rs:102 tests/engineering_oracles_solid.rs::modal_beam_first_mode_matches_blevins tests/analytic_modal_wiring.rs::lambda_squared_matches_blevins_table_for_every_boundary_condition"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-103"
+axis = "vibration"
+item = "higher beam modes, mode shapes, other boundary conditions (free-free, clamped-pinned)"
+source = "Blevins, Formulas for Natural Frequency and Mode Shape Table 8-1"
+status = "missing"
+evidence = "第 1 モードの λ² を 3 境界だけ持つ (src/modal.rs:61)"
+oracle_candidate = "片持ち第 2 モード lambda = 4.694 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-104"
+axis = "vibration"
+item = "simply supported rectangular plate, first mode"
+source = "Warburton 1954; Leissa, Vibration of Plates"
+status = "implemented+oracle"
+evidence = "src/modal.rs:145 tests/engineering_oracles_solid.rs::modal_plate_first_mode_matches_leissa tests/audit_modal.rs::plate_strip_limit_equals_simply_supported_beam_of_unit_width"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-105"
+axis = "vibration"
+item = "plates with clamped / free edges, circular plates, higher plate modes"
+source = "Leissa, Vibration of Plates; Blevins, Formulas for Natural Frequency and Mode Shape"
+status = "missing"
+evidence = "四辺単純支持の (1,1) モードのみ"
+oracle_candidate = "周辺固定正方形板の基本振動数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-106"
+axis = "vibration"
+item = "torsional shaft with end inertia, first mode"
+source = "Rao, Mechanical Vibrations"
+status = "implemented+oracle"
+evidence = "src/modal.rs:194 tests/engineering_oracles_solid.rs::modal_torsional_frequency_si_scale_is_1e3 tests/analytic_modal_wiring.rs::torsional_frequency_matches_rao_for_bronze_shaft"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-107"
+axis = "vibration"
+item = "axial bars, strings, membranes, rings and shells"
+source = "Blevins, Formulas for Natural Frequency and Mode Shape"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "両端固定弦 f = (1/2L) sqrt(T/mu)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-108"
+axis = "vibration"
+item = "Rayleigh (proportional) damping ratio and two-mode fit"
+source = "Chopra, Dynamics of Structures §11.4; Clough-Penzien"
+status = "implemented+oracle"
+evidence = "src/damping_rayleigh.rs:64 tests/engineering_oracles_solid.rs::damping_rayleigh_matches_chopra tests/audit_damping_rayleigh.rs::fit_two_modes_never_returns_negative_damping_coefficients (known defect AUD-A-S2W2-001) FE 減衰は FEM の表"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-109"
+axis = "vibration"
+item = "free damped SDOF response: damped frequency, logarithmic decrement, critical damping"
+source = "Rao; Thomson, Theory of Vibration"
+status = "missing"
+evidence = "grep 0 件 (log decrement / damped natural frequency)"
+oracle_candidate = "omega_d = omega_n sqrt(1 - zeta^2)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-110"
+axis = "vibration"
+item = "forced harmonic SDOF response: dynamic amplification, phase, transmissibility"
+source = "Rao; Thomson"
+status = "missing"
+evidence = "grep 0 件 (aeroelasticity の VIV 連成内の減衰振動子は別系統で数えない)"
+oracle_candidate = "共振時の増幅 1/(2 zeta)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-111"
+axis = "vibration"
+item = "base excitation, shock and arbitrary forcing (Duhamel integral, shock response spectrum)"
+source = "Rao; Harris' Shock and Vibration Handbook"
+status = "missing"
+evidence = "grep 0 件 (Duhamel)"
+oracle_candidate = "矩形パルスの応答"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-112"
+axis = "vibration"
+item = "lumped multi-DOF systems and tuned mass dampers (2-DOF closed forms, Den Hartog)"
+source = "Den Hartog, Mechanical Vibrations; Rao"
+status = "missing"
+evidence = "grep 0 件 (FE の固有値解析は FEM の表)"
+oracle_candidate = "Den Hartog 最適同調 f = 1/(1+mu)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-113"
+axis = "vibration"
+item = "Rayleigh quotient and Dunkerley estimates of the fundamental frequency"
+source = "Rao; Blevins, Formulas for Natural Frequency and Mode Shape"
+status = "missing"
+evidence = "grep 0 件 (Dunkerley)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-114"
+axis = "vibration"
+item = "resonance margin check of a natural frequency against excitation bands"
+source = "Meirovitch, Fundamentals of Vibrations"
+status = "implemented+oracle"
+evidence = "src/vibration_wall.rs:110 tests/engineering_oracles_solid.rs::vibration_wall_frequency_matches_leissa_and_band_logic tests/audit_vibration_wall.rs::wall_within_band_of_a_non_nearest_source_is_risky (known defect AUD-A-S2W1-001)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-115"
+axis = "joint"
+item = "bolt preload from tightening torque (T = K F d)"
+source = "Shigley, Mechanical Engineering Design ch.8; Bickford"
+status = "implemented+oracle"
+evidence = "src/prestressed.rs:38 tests/engineering_oracles_solid.rs::prestressed_bolt_joint_matches_shigley tests/analytic_prestressed_wiring.rs::preload_from_torque_matches_motosh_formula_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-116"
+axis = "joint"
+item = "recommended preload as a fraction of proof load"
+source = "Shigley, Mechanical Engineering Design ch.8"
+status = "implemented+oracle"
+evidence = "src/prestressed.rs:51 tests/analytic_prestressed_wiring.rs::recommended_preload_n_matches_shigley_formula_closed_form_exact"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-117"
+axis = "joint"
+item = "joint constant C, bolt load under external tension, separation load"
+source = "Shigley, Mechanical Engineering Design ch.8; VDI 2230"
+status = "implemented+oracle"
+evidence = "src/prestressed.rs:70 tests/audit_prestressed.rs::load_sharing_equilibrium_bolt_minus_member_equals_external tests/audit_prestressed.rs::separation_load_zeroes_member_compression tests/audit_prestressed.rs::separation_load_for_c_above_one_is_not_negative (known defect AUD-A-S1W6-001)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-118"
+axis = "joint"
+item = "bolt and member stiffness from geometry (grip, frustum / Wileman)"
+source = "Shigley, Mechanical Engineering Design ch.8; VDI 2230"
+status = "missing"
+evidence = "k_b, k_m は呼び手入力 (src/prestressed.rs:70)"
+oracle_candidate = "Shigley の例題の k_m (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-119"
+axis = "joint"
+item = "fatigue of preloaded bolts (Goodman line for bolts)"
+source = "Shigley, Mechanical Engineering Design ch.8"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-120"
+axis = "joint"
+item = "bolts and rivets in shear: bearing, tear-out, eccentric bolt groups"
+source = "Shigley, Mechanical Engineering Design ch.8; AISC"
+status = "missing"
+evidence = "grep 0 件 (bolt group / bearing)"
+oracle_candidate = "偏心荷重の 4 本ボルト群の最大せん断"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-121"
+axis = "joint"
+item = "thread stripping and tensile stress area"
+source = "Shigley, Mechanical Engineering Design ch.8; ISO 898"
+status = "missing"
+evidence = "grep 0 件 (stress area)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-122"
+axis = "joint"
+item = "fillet and butt welds: throat stress, weld groups"
+source = "Shigley, Mechanical Engineering Design ch.9; AWS D1.1"
+status = "missing"
+evidence = "grep 0 件 (weld は剛体拘束の固定ジョイントの意味でのみ出現)"
+oracle_candidate = "片側すみ肉溶接の喉厚応力 0.707 h"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-123"
+axis = "joint"
+item = "adhesively bonded lap joints (Volkersen shear lag, Goland-Reissner peel)"
+source = "Volkersen 1938; Goland-Reissner 1944; Adams, Structural Adhesive Joints"
+status = "missing"
+evidence = "src/bimaterial.rs の接着強度は経験値の表 (src/bimaterial.rs:189)、doc が挙げる G_Ic の peel 強度も関数は無い"
+oracle_candidate = "Volkersen のせん断応力集中係数"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-124"
+axis = "joint"
+item = "cable pretension for a given sag (parabolic cable)"
+source = "Irvine, Cable Structures"
+status = "partial"
+evidence = "src/prestressed.rs:116 tests/engineering_oracles_solid.rs::prestressed_parabolic_cable_matches_irvine tests/audit_prestressed.rs::cable_pretension_approaches_catenary_as_sag_shrinks"
+oracle_candidate = ""
+limitation = "src/prestressed.rs:114 'This is the parabolic-cable approximation (valid for `s ≪ L`).'"
+
+[[item]]
+id = "COV-STRUCT-125"
+axis = "joint"
+item = "exact catenary cable (large sag)"
+source = "Irvine, Cable Structures"
+status = "missing"
+evidence = "厳密 catenary は test 側の比較だけ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-126"
+axis = "joint"
+item = "transverse stiffness of a tensioned cable"
+source = "Irvine, Cable Structures"
+status = "implemented+oracle"
+evidence = "src/prestressed.rs:129 tests/audit_prestressed.rs::cable_stiffness_times_sag_equals_total_distributed_load tests/audit_prestressed.rs::cable_stiffness_is_twice_the_midspan_point_load_stiffness"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-127"
+axis = "joint"
+item = "helical springs: rate, Wahl factor, buckling and surge"
+source = "Shigley, Mechanical Engineering Design ch.10"
+status = "missing"
+evidence = "grep 0 件 (src/vehicle.rs の spring rate はサスペンションのモデル係数)"
+oracle_candidate = "k = G d^4/(8 D^3 N)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-128"
+axis = "thermal-stress"
+item = "constrained bar thermal stress E alpha dT with partial constraint, and the yield temperature"
+source = "Timoshenko-Goodier, Theory of Elasticity ch.14; Boley-Weiner"
+status = "implemented+oracle"
+evidence = "src/thermal_stress.rs:64 tests/engineering_oracles_solid.rs::thermal_stress_magnitude_and_yield_temperature_match_closed_form tests/engineering_oracles_solid.rs::thermal_stress_sign_convention_positive_is_tensile"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-129"
+axis = "thermal-stress"
+item = "thermal mismatch stress of a bonded bilayer"
+source = "Timoshenko 1925 (bi-metal thermostats)"
+status = "partial"
+evidence = "src/bimaterial.rs:160 tests/audit_bimaterial.rs::residual_stress_equal_thickness_matches_the_membrane_closed_form tests/audit_bimaterial.rs::residual_stress_accounts_for_unequal_layer_thickness (known defect AUD-A-S4W3-010)"
+oracle_candidate = ""
+limitation = "src/bimaterial.rs:151 'Simplified Timoshenko formula (equal thickness limit)'"
+
+[[item]]
+id = "COV-STRUCT-130"
+axis = "thermal-stress"
+item = "bi-metal strip curvature (Timoshenko)"
+source = "Timoshenko 1925"
+status = "missing"
+evidence = "曲率を返す関数は無い"
+oracle_candidate = "等厚・等弾性率の 1/rho = 3 d_alpha dT / (2h)"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-131"
+axis = "thermal-stress"
+item = "thermal stress from temperature gradients in plates, cylinders and spheres"
+source = "Timoshenko-Goodier, Theory of Elasticity ch.14; Boley-Weiner"
+status = "missing"
+evidence = "grep 0 件 (FE の熱弾性は FEM の表)"
+oracle_candidate = "板厚方向の線形温度分布で自由板の応力 0"
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-132"
+axis = "synthesis"
+item = "service-life composition of closed forms: bending stress, yield, creep, fatigue damage and column buckling per step"
+source = "Shigley (design for static and fatigue strength)"
+status = "partial"
+evidence = "src/structural_solver.rs:310 tests/engineering_oracles_solid.rs::structural_solver_step_matches_composed_closed_forms tests/analytic_structural_solver_wiring.rs::run_history_matches_closed_forms_for_an_elastic_beam"
+oracle_candidate = ""
+limitation = "src/structural_solver.rs:42 'they do not trip a failure in `step`'"
+
+[[item]]
+id = "COV-STRUCT-133"
+axis = "synthesis"
+item = "load combinations and combined bending / axial / torsion checks in one assessment"
+source = "Shigley, Mechanical Engineering Design; Eurocode 0 (load combinations)"
+status = "missing"
+evidence = "曲げ荷重 1 つと軸力 1 つのみ (src/structural_solver.rs:98)、ねじり・組合せ応力は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-STRUCT-134"
+axis = "synthesis"
+item = "fatigue in the life loop with mean stress and a cycle-counted load history"
+source = "Shigley, Mechanical Engineering Design; ASTM E1049"
+status = "missing"
+evidence = "1 step = 振幅 1 回 (src/structural_solver.rs:332)、平均応力と計数は無い"
+oracle_candidate = ""
+limitation = ""

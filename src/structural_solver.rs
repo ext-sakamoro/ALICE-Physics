@@ -38,6 +38,7 @@
 //! material's Young's modulus. Local plate buckling and snap-through are
 //! queries on the solver ([`StructuralSolver::plate_buckling_mpa`],
 //! [`StructuralSolver::snap_through_load_n`]) evaluated with the solver's
+// LIMITATION(COV-STRUCT-132): they do not trip a failure in `step`
 //! material; they do not trip a failure in `step`.
 
 use crate::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
