@@ -606,7 +606,6 @@ fn scaled_shape_support_scales_the_inner_extreme_point_for_positive_scale() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-017: ScaledShape::support returns scale * inner.support(d) with no sign handling, so a negative scale gives the nearest point instead of the furthest (box scaled -2, d = (1,.5,-.25): dot -6.5, mirrored-box maximum -1); no validation or doc restricts scale to positive"]
 fn scaled_shape_with_negative_scale_is_still_a_support_function() {
     // Trait contract: "the point on the shape furthest in the given
     // direction". The shape scaled by -2 about the origin is the inner box
