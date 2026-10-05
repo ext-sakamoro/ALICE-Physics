@@ -1,0 +1,977 @@
+# Numerical-infrastructure coverage of ALICE-Physics, against an external reference frame.
+#
+# What this table is: every general-purpose numerical building block that the
+# standard references expect (Saad, Iterative Methods for Sparse Linear Systems;
+# Hairer-Norsett-Wanner / Hairer-Wanner, Solving ODEs I/II; Hairer-Lubich-Wanner,
+# Geometric Numerical Integration; Knoll-Keyes, JFNK survey (J. Comput. Phys. 2004);
+# PETSc KSP / PC / SNES / TS / EPS-like eigen solvers; SUNDIALS CVODE / ARKODE /
+# IDA / KINSOL; MOOSE Executioner / MultiApp; preCICE coupling schemes), one
+# [[item]] per capability, with what the crate has today. The axes and the items
+# come from that frame, not from the modules that exist.
+#
+# Scope and boundary with the other tables:
+#   * A row here is about a reusable component: an API that takes the caller's
+#     operator, residual, right-hand side or sweep. The same formula embedded in
+#     one field's module (the private conjugate gradients of the FEM modules, the
+#     FEM Newton / Newton-Krylov / Newmark, the MAC-grid pressure multigrid and
+#     its slab decomposition, the per-module Verlet / symplectic Euler steps) is
+#     cited in `evidence` but not counted: such a row stays `missing` here and
+#     the field's table owns the embedded use.
+#   * Rows that sit next to a solid-FE row of docs/coverage/fem.toml name that
+#     row's id (COV-FEM-NNN) in `evidence`. The FE row judges the capability for
+#     solids; the row here judges the general component. No capability is
+#     counted in both tables.
+#   * Closed-form results (e.g. the 3x3 polar decomposition, the 3x3 symmetric
+#     eigen-decomposition of an inertia tensor) are small dense kernels of the
+#     math layer and are counted here.
+#
+# status (exactly one of):
+#   implemented+oracle     a general component exists, and at least one
+#                          non-ignored test checks it against an independent
+#                          reference (closed form, f64 elimination, another
+#                          solver, or a pinned bit pattern)
+#   implemented-no-oracle  a general component exists, no such test
+#   partial                a general component exists with a restriction that the
+#                          source states; `limitation` quotes it, and the source
+#                          carries a `LIMITATION(<id>)` comment at that place
+#   missing                no general component (a field-embedded one may exist,
+#                          see `evidence`)
+#   out-of-scope           not applicable to this crate (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`.
+#
+# keys: id (COV-NUM-NNN) / axis / item / source (book, chapter, or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Chapter numbers are given from the table of contents and are not checked
+# against the original. Reference values marked "参照値要確認" are to be checked
+# against the original publication before any test uses them. "(推測)" in
+# `evidence` marks a judgement based on a search with synonyms that found
+# nothing, not on reading every module.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-NUM-001"
+axis = "linear_direct"
+item = "small dense direct solve (3x3 inverse)"
+source = "Golub-Van Loan, Matrix Computations ch.3; Mat3 closed-form inverse"
+status = "implemented+oracle"
+evidence = "src/math.rs:1771 (Mat3Fix::inverse、余因子の閉形式) / tests/audit_math.rs::mat3_inverse_closed_form_and_singular / tests/audit_math.rs::mat3_inverse_of_small_scale_matrix"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-002"
+axis = "linear_direct"
+item = "dense LU with partial pivoting (n x n)"
+source = "Golub-Van Loan, Matrix Computations ch.3; PETSc PCLU; LAPACK getrf"
+status = "missing"
+evidence = "n x n の直接法は無い src/linear_solver.rs:163 の DenseMatrix は作用素 (y = A x) のみで分解を持たない tests 側の gauss_f64 は f64 の参照解 (tests/analytic_linear_solver.rs::spd_cantilever_matches_private_cg_and_f64_elimination)"
+oracle_candidate = "f64 消去法との突合、Hilbert 行列で pivot 成長の実測"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-003"
+axis = "linear_direct"
+item = "dense Cholesky / LDL^T"
+source = "Golub-Van Loan, Matrix Computations ch.4; PETSc PCCHOLESKY"
+status = "missing"
+evidence = "密な Cholesky / LDL^T は無い"
+oracle_candidate = "SPD 行列で L L^T = A を bit 近傍で再構成"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-004"
+axis = "linear_direct"
+item = "banded / tridiagonal solve (Thomas) as a general API"
+source = "Golub-Van Loan, Matrix Computations ch.4.3"
+status = "missing"
+evidence = "汎用 API は無い src/transient_thermal.rs:421 の thomas_solve_in_place は 1D 熱伝導専用の private f32 関数"
+oracle_candidate = "既知解の三重対角系 (離散 Poisson 1D) で閉形式解と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-005"
+axis = "linear_direct"
+item = "sparse direct LU / Cholesky with fill-reducing ordering"
+source = "Davis, Direct Methods for Sparse Linear Systems; PETSc PCLU / PCCHOLESKY with MatOrdering (ND / AMD)"
+status = "missing"
+evidence = "疎直接法は無い 固体向けは COV-FEM-069 (fem.toml)"
+oracle_candidate = "2D Poisson 5 点で反復法の解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-006"
+axis = "linear_direct"
+item = "sparse matrix storage (CSR) and SpMV"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.3; PETSc MATAIJ"
+status = "missing"
+evidence = "疎行列型は無い (作用素は matrix-free の src/linear_solver.rs:142 LinearOperator のみ) src/spatial.rs:25 の CSR は近傍探索の index 配列で行列ではない 固体の全体行列は COV-FEM-071 (fem.toml)"
+oracle_candidate = "CSR の SpMV を DenseMatrix の apply と bit 一致で突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-007"
+axis = "linear_direct"
+item = "QR / least squares (dense)"
+source = "Golub-Van Loan, Matrix Computations ch.5; LAPACK geqrf"
+status = "missing"
+evidence = "QR 分解・最小二乗の汎用部品は無い (推測)"
+oracle_candidate = "過剰決定系の正規方程式解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-008"
+axis = "krylov"
+item = "matrix-free operator interface (closure / dense adapter)"
+source = "PETSc MatShell; Saad ch.6"
+status = "implemented+oracle"
+evidence = "src/linear_solver.rs:142 (LinearOperator) / src/linear_solver.rs:230 (FnOperator) / tests/analytic_linear_solver.rs::closure_operator_and_absolute_tolerance"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-009"
+axis = "krylov"
+item = "conjugate gradient (general SPD operator)"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.6.7; PETSc KSPCG"
+status = "missing"
+evidence = "汎用 CG は無い (src/linear_solver.rs の対象は GMRES と BiCGStab のみ、同 file 冒頭に FEM の private CG が 4 本あると記載) 固体の CG は COV-FEM-066 (fem.toml、src/linear_elastic_fem.rs:1377)"
+oracle_candidate = "SPD 系で GMRES と同じ解、反復数が n 以下"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-010"
+axis = "krylov"
+item = "restarted GMRES(m)"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.6.5; PETSc KSPGMRES"
+status = "implemented+oracle"
+evidence = "src/linear_solver/gmres.rs:39 / tests/analytic_linear_solver.rs::gmres_terminates_within_n_on_dense_spd / tests/analytic_linear_solver.rs::gmres_restart_lengths_agree_and_residual_is_monotone 固体向けの非対称 Krylov は COV-FEM-070 (fem.toml)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-011"
+axis = "krylov"
+item = "BiCGStab"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.7.4; van der Vorst 1992; PETSc KSPBCGS"
+status = "implemented+oracle"
+evidence = "src/linear_solver/bicgstab.rs:38 / tests/analytic_linear_solver.rs::advection_diffusion_matches_closed_form_across_peclet / tests/analytic_linear_solver.rs::bicgstab_breakdown_where_gmres_succeeds src/eulerian_grid.rs:4005 の BiCGStab は MAC 格子の Laplacian 専用で数えない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-012"
+axis = "krylov"
+item = "MINRES / SYMMLQ (symmetric indefinite)"
+source = "Saad ch.6.6; Paige-Saunders 1975; PETSc KSPMINRES"
+status = "missing"
+evidence = "無い 固体の不定値接線は CG の負曲率打ち切り (COV-FEM-065、fem.toml)"
+oracle_candidate = "対称不定値 2x2 ブロック (鞍点系) で f64 消去法と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-013"
+axis = "krylov"
+item = "flexible GMRES (variable preconditioner)"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.9.4; PETSc KSPFGMRES"
+status = "missing"
+evidence = "FGMRES は無い"
+oracle_candidate = "内側に反復法を持つ前処理で GMRES が破綻し FGMRES が収束する系"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-014"
+axis = "krylov"
+item = "TFQMR / QMR / IDR(s)"
+source = "Saad ch.7.3-7.4; PETSc KSPTFQMR / KSPQMRCGS"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "移流拡散 (Pe 大) で GMRES と同じ解"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-015"
+axis = "krylov"
+item = "least-squares Krylov (CGLS / LSQR)"
+source = "Saad ch.8; Paige-Saunders 1982; PETSc KSPLSQR"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "過剰決定系で正規方程式の解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-016"
+axis = "krylov"
+item = "stopping on the true residual, with not-converged / stagnated / breakdown verdicts"
+source = "Saad ch.6; PETSc KSPConvergedReason"
+status = "implemented+oracle"
+evidence = "src/linear_solver.rs:402 (LinearSolverError) / tests/analytic_linear_solver.rs::inconsistent_singular_system_is_not_reported_as_solved / tests/analytic_linear_solver.rs::small_budget_is_not_converged / tests/analytic_linear_solver.rs::restarted_gmres_on_a_rotation_stagnates / tests/analytic_linear_solver.rs::zero_operator_is_a_breakdown"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-017"
+axis = "krylov"
+item = "nonzero initial guess (warm start)"
+source = "PETSc KSPSetInitialGuessNonzero"
+status = "partial"
+evidence = "src/linear_solver.rs:104 初期値は常にゼロ (時間積分や Newton の連続した解で前回解から始められない)"
+oracle_candidate = "前回解から始めた反復数が減り、解はゼロ初期値と同じ"
+limitation = "src/linear_solver.rs:104 'The initial guess is always zero.'"
+
+[[item]]
+id = "COV-NUM-018"
+axis = "stationary"
+item = "Jacobi / Gauss-Seidel / SOR / SSOR as general solvers"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.4; PETSc KSPRICHARDSON + PCSOR"
+status = "missing"
+evidence = "汎用の定常反復は無い src/eulerian_grid.rs:3940 (Jacobi) / src/eulerian_grid.rs:1448 (赤黒 Gauss-Seidel) は MAC 格子の圧力専用 (pub(crate))"
+oracle_candidate = "1D Poisson で反復行列のスペクトル半径の閉形式 cos(pi h) と収束率を突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-019"
+axis = "preconditioner"
+item = "Jacobi (diagonal)"
+source = "Saad ch.10.2; PETSc PCJACOBI"
+status = "implemented+oracle"
+evidence = "src/linear_solver/precond.rs:39 / tests/analytic_linear_solver.rs::jacobi_reduces_iterations_on_a_badly_scaled_diagonal 固体の Jacobi は COV-FEM-067 (fem.toml)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-020"
+axis = "preconditioner"
+item = "block Jacobi"
+source = "Saad ch.12; PETSc PCBJACOBI"
+status = "implemented+oracle"
+evidence = "src/linear_solver/precond.rs:159 / tests/analytic_linear_solver.rs::block_jacobi_solves_a_block_diagonal_matrix_in_one_iteration"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-021"
+axis = "preconditioner"
+item = "left / right / split preconditioning"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.9.3; PETSc KSPSetPCSide"
+status = "partial"
+evidence = "src/linear_solver.rs:19 右前処理のみ (左前処理の残差ノルムでの停止は選べない)"
+oracle_candidate = "左右で解が一致し、右前処理では真の残差で停止することを確認"
+limitation = "src/linear_solver.rs:19 'applied on the **right**'"
+
+[[item]]
+id = "COV-NUM-022"
+axis = "preconditioner"
+item = "SSOR / Gauss-Seidel preconditioner"
+source = "Saad ch.10.2; PETSc PCSOR"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1D Poisson で反復数が Jacobi より減る"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-023"
+axis = "preconditioner"
+item = "incomplete LU (ILU(0) / ILUT)"
+source = "Saad, Iterative Methods for Sparse Linear Systems ch.10.3-10.4; PETSc PCILU"
+status = "missing"
+evidence = "無い (疎行列型が無いので前提も無い COV-NUM-006)"
+oracle_candidate = "ILU(0) が 5 点 Laplacian で厳密な LU と非零パターン上で一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-024"
+axis = "preconditioner"
+item = "incomplete Cholesky (IC(0))"
+source = "Saad ch.10.3; PETSc PCICC"
+status = "missing"
+evidence = "無い 固体向けは COV-FEM-068 (fem.toml)"
+oracle_candidate = "SPD 系で CG の反復数が減り解は同じ"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-025"
+axis = "preconditioner"
+item = "geometric multigrid (V / W / F cycle) as a general component"
+source = "Briggs-Henson-McCormick, A Multigrid Tutorial; Trottenberg-Oosterlee-Schuller, Multigrid; Saad ch.13; PETSc PCMG"
+status = "missing"
+evidence = "汎用の multigrid は無い src/eulerian_grid.rs:1365 (project_pressure_multigrid) は MAC 格子の圧力 Poisson 専用で、収束率の格子非依存は tests/analytic_multigrid.rs::contraction_rate_is_grid_independent が CFD 側で確認 固体の multigrid 前処理は COV-FEM-068 (fem.toml)"
+oracle_candidate = "Poisson で収束率が h に依存しない (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-026"
+axis = "preconditioner"
+item = "algebraic multigrid (AMG)"
+source = "Ruge-Stuben 1987; Vanek-Mandel-Brezina (smoothed aggregation); PETSc PCGAMG; hypre BoomerAMG"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "非構造 Laplacian で反復数が問題サイズに依存しない"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-027"
+axis = "preconditioner"
+item = "additive Schwarz / domain-decomposition preconditioner"
+source = "Smith-Bjorstad-Gropp, Domain Decomposition; Saad ch.14; PETSc PCASM"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "重なり幅を増やすと反復数が減る"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-028"
+axis = "preconditioner"
+item = "field-split / Schur-complement block preconditioner"
+source = "Benzi-Golub-Liesen 2005 (saddle point); PETSc PCFIELDSPLIT"
+status = "missing"
+evidence = "無い src/linear_solver/equilibrate.rs:61 の BlockEquilibration はブロックごとのスケーリングで、ブロック前処理ではない"
+oracle_candidate = "鞍点系で厳密 Schur 補元の前処理なら GMRES が 3 反復以内 (Murphy-Golub-Wathen)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-029"
+axis = "nonlinear"
+item = "Newton's method with a caller-supplied residual and Jacobian"
+source = "Kelley, Solving Nonlinear Equations with Newton's Method; PETSc SNESNEWTONLS; SUNDIALS KINSOL"
+status = "missing"
+evidence = "汎用 Newton は無い 固体の Newton は COV-FEM-052 (fem.toml、src/linear_elastic_fem/consistent_tangent.rs:356) src/kepler.rs:232 の Kepler 方程式の Newton はスカラー専用"
+oracle_candidate = "Rosenbrock 関数・Bratu 問題で 2 次収束 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-030"
+axis = "nonlinear"
+item = "line search (backtracking with Armijo / Wolfe conditions)"
+source = "Nocedal-Wright, Numerical Optimization ch.3; PETSc SNESLineSearch (BT / CP / L2)"
+status = "missing"
+evidence = "汎用の line search は無い 固体の backtrack は COV-FEM-056 (fem.toml)"
+oracle_candidate = "Newton が発散する初期値 (arctan) で line search 付きが収束"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-031"
+axis = "nonlinear"
+item = "trust region (dogleg / Levenberg-Marquardt)"
+source = "Nocedal-Wright ch.4; Conn-Gould-Toint, Trust-Region Methods; PETSc SNESNEWTONTR"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Rosenbrock 関数で信頼領域半径の更新規則が教科書どおり"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-032"
+axis = "nonlinear"
+item = "inexact Newton with adaptive forcing (Eisenstat-Walker)"
+source = "Eisenstat-Walker 1996; Knoll-Keyes 2004; PETSc SNESKSPSetUseEW"
+status = "missing"
+evidence = "汎用部品は無い 固体の inexact Newton / Newton-Krylov は COV-FEM-054 (fem.toml、src/linear_elastic_fem/consistent_tangent.rs:457) 適応 forcing term は src 全体で 0 件 (推測)"
+oracle_candidate = "forcing を緩めても解が変わらず線形反復の合計が減る"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-033"
+axis = "nonlinear"
+item = "Jacobian-free Newton-Krylov (finite-difference J v)"
+source = "Knoll-Keyes, J. Comput. Phys. 193 (2004); PETSc MatMFFD + SNES; MOOSE PJFNK"
+status = "missing"
+evidence = "汎用 JFNK は無い (GMRES は src/linear_solver.rs:230 の FnOperator で作用素を受け取れるが、差分 J v と Newton の外側は無い) 固体は COV-FEM-054 (fem.toml)"
+oracle_candidate = "解析 Jacobian の Newton と同じ解、差分幅の選び方で反復数が変わらない範囲を測る"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-034"
+axis = "nonlinear"
+item = "quasi-Newton (Broyden / BFGS)"
+source = "Nocedal-Wright ch.6; Dennis-Schnabel; PETSc SNESQN"
+status = "missing"
+evidence = "無い 固体の BFGS は COV-FEM-055 (fem.toml)"
+oracle_candidate = "線形系で Broyden が n+1 反復以内に厳密解 (Gay の定理、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-035"
+axis = "nonlinear"
+item = "Anderson acceleration of a fixed-point map"
+source = "Walker-Ni 2011; PETSc SNESANDERSON; SUNDIALS KINSOL fixed point"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "線形の不動点写像で GMRES と同値になる (Walker-Ni)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-036"
+axis = "nonlinear"
+item = "continuation / pseudo-transient continuation"
+source = "Kelley-Keyes 1998 (Psi-tc); Allgower-Georg, Numerical Continuation Methods; PETSc SNESNEWTONLS + TSPSEUDO"
+status = "missing"
+evidence = "無い 固体の弧長法は COV-FEM-059 (fem.toml)"
+oracle_candidate = "折り返し点を持つスカラー方程式で解曲線を追跡"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-037"
+axis = "nonlinear"
+item = "bracketed scalar root finding (bisection / Brent) as a general API"
+source = "Brent, Algorithms for Minimization without Derivatives; Press et al., Numerical Recipes ch.9"
+status = "missing"
+evidence = "汎用 API は無い 二分法は src/kepler.rs:232 (Kepler 方程式) と src/turbulence.rs:336 (摩擦速度) に分野内で埋め込み"
+oracle_candidate = "単根を持つ多項式で反復数が log2(幅/許容) と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-038"
+axis = "eigen"
+item = "3x3 symmetric eigen-decomposition (cyclic Jacobi)"
+source = "Golub-Van Loan, Matrix Computations ch.8.5"
+status = "implemented+oracle"
+evidence = "src/mass_properties.rs:507 (principal_axes) / tests/analytic_compound.rs::the_principal_axes_diagonalise_a_symmetric_tensor"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-039"
+axis = "eigen"
+item = "3x3 polar decomposition"
+source = "Higham, Functions of Matrices ch.8"
+status = "implemented+oracle"
+evidence = "src/math.rs:1983 (polar_rotation) / tests/audit_math.rs::polar_rotation_closed_forms_and_error_variants / tests/audit_math.rs::polar_rotation_result_is_orthogonal_to_a_few_ulp"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-040"
+axis = "eigen"
+item = "power iteration / inverse iteration with shift"
+source = "Saad, Numerical Methods for Large Eigenvalue Problems ch.4; Golub-Van Loan ch.7.3"
+status = "missing"
+evidence = "汎用部品は無い tests/analytic_thermoplastic_coupling.rs::the_monolithic_entry_condition_is_three_decades_away_at_real_heat_capacities の冪乗法は test 内の局所実装"
+oracle_candidate = "対角行列・既知固有値の 3 重対角行列で支配固有値と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-041"
+axis = "eigen"
+item = "Lanczos / Arnoldi (implicitly restarted) for large sparse problems"
+source = "Saad, Numerical Methods for Large Eigenvalue Problems ch.6; ARPACK; SLEPc EPSKRYLOVSCHUR"
+status = "missing"
+evidence = "無い (src/linear_solver/gmres.rs の Arnoldi は線形方程式用で固有値を返さない)"
+oracle_candidate = "1D Laplacian の最小固有値 4 sin^2(pi h/2)/h^2 と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-042"
+axis = "eigen"
+item = "generalized symmetric eigenproblem K x = lambda M x"
+source = "Bathe, Finite Element Procedures ch.11; SLEPc EPS (GHEP)"
+status = "missing"
+evidence = "汎用部品は無い FE モード解析は COV-FEM-083 (fem.toml)"
+oracle_candidate = "2 自由度ばね質点の閉形式固有振動数"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-043"
+axis = "eigen"
+item = "LOBPCG / subspace iteration"
+source = "Knyazev 2001; Bathe ch.11.6; SLEPc EPSLOBPCG"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "1D Laplacian の下位 k 個の固有値"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-044"
+axis = "eigen"
+item = "dense nonsymmetric eigenvalues (QR algorithm) / SVD"
+source = "Golub-Van Loan ch.7-8; LAPACK geev / gesvd"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "回転行列の固有値 exp(±i theta)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-045"
+axis = "time_integration"
+item = "general ODE integrator interface (caller-supplied right-hand side)"
+source = "SUNDIALS CVODE / ARKODE; PETSc TS"
+status = "missing"
+evidence = "汎用の時間積分 API は無い 各 module が固有の公式を埋め込む (例 src/nbody.rs:327 / src/molecular_dynamics.rs:419 の Velocity Verlet、src/sdf_sph.rs:115 の symplectic Euler、src/transient_thermal.rs:361 の Crank-Nicolson)"
+oracle_candidate = "y' = lambda y で各公式の安定関数と 1 step 一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-046"
+axis = "time_integration"
+item = "explicit / symplectic (semi-implicit) Euler"
+source = "Hairer-Lubich-Wanner, Geometric Numerical Integration ch.I; PETSc TSEULER"
+status = "missing"
+evidence = "汎用部品は無い (分野内の埋め込みのみ src/sdf_sph.rs:115、剛体 world も同じ形) (推測: 汎用化の 1 番目の候補)"
+oracle_candidate = "調和振動子で 1 次の大域誤差と有界なエネルギー誤差"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-047"
+axis = "time_integration"
+item = "velocity Verlet / leapfrog"
+source = "Hairer-Lubich-Wanner, Geometric Numerical Integration ch.I.3; PETSc TSBASICSYMPLECTIC"
+status = "missing"
+evidence = "汎用部品は無い src/nbody.rs:327 と src/molecular_dynamics.rs:419 に別型の VelocityVerlet がそれぞれ分野専用で存在"
+oracle_candidate = "調和振動子で 2 次の大域誤差、時間反転で初期値に戻る"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-048"
+axis = "time_integration"
+item = "higher-order symplectic composition (Yoshida / Forest-Ruth)"
+source = "Yoshida 1990; Hairer-Lubich-Wanner ch.II.4"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Kepler 問題で 4 次の大域誤差"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-049"
+axis = "time_integration"
+item = "explicit Runge-Kutta (RK4)"
+source = "Hairer-Norsett-Wanner, Solving ODEs I ch.II.1; PETSc TSRK"
+status = "missing"
+evidence = "無い src/aeroelasticity.rs:33 は f64 RK4 を参照解に使うと記載するが src に汎用 RK4 は無い"
+oracle_candidate = "y' = y で 4 次の大域誤差"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-050"
+axis = "time_integration"
+item = "embedded Runge-Kutta with adaptive step control (Dormand-Prince 5(4))"
+source = "Hairer-Norsett-Wanner, Solving ODEs I ch.II.4-II.5; SUNDIALS ARKODE ERK; PETSc TSRK + TSAdapt"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "Arenstorf 軌道で許容誤差と大域誤差の比例 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-051"
+axis = "time_integration"
+item = "implicit Euler / BDF (variable order)"
+source = "Hairer-Wanner, Solving ODEs II ch.III / ch.V; SUNDIALS CVODE BDF; PETSc TSBDF"
+status = "missing"
+evidence = "汎用の陰的積分は無い (陰解法は分野内のみ、例 src/transient_thermal.rs:361)"
+oracle_candidate = "Robertson 問題 (硬い 3 成分) で参照解と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-052"
+axis = "time_integration"
+item = "trapezoidal / theta method"
+source = "Hairer-Wanner, Solving ODEs II; PETSc TSTHETA / TSCN"
+status = "missing"
+evidence = "汎用部品は無い src/transient_thermal.rs:361 の Crank-Nicolson は 1D 熱伝導専用"
+oracle_candidate = "y' = lambda y の安定関数 (1+z/2)/(1-z/2)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-053"
+axis = "time_integration"
+item = "second-order systems: Newmark / HHT-alpha / generalized-alpha as a general integrator"
+source = "Chung-Hulbert 1993; Hilber-Hughes-Taylor 1977; PETSc TSALPHA2"
+status = "missing"
+evidence = "汎用部品は無い 固体の Newmark / HHT / generalized-alpha は COV-FEM-072 / 073 / 074 / 075 (fem.toml)"
+oracle_candidate = "1 自由度振動子で数値減衰率の閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-054"
+axis = "time_integration"
+item = "Rosenbrock / linearly implicit methods"
+source = "Hairer-Wanner, Solving ODEs II ch.IV.7; PETSc TSROSW"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "van der Pol (mu 大) で参照解と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-055"
+axis = "time_integration"
+item = "IMEX additive Runge-Kutta"
+source = "Ascher-Ruuth-Spiteri 1997; Kennedy-Carpenter 2003; SUNDIALS ARKODE ARK; PETSc TSARKIMEX"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "移流 (陽) + 拡散 (陰) の 1D で次数を確認"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-056"
+axis = "time_integration"
+item = "operator splitting (Lie / Strang) as a general component"
+source = "Hairer-Lubich-Wanner ch.II.5; McLachlan-Quispel 2002"
+status = "missing"
+evidence = "汎用部品は無い (各 module の step が分野内で分割を固定) (推測)"
+oracle_candidate = "可換でない 2 線形作用素で Lie 1 次 / Strang 2 次の誤差"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-057"
+axis = "time_integration"
+item = "multirate / subcycling"
+source = "Gear-Wells 1984; SUNDIALS ARKODE MRIStep"
+status = "missing"
+evidence = "無い (推測)"
+oracle_candidate = "速い成分と遅い成分の線形 2 自由度で閉形式解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-058"
+axis = "time_integration"
+item = "DAE (index 1) / constraint projection"
+source = "Hairer-Wanner, Solving ODEs II ch.VI-VII; SUNDIALS IDA"
+status = "missing"
+evidence = "汎用部品は無い (剛体の拘束は位置補正で解く別系統)"
+oracle_candidate = "振り子の Cartesian 定式化で拘束ドリフトが許容内"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-059"
+axis = "coupling"
+item = "partitioned (staggered) sub-iteration driver with convergence monitoring"
+source = "Felippa-Park-Farhat 2001; MOOSE MultiApp fixed-point iterations; preCICE implicit coupling"
+status = "implemented+oracle"
+evidence = "src/coupled_iteration.rs:932 (run_sub_iteration) / src/coupled_iteration.rs:748 (ContractionMonitor) / tests/audit_coupled_iteration.rs::run_sub_iteration_passes_zero_based_sweep_indices_and_reports_the_final_state / tests/analytic_added_mass_coupling.rs::the_contraction_ratio_matches_the_closed_form"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-060"
+axis = "coupling"
+item = "divergence and silent-wrap detection of a coupled iteration"
+source = "Causin-Gerbeau-Nobile 2005 (added-mass instability); Fix128 wrap behaviour of this crate"
+status = "implemented+oracle"
+evidence = "src/coupled_iteration.rs:337 (residual_norm_l2_checked) / tests/audit_coupled_iteration.rs::doubling_residuals_are_diverging_at_the_fourth_sweep / tests/audit_coupled_iteration.rs::two_separate_overshoots_are_not_a_wrap / tests/analytic_added_mass_coupling.rs::a_diverging_iteration_reports_a_zero_l2_residual"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-061"
+axis = "coupling"
+item = "constant under-relaxation in the general driver"
+source = "Kuttler-Wall 2008; MOOSE relaxation_factor; preCICE constant relaxation"
+status = "missing"
+evidence = "汎用 driver (src/coupled_iteration.rs:932) は sweep を呼び手に任せ緩和を持たない 定数緩和は熱塑性連成に分野内で実装 (src/linear_elastic_fem.rs:4809、tests/analytic_thermoplastic_coupling.rs::the_fixed_point_does_not_depend_on_the_relaxation)"
+oracle_candidate = "added-mass ピストンで最適定数緩和 omega* = m/(m+m_f) が 1 sweep で収束 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-062"
+axis = "coupling"
+item = "Aitken dynamic relaxation"
+source = "Irons-Tuck 1969; Kuttler-Wall 2008; MOOSE secant / Steffensen; preCICE aitken"
+status = "missing"
+evidence = "src には無い tests/fix128_vs_f64_coupling_hypotheses.rs::aitken_reaches_the_unstable_upper_branch_under_fix128_too の Aitken は test 内の局所実装"
+oracle_candidate = "2 自由度の分離反復で Aitken が定数緩和より少ない sweep で同じ不動点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-063"
+axis = "coupling"
+item = "interface quasi-Newton (IQN-ILS)"
+source = "Degroote-Bathe-Vierendeels 2009; preCICE IQN-ILS"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "線形 2 場で n 反復以内に収束"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-064"
+axis = "coupling"
+item = "monolithic coupled Newton (block Jacobian)"
+source = "Keyes et al., Multiphysics simulations (IJHPCA 2013); MOOSE single-app fully coupled"
+status = "missing"
+evidence = "無い src/coupled_iteration.rs:224 以降に入口条件と見送りの判断 (Krylov は src/linear_solver.rs で用意済、ブロック等化は src/linear_solver/equilibrate.rs:265)"
+oracle_candidate = "分離反復を収束させた解と同じ不動点"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-065"
+axis = "coupling"
+item = "field transfer between discretisations (sample / splat, conservative)"
+source = "Farhat-Lesoinne-LeTallec 1998 (conservative load transfer); preCICE mapping"
+status = "implemented+oracle"
+evidence = "src/coupled_field.rs:432 (sample) / src/coupled_field.rs:489 (splat) / tests/analytic_coupled_field.rs::splat_is_the_adjoint_of_sample / tests/analytic_coupled_field.rs::splat_conserves_the_total_within_the_derived_rounding_bound"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-066"
+axis = "distributed"
+item = "domain decomposition with halo exchange as a general component"
+source = "Smith-Bjorstad-Gropp, Domain Decomposition; PETSc DMDA + VecScatter"
+status = "missing"
+evidence = "汎用部品は無い z slab 分割と halo 交換は MAC 格子の圧力専用 (src/eulerian_grid.rs:1563 RankTransport、pub(crate))"
+oracle_candidate = "1D Poisson の Jacobi 反復を 1/2/4 分割で bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-067"
+axis = "distributed"
+item = "deterministic global reduction (all-reduce) API"
+source = "MPI_Allreduce; Demmel-Nguyen 2013 (reproducible summation)"
+status = "missing"
+evidence = "汎用 API は無い Fix128 の加算が順序非依存である性質は COV-NUM-074 で確認済 分割数を変えた bit 一致は CFD の圧力でのみ (tests/analytic_pressure_solvers.rs::the_decomposed_multigrid_reproduces_multigrid_to_the_bit_for_every_rank_count)"
+oracle_candidate = "rank 数・到着順を変えた総和が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-068"
+axis = "distributed"
+item = "distributed Krylov (global inner products across ranks)"
+source = "Saad ch.11-12; PETSc KSP on MPI vectors"
+status = "missing"
+evidence = "無い (src/linear_solver.rs の Krylov は単一アドレス空間)"
+oracle_candidate = "分割数を変えた GMRES の解が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-069"
+axis = "distributed"
+item = "multi-process / MPI transport backend"
+source = "MPI-3.1 standard; PETSc PetscSF"
+status = "missing"
+evidence = "src には無い src/eulerian_grid.rs:1563 の doc に MPI backend は feature で後から入る予定と記載 (CFD 圧力専用)"
+oracle_candidate = "loopback の 2 プロセスで単一プロセス解と bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-070"
+axis = "distributed"
+item = "shared-memory parallel kernels with a deterministic result"
+source = "OpenMP / rayon; PETSc with threads"
+status = "missing"
+evidence = "汎用 solver の並列化は無い (src/linear_solver.rs は逐次) (推測)"
+oracle_candidate = "スレッド数を変えて bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-071"
+axis = "distributed"
+item = "load balancing / repartitioning"
+source = "Karypis-Kumar (METIS / ParMETIS); Zoltan"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "不均一な負荷で各 rank の作業量の最大 / 平均を測る"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-072"
+axis = "representation"
+item = "Q64.64 fixed-point scalar with bit-exact arithmetic"
+source = "Yates, Fixed-Point Arithmetic; IEEE 754 is deliberately not used"
+status = "implemented+oracle"
+evidence = "src/math.rs:51 (Fix128) / tests/audit_math.rs::mul_matches_256_bit_reference / tests/audit_math.rs::div_matches_192_bit_reference_and_truncates_toward_zero / tests/audit_math.rs::add_sub_neg_match_i128_wrapping_arithmetic"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-073"
+axis = "representation"
+item = "bit-identical results across platforms (pinned hashes)"
+source = "Reproducible numerics (Demmel-Nguyen); deterministic lockstep simulation"
+status = "implemented+oracle"
+evidence = "tests/determinism_golden.rs::determinism_freefall / tests/determinism_golden.rs::determinism_fluid_step / tests/determinism_golden.rs::determinism_cascade"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-074"
+axis = "representation"
+item = "order-independent summation (bit-identical under permutation)"
+source = "Demmel-Nguyen 2013; Kahan summation as the floating-point counterpart"
+status = "implemented+oracle"
+evidence = "tests/analytic_linear_solver.rs::fix128_sum_of_products_is_order_independent / tests/analytic_linear_solver.rs::bit_identical_and_permutation_equivariant"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-075"
+axis = "representation"
+item = "compensated (Kahan) summation"
+source = "Higham, Accuracy and Stability of Numerical Algorithms ch.4"
+status = "out-of-scope"
+evidence = "Fix128 の加算は整数加算で丸めが無いので補償する誤差が無い (COV-NUM-074)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-076"
+axis = "representation"
+item = "overflow detection in multiplication"
+source = "Higham ch.2; checked arithmetic"
+status = "partial"
+evidence = "src/math.rs:520 (checked_mul、明示的に呼んだ経路のみ) / tests/audit_math.rs::checked_mul_is_sound / tests/audit_math.rs::checked_mul_basic_range_boundaries / known defect: tests/audit_math.rs::checked_mul_is_complete 既定の * は巻き戻る (src/math.rs:433)"
+oracle_candidate = "範囲外の積で None、範囲内の積で Some"
+limitation = "src/math.rs:433 'There is no saturation and no panic, in debug builds too'"
+
+[[item]]
+id = "COV-NUM-077"
+axis = "representation"
+item = "scaled inner products and norms (power-of-two rescaling per vector)"
+source = "Higham ch.3; LAPACK dnrm2 scaling"
+status = "partial"
+evidence = "src/linear_solver.rs:42 ベクトルごとの 2 冪スケーリング、1 本のベクトル内で 2^32 倍小さい成分は救えない (ブロック等化 COV-NUM-079 で補う) / tests/analytic_linear_solver.rs::pla_block_ratio_needs_equilibration"
+oracle_candidate = "大小 2 ブロックの内積で小ブロックの寄与が残る"
+limitation = "src/linear_solver.rs:42 'it cannot rescue entries of one vector that are `2³²` times smaller than that vector's largest entry'"
+
+[[item]]
+id = "COV-NUM-078"
+axis = "representation"
+item = "silent-truncation guard for squared norms (L2 checked / L-infinity norm)"
+source = "this crate's Fix128 product floor 2^-64"
+status = "implemented+oracle"
+evidence = "src/coupled_iteration.rs:337 / tests/audit_coupled_iteration.rs::l2_refuses_every_component_whose_square_leaves_the_representable_range / tests/audit_coupled_iteration.rs::l2_floor_is_exactly_the_square_root_of_one_ulp"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-079"
+axis = "representation"
+item = "block equilibration of multi-field systems (power-of-two factors)"
+source = "Bunch 1971 (equilibration); Higham ch.7; PETSc MatDiagonalScale"
+status = "implemented+oracle"
+evidence = "src/linear_solver/equilibrate.rs:61 / src/linear_solver/equilibrate.rs:265 / tests/analytic_linear_solver.rs::pla_block_ratio_needs_equilibration / tests/analytic_linear_solver.rs::unscaled_floor_check_matches_the_material_table / known defect: tests/audit_coupled_iteration.rs::covering_is_the_smallest_power_of_two_at_or_above_a_fractional_magnitude"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-080"
+axis = "representation"
+item = "ill-conditioned systems (condition number above 2^40)"
+source = "Higham ch.7; iterative refinement (Wilkinson)"
+status = "partial"
+evidence = "src/linear_solver.rs:99 条件数が 2^40 を超える系は解かずに breakdown として返す / tests/analytic_linear_solver.rs::rounded_rank_deficient_matrices_break_down_at_the_second_step"
+oracle_candidate = "Hilbert 行列で breakdown の境界を測る"
+limitation = "src/linear_solver.rs:99 'a system whose condition number exceeds about `2⁴⁰` is reported as breakdown rather than solved to digits the representation does not hold.'"
+
+[[item]]
+id = "COV-NUM-081"
+axis = "representation"
+item = "iterative refinement / mixed precision"
+source = "Wilkinson; Carson-Higham 2018; PETSc KSPPREONLY + refinement"
+status = "missing"
+evidence = "無い"
+oracle_candidate = "条件数 2^30 程度の系で残差補正 1 回ごとに桁が伸びる"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-082"
+axis = "representation"
+item = "f64 <-> Fix128 conversion"
+source = "IEEE 754 binary64"
+status = "implemented+oracle"
+evidence = "src/math.rs:51 / tests/audit_math.rs::f64_and_f32_conversions / known defect: tests/audit_math.rs::from_f64_non_finite_and_out_of_range_are_not_silently_plausible / known defect: tests/audit_math.rs::to_f64_is_relatively_accurate_for_small_negative_values"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-083"
+axis = "representation"
+item = "elementary functions (sqrt / exp / ln / sin / cos / atan2)"
+source = "Muller, Elementary Functions"
+status = "implemented+oracle"
+evidence = "src/math.rs:247 (sqrt) / tests/audit_math.rs::sqrt_is_exact_floor / tests/audit_math.rs::exp_ln_powf_accuracy_claims / tests/audit_math.rs::sin_cos_accuracy_over_the_reduced_range_and_identities / known defect: tests/audit_math.rs::exp_is_accurate_up_to_the_representable_maximum"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-084"
+axis = "benchmark"
+item = "advection-diffusion non-symmetric system across Peclet numbers"
+source = "Saad ch.6 / ch.7 model problems; Elman-Silvester-Wathen ch.6"
+status = "implemented+oracle"
+evidence = "tests/analytic_linear_solver.rs::advection_diffusion_matches_closed_form_across_peclet"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-085"
+axis = "benchmark"
+item = "Krylov solution cross-checked against an independent solver (SPD cantilever)"
+source = "PETSc -ksp_type comparison practice"
+status = "implemented+oracle"
+evidence = "tests/analytic_linear_solver.rs::spd_cantilever_matches_private_cg_and_f64_elimination"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-086"
+axis = "benchmark"
+item = "Poisson multigrid convergence factor independent of h (general component)"
+source = "Briggs-Henson-McCormick ch.4; Trottenberg et al."
+status = "missing"
+evidence = "汎用 multigrid が無い (COV-NUM-025) CFD の圧力では tests/analytic_multigrid.rs::contraction_rate_is_grid_independent"
+oracle_candidate = "既存の CFD 圧力 multigrid の測定値を汎用化時の参照に流用 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-087"
+axis = "benchmark"
+item = "stiff ODE: Robertson chemical kinetics"
+source = "Hairer-Wanner, Solving ODEs II ch.IV.1"
+status = "missing"
+evidence = "陰的汎用積分が無い (COV-NUM-051 / 054)"
+oracle_candidate = "長時間 (t = 1e11) で質量保存と参照解 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-088"
+axis = "benchmark"
+item = "stiff ODE: van der Pol oscillator (large mu)"
+source = "Hairer-Wanner, Solving ODEs II ch.IV.1"
+status = "missing"
+evidence = "陰的汎用積分が無い (COV-NUM-051 / 054)"
+oracle_candidate = "周期の漸近式との突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-089"
+axis = "benchmark"
+item = "long-time energy behaviour of a symplectic integrator (harmonic oscillator / Kepler)"
+source = "Hairer-Lubich-Wanner ch.IX"
+status = "missing"
+evidence = "汎用の symplectic 積分が無い (COV-NUM-046 / 047) nbody / molecular_dynamics の分野内実装は各分野の表"
+oracle_candidate = "1e6 step でエネルギー誤差が有界、位相誤差が線形"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-090"
+axis = "benchmark"
+item = "two-field partitioned coupling with closed-form contraction (added-mass piston)"
+source = "Causin-Gerbeau-Nobile 2005; Forster-Wall-Ramm 2007"
+status = "implemented+oracle"
+evidence = "tests/analytic_added_mass_coupling.rs::the_contraction_ratio_matches_the_closed_form / tests/analytic_added_mass_coupling.rs::refining_the_time_step_does_not_rescue_a_divergent_splitting"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-091"
+axis = "benchmark"
+item = "two-field partitioned coupling with Aitken relaxation (sweep count vs constant relaxation)"
+source = "Kuttler-Wall 2008"
+status = "missing"
+evidence = "汎用 Aitken が無い (COV-NUM-062)"
+oracle_candidate = "added-mass ピストン + 2 自由度で sweep 数を比較 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-092"
+axis = "benchmark"
+item = "nonlinear test set (Rosenbrock function / Bratu problem)"
+source = "More-Garbow-Hillstrom 1981; Knoll-Keyes 2004 (Bratu)"
+status = "missing"
+evidence = "汎用 Newton が無い (COV-NUM-029)"
+oracle_candidate = "Bratu の臨界パラメータ lambda_c (参照値要確認)"
+limitation = ""
