@@ -538,6 +538,74 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::articulation::Li
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::articulation::Link
 pub const alice_physics::articulation::LINK_ROOT: usize
 pub fn alice_physics::articulation::build_ragdoll(alice_physics::math::Vec3Fix, usize) -> (alice_physics::articulation::ArticulatedBody, alloc::vec::Vec<alice_physics::solver::RigidBody>)
+pub mod alice_physics::atmosphere
+pub enum alice_physics::atmosphere::IsaError
+pub alice_physics::atmosphere::IsaError::AltitudeOutOfRange
+pub alice_physics::atmosphere::IsaError::AltitudeOutOfRange::geopotential_altitude_m: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::atmosphere::IsaError
+pub fn alice_physics::atmosphere::IsaError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::atmosphere::IsaError
+impl core::cmp::PartialEq for alice_physics::atmosphere::IsaError
+pub fn alice_physics::atmosphere::IsaError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::atmosphere::IsaError
+impl core::fmt::Debug for alice_physics::atmosphere::IsaError
+pub fn alice_physics::atmosphere::IsaError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::atmosphere::IsaError
+pub fn alice_physics::atmosphere::IsaError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::atmosphere::IsaError
+impl core::marker::StructuralPartialEq for alice_physics::atmosphere::IsaError
+impl core::marker::Freeze for alice_physics::atmosphere::IsaError
+impl core::marker::Send for alice_physics::atmosphere::IsaError
+impl core::marker::Sync for alice_physics::atmosphere::IsaError
+impl core::marker::Unpin for alice_physics::atmosphere::IsaError
+impl core::marker::UnsafeUnpin for alice_physics::atmosphere::IsaError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::atmosphere::IsaError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::atmosphere::IsaError
+pub struct alice_physics::atmosphere::AtmosphereState
+pub alice_physics::atmosphere::AtmosphereState::density_kg_m3: alice_physics::math::Fix128
+pub alice_physics::atmosphere::AtmosphereState::pressure_pa: alice_physics::math::Fix128
+pub alice_physics::atmosphere::AtmosphereState::speed_of_sound_m_s: alice_physics::math::Fix128
+pub alice_physics::atmosphere::AtmosphereState::temperature_k: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::atmosphere::AtmosphereState
+pub fn alice_physics::atmosphere::AtmosphereState::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::atmosphere::AtmosphereState
+impl core::cmp::PartialEq for alice_physics::atmosphere::AtmosphereState
+pub fn alice_physics::atmosphere::AtmosphereState::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::atmosphere::AtmosphereState
+pub fn alice_physics::atmosphere::AtmosphereState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::atmosphere::AtmosphereState
+impl core::marker::StructuralPartialEq for alice_physics::atmosphere::AtmosphereState
+impl core::marker::Freeze for alice_physics::atmosphere::AtmosphereState
+impl core::marker::Send for alice_physics::atmosphere::AtmosphereState
+impl core::marker::Sync for alice_physics::atmosphere::AtmosphereState
+impl core::marker::Unpin for alice_physics::atmosphere::AtmosphereState
+impl core::marker::UnsafeUnpin for alice_physics::atmosphere::AtmosphereState
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::atmosphere::AtmosphereState
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::atmosphere::AtmosphereState
+pub struct alice_physics::atmosphere::Isa1976
+impl alice_physics::atmosphere::Isa1976
+pub const alice_physics::atmosphere::Isa1976::MAX_GEOPOTENTIAL_ALTITUDE_M: i64
+pub fn alice_physics::atmosphere::Isa1976::at_geometric_altitude(alice_physics::math::Fix128) -> core::result::Result<alice_physics::atmosphere::AtmosphereState, alice_physics::atmosphere::IsaError>
+pub fn alice_physics::atmosphere::Isa1976::at_geopotential_altitude(alice_physics::math::Fix128) -> core::result::Result<alice_physics::atmosphere::AtmosphereState, alice_physics::atmosphere::IsaError>
+pub fn alice_physics::atmosphere::Isa1976::geopotential_altitude_m(alice_physics::math::Fix128) -> alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::atmosphere::Isa1976
+pub fn alice_physics::atmosphere::Isa1976::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::atmosphere::Isa1976
+impl core::cmp::PartialEq for alice_physics::atmosphere::Isa1976
+pub fn alice_physics::atmosphere::Isa1976::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::atmosphere::Isa1976
+pub fn alice_physics::atmosphere::Isa1976::default() -> Self
+impl core::fmt::Debug for alice_physics::atmosphere::Isa1976
+pub fn alice_physics::atmosphere::Isa1976::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::atmosphere::Isa1976
+impl core::marker::StructuralPartialEq for alice_physics::atmosphere::Isa1976
+impl core::marker::Freeze for alice_physics::atmosphere::Isa1976
+impl core::marker::Send for alice_physics::atmosphere::Isa1976
+impl core::marker::Sync for alice_physics::atmosphere::Isa1976
+impl core::marker::Unpin for alice_physics::atmosphere::Isa1976
+impl core::marker::UnsafeUnpin for alice_physics::atmosphere::Isa1976
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::atmosphere::Isa1976
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::atmosphere::Isa1976
 pub mod alice_physics::audio_physics
 pub enum alice_physics::audio_physics::AudioEventType
 pub alice_physics::audio_physics::AudioEventType::Break
@@ -5428,6 +5496,133 @@ pub const alice_physics::layers::SENSOR: u32
 pub const alice_physics::layers::STATIC: u32
 pub const alice_physics::layers::TRIGGER: u32
 pub const alice_physics::layers::VEHICLE: u32
+pub mod alice_physics::lift_drag
+pub enum alice_physics::lift_drag::LiftDragError
+pub alice_physics::lift_drag::LiftDragError::DegenerateAxes
+pub alice_physics::lift_drag::LiftDragError::NegativeAirDensity
+pub alice_physics::lift_drag::LiftDragError::NegativeZeroLiftDrag
+pub alice_physics::lift_drag::LiftDragError::NoLiftLossAtStall
+pub alice_physics::lift_drag::LiftDragError::NonPositiveArea
+pub alice_physics::lift_drag::LiftDragError::NonPositiveAspectRatio
+pub alice_physics::lift_drag::LiftDragError::NonPositiveLiftSlope
+pub alice_physics::lift_drag::LiftDragError::OswaldEfficiencyOutOfRange
+pub alice_physics::lift_drag::LiftDragError::StallAngleOutOfRange
+pub alice_physics::lift_drag::LiftDragError::StallTransitionOutOfRange
+impl core::clone::Clone for alice_physics::lift_drag::LiftDragError
+pub fn alice_physics::lift_drag::LiftDragError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::lift_drag::LiftDragError
+impl core::cmp::PartialEq for alice_physics::lift_drag::LiftDragError
+pub fn alice_physics::lift_drag::LiftDragError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::lift_drag::LiftDragError
+impl core::fmt::Debug for alice_physics::lift_drag::LiftDragError
+pub fn alice_physics::lift_drag::LiftDragError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::lift_drag::LiftDragError
+pub fn alice_physics::lift_drag::LiftDragError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::lift_drag::LiftDragError
+impl core::marker::StructuralPartialEq for alice_physics::lift_drag::LiftDragError
+impl core::marker::Freeze for alice_physics::lift_drag::LiftDragError
+impl core::marker::Send for alice_physics::lift_drag::LiftDragError
+impl core::marker::Sync for alice_physics::lift_drag::LiftDragError
+impl core::marker::Unpin for alice_physics::lift_drag::LiftDragError
+impl core::marker::UnsafeUnpin for alice_physics::lift_drag::LiftDragError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::lift_drag::LiftDragError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::lift_drag::LiftDragError
+pub struct alice_physics::lift_drag::AeroCoefficients
+pub alice_physics::lift_drag::AeroCoefficients::drag: alice_physics::math::Fix128
+pub alice_physics::lift_drag::AeroCoefficients::lift: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::lift_drag::AeroCoefficients
+pub fn alice_physics::lift_drag::AeroCoefficients::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::lift_drag::AeroCoefficients
+impl core::cmp::PartialEq for alice_physics::lift_drag::AeroCoefficients
+pub fn alice_physics::lift_drag::AeroCoefficients::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::lift_drag::AeroCoefficients
+pub fn alice_physics::lift_drag::AeroCoefficients::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::lift_drag::AeroCoefficients
+impl core::marker::StructuralPartialEq for alice_physics::lift_drag::AeroCoefficients
+impl core::marker::Freeze for alice_physics::lift_drag::AeroCoefficients
+impl core::marker::Send for alice_physics::lift_drag::AeroCoefficients
+impl core::marker::Sync for alice_physics::lift_drag::AeroCoefficients
+impl core::marker::Unpin for alice_physics::lift_drag::AeroCoefficients
+impl core::marker::UnsafeUnpin for alice_physics::lift_drag::AeroCoefficients
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::lift_drag::AeroCoefficients
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::lift_drag::AeroCoefficients
+pub struct alice_physics::lift_drag::AeroLoad
+pub alice_physics::lift_drag::AeroLoad::airspeed_m_s: alice_physics::math::Fix128
+pub alice_physics::lift_drag::AeroLoad::angle_of_attack_rad: core::option::Option<alice_physics::math::Fix128>
+pub alice_physics::lift_drag::AeroLoad::application_point: alice_physics::math::Vec3Fix
+pub alice_physics::lift_drag::AeroLoad::drag: alice_physics::math::Vec3Fix
+pub alice_physics::lift_drag::AeroLoad::force: alice_physics::math::Vec3Fix
+pub alice_physics::lift_drag::AeroLoad::lift: alice_physics::math::Vec3Fix
+pub alice_physics::lift_drag::AeroLoad::torque: alice_physics::math::Vec3Fix
+impl core::clone::Clone for alice_physics::lift_drag::AeroLoad
+pub fn alice_physics::lift_drag::AeroLoad::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::lift_drag::AeroLoad
+impl core::cmp::PartialEq for alice_physics::lift_drag::AeroLoad
+pub fn alice_physics::lift_drag::AeroLoad::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::lift_drag::AeroLoad
+pub fn alice_physics::lift_drag::AeroLoad::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::lift_drag::AeroLoad
+impl core::marker::StructuralPartialEq for alice_physics::lift_drag::AeroLoad
+impl core::marker::Freeze for alice_physics::lift_drag::AeroLoad
+impl core::marker::Send for alice_physics::lift_drag::AeroLoad
+impl core::marker::Sync for alice_physics::lift_drag::AeroLoad
+impl core::marker::Unpin for alice_physics::lift_drag::AeroLoad
+impl core::marker::UnsafeUnpin for alice_physics::lift_drag::AeroLoad
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::lift_drag::AeroLoad
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::lift_drag::AeroLoad
+pub struct alice_physics::lift_drag::LiftDragParams
+pub alice_physics::lift_drag::LiftDragParams::area_m2: alice_physics::math::Fix128
+pub alice_physics::lift_drag::LiftDragParams::aspect_ratio: alice_physics::math::Fix128
+pub alice_physics::lift_drag::LiftDragParams::center_of_pressure_local: alice_physics::math::Vec3Fix
+pub alice_physics::lift_drag::LiftDragParams::chord_axis_local: alice_physics::math::Vec3Fix
+pub alice_physics::lift_drag::LiftDragParams::lift_axis_local: alice_physics::math::Vec3Fix
+pub alice_physics::lift_drag::LiftDragParams::oswald_efficiency: alice_physics::math::Fix128
+pub alice_physics::lift_drag::LiftDragParams::section_lift_slope_per_rad: alice_physics::math::Fix128
+pub alice_physics::lift_drag::LiftDragParams::stall_angle_rad: alice_physics::math::Fix128
+pub alice_physics::lift_drag::LiftDragParams::stall_transition_rad: alice_physics::math::Fix128
+pub alice_physics::lift_drag::LiftDragParams::zero_lift_angle_rad: alice_physics::math::Fix128
+pub alice_physics::lift_drag::LiftDragParams::zero_lift_drag_coefficient: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::lift_drag::LiftDragParams
+pub fn alice_physics::lift_drag::LiftDragParams::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::lift_drag::LiftDragParams
+impl core::cmp::PartialEq for alice_physics::lift_drag::LiftDragParams
+pub fn alice_physics::lift_drag::LiftDragParams::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::lift_drag::LiftDragParams
+pub fn alice_physics::lift_drag::LiftDragParams::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::lift_drag::LiftDragParams
+impl core::marker::StructuralPartialEq for alice_physics::lift_drag::LiftDragParams
+impl core::marker::Freeze for alice_physics::lift_drag::LiftDragParams
+impl core::marker::Send for alice_physics::lift_drag::LiftDragParams
+impl core::marker::Sync for alice_physics::lift_drag::LiftDragParams
+impl core::marker::Unpin for alice_physics::lift_drag::LiftDragParams
+impl core::marker::UnsafeUnpin for alice_physics::lift_drag::LiftDragParams
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::lift_drag::LiftDragParams
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::lift_drag::LiftDragParams
+pub struct alice_physics::lift_drag::LiftDragSurface
+impl alice_physics::lift_drag::LiftDragSurface
+pub fn alice_physics::lift_drag::LiftDragSurface::apply(&self, &mut alice_physics::solver::RigidBody, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::lift_drag::AeroLoad, alice_physics::lift_drag::LiftDragError>
+pub fn alice_physics::lift_drag::LiftDragSurface::coefficients(&self, alice_physics::math::Fix128) -> alice_physics::lift_drag::AeroCoefficients
+pub fn alice_physics::lift_drag::LiftDragSurface::lift_slope_per_rad(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::lift_drag::LiftDragSurface::load(&self, &alice_physics::solver::RigidBody, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::result::Result<alice_physics::lift_drag::AeroLoad, alice_physics::lift_drag::LiftDragError>
+pub fn alice_physics::lift_drag::LiftDragSurface::new(alice_physics::lift_drag::LiftDragParams) -> core::result::Result<Self, alice_physics::lift_drag::LiftDragError>
+pub fn alice_physics::lift_drag::LiftDragSurface::params(&self) -> &alice_physics::lift_drag::LiftDragParams
+impl core::clone::Clone for alice_physics::lift_drag::LiftDragSurface
+pub fn alice_physics::lift_drag::LiftDragSurface::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::lift_drag::LiftDragSurface
+impl core::cmp::PartialEq for alice_physics::lift_drag::LiftDragSurface
+pub fn alice_physics::lift_drag::LiftDragSurface::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::lift_drag::LiftDragSurface
+pub fn alice_physics::lift_drag::LiftDragSurface::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::lift_drag::LiftDragSurface
+impl core::marker::StructuralPartialEq for alice_physics::lift_drag::LiftDragSurface
+impl core::marker::Freeze for alice_physics::lift_drag::LiftDragSurface
+impl core::marker::Send for alice_physics::lift_drag::LiftDragSurface
+impl core::marker::Sync for alice_physics::lift_drag::LiftDragSurface
+impl core::marker::Unpin for alice_physics::lift_drag::LiftDragSurface
+impl core::marker::UnsafeUnpin for alice_physics::lift_drag::LiftDragSurface
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::lift_drag::LiftDragSurface
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::lift_drag::LiftDragSurface
+pub const alice_physics::lift_drag::THIN_AIRFOIL_LIFT_SLOPE: alice_physics::math::Fix128
 pub mod alice_physics::linear_elastic_fem
 pub enum alice_physics::linear_elastic_fem::Axis
 pub alice_physics::linear_elastic_fem::Axis::X
@@ -13805,6 +14000,128 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rope_attach::Rop
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::rope_attach::RopeAttachment
 pub fn alice_physics::rope_attach::solve_rope_attachments(&[alice_physics::rope_attach::RopeAttachment], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
 pub fn alice_physics::rope_attach::solve_rope_attachments_two_way(&[alice_physics::rope_attach::RopeAttachment], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
+pub mod alice_physics::rotor
+pub enum alice_physics::rotor::RotorError
+pub alice_physics::rotor::RotorError::DegenerateAxis
+pub alice_physics::rotor::RotorError::NegativeAirDensity
+pub alice_physics::rotor::RotorError::NegativeRotationSpeed
+pub alice_physics::rotor::RotorError::NegativeThrust
+pub alice_physics::rotor::RotorError::NegativeThrustCoefficient
+pub alice_physics::rotor::RotorError::NegativeTorqueCoefficient
+pub alice_physics::rotor::RotorError::NonPositiveDiameter
+pub alice_physics::rotor::RotorError::NonPositiveDiskArea
+impl core::clone::Clone for alice_physics::rotor::RotorError
+pub fn alice_physics::rotor::RotorError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::rotor::RotorError
+impl core::cmp::PartialEq for alice_physics::rotor::RotorError
+pub fn alice_physics::rotor::RotorError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::rotor::RotorError
+impl core::fmt::Debug for alice_physics::rotor::RotorError
+pub fn alice_physics::rotor::RotorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::rotor::RotorError
+pub fn alice_physics::rotor::RotorError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::rotor::RotorError
+impl core::marker::StructuralPartialEq for alice_physics::rotor::RotorError
+impl core::marker::Freeze for alice_physics::rotor::RotorError
+impl core::marker::Send for alice_physics::rotor::RotorError
+impl core::marker::Sync for alice_physics::rotor::RotorError
+impl core::marker::Unpin for alice_physics::rotor::RotorError
+impl core::marker::UnsafeUnpin for alice_physics::rotor::RotorError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rotor::RotorError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::rotor::RotorError
+pub enum alice_physics::rotor::RotorSpin
+pub alice_physics::rotor::RotorSpin::LeftHanded
+pub alice_physics::rotor::RotorSpin::RightHanded
+impl core::clone::Clone for alice_physics::rotor::RotorSpin
+pub fn alice_physics::rotor::RotorSpin::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::rotor::RotorSpin
+impl core::cmp::PartialEq for alice_physics::rotor::RotorSpin
+pub fn alice_physics::rotor::RotorSpin::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::rotor::RotorSpin
+pub fn alice_physics::rotor::RotorSpin::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::rotor::RotorSpin
+impl core::marker::StructuralPartialEq for alice_physics::rotor::RotorSpin
+impl core::marker::Freeze for alice_physics::rotor::RotorSpin
+impl core::marker::Send for alice_physics::rotor::RotorSpin
+impl core::marker::Sync for alice_physics::rotor::RotorSpin
+impl core::marker::Unpin for alice_physics::rotor::RotorSpin
+impl core::marker::UnsafeUnpin for alice_physics::rotor::RotorSpin
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rotor::RotorSpin
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::rotor::RotorSpin
+pub struct alice_physics::rotor::Rotor
+impl alice_physics::rotor::Rotor
+pub fn alice_physics::rotor::Rotor::apply(&self, &mut alice_physics::solver::RigidBody, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::rotor::RotorLoad, alice_physics::rotor::RotorError>
+pub fn alice_physics::rotor::Rotor::disk_area_m2(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::rotor::Rotor::load(&self, &alice_physics::solver::RigidBody, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::rotor::RotorLoad, alice_physics::rotor::RotorError>
+pub fn alice_physics::rotor::Rotor::new(alice_physics::rotor::RotorParams) -> core::result::Result<Self, alice_physics::rotor::RotorError>
+pub fn alice_physics::rotor::Rotor::params(&self) -> &alice_physics::rotor::RotorParams
+pub fn alice_physics::rotor::Rotor::shaft_torque_nm(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::rotor::RotorError>
+pub fn alice_physics::rotor::Rotor::speed_for_thrust(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::rotor::RotorError>
+pub fn alice_physics::rotor::Rotor::thrust_n(&self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::rotor::RotorError>
+impl core::clone::Clone for alice_physics::rotor::Rotor
+pub fn alice_physics::rotor::Rotor::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::rotor::Rotor
+impl core::cmp::PartialEq for alice_physics::rotor::Rotor
+pub fn alice_physics::rotor::Rotor::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::rotor::Rotor
+pub fn alice_physics::rotor::Rotor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::rotor::Rotor
+impl core::marker::StructuralPartialEq for alice_physics::rotor::Rotor
+impl core::marker::Freeze for alice_physics::rotor::Rotor
+impl core::marker::Send for alice_physics::rotor::Rotor
+impl core::marker::Sync for alice_physics::rotor::Rotor
+impl core::marker::Unpin for alice_physics::rotor::Rotor
+impl core::marker::UnsafeUnpin for alice_physics::rotor::Rotor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rotor::Rotor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::rotor::Rotor
+pub struct alice_physics::rotor::RotorLoad
+pub alice_physics::rotor::RotorLoad::application_point: alice_physics::math::Vec3Fix
+pub alice_physics::rotor::RotorLoad::force: alice_physics::math::Vec3Fix
+pub alice_physics::rotor::RotorLoad::reaction_torque: alice_physics::math::Vec3Fix
+pub alice_physics::rotor::RotorLoad::shaft_torque_nm: alice_physics::math::Fix128
+pub alice_physics::rotor::RotorLoad::thrust_n: alice_physics::math::Fix128
+pub alice_physics::rotor::RotorLoad::torque: alice_physics::math::Vec3Fix
+impl core::clone::Clone for alice_physics::rotor::RotorLoad
+pub fn alice_physics::rotor::RotorLoad::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::rotor::RotorLoad
+impl core::cmp::PartialEq for alice_physics::rotor::RotorLoad
+pub fn alice_physics::rotor::RotorLoad::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::rotor::RotorLoad
+pub fn alice_physics::rotor::RotorLoad::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::rotor::RotorLoad
+impl core::marker::StructuralPartialEq for alice_physics::rotor::RotorLoad
+impl core::marker::Freeze for alice_physics::rotor::RotorLoad
+impl core::marker::Send for alice_physics::rotor::RotorLoad
+impl core::marker::Sync for alice_physics::rotor::RotorLoad
+impl core::marker::Unpin for alice_physics::rotor::RotorLoad
+impl core::marker::UnsafeUnpin for alice_physics::rotor::RotorLoad
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rotor::RotorLoad
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::rotor::RotorLoad
+pub struct alice_physics::rotor::RotorParams
+pub alice_physics::rotor::RotorParams::diameter_m: alice_physics::math::Fix128
+pub alice_physics::rotor::RotorParams::hub_position_local: alice_physics::math::Vec3Fix
+pub alice_physics::rotor::RotorParams::spin: alice_physics::rotor::RotorSpin
+pub alice_physics::rotor::RotorParams::thrust_axis_local: alice_physics::math::Vec3Fix
+pub alice_physics::rotor::RotorParams::thrust_coefficient: alice_physics::math::Fix128
+pub alice_physics::rotor::RotorParams::torque_coefficient: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::rotor::RotorParams
+pub fn alice_physics::rotor::RotorParams::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::rotor::RotorParams
+impl core::cmp::PartialEq for alice_physics::rotor::RotorParams
+pub fn alice_physics::rotor::RotorParams::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::rotor::RotorParams
+pub fn alice_physics::rotor::RotorParams::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::rotor::RotorParams
+impl core::marker::StructuralPartialEq for alice_physics::rotor::RotorParams
+impl core::marker::Freeze for alice_physics::rotor::RotorParams
+impl core::marker::Send for alice_physics::rotor::RotorParams
+impl core::marker::Sync for alice_physics::rotor::RotorParams
+impl core::marker::Unpin for alice_physics::rotor::RotorParams
+impl core::marker::UnsafeUnpin for alice_physics::rotor::RotorParams
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::rotor::RotorParams
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::rotor::RotorParams
+pub fn alice_physics::rotor::hover_induced_velocity_m_s(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::rotor::RotorError>
+pub fn alice_physics::rotor::ideal_hover_power_w(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::rotor::RotorError>
 pub mod alice_physics::scene_io
 #[non_exhaustive] pub struct alice_physics::scene_io::PhysicsConfig
 pub alice_physics::scene_io::PhysicsConfig::damping: [i64; 2]
