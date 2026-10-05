@@ -14,10 +14,11 @@ void UAlicePhysicsWorldComponent::BeginPlay()
 
     AlicePhysicsConfig Config = alice_physics_config_default();
     Config.substeps = static_cast<uint32_t>(Substeps);
-    // UE5 uses cm, ALICE uses m. Convert gravity.
-    Config.gravity_x = Gravity.X * 0.01;
-    Config.gravity_y = Gravity.Z * 0.01; // UE5 Z-up → ALICE Y-up
-    Config.gravity_z = Gravity.Y * 0.01;
+    // Same axis mapping and cm -> m scale as positions (ToAlice).
+    const AliceVec3 G = ToAlice(Gravity);
+    Config.gravity_x = G.x;
+    Config.gravity_y = G.y;
+    Config.gravity_z = G.z;
 
     World = reinterpret_cast<AlicePhysicsWorld*>(
         alice_physics_world_create_with_config(Config));
@@ -76,8 +77,7 @@ FQuat UAlicePhysicsWorldComponent::GetBodyRotation(int32 BodyId) const
     AliceQuat Rot;
     if (alice_physics_body_get_rotation(World, static_cast<uint32_t>(BodyId), &Rot))
     {
-        // ALICE (Y-up) → UE5 (Z-up)
-        return FQuat(Rot.x, Rot.z, Rot.y, Rot.w);
+        return QuatFromAlice(Rot);
     }
     return FQuat::Identity;
 }
@@ -310,6 +310,15 @@ void UAlicePhysicsWorldComponent::StepSimulationN(float DeltaTime, int32 Steps)
     }
 }
 
+bool UAlicePhysicsWorldComponent::SetWorldGravity(FVector NewGravity)
+{
+    if (!World) return false;
+    const AliceVec3 G = ToAlice(NewGravity);
+    alice_physics_world_set_gravity(World, G.x, G.y, G.z);
+    Gravity = NewGravity;
+    return true;
+}
+
 bool UAlicePhysicsWorldComponent::SetWorldSubsteps(int32 NewSubsteps)
 {
     if (!World || NewSubsteps < 1) return false;
@@ -395,6 +404,12 @@ AliceQuat UAlicePhysicsWorldComponent::QuatToAlice(const FQuat& Q)
     Result.z = Q.X;
     Result.w = Q.W;
     return Result;
+}
+
+FQuat UAlicePhysicsWorldComponent::QuatFromAlice(const AliceQuat& Q)
+{
+    // Inverse of QuatToAlice: UE (X, Y, Z) = ALICE (z, x, y), w kept.
+    return FQuat(Q.z, Q.x, Q.y, Q.w);
 }
 
 AlicePhysicsShape UAlicePhysicsWorldComponent::ShapeToAlice(int32 Kind, const FVector& SizeCm)

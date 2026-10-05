@@ -105,6 +105,7 @@ were introduced during that release window.
 - `docs/integration-levels.md` (`scripts/integration_levels.py`): 公開モジュールを item が実際にどこから呼ばれるか (step / world API / binding / standalone / unused、`examples/` からの呼び出しは数えない) で区分した一覧と、C ABI の各関数を C ヘッダ・`bindings/AlicePhysics.h`・Unity・Unreal Engine プラグインが宣言 / 呼び出しているかの表 README の要約表と `docs/MODULES.md` の Integration 列は CI がこの計測と突き合わせる 利用側が宣言しない関数は `scripts/abi-consumer-gaps.txt` に理由付きで載っていなければ CI が失敗する
 - Unreal Engine プラグインの `UAlicePhysicsWorldComponent` に衝突半径・形状・静的コライダー (平面・高さ場・三角形メッシュ)・ジョイント (ball・hinge・fixed・slider・spring)・body の位置 / 速度 / 反発 / 摩擦の設定・センサー body・`StepSimulationN`・`SetWorldSubsteps`・エラー文字列と版の取得を追加 (UE のビルド環境が無いため型検査は代替ヘッダで行った)
 - `sdf_ccd::sphere_trace_sdf_field` / `sdf_collider::{collide_point_sdf_field, collide_sphere_sdf_field, SdfQuery, ClosureSdfQuery, SdfFrame}` / `SdfCollider::frame`: `SdfCollider` (`Box<dyn SdfField>`、`'static + Send + Sync`) を作らずに、借用した場 (局所変数を捕捉する closure 等) で sphere trace と点・球の判定ができる 姿勢は `SdfFrame` で渡す `SdfField` は変更なし (全実装が blanket impl で `SdfQuery` になる) 既存の `sphere_trace_sdf` / `collide_point_sdf` / `collide_sphere_sdf` は新関数に委譲し、結果は bit 一致
+- Unreal Engine プラグイン: `UAlicePhysicsWorldComponent::SetWorldGravity`
 
 ### Changed
 
@@ -236,6 +237,7 @@ were introduced during that release window.
 - `SolverBackend::Tgs` の warm-start キャッシュが接触と距離拘束を vector 内の位置で引いていたため、接触の増減・`PhysicsWorld::remove_body`・`distance_constraints` の途中削除の後に別の接触・拘束の撃力で warm start していた 鍵を body ごとの安定 ID (削除を跨いで不変) と同じ対の中の序数に変更し、接触は安定 ID の小さい body から大きい body へ向きを揃える
 - `SolverBackend::Tgs` が `PhysicsWorld::add_joint` のジョイントと `PhysicsWorld::add_static_collider` の静的コライダーを無視していた (TGS では距離拘束しか解いていなかった) `step_tgs` で `solve_joints_dispatch` と `resolve_static_collisions` を呼ぶ 位置補正は速度にも反映する (静的接触は面に向かう速度を除き、ジョイントは `Δx / dt` と回転変化の角速度を加える)
 - C ヘッダ `include/alice_physics.h` が `alice_physics_world_step_n` の戻り値を `void` と宣言していた (実装は `uint8_t`) また `alice_physics_body_get_position_fix128_raw` を `include/alice_physics.h` と `bindings/AlicePhysics.h` が、`alice_physics_last_error` / `alice_physics_clear_last_error` / `alice_physics_string_free` を `bindings/AlicePhysics.h` が、`alice_physics_world_step_n` と 4 つの一括 API と `alice_physics_body_get_position_fix128_raw` を Unity の `bindings/AlicePhysics.cs` が宣言していなかった
+- Unreal Engine プラグイン: `UAlicePhysicsWorldComponent` が重力の UE の X / Y 成分を入れ替えて渡し、`GetBodyRotation` が回転の軸を位置と違う写像で返していた 重力・回転とも位置 (`ToAlice` / `FromAlice`) と同じ軸の写像に揃えた (水平成分を持つ重力と、UE の X / Y 軸まわりの回転が影響を受ける)
 
 ## [1.4.0] - 2026-09-17
 

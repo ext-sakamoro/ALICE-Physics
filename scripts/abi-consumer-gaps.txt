@@ -11,4 +11,3 @@ unreal alice_physics_world_get_positions_batch raw double buffers are not a Blue
 unreal alice_physics_world_get_velocities_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
 unreal alice_physics_world_set_velocities_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
 unreal alice_physics_body_apply_impulses_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
-unreal alice_physics_world_set_gravity the component's gravity axis mapping in BeginPlay does not match ToAlice yet; a setter would repeat it
