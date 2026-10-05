@@ -23,6 +23,7 @@
 //!
 //! # Periodic boundary and minimum image
 //!
+// LIMITATION(COV-PART-055): [`PeriodicBox`] is an orthorhombic box `[0, L_x) × [0, L_y) × [0, L_z)`.
 //! [`PeriodicBox`] is an orthorhombic box `[0, L_x) × [0, L_y) × [0, L_z)`.
 //! Positions are wrapped into it after every drift and pair separations use
 //! the minimum-image convention `d ← d − L round(d / L)` (range
@@ -61,6 +62,7 @@
 //! Kinetic energy `K = Σ ½ m v²`, potential energy `U = Σ_{pairs} U(r)`,
 //! total `K + U`, momentum `Σ m v`, and the instantaneous temperature
 //! `T = 2K / (k_B (3N − 3))` (three degrees of freedom per particle minus the
+// LIMITATION(COV-PART-037): `k_B` is a parameter: the SI value `1.380649e-23 J/K` is below the `Fix128` resolution (`2⁻⁶⁴ ≈ 5.4e-20`), so MD in `Fix128` is run in reduced units (`k_B = 1`, energies in `ε`).
 //! conserved total momentum). `k_B` is a parameter: the SI value
 //! `1.380649e-23 J/K` is below the `Fix128` resolution (`2⁻⁶⁴ ≈ 5.4e-20`),
 //! so MD in `Fix128` is run in reduced units (`k_B = 1`, energies in `ε`).

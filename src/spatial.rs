@@ -141,6 +141,7 @@ impl SpatialGrid {
     /// Collect all particle indices in the 3x3x3 neighborhood of `pos`.
     ///
     /// Results are appended to `neighbors` (which is cleared first).
+    // LIMITATION(COV-PART-052): `_radius_sq` is reserved for future distance filtering.
     /// `_radius_sq` is reserved for future distance filtering.
     pub fn query_neighbors_into(
         &self,
