@@ -12,11 +12,16 @@
 //!    computed here from the raw face arrays, is a vanishing fraction of the
 //!    seeded one.
 //!
+//! It also prints what each rank of a slab solver held
+//! (`project_pressure_distributed_with_report`), and checks that the largest
+//! rank of an 8-rank run holds a fraction of what a single rank holds.
+//!
 //! Run with `cargo run --release --example distributed_pressure_projection`.
 
 use alice_physics::cfd_solver::PressureSolver;
 use alice_physics::eulerian_grid::{
-    project_pressure, project_pressure_distributed, project_pressure_multigrid, MacGrid,
+    project_pressure, project_pressure_distributed, project_pressure_distributed_with_report,
+    project_pressure_multigrid, MacGrid,
 };
 use alice_physics::math::Fix128;
 
@@ -107,4 +112,32 @@ fn main() {
     assert!(max_divergence(&mg_ref) < seeded_div * 1e-10);
     assert!(max_divergence(&gs_ref) < seeded_div * 1e-3);
     println!("all rank counts reproduce the single-process answer; divergence removed");
+
+    // What one rank holds: its slab, not the grid.
+    let held = |ranks: usize| {
+        let mut g = base.clone();
+        let report = project_pressure_distributed_with_report(
+            &mut g,
+            dt,
+            rho,
+            PressureSolver::BandedGs { ranks, sweeps: 1 },
+        )
+        .expect("a decomposed solver with a non-zero rank and iteration count");
+        let largest = report
+            .max_rank_bytes()
+            .expect("a slab solver reports every rank");
+        let total = report
+            .total_bytes()
+            .expect("a slab solver reports every rank");
+        println!(
+            "BandedGs over {ranks} ranks: largest rank holds {largest} bytes, all ranks {total}"
+        );
+        largest
+    };
+    let whole = held(1);
+    let slab = held(8);
+    assert!(
+        slab * 4 < whole,
+        "a rank of 8 holds {slab} bytes against {whole} for one rank"
+    );
 }

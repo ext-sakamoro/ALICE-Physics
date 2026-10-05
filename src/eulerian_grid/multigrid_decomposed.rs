@@ -52,8 +52,9 @@
 use super::{
     exchange_slab_halos_local, mg_vcycle, poisson_rhs, subtract_pressure_gradient,
     subtract_slab_pressure_gradient, HaloSchedule, LocalSlabTransport, MacGrid, MgLevel,
-    PoissonMask, SlabFaces, SlabStencil, SlabStorage, SlabTransport, SweepWindow, MG_COARSE_VISITS,
-    MG_CORRECTION_SCALE_DEN, MG_CORRECTION_SCALE_NUM, MG_POST_SMOOTH, MG_PRE_SMOOTH,
+    PoissonMask, SlabBytes, SlabFaces, SlabStencil, SlabStorage, SlabTransport, SweepWindow,
+    MG_COARSE_VISITS, MG_CORRECTION_SCALE_DEN, MG_CORRECTION_SCALE_NUM, MG_POST_SMOOTH,
+    MG_PRE_SMOOTH,
 };
 use crate::eulerian_grid::slab_bounds;
 use crate::math::Fix128;
@@ -175,8 +176,8 @@ fn local_slab_transport(
 /// The conductances, inverse degrees and right-hand side are built for the whole
 /// grid and each rank is handed the slice for its owned layers; what a rank keeps
 /// for the solve itself — pressure, right-hand side, residual — is band-local.
-/// Building the setup from a band, so that no rank ever sees the whole grid, goes
-/// with the rank-per-process driver.
+/// [`project_pressure_multigrid_banded_on_rank`] is the form that builds the
+/// setup from a band, so that no rank ever sees the whole grid.
 pub(crate) fn project_pressure_multigrid_decomposed_over<T, F>(
     grid: &mut MacGrid,
     dt_s: Fix128,
@@ -190,65 +191,10 @@ where
     T: SlabTransport,
     F: FnMut(&[(usize, usize)], usize, usize, usize, Option<&[Fix128]>) -> T,
 {
-    solve_decomposed(
-        grid,
-        dt_s,
-        density_kg_m3,
-        cycles,
-        ranks,
-        schedule,
-        None,
-        make,
-    )
+    solve_decomposed(grid, dt_s, density_kg_m3, cycles, ranks, schedule, make)
 }
 
-/// One rank's half of [`project_pressure_multigrid_decomposed_over`], for
-/// transports whose ranks do not share an address space.
-///
-/// The solve is the same code with the set of ranks it drives narrowed from every
-/// rank to `my_rank`: that rank sweeps, restricts and prolongs its own layers and
-/// asks its transports for its own band and no other. The exchange, the gather and
-/// the correction are still walked in full on every rank, in the same order, and
-/// the transport performs only the half it is party to; so deliveries are matched
-/// by position in a sequence every rank agrees on. Rank 0 also runs the
-/// agglomerated levels, and is the only rank that writes `grid` back.
-///
-/// Every rank must start from the same `grid`.
-// ALLOW-UNWIRED: stage 3 of the distributed multigrid — the rank-local driver a
-// process-per-rank harness calls; the oracle runs it over threads and sockets.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn project_pressure_multigrid_decomposed_on_rank<T, F>(
-    grid: &mut MacGrid,
-    dt_s: Fix128,
-    density_kg_m3: Fix128,
-    cycles: u32,
-    ranks: usize,
-    schedule: HaloSchedule,
-    my_rank: usize,
-    make: F,
-) -> Residency
-where
-    T: SlabTransport,
-    F: FnMut(&[(usize, usize)], usize, usize, usize, Option<&[Fix128]>) -> T,
-{
-    if my_rank >= ranks {
-        return Vec::new();
-    }
-    solve_decomposed(
-        grid,
-        dt_s,
-        density_kg_m3,
-        cycles,
-        ranks,
-        schedule,
-        Some(my_rank),
-        make,
-    )
-}
-
-/// The decomposed solve for the ranks it drives: every rank when `only` is
-/// `None`, otherwise just that one.
-#[allow(clippy::too_many_arguments)]
+/// The decomposed solve, driving every rank from this one address space.
 fn solve_decomposed<T, F>(
     grid: &mut MacGrid,
     dt_s: Fix128,
@@ -256,7 +202,6 @@ fn solve_decomposed<T, F>(
     cycles: u32,
     ranks: usize,
     schedule: HaloSchedule,
-    only: Option<usize>,
     mut make: F,
 ) -> Residency
 where
@@ -292,22 +237,13 @@ where
     let plane = |l: usize| levels[l].nx * levels[l].ny;
 
     // Per rank and level, only the owned layers.
-    let active: Vec<usize> = only.map_or_else(|| (0..ranks).collect(), |r| vec![r]);
+    let active: Vec<usize> = (0..ranks).collect();
     let local: Vec<Vec<Local>> = (0..=last)
         .map(|l| {
             let p = plane(l);
             bounds[l]
                 .iter()
-                .enumerate()
-                .map(|(r, &(k0, k1))| {
-                    if !active.contains(&r) {
-                        return Local {
-                            cond: Vec::new(),
-                            inv: Vec::new(),
-                            rhs: Vec::new(),
-                            res: Vec::new(),
-                        };
-                    }
+                .map(|&(k0, k1)| {
                     let (a, b) = (k0 * p, k1 * p);
                     Local {
                         cond: levels[l].cond[a..b].to_vec(),
@@ -377,10 +313,7 @@ where
         .iter_mut()
         .map(|t| active.iter().map(|&r| t.slab_mut(r).resident()).collect())
         .collect();
-    // Only rank 0 holds the whole field and so only rank 0 can take the gradient.
-    if !active.contains(&0) {
-        return residency;
-    }
+    // Rank 0 holds the whole field, so the gradient is taken from its copy.
     let root = solve
         .finish
         .as_mut()
@@ -428,8 +361,12 @@ pub(crate) fn multigrid_slab_bounds(
     Some(layout(&nzs, ranks).bounds.swap_remove(0))
 }
 
-/// [`project_pressure_multigrid_decomposed_on_rank`] for a rank that holds **no
-/// `MacGrid`**: its faces and its pressure band are all it has.
+/// One rank's half of the decomposed multigrid solve, for a rank that holds **no
+/// `MacGrid`**: its faces and its pressure band are all it has. The schedule is
+/// [`project_pressure_multigrid_decomposed_over`]'s, narrowed to `my_rank`: the
+/// exchange, the gather and the correction are walked in full on every rank, in
+/// the same order, and the transport performs only the half this rank is party
+/// to.
 ///
 /// Everything the solve needs is built from `faces` — the right-hand side, the
 /// conductances and the inverse degrees through [`SlabStencil`] (the same
@@ -452,6 +389,10 @@ pub(crate) fn multigrid_slab_bounds(
 /// A degenerate `dx`, density, step, cycle count or extent leaves everything
 /// untouched, as the other drivers do.
 ///
+/// Returns what the finest-level stencil this rank built allocated
+/// ([`SlabStencil::bytes`]), and [`SlabBytes::ZERO`] when it returned before
+/// building one. The coarser levels and the transports are not in it.
+///
 /// # Panics
 ///
 /// When `faces` does not describe the layers the decomposition gives `my_rank`, or
@@ -467,7 +408,8 @@ pub(crate) fn project_pressure_multigrid_banded_on_rank<T, F>(
     schedule: HaloSchedule,
     my_rank: usize,
     mut make: F,
-) where
+) -> SlabBytes
+where
     T: SlabTransport,
     F: FnMut(&[(usize, usize)], usize, usize, usize, Option<&[Fix128]>) -> T,
 {
@@ -481,7 +423,7 @@ pub(crate) fn project_pressure_multigrid_banded_on_rank<T, F>(
         || density_kg_m3.is_zero()
         || dt_s.is_zero()
     {
-        return;
+        return SlabBytes::ZERO;
     }
     let dims = level_dims(nx, ny, nz);
     let nzs: Vec<usize> = dims.iter().map(|d| d.2).collect();
@@ -655,6 +597,7 @@ pub(crate) fn project_pressure_multigrid_banded_on_rank<T, F>(
             .expect("the band the starting field was read from")
             .copy_from_slice(done.layer(k).expect(OWNED_LAYER_MISSING));
     }
+    stencil.bytes()
 }
 
 /// What one rank keeps for one level besides its pressure band, for its owned
@@ -1421,74 +1364,6 @@ mod tests {
                 .collect();
             crate::eulerian_grid::SlabSocketTransport::new(my_rank, plane, slab, own)
         })
-    }
-
-    /// The rank-local driver, run as one thread per rank over loopback sockets,
-    /// lands on the single-process answer to the bit; rank 0 is the only one that
-    /// writes its grid back, and the others leave theirs as they found it.
-    #[cfg(feature = "std")]
-    #[test]
-    fn the_rank_local_driver_over_sockets_reproduces_the_single_process_cycle() {
-        type Dims = (usize, usize, usize);
-        let cases: &[(Dims, &[usize])] = &[
-            ((8, 8, 8), &[2, 3, 4, 8]),
-            ((16, 8, 4), &[2, 4, 8]),
-            ((4, 4, 16), &[3, 5]),
-            ((8, 8, 1), &[2]),
-        ];
-        for scene in [Scene::Open, Scene::Walled] {
-            for &((nx, ny, nz), rank_counts) in cases {
-                for &ranks in rank_counts {
-                    let base = seed(nx, ny, nz, scene);
-                    let want = solve_single(&base, 2);
-                    assert!(!bit_equal(&base, &want));
-                    let mut mesh = socket_mesh(ranks);
-                    let results: Vec<MacGrid> = std::thread::scope(|sc| {
-                        let handles: Vec<_> = mesh
-                            .iter_mut()
-                            .enumerate()
-                            .map(|(rank, links)| {
-                                let mut grid = base.clone();
-                                let links = &*links;
-                                sc.spawn(move || {
-                                    project_pressure_multigrid_decomposed_on_rank(
-                                        &mut grid,
-                                        fx(DT.0, DT.1),
-                                        Fix128::from_int(RHO),
-                                        2,
-                                        ranks,
-                                        HaloSchedule::EverySweep,
-                                        rank,
-                                        socket_factory(rank, links),
-                                    );
-                                    grid
-                                })
-                            })
-                            .collect();
-                        handles
-                            .into_iter()
-                            .map(|h| h.join().expect("a rank panicked"))
-                            .collect()
-                    });
-                    assert!(
-                        bit_equal(&want, &results[0]),
-                        "{nx}x{ny}x{nz} over {ranks} ranks, {scene:?}: rank 0 over sockets is \
-                         not the single-process answer"
-                    );
-                    // The solve enforces the face conditions on every rank's grid
-                    // before anything else; past that, a non-root rank leaves its
-                    // copy alone.
-                    let mut untouched = base.clone();
-                    untouched.enforce_face_boundaries();
-                    for (rank, grid) in results.iter().enumerate().skip(1) {
-                        assert!(
-                            bit_equal(&untouched, grid),
-                            "{nx}x{ny}x{nz} over {ranks} ranks: rank {rank} wrote its grid back"
-                        );
-                    }
-                }
-            }
-        }
     }
 
     /// Teeth: a driver that runs every rank cannot be handed a transport that
