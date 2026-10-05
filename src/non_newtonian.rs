@@ -20,6 +20,7 @@
 //!
 //! # Integer exponent restriction
 //!
+// LIMITATION(COV-MAT-091): The power-law and Carreau structs store their exponent as an integer
 //! The power-law and Carreau structs store their exponent as an integer so
 //! that `Default`/`Eq` stay trivial: [`Carreau::half_exponent`] is `(n−1)/2`
 //! rounded to an integer, so `-1` is `n = −1` (steep thinning), `0` is
@@ -249,6 +250,7 @@ pub struct HerschelBulkley {
     pub yield_stress: Fix128,
     /// Consistency K (Pa·s^n).
     pub k: Fix128,
+    // LIMITATION(COV-MAT-095): Integer exponent.
     /// Integer exponent.
     pub n_int: u32,
 }

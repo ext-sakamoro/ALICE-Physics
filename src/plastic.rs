@@ -63,6 +63,7 @@ pub enum HardeningType {
     /// Yield surface translates (back-stress evolves). Reproduces Bauschinger
     /// under load reversals — required for cyclic / fatigue analysis.
     Kinematic,
+    // LIMITATION(COV-MAT-068): Combined isotropic + kinematic (equal split).
     /// Combined isotropic + kinematic (equal split).
     Combined,
 }
@@ -88,6 +89,7 @@ pub struct PlasticModel {
 }
 
 impl PlasticModel {
+    // LIMITATION(COV-MAT-073): Defaults to isotropic hardening with `H = 0.05 · E` (typical elastic-plastic ratio for polymers).
     /// Construct from an isotropic material. Defaults to isotropic hardening
     /// with `H = 0.05 · E` (typical elastic-plastic ratio for polymers).
     #[must_use]
