@@ -9052,6 +9052,7 @@ pub alice_physics::plastic::PlasticModel::yield_strength_mpa: alice_physics::mat
 pub alice_physics::plastic::PlasticModel::youngs_modulus_mpa: alice_physics::math::Fix128
 impl alice_physics::plastic::PlasticModel
 pub fn alice_physics::plastic::PlasticModel::from_fdm_material(&alice_physics::filament_db::MaterialProperties) -> Self
+pub const fn alice_physics::plastic::PlasticModel::with_hardening(self, alice_physics::plastic::HardeningType) -> Self
 impl core::clone::Clone for alice_physics::plastic::PlasticModel
 pub fn alice_physics::plastic::PlasticModel::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::plastic::PlasticModel
