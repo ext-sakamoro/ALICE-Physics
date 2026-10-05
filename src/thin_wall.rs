@@ -309,6 +309,7 @@ pub fn analyze_thickness_grid(
     analyze_thickness(sdf, &surface_points, config)
 }
 
+// LIMITATION(COV-AM-013): Extract approximate surface points from a grid AABB by finding sign changes between adjacent cells along the X axis.
 /// Extract approximate surface points from a grid AABB by finding sign changes
 /// between adjacent cells along the X axis. Linear interpolation refines the
 /// zero-crossing location. Exposed for tests and advanced callers.
