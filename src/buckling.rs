@@ -35,9 +35,13 @@
 //! wired into `structural_solver.rs`. The radius-of-gyration / slenderness
 //! helpers are crate-internal and reached through `analyze_column`.
 //! `plate_buckling_mpa` (local wall buckling of a hollow section) and
-//! `snap_through_load_n` (shallow arch / clip) have no consumer in the 1-D
-//! beam life loop; they carry an `ALLOW-UNWIRED` debt marker and their
-//! closed-form oracles live in this module's unit tests.
+//! `snap_through_load_n` (shallow arch / clip) are reached through
+//! `StructuralSolver::plate_buckling_mpa` / `StructuralSolver::snap_through_load_n`,
+//! which take Young's modulus from the solver's material (and, for
+//! snap-through, the bar area from its cross-section). The life loop
+//! (`StructuralSolver::step`) does not trip on either: the plate width,
+//! edge factor and Poisson ratio are caller inputs that neither
+//! `CrossSection` nor `MaterialProperties` carries.
 
 use crate::beam_stress::{ColumnEndCondition, CrossSection};
 use crate::filament_db::MaterialProperties;
@@ -205,9 +209,6 @@ pub fn analyze_column(
 ///
 /// Returns 0 when `width_mm` is zero or when `poisson` is ±1 (the
 /// `1 − ν²` denominator vanishes); both are degenerate inputs, not plates.
-// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (local wall buckling waits for a 2-D structural_solver), oracle src/buckling.rs tests::plate_buckling_matches_timoshenko_closed_form
-#[allow(dead_code)]
 #[must_use]
 pub(crate) fn plate_buckling_mpa(
     e_mpa: Fix128,
@@ -265,9 +266,6 @@ pub(crate) fn plate_buckling_mpa(
 /// `section_area_mm2 ≤ 0` (no bar to buckle),
 /// [`SnapThroughError::NegativeRise`] for `rise_mm < 0` (the apex would be
 /// below the supports, so the load is a pull-through, not this formula).
-// ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-// ALLOW-UNWIRED: wiring debt Backlog structural-pub-crate-residue (snap-through has no arch in the 1-D beam loop), oracle src/buckling.rs tests::snap_through_is_the_shallow_limit_of_the_exact_truss
-#[allow(dead_code)]
 pub(crate) fn snap_through_load_n(
     e_mpa: Fix128,
     section_area_mm2: Fix128,
@@ -290,11 +288,11 @@ pub(crate) fn snap_through_load_n(
     Ok(coefficient * e_mpa * section_area_mm2 * ratio3)
 }
 
-/// Why [`snap_through_load_n`] could not answer.
+/// Why the snap-through load (`StructuralSolver::snap_through_load_n`)
+/// could not be computed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// ALLOW-DEAD: carried by snap_through_load_n, same debt (structural-pub-crate-residue)
-#[allow(dead_code)]
-pub(crate) enum SnapThroughError {
+#[non_exhaustive]
+pub enum SnapThroughError {
     /// `span_mm ≤ 0`: the rise ratio `h/L` is undefined.
     NonPositiveSpan,
     /// `e_mpa ≤ 0` or `section_area_mm2 ≤ 0`: there is no bar.
