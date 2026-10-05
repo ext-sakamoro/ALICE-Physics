@@ -1,8 +1,12 @@
-//! Scene snapshot through JSON: `CURRENT_SCENE_VERSION`, `save_scene_json`, `load_scene_json`.
+//! Scene snapshot through JSON: `CURRENT_SCENE_VERSION`, `save_scene_json`, `load_scene_json`,
+//! `PhysicsConfig::new`.
 //!
 //! A `PhysicsWorld` is captured into a `PhysicsScene` (raw `hi` / `lo` limbs, so the file is
 //! bit exact), written as JSON, read back, and the bodies are rebuilt: every position, velocity and
-//! mass limb must match the original bit for bit.
+//! mass limb must match the original bit for bit. The scene carries a non-default solver
+//! configuration built with `PhysicsConfig::new` from the world's own settings (substeps,
+//! iterations, gravity `(0, -9.81, 0)`, damping 0.95); the documented contract is that the raw
+//! values are stored as given, so each field must decode back to the value that went in.
 //!
 //! ```bash
 //! cargo run --release --example scene_snapshot_roundtrip --features std
@@ -76,12 +80,20 @@ fn main() -> std::io::Result<()> {
             body_type: u8::from(b.inv_mass.is_zero()),
         })
         .collect();
-    let scene = PhysicsScene::new(
-        bodies,
-        Vec::new(),
-        PhysicsConfig::default(),
-        CURRENT_SCENE_VERSION,
+    let gravity = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-981, 100), Fix128::ZERO);
+    let damping = Fix128::from_ratio(95, 100);
+    let config = PhysicsConfig::new(
+        world.config.substeps as u32,
+        world.config.iterations as u32 + 1,
+        limbs3(gravity),
+        limb(damping),
     );
+    assert_eq!(config.substeps, world.config.substeps as u32);
+    assert_eq!(config.iterations, world.config.iterations as u32 + 1);
+    assert_eq!(from_limbs3(&config.gravity), gravity);
+    assert_eq!(config.damping, limb(damping));
+    assert_ne!(config, PhysicsConfig::default(), "a custom configuration");
+    let scene = PhysicsScene::new(bodies, Vec::new(), config, CURRENT_SCENE_VERSION);
 
     let path = std::env::temp_dir().join("alice_physics_scene_snapshot.json");
     save_scene_json(&scene, &path)?;
@@ -90,6 +102,10 @@ fn main() -> std::io::Result<()> {
 
     assert_eq!(loaded, scene, "JSON round trip must be exact");
     assert_eq!(loaded.version, CURRENT_SCENE_VERSION);
+    assert_eq!(loaded.config.substeps, world.config.substeps as u32);
+    assert_eq!(loaded.config.iterations, world.config.iterations as u32 + 1);
+    assert_eq!(from_limbs3(&loaded.config.gravity), gravity);
+    assert_eq!(loaded.config.damping, limb(damping));
     for (b, s) in world.bodies.iter().zip(&loaded.bodies) {
         assert_eq!(from_limbs3(&s.position), b.position);
         assert_eq!(from_limbs3(&s.velocity), b.velocity);
