@@ -856,19 +856,20 @@ impl PhysicsWorld2D {
                     radius: rcap,
                     half_length,
                 },
-            ) => capsule_vs_circle(body_b, *rcap, *half_length, body_a.position, *rc),
+            ) => {
+                // capsule_vs_circle returns capsule -> circle; here A is the circle
+                capsule_vs_circle(body_b, *rcap, *half_length, body_a.position, *rc).map(|mut c| {
+                    c.normal = -c.normal;
+                    c
+                })
+            }
             (
                 Shape2D::Capsule {
                     radius: rcap,
                     half_length,
                 },
                 Shape2D::Circle { radius: rc },
-            ) => {
-                capsule_vs_circle(body_a, *rcap, *half_length, body_b.position, *rc).map(|mut c| {
-                    c.normal = -c.normal;
-                    c
-                })
-            }
+            ) => capsule_vs_circle(body_a, *rcap, *half_length, body_b.position, *rc),
             (Shape2D::Edge { start, end }, Shape2D::Circle { radius }) => {
                 edge_vs_circle(body_a, *start, *end, body_b.position, *radius)
             }
@@ -934,6 +935,10 @@ fn transform_vertices(body: &RigidBody2D, local_verts: &[Vec2Fix]) -> Vec<Vec2Fi
 }
 
 /// Circle vs convex polygon collision using SAT with Voronoi regions.
+///
+/// The returned normal points from the circle (first argument) toward the
+/// polygon, i.e. against the polygon's outward face / vertex direction, so the
+/// `(Circle, Polygon)` arm of `check_collision_2d` uses it as body_a -> body_b.
 fn circle_vs_polygon(
     circle_pos: Vec2Fix,
     circle_radius: Fix128,
@@ -995,7 +1000,7 @@ fn circle_vs_polygon(
         let depth = circle_radius - dist;
         Some(Contact2D {
             point: a,
-            normal,
+            normal: -normal,
             depth,
             body_a: 0,
             body_b: 0,
@@ -1011,7 +1016,7 @@ fn circle_vs_polygon(
         let depth = circle_radius - dist;
         Some(Contact2D {
             point: b,
-            normal,
+            normal: -normal,
             depth,
             body_a: 0,
             body_b: 0,
@@ -1025,7 +1030,7 @@ fn circle_vs_polygon(
         let point = circle_pos - best_normal * best_dist;
         Some(Contact2D {
             point,
-            normal: best_normal,
+            normal: -best_normal,
             depth,
             body_a: 0,
             body_b: 0,
@@ -1161,7 +1166,8 @@ fn polygon_centroid(verts: &[Vec2Fix]) -> Vec2Fix {
 
 /// Capsule vs circle collision.
 ///
-/// The capsule is centered at `body_cap.position` with its segment along the
+/// The returned normal points from the capsule (first argument) toward the
+/// circle. The capsule is centered at `body_cap.position` with its segment along the
 /// local X axis (from `-half_length` to `+half_length`).
 fn capsule_vs_circle(
     body_cap: &RigidBody2D,
@@ -1209,6 +1215,8 @@ fn capsule_vs_circle(
 }
 
 /// Edge vs circle collision.
+///
+/// The returned normal points from the edge (first argument) toward the circle.
 fn edge_vs_circle(
     edge_body: &RigidBody2D,
     local_start: Vec2Fix,
