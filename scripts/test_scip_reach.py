@@ -372,6 +372,58 @@ class Levels(unittest.TestCase):
         self.assertEqual(levels([lib_doc(), t])["src/lib.rs::used"], "L0")
 
 
+class MacroGenerated(unittest.TestCase):
+    """Types a macro_rules invocation generates, and the members its body writes.
+    rust-analyzer defines the type at the invocation's argument token, emits no
+    definition for the members and records no reference from the expanded body."""
+
+    TEXT = ("pub struct Entry { pub hash: u64 }\n"
+            "macro_rules! gen { ($n:ident) => { pub struct $n; impl $n { "
+            "pub fn top_k(&self) -> Vec<Entry> { vec![] } pub fn fresh() -> Self { $n } } } }\n"
+            "gen!(H5);\n"
+            "gen!(H10);")
+
+    def analysis(self, *refs: str):
+        src = (Doc("src/m.rs", self.TEXT)
+               .define("m/Entry#", 0, "Entry")
+               .define("m/Entry#hash.", 0, "hash")
+               .define("m/H5#", 2, "H5")
+               .define("m/H10#", 3, "H10"))
+        ex = Doc("examples/e.rs", "fn main() { x.top_k(); }")
+        for r in refs:
+            ex.ref(r, 0, "top_k")
+        d = build([src, ex])
+        s_ = d / "target" / "scip"
+        return sr.analyze(d, [s_ / "native.scip", s_ / "wasm.scip", s_ / "fuzz.scip"])
+
+    def test_each_generated_type_and_member_is_an_item(self):
+        a = self.analysis("m/impl#[H5]top_k().")
+        self.assertEqual(a.level["src/m.rs::H5::top_k"], "L1")
+        self.assertEqual(a.level["src/m.rs::H5::fresh"], "L0")
+        # the same member of the other invocation is a separate item
+        self.assertEqual(a.level["src/m.rs::H10::top_k"], "L0")
+        self.assertIn("src/m.rs::H10", a.level)
+        self.assertEqual(a.generated_items, 2 * (2 + 1))
+        # accounted for, so no longer listed as unindexed
+        self.assertEqual(a.unindexed, [])
+
+    def test_a_reached_member_reaches_what_the_body_names(self):
+        self.assertEqual(self.analysis("m/impl#[H5]top_k().").level["src/m.rs::Entry"], "L1")
+        self.assertEqual(self.analysis().level["src/m.rs::Entry"], "L0")
+
+    def test_a_used_field_reaches_its_type(self):
+        # reading `entry.hash` shows an Entry exists, although nothing names `Entry#`
+        src = (Doc("src/m.rs", "pub struct Entry { pub hash: u64 }\npub struct Other { pub n: u8 }")
+               .define("m/Entry#", 0, "Entry")
+               .define("m/Entry#hash.", 0, "hash")
+               .define("m/Other#", 1, "Other")
+               .define("m/Other#n.", 1, "n"))
+        ex = Doc("examples/e.rs", "fn main() { let _ = e.hash; }").ref("m/Entry#hash.", 0, "hash")
+        lv = levels([src, ex])
+        self.assertEqual(lv["src/m.rs::Entry"], "L1")
+        self.assertEqual(lv["src/m.rs::Other"], "L0")
+
+
 class Main(unittest.TestCase):
     def test_missing_index_fails(self):
         d = Path(tempfile.mkdtemp())

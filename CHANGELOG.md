@@ -133,6 +133,7 @@ were introduced during that release window.
 
 ### Changed
 
+- `scripts/scip_reach.py`: `macro_rules!` の呼び出しが生成する型と、本体が書く pub member を item として数えるようにした (これまで索引に定義が無く unindexed 27 件として外れていた) 使われている field / variant から所有する型に届くようにした 基準ファイルは unindexed 27 → 0、L0 は 115 件増えた (生成された member のうち呼び出し元の無いもの)
 - `scripts/test_wiring_guard.py`: 大きな入力で検査が遅くならないことを見る 2 件の時間制限を、経過時間でなくこのプロセスの CPU 時間で測るようにした (並行する build の負荷で経過時間だけが伸びて失敗していた)
 - `PhysicsWorld::raycast` と `query::batch_raycast` の doc に、body を外接球で近似し static collider と SDF collider を見ないことを明記 (挙動は不変、実形状は `PhysicsWorld::cast_ray`)
 - **Behavior change:** joint (ball / hinge / fixed / slider / cone-twist) の位置拘束が lever arm と回転補正を含むようになり、D6 の角度誤差は `local_frame_b` 基準になった 全 joint の位置拘束の結果が変わる (AUD-A-S1W6-006 / 010)

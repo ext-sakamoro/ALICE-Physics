@@ -169,6 +169,7 @@ class Analysis:
         self.fuzz_docs = 0
         self.impl_links = 0       # trait-impl method -> in-crate trait method
         self.external_impls = 0   # trait-impl methods of traits defined outside the crate
+        self.generated_items = 0  # items of types a macro invocation generates
 
 
 IMPL_HEADER_RE = re.compile(r"\bimpl\b[^{;]*\{")
@@ -189,6 +190,9 @@ TYPE_DEF_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#$")
 TYPE_OR_MEMBER_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#(?:[A-Za-z_][A-Za-z0-9_]*\.)?$")
 # a method of an inherent or trait impl: `impl#[<Type>]m().` / `impl#[<Type>][<Trait>]m().`
 INHERENT_OR_IMPL_RE = re.compile(r"impl#\[([^\]]*(?:\[[^\]]*\][^\]]*)*)\]")
+# a field or variant: `<module>/<Name>#<member>.` (not a method `...().`); the
+# match starts at the `#`, so the owner type symbol is everything before it plus `#`
+FIELD_RE = re.compile(r"#[A-Za-z_][A-Za-z0-9_]*\.$")
 # a method defined inside a trait or type body: `<module>/<Name>#<method>().`, or
 # `<Name>#<method>().` right after the package version for an item at the crate root
 MEMBER_METHOD_RE = re.compile(r"(?:^|[/ ])([A-Za-z_][A-Za-z0-9_]*)#([A-Za-z_][A-Za-z0-9_]*)\(\)\.$")
@@ -288,6 +292,24 @@ def _visible(code_lines: list[str], pos: tuple[int, int]) -> bool:
     return line < len(code_lines) and ch < len(code_lines[line]) and not code_lines[line][ch].isspace()
 
 
+MACRO_RULES_RE = re.compile(r"\bmacro_rules!\s*([A-Za-z_][A-Za-z0-9_]*)\s*\{")
+MACRO_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)!\s*[\(\[\{]")
+IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
+
+
+def macro_bodies(text: str) -> dict[str, str]:
+    """`macro_rules! name { ... }` -> its body text (brace-matched, comments and
+    strings already blanked by the caller)."""
+    out: dict[str, str] = {}
+    for m in MACRO_RULES_RE.finditer(text):
+        depth, i = 1, m.end()
+        while i < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[i], 0)
+            i += 1
+        out[m.group(1)] = text[m.end():i - 1]
+    return out
+
+
 def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Analysis:
     """Classify every pub item. With `keep_graph=True` the result also carries the
     reachability function and the root sets (`a.reach`, `a.roots_binding`,
@@ -307,6 +329,8 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
     src_defined: set[str] = set()
     texts: dict[str, tuple[list[str], list[str]]] = {}
     seen: set[tuple] = set()
+    # types a macro invocation defines: (file, macro name) -> {type name: type symbol}
+    generated: dict[tuple[str, str], dict[str, str]] = {}
 
     def lines_of(rel: str) -> tuple[list[str], list[str]]:
         if rel not in texts:
@@ -351,6 +375,13 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
                         name = line[sp_[0][1]:sp_[1][1]]
                         if name and re.search(PUB_DEF + re.escape(name) + r"\b", line):
                             a.items.setdefault(item_key(rel, name, s), set()).add(s)
+                        else:
+                            # a type defined at a macro invocation (`impl_x!(Name, 10);`):
+                            # rust-analyzer puts the definition on the argument token
+                            call = MACRO_CALL_RE.search(code[sp_[0][0]] if sp_[0][0] < len(code) else "")
+                            tm = TYPE_DEF_RE.search(s)
+                            if call and tm and tm.group(1) == name:
+                                generated.setdefault((rel, call.group(1)), {})[name] = s
                 else:
                     if is_src and not _visible(code, sp_[0]):
                         continue
@@ -397,9 +428,46 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
                 else:
                     edges.setdefault(ctx, set()).add(s)
 
-    # pub items the index does not define (in practice: items written inside a
-    # macro_rules body, which rust-analyzer does not emit definitions for). They have
-    # no level, so they are listed and ratcheted separately instead of disappearing
+    # Items a macro_rules body defines. rust-analyzer emits the generated types at
+    # the invocation (collected above) but no definition for the members the body
+    # writes, and it records no reference from inside the expanded body. So:
+    #   * each generated type is an item (`file::Type`), and each `pub fn` /
+    #     `pub const` of the body is an item per generated type
+    #     (`file::Type::name`), keyed by the symbols references use
+    #     (`impl#[Type]name().` / `impl#[Type]NAME.`): reached when referenced;
+    #   * a generated type or member reaches the same-module items the body names
+    #     (over-approximation: which member names them is not known).
+    defined_by_name: dict[tuple[str, str], set[str]] = {}
+    for d in defined:
+        head, _, tail = d.rpartition("/")
+        for suffix in ("#", "().", "."):
+            if tail.endswith(suffix) and not tail[:-len(suffix)].count("#"):
+                defined_by_name.setdefault((head, tail[:-len(suffix)]), set()).add(d)
+    for (rel, macro), types in sorted(generated.items()):
+        body = macro_bodies("\n".join(lines_of(rel)[1])).get(macro)
+        if body is None:
+            continue
+        members = sorted(set(PUB_NAME_RE.findall(body)))
+        named = set(IDENT_RE.findall(body))
+        for tname, tsym in sorted(types.items()):
+            base = tsym[:-len(tname) - 1]  # "...<module>/"
+            gen_syms = {tsym}
+            a.items.setdefault(f"{rel}::{tname}", set()).add(tsym)
+            for n in members:
+                syms = {f"{base}impl#[{tname}]{n}().", f"{base}impl#[{tname}]{n}."}
+                a.items.setdefault(f"{rel}::{tname}::{n}", set()).update(syms)
+                gen_syms |= syms
+            mod = base.rstrip("/")
+            targets = set()
+            for ident in named:
+                targets |= defined_by_name.get((mod, ident), set())
+            for g in gen_syms:
+                edges.setdefault(g, set()).update(targets - gen_syms)
+            a.generated_items += len(members) + 1
+
+    # pub items the index does not define and no macro invocation accounts for
+    # (a macro_rules body nothing invokes, or a pattern this analysis does not
+    # model). They have no level, so they are listed and ratcheted separately
     a.unindexed = unindexed_items(root, {legacy_key(k) for k in a.items})
 
     # Trait impls. An impl method runs only when (1) the trait method it implements
@@ -451,6 +519,13 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
                     if t not in live:
                         live.add(t)
                         stack.append(t)
+                # a field or variant that is used shows a value of its type exists
+                m = FIELD_RE.search(s)
+                if m:
+                    owner = s[:m.start() + 1]
+                    if owner not in live and owner in defined:
+                        live.add(owner)
+                        stack.append(owner)
                 for t in implementers.get(s, ()):
                     if t not in live:
                         pending.add(t)
