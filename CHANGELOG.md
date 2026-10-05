@@ -130,6 +130,7 @@ were introduced during that release window.
 - `linear_solver::{gmres, bicgstab, solve_equilibrated, LinearOperator, Preconditioner, DenseMatrix, FnOperator, IdentityPreconditioner, JacobiPreconditioner, BlockJacobiPreconditioner, BlockEquilibration, BlockScale, KrylovMethod, KrylovConfig, KrylovConfigFault, KrylovSolution, KrylovStats, LinearSolverError, BreakdownKind, BREAKDOWN_RELATIVE}`: 非対称な演算子にも使える `Fix128` の Krylov 法 再起動付き GMRES(m) (修正 Gram–Schmidt + Givens 回転) と BiCGStab (破綻の検出付き)、右前処理の Jacobi / ブロック Jacobi (ブロックごとの部分ピボット LU)、収束の統計 (反復数・再起動数・残差履歴) 停止は真の残差で判定し、`NotConverged` / `Stagnated` / `Breakdown` を区別して返す 内積とノルムはベクトルごとに 2 冪で正規化してから積を取るので、小さい残差でも打ち切られない 単位の違う場を連結した系は `BlockEquilibration` (`EquilibrationScale` による 2 冪の対称スケーリング) を通す入口だけを用意し、積が `L2_TERM_FLOOR` を下回るブロックは `BlockBelowProductFloor` で拒否する (PLA の熱弾性ブロック比 2.69e10 で、等化しない GMRES は収束と報告しつつ温度の誤差が等化時の約 1 万倍になることを `tests/analytic_linear_solver.rs` で固定) 既存の共役勾配法と `project_pressure_bicgstab` は変更しない
 - `maxwell_fdtd` に cell ごとの等方材料を追加 (`Material { eps_r, mu_r, sigma }` / `MaterialMap` / `MaterialError` / `YeeGrid::with_materials` / `effective_material` / `div_d`) E 辺は ε・σ の算術平均、H 面は μ の調和平均で、更新式は Taflove 3 章の係数を使う 材料なし・全て真空の map・PML と真空の map は変更前と bit 一致
 - `scripts/land.py`: ローカルの commit を main に取り込む script commit の検査 (author・公開語彙・`src/` 変更時の CHANGELOG 行)、`--fast` preflight、CI・scripts・Cargo・bindings に触れる変更は `ci/<id>` branch の CI を待つ、最新の main へ rebase (生成物の衝突は main 側を取って再生成)、生成物の再生成と検査、main が動いたら再試行 `.gitattributes` で `CHANGELOG.md` を union merge にした
+- `SdfCollider::{set_pose, sync_to_body}` / `sdf_collider::sync_dynamic_sdf_colliders`: 動く SDF collider が body の姿勢に追従する
 
 ### Changed
 
@@ -235,6 +236,8 @@ were introduced during that release window.
 - `scripts/land.py`: CI run が無い間は push 先の ref が push した SHA を指しているかを確かめ、指していなければ待たずに止まる 待ち切れた時は `gh run list` の内容 (SHA・event・状態・作成時刻) を表示する `ci/<id>` が既に HEAD を指していれば push し直さずにその run の結果を使う (途中で止まった取り込みの再開)
 - Oracle Status / Wiring Status の workflow の concurrency group を workflow ごとに分けた (同じ push で起動した 2 本が互いを打ち切っていた)
 - 別プロセスで動く分散 test の子 test 名を `*_child` に揃えた (挙動は同じ)
+- `Cone` / `Cylinder` / `Ellipsoid` / `Torus::aabb` が閉形式の密な箱を返す (従来は外接寄りの緩い箱で、円錐は頂点側と底面側で非対称だった) `BodyCollider::world_aabb` は形状ごとの密な箱を使う (broadphase はまだ外接球の箱)
+- **Behavior change:** 2D の `circle_vs_polygon` / `circle_vs_capsule` が法線を A から B の向きで返すようになり、円が箱や capsule の上に止まる (従来は法線が逆で突き抜けた) capsule 同士・capsule と多角形・edge と多角形・edge と capsule の組が衝突する (従来は組が未実装で素通りした) edge 同士は面積が無いため `None` のまま
 
 ### Deprecated
 
@@ -280,6 +283,9 @@ were introduced during that release window.
 - `SolverBackend::Tgs` が `PhysicsWorld::add_joint` のジョイントと `PhysicsWorld::add_static_collider` の静的コライダーを無視していた (TGS では距離拘束しか解いていなかった) `step_tgs` で `solve_joints_dispatch` と `resolve_static_collisions` を呼ぶ 位置補正は速度にも反映する (静的接触は面に向かう速度を除き、ジョイントは `Δx / dt` と回転変化の角速度を加える)
 - C ヘッダ `include/alice_physics.h` が `alice_physics_world_step_n` の戻り値を `void` と宣言していた (実装は `uint8_t`) また `alice_physics_body_get_position_fix128_raw` を `include/alice_physics.h` と `bindings/AlicePhysics.h` が、`alice_physics_last_error` / `alice_physics_clear_last_error` / `alice_physics_string_free` を `bindings/AlicePhysics.h` が、`alice_physics_world_step_n` と 4 つの一括 API と `alice_physics_body_get_position_fix128_raw` を Unity の `bindings/AlicePhysics.cs` が宣言していなかった
 - Unreal Engine プラグイン: `UAlicePhysicsWorldComponent` が重力の UE の X / Y 成分を入れ替えて渡し、`GetBodyRotation` が回転の軸を位置と違う写像で返していた 重力・回転とも位置 (`ToAlice` / `FromAlice`) と同じ軸の写像に揃えた (水平成分を持つ重力と、UE の X / Y 軸まわりの回転が影響を受ける)
+- `EventCollector::report_contact` が組を (min, max) に並べ替えたとき法線を反転していなかった (step のイベントは組が常に小さい id 順なので不変) `ContactEvent::normal` と `CollisionResult::normal` の doc を実際の向き (B から A) に直した
+- `ScaledShape` が負の拡大率で最も遠い点でなく最も近い点を返していた (AUD-A-S3W3-017)
+- `SingleModifiedSdf` が `is_active() == false` の modifier を適用していた (AUD-A-S5W3-007)
 
 ## [1.4.0] - 2026-09-17
 
