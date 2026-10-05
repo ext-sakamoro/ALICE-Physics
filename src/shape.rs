@@ -384,11 +384,7 @@ impl Support for PosedShape {
             Shape::Cylinder {
                 radius,
                 half_height,
-            } => {
-                let mut c = Cylinder::new(center, half_height, radius);
-                c.rotation = rotation;
-                c.support(direction)
-            }
+            } => Cylinder::with_rotation(center, half_height, radius, rotation).support(direction),
             Shape::Cone {
                 radius,
                 half_height,
@@ -398,9 +394,7 @@ impl Support for PosedShape {
                 c.support(direction)
             }
             Shape::Ellipsoid { radii } => {
-                let mut e = Ellipsoid::new(center, radii);
-                e.rotation = rotation;
-                e.support(direction)
+                Ellipsoid::with_rotation(center, radii, rotation).support(direction)
             }
             Shape::Wedge {
                 width,
@@ -414,11 +408,8 @@ impl Support for PosedShape {
             Shape::Torus {
                 major_radius,
                 minor_radius,
-            } => {
-                let mut t = Torus::new(center, major_radius, minor_radius);
-                t.rotation = rotation;
-                t.support(direction)
-            }
+            } => Torus::with_rotation(center, major_radius, minor_radius, rotation)
+                .support(direction),
         }
     }
 }
