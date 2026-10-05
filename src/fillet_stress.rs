@@ -85,6 +85,7 @@ pub fn kt_shaft_shoulder_bending(
     }
     let rd = fillet_radius_mm / small_dia_mm;
     let big_ratio = large_dia_mm / small_dia_mm;
+    // LIMITATION(COV-STRUCT-092): Piecewise-linear approximation of Peterson chart (Norton Fig 4-36)
     // Piecewise-linear approximation of Peterson chart (Norton Fig 4-36):
     // K_t at D/d = 2 (worst step):
     //   r/d = 0.02 → K_t ≈ 2.9
@@ -115,6 +116,7 @@ pub fn kt_shaft_shoulder_bending(
 /// tension (Peterson curve-fit, Pilkey Table 2-8).
 ///
 /// `K_t ≈ 0.85 + 2·√(h/r)` for `h/r ≤ 10` where `h` = notch depth, `r` =
+// LIMITATION(COV-STRUCT-094): Beyond `h/r = 10` the linear extrapolation is invalid.
 /// notch root radius. Beyond `h/r = 10` the linear extrapolation is invalid.
 #[must_use]
 pub fn kt_u_notch_axial(notch_depth_mm: Fix128, root_radius_mm: Fix128) -> Fix128 {

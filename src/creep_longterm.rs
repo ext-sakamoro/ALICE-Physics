@@ -10,6 +10,7 @@
 //! `ε(t) = ε_0 + m · tⁿ`
 //!
 //! - `ε_0` = instantaneous elastic strain (dimensionless)
+// LIMITATION(COV-STRUCT-064): `n` is an **integer** here
 //! - `m`, `n` = fitting constants; `n` is an **integer** here (`n_int`, 1 to 4,
 //!   evaluated by repeated multiplication), unlike the fractional 0.15-0.30
 //!   exponents of the literature

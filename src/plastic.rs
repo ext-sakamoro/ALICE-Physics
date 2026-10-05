@@ -262,6 +262,7 @@ pub struct NortonCreep {
     /// σ in MPa and integer exponent n, ε̇ is per second.
     pub a: Fix128,
     /// Stress exponent n (dimensionless, typically 3-8 for polymers, 1-3
+    // LIMITATION(COV-STRUCT-063): Stored as integer for numerical stability (Fix128 lacks `.powf`)
     /// for metals near room temperature). Stored as integer for numerical
     /// stability (Fix128 lacks `.powf`).
     pub n: u32,

@@ -147,6 +147,7 @@ pub fn effective_modulus_reuss_mpa(a: &BimaterialSide, b: &BimaterialSide) -> Fi
 /// to `t_cold_c` (both °C). Both layers are assumed to have equal in-plane
 /// dimensions; the CTE difference drives interfacial shear.
 ///
+// LIMITATION(COV-STRUCT-129): Simplified Timoshenko formula (equal thickness limit)
 /// Simplified Timoshenko formula (equal thickness limit):
 /// `σ_res = (Δα · ΔT · E_a · E_b) / (E_a + E_b)`
 ///

@@ -110,6 +110,7 @@ pub fn separation_load_n(preload_n: Fix128, bolt_fraction: Fix128) -> Fix128 {
 ///
 /// `T ≈ w · L² / (8 · s)`
 ///
+// LIMITATION(COV-STRUCT-124): This is the parabolic-cable approximation (valid for `s ≪ L`).
 /// This is the parabolic-cable approximation (valid for `s ≪ L`).
 #[must_use]
 pub fn cable_pretension_n(w_n_per_mm: Fix128, span_mm: Fix128, sag_mm: Fix128) -> Fix128 {

@@ -462,7 +462,7 @@ axis = "material"
 item = "viscoplasticity / creep in FE"
 source = "Simo-Hughes, Computational Inelasticity ch.1; Abaqus creep"
 status = "missing"
-evidence = "FE 経路は無い src/plastic.rs:313 の Norton creep は 1D"
+evidence = "FE 経路は無い src/plastic.rs:314 の Norton creep は 1D"
 oracle_candidate = "一軸 Norton 定常クリープ速度"
 limitation = ""
 
