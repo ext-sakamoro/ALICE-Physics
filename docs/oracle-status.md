@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4393 |
-| 🔴 Red by design | 206 |
+| 🟢 Not ignored (run by CI) | 4427 |
+| 🔴 Red by design | 208 |
 | ⏱ Gated (runtime / diagnostic / manual) | 24 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4623** |
+| **Total** | **4659** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (206)
+## 🔴 Red by design (208)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -220,6 +220,8 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `vec3_normalize_small_nonzero_vectors` (audit_math.rs) — known defect: AUD-A-S1W5-022: Vec3Fix::normalize / try_normalize / normalize_with_length treat any vector with…
 - `wall_within_band_of_a_non_nearest_source_is_risky` (audit_vibration_wall.rs) — known defect: AUD-A-S2W1-001: is_risky checks only the abs-nearest source; w within +-20% of a farther (larger…
 - `weld_angular_correction_is_split_by_inverse_inertia` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-013: apply_angular_correction rotates both bodies by the same angle regardless of inv…
+- `world_hover_holds_altitude` (analytic_rotor.rs) — src gap: frame 先頭の外力 impulse と substep 重力の splitting (world 側に substep 内で外力を掛ける経路が無い)
+- `world_reaction_torque_spin_rate_matches_free_rotation` (analytic_rotor.rs) — src gap: 回転の積分で角速度が substep ごとに ω ← (2/h) sin(ωh/2) と目減りする (率 ω³h/24、h は substep 幅)
 - `youngs_at_angle_is_a_lower_bound_reuss_form` (audit_filament_db.rs) — known defect: AUD-A-S1W5-012: youngs_at_angle doc says 'Reuss-like lower bound' but E_xy cos2 + E_z sin2 is th…
 - `zero_decay_scale_still_blocks_wind_inside_the_obstacle` (audit_sdf_wind_field.rs) — known defect: AUD-A-S6W1-001: decay_scale_m = 0 returns full base wind (10 m/s) inside the obstacle (d = -1) w…
 - `zero_layer_network_forward_does_not_panic` (audit_neural.rs) — known defect: AUD-A-S3W2-007: DeterministicNetwork::forward on a zero-layer network panics (index out of bound…
@@ -280,7 +282,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4393)
+## 🟢 Not ignored (4427)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -377,6 +379,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_audio_physics_wiring.rs` | 16 |
 | `analytic_damping_rayleigh_wiring.rs` | 16 |
 | `analytic_fracture_wiring.rs` | 16 |
+| `analytic_lift_drag.rs` | 16 |
 | `analytic_linear_elastic_fem.rs` | 16 |
 | `analytic_profiling_wiring.rs` | 16 |
 | `analytic_shape.rs` | 16 |
@@ -478,6 +481,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_pressure.rs` | 11 |
 | `audit_rolling_contact.rs` | 11 |
 | `audit_wedge.rs` | 11 |
+| `analytic_atmosphere_isa1976.rs` | 10 |
 | `analytic_bridging_wiring.rs` | 10 |
 | `analytic_cfd_flow_bc.rs` | 10 |
 | `analytic_cubic_hyperelastic.rs` | 10 |
@@ -526,6 +530,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_metric_broadphase.rs` | 8 |
 | `analytic_netcode_prediction.rs` | 8 |
 | `analytic_print_orientation_wiring.rs` | 8 |
+| `analytic_rotor.rs` | 8 |
 | `analytic_step_multigrid.rs` | 8 |
 | `analytic_tgs_joints_in_substep.rs` | 8 |
 | `analytic_thermal_stress_wiring.rs` | 8 |
