@@ -395,6 +395,7 @@ pub mod math_util;
 pub mod maxwell_fdtd;
 pub mod metric;
 pub mod modal;
+pub mod molecular_dynamics;
 pub mod motor;
 pub mod multi_world;
 pub mod multiphase;
@@ -405,6 +406,7 @@ pub mod netcode_prediction;
 #[cfg(feature = "neural")]
 pub mod neural;
 pub mod non_newtonian;
+pub mod pair_potential;
 pub mod particle;
 #[cfg(feature = "std")]
 pub mod phase_change;

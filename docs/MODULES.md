@@ -124,6 +124,8 @@ this file or listed twice, or when a linked example or test does not exist.
 | `deformable` | FEM-XPBD tetrahedral deformable bodies |  | [`deformable_cube_impact`](../examples/deformable_cube_impact.rs) | standalone |
 | `soft_body_cut` | cutting deformables and cloth along a plane |  | [`soft_body_cutting`](../examples/soft_body_cutting.rs) | standalone |
 | `particle` | particle emitters with lifetime and force fields |  | [`particle_emitter_forces`](../examples/particle_emitter_forces.rs) | standalone |
+| `pair_potential` | pair potentials: Lennard-Jones 12-6, Morse, Coulomb, screened Coulomb (Yukawa), cutoff with energy / force shift, Lorentz–Berthelot mixing |  | [`lj_dimer`](../examples/lj_dimer.rs) | standalone |
+| `molecular_dynamics` | velocity Verlet for point particles under a pair potential, periodic cell list with minimum image, kinetic / potential energy and temperature |  | [`lj_dimer`](../examples/lj_dimer.rs) | standalone |
 
 ## Gameplay
 

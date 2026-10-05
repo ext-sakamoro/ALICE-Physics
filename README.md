@@ -176,6 +176,7 @@ Every public module, grouped by area and with a one-line summary, is listed in [
 | Solid mechanics | linear-elastic FEM on P1 / P2 / P3 tetrahedra, corotational large rotation, J2 plasticity, hyperelasticity, thermo-mechanical coupling, adaptive refinement, beams, buckling, fatigue, composites |
 | Fluids and fields | MAC-grid CFD with several pressure solvers, RANS / LES turbulence closures, VOF and level set, SPH, compressible flow, heat transfer, Maxwell FDTD |
 | Aerodynamics | standard atmosphere (ISA 1976, up to 20 km), wing lift and drag with stall, rotor thrust and torque |
+| Molecular dynamics | Lennard-Jones, Morse, Coulomb and screened Coulomb pair potentials with cutoff and shift, velocity Verlet with a periodic cell list (minimum image) |
 | 3D printing | material database, thin-wall and overhang checks, warp risk, layer adhesion, print orientation, a combined safety pipeline |
 | 2D | a separate 2D XPBD engine with its own shapes and joints |
 
@@ -197,7 +198,7 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | step: runs when `PhysicsWorld` steps | 19 |
 | world API: used through another `PhysicsWorld` method | 7 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 127 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 129 |
 | unused: no caller outside tests | 1 |
 
 ## Vehicle dynamics
