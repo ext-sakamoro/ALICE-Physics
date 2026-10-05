@@ -35,7 +35,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `material` | step | 14 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
-| `sdf_collider` | step | 10 / 0 / 0 / 9 / 2 | C ABI, Python, WebAssembly |
+| `sdf_collider` | step | 18 / 0 / 0 / 13 / 2 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 4 / 2 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
@@ -136,7 +136,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `rope_attach` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `scene_io` | standalone | 0 / 0 / 0 / 10 / 1 | — |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
-| `sdf_ccd` | standalone | 0 / 0 / 0 / 5 / 0 | — |
+| `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `sdf_fem_mesh` | standalone | 0 / 0 / 0 / 15 / 0 | — |
