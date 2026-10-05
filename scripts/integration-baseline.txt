@@ -12,10 +12,6 @@ src/bvh.rs::BroadphaseHybrid::clear_dynamic
 src/bvh.rs::BroadphaseHybrid::insert_dynamic
 src/bvh.rs::BroadphaseHybrid::new
 src/bvh.rs::BroadphaseHybrid::query_pairs
-src/cfd_solver.rs::CfdSolver::step_multigrid
-src/cfd_solver.rs::RansState::set
-src/collider.rs::ScaledShape
-src/collider.rs::ScaledShape::new
 src/compound.rs::CompoundShape::support_world
 src/compound.rs::ShapeRef::aabb
 src/compound.rs::TransformedCompound
@@ -60,8 +56,6 @@ src/eulerian_grid.rs::project_pressure_slab_local_on_rank
 src/eulerian_grid/multigrid_decomposed.rs::multigrid_slab_bounds
 src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_banded_on_rank
 src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_decomposed_on_rank
-src/joint.rs::BallJoint::with_compliance
-src/joint.rs::HingeJoint::with_compliance
 src/linear_elastic_fem.rs::ThermalExpansion::new
 src/motor.rs::JointMotor
 src/motor.rs::JointMotor::new
@@ -74,13 +68,6 @@ src/motor.rs::PdController::set_velocity_target
 src/motor.rs::apply_motors
 src/plastic.rs::NortonCreep::petg_room_temp
 src/plastic.rs::PlasticModel::with_hardening
-src/replay.rs::ReplayPlayer::body_count
-src/replay.rs::ReplayRecorder::flush
-src/sdf_collider.rs::SdfCollider::new_dynamic
-src/sdf_collider.rs::SdfCollider::update_cache
-src/sim_modifier.rs::SingleModifiedSdf
-src/sim_modifier.rs::SingleModifiedSdf::new
-src/sim_modifier.rs::SingleModifiedSdf::update
 src/sketch.rs::HeavyHitterEntry
 src/solver.rs::PhysicsWorld::begin_frame
 src/solver.rs::PhysicsWorld::end_frame
