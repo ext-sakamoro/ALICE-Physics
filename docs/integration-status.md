@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 100 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2284 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2299 |
 | live | reached without examples (crate-internal roots or a binding) | 423 |
-| | **total** | **2807** |
+| | **total** | **2822** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -247,7 +247,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2284)
+## L1 — example-only (2299)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -335,7 +335,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/material.rs`: `MaterialTable::combine`, `MaterialTable::is_empty`, `MaterialTable::len`, `MaterialTable::register_concrete`, `MaterialTable::register_ice`, `MaterialTable::register_metal`, `MaterialTable::register_rubber`, `MaterialTable::register_wood`, `MaterialTable::set_pair_override`, `PhysicsMaterial::with_combine_rules`, `PhysicsMaterial::with_static_friction`
 - `src/math.rs`: `Fix128::NEG_ONE`, `Fix128::add_simd`, `Fix128::atan`, `Fix128::ceil`, `Fix128::checked_div`, `Fix128::cos`, `Fix128::exp`, `Fix128::floor`, `Fix128::ln`, `Fix128::powf_pos`, `Fix128::sin`, `Fix128::sub_simd`, `Mat3Fix`, `Mat3Fix::IDENTITY`, `Mat3Fix::ZERO`, `Mat3Fix::determinant`, `Mat3Fix::diagonal`, `Mat3Fix::from_cols`, `Mat3Fix::inverse`, `Mat3Fix::max_abs_component`, `Mat3Fix::mul_mat`, `Mat3Fix::mul_vec`, `Mat3Fix::polar_rotation`, `Mat3Fix::polar_rotation_steps`, `Mat3Fix::scale`, `Mat3Fix::transpose`, `PolarError`, `SIMD_WIDTH`, `Vec3Fix::cross_simd`, `Vec3Fix::dot_batch_4`, `Vec3Fix::dot_simd`, `Vec3Fix::length_squared_simd`, `simd_width`
 - `src/math_util.rs`: `EXP_OVERFLOW_SENTINEL`, `cbrt_fix`, `clamp_fix`, `exp_fix`, `pow_int`
-- `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `YeeGrid`, `YeeGrid::charge`, `YeeGrid::component_dims`, `YeeGrid::courant`, `YeeGrid::current`, `YeeGrid::dims`, `YeeGrid::div_b`, `YeeGrid::div_e`, `YeeGrid::div_j`, `YeeGrid::gauss_residual`, `YeeGrid::get`, `YeeGrid::interior_node_dims`, `YeeGrid::is_absorbing`, `YeeGrid::max_abs_div_b`, `YeeGrid::max_abs_field`, `YeeGrid::max_abs_gauss_residual`, `YeeGrid::new`, `YeeGrid::new_with_absorber`, `YeeGrid::set`, `YeeGrid::set_charge`, `YeeGrid::set_current`, `YeeGrid::step`, `YeeGrid::total_charge`, `cfl_limit_3d`, `loss_coefficients`, `theoretical_pml_reflection`
+- `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `Material`, `Material::VACUUM`, `Material::dielectric`, `Material::new`, `Material::refractive_index`, `MaterialError`, `MaterialMap`, `MaterialMap::dims`, `MaterialMap::fill`, `MaterialMap::get`, `MaterialMap::set`, `MaterialMap::vacuum`, `YeeGrid`, `YeeGrid::charge`, `YeeGrid::component_dims`, `YeeGrid::courant`, `YeeGrid::current`, `YeeGrid::dims`, `YeeGrid::div_b`, `YeeGrid::div_d`, `YeeGrid::div_e`, `YeeGrid::div_j`, `YeeGrid::effective_material`, `YeeGrid::gauss_residual`, `YeeGrid::get`, `YeeGrid::interior_node_dims`, `YeeGrid::is_absorbing`, `YeeGrid::max_abs_div_b`, `YeeGrid::max_abs_field`, `YeeGrid::max_abs_gauss_residual`, `YeeGrid::new`, `YeeGrid::new_with_absorber`, `YeeGrid::set`, `YeeGrid::set_charge`, `YeeGrid::set_current`, `YeeGrid::step`, `YeeGrid::total_charge`, `YeeGrid::with_materials`, `cfl_limit_3d`, `loss_coefficients`, `theoretical_pml_reflection`
 - `src/metric.rs`: `MetricError`, `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::new`, `MetricWeights::norm`, `MetricWeights::weights`
 - `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
 - `src/molecular_dynamics.rs`: `MdError`, `PairForces`, `PeriodicBox`, `PeriodicBox::cubic`, `PeriodicBox::lengths`, `PeriodicBox::minimum_image`, `PeriodicBox::new`, `PeriodicBox::wrap`, `VelocityVerlet`, `VelocityVerlet::forces`, `VelocityVerlet::instantaneous_temperature`, `VelocityVerlet::kinetic_energy`, `VelocityVerlet::masses`, `VelocityVerlet::momentum`, `VelocityVerlet::new`, `VelocityVerlet::periodic_box`, `VelocityVerlet::positions`, `VelocityVerlet::potential`, `VelocityVerlet::potential_energy`, `VelocityVerlet::step`, `VelocityVerlet::total_energy`, `VelocityVerlet::velocities`, `pair_forces_all_pairs`, `pair_forces_cell_list`
