@@ -230,7 +230,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
 | `electromagnetic` | Lorentz force on charged rigid bodies |  | [`em_lorentz_cyclotron`](../examples/em_lorentz_cyclotron.rs) | standalone |
-| `maxwell_fdtd` | Maxwell solver on a Yee lattice with sources and a PML absorber |  | [`maxwell_sources_and_absorber`](../examples/maxwell_sources_and_absorber.rs) | standalone |
+| `maxwell_fdtd` | Maxwell solver on a Yee lattice with sources, per-cell materials and a PML absorber |  | [`maxwell_sources_and_absorber`](../examples/maxwell_sources_and_absorber.rs), [`maxwell_dielectric_slab`](../examples/maxwell_dielectric_slab.rs) | standalone |
 | `piezoelectric` | piezoelectric force and voltage coupling | std | [`piezoelectric_materials`](../examples/piezoelectric_materials.rs) | standalone |
 
 ## Orbital mechanics

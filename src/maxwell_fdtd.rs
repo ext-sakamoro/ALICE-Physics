@@ -127,12 +127,73 @@
 //! sum, and those disagree by 1–3 ULP per step — the same truncation that keeps
 //! `∇·B` off the zero bit pattern.
 //!
+//! # Materials
+//!
+//! [`YeeGrid::with_materials`] gives every **cell** an isotropic relative
+//! permittivity `ε_r`, relative permeability `μ_r` and electric conductivity
+//! `σ` ([`Material`], laid out by a [`MaterialMap`]). The update becomes the
+//! one in Taflove & Hagness, *Computational Electrodynamics*, ch. 3:
+//!
+//! ```text
+//! H ← H − (S/μ)·(∇×E)
+//! E ← C_a·E + C_b·(∇×H − J)
+//! a   = σ·S/(2ε)
+//! C_a = (1 − a)/(1 + a)
+//! C_b = (S/ε)/(1 + a)
+//! ```
+//!
+//! A field sample does not sit inside one cell, so each sample reads an
+//! average of the cells that touch it ([`YeeGrid::effective_material`]):
+//!
+//! - **`E` edges: arithmetic mean of `ε` and of `σ`** over the (up to) four
+//!   cells around the edge. `E` on an edge is tangential to every cell face
+//!   that meets there, and tangential `E` is continuous across an interface,
+//!   so the cells act as capacitors (and conductances) **in parallel**, whose
+//!   effective value is the area-weighted arithmetic mean.
+//! - **`H` faces: harmonic mean of `μ`** over the (up to) two cells sharing the
+//!   face. `H` on a face is normal to it, and the normal `B = μH` is what is
+//!   continuous, so the two half cells act **in series** along the normal:
+//!   `μ_eff = 2/(1/μ₁ + 1/μ₂)`.
+//!
+//! When every contributing cell carries the same value the sample takes that
+//! value exactly rather than through the mean, so a uniform region has exact
+//! coefficients and a vacuum sample is exactly `ε = μ = 1, σ = 0`.
+//!
+//! ⚠️ **A sample whose averaged material is vacuum runs the loss-free update
+//! unchanged**, the same rule the absorber follows. For such a sample `C_a = 1`
+//! and `C_b = S` exactly, so the general expression would give the same bits
+//! anyway — but keeping the original expression on those samples is what makes
+//! "a vacuum map is bit-identical to no map" a property of the code path rather
+//! than of an arithmetic coincidence.
+//!
+//! Stability: the explicit update is stable when `3·S² ≤ ε_min·μ_min` over the
+//! cells (the vacuum `S ≤ 1/√3` with the slowest-wave correction; every
+//! averaged sample is at least the cell minimum, so this bound covers them).
+//! Unlike [`YeeGrid::new`], [`YeeGrid::with_materials`] rejects a step that
+//! violates it. A conductivity only damps (the semi-implicit `C_a` has modulus
+//! below one), so it does not enter the bound.
+//!
+//! Gauss's law becomes `∇·(εE) = ρ` ([`YeeGrid::div_d`]); with `σ = 0` it is
+//! carried by the update exactly as in vacuum, because `ε·C_b = S`. With
+//! `σ > 0` the conduction current `σE` moves charge that `ρ` does not track,
+//! so the residual relaxes rather than being conserved there.
+//!
+//! The absorber and the materials cannot both act on one sample: the split PML
+//! update has no material coefficients. [`YeeGrid::with_materials`] returns
+//! [`MaterialError::AbsorberOverlap`] when a sample is both absorbing and
+//! non-vacuum, so a PML has to be lined with vacuum (and
+//! [`Absorber::Uniform`], which makes every sample absorbing, admits only a
+//! vacuum map — put the loss in [`Material::sigma`] instead).
+//!
 //! # Scope
 //!
-//! No material tensors and no bidirectional coupling to the thermal or
-//! piezoelectric solvers.
+//! Isotropic, non-dispersive materials only: no tensors, no frequency-dependent
+//! (Debye / Drude / Lorentz) media, no magnetic conductivity, and no
+//! bidirectional coupling to the thermal or piezoelectric solvers. Interfaces
+//! are staircased to the cell grid (no conformal correction).
 
 use crate::math::Fix128;
+use core::fmt;
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -292,6 +353,278 @@ pub fn theoretical_pml_reflection(depth: usize, sigma_max: Fix128) -> Fix128 {
     (Fix128::from_int(-2) * integral).exp()
 }
 
+/// The isotropic material of one cell, relative to vacuum.
+///
+/// `eps_r` and `mu_r` are relative (vacuum is `1`), `sigma` is the electric
+/// conductivity in the module's normalised units (the `E`-side loss).
+/// [`YeeGrid::with_materials`] requires `eps_r > 0`, `mu_r > 0`, `sigma ≥ 0`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Material {
+    /// Relative permittivity `ε_r`.
+    pub eps_r: Fix128,
+    /// Relative permeability `μ_r`.
+    pub mu_r: Fix128,
+    /// Electric conductivity `σ`, normalised units.
+    pub sigma: Fix128,
+}
+
+impl Material {
+    /// `ε_r = μ_r = 1`, `σ = 0`.
+    pub const VACUUM: Self = Self {
+        eps_r: Fix128::ONE,
+        mu_r: Fix128::ONE,
+        sigma: Fix128::ZERO,
+    };
+
+    /// A material from its three constants.
+    #[must_use]
+    pub const fn new(eps_r: Fix128, mu_r: Fix128, sigma: Fix128) -> Self {
+        Self { eps_r, mu_r, sigma }
+    }
+
+    /// A loss-free dielectric, `μ_r = 1`, `σ = 0`.
+    #[must_use]
+    pub const fn dielectric(eps_r: Fix128) -> Self {
+        Self {
+            eps_r,
+            mu_r: Fix128::ONE,
+            sigma: Fix128::ZERO,
+        }
+    }
+
+    /// The refractive index `n = √(ε_r·μ_r)`.
+    #[must_use]
+    pub fn refractive_index(&self) -> Fix128 {
+        (self.eps_r * self.mu_r).sqrt()
+    }
+}
+
+/// A [`Material`] per cell of an `nx × ny × nz` lattice, vacuum by default.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaterialMap {
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    cells: Vec<Material>,
+}
+
+impl MaterialMap {
+    /// A map of `nx × ny × nz` vacuum cells.
+    ///
+    /// A zero dimension is accepted here and reported by
+    /// [`YeeGrid::with_materials`] as a dimension mismatch, since no lattice
+    /// has a zero dimension.
+    #[must_use]
+    pub fn vacuum(nx: usize, ny: usize, nz: usize) -> Self {
+        Self {
+            nx,
+            ny,
+            nz,
+            cells: vec![Material::VACUUM; nx * ny * nz],
+        }
+    }
+
+    /// Cell counts along each axis.
+    #[must_use]
+    pub const fn dims(&self) -> (usize, usize, usize) {
+        (self.nx, self.ny, self.nz)
+    }
+
+    #[inline]
+    fn offset(&self, i: usize, j: usize, k: usize) -> usize {
+        assert!(
+            i < self.nx && j < self.ny && k < self.nz,
+            "cell index out of range"
+        );
+        (i * self.ny + j) * self.nz + k
+    }
+
+    /// The material of cell `(i, j, k)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cell is outside the map.
+    #[must_use]
+    pub fn get(&self, i: usize, j: usize, k: usize) -> Material {
+        self.cells[self.offset(i, j, k)]
+    }
+
+    /// Set the material of cell `(i, j, k)`. Values are validated by
+    /// [`YeeGrid::with_materials`], not here.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cell is outside the map.
+    pub fn set(&mut self, i: usize, j: usize, k: usize, material: Material) {
+        let at = self.offset(i, j, k);
+        self.cells[at] = material;
+    }
+
+    /// Set every cell in the half-open box `lo ≤ (i, j, k) < hi`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `hi` exceeds the map on some axis or `lo > hi`.
+    pub fn fill(&mut self, lo: [usize; 3], hi: [usize; 3], material: Material) {
+        let dims = [self.nx, self.ny, self.nz];
+        assert!(
+            (0..3).all(|a| lo[a] <= hi[a] && hi[a] <= dims[a]),
+            "fill box {lo:?}..{hi:?} is not inside the map {dims:?}"
+        );
+        for i in lo[0]..hi[0] {
+            for j in lo[1]..hi[1] {
+                for k in lo[2]..hi[2] {
+                    self.set(i, j, k, material);
+                }
+            }
+        }
+    }
+}
+
+/// Why [`YeeGrid::with_materials`] refused a [`MaterialMap`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialError {
+    /// The map does not have the lattice's cell counts.
+    DimensionMismatch {
+        /// `(nx, ny, nz)` of the lattice.
+        lattice: (usize, usize, usize),
+        /// `(nx, ny, nz)` of the map.
+        map: (usize, usize, usize),
+    },
+    /// A cell has `ε_r ≤ 0` (the first such cell in index order).
+    NonPositivePermittivity {
+        /// The offending cell.
+        cell: (usize, usize, usize),
+    },
+    /// A cell has `μ_r ≤ 0` (the first such cell in index order).
+    NonPositivePermeability {
+        /// The offending cell.
+        cell: (usize, usize, usize),
+    },
+    /// A cell has `σ < 0` (the first such cell in index order); a negative
+    /// conductivity is a gain medium and grows without bound.
+    NegativeConductivity {
+        /// The offending cell.
+        cell: (usize, usize, usize),
+    },
+    /// `3·S² > ε_min·μ_min`: the slowest-cell-adjusted Courant bound fails.
+    CourantViolated {
+        /// The lattice's Courant number `S`.
+        courant: Fix128,
+        /// The smallest `ε_r` over the cells.
+        eps_min: Fix128,
+        /// The smallest `μ_r` over the cells.
+        mu_min: Fix128,
+    },
+    /// A sample is both inside the absorber and non-vacuum; the split PML
+    /// update has no material coefficients.
+    AbsorberOverlap {
+        /// The sample's component.
+        component: Component,
+        /// The sample's index.
+        index: (usize, usize, usize),
+    },
+}
+
+impl fmt::Display for MaterialError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DimensionMismatch { lattice, map } => write!(
+                f,
+                "material map is {}x{}x{} but the lattice is {}x{}x{}",
+                map.0, map.1, map.2, lattice.0, lattice.1, lattice.2
+            ),
+            Self::NonPositivePermittivity { cell } => {
+                write!(f, "cell {cell:?} has a non-positive permittivity")
+            }
+            Self::NonPositivePermeability { cell } => {
+                write!(f, "cell {cell:?} has a non-positive permeability")
+            }
+            Self::NegativeConductivity { cell } => {
+                write!(f, "cell {cell:?} has a negative conductivity")
+            }
+            Self::CourantViolated {
+                courant,
+                eps_min,
+                mu_min,
+            } => write!(
+                f,
+                "Courant number {} exceeds sqrt(eps_min*mu_min/3) with eps_min {} and mu_min {}",
+                courant.to_f64(),
+                eps_min.to_f64(),
+                mu_min.to_f64()
+            ),
+            Self::AbsorberOverlap { component, index } => write!(
+                f,
+                "{component:?}{index:?} is inside the absorber and is not vacuum"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for MaterialError {}
+
+/// Per-sample material coefficients, `[component axis][sample offset]`.
+///
+/// ⚠️ Full lattice size whenever a map is installed, even an all-vacuum one:
+/// the vacuum samples are what the bit-identity contract is about, so they go
+/// through the material path's own vacuum test rather than being elided.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MaterialCoeffs {
+    /// `E` sample is non-vacuum (`ε ≠ 1` or `σ ≠ 0`).
+    e_active: [Vec<bool>; 3],
+    e_ca: [Vec<Fix128>; 3],
+    e_cb: [Vec<Fix128>; 3],
+    e_eps: [Vec<Fix128>; 3],
+    e_sigma: [Vec<Fix128>; 3],
+    /// `H` sample is non-vacuum (`μ ≠ 1`).
+    h_active: [Vec<bool>; 3],
+    /// `S/μ`.
+    h_cb: [Vec<Fix128>; 3],
+    h_mu: [Vec<Fix128>; 3],
+}
+
+/// Arithmetic mean, exact when every value is equal.
+fn arithmetic_mean(values: &[Fix128]) -> Fix128 {
+    if values.iter().all(|&v| v == values[0]) {
+        return values[0];
+    }
+    let sum = values.iter().fold(Fix128::ZERO, |acc, &v| acc + v);
+    sum / Fix128::from_int(values.len() as i64)
+}
+
+/// Harmonic mean `n/Σ(1/v)`, exact when every value is equal.
+fn harmonic_mean(values: &[Fix128]) -> Fix128 {
+    if values.iter().all(|&v| v == values[0]) {
+        return values[0];
+    }
+    let inv = values
+        .iter()
+        .fold(Fix128::ZERO, |acc, &v| acc + Fix128::ONE / v);
+    Fix128::from_int(values.len() as i64) / inv
+}
+
+/// `(C_a, C_b)` of the material `E` update, Taflove ch. 3.
+fn material_e_coefficients(eps: Fix128, sigma: Fix128, courant: Fix128) -> (Fix128, Fix128) {
+    let s_over_eps = courant / eps;
+    if sigma.is_zero() {
+        return (Fix128::ONE, s_over_eps);
+    }
+    let a = (sigma * courant).half() / eps;
+    let denom = Fix128::ONE + a;
+    ((Fix128::ONE - a) / denom, s_over_eps / denom)
+}
+
+/// Axis a component points along (`E`) or is normal to (`H`).
+const fn component_axis(component: Component) -> usize {
+    match component {
+        Component::Ex | Component::Hx => 0,
+        Component::Ey | Component::Hy => 1,
+        Component::Ez | Component::Hz => 2,
+    }
+}
+
 /// Split half fields and the per-axis loss coefficients that drive them.
 ///
 /// ⚠️ The twelve arrays are **full lattice size**, not PML size: a lattice with
@@ -365,6 +698,7 @@ pub struct YeeGrid {
     hz: Vec<Fix128>,
     sources: Option<Box<Sources>>,
     absorber: Option<Box<Splits>>,
+    materials: Option<Box<MaterialCoeffs>>,
 }
 
 impl YeeGrid {
@@ -397,6 +731,7 @@ impl YeeGrid {
             hz: vec![Fix128::ZERO; nx * ny * (nz + 1)],
             sources: None,
             absorber: None,
+            materials: None,
         }
     }
 
@@ -495,6 +830,222 @@ impl YeeGrid {
             lossy_h,
         }));
         grid
+    }
+
+    /// Give every cell a [`Material`], replacing any map installed before.
+    ///
+    /// See the module header (`# Materials`) for the update, the averaging
+    /// rules and the stability bound. Checks run in this order and the first
+    /// failure is returned: map dimensions, then each cell in index order
+    /// (`ε_r > 0`, `μ_r > 0`, `σ ≥ 0`), then `3·S² ≤ ε_min·μ_min`, then that
+    /// no absorbing sample is non-vacuum.
+    ///
+    /// An all-vacuum map is accepted and leaves every field bit-identical to a
+    /// lattice without one; its samples go through the material path's vacuum
+    /// test, they are not elided.
+    ///
+    /// # Errors
+    ///
+    /// [`MaterialError`] as listed above; the lattice is consumed either way.
+    pub fn with_materials(mut self, map: &MaterialMap) -> Result<Self, MaterialError> {
+        let dims = [self.nx, self.ny, self.nz];
+        if map.dims() != (self.nx, self.ny, self.nz) {
+            return Err(MaterialError::DimensionMismatch {
+                lattice: (self.nx, self.ny, self.nz),
+                map: map.dims(),
+            });
+        }
+        let mut eps_min = Fix128::ONE;
+        let mut mu_min = Fix128::ONE;
+        let mut first = true;
+        for i in 0..self.nx {
+            for j in 0..self.ny {
+                for k in 0..self.nz {
+                    let m = map.get(i, j, k);
+                    let cell = (i, j, k);
+                    if m.eps_r <= Fix128::ZERO {
+                        return Err(MaterialError::NonPositivePermittivity { cell });
+                    }
+                    if m.mu_r <= Fix128::ZERO {
+                        return Err(MaterialError::NonPositivePermeability { cell });
+                    }
+                    if m.sigma.is_negative() {
+                        return Err(MaterialError::NegativeConductivity { cell });
+                    }
+                    if first || m.eps_r < eps_min {
+                        eps_min = m.eps_r;
+                    }
+                    if first || m.mu_r < mu_min {
+                        mu_min = m.mu_r;
+                    }
+                    first = false;
+                }
+            }
+        }
+        let s = self.courant;
+        if Fix128::from_int(3) * s * s > eps_min * mu_min {
+            return Err(MaterialError::CourantViolated {
+                courant: s,
+                eps_min,
+                mu_min,
+            });
+        }
+
+        let mut mc = MaterialCoeffs {
+            e_active: Default::default(),
+            e_ca: Default::default(),
+            e_cb: Default::default(),
+            e_eps: Default::default(),
+            e_sigma: Default::default(),
+            h_active: Default::default(),
+            h_cb: Default::default(),
+            h_mu: Default::default(),
+        };
+        // The cells touching a sample: along the sample's own axis an `E` edge
+        // lies inside one cell column and an `H` face separates two; along the
+        // other axes it is the other way round.
+        let around = |p: usize, n: usize| -> ([usize; 2], usize) {
+            match (p >= 1, p < n) {
+                (true, true) => ([p - 1, p], 2),
+                (true, false) => ([p - 1, 0], 1),
+                (false, true) => ([p, 0], 1),
+                (false, false) => ([0, 0], 0),
+            }
+        };
+        let mut cells = Vec::with_capacity(4);
+        for component in [
+            Component::Ex,
+            Component::Ey,
+            Component::Ez,
+            Component::Hx,
+            Component::Hy,
+            Component::Hz,
+        ] {
+            let axis = component_axis(component);
+            let electric = matches!(component, Component::Ex | Component::Ey | Component::Ez);
+            let (ni, nj, nk) = self.component_dims(component);
+            for i in 0..ni {
+                for j in 0..nj {
+                    for k in 0..nk {
+                        let pos = [i, j, k];
+                        let mut lists = [([0usize; 2], 1usize); 3];
+                        for d in 0..3 {
+                            lists[d] = if (d == axis) == electric {
+                                ([pos[d], 0], 1)
+                            } else {
+                                around(pos[d], dims[d])
+                            };
+                        }
+                        cells.clear();
+                        for &ci in &lists[0].0[..lists[0].1] {
+                            for &cj in &lists[1].0[..lists[1].1] {
+                                for &ck in &lists[2].0[..lists[2].1] {
+                                    cells.push(map.get(ci, cj, ck));
+                                }
+                            }
+                        }
+                        if electric {
+                            let eps: Vec<Fix128> = cells.iter().map(|m| m.eps_r).collect();
+                            let sig: Vec<Fix128> = cells.iter().map(|m| m.sigma).collect();
+                            let eps = arithmetic_mean(&eps);
+                            let sigma = arithmetic_mean(&sig);
+                            let (ca, cb) = material_e_coefficients(eps, sigma, s);
+                            let active = !(eps == Fix128::ONE && sigma.is_zero());
+                            if active && self.is_absorbing(component, i, j, k) {
+                                return Err(MaterialError::AbsorberOverlap {
+                                    component,
+                                    index: (i, j, k),
+                                });
+                            }
+                            mc.e_active[axis].push(active);
+                            mc.e_ca[axis].push(ca);
+                            mc.e_cb[axis].push(cb);
+                            mc.e_eps[axis].push(eps);
+                            mc.e_sigma[axis].push(sigma);
+                        } else {
+                            let mus: Vec<Fix128> = cells.iter().map(|m| m.mu_r).collect();
+                            let mu = harmonic_mean(&mus);
+                            let active = mu != Fix128::ONE;
+                            if active && self.is_absorbing(component, i, j, k) {
+                                return Err(MaterialError::AbsorberOverlap {
+                                    component,
+                                    index: (i, j, k),
+                                });
+                            }
+                            mc.h_active[axis].push(active);
+                            mc.h_cb[axis].push(s / mu);
+                            mc.h_mu[axis].push(mu);
+                        }
+                    }
+                }
+            }
+        }
+        self.materials = Some(Box::new(mc));
+        Ok(self)
+    }
+
+    /// The averaged material a field sample is updated with.
+    ///
+    /// `E` samples report `ε` and `σ` (arithmetic means of the cells around
+    /// the edge) with `μ_r = 1`; `H` samples report `μ` (harmonic mean of the
+    /// cells sharing the face) with `ε_r = 1`, `σ = 0`. A lattice without a
+    /// map reports [`Material::VACUUM`] everywhere.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the index is outside [`YeeGrid::component_dims`].
+    #[must_use]
+    pub fn effective_material(
+        &self,
+        component: Component,
+        i: usize,
+        j: usize,
+        k: usize,
+    ) -> Material {
+        let at = self.offset(component, i, j, k);
+        let Some(m) = self.materials.as_deref() else {
+            return Material::VACUUM;
+        };
+        let axis = component_axis(component);
+        match component {
+            Component::Ex | Component::Ey | Component::Ez => Material {
+                eps_r: m.e_eps[axis][at],
+                mu_r: Fix128::ONE,
+                sigma: m.e_sigma[axis][at],
+            },
+            Component::Hx | Component::Hy | Component::Hz => Material {
+                eps_r: Fix128::ONE,
+                mu_r: m.h_mu[axis][at],
+                sigma: Fix128::ZERO,
+            },
+        }
+    }
+
+    /// The factor in front of `J` on an `E` sample: `C_b` there, `S` in vacuum.
+    #[inline]
+    fn source_coefficient(&self, axis: usize, at: usize, s: Fix128) -> Fix128 {
+        match self.materials.as_deref() {
+            Some(m) if m.e_active[axis][at] => m.e_cb[axis][at],
+            _ => s,
+        }
+    }
+
+    /// `ε·E` on one edge, the electric displacement in normalised units.
+    #[inline]
+    fn d_at(&self, component: Component, i: usize, j: usize, k: usize) -> Fix128 {
+        let e = self.get(component, i, j, k);
+        match self.materials.as_deref() {
+            Some(m) => {
+                let axis = component_axis(component);
+                let at = self.offset(component, i, j, k);
+                if m.e_active[axis][at] {
+                    m.e_eps[axis][at] * e
+                } else {
+                    e
+                }
+            }
+            None => e,
+        }
     }
 
     /// Whether this sample is marched by the lossy split-field update.
@@ -776,8 +1327,9 @@ impl YeeGrid {
 
     /// Discrete `∇·E` at an interior node, summed over the six edges that meet there.
     ///
-    /// In normalised units `D = E`, so this is the left-hand side of Gauss's
-    /// law. Every edge it reads is one the `E` update writes, which is what
+    /// In vacuum (normalised units) `D = E`, so this is the left-hand side of
+    /// Gauss's law there; with materials the left-hand side is
+    /// [`YeeGrid::div_d`]. Every edge it reads is one the `E` update writes, which is what
     /// makes the residual in [`YeeGrid::gauss_residual`] a statement about the
     /// update rather than about the boundary.
     ///
@@ -817,14 +1369,34 @@ impl YeeGrid {
             + (jz(i, j, k) - jz(i, j, k - 1))
     }
 
-    /// `∇·E − ρ` at an interior node: how far Gauss's law is from holding.
+    /// Discrete `∇·D = ∇·(εE)` at an interior node, on the [`YeeGrid::div_e`] stencil.
+    ///
+    /// Each edge contributes `ε·E` with the edge's averaged `ε`
+    /// ([`YeeGrid::effective_material`]); a vacuum edge contributes `E`
+    /// itself, so on a lattice without materials this is bit-identical to
+    /// [`YeeGrid::div_e`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `(i, j, k)` is not an interior node.
+    #[must_use]
+    pub fn div_d(&self, i: usize, j: usize, k: usize) -> Fix128 {
+        let _ = self.node_offset(i, j, k);
+        (self.d_at(Component::Ex, i, j, k) - self.d_at(Component::Ex, i - 1, j, k))
+            + (self.d_at(Component::Ey, i, j, k) - self.d_at(Component::Ey, i, j - 1, k))
+            + (self.d_at(Component::Ez, i, j, k) - self.d_at(Component::Ez, i, j, k - 1))
+    }
+
+    /// `∇·(εE) − ρ` at an interior node: how far Gauss's law is from holding.
+    ///
+    /// Without materials `ε = 1` and this is `∇·E − ρ`.
     ///
     /// # Panics
     ///
     /// Panics if `(i, j, k)` is not an interior node.
     #[must_use]
     pub fn gauss_residual(&self, i: usize, j: usize, k: usize) -> Fix128 {
-        self.div_e(i, j, k) - self.charge(i, j, k)
+        self.div_d(i, j, k) - self.charge(i, j, k)
     }
 
     /// Largest `|∇·E − ρ|` over every interior node.
@@ -874,7 +1446,8 @@ impl YeeGrid {
         }
     }
 
-    /// The source term: `E −= S·J` on updated edges, `ρ −= S·(∇·J)` on nodes.
+    /// The source term: `E −= C_b·J` on updated edges (`C_b = S` in vacuum),
+    /// `ρ −= S·(∇·J)` on nodes.
     ///
     /// ⚠️ The edge ranges are the same ones the `E` update writes, so a PEC
     /// wall stays at zero. [`YeeGrid::set_current`] rejects the other edges, so
@@ -904,7 +1477,8 @@ impl YeeGrid {
                 for k in 1..nz {
                     let at = self.offset(Component::Ex, i, j, k);
                     let j_here = self.sources.as_ref().map_or(Fix128::ZERO, |v| v.jx[at]);
-                    self.ex[at] = self.ex[at] - s * j_here;
+                    let coef = self.source_coefficient(0, at, s);
+                    self.ex[at] = self.ex[at] - coef * j_here;
                 }
             }
         }
@@ -913,7 +1487,8 @@ impl YeeGrid {
                 for k in 1..nz {
                     let at = self.offset(Component::Ey, i, j, k);
                     let j_here = self.sources.as_ref().map_or(Fix128::ZERO, |v| v.jy[at]);
-                    self.ey[at] = self.ey[at] - s * j_here;
+                    let coef = self.source_coefficient(1, at, s);
+                    self.ey[at] = self.ey[at] - coef * j_here;
                 }
             }
         }
@@ -922,7 +1497,8 @@ impl YeeGrid {
                 for k in 0..nz {
                     let at = self.offset(Component::Ez, i, j, k);
                     let j_here = self.sources.as_ref().map_or(Fix128::ZERO, |v| v.jz[at]);
-                    self.ez[at] = self.ez[at] - s * j_here;
+                    let coef = self.source_coefficient(2, at, s);
+                    self.ez[at] = self.ez[at] - coef * j_here;
                 }
             }
         }
@@ -952,10 +1528,12 @@ impl YeeGrid {
             hz,
             sources: _,
             absorber,
+            materials,
         } = self;
         let (nx, ny, nz) = (*nx, *ny, *nz);
         let s = *courant;
         let mut ab = absorber.as_deref_mut();
+        let mat = materials.as_deref();
 
         // Strides: index (i, j, k) of a component with sample counts
         // (ni, nj, nk) lives at (i·nj + j)·nk + k.
@@ -982,7 +1560,12 @@ impl YeeGrid {
                             sp.hxz[at] = sp.ca_h[2][k] * sp.hxz[at] + sp.cb_h[2][k] * b;
                             hx[at] = sp.hxy[at] + sp.hxz[at];
                         }
-                        _ => hx[at] = hx[at] - s * curl,
+                        _ => match mat {
+                            Some(m) if m.h_active[0][at] => {
+                                hx[at] = hx[at] - m.h_cb[0][at] * curl;
+                            }
+                            _ => hx[at] = hx[at] - s * curl,
+                        },
                     }
                 }
             }
@@ -1001,7 +1584,12 @@ impl YeeGrid {
                             sp.hyx[at] = sp.ca_h[0][i] * sp.hyx[at] + sp.cb_h[0][i] * b;
                             hy[at] = sp.hyz[at] + sp.hyx[at];
                         }
-                        _ => hy[at] = hy[at] - s * curl,
+                        _ => match mat {
+                            Some(m) if m.h_active[1][at] => {
+                                hy[at] = hy[at] - m.h_cb[1][at] * curl;
+                            }
+                            _ => hy[at] = hy[at] - s * curl,
+                        },
                     }
                 }
             }
@@ -1020,7 +1608,12 @@ impl YeeGrid {
                             sp.hzy[at] = sp.ca_h[1][j] * sp.hzy[at] + sp.cb_h[1][j] * b;
                             hz[at] = sp.hzx[at] + sp.hzy[at];
                         }
-                        _ => hz[at] = hz[at] - s * curl,
+                        _ => match mat {
+                            Some(m) if m.h_active[2][at] => {
+                                hz[at] = hz[at] - m.h_cb[2][at] * curl;
+                            }
+                            _ => hz[at] = hz[at] - s * curl,
+                        },
                     }
                 }
             }
@@ -1042,7 +1635,12 @@ impl YeeGrid {
                             sp.exz[at] = sp.ca_e[2][k] * sp.exz[at] - sp.cb_e[2][k] * b;
                             ex[at] = sp.exy[at] + sp.exz[at];
                         }
-                        _ => ex[at] = ex[at] + s * curl,
+                        _ => match mat {
+                            Some(m) if m.e_active[0][at] => {
+                                ex[at] = m.e_ca[0][at] * ex[at] + m.e_cb[0][at] * curl;
+                            }
+                            _ => ex[at] = ex[at] + s * curl,
+                        },
                     }
                 }
             }
@@ -1061,7 +1659,12 @@ impl YeeGrid {
                             sp.eyx[at] = sp.ca_e[0][i] * sp.eyx[at] - sp.cb_e[0][i] * b;
                             ey[at] = sp.eyz[at] + sp.eyx[at];
                         }
-                        _ => ey[at] = ey[at] + s * curl,
+                        _ => match mat {
+                            Some(m) if m.e_active[1][at] => {
+                                ey[at] = m.e_ca[1][at] * ey[at] + m.e_cb[1][at] * curl;
+                            }
+                            _ => ey[at] = ey[at] + s * curl,
+                        },
                     }
                 }
             }
@@ -1080,7 +1683,12 @@ impl YeeGrid {
                             sp.ezy[at] = sp.ca_e[1][j] * sp.ezy[at] - sp.cb_e[1][j] * b;
                             ez[at] = sp.ezx[at] + sp.ezy[at];
                         }
-                        _ => ez[at] = ez[at] + s * curl,
+                        _ => match mat {
+                            Some(m) if m.e_active[2][at] => {
+                                ez[at] = m.e_ca[2][at] * ez[at] + m.e_cb[2][at] * curl;
+                            }
+                            _ => ez[at] = ez[at] + s * curl,
+                        },
                     }
                 }
             }
