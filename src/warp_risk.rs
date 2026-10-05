@@ -28,7 +28,7 @@
 //! - `ΔT` between print temperature and chamber temperature.
 //!
 //! Empirical fit to the documented case
-//! "280×250×5 mm PLA plate peeled off unheated bed" (2026-02 incident):
+//! "280×250×5 mm PLA plate peeled off unheated bed":
 //! this scenario returns a `Critical` category (score > 0.75).
 //!
 //! # References
