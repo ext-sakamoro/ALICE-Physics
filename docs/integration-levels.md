@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 19 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 120 |
+| standalone | a Rust API that only examples call | 123 |
 | unused | no caller outside tests | 3 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -56,6 +56,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `anisotropic_friction` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `anomaly` | standalone | 0 / 0 / 0 / 54 / 0 | — |
 | `articulation` | standalone | 0 / 0 / 0 / 17 / 0 | — |
+| `atmosphere` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `audio_physics` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `beam_stress` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `bimaterial` | standalone | 0 / 0 / 0 / 9 / 0 | — |
@@ -104,6 +105,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `laminate` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `laminate_failure` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `layer_adhesion` | standalone | 0 / 0 / 0 / 8 / 0 | — |
+| `lift_drag` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `linear_elastic_fem` | standalone (step 1 of 126 items) | 1 / 0 / 0 / 124 / 1 | C ABI, Python, WebAssembly |
 | `math_util` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `maxwell_fdtd` | standalone | 0 / 0 / 0 / 29 / 0 | — |
@@ -134,6 +136,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `rope` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `rope_attach` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `rotor` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `scene_io` | standalone | 0 / 0 / 0 / 10 / 1 | — |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
