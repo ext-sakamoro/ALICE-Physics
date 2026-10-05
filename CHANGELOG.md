@@ -107,6 +107,9 @@ were introduced during that release window.
 - `sdf_ccd::sphere_trace_sdf_field` / `sdf_collider::{collide_point_sdf_field, collide_sphere_sdf_field, SdfQuery, ClosureSdfQuery, SdfFrame}` / `SdfCollider::frame`: `SdfCollider` (`Box<dyn SdfField>`、`'static + Send + Sync`) を作らずに、借用した場 (局所変数を捕捉する closure 等) で sphere trace と点・球の判定ができる 姿勢は `SdfFrame` で渡す `SdfField` は変更なし (全実装が blanket impl で `SdfQuery` になる) 既存の `sphere_trace_sdf` / `collide_point_sdf` / `collide_sphere_sdf` は新関数に委譲し、結果は bit 一致
 - Unreal Engine プラグイン: `UAlicePhysicsWorldComponent::SetWorldGravity`
 - `sdf_collider::{DistanceSdfQuery, FD_NORMAL_BASE_EPS}`: 距離 closure だけから `SdfQuery` を作る 法線は crate 内の中心差分 (`ModifiedSdf` / `SingleModifiedSdf` / `DestructibleSdf` と同じ式・同じ step で bit 一致) で求め、呼び出し側が差分法を持たなくてよい closure は `'static` / `Send` / `Sync` 不要 (`std` feature 必須) 3 wrapper の差分法は 1 つの helper に集約 (法線は変更前と bit 一致)
+- `atmosphere::{Isa1976, AtmosphereState, IsaError}`: U.S. Standard Atmosphere 1976 の対流圏 (0〜11 km、減率 6.5 K/km) と成層圏下部 (11〜20 km、等温) 高度 (ジオポテンシャル / 幾何) から温度・圧力・密度・音速を返す 範囲外は clamp せず `Err` `Fix128` のみで `no_std` でも使える
+- `lift_drag::{LiftDragSurface, LiftDragParams, LiftDragError, AeroCoefficients, AeroLoad, THIN_AIRFOIL_LIFT_SLOPE}`: 翼面の揚力・抗力 迎角は圧力中心の速度 (`v + ω × r`) と風の差から求め、揚力傾斜に揚力線の有限翼補正 `a₀ / (1 + a₀/(π e AR))`、抗力に誘導抗力 `C_L²/(π e AR)`、失速後は遷移幅を経て平板 (`2 sin α cos α`, `C_D0 + 2 sin² α`) へ連続につなぐ 力は圧力中心に impulse で掛ける
+- `rotor::{Rotor, RotorParams, RotorSpin, RotorError, RotorLoad, hover_induced_velocity_m_s, ideal_hover_power_w}`: 静止推力モデル `T = C_T ρ n² D⁴` / `Q = C_Q ρ n² D⁵`、機体への反トルク `−s Q â`、ホバリングの誘起速度 `√(T/(2ρA))` と理想パワー `T v_i` 前進流入による推力低下は含まない
 
 ### Changed
 
