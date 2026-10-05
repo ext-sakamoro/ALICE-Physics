@@ -12,10 +12,9 @@
 //!   at `v₀` along `x` has `v_n = v₀ dⁿ` and
 //!   `x_n = x₀ + v₀ dt (1 − dⁿ) / (1 − d)` after `n` steps;
 //! * two equal spheres of radius `r` closing head-on at `±v` first overlap in
-//!   the substep (length `h = dt / substeps`) whose predicted gap is negative,
-//!   by `p = −gap`. The position pass removes that overlap, so the relative
-//!   normal velocity derived from the substep is `2v − p/h`, and restitution
-//!   `e` reverses it: each body leaves at `∓ e (v − p / (2h))`.
+//!   the substep (length `h = dt / substeps`) whose predicted gap is
+//!   negative; Newton restitution `e` on that approach leaves each body at
+//!   `∓ e v`, wherever inside the substep the first touch falls.
 //!
 //! Author: Moroya Sakamoto
 
@@ -152,27 +151,26 @@ fn a_vetoed_head_on_pair_moves_as_free_bodies() {
     }
 }
 
-/// Control: without the veto the pair bounces once with restitution `e` on
-/// the derived approach velocity, then moves freely:
-/// `v_a = −e (v_k − p/(2h)) d^{n−k}` after `n` steps when the impact is in
-/// frame `k`. `e = 0.3` is the default material; a modifier that sets
-/// `e = 0.8` must give the bounce of `e = 0.8` (the velocity pass reads the
-/// modified restitution). Tolerance `1e-9` as above.
+/// Control: without the veto the pair bounces once with restitution `e`:
+/// each body leaves at `∓ e v_k` (the approach speed `v_k` of the impact
+/// frame `k`, Newton restitution on the pre-solve velocity), then moves
+/// freely, so `v_a = −e v_k d^{n−k}` after `n` steps. `e = 0.3` is the
+/// default material; a modifier that sets `e = 0.8` must give the bounce of
+/// `e = 0.8` (the velocity pass reads the modified restitution). Tolerance
+/// `1e-9` as above.
 #[test]
 fn an_accepted_head_on_pair_bounces_with_the_restitution() {
     let config = PhysicsConfig::default();
     let d = config.damping.to_f64();
     let substeps = config.substeps;
-    let h = DT / substeps as f64;
-    let (k, s) = (0..200)
+    let (k, _) = (0..200)
         .flat_map(|k| (1..=substeps).map(move |s| (k, s)))
         .find(|&(k, s)| free_gap(d, substeps, k, s) < 0.0)
         .expect("impact");
-    let p = -free_gap(d, substeps, k, s);
     let n = 60;
     assert!(k < n, "impact frame {k} must be inside the run");
     for (e, modified) in [(0.3, false), (0.8, true)] {
-        let leave = -e * (free(d, k).1 - p / (2.0 * h));
+        let leave = -e * free(d, k).1;
         let v_want = leave * d.powi((n - k) as i32);
         for path in paths() {
             let (mut w, a, b) = head_on(config, None);
