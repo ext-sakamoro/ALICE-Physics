@@ -12,7 +12,6 @@ unwired src/bvh.rs::build_dynamic
 unwired src/bvh.rs::clear_dynamic
 unwired src/bvh.rs::insert_dynamic
 unwired src/bvh.rs::query_pairs
-unwired src/convex_mesh_builder.rs::build_convex_hull
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes
@@ -28,7 +27,6 @@ unwired src/fatigue.rs::aluminum_a5052
 unwired src/fatigue.rs::analyze_spectrum
 unwired src/fatigue.rs::steel_sus304
 unwired src/fatigue.rs::stress_at_cycles
-unwired src/mass_properties.rs::cylinder_mass_properties
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
