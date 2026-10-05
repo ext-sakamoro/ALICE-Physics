@@ -17,7 +17,7 @@
 //! - Sequential processing within each color (data dependency)
 //! - Parallel processing across colors (no conflicts)
 
-use crate::bvh::{BvhPrimitive, LinearBvh};
+use crate::bvh::{BroadphaseHybrid, BvhPrimitive, LinearBvh};
 use crate::collider::{Contact, AABB};
 use crate::event::EventCollector;
 use crate::filter::CollisionFilter;
@@ -633,9 +633,10 @@ pub enum SolverBackend {
 /// The broad-phase [`PhysicsWorld`] uses to find the pairs of bodies whose
 /// collision spheres may touch.
 ///
-/// Both kinds hand the same sorted candidate pairs to the same exact narrow-phase,
-/// so a world steps to **bit-identical** results whichever it uses; they differ in
-/// cost. Set with [`PhysicsWorld::set_broadphase`].
+/// Every kind hands its candidates (pairs whose sphere boxes may overlap) to the
+/// same exact narrow-phase in ascending pair order, and a pair whose boxes do not
+/// meet has no contact, so a world steps to **bit-identical** results whichever
+/// it uses; they differ in cost. Set with [`PhysicsWorld::set_broadphase`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 #[non_exhaustive]
 pub enum Broadphase {
@@ -646,6 +647,14 @@ pub enum Broadphase {
     /// each body keeps a fattened proxy that is only re-inserted when the body
     /// leaves it, so a world where most bodies move little pays for the few that do.
     DynamicTree,
+    /// Static bodies in a BVH rebuilt only when the static set changes, small
+    /// dynamic bodies in a sparse hash grid whose cell size follows the median
+    /// body, and large dynamic bodies in a per-step BVH; reports exactly the
+    /// pairs whose boxes overlap. Fastest when many bodies are static or bodies
+    /// are of similar size. The sleep skip ([`PhysicsWorld::set_sleep_skip`])
+    /// parks bodies only with [`Broadphase::Bvh`]; with this kind every body is
+    /// staged every step.
+    Hybrid,
 }
 
 /// What the [`Broadphase::DynamicTree`] broad-phase currently holds, returned by
@@ -691,6 +700,9 @@ pub struct StageWork {
     pub broadphase_primitives: u64,
     /// Candidate pairs the broad-phase handed to the narrow-phase.
     pub broadphase_pairs: u64,
+    /// Pairs of bodies whose exact boxes the [`Broadphase::Hybrid`] broad-phase
+    /// compared to find `broadphase_pairs` (0 with the other broad-phases).
+    pub broadphase_box_tests: u64,
     /// Bodies tested against the static and SDF colliders.
     pub resolution_bodies: u64,
     /// Bodies whose velocity was derived from their position change.
@@ -1346,6 +1358,8 @@ pub struct PhysicsWorld {
     broadphase_tree: crate::dynamic_bvh::DynamicAabbTree,
     /// Body index → its proxy in `broadphase_tree`.
     broadphase_proxies: Vec<Option<u32>>,
+    /// The layers of [`Broadphase::Hybrid`] (unused otherwise).
+    broadphase_hybrid: BroadphaseHybrid,
     /// The convex collider a body carries, when it has one — one shape or a
     /// compound of them: the narrow-phase works on it instead of the bounding
     /// sphere (see [`crate::shape`], [`crate::compound`]).
@@ -1497,6 +1511,7 @@ impl PhysicsWorld {
             broadphase: Broadphase::default(),
             broadphase_tree: crate::dynamic_bvh::DynamicAabbTree::new(),
             broadphase_proxies: Vec::new(),
+            broadphase_hybrid: BroadphaseHybrid::new(),
             body_colliders: Vec::new(),
             body_filters: Vec::new(),
             overflow_detected: false,
@@ -2087,7 +2102,8 @@ impl PhysicsWorld {
     /// drops the tree; it is rebuilt on the next step with the skip on.
     ///
     /// Only `step` with the XPBD backend and [`Broadphase::Bvh`] skips; the other
-    /// entry points and broad-phases visit every body as before.
+    /// entry points and broad-phases ([`Broadphase::DynamicTree`],
+    /// [`Broadphase::Hybrid`]) visit every body as before.
     pub fn set_sleep_skip(&mut self, enabled: bool) {
         self.sleep_skip = enabled;
         if !enabled {
@@ -5008,9 +5024,10 @@ impl PhysicsWorld {
         }
     }
 
-    /// Select the broad-phase. Both kinds give bit-identical simulations (see
-    /// [`Broadphase`]); switching drops the persistent tree, which is rebuilt on the
-    /// next step if [`Broadphase::DynamicTree`] is chosen.
+    /// Select the broad-phase. Every kind gives bit-identical simulations (see
+    /// [`Broadphase`]); switching drops the persistent tree and the
+    /// [`Broadphase::Hybrid`] layers, which are rebuilt on the next step if
+    /// that kind is chosen.
     pub fn set_broadphase(&mut self, kind: Broadphase) {
         self.park_generation = self.park_generation.wrapping_add(1);
         self.broadphase = kind;
@@ -5045,11 +5062,13 @@ impl PhysicsWorld {
         Some(self.broadphase_tree.get_aabb(proxy))
     }
 
-    /// Forget the persistent tree: the next [`Broadphase::DynamicTree`] step
-    /// rebuilds it from the bodies. Called when the broad-phase is switched.
+    /// Forget the persistent tree and the hybrid layers: the next
+    /// [`Broadphase::DynamicTree`] or [`Broadphase::Hybrid`] step rebuilds them
+    /// from the bodies. Called when the broad-phase is switched.
     fn broadphase_reset(&mut self) {
         self.broadphase_tree = crate::dynamic_bvh::DynamicAabbTree::new();
         self.broadphase_proxies.clear();
+        self.broadphase_hybrid = BroadphaseHybrid::new();
     }
 
     /// The sorted candidate pairs of bodies whose boxes may overlap, from the
@@ -5094,6 +5113,18 @@ impl PhysicsWorld {
                     }
                 }
                 self.broadphase_tree.find_pairs()
+            }
+            Broadphase::Hybrid => {
+                let hybrid = &mut self.broadphase_hybrid;
+                hybrid.clear_dynamic();
+                for p in &primitives {
+                    let is_static = self.bodies[p.index as usize].is_static();
+                    hybrid.insert_dynamic(p.index, p.aabb, is_static);
+                }
+                hybrid.build_dynamic();
+                let mut pairs = Vec::new();
+                self.stage_work.broadphase_box_tests += hybrid.query_pairs(&mut pairs);
+                pairs
             }
         }
     }
