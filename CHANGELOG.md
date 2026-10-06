@@ -327,6 +327,7 @@ were introduced during that release window.
 
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
+- `DebugDrawData::arrow`: doc どおり矢印の頭 (先端から軸に沿って長さの 0.2 戻った点の両側への 2 本の線) を描くようにした これまでは頭の点を計算して捨て、軸と先端の点だけを記録していた **Behavior change:** 矢印 1 本の線は 1 本から 3 本に (`axes` は 3 本から 9 本) なる (AUD-A-S4W3-008)
 - fatigue の Miner 和: 繰り返し数 `n` が `i64::MAX` を超えると `as i64` で負に wrap し damage が負になっていた 整数商と余りに分けて計算し、表せない大きさと和の溢れは飽和させる (AUD-A-S4W2-007)
 - `HeightField::aabb`: spacing が 0 以下の場は空の場と同じく原点の点 AABB を返す (`collide_sphere` は面が無いとして扱う) これまでは負の spacing で max < min の反転した箱になっていた (AUD-A-S4W3-007)
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 `replay` は alice-db のファイル保存 (fs2 / mmap) に依存するため wasm32-unknown-unknown では未対応
