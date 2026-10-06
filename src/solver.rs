@@ -1163,6 +1163,8 @@ impl BodySlicePtr {
 /// `mu` is the contact's friction (`ContactConstraint::friction`, after the
 /// contact modifiers); the combined material carries one coefficient, so the
 /// static and the kinetic coefficients are equal.
+// LIMITATION(COV-RIGID-080): the combined material carries one coefficient, so the static and the kinetic coefficients are equal.
+// LIMITATION(COV-RIGID-083): Contact points are taken at the body centres: the contact solve is translational only.
 #[allow(clippy::too_many_arguments)]
 #[inline]
 fn static_friction_correction(
