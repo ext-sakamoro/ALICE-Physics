@@ -135,6 +135,7 @@ cargo run --release --example rollback_netcode
 | `snapshot_world` / `from_world_snapshot` / `restore_world` | 世界全体 (物体、ジョイント、拘束、コライダー、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、warm-start のキャッシュ、オーバーフローフラグ) を版番号とチェックサム付きの 1 つの blob に保存し、新しい世界または既存の世界に復元する 復元後のステップは元の世界とビット一致する 不正な blob は理由を示す `WorldSnapshotError` で拒否する |
 | `step_n(n, dt)` | `step(dt)` を `n` 回実行する Python の `step_n` と WASM の `stepN` も同じ関数を呼ぶ |
 | `overflow_detected()` | `Fix128` の演算が範囲を外れたことを報告し、発散した実行を正しい結果と取り違えないようにする フラグはロールバック後も残る |
+| `Vec3Fix::checked_*` / `checked_length_scaled` / `try_normalize_scaled` | 2 乗が `Fix128` の範囲を外れる長さ・内積 (`\|v\| ≥ 2^31.5 ≈ 3.04e9`) で wrap せず `None` を返す scaled 版はその範囲でも正しい長さと向きを返し、範囲内では `length` / `try_normalize` とビット一致する |
 | `netcode::SimulationChecksum` | 保存する状態と同じバイト列から求めるチェックサム |
 
 [`examples/world_auditor_observation.rs`](examples/world_auditor_observation.rs) でリセットと観測の使い方を示している
