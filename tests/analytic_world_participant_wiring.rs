@@ -850,6 +850,43 @@ impl Participant for Twist {
     }
 }
 
+/// One substep of a torque `τ = 3` about x on a free body at rest with the
+/// identity rotation gives `ω = I⁻¹·τ·h` (oracle: the body's own diagonal
+/// `inv_inertia` and `h = 1/64`, `substeps = 1`), and nothing about y or z.
+/// XPBD derives ω again from the orientation change at the end of the
+/// substep (`q += ½·h·ω⊗q`, normalized), which agrees with the applied ω to
+/// second order in `|ω|·h`; measured relative difference `5.6e-12`, so the
+/// tolerance is `1e-9` relative.
+#[test]
+fn a_torque_changes_the_angular_velocity_by_inv_inertia_tau_h() {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps: 1,
+        gravity: Vec3Fix::ZERO,
+        damping: Fix128::ONE,
+        ..Default::default()
+    });
+    let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+    b.angular_damping = Fix128::ONE;
+    w.add_body(b);
+    let inv_i = w.bodies[0].inv_inertia.x;
+    assert!(inv_i > Fix128::ZERO, "fixture: a body that can turn");
+    w.add_participant(Box::new(Twist::new(Vec3Fix::from_int(3, 0, 0))))
+        .expect("register");
+    let h = Fix128::from_ratio(1, 64);
+    w.try_step(h).expect("step");
+    let expected = Fix128::from_int(3) * inv_i * h;
+    let got = w.bodies[0].angular_velocity.x;
+    let rel = ((got - expected).to_f64() / expected.to_f64()).abs();
+    assert!(
+        rel < 1e-9,
+        "ω.x {} vs I⁻¹τh {} (relative {rel:e})",
+        got.to_f64(),
+        expected.to_f64()
+    );
+    assert_eq!(w.bodies[0].angular_velocity.y, Fix128::ZERO);
+    assert_eq!(w.bodies[0].angular_velocity.z, Fix128::ZERO);
+}
+
 /// A light body (mass `2⁻²⁰`, so `inv_inertia ≈ 2.6e6`) under `τ = 2⁵⁰`:
 /// `I⁻¹·τ ≈ 2.9e21` is past the range of [`Fix128`] (`2⁶³`) before it is
 /// scaled by `h`. The torque is not applied (the body turns as in a world
@@ -1020,4 +1057,91 @@ fn a_change_near_the_range_edge_below_the_threshold_leaves_a_parked_body_parked(
         "a change below the threshold woke the body"
     );
     assert_eq!((w.bodies[0].rotation, w.bodies[0].angular_velocity), before);
+}
+
+// ── Rigid trajectory with a participant that stages nothing ─────────────
+
+fn rigid_motion(w: &PhysicsWorld) -> Vec<(Vec3Fix, Vec3Fix, Vec3Fix, Vec3Fix)> {
+    w.bodies
+        .iter()
+        .map(|b| {
+            (
+                b.position,
+                b.velocity,
+                b.angular_velocity,
+                Vec3Fix::new(b.rotation.x, b.rotation.y, b.rotation.z),
+            )
+        })
+        .collect()
+}
+
+/// Gravity and a stack of three bodies resting on a static one (contacts in
+/// every frame), `substeps = 4`: a participant that stages a zero force leaves
+/// every body bit for bit as in the same world without it, on XPBD and on
+/// TGS. On TGS this needs the per-substep loop to hand the bodies to the
+/// participants and back in every substep; `h = dt / 4` is the width the
+/// world without participants uses, so the oracle is exact equality.
+#[test]
+fn a_participant_that_stages_nothing_leaves_a_stacked_world_unchanged() {
+    for backend in [SolverBackend::Xpbd, SolverBackend::Tgs] {
+        let mut a = stacked(backend);
+        let mut b = stacked(backend);
+        b.add_participant(Box::new(Push::new(1, Vec3Fix::ZERO)))
+            .expect("register");
+        for frame in 0..90 {
+            a.step(Fix128::from_ratio(1, 60));
+            b.try_step(Fix128::from_ratio(1, 60)).expect("step");
+            assert_eq!(
+                rigid_motion(&a),
+                rigid_motion(&b),
+                "{backend:?} frame {frame}"
+            );
+        }
+        assert!(
+            b.bodies[3].velocity != Vec3Fix::ZERO || b.bodies[3].position.y < Fix128::from_int(5),
+            "fixture: the stack must move under gravity"
+        );
+    }
+}
+
+// ── Restore order ────────────────────────────────────────────────────────
+
+/// A restore whose participants pass their check but whose fields are
+/// refused (the blob has a field section the target does not declare)
+/// leaves the participants' state as it was: the participants are read only
+/// after every section has been checked.
+#[test]
+fn a_restore_refused_on_the_fields_leaves_the_participant_state_unchanged() {
+    let build = |declare: bool| {
+        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+        w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        if declare {
+            w.declare_field(
+                PortId::new(4),
+                FieldLayout::PerBody { bodies: 1 },
+                FieldMode::Sum,
+            )
+            .expect("declare");
+        }
+        w.add_participant(Box::new(Twist::new(Vec3Fix::ZERO)))
+            .expect("register");
+        w
+    };
+    let mut source = build(true);
+    for _ in 0..3 {
+        source.try_step(Fix128::from_ratio(1, 60)).expect("step");
+    }
+    let blob = source.snapshot_world();
+    let mut target = build(false);
+    let before = target.participant_state(0).expect("participant 0");
+    assert_ne!(
+        source.participant_state(0).expect("participant 0"),
+        before,
+        "fixture: the blob must hold a different participant state"
+    );
+    assert!(matches!(
+        target.restore_world(&blob),
+        Err(WorldSnapshotError::FieldState(_))
+    ));
+    assert_eq!(target.participant_state(0).expect("participant 0"), before);
 }
