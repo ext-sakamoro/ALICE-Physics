@@ -105,23 +105,37 @@ PRIVATE_NAME_HASHES = {
     "c857d09db23e6822e3600bc06ad8d58f92ed62bc8efd81c753f77048662cb97d",
     "b5cf43ae07a7364e0c0ca9e838f01f278fc6a71c207a6f8c3de8d908608b2db1",
     "28e174396028f226b3bead259d19749205378d9204ce12fd9b1918ab6032a15d",
+    # titles and settings of a work that are not to appear in public text
+    "19f798ce9f70706dd4334369cbf056e51922830d480360b8ace258e818ba7dd4",
+    "f20f5b0dfb30b315a2adacb9fd240ce53301a01a4cbc4c16b26c1c64c815eaa8",
+    "e3638dd52d300c1393f35ef855ed00ae35e66b48acc8a8fbfc6b5dfba335593b",
+    "1f770aff55b29cfc7d0e86b0d15f0ca06b523420221794dbb9a4f028a698203a",
+    "cb49d686203bf58098b7db4cc309f826ee749366c217d7f108cad562507feccd",
+    "f59367a3ffb393334570507ae7d5d0f7b1b92b0b7dd8a9a229c0d3f1df416388",
+    "96ac2ef53544a3e2fbe76274f9124be1e78c878f03bdf2ae6ed9aa7864dddecd",
+    "8653d44dc6fd3b625cba9865fc10f6b8d2d9d871d5da9e3624bc6d87179ed8f1",
     # internal review / rule names
     "d44eb131a9fc729aae3aed377733d242c0796290775259142e0bd8d26e1e3132",
     "9330fafbe2c0a50b50ab63cbc545e79f87b76394b7efa9b6f1dc90f4ce76bfb1",
     "3834bde4d50c16031f0b0c9ff9371cd8aaa10155dbbf964f199a5b965e369925",
 }
 TOKEN_RE = re.compile(r"[A-Za-z0-9_\-\u3040-\u30ff\u4e00-\u9fff]+")
+# Japanese is written without spaces, so a name is usually glued to a particle or
+# another word ("<name>の", "<name>編"); the second tokenisation splits at every
+# change of script (Latin / katakana / hiragana / kanji) so such a name is still a token
+SCRIPT_TOKEN_RE = re.compile(r"[A-Za-z0-9_\-]+|[\u30a0-\u30ff]+|[\u3040-\u309f]+|[\u4e00-\u9fff]+")
 
 
 def private_names(line: str) -> list[str]:
     """Tokens / phrases of the line whose hash is a private-project name."""
-    toks = TOKEN_RE.findall(line)
-    found = []
-    for n in (1, 2, 3):
-        for i in range(len(toks) - n + 1):
-            phrase = " ".join(toks[i:i + n])
-            if hashlib.sha256(phrase.lower().encode("utf-8")).hexdigest() in PRIVATE_NAME_HASHES:
-                found.append(phrase)
+    found: list[str] = []
+    for toks in (TOKEN_RE.findall(line), SCRIPT_TOKEN_RE.findall(line)):
+        for n in (1, 2, 3):
+            for i in range(len(toks) - n + 1):
+                phrase = " ".join(toks[i:i + n])
+                if phrase not in found and \
+                        hashlib.sha256(phrase.lower().encode("utf-8")).hexdigest() in PRIVATE_NAME_HASHES:
+                    found.append(phrase)
     return found
 
 CATEGORIES = ("Added", "Changed", "Deprecated", "Removed", "Fixed", "Security")
