@@ -301,3 +301,106 @@ fn normal_shock_at_extreme_mach_is_the_strong_shock_limit() {
     assert!((j.density_ratio.to_f64() - 6.0).abs() < 1e-9);
     assert!(j.pressure_ratio.to_f64() > 1e16);
 }
+
+fn gas_with_gamma(gamma: Fix128) -> IdealGas {
+    IdealGas {
+        gas_constant: f(287.0),
+        gamma,
+    }
+}
+
+/// `T0/T = 1 + 0.2 M^2` for air leaves Fix128 near M = 6.8e9: past it both T0/T
+/// and p0/p saturate at the largest Fix128 instead of wrapping (M^2 wrapped
+/// from about 3e9 and p0/p fell back to 1.0 at M = 7e9, 3e10, 3e15)
+#[test]
+fn stagnation_ratios_saturate_past_the_fix128_range() {
+    let g = IdealGas::air();
+    let mut prev = 0.0;
+    for m in [1e9, 3e9, 5e9, 7e9, 1e10, 3e10, 1e12, 3e15] {
+        let p = stagnation_pressure_ratio(&g, f(m)).to_f64();
+        assert!(
+            p >= prev && p > 9.2e18,
+            "M={m:e}: p0/p={p:e} after {prev:e}"
+        );
+        prev = p;
+    }
+    // T0/T itself: exact while 0.2 M^2 fits (M = 3e9: 1.8e18), saturated after
+    let t = stagnation_temp_ratio(&g, f(3e9)).to_f64();
+    assert!((t - (1.0 + 0.2 * 9e18)).abs() / t < 1e-12, "{t:e}");
+    for m in [7e9, 3e10, 3e15] {
+        assert!(stagnation_temp_ratio(&g, f(m)).to_f64() > 9.2e18, "M={m:e}");
+    }
+}
+
+/// The saturation threshold is ln(largest Fix128) = 63 ln 2 = 43.668, not 43:
+/// air at M = 1118 has ln(p0/p) = 3.5 ln(1 + 0.2 * 1118^2) = 43.50, which fits
+/// (p0/p = 7.8e18) and must be the exact power, not the saturated value
+#[test]
+fn stagnation_pressure_ratio_is_exact_just_below_the_range() {
+    let g = IdealGas::air();
+    let base = 1.0 + 0.2 * 1118.0_f64 * 1118.0;
+    let want = (3.5 * base.ln()).exp();
+    assert!(want < 9.2e18 && 3.5 * base.ln() > 43.0);
+    let got = stagnation_pressure_ratio(&g, f(1118.0)).to_f64();
+    assert!((got - want).abs() / want < 1e-6, "{got:e} vs {want:e}");
+    // isothermal: exp(M^2 / 2) at M = 9 is exp(40.5) = 3.9e17 (fits), M = 10
+    // (exp 50) saturates
+    let iso = gas_with_gamma(Fix128::ONE);
+    let got = stagnation_pressure_ratio(&iso, f(9.0)).to_f64();
+    assert!((got - 40.5_f64.exp()).abs() / got < 1e-6, "{got:e}");
+    assert!(stagnation_pressure_ratio(&iso, f(10.0)).to_f64() > 9.2e18);
+}
+
+/// gamma = 1 (isothermal) normal shock: rho2/rho1 = p2/p1 = M^2, T2/T1 = 1,
+/// M2 = 1/M. At M = 2e9 (M^2 = 4e18 fits) the formulas give M^2 exactly; past
+/// the range of the formulas' M^2 products rho and p are M^2 while it fits and
+/// then saturate (they were wrapped negative: -2.2e17 at 3e9)
+#[test]
+fn isothermal_normal_shock_past_the_range_saturates() {
+    let iso = gas_with_gamma(Fix128::ONE);
+    let j = normal_shock_jump(&iso, f(2e9));
+    assert!((j.density_ratio.to_f64() - 4e18).abs() / 4e18 < 1e-12);
+    assert!((j.pressure_ratio.to_f64() - 4e18).abs() / 4e18 < 1e-12);
+    for m in [3e9, 3.1e9, 1e10] {
+        let j = normal_shock_jump(&iso, f(m));
+        // min(M^2, largest Fix128 = 9.22e18): 9e18 still fits at M = 3e9
+        let want = (m * m).min(9.223_372_036_854_776e18);
+        let rho = j.density_ratio.to_f64();
+        let p = j.pressure_ratio.to_f64();
+        assert!((rho - want).abs() / want < 1e-12, "M={m:e} rho {rho:e}");
+        assert!((p - want).abs() / want < 1e-12, "M={m:e} p {p:e}");
+        assert_eq!(j.temperature_ratio, Fix128::ONE, "M={m:e} T");
+        let m2 = j.mach_downstream.to_f64();
+        assert!((m2 * m - 1.0).abs() < 1e-9, "M={m:e}: M2={m2:e}");
+    }
+}
+
+/// A gamma above 4.6 overflowed 2 gamma M^2 below the old fixed limit M = 1e9
+/// (gamma = 6, M = 9e8 gave M2 = 0): M2 = sqrt((5 + 2/M^2) / (12 - 5/M^2)) =
+/// 0.6455 and rho2/rho1 = 7/5
+#[test]
+fn normal_shock_with_a_large_gamma_does_not_wrap() {
+    // air at M = 3e9: (g+1) M^2 does not fit, so the divided-through form runs;
+    // T2/T1 = (2.8 M^2 - 0.4)(0.4 M^2 + 2) / (5.76 M^2) = 1.75e18 still fits
+    let j = normal_shock_jump(&IdealGas::air(), f(3e9));
+    let m_sq = 9e18_f64;
+    let t_want = (2.8 * m_sq - 0.4) * (0.4 * m_sq + 2.0) / (5.76 * m_sq);
+    let t = j.temperature_ratio.to_f64();
+    assert!((t - t_want).abs() / t_want < 1e-9, "T {t:e} vs {t_want:e}");
+    let p_want = 1.0 + 2.8 / 2.4 * (m_sq - 1.0);
+    assert!(
+        p_want > 9.3e18 && j.pressure_ratio.to_f64() > 9.2e18,
+        "p saturates"
+    );
+
+    let g = gas_with_gamma(Fix128::from_int(6));
+    for m in [9e8, 2e9, 1e12] {
+        let j = normal_shock_jump(&g, f(m));
+        assert!(
+            (j.mach_downstream.to_f64() - (5.0_f64 / 12.0).sqrt()).abs() < 1e-9,
+            "M={m:e}"
+        );
+        assert!((j.density_ratio.to_f64() - 1.4).abs() < 1e-9, "M={m:e}");
+        assert!(j.pressure_ratio.to_f64() > 1e17 && j.temperature_ratio.to_f64() > 1e17);
+    }
+}

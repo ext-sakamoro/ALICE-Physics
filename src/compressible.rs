@@ -115,11 +115,23 @@ impl IdealGas {
 // ============================================================================
 
 /// Isentropic stagnation temperature `T_0 / T = 1 + (γ−1)/2 · M²`.
+///
+/// A ratio beyond the Fix128 range (`M ≳ 6.8·10⁹` for air) saturates at the
+/// largest Fix128 (the most negative for `γ < 1`) instead of wrapping.
 #[must_use]
 pub fn stagnation_temp_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
     let gm1 = gas.gamma - Fix128::ONE;
     let half = Fix128::from_ratio(1, 2);
-    Fix128::ONE + half * gm1 * mach * mach
+    let term = mach
+        .checked_mul(mach)
+        .and_then(|m_sq| (half * gm1).checked_mul(m_sq))
+        .filter(|&t| t < RATIO_SATURATED - Fix128::ONE)
+        .map(|t| t + Fix128::ONE);
+    match term {
+        Some(r) => r,
+        None if gm1.is_negative() => -RATIO_SATURATED,
+        None => RATIO_SATURATED,
+    }
 }
 
 /// Isentropic stagnation pressure ratio `(p_0 / p) = (1 + (γ-1)/2·M²)^(γ/(γ-1))`
@@ -141,15 +153,19 @@ pub fn stagnation_pressure_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
         // lim_{γ→1} (1 + (γ-1)/2·M²)^(γ/(γ-1)) = exp(M²/2) — so compute that
         // directly instead of silently returning 1.
         let half = Fix128::from_ratio(1, 2);
-        return (half * mach * mach).exp();
+        // M² itself may not fit; past exp's own range (x > 43) exp saturates
+        return match mach.checked_mul(mach) {
+            Some(m_sq) => (half * m_sq).exp(),
+            None => RATIO_SATURATED,
+        };
     }
     let base = stagnation_temp_ratio(gas, mach);
     if gm1 < Fix128::ZERO || base <= Fix128::ZERO {
         return Fix128::ONE;
     }
     let exponent = gas.gamma / gm1;
-    // ln of the result; past ln(largest Fix128) = 43.67 the power would wrap
-    if exponent * base.ln() >= Fix128::from_ratio(43, 1) {
+    // ln of the result; past ln(largest Fix128) = 63 ln 2 the power would wrap
+    if exponent * base.ln() >= ln_ratio_saturated() {
         return RATIO_SATURATED;
     }
     base.powf_pos(exponent)
@@ -158,9 +174,18 @@ pub fn stagnation_pressure_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
 /// The largest Fix128, where a ratio beyond the representable range saturates.
 const RATIO_SATURATED: Fix128 = Fix128::from_raw(i64::MAX, u64::MAX);
 
-/// Upstream Mach number above which `M_1²` terms of the normal-shock relations
-/// would leave the Fix128 range (`2γ·M_1²` for `γ ≤ 4.6`).
-const SHOCK_MACH_LIMIT: i64 = 1_000_000_000;
+/// `ln` of [`RATIO_SATURATED`], `63 ln 2 = 43.668…`, less `2⁻²⁰` so that the
+/// rounding of `exp` / `powf_pos` at the edge cannot step past the range.
+fn ln_ratio_saturated() -> Fix128 {
+    Fix128::from_int(63) * Fix128::from_int(2).ln() - Fix128::from_raw(0, 1 << 44)
+}
+
+/// `x · M²`, or the largest Fix128 when it does not fit (`x ≥ 0`, `M > 1`).
+fn times_mach_sq(x: Fix128, mach: Fix128) -> Fix128 {
+    x.checked_mul(mach)
+        .and_then(|t| t.checked_mul(mach))
+        .unwrap_or(RATIO_SATURATED)
+}
 
 // ============================================================================
 // Rankine-Hugoniot normal shock
@@ -193,10 +218,13 @@ pub struct ShockJump {
 /// Compute the normal-shock jump. Returns unit ratios when `M_1 ≤ 1`
 /// (no shock exists for subsonic upstream).
 ///
-/// Above `M_1 = 10⁹` the `M_1²` terms would leave the Fix128 range; the jump
-/// is then the strong-shock limit: `ρ_2/ρ_1 = (γ+1)/(γ−1)`,
-/// `M_2 = √((γ−1)/(2γ))`, and `p_2/p_1`, `T_2/T_1` saturated at the largest
-/// Fix128 (they grow as `M_1²`).
+/// When an `M_1²` term of the formulas would leave the Fix128 range (from
+/// `M_1 ≈ 10⁹`, earlier for a larger `γ`), the same relations are evaluated
+/// divided through by `M_1²`: `ρ_2/ρ_1 = (γ+1)/((γ−1) + 2/M_1²)`,
+/// `M_2 = √(((γ−1) + 2/M_1²)/(2γ − (γ−1)/M_1²))`, and `p_2/p_1`, `T_2/T_1`
+/// (which grow as `M_1²`) saturate at the largest Fix128 once they do not fit.
+/// At `γ = 1` (isothermal) `ρ_2/ρ_1 = p_2/p_1 = M_1²` (saturating),
+/// `T_2/T_1 = 1` and `M_2 = 1/M_1`. `γ < 1` is not a gas.
 #[must_use]
 pub fn normal_shock_jump(gas: &IdealGas, mach_upstream: Fix128) -> ShockJump {
     let m1 = mach_upstream;
@@ -208,21 +236,21 @@ pub fn normal_shock_jump(gas: &IdealGas, mach_upstream: Fix128) -> ShockJump {
             mach_downstream: m1,
         };
     }
-    let gm1 = gas.gamma - Fix128::ONE;
-    if m1 > Fix128::from_int(SHOCK_MACH_LIMIT) && gm1 > Fix128::ZERO {
-        let g = gas.gamma;
-        return ShockJump {
-            density_ratio: (g + Fix128::ONE) / gm1,
-            pressure_ratio: RATIO_SATURATED,
-            temperature_ratio: RATIO_SATURATED,
-            mach_downstream: (gm1 / g.double()).sqrt(),
-        };
-    }
-    let m1_sq = m1 * m1;
     let g = gas.gamma;
     let gp1 = g + Fix128::ONE;
     let gm1 = g - Fix128::ONE;
     let two = Fix128::from_int(2);
+    let two_g_over_gp1 = two * g / gp1;
+    // every M_1² product of the formulas below, or None when one leaves the range
+    let fits = m1.checked_mul(m1).filter(|&m_sq| {
+        gp1.checked_mul(m_sq).is_some()
+            && gm1.checked_mul(m_sq).is_some()
+            && g.double().checked_mul(m_sq).is_some()
+            && two_g_over_gp1.checked_mul(m_sq).is_some()
+    });
+    let Some(m1_sq) = fits else {
+        return strong_shock_jump(g, m1);
+    };
 
     // ρ_2 / ρ_1
     let num_rho = gp1 * m1_sq;
@@ -233,7 +261,6 @@ pub fn normal_shock_jump(gas: &IdealGas, mach_upstream: Fix128) -> ShockJump {
         num_rho / den_rho
     };
     // p_2 / p_1
-    let two_g_over_gp1 = two * g / gp1;
     let p_ratio = Fix128::ONE + two_g_over_gp1 * (m1_sq - Fix128::ONE);
     // T_2 / T_1
     let t_ratio = if rho_ratio.is_zero() {
@@ -255,6 +282,41 @@ pub fn normal_shock_jump(gas: &IdealGas, mach_upstream: Fix128) -> ShockJump {
         pressure_ratio: p_ratio,
         temperature_ratio: t_ratio,
         mach_downstream: m2,
+    }
+}
+
+/// The normal-shock relations divided through by `M_1²`, for an `M_1` whose
+/// square terms do not fit Fix128 (see [`normal_shock_jump`]).
+fn strong_shock_jump(g: Fix128, m1: Fix128) -> ShockJump {
+    let gp1 = g + Fix128::ONE;
+    let gm1 = g - Fix128::ONE;
+    let two = Fix128::from_int(2);
+    if gm1 <= Fix128::ZERO {
+        // γ = 1: ρ_2/ρ_1 = p_2/p_1 = M_1², T_2/T_1 = 1, M_2 = 1/M_1
+        return ShockJump {
+            density_ratio: times_mach_sq(Fix128::ONE, m1),
+            pressure_ratio: times_mach_sq(Fix128::ONE, m1),
+            temperature_ratio: Fix128::ONE,
+            mach_downstream: Fix128::ONE / m1,
+        };
+    }
+    // 2/M² and (γ−1)/M², below one ulp once M_1 > 2^32
+    let two_over = two / m1 / m1;
+    let gm1_over = gm1 / m1 / m1;
+    let k = two * g / gp1;
+    // p = k M² + (1 − k);  T = (2γ − (γ−1)/M²)((γ−1) + 2/M²) M² / (γ+1)²
+    let p = times_mach_sq(k, m1);
+    let p = if p == RATIO_SATURATED {
+        p
+    } else {
+        p + (Fix128::ONE - k)
+    };
+    let t_coef = (g.double() - gm1_over) * (gm1 + two_over) / (gp1 * gp1);
+    ShockJump {
+        density_ratio: gp1 / (gm1 + two_over),
+        pressure_ratio: p,
+        temperature_ratio: times_mach_sq(t_coef, m1),
+        mach_downstream: ((gm1 + two_over) / (g.double() - gm1_over)).sqrt(),
     }
 }
 
