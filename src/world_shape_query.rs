@@ -678,13 +678,29 @@ fn capsule_dist(a: Vec3Fix, b: Vec3Fix, capsule: &Capsule) -> Dist {
 /// The distance from `p` to a solid box of half-extents `h` about the origin, in
 /// its frame.
 fn point_box_local(p: Vec3Fix, h: Vec3Fix) -> Dist {
+    if p.x.abs() < h.x && p.y.abs() < h.y && p.z.abs() < h.z {
+        return Dist::Inside;
+    }
     let q = Vec3Fix::new(
         clamp(p.x, -h.x, h.x),
         clamp(p.y, -h.y, h.y),
         clamp(p.z, -h.z, h.z),
     );
     if q == p {
-        return Dist::Inside;
+        // On the boundary: touching, with the normal of a face it lies on.
+        let axis = |v: Fix128, e: Fix128, unit: Vec3Fix| {
+            (v.abs() == e).then(|| if v.is_negative() { -unit } else { unit })
+        };
+        let z = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE);
+        let normal = axis(p.x, h.x, Vec3Fix::UNIT_X)
+            .or_else(|| axis(p.y, h.y, Vec3Fix::UNIT_Y))
+            .or_else(|| axis(p.z, h.z, z))
+            .unwrap_or(Vec3Fix::UNIT_Y);
+        return Dist::Outside {
+            dist: Fix128::ZERO,
+            point: p,
+            normal,
+        };
     }
     Dist::toward(p, q)
 }
@@ -703,6 +719,23 @@ fn point_cylinder_local(p: Vec3Fix, radius: Fix128, hh: Fix128) -> Dist {
     } else {
         Vec3Fix::new(dir.x * qr, qy, dir.z * qr)
     };
+    if (q - p).length_squared().is_zero() {
+        // On the boundary: touching, with the cap or side normal there.
+        let normal = if p.y.abs() == hh {
+            if p.y.is_negative() {
+                -Vec3Fix::UNIT_Y
+            } else {
+                Vec3Fix::UNIT_Y
+            }
+        } else {
+            dir
+        };
+        return Dist::Outside {
+            dist: Fix128::ZERO,
+            point: p,
+            normal,
+        };
+    }
     Dist::toward(p, q)
 }
 
@@ -1823,7 +1856,15 @@ fn mesh_dist(mesh: &TriMesh, a: Vec3Fix, b: Vec3Fix, cap: Fix128) -> Dist {
     for i in mesh_candidates(mesh, &core_box(a, b, cap)) {
         let tri = &mesh.triangles[i as usize];
         let d = if a == b {
-            Dist::toward(a, tri.closest_point(a))
+            match Dist::toward(a, tri.closest_point(a)) {
+                // On the triangle: touching, with its normal.
+                Dist::Inside => Dist::Outside {
+                    dist: Fix128::ZERO,
+                    point: a,
+                    normal: tri.normal().try_normalize().unwrap_or(Vec3Fix::UNIT_Y),
+                },
+                other => other,
+            }
         } else {
             convex_dist(a, b, &TriangleSupport(tri))
         };
@@ -2306,10 +2347,7 @@ impl Piece<'_> {
                 center,
                 half,
                 rotation,
-            } => {
-                let obb = crate::box_collider::OrientedBox::new(*center, *half, *rotation);
-                gjk_distance(&obb, aabb).is_none()
-            }
+            } => obb_meets_aabb(*center, *half, *rotation, aabb),
             Self::Posed(posed) => match posed.shape {
                 Shape::Torus {
                     major_radius,
@@ -2415,12 +2453,54 @@ fn sweep_local_cylinder(
     best
 }
 
+/// Whether an oriented box overlaps an axis-aligned one, by the separating axis
+/// theorem (the 3 + 3 face axes and the 9 edge cross products): they overlap
+/// when no axis separates them, and boxes that only touch (projections meeting
+/// at a point) do not overlap. Cross products of parallel edges are zero and
+/// separate nothing; they are skipped.
+fn obb_meets_aabb(center: Vec3Fix, half: Vec3Fix, rotation: QuatFix, aabb: &AABB) -> bool {
+    let z = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE);
+    let a_axes = [
+        rotation.rotate_vec(Vec3Fix::UNIT_X),
+        rotation.rotate_vec(Vec3Fix::UNIT_Y),
+        rotation.rotate_vec(z),
+    ];
+    let a_half = [half.x, half.y, half.z];
+    let b_axes = [Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, z];
+    let b_center = half_vec(aabb.min + aabb.max);
+    let b_ext = half_vec(aabb.max - aabb.min);
+    let b_half = [b_ext.x, b_ext.y, b_ext.z];
+    let between = b_center - center;
+    let separates = |l: Vec3Fix| {
+        let reach_a: Fix128 = (0..3).fold(Fix128::ZERO, |acc, i| {
+            acc + a_half[i] * a_axes[i].dot(l).abs()
+        });
+        let reach_b: Fix128 = (0..3).fold(Fix128::ZERO, |acc, i| {
+            acc + b_half[i] * b_axes[i].dot(l).abs()
+        });
+        between.dot(l).abs() >= reach_a + reach_b
+    };
+    let mut axes: Vec<Vec3Fix> = Vec::with_capacity(15);
+    axes.extend_from_slice(&a_axes);
+    axes.extend_from_slice(&b_axes);
+    for ea in a_axes {
+        for eb in b_axes {
+            let l = ea.cross(eb);
+            if !l.length_squared().is_zero() {
+                axes.push(l);
+            }
+        }
+    }
+    !axes.into_iter().any(separates)
+}
+
 /// The distance from the core `a`–`b` to a two-sided plane.
 fn plane_dist(plane: &PlaneCollider, a: Vec3Fix, b: Vec3Fix) -> Dist {
     let n = plane.normal;
     let sa = n.dot(a) - plane.offset;
     let sb = n.dot(b) - plane.offset;
-    if sa.is_zero() || sb.is_zero() || sa.is_negative() != sb.is_negative() {
+    if !sa.is_zero() && !sb.is_zero() && sa.is_negative() != sb.is_negative() {
+        // The segment crosses the plane.
         return Dist::Inside;
     }
     let (p, s) = if sb.abs() < sa.abs() {
@@ -2428,7 +2508,13 @@ fn plane_dist(plane: &PlaneCollider, a: Vec3Fix, b: Vec3Fix) -> Dist {
     } else {
         (a, sa)
     };
-    let side = if s.is_negative() { -n } else { n };
+    // An end on the plane is touching it, on the side of the other end.
+    let other = if sb.abs() < sa.abs() { sa } else { sb };
+    let side = if s.is_negative() || (s.is_zero() && other.is_negative()) {
+        -n
+    } else {
+        n
+    };
     Dist::Outside {
         dist: s.abs(),
         point: p - n * s,
@@ -2579,6 +2665,21 @@ fn aabb_gap(a: &AABB, b: &AABB) -> Fix128 {
     .length()
 }
 
+/// `direction` scaled down by its largest component when that is above `2²⁰`,
+/// so that normalizing it does not overflow the squared length (`i64::MAX / 2`
+/// squared wraps); smaller directions are returned as they are.
+fn tame_direction(direction: Vec3Fix) -> Vec3Fix {
+    let m = max_fix(
+        max_fix(direction.x.abs(), direction.y.abs()),
+        direction.z.abs(),
+    );
+    if m > Fix128::from_int(1 << 20) {
+        direction / m
+    } else {
+        direction
+    }
+}
+
 fn box_is_valid(aabb: &AABB) -> bool {
     aabb.min.x <= aabb.max.x && aabb.min.y <= aabb.max.y && aabb.min.z <= aabb.max.z
 }
@@ -2649,6 +2750,7 @@ impl PhysicsWorld {
         if radius.is_negative() {
             return None;
         }
+        let direction = tame_direction(direction);
         if radius.is_zero() {
             return self
                 .cast_ray(center, direction, max_t, filter)
@@ -2683,7 +2785,7 @@ impl PhysicsWorld {
         if radius.is_negative() {
             return None;
         }
-        self.cast_core(a, b, radius, direction, max_t, filter)
+        self.cast_core(a, b, radius, tame_direction(direction), max_t, filter)
     }
 
     /// Every collider a sphere of `radius` about `center` overlaps, sorted by

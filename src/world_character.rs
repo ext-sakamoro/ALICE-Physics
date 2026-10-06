@@ -92,6 +92,15 @@
 //! and no step is tried from inside (the upward sweep of § Steps also starts
 //! overlapping).
 //!
+//! # Configuration
+//!
+//! A [`CharacterConfig`] with a negative [`CharacterConfig::radius`],
+//! [`CharacterConfig::skin_width`] or [`CharacterConfig::height`] describes no
+//! capsule: the move is refused, the controller is left unchanged and the
+//! returned [`MoveResult`] is its current state. [`CharacterConfig::max_slides`]
+//! of 0 is taken as 1 (one sweep, no slide). A height below `2·radius` is a
+//! sphere of the radius.
+//!
 //! # Excluding the character's own body
 //!
 //! [`PhysicsWorld::move_character_with_filter`] takes a [`RayFilter`]: pass
@@ -293,6 +302,19 @@ impl PhysicsWorld {
         filter: &RayFilter,
     ) -> MoveResult {
         let config: CharacterConfig = ctrl.config;
+        // A negative radius, skin width or height describes no capsule: refused
+        // (module doc § Configuration).
+        if config.radius.is_negative()
+            || config.skin_width.is_negative()
+            || config.height.is_negative()
+        {
+            return MoveResult {
+                position: ctrl.position,
+                grounded: ctrl.grounded,
+                velocity: ctrl.velocity,
+                platform_velocity: ctrl.platform_velocity,
+            };
+        }
         let half = config.height.half() - config.radius;
         let sweep = Sweep {
             world: self,
@@ -305,7 +327,7 @@ impl PhysicsWorld {
             radius: config.radius,
             skin: config.skin_width,
             walkable: config.max_slope_angle.cos(),
-            max_slides: config.max_slides,
+            max_slides: config.max_slides.max(1),
         };
         // A capsule that cannot be freed keeps its position, and the sweep from
         // inside then blocks the move (module doc § Starting overlap).
