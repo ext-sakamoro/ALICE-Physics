@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **31 baseline items** — Permitted violations, ratchet in place
+🟡 **27 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (31 permitted)
+## 📋 Baseline (27 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -18,7 +18,6 @@ Must resolve or remove from baseline to reduce ratchet.
 | File | Baseline lines |
 |------|----------------|
 | `src/eulerian_grid.rs` | 8 |
-| `src/bvh.rs` | 4 |
 | `src/motor.rs` | 4 |
 | `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
 | `src/plastic.rs` | 2 |
@@ -40,13 +39,9 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (25)
+### Unwired Items (21)
 
 ```
-unwired src/bvh.rs::build_dynamic
-unwired src/bvh.rs::clear_dynamic
-unwired src/bvh.rs::insert_dynamic
-unwired src/bvh.rs::query_pairs
 unwired src/creep_longterm.rs::petg_25c_moderate
 unwired src/eulerian_grid.rs::bytes
 unwired src/eulerian_grid.rs::bytes

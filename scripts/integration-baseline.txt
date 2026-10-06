@@ -5,12 +5,6 @@
 # Lines starting with "unindexed: " are pub items the SCIP index has no
 # definition for (macro_rules bodies); they have no level, the same ratchet
 # applies to them.
-src/bvh.rs::BroadphaseHybrid
-src/bvh.rs::BroadphaseHybrid::build_dynamic
-src/bvh.rs::BroadphaseHybrid::clear_dynamic
-src/bvh.rs::BroadphaseHybrid::insert_dynamic
-src/bvh.rs::BroadphaseHybrid::new
-src/bvh.rs::BroadphaseHybrid::query_pairs
 src/coupled_iteration.rs::ContractionMonitor::best_residual
 src/coupled_iteration.rs::EquilibrationScale::round_trip_bound
 src/creep_longterm.rs::FindleyParameters::petg_25c_moderate
