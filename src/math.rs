@@ -1288,6 +1288,22 @@ impl Vec3Fix {
     // bit 互換を保つため変えず、範囲の検査が要る経路だけが以下を使う
     // ------------------------------------------------------------------------
 
+    /// 成分ごとの [`Fix128::checked_add`] (`+` と同じ和、どれかの成分が
+    /// `|·| ≥ 2⁶³` なら `None`)
+    ///
+    /// # Claims
+    /// - `Some` の時は `self + rhs` と bit 一致する
+    /// - 位置の加算のように wrap が反対側の端への移動になる経路だけが使う
+    #[inline]
+    #[must_use]
+    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+        Some(Self {
+            x: self.x.checked_add(rhs.x)?,
+            y: self.y.checked_add(rhs.y)?,
+            z: self.z.checked_add(rhs.z)?,
+        })
+    }
+
     /// [`Self::dot`] と同じ値を計算し、**積か和のどれかが範囲外なら `None`** を返す
     ///
     /// # Claims
