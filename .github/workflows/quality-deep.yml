@@ -150,10 +150,20 @@ jobs:
           fi
           git diff "$base" HEAD -- src Cargo.toml > /tmp/change.diff
           if [ ! -s /tmp/change.diff ]; then echo "no source change between $base and HEAD"; exit 0; fi
+          # a module behind #[cfg(feature = ...)] is not compiled without its feature, so all
+          # its mutants would read "missed"; turn the features of the changed modules on and
+          # run the integration tests named after them besides --lib
+          plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff \
+            --features "${{ matrix.features }}" --out /tmp/planned.diff)
+          echo "plan: $plan"
+          features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
+          tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--test " + t for t in json.load(sys.stdin)["tests"]))')
+          if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; exit 0; fi
           ulimit -v 6291456
           set +e
-          cargo mutants --in-diff /tmp/change.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
-            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib
+          # shellcheck disable=SC2086
+          cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            ${features:+--features "$features"} -- --lib $tests
           rc=$?
           set -e
           # 0 = all caught, 2 = a mutant survived (fails: the change came without a test that sees it),
