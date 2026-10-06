@@ -342,59 +342,74 @@ impl TriMesh {
         deepest
     }
 
-    /// AABB (box) vs `TriMesh` collision: find deepest contact
+    /// AABB (box) vs `TriMesh` collision: the deepest contact over the
+    /// triangles that overlap the box.
     ///
-    /// Treats the AABB as a sphere at its center with radius = half-diagonal
-    /// for broad candidate selection, then does closest-point per triangle.
+    /// Each candidate triangle is tested against the box with the separating
+    /// axis theorem on the 13 axes of a triangle-box pair (the 3 box faces,
+    /// the triangle normal and the 9 cross products of box and triangle
+    /// edges): a triangle overlaps the box exactly when no axis separates them.
+    /// The contact is the axis of least overlap: `depth` is that overlap and
+    /// `normal` the direction that pushes the box out (from the mesh to the
+    /// box); `point_b` is the point of the triangle closest to the box's
+    /// deepest point along `-normal` (on a tie in depth, the triangle whose
+    /// point is nearest it), and `point_a = point_b - normal * depth`
+    /// (the invariant every `Contact` of this module keeps).
     #[must_use]
     pub fn collide_aabb(&self, aabb: &AABB) -> Option<Contact> {
         let candidates = self.bvh.query(aabb);
         let center = (aabb.min + aabb.max) * Fix128::from_ratio(1, 2);
         let half = (aabb.max - aabb.min) * Fix128::from_ratio(1, 2);
 
-        let mut deepest: Option<Contact> = None;
-        let mut max_depth = Fix128::ZERO;
-
+        // the deepest contact; on equal depth, the triangle whose point is nearest
+        // the box's support point (two coplanar triangles of a floor tie)
+        let mut deepest: Option<(Contact, Fix128)> = None;
         for tri_idx in candidates {
             let tri = &self.triangles[tri_idx as usize];
-            let cp = tri.closest_point(center);
-            let delta = center - cp;
-
-            // Check if closest point is within the AABB extents
-            let dx = delta.x.abs();
-            let dy = delta.y.abs();
-            let dz = delta.z.abs();
-
-            if dx <= half.x && dy <= half.y && dz <= half.z {
-                // Inside AABB - compute penetration along triangle normal
-                let normal = tri.unit_normal();
-                let proj = delta.dot(normal).abs();
-                let n_abs = Vec3Fix::new(normal.x.abs(), normal.y.abs(), normal.z.abs());
-                let half_proj = half.x * n_abs.x + half.y * n_abs.y + half.z * n_abs.z;
-                let depth = if proj.is_zero() {
-                    // Fallback: use half extent along normal
-                    half_proj
+            let Some((depth, normal)) = triangle_box_overlap(tri, center, half) else {
+                continue;
+            };
+            if depth <= Fix128::ZERO {
+                continue;
+            }
+            // the box's deepest point along -normal (the face / edge centre on the
+            // axes the normal does not lean along), and the triangle point nearest it
+            let lean = |n: Fix128, h: Fix128| {
+                if n > Fix128::ZERO {
+                    h
+                } else if n < Fix128::ZERO {
+                    -h
                 } else {
-                    half_proj - delta.dot(normal).abs()
-                };
-
-                if depth > max_depth && depth > Fix128::ZERO {
-                    max_depth = depth;
-                    let sign = if delta.dot(normal) >= Fix128::ZERO {
-                        normal
-                    } else {
-                        -normal
-                    };
-                    deepest = Some(Contact {
-                        depth,
-                        normal: sign,
-                        point_a: center - sign * depth,
-                        point_b: cp,
-                    });
+                    Fix128::ZERO
                 }
+            };
+            let support = center
+                - Vec3Fix::new(
+                    lean(normal.x, half.x),
+                    lean(normal.y, half.y),
+                    lean(normal.z, half.z),
+                );
+            let point_b = tri.closest_point(support);
+            let gap = (support - point_b).length_squared();
+            let better = match &deepest {
+                None => true,
+                Some((best, best_gap)) => {
+                    depth > best.depth || (depth == best.depth && gap < *best_gap)
+                }
+            };
+            if better {
+                deepest = Some((
+                    Contact {
+                        depth,
+                        normal,
+                        point_a: point_b - normal * depth,
+                        point_b,
+                    },
+                    gap,
+                ));
             }
         }
-        deepest
+        deepest.map(|(c, _)| c)
     }
 
     /// Number of triangles
@@ -403,6 +418,52 @@ impl TriMesh {
     pub fn triangle_count(&self) -> usize {
         self.triangles.len()
     }
+}
+
+/// Separating-axis test of a triangle against the box `center ± half`.
+/// `None` when one of the 13 axes separates them (or the triangle has no
+/// area); otherwise the overlap along the triangle's own normal and that unit
+/// normal, signed to push the box away from the triangle. The contact uses the
+/// face axis rather than the axis of least overlap: on a mesh the least-overlap
+/// axis of one triangle is often an edge shared with its neighbour (an
+/// internal edge), which would push the box sideways off a flat floor.
+fn triangle_box_overlap(
+    tri: &Triangle,
+    center: Vec3Fix,
+    half: Vec3Fix,
+) -> Option<(Fix128, Vec3Fix)> {
+    let v = [tri.v0 - center, tri.v1 - center, tri.v2 - center];
+    let edges = [v[1] - v[0], v[2] - v[1], v[0] - v[2]];
+    let face = edges[0].cross(edges[1]);
+    let face_len = face.length();
+    if face_len.is_zero() {
+        return None;
+    }
+    // overlap of the box and the triangle along a unit axis: (push along +l, along -l)
+    let pushes = |l: Vec3Fix| {
+        let r = half.x * l.x.abs() + half.y * l.y.abs() + half.z * l.z.abs();
+        let p = [v[0].dot(l), v[1].dot(l), v[2].dot(l)];
+        let (lo, hi) = (p[0].min(p[1]).min(p[2]), p[0].max(p[1]).max(p[2]));
+        if lo > r || hi < -r {
+            None
+        } else {
+            Some((hi + r, r - lo))
+        }
+    };
+    let axes_box = [Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Z];
+    for b in axes_box {
+        pushes(b)?;
+        for e in edges {
+            let axis = b.cross(e);
+            let len = axis.length();
+            if !len.is_zero() {
+                pushes(axis / len)?;
+            }
+        }
+    }
+    let n = face / face_len;
+    let (up, down) = pushes(n)?;
+    Some(if up <= down { (up, n) } else { (down, -n) })
 }
 
 /// Moller-Trumbore parallel-check epsilon (~2^-24), relative: the ray counts

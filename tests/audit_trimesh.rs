@@ -884,7 +884,7 @@ fn collide_aabb_never_reports_contact_for_a_triangle_separated_from_the_box() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-017: collide_aabb の point_a が center - normal * depth (箱の表面でも最深点でもない)。床の上の箱で point_a == point_b (距離 0) となり、Contact の不変条件 point_a - point_b = -normal * depth を満たさない (collide_sphere / collide_capsule は満たす)"]
+// AUD-A-S4W2-017
 fn collide_aabb_contact_points_are_separated_by_depth_along_the_normal() {
     let m = TriMesh::from_triangles(vec![
         Triangle::new(v3(-160, 0, -160), v3(160, 0, -160), v3(160, 0, 160)),
@@ -907,7 +907,7 @@ fn collide_aabb_contact_points_are_separated_by_depth_along_the_normal() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-013: 重なる箱の 30 / 239 (12.6%) を接触なしと答える (箱中心への最近点が箱の外なら棄却するため)。標本点で箱内を確認済"]
+// AUD-A-S4W2-013
 fn collide_aabb_reports_contact_iff_the_triangle_overlaps_the_box() {
     let mut r = Rng(0xBA5E_BA11_0000_0001);
     let (mut overlap, mut agree) = (0, 0);
@@ -983,7 +983,7 @@ fn collide_aabb_separated_box_has_no_contact() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-013: 平面 x + 0.1y = 1.05 の三角形が箱 [-1,1]^3 と交わるのに接触なし (中心からの垂線の足 x = 1.0396 が箱の外)"]
+// AUD-A-S4W2-013
 fn collide_aabb_slanted_triangle_clipping_a_box_corner_is_a_contact() {
     // 平面 x + 0.1 y = 1.05 上の大きな三角形。箱 [-1, 1]^3 とは (0.99, 0.6, 0) などで交わるが、
     // 箱の中心から平面への垂線の足 (1.0396, 0.104, 0) は箱の外 (x > 1)
@@ -1167,4 +1167,21 @@ fn degenerate_triangles_are_never_hit() {
             "{t:?}"
         );
     }
+}
+
+/// On a floor of two coplanar triangles the deepest point of the box lands on
+/// the triangle under it (the depth ties; the nearer triangle point wins):
+/// box centre (2, 0.5, 3), half 1 over the square [-10, 10]^2 split along its
+/// diagonal x = z gives point_b = (2, 0, 3) and point_a = (2, -0.5, 3)
+#[test]
+fn collide_aabb_on_a_two_triangle_floor_picks_the_triangle_under_the_box() {
+    let m = TriMesh::from_triangles(vec![
+        Triangle::new(v3(-160, 0, -160), v3(160, 0, -160), v3(160, 0, 160)),
+        Triangle::new(v3(-160, 0, -160), v3(160, 0, 160), v3(-160, 0, 160)),
+    ]);
+    let c = v3(32, 8, 48);
+    let h = v3(16, 16, 16);
+    let ct = m.collide_aabb(&AABB::new(c - h, c + h)).unwrap();
+    assert_eq!(f(ct.point_b), [2.0, 0.0, 3.0]);
+    assert_eq!(f(ct.point_a), [2.0, -0.5, 3.0]);
 }
