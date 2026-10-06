@@ -26,7 +26,8 @@
 //! | `sin` `cos` | 全域で wrap しない | 絶対誤差が `\|x\|·2⁻⁷⁰` 程度で増える |
 //! | `exp` | `x < 43` | saturate (文書どおり) |
 //! | `powf_pos` 整数部 | 結果 `< 2⁶³` | wrap |
-//! | `Vec3Fix::length_squared` / `length` / `normalize` | `\|v\| < 2³¹·⁵ ≈ 3.04e9` | wrap、`length` は 0、`normalize` は ZERO |
+//! | `Vec3Fix::length_squared` / `length` / `normalize` | `\|v\| < 2³¹·⁵ ≈ 3.04e9` | wrap、`length` は 0、`normalize` は ZERO (`checked_*` 版は `None`) |
+//! | `Vec3Fix::checked_length_scaled` / `try_normalize_scaled` | 長さ `< 2⁶³` / 全域 | `None` (範囲内は `length` / `try_normalize` と bit 一致) |
 //! | `Vec3Fix::cross` | 各積 `< 2⁶²` | wrap |
 //! | `QuatFix::rotate_vec` (単位 q) | `\|v\| ≤ 2⁶²` で wrap しない | 絶対誤差が `\|v\|` に比例 |
 //! | `Mat3Fix::inverse` | `2⁻⁶³ < \|det\| < 2⁶³` | 符号反転した逆行列 / `None` |
@@ -35,7 +36,7 @@
 //! | 角速度の積分 | `\|ω\| < 2³¹·⁵` | 回転が止まり ω が 0 に消える |
 //! | `apply_impulse_at` の torque | `\|r\|·\|J\| < 2⁶²` | wrap |
 //! | 球同士の接触 | 半径和・中心距離 `< 2³¹·⁵` | 重なりを見逃す |
-//! | `ForceField::Point` | 中心からの距離 `< 2³¹·⁵` | 力が 0 / 上限値に飛ぶ |
+//! | `ForceField::Point` | 全域 (距離 `≥ 2³¹·⁵` は 2 乗を経ない式、範囲内は従来の式と bit 一致) | — |
 //! | `LinearBvh` の節点 AABB | 座標 `< 2³¹` (i32) | 候補が全対になる (結果は不変) |
 //! | `SpatialGrid::hash` | `\|x / cell\| < 2⁶³` かつ `hi + half` が i64 に収まる | wrap / debug で panic |
 //! | SDF の問い合わせ | field 原点からの距離で f32 の精度 | 2²⁴ 付近で 0.5 単位に丸まる |
@@ -546,37 +547,383 @@ fn point_force(pos: Vec3Fix, strength: Fix128) -> Vec3Fix {
     alice_physics::force::compute_force(&field, &RigidBody::new(pos, Fix128::ONE))
 }
 
-/// characterization: 点力場は中心からの距離が `2³¹·⁵` を越えると `dist²` が wrap し、
-/// 力が 0 になるか上限値 (真値の 2e19 倍) に飛ぶ
+/// 点力場の参照値 (f64): 中心向き (引力) に `strength / r²`、上限 `max_force`
+fn point_force_ref(pos: Vec3Fix, strength: f64) -> [f64; 3] {
+    let (x, y, z) = (pos.x.to_f64(), pos.y.to_f64(), pos.z.to_f64());
+    let r = (x * x + y * y + z * z).sqrt();
+    let m = strength / (r * r);
+    [-x / r * m, -y / r * m, -z / r * m]
+}
+
+fn assert_close_to_ref(pos: Vec3Fix, strength: Fix128) {
+    let f = point_force(pos, strength);
+    let e = point_force_ref(pos, strength.to_f64());
+    let mag = e.iter().map(|c| c * c).sum::<f64>().sqrt();
+    for (got, want) in [f.x, f.y, f.z].iter().zip(e) {
+        // 絶対 2⁻⁵⁰ か相対 2⁻⁴⁰ (参照の f64 の丸めが支配的)
+        let tol = (mag * 2f64.powi(-40)).max(2f64.powi(-50));
+        assert!(
+            (got.to_f64() - want).abs() <= tol,
+            "pos {pos}: got {f}, want {e:?}"
+        );
+    }
+}
+
+/// 点力場は中心からの距離が `2³¹·⁵` を越えても `strength / r²` を返す
+/// (以前は `dist²` が wrap し、3·2³⁰ で上限値 (真値の 2e19 倍)、2³² で 0 だった)
+///
+/// oracle: 逆 2 乗則の閉形式を f64 で計算した参照値
 #[test]
-fn characterization_point_field_beyond_2_pow_31_5() {
+fn point_field_matches_the_inverse_square_across_the_square_range_edge() {
     let z = Fix128::ZERO;
     // 範囲内: 2⁶⁰ / (2³⁰)² = 1、中心向き
     assert_eq!(
         point_force(Vec3Fix::new(pow2(30), z, z), pow2(60)),
         Vec3Fix::new(-Fix128::ONE, z, z)
     );
-    // 3·2³⁰: 真値 0.44、実測は上限へ
-    let f = point_force(Vec3Fix::new(pow2(31) + pow2(30), z, z), pow2(62));
-    assert!(f.x < -pow2(60), "{f}");
-    // 2³² / 3 軸 2³¹: 0
+    // 範囲外: 2⁶² / (2³²)² = 2⁻² ちょうど
     assert_eq!(
         point_force(Vec3Fix::new(pow2(32), z, z), pow2(62)),
-        Vec3Fix::ZERO
+        Vec3Fix::new(-Fix128::from_ratio(1, 4), z, z)
     );
-    assert_eq!(
-        point_force(Vec3Fix::new(pow2(31), pow2(31), pow2(31)), pow2(62)),
-        Vec3Fix::ZERO
+    let big = Fix128::from_int(3_037_000_499); // 2³¹·⁵ の直下
+    for pos in [
+        Vec3Fix::new(pow2(31) + pow2(30), z, z),
+        Vec3Fix::new(pow2(31), pow2(31), pow2(31)),
+        Vec3Fix::new(big, big, z),
+        Vec3Fix::new(big, z, z),
+        Vec3Fix::new(-pow2(40), pow2(39), -pow2(20)),
+        Vec3Fix::new(pow2(61), -pow2(61), pow2(61)),
+        Vec3Fix::new(pow2(62), pow2(62), pow2(62)),
+        // 距離そのものが 2⁶³ を越える (半分の長さで計算する経路)
+        Vec3Fix::new(Fix128::from_int(3 << 61), Fix128::from_int(3 << 61), z),
+    ] {
+        assert_close_to_ref(pos, pow2(62));
+        assert_close_to_ref(pos, Fix128::from_int(7));
+    }
+    // 斥力は向きだけ反転する
+    let pos = Vec3Fix::new(pow2(33), -pow2(32), z);
+    let field = ForceField::Point {
+        center: Vec3Fix::ZERO,
+        strength: pow2(62),
+        repulsive: true,
+        max_force: Fix128::from_raw(i64::MAX, 0),
+    };
+    let f = alice_physics::force::compute_force(&field, &RigidBody::new(pos, Fix128::ONE));
+    let g = point_force(pos, pow2(62));
+    // `Mul` は −∞ 向きの切り捨てなので、符号の反転は 1 raw 単位までずれる
+    for (a, b) in [(f.x, g.x), (f.y, g.y), (f.z, g.z)] {
+        assert!((raw(a) + raw(b)).abs() <= 1, "{f} vs {g}");
+    }
+    assert!(f.x > Fix128::ZERO && f.y < Fix128::ZERO);
+    // 上限は範囲外でも効く
+    let field = ForceField::Point {
+        center: Vec3Fix::ZERO,
+        strength: pow2(62),
+        repulsive: false,
+        max_force: Fix128::from_ratio(1, 8),
+    };
+    let f = alice_physics::force::compute_force(
+        &field,
+        &RigidBody::new(Vec3Fix::new(pow2(32), z, z), Fix128::ONE),
     );
+    assert_eq!(f, Vec3Fix::new(-Fix128::from_ratio(1, 8), z, z));
 }
 
 #[test]
-#[ignore = "src gap: WORLD-V1-RANGE point force field beyond 2^31.5 returns zero or a capped kick instead of strength/r^2"]
 fn point_field_beyond_range_matches_the_inverse_square() {
     let z = Fix128::ZERO;
     let f = point_force(Vec3Fix::new(pow2(32), z, z), pow2(62));
     // 2⁶² / 2⁶⁴ = 0.25、中心向き
     assert!((f.x.to_f64() + 0.25).abs() < 1e-9, "{f}");
+}
+
+/// 修正前の `ForceField::Point` の式 (範囲内の bit 不変を確かめる参照)
+///
+/// `src/force.rs` の修正前の本体をそのまま写したもの
+fn point_force_previous(
+    center: Vec3Fix,
+    strength: Fix128,
+    repulsive: bool,
+    max_force: Fix128,
+    position: Vec3Fix,
+) -> Vec3Fix {
+    let delta = center - position;
+    let dist_sq = delta.length_squared();
+    if delta == Vec3Fix::ZERO {
+        return Vec3Fix::ZERO;
+    }
+    let direction = if dist_sq < Fix128::ONE {
+        let mut scaled = delta;
+        let mut scaled_dist_sq = dist_sq;
+        for _ in 0..128 {
+            if scaled_dist_sq >= Fix128::ONE {
+                break;
+            }
+            scaled = scaled + scaled;
+            scaled_dist_sq = scaled.length_squared();
+        }
+        scaled / scaled_dist_sq.sqrt()
+    } else {
+        delta / dist_sq.sqrt()
+    };
+    let dist_sq_for_force = if max_force.is_zero() {
+        dist_sq
+    } else {
+        let floor = (strength / max_force).abs();
+        if dist_sq < floor {
+            floor
+        } else {
+            dist_sq
+        }
+    };
+    let force_mag = strength / dist_sq_for_force;
+    let clamped = if force_mag > max_force {
+        max_force
+    } else {
+        force_mag
+    };
+    if repulsive {
+        -direction * clamped
+    } else {
+        direction * clamped
+    }
+}
+
+/// 疑似乱数 (LCG) で raw の上位 `bits` bit までの符号付き値
+fn lcg_fix(state: &mut u64, bits: u32) -> Fix128 {
+    let mut next = || {
+        *state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        *state
+    };
+    let a = ((u128::from(next()) << 64) | u128::from(next())) >> (128 - bits);
+    let v = if next() & 1 == 1 {
+        -(a as i128)
+    } else {
+        a as i128
+    };
+    from_raw128(v)
+}
+
+/// 範囲内 (`|delta|² < 2⁶³`) では修正後の点力場が修正前の式と bit 一致する
+///
+/// 近距離の 2 倍寄せ (`dist² < 1`)、上限による下限 (`dist² < strength / max_force`)、
+/// 上限なし (`max_force = 0`)、斥力、範囲の境界の直下を含む
+#[test]
+fn point_field_in_range_is_bit_identical_to_the_previous_formula() {
+    let mut s = 0x5eed_u64;
+    let mut checked = 0;
+    for bits in [20u32, 40, 56, 64, 72, 80, 88, 93, 94] {
+        for i in 0..3000 {
+            let center = Vec3Fix::new(
+                lcg_fix(&mut s, 80),
+                lcg_fix(&mut s, 80),
+                lcg_fix(&mut s, 80),
+            );
+            let delta = Vec3Fix::new(
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+            );
+            if delta.checked_length_squared().is_none() {
+                continue;
+            }
+            let position = center - delta;
+            let strength = lcg_fix(&mut s, 100);
+            let max_force = match i % 3 {
+                0 => Fix128::ZERO,
+                1 => lcg_fix(&mut s, 100).abs(),
+                _ => Fix128::from_raw(i64::MAX, 0),
+            };
+            let repulsive = i % 2 == 0;
+            let field = ForceField::Point {
+                center,
+                strength,
+                repulsive,
+                max_force,
+            };
+            let got =
+                alice_physics::force::compute_force(&field, &RigidBody::new(position, Fix128::ONE));
+            let want = point_force_previous(center, strength, repulsive, max_force, position);
+            assert_eq!(got, want, "delta {delta} strength {strength}");
+            checked += 1;
+        }
+    }
+    // 境界の直下 (3 軸) と 1 軸
+    let big = Fix128::from_int(1_753_413_056); // 3·big² < 2⁶³
+    for delta in [
+        Vec3Fix::new(big, big, big),
+        Vec3Fix::new(Fix128::from_int(3_037_000_499), Fix128::ZERO, Fix128::ZERO),
+    ] {
+        assert!(delta.checked_length_squared().is_some());
+        let field = ForceField::Point {
+            center: Vec3Fix::ZERO,
+            strength: pow2(62),
+            repulsive: false,
+            max_force: Fix128::from_raw(i64::MAX, 0),
+        };
+        let got = alice_physics::force::compute_force(&field, &RigidBody::new(-delta, Fix128::ONE));
+        let want = point_force_previous(
+            Vec3Fix::ZERO,
+            pow2(62),
+            false,
+            Fix128::from_raw(i64::MAX, 0),
+            -delta,
+        );
+        assert_eq!(got, want);
+        checked += 1;
+    }
+    assert!(checked > 20_000, "比較件数が少ない: {checked}");
+}
+
+// ---------------------------------------------------------------------------
+// Vec3Fix の範囲検査版
+// ---------------------------------------------------------------------------
+
+/// `checked_dot` / `checked_length_squared` / `checked_length` / `checked_normalize` は
+/// 範囲内で既存の関数と bit 一致し、範囲外 (積・和が `2⁶³` 以上) で `None` を返す
+///
+/// oracle: 範囲の境界は整数の 2 乗 (`3_037_000_499² < 2⁶³ < 3_037_000_500²`)
+#[test]
+fn checked_vector_products_match_inside_and_refuse_outside() {
+    let z = Fix128::ZERO;
+    let lo = Fix128::from_int(3_037_000_499);
+    let hi = Fix128::from_int(3_037_000_500);
+    // 1 成分: 積の境界
+    let v = Vec3Fix::new(lo, z, z);
+    assert_eq!(v.checked_length_squared(), Some(v.length_squared()));
+    assert_eq!(v.checked_length(), Some(v.length()));
+    assert_eq!(v.checked_normalize(), v.try_normalize());
+    let v = Vec3Fix::new(hi, z, z);
+    assert_eq!(v.checked_length_squared(), None);
+    assert_eq!(v.checked_length(), None);
+    assert_eq!(v.checked_normalize(), None);
+    // 積は収まるが和が 2⁶³ を越える
+    let v = Vec3Fix::new(pow2(31), pow2(31), z);
+    assert_eq!(v.checked_dot(v), None);
+    // 各積は 2⁶³ の直下でも、和が越えれば None
+    let v = Vec3Fix::new(lo, lo, z);
+    assert_eq!(v.checked_dot(v), None);
+    // 符号の違う積の和は範囲内なら Some
+    let a = Vec3Fix::new(lo, lo, z);
+    let b = Vec3Fix::new(lo, -lo, z);
+    assert_eq!(a.checked_dot(b), Some(z));
+    assert_eq!(a.checked_dot(b), Some(a.dot(b)));
+    // 範囲内の乱数で既存の関数と bit 一致
+    let mut s = 0xd07_u64;
+    let mut n = 0;
+    for bits in [30u32, 60, 80, 90, 93] {
+        for _ in 0..2000 {
+            let a = Vec3Fix::new(
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+            );
+            let b = Vec3Fix::new(
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+            );
+            if let Some(d) = a.checked_dot(b) {
+                assert_eq!(d, a.dot(b));
+                n += 1;
+            }
+            if let Some(l) = a.checked_length() {
+                assert_eq!(l, a.length());
+                assert_eq!(a.checked_normalize(), a.try_normalize());
+                n += 1;
+            }
+        }
+    }
+    assert!(n > 10_000, "比較件数が少ない: {n}");
+}
+
+/// `checked_length_scaled` / `try_normalize_scaled` は範囲内で `length` /
+/// `try_normalize` と bit 一致し、範囲外でも正しい長さ・向きを返す
+///
+/// oracle: f64 の `sqrt(x² + y² + z²)` と `v / |v|`
+#[test]
+fn scaled_length_and_direction_are_correct_beyond_the_square_range() {
+    let z = Fix128::ZERO;
+    // 厳密に分かる値
+    assert_eq!(
+        Vec3Fix::new(pow2(32), z, z).checked_length_scaled(),
+        Some(pow2(32))
+    );
+    assert_eq!(
+        Vec3Fix::new(z, -pow2(62), z).checked_length_scaled(),
+        Some(pow2(62))
+    );
+    assert_eq!(
+        Vec3Fix::new(
+            pow2(40) * Fix128::from_int(3),
+            z,
+            -pow2(40) * Fix128::from_int(4)
+        )
+        .checked_length_scaled(),
+        Some(pow2(40) * Fix128::from_int(5))
+    );
+    assert_eq!(
+        Vec3Fix::new(pow2(32), z, z).try_normalize_scaled(),
+        Some(Vec3Fix::UNIT_X)
+    );
+    // 長さが 2⁶³ 以上 (表せない): 3·2⁶¹·√2 ≈ 9.78e18
+    assert_eq!(
+        Vec3Fix::new(Fix128::from_int(3 << 61), Fix128::from_int(3 << 61), z)
+            .checked_length_scaled(),
+        None
+    );
+    // 2⁶²·√2 ≈ 6.52e18 は表せる
+    assert!(
+        (Vec3Fix::new(pow2(62), pow2(62), z)
+            .checked_length_scaled()
+            .expect("2⁶³ 未満")
+            .to_f64()
+            - 2f64.powf(62.5))
+        .abs()
+            <= 2f64.powf(62.5) * 1e-15
+    );
+    // 零ベクトル
+    assert_eq!(Vec3Fix::ZERO.checked_length_scaled(), Some(z));
+    assert_eq!(Vec3Fix::ZERO.try_normalize_scaled(), None);
+    // 長さの 2 乗が下位桁で 0 になる非零ベクトルにも向きを返す
+    let tiny = Vec3Fix::new(eps(), z, z);
+    assert_eq!(tiny.try_normalize(), None);
+    assert_eq!(tiny.try_normalize_scaled(), Some(Vec3Fix::UNIT_X));
+
+    let mut s = 0x5ca1e_u64;
+    let (mut inside, mut outside) = (0, 0);
+    for bits in [20u32, 50, 70, 90, 93, 94, 96, 100, 110, 120, 126] {
+        for _ in 0..2000 {
+            let v = Vec3Fix::new(
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+                lcg_fix(&mut s, bits),
+            );
+            if v.checked_length_squared().is_some() {
+                assert_eq!(v.checked_length_scaled(), Some(v.length()));
+                if let Some(n) = v.try_normalize() {
+                    assert_eq!(v.try_normalize_scaled(), Some(n));
+                }
+                inside += 1;
+                continue;
+            }
+            outside += 1;
+            let (x, y, zz) = (v.x.to_f64(), v.y.to_f64(), v.z.to_f64());
+            let t = (x * x + y * y + zz * zz).sqrt();
+            match v.checked_length_scaled() {
+                Some(l) => assert!((l.to_f64() - t).abs() <= t * 1e-15, "{v}: {l} vs {t}"),
+                None => assert!(t >= 2f64.powi(63) * (1.0 - 1e-12), "{v}: None at {t}"),
+            }
+            let d = v.try_normalize_scaled().expect("非零");
+            for (got, want) in [(d.x, x / t), (d.y, y / t), (d.z, zz / t)] {
+                assert!((got.to_f64() - want).abs() <= 1e-15, "{v}: {d}");
+            }
+        }
+    }
+    assert!(inside > 5_000 && outside > 5_000, "{inside} / {outside}");
 }
 
 // ---------------------------------------------------------------------------

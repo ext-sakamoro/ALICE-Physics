@@ -544,6 +544,19 @@ impl Fix128 {
         Some(Self { hi, lo: mid_lo })
     }
 
+    /// [`Add`] と同じ和を計算し、**範囲外 (`|a + b| ≥ 2⁶³`) なら `None`** を返す
+    ///
+    /// `Add` は wrap するので、範囲の検査が要る経路だけが本 method を使う
+    /// (`Add` 自体の挙動は変えない)
+    #[inline]
+    #[must_use]
+    pub fn checked_add(self, rhs: Self) -> Option<Self> {
+        let a = ((self.hi as i128) << 64) | (self.lo as i128);
+        let b = ((rhs.hi as i128) << 64) | (rhs.lo as i128);
+        let s = a.checked_add(b)?;
+        Some(Self::from_raw((s >> 64) as i64, s as u64))
+    }
+
     /// `self^exponent` for `self > 0` and `exponent ≥ 0` (real exponent).
     ///
     /// Integer part of the exponent by repeated multiplication, fractional
@@ -1254,6 +1267,132 @@ impl Vec3Fix {
             let inv_len = Fix128::ONE / len;
             (self * inv_len, len)
         }
+    }
+
+    // ------------------------------------------------------------------------
+    // 範囲を検査する版
+    //
+    // `dot` / `length_squared` は各成分の積と和が wrap する (mod 2¹²⁸) ので、
+    // |v| ≥ 2³¹·⁵ ≈ 3.04e9 で `length` は 0、`normalize` は ZERO を返す
+    // (`tests/analytic_coordinate_range.rs`) 既存の関数は決定論の固定値と
+    // bit 互換を保つため変えず、範囲の検査が要る経路だけが以下を使う
+    // ------------------------------------------------------------------------
+
+    /// [`Self::dot`] と同じ値を計算し、**積か和のどれかが範囲外なら `None`** を返す
+    ///
+    /// # Claims
+    /// - `Some` の時は `dot` と bit 一致する (同じ積を同じ順で足す)
+    /// - 3 つの積のどれか、または途中の和が `|·| ≥ 2⁶³` なら `None`
+    #[must_use]
+    pub fn checked_dot(self, rhs: Self) -> Option<Fix128> {
+        let x = self.x.checked_mul(rhs.x)?;
+        let y = self.y.checked_mul(rhs.y)?;
+        let z = self.z.checked_mul(rhs.z)?;
+        x.checked_add(y)?.checked_add(z)
+    }
+
+    /// [`Self::length_squared`] の範囲検査版 (`|v|² ≥ 2⁶³` で `None`)
+    ///
+    /// `Some` の時は `length_squared` と bit 一致する
+    #[must_use]
+    pub fn checked_length_squared(self) -> Option<Fix128> {
+        self.checked_dot(self)
+    }
+
+    /// [`Self::length`] の範囲検査版 (`|v| ≥ 2³¹·⁵` で `None`)
+    ///
+    /// `Some` の時は `length` と bit 一致する 範囲外でも長さが要るなら
+    /// [`Self::checked_length_scaled`] を使う
+    #[must_use]
+    pub fn checked_length(self) -> Option<Fix128> {
+        Some(self.checked_length_squared()?.sqrt())
+    }
+
+    /// [`Self::try_normalize`] の範囲検査版
+    ///
+    /// 長さ 0 と `|v| ≥ 2³¹·⁵` (長さの 2 乗が範囲外) のどちらも `None`
+    /// `Some` の時は `try_normalize` と bit 一致する 範囲外でも向きが要るなら
+    /// [`Self::try_normalize_scaled`] を使う
+    #[must_use]
+    pub fn checked_normalize(self) -> Option<Self> {
+        let len = self.checked_length()?;
+        if len.is_zero() {
+            None
+        } else {
+            Some(self / len)
+        }
+    }
+
+    /// 最大成分を `[2²⁹, 2³⁰)` に寄せた同じ向きのベクトルと、その倍率の指数 `k`
+    /// (`self ≈ scaled · 2ᵏ`) 零ベクトルは `(ZERO, 0)`
+    ///
+    /// 寄せた後は 2 乗の和が `3·2⁶⁰` 未満なので `length_squared` が wrap しない
+    /// 縮める時 (`k > 0`) は各成分の絶対値の下位 `k` bit を切り捨てる (符号は
+    /// 保つので向きは原点対称)、広げる時 (`k < 0`) は厳密
+    fn split_pow2(self) -> (Self, i32) {
+        let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
+        let (x, y, z) = (raw(self.x), raw(self.y), raw(self.z));
+        let m = x.unsigned_abs().max(y.unsigned_abs()).max(z.unsigned_abs());
+        if m == 0 {
+            return (Self::ZERO, 0);
+        }
+        // bit 64 が 1.0、bit 93 が 2²⁹
+        let k = (127 - m.leading_zeros() as i32) - 93;
+        let scale = |r: i128| -> Fix128 {
+            let a = r.unsigned_abs();
+            let s = if k >= 0 { a >> k } else { a << (-k) };
+            // s < 2⁹⁴ なので i128 に収まる
+            let v = if r < 0 { -(s as i128) } else { s as i128 };
+            Fix128::from_raw((v >> 64) as i64, v as u64)
+        };
+        (Self::new(scale(x), scale(y), scale(z)), k)
+    }
+
+    /// 2 乗が範囲外になる大きさでも正しい長さ 結果自体が `≥ 2⁶³` (表せない)
+    /// 時だけ `None`
+    ///
+    /// # Claims
+    /// - `|v|² < 2⁶³` (`length_squared` が wrap しない範囲) では **`length` と
+    ///   bit 一致する** (同じ式をそのまま使う)
+    /// - それより大きい時は、最大成分を 2 の冪で `[2²⁹, 2³⁰)` に寄せてから
+    ///   2 乗するので wrap せず、相対誤差は約 `2⁻⁹²` (成分の切り捨てと
+    ///   `sqrt` の floor)
+    /// - 結果が `≥ 2⁶³` (成分が `2⁶²` 級) なら `None`
+    #[must_use]
+    pub fn checked_length_scaled(self) -> Option<Fix128> {
+        if let Some(len) = self.checked_length() {
+            return Some(len);
+        }
+        let (s, k) = self.split_pow2();
+        // ここに来るのは |v| ≥ 2³¹·⁵ の時だけなので k ≥ 1
+        let ls = s.length();
+        let raw = ((ls.hi as i128) << 64) | (ls.lo as i128);
+        // ls < 2³¹ なので raw ≥ 0、raw << k < 2¹²⁷ が要る
+        if k < 0 || raw.leading_zeros() <= k as u32 {
+            return None;
+        }
+        let r = raw << k;
+        Some(Fix128::from_raw((r >> 64) as i64, r as u64))
+    }
+
+    /// 2 乗が範囲外になる大きさでも向きを返す正規化 零ベクトルだけ `None`
+    ///
+    /// # Claims
+    /// - `try_normalize` が `Some` を返す入力では **`try_normalize` と bit 一致**
+    /// - `try_normalize` が範囲外 (`|v| ≥ 2³¹·⁵`) や長さの 2 乗の下位桁あふれ
+    ///   (`|v| < 約 2⁻³²`) で `None` を返す非零ベクトルには、最大成分を
+    ///   `[2²⁹, 2³⁰)` に寄せたベクトルを正規化して返す
+    #[must_use]
+    pub fn try_normalize_scaled(self) -> Option<Self> {
+        if let Some(n) = self.checked_normalize() {
+            return Some(n);
+        }
+        let (s, _) = self.split_pow2();
+        if s == Self::ZERO {
+            return None;
+        }
+        // 最大成分 ∈ [2²⁹, 2³⁰) なので長さは 0 にならず、2 乗も wrap しない
+        Some(s / s.length())
     }
 
     /// Scale by scalar
