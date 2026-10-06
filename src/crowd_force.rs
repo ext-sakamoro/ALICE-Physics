@@ -104,7 +104,9 @@
 //!   external-force entry, but that entry applies the force once at the head
 //!   of a frame while gravity and contacts are sub-stepped, which shifts
 //!   positions by `O(F/m · dt²)` per frame; the driving-term relaxation is
-//!   then no longer `e^{−t/τ}` exactly.
+//!   then no longer `e^{−t/τ}` exactly. The crowd itself takes part in the
+//!   world's substep loop as [`CrowdParticipant`] (pedestrians only, no
+//!   coupling to rigid bodies).
 //!
 //! # Degenerate inputs
 //!
@@ -139,6 +141,9 @@
 
 use crate::math::Fix128;
 use crate::physics2d::Vec2Fix;
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -593,6 +598,302 @@ fn cell_list_pairs(peds: &[Pedestrian], cutoff: Fix128) -> Vec<(usize, usize)> {
     }
     pairs.sort_unstable();
     pairs
+}
+
+// ---------------------------------------------------------------------------
+// World participant
+// ---------------------------------------------------------------------------
+
+/// Snapshot tag of [`CrowdParticipant`]: the ASCII code `CRWD`, big endian.
+pub const CROWD_PARTICIPANT_KIND: ParticipantKind =
+    ParticipantKind::new(u32::from_be_bytes(*b"CRWD"));
+
+/// Observation channel of [`CrowdParticipant`]: the number of pedestrians.
+pub const CROWD_OBS_COUNT: u32 = 0;
+
+/// Observation channel of [`CrowdParticipant`]: the mean speed `Σ|v_i| / N`
+/// (m/s), not reported for an empty crowd.
+pub const CROWD_OBS_MEAN_SPEED: u32 = 1;
+
+/// Payload layout version written by [`CrowdParticipant`].
+const CROWD_STATE_VERSION: u32 = 1;
+/// `version: u32`, `digest: u64`, `count: u64`.
+const CROWD_HEADER_LEN: usize = 4 + 8 + 8;
+/// Ten `Fix128` per pedestrian.
+const CROWD_PEDESTRIAN_LEN: usize = 10 * 16;
+
+/// A crowd as a participant of the world's substep loop: it owns the
+/// pedestrians, the walls and the [`SocialForce`] model and advances them by
+/// one [`SocialForce::step`] of the world substep width `h` per substep
+/// ([`StepRule::FollowSubstep`](crate::world_participant::StepRule::FollowSubstep)).
+///
+/// # Time step
+///
+/// The step is semi-implicit Euler with the stiff contact terms of the
+/// module doc, so `h` of a few milliseconds is needed for the representative
+/// parameters; the world's substep width is that `h`. A non-positive `h`
+/// never reaches the participant: the world checks the step rule of every
+/// participant before any of them runs.
+///
+/// # Rigid bodies
+///
+/// The crowd does not interact with the world's rigid bodies: it neither
+/// reads them nor stages forces on them. The model has no circular obstacle
+/// (a degenerate wall segment is a point whose force uses the pedestrian
+/// radius alone, not a body radius), and the plane is not tied to a world
+/// axis pair. Route choice stays with the caller, who sets the desired
+/// direction and speed through [`Self::pedestrians_mut`] between steps.
+///
+/// # Faults
+///
+/// [`SocialForce::step`] refuses an invalid pedestrian (`τ ≤ 0`, `m ≤ 0`,
+/// `r < 0`, `v0 < 0`, for instance set through [`Self::pedestrians_mut`])
+/// and leaves the crowd unchanged; the participant then returns
+/// [`ParticipantFault::InvalidState`] and is unchanged.
+///
+/// # Snapshot payload
+///
+/// Little endian: `version: u32` (1), `digest: u64`, `count: u64`, then per
+/// pedestrian position, velocity, radius, mass, desired speed, desired
+/// direction and relaxation time (`Fix128` as `hi: i64`, `lo: u64`). The
+/// digest is FNV-1a 64 over the configuration (both interaction parameter
+/// sets, `λ`, the cutoff, every wall, the neighbour search and the speed cap);
+/// [`Participant::check_state`] refuses a payload of another configuration
+/// ([`StateError::InvalidValue`]) or of a length that does not match its count
+/// ([`StateError::Length`]). The number of pedestrians and every pedestrian
+/// field are state and may differ from the current crowd.
+#[derive(Debug, Clone)]
+pub struct CrowdParticipant {
+    model: SocialForce,
+    pedestrians: Vec<Pedestrian>,
+    walls: Vec<WallSegment>,
+    search: NeighborSearch,
+    speed_cap_ratio: Option<Fix128>,
+    digest: u64,
+}
+
+impl CrowdParticipant {
+    /// A participant owning `pedestrians`, `walls` and `model`, stepping
+    /// with `search` and the optional speed cap `|v| ≤ c · v0`.
+    ///
+    /// # Errors
+    ///
+    /// [`CrowdForceError::NonPositiveSpeedCap`] or an invalid pedestrian
+    /// (the errors of [`SocialForce::step`]).
+    pub fn new(
+        model: SocialForce,
+        pedestrians: Vec<Pedestrian>,
+        walls: Vec<WallSegment>,
+        search: NeighborSearch,
+        speed_cap_ratio: Option<Fix128>,
+    ) -> Result<Self, CrowdForceError> {
+        if let Some(c) = speed_cap_ratio {
+            if c <= Fix128::ZERO {
+                return Err(CrowdForceError::NonPositiveSpeedCap);
+            }
+        }
+        for (i, p) in pedestrians.iter().enumerate() {
+            check_pedestrian(p, i)?;
+        }
+        let digest = crowd_digest(&model, &walls, search, speed_cap_ratio);
+        Ok(Self {
+            model,
+            pedestrians,
+            walls,
+            search,
+            speed_cap_ratio,
+            digest,
+        })
+    }
+
+    /// The pedestrians.
+    #[must_use]
+    pub fn pedestrians(&self) -> &[Pedestrian] {
+        &self.pedestrians
+    }
+
+    /// The pedestrians, for the caller's route choice between steps.
+    pub fn pedestrians_mut(&mut self) -> &mut [Pedestrian] {
+        &mut self.pedestrians
+    }
+
+    /// The walls.
+    #[must_use]
+    pub fn walls(&self) -> &[WallSegment] {
+        &self.walls
+    }
+
+    /// The model.
+    #[must_use]
+    pub const fn model(&self) -> &SocialForce {
+        &self.model
+    }
+}
+
+impl Participant for CrowdParticipant {
+    fn kind(&self) -> ParticipantKind {
+        CROWD_PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        self.model
+            .step(
+                &mut self.pedestrians,
+                &self.walls,
+                h,
+                self.search,
+                self.speed_cap_ratio,
+            )
+            .map_err(|_| ParticipantFault::InvalidState)
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        let n = self.pedestrians.len();
+        out.push(CROWD_OBS_COUNT, Fix128::from_int(n as i64));
+        if n > 0 {
+            let total = self
+                .pedestrians
+                .iter()
+                .fold(Fix128::ZERO, |acc, p| acc + p.velocity.length());
+            out.push(CROWD_OBS_MEAN_SPEED, total / Fix128::from_int(n as i64));
+        }
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&CROWD_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        out.extend_from_slice(&(self.pedestrians.len() as u64).to_le_bytes());
+        for p in &self.pedestrians {
+            for f in pedestrian_fields(p) {
+                put_fix(out, f);
+            }
+        }
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        if bytes.len() < CROWD_HEADER_LEN {
+            return Err(StateError::Length {
+                expected: CROWD_HEADER_LEN,
+                found: bytes.len(),
+            });
+        }
+        if read_u32(bytes, 0) != CROWD_STATE_VERSION || read_u64(bytes, 4) != self.digest {
+            return Err(StateError::InvalidValue);
+        }
+        let count = read_u64(bytes, 12);
+        let expected = usize::try_from(count)
+            .ok()
+            .and_then(|n| n.checked_mul(CROWD_PEDESTRIAN_LEN))
+            .and_then(|b| b.checked_add(CROWD_HEADER_LEN))
+            .unwrap_or(usize::MAX);
+        if bytes.len() != expected {
+            return Err(StateError::Length {
+                expected,
+                found: bytes.len(),
+            });
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        self.pedestrians = bytes[CROWD_HEADER_LEN..]
+            .chunks_exact(CROWD_PEDESTRIAN_LEN)
+            .map(|c| {
+                let f = |k: usize| get_fix(c, 16 * k);
+                Pedestrian {
+                    position: Vec2Fix::new(f(0), f(1)),
+                    velocity: Vec2Fix::new(f(2), f(3)),
+                    radius_m: f(4),
+                    mass_kg: f(5),
+                    desired_speed_m_s: f(6),
+                    desired_direction: Vec2Fix::new(f(7), f(8)),
+                    relaxation_time_s: f(9),
+                }
+            })
+            .collect();
+    }
+}
+
+fn pedestrian_fields(p: &Pedestrian) -> [Fix128; 10] {
+    [
+        p.position.x,
+        p.position.y,
+        p.velocity.x,
+        p.velocity.y,
+        p.radius_m,
+        p.mass_kg,
+        p.desired_speed_m_s,
+        p.desired_direction.x,
+        p.desired_direction.y,
+        p.relaxation_time_s,
+    ]
+}
+
+fn crowd_digest(
+    model: &SocialForce,
+    walls: &[WallSegment],
+    search: NeighborSearch,
+    speed_cap_ratio: Option<Fix128>,
+) -> u64 {
+    let mut b = Vec::new();
+    for p in [&model.pedestrian, &model.wall] {
+        for f in [
+            p.strength_n,
+            p.range_m,
+            p.body_stiffness,
+            p.sliding_friction,
+        ] {
+            put_fix(&mut b, f);
+        }
+    }
+    put_fix(&mut b, model.anisotropy);
+    put_fix(&mut b, model.cutoff_m);
+    b.extend_from_slice(&(walls.len() as u64).to_le_bytes());
+    for w in walls {
+        for f in [w.start.x, w.start.y, w.end.x, w.end.y] {
+            put_fix(&mut b, f);
+        }
+    }
+    b.push(match search {
+        NeighborSearch::Direct => 0,
+        NeighborSearch::CellList => 1,
+    });
+    match speed_cap_ratio {
+        None => b.push(0),
+        Some(c) => {
+            b.push(1);
+            put_fix(&mut b, c);
+        }
+    }
+    fnv1a64(&b)
+}
+
+/// FNV-1a 64 (offset basis `0xcbf2_9ce4_8422_2325`, prime `0x100_0000_01b3`).
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+fn put_fix(out: &mut Vec<u8>, f: Fix128) {
+    out.extend_from_slice(&f.hi.to_le_bytes());
+    out.extend_from_slice(&f.lo.to_le_bytes());
+}
+
+fn read_u32(b: &[u8], at: usize) -> u32 {
+    let mut a = [0u8; 4];
+    a.copy_from_slice(&b[at..at + 4]);
+    u32::from_le_bytes(a)
+}
+
+fn read_u64(b: &[u8], at: usize) -> u64 {
+    let mut a = [0u8; 8];
+    a.copy_from_slice(&b[at..at + 8]);
+    u64::from_le_bytes(a)
+}
+
+fn get_fix(b: &[u8], at: usize) -> Fix128 {
+    Fix128::from_raw(read_u64(b, at) as i64, read_u64(b, at + 8))
 }
 
 #[cfg(test)]

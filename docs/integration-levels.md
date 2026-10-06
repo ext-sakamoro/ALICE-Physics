@@ -79,7 +79,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `coupled_field` | standalone | 0 / 0 / 0 / 42 / 0 | — |
 | `coupled_iteration` | standalone | 0 / 0 / 0 / 24 / 2 | — |
 | `creep_longterm` | standalone | 0 / 0 / 0 / 9 / 1 | — |
-| `crowd_force` | standalone | 0 / 0 / 0 / 13 / 0 | — |
+| `crowd_force` | standalone | 0 / 0 / 0 / 22 / 0 | — |
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `db_bridge` | standalone | 0 / 0 / 0 / 9 / 0 | — |
@@ -119,7 +119,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `maxwell_fdtd` | standalone | 0 / 0 / 0 / 44 / 0 | — |
 | `metric` | standalone (step 5 of 13 items) | 5 / 0 / 0 / 8 / 0 | C ABI, Python, WebAssembly |
 | `modal` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `molecular_dynamics` | standalone | 0 / 0 / 0 / 24 / 0 | — |
+| `molecular_dynamics` | standalone | 0 / 0 / 0 / 33 / 0 | — |
 | `multi_world` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `multiphase` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `nbody` | standalone | 0 / 0 / 0 / 14 / 0 | — |

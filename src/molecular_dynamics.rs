@@ -77,6 +77,9 @@
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::pair_potential::{PairPotential, PairPotentialError, Truncated};
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
@@ -587,4 +590,252 @@ impl<P: PairPotential> VelocityVerlet<P> {
         let dof = Fix128::from_int(3 * n as i64 - 3);
         Ok(self.kinetic_energy().double() / (dof * boltzmann_constant))
     }
+}
+
+// ---------------------------------------------------------------------------
+// World participant
+// ---------------------------------------------------------------------------
+
+/// Snapshot tag of [`MdParticipant`] (every pair potential): the ASCII code
+/// `MDVV`, big endian.
+pub const MD_PARTICIPANT_KIND: ParticipantKind = ParticipantKind::new(u32::from_be_bytes(*b"MDVV"));
+
+/// Observation channel of [`MdParticipant`]: kinetic energy `K`.
+pub const MD_OBS_KINETIC: u32 = 0;
+/// Observation channel of [`MdParticipant`]: potential energy `U`.
+pub const MD_OBS_POTENTIAL: u32 = 1;
+/// Observation channel of [`MdParticipant`]: total energy `K + U`.
+pub const MD_OBS_TOTAL: u32 = 2;
+/// Observation channel of [`MdParticipant`]: instantaneous temperature
+/// `2K / (k_B (3N − 3))`, reported only for `N ≥ 2`.
+pub const MD_OBS_TEMPERATURE: u32 = 3;
+
+/// Payload layout version written by [`MdParticipant`].
+const MD_STATE_VERSION: u32 = 1;
+/// `version: u32`, `digest: u64`, box lengths (3 `Fix128`), cutoff
+/// (`Fix128`), `count: u64`.
+const MD_HEADER_LEN: usize = 4 + 8 + 3 * 16 + 16 + 8;
+/// Mass, position, velocity and force: ten `Fix128` per particle.
+const MD_PARTICLE_LEN: usize = 10 * 16;
+
+/// A [`VelocityVerlet`] system as a participant of the world's substep loop:
+/// one [`VelocityVerlet::step`] of the world substep width `h` per substep
+/// ([`StepRule::FollowSubstep`](crate::world_participant::StepRule::FollowSubstep)).
+///
+/// # Time step
+///
+/// Velocity Verlet is stable for `ωh < 2` on the fastest mode; the world's
+/// substep width is that `h`, so the scene has to choose it. A non-positive
+/// `h` never reaches the participant: the world checks the step rule of every
+/// participant before any of them runs.
+///
+/// # Rigid bodies
+///
+/// The particles do not interact with the world's rigid bodies: the
+/// participant neither reads them nor stages forces on them.
+///
+/// # Faults
+///
+/// [`VelocityVerlet::step`] leaves the state unchanged on error. A pair whose
+/// potential value leaves the `Fix128` range
+/// ([`PairPotentialError::Overflow`]) is [`ParticipantFault::OutOfRange`];
+/// every other error (coincident particles, an invalid potential argument) is
+/// [`ParticipantFault::InvalidState`]. Both leave the participant unchanged.
+///
+/// # Snapshot payload
+///
+/// Little endian: `version: u32` (1), `digest: u64`, the box lengths and the
+/// truncation cutoff (`Fix128` as `hi: i64`, `lo: u64`), `count: u64`, then
+/// per particle mass, position, velocity and force, then the potential
+/// energy. The digest is FNV-1a 64 over the box lengths, the cutoff and
+/// `k_B`. [`Participant::check_state`] refuses a payload whose digest, box or
+/// cutoff differs from this participant's, or with a non-positive mass
+/// ([`StateError::InvalidValue`]), and one whose length does not match its
+/// count ([`StateError::Length`]). The particle count is state.
+///
+/// The type and the parameters of the pair potential are not in the payload
+/// and are not compared: restoring a payload written with another potential
+/// (or other `ε`, `σ`) of the same cutoff is accepted and continues with
+/// this participant's potential. The stored forces and potential energy
+/// are then those of the other potential until the next step.
+#[derive(Debug, Clone)]
+pub struct MdParticipant<P> {
+    system: VelocityVerlet<P>,
+    boltzmann_constant: Fix128,
+    digest: u64,
+}
+
+impl<P: PairPotential> MdParticipant<P> {
+    /// A participant owning `system`; `boltzmann_constant` is the `k_B` of the
+    /// temperature observation.
+    ///
+    /// # Errors
+    ///
+    /// [`MdError::NonPositiveBoltzmannConstant`].
+    pub fn new(system: VelocityVerlet<P>, boltzmann_constant: Fix128) -> Result<Self, MdError> {
+        if boltzmann_constant <= Fix128::ZERO {
+            return Err(MdError::NonPositiveBoltzmannConstant);
+        }
+        let mut b = Vec::new();
+        let l = system.periodic_box.lengths();
+        for f in [l.x, l.y, l.z, system.potential.cutoff(), boltzmann_constant] {
+            md_put_fix(&mut b, f);
+        }
+        let digest = md_fnv1a64(&b);
+        Ok(Self {
+            system,
+            boltzmann_constant,
+            digest,
+        })
+    }
+
+    /// The system.
+    #[must_use]
+    pub const fn system(&self) -> &VelocityVerlet<P> {
+        &self.system
+    }
+
+    /// The `k_B` of the temperature observation.
+    #[must_use]
+    pub const fn boltzmann_constant(&self) -> Fix128 {
+        self.boltzmann_constant
+    }
+}
+
+impl<P: PairPotential + Send> Participant for MdParticipant<P> {
+    fn kind(&self) -> ParticipantKind {
+        MD_PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        self.system.step(h).map_err(|e| match e {
+            MdError::Potential {
+                error: PairPotentialError::Overflow,
+                ..
+            } => ParticipantFault::OutOfRange,
+            _ => ParticipantFault::InvalidState,
+        })
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        let k = self.system.kinetic_energy();
+        let u = self.system.potential_energy();
+        out.push(MD_OBS_KINETIC, k);
+        out.push(MD_OBS_POTENTIAL, u);
+        out.push(MD_OBS_TOTAL, k + u);
+        if let Ok(t) = self
+            .system
+            .instantaneous_temperature(self.boltzmann_constant)
+        {
+            out.push(MD_OBS_TEMPERATURE, t);
+        }
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        let s = &self.system;
+        out.extend_from_slice(&MD_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        let l = s.periodic_box.lengths();
+        for f in [l.x, l.y, l.z, s.potential.cutoff()] {
+            md_put_fix(out, f);
+        }
+        out.extend_from_slice(&(s.positions.len() as u64).to_le_bytes());
+        for i in 0..s.positions.len() {
+            md_put_fix(out, s.masses[i]);
+            for v in [s.positions[i], s.velocities[i], s.forces[i]] {
+                for f in [v.x, v.y, v.z] {
+                    md_put_fix(out, f);
+                }
+            }
+        }
+        md_put_fix(out, s.potential_energy);
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        if bytes.len() < MD_HEADER_LEN {
+            return Err(StateError::Length {
+                expected: MD_HEADER_LEN,
+                found: bytes.len(),
+            });
+        }
+        if md_read_u32(bytes, 0) != MD_STATE_VERSION || md_read_u64(bytes, 4) != self.digest {
+            return Err(StateError::InvalidValue);
+        }
+        let l = self.system.periodic_box.lengths();
+        let own = [l.x, l.y, l.z, self.system.potential.cutoff()];
+        if (0..4).any(|k| md_get_fix(bytes, 12 + 16 * k) != own[k]) {
+            return Err(StateError::InvalidValue);
+        }
+        let count = md_read_u64(bytes, MD_HEADER_LEN - 8);
+        let expected = usize::try_from(count)
+            .ok()
+            .and_then(|n| n.checked_mul(MD_PARTICLE_LEN))
+            .and_then(|b| b.checked_add(MD_HEADER_LEN + 16))
+            .unwrap_or(usize::MAX);
+        if bytes.len() != expected {
+            return Err(StateError::Length {
+                expected,
+                found: bytes.len(),
+            });
+        }
+        let masses_positive = bytes[MD_HEADER_LEN..bytes.len() - 16]
+            .chunks_exact(MD_PARTICLE_LEN)
+            .all(|c| md_get_fix(c, 0) > Fix128::ZERO);
+        if !masses_positive {
+            return Err(StateError::InvalidValue);
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        let body = &bytes[MD_HEADER_LEN..bytes.len() - 16];
+        let n = body.len() / MD_PARTICLE_LEN;
+        let s = &mut self.system;
+        s.masses = Vec::with_capacity(n);
+        s.positions = Vec::with_capacity(n);
+        s.velocities = Vec::with_capacity(n);
+        s.forces = Vec::with_capacity(n);
+        for c in body.chunks_exact(MD_PARTICLE_LEN) {
+            let v = |k: usize| {
+                Vec3Fix::new(
+                    md_get_fix(c, 16 + 48 * k),
+                    md_get_fix(c, 32 + 48 * k),
+                    md_get_fix(c, 48 + 48 * k),
+                )
+            };
+            s.masses.push(md_get_fix(c, 0));
+            s.positions.push(v(0));
+            s.velocities.push(v(1));
+            s.forces.push(v(2));
+        }
+        s.potential_energy = md_get_fix(bytes, bytes.len() - 16);
+    }
+}
+
+/// FNV-1a 64 (offset basis `0xcbf2_9ce4_8422_2325`, prime `0x100_0000_01b3`).
+fn md_fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |h, &b| {
+        (h ^ u64::from(b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+fn md_put_fix(out: &mut Vec<u8>, f: Fix128) {
+    out.extend_from_slice(&f.hi.to_le_bytes());
+    out.extend_from_slice(&f.lo.to_le_bytes());
+}
+
+fn md_read_u32(b: &[u8], at: usize) -> u32 {
+    let mut a = [0u8; 4];
+    a.copy_from_slice(&b[at..at + 4]);
+    u32::from_le_bytes(a)
+}
+
+fn md_read_u64(b: &[u8], at: usize) -> u64 {
+    let mut a = [0u8; 8];
+    a.copy_from_slice(&b[at..at + 8]);
+    u64::from_le_bytes(a)
+}
+
+fn md_get_fix(b: &[u8], at: usize) -> Fix128 {
+    Fix128::from_raw(md_read_u64(b, at) as i64, md_read_u64(b, at + 8))
 }
