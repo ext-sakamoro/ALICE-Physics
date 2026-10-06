@@ -1,5 +1,7 @@
 //! The world side of the participant contract ([`crate::world_participant`]):
 //! registration, the checked step, faults, observation and shared fields.
+//! Like the contract itself, this API is unstable and may change in a minor
+//! release (see the module documentation of [`crate::world_participant`]).
 //!
 //! Where the participants run: in every step loop ([`PhysicsWorld::try_step`]
 //! for XPBD and TGS, [`PhysicsWorld::try_step_parallel`],
@@ -12,7 +14,12 @@
 //!    field writes;
 //! 2. the summed forces reach the dynamic bodies, `v += F·inv_mass·h` and
 //!    `ω += I⁻¹·τ·h` (checked: a result out of range leaves the body as it was
-//!    and records [`WorldFault::ForceOutOfRange`]); a sleeping body is woken
+//!    and records [`WorldFault::ForceOutOfRange`]; the check covers the
+//!    intermediate `F·inv_mass` and `I⁻¹·τ` too, not only the final `·h`);
+//!    the sums themselves are not checked: [`ForceAccumulator`] adds with the
+//!    wrapping addition of [`Fix128`] (in [`run_substep`] and in
+//!    [`ForceAccumulator::merge`]), so staged forces whose sum leaves the
+//!    range wrap before this step sees them; a sleeping body is woken
 //!    only when [`wakes_parked_body`] says so, otherwise the force has no
 //!    effect on it;
 //! 3. the substep body runs as before;
@@ -493,7 +500,12 @@ impl PhysicsWorld {
         }
     }
 
-    /// `v += F·inv_mass·h`, `ω += I⁻¹·τ·h` on every dynamic body (checked).
+    /// `v += F·inv_mass·h`, `ω += I⁻¹·τ·h` on every dynamic body. Every
+    /// operation is checked, the intermediate `F·inv_mass` and `I⁻¹·τ`
+    /// included (the products of [`Fix128`] wrap, so checking only the last
+    /// `·h` would let an out-of-range intermediate through): a result out of
+    /// range leaves the body as it was and records
+    /// [`WorldFault::ForceOutOfRange`].
     #[cfg(feature = "std")]
     fn apply_participant_forces(&mut self, forces: &ForceAccumulator, h: Fix128) {
         for i in 0..self.bodies.len() {
@@ -524,8 +536,8 @@ impl PhysicsWorld {
                 .and_then(|a| a.checked_scale(h))
                 .and_then(|dv| checked_add_vec(body.velocity, dv));
             let w = body
-                .world_inv_inertia_apply(torque)
-                .checked_scale(h)
+                .checked_world_inv_inertia_apply(torque)
+                .and_then(|a| a.checked_scale(h))
                 .and_then(|dw| checked_add_vec(body.angular_velocity, dw));
             match (v, w) {
                 (Some(v), Some(w)) => {

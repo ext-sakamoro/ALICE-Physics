@@ -8,6 +8,10 @@
 //! writes a body's position or velocity. Snapshots carry its state as an
 //! opaque payload tagged with its [`ParticipantKind`].
 //!
+//! **Unstable.** The types and rules of this module may still change before
+//! the participant API is declared stable, and such changes may ship in a
+//! minor release.
+//!
 //! # Contract
 //!
 //! | rule | how it is enforced |
@@ -1826,6 +1830,8 @@ pub fn wakes_parked_body(
     let dv = force
         .checked_scale(body.inv_mass)
         .and_then(|a| a.checked_scale(h));
-    let dw = body.world_inv_inertia_apply(torque).checked_scale(h);
+    let dw = body
+        .checked_world_inv_inertia_apply(torque)
+        .and_then(|a| a.checked_scale(h));
     above(dv, sleep.linear_threshold) || above(dw, sleep.angular_threshold)
 }
