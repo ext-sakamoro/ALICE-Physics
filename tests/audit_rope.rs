@@ -273,9 +273,12 @@ fn contact_rope(substeps: usize, friction: f64) -> Rope {
 }
 
 /// Closed form of one SDF contact for an inbound particle: after the push-out
-/// `v_n' = -0.1 v_n` (restitution 0.1) and `v_t' = (1 - mu) v_t`.
+/// `v_n' = -0.1 v_n` (restitution 0.1) and Coulomb friction takes
+/// `mu * |dv_n| = mu * 1.1 * |v_n|` off the tangential speed (AUD-A-S3W1-005;
+/// this test used to pin the per-contact retention `(1 - mu) v_t`):
+/// v = (2, -3), mu = 0.25 gives v_t' = 2 - 0.25 * 3.3 = 1.175
 #[test]
-fn inbound_contact_scales_normal_by_minus_tenth_and_tangent_by_one_minus_mu() {
+fn inbound_contact_scales_normal_by_minus_tenth_and_applies_coulomb_friction() {
     let mut r = contact_rope(1, 0.25);
     r.velocities[0] = v3(2.0, -3.0, 0.0);
     r.velocities[1] = v3(2.0, -3.0, 0.0);
@@ -290,14 +293,17 @@ fn inbound_contact_scales_normal_by_minus_tenth_and_tangent_by_one_minus_mu() {
         r.positions[0].y.to_f64()
     );
     let v = arr(r.velocities[0]);
-    assert!((v[0] - 2.0 * 0.75).abs() < 1e-5, "tangent {v:?}");
+    assert!(
+        (v[0] - (2.0 - 0.25 * 1.1 * 3.0)).abs() < 1e-5,
+        "tangent {v:?}"
+    );
     assert!((v[1] - 0.3).abs() < 1e-5, "normal {v:?}");
 }
 
 /// A particle still inside the surface but moving *out* of it keeps its outward
 /// velocity; restitution applies only to the approaching component.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-004: resolve_sdf_collisions sets v_n' = -0.1 v_n unconditionally, reversing a separating (outward) normal velocity into the surface (vy +3 -> -0.3 measured)"]
+// AUD-A-S3W1-004
 fn separating_normal_velocity_is_not_reversed_by_the_contact() {
     let mut r = contact_rope(1, 0.0);
     r.positions[0] = v3(0.0, -0.5, 0.0);
@@ -319,7 +325,7 @@ fn separating_normal_velocity_is_not_reversed_by_the_contact() {
 /// frame for a rope pressed on the ground is `mu * g * dt` (Coulomb), not
 /// `(1-mu)^substeps`.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-005: sdf_friction is a per-contact velocity retention (1-mu) applied each substep and independent of the normal force; tangential speed 5.0 -> 3.5 (substeps=1) vs 1.2005 (substeps=4) over one frame, i.e. 0.7^substeps"]
+// AUD-A-S3W1-005
 fn tangential_loss_per_frame_is_independent_of_the_substep_count() {
     let mut speeds = Vec::new();
     for substeps in [1usize, 4] {
@@ -400,4 +406,15 @@ fn a_particle_exactly_on_the_surface_keeps_its_velocity() {
         "{}",
         r.velocities[0].x.to_f64()
     );
+}
+
+/// Coulomb friction stops the tangential motion, it never reverses it: a slow
+/// slide against a hard impact ends at rest along the surface
+#[test]
+fn coulomb_friction_stops_at_zero_tangential_speed() {
+    let mut r = contact_rope(1, 0.5);
+    r.velocities[0] = v3(0.5, -10.0, 0.0);
+    r.velocities[1] = v3(0.5, -10.0, 0.0);
+    r.step_with_sdf(fx(0.125), &[ground()]);
+    assert_eq!(r.velocities[0].x, Fix128::ZERO, "{:?}", r.velocities[0]);
 }
