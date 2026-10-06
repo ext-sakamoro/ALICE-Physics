@@ -40,7 +40,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4177 | 546 | 76 | 102 | 3447 | 6 |
+| **total** | 4177 | 547 | 76 | 101 | 3447 | 6 |
 
 ## `docs/coverage/acous.toml`
 
