@@ -12,11 +12,11 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 19 |
+| step | runs when `PhysicsWorld` steps | 20 |
 | world API | used through another `PhysicsWorld` method | 7 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
 | standalone | a Rust API that only examples call | 131 |
-| unused | no caller outside tests | 1 |
+| unused | no caller outside tests | 0 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
@@ -34,6 +34,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `heightfield` | step | 5 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 14 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
+| `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 18 / 0 / 0 / 17 / 2 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
@@ -44,7 +45,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cylinder` | world API (step 2 of 7 items) | 2 / 3 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `shape` | world API (step 4 of 9 items) | 4 / 5 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 28 of 141 items) | 28 / 78 / 7 / 27 / 1 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 28 of 148 items) | 28 / 85 / 7 / 27 / 1 | C ABI, Python, WebAssembly |
 | `torus` | world API (step 2 of 7 items) | 2 / 3 / 0 / 0 / 2 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
@@ -179,7 +180,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
 
 ### C ABI (`--features ffi`)
 
