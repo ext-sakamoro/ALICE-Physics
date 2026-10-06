@@ -629,6 +629,73 @@ pub fn aabb_plane_toi(
     }
 }
 
+// ============================================================================
+// World time of impact
+// ============================================================================
+
+impl crate::solver::PhysicsWorld {
+    /// The first time in a step at which body `body`, translating with
+    /// `velocity` for `dt`, touches any other geometry the world collides with
+    /// (body shapes, compound children, static colliders and, with `std`, SDF
+    /// colliders), as a [`TOI`].
+    ///
+    /// - **Shape.** The body is swept as the sphere of its collision radius about
+    ///   its position ([`crate::solver::PhysicsWorld::cast_sphere`]). For a body
+    ///   with only a collision radius that is its exact geometry. For a body with
+    ///   a [`crate::shape::Shape`] or a compound collider the radius is the
+    ///   bounding radius about its centre of mass, so the reported time is never
+    ///   later than the true shape's first contact (it can be earlier). A body
+    ///   with no collision radius collides with nothing: `None`.
+    /// - **Time.** [`TOI::t`] is the fraction of the step, `0` at the start and
+    ///   `1` at `velocity · dt`: the distance travelled to the contact divided by
+    ///   `|velocity · dt|`.
+    /// - **Point and normal.** The contact point on the other geometry and its
+    ///   surface normal there, toward the moving body: the convention of
+    ///   [`sphere_plane_toi`], and of [`sphere_sphere_toi`] with the obstacle as
+    ///   sphere A and the moving body as sphere B (moving by `velocity · dt`). A
+    ///   body that already overlaps something reports `t = 0`, its own centre as
+    ///   the point and `−velocity` (normalized) as the normal
+    ///   (see [`crate::world_shape_query`]).
+    /// - **What is seen.** `filter` decides, except that the body itself (and any
+    ///   SDF collider attached to it) is always excluded: the filter's
+    ///   [`RayFilter::exclude_body`](crate::shape_raycast::RayFilter::exclude_body)
+    ///   is replaced by `body`. Everything else is taken at its current pose and
+    ///   treated as still; pass a relative velocity for a moving target.
+    ///
+    /// An index out of range, `dt ≤ 0` or a zero displacement gives `None`.
+    #[must_use]
+    pub fn time_of_impact(
+        &self,
+        body: usize,
+        velocity: Vec3Fix,
+        dt: Fix128,
+        filter: &crate::shape_raycast::RayFilter,
+    ) -> Option<TOI> {
+        if dt <= Fix128::ZERO {
+            return None;
+        }
+        let (radius, _) = self.ray_geometry(body)?;
+        let start = self.bodies.get(body)?.position;
+        let displacement = velocity * dt;
+        let travel = displacement.length();
+        if travel.is_zero() {
+            return None;
+        }
+        let filter = filter.excluding_body(body);
+        let hit = self.cast_sphere(start, radius, displacement, travel, &filter)?;
+        let t = if hit.t >= travel {
+            Fix128::ONE
+        } else {
+            hit.t / travel
+        };
+        Some(TOI {
+            t,
+            point: hit.point,
+            normal: hit.normal,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

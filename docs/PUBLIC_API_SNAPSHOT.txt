@@ -12760,7 +12760,12 @@ impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
 pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::move_sdf_character(&self, &mut alice_physics::sdf_character::SdfCharacter, f32, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
+pub fn alice_physics::solver::PhysicsWorld::sdf_field(&self) -> alice_physics::sdf_character::WorldSdfField<'_>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::time_of_impact(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::ccd::TOI>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
@@ -14283,6 +14288,10 @@ pub trait alice_physics::prelude::SdfField: core::marker::Send + core::marker::S
 pub fn alice_physics::prelude::SdfField::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::prelude::SdfField::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
 pub fn alice_physics::prelude::SdfField::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
@@ -15580,6 +15589,21 @@ impl core::marker::Unpin for alice_physics::sdf_character::SdfCharacter
 impl core::marker::UnsafeUnpin for alice_physics::sdf_character::SdfCharacter
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_character::SdfCharacter
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_character::SdfCharacter
+pub struct alice_physics::sdf_character::WorldSdfField<'a>
+impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl<'a> core::clone::Clone for alice_physics::sdf_character::WorldSdfField<'a>
+pub fn alice_physics::sdf_character::WorldSdfField<'a>::clone(&self) -> Self
+impl<'a> core::marker::Copy for alice_physics::sdf_character::WorldSdfField<'a>
+impl<'a> core::marker::Freeze for alice_physics::sdf_character::WorldSdfField<'a>
+impl<'a> core::marker::Send for alice_physics::sdf_character::WorldSdfField<'a>
+impl<'a> core::marker::Sync for alice_physics::sdf_character::WorldSdfField<'a>
+impl<'a> core::marker::Unpin for alice_physics::sdf_character::WorldSdfField<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::sdf_character::WorldSdfField<'a>
+impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_character::WorldSdfField<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_character::WorldSdfField<'a>
 pub mod alice_physics::sdf_collider
 pub struct alice_physics::sdf_collider::ClosureSdf
 impl alice_physics::sdf_collider::ClosureSdf
@@ -15696,6 +15720,10 @@ pub trait alice_physics::sdf_collider::SdfField: core::marker::Send + core::mark
 pub fn alice_physics::sdf_collider::SdfField::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::SdfField::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
 pub fn alice_physics::sdf_collider::SdfField::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
@@ -17235,7 +17263,12 @@ impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
 pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::move_sdf_character(&self, &mut alice_physics::sdf_character::SdfCharacter, f32, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
+pub fn alice_physics::solver::PhysicsWorld::sdf_field(&self) -> alice_physics::sdf_character::WorldSdfField<'_>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::time_of_impact(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::ccd::TOI>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
@@ -23507,7 +23540,12 @@ impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
 pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::move_sdf_character(&self, &mut alice_physics::sdf_character::SdfCharacter, f32, [f32; 3]) -> alice_physics::sdf_character::MoveOutcome
+pub fn alice_physics::solver::PhysicsWorld::sdf_field(&self) -> alice_physics::sdf_character::WorldSdfField<'_>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::time_of_impact(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::ccd::TOI>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
@@ -25137,6 +25175,10 @@ pub trait alice_physics::SdfField: core::marker::Send + core::marker::Sync
 pub fn alice_physics::SdfField::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::SdfField::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
 pub fn alice_physics::SdfField::normal(&self, f32, f32, f32) -> (f32, f32, f32)
+impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
