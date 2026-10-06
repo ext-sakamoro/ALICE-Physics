@@ -1819,6 +1819,55 @@ pub enum PolarError {
     },
 }
 
+/// A 256-bit two's-complement integer `(high, low)`, used by
+/// [`Mat3Fix::inverse`] to sum products exactly.
+type Wide = (i128, u128);
+
+/// `floor(a·b / 2⁶⁴)` in raw units, exact: the full product of the two Q64.64
+/// values, of which [`Mul`] keeps the low 128 bits.
+fn wide_mul_floor(a: Fix128, b: Fix128) -> Wide {
+    const LOW: u128 = u64::MAX as u128;
+    let ra = ((a.hi as i128) << 64) | a.lo as i128;
+    let rb = ((b.hi as i128) << 64) | b.lo as i128;
+    let (ua, ub) = (ra.unsigned_abs(), rb.unsigned_abs());
+    let (a1, a0) = (ua >> 64, ua & LOW);
+    let (b1, b0) = (ub >> 64, ub & LOW);
+    // |a|, |b| ≤ 2¹²⁷, so the magnitude is below 2²⁵⁴ and `hi` cannot overflow
+    let (mid, mid_carry) = (a0 * b1).overflowing_add(a1 * b0);
+    let (lo, lo_carry) = (a0 * b0).overflowing_add(mid << 64);
+    let hi = a1 * b1 + (mid >> 64) + ((mid_carry as u128) << 64) + lo_carry as u128;
+    let p = if (ra < 0) != (rb < 0) {
+        wide_neg((hi as i128, lo))
+    } else {
+        (hi as i128, lo)
+    };
+    // Arithmetic shift right by 64 bits: floor on the two's-complement value
+    (p.0 >> 64, ((p.0 as u128) << 64) | (p.1 >> 64))
+}
+
+fn wide_add(x: Wide, y: Wide) -> Wide {
+    let (lo, carry) = x.1.overflowing_add(y.1);
+    (x.0.wrapping_add(y.0).wrapping_add(carry as i128), lo)
+}
+
+fn wide_neg(x: Wide) -> Wide {
+    wide_add((!x.0, !x.1), (0, 1))
+}
+
+/// The value as a [`Fix128`], or `None` when it is outside `[-2⁶³, 2⁶³)`.
+fn wide_fit(x: Wide) -> Option<Fix128> {
+    (x.0 == (x.1 as i128) >> 127).then(|| Fix128::from_raw((x.1 >> 64) as i64, x.1 as u64))
+}
+
+/// `p·q − r·s` with the products summed exactly; `None` when the difference
+/// does not fit. Bit-identical to `p * q - r * s` whenever it fits.
+fn wide_cofactor(p: Fix128, q: Fix128, r: Fix128, s: Fix128) -> Option<Fix128> {
+    wide_fit(wide_add(
+        wide_mul_floor(p, q),
+        wide_neg(wide_mul_floor(r, s)),
+    ))
+}
+
 impl Mat3Fix {
     /// Identity matrix
     pub const IDENTITY: Self = Self {
@@ -1905,32 +1954,61 @@ impl Mat3Fix {
             + self.col2.x * (self.col0.y * self.col1.z - self.col0.z * self.col1.y)
     }
 
-    /// Inverse matrix. Returns `None` if the matrix is singular.
+    /// Inverse matrix.
+    ///
+    /// Returns `None` if the matrix is singular **or if the inverse cannot be
+    /// computed inside the Q64.64 range**: a cofactor, the determinant, `1 / det`
+    /// (`|det| ≤ 2⁻⁶³`) or one of the entries `cofactor / det` does not fit.
+    /// Earlier versions wrapped in the out-of-range cases and returned `Some` with flipped
+    /// signs (e.g. `diag(2²¹, 2²¹, 2²¹)`, whose determinant is `2⁶³`).
+    ///
+    /// The products inside each cofactor and inside the determinant are summed
+    /// exactly (256-bit), so a single product beyond `2⁶³` that cancels out does
+    /// not make the result `None`: in that case the wrapping arithmetic was
+    /// already exact modulo `2¹²⁸`, and the result is bit-identical to the
+    /// unchecked formula, as it is for every input whose intermediates fit.
     #[must_use]
     pub fn inverse(self) -> Option<Self> {
-        let det = self.determinant();
+        let (a, b, c) = (self.col0, self.col1, self.col2);
+
+        // Cofactor matrix transposed (adjugate)
+        let c00 = wide_cofactor(b.y, c.z, b.z, c.y)?;
+        let c01 = wide_cofactor(a.z, c.y, a.y, c.z)?;
+        let c02 = wide_cofactor(a.y, b.z, a.z, b.y)?;
+
+        let c10 = wide_cofactor(b.z, c.x, b.x, c.z)?;
+        let c11 = wide_cofactor(a.x, c.z, a.z, c.x)?;
+        let c12 = wide_cofactor(a.z, b.x, a.x, b.z)?;
+
+        let c20 = wide_cofactor(b.x, c.y, b.y, c.x)?;
+        let c21 = wide_cofactor(a.y, c.x, a.x, c.y)?;
+        let c22 = wide_cofactor(a.x, b.y, a.y, b.x)?;
+
+        // Same expansion as `determinant`, summed exactly
+        let minor = wide_cofactor(a.y, c.z, a.z, c.y)?;
+        let det = wide_fit(wide_add(
+            wide_add(
+                wide_mul_floor(a.x, c00),
+                wide_neg(wide_mul_floor(b.x, minor)),
+            ),
+            wide_mul_floor(c.x, c02),
+        ))?;
         if det.is_zero() {
             return None;
         }
+        // `1 / det` is `2¹²⁸ / raw` in raw units, which reaches `2¹²⁷` for
+        // `|raw| ≤ 2` (`|det| ≤ 2⁻⁶³`) and would wrap inside the division
+        let det_raw = ((det.hi as i128) << 64) | det.lo as i128;
+        if det_raw.unsigned_abs() <= 2 {
+            return None;
+        }
         let inv_det = Fix128::ONE / det;
-
-        // Cofactor matrix transposed (adjugate), scaled by 1/det
-        let c00 = self.col1.y * self.col2.z - self.col1.z * self.col2.y;
-        let c01 = self.col0.z * self.col2.y - self.col0.y * self.col2.z;
-        let c02 = self.col0.y * self.col1.z - self.col0.z * self.col1.y;
-
-        let c10 = self.col1.z * self.col2.x - self.col1.x * self.col2.z;
-        let c11 = self.col0.x * self.col2.z - self.col0.z * self.col2.x;
-        let c12 = self.col0.z * self.col1.x - self.col0.x * self.col1.z;
-
-        let c20 = self.col1.x * self.col2.y - self.col1.y * self.col2.x;
-        let c21 = self.col0.y * self.col2.x - self.col0.x * self.col2.y;
-        let c22 = self.col0.x * self.col1.y - self.col0.y * self.col1.x;
+        let e = |x: Fix128| wide_fit(wide_mul_floor(x, inv_det));
 
         Some(Self {
-            col0: Vec3Fix::new(c00 * inv_det, c01 * inv_det, c02 * inv_det),
-            col1: Vec3Fix::new(c10 * inv_det, c11 * inv_det, c12 * inv_det),
-            col2: Vec3Fix::new(c20 * inv_det, c21 * inv_det, c22 * inv_det),
+            col0: Vec3Fix::new(e(c00)?, e(c01)?, e(c02)?),
+            col1: Vec3Fix::new(e(c10)?, e(c11)?, e(c12)?),
+            col2: Vec3Fix::new(e(c20)?, e(c21)?, e(c22)?),
         })
     }
 
