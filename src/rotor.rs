@@ -59,6 +59,13 @@
 //! # Determinism
 //!
 //! `Fix128` throughout, available under `no_std`.
+//!
+//! Mirror and rotation symmetry hold only up to rounding: a `Fix128` product
+//! rounds towards −∞, so `(−a)·b` and `−(a·b)` can differ by one unit of
+//! `2⁻⁶⁴`, and a mirrored or rotated input can give results that differ in
+//! the last bits.
+//! For example the reaction torques of the two senses of rotation are
+//! negatives of each other only to within one unit.
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::solver::RigidBody;
