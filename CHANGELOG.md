@@ -327,6 +327,7 @@ were introduced during that release window.
 
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
+- `CfdSolver::step_with_options`: 陽解法の分子拡散が安定限界 `ν dt / dx² ≤ 1/6` を超えても受け付け、市松模様の誤差が 1 step ごとに 1.4 倍に増えていた (`step_rans` は同じ入力を拒否していた) `StepError::DiffusionUnstable` を返し、何も変えずに拒否する `step` は error を返せないので doc に限界を書いた **Behavior change:** 限界を超える `dt` が `Err` になる (AUD-A-S1W4-005)
 - `TurbulenceSummary::clamped`: doc は打ち切ったセルの数だが、k-ω では k と ω の打ち切りを別々に数え、1 セルを 2 回数えていた (一様な 3³ で 54) セルごとに 1 回だけ数える (AUD-A-S1W4-010)
 - `sdf_fem_mesh::generate` / `generate_marching_tets`: 格子のセル数を f32 の商の切り捨てで決めていたので、幅がセルの整数倍でも商が 1 ulp 下に出ると最後の層が落ちた (幅 1.3 / セル 0.1 で 12 セル) 商を f64 で取り、1e-6 の相対余裕を付けて切り捨てる 端数のセルは従来どおり含めない (AUD-A-S2W3-010)
 - `multiphase::curvature_at`: doc は `1/|∇φ|` で割ると書いていたが、実際は Laplacian をそのまま返していたので、φ を 2 倍すると曲率も 2 倍になり、符号付き距離でない level set では値が誤っていた 界面の曲率 `κ = ∇·(∇φ/|∇φ|) = (|∇φ|²Δφ − ∇φᵀH∇φ)/|∇φ|³` を中心差分 (混合 2 階微分を含む) で計算する 符号付き距離の場では従来とほぼ同じ値 (AUD-A-S2W3-009)

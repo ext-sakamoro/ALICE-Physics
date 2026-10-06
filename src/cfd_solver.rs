@@ -1033,6 +1033,10 @@ impl CfdSolver {
     /// projection, which is where they enter the Poisson problem. A grid
     /// with no boundary conditions set — the default — is untouched by all
     /// three.
+    ///
+    /// `step` has no error channel and does not check the explicit diffusion
+    /// limit `ν dt / dx² ≤ 1/6`; [`Self::step_with_options`] refuses a step
+    /// beyond it with [`StepError::DiffusionUnstable`].
     pub fn step(&mut self, dt_s: Fix128) {
         self.step_with_projection(dt_s, None);
     }
@@ -1207,9 +1211,12 @@ impl CfdSolver {
     /// [`StepError::Pressure`] for the refusals of
     /// [`Self::step_with_pressure_solver`],
     /// [`StepError::WallModelNeedsViscosity`] for a wall model on a solver
-    /// with zero molecular viscosity, and [`StepError::ZeroReinitCount`] for
-    /// a reinitialisation with a zero count. ⚠️ On `Err` the solver is **not
-    /// stepped**: the grid, the level set and `step_count` are untouched.
+    /// with zero molecular viscosity, [`StepError::ZeroReinitCount`] for
+    /// a reinitialisation with a zero count, and [`StepError::DiffusionUnstable`]
+    /// when the explicit molecular diffusion number `ν dt / dx²` exceeds `1/6`
+    /// (the limit [`Self::step_rans`] applies with the eddy viscosity added).
+    /// ⚠️ On `Err` the solver is **not stepped**: the grid, the level set and
+    /// `step_count` are untouched.
     pub fn step_with_options(
         &mut self,
         dt_s: Fix128,
@@ -1223,6 +1230,15 @@ impl CfdSolver {
             return Err(StepError::WallModelNeedsViscosity);
         }
         let reinit = Self::reinit_for(options.level_set_reinit)?;
+        // the molecular diffusion is explicit too: the same 1/6 limit as step_rans
+        if self.density_kg_m3 > Fix128::ZERO {
+            let dx = self.grid.dx;
+            let diffusion_number =
+                self.dynamic_viscosity_pas / self.density_kg_m3 * dt_s / (dx * dx);
+            if diffusion_number > Fix128::from_ratio(1, 6) {
+                return Err(StepError::DiffusionUnstable { diffusion_number });
+            }
+        }
         let (bicgstab, wall, _) =
             self.step_body(dt_s, projection, options.wall_model.as_ref(), None, reinit);
         Ok(StepReport { bicgstab, wall })
