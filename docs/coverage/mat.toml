@@ -70,6 +70,15 @@
 #
 # Ids of other tables are the ones in those tables when this table was written.
 #
+# Lubrication axis (second wave): fluid-film, elastohydrodynamic, mixed and
+# boundary lubrication and their effect on vehicle brakes, wet roads and
+# bearings. The friction laws they feed stay in the contact-material rows
+# (Stribeck curve COV-MAT-112, roughness COV-MAT-114, pair data COV-MAT-108);
+# Hertz contact and rolling-bearing life are the structural table
+# (COV-STRUCT-061, 062); frictional heating is the heat-transfer table
+# (COV-THERM-044); the vehicle side of braking and weather grip is the multibody
+# table (COV-MBD-037, 043, 046, 138).
+#
 # status (exactly one of):
 #   implemented+oracle     implemented, and at least one non-ignored test checks
 #                          it against an independent reference
@@ -1304,5 +1313,155 @@ item = "single-element / material-point verification across all laws (Abaqus-sty
 source = "Abaqus Verification Guide (single-element tests); MOOSE material point tests"
 status = "missing"
 evidence = "材料点の共通の駆動関数は無い (各則は個別の関数)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-122"
+axis = "lubrication"
+item = "hydrodynamic lubrication: Reynolds equation for a thin film (slider and journal), film pressure and load capacity"
+source = "Hamrock-Schmid-Jacobson, Fundamentals of Fluid Film Lubrication ch.7-8; Szeri, Fluid Film Lubrication"
+status = "missing"
+evidence = "潤滑膜を扱う module は無い 接触の摩擦は材料ごとの一定係数 (COV-MAT-103〜106) で、速度依存の摩擦 COV-MAT-112 も missing grep: lubric は src/prestressed.rs の別語義のみ、stribeck / reynolds_equation / sommerfeld は 0 件"
+oracle_candidate = "無限幅の傾斜 slider の負荷容量の閉形式 (行 COV-MAT-133)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-123"
+axis = "lubrication"
+item = "journal-bearing closed forms (Petroff friction, Sommerfeld number, infinitely long and short bearings, Raimondi-Boyd design charts)"
+source = "Shigley's Mechanical Engineering Design ch.12; Raimondi-Boyd 1958"
+status = "missing"
+evidence = "潤滑膜を扱う module は無い 接触の摩擦は材料ごとの一定係数 (COV-MAT-103〜106) で、速度依存の摩擦 COV-MAT-112 も missing grep: lubric は src/prestressed.rs の別語義のみ、stribeck / reynolds_equation / sommerfeld は 0 件 車両と機械の軸受: 転がり軸受の寿命 COV-STRUCT-062 (missing) と並び、軸受の摩擦損失と発熱の入力になる"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-124"
+axis = "lubrication"
+item = "squeeze-film damping between approaching lubricated surfaces"
+source = "Hamrock-Schmid-Jacobson ch.10"
+status = "missing"
+evidence = "潤滑膜を扱う module は無い 接触の摩擦は材料ごとの一定係数 (COV-MAT-103〜106) で、速度依存の摩擦 COV-MAT-112 も missing grep: lubric は src/prestressed.rs の別語義のみ、stribeck / reynolds_equation / sommerfeld は 0 件"
+oracle_candidate = "平行円板の squeeze 力の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-125"
+axis = "lubrication"
+item = "elastohydrodynamic lubrication: pressure-viscosity law (Barus, Roelands) and central / minimum film thickness of rolling contacts (Hamrock-Dowson)"
+source = "Hamrock-Dowson 1977; Hamrock-Schmid-Jacobson ch.18"
+status = "missing"
+evidence = "潤滑膜を扱う module は無い 接触の摩擦は材料ごとの一定係数 (COV-MAT-103〜106) で、速度依存の摩擦 COV-MAT-112 も missing grep: lubric は src/prestressed.rs の別語義のみ、stribeck / reynolds_equation / sommerfeld は 0 件 Hertz の接触圧は構造の表の転がり疲労 COV-STRUCT-061 (I+O) が持つ 歯車・転がり軸受の油膜厚さの判定に効く"
+oracle_candidate = "Hamrock-Dowson の膜厚式 (行 COV-MAT-135)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-126"
+axis = "lubrication"
+item = "lubrication regime from the film parameter lambda = h_min / sigma and the Hersey number; the Stribeck curve assembled from the regimes"
+source = "Stribeck 1902; Hersey 1914; Hutchings-Shipway, Tribology ch.4"
+status = "missing"
+evidence = "COV-MAT-112 (速度依存の摩擦としての Stribeck 曲線、missing) の子 本行は曲線を潤滑の領域から組む側"
+oracle_candidate = "測定した Stribeck 曲線 (行 COV-MAT-136)"
+limitation = ""
+
+[[item]]
+id = "COV-MAT-127"
+axis = "lubrication"
+item = "mixed lubrication: load sharing between asperity contact (Greenwood-Williamson, COV-MAT-114) and the fluid film (Patir-Cheng flow factors)"
+source = "Patir-Cheng 1978; Greenwood-Williamson 1966"
+status = "missing"
+evidence = "潤滑膜を扱う module は無い 接触の摩擦は材料ごとの一定係数 (COV-MAT-103〜106) で、速度依存の摩擦 COV-MAT-112 も missing grep: lubric は src/prestressed.rs の別語義のみ、stribeck / reynolds_equation / sommerfeld は 0 件 粗さの行 COV-MAT-114 も missing"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-128"
+axis = "lubrication"
+item = "boundary lubrication and additive films (friction plateau, film breakdown with temperature and the scuffing limit) (推測)"
+source = "Hutchings-Shipway ch.4; Blok 1937 (flash temperature)"
+status = "missing"
+evidence = "潤滑膜を扱う module は無い 接触の摩擦は材料ごとの一定係数 (COV-MAT-103〜106) で、速度依存の摩擦 COV-MAT-112 も missing grep: lubric は src/prestressed.rs の別語義のみ、stribeck / reynolds_equation / sommerfeld は 0 件 滑り接触の摩擦発熱は熱の表 COV-THERM-044 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-129"
+axis = "lubrication"
+item = "lubricant viscosity against temperature and pressure (Walther / ASTM D341, viscosity index)"
+source = "ASTM D341; ISO 2909"
+status = "missing"
+evidence = "温度依存の粘度 COV-MAT-099 (missing) の子 潤滑油の data は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-130"
+axis = "lubrication"
+item = "wet tyre-road contact: squeeze-out of the water film and the hydroplaning speed (Horne)"
+source = "Horne-Dreher 1963; Pacejka, Tyre and Vehicle Dynamics ch.1"
+status = "missing"
+evidence = "天候による grip は一定係数の切替 (COV-MBD-046、partial)、路面の水膜の推移は COV-MBD-138 (missing) 水膜厚さと速度から grip が落ちる経路が無いので、雨天の制動距離と操舵の限界が速度に依存しない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-131"
+axis = "lubrication"
+item = "brake pad-disc friction as a material law (friction coefficient against temperature, sliding speed and pressure) feeding brake fade"
+source = "Limpert, Brake Design and Safety ch.3; Eriksson-Jacobson 2000"
+status = "missing"
+evidence = "車両の制動は一定 μ の Coulomb ブレーキ (COV-MBD-037、I+O) で、温度・速度依存が無いので連続制動の fade (COV-MBD-043、missing) と制動距離の変化が出ない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-132"
+axis = "lubrication"
+item = "friction torque of rolling bearings and lubricated joints in mechanisms (Palmgren load and viscous terms)"
+source = "Palmgren, Ball and Roller Bearing Engineering; Harris-Kotzalas, Rolling Bearing Analysis"
+status = "missing"
+evidence = "剛体の関節の摩擦は無い (関節の motor COV-RIGID-030 は駆動) 車両の車輪軸受・駆動系の損失と機構の関節の減衰に効く"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-133"
+axis = "benchmark"
+item = "load capacity of an infinitely wide inclined slider bearing (closed form)"
+source = "Hamrock-Schmid-Jacobson ch.8"
+status = "missing"
+evidence = "Reynolds 方程式が無い (行 COV-MAT-122)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-134"
+axis = "benchmark"
+item = "short journal bearing (Ocvirk) load against eccentricity ratio"
+source = "Ocvirk 1952"
+status = "missing"
+evidence = "軸受の閉形式が無い (行 COV-MAT-123)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-135"
+axis = "benchmark"
+item = "Hamrock-Dowson film thickness of a ball-on-flat EHL contact against optical interferometry (参照値要確認)"
+source = "Hamrock-Dowson 1977; Gohar-Cameron 1967"
+status = "missing"
+evidence = "EHL が無い (行 COV-MAT-125)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MAT-136"
+axis = "benchmark"
+item = "measured Stribeck curve of a lubricated pin-on-disc or journal (参照値要確認)"
+source = "Stribeck 1902; Lu-Khonsari 2005"
+status = "missing"
+evidence = "潤滑の領域が無い (行 COV-MAT-126)"
 oracle_candidate = ""
 limitation = ""

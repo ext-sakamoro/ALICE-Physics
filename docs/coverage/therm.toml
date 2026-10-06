@@ -45,6 +45,14 @@
 #   - general linear / time-integration components (tridiagonal solve, ODE
 #     integrators, sub-iteration driver): num.toml.
 #
+# Thermodynamics axis (second wave): processes, cycles, phase equilibrium of pure
+# substances, property formulations, psychrometric processes and exergy. The
+# equations of state are the chemistry table (ideal gas COV-CHEM-001, calorically
+# perfect gas COV-CHEM-004, cubic equations COV-CHEM-011); saturation vapour
+# pressure and humidity measures are the environment table (COV-ENV-014, 015);
+# moist thermodynamics of the atmosphere is the atmosphere table (COV-ATMOS-023 to
+# 033).
+#
 # status (exactly one of):
 #   implemented+oracle     implemented, and at least one non-ignored test checks
 #                          it against an independent reference
@@ -1089,5 +1097,215 @@ item = "NAFEMS standard thermal benchmarks T1-T4"
 source = "NAFEMS, The Standard NAFEMS Benchmarks (thermal); 問題設定と参照値は参照値要確認"
 status = "missing"
 evidence = "対流・放射・固定温度の境界と 2-D / 3-D の定常 solver が無いので組めない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-103"
+axis = "thermodynamics"
+item = "first law for closed systems and the steady-flow energy equation of a control volume (enthalpy flow, shaft work, heat)"
+source = "Çengel-Boles, Thermodynamics: An Engineering Approach ch.4-5; Moran-Shapiro ch.2, ch.4"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-104"
+axis = "thermodynamics"
+item = "ideal-gas process relations: isothermal, isobaric, isochoric, isentropic and polytropic (p v^n), with boundary work and heat"
+source = "Çengel-Boles ch.4, ch.7; Moran-Shapiro ch.3"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ 等エントロピーの関係は圧縮性流れの淀み点比 src/compressible.rs::stagnation_temp_ratio の中にだけある (過程の API ではない) 比熱一定の気体は COV-CHEM-004 (missing)"
+oracle_candidate = "src/compressible.rs::stagnation_temp_ratio を安い参照経路に T2/T1 = (p2/p1)^((gamma-1)/gamma)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-105"
+axis = "thermodynamics"
+item = "real-gas departure functions for enthalpy and entropy (from a cubic equation of state, generalised charts)"
+source = "Çengel-Boles ch.12; Poling-Prausnitz-O'Connell, The Properties of Gases and Liquids ch.6"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ 3 次の状態方程式は化学の表 COV-CHEM-011 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-106"
+axis = "thermodynamics"
+item = "phase equilibrium of a pure substance: saturation curve (Clausius-Clapeyron, Antoine), quality and two-phase mixture properties, critical and triple points"
+source = "Çengel-Boles ch.3; Moran-Shapiro ch.3"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ 水と氷の飽和蒸気圧は気象の側 COV-ENV-014 (missing) 本行は任意の純物質の飽和線と 2 相の状態量"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-107"
+axis = "thermodynamics"
+item = "water and steam properties (IAPWS-IF97)"
+source = "IAPWS-IF97 (Wagner et al. 2000)"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = "IF97 の検証表 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-108"
+axis = "thermodynamics"
+item = "refrigerant property data (R134a, R1234yf, R744, R290)"
+source = "NIST REFPROP feature list; ASHRAE Handbook Fundamentals ch.30"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-109"
+axis = "thermodynamics"
+item = "Carnot efficiency and the Carnot COP bounds of heat engines, refrigerators and heat pumps"
+source = "Çengel-Boles ch.6"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = "閉形式そのもの"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-110"
+axis = "thermodynamics"
+item = "air-standard Otto, Diesel and dual cycles (thermal efficiency, mean effective pressure)"
+source = "Çengel-Boles ch.9; Heywood, Internal Combustion Engine Fundamentals ch.5"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ 車両の機関は全開トルクの表 (COV-MBD-025、I+O) で cycle から作っていない"
+oracle_candidate = "行 COV-THERM-120"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-111"
+axis = "thermodynamics"
+item = "Brayton cycle with component isentropic efficiencies, regeneration, intercooling and reheat"
+source = "Çengel-Boles ch.9; Saravanamuttoo, Gas Turbine Theory ch.2"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-112"
+axis = "thermodynamics"
+item = "Rankine cycle with superheat, reheat and feedwater heating"
+source = "Çengel-Boles ch.10"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ 水の状態量 (行 COV-THERM-107) が前提"
+oracle_candidate = "行 COV-THERM-122"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-113"
+axis = "thermodynamics"
+item = "vapour-compression refrigeration and heat-pump cycle (COP, superheat, subcooling)"
+source = "Çengel-Boles ch.11; ASHRAE Handbook Fundamentals ch.2"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ 冷媒の状態量 (行 COV-THERM-108) が前提"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-114"
+axis = "thermodynamics"
+item = "steady-flow devices: compressor, turbine, nozzle, diffuser and throttling valve (isentropic efficiency, Joule-Thomson expansion)"
+source = "Çengel-Boles ch.5, ch.7"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ 熱交換器の熱量収支は fin / heat exchanger の行 (COV-THERM-082 effectiveness-NTU、missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-115"
+axis = "thermodynamics"
+item = "thermodynamic property relations (Maxwell relations, c_p - c_v for any substance, Joule-Thomson coefficient, Clapeyron equation)"
+source = "Çengel-Boles ch.12; Callen, Thermodynamics ch.7"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-116"
+axis = "thermodynamics"
+item = "psychrometric processes of moist air for building and vehicle air conditioning (sensible heating and cooling, cooling with dehumidification, adiabatic mixing, evaporative cooling, cooling tower)"
+source = "ASHRAE Handbook Fundamentals ch.1; Çengel-Boles ch.14"
+status = "missing"
+evidence = "湿度の定義 COV-ENV-015 (missing) の子 気象の湿潤熱力学は大気の表 (COV-ATMOS-023〜033) 本行は空調の過程"
+oracle_candidate = "ASHRAE の状態点 (行 COV-THERM-123)"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-117"
+axis = "thermodynamics"
+item = "entropy balance and entropy generation of a process (second-law check)"
+source = "Çengel-Boles ch.7; Bejan, Entropy Generation Minimization"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-118"
+axis = "thermodynamics"
+item = "exergy (availability), exergy destruction and second-law efficiency"
+source = "Bejan, Advanced Engineering Thermodynamics ch.3; Kotas, The Exergy Method"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-119"
+axis = "thermodynamics"
+item = "transient lumped thermodynamic systems: filling and emptying of a gas tank, compressed-air storage (推測)"
+source = "Çengel-Boles ch.5 (unsteady-flow processes)"
+status = "missing"
+evidence = "工学熱力学 (過程・cycle・相平衡・湿り空気) の module は無い 状態方程式は理想気体 1 種だけ (src/compressible.rs::IdealGas、化学の表 COV-CHEM-001 で I+O) grep: carnot / otto / brayton / psychro / exergy は 0 件、rankine は src/compressible.rs の Rankine-Hugoniot のみ"
+oracle_candidate = "断熱充填の終温 T = gamma T_line の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-THERM-120"
+axis = "benchmark"
+item = "air-standard Otto efficiency 1 - r^(1 - gamma)"
+source = "Çengel-Boles ch.9"
+status = "missing"
+evidence = "cycle が無い (行 COV-THERM-110) 理想気体の状態式は src/compressible.rs::IdealGas にある"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-121"
+axis = "benchmark"
+item = "van der Waals critical constants and Z_c = 3/8"
+source = "Callen ch.9"
+status = "missing"
+evidence = "3 次の状態方程式が無い (COV-CHEM-011)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-122"
+axis = "benchmark"
+item = "ideal Rankine-cycle efficiency of a textbook steam plant (参照値要確認)"
+source = "Çengel-Boles ch.10 examples"
+status = "missing"
+evidence = "水の状態量と cycle が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-THERM-123"
+axis = "benchmark"
+item = "psychrometric state points against ASHRAE tables (参照値要確認)"
+source = "ASHRAE Handbook Fundamentals ch.1"
+status = "missing"
+evidence = "湿り空気の過程が無い (行 COV-THERM-116)"
 oracle_candidate = ""
 limitation = ""

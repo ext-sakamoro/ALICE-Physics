@@ -65,6 +65,17 @@
 # (substrings of other words) match other meanings only; rows below that say
 # "src 0 件" were checked word by word.
 #
+# Solid-state axis (second wave): a declaration of range, every row missing. The
+# band rows that existed before stay where they are and are cited, not repeated:
+# Bloch theorem and Kronig-Penney COV-QUANTUM-025, tight-binding bands
+# COV-QUANTUM-091, phonons COV-QUANTUM-114, Kronig-Penney band edges
+# COV-QUANTUM-130. Fermi-Dirac occupation, the degenerate Fermi gas and the
+# Einstein / Debye heat capacity are the statistics rows (COV-QUANTUM-107, 110,
+# 111). Photonic bands are the electromagnetics table (COV-EM-058). Many of the
+# semiconductor and superconductor closed forms are real-valued; Bloch phases,
+# Ginzburg-Landau order parameters and band structures need the complex type the
+# crate does not have.
+#
 # status (exactly one of):
 #   implemented+oracle     implemented, and at least one non-ignored test checks
 #                          it against an independent reference
@@ -1442,4 +1453,284 @@ source = "Bethe 1931; Hulthén 1938"
 status = "missing"
 evidence = "src 0 件 (推測)"
 oracle_candidate = "1/4 − ln 2 (J = 1、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-136"
+axis = "solid-state"
+item = "crystal lattice and reciprocal lattice, Brillouin zone and high-symmetry k-paths"
+source = "Ashcroft-Mermin, Solid State Physics ch.4-5; Kittel, Introduction to Solid State Physics ch.1-2"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) 粒子の表の初期格子 COV-PART-046 は MD の初期配置で別物"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-137"
+axis = "solid-state"
+item = "nearly-free-electron bands: gaps 2|U_G| at the zone boundaries"
+source = "Ashcroft-Mermin ch.9"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) Bloch の定理と Kronig-Penney は COV-QUANTUM-025 (missing) 複素数の型が無い (表冒頭の根本、Bloch の位相因子が書けない)"
+oracle_candidate = "Kronig-Penney の弱い周期 potential の極限で gap = 2|U_G|"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-138"
+axis = "solid-state"
+item = "effective mass tensor and group velocity from the band curvature"
+source = "Ashcroft-Mermin ch.12"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-139"
+axis = "solid-state"
+item = "electronic density of states: free-electron closed forms in 1-D, 2-D and 3-D, and numerical DOS of a band structure (tetrahedron method, smearing)"
+source = "Ashcroft-Mermin ch.2, ch.8; Blöchl et al. 1994"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) phonon の DOS は COV-QUANTUM-114 (missing) が持つ"
+oracle_candidate = "3-D 自由電子 g(E) ∝ sqrt(E) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-140"
+axis = "solid-state"
+item = "Fermi level from the electron count and finite-temperature occupation of a band structure"
+source = "Ashcroft-Mermin ch.2"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) Fermi-Dirac 分布 COV-QUANTUM-107 と縮退 Fermi 気体 COV-QUANTUM-111 (いずれも missing) を使う"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-141"
+axis = "solid-state"
+item = "Drude conductivity, Hall coefficient and magnetoresistance of metals"
+source = "Ashcroft-Mermin ch.1; Kittel ch.6"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = "Hall 係数 R_H = -1/(n e) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-142"
+axis = "solid-state"
+item = "Boltzmann transport in the relaxation-time approximation (conductivity, Seebeck coefficient, Wiedemann-Franz law)"
+source = "Ashcroft-Mermin ch.13; Ziman, Electrons and Phonons"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = "Wiedemann-Franz の Lorenz 数"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-143"
+axis = "solid-state"
+item = "lattice thermal conductivity from phonons (kinetic formula k = C v l / 3, Umklapp scattering, Callaway model)"
+source = "Ziman ch.8; Callaway 1959"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) phonon の分散と DOS は COV-QUANTUM-114、Debye の比熱は COV-QUANTUM-110 (いずれも missing) 熱の表の伝導率は材料の定数"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-144"
+axis = "solid-state"
+item = "electron-phonon resistivity (Bloch-Grüneisen) and Matthiessen's rule"
+source = "Ziman ch.9; Ashcroft-Mermin ch.26"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = "低温 T^5 と高温 T の極限"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-145"
+axis = "solid-state"
+item = "London equations of superconductivity: penetration depth and Meissner screening"
+source = "Tinkham, Introduction to Superconductivity ch.1"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = "平板の磁場の指数減衰 exp(-x / lambda_L)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-146"
+axis = "solid-state"
+item = "BCS theory: gap equation Delta(T), critical temperature, quasiparticle density of states"
+source = "Tinkham ch.3; Bardeen-Cooper-Schrieffer 1957"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = "比 2 Delta(0) / k_B T_c (行 COV-QUANTUM-163)"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-147"
+axis = "solid-state"
+item = "Ginzburg-Landau theory: coherence length, kappa, type I / II, upper critical field, vortex lattice (time-dependent GL as the numerical form)"
+source = "Tinkham ch.4-5; Du-Gunzburger-Peterson 1992 (TDGL)"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) 複素数の型が無い (表冒頭の根本、Bloch の位相因子が書けない)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-148"
+axis = "solid-state"
+item = "Josephson junction: DC and AC relations, RCSJ model, Shapiro steps"
+source = "Tinkham ch.6; Barone-Paterno"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = "RCSJ の過減衰極限の時間平均電圧 V = R sqrt(I^2 - I_c^2) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-149"
+axis = "solid-state"
+item = "intrinsic semiconductor: carrier density n_i(T) from the effective densities of states, band-gap temperature dependence (Varshni)"
+source = "Sze-Ng, Physics of Semiconductor Devices ch.1"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-150"
+axis = "solid-state"
+item = "doped semiconductor: donors and acceptors, mass-action law, charge neutrality and the Fermi level, freeze-out"
+source = "Sze-Ng ch.1; Pierret, Semiconductor Device Fundamentals ch.2"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-151"
+axis = "solid-state"
+item = "carrier mobility (lattice and ionised-impurity scattering, Matthiessen), drift and diffusion currents, Einstein relation"
+source = "Sze-Ng ch.1; Caughey-Thomas 1967"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-152"
+axis = "solid-state"
+item = "generation and recombination (Shockley-Read-Hall, radiative, Auger) and minority-carrier lifetime"
+source = "Sze-Ng ch.1; Shockley-Read 1952"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-153"
+axis = "solid-state"
+item = "drift-diffusion equations coupled to Poisson's equation (Scharfetter-Gummel discretisation, Gummel iteration)"
+source = "Selberherr, Analysis and Simulation of Semiconductor Devices; Scharfetter-Gummel 1969"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) 静電場の Poisson solver も電磁の表で missing (COV-EM-071)"
+oracle_candidate = "行 COV-QUANTUM-162"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-154"
+axis = "solid-state"
+item = "pn junction: built-in potential, depletion width and capacitance, Shockley ideal diode equation"
+source = "Sze-Ng ch.2"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = "階段接合の空乏層幅の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-155"
+axis = "solid-state"
+item = "MOS capacitor and MOSFET (threshold voltage, square-law and velocity-saturation currents)"
+source = "Sze-Ng ch.4, ch.6"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-156"
+axis = "solid-state"
+item = "photovoltaic cell: photocurrent, single-diode I-V model, fill factor, detailed-balance (Shockley-Queisser) limit"
+source = "Würfel, Physics of Solar Cells; Shockley-Queisser 1961"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-157"
+axis = "solid-state"
+item = "magnetism in solids: Weiss mean field, Curie-Weiss susceptibility, Heisenberg exchange, spin waves"
+source = "Ashcroft-Mermin ch.31-33; Blundell, Magnetism in Condensed Matter"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質) 量子の spin の行 (COV-QUANTUM-052 から) は 1 粒子、本行は格子の集団"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-158"
+axis = "benchmark"
+item = "graphene tight-binding: Dirac cone at K and the Fermi velocity"
+source = "Castro Neto et al. 2009"
+status = "missing"
+evidence = "tight-binding の band は COV-QUANTUM-091 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-159"
+axis = "benchmark"
+item = "phonon dispersion of the 1-D monatomic and diatomic chains (acoustic and optical branches, gap)"
+source = "Ashcroft-Mermin ch.22; Kittel ch.4"
+status = "missing"
+evidence = "phonon の行 COV-QUANTUM-114 (missing) 実数の固有値問題なので複素型が無くても組める (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-160"
+axis = "benchmark"
+item = "free-electron Fermi energy and density of states of an alkali metal (参照値要確認)"
+source = "Ashcroft-Mermin table 2.1"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-161"
+axis = "benchmark"
+item = "intrinsic carrier density of silicon at 300 K (参照値要確認)"
+source = "Sze-Ng appendix; Green 1990"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-162"
+axis = "benchmark"
+item = "abrupt silicon pn junction: drift-diffusion I-V against the Shockley equation"
+source = "Sze-Ng ch.2; Selberherr"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-QUANTUM-163"
+axis = "benchmark"
+item = "BCS universal ratios: 2 Delta(0) / k_B T_c and the specific-heat jump Delta C / gamma T_c"
+source = "Tinkham ch.3"
+status = "missing"
+evidence = "固体の電子状態・輸送・超伝導・半導体を扱う module は無い grep: bloch / fermi / semicond / superconduct / diode / brillouin / phonon / josephson / curie は src/ で 0 件 (mobility は filament data の別語義、drude は FDTD の分散媒質)"
+oracle_candidate = ""
 limitation = ""

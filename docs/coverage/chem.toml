@@ -50,6 +50,16 @@
 #     distance falloff) and the explosion crater of the destruction layer
 #     (COV-FRACT-074) are not chemistry and are not counted.
 #
+# Battery axis (second wave): cell models, cell heat and thermal runaway, ageing,
+# packs and the battery of an electric vehicle. The electrochemistry rows above
+# are the parents: Nernst COV-CHEM-083, Butler-Volmer COV-CHEM-084, ion transport
+# COV-CHEM-086, the bundled cell-model row COV-CHEM-087 (the battery rows split
+# it). The thermal solver that receives the cell heat is the heat-transfer table
+# (Joule heating COV-THERM-042, lumped capacitance COV-THERM-029); the traction
+# motor and regenerative braking are the multibody table (COV-MBD-034); the
+# lumped circuit elements of the electromagnetics table (COV-EM-083 to 085) are
+# elements in a field lattice, not a circuit solver.
+#
 # status (exactly one of):
 #   implemented+oracle     implemented, and at least one non-ignored test checks
 #                          it against an independent reference
@@ -1197,4 +1207,204 @@ source = "Babrauskas, Ignition Handbook ch.7 and ch.14 (wood); Kanury, Introduct
 status = "missing"
 evidence = "摩擦仕事から温度への段 (剛体の接触の熱、COV-THERM-088)、着火 (COV-CHEM-057)、木材の物性 (COV-MAT-019) が全部 missing で、連鎖を組む口も無い"
 oracle_candidate = "一定の摩擦力と滑り速度の熱流束 q = μ N v / A による半無限体の表面温度上昇の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-113"
+axis = "battery"
+item = "open-circuit voltage against state of charge and temperature (OCV-SOC curve, entropic coefficient dU/dT)"
+source = "Plett, Battery Management Systems vol.1 ch.2; Newman-Thomas-Alyea, Electrochemical Systems ch.2"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) 平衡電位の Nernst 式 COV-CHEM-083 (missing) の電池の側"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-114"
+axis = "battery"
+item = "state of charge by coulomb counting (capacity, coulombic efficiency) and the rate dependence of usable capacity (Peukert)"
+source = "Plett vol.1 ch.2; Peukert 1897"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致)"
+oracle_candidate = "一定電流の放電の SOC の直線"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-115"
+axis = "battery"
+item = "internal-resistance and Thevenin equivalent-circuit cell models with one or two RC pairs"
+source = "Plett vol.1 ch.2; He-Xiong-Fan 2011"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) COV-CHEM-087 (電池の cell model の束、missing) の子 電磁の表の集中定数素子 (COV-EM-083〜085) は FDTD の格子の中の素子で回路網の solver ではない"
+oracle_candidate = "1RC の階段応答 (行 COV-CHEM-130)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-116"
+axis = "battery"
+item = "identification of equivalent-circuit parameters from a pulse test (HPPC: R0 from the instantaneous step, R1 and C1 from the relaxation)"
+source = "USABC / FreedomCAR battery test manual (HPPC); Plett vol.1 ch.2"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) 一般の同定は最適化の表 (COV-OPT-032 / 033、missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-117"
+axis = "battery"
+item = "single-particle model and single-particle model with electrolyte (spherical solid diffusion, Butler-Volmer at each electrode)"
+source = "Santhanagopalan et al. 2006; Marquis et al. 2019 (SPMe)"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) COV-CHEM-087 の子 電極反応は COV-CHEM-084 (Butler-Volmer、missing)"
+oracle_candidate = "行 COV-CHEM-129"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-118"
+axis = "battery"
+item = "solid-phase diffusion in a spherical particle (Fick in r; closed-form, polynomial and Duhamel approximations)"
+source = "Crank, The Mathematics of Diffusion ch.6; Subramanian et al. 2005"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致)"
+oracle_candidate = "球への一定 flux の閉形式 (行 COV-CHEM-132)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-119"
+axis = "battery"
+item = "Doyle-Fuller-Newman pseudo-two-dimensional cell model (concentrated-solution electrolyte transport, porous-electrode potentials, Butler-Volmer, particle diffusion)"
+source = "Doyle-Fuller-Newman 1993; Newman-Thomas-Alyea ch.22; PyBaMM and LIONSIMBA feature lists"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) COV-CHEM-087 の子 電解質のイオン輸送は COV-CHEM-086 (Nernst-Planck、missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-120"
+axis = "battery"
+item = "cell heat generation (irreversible Joule and overpotential heat, reversible entropic heat; Bernardi) handed to the thermal solver"
+source = "Bernardi-Pawlikowski-Newman 1985"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) 受け手の Joule 発熱は熱の表 COV-THERM-042 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-121"
+axis = "battery"
+item = "thermal model of a cell, module and pack (lumped and distributed: cooling plate, convection, cell-to-cell conduction)"
+source = "Pesaran 2002; Bandhauer-Garimella-Fuller 2011"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) 集中定数の冷却は熱の表 COV-THERM-029 (I+O) にあるが電池の発熱源が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-122"
+axis = "battery"
+item = "thermal runaway of a cell: Arrhenius decomposition reactions (SEI, anode-electrolyte, cathode, electrolyte; Hatchard, Kim) with self-heating and venting"
+source = "Hatchard et al. 2001; Kim et al. 2007; Feng et al. 2018 (review)"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) Arrhenius の速度は COV-CHEM-018 (I+O) にあるが反応系を時間発展させる module が無い (0-D 反応器 COV-CHEM-057、熱爆発 COV-CHEM-058 も missing) 熱の側は熱の表の伝導 solver"
+oracle_candidate = "ARC の暴走開始温度 (行 COV-CHEM-131)"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-123"
+axis = "battery"
+item = "propagation of thermal runaway between cells in a module (cell-to-cell heat transfer, vent gas, fire)"
+source = "Feng et al. 2015; Lopez et al. 2015"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) 延焼の行 (fire 軸) と同じ受け口が要る"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-124"
+axis = "battery"
+item = "abuse triggers: internal short circuit, nail penetration, crush and overcharge (推測)"
+source = "Feng et al. 2018; SAE J2464"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-125"
+axis = "battery"
+item = "degradation: SEI growth, lithium plating, capacity fade and resistance rise over cycles and calendar time"
+source = "Ramadass et al. 2004; Reniers-Mulder-Howey 2019"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致)"
+oracle_candidate = "SEI 成長の sqrt(t) 則"
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-126"
+axis = "battery"
+item = "pack model: series-parallel cell network, cell-to-cell variation, imbalance and balancing"
+source = "Plett vol.2 ch.6; Dubarry et al. 2009"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-127"
+axis = "battery"
+item = "battery of an electric vehicle: pack power to the traction motor and regenerative braking back into the pack (current limits from state of charge and temperature), consumption over a drive cycle"
+source = "Ehsani et al., Modern Electric, Hybrid Electric, and Fuel Cell Vehicles ch.4, ch.13; WLTP drive cycle"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致) 車両の駆動は内燃機関のトルク曲線 (COV-MBD-025、I+O) だけで、電動の駆動と回生 COV-MBD-034 も missing 電池と駆動系の口が無いので、車両の制御の学習で電費・回生の制限・温度による出力制限を状態に入れられない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-128"
+axis = "battery"
+item = "electric double-layer capacitor (Helmholtz and Gouy-Chapman-Stern capacitance, transmission-line model) (推測、優先度低)"
+source = "Conway, Electrochemical Supercapacitors; Bard-Faulkner ch.13"
+status = "missing"
+evidence = "電池を扱う module は無い grep: battery / state_of_charge / lithium は src/ で 0 件 (soc は材料の語の部分一致)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-129"
+axis = "benchmark"
+item = "constant-current discharge of the single-particle model against a Doyle-Fuller-Newman reference (published parameter set, 参照値要確認)"
+source = "Marquis et al. 2019; Torchio et al. 2016 (LIONSIMBA); Chen et al. 2020 (LG M50 parameters)"
+status = "missing"
+evidence = "cell model が無い (行 COV-CHEM-117、COV-CHEM-119)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-130"
+axis = "benchmark"
+item = "step response of a one-RC Thevenin model, v(t) = OCV - I R0 - I R1 (1 - exp(-t / (R1 C1)))"
+source = "Plett vol.1 ch.2"
+status = "missing"
+evidence = "等価回路が無い (行 COV-CHEM-115)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-131"
+axis = "benchmark"
+item = "onset temperature and self-heating rate of thermal runaway in accelerating-rate calorimetry (参照値要確認)"
+source = "Feng et al. 2018; Hatchard et al. 2001"
+status = "missing"
+evidence = "熱暴走の model が無い (行 COV-CHEM-122)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-CHEM-132"
+axis = "benchmark"
+item = "constant flux into a sphere: closed-form surface concentration for the particle-diffusion solver"
+source = "Crank ch.6"
+status = "missing"
+evidence = "粒子内拡散が無い (行 COV-CHEM-118)"
+oracle_candidate = ""
 limitation = ""

@@ -42,6 +42,16 @@
 # bisection of the FE mesher; "eigen" matches the thermal eigenstrain of the
 # FE solver. None of these is the capability of the row it was searched for.
 #
+# Mesh axis (second wave): mesh generation and geometry processing as general
+# components, the rows that the FE, additive-manufacturing, fracture, soft-body,
+# coupling and optimisation tables would share. Rows already counted elsewhere
+# are cited, not repeated: SDF to tetrahedra COV-OPT-065, SDF to a collision
+# surface COV-RIGID-070, quality under refinement COV-FEM-115, h-adaptivity
+# COV-FEM-112, design morphing COV-OPT-066, fluid mesh motion COV-COUPLE-016,
+# cloth remeshing COV-SOFT-078, remeshing along a crack COV-FRACT-031, interface
+# surface extraction COV-MULTIPHASE-024, block-structured refinement COV-NUM-101,
+# geometry import into the electromagnetic material map COV-EM-041.
+#
 # status (exactly one of):
 #   implemented+oracle     a general component exists, and at least one
 #                          non-ignored test checks it against an independent
@@ -1081,4 +1091,194 @@ source = "Berger-Oliger 1984; Berger-Colella 1989; AMReX; Chombo; p4est"
 status = "missing"
 evidence = "格子の階層は無い (推測: AMR / octree / quadtree / Berger で src 0 件、COV-CFD-006 は「格子は固定解像度のみ」で missing) 四面体の最長辺二分割は src/sdf_fem_mesh.rs::refine_by_max_edge_length refine_by_max_edge_length / src/sdf_fem_mesh.rs::try_refine_marked try_refine_marked で固体 FE の h 適応 (COV-FEM-112) 専用、構造格子の階層ではない"
 oracle_candidate = "細分化境界を越える一様流が不変、粗密境界の refluxing で保存量の総和が bit 一致で保たれる"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-102"
+axis = "mesh"
+item = "Delaunay tetrahedralisation of a point set (incremental Bowyer-Watson with robust orientation and in-sphere predicates)"
+source = "Cheng-Dey-Shewchuk, Delaunay Mesh Generation ch.3-5; Shewchuk 1997 (robust predicates); CGAL / TetGen feature lists"
+status = "missing"
+evidence = "四面体 mesh の生成は SDF の格子を切る方式だけ (src/sdf_fem_mesh.rs::generate / src/sdf_fem_mesh.rs::generate_marching_tets、形状最適化の表 COV-OPT-065 が I+O で数える) grep: delaunay は src/sdf_fem_mesh.rs の「Delaunay 細分ではない」という注記のみ"
+oracle_candidate = "空の外接球の検査と Euler 標数 (行 COV-NUM-120)"
+limitation = ""
+
+[[item]]
+id = "COV-NUM-103"
+axis = "mesh"
+item = "boundary recovery of a given surface (constrained Delaunay) and Delaunay refinement for quality (Ruppert / Shewchuk)"
+source = "Si 2015 (TetGen); Shewchuk 2002"
+status = "missing"
+evidence = "四面体 mesh の生成は SDF の格子を切る方式だけ (src/sdf_fem_mesh.rs::generate / src/sdf_fem_mesh.rs::generate_marching_tets、形状最適化の表 COV-OPT-065 が I+O で数える) FE の側の細分の品質は COV-FEM-115 (partial、最長辺の二分で Delaunay 細分ではない) 本行は汎用部品"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-104"
+axis = "mesh"
+item = "advancing-front tetrahedral meshing from a surface mesh"
+source = "Löhner, Applied CFD Techniques ch.3; Frey-George, Mesh Generation ch.6"
+status = "missing"
+evidence = "四面体 mesh の生成は SDF の格子を切る方式だけ (src/sdf_fem_mesh.rs::generate / src/sdf_fem_mesh.rs::generate_marching_tets、形状最適化の表 COV-OPT-065 が I+O で数える)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-105"
+axis = "mesh"
+item = "size-graded meshing of an SDF (octree or graded lattice with the cell size from curvature, local feature size and distance to the surface)"
+source = "Labelle-Shewchuk 2007 (isosurface stuffing); Frey-George ch.5"
+status = "missing"
+evidence = "四面体 mesh の生成は SDF の格子を切る方式だけ (src/sdf_fem_mesh.rs::generate / src/sdf_fem_mesh.rs::generate_marching_tets、形状最適化の表 COV-OPT-065 が I+O で数える) 格子は一様で、セルより細い特徴は黙って埋まる (src/sdf_fem_mesh.rs の Limitations に記載)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-106"
+axis = "mesh"
+item = "hexahedral and hex-dominant meshing (sweeping, grid-based with boundary projection)"
+source = "Frey-George ch.8; Owen 1998 (survey)"
+status = "missing"
+evidence = "hex 要素も固体 FE の表で missing (COV-FEM-012 / 013)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-107"
+axis = "mesh"
+item = "element quality measures as a callable component (radius-edge ratio, minimum dihedral angle, aspect ratio, scaled Jacobian)"
+source = "Shewchuk 2002 (What is a good linear element?); Knupp 2001"
+status = "missing"
+evidence = "品質を測る関数は test の中だけ (tests/mesh_quality.rs、tests/refinement_conformity.rs) で、呼び手に渡せる API は src/ に無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-108"
+axis = "mesh"
+item = "mesh improvement with fixed topology and with local reconnection (Laplacian and optimisation-based smoothing, edge and face swaps, sliver removal)"
+source = "Freitag-Ollivier-Gooch 1997; Klingner-Shewchuk 2007"
+status = "missing"
+evidence = "四面体 mesh の生成は SDF の格子を切る方式だけ (src/sdf_fem_mesh.rs::generate / src/sdf_fem_mesh.rs::generate_marching_tets、形状最適化の表 COV-OPT-065 が I+O で数える) 生成後に node を動かす・接続を変える操作は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-109"
+axis = "mesh"
+item = "conforming local refinement of marked tetrahedra (edge bisection propagated until no hanging node remains)"
+source = "Rivara 1984 (longest-edge bisection); Arnold-Mukherjee-Pouly 2000"
+status = "implemented+oracle"
+evidence = "src/sdf_fem_mesh.rs::try_refine_conforming / src/sdf_fem_mesh.rs::try_refine_marked oracle は面の使用回数の数え上げ (内部面はちょうど 2 回) tests/refinement_conformity.rs::uniform_refinement_stays_conforming / tests/refinement_conformity.rs::graded_refinement_stays_conforming FE の適応は COV-FEM-112 が数える 既知の欠陥 tests/audit_sdf_fem_mesh.rs::refinement_keeps_every_element_positively_wound (ignore = known defect AUD-A-S2W3-012、子の向きが混ざる)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-110"
+axis = "mesh"
+item = "coarsening and full adaptive remeshing with a size field (refine, coarsen and smooth to a target metric)"
+source = "Frey-George ch.21; Alauzet-Loseille 2016 (metric-based adaptation)"
+status = "missing"
+evidence = "細分 (行 COV-NUM-109) だけで粗くする操作が無い 布の適応 remesh COV-SOFT-078、き裂に沿う remesh COV-FRACT-031 (いずれも missing) が引く"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-111"
+axis = "mesh"
+item = "boundary-surface extraction of a tetrahedral mesh (faces used once; a non-manifold face is refused)"
+source = "Frey-George ch.1 (mesh data structures)"
+status = "implemented+oracle"
+evidence = "src/sdf_fem_mesh.rs::boundary_faces tests/analytic_sdf_fem_mesh_wiring.rs::a_non_cubic_block_matches_the_closed_form_tet_vertex_and_boundary_counts / tests/analytic_sdf_fem_mesh_wiring.rs::boundary_faces_reports_which_face_and_how_many_tets_claimed_it"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-112"
+axis = "mesh"
+item = "element-quality guarantee of the lattice SDF mesher (uniform quality of the whole-cube dicing, crossing snap that keeps slivers out under refinement)"
+source = "Labelle-Shewchuk 2007 (quality bounds of lattice-based meshers)"
+status = "implemented+oracle"
+evidence = "src/sdf_fem_mesh.rs::generate_marching_tets tests/mesh_quality.rs::whole_cube_dicing_has_uniform_quality / tests/mesh_quality.rs::marching_tets_stays_out_of_the_sliver_population oracle は二面角の下限の数え上げ 細分した後の品質の漂いは COV-FEM-115 (partial)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-113"
+axis = "mesh"
+item = "surface mesh simplification by edge collapse that keeps a closed surface closed and its genus"
+source = "Garland-Heckbert 1997; Hoppe 1996"
+status = "implemented+oracle"
+evidence = "src/collision_mesh_gen.rs::simplify_collision_mesh tests/analytic_collision_mesh.rs::simplifying_never_breaks_the_mesh / tests/analytic_collision_mesh.rs::simplifying_a_torus_keeps_its_hole / tests/analytic_collision_mesh.rs::simplifying_a_ball_keeps_a_closed_outward_sphere 生成は剛体の表 COV-RIGID-070 (同じ test が生成の行の evidence にも出る)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-114"
+axis = "mesh"
+item = "surface remeshing and repair (isotropic remeshing, hole filling, removal of self-intersections, watertightness check)"
+source = "Botsch et al., Polygon Mesh Processing ch.6-8"
+status = "missing"
+evidence = "表面 mesh の修復・再分割は無い (推測: remesh / repair で 0 件)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-115"
+axis = "mesh"
+item = "mesh deformation with fixed connectivity as a general component (Laplacian or pseudo-elastic smoothing of interior nodes, radial-basis interpolation of a boundary displacement)"
+source = "de Boer-van der Schoot-Bijl 2007 (RBF mesh motion); Stein-Tezduyar-Benney 2003"
+status = "missing"
+evidence = "設計変数による mesh morphing COV-OPT-066 と流体 mesh の界面追従 COV-COUPLE-016 (いずれも missing) の共通部品"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-116"
+axis = "mesh"
+item = "signed distance field from a closed triangle mesh (closest triangle with the sign from the winding number or angle-weighted pseudo-normals)"
+source = "Bærentzen-Aanæs 2005; Jacobson et al. 2013 (generalised winding number)"
+status = "missing"
+evidence = "SDF から mesh への向きはある (COV-RIGID-070、COV-OPT-065) が逆向きが無い (推測: mesh_to_sdf / winding で 0 件) 電磁の材料の取り込み COV-EM-041 (missing) が使う"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-117"
+axis = "mesh"
+item = "mesh exchange formats for tetrahedral and surface meshes (Gmsh .msh, VTK / VTU, STL, Exodus II)"
+source = "Gmsh, VTK and Exodus II format specifications"
+status = "missing"
+evidence = "mesh の読み書きは無い (推測: vtk / gmsh / exodus で 0 件) 場の書き出しは電磁の表 COV-EM-100 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-118"
+axis = "mesh"
+item = "curved boundary for higher-order elements (edge and face nodes projected onto the SDF surface)"
+source = "Sherwin-Peiró 2002; Persson-Peraire 2009"
+status = "missing"
+evidence = "P2 / P3 の辺 node は直線辺上 (固体 FE の曲辺アイソパラメトリック COV-FEM-016、missing) 本行は SDF の表面へ射影する汎用部品"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-119"
+axis = "mesh"
+item = "mesh partitioning for distributed runs (graph partitioning, space-filling-curve ordering)"
+source = "Karypis-Kumar 1998 (METIS); Bader, Space-Filling Curves"
+status = "missing"
+evidence = "分散の負荷分散 COV-NUM-071 (missing) が使う 格子の領域分割は一様な立方体の分割だけ (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NUM-120"
+axis = "benchmark"
+item = "Delaunay property of a random point set: empty circumspheres and the Euler characteristic of the result"
+source = "Cheng-Dey-Shewchuk ch.4"
+status = "missing"
+evidence = "Delaunay 分割が無い (行 COV-NUM-102)"
+oracle_candidate = ""
 limitation = ""
