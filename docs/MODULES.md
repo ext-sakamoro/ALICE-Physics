@@ -47,8 +47,8 @@ this file or listed twice, or when a linked example or test does not exist.
 | `math_util` | `Fix128` transcendentals and solvers (`exp_fix`, `cbrt_fix`, `pow_int`, root finding) |  | [`math_util_roots_powers`](../examples/math_util_roots_powers.rs) | standalone |
 | `linear_solver` | general Krylov solvers on `Fix128`: restarted GMRES(m) and BiCGStab, Jacobi / block Jacobi preconditioning, mandatory block equilibration for coupled systems |  | [`linear_solver_krylov`](../examples/linear_solver_krylov.rs) | standalone |
 | `det_math` | re-export of `alice-det-math`: deterministic `sin`, `exp`, `ln`, `powf`, … for `f32` / `f64` |  |  | — |
-| `metric` | the norm a distance is measured in (`‖·‖₁`, `‖·‖₂`, `‖·‖∞` mixes) and conversion to Euclidean bounds |  | [`metric_clearance_bounds`](../examples/metric_clearance_bounds.rs) | standalone (step 5 of 13 items) |
-| `rng` | PCG-XSH-RR deterministic random number generator |  | [`rng_streams_and_bounded`](../examples/rng_streams_and_bounded.rs) | standalone |
+| `metric` | the norm a distance is measured in (`‖·‖₁`, `‖·‖₂`, `‖·‖∞` mixes) and conversion to Euclidean bounds |  | [`metric_clearance_bounds`](../examples/metric_clearance_bounds.rs) | step |
+| `rng` | PCG-XSH-RR deterministic random number generator |  | [`rng_streams_and_bounded`](../examples/rng_streams_and_bounded.rs) | world API |
 | `error` | the crate-wide `PhysicsError` type |  |  | step |
 | `prelude` | commonly used types in one import |  |  | — |
 
@@ -72,7 +72,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `netcode_prediction` | client-side prediction with server reconciliation | std | [`rollback_netcode`](../examples/rollback_netcode.rs) | standalone |
 | `scene_io` | binary and JSON scene files with exact `Fix128` round trip | std | [`scene_snapshot_roundtrip`](../examples/scene_snapshot_roundtrip.rs) | standalone (binding 1 of 11 items) |
 | `profiling` | per-stage timers and per-frame statistics |  | [`profiling_stages`](../examples/profiling_stages.rs) | standalone |
-| `debug_render` | wireframe primitives for bodies, contacts, joints, BVH and forces |  | [`debug_render_primitives`](../examples/debug_render_primitives.rs) | standalone |
+| `debug_render` | wireframe primitives for bodies, contacts, joints, BVH and forces |  | [`debug_render_primitives`](../examples/debug_render_primitives.rs) | world API |
 | `gpu_bridge` | `GpuSolverBridge` trait for external GPU solvers that must match the CPU result bit for bit | gpu-solver-bridge | [`world_api_tour`](../examples/world_api_tour.rs) | standalone (step 1 of 3 items) |
 | `world_participant` | the contract a law signs to take part in the world's substep loop: participant trait, read-only substep context, per-body force accumulator, snapshot payload checks, three-valued observations |  | [`world_participant_contract`](../examples/world_participant_contract.rs) | standalone |
 
@@ -95,11 +95,11 @@ this file or listed twice, or when a linked example or test does not exist.
 | `bvh` | linear BVH over Morton codes with stackless traversal |  | [`bvh_leaf_aabb_roundtrip`](../examples/bvh_leaf_aabb_roundtrip.rs) | step |
 | `dynamic_bvh` | incremental AABB tree (insert / remove / update in O(log n)) |  |  | step |
 | `spatial` | spatial hash grid |  |  | standalone |
-| `raycast` | ray and shape casts |  | [`spatial_raycast_queries`](../examples/spatial_raycast_queries.rs) | standalone (binding 6 of 16 items) |
-| `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | binding |
-| `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | binding |
+| `raycast` | ray and shape casts |  | [`spatial_raycast_queries`](../examples/spatial_raycast_queries.rs) | standalone (world API 4, binding 2 of 16 items) |
+| `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
+| `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | world API |
 | `query` | sphere / capsule casts and overlap queries |  | [`spatial_queries`](../examples/spatial_queries.rs) | standalone |
-| `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone (binding 1 of 13 items) |
+| `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone (world API 2 of 13 items) |
 | `contact_cache` | persistent contact manifolds with warm starting, as an opt-in tool outside `PhysicsWorld::step` |  | [`contact_warm_start_cache`](../examples/contact_warm_start_cache.rs) | step |
 
 ## Joints and articulated bodies
@@ -134,16 +134,16 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `character` | kinematic capsule controller with move-and-slide and stair stepping (`move_and_slide` sees bodies as spheres and SDF colliders, not static colliders) |  | [`character_controller`](../examples/character_controller.rs) | standalone |
-| `world_character` | `PhysicsWorld::move_character`: move-and-slide of the controller's capsule against the world's collided geometry (body shapes, compound children, planes, height fields, triangle meshes, SDF) with slope limit and step-up |  | [`world_character`](../examples/world_character.rs) | standalone |
+| `character` | kinematic capsule controller with move-and-slide and stair stepping (`move_and_slide` sees bodies as spheres and SDF colliders, not static colliders) |  | [`character_controller`](../examples/character_controller.rs) | standalone (world API 3 of 11 items) |
+| `world_character` | `PhysicsWorld::move_character`: move-and-slide of the controller's capsule against the world's collided geometry (body shapes, compound children, planes, height fields, triangle meshes, SDF) with slope limit and step-up |  | [`world_character`](../examples/world_character.rs) | world API |
 | `character_state` | locomotion state machine (idle, walk, run, jump, fall, crouch) |  | [`character_state_machine`](../examples/character_state_machine.rs) | standalone |
 | `vehicle` | wheels, suspension, engine and steering |  | [`vehicle_drive`](../examples/vehicle_drive.rs) | standalone |
 | `vehicle_dynamics` | per-wheel contact forces, wheel spin, brakes and ABS, brush and Magic Formula tyres, road surfaces and weather, powertrain |  | [`vehicle_dynamics`](../examples/vehicle_dynamics.rs) | standalone |
-| `audio_physics` | audio parameters from impacts, sliding and rolling |  | [`audio_physics_events`](../examples/audio_physics_events.rs) | standalone |
+| `audio_physics` | audio parameters from impacts, sliding and rolling |  | [`audio_physics_events`](../examples/audio_physics_events.rs) | world API |
 | `anisotropic_friction` | direction-dependent friction (tyres, skis, ice blades) |  | [`anisotropic_friction_presets`](../examples/anisotropic_friction_presets.rs) | standalone |
 | `buoyancy_zone` | bounded fluid volume applying buoyancy and drag |  | [`buoyancy_zone_pool`](../examples/buoyancy_zone_pool.rs) | standalone |
 | `wind_zone` | bounded wind volume applying drag and lift |  | [`wind_zone_forces`](../examples/wind_zone_forces.rs) | standalone |
-| `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | standalone |
+| `sensors` | simulated lidar, contact sensor and IMU with seeded Gaussian noise |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | world API |
 | `crowd_force` | social force model of pedestrians: driving term, exponential repulsion with a view-angle weight, body force and sliding friction in contact, walls, cell-list neighbour search |  | [`crowd_corridor`](../examples/crowd_corridor.rs) | standalone |
 
 ## SDF integration
@@ -152,11 +152,11 @@ this file or listed twice, or when a linked example or test does not exist.
 |--------|---------|---------|---------|-------------|
 | `sdf_collider` | collision against signed distance fields |  | [`convex_decomposition`](../examples/convex_decomposition.rs) | step |
 | `sdf_manifold` | multi-point contact manifolds from SDF surfaces |  | [`sdf_manifold_patch`](../examples/sdf_manifold_patch.rs) | standalone |
-| `sdf_ccd` | sphere-tracing continuous collision detection |  | [`sdf_ccd_sweep`](../examples/sdf_ccd_sweep.rs) | standalone (binding 2 of 6 items) |
+| `sdf_ccd` | sphere-tracing continuous collision detection |  | [`sdf_ccd_sweep`](../examples/sdf_ccd_sweep.rs) | world API |
 | `sdf_force` | force fields driven by an SDF (attract, repel, contain, flow) |  | [`sdf_force_fields`](../examples/sdf_force_fields.rs) | standalone |
 | `sdf_destruction` | CSG boolean destruction | std | [`sdf_destruction_events`](../examples/sdf_destruction_events.rs) | standalone |
 | `sdf_adaptive` | distance-based level of detail for SDF evaluation | std | [`sdf_adaptive_lod`](../examples/sdf_adaptive_lod.rs) | standalone |
-| `sdf_character` | character controller swept against an SDF |  | [`character_state_machine`](../examples/character_state_machine.rs) | standalone |
+| `sdf_character` | character controller swept against an SDF |  | [`character_state_machine`](../examples/character_state_machine.rs) | standalone (world API 7 of 16 items) |
 | `spherical_terrain` | sphere-world ground as a radial height field, constant gravity toward a centre |  | [`spherical_planet_walk`](../examples/spherical_planet_walk.rs) | standalone (step 1 of 10 items) |
 | `sdf_sph` | SPH particle fluid with SDF boundaries | std | [`sph_boundary_demo`](../examples/sph_boundary_demo.rs) | standalone |
 | `sdf_wind_field` | wind field shaped by an SDF |  |  | standalone |
@@ -267,7 +267,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `heatmap` | stress / temperature / pressure slice images |  | [`heatmap_visualization`](../examples/heatmap_visualization.rs) | standalone |
+| `heatmap` | stress / temperature / pressure slice images |  | [`heatmap_visualization`](../examples/heatmap_visualization.rs) | world API |
 | `flow_viz` | velocity arrows and streamlines | std | [`flow_visualization`](../examples/flow_visualization.rs) | standalone |
 | `contact_viz` | contact force arrows and friction cones |  | [`contact_visualization`](../examples/contact_visualization.rs) | world API |
 
