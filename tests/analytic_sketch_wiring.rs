@@ -59,17 +59,15 @@
 //! `0.0` (documented early return) with `min = +∞`, `max = −∞`, `mean = 0`,
 //! and the cardinality is exactly `0`. Zero-length byte keys are ordinary
 //! keys (their digest is `fmix64(offset basis)`). `quantile(0.0)` (and any
-//! `q` whose rank rounds to `0`, including negative and NaN) returns the
-//! lower edge of the outermost negative bucket, `−γ^{BINS − offset − 2}`,
-//! not the minimum; `q > 1` returns `max`. `insert(NaN)` and `insert(±∞)`
+//! `q` whose rank rounds to `0`, including negative and NaN) is rank 1, the
+//! lower edge of the bucket holding the minimum; `q > 1` returns `max`. `insert(NaN)` and `insert(±∞)`
 //! are rejected outright (not counted, not binned, `sum`/`min`/`max`
 //! untouched) since both would otherwise corrupt the running state
 //! (NaN poisons `sum`, `±∞` overflows the `i32` bucket index in a debug
-//! build); `DDSketch::new(0.0)` still makes `ln γ = 0` and `insert(2.0)`
-//! panics (a separate, unfixed defect — `α = 0` is finite so it is not
-//! caught by the `is_finite()` guard). `CountMinSketch::insert_hash` saturates the
-//! counters but adds to `total` with plain `+=`, which panics in a debug
-//! build once the total passes `u64::MAX`.
+//! build); `DDSketch::new(0.0)` makes `ln γ = 0` (every key is ±∞ or NaN,
+//! counted without panicking but answered with no meaning; `α` is not
+//! validated). `CountMinSketch::insert_hash` and `merge` saturate both the
+//! counters and `total` at `u64::MAX`.
 //!
 //! Author: Moroya Sakamoto
 
@@ -462,18 +460,16 @@ fn count_min_degenerate_inputs() {
     cms.insert_hash(h, u64::MAX);
     assert_eq!(cms.estimate_hash(h), u64::MAX);
     assert_eq!(cms.total(), u64::MAX);
-    // ... but `total` is a plain `+=`: the next insertion overflows it.
-    // Measured contract: panic in a debug build ("attempt to add with
-    // overflow"), wrap-around in release.
+    // ... and so does `total` (AUD-A-S3W1-010): the next insertion and a
+    // merge with itself leave it at u64::MAX in every profile.
     let r = catch_unwind(AssertUnwindSafe(|| {
         cms.insert_hash(h, 1);
-        cms.total()
+        let total = cms.total();
+        let other = cms.clone();
+        cms.merge(&other);
+        (total, cms.total())
     }));
-    if cfg!(debug_assertions) {
-        assert!(r.is_err(), "total overflow panics in debug builds");
-    } else {
-        assert_eq!(r.expect("release wraps"), 0, "total wraps in release");
-    }
+    assert_eq!(r.ok(), Some((u64::MAX, u64::MAX)), "total saturates");
 }
 
 // ---------------------------------------------------------------------------
@@ -729,27 +725,19 @@ fn ddsketch_degenerate_inputs() {
     assert_eq!(sketch.max(), f64::NEG_INFINITY);
     assert_eq!(sketch.alpha(), ALPHA);
 
-    // Positive data: q = 0 (rank 0) is answered by the outermost negative
-    // bucket's edge, −γ^{BINS − offset − 2} with offset = BINS / 4, not the
-    // minimum; q > 1 falls through to `max`; q < 0 and NaN round to rank 0.
+    // Positive data: q = 0 is rank 1, the smallest value, answered by the
+    // lower edge of the bucket holding the minimum, in [min/γ, min] (rank 0
+    // used to fall to the outermost negative bucket, AUD-A-S3W1-006); q < 0 and
+    // NaN round to the same rank; q > 1 falls through to `max`.
     let mut sketch = DDSketch::new(ALPHA);
     for i in 1..=100 {
         sketch.insert(i as f64);
     }
     let g = gamma(ALPHA);
-    let offset = DDSketch::BINS / 4;
-    let outer_edge = -alice_physics::det_math::powf64(g, (DDSketch::BINS - offset - 2) as f64);
     let q0 = sketch.quantile(0.0);
-    assert!(
-        (q0 - outer_edge).abs() <= 1e-6 * outer_edge.abs(),
-        "quantile(0) = {q0}, outer negative edge {outer_edge}"
-    );
-    assert!(
-        q0 < 0.0 && q0 < sketch.min(),
-        "quantile(0) is not the minimum"
-    );
-    assert_eq!(sketch.quantile(-0.5), q0, "negative q rounds to rank 0");
-    assert_eq!(sketch.quantile(f64::NAN), q0, "NaN q rounds to rank 0");
+    assert!(q0 <= 1.0 && q0 >= 1.0 / g, "quantile(0) = {q0}");
+    assert_eq!(sketch.quantile(-0.5), q0, "negative q is rank 1");
+    assert_eq!(sketch.quantile(f64::NAN), q0, "NaN q is rank 1");
     assert_eq!(sketch.quantile(1.5), 100.0, "q > 1 returns max");
     assert_eq!(sketch.quantile(f64::INFINITY), 100.0);
     // q = 1 is the edge of the bucket holding the maximum: in [max/γ, max].
@@ -767,22 +755,22 @@ fn ddsketch_degenerate_inputs() {
     assert_eq!(nan.min(), f64::INFINITY, "NaN never becomes min");
     assert_eq!(nan.sum(), 0.0, "NaN does not poison sum");
 
-    // Tiny and huge finite values: below γ^{−offset} the index clamps to bin 0
-    // (edge γ^{−offset−1}); above γ^{BINS−offset} the value is counted but not
-    // binned, so the high quantile falls through to `max`.
-    let mut tiny = DDSketch::new(ALPHA);
-    tiny.insert(1e-300);
-    let edge0 = alice_physics::det_math::powf64(g, -(offset as f64) - 1.0);
-    let qt = tiny.quantile(1.0);
-    assert!(
-        (qt - edge0).abs() <= 1e-6 * edge0,
-        "tiny: {qt} vs bin-0 edge {edge0}"
-    );
-    let mut huge = DDSketch::new(ALPHA);
-    huge.insert(1e300);
-    assert_eq!(huge.count(), 1);
-    assert_eq!(huge.quantile(1.0), 1e300, "huge: falls through to max");
-    assert_eq!(huge.quantile(0.5), 1e300);
+    // Tiny and huge finite values: the window of buckets moves to the data
+    // (AUD-A-S3W1-009), so a lone 1e-300 or 1e300 is answered by the lower edge
+    // of its own bucket, in [v/γ, v] (relative error at most 2α/(1+α)), not
+    // by bin 0's edge or by `max` through an unbinned count.
+    for v in [1e-300_f64, 1e300] {
+        let mut lone = DDSketch::new(ALPHA);
+        lone.insert(v);
+        assert_eq!(lone.count(), 1);
+        for q in [0.0, 0.5, 1.0] {
+            let est = lone.quantile(q);
+            assert!(
+                est <= v && est >= v / g * (1.0 - 1e-12),
+                "{v:e} q {q}: {est:e}"
+            );
+        }
+    }
 
     // ±∞ is rejected outright (same `is_finite()` guard as NaN), so the
     // `ln(∞)/ln γ = ∞, ceil() as i32 saturates and + offset overflows`
@@ -796,21 +784,16 @@ fn ddsketch_degenerate_inputs() {
         assert_eq!(r.expect("insert(±inf) must not panic"), 0);
     }
 
-    // α = 0: γ = 1, ln γ = 0; any value above 1 divides by zero into the
-    // same saturating cast — measured: panic in a debug build.
+    // α = 0: γ = 1, ln γ = 0; every key is ±∞ or NaN. The key arithmetic
+    // saturates, so the value is counted without a panic in every profile
+    // (α itself is not validated; the answer carries no meaning).
     let r = catch_unwind(AssertUnwindSafe(|| {
         let mut s = DDSketch::new(0.0);
         s.insert(2.0);
+        s.insert(0.5);
         s.count()
     }));
-    if cfg!(debug_assertions) {
-        assert!(
-            r.is_err(),
-            "DDSketch::new(0.0).insert(2.0) panics in debug builds"
-        );
-    } else {
-        assert_eq!(r.expect("release wraps"), 1);
-    }
+    assert_eq!(r.ok(), Some(2), "alpha = 0 counts without panicking");
     let zero_alpha = DDSketch::new(0.0);
     assert_eq!(zero_alpha.alpha(), 0.0, "alpha is stored unvalidated");
 }

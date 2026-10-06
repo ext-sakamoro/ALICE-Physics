@@ -244,7 +244,10 @@ pub struct MetricSlot {
 impl MetricSlot {
     /// Create a new metric slot
     ///
-    /// Note: With 256 bins, use alpha >= 0.05 for best results
+    /// The 256-bucket sketch keeps the relative-error guarantee for histogram
+    /// data whose magnitudes span less than `γ^256` (`γ = (1+α)/(1−α)`): about
+    /// 167× at α = 0.01 and 1.3·10¹¹× at α = 0.05; beyond that the smallest
+    /// magnitudes share the lowest bucket (see [`crate::sketch::DDSketchN`]).
     #[must_use]
     pub fn new(name_hash: u64, alpha: f64) -> Self {
         Self {
@@ -354,7 +357,9 @@ impl<const SLOTS: usize, const QUEUE_SIZE: usize> MetricPipeline<SLOTS, QUEUE_SI
     /// Create a new metric pipeline
     ///
     /// # Arguments
-    /// * `alpha` - Relative error for `DDSketch` (e.g., 0.01 for 1%)
+    /// * `alpha` - Relative error for `DDSketch` (e.g., 0.01 for 1%); each slot's
+    ///   256-bucket sketch holds data spanning up to `γ^256` at that accuracy
+    ///   (see [`MetricSlot::new`])
     #[must_use]
     pub fn new(alpha: f64) -> Self {
         // Use array initialization with Default

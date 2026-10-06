@@ -666,33 +666,24 @@ fn zero_sized_const_generics_currently_panic_with_divide_by_zero() {
     }));
 }
 
-/// Open issue `pipeline-degenerate-config-panics` (2/2): `MetricPipeline::new`
-/// passes `alpha` through unvalidated. `alpha = 0` gives `gamma = 1`,
-/// `ln_gamma = 0`, and the first histogram sample with `|v| > 1` computes
-/// `ln(v) / 0 = +inf`, whose `ceil() as i32` saturates to `i32::MAX`; adding
-/// the bin offset then overflows (`src/sketch.rs` `DDSketch256::bucket_index`,
-/// `attempt to add with overflow`). Pinned for the debug profile; in release
-/// the add wraps and the sample lands in bin 0 instead. A sample with
-/// `|v| ≤ 1` (`ln ≤ 0`, giving `NaN` or `-inf`) does not panic.
+/// `MetricPipeline::new(alpha)` passes `alpha` through unvalidated.
+/// `alpha = 0` gives `gamma = 1` and `ln_gamma = 0`, so every bucket key is
+/// `ln(v) / 0` = ±∞ or NaN. The DDSketch's key arithmetic saturates, so the
+/// samples are counted without a panic (before the window followed the data,
+/// `|v| > 1` overflowed the `i32` bucket index and panicked in a debug
+/// build); the answers carry no meaning, which is the unvalidated-α
+/// characterization below.
 #[test]
-fn alpha_zero_currently_panics_on_the_first_sample_above_one() {
+fn alpha_zero_counts_samples_without_panicking() {
     let res = catch_unwind(AssertUnwindSafe(|| {
         let mut p = MetricPipeline::<2, 4>::new(0.0);
         p.submit(MetricEvent::histogram(1, 2.0));
-        p.flush();
-    }));
-    if cfg!(debug_assertions) {
-        assert!(res.is_err(), "alpha = 0, v = 2: bucket index overflow");
-    }
-    // |v| ≤ 1 never reaches the overflow: counted, no panic.
-    let res = catch_unwind(AssertUnwindSafe(|| {
-        let mut p = MetricPipeline::<2, 4>::new(0.0);
         p.submit(MetricEvent::histogram(1, 1.0));
         p.submit(MetricEvent::histogram(1, 0.5));
         p.flush();
         p.get_slot(1).unwrap().ddsketch.count()
     }));
-    assert_eq!(res.ok(), Some(2));
+    assert_eq!(res.ok(), Some(3));
 }
 
 /// `alpha ≥ 1`, `alpha < 0`, `NaN` and `inf` are accepted by

@@ -292,12 +292,18 @@ fn regression_pin_matches_pre_refactor_digests() {
     assert_eq!(hll_digest(HyperLogLog16::new()), 0xdf78_fe2a_686a_6827);
     assert_eq!(hll_digest(HyperLogLog::new()), 0xde2c_73d6_2834_1e1f);
 
-    assert_eq!(dd_digest(DDSketch128::new(0.1)), 0x8ac7_7960_98ae_496e);
-    assert_eq!(dd_digest(DDSketch256::new(0.05)), 0xa677_ab22_12b6_ebf9);
-    assert_eq!(dd_digest(DDSketch512::new(0.02)), 0xb672_5ec9_2641_92c1);
-    assert_eq!(dd_digest(DDSketch1024::new(0.02)), 0x2bb9_2c6e_9423_d87d);
-    assert_eq!(dd_digest(DDSketch2048::new(0.01)), 0xf9bc_447b_7ba3_4b2f);
-    assert_eq!(dd_digest(DDSketch::new(0.01)), 0xf9bc_447b_7ba3_4b2f);
+    // Re-pinned with AUD-A-S3W1-006 / -009 (the digest folds quantile(0.0),
+    // which is now the smallest bucket, not the outermost negative edge; and the
+    // stream's 0.001 lies below the old fixed window of the 128 / 256 / 512
+    // sizes, which clamped it into bucket 0). With the rank change alone
+    // reverted, 1024 and 2048 — whose data fits the old window — reproduce
+    // the previous digests 0x2bb9_2c6e_9423_d87d / 0xf9bc_447b_7ba3_4b2f.
+    assert_eq!(dd_digest(DDSketch128::new(0.1)), 0x8f54_6624_6d75_e314);
+    assert_eq!(dd_digest(DDSketch256::new(0.05)), 0xc228_dd72_fb0a_36be);
+    assert_eq!(dd_digest(DDSketch512::new(0.02)), 0x10a5_004f_72c0_a6d7);
+    assert_eq!(dd_digest(DDSketch1024::new(0.02)), 0x10a3_004f_72bd_40d7);
+    assert_eq!(dd_digest(DDSketch2048::new(0.01)), 0xdf73_d5ae_becd_26e7);
+    assert_eq!(dd_digest(DDSketch::new(0.01)), 0xdf73_d5ae_becd_26e7);
 
     assert_eq!(
         cms_digest(CountMinSketch1024x5::new()),

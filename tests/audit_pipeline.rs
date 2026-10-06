@@ -383,7 +383,8 @@ fn snapshot_reports_counter_gauge_counts_and_quantiles_within_alpha() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-019: MetricPipeline::new documents alpha = 0.01 as a normal choice, but a 256-bin sketch at that accuracy only holds values up to about 47; larger observations are counted but stored in no bin, so quantiles fall back to the maximum (values 1..=1000: p50 reports 1000 instead of 500)"]
+// AUD-A-S5W3-019: the window of buckets follows the data, so the top 256
+// buckets (values above about 6) keep their own bucket
 fn pipeline_histogram_with_alpha_one_percent_keeps_quantiles_for_values_above_fifty() {
     let mut p = MetricPipeline::<8, 2048>::new(0.01);
     let h = hash("latency");

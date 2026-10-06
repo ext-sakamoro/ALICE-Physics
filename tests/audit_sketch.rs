@@ -233,7 +233,7 @@ fn hll_merge_is_a_register_max_and_idempotent() {
 
 /// `quantile(0.0)` should be the smallest value's bucket edge (within the data range).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-006: DDSketch::quantile(0.0) (rank 0) returns the outermost negative bucket edge, -2.1e13 for 1..=100 at alpha 0.01, instead of a value near min; existing analytic_sketch_wiring pins this behaviour"]
+// AUD-A-S3W1-006
 fn ddsketch_quantile_zero_is_inside_the_data_range() {
     let mut d = DDSketch::new(0.01);
     for i in 1..=100 {
@@ -275,7 +275,7 @@ fn ddsketch_infinite_input_does_not_panic() {
 /// The type's guarantee is a relative error bound for any inserted value; a value
 /// below the first bucket is clamped into bin 0 and answered with an edge far from it.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-009: values below gamma^-(BINS/4) (3.6e-5 at alpha 0.01, DDSketch2048) are clamped into bin 0; quantile(1.0) of {1e-6} answers 3.4e-5 (relative error 3300%); values above the top bin are dropped from the bins (quantile falls through to max); neither is documented"]
+// AUD-A-S3W1-009
 fn ddsketch_relative_error_holds_below_the_first_bucket() {
     let mut d = DDSketch::new(0.01);
     d.insert(1e-6);
@@ -290,7 +290,7 @@ fn ddsketch_relative_error_holds_below_the_first_bucket() {
 /// Same for the upper end: a value above the top bucket is counted but not binned, so
 /// a middle quantile of three huge values returns the maximum.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-009: values above the top bin (gamma^(3 BINS/4) = 2e13 at alpha 0.01) are dropped from the bins; median of {1e14, 5e14, 1e15} answers 1e15 (2x)"]
+// AUD-A-S3W1-009
 fn ddsketch_relative_error_holds_above_the_last_bucket() {
     let mut d = DDSketch::new(0.01);
     for v in [1e14, 5e14, 1e15] {
@@ -306,7 +306,7 @@ fn ddsketch_relative_error_holds_above_the_last_bucket() {
 
 /// Count-Min counters saturate (`saturating_add`), so `total` should not overflow either.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-010: CountMinSketch::insert_hash(_, u64::MAX) twice: counters saturate but `total += count` overflows (panic in debug, wrap in release); merge has the same plain add on total -- escalated: tests/analytic_sketch_wiring.rs::count_min_degenerate_inputs pins this panic/wrap as a 'measured contract'; switching to saturating_add is a design decision to confirm, not a silent fix"]
+// AUD-A-S3W1-010
 fn countmin_total_does_not_overflow_when_counters_saturate() {
     let r = catch_unwind(AssertUnwindSafe(|| {
         let mut c = CountMinSketch::new();
@@ -395,4 +395,69 @@ fn heavy_hitters_do_not_evict_on_a_tie() {
     let keys: Vec<u64> = hh.top().map(|e| e.hash).collect();
     assert_eq!(keys.len(), 5);
     assert!(!keys.contains(&6), "tie must not evict: {keys:?}");
+}
+
+/// AUD-A-S3W1-009 (merge): two sketches whose windows moved apart (one fed
+/// around 1e-6, the other around 1e6; together 1381 buckets at alpha 0.01, inside
+/// 2048) merge by key: the merged sketch answers every quantile bit-for-bit like
+/// one sketch fed all the values, in either merge order.
+#[test]
+fn merging_sketches_with_distant_windows_matches_one_sketch_fed_everything() {
+    let small: Vec<f64> = (1..=50).map(|i| f64::from(i) * 1e-6).collect();
+    let large: Vec<f64> = (1..=50).map(|i| f64::from(i) * 1e5).collect();
+    let mut all = DDSketch::new(0.01);
+    let (mut a, mut b) = (DDSketch::new(0.01), DDSketch::new(0.01));
+    for &v in &small {
+        a.insert(v);
+        all.insert(v);
+    }
+    for &v in &large {
+        b.insert(v);
+        all.insert(v);
+    }
+    let mut ab = a.clone();
+    ab.merge(&b);
+    let mut ba = b.clone();
+    ba.merge(&a);
+    for k in 0..=20 {
+        let q = f64::from(k) / 20.0;
+        let want = all.quantile(q);
+        assert_eq!(ab.quantile(q).to_bits(), want.to_bits(), "a+b q {q}");
+        assert_eq!(ba.quantile(q).to_bits(), want.to_bits(), "b+a q {q}");
+    }
+}
+
+/// AUD-A-S3W1-009 (edge of the window): data whose keys span exactly BINS
+/// buckets still fits; every value's own quantile is within 2 alpha / (1 + alpha).
+/// At alpha 0.1, DDSketch128 holds keys k..k+127; the values 0.95 gamma^k for
+/// k = -60..=67 sit inside 128 consecutive buckets (gamma^(k-1), gamma^k]
+/// (gamma = 11/9 > 1/0.95).
+#[test]
+fn data_spanning_exactly_bins_buckets_keeps_every_quantile() {
+    let alpha = 0.1;
+    let g = (1.0 + alpha) / (1.0 - alpha);
+    let mut d = DDSketch128::new(alpha);
+    let mut p = 1.0;
+    for _ in 0..60 {
+        p /= g;
+    }
+    let mut vals = Vec::new();
+    for _ in -60..=67 {
+        vals.push(0.95 * p);
+        p *= g;
+    }
+    assert_eq!(vals.len(), DDSketch128::BINS);
+    for &v in &vals {
+        d.insert(v);
+    }
+    let n = vals.len() as f64;
+    for (i, &v) in vals.iter().enumerate() {
+        // rank i + 1 of n
+        let est = d.quantile((i as f64 + 1.0) / n);
+        let rel = (est - v).abs() / v;
+        assert!(
+            rel <= 2.0 * alpha / (1.0 + alpha) + 1e-9,
+            "value {v:e} (#{i}): {est:e}"
+        );
+    }
 }

@@ -381,7 +381,17 @@ pub type HyperLogLog = HyperLogLog14;
 /// |v - `true_value`| <= α * `true_value`
 ///
 /// where α is the relative accuracy (e.g., 0.01 for 1% error), chosen at
-/// construction and independent of `BINS`. The named sizes [`DDSketch128`] …
+/// construction and independent of `BINS`.
+///
+/// Each side holds `BINS` consecutive buckets `(γ^(k−1), γ^k]`. The window of
+/// keys `k` follows the data: it starts centred a quarter of the way below
+/// 1.0 and shifts when a value falls outside it, so the guarantee holds for
+/// any data whose magnitudes span fewer than `BINS` buckets (a ratio of
+/// `γ^BINS` between the largest and the smallest non-zero magnitude, about
+/// 6·10¹⁷ for `DDSketch2048` at α = 0.01). Data spanning more buckets
+/// collapses its smallest magnitudes into the lowest bucket (the collapsing
+/// scheme of Masson et al. 2019), which keeps the guarantee for the quantiles
+/// whose magnitudes still have their own bucket. The named sizes [`DDSketch128`] …
 /// [`DDSketch2048`] and the default [`DDSketch`] are aliases of this type.
 ///
 /// # Example
@@ -464,31 +474,88 @@ impl<const BINS: usize> DDSketchN<BINS> {
         }
 
         if value > 0.0 {
-            let idx = self.bucket_index(value);
-            if idx < BINS {
-                self.positive_bins[idx] += 1;
-            }
+            self.add_at_key(false, self.bucket_key(value), 1);
         } else if value < 0.0 {
-            let idx = self.bucket_index(-value);
-            if idx < BINS {
-                self.negative_bins[idx] += 1;
-            }
+            self.add_at_key(true, self.bucket_key(-value), 1);
         } else {
             self.zero_count += 1;
         }
     }
 
-    /// Bucket index calculation
+    /// Bucket key `k = ⌈ln(v) / ln γ⌉` of a positive magnitude, so that
+    /// `v ∈ (γ^(k−1), γ^k]`.
     /// Uses standard `ln()` for quantile accuracy (`DDSketch` requires precise buckets)
     #[inline]
-    fn bucket_index(&self, value: f64) -> usize {
-        let idx = (crate::det_math::ln64(value) / self.ln_gamma).ceil() as i32 + self.offset;
-        idx.max(0) as usize
+    fn bucket_key(&self, magnitude: f64) -> i64 {
+        // `as i64` saturates; every finite magnitude at a usable α is far inside
+        (crate::det_math::ln64(magnitude) / self.ln_gamma).ceil() as i64
+    }
+
+    /// Add `n` to the bucket of `key` on one side, shifting the window first
+    /// when the key lies outside it.
+    fn add_at_key(&mut self, negative: bool, key: i64, n: u64) {
+        let mut idx = key.saturating_add(i64::from(self.offset));
+        if idx < 0 || idx >= BINS as i64 {
+            self.make_room(key);
+            // after a collapse the key may still lie below the window
+            idx = key.saturating_add(i64::from(self.offset)).clamp(0, BINS as i64 - 1);
+        }
+        let bins = if negative {
+            &mut self.negative_bins
+        } else {
+            &mut self.positive_bins
+        };
+        bins[idx as usize] = bins[idx as usize].saturating_add(n);
+    }
+
+    /// Lowest and highest occupied index over both sides, if any.
+    fn occupied(&self) -> Option<(usize, usize)> {
+        let used = |i: usize| self.positive_bins[i] != 0 || self.negative_bins[i] != 0;
+        let lo = (0..BINS).find(|&i| used(i))?;
+        let hi = (0..BINS).rev().find(|&i| used(i))?;
+        Some((lo, hi))
+    }
+
+    /// Move the window so that `key` gets a bucket: centre the occupied keys
+    /// and `key` when they span fewer than `BINS` buckets, otherwise keep the
+    /// highest key at the top and collapse everything below the window into
+    /// bucket 0.
+    fn make_room(&mut self, key: i64) {
+        let bins = BINS as i64;
+        let (lo_key, hi_key) = match self.occupied() {
+            Some((lo, hi)) => {
+                let off = i64::from(self.offset);
+                (
+                    (lo as i64).saturating_sub(off).min(key),
+                    (hi as i64).saturating_sub(off).max(key),
+                )
+            }
+            None => (key, key),
+        };
+        let span = hi_key.saturating_sub(lo_key);
+        let new_offset = if span < bins {
+            ((bins - 1 - span) / 2).saturating_sub(lo_key)
+        } else {
+            (bins - 1).saturating_sub(hi_key)
+        };
+        let shift = new_offset.saturating_sub(i64::from(self.offset));
+        for side in [&mut self.positive_bins, &mut self.negative_bins] {
+            let old = *side;
+            *side = [0u64; BINS];
+            for (i, &c) in old.iter().enumerate() {
+                if c != 0 {
+                    let j = (i as i64).saturating_add(shift).clamp(0, bins - 1) as usize;
+                    side[j] = side[j].saturating_add(c);
+                }
+            }
+        }
+        // the window only ever holds keys an i32 offset can address
+        self.offset = new_offset.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32;
     }
 
     #[inline]
     fn bucket_lower_bound(&self, idx: usize) -> f64 {
-        let exp = (idx as i32 - self.offset) as f64;
+        let exp = (idx as i64 - i64::from(self.offset)) as f64;
         crate::det_math::powf64(self.gamma, exp - 1.0)
     }
 
@@ -507,7 +574,9 @@ impl<const BINS: usize> DDSketchN<BINS> {
             return 0.0;
         }
 
-        let rank = (q * self.count as f64).ceil() as u64;
+        // rank 1 is the smallest value: q = 0 (and any q whose rank rounds to 0,
+        // including negative q and NaN) answers with the smallest bucket
+        let rank = ((q * self.count as f64).ceil() as u64).max(1);
         let mut cumulative = 0u64;
 
         for (idx, &count) in self.negative_bins.iter().enumerate().rev() {
@@ -581,24 +650,23 @@ impl<const BINS: usize> DDSketchN<BINS> {
         self.min = f64::INFINITY;
         self.max = f64::NEG_INFINITY;
         self.sum = 0.0;
+        self.offset = (BINS / 4) as i32;
     }
 }
 
 impl<const BINS: usize> Mergeable for DDSketchN<BINS> {
+    /// Adds `other`'s buckets by key, so sketches whose windows have moved
+    /// apart merge correctly. Both sketches must use the same α.
     fn merge(&mut self, other: &Self) {
-        for (dst, &src) in self
-            .positive_bins
-            .iter_mut()
-            .zip(other.positive_bins.iter())
-        {
-            *dst += src;
-        }
-        for (dst, &src) in self
-            .negative_bins
-            .iter_mut()
-            .zip(other.negative_bins.iter())
-        {
-            *dst += src;
+        let other_offset = i64::from(other.offset);
+        for i in 0..BINS {
+            let key = i as i64 - other_offset;
+            if other.positive_bins[i] != 0 {
+                self.add_at_key(false, key, other.positive_bins[i]);
+            }
+            if other.negative_bins[i] != 0 {
+                self.add_at_key(true, key, other.negative_bins[i]);
+            }
         }
         self.zero_count += other.zero_count;
         self.count += other.count;
@@ -670,7 +738,8 @@ impl<const W: usize, const D: usize> CountMinSketchN<W, D> {
     /// Insert a pre-hashed item with the given count.
     #[inline]
     pub fn insert_hash(&mut self, hash: u64, count: u64) {
-        self.total += count;
+        // saturates like the counters
+        self.total = self.total.saturating_add(count);
         for row in 0..D {
             let col = Self::hash_for_row(hash, row);
             self.counters[row][col] = self.counters[row][col].saturating_add(count);
@@ -750,7 +819,7 @@ impl<const W: usize, const D: usize> Default for CountMinSketchN<W, D> {
 
 impl<const W: usize, const D: usize> Mergeable for CountMinSketchN<W, D> {
     fn merge(&mut self, other: &Self) {
-        self.total += other.total;
+        self.total = self.total.saturating_add(other.total);
         for row in 0..D {
             for col in 0..W {
                 self.counters[row][col] =
