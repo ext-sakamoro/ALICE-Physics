@@ -272,7 +272,14 @@ impl DebugDrawData {
         }
     }
 
-    /// Draw an arrow (line + arrowhead)
+    /// Draw an arrow: the shaft, an arrowhead of two barbs, and a point marker
+    /// at the tip.
+    ///
+    /// The head is `0.2 * |end - start|` long: each barb runs from `end` back to
+    /// `head_point ± side * head_len / 2`, where `head_point` lies `head_len`
+    /// before `end` on the shaft and `side` is a unit vector perpendicular to
+    /// the shaft (`dir × Y`, or `dir × X` when the shaft is along Y). A
+    /// zero-length arrow records the shaft only.
     pub fn arrow(&mut self, start: Vec3Fix, end: Vec3Fix, color: DebugColor) {
         self.line(start, end, color);
 
@@ -283,9 +290,16 @@ impl DebugDrawData {
         }
 
         let head_len = len * Fix128::from_ratio(2, 10);
-        let head_point = end - dir.normalize() * head_len;
+        let unit = dir.normalize();
+        let head_point = end - unit * head_len;
+        let mut side = unit.cross(Vec3Fix::UNIT_Y);
+        if side.length_squared() < Fix128::from_ratio(1, 1_000_000) {
+            side = unit.cross(Vec3Fix::UNIT_X);
+        }
+        let half_width = side.normalize() * head_len.half();
+        self.line(end, head_point + half_width, color);
+        self.line(end, head_point - half_width, color);
         self.point(end, color, head_len);
-        let _ = head_point; // Arrow tip marker
     }
 
     /// Draw local coordinate axes at a position
@@ -403,8 +417,8 @@ mod tests {
     fn test_debug_axes() {
         let mut data = DebugDrawData::new();
         data.axes(Vec3Fix::ZERO, QuatFix::IDENTITY, Fix128::ONE);
-        // 3 arrows = 3 lines + 3 points
-        assert_eq!(data.lines.len(), 3);
+        // 3 arrows = 3 x (shaft + two barbs) lines + 3 tip points
+        assert_eq!(data.lines.len(), 9);
         assert_eq!(data.points.len(), 3);
     }
 

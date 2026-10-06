@@ -45,15 +45,15 @@ fn main() {
 
     // Local frame: 3 arrows (X/Y/Z), hardcoded RED/GREEN/BLUE by `axes` itself.
     manual.axes(Vec3Fix::ZERO, QuatFix::IDENTITY, Fix128::ONE);
-    assert_eq!(manual.primitive_count(), 1 + 48 + 3 + 3);
+    assert_eq!(manual.primitive_count(), 1 + 48 + 9 + 3);
 
-    // A standalone arrow, color-coded WHITE, confirms the +1 line / +1 point
-    // split independently of `axes`.
+    // A standalone arrow, color-coded WHITE, confirms the +3 lines (shaft and
+    // two barbs) / +1 point split independently of `axes`.
     manual.arrow(Vec3Fix::ZERO, Vec3Fix::UNIT_Y, DebugColor::WHITE);
     let after_direct = manual.primitive_count();
-    assert_eq!(after_direct, 1 + 48 + 3 + 3 + 1 + 1);
+    assert_eq!(after_direct, 1 + 48 + 9 + 3 + 3 + 1);
     println!(
-        "[debug_render] direct construction: {after_direct} primitives (point=1 + sphere=48 + axes=6 + arrow=2)"
+        "[debug_render] direct construction: {after_direct} primitives (point=1 + sphere=48 + axes=12 + arrow=4)"
     );
 
     // --- Part 2: debug_draw_world over a physics world ------------------
@@ -105,11 +105,11 @@ fn main() {
     // Closed form (2 bodies, draw_centers + draw_axes; 1 contact with
     // normals; 1 joint):
     //   centers:        2 bodies x 1 point                   = 2 points
-    //   axes:           2 bodies x 3 arrows (line + point)    = 6 lines, 6 points
+    //   axes:           2 bodies x 3 arrows (3 lines + point) = 18 lines, 6 points
     //   contact points: point_a + point_b                     = 2 points
-    //   contact normal: 1 arrow (depth != 0 -> line + point)  = 1 line, 1 point
+    //   contact normal: 1 arrow (depth != 0 -> 3 lines + point) = 3 lines, 1 point
     //   joint:          1 distance constraint -> 1 line        = 1 line
-    let expected_lines = 6 + 1 + 1;
+    let expected_lines = 18 + 3 + 1;
     let expected_points = 2 + 6 + 2 + 1;
     assert_eq!(frame.lines.len(), expected_lines, "line count mismatch");
     assert_eq!(frame.points.len(), expected_points, "point count mismatch");
