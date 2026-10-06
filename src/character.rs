@@ -13,6 +13,12 @@
 //! - Slope angle limiting
 //! - SDF terrain integration
 //!
+//! `move_and_slide()` sees each static body as a sphere of the character's
+//! radius; [`crate::solver::PhysicsWorld::move_character`]
+//! ([`crate::world_character`]) moves the same controller against the geometry
+//! the world collides with (body shapes, compound children, static colliders,
+//! SDF colliders).
+//!
 //! Author: Moroya Sakamoto
 
 use crate::collider::Sphere;
@@ -150,6 +156,10 @@ impl CharacterController {
     /// 1. Try to move the full displacement
     /// 2. On collision, project remaining displacement onto the collision plane
     /// 3. Repeat up to `max_slides` times
+    ///
+    /// Static bodies are seen as spheres of the character's radius at their
+    /// positions (see `sweep_against_bodies`); for the true shapes and the
+    /// world's static colliders use [`crate::solver::PhysicsWorld::move_character`].
     pub fn move_and_slide(
         &mut self,
         displacement: Vec3Fix,
@@ -275,8 +285,15 @@ impl CharacterController {
         }
     }
 
-    // LIMITATION(COV-MBD-104): Sweep the character capsule against rigid bodies (simplified sphere approximation)
-    /// Sweep the character capsule against rigid bodies (simplified sphere approximation)
+    // COV-MBD-104: collision against the true body shapes and the world's static
+    // colliders is `PhysicsWorld::move_character` (src/world_character.rs); this
+    // sweep stays the sphere approximation below and its behaviour is unchanged.
+    /// Sweep the character capsule against rigid bodies (simplified sphere
+    /// approximation): each static body is a sphere of the character's radius at
+    /// the body's position, dynamic bodies are skipped, and the world's static
+    /// colliders (planes, height fields, triangle meshes) and body shapes are not
+    /// seen. [`crate::solver::PhysicsWorld::move_character`] sweeps the capsule
+    /// against the geometry the world collides with.
     fn sweep_against_bodies(
         &self,
         from: Vec3Fix,
