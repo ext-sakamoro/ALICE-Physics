@@ -22,10 +22,11 @@ fn zeta_f64(a: f64, b: f64, w: f64) -> f64 {
 /// tolerates 1e-3 only).
 #[test]
 fn fit_reproduces_both_targets_to_fix128_precision() {
-    let cases: [(i64, i64, i64, i64, i64, i64); 4] = [
+    // (1, 0.02, 2, 0.05) used to be here: its exact fit has alpha < 0, which
+    // fit_two_modes now replaces by the non-negative fit (AUD-A-S2W2-001)
+    let cases: [(i64, i64, i64, i64, i64, i64); 3] = [
         (100, 5, 500, 2, 100, 100),
         (3, 10, 7000, 1, 100, 100),
-        (1, 1, 2, 1, 50, 20),
         (60, 3, 61, 3, 100, 100),
     ];
     for (w1, z1n, w2, z2n, z1d, z2d) in cases {
@@ -143,7 +144,7 @@ fn fit_at_ultrasonic_frequencies_matches_closed_form() {
 /// frequency) when the high mode is asked for a much smaller ratio, with no
 /// clamp and no doc warning.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-001: fit_two_modes returns beta=-2.083e-5 for (100 rad/s, z=0.05) and (500 rad/s, z=0.005) so zeta(omega) goes negative at high omega; doc is silent on admissible targets"]
+// AUD-A-S2W2-001
 fn fit_two_modes_never_returns_negative_damping_coefficients() {
     let r = RayleighCoefficients::fit_two_modes(
         Fix128::from_int(100),
@@ -155,6 +156,67 @@ fn fit_two_modes_never_returns_negative_damping_coefficients() {
     assert!(r.beta >= Fix128::ZERO, "beta = {}", r.beta.to_f64());
     // consequence: damping ratio at a high frequency must not be negative
     assert!(r.damping_ratio(Fix128::from_int(2000)) >= Fix128::ZERO);
+    // oracle (independent f64 NNLS of the two ratios): fit alpha alone
+    // (g = 1/(2w)) and beta alone (h = w/2), clamp at 0, keep the smaller
+    // residual. The first pair is won by alpha, the second (alpha < 0 exactly)
+    // by beta
+    for (modes, alpha_wins) in [
+        ([(100.0f64, 0.05f64), (500.0, 0.005)], true),
+        ([(1.0f64, 0.02f64), (2.0, 0.05)], false),
+    ] {
+        let fit1 = |basis: &dyn Fn(f64) -> f64| {
+            let c = (modes.iter().map(|(w, z)| z * basis(*w)).sum::<f64>()
+                / modes
+                    .iter()
+                    .map(|(w, _)| basis(*w) * basis(*w))
+                    .sum::<f64>())
+            .max(0.0);
+            let res: f64 = modes
+                .iter()
+                .map(|(w, z)| (z - c * basis(*w)) * (z - c * basis(*w)))
+                .sum();
+            (c, res)
+        };
+        let (a, ra) = fit1(&|w| 1.0 / (2.0 * w));
+        let (b, rb) = fit1(&|w| w / 2.0);
+        assert_eq!(ra <= rb, alpha_wins, "scenario check");
+        let fx = |v: f64| Fix128::from_f64(v);
+        let r = RayleighCoefficients::fit_two_modes(
+            fx(modes[0].0),
+            fx(modes[0].1),
+            fx(modes[1].0),
+            fx(modes[1].1),
+        );
+        if alpha_wins {
+            assert!(
+                (r.alpha.to_f64() - a).abs() < 1e-9 * a && r.beta.is_zero(),
+                "{r:?}"
+            );
+        } else {
+            assert!(
+                r.alpha.is_zero() && (r.beta.to_f64() - b).abs() < 1e-9 * b,
+                "{r:?}"
+            );
+        }
+    }
+    // negative targets cannot be met by any positive semi-definite damping:
+    // the non-negative fit is zero
+    let neg = RayleighCoefficients::fit_two_modes(
+        Fix128::from_int(100),
+        Fix128::from_ratio(-1, 100),
+        Fix128::from_int(500),
+        Fix128::from_ratio(-2, 100),
+    );
+    assert_eq!((neg.alpha, neg.beta), (Fix128::ZERO, Fix128::ZERO));
+    // a feasible pair keeps the exact two-mode fit
+    let ok = RayleighCoefficients::fit_two_modes(
+        Fix128::from_int(100),
+        Fix128::from_ratio(2, 100),
+        Fix128::from_int(500),
+        Fix128::from_ratio(3, 100),
+    );
+    assert!(ok.alpha > Fix128::ZERO && ok.beta > Fix128::ZERO);
+    assert!((ok.damping_ratio(Fix128::from_int(500)).to_f64() - 0.03).abs() < 1e-12);
 }
 
 /// omega_2 = -omega_1 makes the 2x2 system singular (rows proportional); the doc
