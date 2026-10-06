@@ -168,6 +168,7 @@ were introduced during that release window.
 
 ### Changed
 
+- `spatial::SpatialGrid`: `hash` と `query_neighbors_into` のセル座標を Fix128 の全範囲で `clamp(floor(x / cell_size) + grid_dim / 2, 0, grid_dim - 1)` にした これまでは `x * (1 / cell_size)` と `+ grid_dim / 2` を素の演算で求めていたため、セル座標が i64 の端に掛かる入力 (位置が約 ±2^62 を超える、または cell_size が小さい) で debug は overflow で panic、release は wrap して誤ったセル (反対側の端など) を返していた 現在は `|x / cell_size| >= 2^62` ならその符号の側の端のセル、`|cell_size| <= 2^-63` (`1 / cell_size` が Fix128 で表せない) なら生の値の床除算で求め、debug と release で同じ結果になる `|x / cell_size| < 2^62` の入力のセルは従来と bit 一致 (`tests/spatial_hash_range.rs`、旧式との突合 56 万件) 公開 API の変更なし
 - CI: fuzz で crash が出たら job を失敗にした (これまでは `continue-on-error` で green のまま、crash の入力は artifact に残るだけだった)
 - CI: `bench-gate.yml` を追加 Valgrind (Callgrind、gungraun) で数えた命令数を、変更と基点の commit について同じ job で測り、2% を超えて増えたベンチマークがあれば失敗する 命令数は runner の負荷で変わらないので比較が成り立つ (時間計測の criterion 比較は quality-deep.yml で情報表示のまま) 対象は `benches/instruction_counts.rs` (接触ありの world step / BVH の構築と問い合わせ / 固定小数点演算) Linux 専用の dev-dependency `gungraun` を追加
 - CI: 変異試験を gate にした src を変える push (main と ci/**) では変更行だけを変異させ (`cargo mutants --in-diff`)、見逃しがあれば失敗する 週次の core shard は見逃し一覧を `scripts/mutants-missed-baseline.txt` と比べ、新たな見逃しと、基準に載っているのに捕まるようになった変異を失敗にする (`scripts/mutants_ratchet.py`、行番号を除いて比べるので他所の編集でずれない) 初期の基準は直近の週次実行 (614 件)
