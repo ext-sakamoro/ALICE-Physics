@@ -896,7 +896,8 @@ pub struct CfdSolver {
     /// multigrid (a grid extent that is not a power of two, or
     /// `step_multigrid(dt, 0)`).
     pub jacobi_iterations: u32,
-    /// Reinitialise the level set every N steps (0 = never).
+    /// Reinitialise the level set every N steps, at the end of steps N, 2N, …
+    /// (counting the first step as step 1; 0 = never).
     pub reinit_every_n_steps: u32,
     /// Simulation step counter.
     pub step_count: u64,
@@ -1429,9 +1430,10 @@ impl CfdSolver {
         };
         if self.level_set.is_some() {
             self.advect_level_set(dt_s);
+            // `step_count` is the number of steps finished before this one:
+            // reinitialise at the end of steps N, 2N, ...
             if self.reinit_every_n_steps > 0
-                && self.step_count > 0
-                && self.step_count % u64::from(self.reinit_every_n_steps) == 0
+                && (self.step_count + 1) % u64::from(self.reinit_every_n_steps) == 0
             {
                 if let Some(ls) = self.level_set.as_mut() {
                     match reinit {

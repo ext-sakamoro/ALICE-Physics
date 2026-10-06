@@ -736,7 +736,7 @@ fn csf_y_and_z_line_impulses_equal_the_x_one_by_sphere_symmetry() {
 // -------------------------------------------------- reinitialisation cadence
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-004: reinit_every_n_steps = N first reinitialises on step N + 1 (the test is step_count > 0 && step_count % N == 0 on the pre-increment counter); `every N steps` read as 1-based would reinitialise at the end of step N. Design / doc decision"]
+// AUD-A-S1W4-004
 fn reinit_every_two_steps_reinitialises_at_the_end_of_the_second_step() {
     // a plane of slope 2 (not a signed distance) at rest; fast sweeping restores slope 1
     let (nx, ny, nz) = (7usize, 3usize, 3usize);

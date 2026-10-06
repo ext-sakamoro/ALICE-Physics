@@ -466,7 +466,7 @@ fn pseudo(iterations: u32) -> StepOptions {
 }
 
 /// A resting fluid (no gravity, no surface tension) that reinitialises its
-/// level set on every step after the first.
+/// level set at the end of every step.
 fn resting(nx: usize, ny: usize, nz: usize, dx: Fix128) -> CfdSolver {
     let mut s = CfdSolver::new(nx, ny, nz, dx);
     s.gravity = Vec3Fix::ZERO;
@@ -530,14 +530,8 @@ fn pseudo_time_one_iteration_on_a_slope_two_plane_moves_the_interior_by_half_dx_
     for axis in AXES {
         let mut s = resting([7, 3, 3][axis], [3, 7, 3][axis], [3, 3, 7][axis], dx);
         s.level_set = Some(plane(axis, 2, dx));
-        // Step 1 never reinitialises (step_count = 0), step 2 does.
+        // reinit_every_n_steps = 1 reinitialises at the end of step 1
         s.step_with_options(q(1, 16), &pseudo(1)).expect("step 1");
-        assert_eq!(
-            s.level_set.as_ref().expect("kept").data,
-            plane(axis, 2, dx).data,
-            "axis {axis}: step 1 is the identity on a resting fluid"
-        );
-        s.step_with_options(q(1, 16), &pseudo(1)).expect("step 2");
         assert_resting_velocity(&s, "slope-2 plane");
         // Interior: φ = (c − 3)/2 → φ − sgn(φ) · dx/2 = φ ∓ 1/8; the zero level stays.
         let want = plane_with_interior(
@@ -551,7 +545,7 @@ fn pseudo_time_one_iteration_on_a_slope_two_plane_moves_the_interior_by_half_dx_
             want.data,
             "axis {axis}"
         );
-        assert_eq!(s.step_count, 2);
+        assert_eq!(s.step_count, 1);
     }
 }
 
@@ -564,8 +558,8 @@ fn pseudo_time_two_iterations_follow_the_jacobi_update_cell_by_cell() {
     let dx = Fix128::ONE;
     let mut s = resting(7, 3, 3, dx);
     s.level_set = Some(plane(0, 2, dx));
+    // one step: reinitialised at its end with the two iterations
     s.step_with_options(q(1, 16), &pseudo(2)).expect("step 1");
-    s.step_with_options(q(1, 16), &pseudo(2)).expect("step 2");
     let want = plane_with_interior(
         0,
         2,
