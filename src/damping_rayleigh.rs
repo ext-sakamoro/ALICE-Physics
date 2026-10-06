@@ -60,6 +60,13 @@ impl RayleighCoefficients {
     ///
     /// Returns `Default` (zeros) if the target frequencies coincide (system
     /// singular).
+    ///
+    /// A Rayleigh damping matrix is positive semi-definite only for `α ≥ 0`
+    /// and `β ≥ 0`. When the exact fit needs a negative coefficient (the high
+    /// mode asked for a much smaller ratio than the low one, which would make
+    /// `ζ` negative at high frequency) the result is the non-negative least
+    /// squares fit of the two ratios instead: the better of `(α, 0)` and
+    /// `(0, β)` with the free coefficient fitted to both modes, or `(0, 0)`.
     #[must_use]
     pub fn fit_two_modes(
         omega_1_rad_per_s: Fix128,
@@ -88,7 +95,52 @@ impl RayleighCoefficients {
         let beta = numerator_beta / denominator_beta;
         // Back-substitute: α = 2·ω_1·ζ_1 − β·ω_1²
         let alpha = two * w1 * zeta_1 - beta * w1_sq;
-        Self { alpha, beta }
+        if alpha >= Fix128::ZERO && beta >= Fix128::ZERO {
+            return Self { alpha, beta };
+        }
+        Self::fit_non_negative([(w1, zeta_1), (w2, zeta_2)])
+    }
+
+    /// Least squares fit of `ζ(ω_i) = ζ_i` with `α, β ≥ 0` when the exact fit
+    /// is infeasible: the optimum lies on a boundary, so each one-coefficient
+    /// fit (`ζ = α/(2ω)`, or `ζ = βω/2`) is solved in closed form, clamped at
+    /// 0, and the one with the smaller squared residual is kept (ties go to
+    /// mass-proportional).
+    fn fit_non_negative(modes: [(Fix128, Fix128); 2]) -> Self {
+        let two = Fix128::from_int(2);
+        // ζ = α·g with g = 1/(2ω), or ζ = β·h with h = ω/2: c = Σ ζ g / Σ g²
+        let one_coefficient = |basis: &dyn Fn(Fix128) -> Fix128| {
+            let (mut num, mut den) = (Fix128::ZERO, Fix128::ZERO);
+            for &(w, z) in &modes {
+                let g = basis(w);
+                num = num + z * g;
+                den = den + g * g;
+            }
+            let c = if den.is_zero() {
+                Fix128::ZERO
+            } else {
+                num / den
+            };
+            let c = c.max(Fix128::ZERO);
+            let residual = modes.iter().fold(Fix128::ZERO, |acc, &(w, z)| {
+                let e = z - c * basis(w);
+                acc + e * e
+            });
+            (c, residual)
+        };
+        let (alpha, res_alpha) = one_coefficient(&|w: Fix128| Fix128::ONE / (two * w));
+        let (beta, res_beta) = one_coefficient(&|w: Fix128| w / two);
+        if res_alpha <= res_beta {
+            Self {
+                alpha,
+                beta: Fix128::ZERO,
+            }
+        } else {
+            Self {
+                alpha: Fix128::ZERO,
+                beta,
+            }
+        }
     }
 }
 
