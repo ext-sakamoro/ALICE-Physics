@@ -143,6 +143,19 @@ class Vocabulary(unittest.TestCase):
         self.assertEqual(e, [])
         self.assertGreater(counts["tree files"], 0)
 
+    def test_a_japanese_name_glued_to_a_particle_is_still_found(self):
+        import hashlib
+        saved = dl.PRIVATE_NAME_HASHES
+        try:
+            dl.PRIVATE_NAME_HASHES = saved | {hashlib.sha256("ゾルバクス".encode()).hexdigest(),
+                                              hashlib.sha256(b"zorb").hexdigest()}
+            for text in ("ゾルバクスの世界", "第二章ゾルバクス編", "zorbの設定"):
+                self.assertTrue(dl.private_names(text), text)
+            # a name only as part of a longer katakana word is not that name
+            self.assertEqual(dl.private_names("ゾルバクスター"), [])
+        finally:
+            dl.PRIVATE_NAME_HASHES = saved
+
     def test_the_hash_list_is_not_empty_and_holds_no_plain_names(self):
         self.assertGreaterEqual(len(dl.PRIVATE_NAME_HASHES), 10)
         self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", h) for h in dl.PRIVATE_NAME_HASHES))
