@@ -166,14 +166,13 @@ fn degenerate_configs_are_safe() {
     assert!(generate_flow_arrows(&[v3(1.0, 1.0, 1.0)], &v, &flat).is_empty());
 }
 
-/// AUD-A-S4W1-007 (known defect): when `fluid_velocities` is shorter than
+/// AUD-A-S4W1-007 (fixed): when `fluid_velocities` is shorter than
 /// `fluid_positions`, a particle without a velocity is still COUNTED in the
 /// average (`count += 1`) but contributes no velocity, so it dilutes the mean
 /// toward zero. `interpolate_velocity` (streamlines) skips such a particle
 /// entirely. Two particles in one cell, velocity given for the first only:
 /// expected mean = v0 (magnitude 2), actual = v0/2 (magnitude 1).
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-007: generate_flow_arrows counts position-only particles in the mean (magnitude 1 instead of 2 for 2 particles / 1 velocity); streamlines skip them"]
 fn missing_velocity_does_not_dilute_the_mean() {
     let p = [v3(1.0, -1.0, -1.0), v3(1.0, -1.0, -1.0)];
     let v = [v3(2.0, 0.0, 0.0)];
@@ -189,14 +188,13 @@ fn missing_velocity_does_not_dilute_the_mean() {
     );
 }
 
-/// AUD-A-S4W1-008 (known defect): the averaging radius is `dx` (x cell size)
+/// AUD-A-S4W1-008 (fixed): the averaging radius is `dx` (x cell size)
 /// for every axis. With non-cubic cells (here dx = 1, dy = 100) a particle
 /// INSIDE the cell but more than dx from its centre along y is ignored, so a
 /// tall cell holding a moving particle gets no arrow. For cubic cells every
 /// interior point is within sqrt(3)/2*dx < dx of the centre, so the property
 /// "a particle inside a cell contributes to that cell" holds there only.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-008: averaging radius uses dx for all axes; particle inside a dy=100 cell, 5 from its centre, gives no arrow"]
 fn particle_inside_a_non_cubic_cell_contributes() {
     let c = cfg(1, v3(0.0, 0.0, 0.0), v3(1.0, 100.0, 1.0), 1.0);
     let arrows = generate_flow_arrows(&[v3(0.5, 55.0, 0.5)], &[v3(1.0, 0.0, 0.0)], &c);
@@ -357,4 +355,15 @@ fn mismatched_lengths_do_not_panic() {
 fn search_radius_is_the_cell_size_not_its_square_root() {
     let arrows = generate_flow_arrows(&[v3(2.5, -1.0, -1.0)], &[v3(0.0, 1.0, 0.0)], &cube(2, 1.0));
     assert!(arrows.iter().any(|a| a.position == v3(1.0, -1.0, -1.0)));
+}
+
+/// A grid flat along z (zero extent) admits only particles exactly on that
+/// plane: one off it by 0.5 gives no arrow, one on it gives the arrow
+#[test]
+fn a_flat_axis_admits_only_particles_on_its_plane() {
+    let c = cfg(1, v3(0.0, 0.0, 0.0), v3(2.0, 2.0, 0.0), 1.0);
+    let off = generate_flow_arrows(&[v3(1.0, 1.0, 0.5)], &[v3(1.0, 0.0, 0.0)], &c);
+    assert!(off.is_empty(), "{off:?}");
+    let on = generate_flow_arrows(&[v3(1.0, 1.0, 0.0)], &[v3(1.0, 0.0, 0.0)], &c);
+    assert_eq!(on.len(), 1);
 }

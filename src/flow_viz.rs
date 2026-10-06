@@ -84,9 +84,12 @@ pub struct FlowVizConfig {
 
 /// Generate flow arrows from fluid particle data.
 ///
-/// Samples velocity on a regular 3D grid by averaging nearby fluid particle
-/// velocities using a radial kernel. Each grid cell with non-zero velocity
-/// produces a flow arrow.
+/// Samples velocity on a regular 3D grid by averaging the velocities of the
+/// fluid particles within the ellipsoid of half-axes `(dx, dy, dz)` (the cell
+/// size per axis) around each cell centre. A particle without a velocity
+/// (`fluid_velocities` shorter than `fluid_positions`) is left out, as the
+/// streamlines leave it out. Each grid cell with non-zero velocity produces a
+/// flow arrow.
 ///
 /// # Arguments
 ///
@@ -111,9 +114,31 @@ pub fn generate_flow_arrows(
     let dy = (max.y - min.y) / Fix128::from_int(res as i64);
     let dz = (max.z - min.z) / Fix128::from_int(res as i64);
 
-    // Cell size determines the search radius for averaging
-    let cell_size = dx;
-    let radius_sq = cell_size * cell_size;
+    // A particle contributes to a cell when it lies inside the ellipsoid of
+    // half-axes (dx, dy, dz) around the cell centre (the radius-dx ball for a
+    // cubic cell): every point inside the cell is within it, whatever the cell
+    // shape. A zero extent on an axis admits only an exact match on it.
+    let within = |diff: Vec3Fix| {
+        let term = |d: Fix128, size: Fix128| {
+            if size.is_zero() {
+                if d.is_zero() {
+                    Some(Fix128::ZERO)
+                } else {
+                    None
+                }
+            } else {
+                let r = d / size;
+                Some(r * r)
+            }
+        };
+        match (term(diff.x, dx), term(diff.y, dy), term(diff.z, dz)) {
+            (Some(a), Some(b), Some(c)) => a + b + c < Fix128::ONE,
+            _ => false,
+        }
+    };
+    if dx.is_zero() && dy.is_zero() && dz.is_zero() {
+        return Vec::new();
+    }
 
     let mut arrows = Vec::new();
 
@@ -131,14 +156,11 @@ pub fn generate_flow_arrows(
                 let mut avg_vel = Vec3Fix::ZERO;
                 let mut count = Fix128::ZERO;
 
-                for (pi, pos) in fluid_positions.iter().enumerate() {
-                    let diff = *pos - center;
-                    let dist_sq = diff.dot(diff);
-
-                    if dist_sq < radius_sq {
-                        if pi < fluid_velocities.len() {
-                            avg_vel = avg_vel + fluid_velocities[pi];
-                        }
+                // only particles with a velocity count (a position-only
+                // particle would dilute the mean towards zero)
+                for (pos, vel) in fluid_positions.iter().zip(fluid_velocities) {
+                    if within(*pos - center) {
+                        avg_vel = avg_vel + *vel;
                         count = count + Fix128::ONE;
                     }
                 }
