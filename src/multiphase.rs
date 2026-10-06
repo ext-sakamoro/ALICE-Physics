@@ -353,8 +353,10 @@ pub enum VofScheme {
     /// First-order upwind: `f_i ← f_i − c (f_i − f_up)` per axis with the
     /// Courant number `c = |u| dt / dx`, the upwind neighbour `f_up` taken
     /// as `0` outside the grid (empty inflow), then clamped to `[0, 1]`.
-    /// Exact at `c = 1` (the field translates by one cell), diffusive below
-    /// it, and only the clamp bounds it above it.
+    /// Exact at `c = 1` (the field translates by one cell) and diffusive
+    /// below it. [`advect_vof_rigid`] sub-cycles a step with `c > 1` into
+    /// `ceil(c)` sub-steps of velocity `u / ceil(c)`, so an integer `c`
+    /// translates by `c` whole cells (to the rounding of `u / c`).
     Upwind,
     /// Semi-Lagrangian back-trace with trilinear sampling of the previous
     /// field, the sample point clamped to the grid (the boundary value is
@@ -381,10 +383,11 @@ pub enum VofScheme {
 /// A zero spacing returns with the field **untouched** (no clamp is applied
 /// either) and a zero volume; a zero velocity or a zero `dt` leaves the field
 /// bit-identical under both schemes; a grid with a zero extent has no cells
-/// and returns zero. A velocity far above `dx / dt` does not panic: the
-/// upwind scheme reduces to the sign rule `f ← 1` where `f_up > f`, `0`
-/// where `f_up < f` (the clamp), and the semi-Lagrangian one samples the
-/// boundary cell the back-trace is clamped to.
+/// and returns zero. A velocity far above `dx / dt` does not panic: under
+/// the upwind scheme a displacement of more cells than the grid is long
+/// carries every cell off it and leaves the field empty (the inflow is
+/// empty), and the semi-Lagrangian one samples the boundary cell the
+/// back-trace is clamped to.
 #[must_use]
 pub fn advect_vof_rigid(
     field: &mut Grid3d,
@@ -394,10 +397,51 @@ pub fn advect_vof_rigid(
 ) -> Fix128 {
     let Vec3Fix { x, y, z } = velocity_m_per_s;
     match scheme {
-        VofScheme::Upwind => advect_vof_uniform(field, x, y, z, dt_s),
+        VofScheme::Upwind => {
+            // sub-cycle so every sub-step has a Courant number of at most 1: an
+            // integer c then moves the field by whole cells, as the doc promises;
+            // past the grid extent everything has left, so the count is capped
+            match upwind_substeps(field, velocity_m_per_s, dt_s) {
+                // carried further than the grid is long: every cell has left
+                // and the inflow is empty
+                None => field.data.iter_mut().for_each(|f| *f = Fix128::ZERO),
+                Some(steps) => {
+                    // the velocity is divided (not dt), so c / steps is exact when
+                    // the velocity is a multiple of the step count
+                    let n = Fix128::from_int(steps as i64);
+                    let (sx, sy, sz) = (x / n, y / n, z / n);
+                    for _ in 0..steps {
+                        advect_vof_uniform(field, sx, sy, sz, dt_s);
+                    }
+                }
+            }
+        }
         VofScheme::SemiLagrangian => advect_vof_uniform_semi_lagrangian(field, x, y, z, dt_s),
     }
     total_volume_vof(field)
+}
+
+/// Number of upwind sub-steps for `advect_vof_rigid`: `ceil(c)` for the
+/// largest per-axis Courant number `c = |u| dt / dx`, at least 1, or `None`
+/// when `c` exceeds the largest grid extent (the field is carried off the
+/// grid). A zero spacing gives 1: the step itself leaves the field untouched.
+fn upwind_substeps(field: &Grid3d, velocity: Vec3Fix, dt: Fix128) -> Option<usize> {
+    if field.dx.is_zero() {
+        return Some(1);
+    }
+    let speed = velocity.x.abs().max(velocity.y.abs()).max(velocity.z.abs());
+    let c = speed * dt.abs() / field.dx;
+    let extent = field.nx.max(field.ny).max(field.nz) as u64;
+    let whole = c.hi.max(0) as u64;
+    let n = if c.lo == 0 {
+        whole
+    } else {
+        whole.saturating_add(1)
+    };
+    if n > extent {
+        return None;
+    }
+    Some(n.max(1) as usize)
 }
 
 // ============================================================================
