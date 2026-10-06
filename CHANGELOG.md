@@ -296,6 +296,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `sdf_fem_mesh::generate` / `generate_marching_tets`: 格子のセル数を f32 の商の切り捨てで決めていたので、幅がセルの整数倍でも商が 1 ulp 下に出ると最後の層が落ちた (幅 1.3 / セル 0.1 で 12 セル) 商を f64 で取り、1e-6 の相対余裕を付けて切り捨てる 端数のセルは従来どおり含めない (AUD-A-S2W3-010)
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 (`replay` は in-memory の保存先で同 target に対応、Added 参照)
 - **Behavior change:** `physics2d::PhysicsWorld2D::check_collision_2d` が capsule–capsule / capsule–polygon / edge–polygon / edge–capsule の接触を返す (従来は `None` で互いにすり抜けていた) 各形状を芯 (線分または凸多角形) と半径に分け、芯が離れていれば最近接点間の距離から、重なっていれば両芯の辺法線での最小重なり量に半径を足して深さを求め、法線は body_a → body_b edge 同士は面積を持たないため意図的に接触しない (`Shape2D::Edge` の doc に明記)
 - **Behavior change:** 形状 (shape / compound) を持つ body と形状を持たない球 body の接触は、形状と球の GJK/EPA で判定する (従来は形状の外接球どうしで判定していた) `PhysicsWorld::colliders_overlap` も同じ規則になる 形状を持つ body の broad-phase の箱は形状の閉形式の world box (外接球の立方体との共通部分) になり、候補 pair が減る (箱 0.4×0.3×0.5 と球 r=0.5 の 150 body で厳密な箱重なり 219 → 173) 休止中の static body は回転が変わると箱を作り直す `PhysicsWorld::raycast` は従来どおり外接球との交差 (形状に当てるのは `cast_ray`)
