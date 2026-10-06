@@ -21,7 +21,9 @@
 //!   `v_n = v_0 + a + a + … + a` (`n` additions in this order, each exact
 //!   because `Fix128` addition is exact when it does not overflow);
 //! * the TGS backend keeps a free body's velocity untouched by its solve, so
-//!   XPBD and TGS give bit-identical velocities for free bodies.
+//!   XPBD and TGS give bit-identical velocities for free bodies (with gravity
+//!   and for positions only where both use the same substep `h`, see the
+//!   last test).
 //!
 //! Author: Moroya Sakamoto
 
@@ -185,17 +187,44 @@ fn xpbd_free_body_under_gravity_accumulates_the_substep_increment_exactly() {
     }
 }
 
-/// XPBD and TGS give bit-identical velocities and positions for free bodies,
-/// with and without gravity.
+/// XPBD and TGS give bit-identical velocities for free bodies without
+/// gravity, for every `substeps`: neither solve touches a free body's
+/// velocity, and without gravity nothing else does.
 #[test]
-fn xpbd_and_tgs_agree_bit_for_bit_on_free_bodies() {
+fn xpbd_and_tgs_free_body_velocities_agree_bit_for_bit() {
+    for dt in dts() {
+        for substeps in SUBSTEPS {
+            let (mut x, ids) = world(SolverBackend::Xpbd, substeps, Vec3Fix::ZERO);
+            let (mut t, _) = world(SolverBackend::Tgs, substeps, Vec3Fix::ZERO);
+            for frame in 1..=FRAMES {
+                x.step(dt);
+                t.step(dt);
+                for (k, &i) in ids.iter().enumerate() {
+                    assert_eq!(
+                        x.bodies[i].velocity, t.bodies[i].velocity,
+                        "dt {dt:?} substeps {substeps} frame {frame} body {k}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// With gravity, and for positions, XPBD and TGS agree bit for bit when both
+/// use the same substep `h`. XPBD takes `h = dt / substeps`; TGS takes
+/// `h = dt · (1 / substeps)` with the reciprocal rounded through `f32`, which
+/// is the same value only when `substeps` is a power of two (`1 / 2^k` is
+/// exact in `f32`, and `dt · 2^-k` truncates the same bits as `dt / 2^k`).
+/// The scene therefore runs `substeps` 1, 4 and 8 only.
+#[test]
+fn xpbd_and_tgs_agree_bit_for_bit_on_free_bodies_with_a_power_of_two_substep_count() {
     let gs = [
         Vec3Fix::ZERO,
         Vec3Fix::new(r(1, 7), Fix128::from_int(-10), r(-2, 3)),
     ];
     for g in gs {
         for dt in dts() {
-            for substeps in SUBSTEPS {
+            for substeps in [1usize, 4, 8] {
                 let (mut x, ids) = world(SolverBackend::Xpbd, substeps, g);
                 let (mut t, _) = world(SolverBackend::Tgs, substeps, g);
                 for frame in 1..=FRAMES {
