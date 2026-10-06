@@ -297,6 +297,8 @@ were introduced during that release window.
 
 ### Fixed
 
+- `analyze_wall_resonance`: `is_risky` は module doc どおり全ての加振源について帯 (`1 - band < wall / source < 1 + band`) を判定する これまでは絶対差で最も近い源だけを見たので、遠いが帯に入る高い源を見逃した 加振源の空の slice は panic せず、危険なし・比 0 の report を返す **Behavior change:** 最も近い源の外で帯に入る壁は `is_risky = true` になる (AUD-A-S2W1-001 / 002)
+- `separation_load_n`: `C > 1` で負の分離荷重を返していた `C >= 1` は分離しないので `C = 1` と同じ飽和値を返す (AUD-A-S1W6-001)
 - `ContactCache::find` / `get_or_create`: `manifolds` を外から `remove` / `retain` すると内部の pair index が範囲内のまま別の pair の slot を指し、別の pair の manifold を返していた slot の pair を照合し、食い違えば走査で引き直して index を直す (index に無い pair は従来どおり O(1) で無しと答える)
 - `kt_shaft_shoulder_bending`: 段付き丸棒の肩フィレット (曲げ) を、公表された Peterson の曲線 fit (Pilkey, Formulas for Stress, Strain, and Structural Matrices 2nd ed.、`h/r` 0.1〜2 と 2〜20 の 2 組の係数) で計算するようにした これまでは D/d = 2 の 5 点を r/d の範囲ごとの定数で返し、他の D/d は超過分を線形に縮めていたので、表の値と合わず範囲の境で跳び、D = d でも 1 にならず、D/d が 1〜2 の段では図表より低い (危険側) 値になった (D/d = 1.1, r/d = 0.05 で 1.12、fit は 1.81) 2 組の境の段差 (最大 0.03) は傾斜でつなぎ、大きな段で fit が r に対して増える区間は単調な上包絡を取る (どちらも値を上げる側) `h/r < 0.1` は 1 へ線形、`h/r > 20` は √(h/r) で外挿、r ≤ 0 は飽和値 `kt_u_notch_axial` は 1 を下回らない `recommended_fillet_radius_mm` は r = 0 で目標を満たすなら 0 を返す (これまでは探索の下限 r/d = 0.01 を返した) **Behavior change:** K_t と推奨半径の値が変わる (D/d が 1〜2 では大きくなる) (AUD-A-S1W5-001 / 002 / 003 / 004 / 006)
 - `AnimationBlender::update`: 遷移の完了による mode の自動切替を、重みが目標に達した時だけにした これまでは重みが 0 / 1 にあるだけで切り替えたので、`go_ragdoll()` 直後に `dt = 0` (または `transition_speed = 0`) で update すると遷移が始まる前に Animated に戻り、その後重みが 1 になっても Ragdoll にならなかった (逆向きの `go_animated()` も同じ) (AUD-A-S2W3-011)
