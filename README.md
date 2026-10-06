@@ -172,7 +172,7 @@ Every public module, grouped by area and with a one-line summary, is listed in [
 | Collision | GJK / EPA, linear BVH or persistent dynamic AABB tree broad-phase, box, sphere, capsule, cylinder, cone, ellipsoid, torus, wedge, convex hull, compound, triangle mesh, height field, SDF colliders; world ray, sphere / capsule cast and sphere / box overlap queries against those shapes (`PhysicsWorld::cast_ray`, `cast_sphere`, `cast_capsule`, `overlap_sphere`, `overlap_aabb`) |
 | Joints | ball, hinge, fixed, slider, spring, D6, cone-twist, plus pulley, gear, weld, rack-and-pinion and mouse joints; breakable joints and PD motors |
 | Soft bodies | XPBD rope and cloth (with self-collision), position-based fluids, FEM-XPBD deformables, cutting |
-| Gameplay | character controller, vehicles (a simple model and a per-wheel dynamics model with tyres, brakes, ABS, road surfaces and weather), ragdolls, IK bridge, client-side prediction, deterministic RNG with Gaussian draws, contact events, simulated lidar / contact / IMU sensors |
+| Gameplay | character controller (move-and-slide against the world's collided geometry), vehicles (a simple model and a per-wheel dynamics model with tyres, brakes, ABS, road surfaces and weather), ragdolls, IK bridge, client-side prediction, deterministic RNG with Gaussian draws, contact events, simulated lidar / contact / IMU sensors |
 | Solid mechanics | linear-elastic FEM on P1 / P2 / P3 tetrahedra, corotational large rotation, J2 plasticity, hyperelasticity, thermo-mechanical coupling, adaptive refinement, beams, buckling, fatigue, composites |
 | Fluids and fields | MAC-grid CFD with several pressure solvers, RANS / LES turbulence closures, VOF and level set, SPH, compressible flow, heat transfer, Maxwell FDTD with per-cell materials |
 | Aerodynamics | standard atmosphere (ISA 1976, up to 20 km), wing lift and drag with stall, rotor thrust and torque |
@@ -199,7 +199,7 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | step: runs when `PhysicsWorld` steps | 17 |
 | world API: used through another `PhysicsWorld` method | 6 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 136 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 137 |
 | unused: no caller outside tests | 1 |
 
 ## Vehicle dynamics

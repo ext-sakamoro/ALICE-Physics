@@ -134,7 +134,8 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `character` | kinematic capsule controller with move-and-slide and stair stepping |  | [`character_controller`](../examples/character_controller.rs) | standalone |
+| `character` | kinematic capsule controller with move-and-slide and stair stepping (`move_and_slide` sees bodies as spheres and SDF colliders, not static colliders) |  | [`character_controller`](../examples/character_controller.rs) | standalone |
+| `world_character` | `PhysicsWorld::move_character`: move-and-slide of the controller's capsule against the world's collided geometry (body shapes, compound children, planes, height fields, triangle meshes, SDF) with slope limit and step-up |  | [`world_character`](../examples/world_character.rs) | standalone |
 | `character_state` | locomotion state machine (idle, walk, run, jump, fall, crouch) |  | [`character_state_machine`](../examples/character_state_machine.rs) | standalone |
 | `vehicle` | wheels, suspension, engine and steering |  | [`vehicle_drive`](../examples/vehicle_drive.rs) | standalone |
 | `vehicle_dynamics` | per-wheel contact forces, wheel spin, brakes and ABS, brush and Magic Formula tyres, road surfaces and weather, powertrain |  | [`vehicle_dynamics`](../examples/vehicle_dynamics.rs) | standalone |

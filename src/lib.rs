@@ -114,6 +114,7 @@
 //! - [`vehicle`]: Vehicle physics (wheel, suspension, engine, steering)
 //! - [`vehicle_dynamics`]: Per-wheel vehicle dynamics (tyre models, wheel spin, brakes / ABS, road surfaces and weather, powertrain, scenario metrics and lossless replay)
 //! - [`character`]: Kinematic capsule-based character controller (move-and-slide)
+//! - [`world_character`]: `PhysicsWorld::move_character`, move-and-slide of a character against the world's collided geometry
 //! - [`trimesh`]: Triangle mesh collision with BVH acceleration (Moller-Trumbore)
 //! - [`heightfield`]: Height field terrain collision (bilinear interpolation)
 //! - [`cloth_fluid`]: Cloth-fluid coupling (drag, buoyancy, boundary repulsion)
@@ -475,6 +476,7 @@ pub mod vibration_wall;
 pub mod warp_risk;
 pub mod wave_ship;
 pub mod wind_zone;
+pub mod world_character;
 pub mod world_participant;
 pub mod world_shape_query;
 
