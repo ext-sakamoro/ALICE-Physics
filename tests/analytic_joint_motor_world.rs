@@ -43,13 +43,15 @@
 //!   the substep map is the same semi-implicit Euler with that torque. Its
 //!   linearisation is the critically damped decay above.
 //!
-//! The angular velocity after a substep is derived from the rotation change,
-//! `2 sin(ω h / 2) / h` (`update_velocities`), a relative shrink of
-//! `(ω h)^2 / 24` per substep that the closed forms above leave out. Each
-//! test therefore checks two things: the substep map written out here in
-//! `f64` including that derivation (`reference`, tight tolerance), and the
-//! closed form (loose tolerance covering the accumulated shrink, below
-//! `2e-4` for every scene here).
+//! The angular velocity after a substep is derived from the rotation change by
+//! the exact rotation logarithm (`update_velocities`), so a turn of `h ω` gives
+//! back `ω` and the substep map carries no shrink of the rate. Each test checks
+//! two things: the substep map written out here in `f64` (`reference`, tight
+//! tolerance), and the continuous closed form (loose tolerance covering the
+//! gap between the semi-implicit substep map and the closed form, below `2e-4`
+//! for every scene here). A rate derived from the rotation chord instead,
+//! `2 sin(ω h / 2) / h`, falls short of `reference` by `(ω h)^2 / 24` per
+//! substep and fails the tight tolerance.
 
 // The expected values are closed forms evaluated in f64 here, outside the
 // deterministic path, so the platform libm is fine for them.
@@ -126,11 +128,6 @@ fn velocity_pd(kp: f64, max: f64, target: f64) -> PdController {
     pd
 }
 
-/// The rate derived after a substep that turned by `h ω` (`2 sin(h ω / 2) / h`).
-fn derived(h: f64, om: f64) -> f64 {
-    2.0 * (h * om / 2.0).sin() / h
-}
-
 /// Substep map of a velocity motor (`τ = clamp(kp (ω_t - ω), ±max)`), frame
 /// damping `d`, `n` substeps: `ω` after each of `frames` frames.
 #[allow(clippy::too_many_arguments)]
@@ -150,9 +147,7 @@ fn velocity_reference(
     for _ in 0..frames {
         for _ in 0..n {
             om += h * (kp * (target - om)).clamp(-max, max);
-            if derive {
-                om = derived(h, om);
-            }
+            if derive {}
         }
         om *= d;
         out.push(om);
@@ -261,7 +256,6 @@ fn pd_reference(kp: f64, kd: f64, i: f64, n: usize, target: f64, frames: usize) 
         for _ in 0..n {
             om += h * (kp * (target - th) - kd * om) / i;
             th += h * om;
-            om = derived(h, om);
         }
         out.push(th);
     }
@@ -315,7 +309,6 @@ fn pd3d_reference(kp: f64, kd: f64, d: f64, n: usize, target: f64, frames: usize
             let tau = 2.0 * kp * ((target - th) / 2.0).sin() - kd * om;
             om += h * tau;
             th += h * om;
-            om = derived(h, om);
         }
         om *= d;
         out.push(th);
