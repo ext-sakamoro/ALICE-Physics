@@ -3743,7 +3743,9 @@ impl PhysicsWorld {
             ..crate::solver_tgs::TgsConfig::default()
         };
         // Participants need a substep loop of their own: with none registered
-        // the joint-free path below is the single call it always was.
+        // the joint-free path below is the single call it always was. The
+        // loop splits `dt` exactly as that call does, so a world whose
+        // participants stage nothing gives the same bits either way.
         let with_participants = !frozen.is_empty();
         if self.joints.is_empty() && !with_participants {
             solve_oriented_islands_serial(
@@ -3769,16 +3771,13 @@ impl PhysicsWorld {
                 ..tgs_cfg
             };
             //
-            // With participants the substep width is `dt / substeps` in
-            // `Fix128`, the same `h` as every other path, so a participant sees
-            // the same `h` whichever backend runs; without them the width
-            // stays the one this path always used.
+            // The width is the one `tgs_step` uses, with or without
+            // participants, and participants are handed the same `h`
+            // ([`Self::participant_substep_width`]): a participant that
+            // stages nothing then leaves the bodies bit for bit as in a world
+            // without it, for every substep count.
             let substeps = self.config.substeps;
-            let sub_dt = if with_participants {
-                dt / Fix128::from_int(substeps as i64)
-            } else {
-                dt * Fix128::from_f32(1.0 / tgs_cfg.substeps as f32)
-            };
+            let sub_dt = dt * Fix128::from_f32(1.0 / tgs_cfg.substeps as f32);
             let jointed = self.jointed_bodies();
             for s in 0..tgs_cfg.substeps {
                 let overflow_at_start = if with_participants {

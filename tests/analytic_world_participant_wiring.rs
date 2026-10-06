@@ -28,6 +28,7 @@
 
 use std::sync::{Arc, Mutex};
 
+use alice_physics::joint::{BallJoint, Joint};
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{
     PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, WorldSnapshotError,
@@ -243,7 +244,7 @@ mod bridge {
     use alice_physics::solver::ContactConstraint;
 
     /// A bridge that solves nothing (the scene has no contact).
-    struct Idle;
+    pub(super) struct Idle;
 
     impl GpuSolverBridge for Idle {
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -269,14 +270,20 @@ mod bridge {
     }
 }
 
-/// Every path hands the participant `h = dt / substeps`, divided in
-/// [`Fix128`]: with 3 substeps `1/3` is not a binary fraction, so a width
-/// taken from an `f32` reciprocal differs in the low bits.
+/// Every path hands the participant the substep width its own rigid solve
+/// uses. XPBD, the parallel path and the bridge divide in [`Fix128`],
+/// `h = dt / substeps`; TGS uses its own width `dt · from_f32(1 / substeps)`
+/// (the split `tgs_step` makes). With 3 substeps `1/3` is not a binary
+/// fraction, so the two widths differ in the low bits; handing TGS's
+/// participants its own width is what keeps a participant that stages
+/// nothing from changing the TGS bodies.
 #[test]
-fn every_path_hands_participants_dt_over_substeps() {
+fn every_path_hands_participants_the_width_its_solve_uses() {
     let dt = Fix128::from_ratio(1, 60);
-    let expected = dt / Fix128::from_int(3);
-    for backend in [SolverBackend::Xpbd, SolverBackend::Tgs] {
+    let divided = dt / Fix128::from_int(3);
+    let tgs = dt * Fix128::from_f32(1.0 / 3.0);
+    assert_ne!(divided, tgs, "fixture: the two widths must differ");
+    for (backend, expected) in [(SolverBackend::Xpbd, divided), (SolverBackend::Tgs, tgs)] {
         let mut w = PhysicsWorld::new(PhysicsConfig {
             substeps: 3,
             solver_backend: backend,
@@ -293,6 +300,38 @@ fn every_path_hands_participants_dt_over_substeps() {
             "{backend:?}"
         );
     }
+}
+
+/// A [`StepRule::Fixed`] step is checked against the width the participants
+/// are handed: under TGS with 3 substeps a fixed step equal to TGS's own
+/// width runs, one equal to `dt / 3` (which differs from it in the low bits)
+/// is refused unchanged.
+#[test]
+fn a_fixed_step_rule_is_checked_against_the_tgs_width() {
+    let dt = Fix128::from_ratio(1, 60);
+    let tgs = dt * Fix128::from_f32(1.0 / 3.0);
+    let divided = dt / Fix128::from_int(3);
+    let build = |step: Fix128| {
+        let mut w = PhysicsWorld::new(PhysicsConfig {
+            substeps: 3,
+            solver_backend: SolverBackend::Tgs,
+            ..Default::default()
+        });
+        w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let mut push = Push::new(0, Vec3Fix::ZERO);
+        push.rule = StepRule::Fixed(step);
+        w.add_participant(Box::new(push)).expect("register");
+        w
+    };
+    let mut accepted = build(tgs);
+    assert_eq!(accepted.try_step(dt), Ok(()));
+    let mut refused = build(divided);
+    let before = refused.snapshot_world();
+    assert!(matches!(
+        refused.try_step(dt),
+        Err(StepError::Rule { index: 0, .. })
+    ));
+    assert_eq!(refused.snapshot_world(), before);
 }
 
 // ── Zero participants ────────────────────────────────────────────────────
@@ -1061,7 +1100,7 @@ fn a_change_near_the_range_edge_below_the_threshold_leaves_a_parked_body_parked(
 
 // ── Rigid trajectory with a participant that stages nothing ─────────────
 
-fn rigid_motion(w: &PhysicsWorld) -> Vec<(Vec3Fix, Vec3Fix, Vec3Fix, Vec3Fix)> {
+fn rigid_motion(w: &PhysicsWorld) -> Vec<(Vec3Fix, Vec3Fix, Vec3Fix, Vec3Fix, Fix128)> {
     w.bodies
         .iter()
         .map(|b| {
@@ -1070,37 +1109,125 @@ fn rigid_motion(w: &PhysicsWorld) -> Vec<(Vec3Fix, Vec3Fix, Vec3Fix, Vec3Fix)> {
                 b.velocity,
                 b.angular_velocity,
                 Vec3Fix::new(b.rotation.x, b.rotation.y, b.rotation.z),
+                b.rotation.w,
             )
         })
         .collect()
 }
 
-/// Gravity and a stack of three bodies resting on a static one (contacts in
-/// every frame), `substeps = 4`: a participant that stages a zero force leaves
-/// every body bit for bit as in the same world without it, on XPBD and on
-/// TGS. On TGS this needs the per-substep loop to hand the bodies to the
-/// participants and back in every substep; `h = dt / 4` is the width the
-/// world without participants uses, so the oracle is exact equality.
-#[test]
-fn a_participant_that_stages_nothing_leaves_a_stacked_world_unchanged() {
-    for backend in [SolverBackend::Xpbd, SolverBackend::Tgs] {
-        let mut a = stacked(backend);
-        let mut b = stacked(backend);
-        b.add_participant(Box::new(Push::new(1, Vec3Fix::ZERO)))
-            .expect("register");
-        for frame in 0..90 {
-            a.step(Fix128::from_ratio(1, 60));
-            b.try_step(Fix128::from_ratio(1, 60)).expect("step");
-            assert_eq!(
-                rigid_motion(&a),
-                rigid_motion(&b),
-                "{backend:?} frame {frame}"
-            );
-        }
-        assert!(
-            b.bodies[3].velocity != Vec3Fix::ZERO || b.bodies[3].position.y < Fix128::from_int(5),
-            "fixture: the stack must move under gravity"
+/// A stack of three spheres on a static one, spinning, under gravity
+/// (contacts in every frame), and with `joints` a fourth sphere hanging from
+/// the static body by a ball joint.
+fn quiet_scene(backend: SolverBackend, substeps: usize, joints: bool) -> PhysicsWorld {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps,
+        iterations: 4,
+        solver_backend: backend,
+        ..Default::default()
+    });
+    w.add_body(RigidBody::new_static(Vec3Fix::from_int(0, -1, 0)));
+    for i in 0..3 {
+        let mut b = RigidBody::new_dynamic(Vec3Fix::from_int(i % 2, 1 + 2 * i, 0), Fix128::ONE);
+        b.angular_velocity = Vec3Fix::new(Fix128::from_ratio(1, 3), Fix128::ZERO, Fix128::ONE);
+        w.add_body_with_radius(b, Fix128::ONE);
+    }
+    if joints {
+        let hanging = w.add_body_with_radius(
+            RigidBody::new_dynamic(Vec3Fix::from_int(5, -1, 0), Fix128::ONE),
+            Fix128::ONE,
         );
+        w.add_joint(Joint::Ball(BallJoint::new(
+            0,
+            hanging,
+            Vec3Fix::from_int(3, 0, 0),
+            Vec3Fix::from_int(-2, 0, 0),
+        )));
+    }
+    w
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Path {
+    Step,
+    #[cfg(feature = "parallel")]
+    Parallel,
+    #[cfg(feature = "gpu-solver-bridge")]
+    Bridge,
+}
+
+/// One frame of `w` on `path`, checked when `checked` (a world with
+/// participants) and plain otherwise.
+fn frame(w: &mut PhysicsWorld, path: Path, checked: bool, dt: Fix128) {
+    match path {
+        Path::Step => {
+            if checked {
+                w.try_step(dt).expect("step");
+            } else {
+                w.step(dt);
+            }
+        }
+        #[cfg(feature = "parallel")]
+        Path::Parallel => {
+            if checked {
+                w.try_step_parallel(dt).expect("step");
+            } else {
+                w.step_parallel(dt);
+            }
+        }
+        #[cfg(feature = "gpu-solver-bridge")]
+        Path::Bridge => w.step_with_bridge(&mut bridge::Idle, dt),
+    }
+}
+
+/// Registering a participant that stages nothing (no force, no torque, no
+/// field) leaves every body bit for bit as in the same world without it,
+/// for 1, 2, 3 and 8 substeps, on XPBD and TGS (with and without joints),
+/// the parallel path and the bridge (without joints: the idle bridge does not
+/// solve them). The oracle is the world without the
+/// participant, compared with `assert_eq!` after every frame. On TGS this
+/// needs the participants' substep loop to split `dt` as the solve without
+/// participants does and to copy the bodies out and back in every substep.
+#[test]
+fn a_participant_that_stages_nothing_leaves_every_path_bit_identical() {
+    let cases = [
+        (SolverBackend::Xpbd, Path::Step),
+        (SolverBackend::Tgs, Path::Step),
+        #[cfg(feature = "parallel")]
+        (SolverBackend::Xpbd, Path::Parallel),
+        #[cfg(feature = "gpu-solver-bridge")]
+        (SolverBackend::Xpbd, Path::Bridge),
+    ];
+    let dt = Fix128::from_ratio(1, 60);
+    for (backend, path) in cases {
+        for substeps in [1, 2, 3, 8] {
+            // the idle bridge does not take joints (`send_joints` panics)
+            #[cfg(feature = "gpu-solver-bridge")]
+            let joint_cases: &[bool] = if matches!(path, Path::Bridge) {
+                &[false]
+            } else {
+                &[false, true]
+            };
+            #[cfg(not(feature = "gpu-solver-bridge"))]
+            let joint_cases: &[bool] = &[false, true];
+            for &joints in joint_cases {
+                let mut a = quiet_scene(backend, substeps, joints);
+                let mut b = quiet_scene(backend, substeps, joints);
+                b.add_participant(Box::new(Push::new(1, Vec3Fix::ZERO)))
+                    .expect("register");
+                let start = rigid_motion(&a);
+                for f in 0..60 {
+                    frame(&mut a, path, false, dt);
+                    frame(&mut b, path, true, dt);
+                    assert_eq!(
+                        rigid_motion(&a),
+                        rigid_motion(&b),
+                        "{backend:?} {path:?} substeps {substeps} joints {joints} frame {f}"
+                    );
+                }
+                assert_ne!(rigid_motion(&a), start, "fixture: the scene must move");
+                assert_eq!(b.fault(), None);
+            }
+        }
     }
 }
 

@@ -45,7 +45,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 29 of 148 items) | 29 / 84 / 7 / 28 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 37 of 173 items) | 37 / 84 / 7 / 45 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `shape_raycast` | binding | 0 / 0 / 24 / 10 / 0 | C ABI, Python, WebAssembly |
@@ -67,7 +67,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `ccd` | standalone (binding 1 of 13 items) | 0 / 0 / 1 / 12 / 0 | C ABI, Python, WebAssembly |
-| `cfd_solver` | standalone | 0 / 0 / 0 / 41 / 0 | — |
+| `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
 | `character` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `cloth` | standalone | 0 / 0 / 0 / 10 / 0 | — |
@@ -183,7 +183,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `world_character` | standalone | 0 / 0 / 0 / 2 / 0 | — |
-| `world_participant` | standalone | 0 / 0 / 0 / 88 / 0 | — |
+| `world_participant` | standalone (step 37, world API 1 of 88 items) | 37 / 1 / 0 / 50 / 0 | C ABI, Python, WebAssembly |
 
 ### C ABI (`--features ffi`)
 
