@@ -188,8 +188,14 @@ pub fn thermal_residual_stress_mpa(
 #[must_use]
 pub fn interfacial_bond_strength_mpa(a: &MaterialProperties, b: &MaterialProperties) -> Fix128 {
     if a.name == b.name {
-        // Same-material: full yield strength (perfect bond)
-        return a.yield_strength_mpa;
+        // Same-material: a perfect bond, as strong as the weaker of the two
+        // (the same name with different yields is a different batch or
+        // grade; taking `a`'s yield made the result depend on argument order)
+        return if a.yield_strength_mpa <= b.yield_strength_mpa {
+            a.yield_strength_mpa
+        } else {
+            b.yield_strength_mpa
+        };
     }
     // Dissimilar: geometric mean of yields, halved (empirical)
     let mean = (a.yield_strength_mpa * b.yield_strength_mpa).sqrt();

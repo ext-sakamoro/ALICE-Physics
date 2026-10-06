@@ -265,14 +265,24 @@ fn dissimilar_bond_is_weaker_than_the_same_material_bond_of_either_partner() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-011: interfacial_bond_strength_mpa is not symmetric when the two materials share a name but differ in yield strength (same-name branch returns a's yield): bond(40-yield PLA, 50-yield PLA) = 40, bond(50, 40) = 50"]
 fn bond_strength_is_symmetric_for_equal_names_with_different_yield() {
+    // AUD-A-S4W3-011: the same-name branch returned a's yield, so the order mattered
     let mut weak = MaterialProperties::pla();
     weak.yield_strength_mpa = Fix128::from_int(40);
     let strong = MaterialProperties::pla();
     assert_eq!(
         interfacial_bond_strength_mpa(&weak, &strong),
         interfacial_bond_strength_mpa(&strong, &weak)
+    );
+    // a perfect bond is as strong as the weaker partner
+    assert_eq!(
+        interfacial_bond_strength_mpa(&strong, &weak),
+        Fix128::from_int(40)
+    );
+    // identical materials keep their full yield
+    assert_eq!(
+        interfacial_bond_strength_mpa(&strong, &strong),
+        strong.yield_strength_mpa
     );
 }
 
