@@ -263,9 +263,34 @@ impl ScalarField3D {
 
     /// Diffuse field values (heat equation: dT/dt = k * laplacian(T))
     ///
-    /// Uses explicit Euler with 7-point stencil.
+    /// Uses explicit Euler with 7-point stencil. The explicit step stays
+    /// monotone (every stencil weight non-negative) only for
+    /// `n = rate * dt * (2/dx² + 2/dy² + 2/dz²) <= 1`. Within that limit it is
+    /// one step, as before; a step beyond it is split into equal sub-steps of
+    /// `n <= 1/2` each, which keeps the centre weight at least 1/2 so f32
+    /// rounding cannot turn a non-negative field negative. A non-finite or
+    /// non-positive `rate * dt` is ignored.
     /// Scratch buffer is reused across calls (zero allocation after first call).
     pub fn diffuse(&mut self, dt: f32, rate: f32) {
+        let (ix, iy, iz) = self.inv_cell_size;
+        let number = rate * dt * 2.0 * (ix * ix + iy * iy + iz * iz);
+        if !number.is_finite() || number <= 0.0 {
+            return;
+        }
+        // at most a million sub-steps: beyond that the field is flat anyway
+        let steps = if number <= 1.0 {
+            1
+        } else {
+            ((number * 2.0).ceil() as u32).clamp(1, 1_000_000)
+        };
+        let sub_dt = dt / steps as f32;
+        for _ in 0..steps {
+            self.diffuse_step(sub_dt, rate);
+        }
+    }
+
+    /// One explicit step of [`Self::diffuse`] (no stability check).
+    fn diffuse_step(&mut self, dt: f32, rate: f32) {
         let inv_dx2 = self.inv_cell_size.0 * self.inv_cell_size.0;
         let inv_dy2 = self.inv_cell_size.1 * self.inv_cell_size.1;
         let inv_dz2 = self.inv_cell_size.2 * self.inv_cell_size.2;

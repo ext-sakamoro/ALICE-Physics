@@ -327,6 +327,8 @@ were introduced during that release window.
 
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
+- `ScalarField3D::diffuse` (pressure / thermal / phase change / fracture / erosion の拡散): 陽解法の安定限界 `rate·dt·(2/dx²+2/dy²+2/dz²) ≤ 1` を超える step も 1 回で進め、正の山が負の値に振れていた 限界を超える step は 1 つあたり 1/2 以下の等分 sub-step に分ける 限界内は従来どおり 1 step (結果は変わらない) (AUD-A-S6W1-004)
+- `PressureModifier`: `apply_impact` を同じ点に 2 回掛けると次の `update` まで凹みが `max_deformation` の 2 倍になっていた 掛けた直後に上限で切る 負の `internal_pressure` は無視されていた 負は面を内側へ引く (AUD-A-S6W1-003 / 006)
 - `generate_flow_arrows`: 速度の無い粒子 (`fluid_velocities` が短い時) も平均の個数に数え、平均を 0 側へ薄めていた (streamline は数えない) 速度のある粒子だけで平均する 平均の範囲は全軸で x のセル幅 `dx` の球だったので、縦長のセルでは中にいる粒子が外れた セルの形の楕円体 (半軸 `dx, dy, dz`) にした 立方体のセルでは従来と同じ (AUD-A-S4W1-007 / 008)
 - `MaterialProperties::youngs_at_angle`: doc は Reuss の下限と書いていたが、実装は算術平均 `E_xy cos² + E_z sin²` (Voigt の上限) で、PLA の 45° で 4.7 % 硬く出ていた doc どおり Reuss の混合 `1/E = cos²/E_xy + sin²/E_z` にした 剛性 0 の方向に成分がある荷重は 0 **Behavior change:** 斜め方向の弾性率が小さくなる (AUD-A-S1W5-012)
 - `SdfTetMesh::try_refine_conforming` / `try_refine_marked`: 辺を 2 等分した子を `[a, mid, c, d]` / `[mid, b, c, d]` の並びで足していたので、分ける辺が `(v0, v1)` でない時は子の半分が裏返った (60 要素を 0.45 で細分すると 745 中 372 が負の体積) 親の頂点を中点で置き換える形にし、子は親と同じ向きになる (AUD-A-S2W3-012)

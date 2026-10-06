@@ -242,7 +242,7 @@ fn diffusion_alone_conserves_total_pressure() {
 /// the field, so two impacts at one node leave 2 * max until `update` clamps.
 /// `deformation_at` / `modify_distance` read the field directly and see it.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-003: two apply_impact calls at one node give deformation 2.0 with max_deformation 1.0 before update() clamps"]
+// AUD-A-S6W1-003
 fn repeated_impacts_never_exceed_max_deformation_before_update() {
     let cfg = PressureConfig {
         deformation_rate: 1.0,
@@ -259,7 +259,7 @@ fn repeated_impacts_never_exceed_max_deformation_before_update() {
 /// `diffuse` is explicit Euler with no stability limit. With
 /// `rate * dt / h^2 = 0.5 > 1/6` a positive spike produces negative pressure.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-004: update() with diffusion_rate*dt/h^2 = 0.5 turns a +100 spike into negative pressure (centre -200 before decay)"]
+// AUD-A-S6W1-004
 fn diffusion_step_never_produces_negative_pressure() {
     let cfg = PressureConfig {
         diffusion_rate: 5.0,
@@ -292,7 +292,7 @@ fn zero_resolution_does_not_panic_on_read() {
 /// A negative `internal_pressure` is ignored, although the field doc reads
 /// "positive = outward expansion".
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-006: negative internal_pressure has no effect (no inward contraction), doc says only positive = outward"]
+// AUD-A-S6W1-006
 fn negative_internal_pressure_contracts_the_surface() {
     let cfg = PressureConfig {
         internal_pressure: -40.0,
