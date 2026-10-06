@@ -14,10 +14,17 @@
 //! every substep / iteration count — through both paths, twice each, and
 //! compares the serialised state after every frame.
 //!
-//! Bit-exact `step` vs `step_parallel` parity is asserted only when the
-//! constraint graph makes the two orderings equivalent: no rods and no
-//! contact at any point of the frame (every constraint then touches its own
-//! bodies only, so the batch order cannot matter).
+//! Bit-exact `step` vs `step_parallel` parity is asserted only while the
+//! constraint graph has made the two orderings equivalent on every frame so
+//! far: no rods, and no contact seen by either path on this or any earlier
+//! frame (every constraint then touches its own bodies only, so the batch
+//! order cannot matter). The gate is sticky because the state is cumulative:
+//! position-level static friction makes the contact solve depend on the
+//! order in which constraints that share a body are visited, so a contact
+//! frame may leave the two paths legitimately apart, and a later frame
+//! without contact still compares those different states. Parity is
+//! therefore required only before any contact; the determinism of each path
+//! is checked on every frame regardless.
 use alice_physics::{DistanceConstraint, Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
@@ -109,7 +116,10 @@ fuzz_target!(|scene: Scene| {
     let mut seq_b = build(&scene);
     #[cfg(feature = "parallel")]
     let (mut par_a, mut par_b) = (build(&scene), build(&scene));
-    let order_free = scene.rods.is_empty() && seq_a.distance_constraints.is_empty();
+    // false once either path has had a rod or a contact: from then on the two
+    // orderings may differ, and so may every later state
+    #[cfg(feature = "parallel")]
+    let mut order_free = scene.rods.is_empty() && seq_a.distance_constraints.is_empty();
 
     for frame in 0..frames {
         seq_a.step(dt);
@@ -130,14 +140,15 @@ fuzz_target!(|scene: Scene| {
                 seq_a.config.substeps,
                 seq_a.config.iterations
             );
-            // No rods and no contact seen by either path this frame → the two
-            // Gauss–Seidel orderings coincide and the bits must match.
-            if order_free
+            // No rods and no contact seen by either path on this or any
+            // earlier frame → the two Gauss–Seidel orderings have coincided
+            // so far and the bits must match.
+            order_free = order_free
                 && seq_a.contact_constraints.is_empty()
                 && par_a.contact_constraints.is_empty()
                 && seq_a.contact_events().is_empty()
-                && par_a.contact_events().is_empty()
-            {
+                && par_a.contact_events().is_empty();
+            if order_free {
                 assert_eq!(
                     golden, par,
                     "step vs step_parallel diverged on an order-free scene at frame {frame}"
