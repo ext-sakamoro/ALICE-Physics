@@ -3852,6 +3852,10 @@ impl PhysicsWorld {
                     for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
                         tgs_to_body(state, body);
                     }
+                    // この substep の範囲外を、参加者が読む前に world の印へ畳む
+                    if tgs_bodies.iter().any(|s| s.overflow) {
+                        self.note_rigid_overflow();
+                    }
                     self.participants_end_substep(overflow_at_start, frozen);
                 }
             }
