@@ -377,7 +377,7 @@ fn curvature_is_zero_on_the_boundary_and_for_planar_fields() {
 /// not depend on the scale of phi: 2 * (signed distance) is the same interface and must give
 /// the same kappa. The implementation returns the bare Laplacian (doubles).
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-009: curvature_at documents a 1/|grad phi| scaling but returns the bare Laplacian / dx^2; phi -> 2 phi doubles kappa (4/r instead of 2/r)"]
+// AUD-A-S2W3-009
 fn curvature_is_invariant_under_scaling_of_phi() {
     let g = sphere_grid(21, 1.0, 6.0);
     let mut g2 = g.clone();
@@ -428,4 +428,48 @@ fn semi_lagrangian_clamps_out_of_range_samples() {
         Fix128::ONE,
     );
     assert_eq!(values(&g), [1.0, 0.0, 0.5]);
+}
+
+/// A level set that is not a signed distance: phi = rho^2 - R^2 (|grad phi| = 2 rho).
+/// The curvature of its zero set is still 2 / R; the bare Laplacian would give 6
+/// (AUD-A-S2W3-009). Evaluated where the grid point lies exactly on the
+/// surface, rho = R = 6 on a unit grid
+#[test]
+fn curvature_of_a_non_distance_level_set_is_two_over_radius() {
+    let n = 21usize;
+    let mut g = Grid3d::new(n, n, n, Fix128::ONE, Fix128::ZERO);
+    let c = 10.0;
+    for k in 0..n {
+        for j in 0..n {
+            for i in 0..n {
+                let (x, y, z) = (i as f64 - c, j as f64 - c, k as f64 - c);
+                g.set(i, j, k, fx(x * x + y * y + z * z - 36.0));
+            }
+        }
+    }
+    let kappa = curvature_at(&g, 16, 10, 10).to_f64();
+    assert!((kappa - 2.0 / 6.0).abs() < 1e-9, "kappa = {kappa}");
+    // off the axes (4, 4, 2), also on rho = 6: the mixed second derivatives count
+    let kappa = curvature_at(&g, 14, 14, 12).to_f64();
+    assert!((kappa - 2.0 / 6.0).abs() < 1e-9, "kappa off-axis = {kappa}");
+}
+
+/// Mixed second derivatives: phi = x y - 6 (a hyperbolic cylinder) has
+/// grad = (y, x, 0) and only phi_xy = 1, so kappa = -2 x y / (x^2 + y^2)^(3/2);
+/// at (2, 3) that is -12 / 13^(3/2). Central differences are exact for a
+/// quadratic, so the stencil must reproduce it to rounding
+#[test]
+fn curvature_uses_the_mixed_second_derivatives() {
+    let n = 9usize;
+    let mut g = Grid3d::new(n, n, n, Fix128::ONE, Fix128::ZERO);
+    for k in 0..n {
+        for j in 0..n {
+            for i in 0..n {
+                g.set(i, j, k, fx(i as f64 * j as f64 - 6.0));
+            }
+        }
+    }
+    let want = -12.0 / 13.0f64.powf(1.5);
+    let kappa = curvature_at(&g, 2, 3, 4).to_f64();
+    assert!((kappa - want).abs() < 1e-9, "kappa = {kappa} vs {want}");
 }

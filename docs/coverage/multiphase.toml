@@ -331,10 +331,10 @@ id = "COV-MULTIPHASE-028"
 axis = "surface tension"
 item = "interface curvature from the level set (divergence of the normal)"
 source = "Osher-Fedkiw, Level Set Methods and Dynamic Implicit Surfaces ch.1; Tryggvason-Scardovelli-Zaleski, Direct Numerical Simulations of Gas-Liquid Multiphase Flows ch.7"
-status = "partial"
-evidence = "src/multiphase.rs::curvature_at tests/audit_multiphase.rs::curvature_of_a_sphere_is_two_over_radius_at_two_resolutions / tests/engineering_oracles_fluid.rs::multiphase_sphere_level_set_curvature_and_eikonal_seed known defect: tests/audit_multiphase.rs::curvature_is_invariant_under_scaling_of_phi"
+status = "implemented+oracle"
+evidence = "src/multiphase.rs::curvature_at tests/audit_multiphase.rs::curvature_of_a_sphere_is_two_over_radius_at_two_resolutions tests/audit_multiphase.rs::curvature_is_invariant_under_scaling_of_phi tests/audit_multiphase.rs::curvature_of_a_non_distance_level_set_is_two_over_radius tests/audit_multiphase.rs::curvature_uses_the_mixed_second_derivatives / tests/engineering_oracles_fluid.rs::multiphase_sphere_level_set_curvature_and_eikonal_seed"
 oracle_candidate = "|grad phi| != 1 の場 (2 phi) で同じ曲率を返すこと"
-limitation = "src/multiphase.rs::curvature_at 'scaled by `1/|∇φ|` (assumed close to 1 for a well-reinitialised field)'"
+limitation = ""
 
 [[item]]
 id = "COV-MULTIPHASE-029"

@@ -483,24 +483,58 @@ pub(crate) fn reinitialize_level_set(field: &mut Grid3d, iterations: u32) {
     }
 }
 
-/// Estimate interface curvature at cell (i, j, k) via central differences.
-// LIMITATION(COV-MULTIPHASE-028): scaled by `1/|∇φ|` (assumed close to 1 for a well-reinitialised field)
-/// Returns `κ = (∂²φ/∂x² + ∂²φ/∂y² + ∂²φ/∂z²)` scaled by `1/|∇φ|` (assumed
-/// close to 1 for a well-reinitialised field).
+/// Interface curvature `κ = ∇·(∇φ/|∇φ|)` at cell (i, j, k), by central
+/// differences:
+///
+/// `κ = (|∇φ|²·Δφ − ∇φᵀ·H·∇φ) / |∇φ|³`
+///
+/// with `H` the Hessian (the mixed terms from the four diagonal neighbours).
+/// It depends only on the interface, not on the scale of `φ` (`2φ` gives the
+/// same `κ`), and equals the Laplacian `Δφ` for a signed-distance field
+/// (`|∇φ| = 1`, `∇φᵀH∇φ = 0`): `2/r` on a sphere of radius `r`. Boundary
+/// cells and a vanishing gradient (no interface direction) give 0.
 #[must_use]
 pub fn curvature_at(field: &Grid3d, i: usize, j: usize, k: usize) -> Fix128 {
     if i == 0 || j == 0 || k == 0 || i + 1 >= field.nx || j + 1 >= field.ny || k + 1 >= field.nz {
         return Fix128::ZERO;
     }
-    let phi = field.get(i, j, k);
-    let dx2 = field.dx * field.dx;
+    let dx = field.dx;
+    let dx2 = dx * dx;
     if dx2.is_zero() {
         return Fix128::ZERO;
     }
-    let d2x = field.get(i + 1, j, k) - phi.double() + field.get(i - 1, j, k);
-    let d2y = field.get(i, j + 1, k) - phi.double() + field.get(i, j - 1, k);
-    let d2z = field.get(i, j, k + 1) - phi.double() + field.get(i, j, k - 1);
-    (d2x + d2y + d2z) / dx2
+    let g = |di: isize, dj: isize, dk: isize| {
+        field.get(
+            (i as isize + di) as usize,
+            (j as isize + dj) as usize,
+            (k as isize + dk) as usize,
+        )
+    };
+    let phi = g(0, 0, 0);
+    let two_dx = dx.double();
+    // first derivatives
+    let px = (g(1, 0, 0) - g(-1, 0, 0)) / two_dx;
+    let py = (g(0, 1, 0) - g(0, -1, 0)) / two_dx;
+    let pz = (g(0, 0, 1) - g(0, 0, -1)) / two_dx;
+    let grad_sq = px * px + py * py + pz * pz;
+    if grad_sq.is_zero() {
+        return Fix128::ZERO;
+    }
+    // second derivatives
+    let pxx = (g(1, 0, 0) - phi.double() + g(-1, 0, 0)) / dx2;
+    let pyy = (g(0, 1, 0) - phi.double() + g(0, -1, 0)) / dx2;
+    let pzz = (g(0, 0, 1) - phi.double() + g(0, 0, -1)) / dx2;
+    let four_dx2 = dx2 + dx2 + dx2 + dx2;
+    let pxy = (g(1, 1, 0) - g(1, -1, 0) - g(-1, 1, 0) + g(-1, -1, 0)) / four_dx2;
+    let pxz = (g(1, 0, 1) - g(1, 0, -1) - g(-1, 0, 1) + g(-1, 0, -1)) / four_dx2;
+    let pyz = (g(0, 1, 1) - g(0, 1, -1) - g(0, -1, 1) + g(0, -1, -1)) / four_dx2;
+    let laplacian = pxx + pyy + pzz;
+    let hess = px * px * pxx
+        + py * py * pyy
+        + pz * pz * pzz
+        + (px * py * pxy + px * pz * pxz + py * pz * pyz).double();
+    let grad = grad_sq.sqrt();
+    (grad_sq * laplacian - hess) / (grad_sq * grad)
 }
 
 // ============================================================================
