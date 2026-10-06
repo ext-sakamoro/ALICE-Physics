@@ -425,3 +425,30 @@ impl Imu {
         })
     }
 }
+
+/// The sensors read through the world: each method passes the world to the
+/// sensor's own method and returns what it returns, advancing the sensor's state
+/// (noise stream, IMU reference velocity) the same way.
+impl PhysicsWorld {
+    /// One scan of `lidar` from its pose in the world ([`Lidar::scan`]).
+    pub fn lidar_scan(&self, lidar: &mut Lidar) -> LidarScan {
+        lidar.scan(self)
+    }
+
+    /// One scan of `lidar` mounted on `body`, not seeing that body
+    /// ([`Lidar::scan_from_body`]). `None` for an index that is not a body.
+    pub fn lidar_scan_from_body(&self, lidar: &mut Lidar, body: usize) -> Option<LidarScan> {
+        lidar.scan_from_body(self, body)
+    }
+
+    /// The contact-sensor reading after a step of `dt` ([`ContactSensor::read`]).
+    pub fn read_contact_sensor(&self, sensor: &mut ContactSensor, dt: Fix128) -> ContactReading {
+        sensor.read(self, dt)
+    }
+
+    /// The IMU reading after a step of `dt` ([`Imu::sample`]): `None` when the
+    /// body is gone or `dt ≤ 0`.
+    pub fn sample_imu(&self, imu: &mut Imu, dt: Fix128) -> Option<ImuReading> {
+        imu.sample(self, dt)
+    }
+}

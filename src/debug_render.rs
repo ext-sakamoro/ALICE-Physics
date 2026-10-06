@@ -365,6 +365,13 @@ pub fn debug_draw_world(
     }
 }
 
+impl crate::solver::PhysicsWorld {
+    /// Draw this world into `data` ([`debug_draw_world`]); `data` is cleared first.
+    pub fn debug_draw(&self, flags: &DebugDrawFlags, data: &mut DebugDrawData) {
+        debug_draw_world(self, flags, data);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
