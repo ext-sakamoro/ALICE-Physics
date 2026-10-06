@@ -126,6 +126,43 @@ namespace AlicePhysics
         public byte isSensor;
     }
 
+    /// <summary>
+    /// Hit of a world query against the collided geometry. targetKind: 0 body,
+    /// 1 static collider, 2 SDF collider; body is AlicePhysicsWorld.NoBody when
+    /// the hit belongs to no body.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AliceQueryHit
+    {
+        public double t;
+        public AliceVec3 point;
+        public AliceVec3 normal;
+        public uint targetKind;
+        public uint targetIndex;
+        public uint body;
+    }
+
+    /// <summary>One collider found by an overlap query (kind as AliceQueryHit.targetKind).</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AliceQueryTarget
+    {
+        public uint kind;
+        public uint index;
+    }
+
+    /// <summary>Observation of one body.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct AliceBodyObservation
+    {
+        public uint bodyIndex;
+        public AliceVec3 position;
+        public AliceVec3 velocity;
+        public AliceQuat rotation;
+        public AliceVec3 angularVelocity;
+        public byte sleeping;
+        public byte inContact;
+    }
+
     // ========================================================================
     // P/Invoke Declarations
     // ========================================================================
@@ -193,6 +230,13 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern uint alice_physics_joint_add_spring(IntPtr world, uint bodyA, uint bodyB, AliceVec3 anchorA, AliceVec3 anchorB, double restLength, double stiffness, double damping);
         [DllImport(DLL)] public static extern byte alice_physics_joint_remove(IntPtr world, uint index);
         [DllImport(DLL)] public static extern uint alice_physics_joint_count(IntPtr world);
+
+        // World queries and body observation
+        [DllImport(DLL)] public static extern byte alice_physics_world_cast_ray(IntPtr world, AliceVec3 origin, AliceVec3 direction, double maxT, uint excludeBody, out AliceQueryHit hit);
+        [DllImport(DLL)] public static extern byte alice_physics_world_cast_sphere(IntPtr world, AliceVec3 center, double radius, AliceVec3 direction, double maxT, uint excludeBody, out AliceQueryHit hit);
+        [DllImport(DLL)] public static extern byte alice_physics_world_cast_capsule(IntPtr world, AliceVec3 a, AliceVec3 b, double radius, AliceVec3 direction, double maxT, uint excludeBody, out AliceQueryHit hit);
+        [DllImport(DLL)] public static extern uint alice_physics_world_overlap_sphere(IntPtr world, AliceVec3 center, double radius, uint excludeBody, [Out] AliceQueryTarget[] output, uint capacity);
+        [DllImport(DLL)] public static extern byte alice_physics_body_observe(IntPtr world, uint bodyId, out AliceBodyObservation observation);
 
         // Version
         [DllImport(DLL)] public static extern IntPtr alice_physics_version();
@@ -372,6 +416,52 @@ namespace AlicePhysics
         {
             ThrowIfDisposed();
             Native.alice_physics_body_apply_impulse_at(_ptr, bodyId, AliceVec3.FromVector3(impulse), AliceVec3.FromVector3(point));
+        }
+
+        // -- World queries and body observation --
+
+        /// <summary>excludeBody value meaning "exclude no body".</summary>
+        public const uint NoBody = uint.MaxValue;
+
+        /// <summary>Nearest ray hit against the collided geometry; false for no hit or a refused argument.</summary>
+        public bool CastRay(Vector3 origin, Vector3 direction, double maxT, out AliceQueryHit hit, uint excludeBody = NoBody)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_world_cast_ray(_ptr, AliceVec3.FromVector3(origin), AliceVec3.FromVector3(direction), maxT, excludeBody, out hit) != 0;
+        }
+
+        /// <summary>Nearest hit of a sphere moving along direction.</summary>
+        public bool CastSphere(Vector3 center, double radius, Vector3 direction, double maxT, out AliceQueryHit hit, uint excludeBody = NoBody)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_world_cast_sphere(_ptr, AliceVec3.FromVector3(center), radius, AliceVec3.FromVector3(direction), maxT, excludeBody, out hit) != 0;
+        }
+
+        /// <summary>Nearest hit of a capsule (segment a-b grown by radius) moving along direction.</summary>
+        public bool CastCapsule(Vector3 a, Vector3 b, double radius, Vector3 direction, double maxT, out AliceQueryHit hit, uint excludeBody = NoBody)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_world_cast_capsule(_ptr, AliceVec3.FromVector3(a), AliceVec3.FromVector3(b), radius, AliceVec3.FromVector3(direction), maxT, excludeBody, out hit) != 0;
+        }
+
+        /// <summary>Colliders a sphere overlaps, sorted by kind then index (empty on a refused argument).</summary>
+        public AliceQueryTarget[] OverlapSphere(Vector3 center, double radius, uint excludeBody = NoBody)
+        {
+            ThrowIfDisposed();
+            AliceVec3 c = AliceVec3.FromVector3(center);
+            uint n = Native.alice_physics_world_overlap_sphere(_ptr, c, radius, excludeBody, null, 0);
+            if (n == uint.MaxValue || n == 0) return Array.Empty<AliceQueryTarget>();
+            var result = new AliceQueryTarget[n];
+            uint m = Native.alice_physics_world_overlap_sphere(_ptr, c, radius, excludeBody, result, n);
+            if (m != n) return Array.Empty<AliceQueryTarget>();
+            return result;
+        }
+
+        /// <summary>Observe one body; false for an unknown body.</summary>
+        public bool ObserveBody(uint bodyId, out AliceBodyObservation observation)
+        {
+            ThrowIfDisposed();
+            return Native.alice_physics_body_observe(_ptr, bodyId, out observation) != 0;
         }
 
         // -- Config --

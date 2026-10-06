@@ -90,16 +90,16 @@ this file or listed twice, or when a linked example or test does not exist.
 | `wedge` | triangular prism |  |  | step |
 | `plane_collider` | infinite plane |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `convex_mesh_builder` | incremental convex hull from a point set |  |  | world API |
-| `trimesh` | BVH-accelerated triangle mesh collision |  | [`static_colliders`](../examples/static_colliders.rs) | standalone (step 6, binding 3 of 16 items) |
+| `trimesh` | BVH-accelerated triangle mesh collision |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `heightfield` | grid terrain with bilinear interpolation |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `bvh` | linear BVH over Morton codes with stackless traversal |  | [`bvh_leaf_aabb_roundtrip`](../examples/bvh_leaf_aabb_roundtrip.rs) | step |
 | `dynamic_bvh` | incremental AABB tree (insert / remove / update in O(log n)) |  |  | step |
 | `spatial` | spatial hash grid |  |  | standalone |
-| `raycast` | ray and shape casts |  | [`spatial_raycast_queries`](../examples/spatial_raycast_queries.rs) | standalone (binding 5 of 16 items) |
-| `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | standalone |
-| `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | standalone |
+| `raycast` | ray and shape casts |  | [`spatial_raycast_queries`](../examples/spatial_raycast_queries.rs) | standalone (binding 6 of 16 items) |
+| `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | binding |
+| `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | binding |
 | `query` | sphere / capsule casts and overlap queries |  | [`spatial_queries`](../examples/spatial_queries.rs) | standalone |
-| `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone |
+| `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone (binding 1 of 12 items) |
 | `contact_cache` | persistent contact manifolds with warm starting, as an opt-in tool outside `PhysicsWorld::step` |  | [`contact_warm_start_cache`](../examples/contact_warm_start_cache.rs) | step |
 
 ## Joints and articulated bodies
@@ -152,7 +152,7 @@ this file or listed twice, or when a linked example or test does not exist.
 |--------|---------|---------|---------|-------------|
 | `sdf_collider` | collision against signed distance fields |  | [`convex_decomposition`](../examples/convex_decomposition.rs) | step |
 | `sdf_manifold` | multi-point contact manifolds from SDF surfaces |  | [`sdf_manifold_patch`](../examples/sdf_manifold_patch.rs) | standalone |
-| `sdf_ccd` | sphere-tracing continuous collision detection |  | [`sdf_ccd_sweep`](../examples/sdf_ccd_sweep.rs) | standalone |
+| `sdf_ccd` | sphere-tracing continuous collision detection |  | [`sdf_ccd_sweep`](../examples/sdf_ccd_sweep.rs) | standalone (binding 2 of 6 items) |
 | `sdf_force` | force fields driven by an SDF (attract, repel, contain, flow) |  | [`sdf_force_fields`](../examples/sdf_force_fields.rs) | standalone |
 | `sdf_destruction` | CSG boolean destruction | std | [`sdf_destruction_events`](../examples/sdf_destruction_events.rs) | standalone |
 | `sdf_adaptive` | distance-based level of detail for SDF evaluation | std | [`sdf_adaptive_lod`](../examples/sdf_adaptive_lod.rs) | standalone |

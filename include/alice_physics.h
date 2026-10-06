@@ -233,6 +233,60 @@ uint8_t alice_physics_joint_remove(AlicePhysicsWorld* world, uint32_t index);
 uint32_t alice_physics_joint_count(const AlicePhysicsWorld* world);
 
 /* ========================================================================== */
+/* World queries and body observation                                          */
+/* ========================================================================== */
+
+/** exclude_body value meaning "exclude no body"; AliceQueryHit.body value
+ *  meaning "the hit belongs to no body". */
+#define ALICE_PHYSICS_NO_BODY UINT32_MAX
+
+/** Hit of a query against the collided geometry (bodies and their shapes,
+ *  static colliders, SDF colliders). target_kind: 0 body, 1 static collider,
+ *  2 SDF collider. */
+typedef struct {
+    double t;
+    AliceVec3 point;
+    AliceVec3 normal;
+    uint32_t target_kind;
+    uint32_t target_index;
+    uint32_t body;
+} AliceQueryHit;
+
+/** One collider found by an overlap query (kind as AliceQueryHit.target_kind). */
+typedef struct {
+    uint32_t kind;
+    uint32_t index;
+} AliceQueryTarget;
+
+/** Observation of one body. */
+typedef struct {
+    uint32_t body_index;
+    AliceVec3 position;
+    AliceVec3 velocity;
+    AliceQuat rotation;
+    AliceVec3 angular_velocity;
+    uint8_t sleeping;
+    uint8_t in_contact;
+} AliceBodyObservation;
+
+/** Nearest ray hit. Returns 1 and writes out on a hit; 0 for no hit (also a
+ *  zero direction or max_t <= 0), a null world / out, a non-finite value or an
+ *  exclude_body that is not a body (out unchanged). */
+uint8_t alice_physics_world_cast_ray(const AlicePhysicsWorld* world, AliceVec3 origin, AliceVec3 direction, double max_t, uint32_t exclude_body, AliceQueryHit* out);
+/** Nearest hit of a sphere moving along direction (negative radius: no hit). Returns as cast_ray. */
+uint8_t alice_physics_world_cast_sphere(const AlicePhysicsWorld* world, AliceVec3 center, double radius, AliceVec3 direction, double max_t, uint32_t exclude_body, AliceQueryHit* out);
+/** Nearest hit of a capsule (segment a-b grown by radius) moving along direction. Returns as cast_ray. */
+uint8_t alice_physics_world_cast_capsule(const AlicePhysicsWorld* world, AliceVec3 a, AliceVec3 b, double radius, AliceVec3 direction, double max_t, uint32_t exclude_body, AliceQueryHit* out);
+/** Colliders a sphere overlaps, sorted by kind then index. Returns the number
+ *  found and writes the first min(found, capacity) to out (out may be NULL
+ *  when capacity is 0); a return value above capacity means call again with a
+ *  larger buffer. UINT32_MAX for a null world, NULL out with capacity > 0, a
+ *  non-finite value or an exclude_body that is not a body. */
+uint32_t alice_physics_world_overlap_sphere(const AlicePhysicsWorld* world, AliceVec3 center, double radius, uint32_t exclude_body, AliceQueryTarget* out, uint32_t capacity);
+/** Observe one body. Returns 1 on success, 0 for a null world / out or an unknown body. */
+uint8_t alice_physics_body_observe(const AlicePhysicsWorld* world, uint32_t body_id, AliceBodyObservation* out);
+
+/* ========================================================================== */
 /* Version                                                                     */
 /* ========================================================================== */
 

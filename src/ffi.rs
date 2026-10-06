@@ -1402,6 +1402,295 @@ pub unsafe extern "C" fn alice_physics_joint_count(world: *const PhysicsWorld) -
     })
 }
 
+// ============================================================================
+// World queries and body observation
+// ============================================================================
+
+/// `exclude_body` value meaning "exclude no body", and `AliceQueryHit::body`
+/// value meaning "the hit belongs to no body".
+pub const ALICE_PHYSICS_NO_BODY: u32 = u32::MAX;
+
+/// A hit of a world query against the collided geometry (bodies, their
+/// shapes, static colliders, SDF colliders). Every value is the Rust
+/// result converted with `Fix128::to_f64`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AliceQueryHit {
+    /// Distance along the normalised direction.
+    pub t: f64,
+    /// World-space hit point (for a shape cast, the contact on the collider).
+    pub point: AliceVec3,
+    /// Unit surface normal at the hit.
+    pub normal: AliceVec3,
+    /// 0 body, 1 static collider, 2 SDF collider.
+    pub target_kind: u32,
+    /// Index of the body / static collider / SDF collider.
+    pub target_index: u32,
+    /// The body the hit belongs to, or `ALICE_PHYSICS_NO_BODY`.
+    pub body: u32,
+}
+
+/// One collider found by an overlap query.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AliceQueryTarget {
+    /// 0 body, 1 static collider, 2 SDF collider.
+    pub kind: u32,
+    /// Index of the body / static collider / SDF collider.
+    pub index: u32,
+}
+
+/// Observation of one body (see `PhysicsWorld::observe_body`).
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AliceBodyObservation {
+    /// Index of the observed body.
+    pub body_index: u32,
+    /// Position (centre of mass).
+    pub position: AliceVec3,
+    /// Linear velocity.
+    pub velocity: AliceVec3,
+    /// Orientation.
+    pub rotation: AliceQuat,
+    /// Angular velocity.
+    pub angular_velocity: AliceVec3,
+    /// 1 if the body is asleep.
+    pub sleeping: u8,
+    /// 1 if the body has at least one active contact this frame.
+    pub in_contact: u8,
+}
+
+fn u32_index(i: usize) -> u32 {
+    u32::try_from(i).unwrap_or(u32::MAX)
+}
+
+fn exclude_arg(exclude_body: u32) -> Option<usize> {
+    (exclude_body != ALICE_PHYSICS_NO_BODY).then_some(exclude_body as usize)
+}
+
+/// Write `hit` to `out`: 1 for a hit, 0 for none.
+fn write_hit(hit: Option<binding_api::QueryHit>, out: &mut AliceQueryHit) -> u8 {
+    let Some(h) = hit else {
+        return 0;
+    };
+    let [px, py, pz] = h.point;
+    let [nx, ny, nz] = h.normal;
+    *out = AliceQueryHit {
+        t: h.t,
+        point: AliceVec3 {
+            x: px,
+            y: py,
+            z: pz,
+        },
+        normal: AliceVec3 {
+            x: nx,
+            y: ny,
+            z: nz,
+        },
+        target_kind: h.target.0,
+        target_index: u32_index(h.target.1),
+        body: h.body.map_or(ALICE_PHYSICS_NO_BODY, u32_index),
+    };
+    1
+}
+
+/// The nearest hit of a ray with the world's geometry (`PhysicsWorld::cast_ray`
+/// with the default filter, ignoring `exclude_body` unless it is
+/// `ALICE_PHYSICS_NO_BODY`). Returns 1 and writes `out` on a hit; 0 for no
+/// hit (also a zero direction or `max_t <= 0`, as the Rust API), a null
+/// world or `out`, a non-finite value or an `exclude_body` that is not a
+/// body. `out` is left unchanged on 0.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`, or
+/// null; `out` must be valid for writes, or null.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_cast_ray(
+    world: *const PhysicsWorld,
+    origin: AliceVec3,
+    direction: AliceVec3,
+    max_t: f64,
+    exclude_body: u32,
+    out: *mut AliceQueryHit,
+) -> u8 {
+    ffi_guard(0, || {
+        let (Some(w), Some(out)) = (world.as_ref(), out.as_mut()) else {
+            return 0;
+        };
+        let (Some(o), Some(d), Some(m), Some(f)) = (
+            vec3_arg(&origin),
+            vec3_arg(&direction),
+            binding_api::finite(max_t),
+            binding_api::query_filter(w, exclude_arg(exclude_body)),
+        ) else {
+            return 0;
+        };
+        write_hit(binding_api::cast_ray(w, o, d, m, &f), out)
+    })
+}
+
+/// The nearest collider a sphere of `radius` touches when its centre moves
+/// from `center` along `direction` for at most `max_t`
+/// (`PhysicsWorld::cast_sphere`). Return values and `exclude_body` as in
+/// `alice_physics_world_cast_ray`; a negative radius gives 0 (no hit).
+///
+/// # Safety
+/// As `alice_physics_world_cast_ray`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_cast_sphere(
+    world: *const PhysicsWorld,
+    center: AliceVec3,
+    radius: f64,
+    direction: AliceVec3,
+    max_t: f64,
+    exclude_body: u32,
+    out: *mut AliceQueryHit,
+) -> u8 {
+    ffi_guard(0, || {
+        let (Some(w), Some(out)) = (world.as_ref(), out.as_mut()) else {
+            return 0;
+        };
+        let (Some(c), Some(r), Some(d), Some(m), Some(f)) = (
+            vec3_arg(&center),
+            binding_api::finite(radius),
+            vec3_arg(&direction),
+            binding_api::finite(max_t),
+            binding_api::query_filter(w, exclude_arg(exclude_body)),
+        ) else {
+            return 0;
+        };
+        write_hit(binding_api::cast_sphere(w, c, r, d, m, &f), out)
+    })
+}
+
+/// The nearest collider a capsule (segment `a`-`b` grown by `radius`)
+/// touches when it moves along `direction` for at most `max_t`
+/// (`PhysicsWorld::cast_capsule`). Return values and `exclude_body` as in
+/// `alice_physics_world_cast_ray`; a negative radius gives 0 (no hit).
+///
+/// # Safety
+/// As `alice_physics_world_cast_ray`.
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub unsafe extern "C" fn alice_physics_world_cast_capsule(
+    world: *const PhysicsWorld,
+    a: AliceVec3,
+    b: AliceVec3,
+    radius: f64,
+    direction: AliceVec3,
+    max_t: f64,
+    exclude_body: u32,
+    out: *mut AliceQueryHit,
+) -> u8 {
+    ffi_guard(0, || {
+        let (Some(w), Some(out)) = (world.as_ref(), out.as_mut()) else {
+            return 0;
+        };
+        let (Some(a), Some(b), Some(r), Some(d), Some(m), Some(f)) = (
+            vec3_arg(&a),
+            vec3_arg(&b),
+            binding_api::finite(radius),
+            vec3_arg(&direction),
+            binding_api::finite(max_t),
+            binding_api::query_filter(w, exclude_arg(exclude_body)),
+        ) else {
+            return 0;
+        };
+        write_hit(binding_api::cast_capsule(w, a, b, r, d, m, &f), out)
+    })
+}
+
+/// Every collider a sphere of `radius` about `center` overlaps
+/// (`PhysicsWorld::overlap_sphere`), sorted by kind then index.
+///
+/// Returns the number of colliders found and writes the first
+/// `min(found, capacity)` of them to `out`: when the return value exceeds
+/// `capacity`, call again with a larger buffer. `out` may be null when
+/// `capacity` is 0 (count only). A negative radius finds nothing (0).
+/// Returns `UINT32_MAX` for a null world, a null `out` with `capacity > 0`,
+/// a non-finite value or an `exclude_body` that is not a body.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`, or
+/// null; `out` must be valid for `capacity` writes of `AliceQueryTarget`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_overlap_sphere(
+    world: *const PhysicsWorld,
+    center: AliceVec3,
+    radius: f64,
+    exclude_body: u32,
+    out: *mut AliceQueryTarget,
+    capacity: u32,
+) -> u32 {
+    ffi_guard(u32::MAX, || {
+        let Some(w) = world.as_ref() else {
+            return u32::MAX;
+        };
+        if out.is_null() && capacity > 0 {
+            return u32::MAX;
+        }
+        let (Some(c), Some(r), Some(f)) = (
+            vec3_arg(&center),
+            binding_api::finite(radius),
+            binding_api::query_filter(w, exclude_arg(exclude_body)),
+        ) else {
+            return u32::MAX;
+        };
+        let found = binding_api::overlap_sphere(w, c, r, &f);
+        let n = found.len().min(capacity as usize);
+        if n > 0 {
+            let buf = std::slice::from_raw_parts_mut(out, n);
+            for (slot, &(kind, index)) in buf.iter_mut().zip(&found) {
+                *slot = AliceQueryTarget {
+                    kind,
+                    index: u32_index(index),
+                };
+            }
+        }
+        // a count past u32 range would read as the error sentinel; clamp below it
+        u32::try_from(found.len()).map_or(u32::MAX - 1, |n| n.min(u32::MAX - 1))
+    })
+}
+
+/// Observe one body (`PhysicsWorld::observe_body`). Returns 1 and writes
+/// `out`; 0 for a null world or `out`, or an unknown body (`out` unchanged).
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`, or
+/// null; `out` must be valid for writes, or null.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_body_observe(
+    world: *const PhysicsWorld,
+    body_id: u32,
+    out: *mut AliceBodyObservation,
+) -> u8 {
+    ffi_guard(0, || {
+        let (Some(w), Some(out)) = (world.as_ref(), out.as_mut()) else {
+            return 0;
+        };
+        let Some(o) = binding_api::observe_body(w, body_id as usize) else {
+            return 0;
+        };
+        let v = |[x, y, z]: [f64; 3]| AliceVec3 { x, y, z };
+        let [qx, qy, qz, qw] = o.rotation;
+        *out = AliceBodyObservation {
+            body_index: u32_index(o.body_index),
+            position: v(o.position),
+            velocity: v(o.velocity),
+            rotation: AliceQuat {
+                x: qx,
+                y: qy,
+                z: qz,
+                w: qw,
+            },
+            angular_velocity: v(o.angular_velocity),
+            sleeping: u8::from(o.sleeping),
+            in_contact: u8::from(o.in_contact),
+        };
+        1
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2246,6 +2535,408 @@ mod tests {
             assert_eq!(w.bodies.len(), 2);
             assert!(w.joints.is_empty());
             assert_eq!(w.static_collider_count(), 0);
+            assert!(
+                alice_physics_last_error().is_null(),
+                "a refusal must not come from a caught panic"
+            );
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // World queries and body observation
+    // ------------------------------------------------------------------
+
+    /// The query scene through the C ABI and the same scene through the Rust
+    /// API: a static body of collision radius 1 at (0, 0, 10), a dynamic
+    /// body of radius 1 at (0, 0, 20) and the static plane y = -2.
+    unsafe fn query_twins() -> (*mut PhysicsWorld, PhysicsWorld) {
+        let world = alice_physics_world_create();
+        assert_eq!(alice_physics_body_add_static(world, v(0.0, 0.0, 10.0)), 0);
+        assert_eq!(
+            alice_physics_body_add_dynamic(world, v(0.0, 0.0, 20.0), 1.0),
+            1
+        );
+        assert_eq!(alice_physics_body_set_collision_radius(world, 0, 1.0), 1);
+        assert_eq!(alice_physics_body_set_collision_radius(world, 1, 1.0), 1);
+        assert_eq!(
+            alice_physics_static_add_plane(world, v(0.0, 1.0, 0.0), -2.0),
+            0
+        );
+        let mut rust = PhysicsWorld::new(SolverConfig::default());
+        rust.add_body(RigidBody::new_static(vf(0.0, 0.0, 10.0)));
+        rust.add_body(RigidBody::new_dynamic(vf(0.0, 0.0, 20.0), Fix128::ONE));
+        rust.set_body_collision_radius(0, Fix128::ONE);
+        rust.set_body_collision_radius(1, Fix128::ONE);
+        rust.add_static_collider(crate::static_collider::StaticCollider::Plane(
+            crate::plane_collider::PlaneCollider::new(Vec3Fix::UNIT_Y, fx(-2.0)),
+        ));
+        (world, rust)
+    }
+
+    fn no_hit() -> AliceQueryHit {
+        AliceQueryHit {
+            t: -1.0,
+            point: v(0.0, 0.0, 0.0),
+            normal: v(0.0, 0.0, 0.0),
+            target_kind: 7,
+            target_index: 7,
+            body: 7,
+        }
+    }
+
+    /// The binding hit is the Rust hit with every Fix128 converted by
+    /// `Fix128::to_f64` (bit-equal f64, no further tolerance), and the
+    /// target as (kind, index, body).
+    fn same_hit(c: &AliceQueryHit, t: Fix128, p: Vec3Fix, n: Vec3Fix, target: (u32, u32, u32)) {
+        assert_eq!(c.t.to_bits(), t.to_f64().to_bits(), "t");
+        assert_eq!(c.point, AliceVec3::from_vec3fix(p), "point");
+        assert_eq!(c.normal, AliceVec3::from_vec3fix(n), "normal");
+        assert_eq!((c.target_kind, c.target_index, c.body), target, "target");
+    }
+
+    fn close(c: AliceVec3, x: f64, y: f64, z: f64) {
+        let d = (c.x - x).abs().max((c.y - y).abs()).max((c.z - z).abs());
+        assert!(d < 1e-12, "{c:?} vs ({x}, {y}, {z})");
+    }
+
+    /// oracle: cast_ray / cast_sphere / cast_capsule / overlap_sphere through
+    /// the C ABI return the Rust API's answer on the same scene, and the
+    /// answers are the closed form (ray to a sphere of radius 1 at distance
+    /// 10: t = 9; a sphere or capsule of radius 0.5: t = 8.5; the plane
+    /// y = -2 from the origin straight down: t = 2).
+    // covers: COV-ENGINE-058
+    #[test]
+    fn query_calls_match_the_rust_api_and_the_closed_form() {
+        unsafe {
+            let (world, rust) = query_twins();
+            let f = crate::shape_raycast::RayFilter::default();
+            let o = v(0.0, 0.0, 0.0);
+            let pz = v(0.0, 0.0, 1.0);
+            let none = ALICE_PHYSICS_NO_BODY;
+
+            // ray +z: the static body 0 at t = 9
+            let mut hit = no_hit();
+            assert_eq!(
+                alice_physics_world_cast_ray(world, o, pz, 100.0, none, &mut hit),
+                1
+            );
+            let r = rust
+                .cast_ray(Vec3Fix::ZERO, Vec3Fix::UNIT_Z, fx(100.0), &f)
+                .unwrap();
+            same_hit(&hit, r.t, r.point, r.normal, (0, 0, 0));
+            assert!((hit.t - 9.0).abs() < 1e-12, "t = {}", hit.t);
+            close(hit.point, 0.0, 0.0, 9.0);
+            close(hit.normal, 0.0, 0.0, -1.0);
+
+            // off-axis ray from (0.25, 0.5, 0): the lateral offset is
+            // d^2 = 0.3125, so t = 10 - sqrt(1 - d^2), normal = hit - centre
+            let off = v(0.25, 0.5, 0.0);
+            assert_eq!(
+                alice_physics_world_cast_ray(world, off, pz, 100.0, none, &mut hit),
+                1
+            );
+            let r = rust
+                .cast_ray(vf(0.25, 0.5, 0.0), Vec3Fix::UNIT_Z, fx(100.0), &f)
+                .unwrap();
+            same_hit(&hit, r.t, r.point, r.normal, (0, 0, 0));
+            let tc = 10.0 - 0.6875f64.sqrt();
+            assert!((hit.t - tc).abs() < 1e-12, "t = {}", hit.t);
+            close(hit.point, 0.25, 0.5, tc);
+            close(hit.normal, 0.25, 0.5, tc - 10.0);
+
+            // excluding body 0: body 1 at t = 19
+            assert_eq!(
+                alice_physics_world_cast_ray(world, o, pz, 100.0, 0, &mut hit),
+                1
+            );
+            let r = rust
+                .cast_ray(
+                    Vec3Fix::ZERO,
+                    Vec3Fix::UNIT_Z,
+                    fx(100.0),
+                    &f.excluding_body(0),
+                )
+                .unwrap();
+            same_hit(&hit, r.t, r.point, r.normal, (0, 1, 1));
+            assert!((hit.t - 19.0).abs() < 1e-12, "t = {}", hit.t);
+
+            // ray straight down (unnormalised direction): the plane at t = 2
+            assert_eq!(
+                alice_physics_world_cast_ray(world, o, v(0.0, -3.0, 0.0), 10.0, none, &mut hit),
+                1
+            );
+            let r = rust
+                .cast_ray(Vec3Fix::ZERO, vf(0.0, -3.0, 0.0), fx(10.0), &f)
+                .unwrap();
+            same_hit(&hit, r.t, r.point, r.normal, (1, 0, none));
+            assert!((hit.t - 2.0).abs() < 1e-12, "t = {}", hit.t);
+            close(hit.point, 0.0, -2.0, 0.0);
+            close(hit.normal, 0.0, 1.0, 0.0);
+
+            // a miss leaves the output untouched
+            let mut miss = no_hit();
+            assert_eq!(
+                alice_physics_world_cast_ray(world, o, v(1.0, 0.0, 0.0), 100.0, none, &mut miss),
+                0
+            );
+            assert!(rust
+                .cast_ray(Vec3Fix::ZERO, Vec3Fix::UNIT_X, fx(100.0), &f)
+                .is_none());
+            assert_eq!(miss.target_kind, 7);
+
+            // sphere cast radius 0.5: t = 8.5, contact (0, 0, 9)
+            assert_eq!(
+                alice_physics_world_cast_sphere(world, o, 0.5, pz, 100.0, none, &mut hit),
+                1
+            );
+            let r = rust
+                .cast_sphere(Vec3Fix::ZERO, fx(0.5), Vec3Fix::UNIT_Z, fx(100.0), &f)
+                .unwrap();
+            same_hit(&hit, r.t, r.point, r.normal, (0, 0, 0));
+            assert!((hit.t - 8.5).abs() < 1e-12, "t = {}", hit.t);
+            close(hit.point, 0.0, 0.0, 9.0);
+            close(hit.normal, 0.0, 0.0, -1.0);
+
+            // capsule (-1,0,0)-(1,0,0) radius 0.5 along +z: t = 8.5
+            let (a, b) = (v(-1.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
+            assert_eq!(
+                alice_physics_world_cast_capsule(world, a, b, 0.5, pz, 100.0, none, &mut hit),
+                1
+            );
+            let r = rust
+                .cast_capsule(
+                    vf(-1.0, 0.0, 0.0),
+                    vf(1.0, 0.0, 0.0),
+                    fx(0.5),
+                    Vec3Fix::UNIT_Z,
+                    fx(100.0),
+                    &f,
+                )
+                .unwrap();
+            same_hit(&hit, r.t, r.point, r.normal, (0, 0, 0));
+            assert!((hit.t - 8.5).abs() < 1e-12, "t = {}", hit.t);
+            close(hit.point, 0.0, 0.0, 9.0);
+
+            // overlap: centre (0, -1.2, 10), radius 1 meets body 0 (distance
+            // 1.2 < 2) and the plane (distance 0.8 < 1), not body 1
+            let mut out = [AliceQueryTarget { kind: 7, index: 7 }; 4];
+            let n = alice_physics_world_overlap_sphere(
+                world,
+                v(0.0, -1.2, 10.0),
+                1.0,
+                none,
+                out.as_mut_ptr(),
+                4,
+            );
+            let r = rust.overlap_sphere(vf(0.0, -1.2, 10.0), Fix128::ONE, &f);
+            use crate::shape_raycast::RayTarget;
+            assert_eq!(r, vec![RayTarget::Body(0), RayTarget::StaticCollider(0)]);
+            assert_eq!(n, 2);
+            assert_eq!(
+                out,
+                [
+                    AliceQueryTarget { kind: 0, index: 0 },
+                    AliceQueryTarget { kind: 1, index: 0 },
+                    AliceQueryTarget { kind: 7, index: 7 },
+                    AliceQueryTarget { kind: 7, index: 7 },
+                ]
+            );
+            // excluding body 0 leaves the plane
+            let n = alice_physics_world_overlap_sphere(
+                world,
+                v(0.0, -1.2, 10.0),
+                1.0,
+                0,
+                out.as_mut_ptr(),
+                4,
+            );
+            assert_eq!(n, 1);
+            assert_eq!(out[0], AliceQueryTarget { kind: 1, index: 0 });
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    /// oracle: the query structs have the C layout the headers declare
+    /// (sizes and the last field offsets measured from include/alice_physics.h
+    /// with a C compiler: 72 / 8 / 120 bytes, `body` at 64, `in_contact` at 113).
+    #[test]
+    fn query_structs_have_the_header_layout() {
+        assert_eq!(std::mem::size_of::<AliceQueryHit>(), 72);
+        assert_eq!(std::mem::offset_of!(AliceQueryHit, body), 64);
+        assert_eq!(std::mem::size_of::<AliceQueryTarget>(), 8);
+        assert_eq!(std::mem::size_of::<AliceBodyObservation>(), 120);
+        assert_eq!(std::mem::offset_of!(AliceBodyObservation, in_contact), 113);
+    }
+
+    /// oracle: a buffer smaller than the result is filled up to its capacity
+    /// and the full count is still returned; capacity 0 with a null buffer
+    /// asks for the count only.
+    #[test]
+    fn overlap_sphere_counts_past_a_small_buffer() {
+        unsafe {
+            let (world, _) = query_twins();
+            let c = v(0.0, -1.2, 10.0);
+            let none = ALICE_PHYSICS_NO_BODY;
+            let mut out = [AliceQueryTarget { kind: 7, index: 7 }; 2];
+            assert_eq!(
+                alice_physics_world_overlap_sphere(world, c, 1.0, none, out.as_mut_ptr(), 1),
+                2
+            );
+            assert_eq!(out[0], AliceQueryTarget { kind: 0, index: 0 });
+            assert_eq!(
+                out[1],
+                AliceQueryTarget { kind: 7, index: 7 },
+                "past capacity"
+            );
+            assert_eq!(
+                alice_physics_world_overlap_sphere(world, c, 1.0, none, std::ptr::null_mut(), 0),
+                2
+            );
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    /// oracle: observe_body through the C ABI is the Rust observation
+    /// converted with `to_f64`, before and after a step (velocity set to
+    /// (1, 2, 3) reads back exactly; identity rotation; no contact).
+    #[test]
+    fn observe_body_matches_the_rust_api() {
+        unsafe {
+            let (world, mut rust) = query_twins();
+            assert_eq!(
+                alice_physics_body_set_velocity(world, 1, v(1.0, 2.0, 3.0)),
+                1
+            );
+            rust.bodies[1].velocity = vf(1.0, 2.0, 3.0);
+            let mut o = std::mem::zeroed::<AliceBodyObservation>();
+            assert_eq!(alice_physics_body_observe(world, 1, &mut o), 1);
+            assert_eq!(o.body_index, 1);
+            assert_eq!(o.position, v(0.0, 0.0, 20.0));
+            assert_eq!(o.velocity, v(1.0, 2.0, 3.0));
+            assert_eq!(
+                (o.rotation.x, o.rotation.y, o.rotation.z, o.rotation.w),
+                (0.0, 0.0, 0.0, 1.0)
+            );
+            assert_eq!(o.angular_velocity, v(0.0, 0.0, 0.0));
+            assert_eq!((o.sleeping, o.in_contact), (0, 0));
+
+            assert_eq!(alice_physics_world_step(world, 1.0 / 60.0), 1);
+            rust.step(fx(1.0 / 60.0));
+            for i in 0..2u32 {
+                assert_eq!(alice_physics_body_observe(world, i, &mut o), 1);
+                let r = rust.observe_body(i as usize).unwrap();
+                assert_eq!(o.body_index, i);
+                assert_eq!(o.position, AliceVec3::from_vec3fix(r.position));
+                assert_eq!(o.velocity, AliceVec3::from_vec3fix(r.velocity));
+                assert_eq!(o.rotation, AliceQuat::from_quatfix(r.rotation));
+                assert_eq!(
+                    o.angular_velocity,
+                    AliceVec3::from_vec3fix(r.angular_velocity)
+                );
+                assert_eq!(
+                    (o.sleeping != 0, o.in_contact != 0),
+                    (r.sleeping, r.in_contact)
+                );
+            }
+            alice_physics_world_destroy(world);
+        }
+    }
+
+    /// oracle: degenerate queries give no hit (zero direction, negative
+    /// radius, max_t <= 0, as the Rust API) or are refused (null world or
+    /// output, non-finite values, an exclude index that is not a body, an
+    /// unknown body to observe), with the output untouched and no panic.
+    #[test]
+    fn query_calls_refuse_degenerate_arguments() {
+        unsafe {
+            let (world, _) = query_twins();
+            alice_physics_clear_last_error();
+            let null: *const PhysicsWorld = std::ptr::null();
+            let none = ALICE_PHYSICS_NO_BODY;
+            let o = v(0.0, 0.0, 0.0);
+            let pz = v(0.0, 0.0, 1.0);
+            let zero = v(0.0, 0.0, 0.0);
+            let nan = f64::NAN;
+            let mut hit = no_hit();
+            let ray = |w, o, d, m, e, h: *mut AliceQueryHit| {
+                alice_physics_world_cast_ray(w, o, d, m, e, h)
+            };
+            assert_eq!(ray(world, o, zero, 100.0, none, &mut hit), 0, "zero dir");
+            assert_eq!(ray(world, o, pz, 0.0, none, &mut hit), 0, "max_t 0");
+            assert_eq!(ray(world, o, pz, -1.0, none, &mut hit), 0, "max_t < 0");
+            assert_eq!(ray(world, o, pz, nan, none, &mut hit), 0, "max_t nan");
+            assert_eq!(ray(world, v(nan, 0.0, 0.0), pz, 100.0, none, &mut hit), 0);
+            assert_eq!(ray(world, o, pz, 100.0, 2, &mut hit), 0, "exclude 2");
+            assert_eq!(ray(null, o, pz, 100.0, none, &mut hit), 0, "null world");
+            assert_eq!(ray(world, o, pz, 100.0, none, std::ptr::null_mut()), 0);
+            assert_eq!(
+                alice_physics_world_cast_sphere(world, o, -0.5, pz, 100.0, none, &mut hit),
+                0,
+                "negative radius"
+            );
+            assert_eq!(
+                alice_physics_world_cast_sphere(world, o, nan, pz, 100.0, none, &mut hit),
+                0
+            );
+            assert_eq!(
+                alice_physics_world_cast_sphere(world, o, 0.5, zero, 100.0, none, &mut hit),
+                0
+            );
+            assert_eq!(
+                alice_physics_world_cast_sphere(null, o, 0.5, pz, 100.0, none, &mut hit),
+                0
+            );
+            let (a, b) = (v(-1.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
+            assert_eq!(
+                alice_physics_world_cast_capsule(world, a, b, -0.5, pz, 100.0, none, &mut hit),
+                0,
+                "negative radius"
+            );
+            assert_eq!(
+                alice_physics_world_cast_capsule(world, a, b, 0.5, zero, 100.0, none, &mut hit),
+                0
+            );
+            assert_eq!(
+                alice_physics_world_cast_capsule(world, a, b, 0.5, pz, 100.0, 9, &mut hit),
+                0
+            );
+            assert_eq!(
+                alice_physics_world_cast_capsule(null, a, b, 0.5, pz, 100.0, none, &mut hit),
+                0
+            );
+            assert_eq!(hit.target_kind, 7, "output untouched");
+
+            let mut out = [AliceQueryTarget { kind: 7, index: 7 }; 2];
+            let c = v(0.0, -1.2, 10.0);
+            let ov = |w, c, r, e, p: *mut AliceQueryTarget, n| {
+                alice_physics_world_overlap_sphere(w, c, r, e, p, n)
+            };
+            assert_eq!(ov(world, c, -1.0, none, out.as_mut_ptr(), 2), 0, "r < 0");
+            assert_eq!(ov(world, c, nan, none, out.as_mut_ptr(), 2), u32::MAX);
+            assert_eq!(ov(world, c, 1.0, 5, out.as_mut_ptr(), 2), u32::MAX);
+            assert_eq!(ov(null, c, 1.0, none, out.as_mut_ptr(), 2), u32::MAX);
+            assert_eq!(ov(world, c, 1.0, none, std::ptr::null_mut(), 2), u32::MAX);
+            assert_eq!(out[0].kind, 7, "output untouched");
+
+            let mut obs = std::mem::zeroed::<AliceBodyObservation>();
+            obs.body_index = 7;
+            assert_eq!(alice_physics_body_observe(world, 2, &mut obs), 0);
+            assert_eq!(alice_physics_body_observe(null, 0, &mut obs), 0);
+            assert_eq!(
+                alice_physics_body_observe(world, 0, std::ptr::null_mut()),
+                0
+            );
+            assert_eq!(obs.body_index, 7, "output untouched");
+
+            // an empty world: no hit, no overlap, nothing to observe
+            let empty = alice_physics_world_create();
+            assert_eq!(ray(empty, o, pz, 100.0, none, &mut hit), 0);
+            assert_eq!(ov(empty, o, 1.0, none, out.as_mut_ptr(), 2), 0);
+            assert_eq!(alice_physics_body_observe(empty, 0, &mut obs), 0);
+            assert_eq!(ray(empty, o, pz, 100.0, 0, &mut hit), 0, "exclude in empty");
+            alice_physics_world_destroy(empty);
+
             assert!(
                 alice_physics_last_error().is_null(),
                 "a refusal must not come from a caught panic"

@@ -3873,6 +3873,29 @@ impl core::marker::Unpin for alice_physics::ffi::AliceBodyInfo
 impl core::marker::UnsafeUnpin for alice_physics::ffi::AliceBodyInfo
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ffi::AliceBodyInfo
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceBodyInfo
+#[repr(C)] pub struct alice_physics::ffi::AliceBodyObservation
+pub alice_physics::ffi::AliceBodyObservation::angular_velocity: alice_physics::ffi::AliceVec3
+pub alice_physics::ffi::AliceBodyObservation::body_index: u32
+pub alice_physics::ffi::AliceBodyObservation::in_contact: u8
+pub alice_physics::ffi::AliceBodyObservation::position: alice_physics::ffi::AliceVec3
+pub alice_physics::ffi::AliceBodyObservation::rotation: alice_physics::ffi::AliceQuat
+pub alice_physics::ffi::AliceBodyObservation::sleeping: u8
+pub alice_physics::ffi::AliceBodyObservation::velocity: alice_physics::ffi::AliceVec3
+impl core::clone::Clone for alice_physics::ffi::AliceBodyObservation
+pub fn alice_physics::ffi::AliceBodyObservation::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::ffi::AliceBodyObservation
+pub fn alice_physics::ffi::AliceBodyObservation::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::ffi::AliceBodyObservation
+pub fn alice_physics::ffi::AliceBodyObservation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::ffi::AliceBodyObservation
+impl core::marker::StructuralPartialEq for alice_physics::ffi::AliceBodyObservation
+impl core::marker::Freeze for alice_physics::ffi::AliceBodyObservation
+impl core::marker::Send for alice_physics::ffi::AliceBodyObservation
+impl core::marker::Sync for alice_physics::ffi::AliceBodyObservation
+impl core::marker::Unpin for alice_physics::ffi::AliceBodyObservation
+impl core::marker::UnsafeUnpin for alice_physics::ffi::AliceBodyObservation
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ffi::AliceBodyObservation
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceBodyObservation
 #[repr(C)] pub struct alice_physics::ffi::AliceFix128Raw
 pub alice_physics::ffi::AliceFix128Raw::hi: i64
 pub alice_physics::ffi::AliceFix128Raw::lo: u64
@@ -3946,6 +3969,47 @@ impl core::marker::Unpin for alice_physics::ffi::AliceQuat
 impl core::marker::UnsafeUnpin for alice_physics::ffi::AliceQuat
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ffi::AliceQuat
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceQuat
+#[repr(C)] pub struct alice_physics::ffi::AliceQueryHit
+pub alice_physics::ffi::AliceQueryHit::body: u32
+pub alice_physics::ffi::AliceQueryHit::normal: alice_physics::ffi::AliceVec3
+pub alice_physics::ffi::AliceQueryHit::point: alice_physics::ffi::AliceVec3
+pub alice_physics::ffi::AliceQueryHit::t: f64
+pub alice_physics::ffi::AliceQueryHit::target_index: u32
+pub alice_physics::ffi::AliceQueryHit::target_kind: u32
+impl core::clone::Clone for alice_physics::ffi::AliceQueryHit
+pub fn alice_physics::ffi::AliceQueryHit::clone(&self) -> Self
+impl core::cmp::PartialEq for alice_physics::ffi::AliceQueryHit
+pub fn alice_physics::ffi::AliceQueryHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::ffi::AliceQueryHit
+pub fn alice_physics::ffi::AliceQueryHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::ffi::AliceQueryHit
+impl core::marker::StructuralPartialEq for alice_physics::ffi::AliceQueryHit
+impl core::marker::Freeze for alice_physics::ffi::AliceQueryHit
+impl core::marker::Send for alice_physics::ffi::AliceQueryHit
+impl core::marker::Sync for alice_physics::ffi::AliceQueryHit
+impl core::marker::Unpin for alice_physics::ffi::AliceQueryHit
+impl core::marker::UnsafeUnpin for alice_physics::ffi::AliceQueryHit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ffi::AliceQueryHit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceQueryHit
+#[repr(C)] pub struct alice_physics::ffi::AliceQueryTarget
+pub alice_physics::ffi::AliceQueryTarget::index: u32
+pub alice_physics::ffi::AliceQueryTarget::kind: u32
+impl core::clone::Clone for alice_physics::ffi::AliceQueryTarget
+pub fn alice_physics::ffi::AliceQueryTarget::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::ffi::AliceQueryTarget
+impl core::cmp::PartialEq for alice_physics::ffi::AliceQueryTarget
+pub fn alice_physics::ffi::AliceQueryTarget::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::ffi::AliceQueryTarget
+pub fn alice_physics::ffi::AliceQueryTarget::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::ffi::AliceQueryTarget
+impl core::marker::StructuralPartialEq for alice_physics::ffi::AliceQueryTarget
+impl core::marker::Freeze for alice_physics::ffi::AliceQueryTarget
+impl core::marker::Send for alice_physics::ffi::AliceQueryTarget
+impl core::marker::Sync for alice_physics::ffi::AliceQueryTarget
+impl core::marker::Unpin for alice_physics::ffi::AliceQueryTarget
+impl core::marker::UnsafeUnpin for alice_physics::ffi::AliceQueryTarget
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ffi::AliceQueryTarget
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceQueryTarget
 #[repr(C)] pub struct alice_physics::ffi::AliceVec3
 pub alice_physics::ffi::AliceVec3::x: f64
 pub alice_physics::ffi::AliceVec3::y: f64
@@ -3985,6 +4049,7 @@ impl core::marker::Unpin for alice_physics::ffi::AliceVec3Fix128Raw
 impl core::marker::UnsafeUnpin for alice_physics::ffi::AliceVec3Fix128Raw
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::ffi::AliceVec3Fix128Raw
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceVec3Fix128Raw
+pub const alice_physics::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_add_dynamic(*mut alice_physics::solver::PhysicsWorld, alice_physics::ffi::AliceVec3, f64) -> u32
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_add_sensor(*mut alice_physics::solver::PhysicsWorld, alice_physics::ffi::AliceVec3) -> u32
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_add_shaped(*mut alice_physics::solver::PhysicsWorld, alice_physics::ffi::AlicePhysicsShape, f64, alice_physics::ffi::AliceVec3) -> u32
@@ -3998,6 +4063,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceVec3Fix12
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_get_position_fix128_raw(*const alice_physics::solver::PhysicsWorld, u32, *mut alice_physics::ffi::AliceVec3Fix128Raw) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_get_rotation(*const alice_physics::solver::PhysicsWorld, u32, *mut alice_physics::ffi::AliceQuat) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_get_velocity(*const alice_physics::solver::PhysicsWorld, u32, *mut alice_physics::ffi::AliceVec3) -> u8
+#[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_observe(*const alice_physics::solver::PhysicsWorld, u32, *mut alice_physics::ffi::AliceBodyObservation) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_set_collision_radius(*mut alice_physics::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_set_friction(*mut alice_physics::solver::PhysicsWorld, u32, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_body_set_position(*mut alice_physics::solver::PhysicsWorld, u32, alice_physics::ffi::AliceVec3) -> u8
@@ -4025,11 +4091,15 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::ffi::AliceVec3Fix12
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_string_free(*mut std::os::raw::c_char)
 #[no_mangle] pub c fn alice_physics::ffi::alice_physics_version() -> *const std::os::raw::c_char
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_body_count(*const alice_physics::solver::PhysicsWorld) -> u32
+#[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_cast_capsule(*const alice_physics::solver::PhysicsWorld, alice_physics::ffi::AliceVec3, alice_physics::ffi::AliceVec3, f64, alice_physics::ffi::AliceVec3, f64, u32, *mut alice_physics::ffi::AliceQueryHit) -> u8
+#[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_cast_ray(*const alice_physics::solver::PhysicsWorld, alice_physics::ffi::AliceVec3, alice_physics::ffi::AliceVec3, f64, u32, *mut alice_physics::ffi::AliceQueryHit) -> u8
+#[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_cast_sphere(*const alice_physics::solver::PhysicsWorld, alice_physics::ffi::AliceVec3, f64, alice_physics::ffi::AliceVec3, f64, u32, *mut alice_physics::ffi::AliceQueryHit) -> u8
 #[no_mangle] pub c fn alice_physics::ffi::alice_physics_world_create() -> *mut alice_physics::solver::PhysicsWorld
 #[no_mangle] pub c fn alice_physics::ffi::alice_physics_world_create_with_config(alice_physics::ffi::AlicePhysicsConfig) -> *mut alice_physics::solver::PhysicsWorld
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_destroy(*mut alice_physics::solver::PhysicsWorld)
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_get_positions_batch(*const alice_physics::solver::PhysicsWorld, *mut f64, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_get_velocities_batch(*const alice_physics::solver::PhysicsWorld, *mut f64, u32) -> u8
+#[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_overlap_sphere(*const alice_physics::solver::PhysicsWorld, alice_physics::ffi::AliceVec3, f64, u32, *mut alice_physics::ffi::AliceQueryTarget, u32) -> u32
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_set_gravity(*mut alice_physics::solver::PhysicsWorld, f64, f64, f64)
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_set_substeps(*mut alice_physics::solver::PhysicsWorld, u32)
 #[no_mangle] pub unsafe c fn alice_physics::ffi::alice_physics_world_set_velocities_batch(*mut alice_physics::solver::PhysicsWorld, *const f64, u32) -> u8

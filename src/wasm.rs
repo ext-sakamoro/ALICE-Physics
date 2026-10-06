@@ -452,6 +452,134 @@ impl WasmPhysicsWorld {
     }
 
     // ------------------------------------------------------------------
+    // World queries against the collided geometry (bodies, their shapes,
+    // static colliders, SDF colliders) and body observation. Vectors are
+    // `[x, y, z]`; `excludeBody` (or `undefined`) is a body the query
+    // ignores. A hit is `[t, px, py, pz, nx, ny, nz, kind, index, body]`
+    // (kind 0 body, 1 static collider, 2 SDF collider; body -1 for none),
+    // every value the Rust result through `Fix128::to_f64`. No hit (also a
+    // zero direction, `maxT <= 0` or a negative radius, as the Rust API) and
+    // a refused argument (non-finite, not 3 values, `excludeBody` not a body)
+    // give an empty array.
+    // ------------------------------------------------------------------
+
+    /// The nearest hit of a ray with the world's geometry
+    /// (`PhysicsWorld::cast_ray`).
+    #[wasm_bindgen(js_name = "castRay")]
+    pub fn cast_ray(
+        &self,
+        origin: &[f64],
+        direction: &[f64],
+        max_t: f64,
+        exclude_body: Option<u32>,
+    ) -> Vec<f64> {
+        let w = &self.inner;
+        let (Some(o), Some(d), Some(m), Some(f)) = (
+            binding_api::vec3_slice(origin),
+            binding_api::vec3_slice(direction),
+            binding_api::finite(max_t),
+            binding_api::query_filter(w, exclude_body.map(|b| b as usize)),
+        ) else {
+            return Vec::new();
+        };
+        hit_array(binding_api::cast_ray(w, o, d, m, &f))
+    }
+
+    /// The nearest collider a sphere of `radius` touches when its centre
+    /// moves along `direction` for at most `max_t`
+    /// (`PhysicsWorld::cast_sphere`).
+    #[wasm_bindgen(js_name = "castSphere")]
+    pub fn cast_sphere(
+        &self,
+        center: &[f64],
+        radius: f64,
+        direction: &[f64],
+        max_t: f64,
+        exclude_body: Option<u32>,
+    ) -> Vec<f64> {
+        let w = &self.inner;
+        let (Some(c), Some(r), Some(d), Some(m), Some(f)) = (
+            binding_api::vec3_slice(center),
+            binding_api::finite(radius),
+            binding_api::vec3_slice(direction),
+            binding_api::finite(max_t),
+            binding_api::query_filter(w, exclude_body.map(|b| b as usize)),
+        ) else {
+            return Vec::new();
+        };
+        hit_array(binding_api::cast_sphere(w, c, r, d, m, &f))
+    }
+
+    /// The nearest collider a capsule (segment `a`-`b` grown by `radius`)
+    /// touches when it moves along `direction` for at most `max_t`
+    /// (`PhysicsWorld::cast_capsule`).
+    #[wasm_bindgen(js_name = "castCapsule")]
+    pub fn cast_capsule(
+        &self,
+        a: &[f64],
+        b: &[f64],
+        radius: f64,
+        direction: &[f64],
+        max_t: f64,
+        exclude_body: Option<u32>,
+    ) -> Vec<f64> {
+        let w = &self.inner;
+        let (Some(a), Some(b), Some(r), Some(d), Some(m), Some(f)) = (
+            binding_api::vec3_slice(a),
+            binding_api::vec3_slice(b),
+            binding_api::finite(radius),
+            binding_api::vec3_slice(direction),
+            binding_api::finite(max_t),
+            binding_api::query_filter(w, exclude_body.map(|b| b as usize)),
+        ) else {
+            return Vec::new();
+        };
+        hit_array(binding_api::cast_capsule(w, a, b, r, d, m, &f))
+    }
+
+    /// Every collider a sphere of `radius` about `center` overlaps
+    /// (`PhysicsWorld::overlap_sphere`), as flat `[kind, index, ...]` sorted
+    /// by kind then index.
+    #[wasm_bindgen(js_name = "overlapSphere")]
+    pub fn overlap_sphere(
+        &self,
+        center: &[f64],
+        radius: f64,
+        exclude_body: Option<u32>,
+    ) -> Vec<f64> {
+        let w = &self.inner;
+        let (Some(c), Some(r), Some(f)) = (
+            binding_api::vec3_slice(center),
+            binding_api::finite(radius),
+            binding_api::query_filter(w, exclude_body.map(|b| b as usize)),
+        ) else {
+            return Vec::new();
+        };
+        binding_api::overlap_sphere(w, c, r, &f)
+            .into_iter()
+            .flat_map(|(kind, index)| [f64::from(kind), index as f64])
+            .collect()
+    }
+
+    /// Observe one body (`PhysicsWorld::observe_body`):
+    /// `[px, py, pz, vx, vy, vz, qx, qy, qz, qw, wx, wy, wz, sleeping,
+    /// inContact]` (flags 0 / 1), or an empty array for an unknown body.
+    #[wasm_bindgen(js_name = "observeBody")]
+    pub fn observe_body(&self, body_id: usize) -> Vec<f64> {
+        let Some(o) = binding_api::observe_body(&self.inner, body_id) else {
+            return Vec::new();
+        };
+        let mut out = Vec::with_capacity(15);
+        out.extend_from_slice(&o.position);
+        out.extend_from_slice(&o.velocity);
+        out.extend_from_slice(&o.rotation);
+        out.extend_from_slice(&o.angular_velocity);
+        out.push(f64::from(u8::from(o.sleeping)));
+        out.push(f64::from(u8::from(o.in_contact)));
+        out
+    }
+
+    // ------------------------------------------------------------------
     // Collision radius, shapes, static colliders, joints. Indices come back
     // as `number`, or `undefined` when an argument is refused (see
     // `binding_api` for the checks); setters return `false` instead.
@@ -674,6 +802,22 @@ pub fn alice_physics_version() -> String {
 // ============================================================================
 // Tests
 // ============================================================================
+
+/// A query hit as `[t, px, py, pz, nx, ny, nz, kind, index, body]` (body -1
+/// for none), or an empty array.
+fn hit_array(hit: Option<binding_api::QueryHit>) -> Vec<f64> {
+    let Some(h) = hit else {
+        return Vec::new();
+    };
+    let mut out = Vec::with_capacity(10);
+    out.push(h.t);
+    out.extend_from_slice(&h.point);
+    out.extend_from_slice(&h.normal);
+    out.push(f64::from(h.target.0));
+    out.push(h.target.1 as f64);
+    out.push(h.body.map_or(-1.0, |b| b as f64));
+    out
+}
 
 #[cfg(test)]
 mod tests {
@@ -945,5 +1089,241 @@ mod tests {
             (w.body_count(), w.joint_count(), w.static_collider_count()),
             (2, 0, 0)
         );
+    }
+
+    // ------------------------------------------------------------------
+    // World queries and body observation
+    // ------------------------------------------------------------------
+
+    /// A static body of collision radius 1 at (0, 0, 10), a dynamic body of
+    /// radius 1 at (0, 0, 20) and the static plane y = -2, through the
+    /// binding and through the Rust API.
+    fn query_twins() -> (WasmPhysicsWorld, PhysicsWorld) {
+        use crate::plane_collider::PlaneCollider;
+        use crate::static_collider::StaticCollider;
+        let f = Fix128::from_f64;
+        let mut w = WasmPhysicsWorld::new();
+        assert_eq!(w.add_static_body(0.0, 0.0, 10.0), 0);
+        assert_eq!(w.add_dynamic_body(0.0, 0.0, 20.0, 1.0), 1);
+        assert!(w.set_collision_radius(0, 1.0));
+        assert!(w.set_collision_radius(1, 1.0));
+        assert_eq!(w.add_static_plane(0.0, 1.0, 0.0, -2.0), Some(0));
+        let mut r = PhysicsWorld::new(PhysicsConfig::default());
+        r.add_body(RigidBody::new_static(Vec3Fix::new(f(0.0), f(0.0), f(10.0))));
+        r.add_body(RigidBody::new_dynamic(
+            Vec3Fix::new(f(0.0), f(0.0), f(20.0)),
+            Fix128::ONE,
+        ));
+        r.set_body_collision_radius(0, Fix128::ONE);
+        r.set_body_collision_radius(1, Fix128::ONE);
+        r.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+            Vec3Fix::UNIT_Y,
+            f(-2.0),
+        )));
+        (w, r)
+    }
+
+    /// `[t, point, normal, kind, index, body]` of a Rust hit, every Fix128
+    /// through `to_f64` (the binding must equal it exactly).
+    fn expected(t: Fix128, p: Vec3Fix, n: Vec3Fix, kind: f64, index: f64, body: f64) -> Vec<f64> {
+        vec![
+            t.to_f64(),
+            p.x.to_f64(),
+            p.y.to_f64(),
+            p.z.to_f64(),
+            n.x.to_f64(),
+            n.y.to_f64(),
+            n.z.to_f64(),
+            kind,
+            index,
+            body,
+        ]
+    }
+
+    fn near(a: &[f64], b: &[f64]) {
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().zip(b) {
+            assert!((x - y).abs() < 1e-12, "{a:?} vs {b:?}");
+        }
+    }
+
+    /// oracle: castRay / castSphere / castCapsule / overlapSphere return the
+    /// Rust API's answer on the same scene, and it is the closed form (ray to
+    /// a sphere of radius 1 at distance 10: t = 9; a radius 0.5 sphere or
+    /// capsule: t = 8.5; the plane y = -2 straight down: t = 2).
+    // covers: COV-ENGINE-070
+    #[test]
+    fn query_calls_match_the_rust_api_and_the_closed_form() {
+        use crate::shape_raycast::{RayFilter, RayTarget};
+        let f = Fix128::from_f64;
+        let vf = |x, y, z| Vec3Fix::new(f(x), f(y), f(z));
+        let (w, r) = query_twins();
+        let flt = RayFilter::default();
+        let o = [0.0, 0.0, 0.0];
+        let pz = [0.0, 0.0, 1.0];
+
+        let got = w.cast_ray(&o, &pz, 100.0, None);
+        let h = r
+            .cast_ray(Vec3Fix::ZERO, Vec3Fix::UNIT_Z, f(100.0), &flt)
+            .unwrap();
+        assert_eq!(got, expected(h.t, h.point, h.normal, 0.0, 0.0, 0.0));
+        near(&got, &[9.0, 0.0, 0.0, 9.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]);
+
+        // off-axis ray from (0.25, 0.5, 0): lateral d^2 = 0.3125, so
+        // t = 10 - sqrt(1 - d^2) and the normal is hit - centre
+        let got = w.cast_ray(&[0.25, 0.5, 0.0], &pz, 100.0, None);
+        let h = r
+            .cast_ray(vf(0.25, 0.5, 0.0), Vec3Fix::UNIT_Z, f(100.0), &flt)
+            .unwrap();
+        assert_eq!(got, expected(h.t, h.point, h.normal, 0.0, 0.0, 0.0));
+        let tc = 10.0 - 0.6875f64.sqrt();
+        near(
+            &got,
+            &[tc, 0.25, 0.5, tc, 0.25, 0.5, tc - 10.0, 0.0, 0.0, 0.0],
+        );
+
+        let got = w.cast_ray(&o, &pz, 100.0, Some(0));
+        let h = r
+            .cast_ray(
+                Vec3Fix::ZERO,
+                Vec3Fix::UNIT_Z,
+                f(100.0),
+                &flt.excluding_body(0),
+            )
+            .unwrap();
+        assert_eq!(got, expected(h.t, h.point, h.normal, 0.0, 1.0, 1.0));
+        near(&got[..1], &[19.0]);
+
+        let got = w.cast_ray(&o, &[0.0, -3.0, 0.0], 10.0, None);
+        let h = r
+            .cast_ray(Vec3Fix::ZERO, vf(0.0, -3.0, 0.0), f(10.0), &flt)
+            .unwrap();
+        assert_eq!(got, expected(h.t, h.point, h.normal, 1.0, 0.0, -1.0));
+        near(&got, &[2.0, 0.0, -2.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0]);
+
+        assert!(w.cast_ray(&o, &[1.0, 0.0, 0.0], 100.0, None).is_empty());
+
+        let got = w.cast_sphere(&o, 0.5, &pz, 100.0, None);
+        let h = r
+            .cast_sphere(Vec3Fix::ZERO, f(0.5), Vec3Fix::UNIT_Z, f(100.0), &flt)
+            .unwrap();
+        assert_eq!(got, expected(h.t, h.point, h.normal, 0.0, 0.0, 0.0));
+        near(&got, &[8.5, 0.0, 0.0, 9.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]);
+
+        let got = w.cast_capsule(&[-1.0, 0.0, 0.0], &[1.0, 0.0, 0.0], 0.5, &pz, 100.0, None);
+        let h = r
+            .cast_capsule(
+                vf(-1.0, 0.0, 0.0),
+                vf(1.0, 0.0, 0.0),
+                f(0.5),
+                Vec3Fix::UNIT_Z,
+                f(100.0),
+                &flt,
+            )
+            .unwrap();
+        assert_eq!(got, expected(h.t, h.point, h.normal, 0.0, 0.0, 0.0));
+        near(&got, &[8.5, 0.0, 0.0, 9.0, 0.0, 0.0, -1.0, 0.0, 0.0, 0.0]);
+
+        // centre (0, -1.2, 10), radius 1: body 0 (distance 1.2 < 2) and the
+        // plane (distance 0.8 < 1)
+        assert_eq!(
+            r.overlap_sphere(vf(0.0, -1.2, 10.0), Fix128::ONE, &flt),
+            vec![RayTarget::Body(0), RayTarget::StaticCollider(0)]
+        );
+        assert_eq!(
+            w.overlap_sphere(&[0.0, -1.2, 10.0], 1.0, None),
+            vec![0.0, 0.0, 1.0, 0.0]
+        );
+        assert_eq!(
+            w.overlap_sphere(&[0.0, -1.2, 10.0], 1.0, Some(0)),
+            vec![1.0, 0.0]
+        );
+    }
+
+    /// oracle: observeBody is the Rust observation through `to_f64`, before
+    /// and after a step.
+    #[test]
+    fn observe_body_matches_the_rust_api() {
+        let (mut w, mut r) = query_twins();
+        w.set_velocity(1, 1.0, 2.0, 3.0);
+        r.bodies[1].velocity = Vec3Fix::new(
+            Fix128::from_f64(1.0),
+            Fix128::from_f64(2.0),
+            Fix128::from_f64(3.0),
+        );
+        assert_eq!(
+            w.observe_body(1),
+            vec![0.0, 0.0, 20.0, 1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        );
+        w.step(1.0 / 60.0);
+        r.step(Fix128::from_f64(1.0 / 60.0));
+        for i in 0..2 {
+            let o = r.observe_body(i).unwrap();
+            let b = |x: bool| if x { 1.0 } else { 0.0 };
+            assert_eq!(
+                w.observe_body(i),
+                vec![
+                    o.position.x.to_f64(),
+                    o.position.y.to_f64(),
+                    o.position.z.to_f64(),
+                    o.velocity.x.to_f64(),
+                    o.velocity.y.to_f64(),
+                    o.velocity.z.to_f64(),
+                    o.rotation.x.to_f64(),
+                    o.rotation.y.to_f64(),
+                    o.rotation.z.to_f64(),
+                    o.rotation.w.to_f64(),
+                    o.angular_velocity.x.to_f64(),
+                    o.angular_velocity.y.to_f64(),
+                    o.angular_velocity.z.to_f64(),
+                    b(o.sleeping),
+                    b(o.in_contact),
+                ]
+            );
+        }
+    }
+
+    /// oracle: degenerate queries give an empty array (zero direction,
+    /// negative radius, max_t <= 0 as the Rust API; non-finite values, a
+    /// vector that is not 3 values, an exclude index that is not a body, an
+    /// unknown body to observe refused) and an empty world answers nothing.
+    #[test]
+    fn query_calls_refuse_degenerate_arguments() {
+        let (w, _) = query_twins();
+        let o = [0.0, 0.0, 0.0];
+        let pz = [0.0, 0.0, 1.0];
+        let nan = f64::NAN;
+        assert!(w.cast_ray(&o, &o, 100.0, None).is_empty(), "zero dir");
+        assert!(w.cast_ray(&o, &pz, 0.0, None).is_empty(), "max_t 0");
+        assert!(w.cast_ray(&o, &pz, nan, None).is_empty(), "max_t nan");
+        assert!(w.cast_ray(&[nan, 0.0, 0.0], &pz, 100.0, None).is_empty());
+        assert!(
+            w.cast_ray(&[0.0, 0.0], &pz, 100.0, None).is_empty(),
+            "2 values"
+        );
+        assert!(w.cast_ray(&o, &pz, 100.0, Some(2)).is_empty(), "exclude 2");
+        assert!(
+            w.cast_sphere(&o, -0.5, &pz, 100.0, None).is_empty(),
+            "r < 0"
+        );
+        assert!(w.cast_sphere(&o, nan, &pz, 100.0, None).is_empty());
+        assert!(
+            w.cast_sphere(&o, 0.5, &o, 100.0, None).is_empty(),
+            "zero dir"
+        );
+        let (a, b) = ([-1.0, 0.0, 0.0], [1.0, 0.0, 0.0]);
+        assert!(w.cast_capsule(&a, &b, -0.5, &pz, 100.0, None).is_empty());
+        assert!(w.cast_capsule(&a, &b, 0.5, &o, 100.0, None).is_empty());
+        assert!(w.cast_capsule(&a, &b, 0.5, &pz, 100.0, Some(9)).is_empty());
+        let c = [0.0, -1.2, 10.0];
+        assert!(w.overlap_sphere(&c, -1.0, None).is_empty(), "r < 0");
+        assert!(w.overlap_sphere(&c, nan, None).is_empty());
+        assert!(w.overlap_sphere(&c, 1.0, Some(5)).is_empty());
+        assert!(w.observe_body(2).is_empty());
+
+        let empty = WasmPhysicsWorld::new();
+        assert!(empty.cast_ray(&o, &pz, 100.0, None).is_empty());
+        assert!(empty.overlap_sphere(&o, 1.0, None).is_empty());
+        assert!(empty.observe_body(0).is_empty());
     }
 }
