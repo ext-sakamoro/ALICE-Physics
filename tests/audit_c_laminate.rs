@@ -256,7 +256,7 @@ fn unsymmetric_angle_ply_has_the_clt_coupling_b16() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S34-050: `compute_abd` returns B = -(n/2) * 2^-64 in every entry for a mirrored stack of n plies (measured -2 ulp for [+30/-30]s, -4 ulp for [0/45/-45/90]s) against the `is_symmetric_stack` doc claim B = 0 exactly"]
+// AUD-A-S34-050
 fn symmetric_stack_b_is_exactly_zero_as_documented() {
     let half = [(16, 0.0), (16, 45.0), (16, -45.0), (16, 90.0)];
     let mut quasi: Vec<(i64, f64)> = half.to_vec();

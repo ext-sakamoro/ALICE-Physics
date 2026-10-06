@@ -224,10 +224,17 @@ pub fn compute_abd(plies: &[Ply]) -> AbdMatrix {
     struct PlyContribution {
         q: Sym3,
         delta_z: Fix128,
-        delta_z2: Fix128,
+        /// `½ (z_{k+1}² − z_k²)` as magnitude and sign (see below)
+        half_delta_z2: (Fix128, bool),
         delta_z3: Fix128,
     }
     let mut z_lower = Fix128::ZERO - half_thickness;
+    // B from doubled coordinates `2z = 2·(thickness below) − total`, which are
+    // exact and exactly mirrored for mirrored plies, and from the magnitude of
+    // each term with its sign put back: `*` and halving floor toward −∞, so
+    // `Q·(−x)` is not `−(Q·x)`, and a symmetric stack would keep a residue of a
+    // few 2^-64 in B instead of the exact zero its symmetry implies
+    let mut below = Fix128::ZERO;
     let contributions: Vec<PlyContribution> = plies
         .iter()
         .map(|ply| {
@@ -242,13 +249,20 @@ pub fn compute_abd(plies: &[Ply]) -> AbdMatrix {
                 m33: q66,
             };
             let delta_z = z_upper - z_lower;
-            let delta_z2 = z_upper * z_upper - z_lower * z_lower;
+            let two_z_lo = below.double() - total_thickness;
+            below = below + ply.thickness_mm;
+            let two_z_hi = below.double() - total_thickness;
+            // (2z_hi)² − (2z_lo)² = 4 (z_hi² − z_lo²); a half of that is 1/8 of
+            // it (a square is the same exact product for ±v, so mirrored values
+            // square to the same bits)
+            let four_delta = two_z_hi * two_z_hi - two_z_lo * two_z_lo;
+            let half_delta_z2 = (four_delta.abs().shr_bits(3), four_delta.is_negative());
             let delta_z3 = z_upper * z_upper * z_upper - z_lower * z_lower * z_lower;
             z_lower = z_upper;
             PlyContribution {
                 q,
                 delta_z,
-                delta_z2,
+                half_delta_z2,
                 delta_z3,
             }
         })
@@ -262,7 +276,7 @@ pub fn compute_abd(plies: &[Ply]) -> AbdMatrix {
             .map(|c| {
                 (
                     c.q.scale(c.delta_z),
-                    c.q.scale(c.delta_z2 * Fix128::from_ratio(1, 2)),
+                    b_term(c.q, c.half_delta_z2),
                     c.q.scale(c.delta_z3 * Fix128::from_ratio(1, 3)),
                 )
             })
@@ -279,13 +293,23 @@ pub fn compute_abd(plies: &[Ply]) -> AbdMatrix {
         let mut d = Sym3::default();
         for c in &contributions {
             a = a.add(&c.q.scale(c.delta_z));
-            b = b.add(&c.q.scale(c.delta_z2 * Fix128::from_ratio(1, 2)));
+            b = b.add(&b_term(c.q, c.half_delta_z2));
             d = d.add(&c.q.scale(c.delta_z3 * Fix128::from_ratio(1, 3)));
         }
         (a, b, d)
     };
 
     AbdMatrix { a, b, d }
+}
+
+/// `Q · (±m)`: the product of the magnitude, negated exactly for a negative sign.
+fn b_term(q: Sym3, (magnitude, negative): (Fix128, bool)) -> Sym3 {
+    let t = q.scale(magnitude);
+    if negative {
+        t.scale(Fix128::NEG_ONE)
+    } else {
+        t
+    }
 }
 
 /// Check whether a ply list forms a symmetric stack (mirrored about mid-plane).

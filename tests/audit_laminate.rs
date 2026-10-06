@@ -246,7 +246,7 @@ fn balanced_angle_ply_has_zero_a16_a26_and_symmetric_has_zero_b() {
 
 /// Doc: "Symmetric stacks have B = 0 exactly".
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-009: compute_abd leaves B != 0 (rounding residue b11 = -2^-64 (raw hi=-1,lo=u64::MAX-1) for symmetric [a,b,c,b,a]; is_symmetric_stack doc says B = 0 exactly"]
+// AUD-A-S1W5-009
 fn symmetric_stack_has_exactly_zero_b() {
     let a = ply(0.2, 0.52, m());
     let b = ply(0.15, 1.04, m());
