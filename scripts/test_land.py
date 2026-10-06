@@ -256,6 +256,16 @@ class Landing(unittest.TestCase):
         self.assertFalse((self.r.work / ".git" / "rebase-merge").exists(), "the rebase was aborted")
         self.assertEqual(git(self.r.work, "rev-parse", "HEAD"), mine, "our commit is left as it was")
 
+    def test_the_ledgers_are_regenerated_before_the_first_preflight(self):
+        # preflight checks the ledgers against a freshly built index; a branch
+        # whose ledgers were written from an older index must not fail there
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        lander.land()
+        self.assertEqual(lander.calls[:2], ["regenerate", "preflight"], lander.calls)
+        landed = git(self.r.work, "show", "HEAD:docs/integration-status.md")
+        self.assertIn("b.rs", landed)
+
     def test_docs_only_upstream_does_not_rerun_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"}, "docs: oracle-status")
