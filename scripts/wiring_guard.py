@@ -7,9 +7,12 @@
     trait / type / union で、test と自身の宣言と `use` 行を除いた production code
     (src / examples / benches / fuzz / bindings 等) から「生きている文脈」で参照されないものは未配線.
     `// ALLOW-UNWIRED: <12 字以上の理由>` を直前に置くか baseline に載せる
-    生きている文脈とは、根 (src 外のコード / src/bin / module 直下 / trait impl と trait 本体の member /
+    生きている文脈とは、根 (src 外のコード / src/bin / module 直下 / trait 本体の member /
+    src 外の型か型引数そのものへの trait impl の member /
     `ALLOW-UNWIRED` 付き / no_mangle 等の exempt 属性付き / `fn main` / macro_rules) か、
     根から到達できる item の本体 (宣言から波括弧の対応までの範囲) のこと
+    src の型 T への trait impl (`impl Trait for T`) は T に結び付いた文脈で、T が生きた時に
+    impl の見出しと本体 (member を含む) が生きる (`impl From<Foo> for Bar` は Bar が未配線なら Foo を配線しない)
     不動点反復で求めるので、未配線の item の本体からしか参照されない item (private helper を含む) も未配線になる
     (報告するのは従来どおり `pub` / `pub(crate)` のみ)
     参照と数えるのは束縛位置以外の出現: `let` / `for` / closure / fn 引数の束縛、`name:` (フィールド・引数)、
@@ -31,9 +34,13 @@ baseline (`scripts/wiring-baseline.txt`) は既存の違反を記録するラチ
 (2) match 腕のパターン束縛や macro 内の束縛は束縛と認識しない (配線済側に倒れる)
 (3) 型 T 自身の `impl T` / `impl<..> Trait for T` の見出しと本体の中の T は T の配線に数えない
     (同じ file の別の item が T を使う場合はその item が生きている時だけ数える) impl の対象の型は
-    見出しの最後の識別子で決めるので、tuple や型 alias 越しの impl は対象外として扱う 本体の中の
-    別の型・関数の参照は従来どおり数える
-(4) trait impl の member は常に根とみなす (dispatch 先が分からないため)
+    見出しの最後の識別子で決めるので、tuple や型 alias 越しの impl は対象外として扱う inherent impl
+    (`impl T`) の見出しと本体の中の別の型・関数の参照は従来どおり impl を囲む文脈の参照として数え、
+    trait impl のそれは T が生きている時だけ数える T は名前で決めるので、別 file の同名の型が生きても
+    生きる (限界 (1) と同じ)
+(4) T が src の型である trait impl の member は T が生きた時に生きる (どの trait method が呼ばれるかは
+    見ない: T が生きていれば dispatch されうるとみなす) T が src 外の型 (u32 / Vec<..>) か見出しの
+    型引数そのもの (`impl<T> Trait for T`) の trait impl と、trait 本体の member は常に根とみなす
 (5) macro_rules 内の参照は常に根とみなす 偽陽性より偽陰性を選んでいる
 """
 from __future__ import annotations
@@ -183,13 +190,14 @@ FOR_RE = re.compile(r"\bfor\b([^{};]*?)\bin\b")
 CLOSURE_RE = re.compile(r"\|([^|;{}]*)\|")
 PREV_WORD_RE = re.compile(r"([A-Za-z_]\w*)\s*$")
 HEADER_CAP = 20000
+TYPE_KINDS = ("struct", "enum", "union", "type", "trait")
 
 
 class Node:
     """item (fn / struct / enum / trait / impl / macro_rules ...) の宣言から本体の終わりまでの範囲."""
 
     __slots__ = ("idx", "rel", "kind", "name", "name_pos", "start", "end", "body_start", "parent", "cls", "root", "exempt", "in_src",
-                 "self_ty")
+                 "self_ty", "own_root", "tied", "type_params")
 
     def __init__(self, idx, rel, kind, name, name_pos, start, end, body_start, in_src):
         self.idx, self.rel, self.kind, self.name, self.name_pos = idx, rel, kind, name, name_pos
@@ -199,6 +207,9 @@ class Node:
         self.root = False
         self.exempt = False
         self.self_ty = None  # impl の対象の型名 (`impl<..> Trait for T` / `impl T` の T)
+        self.own_root = False  # 親によらない根の理由 (exempt 属性 / test 属性 / main / macro)
+        self.tied = False  # src の型 T の trait impl: 自分が文脈になり、T が生きた時に生きる
+        self.type_params: set[str] = set()  # impl の見出しの `<..>` で宣言された型引数
 
 
 def _prev_nonspace(code: str, pos: int) -> int:
@@ -237,6 +248,38 @@ def impl_self_type(header: str) -> str | None:
         return None
     ids = [w for w in IDENT_RE.findall(h) if w not in SELF_TY_SKIP]
     return ids[-1] if ids else None
+
+
+def impl_type_params(header: str) -> set[str]:
+    """`impl<T: Copy, 'a, const N: usize>` の型引数名 {T, N} (見出しが `<` で始まらなければ空)."""
+    h = header.lstrip()
+    if not h.startswith("<"):
+        return set()
+    depth, parts, cur = 0, [], []
+    for ch in h:
+        if ch == "<":
+            depth += 1
+            if depth == 1:
+                continue
+        elif ch == ">":
+            depth -= 1
+            if depth == 0:
+                break
+        if depth == 1 and ch == ",":
+            parts.append("".join(cur))
+            cur = []
+        else:
+            cur.append(ch)
+    parts.append("".join(cur))
+    out: set[str] = set()
+    for part in parts:
+        part = part.strip()
+        if not part or part.startswith("'"):
+            continue
+        m = re.match(r"(?:const\s+)?([A-Za-z_]\w*)", part)
+        if m:
+            out.add(m.group(1))
+    return out
 
 
 def _find_end(code: str, i: int, kind: str, match: dict[int, int]) -> tuple[int, int]:
@@ -296,10 +339,12 @@ def parse_nodes(code: str, rel: str, in_src: bool, first_idx: int) -> list[Node]
         scan_from = name_pos if name_pos >= 0 else start + 4
         end, body = _find_end(code, scan_from, "fn" if kind in ("impl", "macro") else kind, match)
         self_ty = impl_self_type(code[start + 4 : body]) if kind == "impl" else None
+        tparams = impl_type_params(code[start + 4 : body]) if kind == "impl" else set()
         if kind == "impl" and re.search(r"\bfor\b(?!\s*<)", code[start + 4 : body]):
             kind = "impl_trait"
         nd = Node(first_idx + len(nodes), rel, kind, name, name_pos, start, end, body, in_src)
         nd.self_ty = self_ty
+        nd.type_params = tparams
         nodes.append(nd)
     nodes.sort(key=lambda x: (x.start, -x.end))
     st: list[Node] = []
@@ -431,7 +476,7 @@ def collect_refs(code: str, nodes: list[Node], names: set[str], decl_pos: set[in
         while fn is not None and fn.kind != "fn":
             fn = fn.parent
         ctx = cur
-        while ctx is not None and ctx.kind in ("impl", "impl_trait"):
+        while ctx is not None and ctx.kind in ("impl", "impl_trait") and not ctx.tied:
             ctx = ctx.parent
         cid = -1 if ctx is None or ctx.root else ctx.idx
         j = _prev_nonspace(code, s)
@@ -591,16 +636,34 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
             we = nl[ln] if ln < len(nl) else len(code)
             window = code[ws:we]
             nd.exempt = bool(EXEMPT_ATTRS.search(window)) or (nd.parent is not None and nd.parent.exempt)
-            nd.root = (
+            nd.own_root = (
                 nd.exempt
                 or nd.kind == "macro"
                 or (nd.kind == "fn" and nd.name == "main")
                 or bool(ROOT_ATTRS.search(window))
+            )
+            nd.root = (
+                nd.own_root
                 or (nd.parent is not None and nd.parent.kind in ("trait", "impl_trait"))
                 or (nd.parent is not None and nd.parent.root and nd.parent.kind in ("macro",))
             )
             if nd.kind == "fn":
                 nd.cls = "method" if nd.parent is not None and nd.parent.kind == "impl" else "free"
+
+    # 2 パス目: src の型 T の trait impl (`impl Trait for T`) は T に結び付ける 見出しと本体の
+    # 参照はその impl を文脈にし、member は根にしない (T が生きた時に impl ごと生きる)
+    # src に無い型 (u32 / Vec<..>) や見出しの型引数そのもの (`impl<T> Tr for T`) は従来どおり member が根
+    src_types = {nd.name for nd in nodes if nd.in_src and nd.name and nd.kind in TYPE_KINDS}
+    tied_by_type: dict[str, list[int]] = {}
+    for nd in nodes:
+        if (nd.kind == "impl_trait" and nd.in_src and not nd.root and nd.self_ty in src_types
+                and nd.self_ty not in nd.type_params):
+            nd.tied = True
+            tied_by_type.setdefault(nd.self_ty, []).append(nd.idx)
+    for nd in nodes:
+        if nd.parent is not None and nd.parent.tied:
+            nd.root = nd.own_root
+            tied_by_type[nd.parent.self_ty].append(nd.idx)
 
     defs: list[tuple[str, str, int, Path, int]] = []  # (name, key, line, path, name_pos)
     exempt: set[str] = set()
@@ -639,7 +702,19 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
 
     def compute_live(extra_roots: set[int]) -> set[int]:
         live = set(static_roots) | extra_roots
+
+        def tie(idxs: list[int], out: list[int]) -> None:
+            """生きた型の trait impl (と その member) を生かす."""
+            for i in idxs:
+                nd = nodes[i]
+                if nd.kind in TYPE_KINDS and nd.in_src:
+                    for t in tied_by_type.get(nd.name, ()):
+                        if t not in live:
+                            live.add(t)
+                            out.append(t)
+
         frontier = [-1] + sorted(live)
+        tie(sorted(live), frontier)
         while frontier:
             nxt: list[int] = []
             for ctx in frontier:
@@ -648,6 +723,7 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
                         if m.idx not in live and m.idx != ctx and _compat(m, dot, path):
                             live.add(m.idx)
                             nxt.append(m.idx)
+            tie(list(nxt), nxt)
             frontier = nxt
         return live
 
