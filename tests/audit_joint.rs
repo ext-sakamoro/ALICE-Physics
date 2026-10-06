@@ -632,7 +632,13 @@ fn spring(rest: f64, k: f64, c: f64) -> Joint {
 
 /// XPBD spring step: each body moves by `w_i dt^2 F / (1 + k dt^2 w)` along the line, `w = w_a + w_b`.
 fn xpbd_step(w_i: f64, w: f64, f: f64, k: f64, dt: f64) -> f64 {
-    w_i * dt * dt * f / (1.0 + k * dt * dt * w)
+    xpbd_step_damped(w_i, w, f, k, 0.0, dt)
+}
+
+/// XPBD step with damping (Macklin et al. 2016, eq. 26): `w_i dt^2 F / (1 + (k dt^2 + c dt) w)`
+/// with `F = k C + c v_n`; the damping is implicit, so `c dt w` enters the denominator.
+fn xpbd_step_damped(w_i: f64, w: f64, f: f64, k: f64, c: f64, dt: f64) -> f64 {
+    w_i * dt * dt * f / (1.0 + (k * dt * dt + c * dt) * w)
 }
 
 #[test]
@@ -671,7 +677,7 @@ fn spring_damping_opposes_the_relative_velocity_along_the_line() {
     solve_joints(&[spring(2.0, 5.0, 2.0)], &mut b, dt());
     near(
         p(&b[1]).0,
-        2.0 - xpbd_step(1.0, 1.0, 6.0, 5.0, h),
+        2.0 - xpbd_step_damped(1.0, 1.0, 6.0, 5.0, 2.0, h),
         1e-9,
         "damping",
     );
@@ -1151,7 +1157,7 @@ fn spring_damping_is_signed_by_the_relative_velocity() {
     solve_joints(&[spring(2.0, 5.0, 2.0)], &mut b, dt());
     near(
         p(&b[1]).0,
-        2.0 + 1.0 * (1.0 / 60.0) * (1.0 / 60.0) * 6.0 / (1.0 + 5.0 * (1.0 / 60.0) * (1.0 / 60.0)),
+        2.0 + xpbd_step_damped(1.0, 1.0, 6.0, 5.0, 2.0, 1.0 / 60.0),
         1e-9,
         "damping against an approach",
     );

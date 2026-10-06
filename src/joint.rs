@@ -277,7 +277,33 @@ impl SliderJoint {
     }
 }
 
-/// Spring joint: distance spring with damping
+/// Spring joint: a spring-damper between two anchor points
+///
+/// The joint applies the force (on B; A receives the opposite)
+///
+/// - `rest_length == 0`: `F = −k d − c u`, with `d = anchor_b − anchor_a`
+///   and `u = d'` the relative anchor velocity. Spring and damper are both
+///   isotropic, so the damper removes the tangential relative velocity as
+///   well as the radial one and a body held by the spring does not orbit
+///   its anchor.
+/// - `rest_length > 0`: `F = −(k (|d| − L) + c (u · n)) n`, `n = d / |d|`,
+///   the usual spring with a dashpot along its axis. The direction across
+///   the axis is free (a pendulum stays a pendulum), as for a physical
+///   spring-damper element; use `rest_length = 0` to hold a body at a point.
+///
+/// For a body of mass `m` held against a static or kinematic anchor (or
+/// two bodies with `m_eff = 1 / (1/m_a + 1/m_b)`), angular frequency `ω`
+/// and damping ratio `ζ`, use `stiffness = m_eff ω²` and
+/// `damping = 2 ζ m_eff ω`; `ζ = 1` (`damping = 2 √(k m_eff)`) is critical
+/// damping, `x(t) = (x0 + (v0 + ω x0) t) e^(−ωt)` with no overshoot.
+///
+/// It is solved once per substep as an XPBD constraint with damping
+/// (Macklin, Müller, Chentanez 2016, eq. 26), which is a backward Euler step
+/// of the force law: the result converges to the same continuous solution
+/// for any `substeps`, does not depend on `iterations`, and is stable for
+/// any `k` and `c`. Each joint carries its own `stiffness` / `damping`, so
+/// springs of different `ω` can share one world. `SolverConfig::damping`
+/// and the per-body damping factors are applied on top, once per frame.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpringJoint {
     /// Index of the first body
@@ -288,13 +314,19 @@ pub struct SpringJoint {
     pub local_anchor_a: Vec3Fix,
     /// Anchor point in body B's local space
     pub local_anchor_b: Vec3Fix,
-    /// Rest length of the spring
+    /// Rest length `L` of the spring in metres. `0` makes the spring and the
+    /// damper isotropic (see the type doc)
     pub rest_length: Fix128,
-    /// Spring stiffness
+    /// Spring stiffness `k` in newtons per metre (`m_eff ω²` for angular
+    /// frequency `ω`). Independent of the step length and of `substeps`
     pub stiffness: Fix128,
-    /// Damping coefficient
+    /// Damping coefficient `c` in newton-seconds per metre, acting on the
+    /// relative anchor velocity (every component for `rest_length = 0`, the
+    /// component along the spring otherwise). Critical damping is
+    /// `c = 2 √(k m_eff)`
     pub damping: Fix128,
-    /// Maximum force before the joint breaks (None = unbreakable)
+    /// Maximum spring force `|k (|d| − L)|` in newtons before the joint
+    /// breaks (None = unbreakable), see [`solve_joints_breakable`]
     pub break_force: Option<Fix128>,
 }
 
@@ -1007,65 +1039,89 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
     }
 }
 
-/// Solve spring joint: spring force with damping, in XPBD compliance form
+/// Solve spring joint: XPBD with damping (Macklin, Müller, Chentanez 2016,
+/// eq. 26), one solve per substep starting from `λ = 0`
 ///
-/// The spring is the constraint `C = |x_b - x_a| - rest_length` with compliance `alpha = 1/k`;
-/// the scaled compliance is `alpha_tilde = alpha / dt^2 = 1/(k dt^2)`. The damping force
-/// `c * v_n` is folded into the same constraint as the equivalent displacement error, so the
-/// total scalar force is `F = k C + c v_n` (`v_n` = relative velocity along the line, B minus A).
-/// The multiplier is `dlambda = -(k dt^2 C_eff) / (1 + k dt^2 w) = -dt^2 F / (1 + k dt^2 w)`
-/// with `w = inv_m_a + inv_m_b`; body A moves by `+w_a dlambda`-magnitude toward B and body B by
-/// the same magnitude weighted with `w_b` toward A (positions, not velocities).
+/// With `h = dt`, `α̃ = 1/(k h²)` and `γ = c/(k h)`, a constraint row with
+/// gradient `n`, error `C` and displacement `∇C · (x − x_n) = h (u · n)` moves
+/// by `Δλ = −(C + γ h (u · n)) / ((1 + γ) w + α̃)`. Multiplied through by
+/// `k h²`, so that `k = 0` (a pure damper) needs no division:
+///
+/// `λ = h² (k C + c (u · n)) / (1 + (k h² + c h) w)`
+///
+/// with `w` the generalised inverse mass along `n` (lever arms included,
+/// see `point_w_sum`). Body A moves by `+w_a λ n`, body B by `−w_b λ n`.
+///
+/// - `rest_length == 0`: the three rows `C = d` (gradient `I`) are solved as
+///   one row along `n = (k d + c u) / |k d + c u|`, exact when the anchors
+///   are on the centres of mass (the inverse mass is isotropic). This is
+///   the vector form of the force `−k d − c u`.
+/// - `rest_length > 0`: the single row `C = |d| − L`, `n = d / |d|`.
+///
+/// `u` is the relative anchor velocity `(v_b + ω_b × r_b) − (v_a + ω_a × r_a)`
+/// of the substep: the predicted velocity in the XPBD substep and the
+/// velocity the TGS substep advanced the positions with, so that
+/// `h u = x − x_n` in both. The velocity update that follows the solve
+/// (`v = (x − x_n) / h`, or the TGS carry `v += Δx / h`) then makes one
+/// substep the backward Euler step of `m x'' = F`. For a single body of
+/// mass `m` against a static anchor, with `a = ω h`, `k = m ω²` and
+/// `c = 2 ζ m ω`, the map is `x' = (x (1 + 2ζa) + h v) / (1 + 2ζa + a²)`.
 ///
 /// # Claims
-/// - The position change of a body is `w_i dt^2 F / (1 + k dt^2 w)` metres, so the effective
-///   stiffness is `k` newtons per metre independent of `dt`
-/// - A stretched spring (`F > 0`) pulls the bodies together; a compressed one pushes them apart
-/// - Both bodies move along the line through the anchors, B toward A for `F > 0`
-/// - A coincident anchor pair, or two static bodies, leaves both bodies unchanged
-/// - For `k dt^2 w << 1` the change tends to the force-law value `w_i F dt^2`; for large
-///   `k dt^2 w` it saturates at the rest length (no overshoot), so the step is unconditionally stable
+/// - The effective stiffness is `k` [N/m] and the damping `c` [N·s/m], for any
+///   `dt`; a hanging body settles at the static extension `m g / k` exactly
+/// - `rest_length = 0`: the damper acts on every component of the relative
+///   velocity, so tangential motion decays like radial motion (no orbit)
+/// - `rest_length > 0`: the damper acts along the spring only
+/// - Two static bodies, or a coincident anchor pair at rest with
+///   `rest_length > 0` (no direction), leave both bodies unchanged
+/// - Unconditionally stable and free of overshoot for `ζ >= 1`
 fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
-
-    let anchor_a = body_a.position + body_a.rotation.rotate_vec(joint.local_anchor_a);
-    let anchor_b = body_b.position + body_b.rotation.rotate_vec(joint.local_anchor_b);
-
-    let delta = anchor_b - anchor_a;
-    let (normal, distance) = delta.normalize_with_length();
-
-    if distance.is_zero() {
+    if body_a.inv_mass.is_zero() && body_b.inv_mass.is_zero() {
         return;
     }
 
-    // Spring force: F = k * (x - rest_length)
-    let displacement = distance - joint.rest_length;
-    let spring_force = joint.stiffness * displacement;
+    // World-space lever arms (COM → anchor) and anchors
+    let r_a = body_a.rotation.rotate_vec(joint.local_anchor_a);
+    let r_b = body_b.rotation.rotate_vec(joint.local_anchor_b);
+    let delta = (body_b.position + r_b) - (body_a.position + r_a);
 
-    // Damping force: F = c * v_relative_along_normal
-    let rel_vel = body_b.velocity - body_a.velocity;
-    let vel_along_normal = rel_vel.dot(normal);
-    let damping_force = joint.damping * vel_along_normal;
+    // Relative anchor velocity of the substep
+    let vel_a = body_a.velocity + body_a.angular_velocity.cross(r_a);
+    let vel_b = body_b.velocity + body_b.angular_velocity.cross(r_b);
+    let rel_vel = vel_b - vel_a;
 
-    let total_force = spring_force + damping_force;
+    let k = joint.stiffness;
+    let c = joint.damping;
+    let h2 = dt * dt;
 
-    let w_sum = body_a.inv_mass + body_b.inv_mass;
-    if w_sum.is_zero() {
+    // `force` is the scalar `k C + c (u · n)` along `normal` (B is pulled
+    // toward A for a positive value)
+    let (normal, force) = if joint.rest_length.is_zero() {
+        // Vector constraint C = d: the row along the force direction
+        let (normal, force) = (delta * k + rel_vel * c).normalize_with_length();
+        if force.is_zero() {
+            return;
+        }
+        (normal, force)
+    } else {
+        let (normal, distance) = delta.normalize_with_length();
+        if distance.is_zero() {
+            return;
+        }
+        let displacement = distance - joint.rest_length;
+        (normal, k * displacement + c * rel_vel.dot(normal))
+    };
+
+    let w = point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, normal);
+    let denom = Fix128::ONE + (k * h2 + c * dt) * w;
+    if denom.is_zero() {
         return;
     }
-
-    // dlambda = dt^2 F / (1 + k dt^2 w): XPBD with alpha_tilde = 1/(k dt^2)
-    let dt2 = dt * dt;
-    let lambda = total_force * dt2 / (Fix128::ONE + joint.stiffness * dt2 * w_sum);
-    let impulse = normal * lambda;
-
-    if !body_a.inv_mass.is_zero() {
-        bodies[joint.body_a].position = bodies[joint.body_a].position + impulse * body_a.inv_mass;
-    }
-    if !body_b.inv_mass.is_zero() {
-        bodies[joint.body_b].position = bodies[joint.body_b].position - impulse * body_b.inv_mass;
-    }
+    let lambda = force * h2 / denom;
+    apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
 }
 
 /// Solve D6 joint: per-axis locking/limiting for all 6 DOF
@@ -1973,7 +2029,7 @@ mod tests {
 
     #[test]
     fn spring_joint_force_is_stiffness_times_displacement_plus_damping() {
-        // XPBD: lambda = dt^2 F / (1 + k dt^2 w)、dt = 1/4
+        // XPBD: lambda = dt^2 F / (1 + (k dt^2 + c dt) w)、dt = 1/4
         // rest 1、k 2、c 0、距離 4、inv (1, 3): F = 6、w = 4 → lambda = (6/16)/(1 + 2/16*4) = 1/4 → A +1/4、B -3/4
         let mut bodies = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 3);
         let j = SpringJoint::new(
@@ -2015,18 +2071,19 @@ mod tests {
             Vec3Fix::new(Fix128::from_ratio(22, 5), Fix128::ZERO, Fix128::ZERO)
         ));
         // damping: rest 4 (ばね力 0)、k 2、c 2、B が +x に 3 で離れる: F = 2*3 = 6、w = 2
-        // → lambda = (6/16)/(1 + 2/16*2) = 3/10 → A +3/10、B -3/10
+        // 減衰は陰的 (Macklin 2016 eq. 26): lambda = dt^2 F / (1 + (k dt^2 + c dt) w)
+        // → lambda = (6/16)/(1 + (2/16 + 2/4)*2) = 1/6 → A +1/6、B -1/6
         let mut damp = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
         damp[1].velocity = v3i(3, 0, 0);
         let jd = SpringJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, fi(4), fi(2), fi(2));
         solve_spring_joint(&jd, &mut damp, DT);
         assert!(near_v(
             damp[0].position,
-            Vec3Fix::new(Fix128::from_ratio(3, 10), Fix128::ZERO, Fix128::ZERO)
+            Vec3Fix::new(Fix128::from_ratio(1, 6), Fix128::ZERO, Fix128::ZERO)
         ));
         assert!(near_v(
             damp[1].position,
-            Vec3Fix::new(Fix128::from_ratio(37, 10), Fix128::ZERO, Fix128::ZERO)
+            Vec3Fix::new(Fix128::from_ratio(23, 6), Fix128::ZERO, Fix128::ZERO)
         ));
         // rest にあり速度 0 → 不変、一致点 → 不変
         let mut rest = pair(Vec3Fix::ZERO, 1, v3i(4, 0, 0), 1);
@@ -2582,14 +2639,21 @@ mod tests {
             &mut sp,
             DT,
         );
+        // The spring takes the same lever-arm coupling as the point joints above:
+        // C = 2, w = 5, lambda = (dt^2 k C) / (1 + k dt^2 w) = (1/8) / (21/16) = 2/21
+        // ⇒ B moves -2/21 along x and turns by I⁻¹ (r_b × n) (−λ) = +4/21 about z.
         assert!(
             near_v(
                 sp[1].position,
-                Vec3Fix::new(Fix128::from_ratio(49, 17), fi(-2), Fix128::ZERO)
+                Vec3Fix::new(Fix128::from_ratio(61, 21), fi(-2), Fix128::ZERO)
             ),
             "spring {:?}",
             sp[1].position
         );
+        assert!(near(
+            compute_twist_angle(sp[1].rotation, Vec3Fix::UNIT_Z),
+            Fix128::from_ratio(4, 21)
+        ));
     }
 
     #[test]
@@ -3165,9 +3229,10 @@ mod tests {
     /// Kills `1015:35` (`v_b − v_a` → `+`).
     ///
     /// rest 4 = distance (spring force 0), damping 2, `v_a = (1, 0, 0)`, `v_b = (3, 0, 0)`:
-    /// relative velocity along the normal is `3 − 1 = 2` → `F = 4`; XPBD multiplier
-    /// `λ = dt² F / (1 + k dt² w) = (4/16) / (1 + 2·(1/16)·2) = 1/5` → A `(1/5, 0, 0)`,
-    /// B `(4 − 1/5, 0, 0)`. Mutant: `3 + 1 = 4` → `F = 8` → `λ = 2/5` → A `(2/5, 0, 0)`.
+    /// relative velocity along the normal is `3 − 1 = 2` → `F = 4`; XPBD multiplier with
+    /// implicit damping `λ = dt² F / (1 + (k dt² + c dt) w) = (4/16) / (1 + (2/16 + 2/4)·2)
+    /// = 1/9` → A `(1/9, 0, 0)`, B `(4 − 1/9, 0, 0)`. Mutant: `3 + 1 = 4` → `F = 8` →
+    /// `λ = 2/9` → A `(2/9, 0, 0)`.
     #[test]
     fn spring_damping_uses_relative_velocity_b_minus_a() {
         let j = SpringJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, fi(4), fi(2), fi(2));
@@ -3178,7 +3243,7 @@ mod tests {
         assert!(
             near_v(
                 b[0].position,
-                Vec3Fix::new(Fix128::from_ratio(1, 5), Fix128::ZERO, Fix128::ZERO)
+                Vec3Fix::new(Fix128::from_ratio(1, 9), Fix128::ZERO, Fix128::ZERO)
             ),
             "A {:?}",
             b[0].position
@@ -3186,7 +3251,7 @@ mod tests {
         assert!(
             near_v(
                 b[1].position,
-                Vec3Fix::new(Fix128::from_ratio(19, 5), Fix128::ZERO, Fix128::ZERO)
+                Vec3Fix::new(Fix128::from_ratio(35, 9), Fix128::ZERO, Fix128::ZERO)
             ),
             "B {:?}",
             b[1].position
