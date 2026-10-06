@@ -246,7 +246,7 @@ fn a_ball_that_cannot_turn_decelerates_at_mu_g_and_stops() {
 /// velocities only and applies no angular impulse, so the ball never spins
 /// up and never rolls.
 #[test]
-#[ignore = "known defect: contact friction is translational only, a solid ball gets no spin and never rolls"]
+#[ignore = "src gap: contact friction is translational only, a solid ball gets no spin and never rolls"]
 fn a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed() {
     let (mu, v0) = (0.3, 4.0);
     let inv_i = 1.0 / (0.4 * R * R);

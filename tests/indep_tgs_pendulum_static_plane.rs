@@ -247,7 +247,7 @@ fn the_undamped_large_amplitude_period_is_the_elliptic_closed_form() {
 /// The joint projection is numerically dissipative; the frame damping of the
 /// default configuration (`β = 0.60 /s`) dwarfs it (`0.012 /s` here).
 #[test]
-#[ignore = "known defect: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps), same on XPBD"]
+#[ignore = "src gap: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps), same on XPBD"]
 fn the_undamped_pendulum_keeps_its_amplitude() {
     let l = 1.5;
     let theta0: f64 = 0.6;
