@@ -1068,7 +1068,7 @@ fn a_torque_on_a_rotated_anisotropic_body_follows_r_diag_rt() {
     let got = [omega.x.to_f64(), omega.y.to_f64(), omega.z.to_f64()];
     let norm = expected.iter().map(|v| v * v).sum::<f64>().sqrt();
     let rel = (0..3)
-        .map(|i| (got[i] - expected[i]).powi(2))
+        .map(|i| (got[i] - expected[i]) * (got[i] - expected[i]))
         .sum::<f64>()
         .sqrt()
         / norm;
