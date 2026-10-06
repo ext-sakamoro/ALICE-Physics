@@ -231,7 +231,7 @@ fn riemann_invariants_closed_form() {
 
 /// gamma = 1: isothermal limit, 2a/(gamma-1) is infinite; returning (u, u) hides that.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-007: riemann_invariants(gamma=1) silently returns (u,u) (J+ == J-) although 2a/(gamma-1) diverges"]
+// AUD-A-S1W5-007
 fn gamma_one_riemann_invariants_are_not_a_silent_identity() {
     let g = IdealGas {
         gas_constant: f(287.0),
@@ -239,6 +239,13 @@ fn gamma_one_riemann_invariants_are_not_a_silent_identity() {
     };
     let (jp, jm) = riemann_invariants(&g, f(10.0), f(340.0));
     assert!(jp != jm, "J+ == J- == {}", jp.to_f64());
+    let inf = Fix128::from_int(i64::MAX >> 8);
+    assert_eq!((jp, jm), (f(10.0) + inf, f(10.0) - inf));
+    // no sound speed: no acoustic term
+    assert_eq!(
+        riemann_invariants(&g, f(10.0), Fix128::ZERO),
+        (f(10.0), f(10.0))
+    );
 }
 
 /// gamma = 1 is the isothermal limit of the isentropic stagnation relation:
@@ -262,7 +269,7 @@ fn gamma_one_stagnation_pressure_ratio_is_the_isothermal_limit() {
 /// p0/p is monotone in |M| and >= 1. Past the Fix128 range (~9.2e18) it must saturate,
 /// not wrap: M=1e4 (air) is 3.6e25, which wraps to 1.7e18 (< the M=1e3 value 3.6e18); M=1e5 is negative.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-008: stagnation_pressure_ratio wraps silently when p0/p exceeds the Fix128 range (M=1e4 -> 1.7e18 < value at M=1e3; M=1e5 -> -8.6e18); normal_shock_jump wraps from M~3e9"]
+// AUD-A-S1W5-008
 fn stagnation_pressure_ratio_is_monotone_and_positive_at_large_mach() {
     let g = IdealGas::air();
     let mut prev = 1.0;
@@ -271,4 +278,26 @@ fn stagnation_pressure_ratio_is_monotone_and_positive_at_large_mach() {
         assert!(r >= prev && r >= 1.0, "M={m:e}: p0/p={r:e} after {prev:e}");
         prev = r;
     }
+    // below the range the exact power is kept: M = 100, (1 + 0.2e4)^3.5
+    let r = stagnation_pressure_ratio(&g, f(100.0)).to_f64();
+    let want = 2001.0f64.powf(3.5);
+    assert!((r - want).abs() / want < 1e-6, "{r} vs {want}");
+}
+
+/// The normal shock past M = 1e9 (where M^2 terms would wrap): the strong-shock
+/// limit, rho2/rho1 = (g+1)/(g-1) = 6 and M2 = sqrt((g-1)/(2g)) for air, with the
+/// pressure and temperature ratios saturated, never negative
+#[test]
+fn normal_shock_at_extreme_mach_is_the_strong_shock_limit() {
+    let g = IdealGas::air();
+    for m in [3e9, 1e12] {
+        let j = normal_shock_jump(&g, f(m));
+        assert!((j.density_ratio.to_f64() - 6.0).abs() < 1e-12, "M={m:e}");
+        assert!((j.mach_downstream.to_f64() - (0.4f64 / 2.8).sqrt()).abs() < 1e-12);
+        assert!(j.pressure_ratio.to_f64() > 1e18 && j.temperature_ratio.to_f64() > 1e17);
+    }
+    // just below the limit the formulas still apply and approach the same values
+    let j = normal_shock_jump(&g, f(1e8));
+    assert!((j.density_ratio.to_f64() - 6.0).abs() < 1e-9);
+    assert!(j.pressure_ratio.to_f64() > 1e16);
 }

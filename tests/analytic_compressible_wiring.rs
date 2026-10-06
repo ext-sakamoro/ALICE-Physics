@@ -403,15 +403,16 @@ fn riemann_invariants_are_exact_for_gamma_2() {
 }
 
 #[test]
-fn riemann_invariants_gamma_one_collapses_to_velocity() {
-    // Documented degenerate case: gamma - 1 == 0 => both invariants return
-    // `u` unchanged (the `gm1.is_zero()` early return).
+fn riemann_invariants_gamma_one_saturate_the_acoustic_term() {
+    // gamma - 1 == 0: 2a/(gamma - 1) diverges, reported as the saturating
+    // sentinel (AUD-A-S1W5-007; this test used to pin the collapse onto u)
     let g = IdealGas {
         gas_constant: Fix128::from_int(1),
         gamma: Fix128::ONE,
     };
     let u = Fix128::from_int(42);
+    let inf = Fix128::from_int(i64::MAX >> 8);
     let (jp, jm) = riemann_invariants(&g, u, Fix128::from_int(1000));
-    assert_eq!(jp, u);
-    assert_eq!(jm, u);
+    assert_eq!(jp, u + inf);
+    assert_eq!(jm, u - inf);
 }
