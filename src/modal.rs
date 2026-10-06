@@ -140,7 +140,8 @@ pub fn beam_natural_frequency_hz(
 /// thickness, `a,b` the plate dimensions, `ρ` mass density.
 ///
 /// Inputs in engineering units (mm, MPa, g/cm³). Poisson ratio `ν`
-/// dimensionless.
+/// dimensionless. A zero or negative thickness or side gives 0, as a
+/// non-positive length does for [`beam_natural_frequency_hz`].
 #[must_use]
 pub fn plate_natural_frequency_hz(
     material: &MaterialProperties,
@@ -149,7 +150,8 @@ pub fn plate_natural_frequency_hz(
     side_a_mm: Fix128,
     side_b_mm: Fix128,
 ) -> Fix128 {
-    if side_a_mm.is_zero() || side_b_mm.is_zero() || thickness_mm.is_zero() {
+    // a zero or negative dimension is no plate (as a non-positive beam length)
+    if side_a_mm <= Fix128::ZERO || side_b_mm <= Fix128::ZERO || thickness_mm <= Fix128::ZERO {
         return Fix128::ZERO;
     }
     let e_mpa = material.youngs_modulus_gpa * Fix128::from_int(1000);

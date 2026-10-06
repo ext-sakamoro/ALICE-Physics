@@ -271,7 +271,7 @@ fn single_dof_scales_as_sqrt_k_over_m_and_vanishes_for_zero_stiffness() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-002: plate_natural_frequency_hz treats negative thickness / side as its absolute value (h=-2 mm returns 325.30 Hz, the same as h=+2 mm) while beam_natural_frequency_hz returns 0 for a negative length"]
+// AUD-A-S3W2-002
 fn plate_with_negative_dimension_is_rejected_like_the_beam_with_negative_length() {
     let m = MaterialProperties::pla();
     let nu = fx(35, 100);
