@@ -199,11 +199,34 @@ fn static_failure_at_ultimate_strength_is_one_cycle() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-007: n as i64 で n > i64::MAX が負に wrap し damage が負になる (n = u64::MAX -> D < 0)"]
 fn applied_cycles_above_i64_max_do_not_flip_the_damage_sign() {
+    // AUD-A-S4W2-007: n = u64::MAX used to go through `as i64` and wrap negative
     let c = curve(100, 1_000_000, 5, 400);
     let d = miner_damage(&[(Fix128::from_int(300), u64::MAX)], &c);
     assert!(d > Fix128::ZERO, "D = {d:?} (n = u64::MAX)");
+    // N = 1e6 (300/100)^-5 = 4115 cycles (floor): D = n / 4115 exactly in quotient + remainder form
+    let n_fail = 1_000_000u64 * 100_000 / 24_300_000; // 1e6 / 3^5 = 4115.2 -> 4115
+    assert_eq!(n_fail, 4115);
+    let q = u64::MAX / n_fail;
+    let r = u64::MAX % n_fail;
+    let want =
+        Fix128::from_int(q as i64) + Fix128::from_int(r as i64) / Fix128::from_int(n_fail as i64);
+    assert_eq!(d, want);
+}
+
+#[test]
+fn damage_beyond_the_representable_range_saturates_instead_of_wrapping() {
+    // S = 10 S_e, m = 10: N = 1 cycle, so D = n; n = u64::MAX exceeds the Fix128 integer range
+    let c = curve(100, 1_000_000, 10, 6000);
+    let d = miner_damage(&[(Fix128::from_int(1000), u64::MAX)], &c);
+    assert!(d > Fix128::from_int(i64::MAX >> 1), "D = {d:?}");
+    // a sum of two near-maximal terms does not wrap either
+    let i = i64::MAX as u64;
+    let d2 = miner_damage(
+        &[(Fix128::from_int(1000), i), (Fix128::from_int(1000), i)],
+        &c,
+    );
+    assert!(d2 >= d, "D2 = {d2:?}");
 }
 
 #[test]

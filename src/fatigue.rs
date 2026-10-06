@@ -296,10 +296,33 @@ pub fn miner_damage(spectrum: &[SpectrumEntry], curve: &SnCurve) -> Fix128 {
         if n_fail == INFINITE_LIFE {
             continue;
         }
-        let ratio = Fix128::from_int(n as i64) / Fix128::from_int(n_fail as i64);
-        d = d + ratio;
+        let ratio = damage_ratio(n, n_fail);
+        // saturate instead of wrapping: Fix128 addition is modulo 2^128
+        d = if ratio >= DAMAGE_SATURATED - d {
+            DAMAGE_SATURATED
+        } else {
+            d + ratio
+        };
     }
     d
+}
+
+/// The largest damage `miner_damage` reports; a sum that would exceed it
+/// (a count far beyond the life) saturates here instead of wrapping negative.
+pub(crate) const DAMAGE_SATURATED: Fix128 = Fix128::from_raw(i64::MAX, u64::MAX);
+
+/// `n / n_fail` for any `u64` count (`n_fail` is at least 1 and at most
+/// `i64::MAX`, as `cycles_to_failure` returns it). Split into the integer
+/// quotient and the remainder so a count above `i64::MAX` is not converted
+/// through `i64` (which wrapped it negative); a quotient beyond `i64::MAX`
+/// saturates.
+fn damage_ratio(n: u64, n_fail: u64) -> Fix128 {
+    let q = n / n_fail;
+    let r = n % n_fail;
+    if q > i64::MAX as u64 {
+        return DAMAGE_SATURATED;
+    }
+    Fix128::from_int(q as i64) + Fix128::from_int(r as i64) / Fix128::from_int(n_fail as i64)
 }
 
 /// Cumulative damage report for one stress spectrum, returned by
