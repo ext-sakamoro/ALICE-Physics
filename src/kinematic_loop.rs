@@ -69,7 +69,15 @@ impl LoopClosureConstraint {
     pub fn residual(&self, world: &PhysicsWorld) -> Vec3Fix {
         let a = world.bodies[self.body_a];
         let b = world.bodies[self.body_b];
-        (a.position + self.local_anchor_a) - (b.position + self.local_anchor_b)
+        self.world_offset(&a, &b)
+    }
+
+    /// Anchor A minus anchor B in world space: each local anchor is rotated by
+    /// its body's orientation before it is added to the position.
+    fn world_offset(&self, a: &crate::solver::RigidBody, b: &crate::solver::RigidBody) -> Vec3Fix {
+        let anchor_a = a.position + a.rotation.unit_rotation().rotate_vec(self.local_anchor_a);
+        let anchor_b = b.position + b.rotation.unit_rotation().rotate_vec(self.local_anchor_b);
+        anchor_a - anchor_b
     }
 
     /// Apply one Baumgarte-style correction pass, moving both bodies
@@ -78,8 +86,7 @@ impl LoopClosureConstraint {
     pub fn apply(&self, world: &mut PhysicsWorld) {
         let a_snapshot = world.bodies[self.body_a];
         let b_snapshot = world.bodies[self.body_b];
-        let residual = (a_snapshot.position + self.local_anchor_a)
-            - (b_snapshot.position + self.local_anchor_b);
+        let residual = self.world_offset(&a_snapshot, &b_snapshot);
         let total_inv_mass = a_snapshot.inv_mass + b_snapshot.inv_mass;
         if total_inv_mass.is_zero() {
             return;

@@ -141,7 +141,7 @@ fn apply_changes_only_positions_of_the_two_bodies() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-002: residual/apply add local_anchor to position without rotating by body.rotation, so a body rotated 90 deg about z with local anchor (1,0,0) reports residual (1,-1,0) instead of 0"]
+// AUD-A-S3W3-002
 fn residual_rotates_the_local_anchor_into_world_space() {
     // `local_anchor_a` is documented as "Anchor point in body A's local
     // frame". Body A rotated +90 deg about z: local (1,0,0) is world (0,1,0).
@@ -270,4 +270,36 @@ fn four_bar_closure_recloses_a_freed_rocker_pin() {
     close("z", after.z, 0.0);
     // ground body must not have moved
     assert_eq!(w.bodies[l.ground].position, g);
+}
+
+/// AUD-A-S3W3-002 (apply): A rotated +90 deg about z with local anchor (1,0,0)
+/// has its anchor at world (0,1,0); B at (0,3,0) with no anchor; equal masses,
+/// rigid: one apply moves each by half the gap (A to (0,1,0), B to (0,2,0)) and
+/// the anchors coincide.
+#[test]
+fn apply_closes_the_gap_between_rotated_anchors() {
+    let mut w = world();
+    let a = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+    let b = w.add_body(RigidBody::new(Vec3Fix::from_int(0, 3, 0), Fix128::ONE));
+    let half_pi = Fix128::PI / Fix128::from_int(2);
+    w.bodies[a].rotation = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), half_pi);
+    let c = LoopClosureConstraint {
+        body_a: a,
+        body_b: b,
+        local_anchor_a: Vec3Fix::from_int(1, 0, 0),
+        local_anchor_b: Vec3Fix::ZERO,
+        compliance: Fix128::ZERO,
+    };
+    c.apply(&mut w);
+    let pa = w.bodies[a].position;
+    let pb = w.bodies[b].position;
+    assert!(
+        (pa.y.to_f64() - 1.0).abs() < 1e-9 && pa.x.to_f64().abs() < 1e-9,
+        "{pa:?}"
+    );
+    assert!(
+        (pb.y.to_f64() - 2.0).abs() < 1e-9 && pb.x.to_f64().abs() < 1e-9,
+        "{pb:?}"
+    );
+    assert!(c.residual(&w).length().to_f64() < 1e-9);
 }
