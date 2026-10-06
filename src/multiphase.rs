@@ -372,7 +372,8 @@ pub enum VofScheme {
 ///
 /// This is the translation test of a fraction field: a slab of fraction `1`
 /// carried by `u` for `dt = k dx / u` lands `k` cells over with its profile
-/// intact under either scheme, and its volume is unchanged as long as it
+/// intact under either scheme (the upwind scheme advances one axis at a time,
+/// x then y then z, so this holds per axis for a diagonal velocity too), and its volume is unchanged as long as it
 /// stays inside the grid (a cell carried past the last cell is lost, and the
 /// volume drops by that cell). A spatially varying velocity is the level set
 /// path of `CfdSolver` (semi-Lagrangian on the cell-centred MAC velocity),
@@ -398,20 +399,35 @@ pub fn advect_vof_rigid(
     let Vec3Fix { x, y, z } = velocity_m_per_s;
     match scheme {
         VofScheme::Upwind => {
-            // sub-cycle so every sub-step has a Courant number of at most 1: an
-            // integer c then moves the field by whole cells, as the doc promises;
-            // past the grid extent everything has left, so the count is capped
-            match upwind_substeps(field, velocity_m_per_s, dt_s) {
-                // carried further than the grid is long: every cell has left
-                // and the inflow is empty
-                None => field.data.iter_mut().for_each(|f| *f = Fix128::ZERO),
-                Some(steps) => {
+            // dimensional splitting, x then y then z, each axis sub-cycled so
+            // every sub-step has a Courant number of at most 1: the unsplit
+            // update f - cx(f - fx) - cy(f - fy) - cz(f - fz) is only stable for
+            // cx + cy + cz <= 1, and an axis split keeps an integer c a move by
+            // whole cells on every axis, diagonals included
+            let axes = [(x, field.nx), (y, field.ny), (z, field.nz)];
+            let mut steps = [0_usize; 3];
+            let mut carried_off = false;
+            for (a, &(u, extent)) in axes.iter().enumerate() {
+                match upwind_substeps(field.dx, u, dt_s, extent) {
+                    Some(n) => steps[a] = n,
+                    None => carried_off = true,
+                }
+            }
+            if carried_off {
+                // carried further than the grid is long on some axis: every cell
+                // has left and the inflow is empty
+                field.data.iter_mut().for_each(|f| *f = Fix128::ZERO);
+            } else {
+                for (a, &(u, _)) in axes.iter().enumerate() {
+                    if u.is_zero() {
+                        continue;
+                    }
                     // the velocity is divided (not dt), so c / steps is exact when
                     // the velocity is a multiple of the step count
-                    let n = Fix128::from_int(steps as i64);
-                    let (sx, sy, sz) = (x / n, y / n, z / n);
-                    for _ in 0..steps {
-                        advect_vof_uniform(field, sx, sy, sz, dt_s);
+                    let su = u / Fix128::from_int(steps[a] as i64);
+                    let v = |axis: usize| if axis == a { su } else { Fix128::ZERO };
+                    for _ in 0..steps[a] {
+                        advect_vof_uniform(field, v(0), v(1), v(2), dt_s);
                     }
                 }
             }
@@ -421,24 +437,24 @@ pub fn advect_vof_rigid(
     total_volume_vof(field)
 }
 
-/// Number of upwind sub-steps for `advect_vof_rigid`: `ceil(c)` for the
-/// largest per-axis Courant number `c = |u| dt / dx`, at least 1, or `None`
-/// when `c` exceeds the largest grid extent (the field is carried off the
-/// grid). A zero spacing gives 1: the step itself leaves the field untouched.
-fn upwind_substeps(field: &Grid3d, velocity: Vec3Fix, dt: Fix128) -> Option<usize> {
-    if field.dx.is_zero() {
+/// Number of upwind sub-steps along one axis for `advect_vof_rigid`:
+/// `ceil(c)` for the Courant number `c = |u| dt / dx`, at least 1, or `None`
+/// when `c` exceeds the grid's extent along that axis (the field is carried
+/// off the grid), including a `|u| dt` too large for `Fix128`. A zero spacing
+/// gives 1: the step itself leaves the field untouched.
+fn upwind_substeps(dx: Fix128, u: Fix128, dt: Fix128, extent: usize) -> Option<usize> {
+    if dx.is_zero() {
         return Some(1);
     }
-    let speed = velocity.x.abs().max(velocity.y.abs()).max(velocity.z.abs());
-    let c = speed * dt.abs() / field.dx;
-    let extent = field.nx.max(field.ny).max(field.nz) as u64;
+    let travel = u.abs().checked_mul(dt.abs())?;
+    let c = travel / dx;
     let whole = c.hi.max(0) as u64;
     let n = if c.lo == 0 {
         whole
     } else {
         whole.saturating_add(1)
     };
-    if n > extent {
+    if n > extent as u64 {
         return None;
     }
     Some(n.max(1) as usize)

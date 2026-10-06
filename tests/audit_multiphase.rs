@@ -496,3 +496,94 @@ fn curvature_uses_the_mixed_second_derivatives() {
     let kappa = curvature_at(&g, 2, 3, 4).to_f64();
     assert!((kappa - want).abs() < 1e-9, "kappa = {kappa} vs {want}");
 }
+
+/// Upwind on a diagonal: the unsplit update f - cx(f - fx) - cy(f - fy) is
+/// only stable for cx + cy <= 1, so sub-cycling by the largest per-axis c left
+/// negative weights and the clamp added fluid (one cell at (1,1) carried by
+/// u = (2, 2) for dt = 1 became 3 cells of 1). Axis by axis, an integer c is a
+/// move by whole cells on every axis: the cell lands at (3,3), volume 1.
+#[test]
+fn upwind_diagonal_integer_courant_translates_by_whole_cells() {
+    let mut g = Grid3d::new(8, 8, 1, Fix128::ONE, Fix128::ZERO);
+    g.set(1, 1, 0, Fix128::ONE);
+    let vol = advect_vof_rigid(
+        &mut g,
+        VofScheme::Upwind,
+        Vec3Fix::new(int(2), int(2), Fix128::ZERO),
+        Fix128::ONE,
+    );
+    let mut want = Grid3d::new(8, 8, 1, Fix128::ONE, Fix128::ZERO);
+    want.set(3, 3, 0, Fix128::ONE);
+    assert_eq!(values(&g), values(&want));
+    assert_eq!(vol, Fix128::ONE);
+}
+
+/// Upwind on a diagonal with a fractional c: a 3x3 block of 1 carried by
+/// u = (3, 1.5) for dt = 1 stays inside a 16x16 grid, so its volume stays 9
+/// (it was 11.25) and every fraction stays in [0, 1]. The x move is the
+/// whole-cell shift by 3; the y move is two f64 upwind sub-steps at c = 3/4
+/// (oracle written here), applied to the shifted block.
+#[test]
+fn upwind_diagonal_fractional_courant_conserves_volume() {
+    let n = 16;
+    let mut g = Grid3d::new(n, n, 1, Fix128::ONE, Fix128::ZERO);
+    for j in 2..5 {
+        for i in 2..5 {
+            g.set(i, j, 0, Fix128::ONE);
+        }
+    }
+    let vol = advect_vof_rigid(
+        &mut g,
+        VofScheme::Upwind,
+        Vec3Fix::new(int(3), fx(1.5), Fix128::ZERO),
+        Fix128::ONE,
+    );
+    assert!(
+        (vol.to_f64() - 9.0).abs() < 1e-12,
+        "volume {}",
+        vol.to_f64()
+    );
+    // column profile along y after two sub-steps at c = 3/4 (empty inflow)
+    let mut col = vec![0.0_f64; n];
+    for c in col.iter_mut().take(5).skip(2) {
+        *c = 1.0;
+    }
+    for _ in 0..2 {
+        let prev = col.clone();
+        for j in 0..n {
+            let up = if j == 0 { 0.0 } else { prev[j - 1] };
+            col[j] = prev[j] - 0.75 * (prev[j] - up);
+        }
+    }
+    for (j, &cj) in col.iter().enumerate() {
+        for i in 0..n {
+            let want = if (5..8).contains(&i) { cj } else { 0.0 };
+            let got = g.get(i, j, 0).to_f64();
+            assert!((got - want).abs() < 1e-12, "({i},{j}): {got} vs {want}");
+        }
+    }
+}
+
+/// A displacement `|u| dt` too large for Fix128 still means "carried off the
+/// grid": the field is empty (the product used to wrap and leave the field
+/// unchanged or scramble it).
+#[test]
+fn upwind_travel_beyond_fix128_empties_the_field() {
+    for (u, dt) in [
+        (Fix128::from_int(1 << 40), Fix128::from_int(1 << 30)),
+        (
+            Fix128::from_int(3_000_000_000),
+            Fix128::from_int(4_000_000_000),
+        ),
+    ] {
+        let mut g = line(0, &[0.25, 0.5, 0.5, 1.0, 0.0, 0.5], Fix128::ONE);
+        let vol = advect_vof_rigid(
+            &mut g,
+            VofScheme::Upwind,
+            Vec3Fix::new(u, Fix128::ZERO, Fix128::ZERO),
+            dt,
+        );
+        assert_eq!(values(&g), [0.0; 6]);
+        assert_eq!(vol, Fix128::ZERO);
+    }
+}
