@@ -22,6 +22,7 @@ crate has today.
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
 | `docs/coverage/nuclear.toml` | 123 | 0 | 1 | 0 | 122 | 0 |
 | `docs/coverage/num.toml` | 101 | 22 | 0 | 5 | 73 | 1 |
+| `docs/coverage/opt.toml` | 120 | 1 | 0 | 0 | 118 | 1 |
 | `docs/coverage/optics.toml` | 119 | 0 | 0 | 0 | 119 | 0 |
 | `docs/coverage/orbit.toml` | 109 | 23 | 4 | 3 | 79 | 0 |
 | `docs/coverage/part.toml` | 119 | 26 | 2 | 3 | 88 | 0 |
@@ -33,7 +34,7 @@ crate has today.
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 3093 | 535 | 68 | 104 | 2381 | 5 |
+| **total** | 3213 | 536 | 68 | 104 | 2499 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -317,6 +318,25 @@ crate has today.
 | stochastic | 2 | 0 | 0 | 0 | 2 | 0 |
 | time_integration | 14 | 0 | 0 | 0 | 14 | 0 |
 | transform | 2 | 0 | 0 | 0 | 2 | 0 |
+
+## `docs/coverage/opt.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| assimilation | 11 | 0 | 0 | 0 | 11 | 0 |
+| autodiff | 6 | 0 | 0 | 0 | 6 | 0 |
+| benchmark | 12 | 0 | 0 | 0 | 12 | 0 |
+| differentiable_sim | 7 | 0 | 0 | 0 | 7 | 0 |
+| identification | 9 | 0 | 0 | 0 | 9 | 0 |
+| learning | 5 | 0 | 0 | 0 | 4 | 1 |
+| problem | 3 | 0 | 0 | 0 | 3 | 0 |
+| rom | 11 | 0 | 0 | 0 | 11 | 0 |
+| sensitivity | 10 | 0 | 0 | 0 | 10 | 0 |
+| shape | 5 | 1 | 0 | 0 | 4 | 0 |
+| sizing | 3 | 0 | 0 | 0 | 3 | 0 |
+| solver | 12 | 0 | 0 | 0 | 12 | 0 |
+| topology | 13 | 0 | 0 | 0 | 13 | 0 |
+| uq | 13 | 0 | 0 | 0 | 13 | 0 |
 
 ## `docs/coverage/optics.toml`
 

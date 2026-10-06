@@ -1,0 +1,1301 @@
+# Optimisation, inverse problems, sensitivity, data assimilation, uncertainty
+# quantification and reduced-order models (OPT) coverage of ALICE-Physics,
+# against an external reference frame.
+#
+# What this table is: every capability that the standard texts (Nocedal-Wright,
+# Numerical Optimization; Bendsoe-Sigmund, Topology Optimization; Kalnay,
+# Atmospheric Modeling, Data Assimilation and Predictability; Smith, Uncertainty
+# Quantification; Quarteroni-Manzoni-Negri, Reduced Basis Methods for PDEs),
+# reference implementations (the feature lists of dolfin-adjoint, OpenMDAO,
+# Dakota, PETSc TAO, and the differentiability of JAX MD and Brax) and standard
+# benchmarks (MBB beam and cantilever topology optimisation, Rosenbrock, the
+# Lorenz-96 twin experiment, the Ishigami function) expect of the side of a
+# simulator that is used to design, calibrate, assimilate and learn, one
+# [[item]] per capability, with what the crate has today. The rows are written
+# by hand: the axes and the items come from the reference frame, not from the
+# modules that exist, so a missing capability is visible instead of absent.
+#
+# Two uses the rows are judged against (tag at the head of `evidence`):
+#   [A] shape optimisation of an additively manufactured part through its
+#       strength check: geometry -> analysis mesh -> FE -> sensitivity ->
+#       update -> strength with the printed anisotropy -> build orientation ->
+#       printability report
+#   [B] a learner (reinforcement learning, policy optimisation) that uses gradients of its training environment:
+#       derivatives of the world step with respect to state, action and
+#       parameters, through a horizon, batched
+#   [A,B] both, [-] neither of the two (needed by the field in general)
+#
+# What counts as implemented: an API that performs the capability. Parts that
+# a caller could combine (snapshot and branch, seeded generator, several worlds
+# stepped together, a linear solve) are cited in `evidence`, and the row stays
+# `missing` (the numerical-foundations table counts general components the
+# same way). The prerequisites the rows rely on are rows of other tables:
+# bit-identical arithmetic (COV-NUM-072 / 073), whole-world snapshot and
+# branching (COV-ENGINE-012), several worlds stepped in parallel (COV-ENGINE-041),
+# the seeded generator (COV-ENGINE-001), field transfer by sample / splat with
+# splat the adjoint of sample (COV-NUM-065, the observation operator of a
+# gridded field and its adjoint).
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - linear and nonlinear equation solvers (Krylov, Newton, line search for
+#     Newton, trust region for square systems, quasi-Newton for equations,
+#     Newton-Krylov), eigen solvers, FFT, the plain Monte Carlo estimator and
+#     variance reduction: the numerical-foundations table (COV-NUM-*); this
+#     table uses them
+#   - state estimation of a mechanism (Kalman filters, particle filter, observers)
+#     and system identification from recorded motion (COV-SENSE-047 to 063,
+#     078 to 080); model predictive control (COV-SENSE-068); here the assimilation
+#     of a field state and the general inverse-problem machinery
+#   - material parameter identification from homogeneous test data
+#     (COV-MAT-051), inverse kinematics and inverse dynamics of gait
+#     (COV-BIO-019 / 020), reaction-rate sensitivity (COV-CHEM-033): those rows
+#     are cited, no row of the same grain is made here
+#   - the reinforcement-learning environment interface (reset, step, reward,
+#     vectorised envs): the engine table (COV-ENGINE-067); here the derivatives
+#     that a gradient-based learner needs from the world
+#   - build-orientation search of a printed part (COV-AM-001 / 002 / 007):
+#     the additive-manufacturing table; here the general optimisers
+#   - goal-oriented error estimation (DWR, COV-FEM-114) and FE modal analysis
+#     (COV-FEM-083): the solid FE table
+#   - training of network weights: outside this crate (only fixed-point
+#     inference is here, COV-ENGINE-127 / COV-SENSE-075)
+#
+# Ensembles and sampling are written as sets built deterministically from a
+# seed and a member index (the generator is portable and bit-identical).
+#
+# Search notes (word collisions found while judging): optimize -> crater
+# pruning (sdf_destruction) and tree builds (bvh), orientation search (AM);
+# sensitivity -> privacy budget and fatigue mean-stress / filament data;
+# surrogate -> the linear tangent of the modified Newton in FEM; adjoint ->
+# splat versus sample (coupled_field); level set -> interface capture of
+# multiphase flow; reduced -> reduced integration / coordinates / mass;
+# calibrated -> empirical fits; ensemble -> NVE of molecular dynamics;
+# design -> prose. No hit for uncertain, assimil, Sobol, Halton, chaos, POD,
+# SVD, Pareto, penalt, gradient descent.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this crate (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-OPT-NNN) / axis / item / source (book, topic, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate /
+# limitation (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+
+[[item]]
+id = "COV-OPT-001"
+axis = "problem"
+item = "optimisation problem interface (design vector with bounds and scaling, objective, equality / inequality constraints, gradient callbacks, iteration history)"
+source = "OpenMDAO (Problem, design variables, objectives, constraints); PETSc TAO (TaoSetObjectiveAndGradient); Dakota (variables, responses)"
+status = "missing"
+evidence = "[A,B] 汎用の最適化 API は無い (推測: optimi の語は src/print_orientation.rs::optimize_grid の向きの探索 (COV-AM-002) と src/sdf_destruction.rs::optimize の crater 整理の別語義だけ)"
+oracle_candidate = "Rosenbrock の最小点 (1, 1) を API 経由の最適化器で再現し、反復の履歴が記録されること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-002"
+axis = "problem"
+item = "bit-identical optimisation history on every platform (the same iterates for the same inputs)"
+source = "Dakota / OpenMDAO (reproducible studies); the crate's own determinism contract"
+status = "missing"
+evidence = "[A,B] 最適化器が無い 前提の Fix128 の bit 一致は COV-NUM-072 / 073 (src/math.rs::Fix128)"
+oracle_candidate = "同じ問題の反復列の hash を CI の全 OS で固定する"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-003"
+axis = "problem"
+item = "bit-identical gradients across platforms and thread counts (fixed order of every accumulation in adjoint / reverse sweeps)"
+source = "dolfin-adjoint / JAX (gradient evaluation); the crate's own determinism contract"
+status = "missing"
+evidence = "[A,B] 勾配を出す経路が無い 並列 step の bit 一致は COV-ENGINE-005 (src/solver.rs::step_parallel)"
+oracle_candidate = "1 / 2 / 8 thread で勾配の hash が一致すること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-004"
+axis = "sensitivity"
+item = "finite-difference gradient of a simulation response (forward / central differences, step chosen against the 2^-64 resolution of Fix128)"
+source = "Nocedal-Wright, Numerical Optimization (finite-difference derivative approximations); Dakota (numerical gradients); OpenMDAO (approx_totals)"
+status = "missing"
+evidence = "[A,B] 応答の勾配を差分で出す API は無い FEM は接線の作用を内部で中心差分にする (src/linear_elastic_fem/consistent_tangent.rs) が、設計変数に対する応答の微分ではない"
+oracle_candidate = "片持ち梁の FE コンプライアンス C の E に対する微分 dC/dE = -C/E (線形弾性で厳密) と中心差分を突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-005"
+axis = "sensitivity"
+item = "gradient verification by the Taylor remainder test (remainder O(h) without the gradient, O(h^2) with it)"
+source = "dolfin-adjoint (taylor_test); Farrell et al., automated derivation of the adjoint of high-level transient FE programs"
+status = "missing"
+evidence = "[A,B] 勾配が無いので検査の道具も無い (推測: taylor で 0 件)"
+oracle_candidate = "既知の二次関数で剰余の縮小率 1/2 と 1/4 を確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-006"
+axis = "sensitivity"
+item = "direct (forward) differentiation of the discrete linear FE equilibrium (K du/dp = df/dp - dK/dp u)"
+source = "Bendsoe-Sigmund, Topology Optimization (sensitivity analysis); Haftka-Gurdal, Elements of Structural Optimization (direct method)"
+status = "missing"
+evidence = "[A] 剛性の設計変数に対する微分は無い src/linear_elastic_fem.rs::solve は材料 (src/linear_elastic_fem.rs::ElasticMaterial) を mesh 全体で 1 つ受け取る"
+oracle_candidate = "片持ち梁の先端たわみの E に対する微分 -delta/E"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-007"
+axis = "sensitivity"
+item = "discrete adjoint of the linear FE equilibrium (K lambda = dJ/du, one extra solve per objective)"
+source = "Bendsoe-Sigmund, Topology Optimization (adjoint method); dolfin-adjoint (discrete adjoint of the assembled system)"
+status = "missing"
+evidence = "[A] 随伴解法は無い 線形の解法 (src/linear_elastic_fem.rs::solve、内側は src/linear_elastic_fem.rs::conjugate_gradient) は右辺を変えて呼べるが、目的関数の微分を右辺にする経路は無い"
+oracle_candidate = "コンプライアンスは自己随伴 (lambda = -u) で直接法の勾配と一致すること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-008"
+axis = "sensitivity"
+item = "discrete adjoint of a nonlinear steady problem (transposed consistent tangent at the converged state)"
+source = "dolfin-adjoint (nonlinear variational problems); MOOSE (adjoint system)"
+status = "missing"
+evidence = "[A] 整合接線 (src/linear_elastic_fem/consistent_tangent.rs、固体 FE の表の tangent 軸) は Newton の内部だけで使われ、転置系を解く経路は無い"
+oracle_candidate = "超弾性の一軸伸長で荷重に対する変位の感度を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-009"
+axis = "sensitivity"
+item = "adjoint of a transient problem (backward sweep with checkpointing, binomial / revolve schedule)"
+source = "Griewank-Walther, Evaluating Derivatives (checkpointing); dolfin-adjoint (pyadjoint checkpointing)"
+status = "missing"
+evidence = "[A,B] 時間逆向きの掃引は無い checkpoint に使える部品は src/solver/world_snapshot.rs::snapshot_world (COV-ENGINE-012) だけで、world 外の状態の snapshot は無い (COV-ENGINE-016)"
+oracle_candidate = "1 次元熱伝導の終端温度の初期温度に対する随伴勾配を差分と突合 checkpoint 数を変えても bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-010"
+axis = "sensitivity"
+item = "continuous adjoint of a PDE (adjoint heat equation, adjoint Stokes / Navier-Stokes)"
+source = "Giles-Pierce, an introduction to the adjoint approach to design; OpenFOAM adjointOptimisation"
+status = "missing"
+evidence = "[A] 随伴の偏微分方程式を解く module は無い (推測: adjoint の語は src/coupled_field.rs::splat の doc の別語義だけ)"
+oracle_candidate = "定常熱伝導で境界熱流束に対する領域平均温度の勾配を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-011"
+axis = "sensitivity"
+item = "adjoint of a coupled thermo-mechanical problem (heat then elasticity through the thermal eigenstrain)"
+source = "Martins-Ning, Engineering Design Optimization (coupled adjoint); OpenMDAO (coupled derivatives)"
+status = "missing"
+evidence = "[A] 温度ひずみは一方向の連成 (src/linear_elastic_fem.rs::solve_with_eigenstrain、COV-FEM-096) で、連成系の随伴は無い"
+oracle_candidate = "拘束棒の熱応力の温度に対する感度 -E alpha を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-012"
+axis = "sensitivity"
+item = "eigenvalue sensitivity (d lambda = phi^T (dK - lambda dM) phi / phi^T M phi)"
+source = "Bendsoe-Sigmund, Topology Optimization (eigenvalue problems); Haftka-Gurdal (sensitivity of eigenvalues)"
+status = "missing"
+evidence = "[A] FE の固有値解析が無い (COV-FEM-083) src/modal.rs は閉形式"
+oracle_candidate = "単一自由度ばね質量で d omega / dk = 1 / (2 m omega)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-013"
+axis = "sensitivity"
+item = "sensitivity of a world quantity by branching from a snapshot (perturb, step both branches, difference)"
+source = "Brax / MuJoCo (finite-difference derivatives of the step, mjd_transitionFD)"
+status = "missing"
+evidence = "[B] API は無い 部品は src/solver/world_snapshot.rs::snapshot_world と src/solver/world_snapshot.rs::restore_world (分岐は COV-ENGINE-012、partial)"
+oracle_candidate = "放物運動の着地距離の初速に対する微分を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-014"
+axis = "autodiff"
+item = "forward-mode automatic differentiation over Fix128 (dual numbers by operator overloading)"
+source = "Griewank-Walther, Evaluating Derivatives (forward mode); JAX (jvp)"
+status = "missing"
+evidence = "[A,B] Fix128 (src/math.rs::Fix128) に導関数を運ぶ型は無い (推測: dual / jvp で 0 件)"
+oracle_candidate = "多項式と合成関数の導関数を閉形式と bit 単位で突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-015"
+axis = "autodiff"
+item = "derivatives of the elementary functions with the same determinism (sqrt, exp, ln, sin, cos, atan2)"
+source = "Griewank-Walther, Evaluating Derivatives (elementary functions); JAX (primitive rules)"
+status = "missing"
+evidence = "[A,B] 初等関数そのものは COV-NUM-083 微分の規則は無い"
+oracle_candidate = "d sin / dx = cos を全 OS で bit 一致に"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-016"
+axis = "autodiff"
+item = "reverse-mode automatic differentiation of Fix128 kernels (tape or source transformation)"
+source = "Griewank-Walther, Evaluating Derivatives (reverse mode); JAX (vjp / grad)"
+status = "missing"
+evidence = "[A,B] (推測: tape / vjp / backprop で 0 件)"
+oracle_candidate = "スカラー関数の勾配を forward mode と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-017"
+axis = "autodiff"
+item = "Jacobian-vector and vector-Jacobian products of a solver step as an API"
+source = "JAX (jvp / vjp); PETSc TAO (gradient and Hessian callbacks)"
+status = "missing"
+evidence = "[A,B] FEM の内部の差分による作用 (src/linear_elastic_fem/consistent_tangent.rs) は Newton 専用で公開されていない"
+oracle_candidate = "線形 step の Jv と J^T w の内積の一致 (w . Jv = (J^T w) . v)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-018"
+axis = "autodiff"
+item = "Hessian-vector products (second-order adjoint, forward-over-reverse)"
+source = "Nocedal-Wright, Numerical Optimization (Newton-CG with Hessian-vector products); dolfin-adjoint (compute_hessian)"
+status = "missing"
+evidence = "[A] (推測: hessian で 0 件)"
+oracle_candidate = "二次形式で Hv = A v"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-019"
+axis = "autodiff"
+item = "implicit differentiation of an iterative solve at convergence (differentiate the fixed point, not the iterations)"
+source = "Blondel et al., efficient and modular implicit differentiation; dolfin-adjoint (solve annotation)"
+status = "missing"
+evidence = "[A,B] 反復解法 (src/linear_solver.rs、FEM の Newton) の解に対する微分は無い"
+oracle_candidate = "線形系 A(p) x = b の dx/dp = -A^-1 (dA/dp) x と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-020"
+axis = "differentiable_sim"
+item = "state and action Jacobian of one rigid-body world step (bodies and joints, without contact)"
+source = "Brax / MuJoCo XLA (differentiable step); de Avila Belbute-Peres et al., end-to-end differentiable physics"
+status = "missing"
+evidence = "[B] world の step (src/solver.rs::step) に微分は無い"
+oracle_candidate = "重力下の自由物体で d x_{t+1} / d v_t = dt I、関節付き振り子の小振幅線形化と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-021"
+axis = "differentiable_sim"
+item = "parameter Jacobian of the world step (mass, inertia, friction, restitution, joint compliance)"
+source = "Brax / MuJoCo (system identification through gradients); Heiden et al., NeuralSim"
+status = "missing"
+evidence = "[B] (推測: 物性に対する微分は 0 件) 運動からの同定の行は COV-SENSE-078"
+oracle_candidate = "滑る箱の停止距離の摩擦係数に対する微分 -v^2/(2 mu^2 g) と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-022"
+axis = "differentiable_sim"
+item = "gradients through contact (smoothed contact model, or implicit differentiation of the contact projection)"
+source = "Brax (soft contact); Werling et al., fast and feature-complete differentiable physics (complementarity); Suh et al., do differentiable simulators give better policy gradients"
+status = "missing"
+evidence = "[B] 接触の射影 (XPBD) に微分は無い"
+oracle_candidate = "床で跳ねる球の最高到達点の初期高さに対する微分を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-023"
+axis = "differentiable_sim"
+item = "gradient through a horizon of steps (backpropagation through time) with truncation and gradient-norm monitoring"
+source = "Brax / JAX MD (scan with gradients); Metz et al., gradients are not all you need (chaotic loss landscapes)"
+status = "missing"
+evidence = "[B] 多段の勾配は無い 状態の保存は COV-ENGINE-012"
+oracle_candidate = "減衰ばねの N step 後の位置の初期位置に対する微分が閉形式の減衰率の N 乗に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-024"
+axis = "differentiable_sim"
+item = "differentiable cloth and soft body (XPBD constraint projections)"
+source = "Liang et al., differentiable cloth simulation; Hu et al., DiffTaichi"
+status = "missing"
+evidence = "[B] 布・軟体は src/cloth.rs と src/deformable.rs、微分は無い"
+oracle_candidate = "吊り下げた布の静止位置の剛性に対する微分を差分と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-025"
+axis = "differentiable_sim"
+item = "differentiable grid fluid (semi-Lagrangian advection and pressure projection)"
+source = "Holl et al., PhiFlow; Hu et al., DiffTaichi (smoke)"
+status = "missing"
+evidence = "[B] 格子流体 (src/eulerian_grid.rs) に微分は無い"
+oracle_candidate = "一様流の移流の初期場に対する随伴が逆向きの移流になること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-026"
+axis = "differentiable_sim"
+item = "batched differentiable rollouts (many worlds and their gradients in one call, independent of the thread count)"
+source = "Brax (vmap over environments); Isaac Gym (vectorised environments)"
+status = "missing"
+evidence = "[B] 複数 world の並列 step は src/multi_world.rs::MultiWorld (COV-ENGINE-041) にあるが勾配は無い RL 環境の口は COV-ENGINE-067"
+oracle_candidate = "1 本ずつの勾配と一括の勾配が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-027"
+axis = "learning"
+item = "analytic policy gradient through a differentiable rollout (return gradient with respect to actions and policy parameters, short horizons)"
+source = "Xu et al., accelerated policy learning with parallel differentiable simulation (SHAC); Brax (APG)"
+status = "missing"
+evidence = "[B] 微分可能な rollout が無い (上の differentiable_sim 軸)"
+oracle_candidate = "線形二次の問題で勾配を Riccati の閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-028"
+axis = "learning"
+item = "zeroth-order gradient estimate from rollouts with antithetic perturbations built from a seed and a member index (evolution strategies)"
+source = "Salimans et al., evolution strategies as a scalable alternative to reinforcement learning; Dakota (sampling-based gradients)"
+status = "missing"
+evidence = "[B] API は無い 部品は分岐 (src/solver/world_snapshot.rs::restore_world、COV-ENGINE-012)、seed 付き生成器 (src/rng.rs::DeterministicRng、COV-ENGINE-001)、複数 world (src/multi_world.rs::MultiWorld、COV-ENGINE-041)"
+oracle_candidate = "二次関数で推定勾配の平均が真の勾配に近づき、seed が同じなら bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-029"
+axis = "learning"
+item = "gradient-based trajectory optimisation of a mechanism (multiple shooting / direct collocation)"
+source = "Betts, Practical Methods for Optimal Control; Drake (DirectCollocation); OpenMDAO Dymos"
+status = "missing"
+evidence = "[B] 無い 筋骨格の最適制御は COV-BIO-037、MPC は COV-SENSE-068"
+oracle_candidate = "二重積分器の最短時間 bang-bang 制御の閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-030"
+axis = "learning"
+item = "contact-implicit trajectory optimisation (complementarity constraints in the transcription)"
+source = "Posa-Cantu-Tedrake, a direct method for trajectory optimization of rigid bodies through contact; Drake"
+status = "missing"
+evidence = "[B] 無い"
+oracle_candidate = "箱を押す課題で接触力が非負かつ相補条件を満たすこと"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-031"
+axis = "learning"
+item = "training of network weights (optimiser over network parameters)"
+source = "PyTorch / JAX optimisers"
+status = "out-of-scope"
+evidence = "[B] 範囲外 学習は別の crate、ここは固定小数点の推論だけ (src/neural.rs::DeterministicNetwork、COV-ENGINE-127 / COV-SENSE-075)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-OPT-032"
+axis = "identification"
+item = "output-error least-squares fit of model parameters with the simulation in the loop (FE model updating from measured displacements or strains)"
+source = "Tarantola, Inverse Problem Theory; Pierron-Grediac, The Virtual Fields Method (FEMU)"
+status = "missing"
+evidence = "[A] 無い 均質な試験データからの材料定数は COV-MAT-051、運動からの同定は COV-SENSE-078 既存の fit は 2 点を厳密に通す連立 (src/damping_rayleigh.rs::fit_two_modes) だけ"
+oracle_candidate = "合成した変位場 (既知の E) から E を回復し、雑音なしで元の値に戻ること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-033"
+axis = "identification"
+item = "nonlinear least squares for overdetermined residuals (Gauss-Newton, Levenberg-Marquardt on J^T J)"
+source = "Nocedal-Wright, Numerical Optimization (nonlinear least-squares problems); PETSc TAO (BRGN); Dakota (NL2SOL)"
+status = "missing"
+evidence = "[A,B] 無い 正方系の信頼領域は COV-NUM-031、線形の最小二乗は COV-NUM-007"
+oracle_candidate = "指数減衰の曲線あてはめで既知の係数を回復"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-034"
+axis = "identification"
+item = "Tikhonov regularisation with parameter choice (L-curve, discrepancy principle, generalised cross-validation; truncated SVD as the spectral variant)"
+source = "Hansen, Discrete Inverse Problems; Engl-Hanke-Neubauer, Regularization of Inverse Problems"
+status = "missing"
+evidence = "[A] (推測: tikhonov / regulari の語は FEM の正則性と連成の熱の付与の別語義だけ)"
+oracle_candidate = "Hilbert 行列の系で正則化解の誤差が雑音水準に応じて最小になる alpha を確認"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-035"
+axis = "identification"
+item = "total-variation and sparsity (L1) regularisation of a distributed parameter"
+source = "Vogel, Computational Methods for Inverse Problems; Hansen, Discrete Inverse Problems"
+status = "missing"
+evidence = "[A] (推測: 0 件)"
+oracle_candidate = "階段状の係数分布の回復で境界が保たれること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-036"
+axis = "identification"
+item = "inverse heat conduction: boundary heat flux or temperature from interior sensors (sequential function specification)"
+source = "Beck-Blackwell-St. Clair, Inverse Heat Conduction"
+status = "missing"
+evidence = "[A] 順問題の熱伝導は src/transient_thermal.rs、逆問題は無い 造形中の温度履歴の較正に効く"
+oracle_candidate = "半無限体の一定流束で内部温度から流束を回復 (閉形式の erfc 解)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-037"
+axis = "identification"
+item = "load identification from strain or displacement measurements"
+source = "Tarantola, Inverse Problem Theory; Dakota (calibration)"
+status = "missing"
+evidence = "[A] 無い 反力の出力は src/linear_elastic_fem.rs::reactions (COV-FEM-118)"
+oracle_candidate = "片持ち梁の歪み 2 点から先端荷重を回復"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-038"
+axis = "identification"
+item = "distributed parameter identification (stiffness or conductivity field) with adjoint gradients"
+source = "dolfin-adjoint (parameter estimation demos); Vogel, Computational Methods for Inverse Problems"
+status = "missing"
+evidence = "[A] 要素ごとの物性も随伴も無い (同軸の sensitivity 行)"
+oracle_candidate = "2 層の棒で層ごとの剛性を回復"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-039"
+axis = "identification"
+item = "identifiability and parameter confidence from the sensitivity matrix (Fisher information, correlation of the estimates)"
+source = "Bard, Nonlinear Parameter Estimation; Dakota (calibration statistics)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "線形模型で J^T J の逆行列が閉形式の推定の散らばりに一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-040"
+axis = "identification"
+item = "calibration with a posterior sampled by a Markov chain driven by a seeded generator (Bayesian inversion, model-discrepancy term)"
+source = "Kennedy-O'Hagan, Bayesian calibration of computer models; Smith, Uncertainty Quantification (Bayesian model calibration); Dakota (QUESO)"
+status = "missing"
+evidence = "[A] 無い 一様と正規の生成器は src/rng.rs::DeterministicRng と src/rng.rs::next_gaussian_pair"
+oracle_candidate = "線形 Gauss 模型で鎖の平均と分散が閉形式の事後に近づき、seed が同じなら bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-041"
+axis = "assimilation"
+item = "nudging (Newtonian relaxation of the model state toward observations)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (nudging)"
+status = "missing"
+evidence = "[-] 無い (推測: nudg / relax toward で 0 件)"
+oracle_candidate = "線形減衰模型で緩和係数に応じた誤差の減衰率を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-042"
+axis = "assimilation"
+item = "background error covariance model (variances and spatial correlation by a diffusion operator or recursive filter, control-variable transform)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (background error covariances); Weaver-Courtier, correlation modelling on the sphere using a diffusion equation"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "拡散演算子による相関関数の幅が拡散係数と step 数の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-043"
+axis = "assimilation"
+item = "optimal interpolation / best linear unbiased analysis"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (optimal interpolation)"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "1 変数 1 観測で解析値 = 背景 + K (y - H x)、K = B / (B + R) を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-044"
+axis = "assimilation"
+item = "3D-Var (cost function in the state, minimisation with its gradient)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (3D-Var); Lorenc, analysis methods for numerical weather prediction"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "線形の場合に 3D-Var の解が最適内挿と一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-045"
+axis = "assimilation"
+item = "strong-constraint 4D-Var (incremental, with the tangent-linear and adjoint of the forecast model)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (4D-Var); Courtier-Thepaut-Hollingsworth, incremental 4D-Var"
+status = "missing"
+evidence = "[-] 無い 予報模型の随伴は同表 sensitivity 軸の時間逆向きの行が前提"
+oracle_candidate = "線形模型の窓内で 4D-Var と Kalman 平滑化の解が一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-046"
+axis = "assimilation"
+item = "weak-constraint 4D-Var (model-error control variables)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (4D-Var); Tremolet, model-error estimation in 4D-Var"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "既知の定数模型誤差の回復"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-047"
+axis = "assimilation"
+item = "ensemble Kalman filter with the ensemble built deterministically from a seed and a member index (perturbed observations)"
+source = "Evensen, Data Assimilation: The Ensemble Kalman Filter; Kalnay (ensemble methods)"
+status = "missing"
+evidence = "[-] 無い 生成器は src/rng.rs::new_with_stream (member index を stream に使える、COV-ENGINE-001) mechanism の状態推定の Kalman は COV-SENSE-050"
+oracle_candidate = "線形 Gauss 模型で member 数を増やすと解析の散らばりが Kalman の閉形式に近づく"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-048"
+axis = "assimilation"
+item = "ensemble square-root filters (ETKF / LETKF)"
+source = "Hunt-Kostelich-Szunyogh, efficient data assimilation for spatiotemporal chaos (LETKF); Bishop et al. (ETKF)"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "線形 Gauss で ETKF の解析共分散が Kalman の閉形式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-049"
+axis = "assimilation"
+item = "covariance localisation (Gaspari-Cohn taper) and inflation (multiplicative / relaxation to prior spread)"
+source = "Gaspari-Cohn, construction of correlation functions in two and three dimensions; Anderson, adaptive inflation"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "Gaspari-Cohn 関数の値と台を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-050"
+axis = "assimilation"
+item = "forecast-analysis cycling driver with state snapshots (bit-identical cycles)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (analysis cycle); DART / JEDI cycling"
+status = "missing"
+evidence = "[-] 無い world の状態保存は src/solver/world_snapshot.rs::snapshot_world (COV-ENGINE-012)、world 外の場の保存は無い (COV-ENGINE-016)"
+oracle_candidate = "同じ観測列で 2 回の cycle が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-051"
+axis = "assimilation"
+item = "observation-space diagnostics (innovations O-B and O-A, chi-square consistency of the assumed error statistics)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability (observation-space diagnostics); Desroziers et al., diagnosis of observation, background and analysis-error statistics"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "線形 Gauss で E[(O-B)(O-B)^T] = H B H^T + R"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-052"
+axis = "topology"
+item = "element-wise density design field with SIMP stiffness interpolation (RAMP as the alternative interpolation)"
+source = "Bendsoe-Sigmund, Topology Optimization (SIMP); Sigmund, a 99 line topology optimization code; Andreassen et al., 88-line code"
+status = "missing"
+evidence = "[A] 要素ごとの剛性を受け取る口が無い src/linear_elastic_fem.rs::solve は材料を mesh 全体で 1 つ受け取る (src/linear_elastic_fem.rs::ElasticMaterial)"
+oracle_candidate = "一様密度 rho で剛性が rho^p 倍、変位が 1/rho^p 倍になること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-053"
+axis = "topology"
+item = "compliance objective and its element sensitivity (self-adjoint, -p rho^(p-1) u_e^T k_0 u_e)"
+source = "Bendsoe-Sigmund, Topology Optimization (minimum compliance)"
+status = "missing"
+evidence = "[A] 要素のひずみエネルギー密度は src/linear_elastic_fem.rs::complementary_energy_density (COV-FEM-119) にあるが、密度に対する微分は無い"
+oracle_candidate = "要素感度の和と全体コンプライアンスの差分を突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-054"
+axis = "topology"
+item = "density filter and sensitivity filter (minimum length scale r_min)"
+source = "Bendsoe-Sigmund, Topology Optimization (filters); Bourdin, filters in topology optimization; Bruns-Tortorelli"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "一様場がフィルタで変わらず、デルタ場が錐状の重みに広がること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-055"
+axis = "topology"
+item = "Heaviside projection with continuation and the robust (eroded / intermediate / dilated) formulation"
+source = "Guest-Prevost-Belytschko; Wang-Lazarov-Sigmund, robust topology optimization"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "射影関数の値と傾きを閉形式と突合、beta の継続で 0/1 に近づくこと"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-056"
+axis = "topology"
+item = "optimality-criteria update for a volume constraint"
+source = "Bendsoe-Sigmund, Topology Optimization (optimality criteria); Sigmund, a 99 line topology optimization code"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "体積制約が二分法で厳密に満たされること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-057"
+axis = "topology"
+item = "level-set topology optimisation (Hamilton-Jacobi boundary update, topological derivative) giving a crisp SDF boundary"
+source = "Allaire-Jouve-Toader, structural optimization using shape sensitivity and a level-set method; Wang-Wang-Guo"
+status = "missing"
+evidence = "[A] level set は多相流の界面捕獲だけ (src/multiphase.rs::reinitialize_level_set、pub(crate)) 設計の境界を動かす経路は無い SDF の幾何と直結するので造形の経路に効く"
+oracle_candidate = "円孔の境界速度一定で半径が線形に変わること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-058"
+axis = "topology"
+item = "stress-constrained topology optimisation (stress relaxation, p-norm aggregation)"
+source = "Duysinx-Bendsoe; Le et al., stress-based topology optimization for continua"
+status = "missing"
+evidence = "[A] 無い 要素の von Mises は src/linear_elastic_fem.rs::von_mises (COV-FEM-116)"
+oracle_candidate = "p-norm が p を大きくすると最大値に近づくこと"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-059"
+axis = "topology"
+item = "additive-manufacturing constraints in topology optimisation (overhang filter along the build direction, minimum member size)"
+source = "Langelaar, an additive manufacturing filter for topology optimization of print-ready designs; Gaynor-Guest"
+status = "missing"
+evidence = "[A] 無い overhang の検出も無い (COV-AM-009 / 010)"
+oracle_candidate = "45 度以下の張り出しを持つ設計がフィルタで支持付きに変わること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-060"
+axis = "topology"
+item = "multiple load cases (weighted sum and worst-case compliance)"
+source = "Bendsoe-Sigmund, Topology Optimization (multiple load cases)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "2 荷重の重み和の感度が各荷重の感度の重み和に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-061"
+axis = "topology"
+item = "compliant mechanism design (output displacement objective with a spring at the output port)"
+source = "Bendsoe-Sigmund, Topology Optimization (compliant mechanisms); Sigmund, on the design of compliant mechanisms"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "変位反転機構の出力変位の符号と大きさの推移"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-062"
+axis = "topology"
+item = "thermal-compliance (heat conduction) topology optimisation"
+source = "Bendsoe-Sigmund, Topology Optimization (heat conduction); Gersborg-Hansen et al."
+status = "missing"
+evidence = "[A] 無い 定常熱伝導の FE も無い (熱の表 COV-THERM-008)"
+oracle_candidate = "一様発熱の正方形で熱コンプライアンスの感度を差分と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-063"
+axis = "topology"
+item = "eigenfrequency maximisation (with the repeated-eigenvalue treatment)"
+source = "Bendsoe-Sigmund, Topology Optimization (eigenvalue problems); Pedersen, maximization of eigenvalues using topology optimization"
+status = "missing"
+evidence = "[A] FE の固有値解析が無い (COV-FEM-083)"
+oracle_candidate = "単純支持梁の第 1 固有値の感度を差分と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-064"
+axis = "topology"
+item = "extraction of the optimised density as an SDF / iso-surface for re-analysis and printing"
+source = "Bendsoe-Sigmund, Topology Optimization (post-processing); Andreassen et al. (interpretation of the density field)"
+status = "missing"
+evidence = "[A] 無い SDF から解析 mesh を作る逆向きの経路は shape 軸の COV-OPT-065 にある"
+oracle_candidate = "密度 0.5 の等値面が球の場合に半径を保つこと"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-065"
+axis = "shape"
+item = "a design described by an SDF re-meshed into tetrahedra for analysis at every design, without manual meshing"
+source = "OpenMDAO / Dakota (geometry-in-the-loop workflows); Allaire, Conception optimale de structures (remeshing)"
+status = "implemented+oracle"
+evidence = "[A] src/sdf_fem_mesh.rs::generate src/sdf_fem_mesh.rs::generate_marching_tets (任意の SdfField、src/sdf_collider.rs::SdfField) tests/audit_sdf_fem_mesh.rs::marching_tets_tilted_half_space_volumes_match_polytope_formulas tests/analytic_sdf_fem_mesh_wiring.rs::generate_marching_tets_volume_matches_the_half_space_closed_form tests/audit_sdf_fem_mesh.rs::lattice_cell_count_is_robust_to_f32_rounding_of_the_quotient (known defect: 境界の 1 層が商の丸めで落ちる、設計の小変化で応答が跳ぶ経路) 固体 FE の表に mesh 生成の行は無いので、設計の幾何の経路としてここで数える"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-OPT-066"
+axis = "shape"
+item = "mesh morphing with fixed connectivity (design velocity field, free-form deformation, radial-basis morphing)"
+source = "Sederberg-Parry, free-form deformation; Haftka-Grandhi, structural shape optimization (design velocity)"
+status = "missing"
+evidence = "[A] 無い (推測: morph / FFD で 0 件) 上の再 mesh は設計ごとに接続が変わるので、応答は設計変数に対して不連続になる"
+oracle_candidate = "剛体並進の設計速度で応力が変わらないこと"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-067"
+axis = "shape"
+item = "shape derivative as a boundary integral from the adjoint (Hadamard form)"
+source = "Sokolowski-Zolesio, Introduction to Shape Optimization; Allaire, shape optimization by the homogenization method / level sets"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "円孔付き板の孔径に対するコンプライアンスの微分を差分と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-068"
+axis = "shape"
+item = "node-based shape optimisation with gradient smoothing (Sobolev gradient, vertex morphing)"
+source = "Hojjat et al., vertex morphing; Jameson, Sobolev gradients in aerodynamic shape optimisation"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "平滑化後の勾配が高周波成分を減衰させる比を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-069"
+axis = "shape"
+item = "sensitivity of the response to SDF parameters (dimensions, blend radius) through the analysis mesh"
+source = "OpenMDAO (geometry parametrisation); Dakota (design variables)"
+status = "missing"
+evidence = "[A] SdfField (src/sdf_collider.rs::SdfField) は距離を返すだけで、形状の変数を持たない"
+oracle_candidate = "円柱の半径に対する体積の微分 2 pi r h を mesh 経由で再現"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-070"
+axis = "sizing"
+item = "sizing variables of beam and shell elements (thickness, cross-section) with analytic sensitivities"
+source = "Haftka-Gurdal, Elements of Structural Optimization (sizing); Abaqus / OptiStruct (size optimisation)"
+status = "missing"
+evidence = "[A] FE の梁・板・shell 要素が無い (COV-FEM-002 から 005)"
+oracle_candidate = "片持ち梁の高さ h に対するたわみの微分 -3 delta / h"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-071"
+axis = "sizing"
+item = "fully stressed design (stress-ratio resizing)"
+source = "Haftka-Gurdal, Elements of Structural Optimization (optimality criteria, fully stressed design)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "静定トラスで 1 回の resize で全部材が許容応力に達すること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-072"
+axis = "sizing"
+item = "inversion of closed-form strength checks for a required dimension (section size or wall thickness for a target factor of safety)"
+source = "Shigley's Mechanical Engineering Design (design for a factor of safety); Roark (formulas)"
+status = "missing"
+evidence = "[A] 安全率は出せる (src/layer_adhesion.rs::min_fos、COV-AM-045) が、目標の安全率から寸法を返す関数は無い"
+oracle_candidate = "矩形断面の曲げで必要な高さ h = sqrt(6 M n / (b sigma_y))"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-073"
+axis = "solver"
+item = "first-order optimality (KKT residual) measure and stopping verdicts (converged / stalled / infeasible)"
+source = "Nocedal-Wright, Numerical Optimization (optimality conditions); PETSc TAO (convergence tests)"
+status = "missing"
+evidence = "[A,B] 無い 線形解法の判定は COV-NUM-016"
+oracle_candidate = "既知の解で KKT 残差が 0、制約違反で infeasible と判定"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-074"
+axis = "solver"
+item = "unconstrained gradient methods with line search (steepest descent, nonlinear conjugate gradient)"
+source = "Nocedal-Wright, Numerical Optimization (line search methods, nonlinear CG)"
+status = "missing"
+evidence = "[A,B] 無い Newton 用の line search は COV-NUM-030"
+oracle_candidate = "二次関数で厳密線探索の最急降下の収束率を固有値比の閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-075"
+axis = "solver"
+item = "bound-constrained limited-memory quasi-Newton (L-BFGS-B)"
+source = "Nocedal-Wright, Numerical Optimization (limited-memory quasi-Newton); PETSc TAO (BLMVM)"
+status = "missing"
+evidence = "[A,B] 無い 方程式系の quasi-Newton は COV-NUM-034"
+oracle_candidate = "上下限が効く二次関数で射影勾配が 0 になること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-076"
+axis = "solver"
+item = "sequential quadratic programming (quasi-Newton Hessian, merit function or filter)"
+source = "Nocedal-Wright, Numerical Optimization (SQP); Dakota (NPSOL / OPT++)"
+status = "missing"
+evidence = "[A,B] 無い"
+oracle_candidate = "Hock-Schittkowski の問題で既知の最適点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-077"
+axis = "solver"
+item = "interior-point method (primal-dual barrier)"
+source = "Nocedal-Wright, Numerical Optimization (interior-point methods); IPOPT"
+status = "missing"
+evidence = "[A,B] 無い"
+oracle_candidate = "線形計画で中心パスが既知の最適点に収束"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-078"
+axis = "solver"
+item = "augmented Lagrangian and penalty methods"
+source = "Nocedal-Wright, Numerical Optimization (penalty and augmented Lagrangian methods); PETSc TAO (ALMM)"
+status = "missing"
+evidence = "[A,B] 無い (推測: penalt で 0 件)"
+oracle_candidate = "等式制約付き二次問題で乗数が閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-079"
+axis = "solver"
+item = "method of moving asymptotes (MMA / GCMMA)"
+source = "Svanberg, the method of moving asymptotes; OpenMDAO / Dakota (MMA)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "Svanberg の 2 変数の例題 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-080"
+axis = "solver"
+item = "linear and convex quadratic programming (simplex, active set)"
+source = "Nocedal-Wright, Numerical Optimization (linear programming, quadratic programming)"
+status = "missing"
+evidence = "[A,B] 無い MPC (COV-SENSE-068) と SQP の部分問題が前提にする"
+oracle_candidate = "小さな LP / QP で既知の解と双対"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-081"
+axis = "solver"
+item = "derivative-free local search (Nelder-Mead, pattern search, Brent's 1-D minimisation)"
+source = "Conn-Scheinberg-Vicente, Introduction to Derivative-Free Optimization; Dakota (COLINY, pattern search)"
+status = "missing"
+evidence = "[A,B] 汎用の探索は無い 印刷の向きの格子探索 (src/print_orientation.rs::optimize_grid、COV-AM-002) は専用"
+oracle_candidate = "1 次元二次関数で Brent 法の点列を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-082"
+axis = "solver"
+item = "global population methods with a seeded generator (CMA-ES, differential evolution, genetic algorithm)"
+source = "Hansen, the CMA evolution strategy; Dakota (SOGA / COLINY EA)"
+status = "missing"
+evidence = "[A,B] 無い 生成器は src/rng.rs::DeterministicRng (COV-ENGINE-001)"
+oracle_candidate = "Rastrigin 関数で大域最小に到達し、seed が同じなら bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-083"
+axis = "solver"
+item = "multi-objective optimisation (weighted sum, epsilon-constraint, Pareto front by NSGA-II)"
+source = "Deb, Multi-Objective Optimization using Evolutionary Algorithms; Dakota (MOGA)"
+status = "missing"
+evidence = "[A] 無い 印刷の向きの多目的は COV-AM-007"
+oracle_candidate = "ZDT1 の Pareto 前線 f2 = 1 - sqrt(f1)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-084"
+axis = "solver"
+item = "mixed-integer and discrete design variables (branch and bound, rounding heuristics)"
+source = "Nemhauser-Wolsey, Integer and Combinatorial Optimization; Dakota (branch and bound)"
+status = "missing"
+evidence = "[A] 無い 材料の選択や部材の有無の設計に要る"
+oracle_candidate = "小さな knapsack 問題で既知の最適"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-085"
+axis = "uq"
+item = "input distributions beyond uniform and normal (lognormal, Weibull, truncated normal; correlated inputs by Nataf / Cholesky) built from a seed"
+source = "Smith, Uncertainty Quantification (representation of random inputs); Dakota (uncertain variables)"
+status = "missing"
+evidence = "[A] 一様と正規だけ (src/rng.rs::DeterministicRng、src/rng.rs::next_gaussian_pair) 材料の散らばりの値も無い (COV-MAT-009)"
+oracle_candidate = "lognormal の標本の平均と分散が閉形式 exp(mu + s^2/2) に近づく"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-086"
+axis = "uq"
+item = "forward propagation driver (designed runs of a simulation, output mean, variance, quantiles and exceedance of a limit)"
+source = "Smith, Uncertainty Quantification (forward propagation); Dakota (sampling)"
+status = "missing"
+evidence = "[A] 無い 汎用の MC 推定量は COV-NUM-095 (missing、平均と分散の部品は src/anomaly.rs::ZScoreDetector) ここはその推定量でシミュレーションを回す駆動"
+oracle_candidate = "線形応答で出力の分散が入力分散の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-087"
+axis = "uq"
+item = "sampling designs: Latin hypercube and low-discrepancy sequences (Sobol, Halton, with scrambling)"
+source = "Smith, Uncertainty Quantification (sampling methods); Dakota (LHS)"
+status = "missing"
+evidence = "[A] (推測: sobol / halton / latin hypercube で 0 件、latin の語は Latin 文字の別語義)"
+oracle_candidate = "Sobol 列の先頭の点を参照値と突合 (参照値要確認)、LHS の各層に 1 点ずつ"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-088"
+axis = "uq"
+item = "multilevel Monte Carlo (estimators over a hierarchy of discretisations)"
+source = "Giles, multilevel Monte Carlo methods; Dakota (multilevel sampling)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "Euler-Maruyama の幾何 Brown 運動で費用対誤差が理論の傾きになること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-089"
+axis = "uq"
+item = "non-intrusive polynomial chaos expansion (regression or projection, Askey scheme)"
+source = "Smith, Uncertainty Quantification (polynomial chaos); Xiu, Numerical Methods for Stochastic Computations"
+status = "missing"
+evidence = "[A] 無い (推測: chaos で 0 件)"
+oracle_candidate = "Ishigami 関数の PCE 係数から平均と分散を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-090"
+axis = "uq"
+item = "intrusive stochastic Galerkin"
+source = "Ghanem-Spanos, Stochastic Finite Elements; Xiu, Numerical Methods for Stochastic Computations"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "剛性が一様分布の 1 自由度ばねで変位の平均を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-091"
+axis = "uq"
+item = "stochastic collocation on sparse grids (Smolyak)"
+source = "Xiu, Numerical Methods for Stochastic Computations; Dakota (stoch_collocation)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "多項式の被積分関数で疎格子の積分が厳密になる次数"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-092"
+axis = "uq"
+item = "variance-based global sensitivity (Sobol first-order and total indices; Saltelli / Jansen estimators)"
+source = "Saltelli et al., Global Sensitivity Analysis: The Primer; Dakota (variance-based decomposition)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "Ishigami 関数の指数を閉形式と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-093"
+axis = "uq"
+item = "screening by elementary effects (Morris)"
+source = "Saltelli et al., Global Sensitivity Analysis: The Primer (Morris method)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "線形関数で elementary effect が係数に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-094"
+axis = "uq"
+item = "random fields for spatially varying properties (Karhunen-Loeve expansion with a correlation length)"
+source = "Ghanem-Spanos, Stochastic Finite Elements; Smith (random fields)"
+status = "missing"
+evidence = "[A] 無い 固有値の部品は COV-NUM-100 (missing)"
+oracle_candidate = "指数相関の 1 次元場で KL の固有値を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-095"
+axis = "uq"
+item = "reliability analysis (FORM / SORM, most probable point, reliability index)"
+source = "Ditlevsen-Madsen, Structural Reliability Methods; Dakota (local reliability)"
+status = "missing"
+evidence = "[A] 無い 印刷部品の強度の確率的な評価に要る"
+oracle_candidate = "線形限界状態と正規入力で beta = mu_g / sigma_g"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-096"
+axis = "uq"
+item = "reliability-based design optimisation (RBDO)"
+source = "Tu-Choi-Park; Dakota (RBDO)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "線形限界状態で目標 beta を満たす最小寸法を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-097"
+axis = "uq"
+item = "validation metric against experiment with uncertainty (ASME V&V 10 / 20 comparison error and validation uncertainty)"
+source = "ASME V&V 10 / V&V 20; Oberkampf-Roy, Verification and Validation in Scientific Computing"
+status = "missing"
+evidence = "[A] 無い (推測: validation metric で 0 件)"
+oracle_candidate = "既知の誤差を与えた合成実験で比較誤差を回復"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-098"
+axis = "rom"
+item = "proper orthogonal decomposition basis by the method of snapshots / SVD with an energy criterion"
+source = "Quarteroni-Manzoni-Negri, Reduced Basis Methods for PDEs (POD); Holmes-Lumley-Berkooz, Turbulence, Coherent Structures, Dynamical Systems and Symmetry"
+status = "missing"
+evidence = "[-] 無い (推測: POD / svd / proper orth で 0 件) 部品の SVD と n x n 対称固有値は COV-NUM-044 / 100 (missing)"
+oracle_candidate = "低階数の合成行列で特異値と基底を回復"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-099"
+axis = "rom"
+item = "Galerkin projection of an FE operator onto a reduced basis (reduced stiffness V^T K V and load V^T f)"
+source = "Quarteroni-Manzoni-Negri, Reduced Basis Methods for PDEs (Galerkin reduced basis)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "基底が厳密解を含む時に縮約解が厳密解に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-100"
+axis = "rom"
+item = "hyper-reduction for nonlinear terms (DEIM, energy-conserving sampling and weighting)"
+source = "Chaturantabut-Sorensen, DEIM; Farhat et al., ECSW"
+status = "missing"
+evidence = "[-] 無い"
+oracle_candidate = "非線形項が基底に含まれる時に DEIM の補間が厳密"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-101"
+axis = "rom"
+item = "certified reduced basis (greedy parameter sampling, a posteriori error bound, offline-online split)"
+source = "Quarteroni-Manzoni-Negri, Reduced Basis Methods for PDEs (greedy algorithm, a posteriori error estimation)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "誤差上界が真の誤差を上回ること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-102"
+axis = "rom"
+item = "dynamic mode decomposition (exact DMD)"
+source = "Schmid, dynamic mode decomposition; Kutz et al., Dynamic Mode Decomposition"
+status = "missing"
+evidence = "[-] 無い (推測: dynamic mode で 0 件)"
+oracle_candidate = "既知の固有値を持つ線形系の snapshot から固有値を回復"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-103"
+axis = "rom"
+item = "modal truncation of linear structural dynamics (mode superposition with a few modes)"
+source = "Bathe, Finite Element Procedures (mode superposition); Craig-Kurdila, Fundamentals of Structural Dynamics"
+status = "missing"
+evidence = "[A] FE の固有値解析が無い (COV-FEM-083) src/modal.rs は閉形式"
+oracle_candidate = "1 次モードだけの応答が単自由度の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-104"
+axis = "rom"
+item = "component mode synthesis (Craig-Bampton)"
+source = "Craig-Bampton; Craig-Kurdila, Fundamentals of Structural Dynamics"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "固定境界モードを全部残すと元の固有値に一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-105"
+axis = "rom"
+item = "polynomial response surface and radial-basis-function interpolation surrogates"
+source = "Forrester-Sobester-Keane, Engineering Design via Surrogate Modelling; Dakota (surrogate models)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "二次関数を二次応答面が厳密に再現"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-106"
+axis = "rom"
+item = "kriging surrogate with an error indicator"
+source = "Forrester-Sobester-Keane, Engineering Design via Surrogate Modelling; Dakota (Gaussian process surrogate)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "訓練点で補間が厳密、誤差指標が 0"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-107"
+axis = "rom"
+item = "neural-network surrogate of a simulation response (dataset from designed runs, deterministic inference of a regression network)"
+source = "Brunton-Kutz, Data-Driven Science and Engineering; Dakota (neural network surrogate)"
+status = "missing"
+evidence = "[A,B] 推論は ternary 重みの制御器用だけ (src/neural.rs::DeterministicNetwork、COV-ENGINE-127)、実数重みは COV-SENSE-076 (missing)、学習は範囲外 (同表の learning 軸)"
+oracle_candidate = "既知の線形写像を学習済み重みとして与えた推論が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-108"
+axis = "rom"
+item = "surrogate-based optimisation (trust-region model management, expected improvement)"
+source = "Forrester-Sobester-Keane, Engineering Design via Surrogate Modelling; Jones-Schonlau-Welch, efficient global optimization; Dakota (SBO, EGO)"
+status = "missing"
+evidence = "[A] 無い"
+oracle_candidate = "1 次元の多峰関数で既知の大域最小に到達"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-109"
+axis = "benchmark"
+item = "MBB beam minimum compliance (SIMP, volume fraction 0.5) against the published design and compliance"
+source = "Sigmund, a 99 line topology optimization code; Andreassen et al., 88-line code"
+status = "missing"
+evidence = "[A] topology 軸の行が全部 missing 参照値要確認"
+oracle_candidate = "公開された 88-line code の設定と同じ格子でコンプライアンスと形 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-110"
+axis = "benchmark"
+item = "3-D cantilever minimum compliance on a tetrahedral mesh"
+source = "Bendsoe-Sigmund, Topology Optimization (3-D examples); Liu-Tovar, an efficient 3D topology optimization code"
+status = "missing"
+evidence = "[A] topology 軸の行が全部 missing"
+oracle_candidate = "体積比を変えた時のコンプライアンスの単調性と公開値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-111"
+axis = "benchmark"
+item = "adjoint gradient of an FE compliance against central differences, with the Taylor test order"
+source = "dolfin-adjoint (taylor_test); Haftka-Gurdal (sensitivity verification)"
+status = "missing"
+evidence = "[A] sensitivity 軸の行が missing FE の線形解法と要素のエネルギーは I+O (COV-FEM-009 / 119)"
+oracle_candidate = "既存の片持ち梁の FE で dC/dE = -C/E を随伴と差分の両方で再現"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-112"
+axis = "benchmark"
+item = "unconstrained and constrained test problems for the optimisers (Rosenbrock, Hock-Schittkowski)"
+source = "Nocedal-Wright, Numerical Optimization (test problems); Hock-Schittkowski, test examples for nonlinear programming codes"
+status = "missing"
+evidence = "[A,B] 最適化器が無い 方程式解法用の Rosenbrock / Bratu は COV-NUM-092"
+oracle_candidate = "Rosenbrock の最小点 (1, 1) と HS の最適値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-113"
+axis = "benchmark"
+item = "Lorenz-96 twin experiment (truth run, synthetic observations, assimilation error against the observation error)"
+source = "Lorenz, predictability (Lorenz-96); Evensen, Data Assimilation"
+status = "missing"
+evidence = "[-] 同化の行も一般の ODE 積分器 (COV-NUM-045) も無い"
+oracle_candidate = "F = 8、40 変数で解析誤差が観測誤差を下回ること (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-114"
+axis = "benchmark"
+item = "Ishigami function Sobol indices against the closed form"
+source = "Ishigami-Homma; Saltelli et al., Global Sensitivity Analysis: The Primer"
+status = "missing"
+evidence = "[A] uq 軸の行が missing"
+oracle_candidate = "a = 7, b = 0.1 の指数を閉形式と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-115"
+axis = "benchmark"
+item = "cantilever tip deflection with a lognormal Young's modulus: propagated mean and variance against the closed form"
+source = "Smith, Uncertainty Quantification (forward propagation examples)"
+status = "missing"
+evidence = "[A] lognormal も伝播の駆動も無い 決定論の片持ち梁の FE は COV-FEM-124"
+oracle_candidate = "delta は 1/E に比例するので E が lognormal の時の平均と分散は閉形式 既存の FE をそのまま使える"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-116"
+axis = "benchmark"
+item = "inverse heat conduction: boundary flux recovered from an interior thermocouple (Beck test cases)"
+source = "Beck-Blackwell-St. Clair, Inverse Heat Conduction"
+status = "missing"
+evidence = "[A] 逆問題の行が missing 順問題の熱伝導は src/transient_thermal.rs"
+oracle_candidate = "三角波の流束の回復誤差 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-117"
+axis = "benchmark"
+item = "POD-Galerkin reduced model of transient heat conduction: error against the basis size"
+source = "Quarteroni-Manzoni-Negri, Reduced Basis Methods for PDEs (numerical examples)"
+status = "missing"
+evidence = "[-] rom 軸の行が missing"
+oracle_candidate = "誤差が捨てた特異値の和で抑えられること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-118"
+axis = "benchmark"
+item = "end-to-end design loop of a printed bracket: SDF shape -> mesh -> FE -> factor of safety with the printed anisotropy -> build orientation -> printability report, with the objective improving under a volume limit"
+source = "OpenMDAO / Dakota (design studies); ISO/ASTM 52910 (design for additive manufacturing)"
+status = "missing"
+evidence = "[A] 部品は I+O: src/sdf_fem_mesh.rs::generate (同表の shape 軸)、src/linear_elastic_fem.rs::solve (COV-FEM-009)、src/layer_adhesion.rs::min_fos (COV-AM-045)、src/print_orientation.rs::optimize_grid (COV-AM-002)、src/print_pipeline_solver.rs::analyze_print_pipeline (COV-AM-081) 設計を更新する最適化器と感度が無い"
+oracle_candidate = "既存の部品だけで寸法 1 変数の格子探索を回し、体積制約下で安全率が単調に改善すること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-119"
+axis = "benchmark"
+item = "pendulum / cart-pole swing-up with gradients through the world (analytic policy gradient against the evolution-strategies estimate)"
+source = "Brax (APG / ES benchmarks); Suh et al., do differentiable simulators give better policy gradients"
+status = "missing"
+evidence = "[B] differentiable_sim 軸と learning 軸の行が missing"
+oracle_candidate = "短い horizon で 2 つの勾配推定の方向が一致すること"
+limitation = ""
+
+[[item]]
+id = "COV-OPT-120"
+axis = "benchmark"
+item = "state Jacobian of the world step against closed forms (projectile, damped spring, small-amplitude pendulum)"
+source = "Brax / MuJoCo (derivative tests)"
+status = "missing"
+evidence = "[B] differentiable_sim 軸の行が missing"
+oracle_candidate = "放物運動で d x / d v_0 = t、減衰ばねで閉形式の遷移行列"
+limitation = ""
