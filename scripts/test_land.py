@@ -66,6 +66,9 @@ class FakeLander(land.Lander):
         self.calls.append("checks")
         self.check_changelog()
 
+    def run_compile_check(self):
+        self.calls.append("compile")
+
     def wait_ci(self, ref, sha):
         self.calls.append(f"wait_ci {ref}")
         if self.ci_result != "success":
@@ -273,12 +276,40 @@ class Landing(unittest.TestCase):
         lander.land()
         self.assertEqual(lander.preflight_runs, 1)
 
-    def test_code_upstream_reruns_preflight(self):
+    def test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         self.r.push_upstream({"src/c.rs": "fn c() {}\n"}, "feat: c")
         lander = self.r.lander()
         lander.land()
+        self.assertEqual(lander.preflight_runs, 1)
+        self.assertIn("compile", lander.calls)
+
+    def test_upstream_touching_our_file_reruns_preflight(self):
+        write(self.r.work, "src/b.rs", "fn b1() {}\n\n\n\n\nfn b2() {}\n")
+        git(self.r.work, "add", "-A")
+        git(self.r.work, "commit", "-q", "--author", f"{NAME} <{EMAIL}>", "-m", "feat: b base")
+        git(self.r.work, "push", "-q", "origin", "HEAD:main")
+        commit(self.r.work, {"src/b.rs": "fn b1() { mine }\n\n\n\n\nfn b2() {}\n",
+                             "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b1")
+        self.r.push_upstream({"src/b.rs": "fn b1() {}\n\n\n\n\nfn b2() { theirs }\n"}, "feat: b2")
+        lander = self.r.lander()
+        lander.land()
         self.assertEqual(lander.preflight_runs, 2)
+        self.assertNotIn("compile", lander.calls)
+
+    def test_upstream_changing_the_build_reruns_preflight(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        self.r.push_upstream({"Cargo.toml": "[package]\nname = \"x\"\n"}, "build: deps")
+        lander = self.r.lander()
+        lander.land()
+        self.assertEqual(lander.preflight_runs, 2)
+
+    def test_overlaps(self):
+        self.assertFalse(land.overlaps(["src/a.rs", "CHANGELOG.md"], ["src/c.rs", "CHANGELOG.md"]))
+        self.assertTrue(land.overlaps(["src/a.rs"], ["src/a.rs"]))
+        self.assertTrue(land.overlaps(["src/a.rs"], ["Cargo.lock"]))
+        self.assertTrue(land.overlaps(["src/a.rs"], ["src/lib.rs"]))
+        self.assertFalse(land.overlaps(["docs/x.md"], ["docs/x.md"]))
 
     def test_main_moving_before_the_push_is_retried(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")

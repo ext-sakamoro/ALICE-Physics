@@ -170,6 +170,20 @@ def docs_only(paths: list[str]) -> bool:
     return bool(paths) and all(DOCS_RE.match(p) for p in paths)
 
 
+# files whose change can alter how every other file builds or tests
+BUILD_WIDE_RE = re.compile(r"^(Cargo\.(toml|lock)$|build\.rs$|\.cargo/|rust-toolchain|clippy\.toml$|"
+                           r"src/lib\.rs$|scripts/preflight\.sh$)")
+
+
+def overlaps(ours: list[str], theirs: list[str]) -> bool:
+    """True when commits main gained since the last preflight can change what our
+    commits' preflight saw: they touch a file we touch (documents aside), or a
+    build-wide file. Disjoint source changes are left to a compile check here and
+    to main's CI, so a landing is not re-tested in full every time main moves."""
+    mine = {p for p in ours if not DOCS_RE.match(p)}
+    return any(p in mine or BUILD_WIDE_RE.match(p) for p in theirs if not DOCS_RE.match(p))
+
+
 def message_problems(message: str) -> list[str]:
     import docs_lint
     out = []
@@ -210,6 +224,9 @@ class Lander:
     def run_preflight(self) -> None:
         self.preflight_runs += 1
         self.sh("bash", "scripts/preflight.sh", "--fast")
+
+    def run_compile_check(self) -> None:
+        self.sh("cargo", "check", "-q", "--all-targets", "--features", NATIVE)
 
     def regenerate(self) -> None:
         self.sh("bash", "scripts/scip_index.sh")
@@ -457,14 +474,19 @@ class Lander:
             self.fetch()
             new = self.git("rev-parse", self.upstream())
             moved = self.git("rev-list", f"{verified_base}..{new}").split()
-            needs_preflight = any(not docs_only(self.paths(f"{c}^!")) for c in moved)
+            ours = self.paths(f"{self.upstream()}...HEAD")
+            theirs = sorted({p for c in moved for p in self.paths(f"{c}^!")})
+            code_moved = any(not docs_only(self.paths(f"{c}^!")) for c in moved)
             self.rebase()
             self.regenerate()
             self.commit_regenerated()
             self.run_checks()
-            if needs_preflight:
-                self.log("main gained commits beyond documents: preflight again")
+            if code_moved and overlaps(ours, theirs):
+                self.log("main gained commits touching our files or the build: preflight again")
                 self.run_preflight()
+            elif code_moved:
+                self.log("main gained commits in other files: compile check (main's CI runs their tests)")
+                self.run_compile_check()
             verified_base = new
             sha = self.git("rev-parse", "HEAD")
             if self.dry_run:
