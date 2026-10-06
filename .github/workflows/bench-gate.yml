@@ -27,6 +27,10 @@ env:
   # the `gungraun` dev-dependency and the runner binary must be the same version
   GUNGRAUN_VERSION: 0.20.0
   LIMIT: ir=2%
+  # the bench profile inherits `strip = true` from the release profile; Callgrind
+  # finds the benchmark functions by symbol name, and with the symbols stripped it
+  # collected nothing (every count read 0, so every comparison read "no change")
+  CARGO_PROFILE_BENCH_STRIP: "false"
 
 jobs:
   instruction-counts:
@@ -73,9 +77,14 @@ jobs:
           CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" cargo bench --bench instruction_counts -- --save-baseline=base
       - name: Measure the change and compare
         run: |
+          set -o pipefail
           if [ "${{ steps.measure-base.outputs.has_bench }}" = true ]; then
             # exit 3 = a count rose past the limit
-            cargo bench --bench instruction_counts -- --baseline=base --callgrind-limits="$LIMIT"
+            cargo bench --bench instruction_counts -- --baseline=base --callgrind-limits="$LIMIT" 2>&1 | tee bench.txt
           else
-            cargo bench --bench instruction_counts
+            cargo bench --bench instruction_counts 2>&1 | tee bench.txt
           fi
+      # a count of 0 means Callgrind measured nothing, and 0 against 0 reads as
+      # "no change": fail instead of passing on an empty measurement
+      - name: Every benchmark measured something
+        run: python3 scripts/bench_counts_check.py bench.txt
