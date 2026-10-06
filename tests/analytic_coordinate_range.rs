@@ -199,6 +199,45 @@ fn checked_mul_has_no_false_overflow_in_range() {
     );
 }
 
+/// `checked_mul` は中央の項の和が i128 を越える入力でも誤った `Some` を返さない
+///
+/// 和が i128 を越えるのは両方の整数部が `2⁶²` 以上の時だけで、その積は
+/// 必ず範囲外 端の組を 256 bit の参照と突き合わせ、参照が範囲外なら `None`、
+/// 範囲内なら `Some(a * b)` であることを確かめる
+#[test]
+fn checked_mul_extreme_operands_follow_the_reference() {
+    let edge = [
+        Fix128::from_raw(i64::MAX, u64::MAX),
+        Fix128::from_raw(i64::MIN, 0),
+        Fix128::from_raw(i64::MIN, 1),
+        Fix128::from_raw(1, u64::MAX),
+        Fix128::from_raw(-2, 1),
+        Fix128::from_raw(0, u64::MAX),
+        Fix128::from_raw(-1, 1),
+        Fix128::from_raw(1 << 62, u64::MAX),
+        Fix128::from_raw(-(1 << 62), 1),
+        Fix128::from_raw(0, 1),
+    ];
+    let (mut inside, mut outside) = (0, 0);
+    for &a in &edge {
+        for &b in &edge {
+            let (want, fits) = mul_ref(a, b);
+            if fits {
+                assert_eq!(a.checked_mul(b), Some(a * b), "{a:?} * {b:?}");
+                assert_eq!(raw(a * b), want);
+                inside += 1;
+            } else {
+                assert_eq!(a.checked_mul(b), None, "{a:?} * {b:?} は範囲外");
+                outside += 1;
+            }
+        }
+    }
+    assert!(
+        inside > 0 && outside > 0,
+        "両側を比べていない ({inside}/{outside})"
+    );
+}
+
 /// characterization: 積が `2⁶³` 以上になると `*` は `2¹²⁸` を法に wrap する
 /// (panic しない、debug でも同じ) `checked_mul` だけが `None` で知らせる
 ///
