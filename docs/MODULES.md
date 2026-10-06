@@ -147,7 +147,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `sdf_collider` | collision against signed distance fields |  | [`convex_decomposition`](../examples/convex_decomposition.rs) | standalone (step 18 of 40 items) |
+| `sdf_collider` | collision against signed distance fields |  | [`convex_decomposition`](../examples/convex_decomposition.rs) | step |
 | `sdf_manifold` | multi-point contact manifolds from SDF surfaces |  | [`sdf_manifold_patch`](../examples/sdf_manifold_patch.rs) | standalone |
 | `sdf_ccd` | sphere-tracing continuous collision detection |  | [`sdf_ccd_sweep`](../examples/sdf_ccd_sweep.rs) | standalone |
 | `sdf_force` | force fields driven by an SDF (attract, repel, contain, flow) |  | [`sdf_force_fields`](../examples/sdf_force_fields.rs) | standalone |

@@ -12,10 +12,10 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 17 |
+| step | runs when `PhysicsWorld` steps | 18 |
 | world API | used through another `PhysicsWorld` method | 6 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 134 |
+| standalone | a Rust API that only examples call | 133 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -33,6 +33,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `material` | step | 14 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
+| `sdf_collider` | step | 23 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
@@ -148,7 +149,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
-| `sdf_collider` | standalone (step 18 of 40 items) | 18 / 0 / 0 / 22 / 0 | C ABI, Python, WebAssembly |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `sdf_fem_mesh` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `sdf_force` | standalone | 0 / 0 / 0 / 10 / 0 | — |
