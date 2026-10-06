@@ -38,7 +38,7 @@ pub struct PressureConfig {
     pub deformation_rate: f32,
     /// Maximum deformation depth
     pub max_deformation: f32,
-    /// Internal pressure (positive = outward expansion)
+    /// Internal pressure (positive = outward expansion, negative = inward contraction)
     pub internal_pressure: f32,
     /// Internal pressure expansion rate
     pub expansion_rate: f32,
@@ -113,6 +113,9 @@ impl PressureModifier {
         let dent_depth = impulse * self.config.deformation_rate;
         let clamped = dent_depth.min(self.config.max_deformation);
         self.deformation.splat(x, y, z, clamped, radius);
+        // impacts add into the field: keep the sum within max_deformation now,
+        // not only at the next update
+        self.deformation.clamp(0.0, self.config.max_deformation);
     }
 
     /// Get pressure at a point
@@ -160,10 +163,9 @@ impl PhysicsModifier for PressureModifier {
             d += deform;
         }
 
-        // Internal pressure expansion: push surface outward (decrease distance)
-        if self.config.internal_pressure > 0.0 {
-            d -= self.config.internal_pressure * self.config.expansion_rate;
-        }
+        // Internal pressure: positive pushes the surface outward (decreases the
+        // distance), negative pulls it inward
+        d -= self.config.internal_pressure * self.config.expansion_rate;
 
         d
     }
