@@ -354,6 +354,7 @@ were introduced during that release window.
 - **Behavior change:** `PlaneCollider::intersect_aabb` が面の完全に裏にある箱で `point_b` に箱の中心の射影を返していた 最も深い頂点の射影を返し、`point_b - point_a = depth · normal` がどの場合も成り立つ (AUD-A-S3W1-002)
 - **Behavior change:** `smoke_fire::reaction_rate_kg_per_m3_s` が `E_a/(R T)` が 40 以上で速度をちょうど 0 にしていた (`exp_fix` の飽和) 指数を分けて前指数因子に掛けるようにし、0 になるのは真の値が Fix128 の分解能を下回る時だけになった (PLA 450 K で 0 → 1.94e-9 kg/(m³·s)) 指数 16 を超える領域では値の丸めも変わる (AUD-A-S3W2-001)
 - `PhysicsWorld` の形状問い合わせ (`cast_capsule` / `overlap_aabb` / 保守前進と move_character の押し戻し) で GJK が 2 つの凸集合を交差とみなす閾値が `|v|² ≤ 2⁻¹⁶` (`|v| ≤ 2⁻⁸ ≈ 0.0039`) になっていた (`lo` を 2⁻¹²⁸ 単位と取り違えた定数) 間隙 2⁻⁸ 未満の対が重なりとして返り、その距離から始まる cast は t = 0 になっていた 閾値を `|v|² ≤ 2⁻⁶⁴` (`|v| ≤ 2⁻³²`、保守前進の許容差と同じ) にした
+- `PhysicsWorld::cast_sphere` / `cast_capsule` / `move_character` が捩れた (平面でない) height field の cell で表面にめり込んでいた cell 内の最近点を射影から始めた Newton 法で求めており、行列式が正でない時や局所解に収束した時に真の距離より大きい値を返し、保守前進が行き過ぎた (鞍形の cell 中央で半径 0.25 の球が t = 4.8346、正しくは 4.75 振幅 3 の乱数地形で 180 回中 16 回、最大 0.209 めり込み) cell を (u, v) の長方形に分けると各部分は 4 隅を制御点とする双一次曲面でその凸包に含まれるので、距離は凸包の距離を下界とする分枝限定 (誤差 2⁻³² 以下で真の距離を超えない)、cast は凸包との最早接触を部分ごとに求め、凸包が表面から 2⁻³² 以内になるまで分ける (平面の cell は凸包そのもの) 接触点は Newton 法で表面に移す cell は掃引形状が箱に届く順に調べる
 ## [1.4.0] - 2026-09-17
 
 ### Changed
