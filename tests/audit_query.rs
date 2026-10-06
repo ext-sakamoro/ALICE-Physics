@@ -217,7 +217,7 @@ fn capsule_cast_endpoint_hit_matches_closed_form() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-014: capsule_cast casts only 3 spheres (both ends + midpoint) so a body above the quarter point of a 10 m capsule is missed (None, true first contact at t = 4.0); doc says two casts and calls it an approximation but the miss is total, not a late contact"]
+// AUD-A-S3W3-014
 fn capsule_cast_misses_nothing_along_the_segment() {
     // Long horizontal capsule (-5,0,0)-(5,0,0), r 0.5, swept +y. A body at
     // (2.5, 5, 0) with r 0.5 lies over the quarter point of the segment: the
@@ -386,7 +386,7 @@ fn overlap_aabb_expanded_face_distances() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-015: overlap_aabb_expanded inflates the AABB into a bigger box (Minkowski sum with a cube), so a unit sphere centred (1.9,1.9,1.9) next to the box corner (1,1,1) at distance 1.559 > 1 is reported as overlapping; doc claims sphere-vs-AABB overlap"]
+// AUD-A-S3W3-015
 fn overlap_aabb_expanded_does_not_report_spheres_that_miss_the_corner() {
     // Doc: "treated as a sphere of body_radius ... to detect sphere-vs-AABB
     // overlap". Body centre (1.9,1.9,1.9), radius 1: nearest AABB point is the
@@ -549,9 +549,12 @@ fn bvh_queries_ignore_leaf_indices_beyond_the_body_slice() {
 }
 
 #[test]
-fn capsule_cast_midpoint_sample_uses_all_three_midpoint_coordinates() {
-    // capsule (-1,-2,-2)-(1,2,2): midpoint (0,0,0); ends are 2.83 from the
-    // x axis so only the midpoint ray reaches the body at (5,0,0): t = 5 - 1.
+fn capsule_cast_tilted_side_contact_is_the_closed_form_toi() {
+    // capsule (-1,-2,-2)-(1,2,2): axis through the origin along u = (1,2,2)/3,
+    // half-length 3; ends are 2.83 from the x axis. The body at (5,0,0) is
+    // reached by the capsule's side: the distance from (5 - t, 0, 0) to the axis
+    // line is (5 - t) sqrt(8)/3, equal to the reach 1 at t = 5 - 3/sqrt(8), with
+    // the axial coordinate (5 - t)/3 = 0.354 inside the segment.
     let hit = capsule_cast(
         v3(-1.0, -2.0, -2.0),
         v3(1.0, 2.0, 2.0),
@@ -562,7 +565,7 @@ fn capsule_cast_midpoint_sample_uses_all_three_midpoint_coordinates() {
         fx(0.5),
     )
     .expect("hit");
-    close("t", hit.t, 4.0);
+    close("t", hit.t, 5.0 - 3.0 / 8.0_f64.sqrt());
 }
 
 #[test]
@@ -604,4 +607,82 @@ fn bvh_queries_ignore_a_leaf_index_equal_to_the_body_count() {
     );
     let bb = AABB::new(v3(-5.0, -5.0, -5.0), v3(5.0, 5.0, 5.0));
     assert_eq!(overlap_aabb_bvh(&bb, &bodies, &bvh).len(), 2);
+}
+
+/// Capsule sweep, end cap: capsule (0,0,0)-(2,0,0), reach 0.5 + 0.5 = 1, swept
+/// +x; the body at (5, 0.6, 0) is met by the end sphere at (2,0,0) when
+/// (3 - t)^2 + 0.6^2 = 1, t = 2.2. The contact point is the moved end
+/// (4.2, 0, 0) and the normal points from the body to it.
+#[test]
+fn capsule_cast_end_cap_toi_and_normal() {
+    let hit = capsule_cast(
+        v3(0.0, 0.0, 0.0),
+        v3(2.0, 0.0, 0.0),
+        fx(0.5),
+        Vec3Fix::UNIT_X,
+        fx(100.0),
+        &[body(5.0, 0.6, 0.0)],
+        fx(0.5),
+    )
+    .expect("hit");
+    close("t", hit.t, 2.2);
+    close("px", hit.point.x, 4.2);
+    close("py", hit.point.y, 0.0);
+    close("nx", hit.normal.x, -0.8);
+    close("ny", hit.normal.y, -0.6);
+}
+
+/// A body beside the line of the axis but past the segment's end is missed:
+/// capsule (0,0,0)-(2,0,0) swept +y passes the body at (3.5, 5, 0) at 1.5 from
+/// the end, beyond the reach 1 (the infinite cylinder would hit at t = 4).
+#[test]
+fn capsule_cast_does_not_hit_past_the_segment_end() {
+    let hit = capsule_cast(
+        v3(0.0, 0.0, 0.0),
+        v3(2.0, 0.0, 0.0),
+        fx(0.5),
+        Vec3Fix::UNIT_Y,
+        fx(100.0),
+        &[body(3.5, 5.0, 0.0)],
+        fx(0.5),
+    );
+    assert!(hit.is_none(), "{hit:?}");
+}
+
+/// Overlap at t = 0 beside the cylinder: moving towards the body is a contact
+/// at t = 0, moving away is none (the rule of sphere_cast).
+#[test]
+fn capsule_cast_starting_in_overlap_follows_the_sweep_direction() {
+    let cast = |dir: Vec3Fix| {
+        capsule_cast(
+            v3(-2.0, 0.0, 0.0),
+            v3(2.0, 0.0, 0.0),
+            fx(0.5),
+            dir,
+            fx(100.0),
+            &[body(0.0, 0.8, 0.0)],
+            fx(0.5),
+        )
+    };
+    let toward = cast(Vec3Fix::UNIT_Y).expect("contact now");
+    close("t", toward.t, 0.0);
+    close("ny", toward.normal.y, -1.0);
+    assert!(cast(-Vec3Fix::UNIT_Y).is_none());
+}
+
+/// Two bodies met at the same t (side hits at t = 4): the lower index wins.
+#[test]
+fn capsule_cast_ties_go_to_the_lowest_body_index() {
+    let hit = capsule_cast(
+        v3(-1.0, 0.0, 0.0),
+        v3(1.0, 0.0, 0.0),
+        fx(0.5),
+        Vec3Fix::UNIT_Y,
+        fx(100.0),
+        &[body(-0.5, 5.0, 0.0), body(0.5, 5.0, 0.0)],
+        fx(0.5),
+    )
+    .expect("hit");
+    close("t", hit.t, 4.0);
+    assert_eq!(hit.body_index, 0);
 }

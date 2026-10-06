@@ -1025,9 +1025,9 @@ axis = "query"
 item = "shape cast (sphere / capsule sweep) against bodies"
 source = "Ericson, Real-Time Collision Detection ch.5; PhysX sweep; Rapier cast_shape"
 status = "partial"
-evidence = "物体は外接球として扱われ、capsule は複数の球 cast で近似 tests/audit_query.rs::sphere_cast_oblique_hit_matches_quadratic_solution tests/audit_query.rs::capsule_cast_misses_nothing_along_the_segment (known defect)"
-oracle_candidate = "capsule の側面に当たる cast の TOI 閉形式"
-limitation = "src/query.rs::capsule_cast 'Approximates capsule-vs-sphere as two sphere casts (top and bottom hemispheres) and returns the closest hit.'"
+evidence = "capsule は側面と両端の球で厳密な TOI、物体は外接球として扱う tests/audit_query.rs::sphere_cast_oblique_hit_matches_quadratic_solution tests/audit_query.rs::capsule_cast_misses_nothing_along_the_segment tests/audit_query.rs::capsule_cast_tilted_side_contact_is_the_closed_form_toi tests/audit_query.rs::capsule_cast_end_cap_toi_and_normal"
+oracle_candidate = "物体の形状 (箱・capsule) に対する sweep の TOI"
+limitation = "src/query.rs::capsule_cast 'Bodies are treated as their bounding spheres of `body_radius`, not their shapes.'"
 
 [[item]]
 id = "COV-RIGID-099"

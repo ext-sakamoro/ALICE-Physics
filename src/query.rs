@@ -99,13 +99,20 @@ pub fn sphere_cast(
 
 /// Cast a capsule along a direction against rigid bodies.
 ///
-/// Approximates capsule-vs-sphere as two sphere casts
-/// (top and bottom hemispheres) and returns the closest hit.
-// LIMITATION(COV-RIGID-098): Approximates capsule-vs-sphere as two sphere casts (top and bottom hemispheres) and returns the closest hit.
+/// The capsule (segment `capsule_a`–`capsule_b`, radius `capsule_radius`) is
+/// swept along `direction` up to `max_distance`; each body is a sphere of
+/// `body_radius` at its position. The hit is the earliest `t` at which the
+/// swept segment comes within `capsule_radius + body_radius` of a body centre
+/// — the exact time of impact, computed as a ray from the body centre along
+/// `−direction` against the capsule grown by `body_radius`: its cylinder
+/// (a quadratic in the plane across the axis) and its two end spheres. A
+/// body already within reach at `t = 0` is hit at `t = 0` if the sweep moves
+/// the capsule towards it, as for [`sphere_cast`].
 ///
-/// # Panics
-///
-/// Does not panic. Internal `unwrap()` is guarded by `is_none()` check.
+/// `point` is the point of the moved axis nearest the body centre (the centre
+/// of the cast sphere that touches it) and `normal` points from the body
+/// centre to it; ties in `t` go to the lowest body index.
+// LIMITATION(COV-RIGID-098): Bodies are treated as their bounding spheres of `body_radius`, not their shapes.
 #[must_use]
 pub fn capsule_cast(
     capsule_a: Vec3Fix,
@@ -116,47 +123,111 @@ pub fn capsule_cast(
     bodies: &[RigidBody],
     body_radius: Fix128,
 ) -> Option<ShapeCastHit> {
-    // Cast from both endpoints of the capsule and take closest
-    let hit_a = sphere_cast(
-        capsule_a,
-        capsule_radius,
-        direction,
-        max_distance,
-        bodies,
-        body_radius,
-    );
-    let hit_b = sphere_cast(
-        capsule_b,
-        capsule_radius,
-        direction,
-        max_distance,
-        bodies,
-        body_radius,
-    );
+    let dir_len = direction.length();
+    if dir_len.is_zero() {
+        return None;
+    }
+    let d = direction / dir_len;
+    let reach = capsule_radius + body_radius;
+    let axis = capsule_b - capsule_a;
+    let len = axis.length();
+    if len.is_zero() {
+        return sphere_cast(
+            capsule_a,
+            capsule_radius,
+            direction,
+            max_distance,
+            bodies,
+            body_radius,
+        );
+    }
+    let u = axis / len;
 
-    // Also cast from the midpoint for better coverage
-    let mid = Vec3Fix::new(
-        (capsule_a.x + capsule_b.x).half(),
-        (capsule_a.y + capsule_b.y).half(),
-        (capsule_a.z + capsule_b.z).half(),
-    );
-    let hit_mid = sphere_cast(
-        mid,
-        capsule_radius,
-        direction,
-        max_distance,
-        bodies,
-        body_radius,
-    );
-
-    // Return closest of the three
     let mut best: Option<ShapeCastHit> = None;
-    for h in [hit_a, hit_b, hit_mid].into_iter().flatten() {
-        if best.is_none_or(|b| h.t < b.t) {
-            best = Some(h);
+    for (i, body) in bodies.iter().enumerate() {
+        let limit = best.map_or(max_distance, |b| b.t);
+        let Some(t) = capsule_toi(capsule_a, capsule_b, u, len, reach, d, body.position, limit)
+        else {
+            continue;
+        };
+        if best.is_some_and(|b| t >= b.t) {
+            continue;
+        }
+        // the moved axis point nearest the body centre
+        let c = body.position;
+        let s = ((c - capsule_a - d * t).dot(u)).max(Fix128::ZERO).min(len);
+        let point = capsule_a + d * t + u * s;
+        let to = point - c;
+        let normal = if to.length_squared().is_zero() {
+            -d
+        } else {
+            to.normalize()
+        };
+        best = Some(ShapeCastHit {
+            t,
+            point,
+            normal,
+            body_index: i,
+        });
+    }
+    best
+}
+
+/// Earliest `t` in `[0, max_t]` at which the segment `a + t d`–`b + t d`
+/// (unit axis `u`, length `len`) comes within `reach` of `c`: a ray from `c`
+/// along `−d` against the capsule of radius `reach` around `a`–`b`.
+#[allow(clippy::too_many_arguments)]
+fn capsule_toi(
+    a: Vec3Fix,
+    b: Vec3Fix,
+    u: Vec3Fix,
+    len: Fix128,
+    reach: Fix128,
+    d: Vec3Fix,
+    c: Vec3Fix,
+    max_t: Fix128,
+) -> Option<Fix128> {
+    let ray = Ray::new(c, -d);
+    let mut best: Option<Fix128> = None;
+    let mut take = |t: Fix128| {
+        if t >= Fix128::ZERO && t <= max_t && best.is_none_or(|b| t < b) {
+            best = Some(t);
+        }
+    };
+    // the end spheres (their overlap rule at t = 0 is sphere_cast's)
+    for end in [a, b] {
+        if let Some(h) = sweep_ray_sphere(&ray, &Sphere::new(end, reach), max_t) {
+            take(h.t);
         }
     }
-
+    // the cylinder: components across the axis
+    let rd = -d;
+    let oa = c - a;
+    let oa_p = oa - u * oa.dot(u);
+    let rd_p = rd - u * rd.dot(u);
+    let qa = rd_p.dot(rd_p);
+    let qb = oa_p.dot(rd_p);
+    let qc = oa_p.dot(oa_p) - reach * reach;
+    let along = |t: Fix128| oa.dot(u) + rd.dot(u) * t;
+    let on_side = |t: Fix128| {
+        let y = along(t);
+        y >= Fix128::ZERO && y <= len
+    };
+    if qc <= Fix128::ZERO {
+        // already within reach of the axis line at t = 0: a contact now when
+        // the closest axis point is on the segment and the sweep closes in
+        if on_side(Fix128::ZERO) && qb < Fix128::ZERO {
+            take(Fix128::ZERO);
+        }
+    } else if !qa.is_zero() {
+        let disc = qb * qb - qa * qc;
+        if disc >= Fix128::ZERO {
+            let t = (-qb - disc.sqrt()) / qa;
+            if on_side(t) {
+                take(t);
+            }
+        }
+    }
     best
 }
 
@@ -227,28 +298,33 @@ pub fn overlap_aabb(aabb: &AABB, bodies: &[RigidBody]) -> Vec<OverlapResult> {
 
 /// Find all bodies overlapping an AABB, with body radius consideration.
 ///
-/// Each body is treated as a sphere of `body_radius`. The AABB is expanded
-/// by `body_radius` to detect sphere-vs-AABB overlap.
+/// Each body is treated as a sphere of `body_radius`: it overlaps when the
+/// point of the AABB nearest its centre is within `body_radius` (boundary
+/// included). `depth` is zero, as for [`overlap_aabb`].
 #[must_use]
 pub fn overlap_aabb_expanded(
     aabb: &AABB,
     bodies: &[RigidBody],
     body_radius: Fix128,
 ) -> Vec<OverlapResult> {
-    let expanded = AABB::new(
-        Vec3Fix::new(
-            aabb.min.x - body_radius,
-            aabb.min.y - body_radius,
-            aabb.min.z - body_radius,
-        ),
-        Vec3Fix::new(
-            aabb.max.x + body_radius,
-            aabb.max.y + body_radius,
-            aabb.max.z + body_radius,
-        ),
-    );
-
-    overlap_aabb(&expanded, bodies)
+    let r_sq = body_radius * body_radius;
+    bodies
+        .iter()
+        .enumerate()
+        .filter(|(_, body)| {
+            let p = body.position;
+            let nearest = Vec3Fix::new(
+                p.x.max(aabb.min.x).min(aabb.max.x),
+                p.y.max(aabb.min.y).min(aabb.max.y),
+                p.z.max(aabb.min.z).min(aabb.max.z),
+            );
+            (p - nearest).length_squared() <= r_sq
+        })
+        .map(|(i, _)| OverlapResult {
+            body_index: i,
+            depth: Fix128::ZERO,
+        })
+        .collect()
 }
 
 // ============================================================================
