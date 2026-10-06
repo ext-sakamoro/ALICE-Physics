@@ -394,6 +394,7 @@ were introduced during that release window.
 - **Behavior change:** `sdf_destruction::destruction_from_projectile` が穴の中心を正規化していない `direction` で置いていた (`(0,0,2)`・深さ 4 で中心 z = 4) 中心は `entry + 単位方向 * depth/2` になり、`direction` の長さに依らない 単位方向の入力は不変 (AUD-A-S5W3-011)
 - **Behavior change:** `sdf_destruction::destruction_from_projectile` の回転が、±Y から約 2.6 度以内の方向を極に丸めていた (2 度で穴の軸が 0.035 / 単位長ずれる) 極の扱いは方向が厳密に Y 軸上にある時だけにした ちょうど ±Y の入力は不変 (AUD-A-S5W3-012)
 - `PhysicsWorld` の形状問い合わせ (`cast_capsule` / `overlap_aabb` / 保守前進と move_character の押し戻し) で GJK が 2 つの凸集合を交差とみなす閾値が `|v|² ≤ 2⁻¹⁶` (`|v| ≤ 2⁻⁸ ≈ 0.0039`) になっていた (`lo` を 2⁻¹²⁸ 単位と取り違えた定数) 間隙 2⁻⁸ 未満の対が重なりとして返り、その距離から始まる cast は t = 0 になっていた 閾値を `|v|² ≤ 2⁻⁶⁴` (`|v| ≤ 2⁻³²`、保守前進の許容差と同じ) にした
+- `PhysicsWorld::cast_sphere` / `cast_capsule` / `move_character` が捩れた (平面でない) height field の cell で表面にめり込んでいた cell 内の最近点を射影から始めた Newton 法で求めており、行列式が正でない時や局所解に収束した時に真の距離より大きい値を返し、保守前進が行き過ぎた (鞍形の cell 中央で半径 0.25 の球が t = 4.8346、正しくは 4.75 振幅 3 の乱数地形で 180 回中 16 回、最大 0.209 めり込み) cell を (u, v) の長方形に分けると各部分は 4 隅を制御点とする双一次曲面でその凸包に含まれるので、距離は凸包の距離を下界とする分枝限定 (誤差 2⁻³² 以下で真の距離を超えない)、cast は凸包との最早接触を部分ごとに求め、凸包が表面から 2⁻³² 以内になるまで分ける (平面の cell は凸包そのもの) 接触点は Newton 法で表面に移す cell は掃引形状が箱に届く順に調べる
 ## [1.4.0] - 2026-09-17
 
 ### Changed

@@ -32,7 +32,7 @@
 //! | cone, ellipsoid, wedge, convex hull child | conservative advancement, GJK distance | conservative advancement, GJK distance |
 //! | plane | closed form (two-sided) | closed form at the nearer end |
 //! | triangle mesh | per triangle: the two offset triangles + 3 edge capsules | conservative advancement, GJK distance per triangle |
-//! | height field | conservative advancement, distance to the bilinear cells | conservative advancement, segment–cell distance |
+//! | height field | per cell: time of impact against the hull of the cell's corners, the cell split into parts until each hull is within `2⁻³²` of the surface (a planar cell is its own hull) | the same, with the segment |
 //! | SDF (`std`) | sphere tracing of `field − r` | sphere tracing of the field minimum along the segment |
 //!
 //! Overlaps use the distance from the sphere's centre to the geometry (closed form
@@ -76,10 +76,19 @@
 //! GJK stops when its bound is within `2⁻⁴⁰` of the
 //! distance; together they are checked to `1e-9` for approaches up to about 60°
 //! from the surface normal. A grazing approach converges slowly and gives up
-//! (no hit) after 1024 steps. Height-field cells are refined by
-//! Newton steps from the projection of the point, which is exact for a planar cell
-//! and a local minimum on a twisted one. Segment distances to tori, height fields
-//! and SDFs minimise a 1-Lipschitz point distance along the segment by
+//! (no hit) after 1024 steps.
+//!
+//! A bilinear height-field cell restricted to a rectangle of its `(u, v)` is
+//! again bilinear with its four corners as control points, so it lies inside
+//! their convex hull, within a quarter of the part's twist `|h00 − h10 − h01 +
+//! h11|·Δu·Δv` of it. Distances to a cell are found by branch-and-bound over
+//! such parts (the hull distance bounds a part from below), so they never
+//! exceed the true distance by more than `2⁻³²`; casts take the earliest hull
+//! contact over parts, splitting a part until its hull is that close to it, so
+//! a cast never moves past the surface. The contact is then moved onto the
+//! surface by Newton's method. Cells are visited in the order the swept shape
+//! reaches their boxes. Segment distances to tori and
+//! SDFs minimise a 1-Lipschitz point distance along the segment by
 //! branch-and-bound to `2⁻¹⁶` and golden-section refinement after it. SDF fields
 //! are `f32`: a hit is where `field − r` drops below [`crate::sdf_ccd::SdfCcdConfig::tolerance`].
 //!
@@ -142,6 +151,12 @@ const GOLDEN_STEPS: usize = 64;
 
 /// Branch-and-bound node budget per minimisation.
 const CURVE_MAX_NODES: usize = 256;
+
+/// Branch-and-bound parts per height-field cell distance.
+const CELL_MAX_NODES: usize = 512;
+
+/// Parts expanded per hierarchical time of impact (one height-field cell).
+const TREE_MAX_NODES: usize = 1024;
 
 /// SDF box overlap: octree depth.
 #[cfg(feature = "std")]
@@ -823,119 +838,617 @@ fn cell_heights(field: &HeightField, gx: u32, gz: u32) -> [Fix128; 4] {
     ]
 }
 
-/// The point of the bilinear cell nearest `p`: the nearest of its four edges
-/// (straight lines) and, when Newton's method from the projection of `p`
-/// converges inside the cell, that interior point.
-fn cell_closest(x0: Fix128, z0: Fix128, s: Fix128, h: [Fix128; 4], p: Vec3Fix) -> Vec3Fix {
-    let [h00, h10, h01, h11] = h;
-    let corner = |u: bool, v: bool, hh: Fix128| {
-        Vec3Fix::new(if u { x0 + s } else { x0 }, hh, if v { z0 + s } else { z0 })
-    };
-    let c00 = corner(false, false, h00);
-    let c10 = corner(true, false, h10);
-    let c01 = corner(false, true, h01);
-    let c11 = corner(true, true, h11);
-    let mut best = closest_on_segment(c00, c10, p);
-    for (e0, e1) in [(c10, c11), (c11, c01), (c01, c00)] {
-        let q = closest_on_segment(e0, e1, p);
-        if (q - p).length_squared() < (best - p).length_squared() {
-            best = q;
+/// Four points, for GJK: their convex hull. The control points of a bilinear
+/// patch, whose hull contains the patch.
+struct QuadSupport([Vec3Fix; 4]);
+
+impl Support for QuadSupport {
+    fn support(&self, direction: Vec3Fix) -> Vec3Fix {
+        let mut best = self.0[0];
+        let mut best_dot = best.dot(direction);
+        for &p in &self.0[1..] {
+            let d = p.dot(direction);
+            if d > best_dot {
+                best = p;
+                best_dot = d;
+            }
+        }
+        best
+    }
+}
+
+/// One bilinear height-field cell: first corner `(x0, z0)`, spacing `s`, corner
+/// heights `(h00, h10, h01, h11)`.
+#[derive(Clone, Copy)]
+struct Cell {
+    x0: Fix128,
+    z0: Fix128,
+    s: Fix128,
+    h: [Fix128; 4],
+}
+
+impl Cell {
+    fn new(field: &HeightField, gx: u32, gz: u32) -> Self {
+        let (x0, z0) = cell_origin(field, gx, gz);
+        Self {
+            x0,
+            z0,
+            s: field.spacing,
+            h: cell_heights(field, gx, gz),
         }
     }
-    let k = h00 - h10 - h01 + h11;
-    let mut u = clamp((p.x - x0) / s, Fix128::ZERO, Fix128::ONE);
-    let mut v = clamp((p.z - z0) / s, Fix128::ZERO, Fix128::ONE);
-    let mut ok = true;
-    for _ in 0..8 {
+
+    /// The bilinear height at `(u, v) ∈ [0, 1]²`.
+    fn height(&self, u: Fix128, v: Fix128) -> Fix128 {
+        let [h00, h10, h01, h11] = self.h;
         let one = Fix128::ONE;
-        let hh =
-            h00 * (one - u) * (one - v) + h10 * u * (one - v) + h01 * (one - u) * v + h11 * u * v;
+        h00 * (one - u) * (one - v) + h10 * u * (one - v) + h01 * (one - u) * v + h11 * u * v
+    }
+
+    fn point(&self, u: Fix128, v: Fix128) -> Vec3Fix {
+        Vec3Fix::new(
+            self.x0 + self.s * u,
+            self.height(u, v),
+            self.z0 + self.s * v,
+        )
+    }
+
+    /// `h00 − h10 − h01 + h11`: zero for a planar cell.
+    fn twist(&self) -> Fix128 {
+        let [h00, h10, h01, h11] = self.h;
+        h00 - h10 - h01 + h11
+    }
+
+    /// The unit upward normal of the surface at `(u, v)`.
+    fn normal(&self, u: Fix128, v: Fix128) -> Vec3Fix {
+        let [h00, h10, h01, h11] = self.h;
+        let one = Fix128::ONE;
         let hu = (h10 - h00) * (one - v) + (h11 - h01) * v;
         let hv = (h01 - h00) * (one - u) + (h11 - h10) * u;
-        let e = Vec3Fix::new(x0 + s * u, hh, z0 + s * v) - p;
-        let pu = Vec3Fix::new(s, hu, Fix128::ZERO);
-        let pv = Vec3Fix::new(Fix128::ZERO, hv, s);
-        let gu = e.dot(pu);
-        let gv = e.dot(pv);
-        let huu = pu.dot(pu);
-        let hvv = pv.dot(pv);
-        let huv = pu.dot(pv) + e.y * k;
-        let det = huu * hvv - huv * huv;
-        if det <= Fix128::ZERO {
-            ok = false;
-            break;
-        }
-        let du = (hvv * gu - huv * gv) / det;
-        let dv = (huu * gv - huv * gu) / det;
-        u = u - du;
-        v = v - dv;
-        if u.is_negative() || v.is_negative() || u > one || v > one {
-            ok = false;
-            break;
-        }
+        Vec3Fix::new(-hu, self.s, -hv).normalize()
     }
-    if ok {
-        let one = Fix128::ONE;
-        let hh =
-            h00 * (one - u) * (one - v) + h10 * u * (one - v) + h01 * (one - u) * v + h11 * u * v;
-        let q = Vec3Fix::new(x0 + s * u, hh, z0 + s * v);
-        if (q - p).length_squared() < (best - p).length_squared() {
-            best = q;
+
+    /// The `(u, v)` of the world `(x, z)` of `p`, clamped to `[u0, u1] × [v0, v1]`.
+    fn uv(&self, p: Vec3Fix, part: &Patch) -> (Fix128, Fix128) {
+        (
+            clamp((p.x - self.x0) / self.s, part.u0, part.u1),
+            clamp((p.z - self.z0) / self.s, part.v0, part.v1),
+        )
+    }
+}
+
+/// The part `u ∈ [u0, u1]`, `v ∈ [v0, v1]` of a [`Cell`]. A bilinear patch
+/// restricted to a rectangle of `(u, v)` is again bilinear, with its four corners
+/// as control points, so it lies inside the convex hull of those corners.
+#[derive(Clone, Copy)]
+struct Patch {
+    u0: Fix128,
+    u1: Fix128,
+    v0: Fix128,
+    v1: Fix128,
+}
+
+impl Patch {
+    const WHOLE: Self = Self {
+        u0: Fix128::ZERO,
+        u1: Fix128::ONE,
+        v0: Fix128::ZERO,
+        v1: Fix128::ONE,
+    };
+
+    fn hull(&self, cell: &Cell) -> QuadSupport {
+        QuadSupport([
+            cell.point(self.u0, self.v0),
+            cell.point(self.u1, self.v0),
+            cell.point(self.u0, self.v1),
+            cell.point(self.u1, self.v1),
+        ])
+    }
+
+    /// A bound on how far a point of the hull is from the patch: the hull lies
+    /// between the two triangulations of the corners, which differ from the
+    /// bilinear surface by at most a quarter of the part's twist
+    /// `|k|·(u1 − u0)·(v1 − v0)` along `Y`.
+    fn thickness(&self, cell: &Cell) -> Fix128 {
+        (cell.twist().abs() * (self.u1 - self.u0) * (self.v1 - self.v0))
+            .half()
+            .half()
+    }
+
+    fn split(&self) -> [Self; 4] {
+        let um = (self.u0 + self.u1).half();
+        let vm = (self.v0 + self.v1).half();
+        [
+            Self {
+                u1: um,
+                v1: vm,
+                ..*self
+            },
+            Self {
+                u0: um,
+                v1: vm,
+                ..*self
+            },
+            Self {
+                u1: um,
+                v0: vm,
+                ..*self
+            },
+            Self {
+                u0: um,
+                v0: vm,
+                ..*self
+            },
+        ]
+    }
+
+    /// The surface point of this part over the `(x, z)` of `p`.
+    fn surface_under(&self, cell: &Cell, p: Vec3Fix) -> Vec3Fix {
+        let (u, v) = cell.uv(p, self);
+        cell.point(u, v)
+    }
+}
+
+/// The distance from the core `a`–`b` to one cell and the nearest surface point
+/// found, by branch-and-bound over parts of the cell: the distance to a part's
+/// hull is a lower bound for the part, the distance to the surface point under
+/// the hull's nearest point an upper bound, and parts are split until the two
+/// meet within [`TRACE_TOLERANCE`]. The result is never above the true distance
+/// by more than that tolerance; if the node budget runs out it is the lowest
+/// open lower bound (below the true distance).
+fn cell_dist(cell: &Cell, a: Vec3Fix, b: Vec3Fix) -> (Fix128, Vec3Fix) {
+    let to_core = |q: Vec3Fix| (closest_on_segment(a, b, q) - q).length();
+    let eval = |part: &Patch| {
+        let hull = part.hull(cell);
+        let found = if a == b {
+            gjk_distance(&PointSupport(a), &hull)
+        } else {
+            gjk_distance(&SegmentSupport(a, b), &hull)
+        };
+        let (lower, near) = match found {
+            Some((d, _, pb)) => (d, pb),
+            None => (
+                Fix128::ZERO,
+                cell.point((part.u0 + part.u1).half(), (part.v0 + part.v1).half()),
+            ),
+        };
+        let q = part.surface_under(cell, near);
+        (lower, q, to_core(q))
+    };
+    let (lower, q, upper) = eval(&Patch::WHOLE);
+    let mut best = (upper, q);
+    let mut open = vec![(lower, Patch::WHOLE)];
+    let mut nodes = 0usize;
+    while let Some(k) = (0..open.len()).min_by_key(|&k| open[k].0) {
+        let (lower, part) = open.remove(k);
+        // Every open part is at least `lower` away: nothing can beat the best by
+        // more than the tolerance.
+        if lower + TRACE_TOLERANCE >= best.0 {
+            break;
+        }
+        nodes += 1;
+        if nodes > CELL_MAX_NODES {
+            return (lower, best.1);
+        }
+        for child in part.split() {
+            let (lower, q, upper) = eval(&child);
+            if upper < best.0 {
+                best = (upper, q);
+            }
+            // A part thinner than the tolerance has its upper bound within the
+            // tolerance of its lower bound, so it is settled by `best`.
+            if lower + TRACE_TOLERANCE < best.0 && child.thickness(cell) > TRACE_TOLERANCE {
+                open.push((lower, child));
+            }
         }
     }
     best
 }
 
-/// The distance from `p` to the height-field surface, searching the cells within
-/// `cap` of `p` ([`Dist::AtLeast`] beyond).
-fn point_heightfield(field: &HeightField, p: Vec3Fix, cap: Fix128) -> Dist {
+/// The distance from the core `a`–`b` to the height-field surface, searching the
+/// cells within `cap` of it ([`Dist::AtLeast`] beyond). A core within
+/// [`TRACE_TOLERANCE`] of the surface is touching: a point gets distance `0` and
+/// the surface normal on its side, a segment is [`Dist::Inside`] (it meets the
+/// surface).
+fn heightfield_dist(field: &HeightField, a: Vec3Fix, b: Vec3Fix, cap: Fix128) -> Dist {
     if !field_has_surface(field) {
         return Dist::AtLeast(cap);
     }
-    let bounds = field.aabb();
-    let far = (closest_on_aabb(&bounds, p) - p).length();
+    let core = core_box(a, b, Fix128::ZERO);
+    let far = aabb_gap(&core, &field.aabb());
     if far >= cap {
         return Dist::AtLeast(far);
     }
+    let reach = core_box(a, b, cap);
     let s = field.spacing;
     let (Some((gx0, gx1)), Some((gz0, gz1))) = (
-        cell_range(p.x - cap, p.x + cap, field.origin.x, s, field.width),
-        cell_range(p.z - cap, p.z + cap, field.origin.z, s, field.depth),
+        cell_range(reach.min.x, reach.max.x, field.origin.x, s, field.width),
+        cell_range(reach.min.z, reach.max.z, field.origin.z, s, field.depth),
     ) else {
         return Dist::AtLeast(cap);
     };
-    // The cells by their box's distance from `p`, nearest first: once a cell's
-    // box is farther than the best point found, no later cell can be nearer.
+    // The cells by their box's distance from the core, nearest first: once a
+    // cell's box is farther than the best distance found, no later cell is nearer.
     let mut cells: Vec<(Fix128, u32, u32)> = Vec::new();
     for gz in gz0..=gz1 {
         for gx in gx0..=gx1 {
-            let h = cell_heights(field, gx, gz);
-            let (x0, z0) = cell_origin(field, gx, gz);
-            let lo = min_fix(min_fix(h[0], h[1]), min_fix(h[2], h[3]));
-            let hi = max_fix(max_fix(h[0], h[1]), max_fix(h[2], h[3]));
-            let cell_box = AABB::new(Vec3Fix::new(x0, lo, z0), Vec3Fix::new(x0 + s, hi, z0 + s));
-            let lb2 = (closest_on_aabb(&cell_box, p) - p).length_squared();
-            if lb2 < cap * cap {
-                cells.push((lb2, gz, gx));
+            let lower = aabb_gap(&core, &cell_box(field, gx, gz));
+            if lower < cap {
+                cells.push((lower, gz, gx));
             }
         }
     }
     cells.sort_unstable();
-    let mut best: Option<(Fix128, Vec3Fix)> = None;
-    for (lb2, gz, gx) in cells {
-        if best.is_some_and(|(d2, _)| lb2 >= d2) {
+    let mut best: Option<(Fix128, Vec3Fix, Cell)> = None;
+    for (lower, gz, gx) in cells {
+        if best.is_some_and(|(d, _, _)| lower >= d) {
             break;
         }
-        let (x0, z0) = cell_origin(field, gx, gz);
-        let q = cell_closest(x0, z0, s, cell_heights(field, gx, gz), p);
-        let d2 = (q - p).length_squared();
-        if best.is_none_or(|(b, _)| d2 < b) {
-            best = Some((d2, q));
+        let cell = Cell::new(field, gx, gz);
+        let (d, q) = cell_dist(&cell, a, b);
+        if best.is_none_or(|(bd, _, _)| d < bd) {
+            best = Some((d, q, cell));
         }
     }
-    match best {
-        Some((d2, q)) if d2 < cap * cap => Dist::toward(p, q),
-        _ => Dist::AtLeast(cap),
+    let Some((d, q, cell)) = best.filter(|&(d, _, _)| d < cap) else {
+        return Dist::AtLeast(cap);
+    };
+    let core_point = closest_on_segment(a, b, q);
+    if d <= TRACE_TOLERANCE {
+        if a != b {
+            return Dist::Inside;
+        }
+        let (u, v) = cell.uv(q, &Patch::WHOLE);
+        let n = cell.normal(u, v);
+        let side = if (a - q).dot(n).is_negative() { -n } else { n };
+        return Dist::Outside {
+            dist: d,
+            point: q,
+            normal: side,
+        };
+    }
+    let normal = match (core_point - q).try_normalize() {
+        Some(n) => n,
+        None => return Dist::Inside,
+    };
+    Dist::Outside {
+        dist: d,
+        point: q,
+        normal,
+    }
+}
+
+/// The box of cell `(gx, gz)`: its `XZ` square and the range of its corner
+/// heights (the bilinear surface stays within them).
+fn cell_box(field: &HeightField, gx: u32, gz: u32) -> AABB {
+    let h = cell_heights(field, gx, gz);
+    let (x0, z0) = cell_origin(field, gx, gz);
+    let s = field.spacing;
+    let lo = min_fix(min_fix(h[0], h[1]), min_fix(h[2], h[3]));
+    let hi = max_fix(max_fix(h[0], h[1]), max_fix(h[2], h[3]));
+    AABB::new(Vec3Fix::new(x0, lo, z0), Vec3Fix::new(x0 + s, hi, z0 + s))
+}
+
+/// The first time the core `a`–`b` grown by `r`, moving along the unit `d`,
+/// touches one cell: against the hull of the whole cell when it is planar (the
+/// hull is the cell), otherwise by [`toi_tree`] over its parts, which accepts a
+/// part once its hull is within [`TRACE_TOLERANCE`] of its surface.
+fn cell_toi(
+    cell: &Cell,
+    a: Vec3Fix,
+    b: Vec3Fix,
+    r: Fix128,
+    d: Vec3Fix,
+    max_t: Fix128,
+) -> Option<Contact> {
+    let toi = |part: &Patch| toi_convex(a, b, r, Fix128::ZERO, d, max_t, &part.hull(cell));
+    if cell.twist().is_zero() {
+        return toi(&Patch::WHOLE);
+    }
+    let found = toi_tree(
+        &[Patch::WHOLE],
+        toi,
+        |part| part.thickness(cell) <= TRACE_TOLERANCE,
+        |part| part.split().to_vec(),
+    )?;
+    let off = d * found.t;
+    Some(refine_on_cell(cell, a + off, b + off, found))
+}
+
+/// A contact found on a part's hull moved onto the surface: Newton's method on
+/// the squared distance from the core to the bilinear surface, started at the
+/// contact's `(u, v)`. The hull contact is within the part (a few `2⁻¹⁶` of the
+/// cell), where the distance has a single minimum; the refined point is taken
+/// only if it is not farther from the core than the hull contact.
+fn refine_on_cell(cell: &Cell, a: Vec3Fix, b: Vec3Fix, found: Contact) -> Contact {
+    let [h00, h10, h01, h11] = cell.h;
+    let k = cell.twist();
+    let s = cell.s;
+    let one = Fix128::ONE;
+    let (mut u, mut v) = cell.uv(found.point, &Patch::WHOLE);
+    for _ in 0..8 {
+        let q = cell.point(u, v);
+        let e = q - closest_on_segment(a, b, q);
+        let hu = (h10 - h00) * (one - v) + (h11 - h01) * v;
+        let hv = (h01 - h00) * (one - u) + (h11 - h10) * u;
+        let pu = Vec3Fix::new(s, hu, Fix128::ZERO);
+        let pv = Vec3Fix::new(Fix128::ZERO, hv, s);
+        let (gu, gv) = (e.dot(pu), e.dot(pv));
+        let (huu, hvv) = (pu.dot(pu), pv.dot(pv));
+        let huv = pu.dot(pv) + e.y * k;
+        let det = huu * hvv - huv * huv;
+        if det <= Fix128::ZERO {
+            return found;
+        }
+        u = clamp(u - (hvv * gu - huv * gv) / det, Fix128::ZERO, one);
+        v = clamp(v - (huu * gv - huv * gu) / det, Fix128::ZERO, one);
+    }
+    let q = cell.point(u, v);
+    let core = closest_on_segment(a, b, q);
+    let before = (closest_on_segment(a, b, found.point) - found.point).length();
+    match (core - q).normalize_with_length() {
+        (n, dist)
+            if !dist.is_zero()
+                && dist <= before + TRACE_TOLERANCE + TRACE_TOLERANCE
+                && n.dot(found.normal) > Fix128::ZERO =>
+        {
+            Contact {
+                t: found.t,
+                point: q,
+                normal: n,
+            }
+        }
+        _ => found,
+    }
+}
+
+/// The first contact of the core `a`–`b` grown by `r` moving along the unit `d`
+/// with a height field: every cell its swept box crosses, in order of the time
+/// the moving box first reaches the cell's box, stopping once that time is past
+/// the best contact.
+fn sweep_heightfield(
+    field: &HeightField,
+    a: Vec3Fix,
+    b: Vec3Fix,
+    r: Fix128,
+    d: Vec3Fix,
+    max_t: Fix128,
+) -> Option<Contact> {
+    if !field_has_surface(field) {
+        return None;
+    }
+    let start = core_box(a, b, r);
+    let swept = swept_box(a, b, r, d, max_t);
+    let s = field.spacing;
+    let (Some((gx0, gx1)), Some((gz0, gz1))) = (
+        cell_range(swept.min.x, swept.max.x, field.origin.x, s, field.width),
+        cell_range(swept.min.z, swept.max.z, field.origin.z, s, field.depth),
+    ) else {
+        return None;
+    };
+    let mut cells: Vec<(Fix128, u32, u32)> = Vec::new();
+    for gz in gz0..=gz1 {
+        for gx in gx0..=gx1 {
+            if let Some(entry) = box_entry(&start, d, max_t, &cell_box(field, gx, gz)) {
+                cells.push((entry, gz, gx));
+            }
+        }
+    }
+    cells.sort_unstable();
+    let mut best: Option<Contact> = None;
+    for (entry, gz, gx) in cells {
+        if best.is_some_and(|c| c.t < entry) {
+            break;
+        }
+        if let Some(c) = cell_toi(&Cell::new(field, gx, gz), a, b, r, d, max_t) {
+            if best.is_none_or(|bc| c.t < bc.t) {
+                best = Some(c);
+            }
+        }
+    }
+    best
+}
+
+/// `num / den` limited to `[−big, big]` (no overflow for a tiny `den`).
+fn ratio_within(num: Fix128, den: Fix128, big: Fix128) -> Fix128 {
+    if num.abs() >= den.abs() * big {
+        if num.is_negative() == den.is_negative() {
+            big
+        } else {
+            -big
+        }
+    } else {
+        num / den
+    }
+}
+
+/// The first `t ∈ [0, max_t]` at which `moving` shifted by `t·d` meets `target`
+/// (boxes touching count), or `None`.
+fn box_entry(moving: &AABB, d: Vec3Fix, max_t: Fix128, target: &AABB) -> Option<Fix128> {
+    let big = max_t + Fix128::ONE;
+    let mut lo = Fix128::ZERO;
+    let mut hi = max_t;
+    for (m0, m1, t0, t1, di) in [
+        (moving.min.x, moving.max.x, target.min.x, target.max.x, d.x),
+        (moving.min.y, moving.max.y, target.min.y, target.max.y, d.y),
+        (moving.min.z, moving.max.z, target.min.z, target.max.z, d.z),
+    ] {
+        if di.abs() < PARALLEL_EPSILON {
+            // Nearly no motion on this axis: at most max_t·|di| either way.
+            let slack = max_t * di.abs();
+            if m1 + slack < t0 || m0 - slack > t1 {
+                return None;
+            }
+            continue;
+        }
+        let (enter, leave) = if di.is_negative() {
+            (
+                ratio_within(t1 - m0, di, big),
+                ratio_within(t0 - m1, di, big),
+            )
+        } else {
+            (
+                ratio_within(t0 - m1, di, big),
+                ratio_within(t1 - m0, di, big),
+            )
+        };
+        lo = max_fix(lo, enter);
+        hi = min_fix(hi, leave);
+    }
+    (lo <= hi).then_some(lo)
+}
+
+/// The box swept by the core `a`–`b` grown by `r` moving along `d` for `max_t`.
+fn swept_box(a: Vec3Fix, b: Vec3Fix, r: Fix128, d: Vec3Fix, max_t: Fix128) -> AABB {
+    let start = core_box(a, b, r);
+    let end = core_box(a + d * max_t, b + d * max_t, r);
+    AABB::new(
+        Vec3Fix::new(
+            min_fix(start.min.x, end.min.x),
+            min_fix(start.min.y, end.min.y),
+            min_fix(start.min.z, end.min.z),
+        ),
+        Vec3Fix::new(
+            max_fix(start.max.x, end.max.x),
+            max_fix(start.max.y, end.max.y),
+            max_fix(start.max.z, end.max.z),
+        ),
+    )
+}
+
+// ============================================================================
+// Time of impact
+// ============================================================================
+
+/// The first time the core `a`–`b` grown by `r`, moving along the unit `d` for at
+/// most `max_t`, touches a convex `solid` grown by `inflate`.
+///
+/// The gap `g(t) = dist(core + t·d, solid) − r − inflate` of two convex sets
+/// moving apart linearly is convex in `t`, and `g′(t) = d·n` with `n` the unit
+/// normal from the solid toward the core. Newton's step from below,
+/// `t + g / (−g′)`, then never passes the first root (the tangent of a convex
+/// function lies below it) and converges quadratically (linearly at a grazing,
+/// double root); a gap that is not decreasing (`g′ ≥ 0`) never decreases again,
+/// which proves there is no contact. A step that lands past the root (the
+/// distance and normal are computed to within GJK's tolerance) is undone by
+/// bisection between the last clear time and that time.
+///
+/// Returns the contact once the gap is within [`TRACE_TOLERANCE`] and the core
+/// moves into the solid (`d·n < 0`): a core touching the solid and moving away
+/// from it or along it does not hit. A core that overlaps the solid at `t = 0` by
+/// more than the tolerance hits at `t = 0` with normal `−d`. If the step budget
+/// runs out (it does not in practice: Newton needs a few dozen steps even at a
+/// grazing approach), the last clear time is reported, which is never after the
+/// true contact.
+fn toi_convex<S: Support>(
+    a: Vec3Fix,
+    b: Vec3Fix,
+    r: Fix128,
+    inflate: Fix128,
+    d: Vec3Fix,
+    max_t: Fix128,
+    solid: &S,
+) -> Option<Contact> {
+    let reach = r + inflate;
+    let mut t = Fix128::ZERO;
+    // The last time known clear (gap above the tolerance) and its near contact.
+    let mut clear: Option<Contact> = None;
+    // A time known to overlap, once a step has gone past the root.
+    let mut deep: Option<Fix128> = None;
+    for _ in 0..TRACE_MAX_STEPS {
+        let off = d * t;
+        let state = match convex_dist(a + off, b + off, solid) {
+            Dist::Outside {
+                dist,
+                point,
+                normal,
+            } if dist - reach >= -TRACE_TOLERANCE => {
+                let gap = dist - reach;
+                let slope = d.dot(normal);
+                let contact = Contact {
+                    t,
+                    point: point + normal * inflate,
+                    normal,
+                };
+                if gap <= TRACE_TOLERANCE {
+                    return slope.is_negative().then_some(contact);
+                }
+                if !slope.is_negative() {
+                    return None;
+                }
+                Some((gap, -slope, contact))
+            }
+            _ => None,
+        };
+        match state {
+            Some((gap, speed, contact)) => {
+                clear = Some(contact);
+                let limit = deep.unwrap_or(max_t);
+                // The tangent's root, unless it is at or past the limit.
+                if gap >= (limit - t) * speed {
+                    match deep {
+                        None if gap > (limit - t) * speed => return None,
+                        None => t = limit,
+                        Some(hi) => t = (t + hi).half(),
+                    }
+                } else {
+                    t = t + gap / speed;
+                }
+            }
+            None => {
+                if t.is_zero() {
+                    return Some(Contact {
+                        t,
+                        point: half_vec(a + b),
+                        normal: -d,
+                    });
+                }
+                deep = Some(t);
+                let lo = clear.map_or(Fix128::ZERO, |c| c.t);
+                if t - lo <= TRACE_TOLERANCE {
+                    return clear;
+                }
+                t = (lo + t).half();
+            }
+        }
+    }
+    clear
+}
+
+/// The first contact with a non-convex surface described as a hierarchy of parts
+/// whose convex hulls contain them: `toi` is the contact with a part's hull,
+/// `leaf` says a part's hull is within tolerance of the part, `split` divides a
+/// part. Parts are taken best first (earliest hull contact); a hull contact is
+/// never after the contact with the part it contains, so the first leaf taken is
+/// the first contact of the whole surface to within the leaf tolerance. If the
+/// node budget runs out, the earliest open hull contact is reported (never after
+/// the true contact).
+fn toi_tree<N: Copy>(
+    roots: &[N],
+    toi: impl Fn(&N) -> Option<Contact>,
+    leaf: impl Fn(&N) -> bool,
+    split: impl Fn(&N) -> Vec<N>,
+) -> Option<Contact> {
+    let mut open: Vec<(Contact, N)> = roots
+        .iter()
+        .filter_map(|n| toi(n).map(|c| (c, *n)))
+        .collect();
+    let mut nodes = 0usize;
+    loop {
+        let k = (0..open.len()).min_by_key(|&k| open[k].0.t)?;
+        let (contact, node) = open.remove(k);
+        if leaf(&node) {
+            return Some(contact);
+        }
+        nodes += 1;
+        if nodes > TREE_MAX_NODES {
+            return Some(contact);
+        }
+        for child in split(&node) {
+            if let Some(c) = toi(&child) {
+                open.push((c, child));
+            }
+        }
     }
 }
 
@@ -1233,7 +1746,7 @@ impl Piece<'_> {
             }
             Self::Hull(child) => convex_dist(a, b, child),
             Self::Plane(plane) => plane_dist(plane, a, b),
-            Self::Height(field) => segment_min(a, b, |p| point_heightfield(field, p, cap)),
+            Self::Height(field) => heightfield_dist(field, a, b, cap),
             Self::Mesh(mesh) => mesh_dist(mesh, a, b, cap),
             #[cfg(feature = "std")]
             Self::Sdf(sdf) => segment_min(a, b, |p| point_sdf(sdf, p)),
@@ -1315,6 +1828,7 @@ impl Piece<'_> {
                 }
             }
             Self::Plane(plane) => sweep_plane(plane, a, b, r, d, max_t),
+            Self::Height(field) => sweep_heightfield(field, a, b, r, d, max_t),
             Self::Mesh(mesh) if point_core => {
                 let swept = core_box(a, a + d * max_t, r);
                 let mut best: Option<LocalHit> = None;
