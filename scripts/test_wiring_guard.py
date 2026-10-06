@@ -334,21 +334,40 @@ class TransitiveWiring(unittest.TestCase):
         r = crate({"src/lib.rs": LIB, "src/a.rs": "pub fn helper() {}\n", "src/b.rs": "fn dead() { crate::a::helper(); }\npub fn x() {}\n"})
         self.assertIn("helper", unwired(wg.check(r)))
 
-    def test_trait_impl_members_are_roots_so_their_callees_are_wired(self):
+    DISPLAY_T = "struct T;\nimpl core::fmt::Display for T {\n    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result { crate::a::helper(); Ok(()) }\n}\n"
+
+    def test_trait_impl_members_of_a_live_type_wire_their_callees(self):
         r = crate({
             "src/lib.rs": LIB,
             "src/a.rs": "pub fn helper() {}\n",
-            "src/b.rs": "struct T;\nimpl core::fmt::Display for T {\n    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result { crate::a::helper(); Ok(()) }\n}\npub fn x() {}\n",
+            "src/b.rs": self.DISPLAY_T + "pub fn x() { let _t = T; }\n",
+            EX: "fn main() { mycrate::b::x(); }\n",
         })
         self.assertNotIn("helper", unwired(wg.check(r)))
 
-    def test_a_user_trait_impl_member_is_a_root_for_its_callees(self):
+    def test_trait_impl_members_of_an_unused_type_do_not_wire_their_callees(self):
         r = crate({
             "src/lib.rs": LIB,
             "src/a.rs": "pub fn helper() {}\n",
-            "src/b.rs": "pub trait Tr { fn run_it(&self); }\npub struct T;\nimpl Tr for T {\n    fn run_it(&self) { crate::a::helper(); }\n}\n",
+            "src/b.rs": self.DISPLAY_T + "pub fn x() {}\n",
+            EX: "fn main() { mycrate::b::x(); }\n",
+        })
+        self.assertIn("helper", unwired(wg.check(r)))
+
+    USER_TRAIT = "pub trait Tr { fn run_it(&self); }\npub struct T;\nimpl Tr for T {\n    fn run_it(&self) { crate::a::helper(); }\n}\n"
+
+    def test_a_user_trait_impl_member_wires_its_callees_once_the_type_is_used(self):
+        r = crate({
+            "src/lib.rs": LIB,
+            "src/a.rs": "pub fn helper() {}\n",
+            "src/b.rs": self.USER_TRAIT,
+            EX: "fn main() { let _t = mycrate::b::T; }\n",
         })
         self.assertNotIn("helper", unwired(wg.check(r)))
+
+    def test_a_user_trait_impl_member_of_an_unused_type_is_not_a_root(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": "pub fn helper() {}\n", "src/b.rs": self.USER_TRAIT})
+        self.assertTrue({"helper", "T", "Tr"} <= unwired(wg.check(r)))
 
     def test_code_outside_src_is_a_root_even_in_a_function_nobody_calls(self):
         r = crate({
@@ -589,27 +608,95 @@ class OwnImplIsNotWiring(unittest.TestCase):
         self.assertNotIn("src/a.rs::Cell", keys(vs))
         self.assertNotIn("src/a.rs::Board", keys(vs))
 
-    def test_trait_impl_members_stay_roots_for_other_items(self):
-        src = (
-            "pub fn helper() -> u8 { 1 }\n"
-            "pub struct Lonely;\n"
-            "impl Default for Lonely { fn default() -> Lonely { helper(); Lonely } }\n"
-        )
-        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+    LONELY_DEFAULT = (
+        "pub fn helper() -> u8 { 1 }\n"
+        "pub struct Lonely;\n"
+        "impl Default for Lonely { fn default() -> Lonely { helper(); Lonely } }\n"
+    )
+
+    def test_trait_impl_members_of_an_unwired_type_do_not_wire_other_items(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": self.LONELY_DEFAULT, "src/b.rs": "pub fn x() {}\n"})
         vs = wg.check(r)
-        self.assertNotIn("src/a.rs::helper", keys(vs))
+        self.assertIn("src/a.rs::helper", keys(vs))
         self.assertIn("src/a.rs::Lonely", keys(vs))
 
-    def test_a_trait_named_in_an_impl_header_is_still_referenced(self):
-        src = "pub trait Shape { fn area(&self) -> u32; }\npub struct Sq;\nimpl Shape for Sq { fn area(&self) -> u32 { 1 } }\n"
-        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+    def test_trait_impl_members_of_a_wired_type_wire_other_items(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": self.LONELY_DEFAULT, "src/b.rs": "pub fn x() {}\n",
+                   EX: "fn main() { let _l = mycrate::a::Lonely; }\n"})
+        vs = wg.check(r)
+        self.assertNotIn("src/a.rs::helper", keys(vs))
+        self.assertNotIn("src/a.rs::Lonely", keys(vs))
+
+    SHAPE = "pub trait Shape { fn area(&self) -> u32; }\npub struct Sq;\nimpl Shape for Sq { fn area(&self) -> u32 { 1 } }\n"
+
+    def test_a_trait_named_in_an_impl_header_is_referenced_when_the_type_is_wired(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": self.SHAPE, "src/b.rs": "pub fn x() {}\n",
+                   EX: "fn main() { let _s = mycrate::a::Sq; }\n"})
         self.assertNotIn("src/a.rs::Shape", keys(wg.check(r)))
+
+    def test_a_trait_named_only_in_the_impl_header_of_an_unwired_type_is_unwired(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": self.SHAPE, "src/b.rs": "pub fn x() {}\n"})
+        self.assertTrue({"src/a.rs::Shape", "src/a.rs::Sq"} <= keys(wg.check(r)))
 
     def test_allow_unwired_on_a_type_with_an_impl_is_not_stale(self):
         src = "// ALLOW-UNWIRED: public entry point reached from downstream crates\n" + self.LONELY_STRUCT
         vs = wg.check(crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"}))
         self.assertNotIn("stale_marker", kinds(vs))
         self.assertNotIn("src/a.rs::Grid", keys(vs))
+
+
+class TraitImplFollowsSelfType(unittest.TestCase):
+    """`impl Trait for T` with T defined in src lives with T: the header and the members
+    wire what they name only once T is wired. Impls on types from outside src and
+    blanket impls on a type parameter keep their members as roots."""
+
+    TYPES = "pub struct Foo;\npub struct Bar;\npub trait Tag<X> {}\n"
+    FROM = "impl From<Foo> for Bar { fn from(_f: Foo) -> Bar { Bar } }\n"
+    HEADER_ONLY = "impl Tag<Foo> for Bar {}\n"
+
+    def run_on(self, impl: str, example: str | None = None, types: str | None = None):
+        files = {"src/lib.rs": LIB, "src/a.rs": (types or self.TYPES) + impl, "src/b.rs": "pub fn x() {}\n"}
+        if example is not None:
+            files[EX] = example
+        return keys(wg.check(crate(files)))
+
+    def test_from_foo_for_an_unwired_bar_does_not_wire_foo(self):
+        got = self.run_on(self.FROM)
+        self.assertTrue({"src/a.rs::Foo", "src/a.rs::Bar"} <= got, got)
+
+    def test_a_header_only_impl_for_an_unwired_bar_does_not_wire_foo(self):
+        got = self.run_on(self.HEADER_ONLY)
+        self.assertTrue({"src/a.rs::Foo", "src/a.rs::Bar"} <= got, got)
+
+    def test_from_foo_for_a_wired_bar_wires_foo(self):
+        got = self.run_on(self.FROM, "fn main() { let _b = mycrate::a::Bar; }\n")
+        self.assertEqual(got & {"src/a.rs::Foo", "src/a.rs::Bar"}, set())
+
+    def test_a_header_only_impl_for_a_wired_bar_wires_foo(self):
+        got = self.run_on(self.HEADER_ONLY, "fn main() { let _b = mycrate::a::Bar; }\n")
+        self.assertEqual(got & {"src/a.rs::Foo", "src/a.rs::Bar", "src/a.rs::Tag"}, set())
+
+    def test_a_marked_type_wires_its_trait_impls(self):
+        types = "pub struct Foo;\n// ALLOW-UNWIRED: public entry point reached from downstream crates\npub struct Bar;\npub trait Tag<X> {}\n"
+        got = self.run_on(self.FROM, types=types)
+        self.assertNotIn("src/a.rs::Foo", got)
+
+    def test_an_impl_on_an_outside_type_keeps_its_members_as_roots(self):
+        got = self.run_on("impl From<Foo> for u32 { fn from(_f: Foo) -> u32 { 0 } }\n")
+        self.assertNotIn("src/a.rs::Foo", got)
+
+    def test_an_impl_on_an_outside_generic_type_keeps_its_members_as_roots(self):
+        got = self.run_on("impl core::fmt::Debug for Vec<Bar> { fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result { let _ = Foo; Ok(()) } }\n")
+        self.assertNotIn("src/a.rs::Foo", got)
+
+    def test_a_blanket_impl_on_a_type_parameter_keeps_its_members_as_roots(self):
+        got = self.run_on("pub trait Mk { fn mk(&self) -> u8; }\nimpl<T: Copy> Mk for T { fn mk(&self) -> u8 { let _ = Foo; 0 } }\n")
+        self.assertNotIn("src/a.rs::Foo", got)
+
+    def test_a_type_parameter_named_like_a_src_type_is_still_a_parameter(self):
+        types = self.TYPES + "pub struct T;\n"
+        got = self.run_on("pub trait Mk { fn mk(&self) -> u8; }\nimpl<T> Mk for T { fn mk(&self) -> u8 { let _ = Foo; 0 } }\n", types=types)
+        self.assertNotIn("src/a.rs::Foo", got)
 
 
 class Robustness(unittest.TestCase):
