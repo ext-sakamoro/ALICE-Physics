@@ -903,8 +903,8 @@ fn fillet_stress_kirsch_and_inglis_exact() {
     );
 }
 
-/// Shoulder-fillet and U-notch K_t are piecewise / curve fits of Peterson
-/// charts (Pilkey Chart 3.11, Table 2-8) — empirical, validation: none.
+/// Shoulder-fillet and U-notch K_t are curve fits of Peterson charts (Pilkey
+/// 2nd ed. stepped-bar bending fit, Table 2-8) — empirical, validation: none.
 /// Invariants: K_t ≥ 1 in the fitted range, non-increasing with fillet
 /// radius, non-decreasing with D/d and with notch depth, and the inverse
 /// design helper returns a radius whose K_t does not exceed the target.
@@ -950,8 +950,9 @@ fn fillet_stress_peterson_fits_invariants() {
         "fit at h/r = 4",
     );
 
-    // Reachable targets only: the fit's floor at D/d = 2 is 1.3 × 1.1 = 1.43
-    // (an unreachable target such as 1.2 silently returns d/2 — see report).
+    // Reachable targets only: the search stops at r = d/2, where K_t at D/d = 2
+    // is 1.2297 (an unreachable target such as 1.2 silently returns d/2,
+    // AUD-A-S1W5-005).
     for target_tenths in [15, 20, 25, 30] {
         let target = Fix128::from_ratio(target_tenths, 10);
         let r = recommended_fillet_radius_mm(d, big, target);

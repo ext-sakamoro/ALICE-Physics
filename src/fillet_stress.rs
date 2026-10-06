@@ -14,8 +14,8 @@
 //!
 //! - **Circular hole in infinite plate**: `K_t = 3` (Kirsch, 1898).
 //! - **Elliptical hole**: `K_t = 1 + 2·a/b` (Inglis, 1913).
-//! - **Round shaft shoulder fillet in bending / axial / torsion**: Peterson
-//!   curve-fit polynomials (Norton 5th ed.).
+//! - **Round shaft shoulder fillet in bending**: the Peterson curve fit for
+//!   stepped round bars (Pilkey 2nd ed.).
 //! - **U-notch in rectangular bar**: Peterson curve-fit.
 //! - **Recommended fillet radius** from an allowable `K_t` target.
 //!
@@ -87,19 +87,21 @@ pub fn kt_elliptical_hole(semi_axis_perp: Fix128, semi_axis_parallel: Fix128) ->
 /// At `D/d = 2` this gives `K_t = 2.27 / 1.80 / 1.48 / 1.34` at
 /// `r/d = 0.05 / 0.10 / 0.20 / 0.30`. Two adjustments keep the result
 /// continuous and non-increasing in `r`, and only ever raise the fit: the two
-/// coefficient sets differ by up to 0.03 at `x = 2`, and that step is ramped
+/// coefficient sets differ at `x = 2` (by 0.025 at `D/d = 6`, growing to 0.046
+/// for very large steps), and that step is ramped
 /// in over `√x ∈ [√1.5, √2]`; and the fit dips with `x` for large steps
 /// (`D/d ≥ 3`), so `K_t(x)` is the running maximum of the fit over `[0.1, x]`.
 /// Below `x = 0.1` (a large radius for the step) `K_t` falls linearly to 1 at
 /// `x = 0`, so `D = d` (no shoulder) gives exactly 1 and `D < d` is treated
-/// as no shoulder. A sharp corner (`r ≤ 0`) gives the saturating sentinel.
+/// as no shoulder. A sharp corner (`r ≤ 0`) or a small diameter `d ≤ 0`
+/// gives the saturating sentinel.
 #[must_use]
 pub fn kt_shaft_shoulder_bending(
     fillet_radius_mm: Fix128,
     small_dia_mm: Fix128,
     large_dia_mm: Fix128,
 ) -> Fix128 {
-    if small_dia_mm.is_zero() {
+    if small_dia_mm <= Fix128::ZERO {
         return Fix128::from_int(i64::MAX >> 8);
     }
     if large_dia_mm <= small_dia_mm {
@@ -365,6 +367,13 @@ mod tests {
     fn shoulder_bending_zero_diameter_returns_sentinel() {
         let kt = kt_shaft_shoulder_bending(Fix128::from_int(1), Fix128::ZERO, Fix128::from_int(10));
         assert!(kt > Fix128::from_int(1_000_000));
+        // negative diameters are not a shaft either (t = -1 used to give 8.33)
+        let neg = kt_shaft_shoulder_bending(
+            Fix128::from_int(1),
+            Fix128::from_int(-10),
+            Fix128::from_int(-5),
+        );
+        assert_eq!(neg, kt);
     }
 
     #[test]

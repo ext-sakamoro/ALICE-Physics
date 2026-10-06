@@ -235,7 +235,7 @@ fn recommended_fillet_is_minimal_and_satisfying() {
 
 /// An unreachable target (below the fit's floor) must not be reported as satisfied.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-005: recommended_fillet_radius_mm returns d/2 (K_t=1.43 > target 1.2) for an unreachable target with no signal; existing test only comments on it"]
+#[ignore = "known defect: AUD-A-S1W5-005: recommended_fillet_radius_mm returns d/2 (K_t=1.2297 > target 1.2 at D/d = 2) for an unreachable target with no signal; existing test only comments on it"]
 fn recommended_fillet_unreachable_target_not_silently_returned() {
     let d = Fix128::from_int(20);
     let big = Fix128::from_int(40);
