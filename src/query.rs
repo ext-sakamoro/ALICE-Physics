@@ -187,6 +187,19 @@ fn capsule_toi(
     c: Vec3Fix,
     max_t: Fix128,
 ) -> Option<Fix128> {
+    // Already within reach at t = 0: the distance from c to the moving segment
+    // is convex in t, so the sweep either closes in now (contact at t = 0) or
+    // never comes back within reach (no contact), the rule of sphere_cast;
+    // the end spheres would otherwise report a later "entry" from inside
+    let s0 = (c - a).dot(u).max(Fix128::ZERO).min(len);
+    let to_body = c - (a + u * s0);
+    if to_body.length_squared() <= reach * reach {
+        return if to_body.length_squared().is_zero() || to_body.dot(d) > Fix128::ZERO {
+            Some(Fix128::ZERO)
+        } else {
+            None
+        };
+    }
     let ray = Ray::new(c, -d);
     let mut best: Option<Fix128> = None;
     let mut take = |t: Fix128| {
@@ -213,13 +226,7 @@ fn capsule_toi(
         let y = along(t);
         y >= Fix128::ZERO && y <= len
     };
-    if qc <= Fix128::ZERO {
-        // already within reach of the axis line at t = 0: a contact now when
-        // the closest axis point is on the segment and the sweep closes in
-        if on_side(Fix128::ZERO) && qb < Fix128::ZERO {
-            take(Fix128::ZERO);
-        }
-    } else if !qa.is_zero() {
+    if qc > Fix128::ZERO && !qa.is_zero() {
         let disc = qb * qb - qa * qc;
         if disc >= Fix128::ZERO {
             let t = (-qb - disc.sqrt()) / qa;

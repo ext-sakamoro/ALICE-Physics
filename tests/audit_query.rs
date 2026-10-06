@@ -686,3 +686,24 @@ fn capsule_cast_ties_go_to_the_lowest_body_index() {
     close("t", hit.t, 4.0);
     assert_eq!(hit.body_index, 0);
 }
+
+/// Overlap at t = 0 and a sweep that does not close in: sideways at a constant
+/// distance (+x along the axis, the body 0.8 from it) or slowly away
+/// ((1, -0.1, 0)) is no contact, not a later entry through an end sphere.
+#[test]
+fn capsule_cast_starting_in_overlap_and_not_closing_in_is_no_contact() {
+    let cast = |dir: Vec3Fix| {
+        capsule_cast(
+            v3(-2.0, 0.0, 0.0),
+            v3(2.0, 0.0, 0.0),
+            fx(0.5),
+            dir,
+            fx(100.0),
+            &[body(0.0, 0.8, 0.0)],
+            fx(0.5),
+        )
+    };
+    assert!(cast(Vec3Fix::UNIT_X).is_none());
+    assert!(cast(v3(1.0, -0.1, 0.0)).is_none());
+    assert!(cast(v3(1.0, 0.1, 0.0)).is_some_and(|h| h.t.is_zero()));
+}
