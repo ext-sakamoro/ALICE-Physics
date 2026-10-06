@@ -17,6 +17,8 @@ were introduced during that release window.
 
 ### Added
 
+- `Fix128::checked_add` / `Vec3Fix::{checked_dot, checked_length_squared, checked_length, checked_normalize}`: 和・内積・長さの範囲検査版 積か和が `|·| ≥ 2⁶³` (ベクトルの長さで `≥ 2³¹·⁵ ≈ 3.04e9`) なら `None` を返し、`Some` の時は既存の `+` / `dot` / `length_squared` / `length` / `try_normalize` と bit 一致する (既存の関数は不変)
+- `Vec3Fix::{checked_length_scaled, try_normalize_scaled}`: 最大成分を 2 の冪で寄せてから 2 乗するので、`length` が 0、`normalize` が ZERO を返す `|v| ≥ 2³¹·⁵` でも正しい長さと向きを返す (長さが `≥ 2⁶³` で表せない時だけ `None`) 範囲内では `length` / `try_normalize` と同じ式を通り bit 一致する
 - `tests/analytic_coordinate_range.rs`: 演算ごとの許容座標範囲の実測 (`Fix128` の四則・平方根・三角関数・指数、`Vec3Fix` / `QuatFix` / `Mat3Fix`、剛体の積分と衝撃、球の接触、点力場、broadphase、`SpatialGrid`、SDF の問い合わせ) 境界の入力 (2³⁰〜2⁶²) で正しい / wrap / saturate / panic / 明示の Err のどれかを独立の参照計算と比べて pin する 剛体 world の step は 2⁶¹ まで平行移動で bit 一致、あふれは位置の絶対値でなく差・半径・速度・力の大きさ (`|·| ≥ 2³¹·⁵` の 2 乗) で起きる 範囲外で fault にならない 6 件 (位置の ±2⁶³ wrap、TGS 経路の overflow flag、角速度の消失、大半径の球の接触見逃し、点力場、`SpatialGrid::hash`) は `src gap: WORLD-V1-RANGE` の ignore で置いた
 - `docs/coverage/orbit.toml`: 天体・軌道 (2 体問題・N 体・摂動・制限 3 体・軌道遷移・宇宙機の姿勢・座標系と時刻系・地表の重力) の網羅表 (Vallado / Curtis / Murray–Dermott / Battin、REBOUND / GMAT / Orekit の積分器・力モデル・座標系、Kepler 軌道の閉合・figure-eight・Pythagorean 3 体・J2 歳差・L4 の Trojan・Hohmann の標準ベンチマークの範囲に対する 109 項目) partial 3 項目の制限は `src/kepler.rs` と `src/nbody.rs` に `LIMITATION(<id>)` コメントで示す (コメントのみ、挙動の変更なし)
 - `docs/coverage/cfd.toml`: 非圧縮流体・乱流 (CFD) の網羅表 (Ferziger–Perić / Pope / Versteeg–Malalasekera、OpenFOAM / Fluent のソルバ・モデル、Ghia / Armaly / Taylor–Green 等の標準ベンチマークの範囲に対する 117 項目、軸は離散化 / 圧力-速度連成 / 移流 / 時間積分 / 境界条件 / 乱流 / 物理 / 圧力ソルバ / 粒子法 / 出力 / ベンチマーク) partial 6 項目の制限は `src/cfd_solver.rs` と `src/fluid.rs` に `LIMITATION(COV-CFD-NNN)` コメントで対応付け (挙動の変更なし)
@@ -246,6 +248,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `ForceField::Point` は中心からの距離が `2³¹·⁵ ≈ 3.04e9` 以上でも `strength / r²` を返す (従来は `r²` が wrap し、距離 `3·2³⁰` で上限値 (真値の約 2e19 倍)、`2³²` で 0 だった) 距離の 2 乗が範囲内なら従来の式のまま (bit 不変、修正前の式との `assert_eq!` で確認)、範囲外だけ `r²` を作らずに `(strength / r) / r` と 2 乗を経ない正規化で求める
 - **Behavior change:** `physics2d::PhysicsWorld2D::check_collision_2d` が capsule–capsule / capsule–polygon / edge–polygon / edge–capsule の接触を返す (従来は `None` で互いにすり抜けていた) 各形状を芯 (線分または凸多角形) と半径に分け、芯が離れていれば最近接点間の距離から、重なっていれば両芯の辺法線での最小重なり量に半径を足して深さを求め、法線は body_a → body_b edge 同士は面積を持たないため意図的に接触しない (`Shape2D::Edge` の doc に明記)
 - `math::powf_pos` の整数指数部の上限 64 を撤廃した (64 以下の結果は不変) (AUD-A-S1W5-021)
 - `compressible::{riemann_invariants, stagnation_pressure_ratio}` が γ = 1 の等温極限を扱う (AUD-A-S1W5-007)
