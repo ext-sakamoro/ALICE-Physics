@@ -27,6 +27,16 @@
 // Streaming Median (for MAD calculation)
 // ============================================================================
 
+/// A threshold multiplier below zero is taken as zero (NaN is kept: it
+/// compares false and flags nothing).
+const fn non_negative(k: f64) -> f64 {
+    if k < 0.0 {
+        0.0
+    } else {
+        k
+    }
+}
+
 /// Default window size for streaming algorithms
 pub const DEFAULT_WINDOW: usize = 100;
 
@@ -263,9 +273,12 @@ impl MadDetector {
     /// Create a new MAD detector
     ///
     /// # Arguments
-    /// * `threshold_k` - Number of MAD units for anomaly threshold (typically 3.0)
+    /// * `threshold_k` - Number of MAD units for anomaly threshold (typically 3.0);
+    ///   a negative value is taken as 0 (a negative threshold flagged every
+    ///   sample, the median itself included)
     #[must_use]
     pub const fn new(threshold_k: f64) -> Self {
+        let threshold_k = non_negative(threshold_k);
         Self {
             values_median: StreamingMedian::new(),
             deviations_median: StreamingMedian::new(),
@@ -387,7 +400,7 @@ impl MadDetector {
     /// Set the threshold multiplier
     #[inline]
     pub fn set_threshold_k(&mut self, k: f64) {
-        self.threshold_k = k;
+        self.threshold_k = non_negative(k);
     }
 
     /// Get count of observations
@@ -454,13 +467,14 @@ impl EwmaDetector {
     /// # Arguments
     /// * `alpha` - Smoothing factor (0.0-1.0, higher = more reactive)
     /// * `threshold_k` - Number of standard deviations for anomaly threshold
+    ///   (a negative value is taken as 0)
     #[must_use]
     pub fn new(alpha: f64, threshold_k: f64) -> Self {
         Self {
             alpha: alpha.clamp(0.001, 1.0),
             ewma: 0.0,
             ewma_var: 0.0,
-            threshold_k,
+            threshold_k: non_negative(threshold_k),
             initialized: false,
             count: 0,
         }
@@ -514,7 +528,9 @@ impl EwmaDetector {
     /// Get anomaly score (number of standard deviations)
     #[must_use]
     pub fn anomaly_score(&self, value: f64) -> f64 {
-        if !self.initialized {
+        // the same three-sample warm-up as `is_anomaly` (a score of +inf after
+        // one sample contradicted the verdict)
+        if !self.initialized || self.count < 3 {
             return 0.0;
         }
 
@@ -567,7 +583,7 @@ impl EwmaDetector {
     /// Set threshold multiplier
     #[inline]
     pub fn set_threshold_k(&mut self, k: f64) {
-        self.threshold_k = k;
+        self.threshold_k = non_negative(k);
     }
 
     /// Get count of observations
@@ -607,14 +623,14 @@ pub struct ZScoreDetector {
 }
 
 impl ZScoreDetector {
-    /// Create a new Z-score detector
+    /// Create a new Z-score detector (a negative `threshold_k` is taken as 0)
     #[must_use]
     pub const fn new(threshold_k: f64) -> Self {
         Self {
             mean: 0.0,
             m2: 0.0,
             count: 0,
-            threshold_k,
+            threshold_k: non_negative(threshold_k),
         }
     }
 
@@ -673,6 +689,11 @@ impl ZScoreDetector {
     /// Get the Z-score for a value
     #[must_use]
     pub fn z_score(&self, value: f64) -> f64 {
+        // 0 during the three-sample warm-up of `is_anomaly` (there is no spread
+        // yet; the score was +inf even with no observation at all)
+        if self.count < 3 {
+            return 0.0;
+        }
         let std_dev = self.std_dev();
         if std_dev < 1e-10 {
             return if (value - self.mean).abs() > 1e-10 {
