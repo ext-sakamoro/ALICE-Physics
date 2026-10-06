@@ -19228,6 +19228,329 @@ impl core::marker::Unpin for alice_physics::wind_zone::WindZone
 impl core::marker::UnsafeUnpin for alice_physics::wind_zone::WindZone
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::wind_zone::WindZone
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::wind_zone::WindZone
+pub mod alice_physics::world_participant
+#[non_exhaustive] pub enum alice_physics::world_participant::AccumulateError
+pub alice_physics::world_participant::AccumulateError::BodyOutOfRange
+pub alice_physics::world_participant::AccumulateError::BodyOutOfRange::index: usize
+pub alice_physics::world_participant::AccumulateError::BodyOutOfRange::len: usize
+pub alice_physics::world_participant::AccumulateError::LengthMismatch
+pub alice_physics::world_participant::AccumulateError::LengthMismatch::bodies: usize
+pub alice_physics::world_participant::AccumulateError::LengthMismatch::slots: usize
+impl core::clone::Clone for alice_physics::world_participant::AccumulateError
+pub fn alice_physics::world_participant::AccumulateError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::AccumulateError
+impl core::cmp::PartialEq for alice_physics::world_participant::AccumulateError
+pub fn alice_physics::world_participant::AccumulateError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::AccumulateError
+pub fn alice_physics::world_participant::AccumulateError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::AccumulateError
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::AccumulateError
+impl core::marker::Freeze for alice_physics::world_participant::AccumulateError
+impl core::marker::Send for alice_physics::world_participant::AccumulateError
+impl core::marker::Sync for alice_physics::world_participant::AccumulateError
+impl core::marker::Unpin for alice_physics::world_participant::AccumulateError
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::AccumulateError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::AccumulateError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::AccumulateError
+pub enum alice_physics::world_participant::Observed<T>
+pub alice_physics::world_participant::Observed::Exact(T)
+pub alice_physics::world_participant::Observed::Undecided
+impl<T> alice_physics::world_participant::Observed<T>
+pub fn alice_physics::world_participant::Observed<T>::verdict(&self, impl core::ops::function::FnOnce(&T) -> bool) -> alice_physics::world_participant::Verdict
+impl<T: core::clone::Clone> core::clone::Clone for alice_physics::world_participant::Observed<T>
+pub fn alice_physics::world_participant::Observed<T>::clone(&self) -> Self
+impl<T: core::cmp::Eq> core::cmp::Eq for alice_physics::world_participant::Observed<T>
+impl<T: core::cmp::PartialEq> core::cmp::PartialEq for alice_physics::world_participant::Observed<T>
+pub fn alice_physics::world_participant::Observed<T>::eq(&self, &Self) -> bool
+impl<T: core::cmp::PartialEq> core::marker::StructuralPartialEq for alice_physics::world_participant::Observed<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for alice_physics::world_participant::Observed<T>
+pub fn alice_physics::world_participant::Observed<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<T: core::marker::Copy> core::marker::Copy for alice_physics::world_participant::Observed<T>
+impl<T> core::marker::Freeze for alice_physics::world_participant::Observed<T> where T: core::marker::Freeze
+impl<T> core::marker::Send for alice_physics::world_participant::Observed<T> where T: core::marker::Send
+impl<T> core::marker::Sync for alice_physics::world_participant::Observed<T> where T: core::marker::Sync
+impl<T> core::marker::Unpin for alice_physics::world_participant::Observed<T> where T: core::marker::Unpin
+impl<T> core::marker::UnsafeUnpin for alice_physics::world_participant::Observed<T> where T: core::marker::UnsafeUnpin
+impl<T> core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::Observed<T> where T: core::panic::unwind_safe::RefUnwindSafe
+impl<T> core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::Observed<T> where T: core::panic::unwind_safe::UnwindSafe
+#[non_exhaustive] pub enum alice_physics::world_participant::ParticipantFault
+pub alice_physics::world_participant::ParticipantFault::InvalidState
+pub alice_physics::world_participant::ParticipantFault::OutOfRange
+impl alice_physics::world_participant::ParticipantFault
+pub const fn alice_physics::world_participant::ParticipantFault::from_tag(u8) -> core::option::Option<Self>
+pub const fn alice_physics::world_participant::ParticipantFault::tag(self) -> u8
+impl core::clone::Clone for alice_physics::world_participant::ParticipantFault
+pub fn alice_physics::world_participant::ParticipantFault::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::ParticipantFault
+impl core::cmp::PartialEq for alice_physics::world_participant::ParticipantFault
+pub fn alice_physics::world_participant::ParticipantFault::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::ParticipantFault
+pub fn alice_physics::world_participant::ParticipantFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::ParticipantFault
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::ParticipantFault
+impl core::marker::Freeze for alice_physics::world_participant::ParticipantFault
+impl core::marker::Send for alice_physics::world_participant::ParticipantFault
+impl core::marker::Sync for alice_physics::world_participant::ParticipantFault
+impl core::marker::Unpin for alice_physics::world_participant::ParticipantFault
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::ParticipantFault
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::ParticipantFault
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::ParticipantFault
+#[non_exhaustive] pub enum alice_physics::world_participant::ParticipantMismatch
+pub alice_physics::world_participant::ParticipantMismatch::Count
+pub alice_physics::world_participant::ParticipantMismatch::Count::snapshot: usize
+pub alice_physics::world_participant::ParticipantMismatch::Count::world: usize
+pub alice_physics::world_participant::ParticipantMismatch::Kind
+pub alice_physics::world_participant::ParticipantMismatch::Kind::index: usize
+pub alice_physics::world_participant::ParticipantMismatch::Kind::snapshot: alice_physics::world_participant::ParticipantKind
+pub alice_physics::world_participant::ParticipantMismatch::Kind::world: alice_physics::world_participant::ParticipantKind
+pub alice_physics::world_participant::ParticipantMismatch::Order
+pub alice_physics::world_participant::ParticipantMismatch::Order::index: usize
+pub alice_physics::world_participant::ParticipantMismatch::Order::snapshot: alice_physics::world_participant::ParticipantKind
+pub alice_physics::world_participant::ParticipantMismatch::Order::world: alice_physics::world_participant::ParticipantKind
+impl alice_physics::world_participant::ParticipantMismatch
+pub fn alice_physics::world_participant::ParticipantMismatch::classify(&[alice_physics::world_participant::ParticipantKind], &[alice_physics::world_participant::ParticipantKind]) -> core::option::Option<Self>
+impl core::clone::Clone for alice_physics::world_participant::ParticipantMismatch
+pub fn alice_physics::world_participant::ParticipantMismatch::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::ParticipantMismatch
+impl core::cmp::PartialEq for alice_physics::world_participant::ParticipantMismatch
+pub fn alice_physics::world_participant::ParticipantMismatch::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::ParticipantMismatch
+pub fn alice_physics::world_participant::ParticipantMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::ParticipantMismatch
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::ParticipantMismatch
+impl core::marker::Freeze for alice_physics::world_participant::ParticipantMismatch
+impl core::marker::Send for alice_physics::world_participant::ParticipantMismatch
+impl core::marker::Sync for alice_physics::world_participant::ParticipantMismatch
+impl core::marker::Unpin for alice_physics::world_participant::ParticipantMismatch
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::ParticipantMismatch
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::ParticipantMismatch
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::ParticipantMismatch
+#[non_exhaustive] pub enum alice_physics::world_participant::RegisterError
+pub alice_physics::world_participant::RegisterError::NonPositiveStep
+pub alice_physics::world_participant::RegisterError::StepRuleMismatch
+pub alice_physics::world_participant::RegisterError::StepRuleMismatch::step: alice_physics::math::Fix128
+pub alice_physics::world_participant::RegisterError::StepRuleMismatch::substep: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::world_participant::RegisterError
+pub fn alice_physics::world_participant::RegisterError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::RegisterError
+impl core::cmp::PartialEq for alice_physics::world_participant::RegisterError
+pub fn alice_physics::world_participant::RegisterError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::RegisterError
+pub fn alice_physics::world_participant::RegisterError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::RegisterError
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::RegisterError
+impl core::marker::Freeze for alice_physics::world_participant::RegisterError
+impl core::marker::Send for alice_physics::world_participant::RegisterError
+impl core::marker::Sync for alice_physics::world_participant::RegisterError
+impl core::marker::Unpin for alice_physics::world_participant::RegisterError
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::RegisterError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::RegisterError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::RegisterError
+#[non_exhaustive] pub enum alice_physics::world_participant::StateError
+pub alice_physics::world_participant::StateError::InvalidValue
+pub alice_physics::world_participant::StateError::Length
+pub alice_physics::world_participant::StateError::Length::expected: usize
+pub alice_physics::world_participant::StateError::Length::found: usize
+impl core::clone::Clone for alice_physics::world_participant::StateError
+pub fn alice_physics::world_participant::StateError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::StateError
+impl core::cmp::PartialEq for alice_physics::world_participant::StateError
+pub fn alice_physics::world_participant::StateError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::StateError
+pub fn alice_physics::world_participant::StateError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::StateError
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::StateError
+impl core::marker::Freeze for alice_physics::world_participant::StateError
+impl core::marker::Send for alice_physics::world_participant::StateError
+impl core::marker::Sync for alice_physics::world_participant::StateError
+impl core::marker::Unpin for alice_physics::world_participant::StateError
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::StateError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::StateError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::StateError
+#[non_exhaustive] pub enum alice_physics::world_participant::StepError
+pub alice_physics::world_participant::StepError::FaultRaised(alice_physics::world_participant::WorldFault)
+pub alice_physics::world_participant::StepError::Faulted(alice_physics::world_participant::WorldFault)
+pub alice_physics::world_participant::StepError::Rule
+pub alice_physics::world_participant::StepError::Rule::error: alice_physics::world_participant::RegisterError
+pub alice_physics::world_participant::StepError::Rule::index: usize
+impl core::clone::Clone for alice_physics::world_participant::StepError
+pub fn alice_physics::world_participant::StepError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::StepError
+impl core::cmp::PartialEq for alice_physics::world_participant::StepError
+pub fn alice_physics::world_participant::StepError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::StepError
+pub fn alice_physics::world_participant::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::StepError
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::StepError
+impl core::marker::Freeze for alice_physics::world_participant::StepError
+impl core::marker::Send for alice_physics::world_participant::StepError
+impl core::marker::Sync for alice_physics::world_participant::StepError
+impl core::marker::Unpin for alice_physics::world_participant::StepError
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::StepError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::StepError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::StepError
+#[non_exhaustive] pub enum alice_physics::world_participant::StepRule
+pub alice_physics::world_participant::StepRule::Fixed(alice_physics::math::Fix128)
+pub alice_physics::world_participant::StepRule::FollowSubstep
+pub alice_physics::world_participant::StepRule::Subcycle
+impl alice_physics::world_participant::StepRule
+pub fn alice_physics::world_participant::StepRule::steps_per_substep(self, alice_physics::math::Fix128) -> core::result::Result<u64, alice_physics::world_participant::RegisterError>
+impl core::clone::Clone for alice_physics::world_participant::StepRule
+pub fn alice_physics::world_participant::StepRule::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::StepRule
+impl core::cmp::PartialEq for alice_physics::world_participant::StepRule
+pub fn alice_physics::world_participant::StepRule::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::StepRule
+pub fn alice_physics::world_participant::StepRule::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::StepRule
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::StepRule
+impl core::marker::Freeze for alice_physics::world_participant::StepRule
+impl core::marker::Send for alice_physics::world_participant::StepRule
+impl core::marker::Sync for alice_physics::world_participant::StepRule
+impl core::marker::Unpin for alice_physics::world_participant::StepRule
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::StepRule
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::StepRule
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::StepRule
+pub enum alice_physics::world_participant::Verdict
+pub alice_physics::world_participant::Verdict::Holds
+pub alice_physics::world_participant::Verdict::Undecided
+pub alice_physics::world_participant::Verdict::Violated
+impl core::clone::Clone for alice_physics::world_participant::Verdict
+pub fn alice_physics::world_participant::Verdict::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::Verdict
+impl core::cmp::PartialEq for alice_physics::world_participant::Verdict
+pub fn alice_physics::world_participant::Verdict::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::Verdict
+pub fn alice_physics::world_participant::Verdict::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::Verdict
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::Verdict
+impl core::marker::Freeze for alice_physics::world_participant::Verdict
+impl core::marker::Send for alice_physics::world_participant::Verdict
+impl core::marker::Sync for alice_physics::world_participant::Verdict
+impl core::marker::Unpin for alice_physics::world_participant::Verdict
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::Verdict
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::Verdict
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::Verdict
+pub struct alice_physics::world_participant::ForceAccumulator
+impl alice_physics::world_participant::ForceAccumulator
+pub fn alice_physics::world_participant::ForceAccumulator::add_force(&mut self, usize, alice_physics::math::Vec3Fix) -> core::result::Result<(), alice_physics::world_participant::AccumulateError>
+pub fn alice_physics::world_participant::ForceAccumulator::add_torque(&mut self, usize, alice_physics::math::Vec3Fix) -> core::result::Result<(), alice_physics::world_participant::AccumulateError>
+pub fn alice_physics::world_participant::ForceAccumulator::clear(&mut self)
+pub fn alice_physics::world_participant::ForceAccumulator::force(&self, usize) -> core::option::Option<alice_physics::math::Vec3Fix>
+pub fn alice_physics::world_participant::ForceAccumulator::is_empty(&self) -> bool
+pub fn alice_physics::world_participant::ForceAccumulator::len(&self) -> usize
+pub fn alice_physics::world_participant::ForceAccumulator::merge(&mut self, &Self) -> core::result::Result<(), alice_physics::world_participant::AccumulateError>
+pub fn alice_physics::world_participant::ForceAccumulator::new(usize) -> Self
+pub fn alice_physics::world_participant::ForceAccumulator::torque(&self, usize) -> core::option::Option<alice_physics::math::Vec3Fix>
+impl core::clone::Clone for alice_physics::world_participant::ForceAccumulator
+pub fn alice_physics::world_participant::ForceAccumulator::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::ForceAccumulator
+impl core::cmp::PartialEq for alice_physics::world_participant::ForceAccumulator
+pub fn alice_physics::world_participant::ForceAccumulator::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::ForceAccumulator
+pub fn alice_physics::world_participant::ForceAccumulator::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::ForceAccumulator
+impl core::marker::Freeze for alice_physics::world_participant::ForceAccumulator
+impl core::marker::Send for alice_physics::world_participant::ForceAccumulator
+impl core::marker::Sync for alice_physics::world_participant::ForceAccumulator
+impl core::marker::Unpin for alice_physics::world_participant::ForceAccumulator
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::ForceAccumulator
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::ForceAccumulator
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::ForceAccumulator
+pub struct alice_physics::world_participant::ObservationSink
+impl alice_physics::world_participant::ObservationSink
+pub fn alice_physics::world_participant::ObservationSink::new() -> Self
+pub fn alice_physics::world_participant::ObservationSink::push(&mut self, u32, alice_physics::math::Fix128)
+pub fn alice_physics::world_participant::ObservationSink::values(&self) -> &[(u32, alice_physics::math::Fix128)]
+impl core::clone::Clone for alice_physics::world_participant::ObservationSink
+pub fn alice_physics::world_participant::ObservationSink::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::ObservationSink
+impl core::cmp::PartialEq for alice_physics::world_participant::ObservationSink
+pub fn alice_physics::world_participant::ObservationSink::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::world_participant::ObservationSink
+pub fn alice_physics::world_participant::ObservationSink::default() -> Self
+impl core::fmt::Debug for alice_physics::world_participant::ObservationSink
+pub fn alice_physics::world_participant::ObservationSink::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::ObservationSink
+impl core::marker::Freeze for alice_physics::world_participant::ObservationSink
+impl core::marker::Send for alice_physics::world_participant::ObservationSink
+impl core::marker::Sync for alice_physics::world_participant::ObservationSink
+impl core::marker::Unpin for alice_physics::world_participant::ObservationSink
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::ObservationSink
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::ObservationSink
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::ObservationSink
+pub struct alice_physics::world_participant::ParticipantKind(_)
+impl alice_physics::world_participant::ParticipantKind
+pub const fn alice_physics::world_participant::ParticipantKind::get(self) -> u32
+pub const fn alice_physics::world_participant::ParticipantKind::new(u32) -> Self
+impl core::clone::Clone for alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::world_participant::ParticipantKind::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::ParticipantKind
+impl core::cmp::Ord for alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::world_participant::ParticipantKind::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::world_participant::ParticipantKind::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::world_participant::ParticipantKind::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::world_participant::ParticipantKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::world_participant::ParticipantKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::world_participant::ParticipantKind
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::ParticipantKind
+impl core::marker::Freeze for alice_physics::world_participant::ParticipantKind
+impl core::marker::Send for alice_physics::world_participant::ParticipantKind
+impl core::marker::Sync for alice_physics::world_participant::ParticipantKind
+impl core::marker::Unpin for alice_physics::world_participant::ParticipantKind
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::ParticipantKind
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::ParticipantKind
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::ParticipantKind
+pub struct alice_physics::world_participant::SubstepCtx<'a>
+impl<'a> alice_physics::world_participant::SubstepCtx<'a>
+pub fn alice_physics::world_participant::SubstepCtx<'a>::add_force(&mut self, usize, alice_physics::math::Vec3Fix) -> core::result::Result<(), alice_physics::world_participant::AccumulateError>
+pub fn alice_physics::world_participant::SubstepCtx<'a>::add_torque(&mut self, usize, alice_physics::math::Vec3Fix) -> core::result::Result<(), alice_physics::world_participant::AccumulateError>
+pub fn alice_physics::world_participant::SubstepCtx<'a>::bodies(&self) -> &[alice_physics::solver::RigidBody]
+pub fn alice_physics::world_participant::SubstepCtx<'a>::h(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::world_participant::SubstepCtx<'a>::new(&'a [alice_physics::solver::RigidBody], &'a mut alice_physics::world_participant::ForceAccumulator, usize, usize, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::world_participant::AccumulateError>
+pub fn alice_physics::world_participant::SubstepCtx<'a>::substep_index(&self) -> usize
+pub fn alice_physics::world_participant::SubstepCtx<'a>::substeps(&self) -> usize
+impl<'a> core::fmt::Debug for alice_physics::world_participant::SubstepCtx<'a>
+pub fn alice_physics::world_participant::SubstepCtx<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Freeze for alice_physics::world_participant::SubstepCtx<'a>
+impl<'a> core::marker::Send for alice_physics::world_participant::SubstepCtx<'a>
+impl<'a> core::marker::Sync for alice_physics::world_participant::SubstepCtx<'a>
+impl<'a> core::marker::Unpin for alice_physics::world_participant::SubstepCtx<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics::world_participant::SubstepCtx<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::SubstepCtx<'a>
+impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::SubstepCtx<'a>
+pub struct alice_physics::world_participant::WorldFault
+pub alice_physics::world_participant::WorldFault::fault: alice_physics::world_participant::ParticipantFault
+pub alice_physics::world_participant::WorldFault::index: usize
+pub alice_physics::world_participant::WorldFault::kind: alice_physics::world_participant::ParticipantKind
+impl core::clone::Clone for alice_physics::world_participant::WorldFault
+pub fn alice_physics::world_participant::WorldFault::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_participant::WorldFault
+impl core::cmp::PartialEq for alice_physics::world_participant::WorldFault
+pub fn alice_physics::world_participant::WorldFault::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_participant::WorldFault
+pub fn alice_physics::world_participant::WorldFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_participant::WorldFault
+impl core::marker::StructuralPartialEq for alice_physics::world_participant::WorldFault
+impl core::marker::Freeze for alice_physics::world_participant::WorldFault
+impl core::marker::Send for alice_physics::world_participant::WorldFault
+impl core::marker::Sync for alice_physics::world_participant::WorldFault
+impl core::marker::Unpin for alice_physics::world_participant::WorldFault
+impl core::marker::UnsafeUnpin for alice_physics::world_participant::WorldFault
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::WorldFault
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::WorldFault
+pub trait alice_physics::world_participant::Participant: core::marker::Send
+pub fn alice_physics::world_participant::Participant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::world_participant::Participant::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::world_participant::Participant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::world_participant::Participant::read_state(&mut self, &[u8])
+pub fn alice_physics::world_participant::Participant::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::world_participant::Participant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::world_participant::Participant::write_state(&self, &mut alloc::vec::Vec<u8>)
 pub enum alice_physics::BlendMode
 pub alice_physics::BlendMode::Animated
 pub alice_physics::BlendMode::Blend
