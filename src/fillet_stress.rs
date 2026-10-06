@@ -87,7 +87,7 @@ pub fn kt_elliptical_hole(semi_axis_perp: Fix128, semi_axis_parallel: Fix128) ->
 /// At `D/d = 2` this gives `K_t = 2.27 / 1.80 / 1.48 / 1.34` at
 /// `r/d = 0.05 / 0.10 / 0.20 / 0.30`. Two adjustments keep the result
 /// continuous and non-increasing in `r`, and only ever raise the fit: the two
-/// coefficient sets differ at `x = 2` (by 0.025 at `D/d = 6`, growing to 0.046
+/// coefficient sets differ at `x = 2` (by 0.025 at `D/d = 6`, growing to 0.042
 /// for very large steps), and that step is ramped
 /// in over `√x ∈ [√1.5, √2]`; and the fit dips with `x` for large steps
 /// (`D/d ≥ 3`), so `K_t(x)` is the running maximum of the fit over `[0.1, x]`.

@@ -404,3 +404,25 @@ fn normal_shock_with_a_large_gamma_does_not_wrap() {
         assert!(j.pressure_ratio.to_f64() > 1e17 && j.temperature_ratio.to_f64() > 1e17);
     }
 }
+
+/// T0/T stays exact while `1 + 0.2 M^2` fits even where `M^2` alone does not
+/// (air, M = 4e9: 3.2e18, M = 5e9: 5e18, with M^2 = 1.6e19 / 2.5e19), and
+/// saturates from M = 6.8e9. p0/p saturates just past ln(MAX) = 43.67: at
+/// M = 1200 its ln is 3.5 ln(1 + 0.2 * 1200^2) = 44.0. A large gamma at the
+/// edge (gamma = 5, M = 2^31: 2 * 2^62 = 2^63) saturates instead of wrapping.
+#[test]
+fn stagnation_ratios_at_the_edges_of_the_range() {
+    let g = IdealGas::air();
+    for m in [4e9_f64, 5e9, 6.7e9] {
+        let t = stagnation_temp_ratio(&g, f(m)).to_f64();
+        let want = 1.0 + 0.2 * m * m;
+        assert!(
+            (t - want).abs() / want < 1e-12,
+            "M={m:e}: {t:e} vs {want:e}"
+        );
+    }
+    assert!(stagnation_pressure_ratio(&g, f(1200.0)).to_f64() > 9.2e18);
+    let g5 = gas_with_gamma(Fix128::from_int(5));
+    let t = stagnation_temp_ratio(&g5, Fix128::from_int(1 << 31)).to_f64();
+    assert!(t > 9.2e18, "{t:e}");
+}

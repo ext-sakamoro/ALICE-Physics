@@ -122,9 +122,11 @@ impl IdealGas {
 pub fn stagnation_temp_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
     let gm1 = gas.gamma - Fix128::ONE;
     let half = Fix128::from_ratio(1, 2);
-    let term = mach
+    // (½(γ−1)·M)·M: the coefficient first, so the product only leaves the
+    // range when the ratio itself does (M² alone overflows from M ≈ 3·10⁹)
+    let term = (half * gm1)
         .checked_mul(mach)
-        .and_then(|m_sq| (half * gm1).checked_mul(m_sq))
+        .and_then(|k_m| k_m.checked_mul(mach))
         .filter(|&t| t < RATIO_SATURATED - Fix128::ONE)
         .map(|t| t + Fix128::ONE);
     match term {
