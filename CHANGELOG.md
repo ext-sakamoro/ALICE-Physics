@@ -297,6 +297,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `multiphase::curvature_at`: doc は `1/|∇φ|` で割ると書いていたが、実際は Laplacian をそのまま返していたので、φ を 2 倍すると曲率も 2 倍になり、符号付き距離でない level set では値が誤っていた 界面の曲率 `κ = ∇·(∇φ/|∇φ|) = (|∇φ|²Δφ − ∇φᵀH∇φ)/|∇φ|³` を中心差分 (混合 2 階微分を含む) で計算する 符号付き距離の場では従来とほぼ同じ値 (AUD-A-S2W3-009)
 - `ThermalMaterial::conductivity_at`: 較正範囲外で熱伝導率の fit が負になる (steel_1018 の `60 − 0.03·T` は 2000 K 超) と、`diffusivity_at` と face-flux の陽解法・Crank–Nicolson が熱を低温から高温へ流し、陽解法が平滑化でなく増幅していた 熱伝導率を 0 で止める (伝導なし) **Behavior change:** fit が負になる温度での伝導が 0 になる (AUD-A-S2W2-016)
 - `interpolation::slerp`: 名前と doc は SLERP だが中身は NLERP で、角速度が一定でなかった (90° の弧で t = 1/4 が 21.6°、弧が大きいほどずれる) `atan2` / `sin` による SLERP にし、5° 未満 (`a · b > 0.999`) だけ NLERP を使う 運動学的物体の substep 間の姿勢 (`kinematic_substep_pose`) と `AnimationBlender` も同じ実装を使う **Behavior change:** 補間した姿勢の値が変わる (AUD-A-S2W3-006)
 - `Rope::new`: 全粒子に 1 区間分の質量を与えていたので、綱の総質量が `mass_per_unit * L * (N+1)/N` (1 区間なら 2 倍) になっていた 区間の質量を両端の粒子に分ける集中質量にし、両端の粒子は半分、総質量は `mass_per_unit * L` **Behavior change:** 端の粒子の逆質量が 2 倍になる (AUD-A-S3W1-003)
