@@ -41,6 +41,61 @@ def kinds(vs):
 LIB = "pub mod a;\npub mod b;\n"
 
 
+MARKED = "// ALLOW-UNWIRED: wiring debt {key} (kept until the driver exists)\npub fn helper() {{}}\n"
+LEDGER = "# Wiring debt\n\n| key | what | closes |\n|---|---|---|\n{rows}"
+
+
+def ledger_row(key: str) -> str:
+    return f"| `{key}` | a helper | a caller |\n"
+
+
+class DebtLedger(unittest.TestCase):
+    """検査 E: `wiring debt <key>` と docs/wiring-debt.md の行は 2 方向で一致する"""
+
+    def run_on(self, key: str = "driver-later", rows: str | None = None, marker: bool = True):
+        files = {"src/lib.rs": LIB, "src/a.rs": MARKED.format(key=key) if marker else "pub fn helper() {}\n",
+                 "src/b.rs": "pub fn x() {}\n" if marker else "pub fn x() { crate::a::helper(); }\n"}
+        if rows is not None:
+            files["docs/wiring-debt.md"] = LEDGER.format(rows=rows)
+        return wg.check(crate(files))
+
+    def test_a_listed_key_passes(self):
+        self.assertNotIn("debt_unlisted", kinds(self.run_on(rows=ledger_row("driver-later"))))
+        self.assertFalse({"debt_unlisted", "debt_stale", "debt_ledger", "bad_debt_key"} & kinds(
+            self.run_on(rows=ledger_row("driver-later"))))
+
+    def test_a_key_missing_from_the_ledger_fails(self):
+        vs = self.run_on(rows=ledger_row("something-else") + ledger_row("x"))
+        self.assertIn("debt_unlisted", kinds(vs))
+
+    def test_a_ledger_row_no_marker_uses_fails(self):
+        vs = self.run_on(rows=ledger_row("driver-later") + ledger_row("closed-long-ago"))
+        self.assertEqual([v.message for v in vs if v.kind == "debt_stale"][0].split()[0], "台帳の")
+        self.assertIn("closed-long-ago", " ".join(v.message for v in vs if v.kind == "debt_stale"))
+
+    def test_markers_without_a_ledger_fail(self):
+        self.assertIn("debt_ledger", kinds(self.run_on(rows=None)))
+
+    def test_a_ledger_without_rows_fails(self):
+        self.assertIn("debt_ledger", kinds(self.run_on(rows="")))
+
+    def test_a_key_listed_twice_fails(self):
+        vs = self.run_on(rows=ledger_row("driver-later") * 2)
+        self.assertTrue(any(v.kind == "debt_ledger" and "2 行" in v.message for v in vs), vs)
+
+    def test_keys_must_be_kebab_case(self):
+        for bad in ("`driver_later`", "2.0.0", "DriverLater"):
+            vs = self.run_on(key=bad, rows=ledger_row("driver-later"))
+            self.assertIn("bad_debt_key", kinds(vs), bad)
+
+    def test_trailing_punctuation_is_not_part_of_the_key(self):
+        self.assertFalse({"debt_unlisted", "bad_debt_key"} & kinds(
+            self.run_on(key="driver-later,", rows=ledger_row("driver-later"))))
+
+    def test_no_marker_and_no_ledger_is_not_a_finding(self):
+        self.assertFalse({"debt_ledger", "debt_unlisted", "debt_stale"} & kinds(self.run_on(marker=False)))
+
+
 class UnwiredItems(unittest.TestCase):
     def test_an_item_called_from_another_production_module_is_wired(self):
         r = crate({
