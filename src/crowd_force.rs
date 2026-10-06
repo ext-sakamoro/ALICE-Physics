@@ -120,6 +120,14 @@
 //!   `λ ∉ [0, 1]`, `cutoff ≤ 0` at [`SocialForce::new`]; `τ ≤ 0`, `m ≤ 0`,
 //!   `r < 0`, `v0 < 0` per pedestrian; `h ≤ 0` and a speed cap `≤ 0` at
 //!   [`SocialForce::step`]. A step that fails leaves the crowd unchanged.
+//! - Values out of the `Fix128` range: [`SocialForce::step`] and
+//!   [`SocialForce::total_forces`] use the wrapping operators, so a force,
+//!   velocity or position that leaves the range wraps silently.
+//!   [`SocialForce::try_step`] evaluates the same expressions in the same
+//!   order with every product, quotient, sum and difference checked, returns
+//!   [`CrowdStepError::Overflow`] instead and leaves the crowd unchanged;
+//!   where it succeeds its result is bit-identical to `step`'s.
+//!   [`CrowdParticipant`] advances with `try_step`.
 //! - `N = 0` returns an empty force list; `N = 1` has only the driving term
 //!   and the walls.
 //! - A social magnitude `A e^{(r − d)/B}` above the `Fix128` range (only for
@@ -147,6 +155,7 @@
 //! Author: Moroya Sakamoto
 
 use crate::math::Fix128;
+use crate::molecular_dynamics::{checked_quotient, checked_sub};
 use crate::physics2d::Vec2Fix;
 use crate::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
@@ -273,6 +282,38 @@ impl core::fmt::Display for CrowdForceError {
 
 #[cfg(feature = "std")]
 impl std::error::Error for CrowdForceError {}
+
+/// Why [`SocialForce::try_step`] did not advance the crowd. The crowd is
+/// unchanged in every case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum CrowdStepError {
+    /// An error that [`SocialForce::step`] reports as well.
+    Crowd(CrowdForceError),
+    /// A value of the step left the `Fix128` range (`|x| ≥ 2⁶³`): a force
+    /// term (driving, pair, wall) or its sum, a squared distance or the
+    /// squared cutoff, a cell key, the velocity update `v + F h/m`, the speed
+    /// cap or the position update `x + v h`.
+    Overflow,
+}
+
+impl From<CrowdForceError> for CrowdStepError {
+    fn from(e: CrowdForceError) -> Self {
+        Self::Crowd(e)
+    }
+}
+
+impl core::fmt::Display for CrowdStepError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Crowd(e) => core::fmt::Display::fmt(e, f),
+            Self::Overflow => f.write_str("a value of the step is outside the fixed-point range"),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for CrowdStepError {}
 
 /// The social force model: pedestrian and wall interaction parameters, the
 /// view-angle weight `λ` and the pair cutoff.
@@ -507,6 +548,10 @@ impl SocialForce {
     /// `speed_cap_ratio = Some(c)` limits `|v|` to `c · v0` after the velocity
     /// update.
     ///
+    /// The arithmetic is not range-checked: a force, velocity or position
+    /// that leaves the `Fix128` range wraps. [`Self::try_step`] checks the
+    /// range and is bit-identical to this step where it succeeds.
+    ///
     /// # Errors
     ///
     /// `h ≤ 0`, `c ≤ 0` or an invalid pedestrian; the crowd is left unchanged.
@@ -546,6 +591,287 @@ impl SocialForce {
         }
         Ok(())
     }
+
+    /// [`Self::step`] with the range checked: the same expressions in the
+    /// same order, with every product, quotient, sum and difference of the
+    /// forces (driving, pair, wall and their sums, the squared distances of
+    /// the cutoff tests, the cell keys) and of the update (`v + F h/m`, the
+    /// speed cap, `x + v h`) checked against the `Fix128` range.
+    ///
+    /// Where it returns `Ok` the crowd is bit-identical to the one
+    /// [`Self::step`] produces. On error the crowd is not changed.
+    ///
+    /// # Errors
+    ///
+    /// [`CrowdStepError::Crowd`] with the errors of [`Self::step`];
+    /// [`CrowdStepError::Overflow`] for a value out of range.
+    pub fn try_step(
+        &self,
+        peds: &mut [Pedestrian],
+        walls: &[WallSegment],
+        h: Fix128,
+        search: NeighborSearch,
+        speed_cap_ratio: Option<Fix128>,
+    ) -> Result<(), CrowdStepError> {
+        if h <= Fix128::ZERO {
+            return Err(CrowdForceError::NonPositiveTimeStep.into());
+        }
+        if let Some(c) = speed_cap_ratio {
+            if c <= Fix128::ZERO {
+                return Err(CrowdForceError::NonPositiveSpeedCap.into());
+            }
+        }
+        for (i, p) in peds.iter().enumerate() {
+            check_pedestrian(p, i)?;
+        }
+        let forces = self
+            .total_forces_checked(peds, walls, search)
+            .ok_or(CrowdStepError::Overflow)?;
+        let next = peds
+            .iter()
+            .zip(forces)
+            .map(|(p, f)| advance_checked(p, f, h, speed_cap_ratio))
+            .collect::<Option<Vec<Pedestrian>>>()
+            .ok_or(CrowdStepError::Overflow)?;
+        peds.copy_from_slice(&next);
+        Ok(())
+    }
+
+    /// [`Self::total_forces`] for validated pedestrians with every operation
+    /// range-checked (`None` if a value leaves the range).
+    fn total_forces_checked(
+        &self,
+        peds: &[Pedestrian],
+        walls: &[WallSegment],
+        search: NeighborSearch,
+    ) -> Option<Vec<Vec2Fix>> {
+        let cutoff2 = self.cutoff_m.checked_mul(self.cutoff_m)?;
+        let headings = peds
+            .iter()
+            .map(|p| normalize_c(p.desired_direction))
+            .collect::<Option<Vec<Vec2Fix>>>()?;
+        let mut out = Vec::with_capacity(peds.len());
+        for (p, &e) in peds.iter().zip(&headings) {
+            let mut f = driving_c(p, e)?;
+            for w in walls {
+                let near = nearest_point_c(p, w)?;
+                if len_sq_c(sub_c(p.position, near)?)? <= cutoff2 {
+                    f = add_c(f, self.wall_force_c(p, w)?)?;
+                }
+            }
+            out.push(f);
+        }
+        let mut add_pair = |i: usize, j: usize| -> Option<()> {
+            let (a, b) = (&peds[i], &peds[j]);
+            if len_sq_c(sub_c(a.position, b.position)?)? > cutoff2 {
+                return Some(());
+            }
+            let (fa, fb) = self.pair_kernel_c(a, b, headings[i], headings[j])?;
+            out[i] = add_c(out[i], fa)?;
+            out[j] = add_c(out[j], fb)?;
+            Some(())
+        };
+        match search {
+            NeighborSearch::Direct => {
+                for i in 0..peds.len() {
+                    for j in i + 1..peds.len() {
+                        add_pair(i, j)?;
+                    }
+                }
+            }
+            NeighborSearch::CellList => {
+                for (i, j) in cell_list_pairs_checked(peds, self.cutoff_m)? {
+                    add_pair(i, j)?;
+                }
+            }
+        }
+        Some(out)
+    }
+
+    /// [`Self::weight`] range-checked.
+    fn weight_c(&self, e_hat: Vec2Fix, n_ij: Vec2Fix) -> Option<Fix128> {
+        if e_hat == Vec2Fix::ZERO {
+            return Some(Fix128::ONE);
+        }
+        let cos_phi = neg_c(dot_c(n_ij, e_hat)?)?;
+        let opening = Fix128::ONE.checked_add(cos_phi)?.half();
+        let spread = checked_sub(Fix128::ONE, self.anisotropy)?.checked_mul(opening)?;
+        self.anisotropy.checked_add(spread)
+    }
+
+    /// [`Self::pair_kernel`] range-checked.
+    fn pair_kernel_c(
+        &self,
+        a: &Pedestrian,
+        b: &Pedestrian,
+        ea: Vec2Fix,
+        eb: Vec2Fix,
+    ) -> Option<(Vec2Fix, Vec2Fix)> {
+        let diff = sub_c(a.position, b.position)?;
+        let d2 = len_sq_c(diff)?;
+        if d2.is_zero() {
+            return Some((Vec2Fix::ZERO, Vec2Fix::ZERO));
+        }
+        let d = d2.sqrt();
+        let n = div_c(diff, d)?;
+        let overlap = checked_sub(a.radius_m.checked_add(b.radius_m)?, d)?;
+        let social = social_magnitude_c(&self.pedestrian, overlap)?;
+        let mut fa = scale_c(n, social.checked_mul(self.weight_c(ea, n)?)?)?;
+        let mut fb = neg2_c(scale_c(
+            n,
+            social.checked_mul(self.weight_c(eb, neg2_c(n)?)?)?,
+        )?)?;
+        if overlap > Fix128::ZERO {
+            let t = perpendicular_c(n)?;
+            let dvt = dot_c(sub_c(b.velocity, a.velocity)?, t)?;
+            let normal = scale_c(n, self.pedestrian.body_stiffness.checked_mul(overlap)?)?;
+            let tangential = scale_c(
+                t,
+                self.pedestrian
+                    .sliding_friction
+                    .checked_mul(overlap)?
+                    .checked_mul(dvt)?,
+            )?;
+            let contact = add_c(normal, tangential)?;
+            fa = add_c(fa, contact)?;
+            fb = sub_c(fb, contact)?;
+        }
+        Some((fa, fb))
+    }
+
+    /// [`Self::wall_force`] range-checked.
+    fn wall_force_c(&self, p: &Pedestrian, w: &WallSegment) -> Option<Vec2Fix> {
+        let diff = sub_c(p.position, nearest_point_c(p, w)?)?;
+        let d2 = len_sq_c(diff)?;
+        if d2.is_zero() {
+            return Some(Vec2Fix::ZERO);
+        }
+        let d = d2.sqrt();
+        let n = div_c(diff, d)?;
+        let overlap = checked_sub(p.radius_m, d)?;
+        let mut f = scale_c(n, social_magnitude_c(&self.wall, overlap)?)?;
+        if overlap > Fix128::ZERO {
+            let t = perpendicular_c(n)?;
+            let normal = scale_c(n, self.wall.body_stiffness.checked_mul(overlap)?)?;
+            let tangential = scale_c(
+                t,
+                self.wall
+                    .sliding_friction
+                    .checked_mul(overlap)?
+                    .checked_mul(dot_c(p.velocity, t)?)?,
+            )?;
+            f = sub_c(add_c(f, normal)?, tangential)?;
+        }
+        Some(f)
+    }
+}
+
+// Range-checked `Vec2Fix` operations: the same values as the operators where
+// they return `Some`.
+
+fn add_c(a: Vec2Fix, b: Vec2Fix) -> Option<Vec2Fix> {
+    Some(Vec2Fix::new(a.x.checked_add(b.x)?, a.y.checked_add(b.y)?))
+}
+
+fn sub_c(a: Vec2Fix, b: Vec2Fix) -> Option<Vec2Fix> {
+    Some(Vec2Fix::new(checked_sub(a.x, b.x)?, checked_sub(a.y, b.y)?))
+}
+
+fn scale_c(a: Vec2Fix, s: Fix128) -> Option<Vec2Fix> {
+    Some(Vec2Fix::new(a.x.checked_mul(s)?, a.y.checked_mul(s)?))
+}
+
+fn div_c(a: Vec2Fix, s: Fix128) -> Option<Vec2Fix> {
+    Some(Vec2Fix::new(
+        checked_quotient(a.x, s)?,
+        checked_quotient(a.y, s)?,
+    ))
+}
+
+/// `−x` as `Neg` (`0 − x`), `None` for `x = −2⁶³`.
+fn neg_c(x: Fix128) -> Option<Fix128> {
+    checked_sub(Fix128::ZERO, x)
+}
+
+fn neg2_c(a: Vec2Fix) -> Option<Vec2Fix> {
+    Some(Vec2Fix::new(neg_c(a.x)?, neg_c(a.y)?))
+}
+
+fn perpendicular_c(a: Vec2Fix) -> Option<Vec2Fix> {
+    Some(Vec2Fix::new(neg_c(a.y)?, a.x))
+}
+
+fn dot_c(a: Vec2Fix, b: Vec2Fix) -> Option<Fix128> {
+    a.x.checked_mul(b.x)?.checked_add(a.y.checked_mul(b.y)?)
+}
+
+fn len_sq_c(a: Vec2Fix) -> Option<Fix128> {
+    dot_c(a, a)
+}
+
+/// [`Vec2Fix::normalize`] range-checked.
+fn normalize_c(a: Vec2Fix) -> Option<Vec2Fix> {
+    let len = len_sq_c(a)?.sqrt();
+    if len.is_zero() {
+        Some(Vec2Fix::ZERO)
+    } else {
+        div_c(a, len)
+    }
+}
+
+/// [`social_magnitude`] with the quotient `x / B` range-checked (the
+/// saturation of the product is the same).
+fn social_magnitude_c(p: &InteractionParams, x: Fix128) -> Option<Fix128> {
+    let e = checked_quotient(x, p.range_m)?.exp();
+    Some(p.strength_n.checked_mul(e).unwrap_or(FIX_MAX))
+}
+
+/// [`driving`] range-checked.
+fn driving_c(p: &Pedestrian, e_hat: Vec2Fix) -> Option<Vec2Fix> {
+    let rate = checked_quotient(p.mass_kg, p.relaxation_time_s)?;
+    scale_c(
+        sub_c(scale_c(e_hat, p.desired_speed_m_s)?, p.velocity)?,
+        rate,
+    )
+}
+
+/// [`nearest_point`] range-checked.
+fn nearest_point_c(p: &Pedestrian, w: &WallSegment) -> Option<Vec2Fix> {
+    let ab = sub_c(w.end, w.start)?;
+    let len2 = len_sq_c(ab)?;
+    let s = if len2.is_zero() {
+        Fix128::ZERO
+    } else {
+        checked_quotient(dot_c(sub_c(p.position, w.start)?, ab)?, len2)?
+            .clamp(Fix128::ZERO, Fix128::ONE)
+    };
+    add_c(w.start, scale_c(ab, s)?)
+}
+
+/// The velocity and position update of [`SocialForce::step`] for one
+/// pedestrian, range-checked.
+fn advance_checked(
+    p: &Pedestrian,
+    f: Vec2Fix,
+    h: Fix128,
+    speed_cap_ratio: Option<Fix128>,
+) -> Option<Pedestrian> {
+    let mut v = add_c(p.velocity, scale_c(f, checked_quotient(h, p.mass_kg)?)?)?;
+    if let Some(c) = speed_cap_ratio {
+        let v_max = c.checked_mul(p.desired_speed_m_s)?;
+        let speed = len_sq_c(v)?.sqrt();
+        if speed > v_max {
+            v = if speed.is_zero() {
+                Vec2Fix::ZERO
+            } else {
+                scale_c(v, checked_quotient(v_max, speed)?)?
+            };
+        }
+    }
+    let mut next = *p;
+    next.velocity = v;
+    next.position = add_c(p.position, scale_c(v, h)?)?;
+    Some(next)
 }
 
 /// Nearest point of segment `w` to the centre of `p`.
@@ -575,13 +901,37 @@ fn driving(p: &Pedestrian, e_hat: Vec2Fix) -> Vec2Fix {
 fn cell_list_pairs(peds: &[Pedestrian], cutoff: Fix128) -> Vec<(usize, usize)> {
     let cell = cutoff + cutoff.shr_bits(20);
     let inv = Fix128::ONE / cell;
-    let key = |p: &Pedestrian| ((p.position.y * inv).hi, (p.position.x * inv).hi);
+    let keys: Vec<(i64, i64)> = peds
+        .iter()
+        .map(|p| ((p.position.y * inv).hi, (p.position.x * inv).hi))
+        .collect();
+    pairs_in_adjacent_cells(&keys)
+}
+
+/// [`cell_list_pairs`] with the cell keys range-checked.
+fn cell_list_pairs_checked(peds: &[Pedestrian], cutoff: Fix128) -> Option<Vec<(usize, usize)>> {
+    let cell = cutoff.checked_add(cutoff.shr_bits(20))?;
+    let inv = checked_quotient(Fix128::ONE, cell)?;
+    let keys = peds
+        .iter()
+        .map(|p| {
+            Some((
+                p.position.y.checked_mul(inv)?.hi,
+                p.position.x.checked_mul(inv)?.hi,
+            ))
+        })
+        .collect::<Option<Vec<(i64, i64)>>>()?;
+    Some(pairs_in_adjacent_cells(&keys))
+}
+
+/// Pairs `(i, j)`, `i < j`, whose cell keys `(y, x)` differ by at most 1 on
+/// each axis, sorted ascending.
+fn pairs_in_adjacent_cells(keys: &[(i64, i64)]) -> Vec<(usize, usize)> {
     let mut sorted: Vec<((i64, i64), usize)> =
-        peds.iter().enumerate().map(|(i, p)| (key(p), i)).collect();
+        keys.iter().enumerate().map(|(i, k)| (*k, i)).collect();
     sorted.sort_unstable();
     let mut pairs = Vec::new();
-    for (i, p) in peds.iter().enumerate() {
-        let (cy, cx) = key(p);
+    for (i, &(cy, cx)) in keys.iter().enumerate() {
         for dy in -1i64..=1 {
             let Some(ny) = cy.checked_add(dy) else {
                 continue;
@@ -631,7 +981,7 @@ const CROWD_PEDESTRIAN_LEN: usize = 10 * 16;
 
 /// A crowd as a participant of the world's substep loop: it owns the
 /// pedestrians, the walls and the [`SocialForce`] model and advances them by
-/// one [`SocialForce::step`] of the world substep width `h` per substep
+/// one [`SocialForce::try_step`] of the world substep width `h` per substep
 /// ([`StepRule::FollowSubstep`](crate::world_participant::StepRule::FollowSubstep)).
 ///
 /// # Time step
@@ -653,10 +1003,13 @@ const CROWD_PEDESTRIAN_LEN: usize = 10 * 16;
 ///
 /// # Faults
 ///
-/// [`SocialForce::step`] refuses an invalid pedestrian (`τ ≤ 0`, `m ≤ 0`,
-/// `r < 0`, `v0 < 0`, for instance set through [`Self::pedestrians_mut`])
-/// and leaves the crowd unchanged; the participant then returns
-/// [`ParticipantFault::InvalidState`] and is unchanged.
+/// [`SocialForce::try_step`] refuses an invalid pedestrian (`τ ≤ 0`,
+/// `m ≤ 0`, `r < 0`, `v0 < 0`, for instance set through
+/// [`Self::pedestrians_mut`]) and leaves the crowd unchanged; the participant
+/// then returns [`ParticipantFault::InvalidState`] and is unchanged. A force,
+/// velocity or position of the step that leaves the `Fix128` range
+/// ([`CrowdStepError::Overflow`]) is [`ParticipantFault::OutOfRange`], and the
+/// participant is unchanged as well.
 ///
 /// # Snapshot payload
 ///
@@ -744,14 +1097,17 @@ impl Participant for CrowdParticipant {
 
     fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
         self.model
-            .step(
+            .try_step(
                 &mut self.pedestrians,
                 &self.walls,
                 h,
                 self.search,
                 self.speed_cap_ratio,
             )
-            .map_err(|_| ParticipantFault::InvalidState)
+            .map_err(|e| match e {
+                CrowdStepError::Overflow => ParticipantFault::OutOfRange,
+                _ => ParticipantFault::InvalidState,
+            })
     }
 
     fn observe(&self, out: &mut ObservationSink) {

@@ -74,6 +74,19 @@
 //! a failed `step` leaves the state unchanged. Non-positive box lengths,
 //! masses or time steps, mismatched array lengths, and `L < 2 r_c` are
 //! errors.
+//!
+//! # Range
+//!
+//! [`VelocityVerlet::step`] uses the wrapping `Fix128` operators: a kick
+//! `v + F h/(2m)`, a drift `x + h v`, a force or energy sum that leaves the
+//! `Fix128` range wraps silently, and a pair closer than about `2⁻³²` (where
+//! `|d|²` rounds to 0) is reported as coincident.
+//! [`VelocityVerlet::try_step`] is the range-checked step: it evaluates the
+//! same expressions in the same order with every product, quotient, sum and
+//! difference checked, returns [`MdStepError::Overflow`] or
+//! [`MdStepError::PairBelowResolution`] instead, and leaves the state
+//! unchanged. Where `try_step` succeeds its result is bit-identical to
+//! `step`'s. [`MdParticipant`] advances with `try_step`.
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::pair_potential::{PairPotential, PairPotentialError, Truncated};
@@ -138,6 +151,93 @@ impl core::fmt::Display for MdError {
 #[cfg(feature = "std")]
 impl std::error::Error for MdError {}
 
+/// Why [`VelocityVerlet::try_step`] did not advance the system. The state is
+/// unchanged in every case.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MdStepError {
+    /// An error that [`VelocityVerlet::step`] reports as well.
+    Md(MdError),
+    /// A value of the step left the `Fix128` range (`|x| ≥ 2⁶³`): the kick
+    /// factor `h/(2m)`, a kick, a drift, the wrap into the box, a pair
+    /// separation or its square, a pair force `d F/r`, the force on a
+    /// particle or the potential energy sum.
+    Overflow,
+    /// Particles `i < j` are apart (`d ≠ 0`) but closer than the length
+    /// resolution: `|d|²` rounds to 0 (about `|d| < 2⁻³²`), so `|d|` and the
+    /// force direction cannot be evaluated.
+    PairBelowResolution {
+        /// First particle.
+        i: usize,
+        /// Second particle.
+        j: usize,
+    },
+}
+
+impl From<MdError> for MdStepError {
+    fn from(e: MdError) -> Self {
+        Self::Md(e)
+    }
+}
+
+impl core::fmt::Display for MdStepError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Md(e) => core::fmt::Display::fmt(e, f),
+            Self::Overflow => f.write_str("a value of the step is outside the fixed-point range"),
+            Self::PairBelowResolution { i, j } => write!(
+                f,
+                "pair ({i}, {j}) is closer than the length resolution of the fixed-point range"
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for MdStepError {}
+
+// ---------------------------------------------------------------------------
+// Range-checked arithmetic (same values as the operators where `Some`)
+// ---------------------------------------------------------------------------
+
+/// `a − b` as `Sub`, `None` if `|a − b| ≥ 2⁶³`.
+pub(crate) fn checked_sub(a: Fix128, b: Fix128) -> Option<Fix128> {
+    let ra = ((a.hi as i128) << 64) | (a.lo as i128);
+    let rb = ((b.hi as i128) << 64) | (b.lo as i128);
+    let d = ra.checked_sub(rb)?;
+    Some(Fix128::from_raw((d >> 64) as i64, d as u64))
+}
+
+/// `a / b` as `Div` (truncating), `None` if `b = 0` or the quotient has
+/// `|a / b| ≥ 2⁶³` (where `Div` keeps the low 64 bits of the integer part).
+pub(crate) fn checked_quotient(a: Fix128, b: Fix128) -> Option<Fix128> {
+    if b.is_zero() {
+        return None;
+    }
+    let mag = |f: Fix128| (((f.hi as i128) << 64) | (f.lo as i128)).unsigned_abs();
+    // integer part of |a| / |b|, the `quot_hi` of `Div`
+    if mag(a) / mag(b) >= 1u128 << 63 {
+        return None;
+    }
+    Some(a / b)
+}
+
+fn checked_add3(a: Vec3Fix, b: Vec3Fix) -> Option<Vec3Fix> {
+    Some(Vec3Fix::new(
+        a.x.checked_add(b.x)?,
+        a.y.checked_add(b.y)?,
+        a.z.checked_add(b.z)?,
+    ))
+}
+
+fn checked_sub3(a: Vec3Fix, b: Vec3Fix) -> Option<Vec3Fix> {
+    Some(Vec3Fix::new(
+        checked_sub(a.x, b.x)?,
+        checked_sub(a.y, b.y)?,
+        checked_sub(a.z, b.z)?,
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // Periodic box
 // ---------------------------------------------------------------------------
@@ -163,6 +263,22 @@ fn wrap_scalar(x: Fix128, l: Fix128) -> Fix128 {
         y = y - l;
     }
     y
+}
+
+/// [`wrap_scalar`] with every operation range-checked.
+fn wrap_scalar_checked(x: Fix128, l: Fix128) -> Option<Fix128> {
+    if x >= Fix128::ZERO && x < l {
+        return Some(x);
+    }
+    let k = checked_quotient(x, l)?.floor();
+    let mut y = checked_sub(x, k.checked_mul(l)?)?;
+    while y < Fix128::ZERO {
+        y = y.checked_add(l)?;
+    }
+    while y >= l {
+        y = checked_sub(y, l)?;
+    }
+    Some(y)
 }
 
 impl PeriodicBox {
@@ -215,6 +331,23 @@ impl PeriodicBox {
         self.wrap(d + h) - h
     }
 
+    fn wrap_checked(&self, p: Vec3Fix) -> Option<Vec3Fix> {
+        Some(Vec3Fix::new(
+            wrap_scalar_checked(p.x, self.lengths.x)?,
+            wrap_scalar_checked(p.y, self.lengths.y)?,
+            wrap_scalar_checked(p.z, self.lengths.z)?,
+        ))
+    }
+
+    fn minimum_image_checked(&self, d: Vec3Fix) -> Option<Vec3Fix> {
+        let h = Vec3Fix::new(
+            self.lengths.x.half(),
+            self.lengths.y.half(),
+            self.lengths.z.half(),
+        );
+        checked_sub3(self.wrap_checked(checked_add3(d, h)?)?, h)
+    }
+
     fn check_cutoff(&self, cutoff: Fix128) -> Result<(), MdError> {
         let two_rc = cutoff.double();
         if self.lengths.x < two_rc || self.lengths.y < two_rc || self.lengths.z < two_rc {
@@ -259,6 +392,40 @@ fn accumulate_pair<P: PairPotential>(
     out.forces[i] = out.forces[i] + fv;
     out.forces[j] = out.forces[j] - fv;
     out.potential_energy = out.potential_energy + u;
+    Ok(())
+}
+
+/// [`accumulate_pair`] with every operation range-checked, and a pair whose
+/// `|d|²` rounds to 0 at `d ≠ 0` refused.
+fn accumulate_pair_checked<P: PairPotential>(
+    potential: &Truncated<P>,
+    periodic_box: &PeriodicBox,
+    positions: &[Vec3Fix],
+    (i, j): (usize, usize),
+    cutoff_sq: Fix128,
+    out: &mut PairForces,
+) -> Result<(), MdStepError> {
+    let ovf = MdStepError::Overflow;
+    let d = periodic_box
+        .minimum_image_checked(checked_sub3(positions[i], positions[j]).ok_or(ovf)?)
+        .ok_or(ovf)?;
+    let r_sq = d.checked_length_squared().ok_or(ovf)?;
+    if r_sq >= cutoff_sq {
+        return Ok(());
+    }
+    if r_sq.is_zero() && d != Vec3Fix::ZERO {
+        return Err(MdStepError::PairBelowResolution { i, j });
+    }
+    let wrap_err = |error| MdStepError::Md(MdError::Potential { i, j, error });
+    let r = r_sq.sqrt();
+    let f = potential.force(r).map_err(wrap_err)?;
+    let u = potential.energy(r).map_err(wrap_err)?;
+    let fv = d
+        .checked_scale(checked_quotient(f, r).ok_or(ovf)?)
+        .ok_or(ovf)?;
+    out.forces[i] = checked_add3(out.forces[i], fv).ok_or(ovf)?;
+    out.forces[j] = checked_sub3(out.forces[j], fv).ok_or(ovf)?;
+    out.potential_energy = out.potential_energy.checked_add(u).ok_or(ovf)?;
     Ok(())
 }
 
@@ -349,7 +516,6 @@ pub fn pair_forces_cell_list<P: PairPotential>(
         cells_along(l.y, cutoff),
         cells_along(l.z, cutoff),
     ];
-    let n_cells = dims[0] * dims[1] * dims[2];
     let coords: Vec<[usize; 3]> = positions
         .iter()
         .map(|p| {
@@ -361,25 +527,93 @@ pub fn pair_forces_cell_list<P: PairPotential>(
             ]
         })
         .collect();
+    let mut out = empty_forces(positions.len());
+    for_each_cell_pair(dims, &coords, |pair| {
+        accumulate_pair(
+            potential,
+            periodic_box,
+            positions,
+            pair,
+            cutoff_sq,
+            &mut out,
+        )
+    })?;
+    Ok(out)
+}
+
+/// [`pair_forces_cell_list`] with every operation range-checked (the same
+/// values where it succeeds).
+fn pair_forces_cell_list_checked<P: PairPotential>(
+    potential: &Truncated<P>,
+    periodic_box: &PeriodicBox,
+    positions: &[Vec3Fix],
+) -> Result<PairForces, MdStepError> {
+    let ovf = MdStepError::Overflow;
+    let cutoff = potential.cutoff();
+    periodic_box.check_cutoff(cutoff)?;
+    let cutoff_sq = cutoff.checked_mul(cutoff).ok_or(ovf)?;
+    let l = periodic_box.lengths();
+    let along = |length: Fix128| -> Result<usize, MdStepError> {
+        let width = cutoff.checked_add(cutoff.shr_bits(20)).ok_or(ovf)?;
+        let n = checked_quotient(length, width).ok_or(ovf)?.hi;
+        Ok(if n < 1 { 1 } else { n as usize })
+    };
+    let dims = [along(l.x)?, along(l.y)?, along(l.z)?];
+    let coord = |x: Fix128, n: usize, length: Fix128| -> Result<usize, MdStepError> {
+        let xn = x.checked_mul(Fix128::from_int(n as i64)).ok_or(ovf)?;
+        let c = checked_quotient(xn, length).ok_or(ovf)?.hi;
+        Ok(c.clamp(0, n as i64 - 1) as usize)
+    };
+    let mut coords: Vec<[usize; 3]> = Vec::with_capacity(positions.len());
+    for p in positions {
+        let p = periodic_box.wrap_checked(*p).ok_or(ovf)?;
+        coords.push([
+            coord(p.x, dims[0], l.x)?,
+            coord(p.y, dims[1], l.y)?,
+            coord(p.z, dims[2], l.z)?,
+        ]);
+    }
+    let mut out = empty_forces(positions.len());
+    for_each_cell_pair(dims, &coords, |pair| {
+        accumulate_pair_checked(
+            potential,
+            periodic_box,
+            positions,
+            pair,
+            cutoff_sq,
+            &mut out,
+        )
+    })?;
+    Ok(out)
+}
+
+/// Calls `visit((i, j))` for every pair `i < j` of particles in the same or
+/// adjacent cells (periodic), in the order of `i`, then the neighbour cell
+/// (`z`, `y`, `x` ascending), then `j` ascending. Stops at the first error.
+fn for_each_cell_pair<E>(
+    dims: [usize; 3],
+    coords: &[[usize; 3]],
+    mut visit: impl FnMut((usize, usize)) -> Result<(), E>,
+) -> Result<(), E> {
+    let n_cells = dims[0] * dims[1] * dims[2];
     let flat = |c: [usize; 3]| c[0] + dims[0] * (c[1] + dims[1] * c[2]);
 
     // CSR buckets, members in ascending particle index
     let mut starts = vec![0usize; n_cells + 1];
-    for c in &coords {
+    for c in coords {
         starts[flat(*c) + 1] += 1;
     }
     for k in 0..n_cells {
         starts[k + 1] += starts[k];
     }
     let mut cursor = starts.clone();
-    let mut members = vec![0usize; positions.len()];
+    let mut members = vec![0usize; coords.len()];
     for (idx, c) in coords.iter().enumerate() {
         let cell = flat(*c);
         members[cursor[cell]] = idx;
         cursor[cell] += 1;
     }
 
-    let mut out = empty_forces(positions.len());
     for (i, ci) in coords.iter().enumerate() {
         let (zs, nz) = neighbour_cells(ci[2], dims[2]);
         let (ys, ny) = neighbour_cells(ci[1], dims[1]);
@@ -390,21 +624,14 @@ pub fn pair_forces_cell_list<P: PairPotential>(
                     let cell = flat([cx, cy, cz]);
                     for &j in &members[starts[cell]..starts[cell + 1]] {
                         if j > i {
-                            accumulate_pair(
-                                potential,
-                                periodic_box,
-                                positions,
-                                (i, j),
-                                cutoff_sq,
-                                &mut out,
-                            )?;
+                            visit((i, j))?;
                         }
                     }
                 }
             }
         }
     }
-    Ok(out)
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -470,6 +697,12 @@ impl<P: PairPotential> VelocityVerlet<P> {
     /// One velocity Verlet step of length `dt`. On error the state is not
     /// changed.
     ///
+    /// The arithmetic is not range-checked: a kick, drift, force or energy
+    /// that leaves the `Fix128` range wraps, and a pair closer than the
+    /// length resolution (`|d|²` rounds to 0) is [`MdError::Potential`] with
+    /// [`PairPotentialError::NonPositiveDistance`]. [`Self::try_step`] checks
+    /// the range and is bit-identical to this step where it succeeds.
+    ///
     /// # Errors
     ///
     /// [`MdError::NonPositiveTimestep`], [`MdError::Potential`].
@@ -499,6 +732,68 @@ impl<P: PairPotential> VelocityVerlet<P> {
             .zip(&kicks)
             .map(|((v, f), k)| *v + *f * *k)
             .collect();
+        self.positions = x_new;
+        self.forces = pf.forces;
+        self.potential_energy = pf.potential_energy;
+        Ok(())
+    }
+
+    /// [`Self::step`] with the range checked: the same expressions in the
+    /// same order, with every product, quotient, sum and difference of the
+    /// step (the kick factor `h/(2m)`, both kicks, the drift and its wrap
+    /// into the box, the pair separations and their squares, the pair forces
+    /// and the force and energy sums) checked against the `Fix128` range.
+    ///
+    /// Where it returns `Ok` the new state is bit-identical to the one
+    /// [`Self::step`] produces. On error the state is not changed.
+    ///
+    /// # Errors
+    ///
+    /// [`MdStepError::Md`] with the errors of [`Self::step`];
+    /// [`MdStepError::Overflow`] for a value out of range;
+    /// [`MdStepError::PairBelowResolution`] for a pair at `d ≠ 0` whose
+    /// `|d|²` rounds to 0. A wrap into a box much smaller than the drifted
+    /// coordinate (`|x / L| ≥ 2⁶³`) is [`MdStepError::Overflow`].
+    pub fn try_step(&mut self, dt: Fix128) -> Result<(), MdStepError> {
+        if dt <= Fix128::ZERO {
+            return Err(MdError::NonPositiveTimestep.into());
+        }
+        let ovf = MdStepError::Overflow;
+        let half = dt.half();
+        let kicks = self
+            .masses
+            .iter()
+            .map(|m| checked_quotient(half, *m))
+            .collect::<Option<Vec<Fix128>>>()
+            .ok_or(ovf)?;
+        let kick = |v: &Vec3Fix, f: &Vec3Fix, k: &Fix128| checked_add3(*v, f.checked_scale(*k)?);
+        let v_half = self
+            .velocities
+            .iter()
+            .zip(&self.forces)
+            .zip(&kicks)
+            .map(|((v, f), k)| kick(v, f, k))
+            .collect::<Option<Vec<Vec3Fix>>>()
+            .ok_or(ovf)?;
+        let x_new = self
+            .positions
+            .iter()
+            .zip(&v_half)
+            .map(|(x, v)| {
+                self.periodic_box
+                    .wrap_checked(checked_add3(*x, v.checked_scale(dt)?)?)
+            })
+            .collect::<Option<Vec<Vec3Fix>>>()
+            .ok_or(ovf)?;
+        let pf = pair_forces_cell_list_checked(&self.potential, &self.periodic_box, &x_new)?;
+        let v_new = v_half
+            .iter()
+            .zip(&pf.forces)
+            .zip(&kicks)
+            .map(|((v, f), k)| kick(v, f, k))
+            .collect::<Option<Vec<Vec3Fix>>>()
+            .ok_or(ovf)?;
+        self.velocities = v_new;
         self.positions = x_new;
         self.forces = pf.forces;
         self.potential_energy = pf.potential_energy;
@@ -619,7 +914,7 @@ const MD_HEADER_LEN: usize = 4 + 8 + 3 * 16 + 16 + 8;
 const MD_PARTICLE_LEN: usize = 10 * 16;
 
 /// A [`VelocityVerlet`] system as a participant of the world's substep loop:
-/// one [`VelocityVerlet::step`] of the world substep width `h` per substep
+/// one [`VelocityVerlet::try_step`] of the world substep width `h` per substep
 /// ([`StepRule::FollowSubstep`](crate::world_participant::StepRule::FollowSubstep)).
 ///
 /// # Time step
@@ -636,11 +931,14 @@ const MD_PARTICLE_LEN: usize = 10 * 16;
 ///
 /// # Faults
 ///
-/// [`VelocityVerlet::step`] leaves the state unchanged on error. A pair whose
-/// potential value leaves the `Fix128` range
-/// ([`PairPotentialError::Overflow`]) is [`ParticipantFault::OutOfRange`];
-/// every other error (coincident particles, an invalid potential argument) is
-/// [`ParticipantFault::InvalidState`]. Both leave the participant unchanged.
+/// [`VelocityVerlet::try_step`] leaves the state unchanged on error. A value
+/// of the step that leaves the `Fix128` range ([`MdStepError::Overflow`], a
+/// kick or drift among them), a pair closer than the length resolution
+/// ([`MdStepError::PairBelowResolution`]) and a pair whose potential value
+/// leaves the range ([`PairPotentialError::Overflow`]) are
+/// [`ParticipantFault::OutOfRange`]; every other error (coincident particles,
+/// an invalid potential argument) is [`ParticipantFault::InvalidState`]. Both
+/// leave the participant unchanged.
 ///
 /// # Snapshot payload
 ///
@@ -708,11 +1006,13 @@ impl<P: PairPotential + Send> Participant for MdParticipant<P> {
     }
 
     fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
-        self.system.step(h).map_err(|e| match e {
-            MdError::Potential {
+        self.system.try_step(h).map_err(|e| match e {
+            MdStepError::Overflow
+            | MdStepError::PairBelowResolution { .. }
+            | MdStepError::Md(MdError::Potential {
                 error: PairPotentialError::Overflow,
                 ..
-            } => ParticipantFault::OutOfRange,
+            }) => ParticipantFault::OutOfRange,
             _ => ParticipantFault::InvalidState,
         })
     }

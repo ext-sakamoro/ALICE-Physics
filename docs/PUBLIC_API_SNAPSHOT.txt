@@ -2844,6 +2844,8 @@ pub fn alice_physics::crowd_force::CrowdForceError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::crowd_force::CrowdForceError
 impl core::cmp::PartialEq for alice_physics::crowd_force::CrowdForceError
 pub fn alice_physics::crowd_force::CrowdForceError::eq(&self, &Self) -> bool
+impl core::convert::From<alice_physics::crowd_force::CrowdForceError> for alice_physics::crowd_force::CrowdStepError
+pub fn alice_physics::crowd_force::CrowdStepError::from(alice_physics::crowd_force::CrowdForceError) -> Self
 impl core::error::Error for alice_physics::crowd_force::CrowdForceError
 impl core::fmt::Debug for alice_physics::crowd_force::CrowdForceError
 pub fn alice_physics::crowd_force::CrowdForceError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -2858,6 +2860,30 @@ impl core::marker::Unpin for alice_physics::crowd_force::CrowdForceError
 impl core::marker::UnsafeUnpin for alice_physics::crowd_force::CrowdForceError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::CrowdForceError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::CrowdForceError
+#[non_exhaustive] pub enum alice_physics::crowd_force::CrowdStepError
+pub alice_physics::crowd_force::CrowdStepError::Crowd(alice_physics::crowd_force::CrowdForceError)
+pub alice_physics::crowd_force::CrowdStepError::Overflow
+impl core::clone::Clone for alice_physics::crowd_force::CrowdStepError
+pub fn alice_physics::crowd_force::CrowdStepError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::crowd_force::CrowdStepError
+impl core::cmp::PartialEq for alice_physics::crowd_force::CrowdStepError
+pub fn alice_physics::crowd_force::CrowdStepError::eq(&self, &Self) -> bool
+impl core::convert::From<alice_physics::crowd_force::CrowdForceError> for alice_physics::crowd_force::CrowdStepError
+pub fn alice_physics::crowd_force::CrowdStepError::from(alice_physics::crowd_force::CrowdForceError) -> Self
+impl core::error::Error for alice_physics::crowd_force::CrowdStepError
+impl core::fmt::Debug for alice_physics::crowd_force::CrowdStepError
+pub fn alice_physics::crowd_force::CrowdStepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::crowd_force::CrowdStepError
+pub fn alice_physics::crowd_force::CrowdStepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::crowd_force::CrowdStepError
+impl core::marker::StructuralPartialEq for alice_physics::crowd_force::CrowdStepError
+impl core::marker::Freeze for alice_physics::crowd_force::CrowdStepError
+impl core::marker::Send for alice_physics::crowd_force::CrowdStepError
+impl core::marker::Sync for alice_physics::crowd_force::CrowdStepError
+impl core::marker::Unpin for alice_physics::crowd_force::CrowdStepError
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::CrowdStepError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::CrowdStepError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::CrowdStepError
 pub enum alice_physics::crowd_force::NeighborSearch
 pub alice_physics::crowd_force::NeighborSearch::CellList
 pub alice_physics::crowd_force::NeighborSearch::Direct
@@ -2957,6 +2983,7 @@ pub fn alice_physics::crowd_force::SocialForce::new(alice_physics::crowd_force::
 pub fn alice_physics::crowd_force::SocialForce::pair_forces(&self, &alice_physics::crowd_force::Pedestrian, &alice_physics::crowd_force::Pedestrian) -> (alice_physics::physics2d::Vec2Fix, alice_physics::physics2d::Vec2Fix)
 pub fn alice_physics::crowd_force::SocialForce::step(&self, &mut [alice_physics::crowd_force::Pedestrian], &[alice_physics::crowd_force::WallSegment], alice_physics::math::Fix128, alice_physics::crowd_force::NeighborSearch, core::option::Option<alice_physics::math::Fix128>) -> core::result::Result<(), alice_physics::crowd_force::CrowdForceError>
 pub fn alice_physics::crowd_force::SocialForce::total_forces(&self, &[alice_physics::crowd_force::Pedestrian], &[alice_physics::crowd_force::WallSegment], alice_physics::crowd_force::NeighborSearch, &mut alloc::vec::Vec<alice_physics::physics2d::Vec2Fix>) -> core::result::Result<(), alice_physics::crowd_force::CrowdForceError>
+pub fn alice_physics::crowd_force::SocialForce::try_step(&self, &mut [alice_physics::crowd_force::Pedestrian], &[alice_physics::crowd_force::WallSegment], alice_physics::math::Fix128, alice_physics::crowd_force::NeighborSearch, core::option::Option<alice_physics::math::Fix128>) -> core::result::Result<(), alice_physics::crowd_force::CrowdStepError>
 pub fn alice_physics::crowd_force::SocialForce::wall_force(&self, &alice_physics::crowd_force::Pedestrian, &alice_physics::crowd_force::WallSegment) -> alice_physics::physics2d::Vec2Fix
 impl core::clone::Clone for alice_physics::crowd_force::SocialForce
 pub fn alice_physics::crowd_force::SocialForce::clone(&self) -> Self
@@ -7908,6 +7935,8 @@ pub fn alice_physics::molecular_dynamics::MdError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::molecular_dynamics::MdError
 impl core::cmp::PartialEq for alice_physics::molecular_dynamics::MdError
 pub fn alice_physics::molecular_dynamics::MdError::eq(&self, &Self) -> bool
+impl core::convert::From<alice_physics::molecular_dynamics::MdError> for alice_physics::molecular_dynamics::MdStepError
+pub fn alice_physics::molecular_dynamics::MdStepError::from(alice_physics::molecular_dynamics::MdError) -> Self
 impl core::error::Error for alice_physics::molecular_dynamics::MdError
 impl core::fmt::Debug for alice_physics::molecular_dynamics::MdError
 pub fn alice_physics::molecular_dynamics::MdError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -7922,6 +7951,33 @@ impl core::marker::Unpin for alice_physics::molecular_dynamics::MdError
 impl core::marker::UnsafeUnpin for alice_physics::molecular_dynamics::MdError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::molecular_dynamics::MdError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::molecular_dynamics::MdError
+#[non_exhaustive] pub enum alice_physics::molecular_dynamics::MdStepError
+pub alice_physics::molecular_dynamics::MdStepError::Md(alice_physics::molecular_dynamics::MdError)
+pub alice_physics::molecular_dynamics::MdStepError::Overflow
+pub alice_physics::molecular_dynamics::MdStepError::PairBelowResolution
+pub alice_physics::molecular_dynamics::MdStepError::PairBelowResolution::i: usize
+pub alice_physics::molecular_dynamics::MdStepError::PairBelowResolution::j: usize
+impl core::clone::Clone for alice_physics::molecular_dynamics::MdStepError
+pub fn alice_physics::molecular_dynamics::MdStepError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::molecular_dynamics::MdStepError
+impl core::cmp::PartialEq for alice_physics::molecular_dynamics::MdStepError
+pub fn alice_physics::molecular_dynamics::MdStepError::eq(&self, &Self) -> bool
+impl core::convert::From<alice_physics::molecular_dynamics::MdError> for alice_physics::molecular_dynamics::MdStepError
+pub fn alice_physics::molecular_dynamics::MdStepError::from(alice_physics::molecular_dynamics::MdError) -> Self
+impl core::error::Error for alice_physics::molecular_dynamics::MdStepError
+impl core::fmt::Debug for alice_physics::molecular_dynamics::MdStepError
+pub fn alice_physics::molecular_dynamics::MdStepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::molecular_dynamics::MdStepError
+pub fn alice_physics::molecular_dynamics::MdStepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::molecular_dynamics::MdStepError
+impl core::marker::StructuralPartialEq for alice_physics::molecular_dynamics::MdStepError
+impl core::marker::Freeze for alice_physics::molecular_dynamics::MdStepError
+impl core::marker::Send for alice_physics::molecular_dynamics::MdStepError
+impl core::marker::Sync for alice_physics::molecular_dynamics::MdStepError
+impl core::marker::Unpin for alice_physics::molecular_dynamics::MdStepError
+impl core::marker::UnsafeUnpin for alice_physics::molecular_dynamics::MdStepError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::molecular_dynamics::MdStepError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::molecular_dynamics::MdStepError
 pub struct alice_physics::molecular_dynamics::MdParticipant<P>
 impl<P: alice_physics::pair_potential::PairPotential> alice_physics::molecular_dynamics::MdParticipant<P>
 pub const fn alice_physics::molecular_dynamics::MdParticipant<P>::boltzmann_constant(&self) -> alice_physics::math::Fix128
@@ -8002,6 +8058,7 @@ pub const fn alice_physics::molecular_dynamics::VelocityVerlet<P>::potential(&se
 pub const fn alice_physics::molecular_dynamics::VelocityVerlet<P>::potential_energy(&self) -> alice_physics::math::Fix128
 pub fn alice_physics::molecular_dynamics::VelocityVerlet<P>::step(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::molecular_dynamics::MdError>
 pub fn alice_physics::molecular_dynamics::VelocityVerlet<P>::total_energy(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::molecular_dynamics::VelocityVerlet<P>::try_step(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::molecular_dynamics::MdStepError>
 pub fn alice_physics::molecular_dynamics::VelocityVerlet<P>::velocities(&self) -> &[alice_physics::math::Vec3Fix]
 impl<P: core::clone::Clone> core::clone::Clone for alice_physics::molecular_dynamics::VelocityVerlet<P>
 pub fn alice_physics::molecular_dynamics::VelocityVerlet<P>::clone(&self) -> Self
