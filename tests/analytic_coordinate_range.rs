@@ -1029,29 +1029,7 @@ fn characterization_bvh_candidates_become_all_pairs_beyond_i32() {
     assert!(far == origin, "候補の増加で結果が変わった");
 }
 
-/// characterization: `SpatialGrid::hash` は `x / cell` の積が wrap すると中央の cell に
-/// 落ち、`hi + half` が i64 を越えると **debug では panic、release では端の cell**
-/// になる (profile で挙動が違う唯一の箇所として実測)
 #[test]
-fn characterization_spatial_grid_hash_wraps_and_differs_by_profile() {
-    let z = Fix128::ZERO;
-    let g = SpatialGrid::new(Fix128::from_ratio(1, 4), 16);
-    // 2⁶² · 4 = 2⁶⁴ → 0 ⇒ 原点と同じ cell
-    assert_eq!(g.hash(Vec3Fix::new(pow2(62), z, z)), g.hash(Vec3Fix::ZERO));
-
-    let g1 = SpatialGrid::new(Fix128::ONE, 16);
-    let edge = Vec3Fix::new(Fix128::from_raw(i64::MAX, 0), z, z);
-    let r = std::panic::catch_unwind(|| g1.hash(edge));
-    if cfg!(debug_assertions) {
-        assert!(r.is_err(), "debug で panic しなかった");
-    } else {
-        // wrap して負 → x の cell は 0 (正しくは 15)
-        assert_eq!(r.unwrap() % 16, 0);
-    }
-}
-
-#[test]
-#[ignore = "src gap: WORLD-V1-RANGE SpatialGrid::hash wraps to a wrong cell (and panics in debug) instead of clamping"]
 fn spatial_grid_hash_clamps_to_the_edge_cell() {
     let z = Fix128::ZERO;
     let g = SpatialGrid::new(Fix128::from_ratio(1, 4), 16);
