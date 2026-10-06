@@ -700,6 +700,101 @@ impl SdfCharacter {
     }
 }
 
+// ============================================================================
+// The world's SDF colliders as one field
+// ============================================================================
+
+/// The union of a [`PhysicsWorld`](crate::solver::PhysicsWorld)'s SDF colliders
+/// ([`PhysicsWorld::sdf_colliders`](crate::solver::PhysicsWorld::sdf_colliders))
+/// as one world-space [`SdfField`], returned by
+/// [`PhysicsWorld::sdf_field`](crate::solver::PhysicsWorld::sdf_field).
+///
+/// A world point is queried in each collider's local space through its
+/// [`SdfFrame`](crate::sdf_collider::SdfFrame) (as
+/// [`crate::sdf_collider::collide_point_sdf`] does): the distance is the
+/// minimum over the colliders of `scale · field(local point)`, and the normal
+/// is the nearest collider's local normal rotated to world space (the first
+/// collider in index order on a tie, as [`crate::sdf_collider::SdfUnion`]
+/// takes its first field). With no colliders the distance is `+∞` and the
+/// normal `+Y`.
+///
+/// Colliders are taken as stored: a collider attached to a body follows the
+/// body only after [`crate::sdf_collider::sync_dynamic_sdf_colliders`].
+#[cfg(feature = "std")]
+#[derive(Clone, Copy)]
+pub struct WorldSdfField<'a> {
+    colliders: &'a [crate::sdf_collider::SdfCollider],
+}
+
+#[cfg(feature = "std")]
+impl WorldSdfField<'_> {
+    /// The nearest collider at a world point and its world distance.
+    fn nearest(&self, x: f32, y: f32, z: f32) -> Option<(usize, (f32, f32, f32), f32)> {
+        let p = crate::math::Vec3Fix::from_f32(x, y, z);
+        let mut best: Option<(usize, (f32, f32, f32), f32)> = None;
+        for (i, c) in self.colliders.iter().enumerate() {
+            let (lx, ly, lz) = c.world_to_local(p);
+            let d = c.field.distance(lx, ly, lz) * c.frame().scale_f32();
+            if best.is_none_or(|(_, _, b)| d < b) {
+                best = Some((i, (lx, ly, lz), d));
+            }
+        }
+        best
+    }
+}
+
+#[cfg(feature = "std")]
+impl SdfField for WorldSdfField<'_> {
+    fn distance(&self, x: f32, y: f32, z: f32) -> f32 {
+        self.nearest(x, y, z).map_or(f32::INFINITY, |(_, _, d)| d)
+    }
+
+    fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+        self.distance_and_normal(x, y, z).1
+    }
+
+    fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) {
+        match self.nearest(x, y, z) {
+            Some((i, (lx, ly, lz), d)) => {
+                let c = &self.colliders[i];
+                let (nx, ny, nz) = c.field.normal(lx, ly, lz);
+                (d, c.local_normal_to_world(nx, ny, nz).to_f32())
+            }
+            None => (f32::INFINITY, (0.0, 1.0, 0.0)),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl crate::solver::PhysicsWorld {
+    /// The world's SDF colliders as one field ([`WorldSdfField`]), for any
+    /// [`SdfCharacter`] query: [`SdfCharacter::move_and_slide`],
+    /// [`SdfCharacter::step_on_sphere`], [`SdfCharacter::ground_contact`], ….
+    #[must_use]
+    pub fn sdf_field(&self) -> WorldSdfField<'_> {
+        WorldSdfField {
+            colliders: &self.sdf_colliders,
+        }
+    }
+
+    /// Advance `ch` one frame against the world's SDF colliders:
+    /// [`SdfCharacter::step`] on [`PhysicsWorld::sdf_field`](crate::solver::PhysicsWorld::sdf_field),
+    /// with the same arguments and result. `dt` is passed through unchanged, as
+    /// [`SdfCharacter::step`] takes it (`dt = 0` moves by `control` only).
+    ///
+    /// The character sees only the SDF colliders, not bodies or static
+    /// colliders; for a capsule against everything the world collides with see
+    /// [`PhysicsWorld::move_character`](crate::solver::PhysicsWorld::move_character).
+    pub fn move_sdf_character(
+        &self,
+        ch: &mut SdfCharacter,
+        dt: f32,
+        control: [f32; 3],
+    ) -> MoveOutcome {
+        ch.step(&self.sdf_field(), dt, control)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
