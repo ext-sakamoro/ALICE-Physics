@@ -389,13 +389,15 @@ fn zscore_welford_mean_10_variance_0_8_by_hand() {
 #[test]
 fn zscore_degenerate_empty_single_constant_and_reset_replay() {
     let mut d = ZScoreDetector::new(3.0);
-    // oracle: empty → variance 0, σ 0, mean 0; z(0) = 0, z(x ≠ 0) = +∞; no verdict
+    // oracle: empty → variance 0, σ 0, mean 0; below the three-sample warm-up
+    // every z is 0, matching the verdict (AUD-A-S4W1-017; this test used to pin
+    // z(x ≠ 0) = +∞ with no observation)
     assert_eq!(d.variance().to_bits(), 0.0_f64.to_bits());
     assert_eq!(d.std_dev().to_bits(), 0.0_f64.to_bits());
     assert_eq!(d.mean().to_bits(), 0.0_f64.to_bits());
     assert_eq!(d.z_score(0.0), 0.0);
-    assert_eq!(d.z_score(1.0), f64::INFINITY);
-    assert_eq!(d.z_score(-1.0), f64::INFINITY, "σ = 0 rule is unsigned");
+    assert_eq!(d.z_score(1.0), 0.0);
+    assert_eq!(d.z_score(-1.0), 0.0);
     assert!(!d.is_anomaly(1.0));
     // oracle: one sample → mean is the sample, variance 0 (count < 2)
     d.observe(4.0);
@@ -408,10 +410,11 @@ fn zscore_degenerate_empty_single_constant_and_reset_replay() {
         "two samples: still below the 3-sample gate"
     );
     d.observe(4.0);
-    // oracle: three identical → σ = 0 rule
+    // oracle: three identical → σ = 0 rule (unsigned)
     assert!(!d.is_anomaly(4.0));
     assert!(d.is_anomaly(4.0 + 1e-6));
     assert_eq!(d.z_score(5.0), f64::INFINITY);
+    assert_eq!(d.z_score(3.0), f64::INFINITY, "σ = 0 rule is unsigned");
     assert_eq!(d.z_score(4.0), 0.0);
     // a non-flat tail so that reset has a non-zero m2 to forget
     d.observe(100.0);
@@ -743,16 +746,21 @@ fn extreme_magnitudes_overflow_to_inf_then_nan_without_panic() {
     assert!(r.is_ok(), "Welford on ±MAX must not panic");
 
     // oracle: EWMA deviation = −MAX − MAX = −∞ → ewma = −∞,
-    // var = (1−α)·((α·(−∞))·(−∞) + 0) = +∞ → σ = +∞; score(0) = ∞/∞ = NaN
+    // var = (1−α)·((α·(−∞))·(−∞) + 0) = +∞ → σ = +∞
     let r = catch_unwind(AssertUnwindSafe(|| {
         let mut e = EwmaDetector::new(0.1, 3.0);
         e.observe(f64::MAX);
         e.observe(-f64::MAX);
         assert_eq!(e.ewma(), f64::NEG_INFINITY);
         assert_eq!(e.std_dev(), f64::INFINITY);
-        assert!(e.anomaly_score(0.0).is_nan());
+        // two samples: still in the warm-up, score 0 like the verdict
+        assert_eq!(e.anomaly_score(0.0), 0.0);
         e.observe(0.0);
         assert!(e.ewma().is_nan(), "−∞ + α·(+∞) = NaN");
+        assert!(
+            e.anomaly_score(0.0).is_nan(),
+            "past the warm-up the NaN shows"
+        );
         assert!(!e.is_anomaly(0.0), "NaN statistics → verdict false");
     }));
     assert!(r.is_ok(), "EWMA on ±MAX must not panic");
