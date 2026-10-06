@@ -30,7 +30,7 @@
 //! | `Vec3Fix::checked_length_scaled` / `try_normalize_scaled` | 長さ `< 2⁶³` / 全域 | `None` (範囲内は `length` / `try_normalize` と bit 一致) |
 //! | `Vec3Fix::cross` | 各積 `< 2⁶²` | wrap |
 //! | `QuatFix::rotate_vec` (単位 q) | `\|v\| ≤ 2⁶²` で wrap しない | 絶対誤差が `\|v\|` に比例 |
-//! | `Mat3Fix::inverse` | `2⁻⁶³ < \|det\| < 2⁶³` | 符号反転した逆行列 / `None` |
+//! | `Mat3Fix::inverse` | `2⁻⁶³ < \|det\| < 2⁶³` (余因子・各成分も範囲内) | `None` |
 //! | `Shape::mass_and_inertia` | `ρ·8·L⁵ < 2⁶¹` | 明示の `Err` |
 //! | 剛体の位置積分 | `\|x\| < 2⁶³` | wrap、overflow flag は立たない |
 //! | 角速度の積分 | `\|ω\| < 2³¹·⁵` | 回転が止まり ω が 0 に消える |
@@ -363,21 +363,21 @@ fn characterization_rotate_vec_absolute_error_scales_with_magnitude() {
     assert!(big > 1e-7 && big < 1e-3, "|v|=2³¹: {big}");
 }
 
-/// characterization: `Mat3Fix::inverse` は `|det|` が `2⁶³` 以上でも `2⁻⁶³` 以下でも
-/// `Some` で **符号の反転した** 逆行列を返し、その外側では `None`
+/// `Mat3Fix::inverse` は `|det|` が `2⁶³` 以上でも `2⁻⁶³` 以下でも `None`
+/// (以前は境界の直後で符号の反転した逆行列を `Some` で返していた)
 ///
 /// 対角 `s` の 3×3 なら `det = s³` ⇒ 正しい範囲は `2⁻²¹ < s < 2²¹`
 #[test]
-fn characterization_mat3_inverse_sign_flips_outside_the_det_range() {
+fn mat3_inverse_is_none_outside_the_det_range() {
     let d = |f: Fix128| Mat3Fix::diagonal(f, f, f);
     let small = |n: u32| Fix128::from_raw(0, 1u64 << (64 - n));
     // 範囲内
     assert_eq!(d(pow2(20)).inverse().unwrap().col0.x, small(20));
     assert_eq!(d(small(20)).inverse().unwrap().col0.x, pow2(20));
-    // det = 2⁶³ が -2⁶³ に wrap ⇒ 逆行列が負
-    assert_eq!(d(pow2(21)).inverse().unwrap().col0.x, -small(21));
-    // 1/det = 2⁶³ が -2⁶³ に wrap ⇒ 逆行列が負
-    assert_eq!(d(small(21)).inverse().unwrap().col0.x, -pow2(21));
+    // det = 2⁶³ は収まらない
+    assert_eq!(d(pow2(21)).inverse(), None);
+    // 1/det = 2⁶³ は収まらない
+    assert_eq!(d(small(21)).inverse(), None);
     // det が 0 に落ちる
     assert_eq!(d(pow2(22)).inverse(), None);
     assert_eq!(d(small(22)).inverse(), None);
