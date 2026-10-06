@@ -7110,6 +7110,7 @@ pub fn alice_physics::math::Fix128::sqrt(self) -> Self
 pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
+pub fn alice_physics::math::Fix128::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
@@ -7258,6 +7259,11 @@ pub const alice_physics::math::Vec3Fix::UNIT_X: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Y: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Z: Self
 pub const alice_physics::math::Vec3Fix::ZERO: Self
+pub fn alice_physics::math::Vec3Fix::checked_dot(self, Self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length_squared(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_normalize(self) -> core::option::Option<Self>
 pub fn alice_physics::math::Vec3Fix::cross(self, Self) -> Self
 pub fn alice_physics::math::Vec3Fix::dot(self, Self) -> alice_physics::math::Fix128
 pub fn alice_physics::math::Vec3Fix::dot_simd(self, Self) -> alice_physics::math::Fix128
@@ -7272,6 +7278,7 @@ pub fn alice_physics::math::Vec3Fix::normalize_with_length(self) -> (Self, alice
 pub fn alice_physics::math::Vec3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
+pub fn alice_physics::math::Vec3Fix::try_normalize_scaled(self) -> core::option::Option<Self>
 impl alice_physics::math::Vec3Fix
 pub fn alice_physics::math::Vec3Fix::checked_scale(self, alice_physics::math::Fix128) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Vec3Fix
@@ -11298,6 +11305,7 @@ pub fn alice_physics::math::Fix128::sqrt(self) -> Self
 pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
+pub fn alice_physics::math::Fix128::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
@@ -13982,6 +13990,11 @@ pub const alice_physics::math::Vec3Fix::UNIT_X: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Y: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Z: Self
 pub const alice_physics::math::Vec3Fix::ZERO: Self
+pub fn alice_physics::math::Vec3Fix::checked_dot(self, Self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length_squared(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_normalize(self) -> core::option::Option<Self>
 pub fn alice_physics::math::Vec3Fix::cross(self, Self) -> Self
 pub fn alice_physics::math::Vec3Fix::dot(self, Self) -> alice_physics::math::Fix128
 pub fn alice_physics::math::Vec3Fix::dot_simd(self, Self) -> alice_physics::math::Fix128
@@ -13996,6 +14009,7 @@ pub fn alice_physics::math::Vec3Fix::normalize_with_length(self) -> (Self, alice
 pub fn alice_physics::math::Vec3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
+pub fn alice_physics::math::Vec3Fix::try_normalize_scaled(self) -> core::option::Option<Self>
 impl alice_physics::math::Vec3Fix
 pub fn alice_physics::math::Vec3Fix::checked_scale(self, alice_physics::math::Fix128) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Vec3Fix
@@ -22027,6 +22041,7 @@ pub fn alice_physics::math::Fix128::sqrt(self) -> Self
 pub fn alice_physics::math::Fix128::to_f32(self) -> f32
 pub fn alice_physics::math::Fix128::to_f64(self) -> f64
 impl alice_physics::math::Fix128
+pub fn alice_physics::math::Fix128::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_div(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::checked_mul(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Fix128::exp(self) -> Self
@@ -24836,6 +24851,11 @@ pub const alice_physics::math::Vec3Fix::UNIT_X: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Y: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Z: Self
 pub const alice_physics::math::Vec3Fix::ZERO: Self
+pub fn alice_physics::math::Vec3Fix::checked_dot(self, Self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_length_squared(self) -> core::option::Option<alice_physics::math::Fix128>
+pub fn alice_physics::math::Vec3Fix::checked_normalize(self) -> core::option::Option<Self>
 pub fn alice_physics::math::Vec3Fix::cross(self, Self) -> Self
 pub fn alice_physics::math::Vec3Fix::dot(self, Self) -> alice_physics::math::Fix128
 pub fn alice_physics::math::Vec3Fix::dot_simd(self, Self) -> alice_physics::math::Fix128
@@ -24850,6 +24870,7 @@ pub fn alice_physics::math::Vec3Fix::normalize_with_length(self) -> (Self, alice
 pub fn alice_physics::math::Vec3Fix::scale(self, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::Vec3Fix::to_f32(self) -> (f32, f32, f32)
 pub fn alice_physics::math::Vec3Fix::try_normalize(self) -> core::option::Option<Self>
+pub fn alice_physics::math::Vec3Fix::try_normalize_scaled(self) -> core::option::Option<Self>
 impl alice_physics::math::Vec3Fix
 pub fn alice_physics::math::Vec3Fix::checked_scale(self, alice_physics::math::Fix128) -> core::option::Option<Self>
 impl core::clone::Clone for alice_physics::math::Vec3Fix

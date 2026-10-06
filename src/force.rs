@@ -132,6 +132,48 @@ impl ForceFieldInstance {
     }
 }
 
+/// `ForceField::Point` の `|delta|² ≥ 2⁶³` (距離 ≥ 2³¹·⁵ ≈ 3.04e9) の経路
+///
+/// `r²` を作らずに `(strength / r) / r` で大きさを、2 乗を経ない正規化で向きを
+/// 求める 範囲内の式と bit 一致はしないが、範囲内でこの経路は通らない
+///
+/// 距離そのものが表せない (`r ≥ 2⁶³`) 時は半分の長さで計算して 1/4 にする
+/// (`|F| < 2⁻⁶²` なので結果は 0 か数 ulp)
+fn point_force_beyond_square_range(
+    delta: Vec3Fix,
+    strength: Fix128,
+    repulsive: bool,
+    max_force: Fix128,
+) -> Vec3Fix {
+    let Some(direction) = delta.try_normalize_scaled() else {
+        return Vec3Fix::ZERO;
+    };
+    let force_mag = match delta.checked_length_scaled() {
+        Some(r) => (strength / r) / r,
+        None => {
+            let two = Fix128::from_int(2);
+            let half = Vec3Fix::new(delta.x / two, delta.y / two, delta.z / two);
+            match half.checked_length_scaled() {
+                Some(h) => ((strength / h) / h) / Fix128::from_int(4),
+                // |delta| ≤ √3·2⁶³ なので |delta / 2| < 2⁶³ で、ここには来ない
+                None => Fix128::ZERO,
+            }
+        }
+    };
+    // 範囲外では r² ≥ 2⁶³ > strength / max_force なので、近距離側の下限
+    // (`dist_sq_for_force`) は掛からない 上限の比較は範囲内と同じ
+    let clamped = if force_mag > max_force {
+        max_force
+    } else {
+        force_mag
+    };
+    if repulsive {
+        -direction * clamped
+    } else {
+        direction * clamped
+    }
+}
+
 /// Compute force from a force field on a body at a given position
 #[must_use]
 pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
@@ -148,11 +190,17 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             max_force,
         } => {
             let delta = *center - body.position;
-            let dist_sq = delta.length_squared();
 
             if delta == Vec3Fix::ZERO {
                 return Vec3Fix::ZERO;
             }
+
+            // |delta| ≥ 2^31.5 では `length_squared` が wrap し、力が 0 か上限値に
+            // 飛んでいた 範囲内は従来の式のまま (決定論の固定値と bit 互換)、
+            // 2 乗が範囲外の時だけ 2 乗を経ない式に切り替える
+            let Some(dist_sq) = delta.checked_length_squared() else {
+                return point_force_beyond_square_range(delta, *strength, *repulsive, *max_force);
+            };
 
             // Squaring underflows `dist_sq` to exactly zero once
             // |delta| < ~2.33e-10, even though `delta` itself is not the

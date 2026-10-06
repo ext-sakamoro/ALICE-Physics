@@ -145,6 +145,7 @@ result, rewind, try another. These APIs support that use:
 | `snapshot_world` / `from_world_snapshot` / `restore_world` | save the whole world (bodies, joints, constraints, colliders, force fields, materials, filters, events, sleep state, broad-phase tree, warm-start caches, overflow flag) in one versioned blob with a checksum, and restore it into a new or existing world; every later step is bit-identical to the original's. A bad blob is rejected with a `WorldSnapshotError` that says why |
 | `step_n(n, dt)` | `step(dt)` run `n` times, the same call the Python `step_n` and WASM `stepN` bindings make |
 | `overflow_detected()` | reports when `Fix128` arithmetic left its range, so a diverged run is not mistaken for a valid one; the flag survives a rollback |
+| `Vec3Fix::checked_*` / `checked_length_scaled` / `try_normalize_scaled` | a length or dot product whose square would leave the `Fix128` range (`\|v\| ≥ 2^31.5 ≈ 3.04e9`) returns `None` instead of wrapping; the scaled versions return the correct length and direction there and are bit-identical to `length` / `try_normalize` inside the range |
 | `netcode::SimulationChecksum` | a checksum derived from the same bytes as the saved state |
 
 [`examples/world_auditor_observation.rs`](examples/world_auditor_observation.rs)
