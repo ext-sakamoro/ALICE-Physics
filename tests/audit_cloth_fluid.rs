@@ -259,10 +259,9 @@ fn boundary_accumulates_over_cloth_particles_and_is_order_independent() {
 /// Doc of `apply_cloth_boundary_to_fluid_with_residual`: the return value is
 /// `||dv||_inf over the fluid particles`, i.e. the size of the actual velocity
 /// change. Two cloth particles on opposite sides of a fluid particle give
-/// opposite pushes whose net change is zero, yet the report is the single-pair
-/// magnitude.
+/// opposite pushes whose net change is zero, so the report must be zero too,
+/// not the single-pair magnitude.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-004: boundary residual reports the largest single-pair correction component, not the ||dv||_inf of the net velocity change (opposite pushes: net dv = 0, reported 4.0e0)"]
 fn boundary_residual_is_the_norm_of_the_net_velocity_change() {
     let cp = [
         v(Fix128::ZERO, fx(-1, 8), Fix128::ZERO),
@@ -270,10 +269,13 @@ fn boundary_residual_is_the_norm_of_the_net_velocity_change() {
     ];
     let cn = [Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Y];
     let fp = [Vec3Fix::ZERO];
-    let mut fv = [Vec3Fix::ZERO];
+    // A moving fluid particle: the report is the change, not the velocity
+    let initial = Vec3Fix::from_int(1, 5, 0);
+    let mut fv = [initial];
     let reported =
         apply_cloth_boundary_to_fluid_with_residual(&cp, &cn, &fp, &mut fv, Fix128::from_int(4));
-    let net = fv[0].x.abs().max(fv[0].y.abs()).max(fv[0].z.abs());
+    let dv = fv[0] - initial;
+    let net = dv.x.abs().max(dv.y.abs()).max(dv.z.abs());
     assert_eq!(
         reported,
         net,
@@ -284,9 +286,8 @@ fn boundary_residual_is_the_norm_of_the_net_velocity_change() {
 }
 
 /// Same claim, accumulating case: two same-side pushes of 4 add to 8 in the
-/// velocity but the report is 4.
+/// velocity, so the report must be 8, not the single push of 4.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-004: boundary residual under-reports accumulated pushes (two same-direction pushes of 4: net dv = 8, reported 4)"]
 fn boundary_residual_covers_accumulated_pushes() {
     let cp = [
         v(Fix128::ZERO, fx(-1, 8), Fix128::ZERO),
@@ -298,6 +299,25 @@ fn boundary_residual_covers_accumulated_pushes() {
     let reported =
         apply_cloth_boundary_to_fluid_with_residual(&cp, &cn, &fp, &mut fv, Fix128::from_int(4));
     assert_eq!(reported, fv[0].y.abs());
+}
+
+/// Same claim, norm: `||dv||_inf` is the largest component of the net change,
+/// not its L1 or L2 length. A push along `(3/5, 4/5, 0)` with magnitude 4 gives
+/// `dv = (12/5, 16/5, 0)`: inf-norm 16/5, L2 4, L1 28/5.
+#[test]
+fn boundary_residual_is_the_largest_component_of_the_net_change() {
+    let mut fv = [Vec3Fix::ZERO];
+    let reported = apply_cloth_boundary_to_fluid_with_residual(
+        &[Vec3Fix::ZERO],
+        &[v(fx(3, 5), fx(4, 5), Fix128::ZERO)],
+        &[v(Fix128::ZERO, fx(1, 8), Fix128::ZERO)],
+        &mut fv,
+        Fix128::from_int(4),
+    );
+    let net = fv[0].x.abs().max(fv[0].y.abs()).max(fv[0].z.abs());
+    assert_eq!(reported, net);
+    assert_eq!(net, fv[0].y.abs());
+    assert!(fv[0].x > Fix128::ZERO && fv[0].x < fv[0].y);
 }
 
 /// Doc: surface tension "pulls cloth toward local fluid center". A fluid cloud

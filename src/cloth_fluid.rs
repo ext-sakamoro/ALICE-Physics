@@ -250,7 +250,10 @@ pub fn apply_cloth_boundary_to_fluid(
 /// Apply the cloth-to-fluid boundary repulsion and report its norm.
 ///
 /// Identical in effect to [`apply_cloth_boundary_to_fluid`]; the return value
-/// is `‖Δv‖_∞` over the fluid particles.
+/// is `‖Δv‖_∞` over the fluid particles, where `Δv` is each fluid particle's
+/// **net** velocity change from this call (the sum of the pushes from every
+/// cloth particle in range). Two pushes on the same side add, two from
+/// opposite sides cancel, and the report follows the sum in both cases.
 ///
 /// ⚠️ Unlike the fluid-to-cloth direction, this reports a **velocity
 /// correction rather than a force**, because `repulsion_strength` already
@@ -279,6 +282,7 @@ pub fn apply_cloth_boundary_to_fluid_with_residual(
 
     for fi in 0..fluid_positions.len() {
         let fp = fluid_positions[fi];
+        let before = fluid_velocities[fi];
 
         for ci in 0..cloth_positions.len() {
             let cp = cloth_positions[ci];
@@ -312,12 +316,17 @@ pub fn apply_cloth_boundary_to_fluid_with_residual(
                 // Fluid is on the front side: push away along +normal
                 fluid_velocities[fi] = fluid_velocities[fi] + correction;
             }
+        }
 
-            for component in [correction.x, correction.y, correction.z] {
-                let magnitude = component.abs();
-                if magnitude > interface_correction {
-                    interface_correction = magnitude;
-                }
+        // The report is the net change of this particle's velocity, measured
+        // after every cloth particle has pushed it: pushes from different
+        // cloth particles add (same side) or cancel (opposite sides), and the
+        // residual must see the sum, not the largest single push
+        let dv = fluid_velocities[fi] - before;
+        for component in [dv.x, dv.y, dv.z] {
+            let magnitude = component.abs();
+            if magnitude > interface_correction {
+                interface_correction = magnitude;
             }
         }
     }

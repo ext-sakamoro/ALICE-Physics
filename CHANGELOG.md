@@ -338,6 +338,7 @@ were introduced during that release window.
 - `physics2d::Joint2D::Mouse` が `damping` を読んでいなかった (spring-damper として解き、`max_force` で clamp する)
 - `physics2d::Joint2D::Distance` の乗数が反復間で累積されず、`iterations` を増やすほど剛性が上がっていた
 - `cloth_fluid` の陽解法の drag が過補正して速度が反転していた (AUD-A-S2W2-003)
+- `cloth_fluid::apply_cloth_boundary_to_fluid_with_residual` の戻り値が 1 組ごとの押し出しの最大成分で、doc の `‖Δv‖_∞` (流体粒子ごとの正味の速度変化) になっていなかった 同じ側からの押し出しは足されず、逆側からの押し出しは打ち消されなかった 適用する速度の更新は変えていない (AUD-A-S2W2-004)
 - `laminate_failure` が強度 0 以下の ply に対して全 criterion で FI = 0 / Safe を返していた (AUD-A-S4W2-003)
 - `print_pipeline_solver` で熱応力と bimaterial の not safe が `PrintSafetyReport::is_safe` に反映されていなかった (AUD-A-S5W1-007)
 - `SolverBackend::Tgs` の warm-start キャッシュが接触と距離拘束を vector 内の位置で引いていたため、接触の増減・`PhysicsWorld::remove_body`・`distance_constraints` の途中削除の後に別の接触・拘束の撃力で warm start していた 鍵を body ごとの安定 ID (削除を跨いで不変) と同じ対の中の序数に変更し、接触は安定 ID の小さい body から大きい body へ向きを揃える
