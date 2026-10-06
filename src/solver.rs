@@ -3847,8 +3847,11 @@ impl PhysicsWorld {
                     self.tgs_project_joints(&mut tgs_bodies, &jointed, sub_dt);
                 }
                 if with_participants {
-                    // Copy back every substep so the end-of-substep checks see
-                    // this substep's bodies.
+                    // Keep `self.bodies` in step with the TGS state after every
+                    // substep. The end-of-substep check reads only the
+                    // overflow flag, not the bodies; the next substep copies
+                    // the bodies out again before its participants run, and
+                    // the loop end copies them once more.
                     for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
                         tgs_to_body(state, body);
                     }
@@ -5158,8 +5161,11 @@ impl PhysicsWorld {
     ) {
         // The checks of `try_step` (a recorded fault, a non-positive `dt`, a
         // participant step rule or a per-body field that does not fit): when
-        // one fails nothing runs, as `step` does.
-        if !matches!(self.check_step(dt), Ok(true)) {
+        // one fails nothing runs, as `step` does. This path runs the XPBD
+        // substep loop whatever the backend, so the step rules are checked
+        // against the width it hands out, `dt / substeps`.
+        let h = Self::divided_substep_width(dt, self.config.substeps);
+        if !matches!(self.check_step(dt, h), Ok(true)) {
             return;
         }
         let mut frozen = self.participant_flags();

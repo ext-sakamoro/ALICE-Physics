@@ -490,7 +490,8 @@ pub enum StepError {
     /// its forces of that substep were dropped); the fault is now recorded.
     FaultRaised(WorldFault),
     /// The participant at `index` has a [`StepRule::Fixed`] step that does not
-    /// divide this frame's substep width (`dt / substeps`, or under
+    /// divide this frame's substep width, the one the running path hands its
+    /// participants (`dt / substeps`, or on `PhysicsWorld::try_step` under
     /// `SolverBackend::Tgs` the width its solve uses); nothing ran. The step is
     /// only known when the world steps, so the check runs at the start of
     /// every step rather than at registration.
