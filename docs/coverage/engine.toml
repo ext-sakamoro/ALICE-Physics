@@ -531,10 +531,10 @@ id = "COV-ENGINE-047"
 axis = "world"
 item = "render interpolation of orientations (slerp at constant angular velocity)"
 source = "Shoemake 1985, Animating Rotation with Quaternion Curves; Unity Rigidbody interpolation"
-status = "partial"
-evidence = "src/interpolation.rs::slerp / tests/audit_interpolation.rs::slerp_takes_the_short_way_for_negative_dot / known defect: tests/audit_interpolation.rs::slerp_has_constant_angular_velocity"
+status = "implemented+oracle"
+evidence = "src/interpolation.rs::slerp tests/audit_interpolation.rs::slerp_has_constant_angular_velocity tests/audit_interpolation.rs::slerp_sweeps_t_times_the_arc tests/audit_interpolation.rs::slerp_takes_the_short_way_for_negative_dot"
 oracle_candidate = ""
-limitation = "src/interpolation.rs::slerp 'Uses NLERP (normalized linear interpolation) which is deterministic'"
+limitation = ""
 
 [[item]]
 id = "COV-ENGINE-048"
