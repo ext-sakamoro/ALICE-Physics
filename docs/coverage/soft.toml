@@ -579,10 +579,10 @@ limitation = ""
 [[item]]
 id = "COV-SOFT-053"
 axis = "collision"
-item = "tangential friction against colliders (per-contact velocity retention 1 - μ)"
+item = "tangential friction against colliders (Coulomb, |Δv_t| <= μ|Δv_n|)"
 source = "Bridson et al. 2002 §7"
 status = "implemented+oracle"
-evidence = "src/rope.rs::resolve_sdf_collisions tests/audit_rope.rs::inbound_contact_scales_normal_by_minus_tenth_and_tangent_by_one_minus_mu known defect: tests/audit_rope.rs::tangential_loss_per_frame_is_independent_of_the_substep_count 布 src/cloth.rs::resolve_sdf_collisions と軟体も同じ形"
+evidence = "src/rope.rs::resolve_sdf_collisions tests/audit_rope.rs::inbound_contact_scales_normal_by_minus_tenth_and_applies_coulomb_friction tests/audit_rope.rs::tangential_loss_per_frame_is_independent_of_the_substep_count tests/audit_rope.rs::coulomb_friction_stops_at_zero_tangential_speed 布 src/cloth.rs::resolve_sdf_collisions と軟体も同じ形"
 oracle_candidate = ""
 limitation = ""
 
