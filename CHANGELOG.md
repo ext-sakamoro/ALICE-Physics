@@ -296,6 +296,7 @@ were introduced during that release window.
 - **Behavior change:** 形状 (shape / compound) を持つ body と形状を持たない球 body の接触は、形状と球の GJK/EPA で判定する (従来は形状の外接球どうしで判定していた) `PhysicsWorld::colliders_overlap` も同じ規則になる 形状を持つ body の broad-phase の箱は形状の閉形式の world box (外接球の立方体との共通部分) になり、候補 pair が減る (箱 0.4×0.3×0.5 と球 r=0.5 の 150 body で厳密な箱重なり 219 → 173) 休止中の static body は回転が変わると箱を作り直す `PhysicsWorld::raycast` は従来どおり外接球との交差 (形状に当てるのは `cast_ray`)
 - **Behavior change:** 慣性が等方でない自由な 3D 剛体の回転を、保存型の Strang 分割 (Dullweber–Leimkuhler–McLachlan 1997) で積分する (XPBD / `step_parallel` / TGS) 世界座標の角運動量が丸め誤差の水準で保存され、エネルギー誤差は 2 次でずれが溜まらない 等方的な body と、ジャイロ項の対象外の body は従来と bit 一致
 - **Behavior change:** XPBD の角速度を、弦の近似でなく正確な回転の対数から求める 何も作用しない回転が減速せず、結果が substep 数に依らない
+- **Behavior change:** `motor::apply_motors` が `Joint::Hinge` を、中心間距離でなく hinge 軸まわりの twist で駆動する (`ArticulatedBody` と同じ規約、これまで呼び出し元は無かった)
 - 形状を持つ body の上に置いた球が外接球の上でなく形状の面に乗る (箱の上面 + 半径で静止、従来は外接球の内側から押し出されて飛ばされることがあった)
 - SDF の押し出し (`step` 系と停留判定) が、body をその body 自身に付いた SDF collider から押し出していた (`sdf_contacts` / `detect_sdf_contacts` / `sdf_ccd_hits` は既に自身を除外していた) 自身の SDF は除外する
 - `SdfCollider::new_dynamic` で作った SDF collider が body に追従するようになった: `PhysicsWorld::step` / `step_parallel` / TGS backend / `step_with_bridge` は SDF の押し出しの直前と step の終わりに body の姿勢 (位置と回転) を collider に写し、`add_sdf_collider` は追加時に写す これまで collider は作成時の姿勢 (原点・無回転) のまま押し出していた body に付いた SDF collider がある間は sleep skip で body を停留させない 静的 collider だけの world の結果は従来と bit 一致
