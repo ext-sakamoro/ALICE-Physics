@@ -2877,6 +2877,33 @@ impl core::marker::Unpin for alice_physics::crowd_force::NeighborSearch
 impl core::marker::UnsafeUnpin for alice_physics::crowd_force::NeighborSearch
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::NeighborSearch
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::NeighborSearch
+pub struct alice_physics::crowd_force::CrowdParticipant
+impl alice_physics::crowd_force::CrowdParticipant
+pub const fn alice_physics::crowd_force::CrowdParticipant::model(&self) -> &alice_physics::crowd_force::SocialForce
+pub fn alice_physics::crowd_force::CrowdParticipant::new(alice_physics::crowd_force::SocialForce, alloc::vec::Vec<alice_physics::crowd_force::Pedestrian>, alloc::vec::Vec<alice_physics::crowd_force::WallSegment>, alice_physics::crowd_force::NeighborSearch, core::option::Option<alice_physics::math::Fix128>) -> core::result::Result<Self, alice_physics::crowd_force::CrowdForceError>
+pub fn alice_physics::crowd_force::CrowdParticipant::pedestrians(&self) -> &[alice_physics::crowd_force::Pedestrian]
+pub fn alice_physics::crowd_force::CrowdParticipant::pedestrians_mut(&mut self) -> &mut [alice_physics::crowd_force::Pedestrian]
+pub fn alice_physics::crowd_force::CrowdParticipant::walls(&self) -> &[alice_physics::crowd_force::WallSegment]
+impl alice_physics::world_participant::Participant for alice_physics::crowd_force::CrowdParticipant
+pub fn alice_physics::crowd_force::CrowdParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::crowd_force::CrowdParticipant::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::crowd_force::CrowdParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::crowd_force::CrowdParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::crowd_force::CrowdParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::crowd_force::CrowdParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::crowd_force::CrowdParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::crowd_force::CrowdParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics::crowd_force::CrowdParticipant
+pub fn alice_physics::crowd_force::CrowdParticipant::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::crowd_force::CrowdParticipant
+pub fn alice_physics::crowd_force::CrowdParticipant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::crowd_force::CrowdParticipant
+impl core::marker::Send for alice_physics::crowd_force::CrowdParticipant
+impl core::marker::Sync for alice_physics::crowd_force::CrowdParticipant
+impl core::marker::Unpin for alice_physics::crowd_force::CrowdParticipant
+impl core::marker::UnsafeUnpin for alice_physics::crowd_force::CrowdParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::CrowdParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::CrowdParticipant
 pub struct alice_physics::crowd_force::InteractionParams
 pub alice_physics::crowd_force::InteractionParams::body_stiffness: alice_physics::math::Fix128
 pub alice_physics::crowd_force::InteractionParams::range_m: alice_physics::math::Fix128
@@ -2966,6 +2993,9 @@ impl core::marker::Unpin for alice_physics::crowd_force::WallSegment
 impl core::marker::UnsafeUnpin for alice_physics::crowd_force::WallSegment
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::crowd_force::WallSegment
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::crowd_force::WallSegment
+pub const alice_physics::crowd_force::CROWD_OBS_COUNT: u32
+pub const alice_physics::crowd_force::CROWD_OBS_MEAN_SPEED: u32
+pub const alice_physics::crowd_force::CROWD_PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
 pub mod alice_physics::cubic_elastic_fem
 #[non_exhaustive] pub struct alice_physics::cubic_elastic_fem::AdaptiveCubicSolution
 pub alice_physics::cubic_elastic_fem::AdaptiveCubicSolution::field: alice_physics::linear_elastic_fem::FemSolution
@@ -7892,6 +7922,31 @@ impl core::marker::Unpin for alice_physics::molecular_dynamics::MdError
 impl core::marker::UnsafeUnpin for alice_physics::molecular_dynamics::MdError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::molecular_dynamics::MdError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::molecular_dynamics::MdError
+pub struct alice_physics::molecular_dynamics::MdParticipant<P>
+impl<P: alice_physics::pair_potential::PairPotential> alice_physics::molecular_dynamics::MdParticipant<P>
+pub const fn alice_physics::molecular_dynamics::MdParticipant<P>::boltzmann_constant(&self) -> alice_physics::math::Fix128
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::new(alice_physics::molecular_dynamics::VelocityVerlet<P>, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::molecular_dynamics::MdError>
+pub const fn alice_physics::molecular_dynamics::MdParticipant<P>::system(&self) -> &alice_physics::molecular_dynamics::VelocityVerlet<P>
+impl<P: alice_physics::pair_potential::PairPotential + core::marker::Send> alice_physics::world_participant::Participant for alice_physics::molecular_dynamics::MdParticipant<P>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::read_state(&mut self, &[u8])
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl<P: core::clone::Clone> core::clone::Clone for alice_physics::molecular_dynamics::MdParticipant<P>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::clone(&self) -> Self
+impl<P: core::fmt::Debug> core::fmt::Debug for alice_physics::molecular_dynamics::MdParticipant<P>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<P> core::marker::Freeze for alice_physics::molecular_dynamics::MdParticipant<P> where alice_physics::molecular_dynamics::VelocityVerlet<P>: core::marker::Freeze
+impl<P> core::marker::Send for alice_physics::molecular_dynamics::MdParticipant<P> where alice_physics::molecular_dynamics::VelocityVerlet<P>: core::marker::Send
+impl<P> core::marker::Sync for alice_physics::molecular_dynamics::MdParticipant<P> where alice_physics::molecular_dynamics::VelocityVerlet<P>: core::marker::Sync
+impl<P> core::marker::Unpin for alice_physics::molecular_dynamics::MdParticipant<P> where alice_physics::molecular_dynamics::VelocityVerlet<P>: core::marker::Unpin
+impl<P> core::marker::UnsafeUnpin for alice_physics::molecular_dynamics::MdParticipant<P> where alice_physics::molecular_dynamics::VelocityVerlet<P>: core::marker::UnsafeUnpin
+impl<P> core::panic::unwind_safe::RefUnwindSafe for alice_physics::molecular_dynamics::MdParticipant<P> where alice_physics::molecular_dynamics::VelocityVerlet<P>: core::panic::unwind_safe::RefUnwindSafe
+impl<P> core::panic::unwind_safe::UnwindSafe for alice_physics::molecular_dynamics::MdParticipant<P> where alice_physics::molecular_dynamics::VelocityVerlet<P>: core::panic::unwind_safe::UnwindSafe
 pub struct alice_physics::molecular_dynamics::PairForces
 pub alice_physics::molecular_dynamics::PairForces::forces: alloc::vec::Vec<alice_physics::math::Vec3Fix>
 pub alice_physics::molecular_dynamics::PairForces::potential_energy: alice_physics::math::Fix128
@@ -7959,6 +8014,11 @@ impl<P> core::marker::Unpin for alice_physics::molecular_dynamics::VelocityVerle
 impl<P> core::marker::UnsafeUnpin for alice_physics::molecular_dynamics::VelocityVerlet<P> where alice_physics::pair_potential::Truncated<P>: core::marker::UnsafeUnpin
 impl<P> core::panic::unwind_safe::RefUnwindSafe for alice_physics::molecular_dynamics::VelocityVerlet<P> where alice_physics::pair_potential::Truncated<P>: core::panic::unwind_safe::RefUnwindSafe
 impl<P> core::panic::unwind_safe::UnwindSafe for alice_physics::molecular_dynamics::VelocityVerlet<P> where alice_physics::pair_potential::Truncated<P>: core::panic::unwind_safe::UnwindSafe
+pub const alice_physics::molecular_dynamics::MD_OBS_KINETIC: u32
+pub const alice_physics::molecular_dynamics::MD_OBS_POTENTIAL: u32
+pub const alice_physics::molecular_dynamics::MD_OBS_TEMPERATURE: u32
+pub const alice_physics::molecular_dynamics::MD_OBS_TOTAL: u32
+pub const alice_physics::molecular_dynamics::MD_PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
 pub fn alice_physics::molecular_dynamics::pair_forces_all_pairs<P: alice_physics::pair_potential::PairPotential>(&alice_physics::pair_potential::Truncated<P>, &alice_physics::molecular_dynamics::PeriodicBox, &[alice_physics::math::Vec3Fix]) -> core::result::Result<alice_physics::molecular_dynamics::PairForces, alice_physics::molecular_dynamics::MdError>
 pub fn alice_physics::molecular_dynamics::pair_forces_cell_list<P: alice_physics::pair_potential::PairPotential>(&alice_physics::pair_potential::Truncated<P>, &alice_physics::molecular_dynamics::PeriodicBox, &[alice_physics::math::Vec3Fix]) -> core::result::Result<alice_physics::molecular_dynamics::PairForces, alice_physics::molecular_dynamics::MdError>
 pub mod alice_physics::motor
@@ -20163,6 +20223,15 @@ pub fn alice_physics::world_participant::Participant::read_state(&mut self, &[u8
 pub fn alice_physics::world_participant::Participant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::world_participant::Participant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::world_participant::Participant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::crowd_force::CrowdParticipant
+pub fn alice_physics::crowd_force::CrowdParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::crowd_force::CrowdParticipant::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::crowd_force::CrowdParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::crowd_force::CrowdParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::crowd_force::CrowdParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::crowd_force::CrowdParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::crowd_force::CrowdParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::crowd_force::CrowdParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics::world_participant::Participant for alice_physics::erosion::ErosionModifier
 pub fn alice_physics::erosion::ErosionModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
 pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
@@ -20208,6 +20277,15 @@ pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
 pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl<P: alice_physics::pair_potential::PairPotential + core::marker::Send> alice_physics::world_participant::Participant for alice_physics::molecular_dynamics::MdParticipant<P>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::read_state(&mut self, &[u8])
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::write_state(&self, &mut alloc::vec::Vec<u8>)
 pub fn alice_physics::world_participant::check_field_ports(&alice_physics::world_participant::FieldBoard, &[&[alice_physics::world_participant::Port]]) -> core::result::Result<(), alice_physics::world_participant::FieldPortError>
 pub fn alice_physics::world_participant::deposit_bodies(&[alice_physics::solver::RigidBody], &[alice_physics::math::Fix128], &alice_physics::world_participant::FieldLayout) -> core::result::Result<alloc::vec::Vec<alice_physics::math::Fix128>, alice_physics::world_participant::RemapError>
 pub fn alice_physics::world_participant::execution_order(&[&[alice_physics::world_participant::Port]]) -> core::result::Result<alloc::vec::Vec<usize>, alice_physics::world_participant::OrderError>

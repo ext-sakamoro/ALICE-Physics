@@ -15,13 +15,13 @@ crate has today.
 | `docs/coverage/couple.toml` | 123 | 10 | 3 | 4 | 106 | 0 |
 | `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
 | `docs/coverage/engine.toml` | 153 | 64 | 10 | 7 | 72 | 0 |
-| `docs/coverage/env.toml` | 152 | 20 | 3 | 2 | 127 | 0 |
+| `docs/coverage/env.toml` | 152 | 21 | 2 | 2 | 127 | 0 |
 | `docs/coverage/fem.toml` | 137 | 36 | 0 | 6 | 92 | 3 |
 | `docs/coverage/fract.toml` | 112 | 15 | 2 | 4 | 91 | 0 |
 | `docs/coverage/geo.toml` | 125 | 0 | 2 | 0 | 123 | 0 |
 | `docs/coverage/geotech.toml` | 89 | 0 | 2 | 0 | 87 | 0 |
 | `docs/coverage/mat.toml` | 146 | 23 | 13 | 5 | 105 | 0 |
-| `docs/coverage/mbd.toml` | 161 | 36 | 2 | 13 | 110 | 0 |
+| `docs/coverage/mbd.toml` | 161 | 37 | 2 | 12 | 110 | 0 |
 | `docs/coverage/mfg.toml` | 45 | 0 | 0 | 0 | 45 | 0 |
 | `docs/coverage/multiphase.toml` | 92 | 11 | 2 | 3 | 76 | 0 |
 | `docs/coverage/nonlin.toml` | 96 | 1 | 2 | 0 | 93 | 0 |
@@ -31,7 +31,7 @@ crate has today.
 | `docs/coverage/optics.toml` | 121 | 0 | 0 | 0 | 121 | 0 |
 | `docs/coverage/orbit.toml` | 138 | 23 | 4 | 3 | 108 | 0 |
 | `docs/coverage/part.toml` | 122 | 26 | 2 | 3 | 91 | 0 |
-| `docs/coverage/plasma.toml` | 156 | 0 | 4 | 0 | 152 | 0 |
+| `docs/coverage/plasma.toml` | 156 | 3 | 1 | 0 | 152 | 0 |
 | `docs/coverage/quantum.toml` | 169 | 0 | 0 | 0 | 169 | 0 |
 | `docs/coverage/rel.toml` | 112 | 0 | 0 | 0 | 112 | 0 |
 | `docs/coverage/rigid.toml` | 121 | 78 | 4 | 7 | 31 | 1 |
@@ -41,7 +41,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4292 | 573 | 83 | 106 | 3524 | 6 |
+| **total** | 4292 | 578 | 79 | 105 | 3524 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -220,7 +220,7 @@ crate has today.
 | aerodynamics | 14 | 5 | 0 | 0 | 9 | 0 |
 | atmosphere | 13 | 4 | 1 | 0 | 8 | 0 |
 | atmospheric-dynamics | 5 | 0 | 0 | 0 | 5 | 0 |
-| benchmark | 14 | 3 | 1 | 0 | 10 | 0 |
+| benchmark | 14 | 4 | 0 | 0 | 10 | 0 |
 | boundary-layer | 6 | 0 | 0 | 0 | 6 | 0 |
 | cryosphere | 21 | 0 | 0 | 0 | 21 | 0 |
 | environmental-load | 5 | 0 | 0 | 1 | 4 | 0 |
@@ -331,7 +331,7 @@ crate has today.
 | aero-road | 8 | 2 | 0 | 3 | 3 | 0 |
 | benchmark | 14 | 3 | 0 | 1 | 10 | 0 |
 | brakes | 7 | 2 | 1 | 0 | 4 | 0 |
-| character | 12 | 7 | 0 | 2 | 3 | 0 |
+| character | 12 | 8 | 0 | 1 | 3 | 0 |
 | formulation | 9 | 0 | 0 | 0 | 9 | 0 |
 | mechanism | 6 | 1 | 1 | 0 | 4 | 0 |
 | powertrain | 17 | 6 | 0 | 0 | 11 | 0 |
@@ -514,7 +514,7 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| benchmark | 20 | 0 | 2 | 0 | 18 | 0 |
+| benchmark | 20 | 2 | 0 | 0 | 18 | 0 |
 | equilibrium-stability | 9 | 0 | 0 | 0 | 9 | 0 |
 | fluid | 14 | 0 | 0 | 0 | 14 | 0 |
 | fusion | 6 | 0 | 0 | 0 | 6 | 0 |
@@ -525,7 +525,7 @@ crate has today.
 | particle-in-cell | 19 | 0 | 0 | 0 | 19 | 0 |
 | propulsion | 3 | 0 | 0 | 0 | 3 | 0 |
 | reconnection | 5 | 0 | 0 | 0 | 5 | 0 |
-| single-particle | 9 | 0 | 1 | 0 | 8 | 0 |
+| single-particle | 9 | 1 | 0 | 0 | 8 | 0 |
 | space | 5 | 0 | 0 | 0 | 5 | 0 |
 | strongly-coupled | 2 | 0 | 1 | 0 | 1 | 0 |
 | waves | 13 | 0 | 0 | 0 | 13 | 0 |

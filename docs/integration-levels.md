@@ -49,7 +49,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `shape_raycast` | binding | 0 / 0 / 24 / 10 / 0 | C ABI, Python, WebAssembly |
-| `world_shape_query` | binding | 0 / 0 / 4 / 1 / 0 | C ABI, Python, WebAssembly |
+| `world_shape_query` | binding | 0 / 0 / 4 / 3 / 0 | C ABI, Python, WebAssembly |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `aeroelasticity` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `analytics_bridge` | standalone | 0 / 0 / 0 / 14 / 0 | — |
@@ -87,7 +87,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `deformable` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `erosion` | standalone | 0 / 0 / 0 / 9 / 0 | — |
+| `erosion` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `euler_fv` | standalone | 0 / 0 / 0 / 32 / 0 | — |
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 131 / 0 | — |
 | `fatigue` | standalone | 0 / 0 / 0 / 14 / 0 | — |
@@ -97,7 +97,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `flow_viz` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `fluid` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `fluid_netcode` | standalone | 0 / 0 / 0 / 10 / 0 | — |
-| `fracture` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `fracture` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `fsi_advanced` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `gpu_bridge` | standalone (step 1 of 3 items) | 1 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `gpu_sdf` | standalone (step 2 of 23 items) | 2 / 0 / 0 / 21 / 0 | C ABI, Python, WebAssembly |
@@ -129,12 +129,12 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `non_newtonian` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `pair_potential` | standalone | 0 / 0 / 0 / 23 / 0 | — |
 | `particle` | standalone | 0 / 0 / 0 / 13 / 0 | — |
-| `phase_change` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `phase_change` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `physics2d` | standalone | 0 / 0 / 0 / 39 / 0 | — |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `plastic` | standalone | 0 / 0 / 0 / 12 / 1 | — |
-| `pressure` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `pressure` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `prestressed` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `print_orientation` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `print_pipeline_solver` | standalone | 0 / 0 / 0 / 4 / 0 | — |
@@ -162,7 +162,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `sensors` | standalone | 0 / 0 / 0 / 30 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
-| `sim_modifier` | standalone | 0 / 0 / 0 / 12 / 0 | — |
+| `sim_modifier` | standalone | 0 / 0 / 0 / 35 / 0 | — |
 | `sketch` | standalone (step 1 of 70 items) | 1 / 0 / 0 / 69 / 0 | C ABI, Python, WebAssembly |
 | `smoke_fire` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
@@ -171,7 +171,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `structural_solver` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `support_volume` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `surface_tension_csf` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `thermal` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `thermal` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `thin_wall` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `transient_thermal` | standalone | 0 / 0 / 0 / 18 / 0 | — |
