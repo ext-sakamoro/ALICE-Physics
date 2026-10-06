@@ -57,14 +57,16 @@ fn pla() -> MaterialProperties {
 
 /// Timoshenko & Gere Table 2-1 end-condition factors K = 1, 1/2, 2, 0.7 give
 /// `P_cr = pi^2 E I / (K L)^2`. For a 10x20 mm PLA beam of length 200 mm:
-/// `I = b h^3 / 12 = 6666.667 mm^4`, `P_cr(K=1) = 5757.5 N`.
+/// Buckling uses the weak-axis `I = h b^3 / 12 = 1666.667 mm^4`, so
+/// `P_cr(K=1) = 1439.3 N` (a quarter of the strong-axis value).
 #[test]
 fn euler_load_follows_each_end_condition_factor() {
     let load = LoadCase::CantileverEndPoint {
         load_n: int(5),
         length_mm: int(200),
     };
-    let i = 10.0 * 20.0f64 * 20.0 * 20.0 / 12.0;
+    // buckling is about the weak axis (the 10 mm side): I = h b^3 / 12
+    let i = 20.0 * 10.0f64 * 10.0 * 10.0 / 12.0;
     let base = PI * PI * E_MPA * i / (200.0 * 200.0);
     let cases = [
         (ColumnEndCondition::PinPin, 1.0),
@@ -509,4 +511,19 @@ fn zero_modulus_material_reports_zero_deflection_and_zero_euler_load() {
         1000.0 / (10.0 * 400.0 / 6.0),
         "sigma unaffected by E",
     );
+}
+
+/// The Euler load is about the weak axis, so the same bar labelled 10 x 20 or
+/// 20 x 10 buckles at the same load, while the bending stress (about the
+/// horizontal axis) differs
+#[test]
+fn euler_load_does_not_depend_on_how_the_rectangle_is_labelled() {
+    let load = LoadCase::CantileverEndPoint {
+        load_n: int(5),
+        length_mm: int(200),
+    };
+    let a = BeamAnalysis::new(rect(10, 20), load, pla()).analyze();
+    let b = BeamAnalysis::new(rect(20, 10), load, pla()).analyze();
+    assert_eq!(a.euler_critical_load_n, b.euler_critical_load_n);
+    assert!(a.max_bending_stress_mpa < b.max_bending_stress_mpa);
 }

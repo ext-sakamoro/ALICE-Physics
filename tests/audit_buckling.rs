@@ -68,18 +68,20 @@ fn radius_of_gyration_matches_closed_forms_for_every_section() {
         width_mm: fi(10),
         height_mm: fi(30),
     };
+    // weak axis (AUD-A-S2W2-006): the 10 mm side, b/sqrt(12)
     rel(
         radius_of_gyration_mm(&rect),
-        30.0 / 12.0f64.sqrt(),
+        10.0 / 12.0f64.sqrt(),
         1e-12,
-        "rect h/sqrt(12)",
+        "rect min(b, h)/sqrt(12)",
     );
     let hr = CrossSection::HollowRectangular {
         outer_width_mm: fi(20),
         outer_height_mm: fi(30),
         wall_mm: fi(2),
     };
-    let i = (20.0 * 30.0f64.powi(3) - 16.0 * 26.0f64.powi(3)) / 12.0;
+    // weak axis: the 20 mm outer width, I_y = (H B^3 - h b^3) / 12
+    let i = (30.0 * 20.0f64.powi(3) - 26.0 * 16.0f64.powi(3)) / 12.0;
     let a = 20.0 * 30.0 - 16.0 * 26.0;
     rel(
         radius_of_gyration_mm(&hr),
@@ -93,7 +95,10 @@ fn radius_of_gyration_matches_closed_forms_for_every_section() {
         flange_thickness_mm: fi(6),
         web_thickness_mm: fi(4),
     };
-    let i = (50.0 * 100.0f64.powi(3) - 46.0 * 88.0f64.powi(3)) / 12.0;
+    // weak axis: the two flanges 2 t_f b^3 / 12 plus the web (h - 2 t_f) t_w^3 / 12
+    let i = (2.0 * 6.0 * 50.0f64.powi(3) + 88.0 * 4.0f64.powi(3)) / 12.0;
+    let strong = (50.0 * 100.0f64.powi(3) - 46.0 * 88.0f64.powi(3)) / 12.0;
+    assert!(i < strong);
     let a = 2.0 * 50.0 * 6.0 + 4.0 * 88.0;
     rel(radius_of_gyration_mm(&ib), (i / a).sqrt(), 1e-12, "I beam");
 }
@@ -292,7 +297,7 @@ fn snap_through_matches_the_exact_two_bar_truss_maximum() {
 /// uses `second_moment_of_area_mm4` (about the horizontal axis, maximum stiffness
 /// for h > w), so 10 x 20 vs 20 x 10 differ by (20/10)^2 = 4 in P_cr.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-006: analyze_column uses I about the horizontal axis (b h^3/12), not the weak axis min(Ix, Iy): Rectangular{10,20} and Rectangular{20,10} (same physical bar) differ 4x in critical load (5848.65 N vs 1462.16 N at L=1500 steel, non-conservative for h > w)"]
+// AUD-A-S2W2-006
 fn critical_load_does_not_depend_on_how_the_rectangle_is_labelled() {
     let a = analyze_column(
         &CrossSection::Rectangular {
@@ -326,7 +331,7 @@ fn critical_load_does_not_depend_on_how_the_rectangle_is_labelled() {
 /// is also the lambda -> 0+ limit of the Johnson branch. The implementation
 /// returns 0 (and P_cr = 0), a discontinuity at lambda = 0.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-007: zero-length column reports critical_stress = 0 and critical_load = 0 with regime Yielding although the lambda->0+ limit is sigma_y (250 MPa): discontinuous, and the Yielding doc says yielding governs"]
+// AUD-A-S2W2-007
 fn zero_length_column_is_governed_by_yield_not_zero() {
     let r0 = analyze_column(
         &circle(10),
@@ -349,12 +354,12 @@ fn zero_length_column_is_governed_by_yield_not_zero() {
     );
 }
 
-/// Doc: "Returns 0 if `slenderness` is zero (degenerate input)", with regime
-/// Yielding (pins the documented value; see AUD-A-S2W2-007 for whether 0 is right).
+/// Zero slenderness is pure yielding at sigma_y (AUD-A-S2W2-007; this test
+/// used to pin the documented 0)
 #[test]
-fn zero_slenderness_returns_zero_with_the_yielding_regime() {
+fn zero_slenderness_is_yield_with_the_yielding_regime() {
     assert_eq!(
         critical_stress_mpa(Fix128::ZERO, fi(200_000), fi(250)),
-        (Fix128::ZERO, BucklingRegime::Yielding)
+        (fi(250), BucklingRegime::Yielding)
     );
 }
