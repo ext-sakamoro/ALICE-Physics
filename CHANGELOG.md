@@ -353,6 +353,7 @@ were introduced during that release window.
 - `SingleModifiedSdf` が `is_active() == false` の modifier を適用していた (AUD-A-S5W3-007)
 - **Behavior change:** `PlaneCollider::intersect_aabb` が面の完全に裏にある箱で `point_b` に箱の中心の射影を返していた 最も深い頂点の射影を返し、`point_b - point_a = depth · normal` がどの場合も成り立つ (AUD-A-S3W1-002)
 - **Behavior change:** `smoke_fire::reaction_rate_kg_per_m3_s` が `E_a/(R T)` が 40 以上で速度をちょうど 0 にしていた (`exp_fix` の飽和) 指数を分けて前指数因子に掛けるようにし、0 になるのは真の値が Fix128 の分解能を下回る時だけになった (PLA 450 K で 0 → 1.94e-9 kg/(m³·s)) 指数 16 を超える領域では値の丸めも変わる (AUD-A-S3W2-001)
+- `PhysicsWorld` の形状問い合わせ (`cast_capsule` / `overlap_aabb` / 保守前進と move_character の押し戻し) で GJK が 2 つの凸集合を交差とみなす閾値が `|v|² ≤ 2⁻¹⁶` (`|v| ≤ 2⁻⁸ ≈ 0.0039`) になっていた (`lo` を 2⁻¹²⁸ 単位と取り違えた定数) 間隙 2⁻⁸ 未満の対が重なりとして返り、その距離から始まる cast は t = 0 になっていた 閾値を `|v|² ≤ 2⁻⁶⁴` (`|v| ≤ 2⁻³²`、保守前進の許容差と同じ) にした
 ## [1.4.0] - 2026-09-17
 
 ### Changed
