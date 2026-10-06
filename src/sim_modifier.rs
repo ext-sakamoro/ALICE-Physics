@@ -12,6 +12,48 @@
 //! 2. Has `update(dt)` to advance simulation state
 //! 3. `modify_distance(x, y, z, dist)` alters SDF distance
 //!
+//! # World participants
+//!
+//! [`crate::thermal::ThermalModifier`], [`crate::phase_change::PhaseChangeModifier`],
+//! [`crate::pressure::PressureModifier`], [`crate::fracture::FractureModifier`]
+//! and [`crate::erosion::ErosionModifier`] implement
+//! [`crate::world_participant::Participant`], so they advance with world
+//! time when registered with the world (or driven by
+//! [`crate::world_participant::run_substep`]) and are carried in snapshots.
+//!
+//! * **Time.** [`crate::world_participant::StepRule::FollowSubstep`]: each
+//!   substep calls `update(h)` once, with the substep width `h` converted by
+//!   [`crate::math::Fix128::to_f32`] (a fixed rounding, the same on every
+//!   platform). A width `h ≤ 0` never reaches the modifier: the world refuses
+//!   it in the step rule check before any participant runs, so the modifier
+//!   has no path of its own for it. `substep` never returns `Err`; the f32
+//!   state is not checked for non-finite values.
+//! * **State payload** (version 1, little endian): `version: u32`, then every
+//!   field of the configuration in declaration order (`f32` as its bits,
+//!   `usize` as `u64`, `ErosionType` as `u8`: `Wind` 0, `Water` 1,
+//!   `Chemical` 2, `Ablation` 3), `enabled: u8` (0 or 1), each
+//!   `ScalarField3D` as `nx`, `ny`, `nz` (`u64`), the min and max corners
+//!   (3 `f32` each) and the cells, then the lists (`count: u64` and items):
+//!   the heat sources of the thermal modifier (tag `u8` `Point` 0: x, y, z,
+//!   power, radius / `Volume` 1: min, max, power) and the cracks of the
+//!   fracture modifier (start, end, direction, length, `active: u8`). The
+//!   configuration is part of the state: a restore brings it back. A field is
+//!   rebuilt from its sizes and bounds, so its cell size is recomputed from
+//!   the stored bounds. `check_state` refuses another version, a byte that
+//!   is not a valid bool or tag, a size whose cell count overflows, missing
+//!   and trailing bytes, without changing the modifier.
+//! * **Observations** are listed on each `Participant` impl; field values are
+//!   converted with [`crate::math::Fix128::from_f32`] (exact for finite
+//!   values).
+//! * **Not coupled yet.** The participant only advances in world time. It
+//!   stages no force on any body, reads no contact or body state (pressure
+//!   loads, erosion exposure and fracture stress are still applied by the caller
+//!   through the inherent methods), declares no ports and exchanges no shared
+//!   field (the thermal and phase-change temperatures are reconciled only
+//!   through [`crate::coupled_field`]). A modifier registered with the world
+//!   is owned by it, so it is not at the same time in a [`ModifiedSdf`]
+//!   chain; the changed geometry does not reach the world's SDF colliders.
+//!
 //! # Example
 //!
 //! ```
@@ -39,7 +81,10 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::math::Fix128;
 use crate::sdf_collider::{fd_normal, SdfField, FD_NORMAL_BASE_EPS};
+use crate::sim_field::ScalarField3D;
+use crate::world_participant::{ObservationSink, StateError};
 
 #[cfg(not(feature = "std"))]
 use alloc::boxed::Box;
@@ -242,6 +287,204 @@ impl<M: PhysicsModifier> SdfField for SingleModifiedSdf<M> {
         let n = self.normal(x, y, z);
         (d, n)
     }
+}
+
+// ============================================================================
+// World participation (state payload and observations)
+// ============================================================================
+
+/// Version written in front of every modifier state payload.
+pub(crate) const MODIFIER_STATE_VERSION: u32 = 1;
+
+/// Appends a modifier state payload, little endian, version first.
+pub(crate) struct StateWriter<'a> {
+    out: &'a mut Vec<u8>,
+}
+
+impl<'a> StateWriter<'a> {
+    /// Starts a payload in `out` with [`MODIFIER_STATE_VERSION`].
+    pub(crate) fn new(out: &'a mut Vec<u8>) -> Self {
+        out.extend_from_slice(&MODIFIER_STATE_VERSION.to_le_bytes());
+        Self { out }
+    }
+
+    pub(crate) fn u8(&mut self, v: u8) {
+        self.out.push(v);
+    }
+
+    pub(crate) fn bool(&mut self, v: bool) {
+        self.out.push(u8::from(v));
+    }
+
+    pub(crate) fn u64(&mut self, v: u64) {
+        self.out.extend_from_slice(&v.to_le_bytes());
+    }
+
+    pub(crate) fn usize(&mut self, v: usize) {
+        self.u64(v as u64);
+    }
+
+    pub(crate) fn f32(&mut self, v: f32) {
+        self.out.extend_from_slice(&v.to_bits().to_le_bytes());
+    }
+
+    pub(crate) fn vec3(&mut self, v: (f32, f32, f32)) {
+        self.f32(v.0);
+        self.f32(v.1);
+        self.f32(v.2);
+    }
+
+    /// `nx`, `ny`, `nz` as u64, the bounds, then every cell.
+    pub(crate) fn field(&mut self, f: &ScalarField3D) {
+        self.usize(f.nx);
+        self.usize(f.ny);
+        self.usize(f.nz);
+        self.vec3(f.min);
+        self.vec3(f.max);
+        for &v in &f.data {
+            self.f32(v);
+        }
+    }
+}
+
+/// Reads a payload written by [`StateWriter`], refusing anything it cannot
+/// apply. Nothing is allocated before the bytes it describes are known to be
+/// present.
+pub(crate) struct StateReader<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+
+impl<'a> StateReader<'a> {
+    /// Reads the version; any other than [`MODIFIER_STATE_VERSION`] is
+    /// [`StateError::InvalidValue`].
+    pub(crate) fn new(bytes: &'a [u8]) -> Result<Self, StateError> {
+        let mut r = Self { bytes, at: 0 };
+        let mut v = [0_u8; 4];
+        v.copy_from_slice(r.take(4)?);
+        if u32::from_le_bytes(v) != MODIFIER_STATE_VERSION {
+            return Err(StateError::InvalidValue);
+        }
+        Ok(r)
+    }
+
+    fn need(&self, n: usize) -> Result<(), StateError> {
+        let end = self.at.checked_add(n).ok_or(StateError::InvalidValue)?;
+        if end > self.bytes.len() {
+            return Err(StateError::Length {
+                expected: end,
+                found: self.bytes.len(),
+            });
+        }
+        Ok(())
+    }
+
+    fn take(&mut self, n: usize) -> Result<&'a [u8], StateError> {
+        self.need(n)?;
+        let s = &self.bytes[self.at..self.at + n];
+        self.at += n;
+        Ok(s)
+    }
+
+    pub(crate) fn u8(&mut self) -> Result<u8, StateError> {
+        Ok(self.take(1)?[0])
+    }
+
+    pub(crate) fn bool(&mut self) -> Result<bool, StateError> {
+        match self.u8()? {
+            0 => Ok(false),
+            1 => Ok(true),
+            _ => Err(StateError::InvalidValue),
+        }
+    }
+
+    pub(crate) fn u64(&mut self) -> Result<u64, StateError> {
+        let mut v = [0_u8; 8];
+        v.copy_from_slice(self.take(8)?);
+        Ok(u64::from_le_bytes(v))
+    }
+
+    pub(crate) fn usize(&mut self) -> Result<usize, StateError> {
+        usize::try_from(self.u64()?).map_err(|_| StateError::InvalidValue)
+    }
+
+    pub(crate) fn f32(&mut self) -> Result<f32, StateError> {
+        let mut v = [0_u8; 4];
+        v.copy_from_slice(self.take(4)?);
+        Ok(f32::from_bits(u32::from_le_bytes(v)))
+    }
+
+    pub(crate) fn vec3(&mut self) -> Result<(f32, f32, f32), StateError> {
+        Ok((self.f32()?, self.f32()?, self.f32()?))
+    }
+
+    /// A count of items, each at least `min_item_bytes` long, checked against
+    /// the bytes left before the caller allocates for it.
+    pub(crate) fn count(&mut self, min_item_bytes: usize) -> Result<usize, StateError> {
+        let n = self.usize()?;
+        self.need(
+            n.checked_mul(min_item_bytes)
+                .ok_or(StateError::InvalidValue)?,
+        )?;
+        Ok(n)
+    }
+
+    /// A field written by [`StateWriter::field`], rebuilt with
+    /// [`ScalarField3D::new`] (cell sizes follow from the stored bounds).
+    pub(crate) fn field(&mut self) -> Result<ScalarField3D, StateError> {
+        let nx = self.usize()?;
+        let ny = self.usize()?;
+        let nz = self.usize()?;
+        let min = self.vec3()?;
+        let max = self.vec3()?;
+        let cells = nx
+            .checked_mul(ny)
+            .and_then(|c| c.checked_mul(nz))
+            .ok_or(StateError::InvalidValue)?;
+        self.need(cells.checked_mul(4).ok_or(StateError::InvalidValue)?)?;
+        let mut f = ScalarField3D::new(nx, ny, nz, min, max);
+        for v in &mut f.data {
+            *v = self.f32()?;
+        }
+        Ok(f)
+    }
+
+    /// Refuses trailing bytes.
+    pub(crate) fn finish(self) -> Result<(), StateError> {
+        if self.at == self.bytes.len() {
+            Ok(())
+        } else {
+            Err(StateError::Length {
+                expected: self.at,
+                found: self.bytes.len(),
+            })
+        }
+    }
+}
+
+/// Pushes the largest cell of `f` on `channel`; nothing when `f` has no
+/// cells, NaN cells are skipped.
+pub(crate) fn observe_max(out: &mut ObservationSink, channel: u32, f: &ScalarField3D) {
+    let max = f
+        .data
+        .iter()
+        .copied()
+        .filter(|v| !v.is_nan())
+        .reduce(f32::max);
+    if let Some(m) = max {
+        out.push(channel, Fix128::from_f32(m));
+    }
+}
+
+/// Pushes the sum of the cells of `f` on `channel`, each cell converted to
+/// [`Fix128`] first (exact for finite cells, so the sum does not depend on
+/// float rounding).
+pub(crate) fn observe_sum(out: &mut ObservationSink, channel: u32, f: &ScalarField3D) {
+    let sum = f
+        .data
+        .iter()
+        .fold(Fix128::ZERO, |acc, &v| acc + Fix128::from_f32(v));
+    out.push(channel, sum);
 }
 
 // ============================================================================

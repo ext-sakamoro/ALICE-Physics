@@ -29,8 +29,13 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::math::Fix128;
 use crate::sim_field::ScalarField3D;
 use crate::sim_modifier::PhysicsModifier;
+use crate::sim_modifier::{observe_max, observe_sum, StateReader, StateWriter};
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
 
 // ============================================================================
 // Configuration
@@ -243,6 +248,110 @@ impl PhysicsModifier for ErosionModifier {
 
     fn is_active(&self) -> bool {
         self.enabled
+    }
+}
+
+// ============================================================================
+// World participant
+// ============================================================================
+
+impl ErosionType {
+    /// Payload tag: `Wind` 0, `Water` 1, `Chemical` 2, `Ablation` 3.
+    const fn state_tag(self) -> u8 {
+        match self {
+            Self::Wind => 0,
+            Self::Water => 1,
+            Self::Chemical => 2,
+            Self::Ablation => 3,
+        }
+    }
+
+    const fn from_state_tag(tag: u8) -> Option<Self> {
+        match tag {
+            0 => Some(Self::Wind),
+            1 => Some(Self::Water),
+            2 => Some(Self::Chemical),
+            3 => Some(Self::Ablation),
+            _ => None,
+        }
+    }
+}
+
+impl ErosionModifier {
+    /// Snapshot tag of this type as a world participant: `"EROS"`, the four
+    /// ASCII bytes read big endian. Never changes.
+    pub const PARTICIPANT_KIND: ParticipantKind =
+        ParticipantKind::new(u32::from_be_bytes(*b"EROS"));
+
+    fn decode_state(bytes: &[u8]) -> Result<Self, StateError> {
+        let mut r = StateReader::new(bytes)?;
+        let config = ErosionConfig {
+            erosion_type: ErosionType::from_state_tag(r.u8()?).ok_or(StateError::InvalidValue)?,
+            rate: r.f32()?,
+            hardness: r.f32()?,
+            max_depth: r.f32()?,
+            smoothing: r.f32()?,
+            flow_direction: r.vec3()?,
+            flow_speed: r.f32()?,
+        };
+        let enabled = r.bool()?;
+        let erosion_depth = r.field()?;
+        let exposure = r.field()?;
+        r.finish()?;
+        Ok(Self {
+            config,
+            erosion_depth,
+            exposure,
+            enabled,
+        })
+    }
+}
+
+/// One `update(h)` per world substep (`h` converted with
+/// [`Fix128::to_f32`]); see the module documentation of
+/// [`crate::sim_modifier`] for the payload and what is not coupled yet.
+///
+/// Observations: channel 0 the deepest erosion of a cell (absent for a grid
+/// without cells), channel 1 the total erosion depth.
+impl Participant for ErosionModifier {
+    fn kind(&self) -> ParticipantKind {
+        Self::PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        PhysicsModifier::update(self, h.to_f32());
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        observe_max(out, 0, &self.erosion_depth);
+        observe_sum(out, 1, &self.erosion_depth);
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        let mut w = StateWriter::new(out);
+        let c = &self.config;
+        w.u8(c.erosion_type.state_tag());
+        w.f32(c.rate);
+        w.f32(c.hardness);
+        w.f32(c.max_depth);
+        w.f32(c.smoothing);
+        w.vec3(c.flow_direction);
+        w.f32(c.flow_speed);
+        w.bool(self.enabled);
+        w.field(&self.erosion_depth);
+        w.field(&self.exposure);
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        Self::decode_state(bytes).map(drop)
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        match Self::decode_state(bytes) {
+            Ok(state) => *self = state,
+            Err(e) => panic!("read_state called with a payload check_state refuses: {e:?}"),
+        }
     }
 }
 

@@ -31,6 +31,24 @@
 //! | moving an extensive amount between layouts keeps its total exactly | [`remap_conserving`], [`deposit_bodies`] |
 //! | a snapshot holds the committed field values once, in the world's section, never in a participant payload | world side, bytes from [`FieldBoard::write_values`] |
 //!
+//! # Participant kinds
+//!
+//! A participant type in this crate takes as its [`ParticipantKind`] four
+//! ASCII bytes read big endian (`u32::from_be_bytes(*b"THRM")`), declared as
+//! a `pub const` next to the type. An assigned value never changes: a restore
+//! matches the participants of a snapshot to those of the world by kind
+//! value, so changing one makes every earlier snapshot refuse to load. Values
+//! below `0x0100_0000` (small integers) are left for tests and user code and
+//! are never assigned here.
+//!
+//! | code | value | type |
+//! |---|---|---|
+//! | `THRM` | `0x5448_524d` | `thermal::ThermalModifier` |
+//! | `PHAS` | `0x5048_4153` | `phase_change::PhaseChangeModifier` |
+//! | `PRES` | `0x5052_4553` | `pressure::PressureModifier` |
+//! | `FRAC` | `0x4652_4143` | `fracture::FractureModifier` |
+//! | `EROS` | `0x4552_4f53` | `erosion::ErosionModifier` |
+//!
 //! # Coupling through ports
 //!
 //! A participant declares the values it reads and writes as [`Port`]s

@@ -14,8 +14,13 @@
 //!
 //! Author: Moroya Sakamoto
 
+use crate::math::Fix128;
 use crate::sim_field::ScalarField3D;
 use crate::sim_modifier::PhysicsModifier;
+use crate::sim_modifier::{observe_max, StateReader, StateWriter};
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -321,6 +326,108 @@ impl PhysicsModifier for FractureModifier {
 
     fn is_active(&self) -> bool {
         self.enabled
+    }
+}
+
+// ============================================================================
+// World participant
+// ============================================================================
+
+impl FractureModifier {
+    /// Snapshot tag of this type as a world participant: `"FRAC"`, the four
+    /// ASCII bytes read big endian. Never changes.
+    pub const PARTICIPANT_KIND: ParticipantKind =
+        ParticipantKind::new(u32::from_be_bytes(*b"FRAC"));
+
+    fn decode_state(bytes: &[u8]) -> Result<Self, StateError> {
+        let mut r = StateReader::new(bytes)?;
+        let config = FractureConfig {
+            fracture_toughness: r.f32()?,
+            crack_width: r.f32()?,
+            max_cracks: r.usize()?,
+            stress_diffusion: r.f32()?,
+            stress_decay: r.f32()?,
+            propagation_speed: r.f32()?,
+            max_crack_length: r.f32()?,
+        };
+        let enabled = r.bool()?;
+        let stress = r.field()?;
+        let n = r.count(10 * 4 + 1)?;
+        let mut cracks = Vec::with_capacity(n);
+        for _ in 0..n {
+            cracks.push(Crack {
+                start: r.vec3()?,
+                end: r.vec3()?,
+                direction: r.vec3()?,
+                length: r.f32()?,
+                active: r.bool()?,
+            });
+        }
+        r.finish()?;
+        Ok(Self {
+            config,
+            stress,
+            cracks,
+            enabled,
+        })
+    }
+}
+
+/// One `update(h)` per world substep (`h` converted with
+/// [`Fix128::to_f32`]); see the module documentation of
+/// [`crate::sim_modifier`] for the payload and what is not coupled yet.
+///
+/// Observations: channel 0 the highest cell stress (absent for a grid
+/// without cells), channel 1 the number of cracks, channel 2 the number of
+/// cracks still growing.
+impl Participant for FractureModifier {
+    fn kind(&self) -> ParticipantKind {
+        Self::PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        PhysicsModifier::update(self, h.to_f32());
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        observe_max(out, 0, &self.stress);
+        out.push(1, Fix128::from_int(self.cracks.len() as i64));
+        let growing = self.cracks.iter().filter(|c| c.active).count();
+        out.push(2, Fix128::from_int(growing as i64));
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        let mut w = StateWriter::new(out);
+        let c = &self.config;
+        w.f32(c.fracture_toughness);
+        w.f32(c.crack_width);
+        w.usize(c.max_cracks);
+        w.f32(c.stress_diffusion);
+        w.f32(c.stress_decay);
+        w.f32(c.propagation_speed);
+        w.f32(c.max_crack_length);
+        w.bool(self.enabled);
+        w.field(&self.stress);
+        w.usize(self.cracks.len());
+        for k in &self.cracks {
+            w.vec3(k.start);
+            w.vec3(k.end);
+            w.vec3(k.direction);
+            w.f32(k.length);
+            w.bool(k.active);
+        }
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        Self::decode_state(bytes).map(drop)
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        match Self::decode_state(bytes) {
+            Ok(state) => *self = state,
+            Err(e) => panic!("read_state called with a payload check_state refuses: {e:?}"),
+        }
     }
 }
 
