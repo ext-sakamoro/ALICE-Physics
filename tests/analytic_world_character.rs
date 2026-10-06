@@ -564,3 +564,209 @@ fn huge_coordinates_give_the_same_answers() {
     assert_pos(res.position, [o + 2.0 - R - SKIN, o + STAND, o + 1.0], ITER);
     assert!(res.grounded);
 }
+
+// ============================================================ starting overlap
+
+// A capsule that starts overlapping a collider by less than its radius (its
+// segment outside every solid) is pushed out first: each push goes along the
+// collider's normal at the segment point nearest it, by the penetration depth
+// plus the skin width, so the capsule ends a skin width clear of the surface. The
+// expected values are the same closed forms as for a resting capsule: the core
+// segment at distance `r + s` from the surface along its normal.
+
+/// A sphere body of radius `r` (no shape: the body's collision sphere).
+fn sphere_body(w: &mut PhysicsWorld, center: [f64; 3], r: f64) -> usize {
+    w.add_body_with_radius(
+        RigidBody::new_static(v3(center[0], center[1], center[2])),
+        fx(r),
+    )
+}
+
+#[test]
+fn a_capsule_embedded_in_a_plane_floor_is_pushed_up_to_the_standing_height() {
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    // embedded by d = 0.1: centre y = h/2 − d = 0.8, segment bottom at
+    // 0.8 − (h/2 − r) = 0.2 < r.
+    // oracle: pushed along the floor normal +Y by d + s: y = (h/2 − r) + r + s =
+    // h/2 + s = 0.91, x and z unchanged (zero displacement), on the ground.
+    let mut c = ctrl_at([0.25, 0.8, -0.5]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_pos(res.position, [0.25, STAND, -0.5], EXACT);
+    assert_eq!(res.position, c.position);
+    assert!(res.grounded, "a skin width above the floor");
+
+    // oracle: depth 0.25 (segment bottom 0.05 above the floor) ends at the same
+    // height.
+    let mut c = ctrl_at([0.0, 0.65, 0.0]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_pos(res.position, [0.0, STAND, 0.0], EXACT);
+}
+
+#[test]
+fn after_the_push_out_the_move_is_made_from_the_freed_position() {
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    // oracle: pushed to y = h/2 + s, then D = (1, 0, 0.5) is parallel to the
+    // floor and taken whole: (x + 1, 0.91, z + 0.5).
+    let mut c = ctrl_at([0.0, 0.8, 0.0]);
+    let res = w.move_character(&mut c, v3(1.0, 0.0, 0.5));
+    assert_pos(res.position, [1.0, STAND, 0.5], EXACT);
+    assert!(res.grounded);
+}
+
+#[test]
+fn a_capsule_embedded_in_a_box_wall_from_the_side_ends_radius_plus_skin_from_the_face() {
+    let mut w = world();
+    // box x ∈ [2, 4], y ∈ [−4, 4], z ∈ [−5, 5]; face x = 2, normal −X
+    static_box(&mut w, [3.0, 0.0, 0.0], [1.0, 4.0, 5.0]);
+    // embedded by 0.1: centre x = 2 − r + 0.1 = 1.8 (segment at distance 0.2)
+    // oracle: pushed along −X by 0.1 + s: x = 2 − r − s = 1.69, y and z kept.
+    let mut c = ctrl_at([1.8, 1.0, 0.5]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_pos(res.position, [2.0 - R - SKIN, 1.0, 0.5], ITER);
+    assert!(!res.grounded, "a wall is not ground");
+}
+
+#[test]
+fn a_capsule_embedded_in_a_sphere_body_is_pushed_out_along_the_centre_line() {
+    let mut w = world();
+    // sphere body of radius 1 at (0, 1, 0); the capsule centre is level with it,
+    // so the segment point nearest the sphere centre is the capsule centre.
+    sphere_body(&mut w, [0.0, 1.0, 0.0], 1.0);
+    // centre (0.9, 1, 0.9): distance 0.9·√2 ≈ 1.2728 < R + r = 1.3.
+    // oracle: pushed along the centre line (1, 0, 1)/√2 to distance R + r + s =
+    // 1.31: x = z = 1.31/√2.
+    let mut c = ctrl_at([0.9, 1.0, 0.9]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    let k = (1.0 + R + SKIN) / 2f64.sqrt();
+    assert_pos(res.position, [k, 1.0, k], EXACT);
+
+    // oracle: from the side along −X: centre (−1.2, 1, 0) ends at x = −1.31.
+    let mut c = ctrl_at([-1.2, 1.0, 0.0]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_pos(res.position, [-(1.0 + R + SKIN), 1.0, 0.0], EXACT);
+}
+
+#[test]
+fn a_capsule_embedded_in_a_floor_and_a_wall_is_freed_from_both() {
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    // wall x = 2 (normal −X): dot((−1,0,0), p) = −2
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        v3(-1.0, 0.0, 0.0),
+        fx(-2.0),
+    )));
+    // embedded 0.1 in the floor (y = 0.8) and 0.05 in the wall (x = 1.75)
+    // oracle: deepest first (the floor), then the wall: y = h/2 + s,
+    // x = 2 − r − s.
+    let mut c = ctrl_at([1.75, 0.8, 0.0]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_pos(res.position, [2.0 - R - SKIN, STAND, 0.0], EXACT);
+    assert!(res.grounded);
+}
+
+/// A capsule whose segment is inside a solid (deeper than its radius) has no
+/// push-out direction from the distance queries: it keeps its position.
+#[test]
+fn a_capsule_deep_inside_a_large_box_is_left_blocked() {
+    let mut w = world();
+    // box x, y, z ∈ [−10, 10]: the whole capsule is inside
+    static_box(&mut w, [0.0, 0.0, 0.0], [10.0, 10.0, 10.0]);
+    let mut c = ctrl_at([1.0, 2.0, 3.0]);
+    // expected: unchanged bit for bit, for a zero and a non-zero displacement
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_eq!(res.position, v3(1.0, 2.0, 3.0));
+    assert!(!res.grounded);
+    let res = w.move_character(&mut c, v3(0.0, 5.0, 0.0));
+    assert_eq!(res.position, v3(1.0, 2.0, 3.0));
+
+    // expected: a capsule whose segment crosses a plane floor (centre y = 0.3,
+    // segment y ∈ [−0.3, 0.9]) is blocked too.
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    let mut c = ctrl_at([0.0, 0.3, 0.0]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_eq!(res.position, v3(0.0, 0.3, 0.0));
+}
+
+#[test]
+fn a_capsule_clear_of_everything_is_not_pushed() {
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    sphere_body(&mut w, [5.0, 1.0, 0.0], 1.0);
+    // expected: exactly r + s from the sphere (x = 5 − 1.31) and a skin above the
+    // floor: no overlap, nothing moves (bit for bit).
+    let p = v3(5.0 - 1.31, STAND, 0.0);
+    let mut c = CharacterController::new_default(p);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_eq!(res.position, p);
+}
+
+#[test]
+fn a_capsule_taller_than_the_gap_between_floor_and_ceiling_is_left_blocked() {
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    // ceiling y = 1.5 (normal −Y): dot((0,−1,0), p) = −1.5; the capsule is 1.8 tall
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        v3(0.0, -1.0, 0.0),
+        fx(-1.5),
+    )));
+    // centre y = 0.75 overlaps both by 0.15; pushing out of either drives the
+    // segment into the other (no position is clear).
+    // expected: unchanged bit for bit, also for a move.
+    let mut c = ctrl_at([0.0, 0.75, 0.0]);
+    let res = w.move_character(&mut c, v3(1.0, 0.0, 0.0));
+    assert_eq!(res.position, v3(0.0, 0.75, 0.0));
+    assert!(!res.grounded);
+}
+
+#[test]
+fn overlaps_are_pushed_out_deepest_first() {
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    // sphere body R = 1 at (−1.2, 0, 0)
+    sphere_body(&mut w, [-1.2, 0.0, 0.0], 1.0);
+    // centre (0, 0.8, 0): segment y ∈ [0.2, 1.4]; floor depth r − 0.2 = 0.1,
+    // sphere depth R + r − |(1.2, 0.2)| ≈ 0.0834 (nearest segment point is the
+    // bottom end (0, 0.2)).
+    // oracle, deepest (the floor) first: up by 0.1 + s to y = 0.91 (bottom end
+    // (0, 0.31)); then along u = (1.2, 0.31)/|·| by R + r + s − |(1.2, 0.31)|,
+    // which leaves the floor clear.
+    let mut c = ctrl_at([0.0, 0.8, 0.0]);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    let (ux, uy) = (1.2_f64, 0.31_f64);
+    let len = ux.hypot(uy);
+    let push = 1.0 + R + SKIN - len;
+    let want = [push * ux / len, STAND + push * uy / len, 0.0];
+    assert_pos(res.position, want, 1e-9);
+}
+
+#[test]
+fn at_most_max_slides_pushes_are_made() {
+    let mut w = world();
+    floor_plane(&mut w, 0.0);
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        v3(-1.0, 0.0, 0.0),
+        fx(-2.0),
+    )));
+    // the floor-and-wall overlap of
+    // `a_capsule_embedded_in_a_floor_and_a_wall_is_freed_from_both` needs two
+    // pushes.
+    // expected: with max_slides = 1 it is not freed and keeps its position.
+    let config = CharacterConfig {
+        max_slides: 1,
+        ..CharacterConfig::default()
+    };
+    let mut c = CharacterController::new(v3(1.75, 0.8, 0.0), config);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_eq!(res.position, v3(1.75, 0.8, 0.0));
+    // oracle: with max_slides = 2 it is freed: (2 − r − s, h/2 + s, 0).
+    let config = CharacterConfig {
+        max_slides: 2,
+        ..CharacterConfig::default()
+    };
+    let mut c = CharacterController::new(v3(1.75, 0.8, 0.0), config);
+    let res = w.move_character(&mut c, Vec3Fix::ZERO);
+    assert_pos(res.position, [2.0 - R - SKIN, STAND, 0.0], EXACT);
+}

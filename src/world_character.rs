@@ -59,14 +59,38 @@
 //! it belongs to (if any) becomes [`CharacterController::ground_body_index`] and
 //! its velocity [`CharacterController::platform_velocity`].
 //!
-//! # Starting inside a collider
+//! # Starting overlap
 //!
-//! [`PhysicsWorld::cast_capsule`] reports a cast that starts overlapping a
-//! collider at `t = 0` with normal `−direction`: there is no surface normal to
-//! slide along. The move then goes 0 along the direction and its projection onto
-//! the plane normal to the direction is 0, so the controller does not move; such
-//! a contact is not ground, and no step is tried from inside (the upward sweep
-//! of § Steps also starts overlapping).
+//! Before the move, a capsule that starts overlapping colliders is pushed out:
+//!
+//! 1. Find every collider the capsule overlaps and how far: the distance `δ` from
+//!    the capsule's segment to the collider (the queries of
+//!    [`PhysicsWorld::overlap_sphere`], on the segment) is below the radius, the
+//!    penetration is `r − δ` and the direction the collider's normal at the
+//!    nearest point.
+//! 2. Push the capsule along that normal by the penetration plus
+//!    [`CharacterConfig::skin_width`], the deepest overlap first (ties by target:
+//!    bodies, then static colliders, then SDF colliders, each by index), so it
+//!    ends a skin width clear of that surface, as a move leaves it.
+//! 3. Repeat until nothing overlaps, at most [`CharacterConfig::max_slides`]
+//!    pushes.
+//!
+//! The move of § One move then starts from the freed position. A plane is
+//! two-sided: a capsule below it is pushed down.
+//!
+//! The capsule is **not** freed, and keeps its position, when its segment itself
+//! meets a solid (an overlap deeper than the radius: there is no distance and so
+//! no push-out direction), when overlaps remain after
+//! [`CharacterConfig::max_slides`] pushes, or when the pushes would add up to more
+//! than [`CharacterConfig::radius`] `+` [`CharacterConfig::height`] (so a capsule
+//! deep inside a large body is not flung out of it). It then starts the move where
+//! it is, and [`PhysicsWorld::cast_capsule`] reports a cast that starts overlapping
+//! at `t = 0` with normal `−direction`: there is no surface normal to slide along,
+//! the move goes 0 along the direction and its projection onto the plane normal
+//! to the direction is 0, so the controller does not move
+//! ([`MoveResult::position`] is the old position); such a contact is not ground,
+//! and no step is tried from inside (the upward sweep of § Steps also starts
+//! overlapping).
 //!
 //! # Excluding the character's own body
 //!
@@ -79,7 +103,7 @@ use crate::character::{CharacterConfig, CharacterController, MoveResult};
 use crate::math::{Fix128, Vec3Fix};
 use crate::shape_raycast::RayFilter;
 use crate::solver::PhysicsWorld;
-use crate::world_shape_query::WorldShapeHit;
+use crate::world_shape_query::{Penetration, WorldShapeHit};
 
 /// The controller's capsule and the constants a move uses.
 #[derive(Clone, Copy)]
@@ -194,6 +218,38 @@ impl Sweep<'_> {
         (progress(landed) > progress(plain) + self.skin).then_some(landed)
     }
 
+    /// The capsule at `position` pushed out of the colliders it starts overlapping
+    /// (module doc § Starting overlap): `None` when it cannot be freed.
+    fn depenetrate(self, position: Vec3Fix, max_push: Fix128) -> Option<Vec3Fix> {
+        let off = Vec3Fix::new(Fix128::ZERO, self.half, Fix128::ZERO);
+        let mut p = position;
+        let mut pushed = Fix128::ZERO;
+        for _ in 0..=self.max_slides {
+            let overlaps =
+                self.world
+                    .capsule_penetrations(p - off, p + off, self.radius, self.filter)?;
+            // Deepest first, ties by target (the list is sorted by target and only
+            // a strictly deeper one replaces the first).
+            let Some(deepest) =
+                overlaps
+                    .iter()
+                    .fold(None, |best: Option<&Penetration>, o| match best {
+                        Some(b) if b.depth >= o.depth => Some(b),
+                        _ => Some(o),
+                    })
+            else {
+                return Some(p);
+            };
+            let step = deepest.depth + self.skin;
+            pushed = pushed + step;
+            if pushed > max_push {
+                return None;
+            }
+            p = p + deepest.normal * step;
+        }
+        None
+    }
+
     /// The walkable ground under a capsule at `position` (module doc § Ground).
     fn ground(self, position: Vec3Fix, probe: Fix128) -> Option<WorldShapeHit> {
         let down = -Vec3Fix::UNIT_Y;
@@ -251,7 +307,11 @@ impl PhysicsWorld {
             walkable: config.max_slope_angle.cos(),
             max_slides: config.max_slides,
         };
-        let start = ctrl.position;
+        // A capsule that cannot be freed keeps its position, and the sweep from
+        // inside then blocks the move (module doc § Starting overlap).
+        let start = sweep
+            .depenetrate(ctrl.position, config.radius + config.height)
+            .unwrap_or(ctrl.position);
         let total = displacement + ctrl.platform_velocity;
         let plain = sweep.slide(start, total);
         let mut position = plain.position;
