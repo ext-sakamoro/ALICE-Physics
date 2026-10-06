@@ -31,7 +31,7 @@ crate has today.
 | `docs/coverage/optics.toml` | 121 | 0 | 0 | 0 | 121 | 0 |
 | `docs/coverage/orbit.toml` | 138 | 23 | 4 | 3 | 108 | 0 |
 | `docs/coverage/part.toml` | 122 | 26 | 2 | 3 | 91 | 0 |
-| `docs/coverage/plasma.toml` | 156 | 0 | 4 | 0 | 152 | 0 |
+| `docs/coverage/plasma.toml` | 156 | 3 | 1 | 0 | 152 | 0 |
 | `docs/coverage/quantum.toml` | 169 | 0 | 0 | 0 | 169 | 0 |
 | `docs/coverage/rel.toml` | 112 | 0 | 0 | 0 | 112 | 0 |
 | `docs/coverage/rigid.toml` | 121 | 78 | 4 | 7 | 31 | 1 |
@@ -40,7 +40,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4177 | 544 | 74 | 104 | 3449 | 6 |
+| **total** | 4177 | 547 | 71 | 104 | 3449 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -513,7 +513,7 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| benchmark | 20 | 0 | 2 | 0 | 18 | 0 |
+| benchmark | 20 | 2 | 0 | 0 | 18 | 0 |
 | equilibrium-stability | 9 | 0 | 0 | 0 | 9 | 0 |
 | fluid | 14 | 0 | 0 | 0 | 14 | 0 |
 | fusion | 6 | 0 | 0 | 0 | 6 | 0 |
@@ -524,7 +524,7 @@ crate has today.
 | particle-in-cell | 19 | 0 | 0 | 0 | 19 | 0 |
 | propulsion | 3 | 0 | 0 | 0 | 3 | 0 |
 | reconnection | 5 | 0 | 0 | 0 | 5 | 0 |
-| single-particle | 9 | 0 | 1 | 0 | 8 | 0 |
+| single-particle | 9 | 1 | 0 | 0 | 8 | 0 |
 | space | 5 | 0 | 0 | 0 | 5 | 0 |
 | strongly-coupled | 2 | 0 | 1 | 0 | 1 | 0 |
 | waves | 13 | 0 | 0 | 0 | 13 | 0 |
