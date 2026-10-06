@@ -1482,7 +1482,7 @@ mod tests {
         );
 
         assert_eq!(artic.link_count(), 3);
-        assert_eq!(artic.dof_count(), 2);
+        assert_eq!(artic.dof_count(), 6, "two ball joints, 3 each");
         assert_eq!(artic.body_indices(), vec![0, 1, 2]);
     }
 
