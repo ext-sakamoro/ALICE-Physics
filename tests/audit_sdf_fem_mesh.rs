@@ -324,7 +324,7 @@ fn marching_volume_contains_the_staircase_volume_for_a_ball() {
 /// in f32 and truncated, so a box whose width is an exact multiple of the cell loses its last
 /// layer when the quotient comes out one ulp below the integer: 1.3 / 0.1 = 12.999999.
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-010: nx = trunc((max-min)/cell) in f32 drops the last layer when the quotient is 1 ulp below an integer (AABB [0,1.3] at cell 0.1 gives 12 cells, [0,0.9] at 0.3 gives 2); both generators"]
+// AUD-A-S2W3-010
 fn lattice_cell_count_is_robust_to_f32_rounding_of_the_quotient() {
     let sdf = everywhere_inside();
     // (max extent, cell, expected cells)

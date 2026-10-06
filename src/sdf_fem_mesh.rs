@@ -570,6 +570,19 @@ fn split_edge_remaining(vs: [u32; 4], best_edge: usize) -> (u32, u32) {
     }
 }
 
+/// Whole cells of size `cell` across `[min, max]` on each axis, at least 1.
+/// The quotient is formed in f64 with a relative slack of 1e-6, so an extent
+/// that is a multiple of the cell but divides a few f32 ulps below the
+/// integer (1.3 / 0.1 = 12.999999 in f32) keeps its last layer; a partial
+/// last cell is still left out.
+fn lattice_cells(min: [f32; 3], max: [f32; 3], cell: f32) -> [i32; 3] {
+    let count = |a: usize| {
+        let q = (f64::from(max[a]) - f64::from(min[a])) / f64::from(cell);
+        (q * (1.0 + 1e-6)).floor().clamp(1.0, f64::from(i32::MAX)) as i32
+    };
+    [count(0), count(1), count(2)]
+}
+
 /// Generate a tet mesh by walking a Cartesian grid over the AABB
 /// `[min .. max]` at spacing `cell` and dicing every fully-interior
 /// cube into five tetrahedra.
@@ -616,9 +629,7 @@ pub fn generate<F: SdfField + ?Sized>(
     assert!(cell > 0.0, "cell must be positive");
     let mut mesh = SdfTetMesh::default();
     let mut vertex_index: HashMap<(i32, i32, i32), u32> = HashMap::new();
-    let nx = ((max[0] - min[0]) / cell).max(1.0) as i32;
-    let ny = ((max[1] - min[1]) / cell).max(1.0) as i32;
-    let nz = ((max[2] - min[2]) / cell).max(1.0) as i32;
+    let [nx, ny, nz] = lattice_cells(min, max, cell);
 
     for iz in 0..nz {
         for iy in 0..ny {
@@ -845,9 +856,7 @@ pub fn generate_marching_tets<F: SdfField + ?Sized>(
     assert!(cell > 0.0, "cell must be positive");
     let mut mesh = SdfTetMesh::default();
     let mut table: HashMap<VertexKey, u32> = HashMap::new();
-    let nx = ((max[0] - min[0]) / cell).max(1.0) as i32;
-    let ny = ((max[1] - min[1]) / cell).max(1.0) as i32;
-    let nz = ((max[2] - min[2]) / cell).max(1.0) as i32;
+    let [nx, ny, nz] = lattice_cells(min, max, cell);
 
     let lattice = WarpedLattice::build(sdf, min, cell, [nx, ny, nz]);
 
