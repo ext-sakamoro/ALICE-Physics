@@ -327,6 +327,7 @@ were introduced during that release window.
 
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
+- `ray_triangle` (`TriMesh::raycast`): 平行判定の閾値 `MT_EPSILON` (2⁻²⁴) を `det` の絶対値と比べていたので、辺が約 2.4e-4 m より短い三角形は真上からの ray でも当たらなかった 閾値を辺の長さの積で割合にし、大きさに依らず ray と面の角度で判定する (AUD-A-S4W2-012)
 - `ScalarField3D::diffuse` (pressure / thermal / phase change / fracture / erosion の拡散): 陽解法の安定限界 `rate·dt·(2/dx²+2/dy²+2/dz²) ≤ 1` を超える step も 1 回で進め、正の山が負の値に振れていた 限界を超える step は 1 つあたり 1/2 以下の等分 sub-step に分ける 限界内は従来どおり 1 step (結果は変わらない) (AUD-A-S6W1-004)
 - `PressureModifier`: `apply_impact` を同じ点に 2 回掛けると次の `update` まで凹みが `max_deformation` の 2 倍になっていた 掛けた直後に上限で切る 負の `internal_pressure` は無視されていた 負は面を内側へ引く (AUD-A-S6W1-003 / 006)
 - `generate_flow_arrows`: 速度の無い粒子 (`fluid_velocities` が短い時) も平均の個数に数え、平均を 0 側へ薄めていた (streamline は数えない) 速度のある粒子だけで平均する 平均の範囲は全軸で x のセル幅 `dx` の球だったので、縦長のセルでは中にいる粒子が外れた セルの形の楕円体 (半軸 `dx, dy, dz`) にした 立方体のセルでは従来と同じ (AUD-A-S4W1-007 / 008)
