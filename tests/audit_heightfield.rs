@@ -412,7 +412,8 @@ fn origin_y_offsets_the_surface() {
 fn aabb_of_a_negative_spacing_field_is_not_inverted() {
     // AUD-A-S4W3-007: a spacing <= 0 has no surface (collide_sphere returns
     // None), so the box is the degenerate point at the origin, like an empty field
-    for spacing in [-1.0, 0.0] {
+    // -0.5 as well: a spacing in (-1, 0) takes the same point box
+    for spacing in [-1.0, -0.5, 0.0] {
         let origin = v3(2.0, 0.0, -3.0);
         let f = HeightField::flat(4, 4, fx(spacing), origin, Fix128::ONE);
         let bb = f.aabb();

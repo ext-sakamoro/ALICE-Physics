@@ -278,8 +278,9 @@ impl DebugDrawData {
     /// The head is `0.2 * |end - start|` long: each barb runs from `end` back to
     /// `head_point ± side * head_len / 2`, where `head_point` lies `head_len`
     /// before `end` on the shaft and `side` is a unit vector perpendicular to
-    /// the shaft (`dir × Y`, or `dir × X` when the shaft is along Y). A
-    /// zero-length arrow records the shaft only.
+    /// the shaft (`dir × Y`, or `dir × X` when the shaft is within about
+    /// 1e-3 rad of Y, i.e. `|unit × Y| < 1e-3`). A zero-length arrow records
+    /// the shaft only.
     pub fn arrow(&mut self, start: Vec3Fix, end: Vec3Fix, color: DebugColor) {
         self.line(start, end, color);
 

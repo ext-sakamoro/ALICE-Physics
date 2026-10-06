@@ -177,18 +177,19 @@ pub(crate) fn cycles_to_failure(curve: &SnCurve, stress_mpa: Fix128) -> u64 {
         r_m = r_m * ratio;
     }
 
-    // n = N_e · ratio^m
-    let n_e = Fix128::from_int(curve.endurance_cycles as i64);
-    let n_fp = n_e * r_m;
-
-    // Convert Fix128 → u64 (round toward zero)
-    let hi = n_fp.hi;
-    if hi <= 0 {
-        // Very-short life — one cycle minimum for physical meaning.
-        1
-    } else {
-        hi as u64
+    // n = floor(N_e · ratio^m) in integers: N_e times the integer part plus
+    // N_e times the 64 fraction bits. Converting N_e through i64 wrapped a count
+    // above i64::MAX negative. A negative ratio (negative S_e) or a life below
+    // one cycle answers one cycle, the minimum with physical meaning
+    if r_m.hi < 0 {
+        return 1;
     }
+    let ne = u128::from(curve.endurance_cycles);
+    let n = ne * (r_m.hi as u128) + ((ne * u128::from(r_m.lo)) >> 64);
+    // INFINITE_LIFE is u64::MAX, so a finite life stops one below it
+    u64::try_from(n)
+        .unwrap_or(INFINITE_LIFE - 1)
+        .clamp(1, INFINITE_LIFE - 1)
 }
 
 /// Smallest cycle count the Basquin inverse answers for.
@@ -259,7 +260,7 @@ pub(crate) fn stress_at_cycles(curve: &SnCurve, cycles: u64) -> Result<Fix128, F
     if cycles >= curve.endurance_cycles {
         return Ok(curve.endurance_stress_mpa);
     }
-    let target = Fix128::from_int(curve.endurance_cycles as i64) / Fix128::from_int(cycles as i64);
+    let target = u64_ratio(curve.endurance_cycles, cycles);
     let m = Fix128::from_int(i64::from(curve.fatigue_exponent_m));
     let mut x = target.powf_pos(Fix128::ONE / m);
     for _ in 0..2 {
@@ -296,7 +297,7 @@ pub fn miner_damage(spectrum: &[SpectrumEntry], curve: &SnCurve) -> Fix128 {
         if n_fail == INFINITE_LIFE {
             continue;
         }
-        let ratio = damage_ratio(n, n_fail);
+        let ratio = u64_ratio(n, n_fail);
         // saturate instead of wrapping: Fix128 addition is modulo 2^128
         d = if ratio >= DAMAGE_SATURATED - d {
             DAMAGE_SATURATED
@@ -311,18 +312,23 @@ pub fn miner_damage(spectrum: &[SpectrumEntry], curve: &SnCurve) -> Fix128 {
 /// (a count far beyond the life) saturates here instead of wrapping negative.
 pub(crate) const DAMAGE_SATURATED: Fix128 = Fix128::from_raw(i64::MAX, u64::MAX);
 
-/// `n / n_fail` for any `u64` count (`n_fail` is at least 1 and at most
-/// `i64::MAX`, as `cycles_to_failure` returns it). Split into the integer
-/// quotient and the remainder so a count above `i64::MAX` is not converted
-/// through `i64` (which wrapped it negative); a quotient beyond `i64::MAX`
-/// saturates.
-fn damage_ratio(n: u64, n_fail: u64) -> Fix128 {
-    let q = n / n_fail;
-    let r = n % n_fail;
+/// `n / d` for any `u64` pair (`d >= 1`). Split into the integer quotient and
+/// the remainder so a count above `i64::MAX` is not converted through `i64`
+/// (which wrapped it negative); a quotient beyond `i64::MAX` saturates at
+/// [`DAMAGE_SATURATED`]. A divisor above `i64::MAX` drops the last bit of the
+/// remainder and the divisor (a relative error below 2^-62 in the fraction)
+fn u64_ratio(n: u64, d: u64) -> Fix128 {
+    let q = n / d;
+    let r = n % d;
     if q > i64::MAX as u64 {
         return DAMAGE_SATURATED;
     }
-    Fix128::from_int(q as i64) + Fix128::from_int(r as i64) / Fix128::from_int(n_fail as i64)
+    let frac = if d > i64::MAX as u64 {
+        Fix128::from_int((r >> 1) as i64) / Fix128::from_int((d >> 1) as i64)
+    } else {
+        Fix128::from_int(r as i64) / Fix128::from_int(d as i64)
+    };
+    Fix128::from_int(q as i64) + frac
 }
 
 /// Cumulative damage report for one stress spectrum, returned by
