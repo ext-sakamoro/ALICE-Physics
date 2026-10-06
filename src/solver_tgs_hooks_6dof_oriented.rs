@@ -59,21 +59,19 @@ pub(crate) fn from_vec3fix(v: Vec3Fix) -> Vec3 {
 // Orientation integration primitive
 // ---------------------------------------------------------------------------
 
-/// Integrate a unit quaternion by an angular velocity `omega` over the
-/// interval `dt` using the classic first-order rule
-/// `q_new = normalize(q + 0.5 · dt · (ω_q × q))`.
+/// Integrate a unit quaternion by a constant world-frame angular velocity
+/// `omega` over the interval `dt` using the exact exponential map
+/// `q_new = normalize(exp(½ · dt · ω) ⊗ q)`: a turn by `|ω| · dt` about the
+/// axis `ω / |ω|`, left-multiplied because `ω` is expressed in the world
+/// frame. A zero `ω` returns `q` unchanged.
 #[must_use]
 pub(crate) fn integrate_orientation(q: QuatFix, omega: Vec3, dt: Fix128) -> QuatFix {
-    let omega_q = QuatFix::new(omega[0], omega[1], omega[2], Fix128::ZERO);
-    let q_dot = omega_q.mul(q);
-    let half_dt = Fix128::from_f32(0.5) * dt;
-    let candidate = QuatFix::new(
-        q.x + q_dot.x * half_dt,
-        q.y + q_dot.y * half_dt,
-        q.z + q_dot.z * half_dt,
-        q.w + q_dot.w * half_dt,
-    );
-    candidate.normalize()
+    let w = to_vec3fix(omega);
+    if w == Vec3Fix::ZERO {
+        return q;
+    }
+    let angle = w.length() * dt;
+    QuatFix::from_axis_angle(w, angle).mul(q).normalize()
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +151,7 @@ impl Body6DofOrientedState {
     /// already integrated by [`crate::gyroscopic::split_free_rotation`]:
     /// the orientation becomes the split's end orientation `free.rotation`,
     /// followed by the rotation the constraint solve added on top of the
-    /// split's velocity (`ω − free.omega`, first-order rule). Without contact
+    /// split's velocity (`ω − free.omega`, exact exponential map). Without contact
     /// or joint impulses that difference is zero and the split's orientation
     /// is used as is.
     pub(crate) fn advance_split(&mut self, sub_dt: Fix128, free: FreeRotation) {
@@ -996,8 +994,8 @@ mod tests {
 
     /// oracle: with no solve change the split's orientation is used as is;
     /// with a solve change `Δω = (0, 0, a)` from an identity free rotation
-    /// the first-order rule gives `normalize(1 + ½ h a k)`, a turn about `z`
-    /// by `2·atan(h a / 2)`.
+    /// the exact exponential map gives `exp(½ h a k)`, a turn about `z` by
+    /// `h a`, i.e. the half-angle `atan2(q.z, q.w) = h a / 2 = 1/8`.
     #[test]
     fn advance_split_applies_the_solve_change_on_top_of_the_free_rotation() {
         let h = Fix128::from_ratio(1, 8);
@@ -1025,14 +1023,10 @@ mod tests {
         body.orientation = QuatFix::IDENTITY;
         body.angular_velocity = [Fix128::ZERO, Fix128::ZERO, Fix128::from_int(2)];
         body.advance_split(h, free);
-        let want = 0.125_f64; // atan(h a / 2) = atan(1/8)
+        let want = 0.125_f64; // half-angle h a / 2 = 1/8
         let got =
             crate::det_math::atan2_64(body.orientation.z.to_f64(), body.orientation.w.to_f64());
-        assert!(
-            (got - crate::det_math::atan64(want)).abs() < 1e-15,
-            "{got} vs {}",
-            crate::det_math::atan64(want)
-        );
+        assert!((got - want).abs() < 1e-14, "{got} vs {want}");
         assert!(body.orientation.x.is_zero() && body.orientation.y.is_zero());
     }
 
