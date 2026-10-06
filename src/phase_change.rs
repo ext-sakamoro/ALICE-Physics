@@ -24,8 +24,13 @@
 //! Author: Moroya Sakamoto
 
 use crate::coupled_field::{CoupledField, CoupledFieldError, CoupledScalar};
+use crate::math::Fix128;
 use crate::sim_field::ScalarField3D;
 use crate::sim_modifier::PhysicsModifier;
+use crate::sim_modifier::{observe_max, observe_sum, StateReader, StateWriter};
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -385,6 +390,109 @@ impl CoupledScalar for PhaseChangeModifier {
 
     fn adopt(&mut self, src: &CoupledField) -> Result<(), CoupledFieldError> {
         src.write_to_f32(&mut self.temperature)
+    }
+}
+
+// ============================================================================
+// World participant
+// ============================================================================
+
+impl PhaseChangeModifier {
+    /// Snapshot tag of this type as a world participant: `"PHAS"`, the four
+    /// ASCII bytes read big endian. Never changes.
+    pub const PARTICIPANT_KIND: ParticipantKind =
+        ParticipantKind::new(u32::from_be_bytes(*b"PHAS"));
+
+    fn decode_state(bytes: &[u8]) -> Result<Self, StateError> {
+        let mut r = StateReader::new(bytes)?;
+        let config = PhaseChangeConfig {
+            melt_temperature: r.f32()?,
+            boil_temperature: r.f32()?,
+            latent_heat_fusion: r.f32()?,
+            latent_heat_vaporization: r.f32()?,
+            diffusion_rate: r.f32()?,
+            ambient_temperature: r.f32()?,
+            cooling_rate: r.f32()?,
+            liquid_flow_speed: r.f32()?,
+            gas_expansion_rate: r.f32()?,
+            gas_dissipation_rate: r.f32()?,
+            max_offset: r.f32()?,
+        };
+        let enabled = r.bool()?;
+        let temperature = r.field()?;
+        let phase = r.field()?;
+        let latent_heat = r.field()?;
+        let sdf_offset = r.field()?;
+        r.finish()?;
+        Ok(Self {
+            config,
+            temperature,
+            phase,
+            latent_heat,
+            sdf_offset,
+            enabled,
+        })
+    }
+}
+
+/// One `update(h)` per world substep (`h` converted with
+/// [`Fix128::to_f32`]); see the module documentation of
+/// [`crate::sim_modifier`] for the payload and what is not coupled yet.
+///
+/// Observations: channel 0 the highest cell temperature (absent for a grid
+/// without cells), channel 1 the number of cells that are not solid
+/// (stored phase ≥ 0.5), channel 2 the total SDF offset.
+impl Participant for PhaseChangeModifier {
+    fn kind(&self) -> ParticipantKind {
+        Self::PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        PhysicsModifier::update(self, h.to_f32());
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        observe_max(out, 0, &self.temperature);
+        let fluid = self.phase.data.iter().filter(|&&p| p >= 0.5).count();
+        out.push(1, Fix128::from_int(fluid as i64));
+        observe_sum(out, 2, &self.sdf_offset);
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        let mut w = StateWriter::new(out);
+        let c = &self.config;
+        for v in [
+            c.melt_temperature,
+            c.boil_temperature,
+            c.latent_heat_fusion,
+            c.latent_heat_vaporization,
+            c.diffusion_rate,
+            c.ambient_temperature,
+            c.cooling_rate,
+            c.liquid_flow_speed,
+            c.gas_expansion_rate,
+            c.gas_dissipation_rate,
+            c.max_offset,
+        ] {
+            w.f32(v);
+        }
+        w.bool(self.enabled);
+        w.field(&self.temperature);
+        w.field(&self.phase);
+        w.field(&self.latent_heat);
+        w.field(&self.sdf_offset);
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        Self::decode_state(bytes).map(drop)
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        match Self::decode_state(bytes) {
+            Ok(state) => *self = state,
+            Err(e) => panic!("read_state called with a payload check_state refuses: {e:?}"),
+        }
     }
 }
 

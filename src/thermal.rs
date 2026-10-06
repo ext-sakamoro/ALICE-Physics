@@ -14,8 +14,13 @@
 //! Author: Moroya Sakamoto
 
 use crate::coupled_field::{CoupledField, CoupledFieldError, CoupledScalar};
+use crate::math::Fix128;
 use crate::sim_field::ScalarField3D;
 use crate::sim_modifier::PhysicsModifier;
+use crate::sim_modifier::{observe_max, observe_sum, StateReader, StateWriter};
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -338,6 +343,139 @@ impl CoupledScalar for ThermalModifier {
 
     fn adopt(&mut self, src: &CoupledField) -> Result<(), CoupledFieldError> {
         src.write_to_f32(&mut self.temperature)
+    }
+}
+
+// ============================================================================
+// World participant
+// ============================================================================
+
+impl ThermalModifier {
+    /// Snapshot tag of this type as a world participant: `"THRM"`, the four
+    /// ASCII bytes read big endian. Never changes.
+    pub const PARTICIPANT_KIND: ParticipantKind =
+        ParticipantKind::new(u32::from_be_bytes(*b"THRM"));
+
+    fn decode_state(bytes: &[u8]) -> Result<Self, StateError> {
+        let mut r = StateReader::new(bytes)?;
+        let config = ThermalConfig {
+            diffusion_rate: r.f32()?,
+            ambient_temperature: r.f32()?,
+            cooling_rate: r.f32()?,
+            melt_temperature: r.f32()?,
+            melt_rate: r.f32()?,
+            droop_strength: r.f32()?,
+            expansion_coefficient: r.f32()?,
+            freeze_temperature: r.f32()?,
+            freeze_rate: r.f32()?,
+        };
+        let enabled = r.bool()?;
+        let temperature = r.field()?;
+        let melt_accumulator = r.field()?;
+        let n = r.count(1 + 5 * 4)?;
+        let mut heat_sources = Vec::with_capacity(n);
+        for _ in 0..n {
+            heat_sources.push(match r.u8()? {
+                0 => HeatSource::Point {
+                    x: r.f32()?,
+                    y: r.f32()?,
+                    z: r.f32()?,
+                    power: r.f32()?,
+                    radius: r.f32()?,
+                },
+                1 => HeatSource::Volume {
+                    min: r.vec3()?,
+                    max: r.vec3()?,
+                    power: r.f32()?,
+                },
+                _ => return Err(StateError::InvalidValue),
+            });
+        }
+        r.finish()?;
+        Ok(Self {
+            config,
+            temperature,
+            melt_accumulator,
+            heat_sources,
+            enabled,
+        })
+    }
+}
+
+/// One `update(h)` per world substep (`h` converted with
+/// [`Fix128::to_f32`]); see the module documentation of
+/// [`crate::sim_modifier`] for the payload and what is not coupled yet.
+///
+/// Observations: channel 0 the highest cell temperature (absent for a grid
+/// without cells), channel 1 the total melt (sum of the melt cells).
+impl Participant for ThermalModifier {
+    fn kind(&self) -> ParticipantKind {
+        Self::PARTICIPANT_KIND
+    }
+
+    fn substep(&mut self, _ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        PhysicsModifier::update(self, h.to_f32());
+        Ok(())
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        observe_max(out, 0, &self.temperature);
+        observe_sum(out, 1, &self.melt_accumulator);
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        let mut w = StateWriter::new(out);
+        let c = &self.config;
+        for v in [
+            c.diffusion_rate,
+            c.ambient_temperature,
+            c.cooling_rate,
+            c.melt_temperature,
+            c.melt_rate,
+            c.droop_strength,
+            c.expansion_coefficient,
+            c.freeze_temperature,
+            c.freeze_rate,
+        ] {
+            w.f32(v);
+        }
+        w.bool(self.enabled);
+        w.field(&self.temperature);
+        w.field(&self.melt_accumulator);
+        w.usize(self.heat_sources.len());
+        for s in &self.heat_sources {
+            match *s {
+                HeatSource::Point {
+                    x,
+                    y,
+                    z,
+                    power,
+                    radius,
+                } => {
+                    w.u8(0);
+                    for v in [x, y, z, power, radius] {
+                        w.f32(v);
+                    }
+                }
+                HeatSource::Volume { min, max, power } => {
+                    w.u8(1);
+                    w.vec3(min);
+                    w.vec3(max);
+                    w.f32(power);
+                }
+            }
+        }
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        Self::decode_state(bytes).map(drop)
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        match Self::decode_state(bytes) {
+            Ok(state) => *self = state,
+            Err(e) => panic!("read_state called with a payload check_state refuses: {e:?}"),
+        }
     }
 }
 

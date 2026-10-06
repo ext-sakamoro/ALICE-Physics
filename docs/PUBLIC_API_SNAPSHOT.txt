@@ -3493,6 +3493,8 @@ pub alice_physics::erosion::ErosionModifier::enabled: bool
 pub alice_physics::erosion::ErosionModifier::erosion_depth: alice_physics::sim_field::ScalarField3D
 pub alice_physics::erosion::ErosionModifier::exposure: alice_physics::sim_field::ScalarField3D
 impl alice_physics::erosion::ErosionModifier
+pub const alice_physics::erosion::ErosionModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::erosion::ErosionModifier
 pub fn alice_physics::erosion::ErosionModifier::compute_exposure_from_normals(&mut self, &dyn alice_physics::sdf_collider::SdfField, f32)
 pub fn alice_physics::erosion::ErosionModifier::erosion_at(&self, f32, f32, f32) -> f32
 pub fn alice_physics::erosion::ErosionModifier::new(alice_physics::erosion::ErosionConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -3502,6 +3504,15 @@ pub fn alice_physics::erosion::ErosionModifier::is_active(&self) -> bool
 pub fn alice_physics::erosion::ErosionModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::erosion::ErosionModifier::name(&self) -> &'static str
 pub fn alice_physics::erosion::ErosionModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::erosion::ErosionModifier
+pub fn alice_physics::erosion::ErosionModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::erosion::ErosionModifier
 impl core::marker::Send for alice_physics::erosion::ErosionModifier
 impl core::marker::Sync for alice_physics::erosion::ErosionModifier
@@ -4532,6 +4543,8 @@ pub alice_physics::fracture::FractureModifier::cracks: alloc::vec::Vec<alice_phy
 pub alice_physics::fracture::FractureModifier::enabled: bool
 pub alice_physics::fracture::FractureModifier::stress: alice_physics::sim_field::ScalarField3D
 impl alice_physics::fracture::FractureModifier
+pub const alice_physics::fracture::FractureModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::fracture::FractureModifier
 pub fn alice_physics::fracture::FractureModifier::active_crack_count(&self) -> usize
 pub fn alice_physics::fracture::FractureModifier::apply_stress_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::fracture::FractureModifier::new(alice_physics::fracture::FractureConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -4541,6 +4554,15 @@ pub fn alice_physics::fracture::FractureModifier::is_active(&self) -> bool
 pub fn alice_physics::fracture::FractureModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::fracture::FractureModifier::name(&self) -> &'static str
 pub fn alice_physics::fracture::FractureModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::fracture::FractureModifier
+pub fn alice_physics::fracture::FractureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::fracture::FractureModifier
 impl core::marker::Send for alice_physics::fracture::FractureModifier
 impl core::marker::Sync for alice_physics::fracture::FractureModifier
@@ -8598,6 +8620,8 @@ pub alice_physics::phase_change::PhaseChangeModifier::phase: alice_physics::sim_
 pub alice_physics::phase_change::PhaseChangeModifier::sdf_offset: alice_physics::sim_field::ScalarField3D
 pub alice_physics::phase_change::PhaseChangeModifier::temperature: alice_physics::sim_field::ScalarField3D
 impl alice_physics::phase_change::PhaseChangeModifier
+pub const alice_physics::phase_change::PhaseChangeModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::phase_change::PhaseChangeModifier
 pub fn alice_physics::phase_change::PhaseChangeModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::phase_change::PhaseChangeModifier::new(alice_physics::phase_change::PhaseChangeConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::phase_change::PhaseChangeModifier::phase_at(&self, f32, f32, f32) -> alice_physics::phase_change::Phase
@@ -8612,6 +8636,15 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::is_active(&self) -> boo
 pub fn alice_physics::phase_change::PhaseChangeModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::phase_change::PhaseChangeModifier::name(&self) -> &'static str
 pub fn alice_physics::phase_change::PhaseChangeModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::phase_change::PhaseChangeModifier
 impl core::marker::Send for alice_physics::phase_change::PhaseChangeModifier
 impl core::marker::Sync for alice_physics::phase_change::PhaseChangeModifier
@@ -11190,6 +11223,8 @@ pub alice_physics::prelude::ErosionModifier::enabled: bool
 pub alice_physics::prelude::ErosionModifier::erosion_depth: alice_physics::sim_field::ScalarField3D
 pub alice_physics::prelude::ErosionModifier::exposure: alice_physics::sim_field::ScalarField3D
 impl alice_physics::erosion::ErosionModifier
+pub const alice_physics::erosion::ErosionModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::erosion::ErosionModifier
 pub fn alice_physics::erosion::ErosionModifier::compute_exposure_from_normals(&mut self, &dyn alice_physics::sdf_collider::SdfField, f32)
 pub fn alice_physics::erosion::ErosionModifier::erosion_at(&self, f32, f32, f32) -> f32
 pub fn alice_physics::erosion::ErosionModifier::new(alice_physics::erosion::ErosionConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -11199,6 +11234,15 @@ pub fn alice_physics::erosion::ErosionModifier::is_active(&self) -> bool
 pub fn alice_physics::erosion::ErosionModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::erosion::ErosionModifier::name(&self) -> &'static str
 pub fn alice_physics::erosion::ErosionModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::erosion::ErosionModifier
+pub fn alice_physics::erosion::ErosionModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::erosion::ErosionModifier
 impl core::marker::Send for alice_physics::erosion::ErosionModifier
 impl core::marker::Sync for alice_physics::erosion::ErosionModifier
@@ -11595,6 +11639,8 @@ pub alice_physics::prelude::FractureModifier::cracks: alloc::vec::Vec<alice_phys
 pub alice_physics::prelude::FractureModifier::enabled: bool
 pub alice_physics::prelude::FractureModifier::stress: alice_physics::sim_field::ScalarField3D
 impl alice_physics::fracture::FractureModifier
+pub const alice_physics::fracture::FractureModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::fracture::FractureModifier
 pub fn alice_physics::fracture::FractureModifier::active_crack_count(&self) -> usize
 pub fn alice_physics::fracture::FractureModifier::apply_stress_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::fracture::FractureModifier::new(alice_physics::fracture::FractureConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -11604,6 +11650,15 @@ pub fn alice_physics::fracture::FractureModifier::is_active(&self) -> bool
 pub fn alice_physics::fracture::FractureModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::fracture::FractureModifier::name(&self) -> &'static str
 pub fn alice_physics::fracture::FractureModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::fracture::FractureModifier
+pub fn alice_physics::fracture::FractureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::fracture::FractureModifier
 impl core::marker::Send for alice_physics::fracture::FractureModifier
 impl core::marker::Sync for alice_physics::fracture::FractureModifier
@@ -12542,6 +12597,8 @@ pub alice_physics::prelude::PhaseChangeModifier::phase: alice_physics::sim_field
 pub alice_physics::prelude::PhaseChangeModifier::sdf_offset: alice_physics::sim_field::ScalarField3D
 pub alice_physics::prelude::PhaseChangeModifier::temperature: alice_physics::sim_field::ScalarField3D
 impl alice_physics::phase_change::PhaseChangeModifier
+pub const alice_physics::phase_change::PhaseChangeModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::phase_change::PhaseChangeModifier
 pub fn alice_physics::phase_change::PhaseChangeModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::phase_change::PhaseChangeModifier::new(alice_physics::phase_change::PhaseChangeConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::phase_change::PhaseChangeModifier::phase_at(&self, f32, f32, f32) -> alice_physics::phase_change::Phase
@@ -12556,6 +12613,15 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::is_active(&self) -> boo
 pub fn alice_physics::phase_change::PhaseChangeModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::phase_change::PhaseChangeModifier::name(&self) -> &'static str
 pub fn alice_physics::phase_change::PhaseChangeModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::phase_change::PhaseChangeModifier
 impl core::marker::Send for alice_physics::phase_change::PhaseChangeModifier
 impl core::marker::Sync for alice_physics::phase_change::PhaseChangeModifier
@@ -12848,6 +12914,8 @@ pub alice_physics::prelude::PressureModifier::deformation: alice_physics::sim_fi
 pub alice_physics::prelude::PressureModifier::enabled: bool
 pub alice_physics::prelude::PressureModifier::pressure: alice_physics::sim_field::ScalarField3D
 impl alice_physics::pressure::PressureModifier
+pub const alice_physics::pressure::PressureModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::pressure::PressureModifier
 pub fn alice_physics::pressure::PressureModifier::apply_impact(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::pressure::PressureModifier::apply_pressure_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::pressure::PressureModifier::deformation_at(&self, f32, f32, f32) -> f32
@@ -12858,6 +12926,15 @@ pub fn alice_physics::pressure::PressureModifier::is_active(&self) -> bool
 pub fn alice_physics::pressure::PressureModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::pressure::PressureModifier::name(&self) -> &'static str
 pub fn alice_physics::pressure::PressureModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::pressure::PressureModifier
+pub fn alice_physics::pressure::PressureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::pressure::PressureModifier
 impl core::marker::Send for alice_physics::pressure::PressureModifier
 impl core::marker::Sync for alice_physics::pressure::PressureModifier
@@ -13857,6 +13934,8 @@ pub alice_physics::prelude::ThermalModifier::heat_sources: alloc::vec::Vec<alice
 pub alice_physics::prelude::ThermalModifier::melt_accumulator: alice_physics::sim_field::ScalarField3D
 pub alice_physics::prelude::ThermalModifier::temperature: alice_physics::sim_field::ScalarField3D
 impl alice_physics::thermal::ThermalModifier
+pub const alice_physics::thermal::ThermalModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::thermal::ThermalModifier
 pub fn alice_physics::thermal::ThermalModifier::add_heat_point(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::new(alice_physics::thermal::ThermalConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -13871,6 +13950,15 @@ pub fn alice_physics::thermal::ThermalModifier::is_active(&self) -> bool
 pub fn alice_physics::thermal::ThermalModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::thermal::ThermalModifier::name(&self) -> &'static str
 pub fn alice_physics::thermal::ThermalModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::thermal::ThermalModifier
 impl core::marker::Send for alice_physics::thermal::ThermalModifier
 impl core::marker::Sync for alice_physics::thermal::ThermalModifier
@@ -14420,6 +14508,8 @@ pub alice_physics::pressure::PressureModifier::deformation: alice_physics::sim_f
 pub alice_physics::pressure::PressureModifier::enabled: bool
 pub alice_physics::pressure::PressureModifier::pressure: alice_physics::sim_field::ScalarField3D
 impl alice_physics::pressure::PressureModifier
+pub const alice_physics::pressure::PressureModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::pressure::PressureModifier
 pub fn alice_physics::pressure::PressureModifier::apply_impact(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::pressure::PressureModifier::apply_pressure_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::pressure::PressureModifier::deformation_at(&self, f32, f32, f32) -> f32
@@ -14430,6 +14520,15 @@ pub fn alice_physics::pressure::PressureModifier::is_active(&self) -> bool
 pub fn alice_physics::pressure::PressureModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::pressure::PressureModifier::name(&self) -> &'static str
 pub fn alice_physics::pressure::PressureModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::pressure::PressureModifier
+pub fn alice_physics::pressure::PressureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::pressure::PressureModifier
 impl core::marker::Send for alice_physics::pressure::PressureModifier
 impl core::marker::Sync for alice_physics::pressure::PressureModifier
@@ -17688,6 +17787,8 @@ pub alice_physics::thermal::ThermalModifier::heat_sources: alloc::vec::Vec<alice
 pub alice_physics::thermal::ThermalModifier::melt_accumulator: alice_physics::sim_field::ScalarField3D
 pub alice_physics::thermal::ThermalModifier::temperature: alice_physics::sim_field::ScalarField3D
 impl alice_physics::thermal::ThermalModifier
+pub const alice_physics::thermal::ThermalModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::thermal::ThermalModifier
 pub fn alice_physics::thermal::ThermalModifier::add_heat_point(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::new(alice_physics::thermal::ThermalConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -17702,6 +17803,15 @@ pub fn alice_physics::thermal::ThermalModifier::is_active(&self) -> bool
 pub fn alice_physics::thermal::ThermalModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::thermal::ThermalModifier::name(&self) -> &'static str
 pub fn alice_physics::thermal::ThermalModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::thermal::ThermalModifier
 impl core::marker::Send for alice_physics::thermal::ThermalModifier
 impl core::marker::Sync for alice_physics::thermal::ThermalModifier
@@ -19732,6 +19842,51 @@ pub fn alice_physics::world_participant::Participant::read_state(&mut self, &[u8
 pub fn alice_physics::world_participant::Participant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::world_participant::Participant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::world_participant::Participant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::erosion::ErosionModifier
+pub fn alice_physics::erosion::ErosionModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::fracture::FractureModifier
+pub fn alice_physics::fracture::FractureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::pressure::PressureModifier
+pub fn alice_physics::pressure::PressureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 pub fn alice_physics::world_participant::check_field_ports(&alice_physics::world_participant::FieldBoard, &[&[alice_physics::world_participant::Port]]) -> core::result::Result<(), alice_physics::world_participant::FieldPortError>
 pub fn alice_physics::world_participant::deposit_bodies(&[alice_physics::solver::RigidBody], &[alice_physics::math::Fix128], &alice_physics::world_participant::FieldLayout) -> core::result::Result<alloc::vec::Vec<alice_physics::math::Fix128>, alice_physics::world_participant::RemapError>
 pub fn alice_physics::world_participant::execution_order(&[&[alice_physics::world_participant::Port]]) -> core::result::Result<alloc::vec::Vec<usize>, alice_physics::world_participant::OrderError>
@@ -21919,6 +22074,8 @@ pub alice_physics::ErosionModifier::enabled: bool
 pub alice_physics::ErosionModifier::erosion_depth: alice_physics::sim_field::ScalarField3D
 pub alice_physics::ErosionModifier::exposure: alice_physics::sim_field::ScalarField3D
 impl alice_physics::erosion::ErosionModifier
+pub const alice_physics::erosion::ErosionModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::erosion::ErosionModifier
 pub fn alice_physics::erosion::ErosionModifier::compute_exposure_from_normals(&mut self, &dyn alice_physics::sdf_collider::SdfField, f32)
 pub fn alice_physics::erosion::ErosionModifier::erosion_at(&self, f32, f32, f32) -> f32
 pub fn alice_physics::erosion::ErosionModifier::new(alice_physics::erosion::ErosionConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -21928,6 +22085,15 @@ pub fn alice_physics::erosion::ErosionModifier::is_active(&self) -> bool
 pub fn alice_physics::erosion::ErosionModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::erosion::ErosionModifier::name(&self) -> &'static str
 pub fn alice_physics::erosion::ErosionModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::erosion::ErosionModifier
+pub fn alice_physics::erosion::ErosionModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::erosion::ErosionModifier
 impl core::marker::Send for alice_physics::erosion::ErosionModifier
 impl core::marker::Sync for alice_physics::erosion::ErosionModifier
@@ -22324,6 +22490,8 @@ pub alice_physics::FractureModifier::cracks: alloc::vec::Vec<alice_physics::frac
 pub alice_physics::FractureModifier::enabled: bool
 pub alice_physics::FractureModifier::stress: alice_physics::sim_field::ScalarField3D
 impl alice_physics::fracture::FractureModifier
+pub const alice_physics::fracture::FractureModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::fracture::FractureModifier
 pub fn alice_physics::fracture::FractureModifier::active_crack_count(&self) -> usize
 pub fn alice_physics::fracture::FractureModifier::apply_stress_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::fracture::FractureModifier::new(alice_physics::fracture::FractureConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -22333,6 +22501,15 @@ pub fn alice_physics::fracture::FractureModifier::is_active(&self) -> bool
 pub fn alice_physics::fracture::FractureModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::fracture::FractureModifier::name(&self) -> &'static str
 pub fn alice_physics::fracture::FractureModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::fracture::FractureModifier
+pub fn alice_physics::fracture::FractureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::fracture::FractureModifier
 impl core::marker::Send for alice_physics::fracture::FractureModifier
 impl core::marker::Sync for alice_physics::fracture::FractureModifier
@@ -23271,6 +23448,8 @@ pub alice_physics::PhaseChangeModifier::phase: alice_physics::sim_field::ScalarF
 pub alice_physics::PhaseChangeModifier::sdf_offset: alice_physics::sim_field::ScalarField3D
 pub alice_physics::PhaseChangeModifier::temperature: alice_physics::sim_field::ScalarField3D
 impl alice_physics::phase_change::PhaseChangeModifier
+pub const alice_physics::phase_change::PhaseChangeModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::phase_change::PhaseChangeModifier
 pub fn alice_physics::phase_change::PhaseChangeModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::phase_change::PhaseChangeModifier::new(alice_physics::phase_change::PhaseChangeConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
 pub fn alice_physics::phase_change::PhaseChangeModifier::phase_at(&self, f32, f32, f32) -> alice_physics::phase_change::Phase
@@ -23285,6 +23464,15 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::is_active(&self) -> boo
 pub fn alice_physics::phase_change::PhaseChangeModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::phase_change::PhaseChangeModifier::name(&self) -> &'static str
 pub fn alice_physics::phase_change::PhaseChangeModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::phase_change::PhaseChangeModifier
+pub fn alice_physics::phase_change::PhaseChangeModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::phase_change::PhaseChangeModifier
 impl core::marker::Send for alice_physics::phase_change::PhaseChangeModifier
 impl core::marker::Sync for alice_physics::phase_change::PhaseChangeModifier
@@ -23616,6 +23804,8 @@ pub alice_physics::PressureModifier::deformation: alice_physics::sim_field::Scal
 pub alice_physics::PressureModifier::enabled: bool
 pub alice_physics::PressureModifier::pressure: alice_physics::sim_field::ScalarField3D
 impl alice_physics::pressure::PressureModifier
+pub const alice_physics::pressure::PressureModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::pressure::PressureModifier
 pub fn alice_physics::pressure::PressureModifier::apply_impact(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::pressure::PressureModifier::apply_pressure_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::pressure::PressureModifier::deformation_at(&self, f32, f32, f32) -> f32
@@ -23626,6 +23816,15 @@ pub fn alice_physics::pressure::PressureModifier::is_active(&self) -> bool
 pub fn alice_physics::pressure::PressureModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::pressure::PressureModifier::name(&self) -> &'static str
 pub fn alice_physics::pressure::PressureModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::pressure::PressureModifier
+pub fn alice_physics::pressure::PressureModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::pressure::PressureModifier
 impl core::marker::Send for alice_physics::pressure::PressureModifier
 impl core::marker::Sync for alice_physics::pressure::PressureModifier
@@ -24658,6 +24857,8 @@ pub alice_physics::ThermalModifier::heat_sources: alloc::vec::Vec<alice_physics:
 pub alice_physics::ThermalModifier::melt_accumulator: alice_physics::sim_field::ScalarField3D
 pub alice_physics::ThermalModifier::temperature: alice_physics::sim_field::ScalarField3D
 impl alice_physics::thermal::ThermalModifier
+pub const alice_physics::thermal::ThermalModifier::PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
+impl alice_physics::thermal::ThermalModifier
 pub fn alice_physics::thermal::ThermalModifier::add_heat_point(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::apply_heat_at(&mut self, f32, f32, f32, f32, f32)
 pub fn alice_physics::thermal::ThermalModifier::new(alice_physics::thermal::ThermalConfig, usize, (f32, f32, f32), (f32, f32, f32)) -> Self
@@ -24672,6 +24873,15 @@ pub fn alice_physics::thermal::ThermalModifier::is_active(&self) -> bool
 pub fn alice_physics::thermal::ThermalModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
 pub fn alice_physics::thermal::ThermalModifier::name(&self) -> &'static str
 pub fn alice_physics::thermal::ThermalModifier::update(&mut self, f32)
+impl alice_physics::world_participant::Participant for alice_physics::thermal::ThermalModifier
+pub fn alice_physics::thermal::ThermalModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::marker::Freeze for alice_physics::thermal::ThermalModifier
 impl core::marker::Send for alice_physics::thermal::ThermalModifier
 impl core::marker::Sync for alice_physics::thermal::ThermalModifier
