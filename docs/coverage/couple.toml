@@ -776,7 +776,7 @@ axis = "rigid-fluid"
 item = "radiation and diffraction (frequency-dependent added mass and radiation damping, Cummins equation)"
 source = "Cummins 1962; Newman ch.6; WAMIT / NEMOH"
 status = "missing"
-evidence = "無い (推測: radiation damping / added mass で 0 件)"
+evidence = "無い (推測: radiation damping / added mass で 0 件) 分割: 子の行 COV-COUPLE-122〜123 この行の status は子のうち最も実装の少ないもの (missing) に合わせて手で保つ (検査器は親子を見ない)"
 oracle_candidate = "浮体の自由減衰で周期と減衰率 (参照値要確認)"
 limitation = ""
 
@@ -1278,4 +1278,24 @@ source = "preCICE coupling schemes and data mapping; MOOSE MultiApp Transfers; F
 status = "missing"
 evidence = "World の参加者の契約は main に無い 剛体の読みと剛体への力の加算だけでは、場を持つ参加者同士 (熱と構造、電磁と熱、流体と粒子) の受け渡しができない 場の受け渡しの契約は作成中 格子の上の sample / splat の部品はある (src/coupled_field.rs::sample、src/coupled_field.rs::splat、COV-NUM-065) 本表の連成の行 (COV-COUPLE-103〜120) は World の参加者として載せる時にこの行に依存する"
 oracle_candidate = "2 参加者が互いの場を読む時、登録順を入れ替えても開始時の値を読むので結果が bit 一致 / 写像の前後で交換量の総和が保存"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-122"
+axis = "rigid-fluid"
+item = "frequency-domain radiation and diffraction of a floating body (added mass and radiation damping)"
+source = "Newman ch.6; WAMIT / NEMOH"
+status = "missing"
+evidence = "COV-COUPLE-071 の子 無い (推測: radiation damping / added mass で 0 件)"
+oracle_candidate = "半没球の付加質量の閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-123"
+axis = "rigid-fluid"
+item = "time-domain floating body motion by the Cummins equation (retardation function)"
+source = "Cummins 1962"
+status = "missing"
+evidence = "COV-COUPLE-071 の子 無い"
+oracle_candidate = "浮体の自由減衰で周期と減衰率 (参照値要確認)"
 limitation = ""

@@ -6,41 +6,41 @@ crate has today.
 
 | table | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| `docs/coverage/acous.toml` | 101 | 8 | 3 | 3 | 87 | 0 |
-| `docs/coverage/am.toml` | 90 | 10 | 0 | 7 | 73 | 0 |
+| `docs/coverage/acous.toml` | 103 | 8 | 3 | 3 | 89 | 0 |
+| `docs/coverage/am.toml` | 93 | 10 | 0 | 7 | 76 | 0 |
 | `docs/coverage/atmos.toml` | 144 | 0 | 1 | 0 | 143 | 0 |
-| `docs/coverage/bio.toml` | 135 | 0 | 4 | 0 | 131 | 0 |
-| `docs/coverage/cfd.toml` | 117 | 39 | 2 | 6 | 70 | 0 |
-| `docs/coverage/chem.toml` | 132 | 7 | 2 | 0 | 123 | 0 |
-| `docs/coverage/couple.toml` | 121 | 10 | 3 | 4 | 104 | 0 |
-| `docs/coverage/em.toml` | 111 | 20 | 2 | 5 | 84 | 0 |
-| `docs/coverage/engine.toml` | 145 | 63 | 9 | 6 | 67 | 0 |
-| `docs/coverage/env.toml` | 142 | 20 | 3 | 2 | 117 | 0 |
-| `docs/coverage/fem.toml` | 133 | 36 | 0 | 6 | 88 | 3 |
-| `docs/coverage/fract.toml` | 106 | 15 | 2 | 4 | 85 | 0 |
+| `docs/coverage/bio.toml` | 141 | 0 | 4 | 0 | 137 | 0 |
+| `docs/coverage/cfd.toml` | 121 | 39 | 2 | 6 | 74 | 0 |
+| `docs/coverage/chem.toml` | 140 | 7 | 2 | 0 | 131 | 0 |
+| `docs/coverage/couple.toml` | 123 | 10 | 3 | 4 | 106 | 0 |
+| `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
+| `docs/coverage/engine.toml` | 153 | 63 | 9 | 7 | 74 | 0 |
+| `docs/coverage/env.toml` | 152 | 20 | 3 | 2 | 127 | 0 |
+| `docs/coverage/fem.toml` | 137 | 36 | 0 | 6 | 92 | 3 |
+| `docs/coverage/fract.toml` | 112 | 15 | 2 | 4 | 91 | 0 |
 | `docs/coverage/geo.toml` | 125 | 0 | 2 | 0 | 123 | 0 |
 | `docs/coverage/geotech.toml` | 89 | 0 | 2 | 0 | 87 | 0 |
-| `docs/coverage/mat.toml` | 136 | 23 | 13 | 5 | 95 | 0 |
-| `docs/coverage/mbd.toml` | 139 | 36 | 2 | 13 | 88 | 0 |
+| `docs/coverage/mat.toml` | 146 | 23 | 13 | 5 | 105 | 0 |
+| `docs/coverage/mbd.toml` | 161 | 36 | 2 | 13 | 110 | 0 |
 | `docs/coverage/mfg.toml` | 45 | 0 | 0 | 0 | 45 | 0 |
-| `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
+| `docs/coverage/multiphase.toml` | 92 | 11 | 2 | 3 | 76 | 0 |
 | `docs/coverage/nonlin.toml` | 96 | 1 | 2 | 0 | 93 | 0 |
-| `docs/coverage/nuclear.toml` | 123 | 0 | 1 | 0 | 122 | 0 |
-| `docs/coverage/num.toml` | 120 | 26 | 0 | 5 | 88 | 1 |
+| `docs/coverage/nuclear.toml` | 133 | 0 | 1 | 0 | 132 | 0 |
+| `docs/coverage/num.toml` | 124 | 26 | 0 | 5 | 92 | 1 |
 | `docs/coverage/opt.toml` | 120 | 1 | 0 | 0 | 118 | 1 |
-| `docs/coverage/optics.toml` | 119 | 0 | 0 | 0 | 119 | 0 |
-| `docs/coverage/orbit.toml` | 128 | 23 | 4 | 3 | 98 | 0 |
-| `docs/coverage/part.toml` | 120 | 26 | 2 | 3 | 89 | 0 |
-| `docs/coverage/plasma.toml` | 143 | 0 | 4 | 0 | 139 | 0 |
-| `docs/coverage/quantum.toml` | 163 | 0 | 0 | 0 | 163 | 0 |
+| `docs/coverage/optics.toml` | 121 | 0 | 0 | 0 | 121 | 0 |
+| `docs/coverage/orbit.toml` | 138 | 23 | 4 | 3 | 108 | 0 |
+| `docs/coverage/part.toml` | 122 | 26 | 2 | 3 | 91 | 0 |
+| `docs/coverage/plasma.toml` | 156 | 0 | 4 | 0 | 152 | 0 |
+| `docs/coverage/quantum.toml` | 169 | 0 | 0 | 0 | 169 | 0 |
 | `docs/coverage/rel.toml` | 112 | 0 | 0 | 0 | 112 | 0 |
-| `docs/coverage/rigid.toml` | 119 | 77 | 4 | 8 | 29 | 1 |
+| `docs/coverage/rigid.toml` | 121 | 77 | 4 | 8 | 31 | 1 |
 | `docs/coverage/sense.toml` | 92 | 19 | 2 | 2 | 69 | 0 |
-| `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
+| `docs/coverage/soft.toml` | 96 | 21 | 4 | 6 | 65 | 0 |
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
-| `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
-| `docs/coverage/therm.toml` | 123 | 17 | 0 | 3 | 103 | 0 |
-| **total** | 4006 | 542 | 75 | 104 | 3279 | 6 |
+| `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
+| `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
+| **total** | 4177 | 542 | 75 | 105 | 3449 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -49,7 +49,7 @@ crate has today.
 | benchmark | 5 | 1 | 2 | 0 | 2 | 0 |
 | boundary | 11 | 1 | 0 | 0 | 10 | 0 |
 | discretisation | 13 | 3 | 0 | 0 | 10 | 0 |
-| game-audio | 7 | 1 | 0 | 1 | 5 | 0 |
+| game-audio | 9 | 1 | 0 | 1 | 7 | 0 |
 | geometric | 6 | 0 | 0 | 0 | 6 | 0 |
 | governing | 10 | 0 | 0 | 1 | 9 | 0 |
 | medium | 8 | 2 | 0 | 1 | 5 | 0 |
@@ -71,7 +71,7 @@ crate has today.
 | pipeline | 3 | 1 | 0 | 0 | 2 | 0 |
 | post-processing | 4 | 0 | 0 | 0 | 4 | 0 |
 | powder bed fusion | 5 | 0 | 0 | 0 | 5 | 0 |
-| slicer interface | 5 | 0 | 0 | 0 | 5 | 0 |
+| slicer interface | 8 | 0 | 0 | 0 | 8 | 0 |
 | support | 6 | 2 | 0 | 0 | 4 | 0 |
 | thermal history | 8 | 0 | 0 | 0 | 8 | 0 |
 | vat photopolymerisation | 4 | 0 | 0 | 0 | 4 | 0 |
@@ -103,12 +103,12 @@ crate has today.
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | benchmark | 16 | 0 | 0 | 0 | 16 | 0 |
-| bioheat-transport | 4 | 0 | 0 | 0 | 4 | 0 |
+| bioheat-transport | 6 | 0 | 0 | 0 | 6 | 0 |
 | blood-flow | 14 | 0 | 1 | 0 | 13 | 0 |
 | bone | 9 | 0 | 1 | 0 | 8 | 0 |
 | cell-molecular | 10 | 0 | 0 | 0 | 10 | 0 |
-| heart | 10 | 0 | 0 | 0 | 10 | 0 |
-| impact-injury | 10 | 0 | 0 | 0 | 10 | 0 |
+| heart | 12 | 0 | 0 | 0 | 12 | 0 |
+| impact-injury | 12 | 0 | 0 | 0 | 12 | 0 |
 | locomotion | 11 | 0 | 0 | 0 | 11 | 0 |
 | muscle | 12 | 0 | 0 | 0 | 12 | 0 |
 | musculoskeletal | 9 | 0 | 0 | 0 | 9 | 0 |
@@ -126,7 +126,7 @@ crate has today.
 | discretisation | 10 | 3 | 0 | 0 | 7 | 0 |
 | output | 4 | 1 | 0 | 0 | 3 | 0 |
 | particle method | 15 | 7 | 0 | 1 | 7 | 0 |
-| physics | 10 | 3 | 0 | 0 | 7 | 0 |
+| physics | 14 | 3 | 0 | 0 | 11 | 0 |
 | pressure solver | 9 | 4 | 0 | 2 | 3 | 0 |
 | pressure-velocity coupling | 6 | 1 | 0 | 0 | 5 | 0 |
 | time integration | 8 | 2 | 0 | 1 | 5 | 0 |
@@ -138,12 +138,12 @@ crate has today.
 |---|---:|---:|---:|---:|---:|---:|
 | battery | 16 | 0 | 0 | 0 | 16 | 0 |
 | benchmark | 15 | 1 | 1 | 0 | 13 | 0 |
-| combustion | 19 | 2 | 0 | 0 | 17 | 0 |
+| combustion | 21 | 2 | 0 | 0 | 19 | 0 |
 | electrochemistry | 6 | 0 | 0 | 0 | 6 | 0 |
 | equilibrium | 6 | 0 | 0 | 0 | 6 | 0 |
-| fire | 8 | 0 | 0 | 0 | 8 | 0 |
-| kinetics | 16 | 2 | 1 | 0 | 13 | 0 |
-| reactor | 8 | 0 | 0 | 0 | 8 | 0 |
+| fire | 10 | 0 | 0 | 0 | 10 | 0 |
+| kinetics | 18 | 2 | 1 | 0 | 15 | 0 |
+| reactor | 10 | 0 | 0 | 0 | 10 | 0 |
 | stoichiometry | 5 | 0 | 0 | 0 | 5 | 0 |
 | thermo | 12 | 1 | 0 | 0 | 11 | 0 |
 | transport | 9 | 0 | 0 | 0 | 9 | 0 |
@@ -174,7 +174,7 @@ crate has today.
 | particle-fluid | 5 | 0 | 0 | 0 | 5 | 0 |
 | particle-rigid | 2 | 0 | 0 | 0 | 2 | 0 |
 | particle-thermal | 1 | 0 | 0 | 0 | 1 | 0 |
-| rigid-fluid | 10 | 2 | 0 | 2 | 6 | 0 |
+| rigid-fluid | 12 | 2 | 0 | 2 | 8 | 0 |
 | shock-structure | 3 | 0 | 0 | 0 | 3 | 0 |
 | soft-sensor | 1 | 0 | 0 | 0 | 1 | 0 |
 | thermo-atmosphere | 1 | 0 | 0 | 0 | 1 | 0 |
@@ -190,7 +190,7 @@ crate has today.
 | circuit | 6 | 0 | 0 | 0 | 6 | 0 |
 | frequency-domain | 7 | 0 | 0 | 0 | 7 | 0 |
 | integral-equation | 5 | 0 | 0 | 0 | 5 | 0 |
-| material | 14 | 3 | 0 | 1 | 10 | 0 |
+| material | 16 | 3 | 0 | 1 | 12 | 0 |
 | output | 12 | 2 | 0 | 0 | 10 | 0 |
 | particle | 5 | 0 | 0 | 0 | 5 | 0 |
 | quasi-static | 3 | 0 | 0 | 0 | 3 | 0 |
@@ -209,14 +209,14 @@ crate has today.
 | diagnostics | 15 | 9 | 0 | 0 | 6 | 0 |
 | game-engine | 4 | 0 | 0 | 0 | 4 | 0 |
 | network | 18 | 7 | 0 | 0 | 11 | 0 |
-| state | 18 | 5 | 0 | 2 | 11 | 0 |
+| state | 26 | 5 | 0 | 3 | 18 | 0 |
 | world | 11 | 7 | 0 | 1 | 3 | 0 |
 
 ## `docs/coverage/env.toml`
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| aerodynamics | 12 | 5 | 0 | 0 | 7 | 0 |
+| aerodynamics | 14 | 5 | 0 | 0 | 9 | 0 |
 | atmosphere | 13 | 4 | 1 | 0 | 8 | 0 |
 | atmospheric-dynamics | 5 | 0 | 0 | 0 | 5 | 0 |
 | benchmark | 14 | 3 | 1 | 0 | 10 | 0 |
@@ -225,11 +225,11 @@ crate has today.
 | environmental-load | 5 | 0 | 0 | 1 | 4 | 0 |
 | moist-air | 7 | 0 | 0 | 0 | 7 | 0 |
 | ocean-coastal | 5 | 0 | 0 | 0 | 5 | 0 |
-| ocean-waves | 17 | 3 | 0 | 0 | 14 | 0 |
-| terrain | 9 | 3 | 0 | 0 | 6 | 0 |
+| ocean-waves | 21 | 3 | 0 | 0 | 18 | 0 |
+| terrain | 11 | 3 | 0 | 0 | 8 | 0 |
 | turbulence-gust | 10 | 0 | 0 | 1 | 9 | 0 |
 | weather | 9 | 0 | 0 | 0 | 9 | 0 |
-| wind-field | 9 | 2 | 1 | 0 | 6 | 0 |
+| wind-field | 11 | 2 | 1 | 0 | 8 | 0 |
 
 ## `docs/coverage/fem.toml`
 
@@ -237,7 +237,7 @@ crate has today.
 |---|---:|---:|---:|---:|---:|---:|
 | adaptivity | 6 | 2 | 0 | 2 | 2 | 0 |
 | benchmark | 12 | 4 | 0 | 0 | 8 | 0 |
-| constraint | 6 | 1 | 0 | 0 | 5 | 0 |
+| constraint | 8 | 1 | 0 | 0 | 7 | 0 |
 | contact | 6 | 0 | 0 | 0 | 5 | 1 |
 | dynamics | 11 | 3 | 0 | 1 | 7 | 0 |
 | eigen | 3 | 0 | 0 | 0 | 3 | 0 |
@@ -245,7 +245,7 @@ crate has today.
 | fracture | 5 | 0 | 0 | 0 | 4 | 1 |
 | integration | 6 | 1 | 0 | 0 | 4 | 1 |
 | kinematics | 5 | 3 | 0 | 0 | 2 | 0 |
-| linear_solver | 6 | 2 | 0 | 0 | 4 | 0 |
+| linear_solver | 8 | 2 | 0 | 0 | 6 | 0 |
 | load | 7 | 2 | 0 | 0 | 5 | 0 |
 | material | 23 | 6 | 0 | 1 | 16 | 0 |
 | nonlinear | 8 | 4 | 0 | 1 | 3 | 0 |
@@ -257,15 +257,15 @@ crate has today.
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | benchmark | 10 | 0 | 0 | 0 | 10 | 0 |
-| crack-growth | 7 | 0 | 0 | 0 | 7 | 0 |
+| crack-growth | 9 | 0 | 0 | 0 | 9 | 0 |
 | csg-destruction | 9 | 6 | 1 | 1 | 1 | 0 |
 | cutting | 2 | 0 | 0 | 0 | 2 | 0 |
 | damage | 9 | 0 | 0 | 0 | 9 | 0 |
 | discrete-crack | 13 | 0 | 0 | 0 | 13 | 0 |
 | dynamic-fracture | 4 | 0 | 0 | 0 | 4 | 0 |
 | effect-layer-fracture | 11 | 6 | 0 | 2 | 3 | 0 |
-| erosion-wear | 14 | 3 | 1 | 1 | 9 | 0 |
-| fragmentation | 7 | 0 | 0 | 0 | 7 | 0 |
+| erosion-wear | 16 | 3 | 1 | 1 | 11 | 0 |
+| fragmentation | 9 | 0 | 0 | 0 | 9 | 0 |
 | lefm | 13 | 0 | 0 | 0 | 13 | 0 |
 | phase-field | 7 | 0 | 0 | 0 | 7 | 0 |
 
@@ -311,10 +311,10 @@ crate has today.
 | benchmark | 11 | 1 | 0 | 0 | 10 | 0 |
 | contact material | 12 | 3 | 2 | 0 | 7 | 0 |
 | damage-fracture data | 3 | 0 | 0 | 0 | 3 | 0 |
-| data | 16 | 0 | 6 | 0 | 10 | 0 |
-| database | 10 | 2 | 0 | 0 | 8 | 0 |
+| data | 21 | 0 | 6 | 0 | 15 | 0 |
+| database | 13 | 2 | 0 | 0 | 11 | 0 |
 | elasticity | 12 | 3 | 1 | 1 | 7 | 0 |
-| electromagnetic data | 4 | 0 | 1 | 0 | 3 | 0 |
+| electromagnetic data | 6 | 0 | 1 | 0 | 5 | 0 |
 | hyperelasticity | 14 | 6 | 1 | 0 | 7 | 0 |
 | lubrication | 11 | 0 | 0 | 0 | 11 | 0 |
 | plasticity | 16 | 5 | 0 | 2 | 9 | 0 |
@@ -331,17 +331,17 @@ crate has today.
 | benchmark | 14 | 3 | 0 | 1 | 10 | 0 |
 | brakes | 7 | 2 | 1 | 0 | 4 | 0 |
 | character | 12 | 7 | 0 | 2 | 3 | 0 |
-| formulation | 7 | 0 | 0 | 0 | 7 | 0 |
+| formulation | 9 | 0 | 0 | 0 | 9 | 0 |
 | mechanism | 6 | 1 | 1 | 0 | 4 | 0 |
-| powertrain | 12 | 6 | 0 | 0 | 6 | 0 |
-| ragdoll | 10 | 5 | 0 | 1 | 4 | 0 |
+| powertrain | 17 | 6 | 0 | 0 | 11 | 0 |
+| ragdoll | 12 | 5 | 0 | 1 | 6 | 0 |
 | robot-control | 5 | 0 | 0 | 1 | 4 | 0 |
 | robot-dynamics | 5 | 0 | 0 | 0 | 5 | 0 |
-| robot-kinematics | 8 | 0 | 0 | 0 | 8 | 0 |
+| robot-kinematics | 11 | 0 | 0 | 0 | 11 | 0 |
 | rotor | 9 | 2 | 0 | 1 | 6 | 0 |
 | steering | 3 | 1 | 0 | 0 | 2 | 0 |
-| suspension | 7 | 2 | 0 | 1 | 4 | 0 |
-| tyre | 14 | 3 | 0 | 2 | 9 | 0 |
+| suspension | 10 | 2 | 0 | 1 | 7 | 0 |
+| tyre | 21 | 3 | 0 | 2 | 16 | 0 |
 | vehicle | 8 | 2 | 0 | 1 | 5 | 0 |
 
 ## `docs/coverage/mfg.toml`
@@ -366,7 +366,7 @@ crate has today.
 | interface capturing: VOF | 8 | 3 | 0 | 1 | 4 | 0 |
 | interface capturing: level set | 12 | 2 | 1 | 1 | 8 | 0 |
 | interface capturing: other representations | 4 | 0 | 0 | 0 | 4 | 0 |
-| multiphase models (averaged / dispersed) | 6 | 0 | 0 | 0 | 6 | 0 |
+| multiphase models (averaged / dispersed) | 12 | 0 | 0 | 0 | 12 | 0 |
 | non-Newtonian phases | 2 | 0 | 0 | 0 | 2 | 0 |
 | output | 2 | 0 | 0 | 0 | 2 | 0 |
 | particle methods: free surface | 7 | 1 | 0 | 0 | 6 | 0 |
@@ -398,15 +398,15 @@ crate has today.
 | benchmark | 11 | 0 | 0 | 0 | 11 | 0 |
 | charged | 9 | 0 | 0 | 0 | 9 | 0 |
 | decay | 13 | 0 | 1 | 0 | 12 | 0 |
-| detector | 8 | 0 | 0 | 0 | 8 | 0 |
+| detector | 10 | 0 | 0 | 0 | 10 | 0 |
 | dose | 11 | 0 | 0 | 0 | 11 | 0 |
 | foundation | 3 | 0 | 0 | 0 | 3 | 0 |
 | fusion | 6 | 0 | 0 | 0 | 6 | 0 |
-| neutron | 10 | 0 | 0 | 0 | 10 | 0 |
+| neutron | 12 | 0 | 0 | 0 | 12 | 0 |
 | photon | 10 | 0 | 0 | 0 | 10 | 0 |
 | reactor | 17 | 0 | 0 | 0 | 17 | 0 |
 | shielding | 7 | 0 | 0 | 0 | 7 | 0 |
-| transport | 18 | 0 | 0 | 0 | 18 | 0 |
+| transport | 24 | 0 | 0 | 0 | 24 | 0 |
 
 ## `docs/coverage/num.toml`
 
@@ -420,7 +420,7 @@ crate has today.
 | linear_direct | 7 | 1 | 0 | 0 | 6 | 0 |
 | matrix_function | 2 | 0 | 0 | 0 | 2 | 0 |
 | mesh | 18 | 4 | 0 | 0 | 14 | 0 |
-| mesh_adaptivity | 1 | 0 | 0 | 0 | 1 | 0 |
+| mesh_adaptivity | 5 | 0 | 0 | 0 | 5 | 0 |
 | nonlinear | 9 | 0 | 0 | 0 | 9 | 0 |
 | preconditioner | 10 | 2 | 0 | 1 | 7 | 0 |
 | representation | 12 | 7 | 0 | 3 | 1 | 1 |
@@ -465,7 +465,7 @@ crate has today.
 | light-transport | 7 | 0 | 0 | 0 | 7 | 0 |
 | polarisation | 5 | 0 | 0 | 0 | 5 | 0 |
 | radiative-transfer | 7 | 0 | 0 | 0 | 7 | 0 |
-| reflectance | 9 | 0 | 0 | 0 | 9 | 0 |
+| reflectance | 11 | 0 | 0 | 0 | 11 | 0 |
 | scattering | 7 | 0 | 0 | 0 | 7 | 0 |
 | spectral | 7 | 0 | 0 | 0 | 7 | 0 |
 
@@ -474,19 +474,19 @@ crate has today.
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | astrophysics | 14 | 0 | 0 | 0 | 14 | 0 |
-| attitude | 6 | 0 | 0 | 0 | 6 | 0 |
+| attitude | 9 | 0 | 0 | 0 | 9 | 0 |
 | benchmark | 18 | 3 | 0 | 0 | 15 | 0 |
 | elements | 7 | 2 | 0 | 1 | 4 | 0 |
 | frames-time | 7 | 0 | 0 | 0 | 7 | 0 |
 | maneuver | 9 | 0 | 1 | 0 | 8 | 0 |
-| n-body integration | 12 | 3 | 1 | 1 | 7 | 0 |
+| n-body integration | 14 | 3 | 1 | 1 | 9 | 0 |
 | n-body law | 7 | 4 | 0 | 1 | 2 | 0 |
 | output | 3 | 0 | 1 | 0 | 2 | 0 |
 | perturbation | 12 | 1 | 1 | 0 | 10 | 0 |
 | propagation | 7 | 1 | 0 | 0 | 6 | 0 |
 | restricted three-body | 6 | 0 | 0 | 0 | 6 | 0 |
-| surface gravity | 8 | 4 | 0 | 0 | 4 | 0 |
-| targeting | 3 | 0 | 0 | 0 | 3 | 0 |
+| surface gravity | 11 | 4 | 0 | 0 | 7 | 0 |
+| targeting | 5 | 0 | 0 | 0 | 5 | 0 |
 | two-body | 9 | 5 | 0 | 0 | 4 | 0 |
 
 ## `docs/coverage/part.toml`
@@ -496,7 +496,7 @@ crate has today.
 | SPH (beyond single-phase flow) | 5 | 0 | 0 | 0 | 5 | 0 |
 | analysis | 4 | 0 | 0 | 0 | 4 | 0 |
 | benchmark | 14 | 2 | 1 | 0 | 11 | 0 |
-| constraints | 3 | 0 | 0 | 0 | 3 | 0 |
+| constraints | 5 | 0 | 0 | 0 | 5 | 0 |
 | crowd | 10 | 5 | 0 | 0 | 5 | 0 |
 | cutoff | 5 | 3 | 0 | 0 | 2 | 0 |
 | discrete element method | 14 | 0 | 0 | 0 | 14 | 0 |
@@ -515,13 +515,13 @@ crate has today.
 |---|---:|---:|---:|---:|---:|---:|
 | benchmark | 20 | 0 | 2 | 0 | 18 | 0 |
 | equilibrium-stability | 9 | 0 | 0 | 0 | 9 | 0 |
-| fluid | 9 | 0 | 0 | 0 | 9 | 0 |
+| fluid | 14 | 0 | 0 | 0 | 14 | 0 |
 | fusion | 6 | 0 | 0 | 0 | 6 | 0 |
-| industrial | 5 | 0 | 0 | 0 | 5 | 0 |
+| industrial | 11 | 0 | 0 | 0 | 11 | 0 |
 | kinetic | 12 | 0 | 0 | 0 | 12 | 0 |
 | mhd-numerics | 10 | 0 | 0 | 0 | 10 | 0 |
 | parameters | 18 | 0 | 0 | 0 | 18 | 0 |
-| particle-in-cell | 17 | 0 | 0 | 0 | 17 | 0 |
+| particle-in-cell | 19 | 0 | 0 | 0 | 19 | 0 |
 | propulsion | 3 | 0 | 0 | 0 | 3 | 0 |
 | reconnection | 5 | 0 | 0 | 0 | 5 | 0 |
 | single-particle | 9 | 0 | 1 | 0 | 8 | 0 |
@@ -537,7 +537,7 @@ crate has today.
 | benchmark | 20 | 0 | 0 | 0 | 20 | 0 |
 | closed-form | 16 | 0 | 0 | 0 | 16 | 0 |
 | foundation | 8 | 0 | 0 | 0 | 8 | 0 |
-| many-body | 14 | 0 | 0 | 0 | 14 | 0 |
+| many-body | 20 | 0 | 0 | 0 | 20 | 0 |
 | open-system | 10 | 0 | 0 | 0 | 10 | 0 |
 | quantum-information | 12 | 0 | 0 | 0 | 12 | 0 |
 | scattering | 8 | 0 | 0 | 0 | 8 | 0 |
@@ -580,7 +580,7 @@ crate has today.
 | narrowphase | 18 | 11 | 2 | 3 | 2 | 0 |
 | query | 7 | 3 | 0 | 2 | 2 | 0 |
 | sleep | 3 | 3 | 0 | 0 | 0 | 0 |
-| solver | 13 | 7 | 0 | 1 | 5 | 0 |
+| solver | 15 | 7 | 0 | 1 | 7 | 0 |
 
 ## `docs/coverage/sense.toml`
 
@@ -605,9 +605,9 @@ crate has today.
 | cloth model | 14 | 2 | 0 | 0 | 12 | 0 |
 | collision | 16 | 4 | 0 | 2 | 10 | 0 |
 | integration / output | 4 | 2 | 0 | 0 | 2 | 0 |
-| rod / rope / hair | 12 | 3 | 0 | 1 | 8 | 0 |
+| rod / rope / hair | 15 | 3 | 0 | 1 | 11 | 0 |
 | soft body | 9 | 0 | 3 | 1 | 5 | 0 |
-| solver | 12 | 3 | 0 | 0 | 9 | 0 |
+| solver | 15 | 3 | 0 | 0 | 12 | 0 |
 | time integration / damping | 4 | 2 | 0 | 0 | 2 | 0 |
 | topology change | 5 | 1 | 0 | 0 | 4 | 0 |
 
@@ -634,19 +634,19 @@ crate has today.
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | beam | 14 | 2 | 0 | 0 | 12 | 0 |
-| buckling | 11 | 3 | 0 | 1 | 7 | 0 |
+| buckling | 16 | 3 | 0 | 1 | 12 | 0 |
 | contact-stress | 3 | 1 | 0 | 0 | 2 | 0 |
 | creep | 9 | 1 | 0 | 2 | 6 | 0 |
 | fatigue | 17 | 3 | 0 | 2 | 12 | 0 |
-| joint | 13 | 4 | 0 | 1 | 8 | 0 |
+| joint | 18 | 4 | 0 | 1 | 13 | 0 |
 | laminate | 18 | 8 | 0 | 0 | 10 | 0 |
 | plate-shell | 8 | 0 | 0 | 0 | 8 | 0 |
-| section | 8 | 2 | 0 | 0 | 6 | 0 |
+| section | 10 | 2 | 0 | 0 | 8 | 0 |
 | stress-concentration | 8 | 2 | 0 | 2 | 4 | 0 |
 | synthesis | 3 | 0 | 0 | 1 | 2 | 0 |
 | thermal-stress | 4 | 1 | 0 | 1 | 2 | 0 |
 | torsion | 4 | 0 | 0 | 0 | 4 | 0 |
-| vibration | 14 | 6 | 0 | 0 | 8 | 0 |
+| vibration | 20 | 6 | 0 | 0 | 14 | 0 |
 
 ## `docs/coverage/therm.toml`
 
@@ -662,5 +662,5 @@ crate has today.
 | heat source | 8 | 1 | 0 | 1 | 6 | 0 |
 | output | 3 | 1 | 0 | 0 | 2 | 0 |
 | phase change | 9 | 0 | 0 | 1 | 8 | 0 |
-| radiation | 10 | 0 | 0 | 0 | 10 | 0 |
+| radiation | 15 | 0 | 0 | 0 | 15 | 0 |
 | thermodynamics | 17 | 0 | 0 | 0 | 17 | 0 |

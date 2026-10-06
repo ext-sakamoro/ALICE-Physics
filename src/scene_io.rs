@@ -108,6 +108,7 @@ pub struct SerializedJoint {
     pub body_a: u32,
     /// Index of body B
     pub body_b: u32,
+    // LIMITATION(COV-ENGINE-150): five of the seven joint kinds (no D6, no ConeTwist), and only the kind and two anchors are stored: axes, limits, motors and spring constants are not.
     /// Joint type: 0=Ball, 1=Hinge, 2=Fixed, 3=Slider, 4=Spring
     pub joint_type: u8,
     /// Anchor on body A: x.hi, x.lo, y.hi, y.lo, z.hi, z.lo

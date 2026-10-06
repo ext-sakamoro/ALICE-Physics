@@ -425,7 +425,7 @@ axis = "solver"
 item = "direct solvers (LCP: Dantzig / Lemke; sparse LDL for joint chains)"
 source = "Erleben et al., Physics-Based Animation ch.6-7; Bullet btDantzigSolver / btLemkeSolver; Baraff 1996 (Linear-time dynamics using Lagrange multipliers)"
 status = "missing"
-evidence = "無い (直接法 grep: Dantzig / Lemke / LDL 0 件、src/linear_solver は Krylov で剛体拘束には未接続)"
+evidence = "無い (直接法 grep: Dantzig / Lemke / LDL 0 件、src/linear_solver は Krylov で剛体拘束には未接続) 分割: 子の行 COV-RIGID-120〜121 この行の status は子のうち最も実装の少ないもの (missing) に合わせて手で保つ (検査器は親子を見ない)"
 oracle_candidate = "鎖の静止張力を 1 回の solve で厳密"
 limitation = ""
 
@@ -1237,4 +1237,24 @@ source = "Lourenço, Computational strategies for masonry structures (1996); LS-
 status = "missing"
 evidence = "部品として力・トルクの閾値で切れる関節 (COV-RIGID-031、src/joint.rs::solve_joints_breakable) はあるが、継手の強度で組んだ構造物の崩壊を突き合わせる test は無い 破片の剛体化は fract.toml"
 oracle_candidate = "片持ちに積んだブロックの継手が曲げモーメントの閾値で根元から切れる"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-120"
+axis = "solver"
+item = "direct LCP solvers for contact (Dantzig, Lemke)"
+source = "Erleben et al. ch.6-7; Bullet btDantzigSolver / btLemkeSolver"
+status = "missing"
+evidence = "COV-RIGID-038 の子 直接法 grep: Dantzig / Lemke 0 件"
+oracle_candidate = "2 接触の小さな LCP で解が閉形式と厳密"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-121"
+axis = "solver"
+item = "sparse LDL factorisation for joint chains (linear-time)"
+source = "Baraff 1996 (Linear-time dynamics using Lagrange multipliers)"
+status = "missing"
+evidence = "COV-RIGID-038 の子 LDL 0 件 src/linear_solver は Krylov で剛体拘束には未接続"
+oracle_candidate = "鎖の静止張力を 1 回の solve で厳密"
 limitation = ""
