@@ -182,6 +182,28 @@ fn an_arrow_along_y_still_has_a_head_of_two_distinct_barbs() {
     }
 }
 
+/// The side direction is exactly `unit x X` (= -Z for a +Y shaft) within
+/// `|unit x Y| < 1e-3` and `unit x Y` (= +Z for a shaft tilted toward +X)
+/// beyond it, so the first barb's z flips sign across the threshold
+#[test]
+fn the_arrow_side_switches_from_dir_cross_y_to_dir_cross_x_at_1e_3() {
+    let first_barb = |end: Vec3Fix| {
+        let mut d = DebugDrawData::new();
+        d.arrow(Vec3Fix::ZERO, end, DebugColor::ORANGE);
+        (d.lines[1].end, d.lines[2].end)
+    };
+    // exactly vertical: head_point (0, 4, 0), barbs at z = -0.5 then +0.5
+    let (b1, b2) = first_barb(v3(0.0, 5.0, 0.0));
+    assert!(close3(arr(b1), [0.0, 4.0, -0.5], 1e-12), "{b1:?}");
+    assert!(close3(arr(b2), [0.0, 4.0, 0.5], 1e-12), "{b2:?}");
+    // tilt 5e-4 rad (inside the threshold): still dir x X, first barb z < 0
+    let (b1, _) = first_barb(v3(0.0025, 5.0, 0.0));
+    assert!(b1.z.to_f64() < -0.49, "{b1:?}");
+    // tilt 2e-3 rad (beyond it): dir x Y, first barb z > 0
+    let (b1, _) = first_barb(v3(0.01, 5.0, 0.0));
+    assert!(b1.z.to_f64() > 0.49, "{b1:?}");
+}
+
 #[test]
 fn arrow_records_head_geometry_besides_the_shaft() {
     // AUD-A-S4W3-008
