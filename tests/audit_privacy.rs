@@ -222,7 +222,7 @@ fn laplace_privatize_is_symmetric_about_the_value_and_int_rounding_matches() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-025: LaplaceNoise::sample can return -inf: the uniform draw U = 0 (reachable, probability 2^-53, constructible with a chosen seed) gives ln(1 - 2|U - 1/2|) = ln(0)"]
+// AUD-A-S4W3-025
 fn laplace_sample_is_always_finite_even_when_the_uniform_draw_is_zero() {
     // seed whose first xorshift output has its top 53 bits equal to 0: the
     // state before the step is inv_step(1), and the seed is the preimage of
