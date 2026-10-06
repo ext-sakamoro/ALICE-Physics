@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4765 |
-| 🔴 Red by design | 219 |
+| 🟢 Not ignored (run by CI) | 4797 |
+| 🔴 Red by design | 220 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5009** |
+| **Total** | **5042** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (219)
+## 🔴 Red by design (220)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -191,6 +191,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `snapshot_restore_is_bit_identical_with_participants` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 snapshot section `participants` (format v2)
 - `snapshot_restore_is_bit_identical_with_participants_in_parallel` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 PhysicsWorld::try_step_parallel (single pipeline with step)
 - `solve_cubic_never_reports_ok_for_a_body_nothing_holds` (audit_cubic_elastic_fem.rs) — known defect: AUD-A-S2W1-008: solve_cubic returns Ok (u ~ 1e11 mm, relative_residual 0) for a body with no con…
+- `spatial_grid_hash_clamps_to_the_edge_cell` (analytic_coordinate_range.rs) — src gap: WORLD-V1-RANGE SpatialGrid::hash wraps to a wrong cell (and panics in debug) instead of clamping
 - `speculative_contact_reports_coincident_overlapping_spheres` (audit_ccd.rs) — known defect: AUD-A-S2W2-009: speculative_contact returns None for coincident centres (dist == 0 guard) althou…
 - `sphere_capsule_toi_sliding_approach_hits_at_the_right_time` (audit_ccd.rs) — known defect: AUD-A-S2W2-011: sphere_capsule_toi freezes the closest axis point at the start position (treats …
 - `spring_by_add_force_holds_its_static_extension` (analytic_external_force_substep.rs) — src gap: a spring force applied by add_force is a frame-head impulse, so the static extension m g / k is not h…
@@ -294,7 +295,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4765)
+## 🟢 Not ignored (4797)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -312,6 +313,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_coupled_iteration.rs` | 34 |
 | `engineering_oracles_solid.rs` | 34 |
 | `world_participant_conformance.rs` | 33 |
+| `analytic_coordinate_range.rs` | 32 |
 | `audit_math.rs` | 29 |
 | `analytic_crowd_force.rs` | 28 |
 | `audit_raycast.rs` | 28 |

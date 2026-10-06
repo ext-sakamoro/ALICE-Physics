@@ -31,7 +31,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 5 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 61 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 23 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
@@ -43,7 +43,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 29 of 141 items) | 29 / 77 / 7 / 28 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 30 of 142 items) | 30 / 77 / 7 / 28 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |

@@ -367,6 +367,7 @@ mod tests {
             },
             is_dynamic,
             stable_id,
+            overflow: false,
         }
     }
 

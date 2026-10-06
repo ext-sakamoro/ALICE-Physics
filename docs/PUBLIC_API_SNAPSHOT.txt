@@ -7189,6 +7189,7 @@ pub const alice_physics::math::Vec3Fix::UNIT_X: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Y: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Z: Self
 pub const alice_physics::math::Vec3Fix::ZERO: Self
+pub fn alice_physics::math::Vec3Fix::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Vec3Fix::checked_dot(self, Self) -> core::option::Option<alice_physics::math::Fix128>
 pub fn alice_physics::math::Vec3Fix::checked_length(self) -> core::option::Option<alice_physics::math::Fix128>
 pub fn alice_physics::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics::math::Fix128>
@@ -13905,6 +13906,7 @@ pub const alice_physics::math::Vec3Fix::UNIT_X: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Y: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Z: Self
 pub const alice_physics::math::Vec3Fix::ZERO: Self
+pub fn alice_physics::math::Vec3Fix::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Vec3Fix::checked_dot(self, Self) -> core::option::Option<alice_physics::math::Fix128>
 pub fn alice_physics::math::Vec3Fix::checked_length(self) -> core::option::Option<alice_physics::math::Fix128>
 pub fn alice_physics::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics::math::Fix128>
@@ -24712,6 +24714,7 @@ pub const alice_physics::math::Vec3Fix::UNIT_X: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Y: Self
 pub const alice_physics::math::Vec3Fix::UNIT_Z: Self
 pub const alice_physics::math::Vec3Fix::ZERO: Self
+pub fn alice_physics::math::Vec3Fix::checked_add(self, Self) -> core::option::Option<Self>
 pub fn alice_physics::math::Vec3Fix::checked_dot(self, Self) -> core::option::Option<alice_physics::math::Fix128>
 pub fn alice_physics::math::Vec3Fix::checked_length(self) -> core::option::Option<alice_physics::math::Fix128>
 pub fn alice_physics::math::Vec3Fix::checked_length_scaled(self) -> core::option::Option<alice_physics::math::Fix128>
