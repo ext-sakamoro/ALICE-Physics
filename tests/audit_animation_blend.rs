@@ -300,12 +300,17 @@ fn output_pose_follows_mode_and_weight() {
 /// weight is still at its starting end and the mode snaps back, after which the weight creeps to
 /// the target while the output stays on the old pose forever.
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-011: go_ragdoll() then update(dt = 0) (or transition_speed 0) flips mode Blend -> Animated immediately; later updates move the weight to 1 but mode stays Animated and the physics pose never appears (mirror: go_animated() from weight 1)"]
 fn a_zero_dt_update_does_not_cancel_a_started_transition() {
+    // AUD-A-S2W3-011
     let mut b = AnimationBlender::new(1);
     b.physics_pose = pose1(Vec3Fix::from_int(8, 0, 0), rot([0.0, 1.0, 0.0], 0.0));
     b.go_ragdoll();
     b.update(Fix128::ZERO);
+    assert_eq!(
+        b.mode,
+        BlendMode::Blend,
+        "a zero step must leave the transition running"
+    );
     for _ in 0..40 {
         b.update(r(1, 16));
     }
@@ -315,7 +320,6 @@ fn a_zero_dt_update_does_not_cancel_a_started_transition() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-011: mirror case, go_animated() from full ragdoll then update(dt = 0) flips mode to Ragdoll"]
 fn a_zero_dt_update_does_not_cancel_a_return_to_animation() {
     let mut b = AnimationBlender::new(1);
     b.animation_pose = pose1(Vec3Fix::from_int(1, 0, 0), rot([0.0, 1.0, 0.0], 0.0));
@@ -323,6 +327,11 @@ fn a_zero_dt_update_does_not_cancel_a_return_to_animation() {
     b.set_ragdoll();
     b.go_animated();
     b.update(Fix128::ZERO);
+    assert_eq!(
+        b.mode,
+        BlendMode::Blend,
+        "a zero step must leave the transition running"
+    );
     for _ in 0..40 {
         b.update(r(1, 16));
     }

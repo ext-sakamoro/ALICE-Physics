@@ -356,8 +356,7 @@ fn retrigger_mid_transition_overwrites_target_not_queue_or_ignore() {
 }
 
 // ---------------------------------------------------------------------
-// negative dt: unguarded, moves weight away from target, no lower clamp,
-// can desync `mode` from `is_transitioning`.
+// negative dt: unguarded, moves weight away from target, no lower clamp.
 // ---------------------------------------------------------------------
 
 #[test]
@@ -377,9 +376,14 @@ fn negative_dt_moves_weight_away_from_target_with_no_lower_clamp() {
         -r(1, 4),
         "1/4 + (-1/2) = -1/4, unclamped below zero"
     );
-    // mode auto-switches purely because blend_weight <= 0, even though the
-    // target is still 1 and we are further from it than when we started.
-    assert_eq!(b.mode, BlendMode::Animated, "blend_weight <= 0 auto-switch");
+    // the mode switches only when the weight reaches its target (AUD-A-S2W3-011),
+    // so a weight pushed below 0 with the target still at 1 stays in Blend and
+    // agrees with is_transitioning (it used to switch to Animated on weight <= 0)
+    assert_eq!(
+        b.mode,
+        BlendMode::Blend,
+        "no auto-switch before the target is reached"
+    );
     assert!(
         b.is_transitioning(),
         "is_transitioning compares to target_weight (1), not 0: |-1/4 - 1| = 5/4 > 1/1000"
