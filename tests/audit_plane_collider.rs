@@ -185,9 +185,9 @@ fn a_box_resting_on_the_plane_is_not_a_hit() {
 /// Contact points of every colliding box result satisfy the same invariant as the sphere
 /// branch and the partial-overlap branch: `point_b - point_a = depth * normal` (the plane
 /// point sits `depth` along the normal from the penetrating point). The
-/// fully-behind branch projects the box centre instead of the deepest corner.
+/// fully-behind case used to project the box centre instead of the deepest
+/// corner (AUD-A-S3W1-002).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-002: intersect_aabb fully-behind branch returns point_b = project(centre) not project(n_vertex); point_b - point_a is not depth*normal (lateral offset 1.0 for a 2-wide box)"]
 fn box_contact_points_are_depth_apart_along_the_normal_in_every_branch() {
     let p = PlaneCollider::new(v3(0.0, 1.0, 0.0), fx(0.0));
     // Fully behind, off-centre corner: box x in [0,2], y in [-3,-1].
@@ -266,7 +266,7 @@ fn from_point_normal_uses_the_unit_normal_for_the_offset() {
 }
 
 /// Fully-behind box: depth is the deepest corner, the normal is the plane normal and
-/// `point_a` is the deepest corner (the `point_b` of this branch is AUD-A-S3W1-002).
+/// `point_a` is the deepest corner (`point_b` is checked by the test above).
 #[test]
 fn fully_behind_box_reports_depth_normal_and_deepest_corner() {
     let p = PlaneCollider::new(v3(1.0, 1.0, 0.0), fx(0.0));

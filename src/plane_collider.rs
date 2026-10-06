@@ -125,26 +125,9 @@ impl PlaneCollider {
     /// translating the box by `depth · normal` moves it to the front side.
     #[must_use]
     pub fn intersect_aabb(&self, aabb: &AABB) -> CollisionResult {
-        // Find the AABB vertex most in the negative normal direction (n-vertex)
-        // and the vertex most in the positive normal direction (p-vertex)
-        let p_vertex = Vec3Fix::new(
-            if self.normal.x >= Fix128::ZERO {
-                aabb.max.x
-            } else {
-                aabb.min.x
-            },
-            if self.normal.y >= Fix128::ZERO {
-                aabb.max.y
-            } else {
-                aabb.min.y
-            },
-            if self.normal.z >= Fix128::ZERO {
-                aabb.max.z
-            } else {
-                aabb.min.z
-            },
-        );
-
+        // The AABB vertex most in the negative normal direction (n-vertex) is
+        // the deepest point of the box, whether the box straddles the plane or
+        // lies entirely behind it.
         let n_vertex = Vec3Fix::new(
             if self.normal.x >= Fix128::ZERO {
                 aabb.min.x
@@ -163,29 +146,16 @@ impl PlaneCollider {
             },
         );
 
-        let p_dist = self.distance_to_point(p_vertex);
         let n_dist = self.distance_to_point(n_vertex);
-
-        // If the p-vertex is on the back side, the entire AABB is behind the plane
-        // If the n-vertex is on the front side, the entire AABB is in front (no collision)
         if n_dist >= Fix128::ZERO {
             // Entirely in front of plane — no collision
             return CollisionResult::NONE;
         }
 
-        if p_dist < Fix128::ZERO {
-            // Entire AABB is behind the plane
-            let depth = -n_dist;
-            let center = Vec3Fix::new(
-                (aabb.min.x + aabb.max.x).half(),
-                (aabb.min.y + aabb.max.y).half(),
-                (aabb.min.z + aabb.max.z).half(),
-            );
-            let point_on_plane = self.project_point(center);
-            return CollisionResult::new(depth, self.normal, n_vertex, point_on_plane);
-        }
-
-        // Partial intersection
+        // The contact pair is the deepest vertex and its foot on the plane, so
+        // `point_b - point_a = depth · normal` in every case. A box entirely
+        // behind the plane used to report the foot of its centre instead, which
+        // is offset sideways from the deepest vertex.
         let depth = -n_dist;
         let point_on_plane = self.project_point(n_vertex);
         CollisionResult::new(depth, self.normal, n_vertex, point_on_plane)
