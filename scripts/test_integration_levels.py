@@ -219,6 +219,18 @@ class Documents(unittest.TestCase):
         (self.root / "README_JP.md").write_text(summary(c), encoding="utf-8")
         self.assertTrue(any("README_JP.md: summary table" in p for p in il.doc_problems(self.root, self.lv)))
 
+    def test_write_summary_tables_fixes_only_the_counts(self):
+        c = dict(self.lv.counts())
+        c["standalone"] += 3
+        c["unused"] += 1
+        text = summary(c).replace("after", "hand-written text after the table")
+        (self.root / "README.md").write_text(text, encoding="utf-8")
+        self.assertEqual(il.write_summary_tables(self.root, self.lv), 2 * len(c))
+        self.assertEqual(il.doc_problems(self.root, self.lv), [])
+        out = (self.root / "README.md").read_text(encoding="utf-8")
+        self.assertIn("hand-written text after the table", out)
+        self.assertIn("| standalone: x |", out)
+
     def test_a_missing_summary_marker_fails(self):
         (self.root / "README.md").write_text("# R\n", encoding="utf-8")
         self.assertTrue(any("README.md: no" in p for p in il.doc_problems(self.root, self.lv)))

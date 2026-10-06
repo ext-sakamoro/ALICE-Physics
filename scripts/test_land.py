@@ -132,6 +132,18 @@ class Pure(unittest.TestCase):
                   ".gitattributes", ".cargo/config.toml"):
             self.assertEqual(land.lane_of([p]), "ci", p)
 
+    def test_message_style(self):
+        self.assertTrue(any("exaggerated" in p for p in land.message_problems("fix: 致命的な欠陥を直す")))
+        self.assertTrue(any("full stops" in p for p in land.message_problems("fix: 直した。")))
+        self.assertEqual(land.message_problems("fix: 接触法線の向きを直す"), [])
+
+    def test_blank_summary_counts_keeps_the_hand_written_cells(self):
+        import integration_levels as il
+        text = f"# R\n{il.SUMMARY_MARK}\n| How | Modules |\n|---|---:|\n| standalone: hand | 133 |\n\nafter 7\n"
+        out = land.blank_summary_counts(text)
+        self.assertIn("| standalone: hand | |", out)
+        self.assertIn("after 7", out)
+
     def test_changelog_duplicates(self):
         ok = "# C\n\n## [Unreleased]\n\n### Added\n- a\n- b\n\n## [1.0.0]\n\n### Added\n- a\n"
         self.assertEqual(land.changelog_problems(ok), [])
@@ -344,6 +356,38 @@ class Landing(unittest.TestCase):
         self.assertEqual(pushes, [], "the earlier ci/T-1 push is reused, not repeated")
         self.assertIn("wait_ci ci/T-1", lander.calls)
 
+    def test_a_golden_constant_change_needs_ack(self):
+        commit(self.r.work, {"tests/determinism_golden.rs": "const H: u128 = 0x0123456789abcdef0123;\n",
+                             "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- g\n"}, "test: golden")
+        git(self.r.work, "push", "-q", "origin", "HEAD:main")
+        commit(self.r.work, {"tests/determinism_golden.rs": "const H: u128 = 0xfedcba9876543210fedc;\n",
+                             "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- g\n- h\n"}, "fix: step")
+        with self.assertRaisesRegex(land.LandError, "golden constant"):
+            self.r.lander().land()
+        self.r.lander(ack_golden=True).land()
+
+    def test_readme_conflict_in_the_summary_counts_only_is_merged(self):
+        import integration_levels as il
+        def readme(n, extra=""):
+            return f"# R\n{extra}\n{il.SUMMARY_MARK}\n| How | Modules |\n|---|---:|\n| standalone: x | {n} |\n"
+        self.r.push_upstream({"README.md": readme(10)}, "docs: readme")
+        git(self.r.work, "pull", "-q", "--rebase", "origin", "main")
+        commit(self.r.work, {"README.md": readme(11, "mine"), "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- m\n"},
+               "docs: mine")
+        self.r.push_upstream({"README.md": readme(12)}, "docs: theirs")
+        sha = self.r.lander().land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertIn("mine", (self.r.work / "README.md").read_text())
+
+    def test_a_ratchet_conflict_takes_main(self):
+        self.r.push_upstream({"scripts/integration-baseline.txt": "a\nb\n"}, "chore: baseline")
+        git(self.r.work, "pull", "-q", "--rebase", "origin", "main")
+        commit(self.r.work, {"scripts/integration-baseline.txt": "a\n", "src/z.rs": "x\n",
+                             "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- z\n"}, "fix: z")
+        self.r.push_upstream({"scripts/integration-baseline.txt": "b\n"}, "chore: baseline 2")
+        sha = self.r.lander().land()
+        self.assertEqual(self.r.origin_head(), sha)
+
     def test_union_merged_changelog_with_a_repeated_line_fails(self):
         cl = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- start\n"
         self.r.push_upstream({"CHANGELOG.md": cl}, "docs: changelog layout")
@@ -404,10 +448,15 @@ class Landing(unittest.TestCase):
         self.assertNotIn("wait_ci ci/T-1", lander.calls)
 
 
+RUNNING = {"headSha": "abc", "databaseId": 3, "status": "in_progress", "conclusion": ""}
+DONE = {"headSha": "abc", "databaseId": 3, "status": "completed", "conclusion": "success"}
+
+
 class WaitCi(unittest.TestCase):
     """wait_ci against a scripted run list (no network)."""
 
-    def lander(self, answers, at="abc"):
+    def lander(self, answers, at="abc", progress=None, step=1.0):
+        progress = list(progress or [])
         class L(land.Lander):
             def git(self, *a, check=True):
                 return "git@github.com:o/r.git"
@@ -417,7 +466,16 @@ class WaitCi(unittest.TestCase):
 
             def remote_sha(self, ref):
                 return at
+
+            def run_progress(self, slug, run_id):
+                return progress.pop(0) if progress else (0, 1)
         lnd = L(Path("."), "T", log=lambda *_: None)
+        t = [0.0]
+
+        def clock():
+            t[0] += step
+            return t[0]
+        lnd.clock = clock
         lnd.poll_seconds = 0
         return lnd
 
@@ -438,6 +496,17 @@ class WaitCi(unittest.TestCase):
                 self.lander([]).wait_ci("main", "abc")
         finally:
             land.NO_RUN_TIMEOUT = old
+
+    def test_a_slow_run_that_keeps_finishing_jobs_is_waited_for(self):
+        # 200 polls of 60 s = 3h20m, one more job finished every poll: past the old 90-minute cap
+        n = 200
+        lnd = self.lander([[RUNNING]] * n + [[DONE]], progress=[(i, n) for i in range(n)], step=60.0)
+        lnd.wait_ci("ci/x", "abc")
+
+    def test_a_run_with_no_job_finishing_gives_up(self):
+        lnd = self.lander([[RUNNING]] * 200, progress=[(3, 10)] * 200, step=60.0)
+        with self.assertRaisesRegex(land.LandError, "no job of run 3 finished"):
+            lnd.wait_ci("ci/x", "abc")
 
     def test_a_push_that_did_not_reach_the_ref_fails_at_once(self):
         # with no run and the ref elsewhere there is nothing to wait for: not 30 minutes of polling

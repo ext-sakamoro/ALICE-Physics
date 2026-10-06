@@ -336,6 +336,40 @@ def doc_problems(root: Path, levels: "Levels") -> list[str]:
     return out
 
 
+SUMMARY_ROW_RE = re.compile(r"\b(step|world API|binding|standalone|unused)\b")
+
+
+def write_summary_tables(root: Path, levels: "Levels") -> int:
+    """Rewrite the count cell of each row of the README / README_JP summary tables
+    (the rest of each row is hand-written and kept). Returns the rows rewritten."""
+    want = levels.counts()
+    done = 0
+    for rel in ("README.md", "README_JP.md"):
+        p = root / rel
+        if not p.exists():
+            continue
+        lines = p.read_text(encoding="utf-8").split("\n")
+        if not any(SUMMARY_MARK in ln for ln in lines):
+            continue
+        start = next(i for i, ln in enumerate(lines) if SUMMARY_MARK in ln)
+        seen_rows = False
+        for i in range(start + 1, len(lines)):
+            ln = lines[i]
+            if not ln.startswith("|"):
+                if seen_rows:
+                    break
+                continue
+            seen_rows = True
+            cells = ln.strip().strip("|").split("|")
+            m = SUMMARY_ROW_RE.search(cells[0]) if cells else None
+            if m and re.fullmatch(r"\s*\d+\s*", cells[-1]) and m.group(1) in want:
+                cells[-1] = f" {want[m.group(1)]} "
+                lines[i] = "|" + "|".join(cells) + "|"
+                done += 1
+        p.write_text("\n".join(lines), encoding="utf-8")
+    return done
+
+
 def write_modules_column(root: Path, levels: "Levels") -> None:
     """Add or refresh the Integration column of every module table in docs/MODULES.md."""
     p = root / MODULES_DOC
@@ -371,7 +405,8 @@ def main(argv: list[str] | None = None) -> int:
             pass
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--root", default=str(Path(__file__).resolve().parent.parent))
-    ap.add_argument("--write", action="store_true", help=f"regenerate {LEDGER} (and the MODULES.md column with an index)")
+    ap.add_argument("--write", action="store_true",
+                    help=f"regenerate {LEDGER}, the MODULES.md column and the README summary counts (needs an index)")
     ap.add_argument("--check", action="store_true", help="fail on problems, a stale section or docs that disagree")
     ap.add_argument("--scip", default="target/scip")
     ap.add_argument("--no-index", action="store_true", help="C ABI part only (no SCIP index needed)")
@@ -399,6 +434,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         ledger.write_text(text, encoding="utf-8")
         write_modules_column(root, levels)
+        write_summary_tables(root, levels)
     if args.check and levels is not None:
         problems += doc_problems(root, levels)
         current = ledger.read_text(encoding="utf-8") if ledger.exists() else ""

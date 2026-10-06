@@ -52,7 +52,10 @@ GENERATED = (
 )
 # hand-written, with a generated column (Integration) that the regeneration
 # rewrites: a conflict is merged with that column blanked, never dropped
-SEMI_GENERATED = ("docs/MODULES.md",)
+SEMI_GENERATED = ("docs/MODULES.md", "README.md", "README_JP.md")
+# ratchets the regeneration may shrink but never grow: a conflict takes main's copy,
+# and regenerate() rewrites it when the only difference is entries that are gone
+RATCHETS = ("scripts/integration-baseline.txt",)
 # lists that both sides mostly add to: a conflict is merged by merge_append(),
 # which keeps lines both sides added and a line one side rewrote, and stops when
 # both sides changed the same lines. A union merge is not used: it keeps the old
@@ -68,6 +71,11 @@ SIGNATURE_RE = re.compile(r"Co-Authored-By:|^\s*Generated with\b|\U0001F916", re
 NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
 NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
 NO_RUN_TIMEOUT = 1800  # seconds without any run for the pushed SHA (the GitHub queue can be slow)
+NO_PROGRESS_TIMEOUT = 2700  # seconds with no job of the run finishing (a stuck or starved run)
+RUN_TIMEOUT = 6 * 3600  # seconds overall; slow matrix jobs (macOS) can take hours while still moving
+EXAGGERATION_RE = re.compile(r"罠|致命|破綻|炎上|事故|災害|爆発|迷走|空中分解|総崩れ|踏み抜|green な嘘|偽の green")
+GOLDEN_FILE_RE = re.compile(r"^tests/determinism_golden[\w-]*\.rs$")
+GOLDEN_CONST_RE = re.compile(r"0x[0-9a-fA-F_]{16,}")
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MAX_ATTEMPTS = 5
 
@@ -178,15 +186,48 @@ def message_problems(message: str) -> list[str]:
                 out.append(f"line {i}: {label} `{m.group(0)}`")
         for name in docs_lint.private_names(line):
             out.append(f"line {i}: private or internal name (`{name}`)")
+        for m in EXAGGERATION_RE.finditer(line):
+            out.append(f"line {i}: exaggerated wording `{m.group(0)}` (state the fact plainly)")
+        if "。" in line:
+            out.append(f"line {i}: `。` (the project style writes no full stops in Japanese text)")
     return out
+
+
+def blank_summary_counts(text: str) -> str:
+    """README with the count cell of every summary-table row emptied (the
+    regeneration refills it), so a merge sees only the hand-written parts."""
+    import integration_levels as il
+    lines = text.split("\n")
+    start = next((i for i, ln in enumerate(lines) if il.SUMMARY_MARK in ln), None)
+    if start is None:
+        return text
+    seen = False
+    for i in range(start + 1, len(lines)):
+        if not lines[i].startswith("|"):
+            if seen:
+                break
+            continue
+        seen = True
+        cells = lines[i].strip().strip("|").split("|")
+        if re.fullmatch(r"\s*\d+\s*", cells[-1]):
+            cells[-1] = " "
+            lines[i] = "|" + "|".join(cells) + "|"
+    return "\n".join(lines)
+
+
+SEMI_TRANSFORMS = {"docs/MODULES.md": blank_integration, "README.md": blank_summary_counts,
+                   "README_JP.md": blank_summary_counts}
 
 
 class Lander:
     def __init__(self, root: Path, ident: str, *, dry_run: bool = False, no_changelog: bool = False,
-                 replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=print):
+                 replace_ci: bool = False, ack_golden: bool = False, remote: str = "origin", branch: str = "main",
+                 log=print):
         self.root, self.id, self.dry_run = root, ident, dry_run
         self.no_changelog, self.remote, self.branch, self.log = no_changelog, remote, branch, log
         self.replace_ci = replace_ci
+        self.ack_golden = ack_golden
+        self.clock = time.monotonic
         name, email = re.fullmatch(r"(.*) <(.*)>", IDENTITY).groups()
         self.ident_cfg = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         self.preflight_runs = 0
@@ -214,10 +255,31 @@ class Lander:
         self.sh("bash", "scripts/scip_index.sh")
         self.sh("python3", "scripts/integration_levels.py", "--write")
         self.sh("python3", "scripts/scip_reach.py", "--write", "docs/integration-status.md")
+        self.refresh_reach_baseline()
         self.sh("python3", "scripts/gen-oracle-status.py")
         self.sh("python3", "scripts/gen-wiring-status.py")
         self.sh("python3", "scripts/coverage_check.py", "--write-status")
         self.regenerate_public_api()
+
+    def refresh_reach_baseline(self) -> None:
+        """Shrink scripts/integration-baseline.txt when entries are gone (stale);
+        never grow it: a new L0 or unindexed item is left for run_checks to fail on."""
+        r = subprocess.run(["python3", "scripts/scip_reach.py", "--check-baseline"], cwd=self.root,
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            return
+        m = re.search(r"new L0 (\d+), stale (\d+); unindexed \d+ entries, new (\d+), stale (\d+)", r.stdout + r.stderr)
+        if m and m.group(1) == "0" and m.group(3) == "0" and (m.group(2) != "0" or m.group(4) != "0"):
+            self.sh("python3", "scripts/scip_reach.py", "--write-baseline")
+
+    def run_progress(self, slug: str, run_id: int) -> tuple[int, int]:
+        """(finished jobs, all jobs) of a run."""
+        out = subprocess.run(["gh", "run", "view", str(run_id), "--repo", slug, "--json", "jobs"],
+                             capture_output=True, text=True)
+        if out.returncode != 0:
+            return (0, 0)
+        jobs = json.loads(out.stdout or "{}").get("jobs", [])
+        return (sum(1 for j in jobs if j.get("status") == "completed"), len(jobs))
 
     def regenerate_public_api(self) -> None:
         r = subprocess.run(["cargo", f"+{NIGHTLY}", "public-api", "--features", NATIVE, "--simplified"],
@@ -263,9 +325,10 @@ class Lander:
         repo = self.git("remote", "get-url", self.remote)
         m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", repo)
         slug = m.group(1) if m else repo
-        started = time.monotonic()
+        started = self.clock()
         self.last_list_error = ""
-        for _ in range(180):
+        progress, progress_at = (-1, 0), started
+        while True:
             seen = self.list_runs(slug, ref)
             runs = [r for r in seen if r["headSha"] == sha]
             if not runs:
@@ -274,7 +337,7 @@ class Lander:
                 if at != sha:
                     raise LandError(f"{ref} on {self.remote} points at {at[:7] or 'nothing'}, not {sha[:7]}: "
                                     "the push did not reach it, or the ref moved (no CI run to wait for)")
-                if time.monotonic() - started > NO_RUN_TIMEOUT:
+                if self.clock() - started > NO_RUN_TIMEOUT:
                     listing = "\n    ".join(f"{r.get('headSha', '')[:7]} {r.get('event', '')} {r.get('status', '')}"
                                             f"/{r.get('conclusion', '')} created {r.get('createdAt', '')} "
                                             f"run {r.get('databaseId', '')}" for r in seen) or "(none)"
@@ -290,8 +353,20 @@ class Lander:
                     raise LandError(f"CI on {ref} ended {why} (run {runs[0]['databaseId']})")
                 self.log(f"CI on {ref} succeeded (run {runs[0]['databaseId']})")
                 return
+            if runs:
+                # keep waiting while jobs keep finishing (slow macOS jobs take long but move);
+                # give up when nothing has finished for NO_PROGRESS_TIMEOUT, or after RUN_TIMEOUT
+                now = self.clock()
+                p = self.run_progress(slug, runs[0]["databaseId"])
+                if p != progress:
+                    progress, progress_at = p, now
+                if now - progress_at > NO_PROGRESS_TIMEOUT:
+                    raise LandError(f"CI on {ref}: no job of run {runs[0]['databaseId']} finished for "
+                                    f"{NO_PROGRESS_TIMEOUT // 60} minutes ({progress[0]}/{progress[1]} done): "
+                                    "rerun land.py to resume waiting on the same run")
+                if now - started > RUN_TIMEOUT:
+                    raise LandError(f"CI on {ref} did not finish in {RUN_TIMEOUT // 3600} hours")
             time.sleep(self.poll_seconds)
-        raise LandError(f"CI on {ref} did not finish in 90 minutes")
 
     # --- steps -------------------------------------------------------------------
 
@@ -326,6 +401,12 @@ class Lander:
         paths = self.paths(f"{self.upstream()}...HEAD")
         if any(p.startswith("src/") for p in paths) and "CHANGELOG.md" not in paths and not self.no_changelog:
             problems.append("src/ changes without a CHANGELOG.md line (pass --no-changelog for a pure refactor)")
+        golden = [p for p in paths if GOLDEN_FILE_RE.match(p)]
+        if golden and not self.ack_golden:
+            diff = self.git("diff", "-U0", f"{self.upstream()}...HEAD", "--", *golden)
+            if any(GOLDEN_CONST_RE.search(l) for l in diff.splitlines() if l[:1] in "+-" and l[:3] not in ("+++", "---")):
+                problems.append(f"a determinism golden constant changed in {golden} (the simulated result changed): "
+                                "pass --ack-golden after checking the change is intended")
         return problems
 
     def owns_ref(self, sha: str) -> bool:
@@ -348,7 +429,8 @@ class Lander:
             if not conflicted:
                 self.git("rebase", "--abort", check=False)
                 raise LandError(f"rebase failed: {r.stderr.strip()}")
-            other = [p for p in conflicted if p not in GENERATED and p not in SEMI_GENERATED and p not in APPEND_ONLY]
+            other = [p for p in conflicted
+                     if p not in GENERATED and p not in SEMI_GENERATED and p not in APPEND_ONLY and p not in RATCHETS]
             if other:
                 self.git("rebase", "--abort", check=False)
                 raise LandError(f"rebase conflict outside the generated ledgers: {other}")
@@ -395,11 +477,11 @@ class Lander:
             raise LandError(f"{path}: {e}") from None
 
     def merge_semi(self, path: str) -> None:
-        """3-way merge of a hand-written file with its generated column blanked
-        (the regeneration refills it); stop when the hand-written parts clash."""
-        if not self.merge_stages(path, transform=blank_integration):
+        """3-way merge of a hand-written file with its generated cells blanked
+        (the regeneration refills them); stop when the hand-written parts clash."""
+        if not self.merge_stages(path, transform=SEMI_TRANSFORMS.get(path, blank_integration)):
             self.git("rebase", "--abort", check=False)
-            raise LandError(f"{path}: the hand-written parts conflict (not only the Integration column)")
+            raise LandError(f"{path}: the hand-written parts conflict (not only the generated cells)")
 
     def commit_regenerated(self) -> None:
         names = sorted(set(self.git("diff", "--name-only", "HEAD").splitlines())
@@ -407,7 +489,7 @@ class Lander:
         names = [n for n in names if n]
         if not names:
             return
-        stray = [p for p in names if p not in GENERATED and p not in SEMI_GENERATED]
+        stray = [p for p in names if p not in GENERATED and p not in SEMI_GENERATED and p not in RATCHETS]
         if stray:
             raise LandError(f"regeneration touched files that are not ledgers: {stray}")
         self.git("add", "--", *names)
@@ -488,6 +570,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-changelog", action="store_true", help="src/ change without a CHANGELOG line")
     ap.add_argument("--replace-ci", action="store_true",
                     help="overwrite ci/<id> although it holds other commits (your own earlier attempt)")
+    ap.add_argument("--ack-golden", action="store_true",
+                    help="a change to a determinism golden constant is intended (the simulated result changes)")
     ap.add_argument("--wait", action="store_true", help="after landing, wait for the main CI run")
     ap.add_argument("--wait-only", metavar="SHA", help="only wait for the main CI run of SHA")
     args = ap.parse_args(argv)
@@ -496,7 +580,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip())
     lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
-                    replace_ci=args.replace_ci)
+                    replace_ci=args.replace_ci, ack_golden=args.ack_golden)
     if args.wait_only:
         try:
             lander.wait_ci(lander.branch, args.wait_only)
