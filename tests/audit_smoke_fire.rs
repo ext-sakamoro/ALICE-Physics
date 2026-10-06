@@ -194,7 +194,6 @@ fn boussinesq_vanishes_when_any_factor_is_zero() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-001: Arrhenius rate is cut to exactly 0 when E_a/(R T) >= 40 (exp_fix saturation); PLA at 450 K returns 0 vs closed form 1.94e-9 kg/(m3 s) (heat release 35 J/(m3 s)), methane at 600 K returns 0 vs 3.37e-9"]
 fn arrhenius_rate_has_no_hard_zero_cliff_at_the_exp_saturation_threshold() {
     let pla = ArrheniusReaction::pla_air();
     let want = closed_for(&pla, 450);
@@ -210,4 +209,38 @@ fn arrhenius_rate_has_no_hard_zero_cliff_at_the_exp_saturation_threshold() {
         (got - want).abs() / want < 1e-2,
         "methane 600 K: got {got:e} want {want:e}"
     );
+}
+
+/// Past the old cut-off the rate still follows the closed form while it is
+/// representable, and becomes exactly 0 only when the closed form is below the
+/// Fix128 resolution (2^-64). A temperature that makes the exponent huge
+/// (1 K: E_a/(R T) ≈ 1.8e4) returns 0 without iterating over the whole exponent.
+#[test]
+fn arrhenius_rate_reaches_zero_only_below_the_fix128_resolution() {
+    let resolution = 2f64.powi(-64);
+    // PLA at 300 K: E_a/(R T) ≈ 60.1, closed form ≈ 4.3e-18 (about 80 ulp)
+    let pla = ArrheniusReaction::pla_air();
+    let want = closed_for(&pla, 300);
+    assert!(
+        want > 10.0 * resolution,
+        "test premise: {want:e} is representable"
+    );
+    let got = rate_f64(&pla, 300);
+    assert!(
+        (got - want).abs() / want < 5e-2,
+        "PLA 300 K: got {got:e} want {want:e}"
+    );
+    // methane at 300 K: E_a/(R T) ≈ 81, closed form ≈ 8e-27, below the resolution
+    let methane = ArrheniusReaction::methane_air();
+    let want = closed_for(&methane, 300);
+    assert!(
+        want < resolution,
+        "test premise: {want:e} is below the resolution"
+    );
+    assert_eq!(rate_f64(&methane, 300), 0.0);
+    // 1 K: the exponent is ~1.8e4; the result is 0 and the call returns promptly
+    let start = std::time::Instant::now();
+    assert_eq!(rate_f64(&methane, 1), 0.0);
+    assert_eq!(rate_f64(&pla, 1), 0.0);
+    assert!(start.elapsed().as_millis() < 1000);
 }

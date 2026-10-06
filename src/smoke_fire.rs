@@ -89,10 +89,38 @@ pub fn reaction_rate_kg_per_m3_s(
     if denom.is_zero() {
         return Fix128::ZERO;
     }
-    let exponent = Fix128::ZERO - reaction.activation_energy_j_per_mol / denom;
-    let k_arrh = reaction.pre_exponential_a * exp_fix(exponent);
+    let k_arrh = scaled_exp_neg(
+        reaction.pre_exponential_a,
+        reaction.activation_energy_j_per_mol / denom,
+    );
     k_arrh * density_fuel * density_oxidizer
 }
+
+/// `a · exp(−x)`, computed without the cut-off of `exp_fix`.
+///
+/// `exp_fix` returns exactly 0 for an argument at or below −40 and loses
+/// relative precision as its result approaches the Fix128 resolution
+/// (2⁻⁶⁴ ≈ 5.4e-20). An Arrhenius factor `A · exp(−E_a/(R T))` with
+/// `E_a/(R T)` near 40 is still a representable rate (PLA at 450 K:
+/// `5e8 · e^-40.1` ≈ 1.9e-9), so evaluating `exp` first and multiplying by
+/// `A` after cut it to 0. The exponent is applied in steps of at most
+/// [`EXP_STEP`] while the running product is still large, so the result
+/// reaches 0 only when the true value is below the resolution.
+fn scaled_exp_neg(a: Fix128, x: Fix128) -> Fix128 {
+    let step = Fix128::from_int(EXP_STEP);
+    let step_factor = exp_fix(Fix128::ZERO - step);
+    let mut acc = a;
+    let mut rest = x;
+    while rest > step && !acc.is_zero() {
+        acc = acc * step_factor;
+        rest = rest - step;
+    }
+    acc * exp_fix(Fix128::ZERO - rest)
+}
+
+/// Largest exponent step applied at once by [`scaled_exp_neg`]: `e^-16` is
+/// about 1.1e-7, far from the resolution of `exp_fix`.
+const EXP_STEP: i64 = 16;
 
 /// Heat release per unit volume (J/(m³·s)).
 #[must_use]

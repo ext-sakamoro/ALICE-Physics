@@ -345,7 +345,8 @@ were introduced during that release window.
 - `EventCollector::report_contact` が組を (min, max) に並べ替えたとき法線を反転していなかった (step のイベントは組が常に小さい id 順なので不変) `ContactEvent::normal` と `CollisionResult::normal` の doc を実際の向き (B から A) に直した
 - `ScaledShape` が負の拡大率で最も遠い点でなく最も近い点を返していた (AUD-A-S3W3-017)
 - `SingleModifiedSdf` が `is_active() == false` の modifier を適用していた (AUD-A-S5W3-007)
-
+- **Behavior change:** `PlaneCollider::intersect_aabb` が面の完全に裏にある箱で `point_b` に箱の中心の射影を返していた 最も深い頂点の射影を返し、`point_b - point_a = depth · normal` がどの場合も成り立つ (AUD-A-S3W1-002)
+- **Behavior change:** `smoke_fire::reaction_rate_kg_per_m3_s` が `E_a/(R T)` が 40 以上で速度をちょうど 0 にしていた (`exp_fix` の飽和) 指数を分けて前指数因子に掛けるようにし、0 になるのは真の値が Fix128 の分解能を下回る時だけになった (PLA 450 K で 0 → 1.94e-9 kg/(m³·s)) 指数 16 を超える領域では値の丸めも変わる (AUD-A-S3W2-001)
 ## [1.4.0] - 2026-09-17
 
 ### Changed
