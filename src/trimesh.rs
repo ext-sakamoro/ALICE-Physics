@@ -405,7 +405,10 @@ impl TriMesh {
     }
 }
 
-/// Moller-Trumbore parallel-check epsilon (~2^-24)
+/// Moller-Trumbore parallel-check epsilon (~2^-24), relative: the ray counts
+/// as parallel to the triangle when `|det| < MT_EPSILON * |e1| * |e2|`, i.e.
+/// when the sine of the angle between the ray and the plane times the sine of
+/// the triangle's corner angle is below it, whatever the triangle's size
 const MT_EPSILON: Fix128 = Fix128 {
     hi: 0,
     lo: 0x0000010000000000,
@@ -418,7 +421,9 @@ pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> 
     let e2 = tri.v2 - tri.v0;
     let h = ray.direction.cross(e2);
     let det = e1.dot(h);
-    if det.abs() < MT_EPSILON {
+    // relative to the triangle's size (an absolute threshold made every
+    // triangle below about 2.4e-4 m on a side invisible to every ray)
+    if det.is_zero() || det.abs() < MT_EPSILON * e1.length() * e2.length() {
         return None;
     }
 

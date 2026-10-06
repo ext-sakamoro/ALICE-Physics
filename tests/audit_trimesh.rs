@@ -413,7 +413,7 @@ fn ray_triangle_includes_edges_and_vertices() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-012: MT_EPSILON (2^-24) との比較が絶対値で、det = 2 * 面積 * |cos| が小さい三角形 (辺 1e-4 m、面積 5e-9) は真上からの ray でも常に None"]
+// AUD-A-S4W2-012
 fn small_triangles_are_not_invisible_to_rays() {
     // 辺 1e-4 m (0.1 mm) の三角形に真上から ray。面積 5e-9 < MT_EPSILON (2^-24 = 6e-8) で det が閾値を下回る
     let e = Fix128::from_ratio(1, 10_000);
@@ -1147,4 +1147,24 @@ fn collide_capsule_endpoint_beyond_the_segment_end_uses_the_clamped_end() {
     assert!(m
         .collide_capsule(v3(0, 8, 0), v3(16, 8, 0), Fix128::from_int(3))
         .is_none());
+}
+
+/// A degenerate triangle (all three vertices at one point, or on one line) has
+/// no area and is never hit, whatever its size (the threshold scales with the
+/// edges, so it is zero here; det = 0 must still be refused)
+#[test]
+fn degenerate_triangles_are_never_hit() {
+    let p = Vec3Fix::ZERO;
+    let point = Triangle::new(p, p, p);
+    let line = Triangle::new(p, v3(1, 0, 0), v3(2, 0, 0));
+    for t in [point, line] {
+        let ray = Ray::new(
+            Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+            v3(0, 0, -16),
+        );
+        assert!(
+            ray_triangle(&ray, &t, Fix128::from_int(10)).is_none(),
+            "{t:?}"
+        );
+    }
 }
