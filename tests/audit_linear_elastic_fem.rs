@@ -468,7 +468,7 @@ fn mark_bulk_refuses_what_its_doc_says() {
 /// `10 θ = 5.5` ulp, the truncated target is 5, so one element (50 %) is marked
 /// where 55 % was requested.
 #[test]
-#[ignore = "known defect: AUD-A-S1W3-002: mark_bulk truncates total*theta, so at ulp-scale indicators the marked set carries less than theta*total (indicators [5,5] ulp, theta=0.55 marks one element = 50%); negligible at physical scales, doc says 'at least'"]
+// AUD-A-S1W3-002
 fn mark_bulk_carries_at_least_theta_times_total_even_at_ulp_scale() {
     let ind = [Fix128::from_raw(0, 5), Fix128::from_raw(0, 5)];
     let theta = fx(0.55);
@@ -948,4 +948,21 @@ fn a_sliver_with_a_fixed_base_is_not_reported_as_under_constrained() {
             "h = {h:e}: base fixed (9 dofs) yet UnderConstrained"
         );
     }
+}
+
+/// When `θ · total` is exact the target is not raised: indicators `[4, 4]` ulp at
+/// `θ = 1/2` need exactly 4 ulp, one element. `θ = 1` marks everything, and a
+/// physical-scale total (`2^40` with `θ = 0.55`) still marks the minimal set.
+#[test]
+fn mark_bulk_exact_targets_are_not_rounded_up() {
+    let four = Fix128::from_raw(0, 4);
+    let got = mark_bulk(&[four, four], fx(0.5)).expect("valid");
+    assert_eq!(got.iter().filter(|m| **m).count(), 1);
+    let all = mark_bulk(&[four, four, four], Fix128::ONE).expect("valid");
+    assert!(all.iter().all(|m| *m));
+    let big = Fix128::from_int(1 << 40);
+    let got = mark_bulk(&[big, big], fx(0.55)).expect("valid");
+    assert_eq!(got.iter().filter(|m| **m).count(), 2);
+    let got = mark_bulk(&[big, big], fx(0.5)).expect("valid");
+    assert_eq!(got.iter().filter(|m| **m).count(), 1);
 }

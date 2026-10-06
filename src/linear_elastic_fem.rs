@@ -5300,7 +5300,10 @@ pub fn mark_bulk(
     if total.is_zero() {
         return Ok(marked);
     }
-    let target = total * bulk_fraction;
+    // `θ · total` rounded up to the 2^-64 grid: the floored product of `*` can
+    // sit one unit below the exact target, and at indicators of a few units that
+    // stops the greedy set short of the fraction asked for
+    let target = mul_ceil_fraction(total, bulk_fraction);
     let mut order: Vec<usize> = (0..indicators_squared.len()).collect();
     // Descending by indicator, ascending by index on a tie.
     order.sort_by(|&a, &b| {
@@ -5317,6 +5320,18 @@ pub fn mark_bulk(
         running = running + indicators_squared[index];
     }
     Ok(marked)
+}
+
+/// `⌈x · f⌉` on the 2⁻⁶⁴ grid for `x ≥ 0` and `0 < f ≤ 1` (the raw value of `f`
+/// is at most 2⁶⁴, so each partial product fits `u128`).
+fn mul_ceil_fraction(x: Fix128, f: Fix128) -> Fix128 {
+    let f_raw = (u128::from(f.hi as u64) << 64) | u128::from(f.lo);
+    let hi = u128::from(x.hi as u64);
+    let lo = u128::from(x.lo);
+    let low = lo * f_raw;
+    let carry = (low >> 64) + u128::from(low & u128::from(u64::MAX) != 0);
+    let raw = hi * f_raw + carry;
+    Fix128::from_raw((raw >> 64) as i64, raw as u64)
 }
 
 /// How to drive [`solve_adaptive`].
