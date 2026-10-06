@@ -17,6 +17,8 @@
     free fn は `.name(` のメソッド呼び出しでは配線済にならず、メソッドは `.name(` か `::name` でだけ配線済になる
 検査 C: 検査対象が 0 件なら fail (検査器が空振りして green になるのを防ぐ)
 検査 D: src の波括弧が閉じていない file は unbalanced_braces で fail (本体の範囲を切れない)
+検査 E: `// ALLOW-UNWIRED: wiring debt <key>` の key は docs/wiring-debt.md (公開の台帳) の行と
+    2 方向で一致する 台帳に無い key / どの marker も使わない台帳の行 / kebab-case でない key は fail
 
 Cargo workspace: root の `Cargo.toml` の `[workspace] members` (glob 可、`exclude` 対応) を展開し、
 各 member の `src/` (と root 自身の `src/`) を定義の走査対象にする 参照 corpus は repo 全体なので
@@ -60,6 +62,12 @@ USE_RE = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?use\s+[^;]*;")
 CFG_TEST_RE = re.compile(r"#\s*\[\s*cfg\s*\(\s*(?:all\s*\(\s*)?test\b[^\]]*\]")
 ALLOW_DEAD_RE = re.compile(r"#\s*!?\s*\[[^\]]*\ballow\s*\([^)]*\bdead_code\b")
 MARKER_RE = re.compile(r"//\s*ALLOW-(UNWIRED|DEAD)\s*:(.*)$")
+# `// ALLOW-UNWIRED: wiring debt <key> ...` names a tracked debt; the key resolves in
+# DEBT_LEDGER, a public table, so the marker never points at a record outside the repo
+DEBT_RE = re.compile(r"//\s*ALLOW-UNWIRED\s*:\s*wiring debt\s+(\S+)")
+DEBT_KEY_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+DEBT_LEDGER = "docs/wiring-debt.md"
+LEDGER_ROW_RE = re.compile(r"^\|\s*`([^`]+)`\s*\|")
 
 
 @dataclass(frozen=True)
@@ -708,6 +716,47 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
         n = actual_unmarked.get(rel, 0)
         if allowed > n:
             vs.append(Violation("stale_baseline", rel, f"baseline の dead_code {allowed} 件に対し実際は {n} 件 数を減らす"))
+    vs += check_debt_ledger(root, files, raw)
+    return vs
+
+
+def check_debt_ledger(root: Path, files: list[Path], raw: dict[Path, list[str]]) -> list[Violation]:
+    """検査 E: `wiring debt <key>` の key は docs/wiring-debt.md の行と 2 方向で一致する
+    (marker の key が台帳に無い / 台帳の key をどの marker も使っていない / key の書式違反 はどれも fail)"""
+    vs: list[Violation] = []
+    used: dict[str, str] = {}
+    for p in files:
+        rel = p.relative_to(root).as_posix()
+        for i, line in enumerate(raw[p]):
+            m = DEBT_RE.search(line)
+            if not m:
+                continue
+            key = m.group(1).rstrip(",.;:")
+            if not DEBT_KEY_RE.fullmatch(key):
+                vs.append(Violation("bad_debt_key", f"{rel}:{i + 1}",
+                                    f"wiring debt の key {key!r} は小文字・数字・ハイフンの kebab-case にする"))
+                continue
+            used.setdefault(key, f"{rel}:{i + 1}")
+    ledger = root / DEBT_LEDGER
+    if not ledger.is_file():
+        if used:
+            vs.append(Violation("debt_ledger", DEBT_LEDGER, f"wiring debt の marker が {len(used)} 種あるが台帳が無い"))
+        return vs
+    rows: dict[str, int] = {}
+    for n, line in enumerate(ledger.read_text(encoding="utf-8").splitlines(), 1):
+        m = LEDGER_ROW_RE.match(line)
+        if m:
+            if m.group(1) in rows:
+                vs.append(Violation("debt_ledger", f"{DEBT_LEDGER}:{n}", f"key {m.group(1)!r} が 2 行ある"))
+            rows.setdefault(m.group(1), n)
+    if not rows:
+        vs.append(Violation("debt_ledger", DEBT_LEDGER, "台帳に key の行が 1 つも無い (比較 0 件)"))
+    for key, where in sorted(used.items()):
+        if key not in rows:
+            vs.append(Violation("debt_unlisted", where, f"wiring debt {key} が {DEBT_LEDGER} に無い"))
+    for key, n in sorted(rows.items()):
+        if key not in used:
+            vs.append(Violation("debt_stale", f"{DEBT_LEDGER}:{n}", f"台帳の {key} をどの marker も使っていない (解消済なら行を消す)"))
     return vs
 
 
