@@ -178,6 +178,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `phase_change` | solid / liquid / gas transitions from temperature | std | [`thermal_phase_erosion_chain`](../examples/thermal_phase_erosion_chain.rs) | standalone |
 | `coupled_field` | a `Fix128` scalar field shared between solvers, with order-independent reconciliation |  | [`temperature_reconciliation`](../examples/temperature_reconciliation.rs) | standalone |
 | `coupled_iteration` | convergence monitoring for partitioned (staggered) multiphysics coupling |  | [`thermoplastic_sub_iteration`](../examples/thermoplastic_sub_iteration.rs) | standalone |
+| `coupling_medium` | a homogeneous medium exchanging momentum with rigid bodies through linear drag, as a world participant |  | [`coupling_medium`](../examples/coupling_medium.rs) | standalone |
 
 ## Solid mechanics and FEM
 
