@@ -130,7 +130,6 @@ fn velocity_pd(kp: f64, max: f64, target: f64) -> PdController {
 
 /// Substep map of a velocity motor (`τ = clamp(kp (ω_t - ω), ±max)`), frame
 /// damping `d`, `n` substeps: `ω` after each of `frames` frames.
-#[allow(clippy::too_many_arguments)]
 fn velocity_reference(
     kp: f64,
     max: f64,
@@ -139,7 +138,6 @@ fn velocity_reference(
     target: f64,
     w0: f64,
     frames: usize,
-    derive: bool,
 ) -> Vec<f64> {
     let h = dt_f() / n as f64;
     let mut om = w0;
@@ -147,7 +145,6 @@ fn velocity_reference(
     for _ in 0..frames {
         for _ in 0..n {
             om += h * (kp * (target - om)).clamp(-max, max);
-            if derive {}
         }
         om *= d;
         out.push(om);
@@ -173,7 +170,7 @@ fn hinge_velocity_motor_follows_first_order_response() {
     let m = w.add_joint_motor(j, velocity_pd(2.0, 1000.0, 1.0));
     assert_eq!(m, 0);
     let d = frame_damping(&cfg);
-    let reference = velocity_reference(2.0, 1000.0, d, cfg.substeps, 1.0, 0.0, 240, true);
+    let reference = velocity_reference(2.0, 1000.0, d, cfg.substeps, 1.0, 0.0, 240);
     for k in 1..=240 {
         w.step(dt());
         let want = velocity_closed_form(2.0, 1.0, d, cfg.substeps, 1.0, 0.0, k);
@@ -225,7 +222,7 @@ fn hinge_motor_torque_cap_limits_acceleration_to_max_over_inertia() {
     w.add_joint_motor(j, velocity_pd(1000.0, tau_max, 10.0));
     let c = d * tau_max * dt_f() / (1.0 - d);
     let n = w.config.substeps;
-    let reference = velocity_reference(1000.0, tau_max, d, n, 10.0, 0.0, 60, true);
+    let reference = velocity_reference(1000.0, tau_max, d, n, 10.0, 0.0, 60);
     for k in 1..=60 {
         w.step(dt());
         let want = c * (1.0 - d.powi(k));
@@ -404,7 +401,7 @@ fn disable_stops_the_motor_torque() {
     );
     let n = w.config.substeps;
     // no torque: the reference with kp = 0 is the derivation and d only
-    let reference = velocity_reference(0.0, 0.0, d, n, 0.0, w0, 60, true);
+    let reference = velocity_reference(0.0, 0.0, d, n, 0.0, w0, 60);
     for k in 1..=60 {
         w.step(dt());
         let want = w0 * d.powi(k);
@@ -438,7 +435,7 @@ fn set_velocity_target_changes_the_steady_state() {
     }
     let w0 = omega_z(&w);
     assert!(w.set_joint_motor_velocity_target(m, f(-2.0)));
-    let reference = velocity_reference(2.0, 1000.0, d, cfg.substeps, -2.0, w0, 400, true);
+    let reference = velocity_reference(2.0, 1000.0, d, cfg.substeps, -2.0, w0, 400);
     for k in 1..=400 {
         w.step(dt());
         let want = velocity_closed_form(2.0, 1.0, d, cfg.substeps, -2.0, w0, k);
@@ -670,7 +667,7 @@ fn ball_rotation_motor_torque_cap_limits_acceleration() {
     let axis = Vec3Fix::new(Fix128::ZERO, f(0.6), f(0.8));
     w.set_joint_motor_3d_rotation_target(m, QuatFix::from_axis_angle(axis, f(1.0)));
     let c = d * tau_max * dt_f() / (1.0 - d);
-    let reference = velocity_reference(1e9, tau_max, d, n, 1e9, 0.0, 30, true);
+    let reference = velocity_reference(1e9, tau_max, d, n, 1e9, 0.0, 30);
     for k in 1..=30 {
         w.step(dt());
         let wv = w.bodies[1].angular_velocity;
