@@ -546,7 +546,7 @@ axis = "constraints"
 item = "analytic / linear constraint solvers (SETTLE / LINCS)"
 source = "Miyamoto-Kollman 1992; Hess 1997 (GROMACS)"
 status = "missing"
-evidence = "grep 0 件 (SETTLE / LINCS)"
+evidence = "grep 0 件 (SETTLE / LINCS) 分割: 子の行 COV-PART-121〜122 この行の status は子のうち最も実装の少ないもの (missing) に合わせて手で保つ (検査器は親子を見ない)"
 oracle_candidate = "剛体水分子の形状保持"
 limitation = ""
 
@@ -1258,4 +1258,24 @@ source = "Zeng et al. 2014 (Transp. Res. C 40, pedestrian-vehicle social force);
 status = "missing"
 evidence = "群衆の相手は歩行者と静止した壁だけ (src/crowd_force.rs::SocialForce、COV-PART-097) 車両を動く障害物として読む口が無い 物理的な衝突と反力は COV-COUPLE-103"
 oracle_candidate = "一定速度で横切る車両の前で歩行者が止まり、通過後に歩き出す (間隙の閾値の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-PART-121"
+axis = "constraints"
+item = "analytic rigid water constraint (SETTLE)"
+source = "Miyamoto-Kollman 1992"
+status = "missing"
+evidence = "COV-PART-049 の子 grep 0 件 (SETTLE)"
+oracle_candidate = "剛体水分子の形状保持"
+limitation = ""
+
+[[item]]
+id = "COV-PART-122"
+axis = "constraints"
+item = "linear constraint solver for bonds (LINCS)"
+source = "Hess 1997 (GROMACS)"
+status = "missing"
+evidence = "COV-PART-049 の子 grep 0 件 (LINCS)"
+oracle_candidate = "結合長が許容内に留まる"
 limitation = ""
