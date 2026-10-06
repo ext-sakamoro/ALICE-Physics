@@ -105,24 +105,17 @@ impl MultiWorld {
             return None;
         }
 
-        // Remove body from source world
-        // We need to handle the borrow checker: read then modify
-        let body_opt = {
-            let src = &mut self.worlds[from_world];
-            if body_id >= src.bodies.len() {
-                return None;
-            }
-            src.remove_body(body_id)
-        };
-
-        let mut body = body_opt?;
+        // Remove the body with its per-body settings (material, collision
+        // radius, collider, filter) so it collides in the destination exactly
+        // like a body added there with them
+        let (mut body, attachments) =
+            self.worlds[from_world].remove_body_with_attachments(body_id)?;
 
         // Update position for destination world
         body.position = new_position;
         body.prev_position = new_position;
 
-        // Add to destination world
-        let new_id = self.worlds[to_world].add_body(body);
+        let new_id = self.worlds[to_world].add_body_with_attachments(body, attachments);
 
         Some(new_id)
     }

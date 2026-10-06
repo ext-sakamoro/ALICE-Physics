@@ -1452,6 +1452,16 @@ pub struct BodyObservation {
     pub in_contact: bool,
 }
 
+/// The per-body settings of a [`PhysicsWorld`] kept outside [`RigidBody`],
+/// moved together with a body between worlds (see `MultiWorld::transfer_body`).
+#[derive(Clone, Debug)]
+pub(crate) struct BodyAttachments {
+    material: crate::material::MaterialId,
+    collision_radius: Option<Fix128>,
+    collider: Option<crate::body_collider::BodyCollider>,
+    filter: CollisionFilter,
+}
+
 /// XPBD physics world with batched constraint solving
 ///
 /// `PhysicsWorld` integrates all physics subsystems:
@@ -2040,6 +2050,64 @@ impl PhysicsWorld {
         Ok(idx)
     }
 
+    /// Extend the per-body side tables with the defaults `add_body` gives, up
+    /// to `bodies.len()` (bodies pushed onto the public field have none).
+    fn pad_body_tables(&mut self) {
+        let n = self.bodies.len();
+        if self.body_materials.len() < n {
+            self.body_materials
+                .resize(n, crate::material::DEFAULT_MATERIAL);
+        }
+        if self.body_collision_radii.len() < n {
+            self.body_collision_radii.resize(n, None);
+        }
+        if self.body_colliders.len() < n {
+            self.body_colliders.resize(n, None);
+        }
+        if self.body_filters.len() < n {
+            self.body_filters.resize(n, CollisionFilter::DEFAULT);
+        }
+    }
+
+    /// [`Self::remove_body`] that also returns the body's per-body settings
+    /// (material, collision radius, collider, collision filter), for moving it
+    /// into another world with [`Self::add_body_with_attachments`]. The stable
+    /// id stays behind: ids belong to a world.
+    pub(crate) fn remove_body_with_attachments(
+        &mut self,
+        idx: usize,
+    ) -> Option<(RigidBody, BodyAttachments)> {
+        // a body pushed onto the public `bodies` field may have no entries yet:
+        // it carries the defaults `add_body` would give it
+        let attachments = BodyAttachments {
+            material: self
+                .body_materials
+                .get(idx)
+                .copied()
+                .unwrap_or(crate::material::DEFAULT_MATERIAL),
+            collision_radius: self.body_collision_radii.get(idx).copied().flatten(),
+            collider: self.body_colliders.get(idx).cloned().flatten(),
+            filter: self.body_filters.get(idx).copied().unwrap_or_default(),
+        };
+        let body = self.remove_body(idx)?;
+        Some((body, attachments))
+    }
+
+    /// [`Self::add_body`] with the per-body settings taken by
+    /// [`Self::remove_body_with_attachments`]; the body gets a new stable id.
+    pub(crate) fn add_body_with_attachments(
+        &mut self,
+        body: RigidBody,
+        attachments: BodyAttachments,
+    ) -> usize {
+        let idx = self.add_body(body);
+        self.body_materials[idx] = attachments.material;
+        self.body_collision_radii[idx] = attachments.collision_radius;
+        self.body_colliders[idx] = attachments.collider;
+        self.body_filters[idx] = attachments.filter;
+        idx
+    }
+
     /// Remove a body by index (swap-remove).
     ///
     /// The last body is moved to fill the gap. All constraints and joints
@@ -2089,6 +2157,9 @@ impl PhysicsWorld {
         // (a body pushed onto the public field has no id yet).
         #[cfg(feature = "std")]
         self.sync_body_stable_ids();
+        // a body pushed onto the public `bodies` field has no side-table
+        // entries yet: give it the defaults so the tables swap-remove in step
+        self.pad_body_tables();
         let removed = self.bodies.swap_remove(idx);
         self.body_materials.swap_remove(idx);
         self.body_collision_radii.swap_remove(idx);

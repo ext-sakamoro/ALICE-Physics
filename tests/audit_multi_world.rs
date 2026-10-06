@@ -135,7 +135,7 @@ fn failed_transfer_is_atomic() {
 /// collision filter and collision radius in side tables that `remove_body`
 /// pops and `transfer_body` drops; `add_body` re-creates them as defaults.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-005: transfer_body drops the body's material id (3 -> 0)"]
+// AUD-A-S4W1-005
 fn transfer_preserves_material() {
     let mut mw = MultiWorld::new();
     mw.add_world(PhysicsConfig::default());
@@ -148,7 +148,7 @@ fn transfer_preserves_material() {
 
 /// AUD-A-S4W1-005 (collision filter half).
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-005: transfer_body drops the body's collision filter (custom -> DEFAULT)"]
+// AUD-A-S4W1-005
 fn transfer_preserves_collision_filter() {
     let mut mw = MultiWorld::new();
     mw.add_world(PhysicsConfig::default());
@@ -177,7 +177,7 @@ fn settle(w: &mut PhysicsWorld) -> Vec<Vec3Fix> {
 /// radius 1 at overlapping positions. Test world: B is created with radius 1 in
 /// another world and transferred.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-005: transfer_body drops the collision radius, so the transferred body no longer collides (positions differ from the directly-added control)"]
+// AUD-A-S4W1-005
 fn transfer_preserves_collision_radius() {
     let r = Fix128::ONE;
     let mut control = PhysicsWorld::new(PhysicsConfig::default());
@@ -236,4 +236,47 @@ fn step_all_equals_independent_steps() {
     }
     // Free fall closed form for world 0 body: y decreases (g acts), x moves at vx = 0
     assert!(mw.worlds[0].bodies[0].position.y < Fix128::from_int(10));
+}
+
+/// AUD-A-S4W1-005 (collider): a shaped body moved into a world collides there
+/// exactly like the same shape added there directly (differential, bit-equal
+/// positions after settling). Without its collider it would collide as its
+/// bounding sphere (radius 2.1 for this box), not its face.
+#[test]
+fn transfer_preserves_the_shape_collider() {
+    let shape = alice_physics::shape::Shape::Box {
+        half_extents: Vec3Fix::new(half(), Fix128::from_int(2), half()),
+    };
+    let at = Vec3Fix::new(Fix128::from_ratio(13, 10), Fix128::ZERO, Fix128::ZERO);
+    let mut control = PhysicsWorld::new(PhysicsConfig::default());
+    control.add_body_with_radius(body(0, 0, 0), Fix128::ONE);
+    control
+        .add_shaped_body(&shape, Fix128::ONE, at)
+        .expect("valid box");
+    let want = settle(&mut control);
+
+    let mut mw = MultiWorld::new();
+    mw.add_world(PhysicsConfig::default());
+    mw.add_world(PhysicsConfig::default());
+    mw.worlds[1].add_body_with_radius(body(0, 0, 0), Fix128::ONE);
+    mw.worlds[0]
+        .add_shaped_body(&shape, Fix128::ONE, v(9, 9, 9))
+        .expect("valid box");
+    let id = mw.transfer_body(0, 0, 1, at).expect("valid");
+    assert_eq!(id, 1);
+    assert_eq!(settle(&mut mw.worlds[1]), want);
+}
+
+/// A body pushed onto the public `bodies` field has no per-body settings yet;
+/// it still transfers, with the defaults `add_body` gives.
+#[test]
+fn transfer_of_a_body_pushed_onto_the_public_field_uses_the_defaults() {
+    let mut mw = MultiWorld::new();
+    mw.add_world(PhysicsConfig::default());
+    mw.add_world(PhysicsConfig::default());
+    mw.worlds[0].bodies.push(body(1, 2, 3));
+    let id = mw.transfer_body(0, 0, 1, v(4, 5, 6)).expect("transfers");
+    assert_eq!(mw.worlds[1].bodies[id].position, v(4, 5, 6));
+    assert_eq!(mw.worlds[1].body_filter(id), CollisionFilter::DEFAULT);
+    assert_eq!(mw.worlds[0].bodies.len(), 0);
 }
