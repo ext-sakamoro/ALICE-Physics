@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 17 |
 | world API | used through another `PhysicsWorld` method | 6 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 134 |
+| standalone | a Rust API that only examples call | 135 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -179,6 +179,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `world_participant` | standalone | 0 / 0 / 0 / 88 / 0 | — |
 | `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
 
 ### C ABI (`--features ffi`)
