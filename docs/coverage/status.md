@@ -7,14 +7,14 @@ crate has today.
 | table | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | `docs/coverage/acous.toml` | 103 | 8 | 3 | 3 | 89 | 0 |
-| `docs/coverage/am.toml` | 93 | 10 | 0 | 7 | 76 | 0 |
+| `docs/coverage/am.toml` | 93 | 11 | 0 | 6 | 76 | 0 |
 | `docs/coverage/atmos.toml` | 144 | 0 | 1 | 0 | 143 | 0 |
 | `docs/coverage/bio.toml` | 141 | 0 | 4 | 0 | 137 | 0 |
 | `docs/coverage/cfd.toml` | 121 | 39 | 2 | 6 | 74 | 0 |
 | `docs/coverage/chem.toml` | 140 | 7 | 2 | 0 | 131 | 0 |
 | `docs/coverage/couple.toml` | 123 | 10 | 3 | 4 | 106 | 0 |
 | `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
-| `docs/coverage/engine.toml` | 153 | 64 | 10 | 7 | 72 | 0 |
+| `docs/coverage/engine.toml` | 153 | 65 | 10 | 6 | 72 | 0 |
 | `docs/coverage/env.toml` | 152 | 21 | 2 | 2 | 127 | 0 |
 | `docs/coverage/fem.toml` | 137 | 36 | 0 | 6 | 92 | 3 |
 | `docs/coverage/fract.toml` | 112 | 15 | 2 | 4 | 91 | 0 |
@@ -23,7 +23,7 @@ crate has today.
 | `docs/coverage/mat.toml` | 146 | 23 | 13 | 5 | 105 | 0 |
 | `docs/coverage/mbd.toml` | 161 | 37 | 2 | 12 | 110 | 0 |
 | `docs/coverage/mfg.toml` | 45 | 0 | 0 | 0 | 45 | 0 |
-| `docs/coverage/multiphase.toml` | 92 | 11 | 2 | 3 | 76 | 0 |
+| `docs/coverage/multiphase.toml` | 92 | 12 | 2 | 2 | 76 | 0 |
 | `docs/coverage/nonlin.toml` | 96 | 1 | 2 | 0 | 93 | 0 |
 | `docs/coverage/nuclear.toml` | 133 | 0 | 1 | 0 | 132 | 0 |
 | `docs/coverage/num.toml` | 124 | 26 | 0 | 5 | 92 | 1 |
@@ -41,7 +41,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4292 | 578 | 79 | 105 | 3524 | 6 |
+| **total** | 4292 | 581 | 79 | 102 | 3524 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -66,7 +66,7 @@ crate has today.
 |---|---:|---:|---:|---:|---:|---:|
 | benchmark | 7 | 0 | 0 | 0 | 7 | 0 |
 | extrusion and bead | 9 | 0 | 0 | 1 | 8 | 0 |
-| geometry check | 12 | 3 | 0 | 1 | 8 | 0 |
+| geometry check | 12 | 4 | 0 | 0 | 8 | 0 |
 | layer adhesion | 10 | 3 | 0 | 2 | 5 | 0 |
 | orientation | 8 | 1 | 0 | 1 | 6 | 0 |
 | pipeline | 3 | 1 | 0 | 0 | 2 | 0 |
@@ -211,7 +211,7 @@ crate has today.
 | game-engine | 4 | 0 | 0 | 0 | 4 | 0 |
 | network | 18 | 7 | 0 | 0 | 11 | 0 |
 | state | 26 | 5 | 0 | 3 | 18 | 0 |
-| world | 11 | 7 | 0 | 1 | 3 | 0 |
+| world | 11 | 8 | 0 | 0 | 3 | 0 |
 
 ## `docs/coverage/env.toml`
 
@@ -372,7 +372,7 @@ crate has today.
 | output | 2 | 0 | 0 | 0 | 2 | 0 |
 | particle methods: free surface | 7 | 1 | 0 | 0 | 6 | 0 |
 | phase change at the interface (flow side) | 4 | 0 | 0 | 0 | 4 | 0 |
-| surface tension | 15 | 4 | 1 | 1 | 9 | 0 |
+| surface tension | 15 | 5 | 1 | 0 | 9 | 0 |
 | two-phase momentum | 6 | 0 | 0 | 0 | 6 | 0 |
 
 ## `docs/coverage/nonlin.toml`
