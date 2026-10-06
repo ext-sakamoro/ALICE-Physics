@@ -162,6 +162,7 @@ were introduced during that release window.
 
 ### Changed
 
+- `scripts/wiring_guard.py`: 検査 B は型 T 自身の `impl T` / `impl Trait for T` の見出しと本体の中の T を T の配線に数えないようにした (これまでは impl を持つ struct / enum は他から参照されなくても配線済になっていた) 同じ file の別の item からの参照はその item が配線済の時だけ数える これまで見えていなかった未配線 8 件 (`src/solver_tgs_hooks.rs` 4 / `src/motor.rs` 2 / `src/bvh.rs` 1 / `src/solver_tgs_hooks_6dof.rs` 1) を `scripts/wiring-baseline.txt` に追加 src は無変更
 - `scripts/coverage_check.py`: 網羅表の参照を行番号 (`src/x.rs:123`) からシンボル (`src/x.rs::名前`) に切り替えた 行番号は上に行が挿入されるとずれ、表が増えると src の編集のたびに無関係な表が壊れるため、行番号の参照は失敗にする `limitation` は `src/x.rs::名前 '<引用>'` で、引用はその item の doc comment・attribute・本体の中にあること (モジュールの doc は `src/x.rs '<引用>'`) tests/ の補助関数も evidence に書ける (oracle には数えない) 既存の行番号を変換する `scripts/coverage_refs_to_symbols.py` を追加
 - `scripts/scip_reach.py`: `macro_rules!` の呼び出しが生成する型と、本体が書く pub member を item として数えるようにした (これまで索引に定義が無く unindexed 27 件として外れていた) 使われている field / variant から所有する型に届くようにした 基準ファイルは unindexed 27 → 0、L0 は 115 件増えた (生成された member のうち呼び出し元の無いもの)
 - `scripts/scip_reach.py`: macro が生成する member の到達を member ごとの本体で判定するようにした (自型の別 member の呼び出し `self.x()` / `Self::X`、非公開の補助関数を経由した呼び出し、呼び出し時の引数で決まる `$param::name` を辿る) 生成された member が互いを呼ぶ経路を辿れず、呼ばれている 4 件が L0 と判定されていた

@@ -500,6 +500,103 @@ class NameCollisions(unittest.TestCase):
         self.assertNotIn("LIMIT", unwired(wg.check(crate(files))))
 
 
+class OwnImplIsNotWiring(unittest.TestCase):
+    """型 T 自身の `impl T` / `impl Trait for T` の見出しと本体の中の T は、T の配線の根拠にならない."""
+
+    LONELY_STRUCT = (
+        "pub struct Grid { cells: Vec<u8> }\n"
+        "impl Grid {\n"
+        "    pub fn new(n: usize) -> Grid { Grid { cells: vec![0; n] } }\n"
+        "    pub fn merge(&self, other: &Grid) -> Grid { Grid { cells: other.cells.clone() } }\n"
+        "}\n"
+        "impl Clone for Grid {\n"
+        "    fn clone(&self) -> Grid { Grid { cells: self.cells.clone() } }\n"
+        "}\n"
+    )
+
+    def test_a_struct_mentioned_only_by_its_own_impls_is_unwired(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": self.LONELY_STRUCT, "src/b.rs": "pub fn x() {}\n"})
+        self.assertIn("src/a.rs::Grid", keys(wg.check(r)))
+
+    def test_an_enum_matched_only_inside_its_own_impl_is_unwired(self):
+        src = (
+            "pub enum Mode { Fast, Slow }\n"
+            "impl Mode {\n"
+            "    pub fn factor(&self) -> u32 { match self { Mode::Fast => 2, Mode::Slow => 1 } }\n"
+            "}\n"
+            "impl core::fmt::Display for Mode {\n"
+            "    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {\n"
+            "        match self { Mode::Fast => write!(f, \"f\"), Mode::Slow => write!(f, \"s\") }\n"
+            "    }\n"
+            "}\n"
+        )
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        self.assertIn("src/a.rs::Mode", keys(wg.check(r)))
+
+    def test_a_generic_impl_header_does_not_wire_the_type(self):
+        src = "pub struct Wrap<T> { v: T }\nimpl<T: Copy> Wrap<T> where T: Default {\n    pub fn get(&self) -> T { self.v }\n}\n"
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        self.assertIn("src/a.rs::Wrap", keys(wg.check(r)))
+
+    def test_a_struct_used_from_another_file_is_wired(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": self.LONELY_STRUCT,
+                   "src/b.rs": "pub fn x() -> usize { let g = crate::a::Grid::new(3); let _ = g; 0 }\n",
+                   EX: "fn main() { mycrate::b::x(); }\n"})
+        self.assertNotIn("src/a.rs::Grid", keys(wg.check(r)))
+
+    def test_a_struct_used_from_an_example_is_wired(self):
+        r = crate({"src/lib.rs": LIB, "src/a.rs": self.LONELY_STRUCT, "src/b.rs": "pub fn x() {}\n",
+                   EX: "fn main() { let _g = mycrate::a::Grid::new(2); }\n"})
+        self.assertNotIn("src/a.rs::Grid", keys(wg.check(r)))
+
+    def test_a_struct_used_by_a_wired_fn_in_the_same_file_is_wired(self):
+        src = self.LONELY_STRUCT + "pub fn total(n: usize) -> usize { let g = Grid::new(n); g.cells.len() }\n"
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n",
+                   EX: "fn main() { mycrate::a::total(4); }\n"})
+        vs = wg.check(r)
+        self.assertNotIn("src/a.rs::Grid", keys(vs))
+        self.assertNotIn("src/a.rs::total", keys(vs))
+
+    def test_a_struct_used_only_by_an_unwired_fn_in_the_same_file_is_unwired(self):
+        src = self.LONELY_STRUCT + "pub fn total(n: usize) -> usize { let g = Grid::new(n); g.cells.len() }\n"
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        self.assertTrue({"src/a.rs::Grid", "src/a.rs::total"} <= keys(wg.check(r)))
+
+    def test_a_type_named_in_another_types_impl_is_wired_through_that_method(self):
+        src = (
+            "pub struct Cell(u8);\n"
+            "pub struct Board;\n"
+            "impl Board { pub fn cell(&self) -> Cell { Cell(0) } }\n"
+        )
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n",
+                   EX: "fn main() { let b = mycrate::a::Board; let _ = b.cell(); }\n"})
+        vs = wg.check(r)
+        self.assertNotIn("src/a.rs::Cell", keys(vs))
+        self.assertNotIn("src/a.rs::Board", keys(vs))
+
+    def test_trait_impl_members_stay_roots_for_other_items(self):
+        src = (
+            "pub fn helper() -> u8 { 1 }\n"
+            "pub struct Lonely;\n"
+            "impl Default for Lonely { fn default() -> Lonely { helper(); Lonely } }\n"
+        )
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        vs = wg.check(r)
+        self.assertNotIn("src/a.rs::helper", keys(vs))
+        self.assertIn("src/a.rs::Lonely", keys(vs))
+
+    def test_a_trait_named_in_an_impl_header_is_still_referenced(self):
+        src = "pub trait Shape { fn area(&self) -> u32; }\npub struct Sq;\nimpl Shape for Sq { fn area(&self) -> u32 { 1 } }\n"
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        self.assertNotIn("src/a.rs::Shape", keys(wg.check(r)))
+
+    def test_allow_unwired_on_a_type_with_an_impl_is_not_stale(self):
+        src = "// ALLOW-UNWIRED: public entry point reached from downstream crates\n" + self.LONELY_STRUCT
+        vs = wg.check(crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"}))
+        self.assertNotIn("stale_marker", kinds(vs))
+        self.assertNotIn("src/a.rs::Grid", keys(vs))
+
+
 class Robustness(unittest.TestCase):
     """検査器自身が例外終了せず、明示的な違反か empty_scan になる."""
 
