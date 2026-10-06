@@ -30,6 +30,7 @@
 //! | a [`FieldMode::Replace`] field has at most one writer, a plain [`PortAccess::Read`] of a field and a [`PortAccess::ReadCommitted`] of a port that is not a field are refused at registration | [`check_field_ports`], returned as [`RegisterError::Field`] |
 //! | moving an extensive amount between layouts keeps its total exactly | [`remap_conserving`], [`deposit_bodies`] |
 //! | a snapshot holds the committed field values once, in the world's section, never in a participant payload | world side, bytes from [`FieldBoard::write_values`] |
+//! | participants can be registered only in builds with the `std` feature; a `no_std` world has no participants (the world-side participant API requires `std`) | world side |
 //!
 //! # Coupling through ports
 //!
@@ -472,6 +473,20 @@ pub enum StepError {
         index: usize,
         /// Why its rule cannot follow the substep.
         error: RegisterError,
+    },
+    /// The [`FieldLayout::PerBody`] field `field` has `samples` samples but
+    /// the world holds `bodies` bodies (a body was added or removed after the
+    /// field was declared): the step is refused and the world is left
+    /// unchanged, nothing ran. The world-side form of
+    /// [`ExchangeError::BodyCount`], checked at the start of every step like
+    /// [`Self::Rule`].
+    BodyCount {
+        /// The field.
+        field: PortId,
+        /// Samples of the field.
+        samples: usize,
+        /// Bodies in the world.
+        bodies: usize,
     },
 }
 
