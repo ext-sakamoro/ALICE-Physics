@@ -297,6 +297,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `analyze_column` / `BeamAnalysis` の Euler 座屈荷重: 柱は最も弱い軸まわりに座屈するので、断面二次モーメントを弱軸 `min(I_x, I_y)` で取る (I 形は両フランジ `2·t_f·b³/12` + ウェブ) これまでは水平軸まわり (縦長断面では強軸) の I を使ったので、同じ棒を 10 × 20 と 20 × 10 と書くと臨界荷重が 4 倍違い、縦長断面で危険側だった 長さ 0 の柱は応力 0 でなく降伏応力 (λ → 0 の Johnson 式の極限) を返す **Behavior change:** 縦長断面・I 形の座屈荷重が小さくなる (AUD-A-S2W2-006 / 007)
 - `froude_krylov_vertical_n`: 波の谷が喫水を下回る (`d + η < 0`) と負の浮力を返していた 濡れ喫水を 0 で打ち切る doc の「平均からの超過分」は誤りで、返すのは濡れ喫水の全浮力 (`η = 0` で排水重量) と書き直した **Behavior change:** 喫水が水面から出た時の力は 0 (AUD-A-S2W3-004 / 005)
 - `sample_surface_points` / `analyze_thickness_grid`: X 方向の格子線だけで符号変化を探していたので、X に平行な薄板 (z 方向に薄い) を見逃した X / Y / Z の 3 方向の格子線を走査する 各軸の標本点は `max` 自身で終わり、AABB の外 (最大 1 刻み先) に出ていた点を返さない `measure_thickness_at` は面の外側に `start_offset_mm` より離れた点を、まず内向きに面まで進めてから測る (これまでは 0.01 mm の厚さを返した) **Behavior change:** 格子から得る標本点の数が増える (AUD-A-S2W1-004 / 005 / 006)
 - `analyze_wall_resonance`: `is_risky` は module doc どおり全ての加振源について帯 (`1 - band < wall / source < 1 + band`) を判定する これまでは絶対差で最も近い源だけを見たので、遠いが帯に入る高い源を見逃した 加振源の空の slice は panic せず、危険なし・比 0 の report を返す **Behavior change:** 最も近い源の外で帯に入る壁は `is_risky = true` になる (AUD-A-S2W1-001 / 002)

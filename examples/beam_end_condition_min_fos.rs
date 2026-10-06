@@ -4,8 +4,9 @@
 //! 250 mm: `sigma = M / Z = 25 MPa`, `FoS = 50 / 25 = 2` exactly.
 //!
 //! ```text
-//! P_cr = pi^2 E I / (K L)^2      E = 3500 MPa, I = 10000 mm^4, L = 250 mm
-//!   pin-pin      K = 1    P_cr = 5527 N
+//! P_cr = pi^2 E I / (K L)^2      E = 3500 MPa, L = 250 mm, I about the weak
+//!                                axis = h b^3 / 12 = 5625 mm^4
+//!   pin-pin      K = 1    P_cr = 3109 N
 //!   fixed-fixed  K = 1/2  P_cr = 4 x pin-pin
 //!   cantilever   K = 2    P_cr = 1/4 x pin-pin
 //!   fixed-pin    K = 0.7  P_cr = pin-pin / 0.49
@@ -32,7 +33,8 @@ fn main() {
         length_mm: Fix128::from_int(250),
     };
     let base = BeamAnalysis::new(section, load, MaterialProperties::pla());
-    let pin_pin = core::f64::consts::PI.powi(2) * 3500.0 * 10_000.0 / (250.0 * 250.0);
+    // buckling about the weak axis: I = h b^3 / 12 = 20 * 15^3 / 12 = 5625 mm^4
+    let pin_pin = core::f64::consts::PI.powi(2) * 3500.0 * 5_625.0 / (250.0 * 250.0);
 
     for (ec, k) in [
         (ColumnEndCondition::PinPin, 1.0),
