@@ -962,7 +962,7 @@ fn conformance_test_kinds() -> Vec<ParticipantKind> {
 
 /// Kinds used by `examples/world_participant_contract.rs`.
 fn contract_example_kinds() -> Vec<ParticipantKind> {
-    (1..=4).map(ParticipantKind::new).collect()
+    [1, 2, 4, 5].into_iter().map(ParticipantKind::new).collect()
 }
 
 #[test]
@@ -1002,11 +1002,14 @@ fn in_crate_kinds_are_distinct_and_clear_of_test_and_example_kinds() {
             assert_ne!(*ka, k, "{a} collides with a test or example kind");
         }
     }
-    // each source's own kinds are distinct within that source
-    for list in [conformance_test_kinds(), contract_example_kinds()] {
-        let mut sorted = list.clone();
-        sorted.sort();
-        sorted.dedup();
-        assert_eq!(sorted.len(), list.len());
-    }
+    // every kind used by the conformance tests and the contract example is
+    // distinct from every other, across both sources
+    let mut all: Vec<ParticipantKind> = conformance_test_kinds()
+        .into_iter()
+        .chain(contract_example_kinds())
+        .collect();
+    let n = all.len();
+    all.sort();
+    all.dedup();
+    assert_eq!(all.len(), n, "a test or example kind is used twice");
 }

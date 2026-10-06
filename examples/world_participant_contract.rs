@@ -143,7 +143,7 @@ macro_rules! stateless {
 
 impl Participant for Source {
     fn kind(&self) -> ParticipantKind {
-        ParticipantKind::new(3)
+        ParticipantKind::new(5)
     }
     fn ports(&self) -> &[Port] {
         SOURCE_PORTS
