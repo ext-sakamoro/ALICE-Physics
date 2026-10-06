@@ -11,3 +11,8 @@ unreal alice_physics_world_get_positions_batch raw double buffers are not a Blue
 unreal alice_physics_world_get_velocities_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
 unreal alice_physics_world_set_velocities_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
 unreal alice_physics_body_apply_impulses_batch raw double buffers are not a Blueprint type; C++ code calls the C ABI directly
+unreal alice_physics_world_cast_ray the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly
+unreal alice_physics_world_cast_sphere the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly
+unreal alice_physics_world_cast_capsule the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly
+unreal alice_physics_world_overlap_sphere a caller-sized AliceQueryTarget buffer is not a Blueprint type; C++ code calls the C ABI directly
+unreal alice_physics_body_observe AliceBodyObservation has no Blueprint struct; C++ code calls the C ABI directly

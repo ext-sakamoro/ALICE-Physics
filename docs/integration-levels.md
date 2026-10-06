@@ -12,15 +12,15 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 17 |
+| step | runs when `PhysicsWorld` steps | 18 |
 | world API | used through another `PhysicsWorld` method | 6 |
-| binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 136 |
+| binding | reached only from the C ABI, Python or WebAssembly bindings | 4 |
+| standalone | a Rust API that only examples call | 133 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
-| `bvh` | step | 16 / 1 / 0 / 4 / 6 | C ABI, Python, WebAssembly |
+| `bvh` | step | 16 / 1 / 1 / 3 / 6 | C ABI, Python, WebAssembly |
 | `collider` | step | 20 / 1 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `cone` | step | 5 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
@@ -29,22 +29,25 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 9 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
-| `heightfield` | step | 5 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
+| `heightfield` | step | 5 / 0 / 2 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 14 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 53 / 10 / 4 / 21 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
+| `trimesh` | step | 6 / 0 / 5 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
-| `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | — |
+| `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `solver` | world API (step 28 of 141 items) | 28 / 78 / 7 / 27 / 1 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
+| `shape_raycast` | binding | 0 / 0 / 24 / 10 / 0 | C ABI, Python, WebAssembly |
+| `world_shape_query` | binding | 0 / 0 / 4 / 1 / 0 | C ABI, Python, WebAssembly |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `aeroelasticity` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `analytics_bridge` | standalone | 0 / 0 / 0 / 14 / 0 | — |
@@ -61,7 +64,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `ccd` | standalone | 0 / 0 / 0 / 12 / 0 | — |
+| `ccd` | standalone (binding 1 of 12 items) | 0 / 0 / 1 / 11 / 0 | C ABI, Python, WebAssembly |
 | `cfd_solver` | standalone | 0 / 0 / 0 / 41 / 0 | — |
 | `character` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -137,7 +140,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `quadratic_elastic_fem` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `query` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `ragdoll` | standalone | 0 / 0 / 0 / 10 / 0 | — |
-| `raycast` | standalone (binding 5 of 16 items) | 0 / 0 / 5 / 11 / 0 | WebAssembly |
+| `raycast` | standalone (binding 6 of 16 items) | 0 / 0 / 6 / 10 / 0 | C ABI, Python, WebAssembly |
 | `replay` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `rng` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
@@ -146,7 +149,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `rotor` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `scene_io` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
-| `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `sdf_ccd` | standalone (binding 2 of 6 items) | 0 / 0 / 2 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `sdf_collider` | standalone (step 18 of 40 items) | 18 / 0 / 0 / 22 / 0 | C ABI, Python, WebAssembly |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |
@@ -156,7 +159,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_sph` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `sensors` | standalone | 0 / 0 / 0 / 26 / 0 | — |
-| `shape_raycast` | standalone | 0 / 0 / 0 / 34 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `sketch` | standalone (step 1 of 12 items) | 1 / 0 / 0 / 10 / 1 | C ABI, Python, WebAssembly |
@@ -171,7 +173,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `thin_wall` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `transient_thermal` | standalone | 0 / 0 / 0 / 18 / 0 | — |
-| `trimesh` | standalone (step 6, binding 3 of 16 items) | 6 / 0 / 3 / 7 / 0 | C ABI, Python, WebAssembly |
 | `turbulence` | standalone | 0 / 0 / 0 / 33 / 0 | — |
 | `vehicle` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `vehicle_dynamics` | standalone | 0 / 0 / 0 / 83 / 0 | — |
@@ -180,19 +181,18 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `world_participant` | standalone | 0 / 0 / 0 / 88 / 0 | — |
-| `world_shape_query` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
 
 ### C ABI (`--features ffi`)
 
-`src/ffi.rs` exports 50 `extern "C"` functions. Which consumers declare or call each one:
+`src/ffi.rs` exports 55 `extern "C"` functions. Which consumers declare or call each one:
 
 | Consumer | Functions used | Missing |
 |----------|---------------:|---------|
-| C header | 50 / 50 | — |
-| bindings header | 50 / 50 | — |
-| Unity C# | 50 / 50 | — |
-| Unreal Engine plugin | 43 / 50 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_set_velocities_batch` |
+| C header | 55 / 55 | — |
+| bindings header | 55 / 55 | — |
+| Unity C# | 55 / 55 | — |
+| Unreal Engine plugin | 43 / 55 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_set_velocities_batch` |
 
 Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 
@@ -201,7 +201,12 @@ Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 | Unreal Engine plugin | `alice_physics_body_apply_impulses_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_get_info` | AliceBodyInfo has no Blueprint struct; C++ code in a project calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_body_get_position_fix128_raw` | Blueprint has no 128-bit integer type; determinism checks call the C ABI from C++ |
+| Unreal Engine plugin | `alice_physics_body_observe` | AliceBodyObservation has no Blueprint struct; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_world_cast_capsule` | the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_world_cast_ray` | the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_world_cast_sphere` | the component exposes no query Blueprint functions yet; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_create` | the component always creates its world with alice_physics_world_create_with_config (substeps and gravity from its properties) |
 | Unreal Engine plugin | `alice_physics_world_get_positions_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_get_velocities_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |
+| Unreal Engine plugin | `alice_physics_world_overlap_sphere` | a caller-sized AliceQueryTarget buffer is not a Blueprint type; C++ code calls the C ABI directly |
 | Unreal Engine plugin | `alice_physics_world_set_velocities_batch` | raw double buffers are not a Blueprint type; C++ code calls the C ABI directly |

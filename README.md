@@ -196,10 +196,10 @@ items are actually called from; calls from `examples/` do not count. CI measures
 <!-- integration-levels: summary -->
 | How a module is used | Modules |
 |----------------------|--------:|
-| step: runs when `PhysicsWorld` steps | 17 |
+| step: runs when `PhysicsWorld` steps | 18 |
 | world API: used through another `PhysicsWorld` method | 6 |
-| binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 136 |
+| binding: reached from the C ABI, Python or WebAssembly bindings | 4 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 133 |
 | unused: no caller outside tests | 1 |
 
 ## Vehicle dynamics
@@ -316,11 +316,13 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 | C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi`; builds `cdylib` and `staticlib` |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | P/Invoke over the C ABI |
 | Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | Blueprint component over part of the C ABI |
-| Python | `src/python.rs` | `--features python`; `PhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and `DeterministicSimulation` classes, NumPy batch APIs |
-| WebAssembly | [`web/`](web/) | `--features wasm`; `WasmPhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and a Three.js viewer built with `wasm-pack` |
+| Python | `src/python.rs` | `--features python`; `PhysicsWorld` (bodies, collision radius and shapes, static colliders, joints, world queries, body observation) and `DeterministicSimulation` classes, NumPy batch APIs |
+| WebAssembly | [`web/`](web/) | `--features wasm`; `WasmPhysicsWorld` (bodies, collision radius and shapes, static colliders, joints, world queries, body observation) and a Three.js viewer built with `wasm-pack` |
 
 The bindings cover what you need to build and step a scene (bodies, collision radius and shapes,
-static colliders, joints, impulses, state serialization), not every module: the standalone modules
+static colliders, joints, impulses, state serialization) and read it back (ray, sphere and capsule
+casts and sphere overlaps against the collided shapes, the `observe_body` observation), not every
+module: the standalone modules
 in the table above are Rust only. CI checks the C ABI against its consumers
 (`scripts/integration_levels.py`): the C header, `bindings/AlicePhysics.h` and the Unity bindings
 declare every exported function; the Unreal Engine component wraps part of them, and the functions

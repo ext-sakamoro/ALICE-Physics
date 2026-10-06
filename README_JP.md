@@ -174,10 +174,10 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 <!-- integration-levels: summary -->
 | 使われ方 | モジュール数 |
 |----------|-------------:|
-| step: `PhysicsWorld` の step で実行される | 17 |
+| step: `PhysicsWorld` の step で実行される | 18 |
 | world API: `PhysicsWorld` の他のメソッドから使われる | 6 |
-| binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 136 |
+| binding: C ABI・Python・WebAssembly のバインディングから使われる | 4 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 133 |
 | unused: テスト以外に呼び出し元がない | 1 |
 
 ## 車両運動
@@ -259,10 +259,10 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 | C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi` `cdylib` と `staticlib` を生成 |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | C ABI への P/Invoke |
 | Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | C ABI の一部を包む Blueprint コンポーネント |
-| Python | `src/python.rs` | `--features python` `PhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `DeterministicSimulation` クラス、NumPy の一括 API |
-| WebAssembly | [`web/`](web/) | `--features wasm` `WasmPhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `wasm-pack` でビルドする Three.js ビューア |
+| Python | `src/python.rs` | `--features python` `PhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント・world のクエリ・body の観測) と `DeterministicSimulation` クラス、NumPy の一括 API |
+| WebAssembly | [`web/`](web/) | `--features wasm` `WasmPhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント・world のクエリ・body の観測) と `wasm-pack` でビルドする Three.js ビューア |
 
-バインディングが覆うのはシーンを組んで進めるのに要る範囲 (body・衝突半径と形状・静的コライダー・ジョイント・撃力・状態の直列化) で、全モジュールではない 上の表の standalone のモジュールは Rust からのみ使える C ABI と各利用側の対応は CI が `scripts/integration_levels.py` で検査する C ヘッダ・`bindings/AlicePhysics.h`・Unity のバインディングは公開関数をすべて宣言し、Unreal Engine のコンポーネントはその一部を包む 包まない関数とその理由は [`docs/integration-levels.md`](docs/integration-levels.md) (英語) にある
+バインディングが覆うのはシーンを組んで進めるのに要る範囲 (body・衝突半径と形状・静的コライダー・ジョイント・撃力・状態の直列化) と、それを読み返す範囲 (実形状に対する ray・球・カプセルの掃引と球の重なり、`observe_body` の観測) で、全モジュールではない 上の表の standalone のモジュールは Rust からのみ使える C ABI と各利用側の対応は CI が `scripts/integration_levels.py` で検査する C ヘッダ・`bindings/AlicePhysics.h`・Unity のバインディングは公開関数をすべて宣言し、Unreal Engine のコンポーネントはその一部を包む 包まない関数とその理由は [`docs/integration-levels.md`](docs/integration-levels.md) (英語) にある
 
 ```sh
 cargo build --release --features ffi

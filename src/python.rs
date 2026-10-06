@@ -637,6 +637,104 @@ impl PyPhysicsWorld {
     fn joint_count(&self) -> usize {
         self.inner.joint_count()
     }
+
+    // ------------------------------------------------------------------
+    // World queries against the collided geometry (bodies, their shapes,
+    // static colliders, SDF colliders) and body observation. A hit is
+    // `(t, (px, py, pz), (nx, ny, nz), kind, index, body)` with kind
+    // "body" / "static" / "sdf" and body `None` for a hit on no body, every
+    // value the Rust result through `Fix128::to_f64`; no hit (also a zero
+    // direction, `max_t <= 0` or a negative radius, as the Rust API) is
+    // `None`. A non-finite value raises `ValueError`, an `exclude_body`
+    // that is not a body raises `IndexError`.
+    // ------------------------------------------------------------------
+
+    /// The nearest hit of a ray with the world's geometry.
+    #[pyo3(signature = (origin, direction, max_t, exclude_body=None))]
+    fn cast_ray(
+        &self,
+        origin: Vec3Arg,
+        direction: Vec3Arg,
+        max_t: f64,
+        exclude_body: Option<usize>,
+    ) -> PyResult<Option<PyQueryHit>> {
+        let f = self.query_filter(exclude_body)?;
+        let m = some_or_value(binding_api::finite(max_t), "max_t must be finite")?;
+        let hit = binding_api::cast_ray(&self.inner, v3(origin)?, v3(direction)?, m, &f);
+        Ok(hit.map(py_hit))
+    }
+
+    /// The nearest collider a sphere of `radius` touches when its centre
+    /// moves from `center` along `direction` for at most `max_t`.
+    #[pyo3(signature = (center, radius, direction, max_t, exclude_body=None))]
+    fn cast_sphere(
+        &self,
+        center: Vec3Arg,
+        radius: f64,
+        direction: Vec3Arg,
+        max_t: f64,
+        exclude_body: Option<usize>,
+    ) -> PyResult<Option<PyQueryHit>> {
+        let f = self.query_filter(exclude_body)?;
+        let r = some_or_value(binding_api::finite(radius), "radius must be finite")?;
+        let m = some_or_value(binding_api::finite(max_t), "max_t must be finite")?;
+        let hit = binding_api::cast_sphere(&self.inner, v3(center)?, r, v3(direction)?, m, &f);
+        Ok(hit.map(py_hit))
+    }
+
+    /// The nearest collider a capsule (segment `a`-`b` grown by `radius`)
+    /// touches when it moves along `direction` for at most `max_t`.
+    #[pyo3(signature = (a, b, radius, direction, max_t, exclude_body=None))]
+    fn cast_capsule(
+        &self,
+        a: Vec3Arg,
+        b: Vec3Arg,
+        radius: f64,
+        direction: Vec3Arg,
+        max_t: f64,
+        exclude_body: Option<usize>,
+    ) -> PyResult<Option<PyQueryHit>> {
+        let f = self.query_filter(exclude_body)?;
+        let r = some_or_value(binding_api::finite(radius), "radius must be finite")?;
+        let m = some_or_value(binding_api::finite(max_t), "max_t must be finite")?;
+        let hit = binding_api::cast_capsule(&self.inner, v3(a)?, v3(b)?, r, v3(direction)?, m, &f);
+        Ok(hit.map(py_hit))
+    }
+
+    /// Every collider a sphere of `radius` about `center` overlaps, as
+    /// `(kind, index)` pairs sorted by kind then index.
+    #[pyo3(signature = (center, radius, exclude_body=None))]
+    fn overlap_sphere(
+        &self,
+        center: Vec3Arg,
+        radius: f64,
+        exclude_body: Option<usize>,
+    ) -> PyResult<Vec<(&'static str, usize)>> {
+        let f = self.query_filter(exclude_body)?;
+        let r = some_or_value(binding_api::finite(radius), "radius must be finite")?;
+        Ok(binding_api::overlap_sphere(&self.inner, v3(center)?, r, &f)
+            .into_iter()
+            .map(|(kind, index)| (target_name(kind), index))
+            .collect())
+    }
+
+    /// Observe one body: `(position, velocity, rotation (x, y, z, w),
+    /// angular_velocity, sleeping, in_contact)`. An unknown body raises
+    /// `IndexError`.
+    fn observe_body(&self, body_id: usize) -> PyResult<PyObservation> {
+        let o = binding_api::observe_body(&self.inner, body_id)
+            .ok_or_else(|| PyIndexError::new_err("body_id out of range"))?;
+        let t = |[x, y, z]: [f64; 3]| (x, y, z);
+        let [qx, qy, qz, qw] = o.rotation;
+        Ok((
+            t(o.position),
+            t(o.velocity),
+            (qx, qy, qz, qw),
+            t(o.angular_velocity),
+            o.sleeping,
+            o.in_contact,
+        ))
+    }
 }
 
 /// A Python `(x, y, z)` tuple argument.
@@ -648,6 +746,32 @@ fn v3(v: Vec3Arg) -> PyResult<Vec3Fix> {
 
 fn unit(v: Vec3Arg) -> PyResult<Vec3Fix> {
     some_or_value(v3(v)?.try_normalize(), "axis must be non-zero")
+}
+
+/// A query hit returned to Python (see `PyPhysicsWorld::cast_ray`).
+type PyQueryHit = (f64, Vec3Arg, Vec3Arg, &'static str, usize, Option<usize>);
+
+/// A body observation returned to Python (see `PyPhysicsWorld::observe_body`).
+type PyObservation = (Vec3Arg, Vec3Arg, (f64, f64, f64, f64), Vec3Arg, bool, bool);
+
+fn target_name(kind: u32) -> &'static str {
+    match kind {
+        binding_api::TARGET_BODY => "body",
+        binding_api::TARGET_STATIC => "static",
+        _ => "sdf",
+    }
+}
+
+fn py_hit(h: binding_api::QueryHit) -> PyQueryHit {
+    let t = |[x, y, z]: [f64; 3]| (x, y, z);
+    (
+        h.t,
+        t(h.point),
+        t(h.normal),
+        target_name(h.target.0),
+        h.target.1,
+        h.body,
+    )
 }
 
 fn some_or_value<T>(v: Option<T>, msg: &str) -> PyResult<T> {
@@ -669,6 +793,20 @@ impl PyPhysicsWorld {
         } else {
             Err(PyIndexError::new_err("body_id out of range"))
         }
+    }
+
+    /// The query filter, refusing an `exclude_body` that is not a body.
+    fn query_filter(
+        &self,
+        exclude_body: Option<usize>,
+    ) -> PyResult<crate::shape_raycast::RayFilter> {
+        if let Some(b) = exclude_body {
+            self.check_body(b)?;
+        }
+        some_or_value(
+            binding_api::query_filter(&self.inner, exclude_body),
+            "exclude_body out of range",
+        )
     }
 
     /// Add a joint, telling an unknown body (`IndexError`) from a joint

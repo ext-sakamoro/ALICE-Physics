@@ -140,6 +140,40 @@ uint32_t alice_physics_joint_add_spring(AlicePhysicsWorldHandle world, uint32_t 
 uint8_t  alice_physics_joint_remove(AlicePhysicsWorldHandle world, uint32_t index);
 uint32_t alice_physics_joint_count(const AlicePhysicsWorldHandle world);
 
+// --- World queries and body observation ---
+// target_kind / kind: 0 body, 1 static collider, 2 SDF collider
+// exclude_body / body: UINT32_MAX means no body
+struct AliceQueryHit {
+    double t;
+    AliceVec3 point;
+    AliceVec3 normal;
+    uint32_t target_kind;
+    uint32_t target_index;
+    uint32_t body;
+};
+
+struct AliceQueryTarget {
+    uint32_t kind;
+    uint32_t index;
+};
+
+struct AliceBodyObservation {
+    uint32_t body_index;
+    AliceVec3 position;
+    AliceVec3 velocity;
+    AliceQuat rotation;
+    AliceVec3 angular_velocity;
+    uint8_t sleeping;
+    uint8_t in_contact;
+};
+
+uint8_t  alice_physics_world_cast_ray(const AlicePhysicsWorldHandle world, AliceVec3 origin, AliceVec3 direction, double max_t, uint32_t exclude_body, AliceQueryHit* out);
+uint8_t  alice_physics_world_cast_sphere(const AlicePhysicsWorldHandle world, AliceVec3 center, double radius, AliceVec3 direction, double max_t, uint32_t exclude_body, AliceQueryHit* out);
+uint8_t  alice_physics_world_cast_capsule(const AlicePhysicsWorldHandle world, AliceVec3 a, AliceVec3 b, double radius, AliceVec3 direction, double max_t, uint32_t exclude_body, AliceQueryHit* out);
+// returns the number found, writes min(found, capacity); UINT32_MAX on a refused argument
+uint32_t alice_physics_world_overlap_sphere(const AlicePhysicsWorldHandle world, AliceVec3 center, double radius, uint32_t exclude_body, AliceQueryTarget* out, uint32_t capacity);
+uint8_t  alice_physics_body_observe(const AlicePhysicsWorldHandle world, uint32_t body_id, AliceBodyObservation* out);
+
 // --- Version ---
 const char* alice_physics_version();
 
@@ -211,6 +245,13 @@ public:
     bool GetVelocitiesBatch(double* Out, uint32_t Cap) const { return alice_physics_world_get_velocities_batch(Handle, Out, Cap) != 0; }
     bool SetVelocitiesBatch(const double* Data, uint32_t Count) { return alice_physics_world_set_velocities_batch(Handle, Data, Count) != 0; }
     bool ApplyImpulsesBatch(const double* Data, uint32_t Count) { return alice_physics_body_apply_impulses_batch(Handle, Data, Count) != 0; }
+
+    // World queries (ExcludeBody UINT32_MAX: none) and body observation
+    bool CastRay(AliceVec3 Origin, AliceVec3 Dir, double MaxT, AliceQueryHit& Out, uint32_t ExcludeBody = UINT32_MAX) const { return alice_physics_world_cast_ray(Handle, Origin, Dir, MaxT, ExcludeBody, &Out) != 0; }
+    bool CastSphere(AliceVec3 Center, double Radius, AliceVec3 Dir, double MaxT, AliceQueryHit& Out, uint32_t ExcludeBody = UINT32_MAX) const { return alice_physics_world_cast_sphere(Handle, Center, Radius, Dir, MaxT, ExcludeBody, &Out) != 0; }
+    bool CastCapsule(AliceVec3 A, AliceVec3 B, double Radius, AliceVec3 Dir, double MaxT, AliceQueryHit& Out, uint32_t ExcludeBody = UINT32_MAX) const { return alice_physics_world_cast_capsule(Handle, A, B, Radius, Dir, MaxT, ExcludeBody, &Out) != 0; }
+    uint32_t OverlapSphere(AliceVec3 Center, double Radius, AliceQueryTarget* Out, uint32_t Capacity, uint32_t ExcludeBody = UINT32_MAX) const { return alice_physics_world_overlap_sphere(Handle, Center, Radius, ExcludeBody, Out, Capacity); }
+    bool ObserveBody(uint32_t Id, AliceBodyObservation& Out) const { return alice_physics_body_observe(Handle, Id, &Out) != 0; }
 
     // Config
     void SetGravity(double X, double Y, double Z) { alice_physics_world_set_gravity(Handle, X, Y, Z); }
