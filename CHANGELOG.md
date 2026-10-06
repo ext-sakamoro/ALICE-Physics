@@ -298,6 +298,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `ray_triangle` (`TriMesh::raycast`): 平行判定の閾値 `MT_EPSILON` (2⁻²⁴) を `det` の絶対値と比べていたので、辺が約 2.4e-4 m より短い三角形は真上からの ray でも当たらなかった 閾値を辺の長さの積で割合にし、大きさに依らず ray と面の角度で判定する (AUD-A-S4W2-012)
 - `ScalarField3D::diffuse` (pressure / thermal / phase change / fracture / erosion の拡散): 陽解法の安定限界 `rate·dt·(2/dx²+2/dy²+2/dz²) ≤ 1` を超える step も 1 回で進め、正の山が負の値に振れていた 限界を超える step は 1 つあたり 1/2 以下の等分 sub-step に分ける 限界内は従来どおり 1 step (結果は変わらない) (AUD-A-S6W1-004)
 - `PressureModifier`: `apply_impact` を同じ点に 2 回掛けると次の `update` まで凹みが `max_deformation` の 2 倍になっていた 掛けた直後に上限で切る 負の `internal_pressure` は無視されていた 負は面を内側へ引く (AUD-A-S6W1-003 / 006)
 - `generate_flow_arrows`: 速度の無い粒子 (`fluid_velocities` が短い時) も平均の個数に数え、平均を 0 側へ薄めていた (streamline は数えない) 速度のある粒子だけで平均する 平均の範囲は全軸で x のセル幅 `dx` の球だったので、縦長のセルでは中にいる粒子が外れた セルの形の楕円体 (半軸 `dx, dy, dz`) にした 立方体のセルでは従来と同じ (AUD-A-S4W1-007 / 008)
