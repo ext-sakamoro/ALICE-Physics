@@ -7,7 +7,7 @@ crate has today.
 | table | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | `docs/coverage/acous.toml` | 103 | 8 | 3 | 3 | 89 | 0 |
-| `docs/coverage/am.toml` | 93 | 10 | 0 | 7 | 76 | 0 |
+| `docs/coverage/am.toml` | 93 | 11 | 0 | 6 | 76 | 0 |
 | `docs/coverage/atmos.toml` | 144 | 0 | 1 | 0 | 143 | 0 |
 | `docs/coverage/bio.toml` | 141 | 0 | 4 | 0 | 137 | 0 |
 | `docs/coverage/cfd.toml` | 121 | 39 | 2 | 6 | 74 | 0 |
@@ -40,7 +40,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4177 | 544 | 76 | 104 | 3447 | 6 |
+| **total** | 4177 | 545 | 76 | 103 | 3447 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -65,7 +65,7 @@ crate has today.
 |---|---:|---:|---:|---:|---:|---:|
 | benchmark | 7 | 0 | 0 | 0 | 7 | 0 |
 | extrusion and bead | 9 | 0 | 0 | 1 | 8 | 0 |
-| geometry check | 12 | 3 | 0 | 1 | 8 | 0 |
+| geometry check | 12 | 4 | 0 | 0 | 8 | 0 |
 | layer adhesion | 10 | 3 | 0 | 2 | 5 | 0 |
 | orientation | 8 | 1 | 0 | 1 | 6 | 0 |
 | pipeline | 3 | 1 | 0 | 0 | 2 | 0 |
