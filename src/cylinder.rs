@@ -68,7 +68,9 @@ impl Cylinder {
     /// (for a unit rotation, `|â_i|·h + r·√(1 − â_i²)`).
     #[must_use]
     pub fn aabb(&self) -> AABB {
-        let r = self.rotation;
+        let r = self.unit_rotation();
+        // the half-extents use |a_i| and u_i², w_i², so the signs of the
+        // dimensions do not matter here
         let u = r.rotate_vec(Vec3Fix::new(self.radius, Fix128::ZERO, Fix128::ZERO));
         let a = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, self.half_height, Fix128::ZERO));
         let w = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.radius));
@@ -86,7 +88,7 @@ impl Cylinder {
     pub fn volume(&self) -> Fix128 {
         let pi = Fix128::PI;
         let two = Fix128::from_int(2);
-        pi * self.radius * self.radius * two * self.half_height
+        pi * self.radius * self.radius * two * self.half_height.abs()
     }
 
     /// Surface area: 2 * pi * r * (r + 2 * `half_height`)
@@ -95,7 +97,23 @@ impl Cylinder {
     pub fn surface_area(&self) -> Fix128 {
         let pi = Fix128::PI;
         let two = Fix128::from_int(2);
-        two * pi * self.radius * (self.radius + two * self.half_height)
+        let (r, h) = (self.radius.abs(), self.half_height.abs());
+        two * pi * r * (r + two * h)
+    }
+
+    /// `rotation` as a unit quaternion: the public field is used as is when it
+    /// is unit to about 2^-40 (bit-identical results), and normalised otherwise
+    /// (a quaternion of norm 2 scaled every rotated vector by 4); a zero
+    /// quaternion is the identity. Negative `half_height` / `radius` are read
+    /// as their magnitudes by every method.
+    fn unit_rotation(&self) -> QuatFix {
+        let q = self.rotation;
+        let n2 = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+        if (n2 - Fix128::ONE).abs() <= Fix128::from_raw(0, 1 << 24) {
+            q
+        } else {
+            q.normalize()
+        }
     }
 
     /// Compute inertia tensor (diagonal) for given mass
@@ -125,15 +143,17 @@ impl Support for Cylinder {
         // squares below neither underflow nor overflow
         let direction = direction.rescaled_direction();
         // Transform direction to local space
-        let local_dir = self.rotation.conjugate().rotate_vec(direction);
+        let rotation = self.unit_rotation();
+        let (half_height, radius) = (self.half_height.abs(), self.radius.abs());
+        let local_dir = rotation.conjugate().rotate_vec(direction);
 
         // In local space (Y-up cylinder):
         // Along Y axis: sign(local_dir.y) * half_height
         // On XZ plane: radius * normalize(local_dir.x, local_dir.z)
         let y_support = if local_dir.y >= Fix128::ZERO {
-            self.half_height
+            half_height
         } else {
-            -self.half_height
+            -half_height
         };
 
         let xz_len_sq = local_dir.x * local_dir.x + local_dir.z * local_dir.z;
@@ -141,13 +161,13 @@ impl Support for Cylinder {
             Vec3Fix::new(Fix128::ZERO, y_support, Fix128::ZERO)
         } else {
             let xz_len = xz_len_sq.sqrt();
-            let x_support = self.radius * local_dir.x / xz_len;
-            let z_support = self.radius * local_dir.z / xz_len;
+            let x_support = radius * local_dir.x / xz_len;
+            let z_support = radius * local_dir.z / xz_len;
             Vec3Fix::new(x_support, y_support, z_support)
         };
 
         // Transform back to world space
-        self.center + self.rotation.rotate_vec(local_support)
+        self.center + rotation.rotate_vec(local_support)
     }
 }
 
