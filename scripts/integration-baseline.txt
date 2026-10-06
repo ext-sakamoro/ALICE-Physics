@@ -73,8 +73,6 @@ src/sim_modifier.rs::SingleModifiedSdf
 src/sim_modifier.rs::SingleModifiedSdf::new
 src/sim_modifier.rs::SingleModifiedSdf::update
 src/sketch.rs::CountMinSketch1024x5::clear
-src/sketch.rs::CountMinSketch1024x5::estimate_hash
-src/sketch.rs::CountMinSketch1024x5::insert_hash
 src/sketch.rs::CountMinSketch2048x7
 src/sketch.rs::CountMinSketch2048x7::DEPTH
 src/sketch.rs::CountMinSketch2048x7::WIDTH
@@ -159,7 +157,6 @@ src/sketch.rs::HeavyHitters5::cms
 src/sketch.rs::HeavyHitters5::insert_hash
 src/sketch.rs::HeavyHitters5::new
 src/sketch.rs::HeavyHitters5::top
-src/sketch.rs::HyperLogLog10::M
 src/sketch.rs::HyperLogLog10::P
 src/sketch.rs::HyperLogLog10::insert
 src/sketch.rs::HyperLogLog10::insert_bytes
@@ -176,7 +173,6 @@ src/sketch.rs::HyperLogLog12::new
 src/sketch.rs::HyperLogLog12::registers
 src/sketch.rs::HyperLogLog14::P
 src/sketch.rs::HyperLogLog14::clear
-src/sketch.rs::HyperLogLog14::insert_hash
 src/sketch.rs::HyperLogLog16
 src/sketch.rs::HyperLogLog16::M
 src/sketch.rs::HyperLogLog16::P

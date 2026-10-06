@@ -134,6 +134,7 @@ were introduced during that release window.
 ### Changed
 
 - `scripts/scip_reach.py`: `macro_rules!` の呼び出しが生成する型と、本体が書く pub member を item として数えるようにした (これまで索引に定義が無く unindexed 27 件として外れていた) 使われている field / variant から所有する型に届くようにした 基準ファイルは unindexed 27 → 0、L0 は 115 件増えた (生成された member のうち呼び出し元の無いもの)
+- `scripts/scip_reach.py`: macro が生成する member の到達を member ごとの本体で判定するようにした (自型の別 member の呼び出し `self.x()` / `Self::X`、非公開の補助関数を経由した呼び出し、呼び出し時の引数で決まる `$param::name` を辿る) 生成された member が互いを呼ぶ経路を辿れず、呼ばれている 4 件が L0 と判定されていた
 - `scripts/test_wiring_guard.py`: 大きな入力で検査が遅くならないことを見る 2 件の時間制限を、経過時間でなくこのプロセスの CPU 時間で測るようにした (並行する build の負荷で経過時間だけが伸びて失敗していた)
 - `PhysicsWorld::raycast` と `query::batch_raycast` の doc に、body を外接球で近似し static collider と SDF collider を見ないことを明記 (挙動は不変、実形状は `PhysicsWorld::cast_ray`)
 - **Behavior change:** joint (ball / hinge / fixed / slider / cone-twist) の位置拘束が lever arm と回転補正を含むようになり、D6 の角度誤差は `local_frame_b` 基準になった 全 joint の位置拘束の結果が変わる (AUD-A-S1W6-006 / 010)

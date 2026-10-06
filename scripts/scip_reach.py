@@ -297,6 +297,46 @@ MACRO_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)!\s*[\(\[\{]")
 IDENT_RE = re.compile(r"\b[A-Za-z_][A-Za-z0-9_]*\b")
 
 
+MEMBER_DEF_RE = re.compile(r"\b(?:fn|const)\s+([A-Za-z_][A-Za-z0-9_]*)")
+META_PATH_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)\s*::\s*([A-Za-z_][A-Za-z0-9_]*)")
+META_PARAM_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[a-z]+")
+
+
+def macro_params(body: str) -> list[str]:
+    """The metavariables of the first rule's matcher, in order (`($n:ident, $c:ident) => ...`)."""
+    head = body.split("=>", 1)[0]
+    return META_PARAM_RE.findall(head)
+
+
+def split_members(body: str) -> tuple[dict[str, str], str]:
+    """A macro body split into the text of each `fn` / `const` it defines (its
+    signature through the end of its block or `;`) and the remaining text."""
+    parts: dict[str, str] = {}
+    rest, last = [], 0
+    for m in MEMBER_DEF_RE.finditer(body):
+        if m.start() < last:
+            continue  # inside a member already taken
+        i, depth, opened = m.end(), 0, False
+        while i < len(body):
+            c = body[i]
+            if c == "{":
+                depth, opened = depth + 1, True
+            elif c == "}":
+                depth -= 1
+                if opened and depth == 0:
+                    i += 1
+                    break
+            elif c == ";" and not opened:
+                i += 1
+                break
+            i += 1
+        rest.append(body[last:m.start()])
+        parts[m.group(1)] = parts.get(m.group(1), "") + body[m.start():i]
+        last = i
+    rest.append(body[last:])
+    return parts, "".join(rest)
+
+
 def macro_bodies(text: str) -> dict[str, str]:
     """`macro_rules! name { ... }` -> its body text (brace-matched, comments and
     strings already blanked by the caller)."""
@@ -331,6 +371,8 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
     seen: set[tuple] = set()
     # types a macro invocation defines: (file, macro name) -> {type name: type symbol}
     generated: dict[tuple[str, str], dict[str, str]] = {}
+    # the arguments of that invocation, in order: (file, macro, type name) -> [arg, ...]
+    gen_args: dict[tuple[str, str, str], list[str]] = {}
 
     def lines_of(rel: str) -> tuple[list[str], list[str]]:
         if rel not in texts:
@@ -382,6 +424,9 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
                             tm = TYPE_DEF_RE.search(s)
                             if call and tm and tm.group(1) == name:
                                 generated.setdefault((rel, call.group(1)), {})[name] = s
+                                line = code[sp_[0][0]]
+                                inner = line[call.end():].split(")")[0].split("]")[0].split("}")[0]
+                                gen_args[(rel, call.group(1), name)] = [x.strip() for x in inner.split(",")]
                 else:
                     if is_src and not _visible(code, sp_[0]):
                         continue
@@ -435,8 +480,11 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
     #     `pub const` of the body is an item per generated type
     #     (`file::Type::name`), keyed by the symbols references use
     #     (`impl#[Type]name().` / `impl#[Type]NAME.`): reached when referenced;
-    #   * a generated type or member reaches the same-module items the body names
-    #     (over-approximation: which member names them is not known).
+    #   * each member reaches what its own text names: same-module items, the other
+    #     members of the same generated type (`self.x()` / `Self::X`), and through
+    #     `$param::name` the member `name` of the type that invocation passed as
+    #     `$param` (resolved from the matcher and the invocation's arguments); the
+    #     type reaches what the text outside the members names.
     defined_by_name: dict[tuple[str, str], set[str]] = {}
     for d in defined:
         head, _, tail = d.rpartition("/")
@@ -448,7 +496,8 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
         if body is None:
             continue
         members = sorted(set(PUB_NAME_RE.findall(body)))
-        named = set(IDENT_RE.findall(body))
+        member_text, outside = split_members(body)
+        params = macro_params(body)
         for tname, tsym in sorted(types.items()):
             base = tsym[:-len(tname) - 1]  # "...<module>/"
             gen_syms = {tsym}
@@ -458,11 +507,25 @@ def analyze(root: Path, scip_paths: list[Path], keep_graph: bool = False) -> Ana
                 a.items.setdefault(f"{rel}::{tname}::{n}", set()).update(syms)
                 gen_syms |= syms
             mod = base.rstrip("/")
-            targets = set()
-            for ident in named:
-                targets |= defined_by_name.get((mod, ident), set())
-            for g in gen_syms:
-                edges.setdefault(g, set()).update(targets - gen_syms)
+            bound = dict(zip(params, gen_args.get((rel, macro, tname), [])))
+
+            def reach(text: str, own: str | None) -> set[str]:
+                out: set[str] = set()
+                for ident in set(IDENT_RE.findall(text)) - ({own} if own else set()):
+                    out |= defined_by_name.get((mod, ident), set())
+                    if ident in member_text:  # another member of this generated type
+                        out |= {f"{base}impl#[{tname}]{ident}().", f"{base}impl#[{tname}]{ident}."}
+                for param, name in META_PATH_RE.findall(text):
+                    other = bound.get(param)
+                    if other:
+                        out |= {f"{base}impl#[{other}]{name}().", f"{base}impl#[{other}]{name}."}
+                return out
+
+            edges.setdefault(tsym, set()).update(reach(outside, None) - {tsym})
+            for n, text in member_text.items():
+                own = {f"{base}impl#[{tname}]{n}().", f"{base}impl#[{tname}]{n}."}
+                for g in own:  # private members too: a pub member may reach others through them
+                    edges.setdefault(g, set()).update(reach(text, n) - own)
             a.generated_items += len(members) + 1
 
     # pub items the index does not define and no macro invocation accounts for

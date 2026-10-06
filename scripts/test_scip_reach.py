@@ -411,6 +411,57 @@ class MacroGenerated(unittest.TestCase):
         self.assertEqual(self.analysis("m/impl#[H5]top_k().").level["src/m.rs::Entry"], "L1")
         self.assertEqual(self.analysis().level["src/m.rs::Entry"], "L0")
 
+    SIBLINGS = ("macro_rules! sk { ($n:ident, $c:ident) => { pub struct $n; impl $n { "
+                "pub const M: usize = 4; "
+                "pub fn insert(&mut self) { self.insert_hash(Self::M as u64) } "
+                "pub fn insert_hash(&mut self, h: u64) { helper_of(self) } "
+                "fn helper_of(&self) { self.registers(); let _ = $c::new(); } "
+                "pub fn registers(&self) {} "
+                "pub fn unused_one(&self) {} } } }\n"
+                "macro_rules! cm { ($n:ident) => { pub struct $n; impl $n { pub fn new() -> Self { $n } pub fn other() {} } } }\n"
+                "sk!(S4, C8);\n"
+                "cm!(C8);\n"
+                "cm!(C9);")
+
+    def sibling_levels(self):
+        src = (Doc("src/m.rs", self.SIBLINGS)
+               .define("m/S4#", 2, "S4")
+               .define("m/C8#", 3, "C8")
+               .define("m/C9#", 4, "C9"))
+        ex = Doc("examples/e.rs", "fn main() { s.insert(); }").ref("m/impl#[S4]insert().", 0, "insert")
+        return levels([src, ex])
+
+    def test_a_reached_member_reaches_the_siblings_its_own_body_calls(self):
+        lv = self.sibling_levels()
+        self.assertEqual(lv["src/m.rs::S4::insert_hash"], "L1")  # self.insert_hash(..)
+        self.assertEqual(lv["src/m.rs::S4::M"], "L1")            # Self::M
+        self.assertEqual(lv["src/m.rs::S4::registers"], "L1")    # through the private helper_of
+        # a member no reached body names stays unreached (not "every member of the body")
+        self.assertEqual(lv["src/m.rs::S4::unused_one"], "L0")
+
+    def test_a_metavariable_path_reaches_that_member_of_the_generated_types(self):
+        lv = self.sibling_levels()
+        self.assertEqual(lv["src/m.rs::C8::new"], "L1")    # $c::new()
+        self.assertEqual(lv["src/m.rs::C8::other"], "L0")
+        # only the type this invocation passed as `$c`, not every type with a `new`
+        self.assertEqual(lv["src/m.rs::C9::new"], "L0")
+
+    def test_a_reached_generated_type_reaches_its_field_types(self):
+        text = ("pub struct Cell { pub v: u8 }\n"
+                "macro_rules! g { ($n:ident) => { pub struct $n { c: Cell } impl $n { pub fn f(&self) {} } } }\n"
+                "g!(G1);")
+        src = Doc("src/m.rs", text).define("m/Cell#", 0, "Cell").define("m/G1#", 2, "G1")
+        ex = Doc("examples/e.rs", "fn main() { let _x: G1; }").ref("m/G1#", 0, "G1")
+        lv = levels([src, ex])
+        self.assertEqual(lv["src/m.rs::Cell"], "L1")
+        self.assertEqual(lv["src/m.rs::G1::f"], "L0")
+
+    def test_split_members(self):
+        parts, rest = sr.split_members("pub struct $n; impl $n { pub const M: u8 = 1; pub fn a(&self) { if x { b() } } fn c() {} }")
+        self.assertEqual(sorted(parts), ["M", "a", "c"])
+        self.assertIn("if x { b() }", parts["a"])
+        self.assertNotIn("b()", rest)
+
     def test_a_used_field_reaches_its_type(self):
         # reading `entry.hash` shows an Entry exists, although nothing names `Entry#`
         src = (Doc("src/m.rs", "pub struct Entry { pub hash: u64 }\npub struct Other { pub n: u8 }")

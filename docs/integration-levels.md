@@ -179,7 +179,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
-| `sketch` | unused (step 1, standalone 59 of 175 items) | 1 / 0 / 0 / 59 / 115 | C ABI, Python, WebAssembly |
+| `sketch` | unused (step 1, standalone 63 of 175 items) | 1 / 0 / 0 / 63 / 111 | C ABI, Python, WebAssembly |
 
 ### C ABI (`--features ffi`)
 
