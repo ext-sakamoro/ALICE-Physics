@@ -153,6 +153,52 @@ fn mul_matches_the_exact_product_while_it_fits() {
     assert_eq!(raw(a * b), mul_ref(a, b).0);
 }
 
+/// `checked_mul` は積が範囲内なら必ず `Some(a * b)` を返す (偽陽性が無い)
+///
+/// 負の値は整数部が floor なので、`|x| ∈ [3037000499, √2⁶³)` の負の x では
+/// 整数部どうしの積だけが i64 を越え、中央の項がそれを打ち消す 判定は和で
+/// 行う必要がある (整数部の積だけで判定すると範囲内の積を None にしていた)
+#[test]
+fn checked_mul_has_no_false_overflow_in_range() {
+    let window = [
+        Fix128::from_raw(-3_037_000_500, 1 << 63),  // −3037000499.5
+        Fix128::from_raw(-3_037_000_500, 1),        // −3037000499.99..
+        Fix128::from_raw(-3_037_000_500, u64::MAX), // −3037000499 − 2⁻⁶⁴
+    ];
+    let mut compared = 0;
+    for x in window {
+        for y in [x, Fix128::from_raw(-3_037_000_500, 1 << 62), -x] {
+            let (want, fits) = mul_ref(x, y);
+            if fits {
+                assert_eq!(x.checked_mul(y), Some(x * y), "{x:?} * {y:?} は範囲内");
+                assert_eq!(raw(x * y), want);
+                compared += 1;
+            } else {
+                assert_eq!(x.checked_mul(y), None, "{x:?} * {y:?} は範囲外");
+            }
+        }
+    }
+    assert!(compared >= 6, "範囲内の組を比べていない ({compared})");
+    // 境界の両側を細かく走査し、参照で fits の時は必ず Some が返ること
+    let mut fits_seen = 0;
+    let mut out_seen = 0;
+    for k in 0..4096u64 {
+        let x = Fix128::from_raw(-3_037_000_500, k.wrapping_mul(0x9E37_79B9_7F4A_7C15));
+        let (_, fits) = mul_ref(x, x);
+        if fits {
+            assert_eq!(x.checked_mul(x), Some(x * x), "{x:?}²");
+            fits_seen += 1;
+        } else {
+            assert_eq!(x.checked_mul(x), None, "{x:?}²");
+            out_seen += 1;
+        }
+    }
+    assert!(
+        fits_seen > 0 && out_seen > 0,
+        "境界の両側を走査していない ({fits_seen}/{out_seen})"
+    );
+}
+
 /// characterization: 積が `2⁶³` 以上になると `*` は `2¹²⁸` を法に wrap する
 /// (panic しない、debug でも同じ) `checked_mul` だけが `None` で知らせる
 ///
