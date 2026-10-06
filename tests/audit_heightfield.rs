@@ -409,11 +409,21 @@ fn origin_y_offsets_the_surface() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-007: HeightField::new accepts spacing <= 0 (debug_assert checks only the length); collide_sphere rejects it but aabb() of a negative-spacing field is inverted (max.x < min.x)"]
 fn aabb_of_a_negative_spacing_field_is_not_inverted() {
-    let f = HeightField::flat(4, 4, fx(-1.0), Vec3Fix::ZERO, Fix128::ZERO);
+    // AUD-A-S4W3-007: a spacing <= 0 has no surface (collide_sphere returns
+    // None), so the box is the degenerate point at the origin, like an empty field
+    for spacing in [-1.0, 0.0] {
+        let origin = v3(2.0, 0.0, -3.0);
+        let f = HeightField::flat(4, 4, fx(spacing), origin, Fix128::ONE);
+        let bb = f.aabb();
+        assert!(bb.min.x <= bb.max.x && bb.min.y <= bb.max.y && bb.min.z <= bb.max.z, "spacing {spacing}");
+        assert_eq!((bb.min, bb.max), (origin, origin), "spacing {spacing}");
+        assert!(f.collide_sphere(v3(3.0, 1.0, -2.0), Fix128::ONE).is_none());
+    }
+    // a positive spacing is unchanged: x and z span (width-1) and (depth-1) spacings
+    let f = HeightField::flat(4, 3, fx(2.0), Vec3Fix::ZERO, Fix128::ONE);
     let bb = f.aabb();
-    assert!(bb.min.x <= bb.max.x && bb.min.z <= bb.max.z);
+    assert_eq!((bb.max.x.to_f64(), bb.max.z.to_f64(), bb.max.y.to_f64()), (6.0, 4.0, 1.0));
 }
 
 // ------------------------------------------------------------------ indexing
