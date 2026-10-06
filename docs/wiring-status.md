@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **23 baseline items** — Permitted violations, ratchet in place
+🟡 **17 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (23 permitted)
+## 📋 Baseline (17 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -17,7 +17,6 @@ Must resolve or remove from baseline to reduce ratchet.
 
 | File | Baseline lines |
 |------|----------------|
-| `src/motor.rs` | 6 |
 | `src/solver_tgs_hooks.rs` | 5 |
 | `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
 | `src/solver_tgs.rs` | 2 |
@@ -36,15 +35,9 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (17)
+### Unwired Items (11)
 
 ```
-unwired src/motor.rs::JointMotor
-unwired src/motor.rs::PdController3D
-unwired src/motor.rs::apply_motors
-unwired src/motor.rs::disable
-unwired src/motor.rs::set_rotation_target
-unwired src/motor.rs::set_velocity_target
 unwired src/solver_tgs.rs::par_dispatch_islands
 unwired src/solver_tgs_hooks.rs::PgsConfig
 unwired src/solver_tgs_hooks.rs::PgsHooks

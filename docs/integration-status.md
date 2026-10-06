@@ -7,19 +7,19 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 30 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2503 |
-| live | reached without examples (crate-internal roots or a binding) | 451 |
-| | **total** | **2984** |
+| L0 | not reached by any non-test code, examples included | 21 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2510 |
+| live | reached without examples (crate-internal roots or a binding) | 461 |
+| | **total** | **2992** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
 
 ## Compared with the wiring guard
 
-`scripts/wiring-baseline.txt` lists 17 unwired items.
+`scripts/wiring-baseline.txt` lists 11 unwired items.
 
-### L0 here but not in the baseline (13)
+### L0 here but not in the baseline (10)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -27,9 +27,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
-- `src/motor.rs::JointMotor::new`
-- `src/motor.rs::PdController3D::compute_torque`
-- `src/motor.rs::PdController3D::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/solver_tgs.rs::ImpulseCache::len`
 - `src/solver_tgs_hooks_6dof.rs::Body6DofState`
@@ -43,21 +40,12 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (30)
+## L0 — unreached (21)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
-- `src/motor.rs::JointMotor`
-- `src/motor.rs::JointMotor::new`
-- `src/motor.rs::PdController3D`
-- `src/motor.rs::PdController3D::compute_torque`
-- `src/motor.rs::PdController3D::new`
-- `src/motor.rs::PdController3D::set_rotation_target`
-- `src/motor.rs::PdController::disable`
-- `src/motor.rs::PdController::set_velocity_target`
-- `src/motor.rs::apply_motors`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/solver_tgs.rs::ImpulseCache::len`
 - `src/solver_tgs.rs::par_dispatch_islands`
@@ -91,7 +79,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2503)
+## L1 — example-only (2510)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -185,7 +173,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/metric.rs`: `MetricError`, `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::new`, `MetricWeights::norm`, `MetricWeights::weights`
 - `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
 - `src/molecular_dynamics.rs`: `MdError`, `PairForces`, `PeriodicBox`, `PeriodicBox::cubic`, `PeriodicBox::lengths`, `PeriodicBox::minimum_image`, `PeriodicBox::new`, `PeriodicBox::wrap`, `VelocityVerlet`, `VelocityVerlet::forces`, `VelocityVerlet::instantaneous_temperature`, `VelocityVerlet::kinetic_energy`, `VelocityVerlet::masses`, `VelocityVerlet::momentum`, `VelocityVerlet::new`, `VelocityVerlet::periodic_box`, `VelocityVerlet::positions`, `VelocityVerlet::potential`, `VelocityVerlet::potential_energy`, `VelocityVerlet::step`, `VelocityVerlet::total_energy`, `VelocityVerlet::velocities`, `pair_forces_all_pairs`, `pair_forces_cell_list`
-- `src/motor.rs`: `MotorMode`, `PdController`, `PdController::compute`, `PdController::new`, `PdController::set_position_target`, `shortest_arc`
+- `src/motor.rs`: `JointMotor::new`, `PdController3D::new`, `PdController3D::set_rotation_target`, `PdController::disable`, `PdController::set_position_target`, `PdController::set_velocity_target`
 - `src/multi_world.rs`: `MultiWorld`, `MultiWorld::add_world`, `MultiWorld::new`, `MultiWorld::step_all`, `MultiWorld::step_all_parallel`, `MultiWorld::total_body_count`, `MultiWorld::transfer_body`, `MultiWorld::world_count`, `Portal`, `Portal::new`, `Portal::transform_a_to_b`, `Portal::transform_b_to_a`
 - `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
 - `src/nbody.rs`: `DirectSum`, `DirectSum::accelerations`, `DirectSum::gravitational_constant`, `DirectSum::kick_bodies`, `DirectSum::new`, `DirectSum::potential_energy`, `DirectSum::softening`, `DirectSum::step_world`, `NBodyError`, `VelocityVerlet`, `VelocityVerlet::new`, `VelocityVerlet::step`, `kinetic_energy`, `total_momentum`
@@ -236,7 +224,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`
-- `src/solver.rs`: `BodyObservation`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::begin_frame`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_constraint_force`, `PhysicsWorld::contact_events`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::end_frame`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::is_sleeping`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::observe_body`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::ray_geometry`, `PhysicsWorld::raycast`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_body_filter`, `PhysicsWorld::set_body_material`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::set_sleep_skip`, `PhysicsWorld::sleep_skip`, `PhysicsWorld::solve_contact_constraints_with_bridge`, `PhysicsWorld::stage_work`, `PhysicsWorld::static_colliders_slice`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `PhysicsWorld::wake_body`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_rotation`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`, `TgsCacheStats::new`
+- `src/solver.rs`: `BodyObservation`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_joint_motor`, `PhysicsWorld::add_joint_motor_3d`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::begin_frame`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_constraint_force`, `PhysicsWorld::contact_events`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::disable_joint_motor`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::end_frame`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::is_sleeping`, `PhysicsWorld::joint_motor_3d_mut`, `PhysicsWorld::joint_motor_mut`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::observe_body`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::ray_geometry`, `PhysicsWorld::raycast`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_body_filter`, `PhysicsWorld::set_body_material`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_joint_motor_3d_rotation_target`, `PhysicsWorld::set_joint_motor_velocity_target`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::set_sleep_skip`, `PhysicsWorld::sleep_skip`, `PhysicsWorld::solve_contact_constraints_with_bridge`, `PhysicsWorld::stage_work`, `PhysicsWorld::static_colliders_slice`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `PhysicsWorld::wake_body`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_rotation`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`, `TgsCacheStats::new`
 - `src/solver/world_snapshot.rs`: `PhysicsWorld::WORLD_SNAPSHOT_MAGIC`, `PhysicsWorld::WORLD_SNAPSHOT_VERSION`, `PhysicsWorld::from_world_snapshot`, `PhysicsWorld::restore_world`, `PhysicsWorld::snapshot_world`, `WorldSnapshotError`
 - `src/solver_tgs.rs`: `AdaptiveSubStepConfig`, `HasVelocity`, `ImpulseCache::reset_stats`, `ImpulseCache::stats`, `ImpulseCacheStats`, `ImpulseCacheStats::hit_rate`, `adaptive_substeps_for`, `adaptive_substeps_for_ccd`
 - `src/spatial.rs`: `SpatialGrid`, `SpatialGrid::build`, `SpatialGrid::clear`, `SpatialGrid::hash`, `SpatialGrid::insert`, `SpatialGrid::new`, `SpatialGrid::query_neighbors_into`

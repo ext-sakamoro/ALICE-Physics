@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4765 |
+| 🟢 Not ignored (run by CI) | 4779 |
 | 🔴 Red by design | 219 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5009** |
+| **Total** | **5023** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -294,7 +294,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4765)
+## 🟢 Not ignored (4779)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -425,6 +425,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_sdf_force.rs` | 15 |
 | `analytic_collision_mesh.rs` | 14 |
 | `analytic_convex_decompose.rs` | 14 |
+| `analytic_joint_motor_world.rs` | 14 |
 | `analytic_joint_wiring.rs` | 14 |
 | `analytic_scene_io_wiring.rs` | 14 |
 | `analytic_sdf_destruction_wiring.rs` | 14 |
