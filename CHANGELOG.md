@@ -327,6 +327,7 @@ were introduced during that release window.
 
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
+- `evaluate_failure`: 許容応力 0 を「制限なし」として扱っていた (最大応力説はその成分を飛ばし、Hill / Tsai-Wu は項を落とす) ので、強度 0 の方向に 10 MPa を掛けても安全と判定した 0 以下の許容応力に 0 でない応力が掛かればどの基準でも破壊 (飽和した index、余裕率ほぼ 0) とする 法線成分は応力の符号で引張 / 圧縮の許容応力を選ぶ **Behavior change:** 強度 0 の方向に応力がある状態が `is_safe = false` になる (AUD-A-S1W6-005)
 - `solve_cubic`: 拘束が 6 自由度未満の物体 (何も固定していない物体など) でも反復して `Ok` を返し、変位が 1e11 mm 級になっていた P1 solver と `solve_cubic_hyperelastic` と同じく `FemError::UnderConstrained` で拒否する **Behavior change:** 拘束不足の入力が `Err` になる (AUD-A-S2W1-008)
 - `CfdSolver::step_with_options`: 陽解法の分子拡散が安定限界 `ν dt / dx² ≤ 1/6` を超えても受け付け、市松模様の誤差が 1 step ごとに 1.4 倍に増えていた (`step_rans` は同じ入力を拒否していた) `StepError::DiffusionUnstable` を返し、何も変えずに拒否する `step` は error を返せないので doc に限界を書いた **Behavior change:** 限界を超える `dt` が `Err` になる (AUD-A-S1W4-005)
 - `TurbulenceSummary::clamped`: doc は打ち切ったセルの数だが、k-ω では k と ω の打ち切りを別々に数え、1 セルを 2 回数えていた (一様な 3³ で 54) セルごとに 1 回だけ数える (AUD-A-S1W4-010)
