@@ -120,14 +120,18 @@ pub fn ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
 /// the sphere the cast starts in an initial overlap, and the far root (the
 /// exit point) is never reported as a contact:
 ///
+/// - origin at the centre (`oc = 0`): a contact at `t = 0` at the origin with
+///   normal `-d`;
 /// - moving deeper (`oc . d < 0`): a contact at `t = 0` at the origin, with
-///   the normal pointing from the sphere centre to the origin (`-d` when the
-///   origin is the centre), so the normal opposes the cast direction;
-/// - moving outward or tangentially (`oc . d >= 0`): no contact, the cast is
-///   leaving the overlap.
+///   the normal pointing from the sphere centre to the origin, so the normal
+///   opposes the cast direction;
+/// - moving outward or tangentially (`oc . d >= 0`, `oc != 0`): no contact,
+///   the cast is leaving the overlap.
 ///
-/// Shared by [`crate::query::sphere_cast`] and the character controller so
-/// both resolve the initial-overlap case the same way.
+/// Shared by [`sweep_sphere`], [`crate::query::sphere_cast`] and the
+/// character controller so they resolve the initial-overlap case the same way.
+/// Plain raycasts ([`ray_sphere`], [`raycast_spheres`]) keep reporting the far
+/// exit for an origin inside the sphere.
 #[inline]
 #[must_use]
 pub(crate) fn sweep_ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Option<RayHit> {
@@ -138,13 +142,15 @@ pub(crate) fn sweep_ray_sphere(ray: &Ray, sphere: &Sphere, max_t: Fix128) -> Opt
         // only return the near root here.
         return ray_sphere(ray, sphere, max_t);
     }
-    let b = oc.dot(ray.direction);
-    if b >= Fix128::ZERO {
-        return None;
-    }
+    // Coincident centres: every direction starts in the deepest overlap, so
+    // this is checked before the moving-out test (where `b = 0` would
+    // otherwise classify it as leaving).
     let normal = if oc.length_squared().is_zero() {
         -ray.direction
     } else {
+        if oc.dot(ray.direction) >= Fix128::ZERO {
+            return None;
+        }
         oc.normalize()
     };
     Some(RayHit {
@@ -512,6 +518,14 @@ pub fn raycast_any_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> b
 }
 
 /// Swept sphere (shape cast): move a sphere along a ray direction
+///
+/// `t` is the distance travelled along the normalised `direction` until the
+/// spheres first touch. A sweep that starts with the spheres already
+/// overlapping or touching is resolved as in [`crate::query::sphere_cast`]: an
+/// initial overlap at `t = 0` (point = start centre, normal from the target
+/// centre to the start centre, `-direction` when the centres coincide) when
+/// moving deeper, and no hit when moving apart. Unlike the plain raycast
+/// [`ray_sphere`], the far (exit) root is never reported.
 #[must_use]
 pub fn sweep_sphere(
     sphere: &Sphere,
@@ -522,7 +536,7 @@ pub fn sweep_sphere(
     // Equivalent to ray vs expanded sphere
     let expanded = Sphere::new(target_sphere.center, target_sphere.radius + sphere.radius);
     let ray = Ray::new(sphere.center, direction);
-    ray_sphere(&ray, &expanded, max_t)
+    sweep_ray_sphere(&ray, &expanded, max_t)
 }
 
 #[cfg(all(test, feature = "std"))]

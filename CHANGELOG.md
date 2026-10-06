@@ -313,6 +313,7 @@ were introduced during that release window.
 - 形状を持つ body の上に置いた球が外接球の上でなく形状の面に乗る (箱の上面 + 半径で静止、従来は外接球の内側から押し出されて飛ばされることがあった)
 - SDF の押し出し (`step` 系と停留判定) が、body をその body 自身に付いた SDF collider から押し出していた (`sdf_contacts` / `detect_sdf_contacts` / `sdf_ccd_hits` は既に自身を除外していた) 自身の SDF は除外する
 - `SdfCollider::new_dynamic` で作った SDF collider が body に追従するようになった: `PhysicsWorld::step` / `step_parallel` / TGS backend / `step_with_bridge` は SDF の押し出しの直前と step の終わりに body の姿勢 (位置と回転) を collider に写し、`add_sdf_collider` は追加時に写す これまで collider は作成時の姿勢 (原点・無回転) のまま押し出していた body に付いた SDF collider がある間は sleep skip で body を停留させない 静的 collider だけの world の結果は従来と bit 一致
+- **Behavior change:** `raycast::sweep_sphere` は、重なった状態から始まる sweep を `sphere_cast` と同じく初期の重なりとして扱う (深くなる向きは `t = 0`、点は開始中心、法線は相手中心から開始中心への向き、出る向きは hit なし、従来は遠い側の出口を返していた) また `sphere_cast` / `CharacterController::move_and_slide` / `sweep_sphere` は中心が一致した開始を `t = 0`・法線 `-direction` の重なりとして返す (従来は hit なし) 球の cast の規約で、光線の raycast (`ray_sphere` / `raycast_spheres` / `PhysicsWorld::raycast` / wasm の `raycast`) は内側から始まる光線に遠い側の出口を返す従来の規約のまま (AUD-A-S3W3-007 / AUD-A-S3W3-013 と同型)
 - `math::powf_pos` の整数指数部の上限 64 を撤廃した (64 以下の結果は不変) (AUD-A-S1W5-021)
 - `compressible::{riemann_invariants, stagnation_pressure_ratio}` が γ = 1 の等温極限を扱う (AUD-A-S1W5-007)
 - `coupled_iteration` / `creep_longterm` / `non_newtonian` / `wind_zone` / `anisotropic_friction` で二乗・冪の途中に `Fix128` が wrap していた (AUD-A-S3W3-011 / S2W1-003 / S2W2-002 / S3W3-001 / S2W3-002)
