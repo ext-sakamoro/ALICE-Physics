@@ -17,6 +17,8 @@ crate has today.
 | `docs/coverage/env.toml` | 116 | 20 | 3 | 2 | 91 | 0 |
 | `docs/coverage/fem.toml` | 133 | 36 | 0 | 6 | 88 | 3 |
 | `docs/coverage/fract.toml` | 106 | 15 | 2 | 4 | 85 | 0 |
+| `docs/coverage/geo.toml` | 125 | 0 | 2 | 0 | 123 | 0 |
+| `docs/coverage/geotech.toml` | 89 | 0 | 2 | 0 | 87 | 0 |
 | `docs/coverage/mat.toml` | 121 | 23 | 13 | 5 | 80 | 0 |
 | `docs/coverage/mbd.toml` | 137 | 36 | 2 | 13 | 86 | 0 |
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
@@ -33,7 +35,7 @@ crate has today.
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 3093 | 535 | 68 | 104 | 2381 | 5 |
+| **total** | 3307 | 535 | 72 | 104 | 2591 | 5 |
 
 ## `docs/coverage/acous.toml`
 
@@ -223,6 +225,41 @@ crate has today.
 | fragmentation | 7 | 0 | 0 | 0 | 7 | 0 |
 | lefm | 13 | 0 | 0 | 0 | 13 | 0 |
 | phase-field | 7 | 0 | 0 | 0 | 7 | 0 |
+
+## `docs/coverage/geo.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| benchmark | 11 | 0 | 0 | 0 | 11 | 0 |
+| elastic-waves | 11 | 0 | 1 | 0 | 10 | 0 |
+| geodesy-gravity | 7 | 0 | 0 | 0 | 7 | 0 |
+| geomagnetism | 7 | 0 | 0 | 0 | 7 | 0 |
+| ground-motion | 10 | 0 | 1 | 0 | 9 | 0 |
+| groundwater | 11 | 0 | 0 | 0 | 11 | 0 |
+| hydrology | 11 | 0 | 0 | 0 | 11 | 0 |
+| lithosphere | 6 | 0 | 0 | 0 | 6 | 0 |
+| mantle-convection | 9 | 0 | 0 | 0 | 9 | 0 |
+| ocean-circulation | 12 | 0 | 0 | 0 | 12 | 0 |
+| sediment | 7 | 0 | 0 | 0 | 7 | 0 |
+| seismic-numerics | 8 | 0 | 0 | 0 | 8 | 0 |
+| source | 7 | 0 | 0 | 0 | 7 | 0 |
+| tides | 8 | 0 | 0 | 0 | 8 | 0 |
+
+## `docs/coverage/geotech.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| bearing-earth-pressure | 9 | 0 | 1 | 0 | 8 | 0 |
+| benchmark | 9 | 0 | 0 | 0 | 9 | 0 |
+| consolidation | 7 | 0 | 0 | 0 | 7 | 0 |
+| constitutive | 13 | 0 | 0 | 0 | 13 | 0 |
+| excavation-construction | 10 | 0 | 0 | 0 | 10 | 0 |
+| frost | 5 | 0 | 0 | 0 | 5 | 0 |
+| liquefaction | 6 | 0 | 0 | 0 | 6 | 0 |
+| piles-ssi | 6 | 0 | 0 | 0 | 6 | 0 |
+| resident-earthworks | 7 | 0 | 0 | 0 | 7 | 0 |
+| slope | 9 | 0 | 1 | 0 | 8 | 0 |
+| soil-state | 8 | 0 | 0 | 0 | 8 | 0 |
 
 ## `docs/coverage/mat.toml`
 

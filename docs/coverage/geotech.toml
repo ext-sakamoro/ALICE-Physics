@@ -1,0 +1,988 @@
+# Geotechnics (GEOTECH) coverage of ALICE-Physics, against an external
+# reference frame.
+#
+# What this table is: every capability that the standard textbooks of soil and
+# rock mechanics (Terzaghi-Peck-Mesri, Soil Mechanics in Engineering Practice;
+# Das, Principles of Geotechnical Engineering / Principles of Foundation
+# Engineering; Wood, Soil Behaviour and Critical State Soil Mechanics; Potts-
+# Zdravkovic, Finite Element Analysis in Geotechnical Engineering; Kramer,
+# Geotechnical Earthquake Engineering; Hoek, Practical Rock Engineering),
+# reference implementations (PLAXIS, OpenSees, FLAC, GeoStudio SLOPE/W and
+# SIGMA/W, Abaqus soils) and standard benchmarks (Terzaghi 1-D consolidation,
+# Mandel's problem, Prandtl's strip footing, critical-state triaxial paths,
+# infinite slope, Rankine wall, cavity expansion, LEAP liquefaction tests)
+# expect of a geotechnical code, one [[item]] per capability, with what the
+# crate has today. The rows are written by hand: the axes and the items come
+# from the reference frame, not from the modules that exist, so a missing
+# capability is visible instead of absent. Axes: soil-state / constitutive /
+# consolidation / bearing-earth-pressure / slope / liquefaction /
+# excavation-construction / piles-ssi / frost / resident-earthworks /
+# benchmark. The resident-earthworks axis follows what a resident of a
+# simulated world does with the ground (dig a hole, heap soil, see it slump,
+# stand a load on it) and names the rows it needs.
+#
+# The crate has almost none of this field today: the rows mostly declare the
+# range.
+#
+# Boundary with the other tables (one capability goes in one table only; a row
+# here that refines a row of another table says "COV-X-NNN の子" in evidence):
+#   - seismic waves, ground-motion records and site response: the geophysics
+#     table (docs/coverage/geo.toml); its equivalent-linear row uses the
+#     modulus-reduction curves of this table
+#   - groundwater flow, Richards equation, retention curves and seepage: the
+#     geophysics table (groundwater axis); here only their geotechnical use
+#     (effective stress, consolidation, piping and heave, slope suction)
+#   - Drucker-Prager, Mohr-Coulomb and Cam-clay as FE materials: the FEM table
+#     (COV-FEM-038 to 040); their yield functions as material laws: the
+#     material table (COV-MAT-064, 065); soil data (strength, Mohr-Coulomb
+#     parameters): COV-MAT-020; rows here are the geotechnical refinements
+#     (dilatancy, critical state, undrained response, soil-specific models)
+#   - granular DEM and MPM methods themselves: the particle table
+#     (Drucker-Prager MPM COV-PART-069, angle of repose COV-PART-112, column
+#     collapse COV-PART-119); FE body force, initial stress and frictional
+#     contact: COV-FEM-094, 098, 102
+#   - vehicle-soil interaction (Bekker-Wong): the multibody table (COV-MBD-049)
+#   - the height field, its editing and terrain processes: the environment
+#     table (COV-ENV-094 to 102); erosion and talus relaxation: the fracture
+#     table (COV-FRACT-084 to 092)
+#   - phase change and the Stefan problem in general: the thermal table
+#     (COV-THERM-069 to 074, 098, 099); frozen soil rows here refine them
+#   - beams on elastic foundations and base excitation in closed form: the
+#     structural table (COV-STRUCT-015, 111); poroelasticity of tissue: the
+#     biomechanics table (COV-BIO-055)
+#
+# Rule used for "composed from existing parts": a scenario counts as
+# implemented-no-oracle only when the parts solve the same physics (3-D linear
+# elastic FE for an immediate settlement, rigid bodies bouncing on a height
+# field for rockfall). The heat-conduction solver solves the same diffusion
+# equation as 1-D consolidation, but it is a solver of another field and is not
+# counted; it is named in oracle_candidate as a cheap reference path.
+#
+# Search notes (words that hit something else): "soil" (0 hits in src),
+# "consolidat" (0 hits), "cohesion" (SPH surface tension), "Mohr" / "Drucker"
+# (0 hits; the von Mises plasticity of src/plastic.rs is J2 only), "pile"
+# (0 hits in the geotechnical sense), "slope" (walkable slope of characters,
+# terrain slopes in vehicle code, the slope of a curve), "dig" / "excavat"
+# (0 hits), "frost" (0 hits), "snow" (ski friction and road weather grip).
+# Rows below that say "grep 0 件" were checked word by word.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented (or composed from existing parts of the
+#                          same physics), no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-GEOTECH-NNN) / axis / item / source (book, chapter, paper, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Book chapter numbers
+# have not been checked against the editions.
+#
+# Ids of other tables are the ones in those tables when this table was written
+# (COV-ATMOS-NNN are the rows of docs/coverage/atmos.toml).
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-GEOTECH-001"
+axis = "soil-state"
+item = "phase relations of soil (void ratio, porosity, water content, degree of saturation, unit weights)"
+source = "Das, Principles of Geotechnical Engineering ch.3; Terzaghi-Peck-Mesri ch.1"
+status = "missing"
+evidence = "grep 0 件 (void ratio / porosity の土の意味)"
+oracle_candidate = "e = n / (1 - n)、S e = w G_s の恒等式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-002"
+axis = "soil-state"
+item = "effective stress principle (sigma' = sigma - u) with pore pressure from a water table"
+source = "Terzaghi 1936; Das ch.9"
+status = "missing"
+evidence = "grep 0 件 (effective stress / pore pressure)"
+oracle_candidate = "水位以深で sigma'_v = (gamma_sat - gamma_w) z"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-003"
+axis = "soil-state"
+item = "geostatic in-situ stress profile from layered unit weights and the coefficient K0 (Jaky, overconsolidation)"
+source = "Jaky 1944; Mayne-Kulhawy 1982; Potts-Zdravkovic vol.1"
+status = "missing"
+evidence = "FE の初期応力場は COV-FEM-098 (missing)、自重は COV-FEM-094 (missing) ここは土の静止土圧係数と層の積算 grep 0 件 (k0 の土の意味)"
+oracle_candidate = "K0 = 1 - sin(phi') と OCR^(sin phi') の補正 (Mayne-Kulhawy)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-004"
+axis = "soil-state"
+item = "stress increase under surface loads (Boussinesq point load, strip, circular and rectangular loads, influence factors)"
+source = "Boussinesq 1885; Poulos-Davis, Elastic Solutions for Soil and Rock Mechanics; Das ch.10"
+status = "missing"
+evidence = "grep 0 件 (boussinesq の弾性解; CFD の Boussinesq 近似は別語)"
+oracle_candidate = "点荷重の sigma_z = 3 P z^3 / (2 pi R^5) と、3-D 線形 FE の応力との比較"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-005"
+axis = "soil-state"
+item = "soil classification and index properties (grain size, Atterberg limits, USCS) with parameter correlations"
+source = "ASTM D2487 (USCS); Das ch.4-5"
+status = "missing"
+evidence = "土のデータは COV-MAT-020 (missing) 分類と相関は grep 0 件"
+oracle_candidate = "USCS の判定表の境界例"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-006"
+axis = "soil-state"
+item = "parameters from in-situ tests (SPT N, CPT cone resistance and friction ratio correlations)"
+source = "Robertson 2009 (CPT); Kulhawy-Mayne 1990"
+status = "missing"
+evidence = "grep 0 件 (spt / cpt)"
+oracle_candidate = "Robertson の土質分類図 (SBT) の境界 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-007"
+axis = "soil-state"
+item = "compaction (Proctor curve, maximum dry density and optimum water content)"
+source = "Proctor 1933; ASTM D698; Das ch.6"
+status = "missing"
+evidence = "grep 0 件 (compaction / proctor)"
+oracle_candidate = "飽和度一定線 (zero-air-voids) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-008"
+axis = "soil-state"
+item = "unsaturated soil: matric suction and Bishop's effective stress"
+source = "Fredlund-Rahardjo, Soil Mechanics for Unsaturated Soils; Bishop 1959"
+status = "missing"
+evidence = "保水曲線は地球物理の表 (groundwater 軸) grep 0 件 (suction)"
+oracle_candidate = "chi = S_e (Khalili 型の簡略) での sigma' の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-009"
+axis = "constitutive"
+item = "Mohr-Coulomb in FE with non-associated flow (dilatancy angle psi) and a tension cut-off"
+source = "Potts-Zdravkovic vol.1 ch.7; PLAXIS Mohr-Coulomb"
+status = "missing"
+evidence = "COV-FEM-039 (FE の Mohr-Coulomb、missing) の子 src の塑性は J2 のみ (src/plastic.rs::PlasticModel)"
+oracle_candidate = "平面ひずみの単純せん断で体積ひずみ増分 / せん断ひずみ増分 = sin(psi) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-010"
+axis = "constitutive"
+item = "Modified Cam-clay element response: normal compression and unloading lines in e - ln p', critical state line, yield ellipse"
+source = "Roscoe-Burland 1968; Wood, Soil Behaviour and Critical State Soil Mechanics ch.6-7"
+status = "missing"
+evidence = "COV-FEM-040 (FE の Cam-clay、missing) の子 要素 1 点の応答 (材料 driver の水準) grep 0 件 (cam-clay / critical state)"
+oracle_candidate = "排水・非排水三軸の応力経路の閉形式 (下の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-011"
+axis = "constitutive"
+item = "undrained analysis in effective stress (pore pressure from the volumetric constraint with a pore-fluid bulk modulus) and total-stress undrained strength S_u"
+source = "Potts-Zdravkovic vol.1 ch.3; PLAXIS (undrained A / B / C)"
+status = "missing"
+evidence = "grep 0 件 (undrained)"
+oracle_candidate = "弾性の非排水で間隙水圧 = 平均応力の増分 (Skempton B = 1)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-012"
+axis = "constitutive"
+item = "hyperbolic nonlinear elasticity (Duncan-Chang)"
+source = "Duncan-Chang 1970"
+status = "missing"
+evidence = "grep 0 件 (hyperbolic の土の意味)"
+oracle_candidate = "三軸の応力-ひずみが双曲線 q = eps / (a + b eps)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-013"
+axis = "constitutive"
+item = "Hardening Soil model with small-strain stiffness (HSsmall)"
+source = "Schanz-Vermeer-Bonnier 1999; Benz 2007; PLAXIS"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "E50 の応力依存 (p'/p_ref)^m の閉形式 (要素 driver)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-014"
+axis = "constitutive"
+item = "hypoplasticity for sand (von Wolffersdorff, intergranular strain)"
+source = "von Wolffersdorff 1996; Niemunis-Herle 1997"
+status = "missing"
+evidence = "grep 0 件 (hypoplastic)"
+oracle_candidate = "限界状態での応力比と間隙比の漸近 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-015"
+axis = "constitutive"
+item = "critical state models for sand with the state parameter (NorSand, Severn-Trent)"
+source = "Been-Jefferies 1985; Jefferies 1993"
+status = "missing"
+evidence = "grep 0 件 (state parameter)"
+oracle_candidate = "psi < 0 で膨張、psi > 0 で収縮の符号"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-016"
+axis = "constitutive"
+item = "modulus reduction and damping curves (G / G_max and damping vs shear strain; Hardin-Drnevich, Darendeli)"
+source = "Hardin-Drnevich 1972; Darendeli 2001; Kramer ch.6"
+status = "missing"
+evidence = "grep 0 件 (modulus reduction) 地球物理の表の等価線形応答がこの曲線を使う"
+oracle_candidate = "Hardin-Drnevich の G / G_max = 1 / (1 + gamma / gamma_r) と Masing 則の減衰"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-017"
+axis = "constitutive"
+item = "small-strain shear modulus G_max from void ratio and confining stress"
+source = "Hardin-Black 1968; Kramer ch.6"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "G_max = rho V_s^2 と Hardin 式の拘束圧依存 (p')^0.5"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-018"
+axis = "constitutive"
+item = "Hoek-Brown failure criterion for rock masses (GSI, m_b, s, a)"
+source = "Hoek-Carranza-Torres-Corkum 2002"
+status = "missing"
+evidence = "grep 0 件 (hoek)"
+oracle_candidate = "Hoek-Brown から等価な Mohr-Coulomb の c, phi への換算 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-019"
+axis = "constitutive"
+item = "rock joints: shear strength (Barton-Bandis JRC / JCS) and joint interface elements"
+source = "Barton-Choubey 1977; Bandis et al. 1983"
+status = "missing"
+evidence = "grep 0 件 (joint の岩盤の意味; src の joint は剛体の拘束)"
+oracle_candidate = "Barton 式の tau = sigma_n tan(JRC log10(JCS / sigma_n) + phi_r)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-020"
+axis = "constitutive"
+item = "constitutive model for unsaturated soils (Barcelona Basic Model)"
+source = "Alonso-Gens-Josa 1990"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "吸引で降伏曲線が拡大する LC 曲線の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-021"
+axis = "constitutive"
+item = "time-dependent clay behaviour in the constitutive model (soft-soil creep)"
+source = "Vermeer-Neher 1999; PLAXIS Soft Soil Creep"
+status = "missing"
+evidence = "Norton creep は金属・樹脂の 1-D 閉形式 (src/plastic.rs::NortonCreep) で土の対数 creep ではない"
+oracle_candidate = "一定荷重の 2 次圧密 e = e_0 - C_alpha log(t / t_p)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-022"
+axis = "consolidation"
+item = "Terzaghi 1-D consolidation in closed form (excess pore pressure series, degree of consolidation U(T_v))"
+source = "Terzaghi 1925; Das ch.11"
+status = "missing"
+evidence = "grep 0 件 (consolidation / terzaghi)"
+oracle_candidate = "U(T_v) の級数 (T_v 小で 2 sqrt(T_v / pi))"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-023"
+axis = "consolidation"
+item = "numerical 1-D consolidation (diffusion of excess pore pressure with drained and impermeable boundaries, layered c_v)"
+source = "Potts-Zdravkovic vol.1; SIGMA/W"
+status = "missing"
+evidence = "src/transient_thermal.rs::crank_nicolson_step_1d は同じ 1-D 拡散方程式だが熱伝導の solver (両端 Neumann のみ) で、圧密には数えない"
+oracle_candidate = "Terzaghi の級数 既存の Crank-Nicolson を c_v で回し排水端を毎 step 0 に戻す経路は安い参照"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-024"
+axis = "consolidation"
+item = "consolidation settlement from compression and recompression indices (C_c, C_r, preconsolidation pressure, OCR)"
+source = "Das ch.11; Terzaghi-Peck-Mesri ch.16"
+status = "missing"
+evidence = "grep 0 件 (compression index)"
+oracle_candidate = "s = C_c H / (1 + e_0) log10(sigma'_f / sigma'_0)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-025"
+axis = "consolidation"
+item = "secondary compression (C_alpha)"
+source = "Mesri-Godlewski 1977; Das ch.11"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "s_s = C_alpha H log10(t / t_p) / (1 + e_p)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-026"
+axis = "consolidation"
+item = "radial consolidation with vertical drains (Barron, Hansbo; smear and well resistance)"
+source = "Barron 1948; Hansbo 1981"
+status = "missing"
+evidence = "grep 0 件 (vertical drain)"
+oracle_candidate = "Barron の等ひずみ解 U_r = 1 - exp(-8 T_h / F(n))"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-027"
+axis = "consolidation"
+item = "Biot poroelasticity in FE (u-p formulation, coupled deformation and pore pressure)"
+source = "Biot 1941; Zienkiewicz et al., Computational Geomechanics; PLAXIS consolidation"
+status = "missing"
+evidence = "生体組織の Biot は COV-BIO-055 (missing) 土の連成 FE は grep 0 件 (biot)"
+oracle_candidate = "Mandel の問題と Terzaghi の FE 版 (下の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-028"
+axis = "consolidation"
+item = "large-strain consolidation (Gibson)"
+source = "Gibson-England-Hussey 1967"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "小ひずみの極限で Terzaghi に一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-029"
+axis = "bearing-earth-pressure"
+item = "bearing capacity of shallow foundations (N_c, N_q, N_gamma of Prandtl / Reissner / Terzaghi / Meyerhof / Vesic with shape, depth and inclination factors)"
+source = "Terzaghi 1943; Meyerhof 1963; Vesic 1973; Das, Principles of Foundation Engineering ch.4"
+status = "missing"
+evidence = "grep 0 件 (bearing capacity)"
+oracle_candidate = "N_q = exp(pi tan phi) tan^2(45 + phi / 2) と N_c = (N_q - 1) cot phi"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-030"
+axis = "bearing-earth-pressure"
+item = "eccentric and inclined loads on footings (effective area, Meyerhof)"
+source = "Meyerhof 1953; Das (Foundation) ch.5"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "有効幅 B' = B - 2e"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-031"
+axis = "bearing-earth-pressure"
+item = "immediate (elastic) settlement under a surface load by 3-D linear FE"
+source = "Poulos-Davis; PLAXIS (plastic calculation, linear elastic material)"
+status = "implemented-no-oracle"
+evidence = "src/linear_elastic_fem.rs::solve (3-D の P1 四面体、節点荷重と強制変位) で地盤 block 上の載荷は組める 自重 (COV-FEM-094) と初期応力 (COV-FEM-098) は無く、荷重増分の弾性解だけ 地盤の沈下として突合する test は無い"
+oracle_candidate = "一様圧の円形載荷の中心沈下の閉形式 (Poulos-Davis、係数は参照値要確認) と境界の大きさに対する収束"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-032"
+axis = "bearing-earth-pressure"
+item = "closed-form elastic and empirical settlement of footings (influence factors, Schmertmann for sand)"
+source = "Schmertmann 1970 / 1978; Das (Foundation) ch.5"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Schmertmann の I_z 分布の積分 (例題、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-033"
+axis = "bearing-earth-pressure"
+item = "Rankine active and passive earth pressure (K_a, K_p, cohesion and tension crack)"
+source = "Rankine 1857; Das ch.13"
+status = "missing"
+evidence = "grep 0 件 (rankine / earth pressure)"
+oracle_candidate = "K_a = tan^2(45 - phi / 2)、K_a K_p = 1"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-034"
+axis = "bearing-earth-pressure"
+item = "Coulomb earth pressure with wall friction and backfill slope"
+source = "Coulomb 1776; Das ch.13"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "delta = 0、壁鉛直、背面水平で Rankine に一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-035"
+axis = "bearing-earth-pressure"
+item = "seismic earth pressure (Mononobe-Okabe)"
+source = "Mononobe-Matsuo 1929; Okabe 1926; Kramer ch.11"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "k_h = 0 で Coulomb に一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-036"
+axis = "bearing-earth-pressure"
+item = "retaining wall stability (sliding, overturning, bearing)"
+source = "Das (Foundation) ch.8"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "例題の安全率 (参照値要確認) と力・モーメントの釣り合いの恒等式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-037"
+axis = "bearing-earth-pressure"
+item = "embedded and sheet-pile walls (free and fixed earth support) with anchors"
+source = "Das (Foundation) ch.9; CIRIA C580"
+status = "missing"
+evidence = "grep 0 件 (sheet pile)"
+oracle_candidate = "片持ち矢板の根入れの釣り合い式の根 (例題、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-038"
+axis = "slope"
+item = "infinite slope factor of safety (dry, submerged, with slope-parallel seepage)"
+source = "Das ch.15; Duncan-Wright, Soil Strength and Slope Stability ch.6"
+status = "missing"
+evidence = "grep 0 件 (factor of safety の斜面の意味; src の slope はキャラクタの歩行限界・車両の勾配)"
+oracle_candidate = "乾燥砂で FS = tan phi / tan beta、平行浸透で (gamma' / gamma_sat) 倍"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-039"
+axis = "slope"
+item = "limit equilibrium by slices: ordinary (Fellenius) and Bishop simplified"
+source = "Fellenius 1936; Bishop 1955; GeoStudio SLOPE/W"
+status = "missing"
+evidence = "grep 0 件 (bishop / slices)"
+oracle_candidate = "phi = 0 の円弧で両法が一致 (閉形式の摩擦円)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-040"
+axis = "slope"
+item = "rigorous slice methods (Spencer, Morgenstern-Price, Janbu) with non-circular surfaces"
+source = "Spencer 1967; Morgenstern-Price 1965; SLOPE/W"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "ACADS の例題の安全率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-041"
+axis = "slope"
+item = "search for the critical slip surface (grid and radius, optimisation)"
+source = "SLOPE/W; Duncan-Wright ch.14"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "均質斜面の臨界円の位置が Taylor 図表と一致 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-042"
+axis = "slope"
+item = "shear strength reduction FEM (factor of safety from loss of equilibrium)"
+source = "Griffiths-Lane 1999; PLAXIS safety analysis"
+status = "missing"
+evidence = "FE の Mohr-Coulomb (COV-FEM-039) が前提 grep 0 件 (strength reduction)"
+oracle_candidate = "無限斜面と Bishop の安全率に一致 (下の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-043"
+axis = "slope"
+item = "pseudo-static seismic slope stability and Newmark sliding-block displacement"
+source = "Newmark 1965; Kramer ch.10"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "矩形パルスの剛塑性すべり変位の閉形式 (Newmark)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-044"
+axis = "slope"
+item = "rainfall-induced slope failure (infiltration, loss of suction, rising water table)"
+source = "Iverson 2000; Rahardjo et al."
+status = "missing"
+evidence = "浸透は地球物理の表 (groundwater 軸) grep 0 件"
+oracle_candidate = "Iverson の拡散近似の圧力水頭の閉形式と無限斜面の FS(t)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-045"
+axis = "slope"
+item = "landslide and debris-flow runout (depth-averaged flow with Voellmy or Bingham rheology)"
+source = "Hungr 1995 (DAN); RAMMS; Iverson 1997"
+status = "missing"
+evidence = "Bingham の構成式そのものは COV-MAT-094 (src/non_newtonian.rs::Bingham) 斜面上の深さ平均の流れは grep 0 件"
+oracle_candidate = "一様斜面上の Voellmy 流の定常速度 v = sqrt(xi h (sin theta - mu cos theta)) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-046"
+axis = "slope"
+item = "rockfall (blocks bouncing and rolling down a slope with restitution and friction)"
+source = "RocFall (Rocscience); Dorren 2003"
+status = "implemented-no-oracle"
+evidence = "src/solver.rs::RigidBody と src/heightfield.rs::HeightField (高さ場との衝突 COV-RIGID-066) で斜面上の剛体の跳ね・転がりは組める 落石の法線・接線反発の係数の区別と突合 test は無い"
+oracle_candidate = "平らな斜面での飛翔の放物線と跳ね返り速度 e v_n の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-047"
+axis = "liquefaction"
+item = "simplified liquefaction triggering: cyclic stress ratio (Seed-Idriss, r_d) and cyclic resistance from SPT / CPT, factor of safety"
+source = "Seed-Idriss 1971; Idriss-Boulanger 2008; Youd et al. 2001"
+status = "missing"
+evidence = "grep 0 件 (liquefaction / cyclic stress ratio)"
+oracle_candidate = "CSR = 0.65 (a_max / g)(sigma_v / sigma'_v) r_d の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-048"
+axis = "liquefaction"
+item = "excess pore-pressure generation under cyclic loading (r_u vs cycle ratio)"
+source = "Seed-Martin-Lysmer 1976; Kramer ch.9"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Seed らの r_u = (2 / pi) arcsin((N / N_L)^(1 / (2 alpha))) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-049"
+axis = "liquefaction"
+item = "cyclic plasticity models for liquefiable sand (PM4Sand, UBCSAND, bounding surface)"
+source = "Boulanger-Ziotopoulou 2017 (PM4Sand); Beaty-Byrne 1998 (UBCSAND)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "要素の繰返し単純せん断で液状化に至る回数の較正点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-050"
+axis = "liquefaction"
+item = "dynamic effective-stress FE (u-p) for liquefaction"
+source = "Zienkiewicz et al., Computational Geomechanics; OpenSees (u-p elements)"
+status = "missing"
+evidence = "静的な Biot (上の consolidation 軸) と FE 動解析 (COV-FEM-072) の組合せ 両方とも土では無い grep 0 件"
+oracle_candidate = "弾性の極限で波の速度と排水の拡散が分かれる (上の 2 行の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-051"
+axis = "liquefaction"
+item = "post-liquefaction settlement and lateral spreading (Ishihara-Yoshimine, Youd)"
+source = "Ishihara-Yoshimine 1992; Youd-Hansen-Bartlett 2002"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Ishihara-Yoshimine の体積ひずみ曲線 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-052"
+axis = "liquefaction"
+item = "liquefaction effects on structures (loss of bearing, uplift of buried pipes and manholes)"
+source = "Kramer ch.9; Koseki et al. 1997"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "浮上の釣り合い: 埋設物の重さ + 上載土の抵抗 < 間隙水圧の浮力"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-053"
+axis = "excavation-construction"
+item = "initial geostatic stress generation before construction (K0 procedure or gravity loading)"
+source = "Potts-Zdravkovic vol.1; PLAXIS initial phase"
+status = "missing"
+evidence = "COV-FEM-094 (自重) と COV-FEM-098 (初期応力) の子 (両方 missing) ここは土の K0 で応力を置く手順"
+oracle_candidate = "水平地盤で sigma'_h = K0 sigma'_v、変位 0"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-054"
+axis = "excavation-construction"
+item = "staged construction: element deactivation (excavation) and activation (fill, lining)"
+source = "PLAXIS staged construction; Abaqus *MODEL CHANGE"
+status = "missing"
+evidence = "積層造形の層の活性化は COV-AM-033 (missing) 土の段階施工は grep 0 件"
+oracle_candidate = "弾性で掘削を 1 段と 2 段に分けても最終状態が一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-055"
+axis = "excavation-construction"
+item = "excavation unloading forces on the new boundary (equivalent nodal forces of the removed elements)"
+source = "Brown-Booker 1985; Potts-Zdravkovic"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "除去前の応力の釣り合い力を逆向きに載せると除去後の境界が traction free"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-056"
+axis = "excavation-construction"
+item = "embankment construction in lifts on soft ground with consolidation between lifts"
+source = "Leroueil-Magnan-Tavenas, Embankments on Soft Clays"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "排水が速い極限で一括載荷の排水解に一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-057"
+axis = "excavation-construction"
+item = "structural elements in soil (beams, plates, anchors, geogrids) with soil-structure interfaces"
+source = "PLAXIS structural elements; Potts-Zdravkovic"
+status = "missing"
+evidence = "FE の摩擦接触は COV-FEM-102 (missing) 土と構造の interface は grep 0 件"
+oracle_candidate = "interface の Coulomb 限界でのすべり開始荷重"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-058"
+axis = "excavation-construction"
+item = "braced excavation design (apparent earth pressure diagrams, basal heave)"
+source = "Peck 1969; Terzaghi-Peck-Mesri; Bjerrum-Eide 1956"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Bjerrum-Eide の底盤安定 FS = N_c c / (gamma H + q)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-059"
+axis = "excavation-construction"
+item = "tunnelling: convergence-confinement method (ground reaction curve, support characteristic)"
+source = "Panet 1995; Carranza-Torres-Fairhurst 2000"
+status = "missing"
+evidence = "grep 0 件 (tunnel)"
+oracle_candidate = "Mohr-Coulomb の地山反応曲線の閉形式 (下の cavity の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-060"
+axis = "excavation-construction"
+item = "tunnel face stability and the surface settlement trough (Peck Gaussian, volume loss)"
+source = "Peck 1969; Mair-Taylor 1997"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Gauss 沈下曲線の面積 = V_L pi D^2 / 4"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-061"
+axis = "excavation-construction"
+item = "sequential tunnel excavation in FE (stress relaxation / beta method)"
+source = "Potts-Zdravkovic vol.2; PLAXIS"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "beta = 1 で無支保の弾性 Kirsch 解に一致 (COV-FEM-133 の Kirsch と同じ閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-062"
+axis = "excavation-construction"
+item = "dewatering and hydraulic failure of excavations (drawdown, piping and heave, exit gradient)"
+source = "Terzaghi 1943; Cedergren"
+status = "missing"
+evidence = "浸透そのものは地球物理の表 (groundwater 軸) 浸透破壊の判定は grep 0 件"
+oracle_candidate = "限界動水勾配 i_c = gamma' / gamma_w"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-063"
+axis = "piles-ssi"
+item = "axial pile capacity (alpha and beta methods for shaft friction, end bearing)"
+source = "Tomlinson; Burland 1973; Das (Foundation) ch.11"
+status = "missing"
+evidence = "grep 0 件 (pile の杭の意味)"
+oracle_candidate = "beta 法の q_s = beta sigma'_v の積分 (一様層の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-064"
+axis = "piles-ssi"
+item = "load-transfer curves (t-z, q-z) and pile settlement"
+source = "Coyle-Reese 1966; API RP 2GEO"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "線形 t-z の剛杭・弾性杭の頭部剛性の閉形式 (Randolph-Wroth、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-065"
+axis = "piles-ssi"
+item = "laterally loaded piles: p-y curves (Matlock, API) on a beam with a nonlinear Winkler foundation"
+source = "Matlock 1970; API RP 2GEO; LPILE"
+status = "missing"
+evidence = "COV-STRUCT-015 (弾性床上の梁、missing) の子 非線形の p-y は grep 0 件"
+oracle_candidate = "線形の p-y で Hetenyi の閉形式に一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-066"
+axis = "piles-ssi"
+item = "pile groups (group efficiency, interaction factors)"
+source = "Poulos-Davis 1980; Das (Foundation) ch.11"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "相互作用係数の弾性解の対称性 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-067"
+axis = "piles-ssi"
+item = "foundation impedance (frequency-dependent springs and dashpots, Gazetas) for soil-structure interaction"
+source = "Gazetas 1991; NIST GCR 12-917-21"
+status = "missing"
+evidence = "grep 0 件 (impedance の地盤の意味)"
+oracle_candidate = "半無限上の円形基礎の静的鉛直剛性 4 G r / (1 - nu)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-068"
+axis = "piles-ssi"
+item = "kinematic and inertial soil-structure interaction in a time-domain model (period lengthening, radiation damping)"
+source = "Veletsos-Meek 1974; Stewart et al. 1999"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Veletsos の周期延長 T~/T の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-069"
+axis = "frost"
+item = "frost penetration depth (Stefan formula, modified Berggren)"
+source = "Aldrich 1956 (modified Berggren); Andersland-Ladanyi, Frozen Ground Engineering ch.4"
+status = "missing"
+evidence = "COV-THERM-098 (1 相 Stefan の benchmark、missing) の子 ここは凍結指数と土の潜熱からの凍結深さ grep 0 件 (frost)"
+oracle_candidate = "Stefan 式 X = sqrt(2 k_f F / L) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-070"
+axis = "frost"
+item = "freezing soil with unfrozen water content and latent heat (soil-specific apparent heat capacity)"
+source = "Andersland-Ladanyi ch.2; TEMP/W"
+status = "missing"
+evidence = "潜熱の enthalpy 法は COV-THERM-069 (partial) と工学単位の相変化 COV-THERM-072 (missing) 不凍水分曲線は grep 0 件"
+oracle_candidate = "凍結区間の見かけ熱容量の積分 = 潜熱 x 含水量"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-071"
+axis = "frost"
+item = "frost heave (ice lens segregation, segregation potential)"
+source = "Konrad-Morgenstern 1980; Rempel 2004"
+status = "missing"
+evidence = "grep 0 件 (frost heave)"
+oracle_candidate = "segregation potential の定義 v = SP grad T の一定勾配の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-072"
+axis = "frost"
+item = "thaw settlement and thaw consolidation of permafrost"
+source = "Morgenstern-Nixon 1971"
+status = "missing"
+evidence = "grep 0 件 (permafrost / thaw)"
+oracle_candidate = "融解比 R = alpha / (2 sqrt(c_v)) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-073"
+axis = "frost"
+item = "thermal conductivity of soils (Johansen, Kersten; frozen and unfrozen)"
+source = "Johansen 1975; Farouki 1981"
+status = "missing"
+evidence = "熱物性の preset は金属・PLA (src/transient_thermal.rs::ThermalMaterial) 土の熱伝導率は grep 0 件"
+oracle_candidate = "Johansen の Kersten 数の内挿の端点 (乾燥・飽和)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-074"
+axis = "resident-earthworks"
+item = "digging removes a soil volume that is conserved (carried, stockpiled or deposited elsewhere)"
+source = "sandbox-game terrain editing; mass-conserving terrain operations (Benes-Forsbach 2001)"
+status = "missing"
+evidence = "高さの編集は COV-ENV-096 (src/heightfield.rs::HeightField)、SDF の除去は COV-FRACT-092 で、形は変わるが除いた土の体積の受け渡しは無い"
+oracle_candidate = "掘る + 盛るの往復で地形全体の体積が bit 一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-075"
+axis = "resident-earthworks"
+item = "heaped soil relaxes to its angle of repose (slope-limited relaxation of the height field)"
+source = "Bak-Tang-Wiesenfeld sandpile; Musgrave-Kolb-Mace 1989 (thermal weathering)"
+status = "missing"
+evidence = "COV-FRACT-091 (talus 角の緩和、missing) の子 ここは盛土の崩れで、粒子の安息角の benchmark は COV-PART-112"
+oracle_candidate = "緩和後の全隣接勾配 <= tan(phi_repose) と体積保存"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-076"
+axis = "resident-earthworks"
+item = "collapse of an unsupported trench or hole wall (critical height of a vertical cut)"
+source = "Terzaghi 1943; Das ch.13"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Rankine の自立高さ H_c = 4 c / gamma (phi = 0)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-077"
+axis = "resident-earthworks"
+item = "digging resistance of a tool or bucket in soil (Reece / McKyes cutting force)"
+source = "McKyes, Soil Cutting and Tillage; Reece 1964"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Reece の基本式 F = (gamma d^2 N_gamma + c d N_c + q d N_q) w の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-078"
+axis = "resident-earthworks"
+item = "objects placed on the ground sink or tilt when the bearing capacity is exceeded (world bodies on deformable soil)"
+source = "Terzaghi bearing capacity; Bekker 1969"
+status = "missing"
+evidence = "車両の軟弱地盤は COV-MBD-049 (missing)、地面は剛体の幾何のみ 支持力の判定は上の bearing-earth-pressure 軸 grep 0 件"
+oracle_candidate = "支持力未満の荷重では沈下 0、超えると沈下が進む (しきい値の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-079"
+axis = "resident-earthworks"
+item = "water entering a dug hole from the water table and its removal by pumping"
+source = "Powers et al., Construction Dewatering"
+status = "missing"
+evidence = "地下水は地球物理の表 (groundwater 軸) 掘削穴への流入は grep 0 件"
+oracle_candidate = "Thiem 型の定常流入量 (円形の穴、閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-080"
+axis = "resident-earthworks"
+item = "layered soil under the terrain surface (soil type and thickness per cell under the height field)"
+source = "voxel terrain engines; geological models (borehole strata)"
+status = "missing"
+evidence = "src/heightfield.rs::HeightField は高さ 1 値だけを持つ"
+oracle_candidate = "層境界の深さの内挿と掘削で露出する層の一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-081"
+axis = "benchmark"
+item = "Terzaghi 1-D consolidation by a numerical solver against the series solution"
+source = "Terzaghi 1925"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "U(T_v) と u(z, t) の級数解、時間・空間の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-082"
+axis = "benchmark"
+item = "Mandel's problem (pore-pressure rise of the Mandel-Cryer effect)"
+source = "Mandel 1953; Abousleiman et al. 1996"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Mandel の級数解 (初期の間隙水圧が 1 を超える)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-083"
+axis = "benchmark"
+item = "Prandtl strip footing on weightless cohesive soil by FE (q_u = (2 + pi) c)"
+source = "Prandtl 1920; Griffiths 1982"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "(2 + pi) c と、細分に対する FE の崩壊荷重の上からの収束"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-084"
+axis = "benchmark"
+item = "drained and undrained triaxial tests with Modified Cam-clay against closed-form stress paths"
+source = "Wood ch.7; Potts-Zdravkovic vol.1"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "非排水経路の p' と破壊時の q = M p'_f の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-085"
+axis = "benchmark"
+item = "infinite slope by shear strength reduction against the closed-form factor of safety"
+source = "Griffiths-Lane 1999"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "FS = c / (gamma H sin beta cos beta) + tan phi / tan beta"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-086"
+axis = "benchmark"
+item = "Rankine active wall by FE against K_a"
+source = "Potts-Zdravkovic vol.2"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "主働状態の水平応力 = K_a sigma'_v"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-087"
+axis = "benchmark"
+item = "cylindrical cavity expansion / tunnel unloading in Mohr-Coulomb against the closed form (Salencon)"
+source = "Salencon 1969; Yu, Cavity Expansion Methods in Geomechanics"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "塑性域の半径と内圧の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-088"
+axis = "benchmark"
+item = "embankment on soft clay: settlement and pore pressure vs time against a field case"
+source = "e.g. Leroueil et al. case histories"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "計測値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEOTECH-089"
+axis = "benchmark"
+item = "LEAP centrifuge liquefaction tests (sloping deposit)"
+source = "Kutter et al. 2018 (LEAP-2017)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "公表の加速度・間隙水圧の時刻歴 (参照値要確認)"
+limitation = ""

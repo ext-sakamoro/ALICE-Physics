@@ -1,0 +1,1355 @@
+# Geophysics (GEO) coverage of ALICE-Physics, against an external reference
+# frame.
+#
+# What this table is: every capability that the standard textbooks of solid-
+# Earth and surface geophysics (Aki-Richards, Quantitative Seismology; Shearer,
+# Introduction to Seismology; Schubert-Turcotte-Olson, Mantle Convection in the
+# Earth and Planets; Turcotte-Schubert, Geodynamics; Pedlosky, Geophysical Fluid
+# Dynamics / Ocean Circulation Theory; Bear, Dynamics of Fluids in Porous Media;
+# Chow-Maidment-Mays, Applied Hydrology; Heiskanen-Moritz, Physical Geodesy;
+# Merrill-McElhinny-McFadden, The Magnetic Field of the Earth; Pugh, Tides,
+# Surges and Mean Sea-Level), reference implementations (SPECFEM3D, ASPECT,
+# MODFLOW, HEC-RAS, the IGRF and tidal-prediction tools) and standard benchmarks
+# (Lamb's problem, the LOH.1 layer over a half-space, 1-D site amplification,
+# the Blankenbach mantle-convection benchmark, Christensen's dynamo benchmark,
+# the Stommel gyre, the Theis well, Philip infiltration, Ogata-Banks, Henry's
+# saltwater intrusion) expect of a geophysics code, one [[item]] per capability,
+# with what the crate has today. The rows are written by hand: the axes and the
+# items come from the reference frame, not from the modules that exist, so a
+# missing capability is visible instead of absent. Axes: elastic-waves /
+# seismic-numerics / source / ground-motion / mantle-convection / lithosphere /
+# geomagnetism / geodesy-gravity / ocean-circulation / tides / hydrology /
+# groundwater / sediment / benchmark.
+#
+# The crate has almost none of this field today: the rows mostly declare the
+# range. Soil and rock as engineering materials (constitutive laws,
+# consolidation, bearing capacity, slopes, liquefaction, excavation, piles,
+# frost) are the geotechnical table (docs/coverage/geotech.toml); seismic
+# ground motion and site response stay here, their soil curves are there.
+#
+# Boundary with the other tables (one capability goes in one table only; a row
+# here that refines a row of another table says "COV-X-NNN の子" in evidence):
+#   - the atmosphere: the environment and atmosphere tables (ENV, ATMOS); the
+#     rotating-frame balances shared with the ocean (f / beta plane, Rossby
+#     waves, Ekman pumping, mixed layer) are COV-ATMOS-011 to 022 and
+#     COV-ATMOS-103 / 104, cited here and not repeated
+#   - water-surface waves, shallow-water flow over terrain (COV-ENV-090), flow
+#     routing, stream power and hillslope diffusion on a height field
+#     (COV-ENV-100 to 102), terrain generation and the height field itself:
+#     the environment table; rows here are the hydrological and morphodynamic
+#     laws that refine them
+#   - material removal by erosion, game-style hydraulic erosion with sediment
+#     and talus relaxation: the fracture table (COV-FRACT-084 to 092)
+#   - gravity of a planet, J2, spherical-harmonic gravity, tides as an orbit
+#     perturbation, Earth-fixed frames and the reference ellipsoid: the orbit
+#     table (COV-ORBIT-049 to 093); the surface geodesy and gravity rows here
+#     refine them
+#   - generic elastodynamics by FE (Newmark, explicit central difference,
+#     consistent / lumped mass): the FEM table (COV-FEM-072 to 082); the wave
+#     rows here are the seismological capabilities on top of it. Acoustic
+#     (pressure) waves: the acoustics table
+#   - the field of a magnetic dipole in closed form: the EM table (COV-EM-065);
+#     the magnetosphere: the plasma table (COV-PLASMA-110); the magnetometer as
+#     a sensor: the sensing table (COV-SENSE-044)
+#   - Darcy-Forchheimer momentum sources inside the Navier-Stokes solver: the
+#     CFD table (COV-CFD-068); groundwater here is the head-based porous-media
+#     flow of hydrogeology
+#   - generic linear solvers, preconditioners and multigrid: the numerics table
+#     (COV-NUM-025, 026, 028)
+#
+# Rule used for "composed from existing parts": a scenario counts as
+# implemented-no-oracle only when the parts solve the same physics (the FE
+# elastodynamics for elastic waves, a kinematic world body for a shaking
+# ground). A solver of another field that happens to share the equation (the
+# heat-conduction solver for consolidation or groundwater diffusion, the
+# acoustic leapfrog for SH waves) is not counted; it is named in
+# oracle_candidate as a cheap reference path.
+#
+# Search notes (words that hit something else): "river" (driver, in solver and
+# vehicle code), "porous" (a comment on acoustic speed presets), "cohesion" (SPH
+# surface tension), "snow" (ski friction and road weather grip), "sand" (a
+# reference title in the Eulerian grid, which has no granular yield), "Rayleigh"
+# (Rayleigh damping and Rayleigh scattering), "dipole" (the EM closed form),
+# "tide" / "tidal" (0 hits). Rows below that say "grep 0 件" were checked word by
+# word.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented (or composed from existing parts of the
+#                          same physics), no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-GEO-NNN) / axis / item / source (book, chapter, paper, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Book chapter numbers
+# have not been checked against the editions.
+#
+# Ids of other tables are the ones in those tables when this table was written
+# (COV-ATMOS-NNN are the rows of docs/coverage/atmos.toml).
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-GEO-001"
+axis = "elastic-waves"
+item = "P- and S-wave speeds from the elastic moduli and density (c_p = sqrt((lambda + 2 mu) / rho), c_s = sqrt(mu / rho)) and Poisson's ratio from v_p / v_s"
+source = "Aki-Richards, Quantitative Seismology ch.2; Shearer, Introduction to Seismology ch.3"
+status = "missing"
+evidence = "COV-MAT-029 (P 波弾性率を含む弾性定数の換算表、missing) の子 COV-ACOUS-012 の steel / concrete は縦波の音速 preset で、S 波速度は無い src で shear wave / s-wave の grep 0 件"
+oracle_candidate = "v_p / v_s = sqrt(2(1 - nu) / (1 - 2 nu)) の恒等式 (各 nu)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-002"
+axis = "elastic-waves"
+item = "body-wave (P and S) propagation in a 3-D elastic solid by time-domain FE"
+source = "Aki-Richards ch.4; SPECFEM3D (elastic forward solver)"
+status = "implemented-no-oracle"
+evidence = "src/dynamic_fem.rs::TransientSolver (小ひずみ P1 四面体の Newmark 平均加速度、荷重は構築時に固定 = 階段荷重として波を起こせる) COV-FEM-072 の tests/analytic_dynamic_fem.rs::the_axial_bar_reaches_its_peak_at_the_closed_form_wave_transit_time は棒の縦波の到達時刻を見るが、3-D 連続体の P 波・S 波の速度と到達時刻を突合する test は無い"
+oracle_candidate = "大きな block の表面中央に階段荷重 → 深さ d の観測点で P 波 d / c_p と S 波 d / c_s の到達時刻 (境界からの反射が戻る前の時間窓)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-003"
+axis = "elastic-waves"
+item = "Rayleigh surface waves: speed from the Rayleigh equation and elliptical particle motion with depth decay"
+source = "Aki-Richards ch.5; Shearer ch.8"
+status = "missing"
+evidence = "src で rayleigh wave の grep 0 件 (Rayleigh は減衰と散乱の意味だけ) COV-FRACT-050 (亀裂速度の上限としての Rayleigh 波速度) も missing"
+oracle_candidate = "c_R / c_s は nu だけの関数 (Rayleigh 方程式の根、nu = 0.25 で閉形式の根あり、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-004"
+axis = "elastic-waves"
+item = "Love waves in a layer over a half-space (dispersion relation, phase and group velocity)"
+source = "Aki-Richards ch.7; Shearer ch.8"
+status = "missing"
+evidence = "src で love wave / dispersion (地震波) の grep 0 件"
+oracle_candidate = "1 層 + 半無限の Love 波分散関係の根 (基本モード、高次モードの cut-off)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-005"
+axis = "elastic-waves"
+item = "reflection and transmission of plane elastic waves at a welded interface (SH coefficients, P-SV Zoeppritz equations, mode conversion)"
+source = "Aki-Richards ch.5; Shearer ch.6"
+status = "missing"
+evidence = "grep 0 件 (zoeppritz / reflection coefficient)"
+oracle_candidate = "SH の垂直入射 R = (Z1 - Z2) / (Z1 + Z2) とエネルギー流束の保存"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-006"
+axis = "elastic-waves"
+item = "ray theory in layered and smoothly varying media: Snell's law, ray parameter, travel time, head waves (refraction)"
+source = "Shearer ch.4; Aki-Richards ch.4"
+status = "missing"
+evidence = "src の光線追跡は光学・センサの直線 ray で、速度構造の中の屈折 ray は無い (推測)"
+oracle_candidate = "2 層の屈折法: 直接波と head wave の交差距離と走時の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-007"
+axis = "elastic-waves"
+item = "travel-time tables of a 1-D Earth model (PREM / iasp91: travel time and ray parameter vs epicentral distance)"
+source = "Dziewonski-Anderson 1981 (PREM); Kennett-Engdahl 1991 (iasp91); TauP"
+status = "missing"
+evidence = "grep 0 件 (prem / iasp)"
+oracle_candidate = "iasp91 の P 走時表の数点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-008"
+axis = "elastic-waves"
+item = "geometric spreading and anelastic attenuation (quality factor Q, t*), amplitude decay with distance"
+source = "Shearer ch.6; Aki-Richards ch.5"
+status = "missing"
+evidence = "grep 0 件 (quality factor / attenuation の地震波の意味)"
+oracle_candidate = "一様媒質の振幅 exp(-pi f t / Q) / r"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-009"
+axis = "elastic-waves"
+item = "seismic anisotropy (transverse isotropy, shear-wave splitting)"
+source = "Shearer ch.11; Babuska-Cara, Seismic Anisotropy in the Earth"
+status = "missing"
+evidence = "異方弾性の FE は COV-FEM-025 / 026 (missing) が前提 src/anisotropic.rs は FDM 造形物の閉形式の剛性で波は扱わない (推測)"
+oracle_candidate = "TI 媒質の qP / qS 速度の方位依存 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-010"
+axis = "elastic-waves"
+item = "free oscillations of the Earth (spheroidal and toroidal normal modes)"
+source = "Dahlen-Tromp, Theoretical Global Seismology; MINEOS"
+status = "missing"
+evidence = "grep 0 件 (normal mode / spheroidal / toroidal)"
+oracle_candidate = "一様弾性球の toroidal mode の固有振動数 (閉形式の根)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-011"
+axis = "elastic-waves"
+item = "poroelastic waves in fluid-saturated media (Biot fast and slow P waves)"
+source = "Biot 1956; Bourbie-Coussy-Zinszner, Acoustics of Porous Media"
+status = "missing"
+evidence = "grep 0 件 (biot) 準静的な Biot 圧密は地盤の表 (geotech.toml) の行"
+oracle_candidate = "Biot の低周波極限の速さ (Gassmann) と遅い P 波の拡散的な振る舞い"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-012"
+axis = "seismic-numerics"
+item = "staggered-grid velocity-stress finite differences for elastic waves (Virieux)"
+source = "Virieux 1986; Moczo-Kristek-Galis, The Finite-Difference Modelling of Earthquake Motions"
+status = "missing"
+evidence = "grep 0 件 (staggered の弾性波) 電磁気の Yee 格子 (src/maxwell_fdtd.rs) は別の方程式で数えない"
+oracle_candidate = "一様媒質の点源の P / S 到達時刻と格子分散の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-013"
+axis = "seismic-numerics"
+item = "spectral-element method on hexahedra with Gauss-Lobatto-Legendre quadrature (diagonal mass, high order)"
+source = "Komatitsch-Tromp 1999; SPECFEM3D"
+status = "missing"
+evidence = "grep 0 件 (spectral element / gll / lobatto)"
+oracle_candidate = "平面波の位相誤差の次数収束 (p 細分)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-014"
+axis = "seismic-numerics"
+item = "absorbing boundaries for elastic waves (Lysmer-Kuhlemeyer dashpots, Clayton-Engquist, PML / C-PML)"
+source = "Lysmer-Kuhlemeyer 1969; Komatitsch-Martin 2007 (C-PML)"
+status = "missing"
+evidence = "src/dynamic_fem.rs::TransientSolver に吸収境界は無い (固定か自由のみ) 音響の吸収境界は音響の表の行"
+oracle_candidate = "垂直入射 P 波の dashpot 境界の反射係数 0 (閉形式) と斜め入射の反射率"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-015"
+axis = "seismic-numerics"
+item = "free-surface topography in wave simulation (traction-free curved surface)"
+source = "SPECFEM3D (topography); Moczo et al."
+status = "missing"
+evidence = "src/dynamic_fem.rs::TransientSolver の自由面は荷重の無い節点として成り立つが、地形の表面と波の検証は無い (推測)"
+oracle_candidate = "傾斜した自由面での P-SV 変換 (閉形式の反射係数)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-016"
+axis = "seismic-numerics"
+item = "viscoelastic attenuation in the time domain (anelastic relaxation variables, constant Q over a frequency band)"
+source = "Emmerich-Korn 1987; Moczo-Kristek 2005"
+status = "missing"
+evidence = "src/dynamic_fem.rs::TransientSolver は減衰項を持たない (module doc の Limitations: No damping)"
+oracle_candidate = "一定 Q 帯域での振幅減衰と速度分散 (Kramers-Kronig)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-017"
+axis = "seismic-numerics"
+item = "heterogeneous velocity models on the mesh (layered or gridded v_p, v_s and density per element)"
+source = "SPECFEM3D / SW4 (material models)"
+status = "missing"
+evidence = "src/dynamic_fem.rs::TransientSolver は材料 1 つ (ElasticMaterial) を全要素に使う"
+oracle_candidate = "2 層モデルの境界での反射・透過振幅 (上の反射係数の行と同じ閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-018"
+axis = "seismic-numerics"
+item = "seismograms at receivers (displacement / velocity time series interpolated at arbitrary points)"
+source = "SPECFEM3D (stations); SW4"
+status = "missing"
+evidence = "src/dynamic_fem.rs::TransientSolver は全節点の変位・速度を返すだけで、観測点の内挿と時系列の記録は無い"
+oracle_candidate = "節点上の観測点で内挿が節点値と一致、要素内で形状関数の内挿"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-019"
+axis = "seismic-numerics"
+item = "adjoint wavefield and full-waveform inversion (misfit kernels)"
+source = "Tromp-Tape-Liu 2005; SPECFEM3D (adjoint)"
+status = "missing"
+evidence = "grep 0 件 (adjoint)"
+oracle_candidate = "小さな速度摂動に対する misfit の差分と kernel の一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-020"
+axis = "source"
+item = "point-source moment tensor: double couple from strike, dip and rake, P and S radiation patterns"
+source = "Aki-Richards ch.4; Shearer ch.9"
+status = "missing"
+evidence = "grep 0 件 (moment tensor / strike / rake)"
+oracle_candidate = "double couple の P 波放射パターンの節面と 4 象限の符号"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-021"
+axis = "source"
+item = "seismic moment M0 = mu A D and moment magnitude M_w"
+source = "Hanks-Kanamori 1979; Shearer ch.9"
+status = "missing"
+evidence = "grep 0 件 (seismic moment / magnitude)"
+oracle_candidate = "M_w の定義式の往復 (M0 -> M_w -> M0)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-022"
+axis = "source"
+item = "source time functions and source spectra (Brune omega-squared model, corner frequency, stress drop)"
+source = "Brune 1970; Shearer ch.9"
+status = "missing"
+evidence = "grep 0 件 (corner frequency / brune)"
+oracle_candidate = "Brune スペクトルの低周波平坦部と f^-2 の傾き"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-023"
+axis = "source"
+item = "kinematic finite-fault rupture (subfault slip distribution, rupture velocity, rise time)"
+source = "Aki-Richards ch.10; SW4 / SPECFEM3D (finite fault)"
+status = "missing"
+evidence = "grep 0 件 (rupture / slip distribution)"
+oracle_candidate = "一様すべりの線状断層の directivity (到達時刻の方位依存)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-024"
+axis = "source"
+item = "dynamic rupture on a fault with slip-weakening or rate-and-state friction"
+source = "Andrews 1976; Dieterich / Ruina; SCEC dynamic rupture benchmarks (TPV)"
+status = "missing"
+evidence = "grep 0 件 (rate-and-state / slip-weakening) 剛体接触の摩擦則は剛体の表の行で断層ではない"
+oracle_candidate = "SCEC TPV3 のすべり速度と破壊到達時刻 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-025"
+axis = "source"
+item = "static deformation of an elastic half-space by a rectangular dislocation (Okada)"
+source = "Okada 1985 / 1992"
+status = "missing"
+evidence = "grep 0 件 (okada / dislocation)"
+oracle_candidate = "Okada の閉形式の表面変位の対称性と遠方の 1/r^2 減衰"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-026"
+axis = "source"
+item = "seismicity statistics (Gutenberg-Richter, Omori-Utsu) and seeded synthetic catalogues"
+source = "Gutenberg-Richter 1944; Utsu 1961; ETAS (Ogata 1988)"
+status = "missing"
+evidence = "grep 0 件 (gutenberg / omori)"
+oracle_candidate = "seed 付き生成の b 値の最尤推定 (Aki 1965) が設定値に収束"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-027"
+axis = "ground-motion"
+item = "ground shaking of world bodies through a kinematic ground following a displacement history"
+source = "shake-table practice; Chopra, Dynamics of Structures ch.6"
+status = "implemented-no-oracle"
+evidence = "src/solver.rs::RigidBody の kinematic な目標姿勢 (COV-RIGID-012) に変位履歴を毎 step 渡せば地面を揺らせる 地震動の入力としての突合 test は無い"
+oracle_candidate = "正弦加速度の床の上の箱: 床加速度振幅が mu g を超えた時だけ滑る (Coulomb の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-028"
+axis = "ground-motion"
+item = "accelerogram processing: baseline correction, filtering, integration to velocity and displacement"
+source = "Boore-Bommer 2005; PEER NGA processing"
+status = "missing"
+evidence = "grep 0 件 (baseline / accelerogram)"
+oracle_candidate = "正弦の加速度記録の 2 回積分が閉形式の変位、baseline 補正で直線 drift が消える"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-029"
+axis = "ground-motion"
+item = "elastic response spectrum of a single-degree-of-freedom oscillator (S_d, PS_v, PS_a at a damping ratio)"
+source = "Chopra ch.6; Nigam-Jennings 1969"
+status = "missing"
+evidence = "COV-STRUCT-111 (基礎加振・衝撃応答スペクトル、missing) の子 地震動用の擬似速度・擬似加速度スペクトルと減衰比の扱いを分けた"
+oracle_candidate = "正弦入力の定常応答 (共振倍率 1 / (2 zeta)) と周期 0 で PGA に一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-030"
+axis = "ground-motion"
+item = "1-D linear site response of a layered soil column to vertically incident SH waves (transfer function, resonance f = V_s / 4H)"
+source = "Kramer, Geotechnical Earthquake Engineering ch.7; DEEPSOIL / SHAKE"
+status = "missing"
+evidence = "grep 0 件 (site response / transfer function) src/acoustic_wave.rs::leapfrog_step (COV-ACOUS-001) は同じ 1-D スカラー波動方程式だが音響の solver で、別の物理への流用は数えない"
+oracle_candidate = "剛基盤上の一様層の増幅 |1 / cos(omega H / V_s)| と共振 V_s / (4H) 既存の 1-D leapfrog を V_s で回す経路は安い参照"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-031"
+axis = "ground-motion"
+item = "equivalent-linear site response with strain-dependent modulus and damping (SHAKE iteration)"
+source = "Schnabel-Lysmer-Seed 1972 (SHAKE); Kramer ch.7"
+status = "missing"
+evidence = "grep 0 件 G / G_max と減衰の曲線は地盤の表の COV-GEOTECH-016"
+oracle_candidate = "有効ひずみの反復が収束し、線形の極限 (小ひずみ) で上の線形応答に一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-032"
+axis = "ground-motion"
+item = "nonlinear time-domain site response with hysteretic soil (Masing rules, pore pressure)"
+source = "Kramer ch.7; DEEPSOIL; OpenSees (site response)"
+status = "missing"
+evidence = "grep 0 件 (masing / hysteretic)"
+oracle_candidate = "Masing 則の履歴ループの面積が等価減衰と一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-033"
+axis = "ground-motion"
+item = "ground-motion models: median and spread of PGA and spectral acceleration vs magnitude, distance and site class"
+source = "NGA-West2 (Boore-Stewart-Seyhan-Atkinson 2014 等)"
+status = "missing"
+evidence = "grep 0 件 (gmpe / ground motion model)"
+oracle_candidate = "公表係数での数点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-034"
+axis = "ground-motion"
+item = "design response spectra of building codes (site classes, spectral shape)"
+source = "Eurocode 8 (EN 1998-1) §3.2; ASCE 7 ch.11"
+status = "missing"
+evidence = "grep 0 件 (design spectrum)"
+oracle_candidate = "規準の折れ点周期と plateau 値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-035"
+axis = "ground-motion"
+item = "topographic and basin amplification (2-D / 3-D site effects)"
+source = "Kramer ch.7; Bard-Bouchon 1980"
+status = "missing"
+evidence = "grep 0 件 (basin / topographic amplification)"
+oracle_candidate = "半円形の谷の SH 散乱 (Trifunac 1973 の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-036"
+axis = "ground-motion"
+item = "stochastic ground-motion simulation (band-limited noise shaped by a source spectrum, seeded)"
+source = "Boore 2003 (SMSIM)"
+status = "missing"
+evidence = "grep 0 件 (smsim / stochastic ground motion)"
+oracle_candidate = "同じ seed で bit 一致、多数 member の平均スペクトルが目標の Brune スペクトル"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-037"
+axis = "mantle-convection"
+item = "infinite-Prandtl-number Boussinesq convection (Stokes flow with buoyancy, advection-diffusion of temperature)"
+source = "Schubert-Turcotte-Olson ch.6; ASPECT"
+status = "missing"
+evidence = "src/cfd_solver.rs::CfdSolver は慣性を持つ Navier-Stokes (Boussinesq 浮力は COV-CFD-060) で、慣性を落とした Stokes の釣り合いは無い"
+oracle_candidate = "Blankenbach の case 1a (下の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-038"
+axis = "mantle-convection"
+item = "Rayleigh number, onset of convection (critical Ra) and Nusselt-Rayleigh scaling"
+source = "Turcotte-Schubert, Geodynamics ch.6; Chandrasekhar 1961"
+status = "missing"
+evidence = "COV-CFD-106 (Rayleigh-Benard onset、missing) の子 ここは無限 Prandtl 数での臨界と Nu ∝ Ra^(1/3) の scaling"
+oracle_candidate = "自由すべり境界の臨界 Ra = 27 pi^4 / 4 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-039"
+axis = "mantle-convection"
+item = "temperature- and pressure-dependent viscosity (Arrhenius, Frank-Kamenetskii) with large viscosity contrasts"
+source = "Schubert-Turcotte-Olson ch.7; ASPECT (material models)"
+status = "missing"
+evidence = "grep 0 件 (arrhenius の粘性 / frank-kamenetskii) Arrhenius は化学反応と creep の行だけ"
+oracle_candidate = "Blankenbach の case 2a (粘性比 1e3、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-040"
+axis = "mantle-convection"
+item = "internal heating and stagnant-lid / mobile-lid regimes"
+source = "Schubert-Turcotte-Olson ch.8; Solomatov 1995"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "内部発熱のみの層の伝導解 (放物線の温度分布)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-041"
+axis = "mantle-convection"
+item = "visco-plastic rheology for plate-like behaviour (yield stress, pseudo-plastic weakening)"
+source = "Tackley 2000; Moresi-Solomatov 1998"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "降伏応力で決まる lid の破断 (Moresi-Solomatov の regime 境界、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-042"
+axis = "mantle-convection"
+item = "compressible convection (extended Boussinesq / anelastic liquid approximation, adiabatic and shear heating)"
+source = "Schubert-Turcotte-Olson ch.6; King et al. 2010 benchmark"
+status = "missing"
+evidence = "grep 0 件 (anelastic / adiabatic heating)"
+oracle_candidate = "King et al. 2010 の Nu (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-043"
+axis = "mantle-convection"
+item = "spherical-shell geometry (2-D annulus, 3-D shell) with free-slip boundaries"
+source = "ASPECT; Zhong et al. 2008 benchmark"
+status = "missing"
+evidence = "grep 0 件 (spherical shell)"
+oracle_candidate = "Zhong et al. 2008 の Nu と v_rms (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-044"
+axis = "mantle-convection"
+item = "compositional fields and tracer particles advected through the flow"
+source = "van Keken et al. 1997 benchmark; ASPECT (compositional fields)"
+status = "missing"
+evidence = "grep 0 件 (compositional / tracer)"
+oracle_candidate = "van Keken の Rayleigh-Taylor 不安定の初期成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-045"
+axis = "mantle-convection"
+item = "Stokes solver for strong viscosity contrasts (saddle-point discretisation with variable viscosity)"
+source = "May-Moresi 2008; ASPECT (Stokes solver)"
+status = "missing"
+evidence = "src の圧力射影は非圧縮流れの Poisson で、粘性が変わる Stokes の鞍点系は無い 汎用の block 前処理と multigrid は COV-NUM-028 / 025 / 026 (missing)"
+oracle_candidate = "粘性が段差を持つ流れの解析解 (SolCx、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-046"
+axis = "lithosphere"
+item = "half-space cooling of the oceanic lithosphere (heat flow and seafloor depth proportional to sqrt(age))"
+source = "Turcotte-Schubert ch.4"
+status = "missing"
+evidence = "COV-THERM-034 (半無限固体の過渡解、missing) の地球物理の適用 grep 0 件"
+oracle_candidate = "水深 d(t) ∝ sqrt(t) と熱流量 ∝ 1 / sqrt(t) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-047"
+axis = "lithosphere"
+item = "continental geotherm with radiogenic heat production"
+source = "Turcotte-Schubert ch.4"
+status = "missing"
+evidence = "grep 0 件 (geotherm / radiogenic)"
+oracle_candidate = "指数関数で減る発熱の定常 1-D 温度分布 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-048"
+axis = "lithosphere"
+item = "flexure of an elastic plate under a load (flexural rigidity, flexural wavelength, forebulge)"
+source = "Turcotte-Schubert ch.3"
+status = "missing"
+evidence = "COV-STRUCT-015 (弾性床上の梁、missing) の子 ここは浮力を復元力とするリソスフェアの曲げ"
+oracle_candidate = "線荷重の下の板のたわみ exp(-x / alpha) cos(x / alpha) と forebulge の位置"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-049"
+axis = "lithosphere"
+item = "isostasy (Airy and Pratt compensation, isostatic rebound of a load)"
+source = "Turcotte-Schubert ch.2; Heiskanen-Moritz ch.3"
+status = "missing"
+evidence = "grep 0 件 (isostasy / airy / pratt)"
+oracle_candidate = "Airy の根の深さ = h rho_c / (rho_m - rho_c)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-050"
+axis = "lithosphere"
+item = "post-glacial rebound (viscous relaxation of a half-space, relaxation time vs wavelength)"
+source = "Turcotte-Schubert ch.6; Haskell 1935"
+status = "missing"
+evidence = "grep 0 件 (rebound / glacial)"
+oracle_candidate = "粘性半無限の緩和時間 tau = 4 pi eta / (rho g lambda)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-051"
+axis = "lithosphere"
+item = "plate kinematics on a sphere (Euler poles, relative plate velocities, triple junctions)"
+source = "Cox-Hart, Plate Tectonics; GPlates"
+status = "missing"
+evidence = "grep 0 件 (euler pole の板運動)"
+oracle_candidate = "回転極からの角距離で速さ omega R sin(Delta)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-052"
+axis = "geomagnetism"
+item = "geocentric axial or tilted dipole field in Earth units with inclination, declination and intensity"
+source = "Merrill-McElhinny-McFadden ch.2; Campbell, Introduction to Geomagnetic Fields"
+status = "missing"
+evidence = "閉形式の双極子は src/electromagnetic.rs::EmSource (COV-EM-065) にあるが、地球の双極子モーメント (約 8e22 A m^2、参照値要確認) と地球半径の 3 乗は src/math.rs::Fix128 の整数部の範囲 (約 9.2e18) を超えるので、SI 単位のまま地球規模では評価できない 単位の換算と地磁気の座標も無い"
+oracle_candidate = "tan I = 2 tan(磁気緯度)、赤道の強度は極の半分"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-053"
+axis = "geomagnetism"
+item = "IGRF / WMM spherical-harmonic synthesis (Schmidt semi-normalised associated Legendre functions, Gauss coefficients)"
+source = "IGRF-13 (Alken et al. 2021); NOAA WMM technical report"
+status = "missing"
+evidence = "grep 0 件 (legendre / igrf) 球面調和の部品は無く、COV-ORBIT-051 (重力の球面調和) と共通の部品になる"
+oracle_candidate = "IGRF の公表 test 値の数点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-054"
+axis = "geomagnetism"
+item = "secular variation (time interpolation and extrapolation of the coefficients)"
+source = "IGRF-13; WMM"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "5 年 epoch 間の線形内挿の端点一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-055"
+axis = "geomagnetism"
+item = "field components in local frames (X, Y, Z, H, F, D, I) with geodetic vs geocentric latitude"
+source = "WMM technical report"
+status = "missing"
+evidence = "grep 0 件 測地緯度は COV-ORBIT-083 (missing) が前提"
+oracle_candidate = "F^2 = X^2 + Y^2 + Z^2、D = atan2(Y, X) の恒等式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-056"
+axis = "geomagnetism"
+item = "magnetometer input: the geomagnetic field at a body's world position for the magnetometer sensor"
+source = "WMM; robotics simulators (Gazebo magnetometer plugin)"
+status = "missing"
+evidence = "COV-SENSE-044 (磁力計、missing) の入力側 センサ側は body frame への回転と hard / soft iron で、場は上の行から来る"
+oracle_candidate = "静止した body を yaw で回すと水平成分が回転し、F は不変"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-057"
+axis = "geomagnetism"
+item = "crustal magnetic anomalies of bodies (uniformly magnetised sphere and prism)"
+source = "Blakely, Potential Theory in Gravity and Magnetic Applications ch.5"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "一様磁化球の外部場は双極子と一致"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-058"
+axis = "geomagnetism"
+item = "geodynamo: MHD in a rotating spherical shell"
+source = "Christensen et al. 2001 dynamo benchmark; Glatzmaier-Roberts"
+status = "missing"
+evidence = "COV-COUPLE-052 (MHD、missing) の子 回転球殻の MHD は無い"
+oracle_candidate = "Christensen 2001 case 0 / 1 の運動・磁場エネルギーと drift 速度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-059"
+axis = "geodesy-gravity"
+item = "local tangent frames (east-north-up / north-east-down) from geodetic coordinates"
+source = "Vallado §3.2; Hofmann-Wellenhof, GNSS"
+status = "missing"
+evidence = "COV-ORBIT-083 (楕円体上の測地座標、missing) の子 球面世界の局所の上は COV-ORBIT-090 (球のみ)"
+oracle_candidate = "ENU の基底の直交性と、赤道・極での閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-060"
+axis = "geodesy-gravity"
+item = "geodesics on the reference ellipsoid (distance and azimuth, Vincenty / Karney)"
+source = "Karney 2013; GeographicLib"
+status = "missing"
+evidence = "grep 0 件 (vincenty / geodesic の楕円体)"
+oracle_candidate = "GeographicLib の test 集の数点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-061"
+axis = "geodesy-gravity"
+item = "map projections (transverse Mercator / UTM) between geodetic and grid coordinates"
+source = "Snyder, Map Projections - A Working Manual; PROJ"
+status = "missing"
+evidence = "grep 0 件 (utm / mercator) DEM の地理参照は COV-ENV-099 (missing)"
+oracle_candidate = "中央子午線上の縮尺係数 k0 と往復変換の誤差"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-062"
+axis = "geodesy-gravity"
+item = "gravity reductions and anomalies (free-air, Bouguer slab and terrain corrections)"
+source = "Heiskanen-Moritz ch.3; Hinze-von Frese-Saad, Gravity and Magnetic Exploration"
+status = "missing"
+evidence = "grep 0 件 (bouguer / free-air) 正規重力は COV-ORBIT-092 (missing)"
+oracle_candidate = "Bouguer 板の 2 pi G rho h と free-air 勾配 (約 0.3086 mGal/m、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-063"
+axis = "geodesy-gravity"
+item = "geoid undulation from the disturbing potential (Bruns formula)"
+source = "Heiskanen-Moritz ch.2"
+status = "missing"
+evidence = "grep 0 件 (geoid)"
+oracle_candidate = "N = T / gamma の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-064"
+axis = "geodesy-gravity"
+item = "forward gravity of prisms and polygons (Nagy rectangular prism, Talwani 2-D polygon)"
+source = "Nagy 1966; Talwani 1959; Blakely ch.9"
+status = "missing"
+evidence = "COV-ORBIT-093 (広がった・不規則な天体の重力、missing) の子 ここは探査規模の直方体と多角形断面"
+oracle_candidate = "細い prism が点質量に、厚い板が Bouguer 板に一致する極限"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-065"
+axis = "geodesy-gravity"
+item = "gravity inside the Earth from a radial density model (g(r) for PREM)"
+source = "Dziewonski-Anderson 1981; Turcotte-Schubert ch.5"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "一様密度の球の内部 g ∝ r (COV-ORBIT-093 の極限) と PREM の核マントル境界の値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-066"
+axis = "ocean-circulation"
+item = "seawater equation of state (linear with thermal expansion and haline contraction; EOS-80 / TEOS-10)"
+source = "IOC-SCOR-IAPSO 2010 (TEOS-10); UNESCO 1981 (EOS-80)"
+status = "missing"
+evidence = "grep 0 件 (salinity / teos) 海水の音速は音響の表の COV-ACOUS-014 (missing)"
+oracle_candidate = "TEOS-10 の check 値 (参照値要確認) と線形 EOS の偏微分"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-067"
+axis = "ocean-circulation"
+item = "Ekman transport in the ocean from the wind stress (transport 90 degrees to the wind) and coastal Ekman pumping"
+source = "Pedlosky, Ocean Circulation Theory ch.2; Vallis, Atmospheric and Oceanic Fluid Dynamics ch.5"
+status = "missing"
+evidence = "COV-ENV-092 (水面の風応力と吹送流、missing) と COV-ATMOS-021 (Ekman pumping) の子 海洋の体積輸送の行"
+oracle_candidate = "Ekman 輸送 = tau / (rho f) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-068"
+axis = "ocean-circulation"
+item = "Sverdrup balance (meridional transport from the wind-stress curl)"
+source = "Pedlosky ch.2; Stommel, The Gulf Stream"
+status = "missing"
+evidence = "grep 0 件 (sverdrup)"
+oracle_candidate = "beta V = curl(tau) / rho の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-069"
+axis = "ocean-circulation"
+item = "Stommel western intensification (bottom friction, closed-form gyre)"
+source = "Stommel 1948; Pedlosky ch.3"
+status = "missing"
+evidence = "grep 0 件 (stommel)"
+oracle_candidate = "Stommel の流線関数の閉形式と西岸境界層の幅 r / beta"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-070"
+axis = "ocean-circulation"
+item = "Munk western boundary layer (lateral friction, boundary-layer width)"
+source = "Munk 1950; Pedlosky ch.3"
+status = "missing"
+evidence = "grep 0 件 (munk)"
+oracle_candidate = "Munk 層の幅 (A_H / beta)^(1/3)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-071"
+axis = "ocean-circulation"
+item = "geostrophic currents from the density field (dynamic height, thermal wind in the ocean)"
+source = "Pond-Pickard, Introductory Dynamical Oceanography ch.8"
+status = "missing"
+evidence = "大気の温度風は COV-ENV-023 (missing) 海洋の密度場からの地衡流は grep 0 件"
+oracle_candidate = "密度の水平勾配が一定の時の鉛直シアの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-072"
+axis = "ocean-circulation"
+item = "thermohaline box model (Stommel two-box model, multiple equilibria and hysteresis)"
+source = "Stommel 1961; Vallis ch.21"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "2 箱 model の平衡解の分岐と hysteresis の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-073"
+axis = "ocean-circulation"
+item = "reduced-gravity and layered shallow-water ocean models on a beta-plane (equatorial Kelvin and Rossby waves)"
+source = "Gill, Atmosphere-Ocean Dynamics ch.11; Vallis ch.3"
+status = "missing"
+evidence = "大気の Rossby 波は COV-ATMOS-018、f / beta 平面は COV-ATMOS-011 浅水方程式は COV-ENV-090 (missing) 海洋の層 model は grep 0 件"
+oracle_candidate = "赤道 Kelvin 波の位相速度 sqrt(g' H) と東向き伝播"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-074"
+axis = "ocean-circulation"
+item = "coastal upwelling and coastally trapped Kelvin waves"
+source = "Gill ch.10; Pedlosky"
+status = "missing"
+evidence = "grep 0 件 (upwelling の海洋)"
+oracle_candidate = "沿岸 Kelvin 波の沖方向の減衰幅 = 変形半径"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-075"
+axis = "ocean-circulation"
+item = "ocean general circulation model (hydrostatic primitive equations, z / sigma / isopycnal coordinates, free surface)"
+source = "MOM6 / ROMS / NEMO (model descriptions); Griffies, Fundamentals of Ocean Climate Models"
+status = "missing"
+evidence = "grep 0 件 大気の方程式系は COV-ENV-025"
+oracle_candidate = "静止した成層海洋が静止のまま (sigma 座標の圧力勾配誤差の test)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-076"
+axis = "ocean-circulation"
+item = "vertical mixing parameterisations (KPP, Richardson-number dependent mixing)"
+source = "Large-McWilliams-Doney 1994 (KPP); Pacanowski-Philander 1981"
+status = "missing"
+evidence = "混合層の熱収支と entrainment は COV-ATMOS-103 / 104 ここは渦拡散係数の parameterisation grep 0 件"
+oracle_candidate = "Pacanowski-Philander の係数式の Ri 依存 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-077"
+axis = "ocean-circulation"
+item = "temperature, salinity and passive tracer transport in the ocean (advection-diffusion)"
+source = "Griffies ch.5"
+status = "missing"
+evidence = "汎用の移流拡散は COV-NUM-084 (行列の性質の行) 海洋の tracer 輸送は grep 0 件"
+oracle_candidate = "一様流での Gauss 分布の移流拡散の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-078"
+axis = "tides"
+item = "tide-generating potential and force of the Moon and the Sun (degree-2 expansion)"
+source = "Pugh-Woodworth, Sea-Level Science ch.3; Munk-Cartwright 1966"
+status = "missing"
+evidence = "COV-ORBIT-056 (固体・海洋潮汐と潮汐散逸、missing) の子 src で tide / tidal の grep 0 件"
+oracle_candidate = "起潮力の大きさ 2 G M a / d^3 と月・太陽の比 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-079"
+axis = "tides"
+item = "equilibrium tide height and its latitude dependence (semidiurnal, diurnal, long-period species)"
+source = "Pugh-Woodworth ch.3"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "平衡潮汐の振幅の緯度依存 (cos^2, sin 2phi, 3 sin^2 - 1)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-080"
+axis = "tides"
+item = "tidal prediction from harmonic constituents (M2, S2, N2, K1, O1 ... with nodal factors)"
+source = "Pugh-Woodworth ch.4; Foreman (IOS tidal package); UTide"
+status = "missing"
+evidence = "grep 0 件 (constituent / harmonic tide)"
+oracle_candidate = "分潮の周期 (天文引数の組み合わせ) と単一分潮の合成の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-081"
+axis = "tides"
+item = "harmonic analysis of a water-level record (least squares, Rayleigh criterion)"
+source = "Pugh-Woodworth ch.4; UTide / T_TIDE"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "既知の分潮から合成した記録を解析して振幅と位相を回収"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-082"
+axis = "tides"
+item = "solid-Earth tide and Love numbers (h, k, l)"
+source = "Munk-MacDonald, The Rotation of the Earth; IERS Conventions ch.7"
+status = "missing"
+evidence = "COV-ORBIT-056 の子 grep 0 件 (love number)"
+oracle_candidate = "一様弾性球の Love 数 (Kelvin の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-083"
+axis = "tides"
+item = "tidal propagation in channels and basins (co-oscillating tide, Kelvin waves, amphidromic points)"
+source = "Pugh-Woodworth ch.5; Taylor 1921"
+status = "missing"
+evidence = "浅水方程式 COV-ENV-090 (missing) の上に乗る 潮汐の境界強制と回転は grep 0 件"
+oracle_candidate = "閉じた 1-D 水路の共振周期 4L / sqrt(g h) (Merian)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-084"
+axis = "tides"
+item = "tidal currents (rectilinear and rotary currents, tidal ellipses)"
+source = "Pugh-Woodworth ch.5"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "u, v の分潮振幅と位相から楕円の長短軸 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-085"
+axis = "tides"
+item = "tidal flats and wetting / drying, tidal bores"
+source = "Chanson, The Hydraulics of Open Channel Flow (bores)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "段波の速さ (跳水の運動量保存の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-086"
+axis = "hydrology"
+item = "infiltration models (Horton, Green-Ampt, Philip)"
+source = "Chow-Maidment-Mays, Applied Hydrology ch.4"
+status = "missing"
+evidence = "grep 0 件 (infiltration)"
+oracle_candidate = "Green-Ampt の累積浸透量の陰的閉形式と Philip の t^(1/2) 項"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-087"
+axis = "hydrology"
+item = "rainfall excess by the SCS curve number and the rational method"
+source = "USDA NRCS TR-55; Chow-Maidment-Mays ch.5"
+status = "missing"
+evidence = "grep 0 件 (curve number / runoff)"
+oracle_candidate = "CN 法の Q = (P - 0.2S)^2 / (P + 0.8S) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-088"
+axis = "hydrology"
+item = "unit hydrograph and linear-reservoir routing (Nash cascade)"
+source = "Chow-Maidment-Mays ch.7; Nash 1957"
+status = "missing"
+evidence = "grep 0 件 (hydrograph)"
+oracle_candidate = "Nash cascade の瞬間単位図 = Gamma 分布の形 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-089"
+axis = "hydrology"
+item = "kinematic-wave overland flow on a plane"
+source = "Chow-Maidment-Mays ch.9; Woolhiser-Liggett 1967"
+status = "missing"
+evidence = "grep 0 件 (kinematic wave)"
+oracle_candidate = "一定降雨の斜面の平衡到達時間と上昇部の閉形式 (下の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-090"
+axis = "hydrology"
+item = "channel routing: Muskingum / Muskingum-Cunge and kinematic / diffusive wave"
+source = "Chow-Maidment-Mays ch.8-9; Cunge 1969"
+status = "missing"
+evidence = "grep 0 件 (muskingum)"
+oracle_candidate = "Muskingum の係数で流入 hydrograph の遅れと減衰 (線形系の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-091"
+axis = "hydrology"
+item = "1-D Saint-Venant equations in a channel network with cross sections (dynamic wave)"
+source = "Cunge-Holly-Verwey, Practical Aspects of Computational River Hydraulics; HEC-RAS unsteady"
+status = "missing"
+evidence = "COV-ENV-090 (地形上の 2-D 浅水方程式、missing) の子 断面形状を持つ 1-D 河道網は grep 0 件"
+oracle_candidate = "矩形水路の dam break (Ritter の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-092"
+axis = "hydrology"
+item = "open-channel hydraulics: Manning / Chezy friction, normal and critical depth, Froude number, rating curves"
+source = "Chow, Open-Channel Hydraulics ch.4-5; HEC-RAS"
+status = "missing"
+evidence = "grep 0 件 (manning / chezy / critical depth)"
+oracle_candidate = "広幅矩形水路の等流水深と限界水深の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-093"
+axis = "hydrology"
+item = "gradually varied flow profiles (standard step method, HEC-RAS steady flow)"
+source = "Chow ch.9-10; HEC-RAS steady"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "広幅水路の M1 / M2 背水曲線 (Bresse の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-094"
+axis = "hydrology"
+item = "hydraulic structures as internal boundaries (weirs, culverts, gates)"
+source = "HEC-RAS (inline structures); Chow ch.14"
+status = "missing"
+evidence = "grep 0 件 (weir / culvert)"
+oracle_candidate = "矩形せきの流量公式 Q = C b H^(3/2)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-095"
+axis = "hydrology"
+item = "reservoir and lake level-pool routing"
+source = "Chow-Maidment-Mays ch.8"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "線形の貯留と流出で指数の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-096"
+axis = "hydrology"
+item = "evapotranspiration (Penman-Monteith) and the catchment water balance"
+source = "Allen et al. 1998 (FAO-56)"
+status = "missing"
+evidence = "grep 0 件 (evapotranspiration / penman)"
+oracle_candidate = "FAO-56 の計算例 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-097"
+axis = "groundwater"
+item = "Darcy's law: hydraulic conductivity vs intrinsic permeability, specific discharge and seepage velocity"
+source = "Bear, Dynamics of Fluids in Porous Media ch.5; Freeze-Cherry, Groundwater ch.2"
+status = "missing"
+evidence = "grep 0 件 (darcy) Navier-Stokes の中の Darcy-Forchheimer 運動量源は COV-CFD-068 (missing)"
+oracle_candidate = "一様勾配の 1-D 流れの流量 Q = K A i"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-098"
+axis = "groundwater"
+item = "steady confined flow (Laplace equation for head) and the Thiem well equation"
+source = "Bear ch.8; Freeze-Cherry ch.5"
+status = "missing"
+evidence = "grep 0 件 (aquifer / thiem)"
+oracle_candidate = "Thiem の対数分布 h(r)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-099"
+axis = "groundwater"
+item = "transient confined flow (storativity, diffusion of head), Theis and Cooper-Jacob well solutions"
+source = "Theis 1935; Freeze-Cherry ch.8"
+status = "missing"
+evidence = "grep 0 件 (theis) src/transient_thermal.rs::crank_nicolson_step_1d は同じ拡散方程式だが熱伝導の solver で、地下水に数えない"
+oracle_candidate = "Theis の井戸関数 W(u) による水位低下 (下の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-100"
+axis = "groundwater"
+item = "unconfined aquifers (Dupuit-Forchheimer, Boussinesq aquifer equation, phreatic surface)"
+source = "Bear ch.8; Freeze-Cherry ch.5"
+status = "missing"
+evidence = "grep 0 件 (dupuit / phreatic)"
+oracle_candidate = "2 つの水位の間の Dupuit 放物線"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-101"
+axis = "groundwater"
+item = "block-centred finite-difference aquifer model with layers, wells, rivers and recharge (MODFLOW packages)"
+source = "Harbaugh 2005 (MODFLOW-2005); MODFLOW 6"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "一様涵養の帯水層の放物線水位 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-102"
+axis = "groundwater"
+item = "variably saturated flow: Richards equation"
+source = "Richards 1931; Celia-Bouloutas-Zarba 1990 (mass-conservative scheme); HYDRUS"
+status = "missing"
+evidence = "grep 0 件 (richards の浸透の意味; Richardson は大気と外挿の別語)"
+oracle_candidate = "Philip の浸透 (下の benchmark 行) と質量保存の誤差"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-103"
+axis = "groundwater"
+item = "soil-water retention and unsaturated conductivity (van Genuchten-Mualem, Brooks-Corey)"
+source = "van Genuchten 1980; Brooks-Corey 1964"
+status = "missing"
+evidence = "grep 0 件 (van genuchten / retention)"
+oracle_candidate = "van Genuchten の式の有効飽和度の往復と K(S_e) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-104"
+axis = "groundwater"
+item = "seepage with a free surface and seepage face (flow under and through dams, flow nets, exit gradient)"
+source = "Cedergren, Seepage, Drainage and Flow Nets; Harr, Groundwater and Seepage"
+status = "missing"
+evidence = "grep 0 件 (seepage) 浸透破壊 (piping, heave) の判定は地盤の表の行"
+oracle_candidate = "矢板の下の浸透の等角写像の閉形式 (Harr)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-105"
+axis = "groundwater"
+item = "solute transport: advection-dispersion with retardation and first-order decay"
+source = "Bear ch.10; Zheng-Bennett, Applied Contaminant Transport Modeling (MT3DMS)"
+status = "missing"
+evidence = "grep 0 件 (dispersivity / retardation)"
+oracle_candidate = "Ogata-Banks (下の benchmark 行)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-106"
+axis = "groundwater"
+item = "density-dependent flow and saltwater intrusion (Ghyben-Herzberg, variable-density flow)"
+source = "Bear ch.9; SEAWAT"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "Ghyben-Herzberg 界面の深さ = 40 h (密度比 1.025 の時、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-107"
+axis = "groundwater"
+item = "heat transport in aquifers (conduction-advection in porous media, geothermal doublets)"
+source = "Bear ch.10; Diersch, FEFLOW"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "一様流での熱の遅れ係数 (熱容量比) と熱前線の位置"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-108"
+axis = "sediment"
+item = "particle settling velocity (Stokes, Dietrich / Ferguson-Church)"
+source = "Dietrich 1982; Ferguson-Church 2004; Garcia (ed.), Sedimentation Engineering ch.2"
+status = "missing"
+evidence = "grep 0 件 (settling) 気泡・液滴の終端速度は COV-MULTIPHASE-061 (missing)"
+oracle_candidate = "細粒の極限で Stokes の w = (s - 1) g d^2 / (18 nu)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-109"
+axis = "sediment"
+item = "incipient motion: Shields parameter and critical bed shear stress"
+source = "Shields 1936; Garcia ch.2"
+status = "missing"
+evidence = "grep 0 件 (shields)"
+oracle_candidate = "Shields 曲線の数点 (Brownlie の近似式、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-110"
+axis = "sediment"
+item = "bedload transport formulas (Meyer-Peter Mueller, Einstein)"
+source = "Meyer-Peter-Mueller 1948; Wong-Parker 2006; Garcia ch.2"
+status = "missing"
+evidence = "grep 0 件 (bedload)"
+oracle_candidate = "MPM 式の q* = 8 (tau* - 0.047)^1.5 (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-111"
+axis = "sediment"
+item = "suspended load (Rouse concentration profile, advection-diffusion with settling)"
+source = "Rouse 1937; Garcia ch.2"
+status = "missing"
+evidence = "grep 0 件 (rouse / suspended)"
+oracle_candidate = "平衡状態の Rouse 分布の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-112"
+axis = "sediment"
+item = "Exner equation for bed elevation coupled to the shallow-water flow (river morphodynamics)"
+source = "Exner 1925; Parker, 1D Sediment Transport Morphodynamics; Delft3D / TELEMAC-SISYPHE"
+status = "missing"
+evidence = "COV-FRACT-090 (容量・堆積・水路形成のゲーム型の水食、missing) の子 ここは流砂量の発散で河床が変わる物理の式 grep 0 件 (exner)"
+oracle_candidate = "一様流で河床の微小擾乱が流砂の波速で移流 (線形化 Exner の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-113"
+axis = "sediment"
+item = "soil loss by rainfall (USLE / RUSLE)"
+source = "Wischmeier-Smith 1978; Renard et al. 1997"
+status = "missing"
+evidence = "grep 0 件 (usle)"
+oracle_candidate = "A = R K LS C P の係数の積 (例題、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-114"
+axis = "sediment"
+item = "coastal sediment transport (longshore transport, CERC formula, equilibrium beach profile)"
+source = "Coastal Engineering Manual (USACE) III-2; Dean 1991"
+status = "missing"
+evidence = "grep 0 件 (longshore)"
+oracle_candidate = "Dean の平衡断面 h = A y^(2/3)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-115"
+axis = "benchmark"
+item = "Lamb's problem: surface response of an elastic half-space to a point or line load"
+source = "Lamb 1904; Pekeris 1955"
+status = "missing"
+evidence = "src/dynamic_fem.rs::TransientSolver で場面は組めるが吸収境界 (上の seismic-numerics の行) が無く、突合 test は無い"
+oracle_candidate = "表面の P 波・S 波・Rayleigh 波の到達時刻と Rayleigh 極の振幅 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-116"
+axis = "benchmark"
+item = "layer over a half-space (LOH.1) seismograms"
+source = "SCEC / SPICE code-validation (Day et al. 2001)"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "公表の参照波形 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-117"
+axis = "benchmark"
+item = "1-D site amplification of a uniform damped layer on elastic bedrock"
+source = "Kramer ch.7"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "弾性基盤の増幅の閉形式 (インピーダンス比と減衰比の関数)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-118"
+axis = "benchmark"
+item = "Blankenbach mantle-convection benchmark (Nu and v_rms at Ra = 1e4, 1e5, 1e6, and with variable viscosity)"
+source = "Blankenbach et al. 1989"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "公表の Nu と v_rms (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-119"
+axis = "benchmark"
+item = "Christensen geodynamo benchmark (case 0, case 1)"
+source = "Christensen et al. 2001"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "運動・磁場エネルギーと drift 周波数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-120"
+axis = "benchmark"
+item = "Stommel gyre: numerical barotropic model against the closed-form stream function"
+source = "Stommel 1948"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "閉形式の流線関数との L2 誤差の収束次数"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-121"
+axis = "benchmark"
+item = "Theis well drawdown vs time and distance"
+source = "Theis 1935"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "W(u) の級数による閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-122"
+axis = "benchmark"
+item = "Philip infiltration (sorptivity and cumulative infiltration vs time) against a Richards solution"
+source = "Philip 1957"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "短時間の I = S t^(1/2) (sorptivity は土の参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-123"
+axis = "benchmark"
+item = "Ogata-Banks 1-D advection-dispersion"
+source = "Ogata-Banks 1961"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "erfc の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-124"
+axis = "benchmark"
+item = "Henry saltwater intrusion problem"
+source = "Henry 1964; Simpson-Clement 2004"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "公表の等濃度線 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-GEO-125"
+axis = "benchmark"
+item = "kinematic-wave overland flow on a plane (rising limb and equilibrium time)"
+source = "Chow-Maidment-Mays ch.9"
+status = "missing"
+evidence = "grep 0 件"
+oracle_candidate = "平衡到達時間 t_e と上昇部の閉形式"
+limitation = ""
