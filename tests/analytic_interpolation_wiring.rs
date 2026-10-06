@@ -12,11 +12,9 @@
 //!   line rather than clamping or erroring, because the formula has no
 //!   branch on `t`.
 //! * **`lerp_vec3`** is `lerp_fix128` applied componentwise.
-//! * **`slerp` is NLERP, not geometric SLERP** (read from the module: no
-//!   `acos`/`sin` appear in it). Its closed form is: `dot = a·b`; if
-//!   `dot < 0`, negate every component of `b` (shortest-path fix); then
-//!   `raw = lerp(a, b, t)` componentwise; if `|raw|² = 0` return `IDENTITY`;
-//!   otherwise return `raw / |raw|`.
+//! * **`slerp`** is geometric SLERP along the shorter arc (`dot < 0`
+//!   negates `b`), with NLERP (`raw = lerp(a, b, t)`, `raw / |raw|`, or
+//!   `IDENTITY` for `|raw|² = 0`) for nearly equal rotations (`dot > 0.999`).
 //! * **`BodySnapshot::from_body`** copies exactly `position`, `rotation`,
 //!   `velocity` from a `RigidBody` — nothing else (mass, friction, etc. are
 //!   not part of the snapshot).
@@ -48,12 +46,11 @@
 //! * `slerp` of two quaternions that are component-wise negatives of each
 //!   other (the classic antipodal case) takes the `dot < 0` branch, which
 //!   flips `b` back to `a`, so the result is `a` exactly — not `NaN`.
-//! * `slerp` of two quaternions with `dot == 0` (geometrically 180° apart
-//!   for true SLERP, where the axis is undefined and a `sin`-based formula
-//!   divides `0/0`): NLERP has no such singularity; it lerps and
-//!   normalizes like any other case.
+//! * `slerp` of two quaternions with `dot == 0` (180° apart as rotations
+//!   of the 4D sphere, a 180° rotation of the frame): `sin θ = 1`, so the
+//!   sine ratio has no singularity; the halfway point is `(a + b)/√2`.
 //! * `slerp((0,0,0,0), (0,0,0,0), t)`: the lerp is `(0,0,0,0)` for every
-//!   `t`, so `|raw|² = 0` and the function returns `IDENTITY` rather than
+//!   `t` (and the sine-weighted sum is zero too), so the function returns `IDENTITY` rather than
 //!   dividing by zero / producing `NaN`.
 //! * Extreme `Fix128` magnitudes (`i64::MAX` scaled by an extrapolating
 //!   `t`): `Fix128::mul`/`Fix128::add` are explicitly wrapping (`wrapping_add`
@@ -152,7 +149,7 @@ fn lerp_fix128_extreme_magnitude_wraps_per_fix128_semantics_no_panic() {
 }
 
 // ---------------------------------------------------------------------------
-// slerp (NLERP)
+// slerp
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -244,11 +241,8 @@ fn slerp_antipodal_double_cover_flips_back_to_a_not_nan() {
 
 #[test]
 fn slerp_orthogonal_quaternions_dot_zero_no_flip_no_nan() {
-    // Geometrically, dot == 0 is the "180 degrees apart" case for a true
-    // acos/sin-based SLERP (undefined axis, 0/0 in the sin ratio). NLERP
-    // has no such singularity: dot == 0 does not satisfy `dot < 0`, so
-    // there is no flip, and the lerp + normalize proceeds like any other
-    // input.
+    // dot == 0: theta = pi/2 in quaternion space, sin(theta) = 1, no flip.
+    // SLERP at t = 1/2 weights both by sin(pi/4) = 1/sqrt(2): (a + b)/sqrt(2)
     let a = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, Fix128::ONE);
     let b = QuatFix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
     assert_eq!(
@@ -256,32 +250,16 @@ fn slerp_orthogonal_quaternions_dot_zero_no_flip_no_nan() {
         Fix128::ZERO,
         "fixture must have dot(a,b) == 0"
     );
-    let t = Fix128::from_ratio(1, 2);
-
-    let result = catch_unwind(AssertUnwindSafe(|| slerp(a, b, t)));
+    let result = catch_unwind(AssertUnwindSafe(|| slerp(a, b, Fix128::from_ratio(1, 2))));
     let got = result.expect("dot == 0 must not panic or produce NaN-equivalent state");
-
-    // independent closed form: raw = (0.5, 0, 0, 0.5), |raw| = sqrt(0.5),
-    // normalized = raw / |raw|, evaluated with bare Fix128 operators.
-    let raw = QuatFix::new(
-        Fix128::from_ratio(1, 2),
-        Fix128::ZERO,
-        Fix128::ZERO,
-        Fix128::from_ratio(1, 2),
-    );
-    let len = (raw.x * raw.x + raw.y * raw.y + raw.z * raw.z + raw.w * raw.w).sqrt();
-    assert!(
-        !len.is_zero(),
-        "sanity: dot==0 case must not degenerate to zero length"
-    );
-    let inv_len = Fix128::ONE / len;
-    let expected = QuatFix::new(
-        raw.x * inv_len,
-        raw.y * inv_len,
-        raw.z * inv_len,
-        raw.w * inv_len,
-    );
-    assert_eq!(got, expected);
+    let h = core::f64::consts::FRAC_1_SQRT_2;
+    for (g, w) in [(got.x, h), (got.y, 0.0), (got.z, 0.0), (got.w, h)] {
+        assert!((g.to_f64() - w).abs() < 1e-12, "{got:?}");
+    }
+    // t = 1/3 sweeps a third of the quarter turn: (x, w) = (sin(pi/6), cos(pi/6)) = (1/2, sqrt(3)/2)
+    let got = slerp(a, b, Fix128::from_ratio(1, 3));
+    assert!((got.x.to_f64() - 0.5).abs() < 1e-12);
+    assert!((got.w.to_f64() - 3.0f64.sqrt() / 2.0).abs() < 1e-12);
 }
 
 #[test]

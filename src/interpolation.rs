@@ -179,26 +179,53 @@ pub fn lerp_fix128(a: Fix128, b: Fix128, t: Fix128) -> Fix128 {
     a * (Fix128::ONE - t) + b * t
 }
 
-/// Spherical linear interpolation for quaternions
+/// Spherical linear interpolation for quaternions: constant angular velocity
+/// along the shorter arc (`b` is negated when `a · b < 0`).
 ///
-// LIMITATION(COV-ENGINE-047): Uses NLERP (normalized linear interpolation) which is deterministic
-/// Uses NLERP (normalized linear interpolation) which is deterministic
-/// and provides near-identical results to SLERP for interpolation.
-/// NLERP is preferred for fixed-point as it avoids acos/sin.
+/// `θ = atan2(√(1 − d²), d)` with `d = a · b`, and
+/// `slerp = (sin((1 − t)θ)·a + sin(tθ)·b) / sin θ`, renormalised. Every step
+/// (`atan2`, `sin`, `sqrt`) is the crate's deterministic `Fix128` arithmetic.
+/// For nearly equal rotations (`d > 0.999`, under about 5°) the sine ratio
+/// loses precision and NLERP is used instead (its angle differs from SLERP's
+/// by under 1e-4°). Inputs are expected to be unit quaternions; two zero
+/// quaternions give the identity.
 #[must_use]
 pub fn slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
-    // Compute dot product
-    let dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
+    let mut dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
 
     // Ensure shortest path
     let b = if dot < Fix128::ZERO {
+        dot = -dot;
         QuatFix::new(-b.x, -b.y, -b.z, -b.w)
     } else {
         b
     };
 
-    // Use NLERP for deterministic fixed-point interpolation
-    nlerp(a, b, t)
+    if dot > Fix128::from_ratio(999, 1000) {
+        return nlerp(a, b, t);
+    }
+
+    // theta = acos(dot) via atan2(sqrt(1 - dot^2), dot)
+    let one_minus_dot_sq = Fix128::ONE - dot * dot;
+    let sin_theta = if one_minus_dot_sq.is_negative() {
+        Fix128::ZERO
+    } else {
+        one_minus_dot_sq.sqrt()
+    };
+    if sin_theta.is_zero() {
+        return nlerp(a, b, t);
+    }
+    let theta = Fix128::atan2(sin_theta, dot);
+    let s0 = ((Fix128::ONE - t) * theta).sin() / sin_theta;
+    let s1 = (t * theta).sin() / sin_theta;
+    let result = QuatFix::new(
+        a.x * s0 + b.x * s1,
+        a.y * s0 + b.y * s1,
+        a.z * s0 + b.z * s1,
+        a.w * s0 + b.w * s1,
+    );
+    // `normalize` returns the identity for a zero-length result (zero inputs)
+    result.normalize()
 }
 
 /// Normalized linear interpolation (NLERP) — faster approximate SLERP

@@ -396,55 +396,9 @@ impl AnimationBlender {
 // ============================================================================
 
 /// Spherical linear interpolation between two quaternions
+/// ([`crate::interpolation::slerp`], the one implementation in the crate).
 fn quat_slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
-    let mut dot = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w;
-
-    // Ensure shortest path
-    let b = if dot < Fix128::ZERO {
-        dot = -dot;
-        QuatFix::new(-b.x, -b.y, -b.z, -b.w)
-    } else {
-        b
-    };
-
-    // If quaternions are very close, use NLERP (faster, avoids division by near-zero)
-    if dot > Fix128::from_ratio(999, 1000) {
-        let one_minus_t = Fix128::ONE - t;
-        return QuatFix::new(
-            a.x * one_minus_t + b.x * t,
-            a.y * one_minus_t + b.y * t,
-            a.z * one_minus_t + b.z * t,
-            a.w * one_minus_t + b.w * t,
-        )
-        .normalize();
-    }
-
-    // Full SLERP: theta = acos(dot) via atan2(sqrt(1 - dot^2), dot)
-    let one_minus_dot_sq = Fix128::ONE - dot * dot;
-    // Clamp to avoid negative values from numerical error
-    let sin_half = if one_minus_dot_sq.is_negative() {
-        Fix128::ZERO
-    } else {
-        one_minus_dot_sq.sqrt()
-    };
-    let theta = Fix128::atan2(sin_half, dot);
-    let sin_theta = sin_half;
-
-    if sin_theta.is_zero() {
-        return a;
-    }
-
-    let one_minus_t = Fix128::ONE - t;
-    let s0 = (one_minus_t * theta).sin() / sin_theta;
-    let s1 = (t * theta).sin() / sin_theta;
-
-    QuatFix::new(
-        a.x * s0 + b.x * s1,
-        a.y * s0 + b.y * s1,
-        a.z * s0 + b.z * s1,
-        a.w * s0 + b.w * s1,
-    )
-    .normalize()
+    crate::interpolation::slerp(a, b, t)
 }
 
 // ============================================================================
