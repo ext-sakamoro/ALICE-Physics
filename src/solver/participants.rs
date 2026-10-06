@@ -7,7 +7,10 @@
 //! for XPBD and TGS, [`PhysicsWorld::try_step_parallel`],
 //! [`PhysicsWorld::step_with_bridge`]) at the start of each substep, before
 //! the substep body. Per substep, with `h = dt / substeps` (a [`Fix128`]
-//! division on every path):
+//! division) on XPBD, the parallel path and the bridge, and under
+//! [`super::SolverBackend::Tgs`] the width the TGS solve itself uses,
+//! `dt · from_f32(1 / substeps)` (equal to `dt / substeps` when `substeps`
+//! is a power of two, otherwise it can differ in the last bits):
 //!
 //! 1. [`run_substep`] calls the participants in their run order with the
 //!    bodies as they are at the start of the substep and commits the staged
@@ -29,6 +32,11 @@
 //! With no participant registered none of this runs: the step is the one it
 //! was before participants existed, bit for bit, and no fault is recorded
 //! (the overflow flag then stays a flag, as it always was).
+//!
+//! Participants that stage nothing (no force, no torque, no field) leave the
+//! bodies bit for bit as in the same world without them, for every substep
+//! count and on every path: that is why TGS hands its own width to the
+//! participants instead of `dt / substeps`.
 //!
 //! Participants exist only with the `std` feature (they are held behind a
 //! [`std::sync::Mutex`] so that the world stays `Sync` while a participant
@@ -352,7 +360,10 @@ impl PhysicsWorld {
     /// In order: while a fault is recorded the step is refused
     /// ([`StepError::Faulted`]) and the world is unchanged; a non-positive
     /// `dt` changes nothing and is `Ok`; every participant's step rule is
-    /// checked against `h = dt / substeps` ([`StepError::Rule`]) and every
+    /// checked against the substep width `h` the participants are handed
+    /// (`dt / substeps`, or the TGS width under
+    /// [`super::SolverBackend::Tgs`], see the module documentation;
+    /// [`StepError::Rule`]) and every
     /// [`FieldLayout::PerBody`] field against the body count
     /// ([`StepError::BodyCount`]), refused unchanged. Then the step runs (see
     /// the module documentation of [`crate::world_participant`] and
@@ -404,7 +415,7 @@ impl PhysicsWorld {
         {
             let list = self.lock_participants();
             if !list.is_empty() {
-                let h = dt / Fix128::from_int(self.config.substeps as i64);
+                let h = self.participant_substep_width(dt);
                 for (index, p) in list.iter().enumerate() {
                     p.step_rule()
                         .steps_per_substep(h)
@@ -425,6 +436,22 @@ impl PhysicsWorld {
             }
         }
         Ok(true)
+    }
+
+    /// The substep width `h` participants are handed for a step of `dt`:
+    /// `dt / substeps` (a [`Fix128`] division) on the XPBD, parallel and
+    /// bridge paths, and under [`super::SolverBackend::Tgs`] the width the
+    /// TGS solve itself uses, `dt · from_f32(1 / substeps)`, which can differ
+    /// from `dt / substeps` in the last bits when `substeps` is not a power of
+    /// two. Zero substeps give `dt / 0` on every backend, which every step
+    /// rule refuses.
+    pub(super) fn participant_substep_width(&self, dt: Fix128) -> Fix128 {
+        let substeps = self.config.substeps;
+        #[cfg(feature = "std")]
+        if substeps > 0 && matches!(self.config.solver_backend, super::SolverBackend::Tgs) {
+            return dt * Fix128::from_f32(1.0 / substeps as f32);
+        }
+        dt / Fix128::from_int(substeps as i64)
     }
 
     /// One `false` per registered participant: the participants that failed
