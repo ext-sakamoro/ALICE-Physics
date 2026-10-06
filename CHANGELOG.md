@@ -167,6 +167,7 @@ were introduced during that release window.
 
 ### Changed
 
+- CI: `bench-gate.yml` を追加 Valgrind (Callgrind、gungraun) で数えた命令数を、変更と基点の commit について同じ job で測り、2% を超えて増えたベンチマークがあれば失敗する 命令数は runner の負荷で変わらないので比較が成り立つ (時間計測の criterion 比較は quality-deep.yml で情報表示のまま) 対象は `benches/instruction_counts.rs` (接触ありの world step / BVH の構築と問い合わせ / 固定小数点演算) Linux 専用の dev-dependency `gungraun` を追加
 - CI: 変異試験を gate にした src を変える push (main と ci/**) では変更行だけを変異させ (`cargo mutants --in-diff`)、見逃しがあれば失敗する 週次の core shard は見逃し一覧を `scripts/mutants-missed-baseline.txt` と比べ、新たな見逃しと、基準に載っているのに捕まるようになった変異を失敗にする (`scripts/mutants_ratchet.py`、行番号を除いて比べるので他所の編集でずれない) 初期の基準は直近の週次実行 (614 件)
 - CI: Security workflow の coverage job を情報表示から gate に変えた `scripts/line_coverage_ratchet.py` が `cargo llvm-cov --lib` の行カバレッジを `scripts/line-coverage-baseline.txt` と比べ、全体で 0.1 pt を超えて下がるか、50 行以上の file が 2 pt を超えて下がると失敗する (全体の伸びで 1 file の低下が隠れない) 上がった分は `--write` で基準に記録する
 - CI: `unsafe-and-parallel.yml` を追加 並列 step の raw pointer (src/solver.rs) と並列処理に関わる file を変える push で、Miri (未定義動作) と loom (スレッドの全交互実行) を実行する これまでは週次 (quality-deep.yml) だけだった

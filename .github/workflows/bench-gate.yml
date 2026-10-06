@@ -1,0 +1,81 @@
+name: Bench gate (instruction counts)
+
+# Instruction counts (Valgrind / Callgrind through gungraun) do not move with the
+# load of the runner, so the change and its base commit are measured in the same
+# job and compared directly: a benchmark whose instruction count rises by more
+# than the limit fails the job. quality-deep.yml keeps the wall-clock criterion
+# comparison as information only, because wall-clock time on shared runners
+# does not repeat.
+on:
+  push:
+    branches: [main, 'ci/**']
+    paths:
+      - 'src/**'
+      - 'benches/instruction_counts.rs'
+      - 'Cargo.toml'
+      - '.github/workflows/bench-gate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # the `gungraun` dev-dependency and the runner binary must be the same version
+  GUNGRAUN_VERSION: 0.20.0
+  LIMIT: ir=2%
+
+jobs:
+  instruction-counts:
+    name: Instruction counts (base vs change, limit 2% Ir)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: bench-gate
+      - name: Install Valgrind
+        run: sudo apt-get update && sudo apt-get install -y valgrind
+      - name: Install gungraun-runner
+        run: cargo install gungraun-runner --version "$GUNGRAUN_VERSION" --locked
+      - name: Choose the base commit
+        id: base
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            base="$BEFORE"
+          else
+            base=$(git merge-base origin/main HEAD)
+          fi
+          echo "sha=$base" >> "$GITHUB_OUTPUT"
+          echo "base commit: $base"
+      # the base is measured in its own checkout but writes its baseline into the
+      # same target directory, where the change's run reads it
+      - name: Measure the base commit
+        id: measure-base
+        run: |
+          git worktree add /tmp/base "${{ steps.base.outputs.sha }}"
+          if [ ! -f /tmp/base/benches/instruction_counts.rs ]; then
+            echo "has_bench=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::the base commit has no instruction-count bench yet; only the change is measured"
+            exit 0
+          fi
+          echo "has_bench=true" >> "$GITHUB_OUTPUT"
+          cd /tmp/base
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/target" cargo bench --bench instruction_counts -- --save-baseline=base
+      - name: Measure the change and compare
+        run: |
+          if [ "${{ steps.measure-base.outputs.has_bench }}" = true ]; then
+            # exit 3 = a count rose past the limit
+            cargo bench --bench instruction_counts -- --baseline=base --callgrind-limits="$LIMIT"
+          else
+            cargo bench --bench instruction_counts
+          fi

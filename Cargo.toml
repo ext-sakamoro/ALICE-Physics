@@ -77,6 +77,9 @@ alice-analytics = { version = "0.1", optional = true, default-features = false, 
 # gated on `std`.
 alice-det-math = { version = "0.3", default-features = false }
 
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gungraun = "0.20"
+
 [dev-dependencies]
 tempfile = "3.10"
 criterion = { version = "0.5", default-features = false }
@@ -624,6 +627,14 @@ harness = false
 [[bench]]
 name = "world_scale"
 harness = false
+
+# Instruction counts under Valgrind (gungraun): deterministic, so a CI job can
+# compare a change with its base commit on the same runner and fail on a
+# regression (.github/workflows/bench-gate.yml). Linux only (Valgrind).
+[[bench]]
+name = "instruction_counts"
+harness = false
+required-features = ["std"]
 
 [profile.release]
 opt-level = 3
