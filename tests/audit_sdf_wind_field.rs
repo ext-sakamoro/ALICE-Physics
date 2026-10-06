@@ -122,7 +122,7 @@ fn spherical_obstacle_shelter_on_the_axes() {
 /// gives zero wind there. The limit decay -> 0+ and the module's statement
 /// that inside points get no wind both say zero.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-001: decay_scale_m = 0 returns full base wind (10 m/s) inside the obstacle (d = -1) while decay 1e-30 returns 0"]
+// AUD-A-S6W1-001
 fn zero_decay_scale_still_blocks_wind_inside_the_obstacle() {
     let sdf = wall();
     let mut tiny = SdfWindField::new(&sdf, [1.0, 0.0, 0.0], 10.0);
@@ -136,7 +136,7 @@ fn zero_decay_scale_still_blocks_wind_inside_the_obstacle() {
 /// A NaN distance from the SDF is turned into zero wind (`f32::max(NaN, 0.0)`
 /// returns 0.0), so a broken SDF reads as still air instead of surfacing.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-002: NaN SDF distance is masked to zero wind (finite 0.0) instead of propagating"]
+// AUD-A-S6W1-002
 fn nan_sdf_distance_is_not_masked_as_still_air() {
     let bad = ClosureSdf::new(|_x, _y, _z| f32::NAN, |_x, _y, _z| (0.0, 1.0, 0.0));
     let f = SdfWindField::new(&bad, [1.0, 0.0, 0.0], 10.0);
@@ -162,4 +162,6 @@ fn zero_decay_scale_on_the_surface_is_finite() {
     f.decay_scale_m = 0.0;
     let v = f.sample([0.0, 0.0, 0.0]);
     assert!(v.iter().all(|c| c.is_finite()), "{v:?}");
+    // the ramp's limit at d = 0 is clamp(0 / scale) = 0 for every scale > 0
+    assert_eq!(v, [0.0, 0.0, 0.0]);
 }

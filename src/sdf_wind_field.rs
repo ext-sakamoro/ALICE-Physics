@@ -32,7 +32,9 @@ pub struct SdfWindField<'a, F: SdfField + ?Sized> {
     /// Nominal wind speed at distances `>= decay_scale`.
     pub base_speed_m_s: f32,
     /// Distance scale over which the shelter attenuation ramps from
-    /// 0 → 1. Typical: 5 m for building-scale geometry.
+    /// 0 → 1. Typical: 5 m for building-scale geometry. A scale `<= 0` is the
+    /// sharp limit of the ramp: full wind outside the obstacle (`d > 0`), none
+    /// on its surface or inside.
     pub decay_scale_m: f32,
 }
 
@@ -48,16 +50,24 @@ impl<'a, F: SdfField + ?Sized> SdfWindField<'a, F> {
     }
 
     /// Sample the wind velocity at `position` (m).
+    ///
+    /// The wind is `base_speed · clamp(d / decay_scale, 0, 1)` along
+    /// `base_direction`, `d` the SDF distance (zero inside the obstacle). A NaN
+    /// distance (a broken SDF) gives a NaN wind rather than still air.
     #[must_use]
     pub fn sample(&self, position: [f32; 3]) -> [f32; 3] {
-        let d = self
-            .sdf
-            .distance(position[0], position[1], position[2])
-            .max(0.0);
-        let shelter = if self.decay_scale_m <= 0.0 {
-            1.0
+        let d = self.sdf.distance(position[0], position[1], position[2]);
+        let shelter = if d.is_nan() {
+            f32::NAN
+        } else if self.decay_scale_m <= 0.0 {
+            // the limit of the ramp as the scale goes to 0+
+            if d > 0.0 {
+                1.0
+            } else {
+                0.0
+            }
         } else {
-            (d / self.decay_scale_m).clamp(0.0, 1.0)
+            (d.max(0.0) / self.decay_scale_m).clamp(0.0, 1.0)
         };
         let scale = self.base_speed_m_s * shelter;
         [
