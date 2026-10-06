@@ -6,27 +6,23 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4607 |
-| 🔴 Red by design | 208 |
+| 🟢 Not ignored (run by CI) | 4639 |
+| 🔴 Red by design | 204 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4840** |
+| **Total** | **4868** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (208)
+## 🔴 Red by design (204)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
 - `a_zero_dt_update_does_not_cancel_a_return_to_animation` (audit_animation_blend.rs) — known defect: AUD-A-S2W3-011: mirror case, go_animated() from full ragdoll then update(dt = 0) flips mode to R…
 - `a_zero_dt_update_does_not_cancel_a_started_transition` (audit_animation_blend.rs) — known defect: AUD-A-S2W3-011: go_ragdoll() then update(dt = 0) (or transition_speed 0) flips mode Blend -> Ani…
-- `aabb_half_extent_along_symmetry_axis_is_minor_radius` (audit_torus.rs) — known defect: AUD-A-S5W3-001: Torus::aabb is not tight along the symmetry axis (R=5, r=1, identity: Y half ext…
 - `aabb_of_a_negative_spacing_field_is_not_inverted` (audit_heightfield.rs) — known defect: AUD-A-S4W3-007: HeightField::new accepts spacing <= 0 (debug_assert checks only the length); col…
-- `aabb_of_a_rotated_sphere_is_tight` (audit_ellipsoid.rs) — known defect: AUD-A-S5W2-006: aabb sums |R_ij r_j| instead of the exact half-extent sqrt(sum (R_ij r_j)^2); a …
-- `aabb_of_a_tilted_ellipsoid_equals_the_exact_extent` (audit_ellipsoid.rs) — known defect: AUD-A-S5W2-006: aabb is conservative by up to sqrt(3) (see aabb_of_a_rotated_sphere_is_tight): r…
-- `aabb_of_an_upright_cone_is_tight_along_the_axis` (audit_cone.rs) — known defect: AUD-A-S4W3-013: Cone::aabb is conservative, not tight: along the cone axis it adds the base radi…
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
 - `applied_cycles_above_i64_max_do_not_flip_the_damage_sign` (audit_fatigue.rs) — known defect: AUD-A-S4W2-007: n as i64 で n > i64::MAX が負に wrap し damage が負になる (n = u64::MAX -> D < 0)
@@ -283,7 +279,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4607)
+## 🟢 Not ignored (4639)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -337,6 +333,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_neural_wiring.rs` | 21 |
 | `analytic_rope_wiring.rs` | 21 |
 | `analytic_vehicle_dynamics.rs` | 21 |
+| `audit_torus.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
 | `analytic_joint_extra_wiring.rs` | 20 |
@@ -344,7 +341,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_wave_ship_wiring.rs` | 20 |
 | `audit_pipeline.rs` | 20 |
 | `audit_print_pipeline_solver.rs` | 20 |
-| `audit_torus.rs` | 20 |
 | `analytic_compressible_wiring.rs` | 19 |
 | `analytic_debug_render_wiring.rs` | 19 |
 | `analytic_elastoplastic_fem.rs` | 19 |
@@ -377,6 +373,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_nbody.rs` | 17 |
 | `analytic_phase_change_wiring.rs` | 17 |
 | `audit_anomaly.rs` | 17 |
+| `audit_cone.rs` | 17 |
 | `audit_coupled_field.rs` | 17 |
 | `audit_cubic_elastic_fem.rs` | 17 |
 | `audit_neural.rs` | 17 |
@@ -396,7 +393,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_audio_physics.rs` | 16 |
 | `audit_bimaterial.rs` | 16 |
 | `audit_ccd.rs` | 16 |
-| `audit_cone.rs` | 16 |
 | `audit_interpolation.rs` | 16 |
 | `audit_maxwell_fdtd.rs` | 16 |
 | `analytic_articulation_wiring.rs` | 15 |
@@ -408,6 +404,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_body_collider.rs` | 15 |
 | `analytic_self_contact.rs` | 15 |
 | `analytic_thermoplastic_coupling.rs` | 15 |
+| `audit_ellipsoid.rs` | 15 |
 | `audit_sdf_force.rs` | 15 |
 | `analytic_collision_mesh.rs` | 14 |
 | `analytic_convex_decompose.rs` | 14 |
@@ -448,7 +445,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sketch_wiring.rs` | 13 |
 | `audit_box_collider.rs` | 13 |
 | `audit_dynamic_fem.rs` | 13 |
-| `audit_ellipsoid.rs` | 13 |
 | `audit_flow_viz.rs` | 13 |
 | `audit_gpu_sdf.rs` | 13 |
 | `audit_sdf_fem_mesh.rs` | 13 |
@@ -458,6 +454,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_f32.rs` | 13 |
 | `analytic_aeroelasticity_wiring.rs` | 12 |
 | `analytic_beam_stress_wiring.rs` | 12 |
+| `analytic_broadphase_hybrid.rs` | 12 |
 | `analytic_collision_mesh_gen_wiring.rs` | 12 |
 | `analytic_contact_cache_wiring.rs` | 12 |
 | `analytic_deformable_wiring.rs` | 12 |
@@ -478,6 +475,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_adaptive_wiring.rs` | 11 |
 | `analytic_sdf_ccd_borrowed_field.rs` | 11 |
 | `analytic_temperature_rise.rs` | 11 |
+| `analytic_tight_world_aabb.rs` | 11 |
 | `analytic_vibration_wall_wiring.rs` | 11 |
 | `audit_anisotropic_friction.rs` | 11 |
 | `audit_creep_longterm.rs` | 11 |
@@ -596,6 +594,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_math_ln.rs` | 5 |
 | `analytic_pressure_distributed.rs` | 5 |
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
+| `analytic_shaped_sphere_contacts.rs` | 5 |
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
 | `audit_c_buckling.rs` | 5 |
 | `audit_c_collider.rs` | 5 |
