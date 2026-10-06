@@ -439,7 +439,6 @@ fn mad_survives_a_nan_sample() {
 /// negative, so every sample, the centre itself included, is flagged. The
 /// constructors accept any `k` (the EWMA clamps only `alpha`).
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-016: negative threshold_k flags the median itself (deviation 0 > negative threshold)"]
 fn negative_threshold_does_not_flag_the_centre() {
     let mut m = MadDetector::new(-3.0);
     let mut e = EwmaDetector::new(0.2, -3.0);
@@ -462,7 +461,6 @@ fn negative_threshold_does_not_flag_the_centre() {
 /// composite's score (a maximum) is therefore +inf on a fresh detector while
 /// its verdict is false.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-017: CompositeDetector::anomaly_score = +inf with 0 observations although is_anomaly is false (z_score / EWMA score lack the count<3 guard MAD has)"]
 fn composite_score_matches_verdict_during_warm_up() {
     let mut c = CompositeDetector::new();
     assert!(!c.is_anomaly(100.0));

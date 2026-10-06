@@ -298,6 +298,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `anomaly`: 負の `threshold_k` を受け付け、しきい値が負になって中心の値まで異常と判定していた 構築時と `set_threshold_k` で 0 に切り上げる `ZScoreDetector::z_score` と `EwmaDetector::anomaly_score` は 3 標本の warm-up 中 (`is_anomaly` は常に false) も +∞ を返し、`CompositeDetector` の score が判定と食い違った warm-up 中は 0 を返す **Behavior change:** 観測 3 件未満の score が 0 になる (AUD-A-S4W1-016 / 017)
 - `TriMesh::collide_capsule`: 線分と三角形の最近点を「線分の中点から 2 回交互に射影」で近似していたので距離を過大に見積もり (250 配置中 63 件、最悪 +0.55)、重なる capsule を接触なしと答えることがあった 線分が三角形を貫けば距離 0、そうでなければ両端点と三角形、線分と 3 辺の最近点の最小で厳密に求める (AUD-A-S4W2-014)
 - `TriMesh::closest_point`: 点の ±1000 の箱で候補を絞っていたので、メッシュから 1000 より遠い点では候補が無く `triangles[0].v0` を返した 箱を倍々に広げ、最良の候補が箱の半幅以内に入ったところで止める (どの距離でも厳密) 距離が等しい時は最小の三角形 index を返す (AUD-A-S4W2-010)
 - `TriMesh::collide_aabb`: 箱の中心への三角形の最近点が箱の外なら接触なしとしていたので、斜めの三角形が箱の角を切る場合など重なる箱の約 13 % を取りこぼした 三角形と箱の重なりを分離軸 13 本で判定する 接触は三角形の法線方向 (隣の三角形と共有する辺の向きには押さない) `point_a` が `center - normal * depth` で箱の表面でも最深点でもなく、`point_a - point_b = -normal * depth` を満たさなかった `point_b` を箱の最深点に最も近い三角形の点 (深さが等しい時は近い方の三角形) とし `point_a = point_b - normal * depth` にした (AUD-A-S4W2-013 / 017)
