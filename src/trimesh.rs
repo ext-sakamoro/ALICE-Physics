@@ -223,30 +223,43 @@ impl TriMesh {
             return (point, 0);
         }
 
-        // Query BVH with a large AABB centered on point
-        let half = Fix128::from_int(1000);
-        let query = AABB::new(
-            point - Vec3Fix::new(half, half, half),
-            point + Vec3Fix::new(half, half, half),
-        );
-        let candidates = self.bvh.query(&query);
-
-        let mut best_point = self.triangles[0].v0;
-        let mut best_dist_sq = Fix128::from_int(i64::MAX / 2);
-        let mut best_idx = 0;
-
-        for tri_idx in candidates {
-            let tri = &self.triangles[tri_idx as usize];
-            let cp = tri.closest_point(point);
-            let dist_sq = (cp - point).length_squared();
-            if dist_sq < best_dist_sq {
-                best_dist_sq = dist_sq;
-                best_point = cp;
-                best_idx = tri_idx as usize;
+        // Grow a box around the point until the best candidate is no farther
+        // than the box's half-size: every triangle nearer than that intersects
+        // the box, so the answer is exact at any distance (a fixed 1000 box
+        // found nothing past it and answered triangles[0].v0). Ties go to the
+        // smallest triangle index, whatever order the BVH visits them in.
+        let span =
+            (self.bounds.max - self.bounds.min).length() + (point - self.bounds.min).length();
+        let mut half = Fix128::ONE;
+        loop {
+            let query = AABB::new(
+                point - Vec3Fix::new(half, half, half),
+                point + Vec3Fix::new(half, half, half),
+            );
+            let mut best: Option<(Fix128, usize, Vec3Fix)> = None;
+            for tri_idx in self.bvh.query(&query) {
+                let idx = tri_idx as usize;
+                let cp = self.triangles[idx].closest_point(point);
+                let dist_sq = (cp - point).length_squared();
+                let better = match best {
+                    None => true,
+                    Some((d, i, _)) => dist_sq < d || (dist_sq == d && idx < i),
+                };
+                if better {
+                    best = Some((dist_sq, idx, cp));
+                }
             }
+            if let Some((dist_sq, idx, cp)) = best {
+                if dist_sq <= half * half || half > span {
+                    return (cp, idx);
+                }
+            }
+            if half > span {
+                // the box holds the whole mesh and still found nothing: an empty BVH
+                return (self.triangles[0].v0, 0);
+            }
+            half = half.double();
         }
-
-        (best_point, best_idx)
     }
 
     /// Sphere vs `TriMesh` collision: find deepest penetrating contact

@@ -327,6 +327,7 @@ were introduced during that release window.
 
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
+- `TriMesh::closest_point`: 点の ±1000 の箱で候補を絞っていたので、メッシュから 1000 より遠い点では候補が無く `triangles[0].v0` を返した 箱を倍々に広げ、最良の候補が箱の半幅以内に入ったところで止める (どの距離でも厳密) 距離が等しい時は最小の三角形 index を返す (AUD-A-S4W2-010)
 - `TriMesh::collide_aabb`: 箱の中心への三角形の最近点が箱の外なら接触なしとしていたので、斜めの三角形が箱の角を切る場合など重なる箱の約 13 % を取りこぼした 三角形と箱の重なりを分離軸 13 本で判定する 接触は三角形の法線方向 (隣の三角形と共有する辺の向きには押さない) `point_a` が `center - normal * depth` で箱の表面でも最深点でもなく、`point_a - point_b = -normal * depth` を満たさなかった `point_b` を箱の最深点に最も近い三角形の点 (深さが等しい時は近い方の三角形) とし `point_a = point_b - normal * depth` にした (AUD-A-S4W2-013 / 017)
 - `ray_triangle` (`TriMesh::raycast`): 平行判定の閾値 `MT_EPSILON` (2⁻²⁴) を `det` の絶対値と比べていたので、辺が約 2.4e-4 m より短い三角形は真上からの ray でも当たらなかった 閾値を辺の長さの積で割合にし、大きさに依らず ray と面の角度で判定する (AUD-A-S4W2-012)
 - `ScalarField3D::diffuse` (pressure / thermal / phase change / fracture / erosion の拡散): 陽解法の安定限界 `rate·dt·(2/dx²+2/dy²+2/dz²) ≤ 1` を超える step も 1 回で進め、正の山が負の値に振れていた 限界を超える step は 1 つあたり 1/2 以下の等分 sub-step に分ける 限界内は従来どおり 1 step (結果は変わらない) (AUD-A-S6W1-004)
