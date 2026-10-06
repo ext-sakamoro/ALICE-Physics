@@ -160,6 +160,13 @@ impl ThinWallReport {
 ///
 /// Returns `None` if the ray does not hit an opposite surface within
 /// `config.max_march_distance_mm` or if `config.max_iterations` was exhausted.
+///
+/// A `surface_point` off the zero set on the outside by more than
+/// `config.start_offset_mm` (a mesh vertex slightly off the field) is first
+/// sphere-traced inward onto the surface, and the thickness is measured from
+/// there; the gap outside is not wall. A point within the offset of the zero
+/// set is taken as on the surface, so a wall thinner than the offset still
+/// reports the offset.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn measure_thickness_at(
@@ -181,6 +188,34 @@ pub fn measure_thickness_at(
     let mut px = surface_point.x.to_f32();
     let mut py = surface_point.y.to_f32();
     let mut pz = surface_point.z.to_f32();
+
+    let max_dist_f32 = config.max_march_distance_mm.to_f32();
+
+    // Off the surface on the outside: trace inward onto it first. The SDF is
+    // the distance to the nearest surface, so a step of `d` cannot overshoot
+    // it; the approach and the measurement share the iteration and distance
+    // budgets.
+    let mut iterations = 0;
+    let mut approach = 0.0_f32;
+    loop {
+        let d = sdf.distance(px, py, pz);
+        if d <= config.start_offset_mm {
+            break;
+        }
+        iterations += 1;
+        let step = d.max(config.min_step_mm);
+        approach += step;
+        if iterations > config.max_iterations || approach > max_dist_f32 {
+            return None;
+        }
+        let prev = (px, py, pz);
+        px += inward.0 * step;
+        py += inward.1 * step;
+        pz += inward.2 * step;
+        if (px, py, pz) == prev {
+            return None;
+        }
+    }
 
     // Step just inside the surface to leave the SDF ≈ 0 noise band.
     let (prev_px, prev_py, prev_pz) = (px, py, pz);
@@ -204,9 +239,7 @@ pub fn measure_thickness_at(
         return None;
     }
 
-    let max_dist_f32 = config.max_march_distance_mm.to_f32();
-
-    for _ in 0..config.max_iterations {
+    for _ in iterations..config.max_iterations {
         let d = sdf.distance(px, py, pz);
         if d >= 0.0 {
             // Exited through the opposite surface.
@@ -228,7 +261,7 @@ pub fn measure_thickness_at(
             return None;
         }
         distance += step;
-        if distance > max_dist_f32 {
+        if approach + distance > max_dist_f32 {
             return None;
         }
     }
@@ -309,10 +342,14 @@ pub fn analyze_thickness_grid(
     analyze_thickness(sdf, &surface_points, config)
 }
 
-// LIMITATION(COV-AM-013): Extract approximate surface points from a grid AABB by finding sign changes between adjacent cells along the X axis.
 /// Extract approximate surface points from a grid AABB by finding sign changes
-/// between adjacent cells along the X axis. Linear interpolation refines the
-/// zero-crossing location. Exposed for tests and advanced callers.
+/// between adjacent cells along each of the X, Y and Z axes (X lines first,
+/// then Y, then Z), so a wall thin along any axis is crossed by the lines of
+/// that axis. Linear interpolation refines the zero-crossing location. The
+/// samples on each axis are `min + i * step` up to `max`, with `max` itself
+/// as the last one when the extent is not a multiple of the step, so every
+/// point lies inside `[aabb_min, aabb_max]` and the whole box is scanned.
+/// Exposed for tests and advanced callers.
 #[cfg(feature = "std")]
 #[must_use]
 pub fn sample_surface_points(
@@ -351,46 +388,62 @@ pub fn sample_surface_points(
             return 0; // inverted AABB: empty on this axis, by design (existing contract)
         }
         let n = (f64::from(max) - f64::from(min)) / f64::from(step);
-        // `ceil` then re-add 1 to walk the *endpoints* `0..=n`, matching the
-        // old `while coord <= max` inclusive-of-`max` semantics.
-        u32::try_from(n.ceil() as i64).unwrap_or(u32::MAX)
+        // grid points `min + i * step` for `i < n`, then `max` itself as the
+        // last point (`axis_coord` clamps), so the whole extent is scanned
+        // and no point lies beyond `max`. The relative slack of 1e-6 (several
+        // f32 rounding errors of `min`, `max` and `step`) keeps an extent that
+        // is a multiple of the step from gaining a near-duplicate last point.
+        u32::try_from((n * (1.0 - 1e-6)).ceil() as i64).unwrap_or(u32::MAX)
     }
-    fn axis_coord(min: f32, step: f32, i: u32) -> f32 {
+    fn axis_coord(min: f32, max: f32, step: f32, i: u32) -> f32 {
         // `f64` intermediate: avoids compounding `f32` rounding across
-        // iterations the way repeated `+= step` did.
-        (f64::from(min) + f64::from(i) * f64::from(step)) as f32
+        // iterations the way repeated `+= step` did; the last point is
+        // clamped onto `max` (it would be up to one step beyond it)
+        ((f64::from(min) + f64::from(i) * f64::from(step)) as f32).min(max)
     }
 
-    let y_steps = axis_steps(ymin, ymax, step);
-    let z_steps = axis_steps(zmin, zmax, step);
-    let x_steps = axis_steps(xmin, xmax, step);
+    let lo = [xmin, ymin, zmin];
+    let hi = [xmax, ymax, zmax];
+    let steps = [
+        axis_steps(xmin, xmax, step),
+        axis_steps(ymin, ymax, step),
+        axis_steps(zmin, zmax, step),
+    ];
+    let coord = |axis: usize, i: u32| axis_coord(lo[axis], hi[axis], step, i);
+    let at = |p: [f32; 3]| sdf.distance(p[0], p[1], p[2]);
 
     let mut out = Vec::new();
-
-    for yi in 0..=y_steps {
-        let y = axis_coord(ymin, step, yi);
-        for zi in 0..=z_steps {
-            let z = axis_coord(zmin, step, zi);
-            let mut x = axis_coord(xmin, step, 0);
-            let mut prev_d = sdf.distance(x, y, z);
-            for xi in 1..=x_steps {
-                let next_x = axis_coord(xmin, step, xi);
-                let d = sdf.distance(next_x, y, z);
-                if (prev_d < 0.0 && d >= 0.0) || (prev_d >= 0.0 && d < 0.0) {
-                    // Sign change: linear interp on the segment [x, next_x].
-                    let denom = d - prev_d;
-                    if denom.abs() > f32::EPSILON {
-                        let t = -prev_d / denom; // in [0, 1]
-                        let sx = x + t * (next_x - x);
-                        out.push(Vec3Fix::new(
-                            Fix128::from_f32(sx),
-                            Fix128::from_f32(y),
-                            Fix128::from_f32(z),
-                        ));
+    // lines along `axis`, the two other axes `u` (outer) and `v` (inner) in
+    // ascending order: X lines over (y, z), Y lines over (x, z), Z lines over (x, y)
+    for (axis, u, v) in [(0, 1, 2), (1, 0, 2), (2, 0, 1)] {
+        for ui in 0..=steps[u] {
+            for vi in 0..=steps[v] {
+                let mut p = [0.0_f32; 3];
+                p[u] = coord(u, ui);
+                p[v] = coord(v, vi);
+                p[axis] = coord(axis, 0);
+                let mut prev_d = at(p);
+                for ai in 1..=steps[axis] {
+                    let mut q = p;
+                    q[axis] = coord(axis, ai);
+                    let d = at(q);
+                    if (prev_d < 0.0 && d >= 0.0) || (prev_d >= 0.0 && d < 0.0) {
+                        // Sign change: linear interp on the segment [p, q].
+                        let denom = d - prev_d;
+                        if denom.abs() > f32::EPSILON {
+                            let t = -prev_d / denom; // in [0, 1]
+                            let mut c = p;
+                            c[axis] = p[axis] + t * (q[axis] - p[axis]);
+                            out.push(Vec3Fix::new(
+                                Fix128::from_f32(c[0]),
+                                Fix128::from_f32(c[1]),
+                                Fix128::from_f32(c[2]),
+                            ));
+                        }
                     }
+                    prev_d = d;
+                    p = q;
                 }
-                prev_d = d;
-                x = next_x;
             }
         }
     }

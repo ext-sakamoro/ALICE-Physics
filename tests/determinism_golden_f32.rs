@@ -407,7 +407,9 @@ fn golden_sdf_sph() {
 // 8. thin_wall — thickness analysis over sampled surface points
 // ---------------------------------------------------------------------------
 
-const GOLDEN_THIN_WALL: &str = "d735baa3573b193582e0b05450a05dfcb39f508694060e4575bace521fb604fa";
+// 2026-10-06 AUD-A-S2W1-004: the sampler also scans Y and Z lines (the first
+// 32 points, all on X lines, are unchanged; the counts grow)
+const GOLDEN_THIN_WALL: &str = "9db6bf248b3957d64398ecc2707682cc2ea7184756738a48da15cec9e8c12d01";
 
 #[test]
 fn golden_thin_wall() {
