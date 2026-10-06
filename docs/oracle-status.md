@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4846 |
-| 🔴 Red by design | 215 |
-| ⏱ Gated (runtime / diagnostic / manual) | 25 |
+| 🟢 Not ignored (run by CI) | 4942 |
+| 🔴 Red by design | 218 |
+| ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5086** |
+| **Total** | **5186** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (215)
+## 🔴 Red by design (218)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -25,6 +25,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `a_force_exactly_at_the_wake_threshold_leaves_a_parked_body_parked` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 a parked body stays parked at exactly the wake threshold
 - `a_force_just_above_the_wake_threshold_wakes_a_parked_body` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 a parked body wakes just above the wake threshold
 - `a_recorded_fault_refuses_the_next_step_and_observations_are_undecided` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 sticky fault, observe_participant / observe_body_checked, clear_fault
+- `a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed` (indep_contact_restitution_friction.rs) — src gap: contact friction is translational only, a solid ball gets no spin and never rolls
 - `a_zero_dt_update_does_not_cancel_a_return_to_animation` (audit_animation_blend.rs) — known defect: AUD-A-S2W3-011: mirror case, go_animated() from full ragdoll then update(dt = 0) flips mode to R…
 - `a_zero_dt_update_does_not_cancel_a_started_transition` (audit_animation_blend.rs) — known defect: AUD-A-S2W3-011: go_ragdoll() then update(dt = 0) (or transition_speed 0) flips mode Blend -> Ani…
 - `aabb_of_a_negative_spacing_field_is_not_inverted` (audit_heightfield.rs) — known defect: AUD-A-S4W3-007: HeightField::new accepts spacing <= 0 (debug_assert checks only the length); col…
@@ -210,9 +211,11 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `tangential_loss_per_frame_is_independent_of_the_substep_count` (audit_rope.rs) — known defect: AUD-A-S3W1-005: sdf_friction is a per-contact velocity retention (1-mu) applied each substep and…
 - `tanh_approx_is_bounded_by_one_and_monotone` (audit_neural.rs) — known defect: AUD-A-S3W2-004: fix128_tanh_approx (Activation::TanhApprox, doc 'smooth bounded output') returns…
 - `tanh_approx_max_error_matches_the_documented_0_004` (audit_neural.rs) — known defect: AUD-A-S3W2-003: fix128_tanh_approx doc claims a Pade approximant with ~0.004 max error for |x| <…
+- `tgs_isotropic_spin_turns_by_omega_t` (indep_free_rotation_closed_forms.rs) — src gap: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12
 - `the_answer_does_not_depend_on_the_increment_count` (analytic_corotational.rs) — the red is correct: bit-identical displacements across increment counts need an exact fixed point of the frame…
 - `the_clamped_counter_of_k_omega_counts_cells_as_documented` (audit_cfd_solver_rans.rs) — known defect: AUD-A-S1W4-010: `TurbulenceSummary::clamped` is documented as the `Number of cells` whose k, eps…
 - `the_reattachment_length_matches_gartling` (armaly_backward_step.rs) — src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of t…
+- `the_undamped_pendulum_keeps_its_amplitude` (indep_tgs_pendulum_static_plane.rs) — src gap: joint projection loses swing energy at first order in h (amplitude 0.6 to 0.517 in 12 s at 4 substeps…
 - `to_f64_is_relatively_accurate_for_small_negative_values` (audit_math.rs) — known defect: AUD-A-S1W5-025: Fix128::to_f64 computes hi + lo/2^64 in f64, so a small negative value loses its…
 - `total_dispatches_counts_unique_sdf_ids` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-011: GpuSdfMultiDispatch docs say one dispatch per unique sdf_id, but add_batch never…
 - `total_particle_mass_is_mass_per_unit_times_length` (audit_rope.rs) — known defect: AUD-A-S3W1-003: Rope::new total particle mass = mpu*L*(N+1)/N, not mpu*L (measured N=1: 12 vs 6)…
@@ -259,11 +262,12 @@ when the lock is not committed), re-check whether the defect remains.
 |--------|------|-------|-------------|----------|--------|
 | AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.1 | ⚠️ re-check |
 
-## ⏱ Gated (25)
+## ⏱ Gated (26)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
 
+- `a_ball_is_cradled_in_the_hole_of_a_torus` (indep_shaped_sphere_rest_heights.rs) — known limitation: a torus collides as its convex hull, a ball cannot enter the hole (rests at rho + r = 1.3, w…
 - `adaptive_cubic_beats_uniform_per_node` (analytic_adaptive_refinement_high_order.rs) — runtime: about 40 s in release (P3 reference at two uniform passes, a uniform coarse solve and a six-round ada…
 - `adaptive_quadratic_beats_uniform_per_node` (analytic_adaptive_refinement_high_order.rs) — runtime: about 2 s in release, measured 2026-10-03 (P2 reference at two uniform passes, a uniform coarse solve…
 - `amplification_growth_is_problem_size_or_element_shape` (mesh_to_fem_stress.rs) — diagnostic: run when the amplification threshold is in question
@@ -290,7 +294,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4846)
+## 🟢 Not ignored (4942)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -316,6 +320,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_static_collider.rs` | 27 |
 | `audit_motor.rs` | 27 |
 | `engineering_oracles_misc.rs` | 27 |
+| `analytic_euler_fv.rs` | 26 |
 | `analytic_maxwell_wiring.rs` | 26 |
 | `analytic_particle_wiring.rs` | 26 |
 | `audit_cfd_solver_rans.rs` | 26 |
@@ -338,6 +343,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_linear_elastic_fem.rs` | 23 |
 | `analytic_pair_potential.rs` | 22 |
 | `analytic_reactions.rs` | 22 |
+| `analytic_world_sweeps.rs` | 22 |
 | `audit_fluid_netcode.rs` | 22 |
 | `audit_force.rs` | 22 |
 | `determinism_semantic.rs` | 22 |
@@ -404,6 +410,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_shape.rs` | 16 |
 | `analytic_structural_solver_wiring.rs` | 16 |
 | `analytic_vehicle_wiring.rs` | 16 |
+| `analytic_world_views.rs` | 16 |
 | `armaly_backward_step.rs` | 16 |
 | `audit_audio_physics.rs` | 16 |
 | `audit_bimaterial.rs` | 16 |
@@ -478,6 +485,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
+| `analytic_sweep_sphere_inside.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
 | `audit_plane_collider.rs` | 12 |
 | `audit_plastic.rs` | 12 |
@@ -625,6 +633,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_solver_bridge_modifier.rs` | 5 |
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
+| `indep_free_rotation_closed_forms.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
@@ -636,10 +645,13 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_laminate.rs` | 4 |
 | `audit_c_linear_elastic_fem.rs` | 4 |
 | `audit_c_plane_collider.rs` | 4 |
+| `indep_contact_restitution_friction.rs` | 4 |
+| `indep_shaped_sphere_rest_heights.rs` | 4 |
 | `locking_p1.rs` | 4 |
 | `p2_oracle_design.rs` | 4 |
 | `p2_quadrature_fix128.rs` | 4 |
 | `refinement_conformity.rs` | 4 |
+| `spatial_hash_range.rs` | 4 |
 | `tgs_stable_cache_keys.rs` | 4 |
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
@@ -655,6 +667,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_math.rs` | 3 |
 | `audit_c_turbulence.rs` | 3 |
 | `audit_gpu_bridge.rs` | 3 |
+| `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
 | `sleep_skip_snapshot.rs` | 3 |
 | `wm01_flag_survives_rollback.rs` | 3 |
