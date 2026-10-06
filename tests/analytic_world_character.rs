@@ -534,10 +534,10 @@ fn large_displacements_are_swept_whole() {
     assert!(res.grounded);
 }
 
-/// Design: a capsule that starts overlapping a collider does not move. The
-/// cast reports such a contact at `t = 0` with no surface normal (`−direction`),
-/// so there is no plane to slide along; the controller keeps its position and
-/// such a contact does not count as ground.
+/// Design: a capsule whose segment starts inside a solid (deeper than its
+/// radius) does not move. The cast reports such a contact at `t = 0` with no
+/// surface normal (`−direction`), so there is no plane to slide along; the
+/// controller keeps its position and such a contact does not count as ground.
 #[test]
 fn starting_overlap_does_not_move() {
     let mut w = world();
