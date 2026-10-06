@@ -416,14 +416,20 @@ fn aabb_of_a_negative_spacing_field_is_not_inverted() {
         let origin = v3(2.0, 0.0, -3.0);
         let f = HeightField::flat(4, 4, fx(spacing), origin, Fix128::ONE);
         let bb = f.aabb();
-        assert!(bb.min.x <= bb.max.x && bb.min.y <= bb.max.y && bb.min.z <= bb.max.z, "spacing {spacing}");
+        assert!(
+            bb.min.x <= bb.max.x && bb.min.y <= bb.max.y && bb.min.z <= bb.max.z,
+            "spacing {spacing}"
+        );
         assert_eq!((bb.min, bb.max), (origin, origin), "spacing {spacing}");
         assert!(f.collide_sphere(v3(3.0, 1.0, -2.0), Fix128::ONE).is_none());
     }
     // a positive spacing is unchanged: x and z span (width-1) and (depth-1) spacings
     let f = HeightField::flat(4, 3, fx(2.0), Vec3Fix::ZERO, Fix128::ONE);
     let bb = f.aabb();
-    assert_eq!((bb.max.x.to_f64(), bb.max.z.to_f64(), bb.max.y.to_f64()), (6.0, 4.0, 1.0));
+    assert_eq!(
+        (bb.max.x.to_f64(), bb.max.z.to_f64(), bb.max.y.to_f64()),
+        (6.0, 4.0, 1.0)
+    );
 }
 
 // ------------------------------------------------------------------ indexing

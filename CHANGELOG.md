@@ -297,6 +297,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- fatigue の Miner 和: 繰り返し数 `n` が `i64::MAX` を超えると `as i64` で負に wrap し damage が負になっていた 整数商と余りに分けて計算し、表せない大きさと和の溢れは飽和させる (AUD-A-S4W2-007)
 - `HeightField::aabb`: spacing が 0 以下の場は空の場と同じく原点の点 AABB を返す (`collide_sphere` は面が無いとして扱う) これまでは負の spacing で max < min の反転した箱になっていた (AUD-A-S4W3-007)
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 `replay` は alice-db のファイル保存 (fs2 / mmap) に依存するため wasm32-unknown-unknown では未対応
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 (`replay` は in-memory の保存先で同 target に対応、Added 参照)
