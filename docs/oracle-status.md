@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4829 |
+| 🟢 Not ignored (run by CI) | 4841 |
 | 🔴 Red by design | 219 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5073** |
+| **Total** | **5085** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -294,7 +294,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4829)
+## 🟢 Not ignored (4841)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -481,6 +481,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
+| `analytic_sweep_sphere_inside.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
 | `audit_cloth_fluid.rs` | 12 |
 | `audit_plastic.rs` | 12 |
