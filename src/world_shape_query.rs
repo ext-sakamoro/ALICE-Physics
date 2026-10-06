@@ -56,11 +56,20 @@
 //!   strictly inside a solid.
 //! - A capsule whose two ends coincide is a sphere: [`PhysicsWorld::cast_capsule`]
 //!   then returns [`PhysicsWorld::cast_sphere`].
-//! - A cast that starts overlapping a collider reports it at `t = 0`, normal
-//!   `−direction`, point the cast shape's centre (the sphere's centre, the
-//!   capsule segment's midpoint). Otherwise the hit's point is the contact point on
-//!   the collider and the normal is the collider's surface normal there, pointing
-//!   toward the cast shape (for surfaces: toward the side the shape comes from).
+//! - A cast that starts overlapping a collider by more than `2⁻³²` reports it at
+//!   `t = 0`, normal `−direction`, point the cast shape's centre (the sphere's
+//!   centre, the capsule segment's midpoint). Otherwise the hit's point is the
+//!   contact point on the collider and the normal is the collider's surface
+//!   normal there, pointing toward the cast shape (for surfaces: toward the side
+//!   the shape comes from).
+//! - A cast that starts touching a collider (within `2⁻³²`) hits it at `t = 0`
+//!   only when the direction goes into the surface (`direction·normal < 0`);
+//!   moving away from it or along it is not a hit, and the cast goes on to what
+//!   lies further along the path. The same holds wherever a cast touches a
+//!   surface on its way: a contact whose direction is within `2⁻⁶` of the
+//!   tangent plane is a hit only if the path then goes more than `2⁻³²` into
+//!   that piece, so a shape resting on a mesh floor or a flat height field
+//!   crosses the edges between triangles and cells.
 //! - Touching is not overlapping: an overlap needs a distance below the radius
 //!   (or, for boxes against convex pieces, a GJK intersection).
 //! - Ties in `t` are broken by target (bodies, then static colliders, then SDF
@@ -132,6 +141,14 @@ use alloc::{vec, vec::Vec};
 const TRACE_TOLERANCE: Fix128 = Fix128 {
     hi: 0,
     lo: 0x0000_0001_0000_0000,
+};
+
+/// A touching contact whose motion is closer than this to the surface's tangent
+/// plane (`|d·n| < 2⁻⁶`) is a hit only if the path then goes more than
+/// [`TRACE_TOLERANCE`] into the piece (see [`dips_below`]); a steeper one is.
+const NEAR_TANGENT: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0400_0000_0000_0000,
 };
 
 /// Newton steps of a convex time of impact before the last clear time is
@@ -289,6 +306,17 @@ impl Dist {
             Self::AtLeast(d) => Self::AtLeast(d - amount),
             Self::Inside => Self::Inside,
         }
+    }
+}
+
+/// Whether a cast of radius `r` starts overlapping a piece at distance `d`: more
+/// than [`TRACE_TOLERANCE`] inside it. Within the tolerance it is touching, and
+/// the sweep decides by the direction of motion.
+fn starts_overlapping(d: &Dist, r: Fix128) -> bool {
+    match *d {
+        Dist::Inside => true,
+        Dist::Outside { dist, .. } => dist + TRACE_TOLERANCE < r,
+        Dist::AtLeast(_) => false,
     }
 }
 
@@ -1505,8 +1533,8 @@ impl Ring {
 /// bisection between the last clear time and that time.
 ///
 /// Returns the contact once the gap is within [`TRACE_TOLERANCE`] and the core
-/// moves into the solid (`d·n < 0`): a core touching the solid and moving away
-/// from it or along it does not hit. A core that overlaps the solid at `t = 0` by
+/// moves into the solid (see [`touch_is_hit`]): a core touching the solid and
+/// moving away from it or along it does not hit. A core that overlaps the solid at `t = 0` by
 /// more than the tolerance hits at `t = 0` with normal `−d`. If the step budget
 /// runs out (it does not in practice: Newton needs a few dozen steps even at a
 /// grazing approach), the last clear time is reported, which is never after the
@@ -1542,7 +1570,14 @@ fn toi_convex<S: Support>(
                     normal,
                 };
                 if gap <= TRACE_TOLERANCE {
-                    return slope.is_negative().then_some(contact);
+                    let gap_at = |t: Fix128| {
+                        let off = d * t;
+                        match convex_dist(a + off, b + off, solid) {
+                            Dist::Outside { dist, .. } => Some(dist - reach),
+                            _ => None,
+                        }
+                    };
+                    return touch_is_hit(contact, d, max_t, gap_at).then_some(contact);
                 }
                 if !slope.is_negative() {
                     return None;
@@ -1584,6 +1619,87 @@ fn toi_convex<S: Support>(
         }
     }
     clear
+}
+
+/// Whether a contact found touching a convex piece (gap at most `2⁻³²`, normal
+/// `n` toward the core) is a hit for the motion along the unit `d`: moving away
+/// or along the surface (`d·n ≥ 0`) is not; moving into it is, except that when
+/// the motion is within [`NEAR_TANGENT`] of the tangent plane the contact is a
+/// hit only if `gap_at` (the gap along the path, `None` inside) then drops
+/// below `−2⁻³²` before `max_t`. A shape resting on a mesh floor or a flat
+/// height field touches the next triangle or cell only tangentially at their
+/// shared edge, and must not stop there; a grazing approach that really goes
+/// in is still a hit.
+fn touch_is_hit(
+    contact: Contact,
+    d: Vec3Fix,
+    max_t: Fix128,
+    gap_at: impl Fn(Fix128) -> Option<Fix128>,
+) -> bool {
+    let slope = d.dot(contact.normal);
+    if slope < -NEAR_TANGENT {
+        return true;
+    }
+    if !slope.is_negative() {
+        return false;
+    }
+    match gap_at(contact.t) {
+        None => true,
+        Some(gap) => dips_below(gap_at, contact.t, gap, -slope, max_t),
+    }
+}
+
+/// Whether a convex gap function (`None` inside) that is `f0` at `t0` and
+/// decreasing at `speed` drops below `−2⁻³²` in `[t0, max_t]`: steps doubling
+/// from the tangent's root until the gap goes below that (yes), grows again
+/// (its minimum is then bracketed and found by golden-section search) or
+/// `max_t` is reached.
+fn dips_below(
+    gap_at: impl Fn(Fix128) -> Option<Fix128>,
+    t0: Fix128,
+    f0: Fix128,
+    speed: Fix128,
+    max_t: Fix128,
+) -> bool {
+    let deep = |g: Option<Fix128>| g.is_none_or(|g| g < -TRACE_TOLERANCE);
+    let big = max_t + Fix128::ONE;
+    let mut step = max_fix(
+        ratio_within(max_fix(f0, Fix128::ZERO), speed, big),
+        TRACE_TOLERANCE,
+    );
+    let (mut before, mut last, mut last_gap) = (t0, t0, f0);
+    for _ in 0..GOLDEN_STEPS {
+        let t1 = min_fix(t0 + step, max_t);
+        let g1 = gap_at(t1);
+        if deep(g1) {
+            return true;
+        }
+        let g1 = g1.unwrap_or(Fix128::ZERO);
+        if g1 > last_gap || t1 >= max_t {
+            // Convex: the minimum is in [before, t1].
+            let (mut lo, mut hi) = (before, t1);
+            let ratio = Fix128::from_ratio(618_033_988_749_895, 1_000_000_000_000_000);
+            for _ in 0..GOLDEN_STEPS {
+                let x1 = hi - (hi - lo) * ratio;
+                let x2 = lo + (hi - lo) * ratio;
+                let (g1, g2) = (gap_at(x1), gap_at(x2));
+                if deep(g1) || deep(g2) {
+                    return true;
+                }
+                if g1 <= g2 {
+                    hi = x2;
+                } else {
+                    lo = x1;
+                }
+            }
+            return false;
+        }
+        before = last;
+        last = t1;
+        last_gap = g1;
+        step = step.double();
+    }
+    false
 }
 
 /// The first contact with a non-convex surface described as a hierarchy of parts
@@ -1945,27 +2061,28 @@ impl Piece<'_> {
         let point_core = a == b;
         match self {
             Self::Sphere { center, radius } => {
-                if point_core {
+                let c = if point_core {
                     let h = ray_solid_sphere(a, d, *center, *radius + r, max_t)?;
-                    Some(Contact::from_ray(a, d, r, h))
+                    Contact::from_ray(a, d, r, h)
                 } else {
                     // The capsule moving +d meets the sphere when the sphere's
                     // centre, moving −d, meets the capsule grown by its radius.
                     let grown = Capsule::new(a, b, r + *radius);
                     let h = ray_solid_capsule(*center, -d, &grown, max_t)?;
                     let normal = -h.normal;
-                    Some(Contact {
+                    Contact {
                         t: h.t,
                         point: *center + normal * *radius,
                         normal,
-                    })
-                }
+                    }
+                };
+                self.entering(c, a, b, r, d, max_t)
             }
             Self::Capsule(c) => {
                 if point_core {
                     let grown = Capsule::new(c.a, c.b, c.radius + r);
                     let h = ray_solid_capsule(a, d, &grown, max_t)?;
-                    Some(Contact::from_ray(a, d, r, h))
+                    self.entering(Contact::from_ray(a, d, r, h), a, b, r, d, max_t)
                 } else {
                     toi_convex(a, b, r, c.radius, d, max_t, &SegmentSupport(c.a, c.b))
                 }
@@ -1978,7 +2095,7 @@ impl Piece<'_> {
                 if point_core {
                     let (o, dl) = to_local(a, d, *center, *rotation);
                     let h = to_world(sweep_local_box(o, dl, *half, r, max_t), *rotation)?;
-                    Some(Contact::from_ray(a, d, r, h))
+                    self.entering(Contact::from_ray(a, d, r, h), a, b, r, d, max_t)
                 } else {
                     let obb = crate::box_collider::OrientedBox::new(*center, *half, *rotation);
                     toi_convex(a, b, r, Fix128::ZERO, d, max_t, &obb)
@@ -1996,24 +2113,27 @@ impl Piece<'_> {
                             Some(sweep_local_cylinder(o, dl, radius, half_height, r, max_t)?),
                             rotation,
                         )?;
-                        Some(Contact::from_ray(a, d, r, h))
+                        self.entering(Contact::from_ray(a, d, r, h), a, b, r, d, max_t)
                     }
                     Shape::Torus {
                         major_radius,
                         minor_radius,
                     } => {
+                        let ring = Ring {
+                            center,
+                            rotation,
+                            major: major_radius,
+                            minor: minor_radius,
+                        };
                         if point_core {
                             let (o, dl) = to_local(a, d, center, rotation);
                             let h = ray_local_torus(o, dl, major_radius, minor_radius + r, max_t);
-                            let h = to_world(h, rotation)?;
-                            Some(Contact::from_ray(a, d, r, h))
+                            let c = Contact::from_ray(a, d, r, to_world(h, rotation)?);
+                            // A torus is not convex: leaving it where the sphere
+                            // touches it, the path can still enter it further on.
+                            self.entering(c, a, b, r, d, max_t)
+                                .or_else(|| ring.sweep(a, b, r, d, max_t))
                         } else {
-                            let ring = Ring {
-                                center,
-                                rotation,
-                                major: major_radius,
-                                minor: minor_radius,
-                            };
                             ring.sweep(a, b, r, d, max_t)
                         }
                     }
@@ -2026,14 +2146,41 @@ impl Piece<'_> {
             Self::Mesh(mesh) => {
                 if point_core {
                     let swept = core_box(a, a + d * max_t, r);
-                    let mut best: Option<LocalHit> = None;
+                    let mut best: Option<Contact> = None;
                     for i in mesh_candidates(mesh, &swept) {
-                        best = nearer(
-                            best,
-                            sweep_triangle(a, d, &mesh.triangles[i as usize], r, max_t),
-                        );
+                        let tri = &mesh.triangles[i as usize];
+                        let Some(h) = sweep_triangle(a, d, tri, r, max_t) else {
+                            continue;
+                        };
+                        let gap_at = |t: Fix128| {
+                            let p = a + d * t;
+                            match Dist::toward(p, tri.closest_point(p)) {
+                                Dist::Outside { dist, .. } => Some(dist - r),
+                                _ => None,
+                            }
+                        };
+                        let mut c = Contact::from_ray(a, d, r, h);
+                        if c.t <= TRACE_TOLERANCE {
+                            // Touching this triangle at the start: its own
+                            // nearest point and normal (see `entering`).
+                            if let Dist::Outside { point, normal, .. } =
+                                Dist::toward(a, tri.closest_point(a))
+                            {
+                                c = Contact {
+                                    t: Fix128::ZERO,
+                                    point,
+                                    normal,
+                                };
+                            }
+                        }
+                        if !touch_is_hit(c, d, max_t, gap_at) {
+                            continue;
+                        }
+                        if best.is_none_or(|bc| c.t < bc.t) {
+                            best = Some(c);
+                        }
                     }
-                    best.map(|h| Contact::from_ray(a, d, r, h))
+                    best
                 } else {
                     sweep_mesh(mesh, a, b, r, d, max_t)
                 }
@@ -2045,6 +2192,45 @@ impl Piece<'_> {
             }
         }
         .filter(|c| c.t >= Fix128::ZERO && c.t <= max_t)
+    }
+
+    /// A closed-form contact is a hit by [`touch_is_hit`]. One at `t ≤ 2⁻³²`
+    /// comes from a cast that starts touching the piece (an overlap is reported
+    /// before the sweep): its normal and point are the piece's nearest point and
+    /// normal toward the core (a closed form may report a touching origin as
+    /// inside). Moving away or along the surface is not a hit, nor is a tangent
+    /// arrival.
+    fn entering(
+        &self,
+        c: Contact,
+        a: Vec3Fix,
+        b: Vec3Fix,
+        r: Fix128,
+        d: Vec3Fix,
+        max_t: Fix128,
+    ) -> Option<Contact> {
+        let cap = r + r + Fix128::ONE;
+        let gap_at = |t: Fix128| {
+            let off = d * t;
+            match self.dist(a + off, b + off, cap) {
+                Dist::Outside { dist, .. } => Some(dist - r),
+                Dist::AtLeast(bound) => Some(bound - r),
+                Dist::Inside => None,
+            }
+        };
+        let c = if c.t > TRACE_TOLERANCE {
+            c
+        } else {
+            match self.dist(a, b, cap) {
+                Dist::Outside { point, normal, .. } => Contact {
+                    t: Fix128::ZERO,
+                    point,
+                    normal,
+                },
+                _ => return Some(c),
+            }
+        };
+        touch_is_hit(c, d, max_t, gap_at).then_some(c)
     }
 
     /// Sphere tracing (for SDFs): step by the gap (the distance less `r`) until
@@ -2082,11 +2268,17 @@ impl Piece<'_> {
                 } => {
                     let gap = dist - r;
                     let contact = Contact { t, point, normal };
-                    if gap <= tol {
-                        return Some(contact);
-                    }
                     last = Some(contact);
-                    gap
+                    if gap <= tol {
+                        // Touching: a hit only when moving into the surface;
+                        // moving away or along it, step past by the tolerance.
+                        if d.dot(normal).is_negative() {
+                            return Some(contact);
+                        }
+                        tol
+                    } else {
+                        gap
+                    }
                 }
             };
             if gap <= Fix128::ZERO {
@@ -2271,8 +2463,10 @@ fn sweep_plane(
     if speed < PARALLEL_EPSILON {
         return None;
     }
-    let t = (s.abs() - r) / speed;
-    if t.is_negative() || t > max_t {
+    // A start within the tolerance inside the plane's reach (deeper is a start
+    // overlap, reported before the sweep) is touching: contact at once.
+    let t = max_fix((s.abs() - r) / speed, Fix128::ZERO);
+    if t > max_t {
         return None;
     }
     Some(Contact {
@@ -2558,11 +2752,13 @@ impl PhysicsWorld {
             for piece in pieces {
                 match piece.dist(a, b, cap) {
                     Dist::Inside => core_inside = true,
-                    Dist::Outside { dist, normal, .. } if dist < r => out.push(Penetration {
-                        target,
-                        depth: r - dist,
-                        normal,
-                    }),
+                    Dist::Outside { dist, normal, .. } if dist + TRACE_TOLERANCE < r => {
+                        out.push(Penetration {
+                            target,
+                            depth: r - dist,
+                            normal,
+                        })
+                    }
                     _ => {}
                 }
             }
@@ -2615,7 +2811,7 @@ impl PhysicsWorld {
         for_each_target(self, filter, &swept, |target, body, pieces| {
             let mut nearest: Option<Contact> = None;
             for piece in pieces {
-                let c = if piece.dist(a, b, start_cap).within(r) {
+                let c = if starts_overlapping(&piece.dist(a, b, start_cap), r) {
                     Some(Contact {
                         t: Fix128::ZERO,
                         point: centre,
