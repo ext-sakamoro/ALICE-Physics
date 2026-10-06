@@ -270,7 +270,12 @@ fn collide_aabb_depth_and_normal_follow_the_bottom_face() {
         // point_b is a mesh point on the bottom face footprint
         let pb = arr(got.point_b);
         assert!(pb[1].abs() < 1e-15, "point_b on the plane {pb:?}");
-        assert!((pb[0] - c[0]).abs() <= h[0] && (pb[2] - c[2]).abs() <= h[2]);
+        assert!(
+            (pb[0] - c[0]).abs() <= h[0] && (pb[2] - c[2]).abs() <= h[2],
+            "point_b {pb:?} centre {c:?} normal {:?} depth {}",
+            arr(got.normal),
+            got.depth.to_f64()
+        );
     }
     let above = AABB::new(v3(-1.0, 0.5, -1.0), v3(1.0, 2.0, 1.0));
     assert!(mesh.collide_aabb(&above).is_none());
