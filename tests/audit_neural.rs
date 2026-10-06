@@ -62,26 +62,30 @@ fn tanh_approx_is_odd_and_zero_at_the_origin() {
 }
 
 #[test]
-fn tanh_approx_error_near_zero_is_the_cubic_gap_between_the_two_taylor_series() {
-    // f(x) = x (27 + x^2) / (27 + 9 x^2) = x - 8 x^3 / 27 + 8 x^5 / 81 - ...
-    // tanh(x)                              = x -   x^3 / 3  + 2 x^5 / 15 - ...
-    // so f - tanh = x^3 / 27 + O(x^5): the formula is not a Pade approximant of tanh
-    // (whose error starts at x^5). Checked against the analytic leading term.
-    for k in 1..=8 {
+fn tanh_approx_error_near_zero_is_below_the_f64_resolution() {
+    // The Pade [7/6] approximant agrees with the Taylor series of tanh through
+    // x^13, so its error starts at x^15 / O(10^11): below 1e-15 for |x| <= 1/2
+    // (f64 tanh itself is good to about 1e-16 there), and 1.6e-12 at x = 1.
+    for k in 1..=16 {
         let x = k as f64 / 32.0;
         let got = tanh_approx_at(Fix128::from_ratio(k, 32));
-        let err = got - x.tanh();
         assert!(
-            (err - x * x * x / 27.0).abs() < 0.04 * x.powi(5),
-            "x = {x}: err {err}"
+            (got - x.tanh()).abs() < 1e-15,
+            "x = {x}: err {}",
+            got - x.tanh()
         );
     }
+    let at_one = tanh_approx_at(Fix128::ONE) - 1.0_f64.tanh();
+    assert!(
+        at_one.abs() < 2e-12 && at_one.abs() > 1e-12,
+        "x = 1: err {at_one}"
+    );
 }
 
 #[test]
 fn tanh_approx_stays_within_three_hundredths_of_tanh_up_to_four() {
-    // Measured maximum is ~0.0236 (near |x| = 1.5); this pins the real accuracy
-    // class so a regression to a worse rational is caught.
+    // A coarse bound kept from the earlier formula: any rational in this
+    // accuracy class passes; the documented bound is pinned below.
     let mut worst = 0.0_f64;
     for k in 0..=320 {
         let xf = k as f64 / 80.0;
@@ -92,17 +96,20 @@ fn tanh_approx_stays_within_three_hundredths_of_tanh_up_to_four() {
 }
 
 #[test]
-fn tanh_approx_clamps_to_unit_beyond_four() {
-    assert_eq!(tanh_approx_at(Fix128::from_ratio(41, 10)), 1.0);
-    assert_eq!(tanh_approx_at(Fix128::from_ratio(-41, 10)), -1.0);
+fn tanh_approx_clamps_to_unit_beyond_nine_halves() {
+    assert_eq!(tanh_approx_at(Fix128::from_ratio(46, 10)), 1.0);
+    assert_eq!(tanh_approx_at(Fix128::from_ratio(-46, 10)), -1.0);
+    // 4.1 is inside the ratio's range now, not clamped
+    assert!(tanh_approx_at(Fix128::from_ratio(41, 10)) < 1.0);
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-003: fix128_tanh_approx doc claims a Pade approximant with ~0.004 max error for |x| < 4.5; the formula x(27+x^2)/(27+9x^2) is not the Pade[3/2] of tanh (x(15+x^2)/(15+6x^2)) and its max error vs tanh is 0.0235 at |x| = 1.56 (0.0201 at 2.0)"]
-fn tanh_approx_max_error_matches_the_documented_0_004() {
+fn tanh_approx_max_error_matches_the_documented_bound() {
+    // AUD-A-S3W2-003: the doc claims a Pade approximant with max error about
+    // 2.5e-4; the worst point is just past the 9/2 clamp, 1 - tanh(4.5) = 2.47e-4.
     let mut worst = 0.0_f64;
     let mut at = 0.0_f64;
-    for k in 0..=360 {
+    for k in 0..=800 {
         let xf = k as f64 / 80.0;
         let got = tanh_approx_at(Fix128::from_ratio(k, 80));
         let e = (got - xf.tanh()).abs();
@@ -111,11 +118,11 @@ fn tanh_approx_max_error_matches_the_documented_0_004() {
             at = xf;
         }
     }
-    assert!(worst < 0.0045, "worst error {worst} at x = {at}");
+    assert!(worst < 2.5e-4, "worst error {worst} at x = {at}");
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-004: fix128_tanh_approx (Activation::TanhApprox, doc 'smooth bounded output') returns values above 1 for 3 < x <= 4 (1.0058 at x = 4) and then drops back to exactly 1 for x > 4, so it is neither bounded by 1 nor monotone"]
+// AUD-A-S3W2-004
 fn tanh_approx_is_bounded_by_one_and_monotone() {
     let mut prev = -1.0_f64;
     for k in -400..=400 {
@@ -349,13 +356,15 @@ fn mismatched_layer_chain_is_rejected_at_construction() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-007: DeterministicNetwork::forward on a zero-layer network panics (index out of bounds on buf_offsets[1] / usize underflow of n - 1) although new(vec![], vec![]) succeeds and the doc lists only the length-mismatch panic; also input_size()/output_size() panic on it (pinned as current behaviour in analytic_neural_wiring.rs, not recorded as a defect there) -- escalated: tests/analytic_neural_wiring.rs::deterministic_network_zero_layers_constructs_but_forward_panics pins the panic as current behaviour and names this exact choice (validate in new() vs return &[] in forward()) a design decision, not a silent fix"]
+// AUD-A-S3W2-007: an empty network has no outputs
 fn zero_layer_network_forward_does_not_panic() {
     let mut net = DeterministicNetwork::new(vec![], vec![]);
     let r = catch_unwind(AssertUnwindSafe(|| {
-        let _ = net.forward(&[]);
+        assert!(net.forward(&[]).is_empty());
     }));
     assert!(r.is_ok());
+    assert_eq!(net.input_size(), 0);
+    assert_eq!(net.output_size(), 0);
 }
 
 #[test]
@@ -421,9 +430,12 @@ fn documented_constructor_panics_fire_for_every_dimension_mismatch() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-016: fix128_ternary_matvec doc says 'No rounding error', but the final `acc * scale` is a truncating Q64.64 multiply: input 1/3 (raw 0x5555..) times f32 scale 0.1 loses the low 88-64 fraction bits (output differs from the exact product by 1 ulp = 2^-64)"]
-fn matvec_output_is_the_exact_product_of_the_integer_sum_and_the_scale() {
-    // exact value: raw_x * raw_scale / 2^64 (raw_scale = f32 0.1 widened exactly)
+// AUD-A-S3W2-016: the doc promised no rounding; the sum is exact and the scale
+// multiply rounds down to the 2^-64 grid, as the doc now says
+fn matvec_output_is_the_floor_of_the_exact_product_of_the_sum_and_the_scale() {
+    // exact value: raw_x * raw_scale / 2^64 (raw_scale = f32 0.1 widened exactly),
+    // floored to the 2^-64 grid; 1/3 * 0.1 is not on the grid, so the floor is
+    // strictly below the exact value
     let x = Fix128::from_ratio(1, 3);
     let scale = Fix128::from_f64(f64::from(0.1_f32));
     let w = FixedTernaryWeight::from_ternary_weight_with_scale(
@@ -435,8 +447,16 @@ fn matvec_output_is_the_exact_product_of_the_integer_sum_and_the_scale() {
     let raw = |v: Fix128| ((v.hi as i128) << 64) | i128::from(v.lo);
     let exact_num = raw(x) * raw(scale);
     // exact product in units of 2^-128; the output carries 2^-64 resolution
-    let got_scaled = raw(out[0]) << 64;
-    assert_eq!(got_scaled, exact_num, "product was rounded");
+    assert_ne!(
+        exact_num & ((1_i128 << 64) - 1),
+        0,
+        "the product is off the grid"
+    );
+    assert_eq!(
+        raw(out[0]),
+        exact_num >> 64,
+        "not the floor of the exact product"
+    );
 }
 
 #[test]

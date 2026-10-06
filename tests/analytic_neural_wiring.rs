@@ -9,13 +9,13 @@
 //! * `fix128_hard_tanh(x) = clamp(x, -1, 1)`: the comparisons in the source
 //!   are strict `>` / `<`, so `x = +-1` passes through unchanged and only
 //!   `|x| > 1` is clamped.
-//! * `fix128_tanh_approx(x) = x*(27+x^2)/(27+9x^2)` for `|x| <= 4`, else
-//!   `+-1`. At `x = 3`: `3*(27+9)/(27+81) = 108/108 = 1` exactly, and by the
-//!   formula's oddness `x = -3` gives exactly `-1`. At `x = 0` the formula is
-//!   `0/27 = 0` exactly. `x = 4` is *not* claimed by the clamp branch
-//!   (`4 > 4` is false), so it still evaluates the Padé ratio
-//!   `4*43/171 = 172/171`, computed independently here with the same
-//!   `Fix128` primitives (not by calling the function under test).
+//! * `fix128_tanh_approx(x)` is the Padé [7/6] approximant of tanh,
+//!   `x*(135135+17325x^2+378x^4+x^6)/(135135+62370x^2+3150x^4+28x^6)`, for
+//!   `|x| <= 9/2`, else `+-1`. At `x = 0` it is `0/135135 = 0` exactly; at
+//!   `x = 1` it is `152839/200683` (sum of the coefficients), checked against
+//!   that rational to `2^-60`; `x = 9/2` is *not* claimed by the clamp branch
+//!   (`9/2 > 9/2` is false) and evaluates to `0.99979…`, strictly below 1;
+//!   anything beyond `9/2` is exactly `+-1`.
 //! * `fix128_leaky_relu(x, alpha) = x if x >= 0 else alpha*x`: the negative
 //!   branch's expected value is `alpha * x`, computed in the test via the
 //!   `Fix128` `Mul` operator directly (the same primitive the function
@@ -27,10 +27,10 @@
 //!   scale of `3/4` (an exact power-of-two-denominator fraction) gives
 //!   `[3, 6]` bit-exactly.
 //! * `DeterministicNetwork::forward`: a hand-built 2-layer net
-//!   (`3 -> 2` ReLU `-> 2` TanhApprox) on input `[3,0,0]` gives layer-1 raw
-//!   `[3,0]` (ReLU leaves both unchanged), layer-2 raw `[3,-3]`, and
-//!   `TanhApprox(3)=1`, `TanhApprox(-3)=-1` exactly (the same Padé root used
-//!   above), so `forward() == [1,-1]` bit-exactly.
+//!   (`3 -> 2` ReLU `-> 2` TanhApprox) on input `[5,0,0]` gives layer-1 raw
+//!   `[5,0]` (ReLU leaves both unchanged), layer-2 raw `[5,-5]`, and
+//!   `TanhApprox(5)=1`, `TanhApprox(-5)=-1` exactly (beyond the `9/2`
+//!   clamp), so `forward() == [1,-1]` bit-exactly.
 //! * `RagdollController::compute`: a hand-built `13 -> 4` ReLU `-> 3`
 //!   HardTanh network driven by a single body with `velocity = (2,4,6)` and
 //!   `angular_velocity.z = 5` gives layer-1 raw `[2,4,-6,5]`, ReLU
@@ -158,59 +158,65 @@ fn fix128_hard_tanh_clamps_strictly_outside_unit_interval() {
 }
 
 #[test]
-fn fix128_tanh_approx_exact_pade_roots_and_clamp_branch() {
-    // x = 0: 0*(27+0)/(27+0) = 0 exactly.
-    // x = 3: 3*(27+9)/(27+81) = 108/108 = 1 exactly.
-    // x = -3: oddness of the formula gives exactly -1.
-    // x = 10 / -10: beyond the |x| > 4 clamp guard, independent of the Padé
-    //   ratio entirely.
+fn fix128_tanh_approx_closed_form_points_and_clamp_branch() {
+    // x = 0: 0/135135 = 0 exactly.
+    // x = 1: (135135+17325+378+1)/(135135+62370+3150+28) = 152839/200683.
+    // x = -1: the ratio is odd.
+    // x = 5 / -5: beyond the |x| > 9/2 clamp guard, exactly +-1.
     let mut values = [
         Fix128::ZERO,
-        Fix128::from_int(3),
-        Fix128::from_int(-3),
-        Fix128::from_int(10),
-        Fix128::from_int(-10),
+        Fix128::ONE,
+        Fix128::NEG_ONE,
+        Fix128::from_int(5),
+        Fix128::from_int(-5),
     ];
     let r = catch_unwind(AssertUnwindSafe(|| {
         fix128_tanh_approx(&mut values);
     }));
     assert!(r.is_ok());
     assert_eq!(values[0], Fix128::ZERO);
-    assert_eq!(values[1], Fix128::ONE);
-    assert_eq!(values[2], Fix128::NEG_ONE);
-    assert_eq!(values[3], Fix128::ONE, "x > 4 clamps to 1");
-    assert_eq!(values[4], Fix128::NEG_ONE, "x < -4 clamps to -1");
+    let want = 152_839.0_f64 / 200_683.0;
+    assert!(
+        (values[1].to_f64() - want).abs() < 1e-15,
+        "{}",
+        values[1].to_f64()
+    );
+    assert!(
+        (values[2].to_f64() + want).abs() < 1e-15,
+        "{}",
+        values[2].to_f64()
+    );
+    assert_eq!(values[3], Fix128::ONE, "x > 9/2 clamps to 1");
+    assert_eq!(values[4], Fix128::NEG_ONE, "x < -9/2 clamps to -1");
 }
 
 #[test]
-fn fix128_tanh_approx_boundary_x_equals_four_is_not_clamped() {
-    // x = 4 fails the strict `x > 4` clamp guard, so it still evaluates the
-    // Padé ratio: 4*(27+16)/(27+144) = 4*43/171 = 172/171. Computed here
-    // independently with the same Fix128 primitives (Add/Mul/Div), not by
-    // calling fix128_tanh_approx.
-    let x = Fix128::from_int(4);
-    let c27 = Fix128::from_int(27);
-    let c9 = Fix128::from_int(9);
-    let x2 = x * x;
-    let expected = (x * (c27 + x2)) / (c27 + c9 * x2);
-    assert_eq!(expected, Fix128::from_int(172) / Fix128::from_int(171));
-    assert_ne!(
-        expected,
-        Fix128::ONE,
-        "the boundary is NOT clamped, so it must not equal exactly 1"
-    );
-
-    let mut values = [x];
+fn fix128_tanh_approx_boundary_nine_halves_is_not_clamped() {
+    // x = 9/2 fails the strict `x > 9/2` guard, so it evaluates the ratio:
+    // with x^2 = 81/4 the closed form is
+    //   (9/2)(135135 + 17325*81/4 + 378*6561/16 + 531441/64)
+    //   / (135135 + 62370*81/4 + 3150*6561/16 + 28*531441/64)
+    // = 0.9997947…, strictly below 1. Just above the guard the value is 1.
+    let x2 = 81.0_f64 / 4.0;
+    let want = 4.5 * (135_135.0 + x2 * (17_325.0 + x2 * (378.0 + x2)))
+        / (135_135.0 + x2 * (62_370.0 + x2 * (3_150.0 + x2 * 28.0)));
+    let mut values = [
+        Fix128::from_ratio(9, 2),
+        Fix128::from_ratio(9, 2) + Fix128::from_raw(0, 1),
+    ];
     fix128_tanh_approx(&mut values);
-    assert_eq!(
-        values[0], expected,
-        "x == 4 takes the Pade branch, not the clamp branch"
+    assert!(values[0] < Fix128::ONE, "the boundary is not clamped");
+    assert!(
+        (values[0].to_f64() - want).abs() < 1e-15,
+        "{}",
+        values[0].to_f64()
     );
+    assert_eq!(values[1], Fix128::ONE);
 }
 
 #[test]
 fn fix128_tanh_approx_extreme_magnitude_never_reaches_the_squaring_multiply() {
-    // The clamp check `x > 4` / `x < -4` runs before x*x, so extreme
+    // The clamp check `x > 9/2` / `x < -9/2` runs before x*x, so extreme
     // magnitudes can never overflow the squaring multiply — they are always
     // claimed by the clamp branch.
     let mut values = [
@@ -438,35 +444,27 @@ fn deterministic_network_forward_matches_hand_derived_layers() {
     let mut net = build_tiny_relu_tanh_network();
     assert_eq!(net.num_layers(), 2);
 
-    // input = [3,0,0]
-    // layer1 raw = [3*1+0+0, 0+0+0*-1] = [3,0]; ReLU leaves both unchanged.
-    // layer2 raw = [3*1+0*0, 3*-1+0*0] = [3,-3];
-    // TanhApprox(3) = 1, TanhApprox(-3) = -1 exactly (same Pade root as
-    // the activation-kernel test above).
-    let input = [Fix128::from_int(3), Fix128::ZERO, Fix128::ZERO];
+    // input = [5,0,0]
+    // layer1 raw = [5*1+0+0, 0+0+0*-1] = [5,0]; ReLU leaves both unchanged.
+    // layer2 raw = [5*1+0*0, 5*-1+0*0] = [5,-5];
+    // TanhApprox(5) = 1, TanhApprox(-5) = -1 exactly (beyond the 9/2 clamp).
+    let input = [Fix128::from_int(5), Fix128::ZERO, Fix128::ZERO];
     let out = net.forward(&input);
     assert_eq!(out, [Fix128::ONE, Fix128::NEG_ONE]);
 }
 
-// PIN: AUD-A-S3W2-007
+// AUD-A-S3W2-007
 #[test]
-fn deterministic_network_zero_layers_constructs_but_forward_panics() {
+fn deterministic_network_zero_layers_has_no_inputs_or_outputs() {
+    // The empty composition has no output layer: forward() returns an empty
+    // slice and both sizes are 0 (previously forward() indexed buf_offsets[1]
+    // and panicked).
     let mut net = DeterministicNetwork::new(vec![], vec![]);
     assert_eq!(net.num_layers(), 0, "an empty network is constructible");
-
-    // forward() unconditionally indexes buf_offsets[1] (and later
-    // buf_offsets[n - 1] with n = 0, an underflow), neither of which exist
-    // for a zero-layer network. This is the CURRENT behaviour — pinned as
-    // a documented gap, not silently patched here (changing it is a design
-    // decision: validate eagerly in `new()`, or make `forward()` return
-    // `&[]`).
-    let r = catch_unwind(AssertUnwindSafe(|| {
-        let _ = net.forward(&[]);
-    }));
-    assert!(
-        r.is_err(),
-        "forward() on a zero-layer network panics (index out of bounds), it does not return &[]"
-    );
+    let r = catch_unwind(AssertUnwindSafe(|| net.forward(&[]).len()));
+    assert_eq!(r.ok(), Some(0));
+    assert_eq!(net.input_size(), 0);
+    assert_eq!(net.output_size(), 0);
 }
 
 #[test]

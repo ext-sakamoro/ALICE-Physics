@@ -56,18 +56,21 @@ fn main() {
         [Fix128::ONE, Fix128::NEG_ONE, Fix128::ONE, Fix128::NEG_ONE]
     );
 
-    // fix128_tanh_approx: Pade approximant x*(27+x^2)/(27+9x^2) for |x| <= 4,
-    // else clamp to +-1. At x = 3: 3*(27+9)/(27+81) = 108/108 = 1 exactly
-    // (and by oddness of the formula, x = -3 gives exactly -1).
-    let mut pade_vals = [Fix128::from_int(3), Fix128::from_int(-3), Fix128::ZERO];
+    // fix128_tanh_approx: Pade [7/6] approximant of tanh for |x| <= 9/2, else
+    // clamp to +-1. At x = 0 it is exactly 0; at x = 1 it is
+    // (135135+17325+378+1)/(135135+62370+3150+28) = 152839/200683 = 0.76159…
+    // (tanh(1) = 0.76159…); at x = 5 it is clamped to exactly 1.
+    let mut pade_vals = [Fix128::ONE, Fix128::from_int(5), Fix128::ZERO];
     fix128_tanh_approx(&mut pade_vals);
     println!(
-        "[neural] fix128_tanh_approx([3,-3,0]) = [{}, {}, {}] (expect [1, -1, 0], exact Pade root)",
+        "[neural] fix128_tanh_approx([1,5,0]) = [{}, {}, {}] (expect [152839/200683, 1, 0])",
         pade_vals[0].to_f64(),
         pade_vals[1].to_f64(),
         pade_vals[2].to_f64()
     );
-    assert_eq!(pade_vals, [Fix128::ONE, Fix128::NEG_ONE, Fix128::ZERO]);
+    assert!((pade_vals[0].to_f64() - 152_839.0 / 200_683.0).abs() < 1e-15);
+    assert_eq!(pade_vals[1], Fix128::ONE);
+    assert_eq!(pade_vals[2], Fix128::ZERO);
 
     // fix128_leaky_relu: x if x >= 0, alpha * x otherwise. alpha = 1/8 keeps
     // the closed form exact in Fix128 (a power-of-two fraction), unlike the
