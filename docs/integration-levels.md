@@ -31,7 +31,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 5 / 1 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 60 / 15 / 1 / 19 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 61 / 15 / 1 / 18 / 0 | C ABI, Python, WebAssembly |
 | `metric` | step | 5 / 3 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
@@ -72,7 +72,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `bimaterial` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `box_collider` | standalone (step 3, world API 2 of 9 items) | 3 / 2 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
-| `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
+| `buckling` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `ccd` | standalone (world API 2 of 13 items) | 0 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
