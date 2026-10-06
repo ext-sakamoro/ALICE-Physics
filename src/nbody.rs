@@ -41,6 +41,13 @@
 //! not depend on the summation order at all. The same inputs give the same
 //! bits on every platform.
 //!
+//! Mirror and rotation symmetry hold only up to rounding: a [`Fix128`] product
+//! rounds towards −∞, so `(−a)·b` and `−(a·b)` can differ by one unit of
+//! `2⁻⁶⁴`, and a mirrored or rotated input can give results that differ in
+//! the last bits.
+//! For the same reason the total momentum `Σ m v` is conserved to rounding,
+//! not bit for bit.
+//!
 //! # Range
 //!
 //! `1/(d² + ε²)^{3/2}` must stay below about `9·10¹⁸`: with `ε = 0` that is

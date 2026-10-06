@@ -126,6 +126,13 @@
 //!   overlaps beyond about `36 B` with `A = 2000 N`) saturates at the largest
 //!   representable value instead of wrapping.
 //!
+//! # Symmetry
+//!
+//! Mirror and rotation symmetry hold only up to rounding: a [`Fix128`] product
+//! rounds towards −∞, so `(−a)·b` and `−(a·b)` can differ by one unit of
+//! `2⁻⁶⁴`, and a mirrored or rotated input can give results that differ in
+//! the last bits.
+//!
 //! # References
 //!
 //! - D. Helbing, P. Molnár, *Social force model for pedestrian dynamics*,
