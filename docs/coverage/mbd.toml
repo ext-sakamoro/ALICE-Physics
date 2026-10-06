@@ -1426,3 +1426,23 @@ status = "missing"
 evidence = "冗長拘束と空間閉ループの扱いが無い"
 oracle_candidate = "原典のエネルギー保存の許容 (参照値要確認)"
 limitation = ""
+
+[[item]]
+id = "COV-MBD-138"
+axis = "aero-road"
+item = "road-surface state over time: water film depth from rainfall intensity, drainage length, slope and texture, drying, and snow / ice cover, feeding the weather-dependent grip"
+source = "Gallaway et al. 1979 (FHWA-RD-79-31, water film depth); PIARC road surface characteristics"
+status = "missing"
+evidence = "路面の水膜厚は呼び手が与える固定値 (src/vehicle_dynamics/surface.rs::Weather の Wet の water_depth_mm) で、雨量・排水・乾燥から求める口が無い 水膜厚から grip への段は COV-MBD-046 / 047 降水の場は COV-ENV-063〜070"
+oracle_candidate = "Gallaway 式の水膜厚 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-MBD-139"
+axis = "robot-dynamics"
+item = "grasping: multi-finger contact grasp of an object (force closure, grasp stability, lifting and carrying without slip)"
+source = "Murray-Li-Sastry, A Mathematical Introduction to Robotic Manipulation ch.5; Prattichizzo-Trinkle (Springer Handbook of Robotics ch.38); MuJoCo grasping"
+status = "missing"
+evidence = "把持の型・判定は無い (推測: grasp で src 0 件) 部品として摩擦 (COV-RIGID-078 / 079) と接触力の出力 (COV-RIGID-091) はあるが、指の側はロボットの行が missing (COV-MBD-080)"
+oracle_candidate = "2 指で挟んだ箱が μ N ≥ m g / 2 の時に滑らず、下回ると滑る"
+limitation = ""

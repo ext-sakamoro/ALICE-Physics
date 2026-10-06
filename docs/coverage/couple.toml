@@ -1089,3 +1089,193 @@ status = "missing"
 evidence = "放射減衰が無い (COV-COUPLE-071)"
 oracle_candidate = ""
 limitation = ""
+
+[[item]]
+id = "COV-COUPLE-103"
+axis = "particle-rigid"
+item = "two-way interaction of pedestrians (crowd model) with rigid bodies and vehicles (a body pushes or strikes a pedestrian, the pedestrian's reaction acts on the body)"
+source = "Helbing-Molnár 1995 (Phys. Rev. E 51); Helbing-Farkas-Vicsek 2000 (Nature 407); pedestrian-vehicle mixed-traffic models (Zeng et al. 2014, Transp. Res. C 40)"
+status = "missing"
+evidence = "群衆は 2D 平面の別系統 (src/crowd_force.rs::SocialForce) で、相手にできるのは歩行者と静止した壁 (src/crowd_force.rs::WallSegment、COV-PART-097) だけ 剛体・車両 (COV-MBD-056) を動く障害物として読む口も、歩行者の反力を剛体に返す口も無い 車両と群衆 (MBD × 群衆) もこの行が受け持つ 群衆側の行動 (譲る・横断の判断) は COV-PART-120 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "1 人の歩行者と一定速度で押す板: 接触の body force と板への反力が逆向き同大 (作用反作用、bit 一致)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-104"
+axis = "particle-rigid"
+item = "two-way coupling of DEM granular material with dynamic rigid bodies (wheel in sand, bucket in a granular bed, objects buried in grains)"
+source = "Cundall-Strack 1979 (Géotechnique 29); Project Chrono DEM-rigid co-simulation; EDEM / LIGGGHTS mesh-wall coupling"
+status = "missing"
+evidence = "DEM の接触則・粒子そのものが無い (COV-PART-072〜084 は全部 missing) 剛体側の world はあるので、粒子から剛体への力の受け渡しの口と剛体の面を粒子の壁にする口が両方要る World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "静止した粒子層に置いた箱の沈下が層の支持で止まる / 粒子の総運動量と剛体の運動量の和が保存 (外力なし)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-105"
+axis = "shock-structure"
+item = "blast and shock loading of structures: the pressure history of a resolved shock or blast wave applied to FE / structural members, and the deformed surface fed back (one- and two-way)"
+source = "Baker, Explosions in Air; UFC 3-340-02 (blast loads on structures); LS-DYNA LOAD_BLAST_ENHANCED and ALE-FSI"
+status = "missing"
+evidence = "衝撃波の solver 側は衝撃の表 爆風の過圧と換算距離の閉形式 (COV-CHEM-066) も missing 構造側の FE (fem.toml) に時間依存の面圧を受ける口が無い (COV-FEM の動解析の荷重は構築時に固定) World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "Friedlander 形の過圧を受ける 1 自由度の板: 応答の最大変位を衝撃領域・準静的領域の閉形式と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-106"
+axis = "shock-structure"
+item = "rigid bodies driven by a blast wave (impulse from the pressure integrated over the body surface, debris throw)"
+source = "Baker, Explosions in Air; Kingery-Bulmash 1984 (ARBRL-TR-02555); fragment and debris throw models (DDESB TP 13)"
+status = "missing"
+evidence = "src/force.rs::ForceField の Explosion は距離の冪で減る径方向の力で、波の到達時刻・過圧の時間履歴・物体の面積を持たない (COV-CHEM-066 の evidence と同じ判断) 衝撃波の solver 側は衝撃の表 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "球に掛かる正圧相の力積 (過圧の時間積分 × 投影面積) の閉形式と物体の速度変化 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-107"
+axis = "shock-structure"
+item = "shock-induced fracture: spall from the reflected tensile wave and fragmentation of a shell or plate driven by the shock loading"
+source = "Meyers, Dynamic Behavior of Materials ch.16 (spalling); Grady 1982 (J. Appl. Phys. 53); Mott 1947"
+status = "missing"
+evidence = "破片の大きさ分布 (COV-FRACT-070) は missing、応力波の反射から spall を判定する経路も無い 衝撃波の solver 側は衝撃の表、き裂・破片の側は fract.toml World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "平板衝突の spall 面の位置 (反射引張波が spall 強度を超える点) の 1 次元閉形式 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-108"
+axis = "thermo-soft"
+item = "temperature carried by cloth and soft bodies: heat conduction through layered clothing, heating and cooling of soft tissue, temperature-dependent stiffness"
+source = "Fan-Cheng 2005 (clothing heat and moisture transfer); Pennes 1948 (J. Appl. Physiol. 1); ISO 9920 (clothing thermal insulation)"
+status = "missing"
+evidence = "布・軟体 (src/cloth.rs::Cloth、src/deformable.rs::DeformableBody) は温度を持たない (両 file の temperature / thermal 0 件) 生体の熱 (COV-BIO-115) も missing 人体の熱収支は COV-BIO-134 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "一様な厚さの布 1 層を挟む定常熱流束 q = k ΔT / d の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-109"
+axis = "thermo-atmosphere"
+item = "surface energy exchange between the ground / sea and the atmosphere model (sensible and latent heat fluxes, surface temperature as the atmosphere's lower boundary)"
+source = "Stull, An Introduction to Boundary Layer Meteorology ch.7; Monin-Obukhov bulk flux formulae; Garratt, The Atmospheric Boundary Layer"
+status = "missing"
+evidence = "地表の熱は THERM の solver にあるが、大気のモデルと熱流束を受け渡す口が無い 境界層の安定度の閉形式 (COV-ENV-029) も missing 日射による地表・建物の加熱は COV-THERM-068 大気側は ATMOS 表 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "bulk 式 H = ρ c_p C_H U (T_s − T_a) の 1 点の値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-110"
+axis = "chem-environment"
+item = "fire spread driven by the wind field (wind speed and direction at the fire front taken from the environment's wind) and the plume's effect back on the local wind"
+source = "Rothermel 1972 (USDA INT-115); FARSITE; WRF-SFIRE coupled fire-atmosphere"
+status = "missing"
+evidence = "延焼の速度式・前線の伝播 (COV-CHEM-095) が missing 風の場は部品としてある (src/sdf_wind_field.rs::SdfWindField、src/wind_zone.rs::WindZone) が、火の側に読む口が無い World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "Rothermel 式の風係数 φ_w を一様風で掛けた延焼速度と前線の移動距離の一致 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-111"
+axis = "em-optics"
+item = "hand-off from a full-wave electromagnetic solution to ray optics (near-to-far-field pattern used as the source of a ray / radiance computation)"
+source = "Taflove-Hagness, Computational Electrodynamics ch.8; hybrid FDTD-ray tracing (e.g. Sheng et al.)"
+status = "missing"
+evidence = "FDTD の遠方界変換 (COV-EM-095) が無く、幾何光学の側に遠方界を光源として受ける口も無い (推測、優先度低) World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "Hertz 双極子の遠方界の放射パターン sin²θ を光線側で受けた強度分布"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-112"
+axis = "particle-thermal"
+item = "temperature of particles (heat conduction between contacting DEM grains, cooling and heating of embers and droplets in the surrounding gas, phase change of particles)"
+source = "Batchelor-O'Brien 1977 (contact conductance); Ranz-Marshall 1952 (droplet heat transfer); Zhou-Yu-Zulli 2010 (DEM heat transfer review)"
+status = "missing"
+evidence = "効果粒子 (src/particle.rs::Particle) は温度を持たない (COV-CHEM-099)、DEM 粒子そのものが無い (COV-PART-072) 分子動力学の温度は熱浴の量で、粒子 1 個の温度ではない World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "静止気体中の球の冷却 (Bi ≪ 1 の lumped 指数減衰、Ranz-Marshall の Nu)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-113"
+axis = "particle-atmosphere"
+item = "particles transported by the atmosphere model (dust, precipitation, seeded condensation / ice nuclei) and their effect back on the atmosphere (nuclei as sources of the cloud microphysics)"
+source = "Seinfeld-Pandis, Atmospheric Chemistry and Physics ch.9 (particle dynamics); Pruppacher-Klett ch.9; cloud-seeding model studies (e.g. Xue et al. 2013)"
+status = "missing"
+evidence = "効果粒子は force field の定数力・線形抗力だけを受け、風速場を読まない (COV-ENV-070、src/particle.rs::ParticleSystem) 粒子を大気の微物理の源にする口も無い 大気側は ATMOS 表 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "一様風の中の重い粒子の終端速度と水平の漂流距離 (Stokes 抗力の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-114"
+axis = "multiphase-environment"
+item = "ocean waves of the environment as the boundary condition of a resolved free-surface flow (wave generation and absorption at the boundary, breaking and overtopping at a structure)"
+source = "Jacobsen-Fuhrman-Fredsøe 2012 (waves2Foam relaxation zones); Higuera-Lara-Losada 2013 (IHFOAM); EurOtop manual (overtopping)"
+status = "missing"
+evidence = "波の場は src/wave_ship.rs::Jonswap の線形重ね合わせ (浮体の Froude-Krylov 用) で、自由表面流の境界に渡す口が無い 自由表面流の側も格子法は COV-MULTIPHASE-044 が missing、SPH は COV-MULTIPHASE-049 の圧力の切り捨てのみ World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "数値水槽で生成した線形波の波高・波長が入力どおり、吸収端からの反射率が小さい (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-115"
+axis = "optics-atmosphere"
+item = "radiation through the atmosphere model's clouds and fog (extinction and scattering of solar radiation, visibility and surface irradiance from the model's water content)"
+source = "Liou, An Introduction to Atmospheric Radiation ch.6; Koschmieder 1924; libRadtran"
+status = "missing"
+evidence = "放射伝達 (COV-OPTICS-065) と霧の視程 (COV-ENV-068) が missing、空の色 (Rayleigh + Mie) は大気の状態を読まない閉形式の行 大気側は ATMOS 表 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "一様な霧の層の透過率 exp(−β z) と Koschmieder の視程 3.912/β"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-116"
+axis = "bio-multibody"
+item = "musculoskeletal model running inside the world as a closed loop (muscle forces actuate the ragdoll / multibody bodies, the ground reaction and joint state feed back into the muscle model in the same step)"
+source = "Delp et al. 2007 (OpenSim, IEEE TBME 54); Seth et al. 2018 (OpenSim 4); MuJoCo tendon actuators"
+status = "missing"
+evidence = "筋から剛体への片方向 (COV-BIO-012) と筋で駆動する順動力学 (COV-BIO-024) が missing ragdoll は形と関節だけ (src/ragdoll.rs::RagdollBuilder、COV-MBD-093) 本行は world の接触と筋の状態を同じ step で回す閉ループ World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "1 関節を 1 本の筋で保持する静的釣り合い: 筋力 × モーメントアーム = 重力モーメント"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-117"
+axis = "bio-collision"
+item = "injury metrics evaluated from the world's own contacts and body accelerations (head, neck and chest of a ragdoll in a fall or impact), with the result handed to the injury state"
+source = "Versace 1971 (HIC); Eppinger et al. 1999 (NHTSA Nij); Euro NCAP assessment protocols"
+status = "missing"
+evidence = "指標の計算そのもの (COV-BIO-106〜114) が missing 加速度の時系列は IMU から取れる (src/sensors.rs::Imu) が、world の接触から体節ごとの指標を出す経路は無い 怪我の状態量は COV-BIO-135 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "一定減速度 a の半正弦パルスの HIC の閉形式を、world の剛体の衝突から得た加速度で再現"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-118"
+axis = "bio-nuclear"
+item = "absorbed dose in body regions of a receptor turned into tissue effects (deterministic effects by organ dose, cumulative dose along the receptor's path)"
+source = "ICRP Publication 103 and 118 (tissue reactions); NCRP Report 132"
+status = "missing"
+evidence = "吸収線量 (COV-NUCLEAR-094) と移動する受容体の累積線量 (COV-NUCLEAR-104) が missing、線量から組織の効果へ渡す口も無い (推測、優先度低) World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "一様な線量率の場に一定時間置いた受容体の累積線量 = 線量率 × 時間"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-119"
+axis = "soft-sensor"
+item = "cloth and soft bodies as targets of the sensors (lidar rays, depth and contact sensors see cloth, ropes and deformable bodies)"
+source = "Gazebo / Isaac Sim sensor models (ray casts against deformable meshes)"
+status = "missing"
+evidence = "lidar は PhysicsWorld だけを走査する (src/sensors.rs::Lidar) 布・軟体は world の外の型 (src/cloth.rs::Cloth、src/deformable.rs::DeformableBody) なので光線に当たらない World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "平面に張った布までの距離を lidar の 1 本の光線で測ると幾何の距離と一致"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-120"
+axis = "atmosphere-environment"
+item = "fields of the atmosphere model handed to the local environment (near-surface wind, precipitation, temperature and humidity used by the environment's wind, rain and road-surface effects)"
+source = "WRF surface-layer output; dynamical downscaling (Giorgi 1990)"
+status = "missing"
+evidence = "環境の風・降水 (COV-ENV-026〜041、COV-ENV-063〜070) は固定の入力か missing で、大気のモデルの場を受ける口が無い 大気側は ATMOS 表 World の参加者として載せる時は参加者間の場の受け渡し (COV-COUPLE-121) に依存"
+oracle_candidate = "一様な大気の場を渡した時に環境側の風速・降水量が同じ値になる (写像の恒等)"
+limitation = ""
+
+[[item]]
+id = "COV-COUPLE-121"
+axis = "framework"
+item = "exchange of fields between world participants inside a step (a participant reads another's field at the start of the substep, writes into a staged buffer committed in registration order, mapping between different grids conserves the exchanged quantity, quantities other than rigid-body forces can be injected, and the exchanged fields are part of the snapshot)"
+source = "preCICE coupling schemes and data mapping; MOOSE MultiApp Transfers; FMI 2.0 co-simulation (exchange of variables between slaves)"
+status = "missing"
+evidence = "World の参加者の契約は main に無い 剛体の読みと剛体への力の加算だけでは、場を持つ参加者同士 (熱と構造、電磁と熱、流体と粒子) の受け渡しができない 場の受け渡しの契約は作成中 格子の上の sample / splat の部品はある (src/coupled_field.rs::sample、src/coupled_field.rs::splat、COV-NUM-065) 本表の連成の行 (COV-COUPLE-103〜120) は World の参加者として載せる時にこの行に依存する"
+oracle_candidate = "2 参加者が互いの場を読む時、登録順を入れ替えても開始時の値を読むので結果が bit 一致 / 写像の前後で交換量の総和が保存"
+limitation = ""

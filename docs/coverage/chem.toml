@@ -1188,3 +1188,13 @@ status = "missing"
 evidence = "PSR が無い (行 COV-CHEM-036)"
 oracle_candidate = ""
 limitation = ""
+
+[[item]]
+id = "COV-CHEM-112"
+axis = "fire"
+item = "ignition by friction (frictional work on a contact heats the surface, the temperature reaches the ignition point of wood or tinder, burning is sustained)"
+source = "Babrauskas, Ignition Handbook ch.7 and ch.14 (wood); Kanury, Introduction to Combustion Phenomena"
+status = "missing"
+evidence = "摩擦仕事から温度への段 (剛体の接触の熱、COV-THERM-088)、着火 (COV-CHEM-057)、木材の物性 (COV-MAT-019) が全部 missing で、連鎖を組む口も無い"
+oracle_candidate = "一定の摩擦力と滑り速度の熱流束 q = μ N v / A による半無限体の表面温度上昇の閉形式"
+limitation = ""
