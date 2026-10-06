@@ -327,6 +327,7 @@ were introduced during that release window.
 
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
+- `MetricEntry::new`: 名前を 64 byte で切る時に多 byte 文字の途中で切り、`name_str()` が空文字列を返していた 文字の境目で切る `MetricSnapshot` は histogram の無い slot で `min = +∞` / `max = -∞` を返していた `mean` や quantile と同じく 0 にする (AUD-A-S5W3-018 / 020)
 - `LaplaceNoise::sample`: 一様乱数 U が 0 (確率 2⁻⁵³、seed を選べば再現可) の時 `ln(0) = -∞` を返していた U = 0 だけを半刻み (2⁻⁵⁴) に移し、他の乱数列はそのまま (AUD-A-S4W3-025)
 - `anomaly`: 負の `threshold_k` を受け付け、しきい値が負になって中心の値まで異常と判定していた 構築時と `set_threshold_k` で 0 に切り上げる `ZScoreDetector::z_score` と `EwmaDetector::anomaly_score` は 3 標本の warm-up 中 (`is_anomaly` は常に false) も +∞ を返し、`CompositeDetector` の score が判定と食い違った warm-up 中は 0 を返す **Behavior change:** 観測 3 件未満の score が 0 になる (AUD-A-S4W1-016 / 017)
 - `TriMesh::collide_capsule`: 線分と三角形の最近点を「線分の中点から 2 回交互に射影」で近似していたので距離を過大に見積もり (250 配置中 63 件、最悪 +0.55)、重なる capsule を接触なしと答えることがあった 線分が三角形を貫けば距離 0、そうでなければ両端点と三角形、線分と 3 辺の最近点の最小で厳密に求める (AUD-A-S4W2-014)
