@@ -130,8 +130,12 @@ fn bolt_load_fraction_stays_in_unit_interval() {
 /// Out-of-domain C > 1 (bolt softer than the formula's assumption never produces it, but the
 /// separation formula is unguarded): the result must not be a negative "load".
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-001: separation_load_n(1000, C=1.2) returns -5000 (negative load, no clamp/guard for C>1; doc says C in [0,1])"]
 fn separation_load_for_c_above_one_is_not_negative() {
-    let p = separation_load_n(fx(1000.0), fx(1.2));
-    assert!(p >= Fix128::ZERO, "P_sep = {} for C = 1.2", p.to_f64());
+    // AUD-A-S1W6-001: C >= 1 never separates, the same sentinel as C = 1
+    let never = separation_load_n(fx(1000.0), Fix128::ONE);
+    for c in [1.2, 2.0, 1e6] {
+        let p = separation_load_n(fx(1000.0), fx(c));
+        assert_eq!(p, never, "P_sep = {} for C = {c}", p.to_f64());
+    }
+    assert_eq!(never, Fix128::from_int(i64::MAX >> 8));
 }
