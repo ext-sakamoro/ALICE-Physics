@@ -129,6 +129,9 @@ pub fn stagnation_temp_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
 /// exactly via [`Fix128::powf_pos`] (deterministic Fix128 throughout). Before
 /// 1.2.0 the exponent was rounded to 4 for every gas, which is 9.5 % high at
 /// `M = 1` and 34 % at `M = 2` for air (`tests/engineering_oracles_fluid.rs`).
+///
+/// A ratio beyond the Fix128 range (`M ≳ 3·10³` for air) saturates at the
+/// largest Fix128 instead of wrapping, so the ratio stays monotone in `|M|`.
 #[must_use]
 pub fn stagnation_pressure_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
     let gm1 = gas.gamma - Fix128::ONE;
@@ -144,8 +147,20 @@ pub fn stagnation_pressure_ratio(gas: &IdealGas, mach: Fix128) -> Fix128 {
     if gm1 < Fix128::ZERO || base <= Fix128::ZERO {
         return Fix128::ONE;
     }
-    base.powf_pos(gas.gamma / gm1)
+    let exponent = gas.gamma / gm1;
+    // ln of the result; past ln(largest Fix128) = 43.67 the power would wrap
+    if exponent * base.ln() >= Fix128::from_ratio(43, 1) {
+        return RATIO_SATURATED;
+    }
+    base.powf_pos(exponent)
 }
+
+/// The largest Fix128, where a ratio beyond the representable range saturates.
+const RATIO_SATURATED: Fix128 = Fix128::from_raw(i64::MAX, u64::MAX);
+
+/// Upstream Mach number above which `M_1²` terms of the normal-shock relations
+/// would leave the Fix128 range (`2γ·M_1²` for `γ ≤ 4.6`).
+const SHOCK_MACH_LIMIT: i64 = 1_000_000_000;
 
 // ============================================================================
 // Rankine-Hugoniot normal shock
@@ -177,6 +192,11 @@ pub struct ShockJump {
 
 /// Compute the normal-shock jump. Returns unit ratios when `M_1 ≤ 1`
 /// (no shock exists for subsonic upstream).
+///
+/// Above `M_1 = 10⁹` the `M_1²` terms would leave the Fix128 range; the jump
+/// is then the strong-shock limit: `ρ_2/ρ_1 = (γ+1)/(γ−1)`,
+/// `M_2 = √((γ−1)/(2γ))`, and `p_2/p_1`, `T_2/T_1` saturated at the largest
+/// Fix128 (they grow as `M_1²`).
 #[must_use]
 pub fn normal_shock_jump(gas: &IdealGas, mach_upstream: Fix128) -> ShockJump {
     let m1 = mach_upstream;
@@ -186,6 +206,16 @@ pub fn normal_shock_jump(gas: &IdealGas, mach_upstream: Fix128) -> ShockJump {
             pressure_ratio: Fix128::ONE,
             temperature_ratio: Fix128::ONE,
             mach_downstream: m1,
+        };
+    }
+    let gm1 = gas.gamma - Fix128::ONE;
+    if m1 > Fix128::from_int(SHOCK_MACH_LIMIT) && gm1 > Fix128::ZERO {
+        let g = gas.gamma;
+        return ShockJump {
+            density_ratio: (g + Fix128::ONE) / gm1,
+            pressure_ratio: RATIO_SATURATED,
+            temperature_ratio: RATIO_SATURATED,
+            mach_downstream: (gm1 / g.double()).sqrt(),
         };
     }
     let m1_sq = m1 * m1;
@@ -236,6 +266,10 @@ pub fn normal_shock_jump(gas: &IdealGas, mach_upstream: Fix128) -> ShockJump {
 ///
 /// `J⁺ = u + 2a/(γ−1)`  (right-moving characteristic)
 /// `J⁻ = u − 2a/(γ−1)`  (left-moving characteristic)
+///
+/// At `γ = 1` (isothermal) `2a/(γ−1)` diverges: the term is the saturating
+/// sentinel `Fix128::from_int(i64::MAX >> 8)` (signed like `a`), so
+/// `J⁺ ≠ J⁻` still; `a = 0` gives `(u, u)`.
 #[must_use]
 pub fn riemann_invariants(
     gas: &IdealGas,
@@ -244,7 +278,18 @@ pub fn riemann_invariants(
 ) -> (Fix128, Fix128) {
     let gm1 = gas.gamma - Fix128::ONE;
     if gm1.is_zero() {
-        return (velocity_m_per_s, velocity_m_per_s);
+        // γ = 1: 2a/(γ−1) diverges; report it as the saturating sentinel
+        // rather than collapsing both invariants onto u
+        if sound_speed_m_per_s.is_zero() {
+            return (velocity_m_per_s, velocity_m_per_s);
+        }
+        let inf = Fix128::from_int(i64::MAX >> 8);
+        let s = if sound_speed_m_per_s > Fix128::ZERO {
+            inf
+        } else {
+            -inf
+        };
+        return (velocity_m_per_s + s, velocity_m_per_s - s);
     }
     let two_a_over_gm1 = Fix128::from_int(2) * sound_speed_m_per_s / gm1;
     (
