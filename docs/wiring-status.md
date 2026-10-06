@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **27 baseline items** — Permitted violations, ratchet in place
+🟡 **26 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (27 permitted)
+## 📋 Baseline (26 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -20,11 +20,11 @@ Must resolve or remove from baseline to reduce ratchet.
 | `src/eulerian_grid.rs` | 8 |
 | `src/motor.rs` | 4 |
 | `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
-| `src/plastic.rs` | 2 |
 | `src/solver_tgs.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented_scoped.rs` | 2 |
 | `src/creep_longterm.rs` | 1 |
+| `src/plastic.rs` | 1 |
 | `src/solver_tgs_hooks.rs` | 1 |
 | `src/solver_tgs_hooks_6dof.rs` | 1 |
 
@@ -39,7 +39,7 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (21)
+### Unwired Items (20)
 
 ```
 unwired src/creep_longterm.rs::petg_25c_moderate
@@ -56,7 +56,6 @@ unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
 unwired src/plastic.rs::petg_room_temp
-unwired src/plastic.rs::with_hardening
 unwired src/solver_tgs.rs::par_dispatch_islands
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel

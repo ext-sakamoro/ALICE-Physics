@@ -12,10 +12,10 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 17 |
+| step | runs when `PhysicsWorld` steps | 18 |
 | world API | used through another `PhysicsWorld` method | 6 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 134 |
+| standalone | a Rust API that only examples call | 133 |
 | unused | no caller outside tests | 2 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -33,6 +33,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
+| `sdf_collider` | step | 23 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
@@ -42,7 +43,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 29 of 141 items) | 29 / 77 / 7 / 27 / 1 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 29 of 141 items) | 29 / 77 / 7 / 28 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -127,7 +128,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `physics2d` | standalone | 0 / 0 / 0 / 39 / 0 | — |
 | `piezoelectric` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
-| `plastic` | standalone | 0 / 0 / 0 / 11 / 2 | — |
+| `plastic` | standalone | 0 / 0 / 0 / 12 / 1 | — |
 | `pressure` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `prestressed` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `print_orientation` | standalone | 0 / 0 / 0 / 13 / 0 | — |
@@ -148,7 +149,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
-| `sdf_collider` | standalone (step 18 of 40 items) | 18 / 0 / 0 / 22 / 0 | C ABI, Python, WebAssembly |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `sdf_fem_mesh` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `sdf_force` | standalone | 0 / 0 / 0 / 10 / 0 | — |

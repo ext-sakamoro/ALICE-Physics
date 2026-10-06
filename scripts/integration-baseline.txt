@@ -42,7 +42,6 @@ src/motor.rs::PdController::disable
 src/motor.rs::PdController::set_velocity_target
 src/motor.rs::apply_motors
 src/plastic.rs::NortonCreep::petg_room_temp
-src/plastic.rs::PlasticModel::with_hardening
 src/sketch.rs::CountMinSketch1024x5::clear
 src/sketch.rs::CountMinSketch2048x7
 src/sketch.rs::CountMinSketch2048x7::DEPTH
@@ -154,9 +153,6 @@ src/sketch.rs::HyperLogLog16::insert_bytes
 src/sketch.rs::HyperLogLog16::insert_hash
 src/sketch.rs::HyperLogLog16::new
 src/sketch.rs::HyperLogLog16::registers
-src/solver.rs::PhysicsWorld::begin_frame
-src/solver.rs::PhysicsWorld::end_frame
-src/solver.rs::TgsCacheStats::new
 src/solver_tgs.rs::ImpulseCache::len
 src/solver_tgs.rs::par_dispatch_islands
 src/solver_tgs_hooks.rs::PgsConfig
