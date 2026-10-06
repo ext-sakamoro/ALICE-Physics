@@ -531,15 +531,16 @@ impl Fix128 {
         let hh = a_hi.wrapping_mul(b_hi);
         let ll_hi = (ll >> 64) as i128;
 
-        let mid = hl.wrapping_add(lh).wrapping_add(ll_hi);
+        // 中央 128 bit の和が i128 を越えるのは |a_hi| と |b_hi| がどちらも
+        // 2⁶³ 近くの時だけで、その時の積は必ず範囲外なので None でよい
+        let mid = hl.checked_add(lh)?.checked_add(ll_hi)?;
         let mid_lo = mid as u64;
 
-        // ⚠️ `Mul` は `as i64` で切り捨てる 2 箇所を try_from で検査する
-        // (`hh` が i64 に収まらない = 上位 bit を落としている、
-        //  `mid >> 64` も同様、さらに加算自体の overflow も拒否する)
-        let hh_i64 = i64::try_from(hh).ok()?;
-        let mid_hi = i64::try_from(mid >> 64).ok()?;
-        let hi = hh_i64.checked_add(mid_hi)?;
+        // 整数部は `hh + (mid >> 64)` で、収まるかは**和**で判定する
+        // `hh` 単独では判定しない: 負の値は整数部が floor (−(k+1)) なので、
+        // `hh` が i64 を越えても `mid >> 64` が打ち消して和は収まることがある
+        // (例: x = −3037000499.5 の x²、真値 ≈ 9.2233720339e18 < 2⁶³)
+        let hi = i64::try_from(hh.checked_add(mid >> 64)?).ok()?;
 
         Some(Self { hi, lo: mid_lo })
     }
