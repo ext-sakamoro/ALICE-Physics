@@ -147,10 +147,11 @@ fn fan_7000rpm_frequency_matches_rpm_over_60() {
     );
 }
 
-/// Reference semantics actually implemented: the band test applies to the
-/// nearest source only. Brute-force pin over a deterministic grid.
+/// Brute force over a deterministic grid: the reported ratio is the nearest
+/// source's, and `is_risky` is the band test over every source (before
+/// AUD-A-S2W1-001 this pinned the nearest-only band test).
 #[test]
-fn is_risky_equals_band_test_on_brute_force_nearest_source() {
+fn is_risky_equals_band_test_on_brute_force_any_source() {
     let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut next = || {
         seed = seed
@@ -179,13 +180,22 @@ fn is_risky_equals_band_test_on_brute_force_nearest_source() {
                     best = f;
                 }
             }
-            let ratio = w / best;
             let bf = n as f64 / d as f64;
+            // the nearest source's ratio is reported as is
+            assert!((r.frequency_ratio.to_f64() - w / best).abs() < 1e-9);
+            // risky iff any source has its ratio inside the band (AUD-A-S2W1-001)
+            let ratios: Vec<f64> = sources
+                .iter()
+                .map(|s| w / s.frequency_hz.to_f64())
+                .collect();
             // skip knife-edge cases where Fix128 rounding could matter
-            if ((ratio - (1.0 - bf)).abs() < 1e-9) || ((ratio - (1.0 + bf)).abs() < 1e-9) {
+            if ratios
+                .iter()
+                .any(|r| (r - (1.0 - bf)).abs() < 1e-9 || (r - (1.0 + bf)).abs() < 1e-9)
+            {
                 continue;
             }
-            let want = ratio > 1.0 - bf && ratio < 1.0 + bf;
+            let want = ratios.iter().any(|r| *r > 1.0 - bf && *r < 1.0 + bf);
             assert_eq!(r.is_risky, want, "t={t} a={a} b={b} band={bf} w={w}");
             checked += 1;
         }
@@ -282,13 +292,13 @@ fn ratio_is_wall_over_source_not_inverse() {
     assert!(r.frequency_ratio > Fix128::ONE);
 }
 
-/// KNOWN DEFECT: the module doc says a wall "is at risk when its natural
+/// Fixed (AUD-A-S2W1-001): the module doc says a wall "is at risk when its natural
 /// frequency is within +-20 % of a significant excitation source" (any
 /// source), but `is_risky` tests only the absolute-nearest source. With
 /// sources S = w/1.22 (nearest by absolute distance) and G = w/0.813
 /// (ratio 0.813, inside the band) the wall is reported safe.
 #[test]
-#[ignore = "known defect: AUD-A-S2W1-001: is_risky checks only the abs-nearest source; w within +-20% of a farther (larger) source reports false (S=w/1.22, G=w/0.813)"]
+// AUD-A-S2W1-001
 fn wall_within_band_of_a_non_nearest_source_is_risky() {
     let probe = wall(
         2,
@@ -311,15 +321,24 @@ fn wall_within_band_of_a_non_nearest_source_is_risky() {
     assert!(r.is_risky, "wall within 20% of G must be risky");
 }
 
-/// KNOWN DEFECT (contract): an empty source slice panics by indexing
+/// Fixed (AUD-A-S2W1-002): an empty source slice used to panic by indexing
 /// `sources[0]`; neither the doc nor the signature (slice, not NonEmpty)
 /// says so.
 #[test]
-#[ignore = "known defect: AUD-A-S2W1-002: analyze_wall_resonance(&[]) panics (index out of bounds) with no documented precondition"]
+// AUD-A-S2W1-002
 fn empty_source_list_does_not_panic() {
     let res = std::panic::catch_unwind(|| wall(2, 100, 100, &[], Fix128::from_ratio(1, 5)));
-    assert!(
-        res.is_ok(),
-        "empty source list must be handled or documented"
+    let r = res.expect("an empty source list must not panic");
+    // no excitation: not risky, ratio 0, the wall frequency is still computed
+    assert!(!r.is_risky);
+    assert_eq!(r.frequency_ratio, Fix128::ZERO);
+    assert_eq!(r.nearest_source.frequency_hz, Fix128::ZERO);
+    let one = wall(
+        2,
+        100,
+        100,
+        &default_excitation_sources(),
+        Fix128::from_ratio(1, 5),
     );
+    assert_eq!(r.wall_frequency_hz, one.wall_frequency_hz);
 }

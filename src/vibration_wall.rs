@@ -92,12 +92,15 @@ pub fn default_excitation_sources() -> Vec<ExcitationSource> {
 pub struct WallResonanceReport {
     /// Wall's first natural frequency (Hz).
     pub wall_frequency_hz: Fix128,
-    /// Nearest excitation source (by absolute frequency difference).
+    /// Nearest excitation source (by absolute frequency difference). With no
+    /// source at all it is a source named `""` at 0 Hz.
     pub nearest_source: ExcitationSource,
     /// Ratio `wall / source` — should be far from 1.0 for safety.
     pub frequency_ratio: Fix128,
-    /// True iff the wall frequency lies within `resonance_band` of the
-    /// nearest source (default ±20 %).
+    /// True iff the wall frequency lies within `resonance_band` of any
+    /// source (default ±20 %): `1 - band < wall / source < 1 + band`. The
+    /// band is relative, so a farther, higher source can be in it while the
+    /// nearest is not. False with no source.
     pub is_risky: bool,
 }
 
@@ -106,6 +109,7 @@ pub struct WallResonanceReport {
 /// `wall_thickness_mm`, `side_a_mm`, `side_b_mm` describe a simply-supported
 /// rectangular plate (same convention as `modal::plate_natural_frequency_hz`).
 /// `resonance_band` = fractional half-width of the risky region (0.2 = ±20 %).
+/// An empty `sources` slice is no excitation: not risky, ratio 0.
 #[must_use]
 pub fn analyze_wall_resonance(
     material: &MaterialProperties,
@@ -124,10 +128,32 @@ pub fn analyze_wall_resonance(
         side_b_mm,
     );
 
+    let ratio_to = |src: &ExcitationSource| {
+        if src.frequency_hz.is_zero() {
+            Fix128::ZERO
+        } else {
+            f_wall / src.frequency_hz
+        }
+    };
+    let in_band = |ratio: Fix128| {
+        ratio > (Fix128::ONE - resonance_band) && ratio < (Fix128::ONE + resonance_band)
+    };
+
     // Locate the nearest source by absolute distance.
-    let mut nearest = sources[0];
+    let Some((&first, rest)) = sources.split_first() else {
+        return WallResonanceReport {
+            wall_frequency_hz: f_wall,
+            nearest_source: ExcitationSource {
+                name: "",
+                frequency_hz: Fix128::ZERO,
+            },
+            frequency_ratio: Fix128::ZERO,
+            is_risky: false,
+        };
+    };
+    let mut nearest = first;
     let mut best_dist = (f_wall - nearest.frequency_hz).abs();
-    for src in sources.iter().skip(1) {
+    for src in rest {
         let d = (f_wall - src.frequency_hz).abs();
         if d < best_dist {
             best_dist = d;
@@ -135,12 +161,9 @@ pub fn analyze_wall_resonance(
         }
     }
 
-    let ratio = if nearest.frequency_hz.is_zero() {
-        Fix128::ZERO
-    } else {
-        f_wall / nearest.frequency_hz
-    };
-    let is_risky = ratio > (Fix128::ONE - resonance_band) && ratio < (Fix128::ONE + resonance_band);
+    let ratio = ratio_to(&nearest);
+    // the band is relative to each source, so every source is checked
+    let is_risky = sources.iter().any(|src| in_band(ratio_to(src)));
 
     WallResonanceReport {
         wall_frequency_hz: f_wall,
