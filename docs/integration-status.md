@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 164 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2472 |
+| L0 | not reached by any non-test code, examples included | 30 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2503 |
 | live | reached without examples (crate-internal roots or a binding) | 451 |
-| | **total** | **3087** |
+| | **total** | **2984** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,153 +19,22 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 17 unwired items.
 
-### L0 here but not in the baseline (144)
+### L0 here but not in the baseline (13)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
-- `src/eulerian_grid.rs::LocalPlaneChannel`
-- `src/eulerian_grid.rs::LocalPlaneChannel::is_drained`
-- `src/eulerian_grid.rs::LocalPlaneChannel::new`
-- `src/eulerian_grid.rs::PlaneChannel`
-- `src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING`
-- `src/eulerian_grid.rs::SlabBytes`
-- `src/eulerian_grid.rs::SlabBytes::ZERO`
-- `src/eulerian_grid.rs::SlabBytes::add`
-- `src/eulerian_grid.rs::SlabBytes::total`
-- `src/eulerian_grid.rs::SlabFaceConditions`
-- `src/eulerian_grid.rs::SlabFaceConditions::from_grid`
-- `src/eulerian_grid.rs::SlabFaceConditions::new`
-- `src/eulerian_grid.rs::enforce_slab_face_boundaries`
-- `src/eulerian_grid.rs::enforce_slab_face_boundaries_on_rank`
-- `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_decomposed_on_rank`
+- `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
-- `src/motor.rs::JointMotor`
 - `src/motor.rs::JointMotor::new`
-- `src/motor.rs::PdController3D`
 - `src/motor.rs::PdController3D::compute_torque`
 - `src/motor.rs::PdController3D::new`
-- `src/sketch.rs::CountMinSketch1024x5::clear`
-- `src/sketch.rs::CountMinSketch2048x7`
-- `src/sketch.rs::CountMinSketch2048x7::DEPTH`
-- `src/sketch.rs::CountMinSketch2048x7::WIDTH`
-- `src/sketch.rs::CountMinSketch2048x7::clear`
-- `src/sketch.rs::CountMinSketch2048x7::confidence`
-- `src/sketch.rs::CountMinSketch2048x7::error_bound`
-- `src/sketch.rs::CountMinSketch2048x7::estimate`
-- `src/sketch.rs::CountMinSketch2048x7::estimate_bytes`
-- `src/sketch.rs::CountMinSketch2048x7::estimate_hash`
-- `src/sketch.rs::CountMinSketch2048x7::insert`
-- `src/sketch.rs::CountMinSketch2048x7::insert_bytes`
-- `src/sketch.rs::CountMinSketch2048x7::insert_hash`
-- `src/sketch.rs::CountMinSketch2048x7::new`
-- `src/sketch.rs::CountMinSketch2048x7::total`
-- `src/sketch.rs::CountMinSketch4096x5`
-- `src/sketch.rs::CountMinSketch4096x5::DEPTH`
-- `src/sketch.rs::CountMinSketch4096x5::WIDTH`
-- `src/sketch.rs::CountMinSketch4096x5::clear`
-- `src/sketch.rs::CountMinSketch4096x5::confidence`
-- `src/sketch.rs::CountMinSketch4096x5::error_bound`
-- `src/sketch.rs::CountMinSketch4096x5::estimate`
-- `src/sketch.rs::CountMinSketch4096x5::estimate_bytes`
-- `src/sketch.rs::CountMinSketch4096x5::estimate_hash`
-- `src/sketch.rs::CountMinSketch4096x5::insert`
-- `src/sketch.rs::CountMinSketch4096x5::insert_bytes`
-- `src/sketch.rs::CountMinSketch4096x5::insert_hash`
-- `src/sketch.rs::CountMinSketch4096x5::new`
-- `src/sketch.rs::CountMinSketch4096x5::total`
-- `src/sketch.rs::DDSketch1024`
-- `src/sketch.rs::DDSketch1024::BINS`
-- `src/sketch.rs::DDSketch1024::alpha`
-- `src/sketch.rs::DDSketch1024::clear`
-- `src/sketch.rs::DDSketch1024::count`
-- `src/sketch.rs::DDSketch1024::insert`
-- `src/sketch.rs::DDSketch1024::max`
-- `src/sketch.rs::DDSketch1024::mean`
-- `src/sketch.rs::DDSketch1024::min`
-- `src/sketch.rs::DDSketch1024::new`
-- `src/sketch.rs::DDSketch1024::quantile`
-- `src/sketch.rs::DDSketch1024::sum`
-- `src/sketch.rs::DDSketch128`
-- `src/sketch.rs::DDSketch128::BINS`
-- `src/sketch.rs::DDSketch128::alpha`
-- `src/sketch.rs::DDSketch128::clear`
-- `src/sketch.rs::DDSketch128::count`
-- `src/sketch.rs::DDSketch128::insert`
-- `src/sketch.rs::DDSketch128::max`
-- `src/sketch.rs::DDSketch128::mean`
-- `src/sketch.rs::DDSketch128::min`
-- `src/sketch.rs::DDSketch128::new`
-- `src/sketch.rs::DDSketch128::quantile`
-- `src/sketch.rs::DDSketch128::sum`
-- `src/sketch.rs::DDSketch2048::clear`
-- `src/sketch.rs::DDSketch2048::sum`
-- `src/sketch.rs::DDSketch256::BINS`
-- `src/sketch.rs::DDSketch256::alpha`
-- `src/sketch.rs::DDSketch256::sum`
-- `src/sketch.rs::DDSketch512`
-- `src/sketch.rs::DDSketch512::BINS`
-- `src/sketch.rs::DDSketch512::alpha`
-- `src/sketch.rs::DDSketch512::clear`
-- `src/sketch.rs::DDSketch512::count`
-- `src/sketch.rs::DDSketch512::insert`
-- `src/sketch.rs::DDSketch512::max`
-- `src/sketch.rs::DDSketch512::mean`
-- `src/sketch.rs::DDSketch512::min`
-- `src/sketch.rs::DDSketch512::new`
-- `src/sketch.rs::DDSketch512::quantile`
-- `src/sketch.rs::DDSketch512::sum`
-- `src/sketch.rs::HeavyHitters10::clear`
-- `src/sketch.rs::HeavyHitters20`
-- `src/sketch.rs::HeavyHitters20::K`
-- `src/sketch.rs::HeavyHitters20::clear`
-- `src/sketch.rs::HeavyHitters20::cms`
-- `src/sketch.rs::HeavyHitters20::insert_hash`
-- `src/sketch.rs::HeavyHitters20::new`
-- `src/sketch.rs::HeavyHitters20::top`
-- `src/sketch.rs::HeavyHitters5`
-- `src/sketch.rs::HeavyHitters5::K`
-- `src/sketch.rs::HeavyHitters5::clear`
-- `src/sketch.rs::HeavyHitters5::cms`
-- `src/sketch.rs::HeavyHitters5::insert_hash`
-- `src/sketch.rs::HeavyHitters5::new`
-- `src/sketch.rs::HeavyHitters5::top`
-- `src/sketch.rs::HyperLogLog10::P`
-- `src/sketch.rs::HyperLogLog10::insert`
-- `src/sketch.rs::HyperLogLog10::insert_bytes`
-- `src/sketch.rs::HyperLogLog10::registers`
-- `src/sketch.rs::HyperLogLog12`
-- `src/sketch.rs::HyperLogLog12::M`
-- `src/sketch.rs::HyperLogLog12::P`
-- `src/sketch.rs::HyperLogLog12::cardinality`
-- `src/sketch.rs::HyperLogLog12::clear`
-- `src/sketch.rs::HyperLogLog12::insert`
-- `src/sketch.rs::HyperLogLog12::insert_bytes`
-- `src/sketch.rs::HyperLogLog12::insert_hash`
-- `src/sketch.rs::HyperLogLog12::new`
-- `src/sketch.rs::HyperLogLog12::registers`
-- `src/sketch.rs::HyperLogLog14::P`
-- `src/sketch.rs::HyperLogLog14::clear`
-- `src/sketch.rs::HyperLogLog16`
-- `src/sketch.rs::HyperLogLog16::M`
-- `src/sketch.rs::HyperLogLog16::P`
-- `src/sketch.rs::HyperLogLog16::cardinality`
-- `src/sketch.rs::HyperLogLog16::clear`
-- `src/sketch.rs::HyperLogLog16::insert`
-- `src/sketch.rs::HyperLogLog16::insert_bytes`
-- `src/sketch.rs::HyperLogLog16::insert_hash`
-- `src/sketch.rs::HyperLogLog16::new`
-- `src/sketch.rs::HyperLogLog16::registers`
+- `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/solver_tgs.rs::ImpulseCache::len`
-- `src/solver_tgs_hooks.rs::PgsConfig`
-- `src/solver_tgs_hooks.rs::PgsHooks`
-- `src/solver_tgs_hooks.rs::SimpleBodyState`
-- `src/solver_tgs_hooks.rs::SimpleContact`
 - `src/solver_tgs_hooks_6dof.rs::Body6DofState`
 - `src/solver_tgs_hooks_6dof.rs::Contact6Dof`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofConfig`
-- `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks`
 - `src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks::new`
 
 ### In the baseline but reached here (0)
@@ -174,34 +43,11 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (164)
+## L0 — unreached (30)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
-- `src/eulerian_grid.rs::LocalPlaneChannel`
-- `src/eulerian_grid.rs::LocalPlaneChannel::is_drained`
-- `src/eulerian_grid.rs::LocalPlaneChannel::new`
-- `src/eulerian_grid.rs::LocalSlabTransport::bytes`
-- `src/eulerian_grid.rs::PlaneChannel`
-- `src/eulerian_grid.rs::SLAB_FACE_HALO_MISSING`
-- `src/eulerian_grid.rs::SlabBytes`
-- `src/eulerian_grid.rs::SlabBytes::ZERO`
-- `src/eulerian_grid.rs::SlabBytes::add`
-- `src/eulerian_grid.rs::SlabBytes::total`
-- `src/eulerian_grid.rs::SlabFaceConditions`
-- `src/eulerian_grid.rs::SlabFaceConditions::from_grid`
-- `src/eulerian_grid.rs::SlabFaceConditions::new`
-- `src/eulerian_grid.rs::SlabFaceConditions::set_u`
-- `src/eulerian_grid.rs::SlabFaceConditions::set_v`
-- `src/eulerian_grid.rs::SlabFaceConditions::set_w`
-- `src/eulerian_grid.rs::SlabFaces::bytes`
-- `src/eulerian_grid.rs::SlabStencil::bytes`
-- `src/eulerian_grid.rs::SlabStorage::bytes`
-- `src/eulerian_grid.rs::enforce_slab_face_boundaries`
-- `src/eulerian_grid.rs::enforce_slab_face_boundaries_on_rank`
-- `src/eulerian_grid.rs::enforce_slab_face_boundaries_over`
-- `src/eulerian_grid/multigrid_decomposed.rs::project_pressure_multigrid_decomposed_on_rank`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/motor.rs::JointMotor`
 - `src/motor.rs::JointMotor::new`
@@ -213,117 +59,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/motor.rs::PdController::set_velocity_target`
 - `src/motor.rs::apply_motors`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
-- `src/sketch.rs::CountMinSketch1024x5::clear`
-- `src/sketch.rs::CountMinSketch2048x7`
-- `src/sketch.rs::CountMinSketch2048x7::DEPTH`
-- `src/sketch.rs::CountMinSketch2048x7::WIDTH`
-- `src/sketch.rs::CountMinSketch2048x7::clear`
-- `src/sketch.rs::CountMinSketch2048x7::confidence`
-- `src/sketch.rs::CountMinSketch2048x7::error_bound`
-- `src/sketch.rs::CountMinSketch2048x7::estimate`
-- `src/sketch.rs::CountMinSketch2048x7::estimate_bytes`
-- `src/sketch.rs::CountMinSketch2048x7::estimate_hash`
-- `src/sketch.rs::CountMinSketch2048x7::insert`
-- `src/sketch.rs::CountMinSketch2048x7::insert_bytes`
-- `src/sketch.rs::CountMinSketch2048x7::insert_hash`
-- `src/sketch.rs::CountMinSketch2048x7::new`
-- `src/sketch.rs::CountMinSketch2048x7::total`
-- `src/sketch.rs::CountMinSketch4096x5`
-- `src/sketch.rs::CountMinSketch4096x5::DEPTH`
-- `src/sketch.rs::CountMinSketch4096x5::WIDTH`
-- `src/sketch.rs::CountMinSketch4096x5::clear`
-- `src/sketch.rs::CountMinSketch4096x5::confidence`
-- `src/sketch.rs::CountMinSketch4096x5::error_bound`
-- `src/sketch.rs::CountMinSketch4096x5::estimate`
-- `src/sketch.rs::CountMinSketch4096x5::estimate_bytes`
-- `src/sketch.rs::CountMinSketch4096x5::estimate_hash`
-- `src/sketch.rs::CountMinSketch4096x5::insert`
-- `src/sketch.rs::CountMinSketch4096x5::insert_bytes`
-- `src/sketch.rs::CountMinSketch4096x5::insert_hash`
-- `src/sketch.rs::CountMinSketch4096x5::new`
-- `src/sketch.rs::CountMinSketch4096x5::total`
-- `src/sketch.rs::DDSketch1024`
-- `src/sketch.rs::DDSketch1024::BINS`
-- `src/sketch.rs::DDSketch1024::alpha`
-- `src/sketch.rs::DDSketch1024::clear`
-- `src/sketch.rs::DDSketch1024::count`
-- `src/sketch.rs::DDSketch1024::insert`
-- `src/sketch.rs::DDSketch1024::max`
-- `src/sketch.rs::DDSketch1024::mean`
-- `src/sketch.rs::DDSketch1024::min`
-- `src/sketch.rs::DDSketch1024::new`
-- `src/sketch.rs::DDSketch1024::quantile`
-- `src/sketch.rs::DDSketch1024::sum`
-- `src/sketch.rs::DDSketch128`
-- `src/sketch.rs::DDSketch128::BINS`
-- `src/sketch.rs::DDSketch128::alpha`
-- `src/sketch.rs::DDSketch128::clear`
-- `src/sketch.rs::DDSketch128::count`
-- `src/sketch.rs::DDSketch128::insert`
-- `src/sketch.rs::DDSketch128::max`
-- `src/sketch.rs::DDSketch128::mean`
-- `src/sketch.rs::DDSketch128::min`
-- `src/sketch.rs::DDSketch128::new`
-- `src/sketch.rs::DDSketch128::quantile`
-- `src/sketch.rs::DDSketch128::sum`
-- `src/sketch.rs::DDSketch2048::clear`
-- `src/sketch.rs::DDSketch2048::sum`
-- `src/sketch.rs::DDSketch256::BINS`
-- `src/sketch.rs::DDSketch256::alpha`
-- `src/sketch.rs::DDSketch256::sum`
-- `src/sketch.rs::DDSketch512`
-- `src/sketch.rs::DDSketch512::BINS`
-- `src/sketch.rs::DDSketch512::alpha`
-- `src/sketch.rs::DDSketch512::clear`
-- `src/sketch.rs::DDSketch512::count`
-- `src/sketch.rs::DDSketch512::insert`
-- `src/sketch.rs::DDSketch512::max`
-- `src/sketch.rs::DDSketch512::mean`
-- `src/sketch.rs::DDSketch512::min`
-- `src/sketch.rs::DDSketch512::new`
-- `src/sketch.rs::DDSketch512::quantile`
-- `src/sketch.rs::DDSketch512::sum`
-- `src/sketch.rs::HeavyHitters10::clear`
-- `src/sketch.rs::HeavyHitters20`
-- `src/sketch.rs::HeavyHitters20::K`
-- `src/sketch.rs::HeavyHitters20::clear`
-- `src/sketch.rs::HeavyHitters20::cms`
-- `src/sketch.rs::HeavyHitters20::insert_hash`
-- `src/sketch.rs::HeavyHitters20::new`
-- `src/sketch.rs::HeavyHitters20::top`
-- `src/sketch.rs::HeavyHitters5`
-- `src/sketch.rs::HeavyHitters5::K`
-- `src/sketch.rs::HeavyHitters5::clear`
-- `src/sketch.rs::HeavyHitters5::cms`
-- `src/sketch.rs::HeavyHitters5::insert_hash`
-- `src/sketch.rs::HeavyHitters5::new`
-- `src/sketch.rs::HeavyHitters5::top`
-- `src/sketch.rs::HyperLogLog10::P`
-- `src/sketch.rs::HyperLogLog10::insert`
-- `src/sketch.rs::HyperLogLog10::insert_bytes`
-- `src/sketch.rs::HyperLogLog10::registers`
-- `src/sketch.rs::HyperLogLog12`
-- `src/sketch.rs::HyperLogLog12::M`
-- `src/sketch.rs::HyperLogLog12::P`
-- `src/sketch.rs::HyperLogLog12::cardinality`
-- `src/sketch.rs::HyperLogLog12::clear`
-- `src/sketch.rs::HyperLogLog12::insert`
-- `src/sketch.rs::HyperLogLog12::insert_bytes`
-- `src/sketch.rs::HyperLogLog12::insert_hash`
-- `src/sketch.rs::HyperLogLog12::new`
-- `src/sketch.rs::HyperLogLog12::registers`
-- `src/sketch.rs::HyperLogLog14::P`
-- `src/sketch.rs::HyperLogLog14::clear`
-- `src/sketch.rs::HyperLogLog16`
-- `src/sketch.rs::HyperLogLog16::M`
-- `src/sketch.rs::HyperLogLog16::P`
-- `src/sketch.rs::HyperLogLog16::cardinality`
-- `src/sketch.rs::HyperLogLog16::clear`
-- `src/sketch.rs::HyperLogLog16::insert`
-- `src/sketch.rs::HyperLogLog16::insert_bytes`
-- `src/sketch.rs::HyperLogLog16::insert_hash`
-- `src/sketch.rs::HyperLogLog16::new`
-- `src/sketch.rs::HyperLogLog16::registers`
 - `src/solver_tgs.rs::ImpulseCache::len`
 - `src/solver_tgs.rs::par_dispatch_islands`
 - `src/solver_tgs_hooks.rs::PgsConfig`
@@ -356,7 +91,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2472)
+## L1 — example-only (2503)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -405,9 +140,9 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/dynamic_fem.rs`: `DynamicsConfig`, `DynamicsConfig::try_new`, `MassLumping`, `TransientSolver`, `TransientSolver::accelerations`, `TransientSolver::displacements`, `TransientSolver::new`, `TransientSolver::step`, `TransientSolver::velocities`
 - `src/electromagnetic.rs`: `ChargedBody`, `ChargedBody::new`, `EmSource`, `EmSource::sample`, `lorentz_force`, `lorentz_force_sum`
 - `src/erosion.rs`: `EXPOSURE_DECAY_PER_S`, `ErosionConfig`, `ErosionModifier`, `ErosionModifier::compute_exposure_from_normals`, `ErosionModifier::erosion_at`, `ErosionModifier::new`, `ErosionModifier::set_exposure_at`, `ErosionType`, `WATER_PREFACTOR`
-- `src/eulerian_grid.rs`: `BicgstabStats`, `DELIVERY_DESTINATION_LACKS_LAYER`, `DELIVERY_SOURCE_LACKS_LAYER`, `FaceBc`, `FaceBc::blocks_pressure`, `FaceBc::is_inflow`, `FaceBc::is_wall`, `FaceBc::no_slip_velocity`, `FaceFlags`, `FaceSink`, `HALO_MISSING_ABOVE`, `HALO_MISSING_BELOW`, `HaloSchedule`, `LocalSlabTransport`, `LocalSlabTransport::from_field`, `LocalSlabTransport::slab`, `LocalTransport`, `LocalTransport::new`, `MacGrid`, `MacGrid::cell_velocity`, `MacGrid::divergence`, `MacGrid::enforce_face_boundaries`, `MacGrid::enforce_solid_faces`, `MacGrid::idx_u`, `MacGrid::idx_v`, `MacGrid::idx_w`, `MacGrid::is_u_solid`, `MacGrid::is_v_solid`, `MacGrid::is_w_solid`, `MacGrid::new`, `MacGrid::pressure`, `MacGrid::set_closed_box_walls`, `MacGrid::set_u_bc`, `MacGrid::set_u_solid`, `MacGrid::set_v_bc`, `MacGrid::set_v_solid`, `MacGrid::set_w_bc`, `MacGrid::set_w_solid`, `MacGrid::u`, `MacGrid::u_bc`, `MacGrid::u_blocks_pressure`, `MacGrid::u_wall_across_y`, `MacGrid::u_wall_across_z`, `MacGrid::v`, `MacGrid::v_bc`, `MacGrid::v_blocks_pressure`, `MacGrid::v_wall_across_x`, `MacGrid::v_wall_across_z`, `MacGrid::w`, `MacGrid::w_bc`, `MacGrid::w_blocks_pressure`, `MacGrid::w_wall_across_x`, `MacGrid::w_wall_across_y`, `ParticleScatter`, `RankTransport`, `SlabFaces`, `SlabFaces::from_grid`, `SlabFaces::new`, `SlabFaces::owned`, `SlabFaces::u_layer_mut`, `SlabFaces::v_layer_mut`, `SlabFaces::w_layer_mut`, `SlabSocketTransport`, `SlabSocketTransport::new`, `SlabSocketTransport::slab`, `SlabStencil`, `SlabStencil::build`, `SlabStorage`, `SlabStorage::for_slab`, `SlabStorage::layer`, `SlabStorage::layer_mut`, `SlabStorage::resident`, `SlabStorage::sweep_window`, `SlabTransport`, `SocketTransport`, `SocketTransport::new`, `SweepWindow`, `g2p_velocity`, `p2g_nearest`, `p2g_normalized`, `p2g_normalized_with`, `p2g_trilinear`, `project_pressure`, `project_pressure_banded`, `project_pressure_bicgstab`, `project_pressure_decomposed`, `project_pressure_decomposed_on_rank`, `project_pressure_jacobi`, `project_pressure_multigrid`, `project_pressure_red_black_gs`, `project_pressure_slab_local_on_rank`, `project_pressure_slab_local_over`, `sample_u_range`, `sample_u_trilinear`, `sample_v_range`, `sample_v_trilinear`, `sample_w_range`, `sample_w_trilinear`
+- `src/eulerian_grid.rs`: `BicgstabStats`, `DELIVERY_DESTINATION_LACKS_LAYER`, `DELIVERY_SOURCE_LACKS_LAYER`, `FaceBc`, `FaceBc::blocks_pressure`, `FaceBc::is_inflow`, `FaceBc::is_wall`, `FaceBc::no_slip_velocity`, `FaceFlags`, `FaceSink`, `HALO_MISSING_ABOVE`, `HALO_MISSING_BELOW`, `HaloSchedule`, `LocalPlaneChannel`, `LocalPlaneChannel::is_drained`, `LocalPlaneChannel::new`, `LocalSlabTransport`, `LocalSlabTransport::from_field`, `LocalSlabTransport::slab`, `LocalTransport`, `LocalTransport::new`, `MacGrid`, `MacGrid::cell_velocity`, `MacGrid::divergence`, `MacGrid::enforce_face_boundaries`, `MacGrid::enforce_solid_faces`, `MacGrid::idx_u`, `MacGrid::idx_v`, `MacGrid::idx_w`, `MacGrid::is_u_solid`, `MacGrid::is_v_solid`, `MacGrid::is_w_solid`, `MacGrid::new`, `MacGrid::pressure`, `MacGrid::set_closed_box_walls`, `MacGrid::set_u_bc`, `MacGrid::set_u_solid`, `MacGrid::set_v_bc`, `MacGrid::set_v_solid`, `MacGrid::set_w_bc`, `MacGrid::set_w_solid`, `MacGrid::u`, `MacGrid::u_bc`, `MacGrid::u_blocks_pressure`, `MacGrid::u_wall_across_y`, `MacGrid::u_wall_across_z`, `MacGrid::v`, `MacGrid::v_bc`, `MacGrid::v_blocks_pressure`, `MacGrid::v_wall_across_x`, `MacGrid::v_wall_across_z`, `MacGrid::w`, `MacGrid::w_bc`, `MacGrid::w_blocks_pressure`, `MacGrid::w_wall_across_x`, `MacGrid::w_wall_across_y`, `ParticleScatter`, `PlaneChannel`, `RankTransport`, `SLAB_FACE_HALO_MISSING`, `SlabBytes`, `SlabBytes::ZERO`, `SlabBytes::add`, `SlabBytes::total`, `SlabFaceConditions`, `SlabFaceConditions::from_grid`, `SlabFaceConditions::new`, `SlabFaceConditions::set_u`, `SlabFaceConditions::set_v`, `SlabFaceConditions::set_w`, `SlabFaces`, `SlabFaces::bytes`, `SlabFaces::from_grid`, `SlabFaces::new`, `SlabFaces::owned`, `SlabFaces::u_layer_mut`, `SlabFaces::v_layer_mut`, `SlabFaces::w_layer_mut`, `SlabSocketTransport`, `SlabSocketTransport::new`, `SlabSocketTransport::slab`, `SlabStencil`, `SlabStencil::build`, `SlabStencil::bytes`, `SlabStorage`, `SlabStorage::bytes`, `SlabStorage::for_slab`, `SlabStorage::layer`, `SlabStorage::layer_mut`, `SlabStorage::resident`, `SlabStorage::sweep_window`, `SlabTransport`, `SocketTransport`, `SocketTransport::new`, `SweepWindow`, `enforce_slab_face_boundaries`, `enforce_slab_face_boundaries_on_rank`, `enforce_slab_face_boundaries_over`, `g2p_velocity`, `p2g_nearest`, `p2g_normalized`, `p2g_normalized_with`, `p2g_trilinear`, `project_pressure`, `project_pressure_banded`, `project_pressure_bicgstab`, `project_pressure_decomposed`, `project_pressure_decomposed_on_rank`, `project_pressure_jacobi`, `project_pressure_multigrid`, `project_pressure_red_black_gs`, `project_pressure_slab_local_on_rank`, `project_pressure_slab_local_over`, `sample_u_range`, `sample_u_trilinear`, `sample_v_range`, `sample_v_trilinear`, `sample_w_range`, `sample_w_trilinear`
 - `src/eulerian_grid/multigrid_decomposed.rs`: `HALO`, `Residency`, `multigrid_slab_bounds`, `project_pressure_multigrid_banded_on_rank`, `project_pressure_multigrid_decomposed`, `project_pressure_multigrid_decomposed_over`
-- `src/eulerian_grid/rank_threads.rs`: `MemoryLink`, `project_pressure_distributed`
+- `src/eulerian_grid/rank_threads.rs`: `DistributedProjectionReport`, `DistributedProjectionReport::max_rank_bytes`, `DistributedProjectionReport::total_bytes`, `MemoryLink`, `project_pressure_distributed`, `project_pressure_distributed_with_report`
 - `src/event.rs`: `EventCollector::contact_events`, `EventCollector::drain_contact_events`, `EventCollector::drain_trigger_events`, `EventCollector::has_events`, `EventCollector::trigger_events`
 - `src/fatigue.rs`: `BASQUIN_LOW_CYCLE_BOUND`, `FatigueRangeError`, `FatigueReport`, `INFINITE_LIFE`, `SnCurve`, `SnCurve::aluminum_a5052`, `SnCurve::for_material`, `SnCurve::from_fdm_material`, `SnCurve::steel_sus304`, `SpectrumEntry`, `analyze_spectrum`, `cycles_to_failure`, `miner_damage`, `stress_at_cycles`
 - `src/filament_db.rs`: `FilamentDb`, `FilamentDb::by_category`, `FilamentDb::find_by_name`, `FilamentDb::get`, `FilamentDb::is_empty`, `FilamentDb::iter`, `FilamentDb::len`, `FilamentDb::new`, `FilamentDb::register`, `FilamentDb::try_register`, `FilamentDb::with_defaults`, `FilamentId`, `GPA_TO_PA`, `G_CM3_TO_KG_M3`, `MPA_TO_PA`, `MaterialCategory`, `MaterialProperties`, `MaterialProperties::a5052`, `MaterialProperties::abs`, `MaterialProperties::cf_nylon`, `MaterialProperties::density_si`, `MaterialProperties::is_fdm`, `MaterialProperties::is_sheet_metal`, `MaterialProperties::nylon`, `MaterialProperties::pc`, `MaterialProperties::peek`, `MaterialProperties::petg`, `MaterialProperties::pla`, `MaterialProperties::sus304`, `MaterialProperties::tensile_z`, `MaterialProperties::tpu`, `MaterialProperties::yield_at_angle`, `MaterialProperties::yield_pa`, `MaterialProperties::yield_z`, `MaterialProperties::youngs_at_angle`, `MaterialProperties::youngs_pa`, `MaterialProperties::youngs_z`
@@ -497,7 +232,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/shape_raycast.rs`: `LocalHit`, `PhysicsWorld::cast_ray`, `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `PhysicsWorld::ray_caster`, `RayFilter`, `RayFilter::excluding_body`, `RayFilter::new`, `RayFilter::with_layer_mask`, `RayFilter::with_sdf`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `RayFilter::with_static`, `RayTarget`, `WorldRayCaster`, `WorldRayCaster::all`, `WorldRayCaster::any`, `WorldRayCaster::candidates`, `WorldRayCaster::closest`, `WorldRayHit`
 - `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::clear`, `ScalarField3D::contains`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::max_value`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`, `VectorField3D`, `VectorField3D::clear`, `VectorField3D::decay`, `VectorField3D::new`, `VectorField3D::sample`, `VectorField3D::splat`
 - `src/sim_modifier.rs`: `ModifiedSdf`, `ModifiedSdf::add_modifier`, `ModifiedSdf::clear_modifiers`, `ModifiedSdf::modifier_count`, `ModifiedSdf::modifier_mut`, `ModifiedSdf::new`, `ModifiedSdf::update`, `ModifiedSdf::with_modifier`, `PhysicsModifier`, `SingleModifiedSdf`, `SingleModifiedSdf::new`, `SingleModifiedSdf::update`
-- `src/sketch.rs`: `CountMinSketch`, `CountMinSketch1024x5`, `CountMinSketch1024x5::DEPTH`, `CountMinSketch1024x5::WIDTH`, `CountMinSketch1024x5::confidence`, `CountMinSketch1024x5::error_bound`, `CountMinSketch1024x5::estimate`, `CountMinSketch1024x5::estimate_bytes`, `CountMinSketch1024x5::estimate_hash`, `CountMinSketch1024x5::insert`, `CountMinSketch1024x5::insert_bytes`, `CountMinSketch1024x5::insert_hash`, `CountMinSketch1024x5::new`, `CountMinSketch1024x5::total`, `DDSketch`, `DDSketch2048`, `DDSketch2048::BINS`, `DDSketch2048::alpha`, `DDSketch2048::count`, `DDSketch2048::insert`, `DDSketch2048::max`, `DDSketch2048::mean`, `DDSketch2048::min`, `DDSketch2048::new`, `DDSketch2048::quantile`, `DDSketch256`, `DDSketch256::clear`, `DDSketch256::count`, `DDSketch256::insert`, `DDSketch256::max`, `DDSketch256::mean`, `DDSketch256::min`, `DDSketch256::new`, `DDSketch256::quantile`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitterEntry`, `HeavyHitters`, `HeavyHitters10`, `HeavyHitters10::K`, `HeavyHitters10::cms`, `HeavyHitters10::insert_hash`, `HeavyHitters10::new`, `HeavyHitters10::top`, `HyperLogLog`, `HyperLogLog10`, `HyperLogLog10::M`, `HyperLogLog10::cardinality`, `HyperLogLog10::clear`, `HyperLogLog10::insert_hash`, `HyperLogLog10::new`, `HyperLogLog14`, `HyperLogLog14::M`, `HyperLogLog14::cardinality`, `HyperLogLog14::insert`, `HyperLogLog14::insert_bytes`, `HyperLogLog14::insert_hash`, `HyperLogLog14::new`, `HyperLogLog14::registers`, `Mergeable`
+- `src/sketch.rs`: `CountMinSketch`, `CountMinSketch1024x5`, `CountMinSketch2048x7`, `CountMinSketch4096x5`, `CountMinSketchN`, `CountMinSketchN::DEPTH`, `CountMinSketchN::WIDTH`, `CountMinSketchN::clear`, `CountMinSketchN::confidence`, `CountMinSketchN::error_bound`, `CountMinSketchN::estimate`, `CountMinSketchN::estimate_bytes`, `CountMinSketchN::estimate_hash`, `CountMinSketchN::insert`, `CountMinSketchN::insert_bytes`, `CountMinSketchN::insert_hash`, `CountMinSketchN::new`, `CountMinSketchN::total`, `DDSketch`, `DDSketch1024`, `DDSketch128`, `DDSketch2048`, `DDSketch256`, `DDSketch512`, `DDSketchN`, `DDSketchN::BINS`, `DDSketchN::alpha`, `DDSketchN::clear`, `DDSketchN::count`, `DDSketchN::insert`, `DDSketchN::max`, `DDSketchN::mean`, `DDSketchN::min`, `DDSketchN::new`, `DDSketchN::quantile`, `DDSketchN::sum`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitterEntry`, `HeavyHitters`, `HeavyHitters10`, `HeavyHitters20`, `HeavyHitters5`, `HeavyHittersN`, `HeavyHittersN::K`, `HeavyHittersN::clear`, `HeavyHittersN::cms`, `HeavyHittersN::insert_hash`, `HeavyHittersN::new`, `HeavyHittersN::top`, `HyperLogLog`, `HyperLogLog10`, `HyperLogLog12`, `HyperLogLog14`, `HyperLogLog16`, `HyperLogLogN`, `HyperLogLogN::M`, `HyperLogLogN::P`, `HyperLogLogN::cardinality`, `HyperLogLogN::clear`, `HyperLogLogN::insert`, `HyperLogLogN::insert_bytes`, `HyperLogLogN::insert_hash`, `HyperLogLogN::new`, `HyperLogLogN::registers`, `Mergeable`
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`

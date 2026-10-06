@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **26 baseline items** — Permitted violations, ratchet in place
+🟡 **23 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (26 permitted)
+## 📋 Baseline (23 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -17,16 +17,13 @@ Must resolve or remove from baseline to reduce ratchet.
 
 | File | Baseline lines |
 |------|----------------|
-| `src/eulerian_grid.rs` | 8 |
-| `src/motor.rs` | 4 |
+| `src/motor.rs` | 6 |
+| `src/solver_tgs_hooks.rs` | 5 |
 | `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
 | `src/solver_tgs.rs` | 2 |
+| `src/solver_tgs_hooks_6dof.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented_scoped.rs` | 2 |
-| `src/creep_longterm.rs` | 1 |
-| `src/plastic.rs` | 1 |
-| `src/solver_tgs_hooks.rs` | 1 |
-| `src/solver_tgs_hooks_6dof.rs` | 1 |
 
 ### Dead Code (6)
 
@@ -39,24 +36,21 @@ dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (20)
+### Unwired Items (17)
 
 ```
-unwired src/creep_longterm.rs::petg_25c_moderate
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::bytes
-unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_over
-unwired src/eulerian_grid.rs::set_u
-unwired src/eulerian_grid.rs::set_v
-unwired src/eulerian_grid.rs::set_w
+unwired src/motor.rs::JointMotor
+unwired src/motor.rs::PdController3D
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
-unwired src/plastic.rs::petg_room_temp
 unwired src/solver_tgs.rs::par_dispatch_islands
+unwired src/solver_tgs_hooks.rs::PgsConfig
+unwired src/solver_tgs_hooks.rs::PgsHooks
+unwired src/solver_tgs_hooks.rs::SimpleBodyState
+unwired src/solver_tgs_hooks.rs::SimpleContact
+unwired src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated

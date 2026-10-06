@@ -15,8 +15,8 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 18 |
 | world API | used through another `PhysicsWorld` method | 6 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 133 |
-| unused | no caller outside tests | 2 |
+| standalone | a Rust API that only examples call | 134 |
+| unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
@@ -84,7 +84,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `erosion` | standalone | 0 / 0 / 0 / 9 / 0 | — |
-| `eulerian_grid` | standalone | 0 / 0 / 0 / 106 / 23 | — |
+| `eulerian_grid` | standalone | 0 / 0 / 0 / 131 / 0 | — |
 | `fatigue` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `filament_db` | standalone | 0 / 0 / 0 / 37 / 0 | — |
 | `fillet_stress` | standalone | 0 / 0 / 0 / 5 / 0 | — |
@@ -159,6 +159,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `shape_raycast` | standalone | 0 / 0 / 0 / 20 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 12 / 0 | — |
+| `sketch` | standalone (step 1 of 70 items) | 1 / 0 / 0 / 69 / 0 | C ABI, Python, WebAssembly |
 | `smoke_fire` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `spatial` | standalone | 0 / 0 / 0 / 7 / 0 | — |
@@ -180,7 +181,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `world_participant` | standalone | 0 / 0 / 0 / 88 / 0 | — |
 | `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
-| `sketch` | unused (step 1, standalone 63 of 175 items) | 1 / 0 / 0 / 63 / 111 | C ABI, Python, WebAssembly |
 
 ### C ABI (`--features ffi`)
 
