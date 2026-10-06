@@ -257,6 +257,22 @@ fn viridis_color(t: f64) -> [u8; 4] {
 }
 
 // ============================================================================
+// World view
+// ============================================================================
+
+impl crate::solver::PhysicsWorld {
+    /// The stress heatmap of the last step's contacts: [`generate_stress_heatmap`]
+    /// over the body positions and [`contact_forces`](Self::contact_forces)`(dt)`,
+    /// where `dt` is the frame step passed to [`step`](Self::step) (a `dt` of zero
+    /// carries no force, so the map is all zero).
+    #[must_use]
+    pub fn stress_heatmap(&self, dt: Fix128, config: &HeatmapConfig) -> Heatmap {
+        let positions: Vec<Vec3Fix> = self.bodies.iter().map(|b| b.position).collect();
+        generate_stress_heatmap(&positions, &self.contact_forces(dt), config)
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 

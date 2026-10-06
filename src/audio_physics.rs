@@ -411,6 +411,58 @@ impl AudioGenerator {
 }
 
 // ============================================================================
+// World view
+// ============================================================================
+
+impl crate::solver::PhysicsWorld {
+    /// Feed every contact of the last step to `generator`
+    /// ([`AudioGenerator::process_contact`]), in the order of
+    /// [`contact_events`](Self::contact_events), which is deterministic.
+    ///
+    /// One call per touching pair (a pair is reported once per step): a
+    /// [`Begin`](crate::event::ContactEventType::Begin) event is a new contact, a
+    /// [`Persist`](crate::event::ContactEventType::Persist) event a continuing one,
+    /// and an [`End`](crate::event::ContactEventType::End) event is skipped. The
+    /// relative velocity passed is the event's normal speed
+    /// ([`ContactEvent::relative_velocity`](crate::event::ContactEvent::relative_velocity),
+    /// measured when the contact was detected, before the solver removed it) along
+    /// the event normal, plus the tangential part of the bodies' current linear
+    /// velocity difference `v_a − v_b`. The contact passed has the event's point as
+    /// `point_a` and `point_a + normal·depth` as `point_b`.
+    ///
+    /// The generator's events are appended to; call
+    /// [`AudioGenerator::begin_frame`] first to start a new frame.
+    pub fn emit_contact_audio(&self, generator: &mut AudioGenerator) {
+        use crate::event::ContactEventType;
+        for e in self.contact_events() {
+            let is_new = match e.event_type {
+                ContactEventType::Begin => true,
+                ContactEventType::Persist => false,
+                ContactEventType::End => continue,
+            };
+            let (Some(a), Some(b)) = (self.bodies.get(e.body_a), self.bodies.get(e.body_b)) else {
+                continue;
+            };
+            let rel = a.velocity - b.velocity;
+            let tangential = rel - e.normal * rel.dot(e.normal);
+            let contact = Contact {
+                depth: e.depth,
+                normal: e.normal,
+                point_a: e.point,
+                point_b: e.point + e.normal * e.depth,
+            };
+            generator.process_contact(
+                e.body_a,
+                e.body_b,
+                &contact,
+                e.normal * e.relative_velocity + tangential,
+                is_new,
+            );
+        }
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
