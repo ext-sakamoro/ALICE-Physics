@@ -99,10 +99,20 @@ pub struct ThermalMaterial {
 }
 
 impl ThermalMaterial {
-    /// Thermal conductivity at `temperature` (K).
+    /// Thermal conductivity at `temperature` (K), never below 0: a fit
+    /// evaluated outside its calibrated range can turn negative (steel_1018's
+    /// `60 − 0.03·T` above 2000 K), which would make heat flow from cold to
+    /// hot and the explicit step amplify instead of smooth. A negative value
+    /// is clamped to 0 (no conduction); a NaN fit also gives 0.
     #[must_use]
     pub fn conductivity_at(&self, temperature: f32) -> f32 {
-        self.conductivity.evaluate(temperature)
+        let k = self.conductivity.evaluate(temperature);
+        // NaN compares false and also lands on 0
+        if k > 0.0 {
+            k
+        } else {
+            0.0
+        }
     }
 
     /// Specific heat at `temperature` (K).
@@ -126,8 +136,9 @@ impl ThermalMaterial {
     /// Thermal diffusivity `α(T) = k(T) / (ρ(T) · cp(T))` in `m² / s`.
     ///
     /// Returns `0.0` if the volumetric heat capacity is not finite or
-    /// non-positive (guards against pathological polynomial evaluations
-    /// outside the calibrated range).
+    /// non-positive, and is never negative because `conductivity_at` is not
+    /// (guards against pathological polynomial evaluations outside the
+    /// calibrated range).
     #[must_use]
     pub fn diffusivity_at(&self, temperature: f32) -> f32 {
         let denom = self.heat_capacity_at(temperature);
