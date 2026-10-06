@@ -14,7 +14,7 @@ crate has today.
 | `docs/coverage/chem.toml` | 140 | 7 | 2 | 0 | 131 | 0 |
 | `docs/coverage/couple.toml` | 123 | 10 | 3 | 4 | 106 | 0 |
 | `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
-| `docs/coverage/engine.toml` | 153 | 63 | 9 | 7 | 74 | 0 |
+| `docs/coverage/engine.toml` | 153 | 64 | 10 | 7 | 72 | 0 |
 | `docs/coverage/env.toml` | 152 | 20 | 3 | 2 | 127 | 0 |
 | `docs/coverage/fem.toml` | 137 | 36 | 0 | 6 | 92 | 3 |
 | `docs/coverage/fract.toml` | 112 | 15 | 2 | 4 | 91 | 0 |
@@ -40,7 +40,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4177 | 543 | 75 | 104 | 3449 | 6 |
+| **total** | 4177 | 544 | 76 | 104 | 3447 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -202,7 +202,7 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| api | 26 | 8 | 5 | 1 | 12 | 0 |
+| api | 26 | 9 | 6 | 1 | 10 | 0 |
 | auxiliary | 34 | 18 | 0 | 2 | 14 | 0 |
 | benchmark | 8 | 3 | 2 | 0 | 3 | 0 |
 | determinism | 11 | 6 | 2 | 0 | 3 | 0 |
