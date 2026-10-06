@@ -282,19 +282,19 @@ fn main() {
     assert_eq!(large_attract.unwrap(), Vec3Fix::from_int(-30, 0, 0));
 
     // ------------------------------------------------------------------
-    // 8b. Degenerate: extreme coordinates do not panic. The computation
-    //     stays finite because Fix128's own representable range (~9.22e18)
-    //     keeps the sum-of-squares used by the sphere's distance formula
-    //     well under f32::MAX (~3.4e38) -- so no NaN/Inf is ever produced.
+    // 8b. Degenerate: extreme coordinates do not panic, and the clamp still
+    //     holds. The computation stays finite because Fix128's own
+    //     representable range (~9.22e18) keeps the sum-of-squares used by
+    //     the sphere's distance formula well under f32::MAX (~3.4e38), so no
+    //     NaN/Inf is ever produced.
     //
-    //     ⚠️ Finding (not fixed here, see report): at this magnitude
-    //     `strength * dist_fix` itself overflows Fix128's representable
-    //     range and wraps (mod 2^128, `Mul`'s documented contract in
-    //     math.rs), so `min(wrapped, max_force)` can pick the wrapped
-    //     value instead of the intended clamp. The assertion below pins
-    //     the actual (wrapped, not clamped) behavior via the same public
-    //     Fix128 primitives the implementation uses, rather than
-    //     asserting the clamp holds (it does not, at this magnitude).
+    //     At this magnitude (x ~ 2^62 ~ 4.6e18) `strength * dist` = 3 * 4.6e18
+    //     ~ 1.4e19 exceeds Fix128's range. `SdfForceType::Attract` is
+    //     `force = -normal * min(strength*|dist|, max_force)` with the product
+    //     taken by `checked_mul` (`compute_sdf_force`): an overflowing product
+    //     is certainly larger than max_force, so the clamp value is used
+    //     instead of a wrapped one. The closed form is therefore min(1.4e19, 30) = 30 along
+    //     -normal = -x.
     // ------------------------------------------------------------------
     let extreme_pos = Vec3Fix::new(
         Fix128::from_raw(i64::MAX / 2, u64::MAX),
@@ -306,11 +306,13 @@ fn main() {
         compute_sdf_force(&body_extreme, &sphere, &attract.force_type)
     }));
     let (lx, _, _) = extreme_pos.to_f32();
-    let dist_f32 = lx - 1.0; // same formula as unit_sphere()'s eval_fn at (lx, 0, 0)
-    let dist_fix = Fix128::from_f32(dist_f32);
-    let wrapped_force_mag = (Fix128::from_int(3) * dist_fix.abs()).min(Fix128::from_int(30));
-    let expect_extreme = -Vec3Fix::UNIT_X * wrapped_force_mag;
-    println!("[sdf_force] extreme position, attract(): {extreme_attract:?} (expect {expect_extreme}, overflow-wrapped not clamped)");
+    let dist_f64 = f64::from(lx) - 1.0; // unit_sphere()'s eval_fn at (lx, 0, 0)
+    assert!(
+        3.0 * dist_f64 > 9.223_372_036_854_776e18, // 2^63, Fix128's integer range
+        "the product must exceed Fix128's integer range for this case to test the overflow path"
+    );
+    let expect_extreme = Vec3Fix::from_int(-30, 0, 0);
+    println!("[sdf_force] extreme position, attract(): {extreme_attract:?} (expect {expect_extreme}, clamped to max_force=30)");
     assert!(extreme_attract.is_ok());
     assert_eq!(extreme_attract.unwrap(), expect_extreme);
 

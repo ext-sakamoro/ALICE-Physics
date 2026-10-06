@@ -53,8 +53,14 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run --release --example buckmaster_alpoge_boussinesq_r2
+//! cargo run --release --example buckmaster_alpoge_boussinesq_r2          # 100 steps per scenario
+//! cargo run --release --example buckmaster_alpoge_boussinesq_r2 -- --full # 500 steps (t = 5 s)
 //! ```
+//!
+//! The default run is the first 100 steps (t = 1 s) of every scenario so
+//! that it finishes in well under a minute in release; `--full` runs the
+//! 500-step horizon (about two minutes). Every diagnostic is checked to be
+//! finite in both modes.
 
 use alice_physics::cfd_solver::CfdSolver;
 use alice_physics::det_math;
@@ -66,19 +72,27 @@ const NY: usize = 64;
 const NZ: usize = 4;
 const DX_F32: f32 = 0.1;
 const DT_F32: f32 = 0.01;
-const N_STEPS: usize = 500;
+/// Steps per scenario with `--full`.
+const FULL_STEPS: usize = 500;
+/// Steps per scenario by default.
+const DEFAULT_STEPS: usize = 100;
 const LOG_EVERY: usize = 25;
 const R_INNER: f32 = 2.0; // χ₀ = 1 for |x| ≤ R_INNER
 const R_OUTER: f32 = 3.0; // χ₀ = 0 for |x| ≥ R_OUTER
 
 fn main() {
+    let n_steps = if std::env::args().any(|a| a == "--full") {
+        FULL_STEPS
+    } else {
+        DEFAULT_STEPS
+    };
     println!("scenario,step,time_s,l_inf_theta,l_inf_grad_theta,l_inf_vorticity,max_divergence");
-    run_scenario(1.0, 1.0);
-    run_scenario(4.0, 1.0);
-    run_scenario(16.0, 2.0);
+    run_scenario(1.0, 1.0, n_steps);
+    run_scenario(4.0, 1.0, n_steps);
+    run_scenario(16.0, 2.0, n_steps);
 }
 
-fn run_scenario(a0: f32, lambda0: f32) {
+fn run_scenario(a0: f32, lambda0: f32, n_steps: usize) {
     let dx = Fix128::from_f32(DX_F32);
     let dt = Fix128::from_f32(DT_F32);
     let mut solver = CfdSolver::new(NX, NY, NZ, dx);
@@ -90,7 +104,7 @@ fn run_scenario(a0: f32, lambda0: f32) {
 
     let scenario = format!("A0={a0:.0}_lam0={lambda0:.0}");
     log_diagnostics(&solver, &scenario, 0);
-    for step in 1..=N_STEPS {
+    for step in 1..=n_steps {
         solver.step(dt);
         if step % LOG_EVERY == 0 {
             log_diagnostics(&solver, &scenario, step);
@@ -153,6 +167,14 @@ fn log_diagnostics(solver: &CfdSolver, scenario: &str, step: usize) {
     println!(
         "{scenario},{step},{time:.4},{l_inf_theta:.6e},{l_inf_grad:.6e},{l_inf_vort:.6e},{max_div:.3e}"
     );
+    for (label, v) in [
+        ("l_inf_theta", l_inf_theta),
+        ("l_inf_grad_theta", l_inf_grad),
+        ("l_inf_vorticity", l_inf_vort),
+        ("max_divergence", max_div),
+    ] {
+        assert!(v.is_finite(), "{scenario} step {step}: {label} = {v}");
+    }
 }
 
 fn l_infty_theta(solver: &CfdSolver) -> f32 {

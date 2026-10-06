@@ -245,10 +245,15 @@ fn main() {
     // --- sphere_cast: ray starting inside a body -----------------------------
     //
     // body at (5,0,0), body_radius 1, cast_radius 1 (combined_radius 2).
-    // origin (4,0,0) is inside (distance 1 < 2). oc=(-1,0,0) b=oc.d=-1 < 0
-    // (moving deeper) c=1-4=-3 <= 0: the cast starts in an initial overlap,
-    // reported at t=0 at the origin with normal oc/|oc|=(-1,0,0). The exit
-    // root t=1+2=3 is never a contact.
+    // origin (4,0,0) is inside: oc = origin - centre = (-1,0,0),
+    // |oc|^2 - r^2 = 1 - 4 = -3 <= 0. The documented contract for a cast
+    // that starts in an initial overlap (raycast::sweep_ray_sphere, shared
+    // by sphere_cast and the character controller):
+    //   - moving deeper (oc . d < 0): contact at t = 0 at the origin, normal
+    //     oc / |oc| (centre -> origin), opposing the cast direction;
+    //   - moving outward (oc . d >= 0): no contact.
+    // Here oc . d = -1 < 0, so t = 0, point (4,0,0), normal (-1,0,0). The far
+    // root t = 1 + 2 = 3 (the exit point) is never reported as a contact.
     let inside_body = vec![RigidBody::new_static(Vec3Fix::from_int(5, 0, 0))];
     let inside_hit = sphere_cast(
         Vec3Fix::from_int(4, 0, 0),
@@ -258,23 +263,35 @@ fn main() {
         &inside_body,
         Fix128::ONE,
     )
-    .expect("sphere_cast from inside the body reports the initial overlap");
+    .expect("sphere_cast moving deeper from inside the body reports the initial overlap");
     assert_eq!(
         inside_hit.t,
         Fix128::ZERO,
-        "interior origin moving deeper is an initial overlap, not the exit t=3"
+        "interior origin moving deeper resolves to an initial overlap at TOI=0, not the exit point"
     );
     assert_eq!(inside_hit.point, Vec3Fix::from_int(4, 0, 0));
     assert_eq!(inside_hit.normal, Vec3Fix::from_int(-1, 0, 0));
     println!(
-        "[spatial_queries] sphere_cast from inside a body: initial overlap t={} normal={:?}",
+        "[spatial_queries] sphere_cast from inside a body, moving deeper: t={} normal={:?}",
         inside_hit.t.to_f64(),
-        (
-            inside_hit.normal.x.to_f64(),
-            inside_hit.normal.y.to_f64(),
-            inside_hit.normal.z.to_f64()
-        )
+        inside_hit.normal.to_f32()
     );
+
+    // Same body, origin (6,0,0) inside, moving +X: oc = (1,0,0), oc . d = 1 >= 0,
+    // the cast is leaving the overlap -> no contact.
+    let leaving = sphere_cast(
+        Vec3Fix::from_int(6, 0, 0),
+        Fix128::ONE,
+        Vec3Fix::UNIT_X,
+        Fix128::from_int(100),
+        &inside_body,
+        Fix128::ONE,
+    );
+    assert_eq!(
+        leaving, None,
+        "interior origin moving outward reports no contact"
+    );
+    println!("[spatial_queries] sphere_cast from inside a body, moving outward: no contact");
 
     // --- capsule_cast: three sub-casts, closest wins -------------------------
     //

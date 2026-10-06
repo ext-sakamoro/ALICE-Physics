@@ -170,6 +170,31 @@ jobs:
       - name: Test (SIMD, lib)
         run: cargo test --lib --features "simd"
 
+  # Every example is built in release and executed (scripts/run_examples.py):
+  # the examples were compiled by clippy --all-targets but never run, so three
+  # of them kept asserting behaviour a library fix had changed and one ran for
+  # more than ten minutes with every job green. The script takes the example
+  # list and the union of their required-features from `cargo metadata`, fails
+  # on a non-zero exit or a per-example timeout, and fails when it executed 0
+  # examples; preflight.sh calls the same script with no arguments
+  examples:
+    name: Run examples (release)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: examples-release
+      - name: Example runner (tests)
+        run: python scripts/test_run_examples.py
+      - name: Run every example (release, timeout per example, zero executed is red)
+        run: python scripts/run_examples.py
+
   # v1.0 Item E Phase 2: WASM determinism check
   # `wasm32-wasip1` target で determinism_golden test を build → wasmtime で
   # 実行 SHA-256 hash が native platform (macOS ARM baseline) と bit-exact

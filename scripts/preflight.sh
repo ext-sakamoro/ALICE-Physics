@@ -9,6 +9,7 @@
 #
 # usage: scripts/preflight.sh [--quick | --fast]
 #   (none)   every static gate + the full test suites (what CI runs on 5 OS)
+#            + every example built in release and executed (ci.yml job examples)
 #   --fast   every static gate (incl. the SCIP / L0 ratchet) + only the tests that
 #            reference the modules changed since origin/main + the determinism goldens
 #            -- the local push gate; CI runs the full suites (2026-10-04: no full-suite
@@ -78,6 +79,9 @@ python3 scripts/test_gen_status.py
 
 step "affected-test selector oracle (preflight --fast)"
 python3 scripts/test_affected_tests.py
+
+step "example runner oracle (scripts/run_examples.py, run in full mode and ci.yml job examples)"
+python3 scripts/test_run_examples.py
 
 # Fast static gates that failed late in practice (no_std build, public API drift)
 step "no_std rlib build (cdylib crate-type needs std, so rustc --crate-type rlib)"
@@ -178,5 +182,8 @@ cargo test --lib --features "neural,replay,analytics"
 
 step "feature-gated integration tests (same script and arguments as ci.yml)"
 python3 scripts/run_feature_gated_tests.py
+
+step "run every example in release (same script and arguments as ci.yml job examples)"
+python3 scripts/run_examples.py
 
 echo; echo "preflight OK"

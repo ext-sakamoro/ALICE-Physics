@@ -50,8 +50,14 @@
 //! Run with:
 //!
 //! ```sh
-//! cargo run --release --example buckmaster_alpoge_euler_r3
+//! cargo run --release --example buckmaster_alpoge_euler_r3          # 40 steps per scenario
+//! cargo run --release --example buckmaster_alpoge_euler_r3 -- --full # 400 steps (t = 2 s)
 //! ```
+//!
+//! The default run is the first 40 steps (t = 0.2 s) of every scenario so
+//! that it finishes in about a minute in release; `--full` runs the 400-step
+//! horizon (several minutes: 4 scenarios x 400 steps of a 40^3 grid with 60
+//! Jacobi iterations each). The checks below run in both modes.
 
 use alice_physics::cfd_solver::{AdvectionScheme, CfdSolver};
 use alice_physics::det_math;
@@ -60,7 +66,10 @@ use alice_physics::math::{Fix128, Vec3Fix};
 const N: usize = 40;
 const DX_F32: f32 = 0.05; // physical domain [-1.0, 1.0]^3 → 2m / 40 = 0.05m per cell
 const DT_F32: f32 = 5.0e-3;
-const N_STEPS: usize = 400;
+/// Steps per scenario with `--full`.
+const FULL_STEPS: usize = 400;
+/// Steps per scenario by default.
+const DEFAULT_STEPS: usize = 40;
 const LOG_EVERY: usize = 20;
 const R0: f32 = 1.0; // ring radius (normalized per Lemma 2.2)
 const Z0: f32 = 0.0;
@@ -68,16 +77,21 @@ const R_INNER: f32 = 0.30; // χ = 1 for d ≤ R_INNER
 const R_OUTER: f32 = 0.40; // χ = 0 for d ≥ R_OUTER (< r₀/2 = 0.5)
 
 fn main() {
+    let n_steps = if std::env::args().any(|a| a == "--full") {
+        FULL_STEPS
+    } else {
+        DEFAULT_STEPS
+    };
     println!(
         "scenario,step,time_s,l_inf_gamma,l_inf_u_r,l_inf_u_z,l_inf_grad_gamma,l_inf_vorticity,vorticity_time_integral,max_divergence"
     );
-    run_scenario(1.0, AdvectionScheme::SemiLagrangian);
-    run_scenario(4.0, AdvectionScheme::SemiLagrangian);
-    run_scenario(1.0, AdvectionScheme::MacCormack);
-    run_scenario(4.0, AdvectionScheme::MacCormack);
+    run_scenario(1.0, AdvectionScheme::SemiLagrangian, n_steps);
+    run_scenario(4.0, AdvectionScheme::SemiLagrangian, n_steps);
+    run_scenario(1.0, AdvectionScheme::MacCormack, n_steps);
+    run_scenario(4.0, AdvectionScheme::MacCormack, n_steps);
 }
 
-fn run_scenario(gamma_0: f32, scheme: AdvectionScheme) {
+fn run_scenario(gamma_0: f32, scheme: AdvectionScheme, n_steps: usize) {
     let dx = Fix128::from_f32(DX_F32);
     let dt = Fix128::from_f32(DT_F32);
     let mut solver = CfdSolver::new(N, N, N, dx);
@@ -93,17 +107,26 @@ fn run_scenario(gamma_0: f32, scheme: AdvectionScheme) {
     let scenario = format!("Gamma0={gamma_0:.0}_{scheme_tag}");
     let mut vort_integral = 0.0_f32;
     let mut prev_vort = 0.0_f32;
-    log_diagnostics(&solver, &scenario, 0, vort_integral);
-    for step in 1..=N_STEPS {
+    let initial_div = log_diagnostics(&solver, &scenario, 0, vort_integral);
+    let mut last_div = initial_div;
+    for step in 1..=n_steps {
         solver.step(dt);
         // Trapezoidal integration of |ω|_∞ over time.
         let curr_vort = l_infty_vorticity(&solver);
         vort_integral += 0.5 * (prev_vort + curr_vort) * DT_F32;
         prev_vort = curr_vort;
         if step % LOG_EVERY == 0 {
-            log_diagnostics(&solver, &scenario, step, vort_integral);
+            last_div = log_diagnostics(&solver, &scenario, step, vort_integral);
         }
     }
+    // The pressure projection makes the face velocities discretely
+    // divergence-free up to the Jacobi residual: the interpolated initial
+    // swirl is not, so the divergence after any projected step must be
+    // below the initial one.
+    assert!(
+        last_div < initial_div,
+        "{scenario}: max divergence after {n_steps} steps {last_div:e} is not below the initial {initial_div:e}"
+    );
 }
 
 fn configure_inviscid_euler(solver: &mut CfdSolver) {
@@ -182,7 +205,8 @@ fn cutoff(d: f32) -> f32 {
     }
 }
 
-fn log_diagnostics(solver: &CfdSolver, scenario: &str, step: usize, vort_integral: f32) {
+/// Print one CSV row, assert every diagnostic is finite, return the max divergence.
+fn log_diagnostics(solver: &CfdSolver, scenario: &str, step: usize, vort_integral: f32) -> f32 {
     let time = step as f32 * DT_F32;
     let (l_inf_gamma, l_inf_ur, l_inf_uz) = bounded_quantities(solver);
     let l_inf_grad_gamma = l_infty_grad_gamma(solver);
@@ -191,6 +215,18 @@ fn log_diagnostics(solver: &CfdSolver, scenario: &str, step: usize, vort_integra
     println!(
         "{scenario},{step},{time:.4},{l_inf_gamma:.6e},{l_inf_ur:.6e},{l_inf_uz:.6e},{l_inf_grad_gamma:.6e},{l_inf_vort:.6e},{vort_integral:.6e},{max_div:.3e}"
     );
+    for (label, v) in [
+        ("l_inf_gamma", l_inf_gamma),
+        ("l_inf_u_r", l_inf_ur),
+        ("l_inf_u_z", l_inf_uz),
+        ("l_inf_grad_gamma", l_inf_grad_gamma),
+        ("l_inf_vorticity", l_inf_vort),
+        ("vorticity_time_integral", vort_integral),
+        ("max_divergence", max_div),
+    ] {
+        assert!(v.is_finite(), "{scenario} step {step}: {label} = {v}");
+    }
+    max_div
 }
 
 fn cell_center_velocity(solver: &CfdSolver, i: usize, j: usize, k: usize) -> (f32, f32, f32) {

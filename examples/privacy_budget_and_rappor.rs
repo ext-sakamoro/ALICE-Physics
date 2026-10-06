@@ -8,7 +8,10 @@
 //!   `Σ accepted ≥ ε_max`, a spend is refused exactly when it would exceed,
 //! * Laplace: `b = Δf / ε`, the sample is `−sign(u)·b·ln(1 − 2|u|)` with
 //!   `u = U − ½`, the aggregator's standard error is `b·√2/√n`,
-//! * randomized response: `p_true = e^ε / (e^ε + 1)`, with `k` positive
+//! * randomized response: truthful with probability `p`, otherwise a fair
+//!   coin, so the report probabilities are `(1 ± p) / 2` and
+//!   `ε = ln((1 + p) / (1 − p))`, i.e. `p_true = (e^ε − 1) / (e^ε + 1)`
+//!   `= 1 − 2 / (e^ε + 1)`; with `k` positive
 //!   reports out of `n` the unbiased proportion is `(k/n − (1 − p)/2) / p`,
 //! * RAPPOR: `f = 0`, `p = 1`, `q = 0` is the identity on the Bloom filter.
 //!
@@ -82,10 +85,15 @@ fn main() {
     let eps_rr = 1.0;
     let rr_from_eps = RandomizedResponse::new(eps_rr);
     let e = exp64(eps_rr);
+    let p_closed = (e - 1.0) / (e + 1.0);
     println!(
-        "[privacy] randomized response ε={eps_rr}: p_true={} (closed form e^ε/(e^ε+1)={})",
+        "[privacy] randomized response ε={eps_rr}: p_true={} (closed form (e^ε−1)/(e^ε+1)={p_closed})",
         rr_from_eps.p_true(),
-        e / (e + 1.0)
+    );
+    assert!(
+        (rr_from_eps.p_true() - p_closed).abs() < 1e-12,
+        "RandomizedResponse::new(ε).p_true() = {} vs (e^ε−1)/(e^ε+1) = {p_closed}",
+        rr_from_eps.p_true()
     );
     let p = 0.75;
     let mut rr = RandomizedResponse::with_probability(p, 7);
