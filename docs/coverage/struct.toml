@@ -48,7 +48,7 @@
 #
 # keys: id (COV-STRUCT-NNN) / axis / item / source (book, chapter, standard or
 # reference-implementation feature; no quoted text) / status / evidence
-# (`src/...rs:line`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate / limitation
 # (verbatim quote of the source, required for `partial`).
 #
 # Reference values marked "参照値要確認" are to be checked against the original
