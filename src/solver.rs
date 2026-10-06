@@ -6555,6 +6555,56 @@ impl core::fmt::Debug for PhysicsWorld {
 mod tests {
     use super::*;
 
+    /// oracle: [`RigidBody::world_inv_inertia_apply`] (unchecked). On inputs
+    /// in range the checked form gives the same bits, for rotations about
+    /// several axes and an anisotropic `inv_inertia` (`1, 2, 4`), so a
+    /// dropped rotation, a component taken from the wrong axis or a sign
+    /// error in the checked quaternion product changes the result. The
+    /// fixture asserts that rotation and anisotropy both matter here.
+    #[test]
+    fn checked_world_inv_inertia_apply_is_the_unchecked_one_in_range() {
+        let torques = [
+            Vec3Fix::from_int(3, -1, 2),
+            Vec3Fix::new(
+                Fix128::from_ratio(-5, 7),
+                Fix128::from_ratio(11, 3),
+                Fix128::from_int(-9),
+            ),
+        ];
+        let rotations = [
+            QuatFix::from_axis_angle(Vec3Fix::from_int(1, 2, 3), Fix128::from_ratio(7, 10)),
+            QuatFix::from_axis_angle(Vec3Fix::from_int(-2, 1, 0), Fix128::from_ratio(-13, 5)),
+            QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), Fix128::from_ratio(1, 3)),
+        ];
+        for q in rotations {
+            let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+            body.inv_inertia = Vec3Fix::from_int(1, 2, 4);
+            body.rotation = q;
+            for tau in torques {
+                let unchecked = body.world_inv_inertia_apply(tau);
+                assert_eq!(
+                    body.checked_world_inv_inertia_apply(tau),
+                    Some(unchecked),
+                    "q {q:?} tau {tau:?}"
+                );
+                let mut unrotated = body;
+                unrotated.rotation = QuatFix::IDENTITY;
+                assert_ne!(
+                    unrotated.world_inv_inertia_apply(tau),
+                    unchecked,
+                    "fixture: the rotation must matter"
+                );
+                let mut isotropic = body;
+                isotropic.inv_inertia = Vec3Fix::from_int(2, 2, 2);
+                assert_ne!(
+                    isotropic.world_inv_inertia_apply(tau),
+                    unchecked,
+                    "fixture: the anisotropy must matter"
+                );
+            }
+        }
+    }
+
     /// oracle: the key is a function of (kind, ids, ordinal) only. Entries
     /// of one pair get distinct keys in arrival order, a second pass with a
     /// fresh counter reproduces them, and kind or direction separate keys.
