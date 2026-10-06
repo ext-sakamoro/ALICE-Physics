@@ -8314,7 +8314,7 @@ pub fn alice_physics::netcode::DeterministicSimulation::new(alice_physics::netco
 pub fn alice_physics::netcode::DeterministicSimulation::save_snapshot(&mut self) -> &alice_physics::netcode::SimulationSnapshot
 pub fn alice_physics::netcode::DeterministicSimulation::snapshot_count(&self) -> usize
 pub fn alice_physics::netcode::DeterministicSimulation::verify_checksum(&self, u64, alice_physics::netcode::SimulationChecksum) -> core::option::Option<bool>
-impl core::marker::Freeze for alice_physics::netcode::DeterministicSimulation
+impl !core::marker::Freeze for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Send for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Sync for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Unpin for alice_physics::netcode::DeterministicSimulation
@@ -10057,8 +10057,13 @@ pub alice_physics::prelude::WorldSnapshotError::DanglingIndex
 pub alice_physics::prelude::WorldSnapshotError::DanglingIndex::index: usize
 pub alice_physics::prelude::WorldSnapshotError::DanglingIndex::len: usize
 pub alice_physics::prelude::WorldSnapshotError::DanglingIndex::section: &'static str
+pub alice_physics::prelude::WorldSnapshotError::FieldState(alice_physics::world_participant::StateError)
 pub alice_physics::prelude::WorldSnapshotError::InvalidValue
 pub alice_physics::prelude::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::prelude::WorldSnapshotError::ParticipantMismatch(alice_physics::world_participant::ParticipantMismatch)
+pub alice_physics::prelude::WorldSnapshotError::ParticipantState
+pub alice_physics::prelude::WorldSnapshotError::ParticipantState::error: alice_physics::world_participant::StateError
+pub alice_physics::prelude::WorldSnapshotError::ParticipantState::index: usize
 pub alice_physics::prelude::WorldSnapshotError::ReservedNotZero
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
@@ -11423,7 +11428,7 @@ pub fn alice_physics::netcode::DeterministicSimulation::new(alice_physics::netco
 pub fn alice_physics::netcode::DeterministicSimulation::save_snapshot(&mut self) -> &alice_physics::netcode::SimulationSnapshot
 pub fn alice_physics::netcode::DeterministicSimulation::snapshot_count(&self) -> usize
 pub fn alice_physics::netcode::DeterministicSimulation::verify_checksum(&self, u64, alice_physics::netcode::SimulationChecksum) -> core::option::Option<bool>
-impl core::marker::Freeze for alice_physics::netcode::DeterministicSimulation
+impl !core::marker::Freeze for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Send for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Sync for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Unpin for alice_physics::netcode::DeterministicSimulation
@@ -13133,6 +13138,20 @@ pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics::world_participant::Participant>) -> core::result::Result<usize, alice_physics::world_participant::RegisterError>
+pub fn alice_physics::solver::PhysicsWorld::clear_fault(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::declare_field(&mut self, alice_physics::world_participant::PortId, alice_physics::world_participant::FieldLayout, alice_physics::world_participant::FieldMode) -> core::result::Result<(), alice_physics::solver::DeclareFieldError>
+pub const fn alice_physics::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics::world_participant::WorldFault>
+pub const fn alice_physics::solver::PhysicsWorld::fields(&self) -> &alice_physics::world_participant::FieldBoard
+pub fn alice_physics::solver::PhysicsWorld::observe_body_checked(&self, usize) -> core::option::Option<alice_physics::world_participant::Observed<alice_physics::solver::BodyObservation>>
+pub fn alice_physics::solver::PhysicsWorld::observe_participant(&self, usize) -> core::option::Option<alice_physics::world_participant::Observed<alice_physics::world_participant::ObservationSink>>
+pub fn alice_physics::solver::PhysicsWorld::participant_count(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::participant_kinds(&self) -> alloc::vec::Vec<alice_physics::world_participant::ParticipantKind>
+pub fn alice_physics::solver::PhysicsWorld::participant_state(&self, usize) -> core::option::Option<alloc::vec::Vec<u8>>
+pub fn alice_physics::solver::PhysicsWorld::set_field(&mut self, alice_physics::world_participant::PortId, &[alice_physics::math::Fix128]) -> core::result::Result<(), alice_physics::world_participant::FieldError>
+pub fn alice_physics::solver::PhysicsWorld::try_step(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::StepError>
+pub fn alice_physics::solver::PhysicsWorld::try_step_parallel(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::StepError>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::cast_capsule(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
 pub fn alice_physics::solver::PhysicsWorld::overlap_aabb(&self, &alice_physics::collider::AABB, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
@@ -13165,7 +13184,7 @@ impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::time_of_impact(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::ccd::TOI>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
+impl !core::marker::Freeze for alice_physics::solver::PhysicsWorld
 impl core::marker::Send for alice_physics::solver::PhysicsWorld
 impl core::marker::Sync for alice_physics::solver::PhysicsWorld
 impl core::marker::Unpin for alice_physics::solver::PhysicsWorld
@@ -17400,6 +17419,27 @@ impl core::marker::Unpin for alice_physics::solver::Broadphase
 impl core::marker::UnsafeUnpin for alice_physics::solver::Broadphase
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::Broadphase
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::Broadphase
+#[non_exhaustive] pub enum alice_physics::solver::DeclareFieldError
+pub alice_physics::solver::DeclareFieldError::Field(alice_physics::world_participant::FieldError)
+pub alice_physics::solver::DeclareFieldError::Ports(alice_physics::world_participant::RegisterError)
+impl core::clone::Clone for alice_physics::solver::DeclareFieldError
+pub fn alice_physics::solver::DeclareFieldError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::solver::DeclareFieldError
+impl core::cmp::PartialEq for alice_physics::solver::DeclareFieldError
+pub fn alice_physics::solver::DeclareFieldError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::solver::DeclareFieldError
+impl core::fmt::Debug for alice_physics::solver::DeclareFieldError
+pub fn alice_physics::solver::DeclareFieldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::solver::DeclareFieldError
+pub fn alice_physics::solver::DeclareFieldError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::solver::DeclareFieldError
+impl core::marker::Freeze for alice_physics::solver::DeclareFieldError
+impl core::marker::Send for alice_physics::solver::DeclareFieldError
+impl core::marker::Sync for alice_physics::solver::DeclareFieldError
+impl core::marker::Unpin for alice_physics::solver::DeclareFieldError
+impl core::marker::UnsafeUnpin for alice_physics::solver::DeclareFieldError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::DeclareFieldError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::DeclareFieldError
 #[non_exhaustive] pub enum alice_physics::solver::SolverBackend
 pub alice_physics::solver::SolverBackend::Tgs
 pub alice_physics::solver::SolverBackend::Xpbd
@@ -17434,8 +17474,13 @@ pub alice_physics::solver::WorldSnapshotError::DanglingIndex
 pub alice_physics::solver::WorldSnapshotError::DanglingIndex::index: usize
 pub alice_physics::solver::WorldSnapshotError::DanglingIndex::len: usize
 pub alice_physics::solver::WorldSnapshotError::DanglingIndex::section: &'static str
+pub alice_physics::solver::WorldSnapshotError::FieldState(alice_physics::world_participant::StateError)
 pub alice_physics::solver::WorldSnapshotError::InvalidValue
 pub alice_physics::solver::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::solver::WorldSnapshotError::ParticipantMismatch(alice_physics::world_participant::ParticipantMismatch)
+pub alice_physics::solver::WorldSnapshotError::ParticipantState
+pub alice_physics::solver::WorldSnapshotError::ParticipantState::error: alice_physics::world_participant::StateError
+pub alice_physics::solver::WorldSnapshotError::ParticipantState::index: usize
 pub alice_physics::solver::WorldSnapshotError::ReservedNotZero
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
@@ -17686,6 +17731,20 @@ pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics::world_participant::Participant>) -> core::result::Result<usize, alice_physics::world_participant::RegisterError>
+pub fn alice_physics::solver::PhysicsWorld::clear_fault(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::declare_field(&mut self, alice_physics::world_participant::PortId, alice_physics::world_participant::FieldLayout, alice_physics::world_participant::FieldMode) -> core::result::Result<(), alice_physics::solver::DeclareFieldError>
+pub const fn alice_physics::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics::world_participant::WorldFault>
+pub const fn alice_physics::solver::PhysicsWorld::fields(&self) -> &alice_physics::world_participant::FieldBoard
+pub fn alice_physics::solver::PhysicsWorld::observe_body_checked(&self, usize) -> core::option::Option<alice_physics::world_participant::Observed<alice_physics::solver::BodyObservation>>
+pub fn alice_physics::solver::PhysicsWorld::observe_participant(&self, usize) -> core::option::Option<alice_physics::world_participant::Observed<alice_physics::world_participant::ObservationSink>>
+pub fn alice_physics::solver::PhysicsWorld::participant_count(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::participant_kinds(&self) -> alloc::vec::Vec<alice_physics::world_participant::ParticipantKind>
+pub fn alice_physics::solver::PhysicsWorld::participant_state(&self, usize) -> core::option::Option<alloc::vec::Vec<u8>>
+pub fn alice_physics::solver::PhysicsWorld::set_field(&mut self, alice_physics::world_participant::PortId, &[alice_physics::math::Fix128]) -> core::result::Result<(), alice_physics::world_participant::FieldError>
+pub fn alice_physics::solver::PhysicsWorld::try_step(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::StepError>
+pub fn alice_physics::solver::PhysicsWorld::try_step_parallel(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::StepError>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::cast_capsule(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
 pub fn alice_physics::solver::PhysicsWorld::overlap_aabb(&self, &alice_physics::collider::AABB, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
@@ -17718,7 +17777,7 @@ impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::time_of_impact(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::ccd::TOI>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
+impl !core::marker::Freeze for alice_physics::solver::PhysicsWorld
 impl core::marker::Send for alice_physics::solver::PhysicsWorld
 impl core::marker::Sync for alice_physics::solver::PhysicsWorld
 impl core::marker::Unpin for alice_physics::solver::PhysicsWorld
@@ -18749,7 +18808,7 @@ pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::start_recording(&
 pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::step(&mut self, &[alice_physics::vehicle_dynamics::DriverInput])
 pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::step_with<F>(&mut self, usize, F) where F: core::ops::function::FnMut(u64, usize, &alice_physics::vehicle_dynamics::DynamicVehicle, &alice_physics::solver::RigidBody) -> alice_physics::vehicle_dynamics::DriverInput
 pub fn alice_physics::vehicle_dynamics::scenario::Scenario<R>::stop_recording(&mut self) -> core::option::Option<alice_physics::vehicle_dynamics::scenario::Recording>
-impl<R> core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Freeze
+impl<R> !core::marker::Freeze for alice_physics::vehicle_dynamics::scenario::Scenario<R>
 impl<R> core::marker::Send for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Send
 impl<R> core::marker::Sync for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Sync
 impl<R> core::marker::Unpin for alice_physics::vehicle_dynamics::scenario::Scenario<R> where R: core::marker::Unpin
@@ -19889,6 +19948,10 @@ impl core::marker::UnsafeUnpin for alice_physics::world_participant::StateError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::StateError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::StateError
 #[non_exhaustive] pub enum alice_physics::world_participant::StepError
+pub alice_physics::world_participant::StepError::BodyCount
+pub alice_physics::world_participant::StepError::BodyCount::bodies: usize
+pub alice_physics::world_participant::StepError::BodyCount::field: alice_physics::world_participant::PortId
+pub alice_physics::world_participant::StepError::BodyCount::samples: usize
 pub alice_physics::world_participant::StepError::FaultRaised(alice_physics::world_participant::WorldFault)
 pub alice_physics::world_participant::StepError::Faulted(alice_physics::world_participant::WorldFault)
 pub alice_physics::world_participant::StepError::Rule
@@ -20966,8 +21029,13 @@ pub alice_physics::WorldSnapshotError::DanglingIndex
 pub alice_physics::WorldSnapshotError::DanglingIndex::index: usize
 pub alice_physics::WorldSnapshotError::DanglingIndex::len: usize
 pub alice_physics::WorldSnapshotError::DanglingIndex::section: &'static str
+pub alice_physics::WorldSnapshotError::FieldState(alice_physics::world_participant::StateError)
 pub alice_physics::WorldSnapshotError::InvalidValue
 pub alice_physics::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::WorldSnapshotError::ParticipantMismatch(alice_physics::world_participant::ParticipantMismatch)
+pub alice_physics::WorldSnapshotError::ParticipantState
+pub alice_physics::WorldSnapshotError::ParticipantState::error: alice_physics::world_participant::StateError
+pub alice_physics::WorldSnapshotError::ParticipantState::index: usize
 pub alice_physics::WorldSnapshotError::ReservedNotZero
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
@@ -22354,7 +22422,7 @@ pub fn alice_physics::netcode::DeterministicSimulation::new(alice_physics::netco
 pub fn alice_physics::netcode::DeterministicSimulation::save_snapshot(&mut self) -> &alice_physics::netcode::SimulationSnapshot
 pub fn alice_physics::netcode::DeterministicSimulation::snapshot_count(&self) -> usize
 pub fn alice_physics::netcode::DeterministicSimulation::verify_checksum(&self, u64, alice_physics::netcode::SimulationChecksum) -> core::option::Option<bool>
-impl core::marker::Freeze for alice_physics::netcode::DeterministicSimulation
+impl !core::marker::Freeze for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Send for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Sync for alice_physics::netcode::DeterministicSimulation
 impl core::marker::Unpin for alice_physics::netcode::DeterministicSimulation
@@ -24082,6 +24150,20 @@ pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics::world_participant::Participant>) -> core::result::Result<usize, alice_physics::world_participant::RegisterError>
+pub fn alice_physics::solver::PhysicsWorld::clear_fault(&mut self)
+pub fn alice_physics::solver::PhysicsWorld::declare_field(&mut self, alice_physics::world_participant::PortId, alice_physics::world_participant::FieldLayout, alice_physics::world_participant::FieldMode) -> core::result::Result<(), alice_physics::solver::DeclareFieldError>
+pub const fn alice_physics::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics::world_participant::WorldFault>
+pub const fn alice_physics::solver::PhysicsWorld::fields(&self) -> &alice_physics::world_participant::FieldBoard
+pub fn alice_physics::solver::PhysicsWorld::observe_body_checked(&self, usize) -> core::option::Option<alice_physics::world_participant::Observed<alice_physics::solver::BodyObservation>>
+pub fn alice_physics::solver::PhysicsWorld::observe_participant(&self, usize) -> core::option::Option<alice_physics::world_participant::Observed<alice_physics::world_participant::ObservationSink>>
+pub fn alice_physics::solver::PhysicsWorld::participant_count(&self) -> usize
+pub fn alice_physics::solver::PhysicsWorld::participant_kinds(&self) -> alloc::vec::Vec<alice_physics::world_participant::ParticipantKind>
+pub fn alice_physics::solver::PhysicsWorld::participant_state(&self, usize) -> core::option::Option<alloc::vec::Vec<u8>>
+pub fn alice_physics::solver::PhysicsWorld::set_field(&mut self, alice_physics::world_participant::PortId, &[alice_physics::math::Fix128]) -> core::result::Result<(), alice_physics::world_participant::FieldError>
+pub fn alice_physics::solver::PhysicsWorld::try_step(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::StepError>
+pub fn alice_physics::solver::PhysicsWorld::try_step_parallel(&mut self, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::StepError>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::cast_capsule(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
 pub fn alice_physics::solver::PhysicsWorld::overlap_aabb(&self, &alice_physics::collider::AABB, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
@@ -24114,7 +24196,7 @@ impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::time_of_impact(&self, usize, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::ccd::TOI>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
+impl !core::marker::Freeze for alice_physics::solver::PhysicsWorld
 impl core::marker::Send for alice_physics::solver::PhysicsWorld
 impl core::marker::Sync for alice_physics::solver::PhysicsWorld
 impl core::marker::Unpin for alice_physics::solver::PhysicsWorld

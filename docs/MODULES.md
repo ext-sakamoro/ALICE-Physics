@@ -74,7 +74,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `profiling` | per-stage timers and per-frame statistics |  | [`profiling_stages`](../examples/profiling_stages.rs) | standalone |
 | `debug_render` | wireframe primitives for bodies, contacts, joints, BVH and forces |  | [`debug_render_primitives`](../examples/debug_render_primitives.rs) | world API |
 | `gpu_bridge` | `GpuSolverBridge` trait for external GPU solvers that must match the CPU result bit for bit | gpu-solver-bridge | [`world_api_tour`](../examples/world_api_tour.rs) | standalone (step 1 of 3 items) |
-| `world_participant` | the contract a law signs to take part in the world's substep loop: participant trait, read-only substep context, per-body force accumulator, snapshot payload checks, three-valued observations |  | [`world_participant_contract`](../examples/world_participant_contract.rs) | standalone (step 37, world API 1 of 88 items) |
+| `world_participant` | the contract a law signs to take part in the world's substep loop: participant trait, read-only substep context, per-body force accumulator, snapshot payload checks, three-valued observations |  | [`world_participant_contract`](../examples/world_participant_contract.rs) | step |
 
 ## Collision shapes and queries
 

@@ -12,10 +12,10 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 21 |
+| step | runs when `PhysicsWorld` steps | 22 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 126 |
+| standalone | a Rust API that only examples call | 125 |
 | unused | no caller outside tests | 0 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -41,6 +41,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 6 / 3 / 2 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 37 / 23 / 0 / 28 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
@@ -53,7 +54,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | world API | 0 / 28 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 29 of 148 items) | 29 / 90 / 7 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 37 of 173 items) | 37 / 107 / 7 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API | 0 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -74,7 +75,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `ccd` | standalone (world API 2 of 13 items) | 0 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `cfd_solver` | standalone | 0 / 0 / 0 / 41 / 0 | — |
+| `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
 | `character` | standalone (world API 3 of 11 items) | 0 / 3 / 0 / 8 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `cloth` | standalone | 0 / 0 / 0 / 10 / 0 | — |
@@ -183,7 +184,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `world_participant` | standalone | 0 / 0 / 0 / 88 / 0 | — |
 
 ### C ABI (`--features ffi`)
 
