@@ -223,7 +223,7 @@ fn slab_translates_k_cells_under_semi_lagrangian_on_every_axis_and_sign() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-008: advect_vof_rigid doc promises a k-cell translation 'under either scheme' for dt = k dx / u, but Upwind with k = 2 (c = 2) yields a 1-cell shift of the slab ([0,0,1,1,1,0..] not [0,0,0,1,1,1,0..]); VofScheme::Upwind doc says exact only at c = 1 (doc contradiction)"]
+// AUD-A-S2W3-008
 fn upwind_slab_translates_k_cells_for_k_greater_than_one() {
     let slab = [0.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
     let mut g = line(0, &slab, Fix128::ONE);
@@ -262,15 +262,38 @@ fn quarter_courant_blend_and_volume_conservation_for_both_schemes() {
     }
 }
 
-/// Upwind sign rule far above the CFL limit (doc): f -> 1 where the upwind neighbour is larger,
-/// 0 where smaller, unchanged where equal; the result stays in [0, 1].
+/// Far above the CFL limit the upwind step carries the field off the grid: a
+/// displacement of 100 cells on a 6-cell line leaves it empty, the exact answer
+/// with an empty inflow (AUD-A-S2W3-008; this test used to pin the clamp's
+/// sign rule of a single step with c = 100). A displacement of exactly the
+/// grid length (6 cells, c = 6, sub-cycled at c = 1) empties it too
 #[test]
-fn upwind_beyond_the_courant_limit_follows_the_documented_sign_rule() {
-    let mut g = line(0, &[0.25, 0.5, 0.5, 1.0, 0.0, 0.5], Fix128::ONE);
-    let _ = advect_vof_rigid(&mut g, VofScheme::Upwind, along(0, 100.0), Fix128::ONE);
-    // new = f - c (f - f_up), c = 100: f_up > f -> +huge -> 1 ; f_up < f -> -huge -> 0 ; equal -> f
-    // i0: up=0 <.25 -> 0 ; i1: up=.25 < .5 -> 0 ; i2: equal -> .5 ; i3: up=.5 < 1 -> 0 ; i4: up=1 > 0 -> 1 ; i5: up=0 < .5 -> 0
-    assert_eq!(values(&g), [0.0, 0.0, 0.5, 0.0, 1.0, 0.0]);
+fn upwind_far_beyond_the_courant_limit_carries_the_field_off_the_grid() {
+    for u in [100.0, 6.0] {
+        let mut g = line(0, &[0.25, 0.5, 0.5, 1.0, 0.0, 0.5], Fix128::ONE);
+        let vol = advect_vof_rigid(&mut g, VofScheme::Upwind, along(0, u), Fix128::ONE);
+        assert_eq!(values(&g), [0.0; 6], "u = {u}");
+        assert_eq!(vol, Fix128::ZERO);
+    }
+    // c = 2.5 (not an integer) on a long line: sub-cycled at 2.5 / 3, bounded and
+    // volume-conserving while inside
+    let start = [0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+    let mut g = line(0, &start, Fix128::ONE);
+    let vol = advect_vof_rigid(&mut g, VofScheme::Upwind, along(0, 2.5), Fix128::ONE);
+    assert!((vol.to_f64() - 2.0).abs() < 1e-12, "{}", vol.to_f64());
+    // oracle: ceil(2.5) = 3 independent f64 upwind sub-steps at c = 2.5 / 3
+    // (empty inflow), each f_i <- f_i - c (f_i - f_{i-1})
+    let mut want = start;
+    for _ in 0..3 {
+        let prev = want;
+        for i in 0..want.len() {
+            let up = if i == 0 { 0.0 } else { prev[i - 1] };
+            want[i] = prev[i] - 2.5 / 3.0 * (prev[i] - up);
+        }
+    }
+    for (got, want) in values(&g).iter().zip(want) {
+        assert!((got - want).abs() < 1e-12, "{:?} vs {want:?}", values(&g));
+    }
 }
 
 /// Rigid convection never creates mass: the returned volume is `sum(f) dx^3` and an advected

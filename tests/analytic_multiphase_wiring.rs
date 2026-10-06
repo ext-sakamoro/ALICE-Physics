@@ -227,9 +227,10 @@ fn semi_lagrangian_half_cell_displacement_averages_the_two_neighbours() {
 }
 
 #[test]
-fn above_courant_one_the_two_schemes_give_different_documented_answers() {
-    // u dt / dx = 2: upwind f_i ← f_i − 2 (f_i − f_{i−1}), clamped;
-    // semi-Lagrangian shifts by two cells exactly.
+fn above_courant_one_both_schemes_shift_by_whole_cells() {
+    // u dt / dx = 2: the upwind step is sub-cycled at c = 1 (AUD-A-S2W3-008;
+    // this test used to pin a single clamped step with c = 2), and the
+    // semi-Lagrangian one shifts by two cells; both land on the same answer
     let mut up = line(0, &ints(&[0, 1, 0, 0, 0, 0]), Fix128::ONE);
     let mut sl = up.clone();
     let vu = advect_vof_rigid(&mut up, VofScheme::Upwind, along(0, int(2)), Fix128::ONE);
@@ -239,7 +240,11 @@ fn above_courant_one_the_two_schemes_give_different_documented_answers() {
         along(0, int(2)),
         Fix128::ONE,
     );
-    assert_eq!(up.data, ints(&[0, 0, 1, 0, 0, 0]), "upwind: −1 → 0, 2 → 1");
+    assert_eq!(
+        up.data,
+        ints(&[0, 0, 0, 1, 0, 0]),
+        "upwind: two sub-steps at c = 1"
+    );
     assert_eq!(
         sl.data,
         ints(&[0, 0, 0, 1, 0, 0]),
@@ -320,17 +325,18 @@ fn zero_extent_grids_have_no_cells_and_return_a_zero_volume() {
 }
 
 #[test]
-fn a_velocity_far_above_dx_over_dt_follows_the_sign_rule_upwind_and_samples_the_clamped_boundary_semi_lagrangian(
+fn a_velocity_far_above_dx_over_dt_empties_the_field_upwind_and_samples_the_clamped_boundary_semi_lagrangian(
 ) {
     for huge in [int(1 << 40), int(i64::MAX)] {
         for (u, up_want, sl_want) in [
-            // upwind: 1 where f_up > f, 0 where f_up < f, f where equal;
+            // upwind: the field is carried off the grid and the inflow is empty
+            // (AUD-A-S2W3-008; this test used to pin the clamp's sign rule);
             // semi-Lagrangian: every cell samples the boundary cell on the
             // inflow side (cell 0 for u > 0, cell 3 for u < 0).
-            (huge, ints(&[0, 1, 0, 0]), ints(&[1, 1, 1, 1])),
+            (huge, ints(&[0, 0, 0, 0]), ints(&[1, 1, 1, 1])),
             (
                 Fix128::ZERO - huge,
-                ints(&[0, 0, 1, 0]),
+                ints(&[0, 0, 0, 0]),
                 ints(&[1, 1, 1, 1]),
             ),
         ] {
@@ -346,7 +352,7 @@ fn a_velocity_far_above_dx_over_dt_follows_the_sign_rule_upwind_and_samples_the_
             .expect("semi-Lagrangian must not panic");
             assert_eq!(up.data, up_want, "upwind, u = {}", u.to_f64());
             assert_eq!(sl.data, sl_want, "semi-Lagrangian, u = {}", u.to_f64());
-            assert_eq!(vu, Fix128::ONE);
+            assert_eq!(vu, Fix128::ZERO);
             assert_eq!(vs, int(4));
         }
     }
