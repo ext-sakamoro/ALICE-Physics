@@ -1523,12 +1523,17 @@ fn fluid_netcode_snapshot_round_trip_is_bit_exact_over_the_full_range() {
         snap.checksum
     );
 
-    // Truncated payload → None; empty state → FNV offset basis.
+    // Truncated payload → None; empty state → FNV-1a of the two zero byte
+    // lengths (16 zero bytes, u64 little-endian each), computed here.
     let mut cut = snap.clone();
     cut.positions.truncate(cut.positions.len() - 1);
     assert!(cut.restore().is_none());
     let empty = FluidSnapshot::capture(&[], &[], 0);
-    assert_eq!(empty.checksum, 0xcbf2_9ce4_8422_2325);
+    let mut fnv: u64 = 0xcbf2_9ce4_8422_2325;
+    for _ in 0..16 {
+        fnv = fnv.wrapping_mul(0x0100_0000_01b3); // xor with 0 leaves it
+    }
+    assert_eq!(empty.checksum, fnv);
     assert_eq!(empty.size_bytes(), 20);
     let (p0, v0) = empty.restore().expect("empty restore");
     assert!(p0.is_empty() && v0.is_empty());
