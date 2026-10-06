@@ -72,9 +72,8 @@ fn section_chain_topology() {
     );
 
     assert_eq!(artic.link_count(), 3, "root + 2 add_link calls = 3 links");
-    // dof_count counts jointed LINKS, not summed joint DOF (documented as
-    // "approximate" at its own definition) — 2 non-root links, 2 "dof".
-    assert_eq!(artic.dof_count(), 2);
+    // dof_count sums the joints' freedom: ball 3 + hinge 1
+    assert_eq!(artic.dof_count(), 4);
     assert_eq!(artic.body_indices(), vec![0, 1, 2]);
     assert_eq!(artic.joints().len(), 2);
 
@@ -317,10 +316,12 @@ fn section_build_ragdoll() {
         "every body index must fall in [start, start+12), got {indices:?}"
     );
     assert_eq!(
-        artic.dof_count(),
+        artic.joints().len(),
         11,
         "11 non-root links, each with a joint"
     );
+    // 7 ball joints * 3 + 4 hinges * 1
+    assert_eq!(artic.dof_count(), 25);
 
     println!(
         "[articulation] build_ragdoll: bodies={} links={} dof={} indices[0..3]={:?}",

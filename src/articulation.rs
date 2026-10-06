@@ -113,10 +113,34 @@ impl ArticulatedBody {
         self.links.len()
     }
 
-    /// Number of DOFs (approximate: each non-root link's joint)
+    /// Degrees of freedom the joints of the non-root links leave between each
+    /// link and its parent, summed: ball 3, hinge 1, fixed 0, slider 1,
+    /// cone-twist 3 (rotations, limited), D6 its axes that are not locked, and
+    /// a spring 6 (it adds a force but removes no freedom). The root's own
+    /// freedom (6 when it is floating) is not counted.
     #[must_use]
     pub fn dof_count(&self) -> usize {
-        self.links.iter().filter(|l| l.joint.is_some()).count()
+        self.links
+            .iter()
+            .filter_map(|l| l.joint.as_ref())
+            .map(|j| match j {
+                Joint::Ball(_) | Joint::ConeTwist(_) => 3,
+                Joint::Hinge(_) | Joint::Slider(_) => 1,
+                Joint::Fixed(_) => 0,
+                Joint::Spring(_) => 6,
+                Joint::D6(d) => [
+                    d.linear_x,
+                    d.linear_y,
+                    d.linear_z,
+                    d.angular_x,
+                    d.angular_y,
+                    d.angular_z,
+                ]
+                .iter()
+                .filter(|m| !matches!(m, crate::joint::D6Motion::Locked))
+                .count(),
+            })
+            .sum()
     }
 
     /// Get all body indices in this articulation
@@ -302,7 +326,7 @@ pub fn build_ragdoll(
             pelvis_idx,
             spine_idx,
             Vec3Fix::from_int(0, 1, 0),
-            Vec3Fix::ZERO,
+            Vec3Fix::from_int(0, -1, 0),
         )),
         Vec3Fix::from_int(0, 2, 0),
     );
@@ -313,7 +337,7 @@ pub fn build_ragdoll(
             spine_idx,
             chest_idx,
             Vec3Fix::from_int(0, 1, 0),
-            Vec3Fix::ZERO,
+            Vec3Fix::from_int(0, -1, 0),
         )),
         Vec3Fix::from_int(0, 2, 0),
     );
@@ -324,7 +348,7 @@ pub fn build_ragdoll(
             chest_idx,
             head_idx,
             Vec3Fix::from_int(0, 1, 0),
-            Vec3Fix::ZERO,
+            Vec3Fix::from_int(0, -1, 0),
         )),
         Vec3Fix::from_int(0, 2, 0),
     );

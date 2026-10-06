@@ -92,7 +92,7 @@ fn ragdoll_links_are_consistent_with_their_joints_and_pose() {
 /// A freshly built ragdoll satisfies its own joints: the two anchors of every joint
 /// coincide in world space (otherwise the first constraint solve snaps the body).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-018: build_ragdoll spine / chest / head / leg joints put anchor_a at +1 (or -1) on the parent and anchor_b at the child's origin, so the anchors are 1 unit apart at build time (arms are consistent)"]
+// AUD-A-S3W1-018
 fn ragdoll_joint_anchors_coincide_at_build_time() {
     let (artic, bodies) = build_ragdoll(Vec3Fix::ZERO, 0);
     let mut worst = 0.0f64;
@@ -132,7 +132,7 @@ fn ragdoll_joint_anchors_coincide_at_build_time() {
 /// `dof_count` is documented "approximate: each non-root link's joint": it counts
 /// joints, so a ball (3 DOF) and a hinge (1 DOF) give 2, not 4.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-019: dof_count returns the number of jointed links (2 for Ball + Hinge), not the degrees of freedom (4); the name promises DOFs, the doc admits 'approximate', the existing wiring test pins the joint count"]
+// AUD-A-S3W1-019
 fn dof_count_sums_joint_degrees_of_freedom() {
     let mut a = ArticulatedBody::new(0, true);
     let l1 = a.add_link(0, 1, ball(0, 1), Vec3Fix::ZERO);
@@ -476,4 +476,49 @@ fn static_child_links_are_not_integrated() {
     FeatherstoneSolver::new().solve(&a, &mut bodies, v3(0.0, -10.0, 0.0), fx(0.25));
     assert_eq!(arr(bodies[1].position), [0.0, 2.0, 0.0]);
     assert_eq!(arr(bodies[1].velocity), [0.0; 3]);
+}
+
+/// AUD-A-S3W1-019 (every joint kind): slider 1, spring 6 (removes no freedom),
+/// cone-twist 3, and a D6 counts its axes that are not locked (two locked: 4).
+#[test]
+fn dof_count_weights_every_joint_kind() {
+    use alice_physics::joint::{ConeTwistJoint, D6Joint, D6Motion, SliderJoint, SpringJoint};
+    let z = Vec3Fix::ZERO;
+    let one = |j: Joint| {
+        let mut a = ArticulatedBody::new(0, true);
+        a.add_link(0, 1, j, z);
+        a.dof_count()
+    };
+    assert_eq!(
+        one(Joint::Slider(SliderJoint::new(0, 1, Vec3Fix::UNIT_X, z, z))),
+        1
+    );
+    assert_eq!(
+        one(Joint::Spring(SpringJoint::new(
+            0,
+            1,
+            z,
+            z,
+            Fix128::ONE,
+            Fix128::ONE,
+            Fix128::ZERO
+        ))),
+        6
+    );
+    assert_eq!(
+        one(Joint::ConeTwist(ConeTwistJoint::new(
+            0,
+            1,
+            z,
+            z,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_X
+        ))),
+        3
+    );
+    let mut d6 = D6Joint::new(0, 1, z, z);
+    d6.linear_x = D6Motion::Locked;
+    d6.angular_z = D6Motion::Locked;
+    d6.angular_y = D6Motion::Limited;
+    assert_eq!(one(Joint::D6(d6)), 4);
 }

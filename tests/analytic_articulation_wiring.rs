@@ -147,11 +147,11 @@ fn add_link_panics_on_out_of_range_parent() {
 }
 
 // ---------------------------------------------------------------------------
-// dof_count: counts jointed LINKS, not summed joint DOF.
+// dof_count: sums the joints' degrees of freedom (AUD-A-S3W1-019).
 // ---------------------------------------------------------------------------
 
 #[test]
-fn dof_count_counts_jointed_links_not_summed_joint_dof() {
+fn dof_count_sums_the_joint_degrees_of_freedom() {
     let mut artic = ArticulatedBody::new(0, false);
     // A weld (Fixed) joint has zero true kinematic freedom...
     let weld = artic.add_link(
@@ -174,14 +174,9 @@ fn dof_count_counts_jointed_links_not_summed_joint_dof() {
         Vec3Fix::from_int(0, 1, 0),
     );
 
-    // dof_count's own doc says "approximate: each non-root link's joint" —
-    // it is link.joint.is_some().count(), so the weld (0 true DOF) and the
-    // ball (3 true DOF) both contribute exactly 1, for a total of 2, not 3.
-    assert_eq!(
-        artic.dof_count(),
-        2,
-        "dof_count must count jointed links (2), not the weld's 0 + the ball's 3 = 3 true DOF"
-    );
+    // the weld leaves 0 and the ball 3: 3 in all (two jointed links)
+    assert_eq!(artic.joints().len(), 2);
+    assert_eq!(artic.dof_count(), 3, "weld 0 + ball 3");
 }
 
 // ---------------------------------------------------------------------------
@@ -546,7 +541,14 @@ fn build_ragdoll_matches_its_documented_hierarchy() {
 
     assert_eq!(bodies.len(), 12);
     assert_eq!(artic.link_count(), 12);
-    assert_eq!(artic.dof_count(), 11, "every non-root link carries a joint");
+    assert_eq!(
+        artic.joints().len(),
+        11,
+        "every non-root link carries a joint"
+    );
+    // 7 ball joints (spine, chest, head, two shoulders, two hips) and 4 hinges
+    // (elbows, knees): 7 * 3 + 4 * 1 = 25 degrees of freedom
+    assert_eq!(artic.dof_count(), 25);
 
     // Link indices, in creation order: 0 pelvis(root), 1 spine, 2 chest,
     // 3 head, 4 l_upper_arm, 5 l_lower_arm, 6 r_upper_arm, 7 r_lower_arm,
