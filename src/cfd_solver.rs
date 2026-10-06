@@ -3213,13 +3213,15 @@ impl CfdSolver {
                     production_max = production;
                 }
                 let cell = field.cell_state(c);
+                // a cell counts once, whichever of its two scalars would go negative
+                let mut hit = false;
                 let next = match run.model {
                     TurbulenceModel::KEpsilon => {
                         let mut st = cell;
                         // Would the explicit update go negative? Counted
                         // before the clamp inside `advance_*` hides it.
                         if st.k + (production - st.epsilon) * dt_s < Fix128::ZERO {
-                            clamped += 1;
+                            hit = true;
                         }
                         st.advance_k(production, dt_s);
                         if !st.k.is_zero() {
@@ -3228,7 +3230,7 @@ impl CfdSolver {
                                 * (crate::turbulence::KE_C1_EPS * production
                                     - crate::turbulence::KE_C2_EPS * st.epsilon);
                             if st.epsilon + d_eps * dt_s < Fix128::ZERO {
-                                clamped += 1;
+                                hit = true;
                             }
                         }
                         st.advance_epsilon(production, dt_s);
@@ -3239,7 +3241,7 @@ impl CfdSolver {
                         let (k, w) = (st.k, st.omega);
                         let dk = production - KW_BETA_STAR * k * w;
                         if k + dk * dt_s < Fix128::ZERO {
-                            clamped += 1;
+                            hit = true;
                         }
                         let dw = if k.is_zero() {
                             Fix128::ZERO - crate::turbulence::KW_BETA * w * w
@@ -3248,12 +3250,13 @@ impl CfdSolver {
                                 - crate::turbulence::KW_BETA * w * w
                         };
                         if w + dw * dt_s < Fix128::ZERO {
-                            clamped += 1;
+                            hit = true;
                         }
                         st.advance(production, dt_s);
                         st.to_k_epsilon()
                     }
                 };
+                clamped += u32::from(hit);
                 field.k[c] = next.k;
                 field.epsilon[c] = next.epsilon;
             }

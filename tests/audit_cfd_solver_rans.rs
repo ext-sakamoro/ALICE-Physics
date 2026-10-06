@@ -643,7 +643,7 @@ fn a_transported_k_is_carried_with_the_fluid_by_half_a_cell() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-010: `TurbulenceSummary::clamped` is documented as the `Number of cells` whose k, eps or omega step was clamped, but the k-omega branch counts the k clamp and the omega clamp separately: a uniform 3^3 field gives 54 (2 per cell) instead of 27"]
+// AUD-A-S1W4-010
 fn the_clamped_counter_of_k_omega_counts_cells_as_documented() {
     // doc: "Number of cells whose explicit source step would have taken k, eps or omega negative".
     // uniform k = 1, eps = 100, dt = 0.02: k + dk dt < 0 and omega + domega dt < 0 in every cell
@@ -886,4 +886,16 @@ fn the_pressure_report_names_the_solver_that_ran_and_only_bicgstab_reports_a_ver
             "{solver:?}"
         );
     }
+}
+
+#[test]
+fn the_clamped_counter_of_k_epsilon_counts_cells_once() {
+    // uniform k = 1, eps = 100, dt = 0.02, no production: k - eps dt = -1 would go
+    // negative in every cell (k is clamped to 0, which skips the eps step), one
+    // count per cell (AUD-A-S1W4-010; only the k-omega branch could count twice)
+    let n = 3;
+    let mut s = rest_solver(n, int(1));
+    let mut state = RansState::uniform(n, n, n, TurbulenceModel::KEpsilon, int(1), int(100));
+    let r = s.step_rans(q(1, 50), &opts(), &mut state).expect("steps");
+    assert_eq!(r.turbulence.clamped, (n * n * n) as u32);
 }
