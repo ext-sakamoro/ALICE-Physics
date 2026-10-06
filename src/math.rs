@@ -531,16 +531,25 @@ impl Fix128 {
         let hh = a_hi.wrapping_mul(b_hi);
         let ll_hi = (ll >> 64) as i128;
 
-        // 中央 128 bit の和が i128 を越えるのは |a_hi| と |b_hi| がどちらも
-        // 2⁶³ 近くの時だけで、その時の積は必ず範囲外なので None でよい
-        let mid = hl.checked_add(lh)?.checked_add(ll_hi)?;
+        // 中央の和 `hl + lh + ll_hi` は i128 を 1 bit 越えうる (例: a_hi = i64::MIN と
+        // b = −2⁻⁶⁴ の組は真の積が ≈ 0.5 でも和が −2¹²⁷ を下回る) wrap した値と
+        // 2¹²⁸ 単位の桁上がり `carry` に分けて厳密に持ち、範囲は最後に 1 回だけ判定する
+        let mut carry: i128 = 0;
+        let (mid, o1) = hl.overflowing_add(lh);
+        if o1 {
+            carry += if lh > 0 { 1 } else { -1 };
+        }
+        let (mid, o2) = mid.overflowing_add(ll_hi);
+        if o2 {
+            carry += 1; // ll_hi ≥ 0
+        }
         let mid_lo = mid as u64;
 
-        // 整数部は `hh + (mid >> 64)` で、収まるかは**和**で判定する
-        // `hh` 単独では判定しない: 負の値は整数部が floor (−(k+1)) なので、
-        // `hh` が i64 を越えても `mid >> 64` が打ち消して和は収まることがある
-        // (例: x = −3037000499.5 の x²、真値 ≈ 9.2233720339e18 < 2⁶³)
-        let hi = i64::try_from(hh.checked_add(mid >> 64)?).ok()?;
+        // 整数部は `hh + floor(真の中央の和 / 2⁶⁴)` = `hh + (mid >> 64) + carry·2⁶⁴`
+        // 収まるかは**和**で判定する (`hh` 単独では判定しない: 負の値は整数部が
+        // floor なので `hh` が i64 を越えても後ろの項が打ち消すことがある)
+        // |hh| ≤ 2¹²⁶、|mid >> 64| ≤ 2⁶³、|carry·2⁶⁴| ≤ 2⁶⁵ なので i128 で溢れない
+        let hi = i64::try_from(hh + (mid >> 64) + (carry << 64)).ok()?;
 
         Some(Self { hi, lo: mid_lo })
     }

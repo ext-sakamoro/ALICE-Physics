@@ -317,6 +317,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 (`replay` は in-memory の保存先で同 target に対応、Added 参照)
 - `Fix128::checked_mul` が範囲内の積を `None` にしていた 負の値は整数部が floor なので、`|x| ∈ [3037000499, √2⁶³)` の負の x を含む積では整数部どうしの積だけが i64 を越える (和では収まる) 判定を整数部の和で行うようにした これを使う経路 (`Vec3Fix::checked_*`、`ForceField::Point` の範囲の判定、剛体の積分の `v·dt` 検査) で、その窓の入力が範囲外として扱われなくなる
 - `ForceField::Point` は中心からの距離が `2³¹·⁵ ≈ 3.04e9` 以上でも `strength / r²` を返す (従来は `r²` が wrap し、距離 `3·2³⁰` で上限値 (真値の約 2e19 倍)、`2³²` で 0 だった) 距離の 2 乗が範囲内なら従来の式のまま (bit 不変、修正前の式との `assert_eq!` で確認)、範囲外だけ `r²` を作らずに `(strength / r) / r` と 2 乗を経ない正規化で求める
