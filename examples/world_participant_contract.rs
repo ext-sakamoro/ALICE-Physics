@@ -2,19 +2,25 @@
 //! ([`alice_physics::world_participant`]) and driven by hand through the
 //! substep context, the way the world will drive it: a point oscillator that
 //! pulls a body along y, its snapshot payload, a failing call that leaves it
-//! unchanged, and the checks a restore makes on the participant list.
+//! unchanged, the checks a restore makes on the participant list, and the
+//! execution order the world derives from the ports participants declare.
 //!
 //! Run: `cargo run --example world_participant_contract`
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::RigidBody;
 use alice_physics::world_participant::{
-    AccumulateError, ForceAccumulator, ObservationSink, Observed, Participant, ParticipantFault,
-    ParticipantKind, ParticipantMismatch, RegisterError, StateError, StepError, StepRule,
-    SubstepCtx, Verdict, WorldFault,
+    execution_order, AccumulateError, ForceAccumulator, ObservationSink, Observed, OrderError,
+    Participant, ParticipantFault, ParticipantKind, ParticipantMismatch, Port, PortAccess, PortId,
+    RegisterError, StateError, StepError, StepRule, SubstepCtx, Verdict, WorldFault,
 };
 
 const KIND: ParticipantKind = ParticipantKind::new(1);
+/// The oscillator's displacement, published for other participants.
+const DISPLACEMENT: PortId = PortId::new(1);
+/// A load some other participant computes from the displacement.
+const LOAD: PortId = PortId::new(2);
+const OSCILLATOR_PORTS: &[Port] = &[Port::writes(DISPLACEMENT)];
 
 /// `x'' = -k x` (symplectic Euler); pulls `target` with `c (x - y_body)`.
 struct Oscillator {
@@ -31,6 +37,10 @@ impl Participant for Oscillator {
 
     fn step_rule(&self) -> StepRule {
         StepRule::FollowSubstep
+    }
+
+    fn ports(&self) -> &[Port] {
+        OSCILLATOR_PORTS
     }
 
     fn substep(&mut self, ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
@@ -175,12 +185,18 @@ fn main() {
         state(&tight) == before
     );
     assert_eq!(ParticipantFault::from_tag(fault.tag()), Some(fault));
-    let recorded = WorldFault {
+    let recorded = WorldFault::Participant {
         index: 0,
         kind: KIND,
         fault,
     };
     let refused = StepError::Faulted(recorded);
+    for other in [
+        WorldFault::RigidOverflow,
+        WorldFault::ForceOutOfRange { body: 0 },
+    ] {
+        println!("[world_participant] other world fault: {other:?}");
+    }
     let mut sink = ObservationSink::new();
     tight.observe(&mut sink);
     let seen = Observed::Exact(sink.values()[0].1);
@@ -210,4 +226,24 @@ fn main() {
         "[world_participant] Fixed(2/3) in a substep of 1 = {rule:?} (Subcycle: {:?})",
         StepRule::Subcycle.steps_per_substep(Fix128::ONE)
     );
+
+    // Execution order from declared ports: the oscillator (registered last)
+    // writes the displacement the load reads, so it runs first.
+    let load: &[Port] = &[Port::reads(DISPLACEMENT), Port::writes(LOAD)];
+    let consumer: &[Port] = &[Port::reads(LOAD)];
+    let order = execution_order(&[consumer, load, p.ports()]).expect("no loop");
+    println!(
+        "[world_participant] ports {:?} run order {order:?}",
+        p.ports()
+            .iter()
+            .map(|q| (q.id().get(), q.access() == PortAccess::Write))
+            .collect::<Vec<_>>()
+    );
+    assert_eq!(order, vec![2, 1, 0]);
+    // A loop is refused at registration, not ordered.
+    let back: &[Port] = &[Port::reads(LOAD), Port::writes(DISPLACEMENT)];
+    let looped: Result<Vec<usize>, OrderError> = execution_order(&[load, back]);
+    let refused_registration = looped.clone().map_err(RegisterError::Order);
+    println!("[world_participant] loop {looped:?} -> registration {refused_registration:?}");
+    assert!(refused_registration.is_err());
 }

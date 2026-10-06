@@ -18,6 +18,34 @@
 //! | a participant cannot write a body | type: [`SubstepCtx`] only hands out `&[RigidBody]` and the accumulator |
 //! | [`Participant::check_state`] accepts every payload [`Participant::write_state`] produced, and [`Participant::read_state`] then restores the participant bit for bit | participant side, checked by the conformance tests |
 //! | a restore checks the target world holds the same number of participants, of the same kinds, in the same order | world side, [`ParticipantMismatch::classify`] |
+//! | participants run in the order [`execution_order`] gives for their [`Participant::ports`]: a writer of a port before its readers, registration order otherwise; with no ports declared that is registration order | world side calls [`execution_order`] at registration |
+//! | a loop of ports (a cycle) is refused at registration, never ordered silently | type: [`execution_order`] returns [`OrderError::Cycle`], the world returns it as [`RegisterError::Order`] |
+//! | the value behind a port is state of the participant that holds it, so it is in that participant's [`Participant::write_state`] payload | participant side |
+//! | the summed force and torque reach a body through `v += F·h·inv_mass`, `ω += I⁻¹·τ·h`; a product out of range is a fault ([`WorldFault::ForceOutOfRange`]), never clamped | world side |
+//! | the rigid integration going out of range ([`WorldFault::RigidOverflow`]) is a fault like a participant's | world side |
+//! | a parked (sleeping) body is woken by participant forces only above a deterministic threshold; below it the force has no effect on the body | world side |
+//!
+//! # Coupling through ports
+//!
+//! A participant declares the values it reads and writes as [`Port`]s
+//! ([`Participant::ports`], empty by default). A port is named by a
+//! [`PortId`], which, like [`ParticipantKind`], keeps its value across
+//! snapshots and versions. Within a substep, a participant that reads a port
+//! runs after every participant that writes it, so it sees the value of this
+//! substep. Participants that do not depend on each other keep their
+//! registration order. A participant that reads and writes the same port has
+//! no ordering constraint with itself.
+//!
+//! When the ports form a loop (A writes what B reads and B writes what A
+//! reads), no order lets every read see the value of this substep. The v1
+//! rule for such a loop is that its reads see the previous substep's values
+//! (explicit coupling); [`execution_order`] does not pick an order for it
+//! and returns [`OrderError::Cycle`] instead, so a loop is never coupled
+//! without being declared as one. How a participant declares a lagged read is
+//! not part of this version ([`PortAccess`] is `#[non_exhaustive]`). The
+//! types of the values behind a port (temperature, velocity, electromagnetic
+//! fields) and implicit iteration between coupled participants are not part
+//! of this module either.
 //!
 //! A participant cannot write a body because [`SubstepCtx`] has no way to
 //! reach one mutably:
@@ -55,6 +83,162 @@ impl ParticipantKind {
     pub const fn get(self) -> u32 {
         self.0
     }
+}
+
+/// Stable name of a value participants exchange (a field, a set of loads).
+/// A port keeps its id across snapshots and versions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PortId(u32);
+
+impl PortId {
+    /// The port `raw`.
+    #[must_use]
+    pub const fn new(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    /// The raw id.
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// Whether a participant reads or writes a port.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum PortAccess {
+    /// Reads the value of the current substep (runs after every writer).
+    Read,
+    /// Writes the value (runs before every reader).
+    Write,
+}
+
+/// One declared access of a participant to a port.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Port {
+    id: PortId,
+    access: PortAccess,
+}
+
+impl Port {
+    /// A read of `id`.
+    #[must_use]
+    pub const fn reads(id: PortId) -> Self {
+        Self {
+            id,
+            access: PortAccess::Read,
+        }
+    }
+
+    /// A write of `id`.
+    #[must_use]
+    pub const fn writes(id: PortId) -> Self {
+        Self {
+            id,
+            access: PortAccess::Write,
+        }
+    }
+
+    /// The port.
+    #[must_use]
+    pub const fn id(self) -> PortId {
+        self.id
+    }
+
+    /// Read or write.
+    #[must_use]
+    pub const fn access(self) -> PortAccess {
+        self.access
+    }
+}
+
+/// Why the participants' ports admit no execution order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum OrderError {
+    /// The ports form a loop within one substep.
+    Cycle {
+        /// Registration indices of every participant on a loop, ascending.
+        /// Participants that only depend on a loop are not listed.
+        members: Vec<usize>,
+    },
+}
+
+/// The order participants run in within a substep, from their declared
+/// ports: `ports[i]` is what [`Participant::ports`] returns for the
+/// participant registered at index `i`, and the result lists registration
+/// indices in run order.
+///
+/// A participant that writes a port runs before every other participant that
+/// reads it. Among participants free to run, the one registered first runs
+/// first, so with no ports at all the order is `0, 1, …, n-1`, and the result
+/// depends only on `ports`. Two writers of one port are not ordered against
+/// each other by that port.
+///
+/// # Errors
+///
+/// [`OrderError::Cycle`] when the dependencies form a loop; no order is
+/// chosen.
+pub fn execution_order(ports: &[&[Port]]) -> Result<Vec<usize>, OrderError> {
+    let n = ports.len();
+    // succ[w] = readers that must run after writer w
+    let mut succ: Vec<Vec<usize>> = vec![Vec::new(); n];
+    for (w, wp) in ports.iter().enumerate() {
+        for p in wp.iter().filter(|p| p.access == PortAccess::Write) {
+            for (r, rp) in ports.iter().enumerate() {
+                if r != w
+                    && rp
+                        .iter()
+                        .any(|q| q.access == PortAccess::Read && q.id == p.id)
+                {
+                    succ[w].push(r);
+                }
+            }
+        }
+    }
+    let mut indegree = vec![0_usize; n];
+    for s in &mut succ {
+        s.sort_unstable();
+        s.dedup();
+        for &r in s.iter() {
+            indegree[r] += 1;
+        }
+    }
+    let mut done = vec![false; n];
+    let mut order = Vec::with_capacity(n);
+    while let Some(next) = (0..n).find(|&i| !done[i] && indegree[i] == 0) {
+        done[next] = true;
+        order.push(next);
+        for &r in &succ[next] {
+            indegree[r] -= 1;
+        }
+    }
+    if order.len() == n {
+        return Ok(order);
+    }
+    // A participant left over is on a loop iff it reaches itself through
+    // other left-over participants.
+    let members = (0..n)
+        .filter(|&v| !done[v] && reaches_itself(v, &succ, &done))
+        .collect();
+    Err(OrderError::Cycle { members })
+}
+
+fn reaches_itself(start: usize, succ: &[Vec<usize>], done: &[bool]) -> bool {
+    let mut seen = vec![false; succ.len()];
+    let mut stack: Vec<usize> = succ[start].clone();
+    while let Some(v) = stack.pop() {
+        if v == start {
+            return true;
+        }
+        if done[v] || seen[v] {
+            continue;
+        }
+        seen[v] = true;
+        stack.extend_from_slice(&succ[v]);
+    }
+    false
 }
 
 /// How a participant's own time step relates to the world substep `h`.
@@ -106,7 +290,7 @@ impl StepRule {
 }
 
 /// Why a participant could not be registered.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RegisterError {
     /// The world substep or the participant's own step is not positive.
@@ -118,6 +302,9 @@ pub enum RegisterError {
         /// The participant's fixed step.
         step: Fix128,
     },
+    /// With the new participant the declared ports form a loop
+    /// ([`execution_order`]); the participant was not registered.
+    Order(OrderError),
 }
 
 /// Why a participant's substep failed. The participant is unchanged and its
@@ -154,17 +341,37 @@ impl ParticipantFault {
 
 /// The first fault the world recorded (sticky until cleared).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct WorldFault {
-    /// Registration index of the participant that failed.
-    pub index: usize,
-    /// Its kind.
-    pub kind: ParticipantKind,
-    /// What failed.
-    pub fault: ParticipantFault,
+#[non_exhaustive]
+pub enum WorldFault {
+    /// A participant's substep returned `Err`.
+    Participant {
+        /// Registration index of the participant that failed.
+        index: usize,
+        /// Its kind.
+        kind: ParticipantKind,
+        /// What failed.
+        fault: ParticipantFault,
+    },
+    /// The rigid integration (position prediction, velocity from positions)
+    /// left the range of [`Fix128`]; the world's overflow flag in fault form.
+    /// It names no body because the flag does not.
+    ///
+    /// The flag covers only part of the products today: the XPBD position
+    /// prediction and the velocity derived from jointed positions. The TGS
+    /// path does not raise it, and a wrapping addition of a position (XPBD or
+    /// TGS) is not detected.
+    RigidOverflow,
+    /// Applying the summed participant force or torque to body `body`
+    /// (`F·h·inv_mass`, `I⁻¹·τ·h`) left the range of [`Fix128`]. Nothing is
+    /// clamped.
+    ForceOutOfRange {
+        /// Index of the body.
+        body: usize,
+    },
 }
 
 /// Why a checked world step did not run normally.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum StepError {
     /// A fault was already recorded; the world was not touched.
@@ -436,7 +643,9 @@ impl<'a> SubstepCtx<'a> {
         })
     }
 
-    /// The bodies at the start of this substep.
+    /// The bodies at the start of this substep. With TGS (one detection per
+    /// tick) as well as XPBD, positions and velocities are those at the head
+    /// of the substep.
     #[must_use]
     pub fn bodies(&self) -> &[RigidBody] {
         self.bodies
@@ -548,6 +757,14 @@ pub trait Participant: Send {
     /// How this participant's time step relates to the world substep.
     fn step_rule(&self) -> StepRule {
         StepRule::FollowSubstep
+    }
+
+    /// The ports this participant reads and writes, empty by default. The
+    /// world reads them once, at registration, to fix the execution order
+    /// ([`execution_order`]); they must not change while the participant is
+    /// registered.
+    fn ports(&self) -> &[Port] {
+        &[]
     }
 
     /// Advance by one world substep of width `h` (`ctx.h()`). Read bodies
