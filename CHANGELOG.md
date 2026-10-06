@@ -298,6 +298,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `MaterialProperties::youngs_at_angle`: doc は Reuss の下限と書いていたが、実装は算術平均 `E_xy cos² + E_z sin²` (Voigt の上限) で、PLA の 45° で 4.7 % 硬く出ていた doc どおり Reuss の混合 `1/E = cos²/E_xy + sin²/E_z` にした 剛性 0 の方向に成分がある荷重は 0 **Behavior change:** 斜め方向の弾性率が小さくなる (AUD-A-S1W5-012)
 - `SdfTetMesh::try_refine_conforming` / `try_refine_marked`: 辺を 2 等分した子を `[a, mid, c, d]` / `[mid, b, c, d]` の並びで足していたので、分ける辺が `(v0, v1)` でない時は子の半分が裏返った (60 要素を 0.45 で細分すると 745 中 372 が負の体積) 親の頂点を中点で置き換える形にし、子は親と同じ向きになる (AUD-A-S2W3-012)
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 (`replay` は in-memory の保存先で同 target に対応、Added 参照)
 - **Behavior change:** `physics2d::PhysicsWorld2D::check_collision_2d` が capsule–capsule / capsule–polygon / edge–polygon / edge–capsule の接触を返す (従来は `None` で互いにすり抜けていた) 各形状を芯 (線分または凸多角形) と半径に分け、芯が離れていれば最近接点間の距離から、重なっていれば両芯の辺法線での最小重なり量に半径を足して深さを求め、法線は body_a → body_b edge 同士は面積を持たないため意図的に接触しない (`Shape2D::Edge` の doc に明記)
