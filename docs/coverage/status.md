@@ -36,11 +36,12 @@ crate has today.
 | `docs/coverage/rel.toml` | 112 | 0 | 0 | 0 | 112 | 0 |
 | `docs/coverage/rigid.toml` | 121 | 78 | 4 | 7 | 31 | 1 |
 | `docs/coverage/sense.toml` | 92 | 19 | 2 | 2 | 69 | 0 |
+| `docs/coverage/shock.toml` | 115 | 29 | 7 | 2 | 77 | 0 |
 | `docs/coverage/soft.toml` | 96 | 21 | 4 | 6 | 65 | 0 |
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4177 | 544 | 76 | 104 | 3447 | 6 |
+| **total** | 4292 | 573 | 83 | 106 | 3524 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -595,6 +596,24 @@ crate has today.
 | proprio-nav | 7 | 0 | 1 | 0 | 6 | 0 |
 | range | 14 | 5 | 0 | 0 | 9 | 0 |
 | sysid | 3 | 0 | 0 | 0 | 3 | 0 |
+
+## `docs/coverage/shock.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| ale-hydrocode | 6 | 0 | 0 | 0 | 6 | 0 |
+| benchmark | 19 | 7 | 5 | 0 | 7 | 0 |
+| boundary | 7 | 3 | 0 | 0 | 4 | 0 |
+| closed-form | 15 | 4 | 0 | 0 | 11 | 0 |
+| detonation | 5 | 0 | 0 | 0 | 5 | 0 |
+| eos | 7 | 1 | 0 | 0 | 6 | 0 |
+| governing | 8 | 1 | 0 | 0 | 7 | 0 |
+| multi-dimensional | 5 | 0 | 0 | 0 | 5 | 0 |
+| output | 2 | 0 | 0 | 0 | 2 | 0 |
+| positivity-entropy | 10 | 5 | 1 | 2 | 2 | 0 |
+| reconstruction | 10 | 3 | 1 | 0 | 6 | 0 |
+| riemann | 14 | 2 | 0 | 0 | 12 | 0 |
+| time | 7 | 3 | 0 | 0 | 4 | 0 |
 
 ## `docs/coverage/soft.toml`
 
