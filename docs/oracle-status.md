@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4834 |
-| 🔴 Red by design | 219 |
+| 🟢 Not ignored (run by CI) | 4843 |
+| 🔴 Red by design | 217 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5078** |
+| **Total** | **5085** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (219)
+## 🔴 Red by design (217)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -31,12 +31,10 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
 - `applied_cycles_above_i64_max_do_not_flip_the_damage_sign` (audit_fatigue.rs) — known defect: AUD-A-S4W2-007: n as i64 で n > i64::MAX が負に wrap し damage が負になる (n = u64::MAX -> D < 0)
-- `arrhenius_rate_has_no_hard_zero_cliff_at_the_exp_saturation_threshold` (audit_smoke_fire.rs) — known defect: AUD-A-S3W2-001: Arrhenius rate is cut to exactly 0 when E_a/(R T) >= 40 (exp_fix saturation); PL…
 - `arrow_records_head_geometry_besides_the_shaft` (audit_debug_render.rs) — known defect: AUD-A-S4W3-008: arrow() documents 'line + arrowhead' but the computed head_point is discarded (`…
 - `bond_strength_is_symmetric_for_equal_names_with_different_yield` (audit_bimaterial.rs) — known defect: AUD-A-S4W3-011: interfacial_bond_strength_mpa is not symmetric when the two materials share a na…
 - `boundary_residual_covers_accumulated_pushes` (audit_cloth_fluid.rs) — known defect: AUD-A-S2W2-004: boundary residual under-reports accumulated pushes (two same-direction pushes of…
 - `boundary_residual_is_the_norm_of_the_net_velocity_change` (audit_cloth_fluid.rs) — known defect: AUD-A-S2W2-004: boundary residual reports the largest single-pair correction component, not the …
-- `box_contact_points_are_depth_apart_along_the_normal_in_every_branch` (audit_plane_collider.rs) — known defect: AUD-A-S3W1-002: intersect_aabb fully-behind branch returns point_b = project(centre) not project…
 - `buoyancy_field_holds_a_body_at_its_equilibrium_depth` (analytic_external_force_substep.rs) — src gap: the buoyancy field is a frame-head impulse while gravity is per substep, so a floating body at equili…
 - `buoyancy_uses_gravity_magnitude` (audit_fsi_advanced.rs) — known defect: AUD-A-S4W1-002: buoyancy_force doc says rho*V*|g| but g=-10 gives F_y=-10000 (downward); no abs
 - `capsule_bottom_does_not_sink_into_a_static_body_it_lands_on` (audit_character.rs) — known defect: AUD-A-S3W3-009: sweep_against_bodies casts a point-sphere from the capsule centre, so landing on…
@@ -294,7 +292,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4834)
+## 🟢 Not ignored (4843)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -483,6 +481,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
 | `audit_cloth_fluid.rs` | 12 |
+| `audit_plane_collider.rs` | 12 |
 | `audit_plastic.rs` | 12 |
 | `audit_turbulence.rs` | 12 |
 | `analytic_animation_blend_wiring.rs` | 11 |
@@ -504,7 +503,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_debug_render.rs` | 11 |
 | `audit_laminate.rs` | 11 |
 | `audit_piezoelectric.rs` | 11 |
-| `audit_plane_collider.rs` | 11 |
 | `audit_pressure.rs` | 11 |
 | `audit_rolling_contact.rs` | 11 |
 | `audit_wedge.rs` | 11 |
@@ -525,6 +523,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_compressible.rs` | 10 |
 | `audit_contact_cache.rs` | 10 |
 | `audit_db_bridge.rs` | 10 |
+| `audit_smoke_fire.rs` | 10 |
 | `audit_transient_thermal.rs` | 10 |
 | `coupling_channel_inventory.rs` | 10 |
 | `fix128_vs_f64_coupling_hypotheses.rs` | 10 |
@@ -575,7 +574,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_filter.rs` | 8 |
 | `audit_kinematic_loop.rs` | 8 |
 | `audit_prestressed.rs` | 8 |
-| `audit_smoke_fire.rs` | 8 |
 | `mesh_conformity.rs` | 8 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
@@ -601,6 +599,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_geometry_helpers.rs` | 6 |
 | `analytic_mass_properties_exactness.rs` | 6 |
 | `analytic_metric_wiring.rs` | 6 |
+| `analytic_replay_in_memory.rs` | 6 |
 | `analytic_sdf_distance_query.rs` | 6 |
 | `analytic_support_volume_wiring.rs` | 6 |
 | `analytic_thermoelastic.rs` | 6 |
