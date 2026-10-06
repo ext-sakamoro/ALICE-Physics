@@ -167,6 +167,7 @@ were introduced during that release window.
 
 ### Changed
 
+- CI: Security workflow の coverage job を情報表示から gate に変えた `scripts/line_coverage_ratchet.py` が `cargo llvm-cov --lib` の行カバレッジを `scripts/line-coverage-baseline.txt` と比べ、全体で 0.1 pt を超えて下がるか、50 行以上の file が 2 pt を超えて下がると失敗する (全体の伸びで 1 file の低下が隠れない) 上がった分は `--write` で基準に記録する
 - CI: `unsafe-and-parallel.yml` を追加 並列 step の raw pointer (src/solver.rs) と並列処理に関わる file を変える push で、Miri (未定義動作) と loom (スレッドの全交互実行) を実行する これまでは週次 (quality-deep.yml) だけだった
 - `scripts/coverage_check.py`: 網羅表の参照を行番号 (`src/x.rs:123`) からシンボル (`src/x.rs::名前`) に切り替えた 行番号は上に行が挿入されるとずれ、表が増えると src の編集のたびに無関係な表が壊れるため、行番号の参照は失敗にする `limitation` は `src/x.rs::名前 '<引用>'` で、引用はその item の doc comment・attribute・本体の中にあること (モジュールの doc は `src/x.rs '<引用>'`) tests/ の補助関数も evidence に書ける (oracle には数えない) 既存の行番号を変換する `scripts/coverage_refs_to_symbols.py` を追加
 - `scripts/scip_reach.py`: `macro_rules!` の呼び出しが生成する型と、本体が書く pub member を item として数えるようにした (これまで索引に定義が無く unindexed 27 件として外れていた) 使われている field / variant から所有する型に届くようにした 基準ファイルは unindexed 27 → 0、L0 は 115 件増えた (生成された member のうち呼び出し元の無いもの)

@@ -54,6 +54,8 @@ jobs:
         run: python scripts/test_coverage_check.py
       - name: Coverage reference converter (tests)
         run: python scripts/test_coverage_refs_to_symbols.py
+      - name: Line-coverage ratchet (tests)
+        run: python scripts/test_line_coverage_ratchet.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)
         run: python scripts/coverage_check.py
       # SCIP integration ledger (docs/integration-status.md): the analysis is

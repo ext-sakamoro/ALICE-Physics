@@ -19,6 +19,8 @@ on:
       # snapshot 再生成 commit でも public-api job を再実行する (paths 漏れだと red が残り続ける)
       - 'docs/PUBLIC_API_SNAPSHOT.txt'
       - '.github/workflows/security-audit.yml'
+      - 'scripts/line_coverage_ratchet.py'
+      - 'scripts/line-coverage-baseline.txt'
       - '.github/actions/**'
       - 'examples/*/Cargo.toml'
       - 'bindings/*/Cargo.toml'
@@ -197,9 +199,8 @@ jobs:
           cargo check
 
   coverage:
-    name: Coverage (cargo-llvm-cov、informational)
+    name: Coverage (cargo-llvm-cov, line-coverage ratchet)
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -212,9 +213,16 @@ jobs:
 
       - name: Run coverage
         run: |
+          set -o pipefail
           cargo llvm-cov --lib --summary-only 2>&1 | tee coverage-summary.txt
 
+      # coverage may not fall below scripts/line-coverage-baseline.txt (total, and
+      # per file for files of 50 lines or more); a rise is recorded with --write
+      - name: Line-coverage ratchet
+        run: python3 scripts/line_coverage_ratchet.py --summary coverage-summary.txt
+
       - name: Upload coverage summary as artifact
+        if: always()
         uses: actions/upload-artifact@v6
         with:
           name: coverage-summary
