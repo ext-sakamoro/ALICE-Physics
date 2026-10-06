@@ -7,24 +7,22 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 174 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2472 |
-| live | reached without examples (crate-internal roots or a binding) | 435 |
-| | **total** | **3081** |
+| L0 | not reached by any non-test code, examples included | 168 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2473 |
+| live | reached without examples (crate-internal roots or a binding) | 443 |
+| | **total** | **3084** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
 
 ## Compared with the wiring guard
 
-`scripts/wiring-baseline.txt` lists 22 unwired items.
+`scripts/wiring-baseline.txt` lists 18 unwired items.
 
-### L0 here but not in the baseline (149)
+### L0 here but not in the baseline (147)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
-- `src/bvh.rs::BroadphaseHybrid`
-- `src/bvh.rs::BroadphaseHybrid::new`
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/eulerian_grid.rs::LocalPlaneChannel`
@@ -179,14 +177,8 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (174)
+## L0 — unreached (168)
 
-- `src/bvh.rs::BroadphaseHybrid`
-- `src/bvh.rs::BroadphaseHybrid::build_dynamic`
-- `src/bvh.rs::BroadphaseHybrid::clear_dynamic`
-- `src/bvh.rs::BroadphaseHybrid::insert_dynamic`
-- `src/bvh.rs::BroadphaseHybrid::new`
-- `src/bvh.rs::BroadphaseHybrid::query_pairs`
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
@@ -371,7 +363,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2472)
+## L1 — example-only (2473)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -385,7 +377,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/audio_physics.rs`: `AudioConfig`, `AudioEvent`, `AudioEventType`, `AudioGenerator`, `AudioGenerator::begin_frame`, `AudioGenerator::get_events`, `AudioGenerator::new`, `AudioGenerator::process_contact`, `AudioGenerator::set_material`, `AudioMaterial`, `AudioMaterial::METAL`, `AudioMaterial::RUBBER`, `AudioMaterial::STONE`, `AudioMaterial::WOOD`, `MaterialType`
 - `src/beam_stress.rs`: `BeamAnalysis`, `BeamAnalysis::analyze`, `BeamAnalysis::new`, `BeamAnalysis::with_end_condition`, `BeamAnalysis::with_min_fos`, `BeamReport`, `ColumnEndCondition`, `ColumnEndCondition::k_factor`, `CrossSection`, `CrossSection::area_mm2`, `CrossSection::max_c_mm`, `CrossSection::second_moment_of_area_mm4`, `CrossSection::section_modulus_mm3`, `LoadCase`, `LoadCase::length_mm`, `LoadCase::max_bending_moment_nmm`, `LoadCase::max_deflection_mm`, `euler_critical_load_n`
 - `src/bimaterial.rs`: `BimaterialReport`, `BimaterialSide`, `BimaterialSide::from_material`, `analyze_bimaterial`, `effective_modulus_reuss_mpa`, `effective_modulus_voigt_mpa`, `interfacial_bond_strength_mpa`, `published_cte_per_c`, `thermal_residual_stress_mpa`
-- `src/body_collider.rs`: `BodyCollider::bounding_radius`, `colliders_meet`, `quat_from_rotation`
+- `src/body_collider.rs`: `BodyCollider::bounding_radius`, `collider_meets_sphere`, `colliders_meet`, `quat_from_rotation`
 - `src/box_collider.rs`: `OrientedBox::axis_aligned`, `OrientedBox::corner`, `OrientedBox::corners`, `OrientedBox::surface_area`
 - `src/bridging.rs`: `BridgeCheck`, `BridgeSpan`, `BridgeSpan::length_mm`, `BridgeSpan::z_delta_mm`, `BridgingReport`, `BridgingReport::has_unsafe`, `BridgingReport::unsafe_checks`, `analyze_bridges`, `check_span`
 - `src/buckling.rs`: `BucklingRegime`, `ColumnBucklingReport`, `SnapThroughError`, `analyze_column`, `critical_stress_mpa`, `plate_buckling_mpa`, `radius_of_gyration_mm`, `slenderness_ratio`, `snap_through_load_n`, `transition_slenderness`
