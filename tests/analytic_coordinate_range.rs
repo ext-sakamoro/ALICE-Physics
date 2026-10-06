@@ -199,6 +199,57 @@ fn checked_mul_has_no_false_overflow_in_range() {
     );
 }
 
+/// `checked_mul` は中央の和が i128 を越える組でも、真の積が範囲内なら `Some(a * b)`
+///
+/// 例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴) の真値は ≈ 0.5 だが、中央の 2 項がどちらも
+/// −2¹²⁶ 級の負で、和が −2¹²⁷ を下回る 端の値と乱数を 256 bit 参照と突き合わせる
+#[test]
+fn checked_mul_is_exact_when_the_middle_sum_leaves_i128() {
+    let a = Fix128::from_raw(i64::MIN, u64::MAX);
+    let b = Fix128::from_raw(-1, u64::MAX);
+    let (want, fits) = mul_ref(a, b);
+    assert!(fits, "前提: 真の積 ≈ 0.5 は範囲内");
+    assert_eq!(a.checked_mul(b), Some(a * b));
+    assert_eq!(raw(a * b), want);
+
+    let edge_hi = [i64::MIN, i64::MIN + 1, -2, -1, 0, 1, i64::MAX - 1, i64::MAX];
+    let edge_lo = [0, 1, 1 << 63, u64::MAX - 1, u64::MAX];
+    let mut vals = Vec::new();
+    for &h in &edge_hi {
+        for &l in &edge_lo {
+            vals.push(Fix128::from_raw(h, l));
+        }
+    }
+    let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    for _ in 0..2000 {
+        vals.push(Fix128::from_raw(next() as i64, next()));
+    }
+    let (mut inside, mut outside) = (0u32, 0u32);
+    for &x in &vals {
+        for &y in vals.iter().take(60) {
+            let (want, fits) = mul_ref(x, y);
+            if fits {
+                assert_eq!(x.checked_mul(y), Some(x * y), "{x:?} * {y:?}");
+                assert_eq!(raw(x * y), want);
+                inside += 1;
+            } else {
+                assert_eq!(x.checked_mul(y), None, "{x:?} * {y:?} は範囲外");
+                outside += 1;
+            }
+        }
+    }
+    assert!(
+        inside > 1000 && outside > 1000,
+        "両側を比べていない ({inside}/{outside})"
+    );
+}
+
 /// characterization: 積が `2⁶³` 以上になると `*` は `2¹²⁸` を法に wrap する
 /// (panic しない、debug でも同じ) `checked_mul` だけが `None` で知らせる
 ///
