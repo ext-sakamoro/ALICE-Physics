@@ -479,9 +479,10 @@ fn froude_krylov_vertical_n_degenerate_inputs_are_exact_zero() {
 }
 
 #[test]
-fn froude_krylov_vertical_n_negative_elevation_can_go_negative() {
-    // A trough deep enough to exceed the mean draft produces a net downward
-    // (negative) force -- not clamped at zero.
+fn froude_krylov_vertical_n_is_zero_when_the_trough_passes_the_keel() {
+    // A trough deeper than the mean draft leaves the keel dry: no wet
+    // surface, no force, never a downward pull (AUD-A-S2W3-004; this test
+    // used to pin the unclamped negative value).
     let f = froude_krylov_vertical_n(
         Fix128::from_int(1000),
         Fix128::from_ratio(981, 100),
@@ -489,12 +490,7 @@ fn froude_krylov_vertical_n_negative_elevation_can_go_negative() {
         Fix128::from_int(1),
         Fix128::from_int(-5), // trough of 5 m against a 1 m mean draft
     );
-    assert!(
-        f < Fix128::ZERO,
-        "deep trough must net negative force: {f:?}"
-    );
-    let want = 1000.0 * 9.81 * 10.0 * (1.0 - 5.0);
-    assert!(rel_err(f.to_f64(), want) < 1e-6);
+    assert_eq!(f, Fix128::ZERO, "dry keel: {f:?}");
 }
 
 #[test]
