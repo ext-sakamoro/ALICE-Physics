@@ -321,3 +321,30 @@ fn warm_start_factor_zero_is_off_and_scales_linearly() {
     assert_eq!(mk(1.0), 8.0);
     assert_eq!(mk(0.25), 2.0);
 }
+
+/// An index can be stale without being out of range: removing an earlier
+/// manifold from the `pub` vector shifts the later ones down, so the pair index
+/// of (2, 3) points at the slot (4, 5) now holds. `find` and `get_or_create`
+/// must answer for the asked pair, never another pair's manifold
+#[test]
+fn an_in_range_stale_index_never_answers_another_pair() {
+    let mut cache = ContactCache::new();
+    let (a, b, c) = (
+        BodyPairKey::new(0, 1),
+        BodyPairKey::new(2, 3),
+        BodyPairKey::new(4, 5),
+    );
+    for k in [a, b, c] {
+        cache.get_or_create(k, f(0.5), f(0.1));
+    }
+    cache.manifolds.remove(0); // [b, c]: b's index 1 now holds c
+    for k in [b, c] {
+        if let Some(m) = cache.find(&k) {
+            assert_eq!(m.pair, k, "find({k:?}) answered another pair");
+        }
+        assert_eq!(cache.get_or_create(k, f(0.5), f(0.1)).pair, k);
+    }
+    // a pair that was removed is not answered by the manifold now in its slot
+    assert!(cache.find(&a).is_none_or(|m| m.pair == a));
+    assert_eq!(cache.get_or_create(a, f(0.5), f(0.1)).pair, a);
+}
