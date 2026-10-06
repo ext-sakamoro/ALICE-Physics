@@ -162,7 +162,7 @@ axis = "database"
 item = "validity range of a fitted property (temperature range) enforced or reported"
 source = "Incropera-DeWitt property tables (stated ranges); NIST REFPROP range checks"
 status = "missing"
-evidence = "範囲は doc の文だけ (src/transient_thermal.rs::steel_1018) 範囲外は黙って外挿する (tests/analytic_transient_thermal_wiring.rs::beyond_calibrated_range_the_fits_extrapolate_without_clamp が現状を固定)"
+evidence = "範囲は doc の文だけ (src/transient_thermal.rs::steel_1018) 範囲外は外挿する (熱伝導率だけは 0 で止める、tests/analytic_transient_thermal_wiring.rs::beyond_calibrated_range_the_fits_extrapolate_but_conductivity_stops_at_zero)"
 oracle_candidate = "範囲外で Err か flag を返すこと"
 limitation = ""
 

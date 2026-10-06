@@ -263,7 +263,6 @@ fn explicit_step_conserves_enthalpy_with_temperature_dependent_conductivity() {
 /// 60 - 0.03 T turns negative above 2000 K and alpha follows, i.e. anti-diffusion
 /// (an explicit step then amplifies instead of smoothing).
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-016: diffusivity_at guards only rho*cp <= 0; steel_1018 at 2500 K gives k = -15 W/mK and alpha < 0 (anti-diffusion), contradicting the doc's out-of-range guard; tests/analytic_transient_thermal_wiring.rs::beyond_calibrated_range_the_fits_extrapolate_without_clamp pins the negative value"]
 fn diffusivity_is_never_negative_outside_the_calibrated_range() {
     let m = ThermalMaterial::steel_1018();
     for t in [100.0f32, 300.0, 1000.0, 1999.0, 2000.0, 2500.0, 3000.0] {
@@ -273,6 +272,11 @@ fn diffusivity_is_never_negative_outside_the_calibrated_range() {
             m.diffusivity_at(t)
         );
     }
+    // AUD-A-S2W2-016: past the zero of the fit (2000 K) there is no conduction
+    assert_eq!(m.conductivity_at(2500.0), 0.0);
+    assert_eq!(m.diffusivity_at(2500.0), 0.0);
+    // below it the fit is unchanged: 60 - 0.03 * 1000 = 30
+    assert!((m.conductivity_at(1000.0) - 30.0).abs() < 1e-4);
 }
 
 /// A non-finite diffusivity gives no usable CFL bound: both stable_dt functions
@@ -356,4 +360,21 @@ fn explicit_3d_step_uses_the_harmonic_mean_face_conductivity() {
         (got - want).abs() / (want - ambient) < 1e-3,
         "neighbour of the hot plane: {got}, closed form {want}"
     );
+}
+
+/// The explicit face-flux step reads the conductivity directly: in the range
+/// where the steel fit is negative a hot spot neither grows nor spreads (no
+/// conduction), where a negative k would pull heat into it (AUD-A-S2W2-016)
+#[test]
+fn a_hot_spot_beyond_the_fit_range_does_not_grow() {
+    let m = ThermalMaterial::steel_1018();
+    let mut field = [2500.0f32, 2500.0, 2600.0, 2500.0, 2500.0];
+    let before = field;
+    transient_step_1d(&mut field, &m, 1.0e-3, 1.0e-3);
+    assert_eq!(field, before, "{field:?}");
+    let mut field3 = [2500.0f32; 27];
+    field3[13] = 2600.0;
+    let before3 = field3;
+    transient_step_3d(&mut field3, 3, 3, 3, &m, 1.0e-3, 1.0e-3);
+    assert_eq!(field3, before3);
 }
