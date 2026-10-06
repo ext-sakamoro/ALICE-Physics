@@ -1,6 +1,6 @@
 # line coverage of `cargo llvm-cov --lib` per file: <file> <lines> <missed lines>
 # written by scripts/line_coverage_ratchet.py --write; coverage may not fall below it
-TOTAL 83806 17760
+TOTAL 82636 17715
 acoustic_wave.rs 105 0
 aeroelasticity.rs 211 0
 animation_blend.rs 777 10
@@ -147,11 +147,8 @@ solver.rs 4660 289
 solver/world_snapshot.rs 1960 199
 solver_tgs.rs 1028 10
 solver_tgs_backend.rs 196 3
-solver_tgs_hooks.rs 424 18
-solver_tgs_hooks_6dof.rs 522 21
 solver_tgs_hooks_6dof_oriented.rs 661 23
 solver_tgs_hooks_6dof_oriented_scoped.rs 182 8
-solver_tgs_hooks_6dof_scoped.rs 224 6
 spatial.rs 125 3
 spherical_terrain.rs 140 106
 static_collider.rs 13 0

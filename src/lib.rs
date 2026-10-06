@@ -500,15 +500,9 @@ pub(crate) mod gyroscopic;
 #[cfg(feature = "std")]
 pub(crate) mod solver_tgs;
 #[cfg(feature = "std")]
-pub(crate) mod solver_tgs_hooks;
-#[cfg(feature = "std")]
-pub(crate) mod solver_tgs_hooks_6dof;
-#[cfg(feature = "std")]
 pub(crate) mod solver_tgs_hooks_6dof_oriented;
 #[cfg(feature = "std")]
 pub(crate) mod solver_tgs_hooks_6dof_oriented_scoped;
-#[cfg(feature = "std")]
-pub(crate) mod solver_tgs_hooks_6dof_scoped;
 // Adapter from `solver::RigidBody` / `ContactConstraint` to the solver_tgs*
 // family's oriented body/contact types — the production entry point for
 // `SolverBackend::Tgs` (`PhysicsWorld::step_tgs`). std-gated for the same

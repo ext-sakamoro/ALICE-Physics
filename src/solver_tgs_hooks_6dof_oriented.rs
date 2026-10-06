@@ -13,9 +13,8 @@
 //! world-frame inertia (`R · I_local · Rᵀ`) is the usual recipe for
 //! layering full 6-DOF simulation on top of the existing hooks.
 //!
-//! The inertia is kept diagonal for now, matching
-//! [`crate::solver_tgs_hooks_6dof::Body6DofState`]; consumers that
-//! need a full symmetric world-frame inertia can rebuild one before
+//! The inertia is kept diagonal (principal axes, `inv_inertia_local`);
+//! consumers that need a full symmetric world-frame inertia can rebuild one before
 //! each sub-step using [`crate::math::Mat3Fix`].
 //!
 //! # Visibility
@@ -81,14 +80,11 @@ pub(crate) fn integrate_orientation(q: QuatFix, omega: Vec3, dt: Fix128) -> Quat
 // Body state with orientation
 // ---------------------------------------------------------------------------
 
-/// A [`Body6DofState`] augmented with a unit quaternion orientation.
-/// Callers that want full 6-DOF simulation typically build a shim hook
-/// that mirrors the existing [`Pgs6DofHooks`] logic against this type
+/// A 6-DOF body state (position, linear and angular velocity, diagonal
+/// inverse inertia) with a unit quaternion orientation.
+/// [`Pgs6DofOrientedHooks`] solves contacts and joints against this type
 /// and finishes each sub-step by [`integrate_orientation`] over
 /// `end_substep`'s `sub_dt`.
-///
-/// [`Body6DofState`]: crate::solver_tgs_hooks_6dof::Body6DofState
-/// [`Pgs6DofHooks`]: crate::solver_tgs_hooks_6dof::Pgs6DofHooks
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Body6DofOrientedState {
     /// World-space centre-of-mass position.
@@ -175,12 +171,6 @@ impl Body6DofOrientedState {
         } else {
             integrate_orientation(free.rotation, correction, sub_dt)
         };
-    }
-
-    /// Rotate a body-local vector into the world frame.
-    #[must_use]
-    pub(crate) fn local_to_world(&self, local: Vec3) -> Vec3 {
-        from_vec3fix(self.orientation.rotate_vec(to_vec3fix(local)))
     }
 }
 
@@ -1114,23 +1104,5 @@ mod tests {
             assert_eq!(x.orientation.z, y.orientation.z);
             assert_eq!(x.orientation.w, y.orientation.w);
         }
-    }
-
-    #[test]
-    fn local_to_world_uses_the_orientation() {
-        let mut body = Body6DofOrientedState {
-            is_dynamic: true,
-            stable_id: 1,
-            ..Default::default()
-        };
-        // Rotate 90° about +Y using the axis-angle helper.
-        body.orientation = QuatFix::from_axis_angle(
-            Vec3Fix::from_f32(0.0, 1.0, 0.0),
-            Fix128::from_f32(core::f32::consts::FRAC_PI_2),
-        );
-        // +X in the body frame becomes ≈ -Z in the world frame after a
-        // 90° rotation about +Y.
-        let world = body.local_to_world([Fix128::ONE, Fix128::ZERO, Fix128::ZERO]);
-        assert!(world[2].to_f32() < -0.9, "expected ≈ -Z, got {:?}", world);
     }
 }

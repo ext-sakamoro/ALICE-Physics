@@ -11,10 +11,11 @@
 //!
 //! Every tolerance is stated in the assertion message. No float `assert_eq!`.
 //!
-//! Not covered here: `TgsConfig`, `AdaptiveSubStepConfig`, `PgsConfig` live in
-//! `pub(crate) mod solver_tgs*` (hidden since v0.14.0-preview.8, v1.0 Item B)
-//! and are unreachable from an integration test; they need a unit test next
-//! to their `impl Default` or a re-export.
+//! Not covered here: `TgsConfig`, `AdaptiveSubStepConfig`,
+//! `Pgs6DofOrientedConfig` live in `pub(crate) mod solver_tgs*` (hidden since
+//! v0.14.0-preview.8, v1.0 Item B) and are unreachable from an integration
+//! test; their defaults are checked by unit tests in `src/solver_tgs.rs` and
+//! `src/solver_tgs_hooks_6dof_oriented_scoped.rs`.
 
 #![cfg(feature = "std")]
 // The f64 values in this file are the *oracle* (closed-form references and
