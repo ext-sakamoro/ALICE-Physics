@@ -21,7 +21,7 @@ crate has today.
 | `docs/coverage/mbd.toml` | 137 | 36 | 2 | 13 | 86 | 0 |
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
 | `docs/coverage/nuclear.toml` | 123 | 0 | 1 | 0 | 122 | 0 |
-| `docs/coverage/num.toml` | 101 | 22 | 1 | 5 | 72 | 1 |
+| `docs/coverage/num.toml` | 101 | 22 | 0 | 5 | 73 | 1 |
 | `docs/coverage/optics.toml` | 119 | 0 | 0 | 0 | 119 | 0 |
 | `docs/coverage/orbit.toml` | 109 | 23 | 4 | 3 | 79 | 0 |
 | `docs/coverage/part.toml` | 119 | 26 | 2 | 3 | 88 | 0 |
@@ -33,7 +33,7 @@ crate has today.
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 3093 | 535 | 69 | 104 | 2380 | 5 |
+| **total** | 3093 | 535 | 68 | 104 | 2381 | 5 |
 
 ## `docs/coverage/acous.toml`
 
@@ -314,7 +314,7 @@ crate has today.
 | preconditioner | 10 | 2 | 0 | 1 | 7 | 0 |
 | representation | 12 | 7 | 0 | 3 | 1 | 1 |
 | stationary | 1 | 0 | 0 | 0 | 1 | 0 |
-| stochastic | 2 | 0 | 1 | 0 | 1 | 0 |
+| stochastic | 2 | 0 | 0 | 0 | 2 | 0 |
 | time_integration | 14 | 0 | 0 | 0 | 14 | 0 |
 | transform | 2 | 0 | 0 | 0 | 2 | 0 |
 

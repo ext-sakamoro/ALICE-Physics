@@ -28,10 +28,10 @@
 #     CRAM), tridiagonal / dense symmetric eigensolvers and block-structured
 #     mesh refinement are general components counted here; the field tables
 #     (acoustics, CFD, quantum, nuclear, plasma, relativity) keep their uses.
-#     A row whose general component can be put together from existing public
-#     parts (e.g. the deterministic random number generator plus a running
-#     mean / variance) is `implemented-no-oracle` until a test checks the
-#     combination against an independent reference.
+#     Only a general component a caller can hand its inputs to is counted;
+#     a combination of existing parts (e.g. the deterministic random number
+#     generator plus a running mean / variance) is cited in the evidence of a
+#     missing row.
 #
 # Search notes: "fft" / "dft" match the deformation-gradient variable names in
 # src/linear_elastic_fem/consistent_tangent.rs; "Fourier" matches the replay
@@ -1018,8 +1018,8 @@ id = "COV-NUM-095"
 axis = "stochastic"
 item = "plain Monte Carlo estimate of an integral / expectation with its sample variance and standard error"
 source = "Robert-Casella, Monte Carlo Statistical Methods ch.3; Owen, Monte Carlo theory, methods and examples ch.2"
-status = "implemented-no-oracle"
-evidence = "推定量の API は無いが部品の組合せで成り立つ: 標本は src/rng.rs::DeterministicRng の DeterministicRng (src/rng.rs::next_fix128 next_fix128 一様 [0, 1)、src/rng.rs::next_gaussian_pair next_gaussian_pair、tests/analytic_rng_wiring.rs::bounded_is_uniform_chi_square)、平均と標本分散は src/anomaly.rs::ZScoreDetector の ZScoreDetector (Welford、src/anomaly.rs::observe observe / src/anomaly.rs::variance variance、std feature、tests/audit_anomaly.rs::zscore_matches_two_pass_mean_variance) 標本は Fix128、統計量は f64 推定量そのものを独立な参照と突合する test は無い"
+status = "missing"
+evidence = "推定量の API は無い 部品として標本は src/rng.rs::DeterministicRng (src/rng.rs::next_fix128 一様 [0, 1)、src/rng.rs::next_gaussian_pair、tests/analytic_rng_wiring.rs::bounded_is_uniform_chi_square)、平均と標本分散は src/anomaly.rs::ZScoreDetector (Welford、src/anomaly.rs::observe / src/anomaly.rs::variance、std feature、tests/audit_anomaly.rs::zscore_matches_two_pass_mean_variance) にあるが、その組み合わせは呼び手が渡せる汎用の推定量ではないので数えない 標本は Fix128、統計量は f64"
 oracle_candidate = "∫_0^1 x^2 dx = 1/3 を N 標本で推定し、誤差が標準誤差の数倍に収まることと標準誤差が 1/sqrt(N) で減ることを seed 固定で確認"
 limitation = ""
 
