@@ -327,21 +327,17 @@ fn density_at_reference_temperature_is_ref_value_bit_for_bit_and_presets_are_dis
 /// conductivity line `60 − 0.03 T` is negative above 2000 K, which
 /// `diffusivity_at` passes through (only `ρ c_p ≤ 0` is guarded).
 #[test]
-fn beyond_calibrated_range_the_fits_extrapolate_without_clamp() {
+fn beyond_calibrated_range_the_fits_extrapolate_but_conductivity_stops_at_zero() {
     let m = ThermalMaterial::steel_1018();
-    // 3000 K: k = 60 − 90 = −30, c_p = 380 + 900 = 1280, ρ = 7870 (1 − 3.6e-5 · 2706.85)
-    let k = -30.0;
+    // 3000 K: the line 60 − 0.03 T would give k = −30; conduction stops at 0
+    // (AUD-A-S2W2-016; this test used to pin the negative value).
+    // c_p = 380 + 900 = 1280, ρ = 7870 (1 − 3.6e-5 · 2706.85) still extrapolate
     let cp = 1280.0;
     let rho = 7870.0 * (1.0 - 3.6e-5 * (3000.0 - 293.15));
-    assert_rel(m.conductivity_at(3000.0), k, 2e-6, "k @ 3000 K");
+    assert_eq!(m.conductivity_at(3000.0), 0.0, "k @ 3000 K");
     assert_rel(m.specific_heat_at(3000.0), cp, 2e-6, "c_p @ 3000 K");
     assert_rel(m.density_at(3000.0), rho, 2e-6, "rho @ 3000 K");
-    let alpha = m.diffusivity_at(3000.0);
-    assert!(
-        alpha < 0.0,
-        "negative conductivity is not guarded: alpha = {alpha}"
-    );
-    assert_rel(alpha, k / (rho * cp), 6e-6, "alpha @ 3000 K");
+    assert_eq!(m.diffusivity_at(3000.0), 0.0, "alpha @ 3000 K");
     // and a field entirely in that regime reports no finite bound (max α stays 0)
     assert!(stable_dt_1d(&[3000.0; 4], &m, 1e-3).is_infinite());
     assert!(stable_dt_3d(&[3000.0; 27], &m, 1e-3).is_infinite());
@@ -963,7 +959,8 @@ fn zero_density_or_specific_heat_gives_zero_diffusivity_and_identity_steps() {
 /// `c0 + c1·T + (c2·T)·T`; every preset has `c2 = 0.0`, so `(0.0 · T) · T`
 /// collapses to `0.0 · T = 0.0` **before** the second multiplication can
 /// overflow — the fits stay finite even at `T = f32::MAX` (verified against
-/// the module with a throwaway probe: `k(MAX) ≈ −1.0208470e37`,
+/// the module with a throwaway probe: the conductivity fit `≈ −1.0208470e37`,
+/// which `conductivity_at` clamps to 0,
 /// `c_p(MAX) ≈ 1.0208470e38`, both finite). `density_at` (a `Linear` model)
 /// is likewise finite. Their *product* `ρ·c_p`, computed in `heat_capacity_at`,
 /// does overflow to `−∞` (probed: `ρ(MAX) ≈ −9.6408790e37`,
@@ -980,8 +977,10 @@ fn extreme_temperature_does_not_panic_the_explicit_step_is_unchanged_and_cn_retu
     let m = ThermalMaterial::steel_1018();
     let t = f32::MAX;
     let msg = panic_message(|| {
-        assert!(
-            m.conductivity_at(t).is_finite() && m.conductivity_at(t) < 0.0,
+        // the fit is negative there; conduction stops at 0 (AUD-A-S2W2-016)
+        assert_eq!(
+            m.conductivity_at(t),
+            0.0,
             "k(MAX) = {}",
             m.conductivity_at(t)
         );

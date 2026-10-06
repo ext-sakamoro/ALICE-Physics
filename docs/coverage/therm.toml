@@ -256,7 +256,7 @@ axis = "conduction"
 item = "temperature-dependent property models (constant, polynomial, linear-in-T)"
 source = "Incropera-DeWitt, Fundamentals of Heat and Mass Transfer appendix A (property tables); Abaqus heat transfer temperature-dependent property tables"
 status = "implemented+oracle"
-evidence = "src/transient_thermal.rs::TemperatureDependence / tests/analytic_transient_thermal_wiring.rs::every_preset_accessor_matches_the_hand_formula / tests/analytic_transient_thermal_wiring.rs::beyond_calibrated_range_the_fits_extrapolate_without_clamp (表形式の区分線形補間は無い、材料の値そのものは材料データの表)"
+evidence = "src/transient_thermal.rs::TemperatureDependence / tests/analytic_transient_thermal_wiring.rs::every_preset_accessor_matches_the_hand_formula / tests/analytic_transient_thermal_wiring.rs::beyond_calibrated_range_the_fits_extrapolate_but_conductivity_stops_at_zero (表形式の区分線形補間は無い、材料の値そのものは材料データの表)"
 oracle_candidate = ""
 limitation = ""
 
