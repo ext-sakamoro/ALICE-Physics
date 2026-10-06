@@ -60,7 +60,7 @@ fn strain_far_above_tg_matches_the_wlf_closed_form_while_a_t_is_representable() 
 /// an argument of -40 and a zero shift factor is mapped to a zero effective
 /// time.
 #[test]
-#[ignore = "known defect: AUD-A-S34-031: `predict_strain` returns `epsilon_0` (no creep) once `ln10 * log10 a_T <= -40`, measured between `T_g + 13139` and `T_g + 13140` degC, because `exp_fix` saturates to zero there and `effective_time_at_temp` maps `a_T == 0` to an effective time of zero; with `m = 2^-60`, `n = 1`, `t = 1 h`: 0.001 at `T_g + 13200` against the closed form 0.2053, while `T_g + 13139` gives 0.2061 against 0.2052"]
+// AUD-A-S34-031
 fn strain_far_above_tg_does_not_collapse_to_the_elastic_strain() {
     let dt = 13_200;
     let got = strain_at_offset(dt);
@@ -76,7 +76,7 @@ fn strain_far_above_tg_does_not_collapse_to_the_elastic_strain() {
 /// temperature. Checked across the point where the shift factor stops being
 /// representable.
 #[test]
-#[ignore = "known defect: AUD-A-S34-031: strain drops from 0.2061 at `T_g + 13100` to 0.001 at `T_g + 13200` (`m = 2^-60`, `n = 1`, `t = 1 h`), the shift factor underflow mapped to zero creep"]
+// AUD-A-S34-031
 fn strain_is_monotone_in_temperature_across_the_shift_factor_underflow() {
     let mut previous = 0.0_f64;
     for dt in (12_000..=14_000).step_by(100) {
@@ -84,4 +84,19 @@ fn strain_is_monotone_in_temperature_across_the_shift_factor_underflow() {
         assert!(got >= previous, "dT = {dt}: strain {got} after {previous}");
         previous = got;
     }
+}
+
+/// At `T_g + 13200` the speedup `1 / a_T` is `2.4e17`; `t = 1e5 h` makes the
+/// effective time `2.4e22 h`, past the Fix128 range: it saturates instead of
+/// wrapping or dropping to zero, so the strain does not fall as time grows.
+#[test]
+fn an_effective_time_past_the_range_saturates() {
+    let pla = MaterialProperties::pla();
+    let t = pla.glass_transition_c + Fix128::from_int(13_200);
+    let short = predict_strain(&params(), &pla, Fix128::ONE, t).to_f64();
+    let long = predict_strain(&params(), &pla, Fix128::from_int(100_000), t).to_f64();
+    assert!(
+        long >= short && long > 0.25,
+        "t = 1e5 h: {long} after {short}"
+    );
 }

@@ -236,6 +236,25 @@ pub(crate) fn effective_time_at_temp(
     t_ref_c: Fix128,
     wlf: &WlfConstants,
 ) -> Fix128 {
+    let dt = temp_c - t_ref_c;
+    if dt > Fix128::ZERO {
+        // above the reference a_T < 1 can fall below the 2^-64 resolution
+        // (a_T = 4e-18 at T_ref + 13200 for the universal constants): divide by
+        // it as t * exp(-ln a_T) instead, -ln a_T = ln10 C1 dT / (C2 + dT) being
+        // below ln10 C1 = 40.2; `exp_fix` covers arguments below 20, so a
+        // larger one is taken as the cube of exp(x / 3)
+        let ln10 = Fix128::from_ratio(230_258_509, 100_000_000);
+        let neg_ln_at = ln10 * wlf.c1 * dt / (wlf.c2 + dt);
+        let speedup = if neg_ln_at < Fix128::from_int(20) {
+            exp_fix(neg_ln_at)
+        } else {
+            let third = exp_fix(neg_ln_at / Fix128::from_int(3));
+            third * third * third
+        };
+        return t_hours
+            .checked_mul(speedup)
+            .unwrap_or(Fix128::from_raw(i64::MAX, u64::MAX));
+    }
     let a_t = wlf_shift_factor(temp_c, t_ref_c, wlf);
     if a_t.is_zero() {
         return Fix128::ZERO;
