@@ -27,7 +27,9 @@ use crate::joint::{
     BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, SliderJoint,
     SpringJoint,
 };
-use crate::material::{CombineRule, MaterialTable, PairOverride, PhysicsMaterial};
+use crate::material::{
+    CombineRule, MaterialTable, PairOverride, PhysicsMaterial, MATERIAL_ID_CAPACITY,
+};
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::shape::Shape;
 use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
@@ -54,6 +56,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// | longer than the declared payload | [`Self::TrailingBytes`] |
 /// | checksum differs | [`Self::ChecksumMismatch`] |
 /// | unknown enum tag / non-boolean byte / unrepresentable value inside the payload | [`Self::InvalidValue`] |
+/// | material table with 0 or more than 65,536 materials, or a material whose id is not its index | [`Self::InvalidValue`] (`section: "material_table"`) |
 /// | a joint / constraint / contact / SDF collider / batch / proxy index past its target | [`Self::DanglingIndex`] |
 /// | target world holds a different number of SDF fields | [`Self::SdfFieldCountMismatch`] |
 /// | target world holds a different number of hooks / modifiers / bridges | [`Self::CallbackCountMismatch`] |
@@ -89,7 +92,8 @@ pub enum WorldSnapshotError {
     },
     /// A value inside the payload is not valid for its field (unknown enum
     /// tag, a boolean byte other than 0 / 1, a count that does not fit
-    /// `usize`, invalid metric weights).
+    /// `usize`, invalid metric weights, a material table holding 0 or more
+    /// than 65,536 materials or a material whose id is not its index).
     InvalidValue {
         /// Section the value was read in.
         section: &'static str,
@@ -1178,13 +1182,27 @@ fn w_material_table(w: &mut W, t: &MaterialTable) {
     w.u8(combine_tag(t.default_restitution_combine));
 }
 
+/// Reads the material table and rejects any table the `MaterialTable` API
+/// cannot build: `MaterialTable::new` puts the default material at id 0 and
+/// `try_register` assigns `id = len` up to 65,536 ids, so a valid table holds
+/// `1..=65_536` materials with `materials[i].id == i` (`get` indexes by
+/// position and falls back to entry 0, so an empty table panics there).
 fn r_material_table(r: &mut R<'_>) -> Res<MaterialTable> {
     const S: &str = "material_table";
     let n = r.len(S, 52)?;
+    // `n > 65_536` is also caught by the id check below (an id is a `u16`);
+    // checking it here rejects before reading the entries.
+    if n == 0 || n > MATERIAL_ID_CAPACITY {
+        return Err(invalid(S));
+    }
     let mut materials = Vec::with_capacity(n);
-    for _ in 0..n {
+    for i in 0..n {
+        let id = r.u16()?;
+        if usize::from(id) != i {
+            return Err(invalid(S));
+        }
         materials.push(PhysicsMaterial {
-            id: r.u16()?,
+            id,
             static_friction: r.fix()?,
             dynamic_friction: r.fix()?,
             restitution: r.fix()?,

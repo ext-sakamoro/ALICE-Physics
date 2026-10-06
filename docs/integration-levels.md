@@ -30,7 +30,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `event` | step | 9 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 5 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
-| `material` | step | 14 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
+| `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 53 / 10 / 2 / 23 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
