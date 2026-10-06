@@ -25,13 +25,13 @@
 //! | geometry | sphere cast | capsule cast |
 //! |---|---|---|
 //! | sphere (body radius, compound child) | ray vs sphere of `R + r` | ray from the sphere's centre along `−direction` vs the capsule grown by `R` |
-//! | box (shape, compound child) | ray vs rounded box (3 slabs + 12 edge capsules) | conservative advancement, GJK distance |
-//! | cylinder | ray vs rounded cylinder (2 cylinders + 2 rim tori) | conservative advancement, GJK distance |
-//! | torus | ray vs torus of tube `minor + r` | conservative advancement, segment–torus distance |
-//! | compound capsule | ray vs capsule of `radius + r` | conservative advancement, GJK distance |
-//! | cone, ellipsoid, wedge, convex hull child | conservative advancement, GJK distance | conservative advancement, GJK distance |
+//! | box (shape, compound child) | ray vs rounded box (3 slabs + 12 edge capsules) | convex time of impact |
+//! | cylinder | ray vs rounded cylinder (2 cylinders + 2 rim tori) | convex time of impact |
+//! | torus | ray vs torus of tube `minor + r` | arcs of the ring: time of impact against each arc's hull grown by `minor`, arcs split until the hull is within `2⁻³²` of the arc |
+//! | compound capsule | ray vs capsule of `radius + r` | convex time of impact |
+//! | cone, ellipsoid, wedge, convex hull child | convex time of impact | convex time of impact |
 //! | plane | closed form (two-sided) | closed form at the nearer end |
-//! | triangle mesh | per triangle: the two offset triangles + 3 edge capsules | conservative advancement, GJK distance per triangle |
+//! | triangle mesh | per triangle: the two offset triangles + 3 edge capsules | convex time of impact per triangle |
 //! | height field | per cell: time of impact against the hull of the cell's corners, the cell split into parts until each hull is within `2⁻³²` of the surface (a planar cell is its own hull) | the same, with the segment |
 //! | SDF (`std`) | sphere tracing of `field − r` | sphere tracing of the field minimum along the segment |
 //!
@@ -72,11 +72,24 @@
 //!
 //! Closed-form paths are exact up to `Fix128` truncation and the CORDIC rotations,
 //! like the ray queries (`tests/analytic_world_shape_query.rs` checks them to
-//! `1e-12`). Conservative advancement stops when the gap is below `2⁻³²`
-//! GJK stops when its bound is within `2⁻⁴⁰` of the
-//! distance; together they are checked to `1e-9` for approaches up to about 60°
-//! from the surface normal. A grazing approach converges slowly and gives up
-//! (no hit) after 1024 steps.
+//! `1e-12`).
+//!
+//! The convex time of impact steps by Newton's method on the gap `g(t)` (GJK
+//! distance less the radii; GJK stops when its bound is within `2⁻⁴⁰` of the
+//! distance). For two convex sets moving apart linearly `g` is convex in `t`,
+//! so the tangent's root never passes the first contact, and a gap that is not
+//! decreasing proves there is none. It stops when the gap is below `2⁻³²`
+//! (checked to `1e-9`); a grazing approach converges linearly instead of
+//! quadratically but still in a few dozen steps (an approach `0.1°` from
+//! tangent is checked). Meshes, height-field cells and torus arcs are split into
+//! convex parts, so moving along one part (a mesh floor) costs nothing against
+//! another (a wall of the same mesh).
+//!
+//! **No missed hits:** a cast reports no hit only when there is none within
+//! `max_t` (to the `2⁻³²` gap tolerance). If a step budget runs out (a part
+//! hierarchy deeper than its node budget, an SDF traced for more than 4096
+//! steps), the cast reports the earliest position it could not rule out, which
+//! is never after the true contact.
 //!
 //! A bilinear height-field cell restricted to a rectangle of its `(u, v)` is
 //! again bilinear with its four corners as control points, so it lies inside
@@ -121,8 +134,13 @@ const TRACE_TOLERANCE: Fix128 = Fix128 {
     lo: 0x0000_0001_0000_0000,
 };
 
-/// Conservative advancement steps before giving up (a grazing approach).
+/// Newton steps of a convex time of impact before the last clear time is
+/// reported (it needs a few dozen at most, even at a grazing approach).
 const TRACE_MAX_STEPS: usize = 1024;
+
+/// Sphere-tracing steps for an SDF before the last position is reported.
+#[cfg(feature = "std")]
+const SDF_MAX_STEPS: usize = 4096;
 
 /// GJK stops when `|v|² − v·w ≤ |v|² · 2⁻⁴⁰`.
 const GJK_RELATIVE: Fix128 = Fix128 {
@@ -1316,6 +1334,159 @@ fn swept_box(a: Vec3Fix, b: Vec3Fix, r: Fix128, d: Vec3Fix, max_t: Fix128) -> AA
     )
 }
 
+/// The first contact of the core `a`–`b` grown by `r` moving along the unit `d`
+/// with a triangle mesh: a convex time of impact per triangle the swept box
+/// meets, in order of the time the moving box reaches the triangle's box. Each
+/// triangle is convex, so running along one triangle (a floor) is not a step
+/// budget spent against another (a wall).
+fn sweep_mesh(
+    mesh: &TriMesh,
+    a: Vec3Fix,
+    b: Vec3Fix,
+    r: Fix128,
+    d: Vec3Fix,
+    max_t: Fix128,
+) -> Option<Contact> {
+    let start = core_box(a, b, r);
+    let mut order: Vec<(Fix128, u32)> = mesh_candidates(mesh, &swept_box(a, b, r, d, max_t))
+        .into_iter()
+        .filter_map(|i| {
+            let tri = &mesh.triangles[i as usize];
+            let tri_box = AABB::new(
+                Vec3Fix::new(
+                    min_fix(min_fix(tri.v0.x, tri.v1.x), tri.v2.x),
+                    min_fix(min_fix(tri.v0.y, tri.v1.y), tri.v2.y),
+                    min_fix(min_fix(tri.v0.z, tri.v1.z), tri.v2.z),
+                ),
+                Vec3Fix::new(
+                    max_fix(max_fix(tri.v0.x, tri.v1.x), tri.v2.x),
+                    max_fix(max_fix(tri.v0.y, tri.v1.y), tri.v2.y),
+                    max_fix(max_fix(tri.v0.z, tri.v1.z), tri.v2.z),
+                ),
+            );
+            box_entry(&start, d, max_t, &tri_box).map(|entry| (entry, i))
+        })
+        .collect();
+    order.sort_unstable();
+    let mut best: Option<Contact> = None;
+    for (entry, i) in order {
+        if best.is_some_and(|c| c.t < entry) {
+            break;
+        }
+        let tri = &mesh.triangles[i as usize];
+        if let Some(c) = toi_convex(a, b, r, Fix128::ZERO, d, max_t, &TriangleSupport(tri)) {
+            if best.is_none_or(|bc| c.t < bc.t) {
+                best = Some(c);
+            }
+        }
+    }
+    best
+}
+
+/// The ring of a torus (radius `major` in its local `XZ` plane) and its tube
+/// radius: the solid torus is the ring grown by `minor`.
+#[derive(Clone, Copy)]
+struct Ring {
+    center: Vec3Fix,
+    rotation: QuatFix,
+    major: Fix128,
+    minor: Fix128,
+}
+
+/// The arc of a [`Ring`] from the unit local direction `e0` counter-clockwise
+/// (from `+X` toward `+Z`) to `e1`, less than half a turn.
+#[derive(Clone, Copy)]
+struct RingArc {
+    e0: Vec3Fix,
+    e1: Vec3Fix,
+}
+
+/// `(a × b)·Y` for vectors in the `XZ` plane: positive when `b` is
+/// counter-clockwise from `a` (from `+X` toward `+Z`).
+fn turn(a: Vec3Fix, b: Vec3Fix) -> Fix128 {
+    a.x * b.z - a.z * b.x
+}
+
+impl RingArc {
+    /// How far the chord is inside the arc (the sagitta): every point of the
+    /// arc's hull is within it of the arc.
+    fn thickness(&self, major: Fix128) -> Fix128 {
+        let half_chord = ((self.e1 - self.e0).length() * major).half();
+        major - (major * major - half_chord * half_chord).sqrt()
+    }
+
+    fn split(&self) -> [Self; 2] {
+        let mid = (self.e0 + self.e1).normalize();
+        [
+            Self {
+                e0: self.e0,
+                e1: mid,
+            },
+            Self {
+                e0: mid,
+                e1: self.e1,
+            },
+        ]
+    }
+}
+
+/// An arc of a ring placed in the world, for GJK: its convex hull (the circular
+/// segment).
+struct ArcSupport {
+    ring: Ring,
+    arc: RingArc,
+}
+
+impl Support for ArcSupport {
+    fn support(&self, direction: Vec3Fix) -> Vec3Fix {
+        let local = self.ring.rotation.conjugate().rotate_vec(direction);
+        let flat = Vec3Fix::new(local.x, Fix128::ZERO, local.z);
+        let (e0, e1) = (self.arc.e0, self.arc.e1);
+        let e = match flat.try_normalize() {
+            Some(u) if !turn(e0, u).is_negative() && !turn(u, e1).is_negative() => u,
+            _ if e1.dot(flat) > e0.dot(flat) => e1,
+            _ => e0,
+        };
+        self.ring.center + self.ring.rotation.rotate_vec(e * self.ring.major)
+    }
+}
+
+impl Ring {
+    /// The first contact of the core `a`–`b` grown by `r` with the solid torus:
+    /// [`toi_tree`] over arcs of the ring, each arc's hull grown by the tube
+    /// radius (a convex set containing that part of the torus), split until the
+    /// hull is within [`TRACE_TOLERANCE`] of the arc.
+    fn sweep(
+        &self,
+        a: Vec3Fix,
+        b: Vec3Fix,
+        r: Fix128,
+        d: Vec3Fix,
+        max_t: Fix128,
+    ) -> Option<Contact> {
+        let x = Vec3Fix::UNIT_X;
+        let z = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE);
+        let quarters = [
+            RingArc { e0: x, e1: z },
+            RingArc { e0: z, e1: -x },
+            RingArc { e0: -x, e1: -z },
+            RingArc { e0: -z, e1: x },
+        ];
+        toi_tree(
+            &quarters,
+            |arc| {
+                let hull = ArcSupport {
+                    ring: *self,
+                    arc: *arc,
+                };
+                toi_convex(a, b, r, self.minor, d, max_t, &hull)
+            },
+            |arc| arc.thickness(self.major) <= TRACE_TOLERANCE,
+            |arc| arc.split().to_vec(),
+        )
+    }
+}
+
 // ============================================================================
 // Time of impact
 // ============================================================================
@@ -1753,8 +1924,13 @@ impl Piece<'_> {
         }
     }
 
-    /// The first time the core `o`, `o + (b − a)` grown by `r` touches this
-    /// piece moving along the unit `d`, when it does not overlap it at the start.
+    /// The first time the core `a`–`b` grown by `r` touches this piece moving
+    /// along the unit `d`, when it does not overlap it at the start: closed forms
+    /// for a point core against spheres, capsules, boxes, cylinders, tori,
+    /// planes and triangles, the convex time of impact ([`toi_convex`]) for a
+    /// segment core and the other convex pieces, a hierarchy of hulls for
+    /// height-field cells and torus arcs ([`toi_tree`]), one time of impact per
+    /// triangle for meshes, and sphere tracing for SDFs.
     fn sweep(
         &self,
         a: Vec3Fix,
@@ -1785,73 +1961,97 @@ impl Piece<'_> {
                     })
                 }
             }
-            Self::Capsule(c) if point_core => {
-                let grown = Capsule::new(c.a, c.b, c.radius + r);
-                let h = ray_solid_capsule(a, d, &grown, max_t)?;
-                Some(Contact::from_ray(a, d, r, h))
+            Self::Capsule(c) => {
+                if point_core {
+                    let grown = Capsule::new(c.a, c.b, c.radius + r);
+                    let h = ray_solid_capsule(a, d, &grown, max_t)?;
+                    Some(Contact::from_ray(a, d, r, h))
+                } else {
+                    toi_convex(a, b, r, c.radius, d, max_t, &SegmentSupport(c.a, c.b))
+                }
             }
             Self::Box {
                 center,
                 half,
                 rotation,
-            } if point_core => {
-                let (o, dl) = to_local(a, d, *center, *rotation);
-                let h = to_world(sweep_local_box(o, dl, *half, r, max_t), *rotation)?;
-                Some(Contact::from_ray(a, d, r, h))
+            } => {
+                if point_core {
+                    let (o, dl) = to_local(a, d, *center, *rotation);
+                    let h = to_world(sweep_local_box(o, dl, *half, r, max_t), *rotation)?;
+                    Some(Contact::from_ray(a, d, r, h))
+                } else {
+                    let obb = crate::box_collider::OrientedBox::new(*center, *half, *rotation);
+                    toi_convex(a, b, r, Fix128::ZERO, d, max_t, &obb)
+                }
             }
-            Self::Posed(posed) if point_core => {
+            Self::Posed(posed) => {
                 let (center, rotation) = posed_frame(posed);
-                let (o, dl) = to_local(a, d, center, rotation);
-                let local = match posed.shape {
+                match posed.shape {
                     Shape::Cylinder {
                         radius,
                         half_height,
-                    } => Some(sweep_local_cylinder(o, dl, radius, half_height, r, max_t)),
+                    } if point_core => {
+                        let (o, dl) = to_local(a, d, center, rotation);
+                        let h = to_world(
+                            Some(sweep_local_cylinder(o, dl, radius, half_height, r, max_t)?),
+                            rotation,
+                        )?;
+                        Some(Contact::from_ray(a, d, r, h))
+                    }
                     Shape::Torus {
                         major_radius,
                         minor_radius,
-                    } => Some(ray_local_torus(
-                        o,
-                        dl,
-                        major_radius,
-                        minor_radius + r,
-                        max_t,
-                    )),
-                    _ => None,
-                };
-                match local {
-                    Some(h) => {
-                        let h = to_world(h, rotation)?;
-                        Some(Contact::from_ray(a, d, r, h))
+                    } => {
+                        if point_core {
+                            let (o, dl) = to_local(a, d, center, rotation);
+                            let h = ray_local_torus(o, dl, major_radius, minor_radius + r, max_t);
+                            let h = to_world(h, rotation)?;
+                            Some(Contact::from_ray(a, d, r, h))
+                        } else {
+                            let ring = Ring {
+                                center,
+                                rotation,
+                                major: major_radius,
+                                minor: minor_radius,
+                            };
+                            ring.sweep(a, b, r, d, max_t)
+                        }
                     }
-                    None => self.trace(a, b, r, d, max_t, TRACE_TOLERANCE),
+                    _ => toi_convex(a, b, r, Fix128::ZERO, d, max_t, posed),
                 }
             }
+            Self::Hull(child) => toi_convex(a, b, r, Fix128::ZERO, d, max_t, child),
             Self::Plane(plane) => sweep_plane(plane, a, b, r, d, max_t),
             Self::Height(field) => sweep_heightfield(field, a, b, r, d, max_t),
-            Self::Mesh(mesh) if point_core => {
-                let swept = core_box(a, a + d * max_t, r);
-                let mut best: Option<LocalHit> = None;
-                for i in mesh_candidates(mesh, &swept) {
-                    best = nearer(
-                        best,
-                        sweep_triangle(a, d, &mesh.triangles[i as usize], r, max_t),
-                    );
+            Self::Mesh(mesh) => {
+                if point_core {
+                    let swept = core_box(a, a + d * max_t, r);
+                    let mut best: Option<LocalHit> = None;
+                    for i in mesh_candidates(mesh, &swept) {
+                        best = nearer(
+                            best,
+                            sweep_triangle(a, d, &mesh.triangles[i as usize], r, max_t),
+                        );
+                    }
+                    best.map(|h| Contact::from_ray(a, d, r, h))
+                } else {
+                    sweep_mesh(mesh, a, b, r, d, max_t)
                 }
-                best.map(|h| Contact::from_ray(a, d, r, h))
             }
             #[cfg(feature = "std")]
             Self::Sdf(_) => {
                 let tol = Fix128::from_f32(settings.sdf.tolerance);
                 self.trace(a, b, r, d, max_t, tol)
             }
-            _ => self.trace(a, b, r, d, max_t, TRACE_TOLERANCE),
         }
         .filter(|c| c.t >= Fix128::ZERO && c.t <= max_t)
     }
 
-    /// Conservative advancement: step by the gap (the distance less `r`) until it
-    /// is below `tol`.
+    /// Sphere tracing (for SDFs): step by the gap (the distance less `r`) until
+    /// it is below `tol`. A field that is a true distance never lets a step pass
+    /// the surface; if the step budget runs out the last position is reported
+    /// (never after the contact), not "no hit".
+    #[cfg(feature = "std")]
     fn trace(
         &self,
         a: Vec3Fix,
@@ -1863,7 +2063,8 @@ impl Piece<'_> {
     ) -> Option<Contact> {
         let mut t = Fix128::ZERO;
         let cap = r + r + Fix128::ONE;
-        for _ in 0..TRACE_MAX_STEPS {
+        let mut last: Option<Contact> = None;
+        for _ in 0..SDF_MAX_STEPS {
             let off = d * t;
             let gap = match self.dist(a + off, b + off, cap) {
                 Dist::Inside => {
@@ -1880,9 +2081,11 @@ impl Piece<'_> {
                     normal,
                 } => {
                     let gap = dist - r;
+                    let contact = Contact { t, point, normal };
                     if gap <= tol {
-                        return Some(Contact { t, point, normal });
+                        return Some(contact);
                     }
+                    last = Some(contact);
                     gap
                 }
             };
@@ -1894,7 +2097,7 @@ impl Piece<'_> {
                 return None;
             }
         }
-        None
+        last
     }
 
     /// Whether this piece overlaps `aabb` (see the module doc).
