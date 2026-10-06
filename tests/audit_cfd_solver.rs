@@ -754,6 +754,12 @@ fn reinit_every_two_steps_reinitialises_at_the_end_of_the_second_step() {
     let before = ls.data.clone();
     s.level_set = Some(ls);
     s.step_multigrid(q(1, 100), 0);
+    // at rest, step 1 (not a multiple of 2) leaves the level set as it was
+    assert_eq!(
+        s.level_set.as_ref().unwrap().data,
+        before,
+        "reinit_every_n_steps = 2 reinitialised at the end of step 1"
+    );
     s.step_multigrid(q(1, 100), 0);
     assert_ne!(
         s.level_set.as_ref().unwrap().data,
@@ -860,4 +866,19 @@ fn a_zero_extent_grid_with_temperature_steps_without_panic() {
 #[test]
 fn a_zero_extent_grid_with_use_turbulence_steps_without_panic() {
     assert!(zero_extent_step(true, false, false));
+}
+
+/// The step counter is a public field: at `u64::MAX` the cadence test must not
+/// overflow (steps are counted modulo N).
+#[test]
+fn reinit_cadence_does_not_overflow_at_the_largest_step_count() {
+    let (nx, ny, nz) = (7usize, 3usize, 3usize);
+    let mut s = bare(nx, ny, nz, int(1));
+    s.reinit_every_n_steps = 2;
+    s.step_count = u64::MAX;
+    s.level_set = Some(Grid3d::new(nx, ny, nz, int(1), Fix128::ZERO));
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        s.step_multigrid(q(1, 100), 0);
+    }));
+    assert!(r.is_ok());
 }

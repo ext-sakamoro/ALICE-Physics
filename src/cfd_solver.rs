@@ -1432,9 +1432,8 @@ impl CfdSolver {
             self.advect_level_set(dt_s);
             // `step_count` is the number of steps finished before this one:
             // reinitialise at the end of steps N, 2N, ...
-            if self.reinit_every_n_steps > 0
-                && (self.step_count + 1) % u64::from(self.reinit_every_n_steps) == 0
-            {
+            let every = u64::from(self.reinit_every_n_steps);
+            if every > 0 && self.step_count % every == every - 1 {
                 if let Some(ls) = self.level_set.as_mut() {
                     match reinit {
                         LevelSetReinit::FastSweeping { sweeps } => fast_sweeping_reinit(ls, sweeps),
@@ -1452,7 +1451,7 @@ impl CfdSolver {
                 AdvectionScheme::Bfecc => self.advect_temperature_bfecc(dt_s),
             }
         }
-        self.step_count += 1;
+        self.step_count = self.step_count.wrapping_add(1);
         (stats, wall_summary, turbulence_summary)
     }
 
@@ -1620,7 +1619,7 @@ impl CfdSolver {
             pos.y = clamp(pos.y + vel.y * dt_s, Fix128::ZERO, hi_y);
             pos.z = clamp(pos.z + vel.z * dt_s, Fix128::ZERO, hi_z);
         }
-        self.step_count += 1;
+        self.step_count = self.step_count.wrapping_add(1);
     }
 
     /// Step 1: Add body forces (gravity + buoyancy + surface tension).
