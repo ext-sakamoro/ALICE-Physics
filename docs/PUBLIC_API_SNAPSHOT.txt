@@ -3621,6 +3621,26 @@ impl core::marker::Unpin for alice_physics::eulerian_grid::BicgstabStats
 impl core::marker::UnsafeUnpin for alice_physics::eulerian_grid::BicgstabStats
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::eulerian_grid::BicgstabStats
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::BicgstabStats
+#[non_exhaustive] pub struct alice_physics::eulerian_grid::DistributedProjectionReport
+pub alice_physics::eulerian_grid::DistributedProjectionReport::rank_bytes: alloc::vec::Vec<usize>
+impl alice_physics::eulerian_grid::DistributedProjectionReport
+pub fn alice_physics::eulerian_grid::DistributedProjectionReport::max_rank_bytes(&self) -> core::option::Option<usize>
+pub fn alice_physics::eulerian_grid::DistributedProjectionReport::total_bytes(&self) -> core::option::Option<usize>
+impl core::clone::Clone for alice_physics::eulerian_grid::DistributedProjectionReport
+pub fn alice_physics::eulerian_grid::DistributedProjectionReport::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::cmp::PartialEq for alice_physics::eulerian_grid::DistributedProjectionReport
+pub fn alice_physics::eulerian_grid::DistributedProjectionReport::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::eulerian_grid::DistributedProjectionReport
+pub fn alice_physics::eulerian_grid::DistributedProjectionReport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::marker::Freeze for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::marker::Send for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::marker::Sync for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::marker::Unpin for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::marker::UnsafeUnpin for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::eulerian_grid::DistributedProjectionReport
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::eulerian_grid::DistributedProjectionReport
 pub struct alice_physics::eulerian_grid::MacGrid
 pub alice_physics::eulerian_grid::MacGrid::dx: alice_physics::math::Fix128
 pub alice_physics::eulerian_grid::MacGrid::nx: usize
@@ -3678,6 +3698,7 @@ pub fn alice_physics::eulerian_grid::p2g_normalized(&mut alice_physics::eulerian
 pub fn alice_physics::eulerian_grid::p2g_normalized_with(&mut alice_physics::eulerian_grid::MacGrid, &[(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix)], alice_physics::eulerian_grid::ParticleScatter)
 pub fn alice_physics::eulerian_grid::project_pressure(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
 pub fn alice_physics::eulerian_grid::project_pressure_distributed(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::cfd_solver::PressureSolver) -> core::result::Result<(), alice_physics::cfd_solver::PressureSolverError>
+pub fn alice_physics::eulerian_grid::project_pressure_distributed_with_report(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::cfd_solver::PressureSolver) -> core::result::Result<alice_physics::eulerian_grid::DistributedProjectionReport, alice_physics::cfd_solver::PressureSolverError>
 pub fn alice_physics::eulerian_grid::project_pressure_multigrid(&mut alice_physics::eulerian_grid::MacGrid, alice_physics::math::Fix128, alice_physics::math::Fix128, u32)
 pub mod alice_physics::event
 pub enum alice_physics::event::ContactEventType
