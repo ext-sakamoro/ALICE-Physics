@@ -29,7 +29,10 @@ baseline (`scripts/wiring-baseline.txt`) は既存の違反を記録するラチ
 
 限界: 名前で数えるので、(1) 別 file の同名 item は区別しない (同名の free fn が別 module にあれば一方の呼び出しで両方配線済)
 (2) match 腕のパターン束縛や macro 内の束縛は束縛と認識しない (配線済側に倒れる)
-(3) `impl Foo { .. }` の見出しが型名を参照するので、impl を持つ struct / enum は未配線でも配線済になる
+(3) 型 T 自身の `impl T` / `impl<..> Trait for T` の見出しと本体の中の T は T の配線に数えない
+    (同じ file の別の item が T を使う場合はその item が生きている時だけ数える) impl の対象の型は
+    見出しの最後の識別子で決めるので、tuple や型 alias 越しの impl は対象外として扱う 本体の中の
+    別の型・関数の参照は従来どおり数える
 (4) trait impl の member は常に根とみなす (dispatch 先が分からないため)
 (5) macro_rules 内の参照は常に根とみなす 偽陽性より偽陰性を選んでいる
 """
@@ -185,7 +188,8 @@ HEADER_CAP = 20000
 class Node:
     """item (fn / struct / enum / trait / impl / macro_rules ...) の宣言から本体の終わりまでの範囲."""
 
-    __slots__ = ("idx", "rel", "kind", "name", "name_pos", "start", "end", "body_start", "parent", "cls", "root", "exempt", "in_src")
+    __slots__ = ("idx", "rel", "kind", "name", "name_pos", "start", "end", "body_start", "parent", "cls", "root", "exempt", "in_src",
+                 "self_ty")
 
     def __init__(self, idx, rel, kind, name, name_pos, start, end, body_start, in_src):
         self.idx, self.rel, self.kind, self.name, self.name_pos = idx, rel, kind, name, name_pos
@@ -194,6 +198,7 @@ class Node:
         self.cls = "item"
         self.root = False
         self.exempt = False
+        self.self_ty = None  # impl の対象の型名 (`impl<..> Trait for T` / `impl T` の T)
 
 
 def _prev_nonspace(code: str, pos: int) -> int:
@@ -201,6 +206,37 @@ def _prev_nonspace(code: str, pos: int) -> int:
     while j >= 0 and code[j] in " \t\r\n":
         j -= 1
     return j
+
+
+LIFETIME_RE = re.compile(r"'[A-Za-z_]\w*")
+WHERE_RE = re.compile(r"\bwhere\b")
+FOR_KW_RE = re.compile(r"\bfor\b")
+SELF_TY_SKIP = {"mut", "dyn", "const", "crate", "self", "super", "unsafe"}
+
+
+def _drop_angle(text: str) -> str:
+    """`<...>` の中身を (入れ子ごと) 落とす `->` の `>` は数えない."""
+    out: list[str] = []
+    depth = 0
+    for ch in text.replace("->", "  "):
+        if ch == "<":
+            depth += 1
+        elif ch == ">" and depth:
+            depth -= 1
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
+def impl_self_type(header: str) -> str | None:
+    """`impl` の見出し (`impl` の直後から本体の `{` まで) から対象の型の名前を取る
+    (`impl<T> Foo<T>` / `impl Trait for &'a mut a::Foo<T> where ..` の Foo) tuple 等は None."""
+    h = _drop_angle(WHERE_RE.split(LIFETIME_RE.sub(" ", header))[0])
+    h = FOR_KW_RE.split(h)[-1].strip()
+    if not h or h[0] == "(":
+        return None
+    ids = [w for w in IDENT_RE.findall(h) if w not in SELF_TY_SKIP]
+    return ids[-1] if ids else None
 
 
 def _find_end(code: str, i: int, kind: str, match: dict[int, int]) -> tuple[int, int]:
@@ -259,9 +295,12 @@ def parse_nodes(code: str, rel: str, in_src: bool, first_idx: int) -> list[Node]
     for start, kind, name, name_pos in cands:
         scan_from = name_pos if name_pos >= 0 else start + 4
         end, body = _find_end(code, scan_from, "fn" if kind in ("impl", "macro") else kind, match)
+        self_ty = impl_self_type(code[start + 4 : body]) if kind == "impl" else None
         if kind == "impl" and re.search(r"\bfor\b(?!\s*<)", code[start + 4 : body]):
             kind = "impl_trait"
-        nodes.append(Node(first_idx + len(nodes), rel, kind, name, name_pos, start, end, body, in_src))
+        nd = Node(first_idx + len(nodes), rel, kind, name, name_pos, start, end, body, in_src)
+        nd.self_ty = self_ty
+        nodes.append(nd)
     nodes.sort(key=lambda x: (x.start, -x.end))
     st: list[Node] = []
     for nd in nodes:
@@ -383,6 +422,11 @@ def collect_refs(code: str, nodes: list[Node], names: set[str], decl_pos: set[in
         while st and st[-1].end <= s:
             st.pop()
         cur = st[-1] if st else None
+        own = cur
+        while own is not None and own.self_ty != name:
+            own = own.parent
+        if own is not None:
+            continue  # T 自身の `impl T` / `impl Trait for T` の見出しと本体の T は T の配線にならない
         fn = cur
         while fn is not None and fn.kind != "fn":
             fn = fn.parent

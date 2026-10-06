@@ -6,12 +6,33 @@ dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
 dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 unwired src/creep_longterm.rs::petg_25c_moderate
+unwired src/bvh.rs::BroadphaseHybrid
+unwired src/bvh.rs::build_dynamic
+unwired src/bvh.rs::clear_dynamic
+unwired src/bvh.rs::insert_dynamic
+unwired src/bvh.rs::query_pairs
+unwired src/creep_longterm.rs::petg_25c_moderate
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::bytes
+unwired src/eulerian_grid.rs::enforce_slab_face_boundaries_over
+unwired src/eulerian_grid.rs::set_u
+unwired src/eulerian_grid.rs::set_v
+unwired src/eulerian_grid.rs::set_w
+unwired src/motor.rs::JointMotor
+unwired src/motor.rs::PdController3D
 unwired src/motor.rs::apply_motors
 unwired src/motor.rs::disable
 unwired src/motor.rs::set_rotation_target
 unwired src/motor.rs::set_velocity_target
 unwired src/plastic.rs::petg_room_temp
 unwired src/solver_tgs.rs::par_dispatch_islands
+unwired src/solver_tgs_hooks.rs::PgsConfig
+unwired src/solver_tgs_hooks.rs::PgsHooks
+unwired src/solver_tgs_hooks.rs::SimpleBodyState
+unwired src/solver_tgs_hooks.rs::SimpleContact
+unwired src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks
 unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
