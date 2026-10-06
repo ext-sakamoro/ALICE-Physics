@@ -1332,7 +1332,7 @@ axis = "auxiliary"
 item = "deterministic fixed-point neural-network inference for controllers (ternary weights)"
 source = "Ma et al. 2024 (BitNet b1.58 ternary weights); Photon Quantum deterministic AI"
 status = "implemented+oracle"
-evidence = "src/neural.rs::DeterministicNetwork (feature neural) / tests/analytic_neural_wiring.rs::deterministic_network_forward_matches_hand_derived_layers / tests/audit_neural.rs::ternary_matvec_is_linear_in_the_input / known defect: tests/audit_neural.rs::matvec_output_is_the_exact_product_of_the_integer_sum_and_the_scale"
+evidence = "src/neural.rs::DeterministicNetwork (feature neural) / tests/analytic_neural_wiring.rs::deterministic_network_forward_matches_hand_derived_layers / tests/audit_neural.rs::ternary_matvec_is_linear_in_the_input / tests/audit_neural.rs::matvec_output_is_the_floor_of_the_exact_product_of_the_sum_and_the_scale"
 oracle_candidate = ""
 limitation = ""
 
