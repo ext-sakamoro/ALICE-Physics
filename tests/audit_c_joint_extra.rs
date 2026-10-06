@@ -223,7 +223,7 @@ fn gear_ratio_two_closes_the_signed_residual() {
 /// by 1 (total 16). Repeated solves must return the total to the rest value
 /// (rope length conservation).
 #[test]
-#[ignore = "known defect: AUD-A-S34-012: same root as AUD-A-S3W1-011 for ratio 2: `solve_pulley` uses `error = Fix128::ZERO` and stores no rest length, so the bodies never move; measured total length 16 after 50 solves, want the rest value 15"]
+// AUD-A-S34-012
 fn pulley_ratio_two_conserves_the_rope_length() {
     let mut bodies = vec![
         RigidBody::new(Vec3Fix::from_int(-1, 5, 0), Fix128::ONE),
@@ -245,4 +245,38 @@ fn pulley_ratio_two_conserves_the_rope_length() {
     }
     let t = j.total_length(&bodies).to_f64();
     assert!((t - 15.0).abs() < 1e-6, "total length {t}, want 15");
+}
+
+/// One projection of the ratio-2 pulley: a pulled down by 1 (total 16, rest 15
+/// from the previous pose), both inverse masses 1, vertical ropes:
+/// lambda = 1 / (1 + 2^2) = 0.2, a moves up 0.2 and b moves up 2 * 0.2 = 0.4
+/// (rope b shortens by 0.4), and the total is back at 15 in one solve.
+#[test]
+fn pulley_ratio_two_splits_one_projection_by_the_ratio() {
+    let mut bodies = vec![
+        RigidBody::new(Vec3Fix::from_int(-1, 5, 0), Fix128::ONE),
+        RigidBody::new(Vec3Fix::from_int(1, 5, 0), Fix128::ONE),
+    ];
+    let j = PulleyJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Vec3Fix::from_int(-1, 10, 0),
+        Vec3Fix::from_int(1, 10, 0),
+        fx(2.0),
+    );
+    bodies[0].position = Vec3Fix::from_int(-1, 4, 0);
+    solve_extra_joints(&mut bodies, &[ExtraJoint::Pulley(j)], dt());
+    assert!(
+        (bodies[0].position.y.to_f64() - 4.2).abs() < 1e-12,
+        "{}",
+        bodies[0].position.y.to_f64()
+    );
+    assert!(
+        (bodies[1].position.y.to_f64() - 5.4).abs() < 1e-12,
+        "{}",
+        bodies[1].position.y.to_f64()
+    );
+    assert!((j.total_length(&bodies).to_f64() - 15.0).abs() < 1e-12);
 }

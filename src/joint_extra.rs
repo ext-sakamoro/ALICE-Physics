@@ -413,10 +413,12 @@ pub fn solve_extra_joints(bodies: &mut [RigidBody], joints: &[ExtraJoint], dt: F
 ///
 /// # Claims
 ///
-/// - This is a no-op: [`PulleyJoint`] stores no rest length, so there is no
-///   target to correct toward and no body is moved.
-/// - To constrain the rope length use [`solve_pulley_to_length`], which takes the
-///   rest length explicitly.
+/// - The rope keeps the total `len_a + ratio · len_b` it had at the start of
+///   the step, evaluated at the bodies' `prev_position` / `prev_rotation`; one
+///   XPBD projection along the two ropes (split by inverse mass, the second
+///   scaled by `ratio`) moves the bodies back onto it. A pulley whose bodies
+///   have not moved since the previous pose is left as it is.
+/// - To hold an explicit rest length instead use [`solve_pulley_to_length`].
 fn solve_pulley(joint: &PulleyJoint, bodies: &mut [RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
@@ -434,82 +436,34 @@ fn solve_pulley(joint: &PulleyJoint, bodies: &mut [RigidBody], dt: Fix128) {
         return;
     }
 
-    // Current total vs. rest total
-    // For the constraint we need a reference total length.
-    // We enforce: len_a + ratio * len_b = rest_total (computed at first solve).
-    // Since we don't store rest_total we correct relative: error = current - rest.
-    // A simpler approach: correct the constraint C = len_a + ratio * len_b toward
-    // the initial value. For an XPBD positional constraint we just correct delta.
-    let current_total = len_a + joint.ratio * len_b;
-
-    // We need to know what total_length should be. Since we don't store it,
-    // we treat the constraint as "maintain current total". The user should set up
-    // bodies so the initial total is the desired rest length. Here we correct
-    // any deviation by distributing it between the two ropes.
-    // For a single iteration correction, treat it as a bilateral constraint:
-    // Move A along dir_a and B along dir_b such that the total stays constant.
+    // The rope keeps the total it had at the start of the step (the bodies'
+    // previous pose): C = (len_a + ratio len_b) − total at prev_position. One
+    // XPBD projection along the two ropes moves the bodies back onto it, so
+    // whatever moved them during the step cannot lengthen or shorten the rope.
+    let prev_a = body_a.prev_position + body_a.prev_rotation.rotate_vec(joint.anchor_a);
+    let prev_b = body_b.prev_position + body_b.prev_rotation.rotate_vec(joint.anchor_b);
+    let rest_total = (prev_a - joint.ground_anchor_a).length()
+        + joint.ratio * (prev_b - joint.ground_anchor_b).length();
+    let error = len_a + joint.ratio * len_b - rest_total;
+    if error.is_zero() {
+        return;
+    }
 
     // Effective mass: w_a + ratio^2 * w_b
     let compliance_term = joint.compliance / (dt * dt);
     let w_a = body_a.inv_mass;
     let w_b = body_b.inv_mass;
     let w_sum = w_a + joint.ratio * joint.ratio * w_b + compliance_term;
-
     if w_sum.is_zero() {
         return;
     }
-
-    // For a pulley constraint, the error is the deviation from the rest length.
-    // On each iteration we reduce positional error along each rope direction.
-    // We use a simplified approach: correct body_a along dir_a, body_b along dir_b.
-    // The constraint gradient for body_a is dir_a, for body_b is ratio * dir_b.
-
-    // Since there's no stored rest length, the pulley holds the current total.
-    // We only correct if the total has changed (which shouldn't happen without
-    // external forces). We just enforce the bilateral coupling.
-    // If one side gets longer, the other must get shorter proportionally.
-
-    // For now we enforce the positional coupling: if body A moves closer to
-    // ground_anchor_a by dx, body B must move away from ground_anchor_b by dx/ratio.
-    // This is handled implicitly by the constraint gradient.
-    let _ = current_total; // constraint is satisfied by coupling
-
-    // Apply positional coupling: keep the total constant
-    // We compute a small correction based on how the current total deviates.
-    // For a properly initialized joint this is zero; during simulation
-    // external forces cause deviation which we correct here.
-
-    // Generalized inverse mass
-    let inv_w = Fix128::ONE / w_sum;
-
-    // The constraint value changes when bodies move. We need to correct:
-    // delta_C = grad_a . dx_a + grad_b . dx_b
-    // For positional correction we project each body along its rope direction.
-
-    // Correct: pull body_a toward ground_anchor_a and body_b toward ground_anchor_b
-    // proportionally. The correction magnitude comes from the deviation from rest.
-    // Without a stored rest length, we ensure the constraint holds frame-to-frame.
-
-    // Practical approach: apply position correction to keep anchors at
-    // their current rope lengths. The coupling is maintained by applying
-    // opposite corrections scaled by the ratio.
-    // This is a no-op when the constraint is already satisfied.
-
-    // For actual physics, we apply impulse coupling: if A moves by +d along rope_a,
-    // B must move by -d/ratio along rope_b (and vice versa).
-    // We apply a small stabilization correction:
-    let error = Fix128::ZERO; // No stored rest length, so zero error by definition.
-                              // The coupling is maintained via velocity constraints in a full solver.
-                              // For XPBD positional correction, we need a reference. Skip if zero error.
-    if !error.is_zero() {
-        let lambda = error * inv_w;
-        if !w_a.is_zero() {
-            bodies[joint.body_a].position = bodies[joint.body_a].position - dir_a * (lambda * w_a);
-        }
-        if !w_b.is_zero() {
-            bodies[joint.body_b].position =
-                bodies[joint.body_b].position - dir_b * (lambda * joint.ratio * w_b);
-        }
+    let lambda = error / w_sum;
+    if !w_a.is_zero() {
+        bodies[joint.body_a].position = bodies[joint.body_a].position - dir_a * (lambda * w_a);
+    }
+    if !w_b.is_zero() {
+        bodies[joint.body_b].position =
+            bodies[joint.body_b].position - dir_b * (lambda * joint.ratio * w_b);
     }
 }
 
