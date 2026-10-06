@@ -6,7 +6,8 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
   1. checks the commits: author and committer identity, no internal vocabulary
      in the messages (the docs_lint word list and private-name hashes), a
      CHANGELOG line when src/ changes (--no-changelog for a pure refactor);
-  2. runs `scripts/preflight.sh --fast` once;
+  2. regenerates the ledgers (they are checked against a freshly built index)
+     and runs `scripts/preflight.sh --fast` once;
   3. CI lane: when the change touches .github/, scripts/, Cargo.toml / .lock or
      bindings/ (the parts whose failures were OS / runner specific), pushes
      HEAD to `ci/<id>` and waits for that ci.yml run to succeed; other changes
@@ -423,6 +424,11 @@ class Lander:
                           if l.startswith("+") and not l.startswith("+++"))
         lane = lane_of(self.paths(f"{self.upstream()}...HEAD"), added)
         self.log(f"lane: {lane}")
+        # preflight checks the ledgers against a freshly built index, so a branch
+        # whose ledgers were written from an older index (or not at all) would fail
+        # there; regenerate them first, as is done again after every rebase
+        self.regenerate()
+        self.commit_regenerated()
         self.run_preflight()
         if lane == "ci":
             ref = f"ci/{self.id}"
