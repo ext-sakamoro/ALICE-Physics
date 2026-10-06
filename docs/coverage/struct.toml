@@ -1343,9 +1343,9 @@ axis = "thermal-stress"
 item = "thermal mismatch stress of a bonded bilayer"
 source = "Timoshenko 1925 (bi-metal thermostats)"
 status = "partial"
-evidence = "src/bimaterial.rs::thermal_residual_stress_mpa tests/audit_bimaterial.rs::residual_stress_equal_thickness_matches_the_membrane_closed_form tests/audit_bimaterial.rs::residual_stress_accounts_for_unequal_layer_thickness (known defect AUD-A-S4W3-010)"
+evidence = "src/bimaterial.rs::thermal_residual_stress_mpa tests/audit_bimaterial.rs::residual_stress_equal_thickness_matches_the_membrane_closed_form tests/audit_bimaterial.rs::residual_stress_accounts_for_unequal_layer_thickness"
 oracle_candidate = ""
-limitation = "src/bimaterial.rs::thermal_residual_stress_mpa 'Simplified Timoshenko formula (equal thickness limit)'"
+limitation = "src/bimaterial.rs::thermal_residual_stress_mpa 'Membrane stress only; the bending of the bilayer (Timoshenko curvature) is not included'"
 
 [[item]]
 id = "COV-STRUCT-130"

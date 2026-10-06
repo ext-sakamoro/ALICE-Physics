@@ -208,7 +208,7 @@ fn zero_stiffness_pair_has_zero_residual_stress() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-010: thermal_residual_stress_mpa ignores layer thickness (equal-thickness formula) although the sides carry thickness_mm and analyze_bimaterial passes arbitrary ones; the membrane force balance for t_a=1, t_b=4 (ABS / PETG, dT=180) is 9.647 MPa but 5.777 MPa is returned"]
+// AUD-A-S4W3-010
 fn residual_stress_accounts_for_unequal_layer_thickness() {
     // sigma_a t_a + sigma_b t_b = 0 and equal total strain:
     // sigma_a = da * dT * E_a E_b t_b / (E_a t_a + E_b t_b)
@@ -339,12 +339,13 @@ fn report_fields_are_the_component_results() {
         r2.total_interfacial_stress_mpa,
         r.total_interfacial_stress_mpa
     );
-    // the sign of the residual is dropped too: swap the pair
+    // swapping the pair reports layer b's stress, which balances layer a's
+    // force: sigma_b t_b = -sigma_a t_a, so |sigma_b| = |sigma_a| * 1.2 / 0.8
     let r3 = analyze_bimaterial(&b, &a, th, tc, fx(3.0));
-    assert_eq!(
-        r3.total_interfacial_stress_mpa,
-        r.total_interfacial_stress_mpa
-    );
+    let sa = r.thermal_residual_mpa.to_f64();
+    let sb = r3.thermal_residual_mpa.to_f64();
+    assert!((sa * 1.2 + sb * 0.8).abs() < 1e-9 * sa.abs(), "{sa} {sb}");
+    assert!(rel(r3.total_interfacial_stress_mpa, sb.abs() + 3.0) < 1e-12);
 }
 
 #[test]

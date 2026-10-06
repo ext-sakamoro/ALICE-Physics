@@ -1677,10 +1677,10 @@ fn vibration_wall_frequency_matches_leissa_and_band_logic() {
 // ============================================================================
 
 /// Rule of mixtures (Jones §3.2, Hill 1952): E_V = V_a E_a + V_b E_b,
-/// 1/E_R = V_a/E_a + V_b/E_b, E_R ≤ E_V. Equal-thickness bonded layers
-/// cooled by ΔT with no bending (force balance σ_a t + σ_b t = 0, strain
-/// compatibility): σ_a = (α_a − α_b) ΔT E_a E_b / (E_a + E_b) — tension in
-/// the higher-CTE layer (Timoshenko 1925, membrane limit).
+/// 1/E_R = V_a/E_a + V_b/E_b, E_R ≤ E_V. Bonded layers cooled by ΔT with no
+/// bending (force balance σ_a t_a + σ_b t_b = 0, strain compatibility):
+/// σ_a = (α_a − α_b) ΔT E_a E_b t_b / (E_a t_a + E_b t_b) — tension in the
+/// higher-CTE layer (Timoshenko 1925, membrane limit).
 #[test]
 fn bimaterial_rule_of_mixtures_and_thermal_mismatch() {
     let a = BimaterialSide::from_material(pla_like(), Fix128::from_int(1)); // 68e-6
@@ -1702,12 +1702,13 @@ fn bimaterial_rule_of_mixtures_and_thermal_mismatch() {
     assert_rel(a.cte_per_c, 68e-6, 1e-12, "PLA CTE lookup");
     assert_rel(b.cte_per_c, 17.3e-6, 1e-12, "SUS304 CTE lookup");
     let dt = 180.0f64;
-    let want = (68e-6 - 17.3e-6) * dt * ea * eb / (ea + eb);
+    let (ta, tb) = (1.0f64, 3.0f64);
+    let want = (68e-6 - 17.3e-6) * dt * ea * eb * tb / (ea * ta + eb * tb);
     let sigma = thermal_residual_stress_mpa(&a, &b, Fix128::from_int(200), Fix128::from_int(20));
     assert_rel(sigma, want, 1e-10, "σ_res membrane closed form");
-    // antisymmetric in the pair order
+    // the pair swapped gives layer b's stress, balancing a's force
     let swapped = thermal_residual_stress_mpa(&b, &a, Fix128::from_int(200), Fix128::from_int(20));
-    assert_rel(swapped, -want, 1e-10, "σ_res(b, a) = −σ_res(a, b)");
+    assert_rel(swapped, -want * ta / tb, 1e-10, "σ_b t_b = −σ_a t_a");
     // bond strength: same material → σ_y; dissimilar → ½√(σ_a σ_b), symmetric (empirical)
     assert_eq!(
         interfacial_bond_strength_mpa(&pla_like(), &pla_like()),

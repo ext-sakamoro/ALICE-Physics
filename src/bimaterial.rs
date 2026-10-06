@@ -147,15 +147,19 @@ pub fn effective_modulus_reuss_mpa(a: &BimaterialSide, b: &BimaterialSide) -> Fi
 /// to `t_cold_c` (both °C). Both layers are assumed to have equal in-plane
 /// dimensions; the CTE difference drives interfacial shear.
 ///
-// LIMITATION(COV-STRUCT-129): Simplified Timoshenko formula (equal thickness limit)
-/// Simplified Timoshenko formula (equal thickness limit):
-/// `σ_res = (Δα · ΔT · E_a · E_b) / (E_a + E_b)`
+/// Membrane force balance of the bonded pair (the layers share one strain and
+/// their forces cancel, `σ_a t_a + σ_b t_b = 0`):
+/// `σ_a = Δα · ΔT · E_a · E_b · t_b / (E_a · t_a + E_b · t_b)`, which for equal
+/// thicknesses is `Δα · ΔT · E_a · E_b / (E_a + E_b)`.
+// LIMITATION(COV-STRUCT-129): Membrane stress only; the bending of the bilayer (Timoshenko curvature) is not included
+/// The bending of the bilayer (Timoshenko curvature) is not included.
 ///
-/// Returned value is the peak longitudinal stress in layer `a`:
+/// Returned value is the longitudinal stress in layer `a`:
 /// `+` (tension) when `a` has the *higher* CTE (it wants to shrink more on
 /// cooling and is held by `b`), `−` (compression) when `a` has the lower CTE;
-/// layer `b` carries the opposite sign. (The pre-1.2.0 doc said "the
-/// lower-CTE layer"; the formula was always layer `a`.)
+/// layer `b` carries the opposite sign, `−σ_a t_a / t_b`. (The pre-1.2.0 doc
+/// said "the lower-CTE layer"; the formula was always layer `a`.) Zero when
+/// both stiffness-thickness products are zero.
 #[must_use]
 pub fn thermal_residual_stress_mpa(
     a: &BimaterialSide,
@@ -167,11 +171,13 @@ pub fn thermal_residual_stress_mpa(
     let da = a.cte_per_c - b.cte_per_c;
     let e_a = a.material.youngs_modulus_gpa * Fix128::from_int(1000);
     let e_b = b.material.youngs_modulus_gpa * Fix128::from_int(1000);
-    let ea_plus_eb = e_a + e_b;
-    if ea_plus_eb.is_zero() {
+    let stiff_a = e_a * a.thickness_mm;
+    let stiff_b = e_b * b.thickness_mm;
+    let total = stiff_a + stiff_b;
+    if total.is_zero() {
         return Fix128::ZERO;
     }
-    da * dt * e_a * e_b / ea_plus_eb
+    da * dt * e_a * stiff_b / total
 }
 
 // ============================================================================
