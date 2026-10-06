@@ -49,7 +49,121 @@ src/motor.rs::PdController::set_velocity_target
 src/motor.rs::apply_motors
 src/plastic.rs::NortonCreep::petg_room_temp
 src/plastic.rs::PlasticModel::with_hardening
-src/sketch.rs::HeavyHitterEntry
+src/sketch.rs::CountMinSketch1024x5::clear
+src/sketch.rs::CountMinSketch1024x5::estimate_hash
+src/sketch.rs::CountMinSketch1024x5::insert_hash
+src/sketch.rs::CountMinSketch2048x7
+src/sketch.rs::CountMinSketch2048x7::DEPTH
+src/sketch.rs::CountMinSketch2048x7::WIDTH
+src/sketch.rs::CountMinSketch2048x7::clear
+src/sketch.rs::CountMinSketch2048x7::confidence
+src/sketch.rs::CountMinSketch2048x7::error_bound
+src/sketch.rs::CountMinSketch2048x7::estimate
+src/sketch.rs::CountMinSketch2048x7::estimate_bytes
+src/sketch.rs::CountMinSketch2048x7::estimate_hash
+src/sketch.rs::CountMinSketch2048x7::insert
+src/sketch.rs::CountMinSketch2048x7::insert_bytes
+src/sketch.rs::CountMinSketch2048x7::insert_hash
+src/sketch.rs::CountMinSketch2048x7::new
+src/sketch.rs::CountMinSketch2048x7::total
+src/sketch.rs::CountMinSketch4096x5
+src/sketch.rs::CountMinSketch4096x5::DEPTH
+src/sketch.rs::CountMinSketch4096x5::WIDTH
+src/sketch.rs::CountMinSketch4096x5::clear
+src/sketch.rs::CountMinSketch4096x5::confidence
+src/sketch.rs::CountMinSketch4096x5::error_bound
+src/sketch.rs::CountMinSketch4096x5::estimate
+src/sketch.rs::CountMinSketch4096x5::estimate_bytes
+src/sketch.rs::CountMinSketch4096x5::estimate_hash
+src/sketch.rs::CountMinSketch4096x5::insert
+src/sketch.rs::CountMinSketch4096x5::insert_bytes
+src/sketch.rs::CountMinSketch4096x5::insert_hash
+src/sketch.rs::CountMinSketch4096x5::new
+src/sketch.rs::CountMinSketch4096x5::total
+src/sketch.rs::DDSketch1024
+src/sketch.rs::DDSketch1024::BINS
+src/sketch.rs::DDSketch1024::alpha
+src/sketch.rs::DDSketch1024::clear
+src/sketch.rs::DDSketch1024::count
+src/sketch.rs::DDSketch1024::insert
+src/sketch.rs::DDSketch1024::max
+src/sketch.rs::DDSketch1024::mean
+src/sketch.rs::DDSketch1024::min
+src/sketch.rs::DDSketch1024::new
+src/sketch.rs::DDSketch1024::quantile
+src/sketch.rs::DDSketch1024::sum
+src/sketch.rs::DDSketch128
+src/sketch.rs::DDSketch128::BINS
+src/sketch.rs::DDSketch128::alpha
+src/sketch.rs::DDSketch128::clear
+src/sketch.rs::DDSketch128::count
+src/sketch.rs::DDSketch128::insert
+src/sketch.rs::DDSketch128::max
+src/sketch.rs::DDSketch128::mean
+src/sketch.rs::DDSketch128::min
+src/sketch.rs::DDSketch128::new
+src/sketch.rs::DDSketch128::quantile
+src/sketch.rs::DDSketch128::sum
+src/sketch.rs::DDSketch2048::clear
+src/sketch.rs::DDSketch2048::sum
+src/sketch.rs::DDSketch256::BINS
+src/sketch.rs::DDSketch256::alpha
+src/sketch.rs::DDSketch256::sum
+src/sketch.rs::DDSketch512
+src/sketch.rs::DDSketch512::BINS
+src/sketch.rs::DDSketch512::alpha
+src/sketch.rs::DDSketch512::clear
+src/sketch.rs::DDSketch512::count
+src/sketch.rs::DDSketch512::insert
+src/sketch.rs::DDSketch512::max
+src/sketch.rs::DDSketch512::mean
+src/sketch.rs::DDSketch512::min
+src/sketch.rs::DDSketch512::new
+src/sketch.rs::DDSketch512::quantile
+src/sketch.rs::DDSketch512::sum
+src/sketch.rs::HeavyHitters10::clear
+src/sketch.rs::HeavyHitters20
+src/sketch.rs::HeavyHitters20::K
+src/sketch.rs::HeavyHitters20::clear
+src/sketch.rs::HeavyHitters20::cms
+src/sketch.rs::HeavyHitters20::insert_hash
+src/sketch.rs::HeavyHitters20::new
+src/sketch.rs::HeavyHitters20::top
+src/sketch.rs::HeavyHitters5
+src/sketch.rs::HeavyHitters5::K
+src/sketch.rs::HeavyHitters5::clear
+src/sketch.rs::HeavyHitters5::cms
+src/sketch.rs::HeavyHitters5::insert_hash
+src/sketch.rs::HeavyHitters5::new
+src/sketch.rs::HeavyHitters5::top
+src/sketch.rs::HyperLogLog10::M
+src/sketch.rs::HyperLogLog10::P
+src/sketch.rs::HyperLogLog10::insert
+src/sketch.rs::HyperLogLog10::insert_bytes
+src/sketch.rs::HyperLogLog10::registers
+src/sketch.rs::HyperLogLog12
+src/sketch.rs::HyperLogLog12::M
+src/sketch.rs::HyperLogLog12::P
+src/sketch.rs::HyperLogLog12::cardinality
+src/sketch.rs::HyperLogLog12::clear
+src/sketch.rs::HyperLogLog12::insert
+src/sketch.rs::HyperLogLog12::insert_bytes
+src/sketch.rs::HyperLogLog12::insert_hash
+src/sketch.rs::HyperLogLog12::new
+src/sketch.rs::HyperLogLog12::registers
+src/sketch.rs::HyperLogLog14::P
+src/sketch.rs::HyperLogLog14::clear
+src/sketch.rs::HyperLogLog14::insert_hash
+src/sketch.rs::HyperLogLog16
+src/sketch.rs::HyperLogLog16::M
+src/sketch.rs::HyperLogLog16::P
+src/sketch.rs::HyperLogLog16::cardinality
+src/sketch.rs::HyperLogLog16::clear
+src/sketch.rs::HyperLogLog16::insert
+src/sketch.rs::HyperLogLog16::insert_bytes
+src/sketch.rs::HyperLogLog16::insert_hash
+src/sketch.rs::HyperLogLog16::new
+src/sketch.rs::HyperLogLog16::registers
 src/solver.rs::PhysicsWorld::begin_frame
 src/solver.rs::PhysicsWorld::end_frame
 src/solver.rs::TgsCacheStats::new
@@ -69,30 +183,3 @@ src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
 src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
 src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
-unindexed: src/sketch.rs::BINS
-unindexed: src/sketch.rs::DEPTH
-unindexed: src/sketch.rs::K
-unindexed: src/sketch.rs::M
-unindexed: src/sketch.rs::P
-unindexed: src/sketch.rs::WIDTH
-unindexed: src/sketch.rs::alpha
-unindexed: src/sketch.rs::cardinality
-unindexed: src/sketch.rs::clear
-unindexed: src/sketch.rs::cms
-unindexed: src/sketch.rs::confidence
-unindexed: src/sketch.rs::count
-unindexed: src/sketch.rs::error_bound
-unindexed: src/sketch.rs::estimate
-unindexed: src/sketch.rs::estimate_bytes
-unindexed: src/sketch.rs::estimate_hash
-unindexed: src/sketch.rs::insert
-unindexed: src/sketch.rs::insert_bytes
-unindexed: src/sketch.rs::insert_hash
-unindexed: src/sketch.rs::max
-unindexed: src/sketch.rs::mean
-unindexed: src/sketch.rs::min
-unindexed: src/sketch.rs::quantile
-unindexed: src/sketch.rs::registers
-unindexed: src/sketch.rs::sum
-unindexed: src/sketch.rs::top
-unindexed: src/sketch.rs::total

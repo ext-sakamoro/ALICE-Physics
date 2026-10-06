@@ -56,7 +56,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 28 of 141 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 29 of 141 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 10 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
@@ -70,7 +70,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `multi_world` | several independent worlds with body transfer |  | [`multi_world_management`](../examples/multi_world_management.rs) | standalone |
 | `netcode` | lockstep frame inputs, snapshots, checksums and rollback |  | [`rollback_netcode`](../examples/rollback_netcode.rs) | binding |
 | `netcode_prediction` | client-side prediction with server reconciliation | std | [`rollback_netcode`](../examples/rollback_netcode.rs) | standalone |
-| `scene_io` | binary and JSON scene files with exact `Fix128` round trip | std | [`scene_snapshot_roundtrip`](../examples/scene_snapshot_roundtrip.rs) | standalone |
+| `scene_io` | binary and JSON scene files with exact `Fix128` round trip | std | [`scene_snapshot_roundtrip`](../examples/scene_snapshot_roundtrip.rs) | standalone (binding 1 of 11 items) |
 | `profiling` | per-stage timers and per-frame statistics |  | [`profiling_stages`](../examples/profiling_stages.rs) | standalone |
 | `debug_render` | wireframe primitives for bodies, contacts, joints, BVH and forces |  | [`debug_render_primitives`](../examples/debug_render_primitives.rs) | standalone |
 | `gpu_bridge` | `GpuSolverBridge` trait for external GPU solvers that must match the CPU result bit for bit | gpu-solver-bridge | [`world_api_tour`](../examples/world_api_tour.rs) | standalone (step 1 of 3 items) |
@@ -181,7 +181,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `linear_elastic_fem` | small-strain FEM on linear (P1) tetrahedra; thermal eigenstrain, J2 plasticity, corotational large rotation, adaptive refinement | std | [`linear_elastic_fem_config_diagnostics`](../examples/linear_elastic_fem_config_diagnostics.rs) | standalone (step 1 of 126 items) |
+| `linear_elastic_fem` | small-strain FEM on linear (P1) tetrahedra; thermal eigenstrain, J2 plasticity, corotational large rotation, adaptive refinement | std | [`linear_elastic_fem_config_diagnostics`](../examples/linear_elastic_fem_config_diagnostics.rs) | standalone (step 2 of 126 items) |
 | `quadratic_elastic_fem` | FEM on ten-node quadratic (P2) tetrahedra |  | [`quadratic_mesh_edge_nodes`](../examples/quadratic_mesh_edge_nodes.rs) | standalone |
 | `cubic_elastic_fem` | FEM on twenty-node cubic (P3) tetrahedra |  | [`cubic_elastic_fem_topology`](../examples/cubic_elastic_fem_topology.rs) | standalone |
 | `dynamic_fem` | transient FEM with a mass matrix and Newmark-β time stepping | std | [`dynamic_fem_cantilever`](../examples/dynamic_fem_cantilever.rs) | standalone |
@@ -274,8 +274,8 @@ this file or listed twice, or when a linked example or test does not exist.
 |--------|---------|---------|---------|-------------|
 | `anomaly` | streaming anomaly detection (EWMA, MAD, z-score) | std | [`anomaly_detectors`](../examples/anomaly_detectors.rs) | standalone |
 | `pipeline` | ring-buffer metric aggregation | std | [`pipeline_events`](../examples/pipeline_events.rs) | standalone |
-| `privacy` | local differential privacy (Laplace noise, RAPPOR, randomized response) | std | [`privacy_budget_and_rappor`](../examples/privacy_budget_and_rappor.rs) | standalone (step 2 of 44 items) |
-| `sketch` | Count-Min, HyperLogLog, DDSketch and heavy hitters | std | [`sketch_streams`](../examples/sketch_streams.rs) | standalone (step 1 of 12 items) |
+| `privacy` | local differential privacy (Laplace noise, RAPPOR, randomized response) | std | [`privacy_budget_and_rappor`](../examples/privacy_budget_and_rappor.rs) | standalone (step 3 of 44 items) |
+| `sketch` | Count-Min, HyperLogLog, DDSketch and heavy hitters | std | [`sketch_streams`](../examples/sketch_streams.rs) | unused (step 1, standalone 59 of 175 items) |
 
 ## Bindings and bridges
 
