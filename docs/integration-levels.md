@@ -66,7 +66,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `ccd` | standalone (binding 1 of 12 items) | 0 / 0 / 1 / 11 / 0 | C ABI, Python, WebAssembly |
+| `ccd` | standalone (binding 1 of 13 items) | 0 / 0 / 1 / 12 / 0 | C ABI, Python, WebAssembly |
 | `cfd_solver` | standalone | 0 / 0 / 0 / 41 / 0 | — |
 | `character` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -152,7 +152,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `scene_io` | standalone (binding 1 of 11 items) | 0 / 0 / 1 / 10 / 0 | Python, WebAssembly |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone (binding 2 of 6 items) | 0 / 0 / 2 / 4 / 0 | C ABI, Python, WebAssembly |
-| `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
+| `sdf_character` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `sdf_fem_mesh` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `sdf_force` | standalone | 0 / 0 / 0 / 10 / 0 | — |
