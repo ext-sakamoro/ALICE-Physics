@@ -328,7 +328,7 @@ fn a_principal_spin_keeps_omega_and_turns_by_omega_t_at_every_substep_count() {
 /// The anisotropic principal spin under TGS (split path) holds to `1e-8` in
 /// the previous test, which stays green as the control.
 #[test]
-#[ignore = "known defect: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12"]
+#[ignore = "src gap: TGS turns an isotropic body by 2 atan(|w| h / 2) per substep, the angle lags by |w|^3 h^2 t / 12"]
 fn tgs_isotropic_spin_turns_by_omega_t() {
     let tgs = [(SolverBackend::Tgs, Entry::Step)];
     let failures = principal_spin_failures(&tgs, &[ISOTROPIC_SPIN]);
