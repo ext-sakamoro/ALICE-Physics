@@ -1,0 +1,1054 @@
+# Nonlinear dynamics, chaos and complex systems (NONLIN) coverage of
+# ALICE-Physics, against an external reference frame.
+#
+# What this table is: every capability that the standard texts (Strogatz,
+# Nonlinear Dynamics and Chaos; Ott, Chaos in Dynamical Systems; Kuznetsov,
+# Elements of Applied Bifurcation Theory; Cross-Greenside, Pattern Formation
+# and Dynamics in Nonequilibrium Systems), reference implementations (the
+# feature lists of AUTO / MatCont and DynamicalSystems.jl) and standard
+# benchmarks (the largest Lyapunov exponent of the Lorenz system, the
+# Feigenbaum constants of the logistic map, the critical coupling of the
+# Kuramoto model, the KdV two-soliton collision) expect of a simulator of
+# nonlinear dynamics, one [[item]] per capability, with what the crate has
+# today. The rows are written by hand: the axes and the items come from the
+# reference frame, not from the modules that exist, so a missing capability is
+# visible instead of absent.
+#
+# Axes: ode-system / map / lyapunov / section / bifurcation / hamiltonian /
+# cellular-automaton / pattern / synchronisation / soliton / determinism /
+# benchmark.
+#
+# What counts as implemented: an API that performs the capability. Most model
+# rows need a general ODE integrator with a caller-supplied right-hand side,
+# which the numerical-foundations table has as missing (COV-NUM-045 / 049 /
+# 050); those rows say so. A solver of another field that integrates the same
+# equation is counted (the wake oscillator of vortex-induced vibration with its
+# coupling set to zero is the Van der Pol oscillator); a solver of a different
+# equation is not.
+#
+# The determinism axis is what this crate adds to the field: the same initial
+# state gives the same bits over horizons much longer than the Lyapunov time,
+# and a perturbation of one unit in the last place (2^-64, absolute, in Q64.64)
+# grows at the rate of the largest Lyapunov exponent, so the time at which two
+# runs part is ln(Delta / 2^-64) / lambda (about 44.4 / lambda for Delta = 1).
+#
+# Boundary with the other tables (one capability goes in one table only; rows
+# of the same grain are not made here, the id is cited instead, and a row that
+# refines one of them says "COV-X-NNN の子" at the head of `evidence`):
+#   - integrators and solvers as such (ODE, symplectic, Newton, continuation,
+#     eigenvalues, FFT): the numerical-foundations table (COV-NUM-029, 036,
+#     044 to 050, 088, 089, 093); here their use on dynamical systems
+#   - long-time stability of orbits, the symplectic N-body integrator and the
+#     restricted three-body problem: the orbit table (COV-ORBIT-034, 035, 038,
+#     039, 063, 103)
+#   - the rigid world's bit-exact stepping and snapshot / branching, and its
+#     thread-count independence: the rigid and engine tables (COV-RIGID-014,
+#     COV-ENGINE-005, 012); here their use on chaotic trajectories
+#   - reaction-diffusion chemistry: the chemistry table (COV-CHEM-082); phase
+#     field as an interface method: the multiphase table (COV-MULTIPHASE-021 /
+#     022); Rayleigh-Benard convection: COV-CFD-106 / COV-ATMOS-076; nonlinear
+#     water waves: COV-ENV-083; ion-acoustic solitons: COV-PLASMA-077; the
+#     cellular-automaton floor field of crowds: COV-PART-100; central pattern
+#     generators of locomotion: COV-BIO-034; the vortex-induced vibration model
+#     as a coupled problem: COV-COUPLE-020 to 022
+#   - derivatives of the world step (state Jacobians, tangent models for
+#     optimisation): the optimisation table (COV-OPT-014, 016, 120)
+#   - statistical mechanics (lattice models, Monte Carlo, Langevin dynamics):
+#     the statistical-mechanics table (COV-STAT-*)
+#
+# Search notes (word collisions found while judging): automat ->
+# automatically; pattern -> toolpath / infill / scan patterns; synchron ->
+# network and thread synchronisation; symplectic -> the N-body, molecular
+# dynamics and rigid-body integrator docs; bifurcation -> the scope of the
+# vortex-induced vibration module; continuation -> the load path of FE
+# increments; return map -> return mapping of plasticity; Van der Pol -> the
+# wake oscillator. No hit for lyapunov, poincare, chaos, lorenz (only
+# lorentz_berthelot of pair potentials), rossler, henon, logistic map,
+# kuramoto, soliton, cellular, duffing, floquet, hopf.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this crate (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-NONLIN-NNN) / axis / item / source (book, topic, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate /
+# limitation (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+
+[[item]]
+id = "COV-NONLIN-001"
+axis = "ode-system"
+item = "Lorenz system"
+source = "Strogatz, Nonlinear Dynamics and Chaos (ch. 9); DynamicalSystems.jl (Systems.lorenz)"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない lorenz で当たるのは src/pair_potential.rs::lorentz_berthelot だけ"
+oracle_candidate = "COV-NONLIN-084"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-002"
+axis = "ode-system"
+item = "Rossler system"
+source = "Strogatz, Nonlinear Dynamics and Chaos (ch. 12); DynamicalSystems.jl"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "固定点の位置と Jacobian の固有値の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-003"
+axis = "ode-system"
+item = "forced Duffing oscillator (hardening and softening, jump phenomenon, chaotic regime)"
+source = "Strogatz, Nonlinear Dynamics and Chaos; Kovacic-Brennan, The Duffing Equation"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない 時間変化する強制 f(t) の一般形も無い"
+oracle_candidate = "COV-NONLIN-091"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-004"
+axis = "ode-system"
+item = "driven damped pendulum (period doubling and chaos)"
+source = "Strogatz, Nonlinear Dynamics and Chaos; Baker-Gollub, Chaotic Dynamics"
+status = "missing"
+evidence = "剛体の振り子は組める (COV-RIGID-111) が、周期的な駆動トルクを step ごとに与える仕組みは呼び手任せで、駆動振り子の場面も分岐の走査も無い"
+oracle_candidate = "COV-NONLIN-092"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-005"
+axis = "ode-system"
+item = "double pendulum at large amplitude (chaotic regime)"
+source = "Strogatz, Nonlinear Dynamics and Chaos; Shinbrot et al., Am. J. Phys. (1992)"
+status = "implemented-no-oracle"
+evidence = "COV-RIGID-115 の子 簡約座標の Featherstone ( src/articulation.rs::FeatherstoneSolver ) は大振幅でも線形化しない 突合は 1 step の加速度の閉形式だけ ( tests/analytic_multibody_dynamics.rs::double_pendulum_rank_reduction_matches_its_closed_form ) で、長時間のエネルギー保存や近接軌道の分離を見る test は無い"
+oracle_candidate = "エネルギー誤差の有界性 + COV-NONLIN-081"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-006"
+axis = "ode-system"
+item = "Henon-Heiles Hamiltonian system"
+source = "Ott, Chaos in Dynamical Systems; Henon-Heiles (1964)"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "COV-NONLIN-045"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-007"
+axis = "ode-system"
+item = "Van der Pol oscillator: limit cycle of amplitude 2 in the weakly nonlinear regime"
+source = "Strogatz, Nonlinear Dynamics and Chaos (sec. 7.5, 7.6)"
+status = "implemented+oracle"
+evidence = "渦励振の wake 方程式 ( src/aeroelasticity.rs::viv_step ) は連成係数 A = 0 で Van der Pol そのもの (減衰は epsilon Omega_f (q^2 - 1) q') tests/engineering_oracles_fluid.rs::aeroelasticity_van_der_pol_amplitude_and_strouhal_frequency が振幅 2 と周波数を 3 % で突合 (f32、前進 Euler) 強非線形 (緩和振動) は COV-NUM-088"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-008"
+axis = "ode-system"
+item = "FitzHugh-Nagumo model (excitable and oscillatory regimes)"
+source = "Strogatz, Nonlinear Dynamics and Chaos; FitzHugh (1961)"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "閾値以下と以上の応答、Hopf 点の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-009"
+axis = "ode-system"
+item = "Lorenz-96 model"
+source = "Lorenz (1996); DynamicalSystems.jl"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "一様な固定点 x = F の安定性の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-010"
+axis = "ode-system"
+item = "Lotka-Volterra predator-prey system and its conserved quantity"
+source = "Strogatz, Nonlinear Dynamics and Chaos (ch. 6)"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "保存量 V = d x - c ln x + b y - a ln y の誤差の有界性"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-011"
+axis = "ode-system"
+item = "delay differential equations (Mackey-Glass) with a history buffer"
+source = "Bellen-Zennaro, Numerical Methods for Delay Differential Equations; Mackey-Glass (1977)"
+status = "missing"
+evidence = "遅延微分方程式の積分は無い (推測)"
+oracle_candidate = "定数解の線形安定性の閉形式 (遅延による Hopf)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-012"
+axis = "map"
+item = "logistic map"
+source = "Strogatz, Nonlinear Dynamics and Chaos (ch. 10); DynamicalSystems.jl"
+status = "missing"
+evidence = "写像を反復する API は無い (推測: 写像名で src 0 件) 呼び手が Fix128 で書くことはできる"
+oracle_candidate = "COV-NONLIN-085、COV-NONLIN-086"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-013"
+axis = "map"
+item = "Henon map"
+source = "Ott, Chaos in Dynamical Systems; Henon (1976)"
+status = "missing"
+evidence = "写像を反復する API は無い (推測: 写像名で src 0 件) 呼び手が Fix128 で書くことはできる"
+oracle_candidate = "COV-NONLIN-090"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-014"
+axis = "map"
+item = "standard (Chirikov) map"
+source = "Ott, Chaos in Dynamical Systems; Lichtenberg-Lieberman, Regular and Chaotic Dynamics"
+status = "missing"
+evidence = "写像を反復する API は無い (推測: 写像名で src 0 件) 呼び手が Fix128 で書くことはできる"
+oracle_candidate = "面積保存 (Jacobian 行列式 1) + COV-NONLIN-043"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-015"
+axis = "map"
+item = "circle map: mode locking, Arnold tongues and the devil's staircase"
+source = "Ott, Chaos in Dynamical Systems; Strogatz, Nonlinear Dynamics and Chaos"
+status = "missing"
+evidence = "写像を反復する API は無い (推測: 写像名で src 0 件) 呼び手が Fix128 で書くことはできる"
+oracle_candidate = "K = 0 の回転数 = Omega、K > 0 の 1/2 舌の幅 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-016"
+axis = "map"
+item = "tent and doubling maps, and their collapse in finite precision (Q64.64 shifts one fraction bit out per doubling and reaches 0 within 64 steps)"
+source = "Ott, Chaos in Dynamical Systems; Grebogi-Ott-Yorke, Phys. Rev. A (1988) roundoff"
+status = "missing"
+evidence = "写像を反復する API は無い (推測: 写像名で src 0 件) 呼び手が Fix128 で書くことはできる Fix128 の小数部は 64 bit (src/math.rs::Fix128) なので x -> 2x mod 1 は 64 回以内に 0 に落ちる (構成から確実、実測なし)"
+oracle_candidate = "倍写像が最大 64 step で 0 に到達することを確認し、有限精度の人工物の例として固定する"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-017"
+axis = "map"
+item = "cycle lengths of a chaotic map in finite precision (logistic map in Q64.64)"
+source = "Grebogi-Ott-Yorke (1988); Boghosian et al., Proc. R. Soc. A (2019)"
+status = "missing"
+evidence = "写像を反復する API は無い (推測: 写像名で src 0 件) 呼び手が Fix128 で書くことはできる COV-NONLIN-016 と同じく有限状態の写像は必ず周期に落ちる"
+oracle_candidate = "初期値ごとの過渡長と周期長の分布を f64 と比べる"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-018"
+axis = "lyapunov"
+item = "largest Lyapunov exponent of a flow from two nearby trajectories with periodic renormalisation (Benettin)"
+source = "Ott, Chaos in Dynamical Systems; DynamicalSystems.jl (lyapunov); Benettin et al. (1980)"
+status = "missing"
+evidence = "src 0 件 (lyapunov で 0 件)"
+oracle_candidate = "COV-NONLIN-084"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-019"
+axis = "lyapunov"
+item = "Lyapunov spectrum by tangent dynamics and repeated QR (Benettin, Shimada-Nagashima)"
+source = "Ott, Chaos in Dynamical Systems; DynamicalSystems.jl (lyapunovspectrum)"
+status = "missing"
+evidence = "接線方程式 (COV-OPT-120 の状態 Jacobian も missing) と小さい QR (COV-NUM-044) が無い"
+oracle_candidate = "Lorenz のスペクトルの和 = -(sigma + 1 + beta) (発散の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-020"
+axis = "lyapunov"
+item = "Lyapunov exponent of a 1-D map as the orbit average of ln |f'|"
+source = "Strogatz, Nonlinear Dynamics and Chaos (sec. 10.5)"
+status = "missing"
+evidence = "COV-NONLIN-012 が無い"
+oracle_candidate = "COV-NONLIN-086"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-021"
+axis = "lyapunov"
+item = "finite-time Lyapunov exponent fields and Lagrangian coherent structures of a velocity field"
+source = "Haller, Annu. Rev. Fluid Mech. (2015); Shadden et al. (2005)"
+status = "missing"
+evidence = "流れの速度場は src/cfd_solver.rs::CfdSolver にあるが、tracer の流れ写像とその勾配を出す経路は無い"
+oracle_candidate = "定常な双曲型の鞍点流 (u = a x, v = -a y) で FTLE = a の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-022"
+axis = "lyapunov"
+item = "Kaplan-Yorke (Lyapunov) dimension from the spectrum"
+source = "Ott, Chaos in Dynamical Systems; Kaplan-Yorke (1979)"
+status = "missing"
+evidence = "スペクトルが無い"
+oracle_candidate = "Henon 写像の Kaplan-Yorke 次元 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-023"
+axis = "lyapunov"
+item = "Lyapunov exponents of the rigid world (perturbing body state through the world step, renormalising, branching from a snapshot)"
+source = "Ott, Chaos in Dynamical Systems; the crate's snapshot contract"
+status = "missing"
+evidence = "world の snapshot / 分岐は COV-ENGINE-012 (partial) 分離を測って再正規化する仕組みは無い"
+oracle_candidate = "COV-NONLIN-005 の最大 Lyapunov 指数が 2 つの初期値の組で同じ値に収束すること"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-024"
+axis = "section"
+item = "Poincare section of a flow with event location (crossing of a hyperplane, interpolation to the plane)"
+source = "Strogatz, Nonlinear Dynamics and Chaos; DynamicalSystems.jl (poincaresos)"
+status = "missing"
+evidence = "src 0 件 (poincar で 0 件) 汎用の事象検出付き積分も無い (COV-NUM-045)"
+oracle_candidate = "調和振動子の断面が 1 点に戻ること、Henon-Heiles の断面の正則・カオス領域"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-025"
+axis = "section"
+item = "stroboscopic map of a periodically forced system"
+source = "Strogatz, Nonlinear Dynamics and Chaos; DynamicalSystems.jl"
+status = "missing"
+evidence = "駆動系が組めない (COV-NONLIN-001 と同じ根拠)"
+oracle_candidate = "線形強制振動子の定常解が 1 点になること"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-026"
+axis = "section"
+item = "first-return map and return times"
+source = "Ott, Chaos in Dynamical Systems; DynamicalSystems.jl"
+status = "missing"
+evidence = "COV-NONLIN-024 が無い"
+oracle_candidate = "Lorenz の z 極大の return map (Lorenz 1963 の図、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-027"
+axis = "section"
+item = "power spectrum of a trajectory (windowed FFT) to tell periodic, quasiperiodic and chaotic motion apart"
+source = "Ott, Chaos in Dynamical Systems; Strogatz, Nonlinear Dynamics and Chaos"
+status = "missing"
+evidence = "FFT (COV-NUM-093) が無い"
+oracle_candidate = "準周期運動のスペクトル線が 2 つの基本周波数の整数結合に乗ること"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-028"
+axis = "section"
+item = "correlation dimension (Grassberger-Procaccia)"
+source = "Ott, Chaos in Dynamical Systems; Grassberger-Procaccia (1983); DynamicalSystems.jl"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "一様な線分で 1、正方形で 2 の自明な値"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-029"
+axis = "section"
+item = "box-counting (capacity) dimension of an attractor"
+source = "Ott, Chaos in Dynamical Systems; DynamicalSystems.jl"
+status = "missing"
+evidence = "src 0 件 (fractal は SDF の形状の別語義)"
+oracle_candidate = "Cantor 集合の ln 2 / ln 3 (厳密)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-030"
+axis = "section"
+item = "time-delay embedding (Takens) with delay and dimension selection (mutual information, false nearest neighbours)"
+source = "Ott, Chaos in Dynamical Systems; Kantz-Schreiber, Nonlinear Time Series Analysis; DynamicalSystems.jl"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Lorenz の x から再構成した相関次元が状態空間の値と合うこと"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-031"
+axis = "section"
+item = "recurrence plots and recurrence quantification"
+source = "Marwan et al., Phys. Rep. (2007); DynamicalSystems.jl"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "周期軌道の決定論率 1"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-032"
+axis = "bifurcation"
+item = "equilibria of a caller-supplied vector field by Newton, and their stability from the Jacobian eigenvalues"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; AUTO / MatCont"
+status = "missing"
+evidence = "Newton (COV-NUM-029) と非対称固有値 (COV-NUM-044) が無い"
+oracle_candidate = "Lorenz の固定点 (0 と C+-) と固有値の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-033"
+axis = "bifurcation"
+item = "natural-parameter continuation (the previous solution as the initial guess)"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; AUTO / MatCont"
+status = "missing"
+evidence = "COV-NONLIN-032 が無い"
+oracle_candidate = "pitchfork x' = r x - x^3 の枝 x = sqrt r"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-034"
+axis = "bifurcation"
+item = "pseudo-arclength continuation of an equilibrium branch through folds (tangent predictor, corrector with the arclength constraint)"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory (ch. 10); AUTO / MatCont"
+status = "missing"
+evidence = "COV-NUM-036 の子 固体の弧長法 (COV-FEM-059) も missing"
+oracle_candidate = "x' = r + x^2 の fold を回り込む枝"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-035"
+axis = "bifurcation"
+item = "fold detection by test functions and two-parameter continuation of fold curves"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; MatCont"
+status = "missing"
+evidence = "COV-NONLIN-034 が無い"
+oracle_candidate = "cusp の正規形 x' = a + b x - x^3 の fold 曲線 4 b^3 = 27 a^2"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-036"
+axis = "bifurcation"
+item = "branch-point detection and branch switching (pitchfork, transcritical)"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; AUTO / MatCont"
+status = "missing"
+evidence = "COV-NONLIN-034 が無い"
+oracle_candidate = "対称性の破れる pitchfork の 2 枝への切替"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-037"
+axis = "bifurcation"
+item = "Hopf detection and the first Lyapunov coefficient (super- versus subcritical)"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory (ch. 3); MatCont"
+status = "missing"
+evidence = "COV-NONLIN-032 が無い (hopf で src 0 件)"
+oracle_candidate = "Hopf 正規形の第 1 Lyapunov 係数の閉形式、Brusselator の Hopf 点 b = 1 + a^2"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-038"
+axis = "bifurcation"
+item = "periodic orbits by shooting or orthogonal collocation, with Floquet multipliers"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; AUTO / MatCont"
+status = "missing"
+evidence = "src 0 件 (floquet で 0 件)"
+oracle_candidate = "COV-NONLIN-007 の周期の弱非線形展開と Floquet 乗数 1 の存在"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-039"
+axis = "bifurcation"
+item = "continuation of periodic orbits with period-doubling and Neimark-Sacker detection"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; AUTO / MatCont"
+status = "missing"
+evidence = "COV-NONLIN-038 が無い"
+oracle_candidate = "COV-NONLIN-092 の周期倍分岐点"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-040"
+axis = "bifurcation"
+item = "homoclinic and heteroclinic orbit continuation"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; AUTO (HomCont)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "可積分な振り子のセパラトリクスの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-041"
+axis = "bifurcation"
+item = "brute-force bifurcation diagram (parameter sweep with transients discarded, deterministic and parallel over the parameter)"
+source = "Strogatz, Nonlinear Dynamics and Chaos; DynamicalSystems.jl (orbitdiagram)"
+status = "missing"
+evidence = "写像も ODE の API も無い"
+oracle_candidate = "COV-NONLIN-085 の倍周期分岐点の列"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-042"
+axis = "bifurcation"
+item = "normal forms of codimension-one bifurcations as closed-form oracles (saddle-node, transcritical, pitchfork, Hopf)"
+source = "Strogatz, Nonlinear Dynamics and Chaos (ch. 3, 8); Kuznetsov, Elements of Applied Bifurcation Theory"
+status = "missing"
+evidence = "src 0 件 (bifurcation で当たるのは src/aeroelasticity.rs の範囲の記述だけ)"
+oracle_candidate = "各正規形の枝と安定性の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-043"
+axis = "hamiltonian"
+item = "KAM tori and their breakup (last invariant circle of the standard map)"
+source = "Ott, Chaos in Dynamical Systems (ch. 7); Lichtenberg-Lieberman"
+status = "missing"
+evidence = "COV-NONLIN-014 が無い"
+oracle_candidate = "Greene の臨界値 K_c (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-044"
+axis = "hamiltonian"
+item = "Chirikov resonance-overlap criterion"
+source = "Chirikov, Phys. Rep. (1979); Lichtenberg-Lieberman"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "標準写像の重なり評価 K = pi^2 / 4 (閉形式) と数値の K_c の比較"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-045"
+axis = "hamiltonian"
+item = "bounded energy error of a symplectic integrator on a nonintegrable chaotic system (Henon-Heiles)"
+source = "Hairer-Lubich-Wanner, Geometric Numerical Integration"
+status = "missing"
+evidence = "COV-NUM-089 の子 分野内の symplectic 積分の有界性は N 体 (COV-ORBIT-035) と MD (COV-PART-107) で突合済みだが、どちらも汎用の Hamilton 系には使えない"
+oracle_candidate = "カオス領域の初期値でエネルギー誤差が O(h^2) で有界、ドリフトしないこと"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-046"
+axis = "hamiltonian"
+item = "linear growth of the phase error in an integrable system and its order"
+source = "Hairer-Lubich-Wanner (ch. X)"
+status = "missing"
+evidence = "COV-NUM-089 の子"
+oracle_candidate = "調和振動子の位相誤差 omega^3 h^2 t / 24 (速度 Verlet の cos(omega_d h) = 1 - (omega h)^2 / 2 から)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-047"
+axis = "hamiltonian"
+item = "effect of fixed-point rounding on long-time integration (energy random walk versus systematic drift)"
+source = "Hairer-McLachlan-Razakarivony, BIT (2008) roundoff in long-time integration"
+status = "missing"
+evidence = "Fix128 の乗算は -inf 方向の切り捨て ( src/math.rs::Fix128 の Mul の doc 'a floor toward −∞') で、毎回同じ符号の偏りになる 長時間積分での位相誤差・エネルギーのドリフトへの影響は測っていない (推測)"
+oracle_candidate = "調和振動子 1e7 step を Fix128 と f64 で回し、エネルギー誤差の増え方 (sqrt(t) か t か) を比べる"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-048"
+axis = "hamiltonian"
+item = "bit-exact time reversal of a chaotic Hamiltonian trajectory by velocity reversal (Levesque-Verlet)"
+source = "Levesque-Verlet, J. Stat. Phys. (1993)"
+status = "missing"
+evidence = "Fix128 の乗算は -inf 方向の切り捨て ( src/math.rs::Fix128 の Mul の doc 'a floor toward −∞') で、毎回同じ符号の偏りになる ⇒ (-a) b と -(a b) は最後の bit で一致しないことがあり、速度反転による bit 単位の可逆性は保証されない (推測、未測定) 許容差つきの反転は tests/determinism_semantic.rs::symmetry_time_reversibility_of_kinematic_drift (等速の drift のみ)"
+oracle_candidate = "LJ 気体を N step 進めて速度を反転し N step 戻した時の初期状態との差 (bit 一致か、何 ulp か)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-049"
+axis = "hamiltonian"
+item = "Toda lattice (integrable nonlinear lattice with exact solitons)"
+source = "Toda, Theory of Nonlinear Lattices"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "1-soliton の速度と幅の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-050"
+axis = "cellular-automaton"
+item = "elementary 1-D cellular automata by Wolfram rule number (periodic or fixed boundary)"
+source = "Wolfram, A New Kind of Science; Wolfram, Rev. Mod. Phys. (1983)"
+status = "missing"
+evidence = "src 0 件 (cellular で 0 件、automat は automatically の別語義)"
+oracle_candidate = "COV-NONLIN-093"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-051"
+axis = "cellular-automaton"
+item = "2-D outer-totalistic automata (Conway's Game of Life and Life-like rules)"
+source = "Berlekamp-Conway-Guy, Winning Ways; Gardner (1970)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "COV-NONLIN-093"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-052"
+axis = "cellular-automaton"
+item = "bit-packed parallel update of binary automata with the same bits on every platform and thread count"
+source = "Toffoli-Margolus, Cellular Automata Machines"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "1 / 2 / 8 thread と bit packing の有無で同じ hash"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-053"
+axis = "cellular-automaton"
+item = "lattice-gas automata for hydrodynamics (HPP, FHP)"
+source = "Frisch-Hasslacher-Pomeau, Phys. Rev. Lett. (1986); Rothman-Zaleski"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "質量と運動量の厳密保存 + FHP の音速 1/sqrt 2 (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-054"
+axis = "cellular-automaton"
+item = "excitable-media automata (Greenberg-Hastings)"
+source = "Greenberg-Hastings, SIAM J. Appl. Math. (1978)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "平面波の伝播速度 1 セル / step (構成から厳密)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-055"
+axis = "cellular-automaton"
+item = "Bak-Tang-Wiesenfeld sandpile (self-organised criticality, avalanche statistics)"
+source = "Bak-Tang-Wiesenfeld, Phys. Rev. Lett. (1987); Dhar, Physica A (2006)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "COV-NONLIN-094、abelian 性 (落とす順によらない安定配置)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-056"
+axis = "cellular-automaton"
+item = "forest-fire model"
+source = "Drossel-Schwabl, Phys. Rev. Lett. (1992)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "seed 固定で bit 再現 + 平均密度 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-057"
+axis = "cellular-automaton"
+item = "probabilistic automata driven by the seeded sequence (Domany-Kinzel, directed percolation)"
+source = "Domany-Kinzel, Phys. Rev. Lett. (1984); Hinrichsen, Adv. Phys. (2000)"
+status = "missing"
+evidence = "src 0 件 (推測) 乱数の部品は src/rng.rs::DeterministicRng"
+oracle_candidate = "有向 percolation の臨界点 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-058"
+axis = "pattern"
+item = "Gray-Scott model: spots, stripes and self-replicating patterns"
+source = "Pearson, Science (1993); Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems"
+status = "missing"
+evidence = "COV-CHEM-082 の子"
+oracle_candidate = "COV-NONLIN-096"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-059"
+axis = "pattern"
+item = "Turing instability: linear dispersion relation and critical wavenumber of a two-species system"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems (ch. 2); Murray, Mathematical Biology II"
+status = "missing"
+evidence = "COV-CHEM-082 の子"
+oracle_candidate = "線形化の成長率の閉形式と、数値の初期成長率の突合"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-060"
+axis = "pattern"
+item = "Brusselator and Schnakenberg kinetics"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems; Murray"
+status = "missing"
+evidence = "COV-CHEM-082 の子"
+oracle_candidate = "Brusselator の Turing 条件と Hopf 点の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-061"
+axis = "pattern"
+item = "Swift-Hohenberg equation (stripes and hexagons, wavelength selection)"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems (ch. 5); Swift-Hohenberg (1977)"
+status = "missing"
+evidence = "汎用の格子 PDE solver と FFT (COV-NUM-093) が無い"
+oracle_candidate = "COV-NONLIN-095"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-062"
+axis = "pattern"
+item = "Kuramoto-Sivashinsky equation (spatiotemporal chaos)"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems; Kassam-Trefethen (2005) ETDRK4"
+status = "missing"
+evidence = "汎用の格子 PDE solver と FFT (COV-NUM-093) が無い"
+oracle_candidate = "線形不安定帯 0 < k < 1 の閉形式、領域長ごとの最大 Lyapunov 指数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-063"
+axis = "pattern"
+item = "complex Ginzburg-Landau equation (amplitude equation, Benjamin-Feir instability, spiral defects)"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems (ch. 10); Aranson-Kramer, Rev. Mod. Phys. (2002)"
+status = "missing"
+evidence = "汎用の格子 PDE solver と FFT (COV-NUM-093) が無い"
+oracle_candidate = "Benjamin-Feir の条件 1 + alpha beta < 0 (閉形式、係数の符号の取り方は原典に合わせる)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-064"
+axis = "pattern"
+item = "spiral waves in 2-D excitable media (FitzHugh-Nagumo, Barkley)"
+source = "Barkley, Physica D (1991); Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems"
+status = "missing"
+evidence = "汎用の格子 PDE solver と FFT (COV-NUM-093) が無い"
+oracle_candidate = "spiral の回転周期の格子・時間刻み収束"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-065"
+axis = "pattern"
+item = "spinodal decomposition by Cahn-Hilliard and the coarsening law L ~ t^(1/3)"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems; Bray, Adv. Phys. (1994)"
+status = "missing"
+evidence = "COV-MULTIPHASE-021 の子"
+oracle_candidate = "粗大化の指数 1/3 と質量の厳密保存"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-066"
+axis = "pattern"
+item = "curvature-driven coarsening by Allen-Cahn (L ~ t^(1/2))"
+source = "Bray (1994); Allen-Cahn (1979)"
+status = "missing"
+evidence = "COV-MULTIPHASE-022 の子"
+oracle_candidate = "円形 domain の半径 R^2 = R0^2 - 2 t (界面速度 = 平均曲率に無次元化した場合の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-067"
+axis = "pattern"
+item = "characterisation of a 2-D pattern (structure factor, dominant wavelength, defect count)"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems"
+status = "missing"
+evidence = "FFT (COV-NUM-093) が無い"
+oracle_candidate = "正弦縞で単一ピークの位置が 2 pi / lambda"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-068"
+axis = "synchronisation"
+item = "Kuramoto model with all-to-all coupling and the order parameter r exp(i psi)"
+source = "Strogatz, Nonlinear Dynamics and Chaos; Kuramoto, Chemical Oscillations, Waves, and Turbulence; Acebron et al., Rev. Mod. Phys. (2005)"
+status = "missing"
+evidence = "src 0 件 (kuramoto で 0 件、synchron は通信・thread の別語義) 汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "COV-NONLIN-087"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-069"
+axis = "synchronisation"
+item = "Kuramoto oscillators on a network (sparse adjacency)"
+source = "Arenas et al., Phys. Rep. (2008)"
+status = "missing"
+evidence = "COV-NONLIN-068 が無い"
+oracle_candidate = "完全グラフで全結合と一致"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-070"
+axis = "synchronisation"
+item = "Stuart-Landau oscillators (Hopf normal form) and amplitude death"
+source = "Kuznetsov, Elements of Applied Bifurcation Theory; Pikovsky-Rosenblum-Kurths, Synchronization"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "単体の極限周期の半径 sqrt(mu) (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-071"
+axis = "synchronisation"
+item = "phase reduction and the phase response curve of a limit-cycle oscillator"
+source = "Pikovsky-Rosenblum-Kurths; Winfree, The Geometry of Biological Time"
+status = "missing"
+evidence = "COV-NONLIN-038 が無い"
+oracle_candidate = "Stuart-Landau の PRC の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-072"
+axis = "synchronisation"
+item = "phase locking of a forced oscillator (Adler equation, Arnold tongues)"
+source = "Strogatz, Nonlinear Dynamics and Chaos (sec. 4.5); Pikovsky-Rosenblum-Kurths"
+status = "missing"
+evidence = "汎用の ODE 積分 (COV-NUM-045 / 049 / 050) が無いので組めない"
+oracle_candidate = "Adler の固定条件 |Delta omega| < K と滑り周期 2 pi / sqrt(Delta omega^2 - K^2)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-073"
+axis = "synchronisation"
+item = "synchronisation of identical chaotic oscillators and the master stability function"
+source = "Pecora-Carroll, Phys. Rev. Lett. (1990, 1998)"
+status = "missing"
+evidence = "COV-NONLIN-001 が無い"
+oracle_candidate = "2 個の Lorenz の拡散結合の同期閾値と最大 Lyapunov 指数の関係"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-074"
+axis = "synchronisation"
+item = "pulse-coupled oscillators (Mirollo-Strogatz)"
+source = "Mirollo-Strogatz, SIAM J. Appl. Math. (1990)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "全結合で有限時間に完全同期すること"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-075"
+axis = "synchronisation"
+item = "mechanical synchronisation of pendulum clocks or metronomes on a movable base (Huygens) in the rigid world"
+source = "Pantaleone, Am. J. Phys. (2002); Huygens (1665)"
+status = "missing"
+evidence = "台車と振り子は剛体と拘束で組める (COV-RIGID-016 / 023) が、escapement (振幅を保つ駆動) が無い"
+oracle_candidate = "同相と逆相の同期の現れる条件 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-076"
+axis = "soliton"
+item = "Korteweg-de Vries equation by a conservative scheme (Zabusky-Kruskal or pseudo-spectral with an integrating factor)"
+source = "Zabusky-Kruskal, Phys. Rev. Lett. (1965); Trefethen, Spectral Methods in MATLAB"
+status = "missing"
+evidence = "汎用の格子 PDE solver と FFT (COV-NUM-093) が無い イオン音波の KdV は COV-PLASMA-077、浅水の孤立波は COV-ENV-083"
+oracle_candidate = "COV-NONLIN-088"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-077"
+axis = "soliton"
+item = "discrete conservation of the KdV invariants (mass, momentum, energy) by the scheme"
+source = "Ablowitz-Segur, Solitons and the Inverse Scattering Transform"
+status = "missing"
+evidence = "COV-NONLIN-076 が無い"
+oracle_candidate = "3 不変量の時間変化が丸めの範囲"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-078"
+axis = "soliton"
+item = "nonlinear Schrodinger equation by split-step Fourier (bright soliton, modulational instability)"
+source = "Agrawal, Nonlinear Fiber Optics; Ablowitz-Segur"
+status = "missing"
+evidence = "汎用の格子 PDE solver と FFT (COV-NUM-093) が無い"
+oracle_candidate = "sech soliton の形が保たれること + 変調不安定の成長率の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-079"
+axis = "soliton"
+item = "sine-Gordon kinks and breathers"
+source = "Drazin-Johnson, Solitons: An Introduction"
+status = "missing"
+evidence = "汎用の格子 PDE solver と FFT (COV-NUM-093) が無い"
+oracle_candidate = "kink の Lorentz 収縮した幅と breather の周期の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-080"
+axis = "determinism"
+item = "the same initial state gives the same bits over a horizon much longer than the Lyapunov time on a chaotic system"
+source = "the crate's determinism contract; Levesque-Verlet (1993)"
+status = "implemented-no-oracle"
+evidence = "COV-RIGID-014 の子 world の step は Fix128 で bit 一致 (golden は tests/determinism_golden.rs::determinism_joint_pendulum の 240 step で、重い支点に吊った単振り子に近い場面) カオス系の長時間 (Lyapunov 時間の数十倍) の hash 固定は無い thread 数によらない一致は COV-ENGINE-005"
+oracle_candidate = "COV-NONLIN-005 を 1e6 step 回した hash を CI の全 OS で固定"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-081"
+axis = "determinism"
+item = "a one-ulp perturbation of the initial state separates at the rate of the largest Lyapunov exponent until it saturates"
+source = "Ott, Chaos in Dynamical Systems; the crate's fixed-point contract"
+status = "missing"
+evidence = "最大 Lyapunov 指数を出す経路が無い (COV-NONLIN-018) Fix128 の 1 ulp は絶対量 2^-64 (相対ではない) なので、分離が O(1) に届く時刻は ln(2^64) / lambda = 約 44.4 / lambda"
+oracle_candidate = "分離の対数の傾きが COV-NONLIN-018 の値と一致し、飽和時刻が 44.4 / lambda 付近になること"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-082"
+axis = "determinism"
+item = "comparison of a fixed-point trajectory with an f64 or higher-precision reference: the parting time as a diagnostic of chaos versus numerical error"
+source = "Ott, Chaos in Dynamical Systems; Kantz-Schreiber"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Lorenz で Fix128 と f64 の分離時刻が約 ln(Delta / eps) / lambda に従うこと"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-083"
+axis = "determinism"
+item = "shadowing: a computed chaotic trajectory stays close to a true trajectory for a measured shadowing time"
+source = "Hammel-Yorke-Grebogi, J. Complexity (1987); Sauer et al. (1997)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Henon 写像の shadowing 距離の評価 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-084"
+axis = "benchmark"
+item = "largest Lyapunov exponent of the Lorenz system at sigma = 10, rho = 28, beta = 8/3"
+source = "Strogatz, Nonlinear Dynamics and Chaos; Sprott, Chaos and Time-Series Analysis"
+status = "missing"
+evidence = "COV-NONLIN-001 が無い"
+oracle_candidate = "最大 Lyapunov 指数 (参照値要確認) スペクトルの和は閉形式 -(sigma + 1 + beta)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-085"
+axis = "benchmark"
+item = "Feigenbaum constants delta and alpha from the period-doubling cascade of the logistic map"
+source = "Strogatz, Nonlinear Dynamics and Chaos (sec. 10.6); Feigenbaum (1978)"
+status = "missing"
+evidence = "COV-NONLIN-012 が無い"
+oracle_candidate = "倍周期分岐点の比の極限 delta と alpha (参照値要確認) 最初の 2 分岐 r = 3、1 + sqrt 6 は閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-086"
+axis = "benchmark"
+item = "logistic map at r = 4: Lyapunov exponent ln 2 and invariant density 1 / (pi sqrt(x (1 - x)))"
+source = "Strogatz, Nonlinear Dynamics and Chaos; Ulam-von Neumann (1947)"
+status = "missing"
+evidence = "COV-NONLIN-012 が無い"
+oracle_candidate = "閉形式 (ln 2 と不変密度) ただし有限精度では COV-NONLIN-016 と同じ崩壊が起こりうる"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-087"
+axis = "benchmark"
+item = "Kuramoto critical coupling with a Lorentzian frequency distribution: K_c = 2 gamma and r = sqrt(1 - K_c / K)"
+source = "Kuramoto (1984); Strogatz, Physica D (2000)"
+status = "missing"
+evidence = "COV-NONLIN-068 が無い"
+oracle_candidate = "N を増やした時の r(K) の閉形式への収束"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-088"
+axis = "benchmark"
+item = "KdV two-soliton collision: phase shifts of the two solitons"
+source = "Drazin-Johnson; Hirota (1971)"
+status = "missing"
+evidence = "COV-NONLIN-076 が無い"
+oracle_candidate = "衝突後の位相のずれの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-089"
+axis = "benchmark"
+item = "Fermi-Pasta-Ulam-Tsingou recurrence"
+source = "Fermi-Pasta-Ulam (1955); Gallavotti (ed.), The FPU Problem"
+status = "missing"
+evidence = "汎用の Hamilton 系の積分が無い (COV-NUM-046 / 048)"
+oracle_candidate = "最低次モードへの再帰時刻 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-090"
+axis = "benchmark"
+item = "Henon map attractor: largest Lyapunov exponent and dimension at a = 1.4, b = 0.3"
+source = "Ott, Chaos in Dynamical Systems; Henon (1976)"
+status = "missing"
+evidence = "Henon 写像の行が missing"
+oracle_candidate = "最大 Lyapunov 指数と次元 (参照値要確認) Jacobian 行列式 -b は閉形式で、2 指数の和 = ln b"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-091"
+axis = "benchmark"
+item = "Duffing frequency-response curve and the jump (harmonic balance)"
+source = "Nayfeh-Mook, Nonlinear Oscillations"
+status = "missing"
+evidence = "Duffing の行が missing"
+oracle_candidate = "調和平衡の閉形式 (弱非線形) の上下枝と跳躍周波数"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-092"
+axis = "benchmark"
+item = "period-doubling route of the driven damped pendulum"
+source = "Baker-Gollub; Grebogi-Ott-Yorke"
+status = "missing"
+evidence = "駆動振り子の行が missing"
+oracle_candidate = "倍周期の駆動振幅 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-093"
+axis = "benchmark"
+item = "exact cellular-automaton patterns: rule 90 from one cell gives Pascal's triangle mod 2, the Life glider moves one cell diagonally every 4 generations"
+source = "Wolfram (1983); Berlekamp-Conway-Guy"
+status = "missing"
+evidence = "CA の行が missing"
+oracle_candidate = "構成から厳密 (rule 90 の t 行目 = 二項係数 mod 2、glider の変位 (1, 1) / 4 世代)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-094"
+axis = "benchmark"
+item = "BTW sandpile avalanche-size distribution exponent"
+source = "Bak-Tang-Wiesenfeld (1987); Manna (1991)"
+status = "missing"
+evidence = "sandpile の行が missing"
+oracle_candidate = "指数 (参照値要確認) 1 点に N 粒積んだ安定配置は落とす順によらない (abelian、厳密)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-095"
+axis = "benchmark"
+item = "Swift-Hohenberg stripe wavelength near onset"
+source = "Cross-Greenside, Pattern Formation and Dynamics in Nonequilibrium Systems; Swift-Hohenberg (1977)"
+status = "missing"
+evidence = "COV-NONLIN-061 が無い"
+oracle_candidate = "閾値近傍の縞の波数 k_c = 1 (無次元化した方程式の閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-NONLIN-096"
+axis = "benchmark"
+item = "Gray-Scott pattern classes over the feed and kill parameter plane"
+source = "Pearson, Science (1993)"
+status = "missing"
+evidence = "Gray-Scott の行が missing"
+oracle_candidate = "Pearson の分類 (参照値要確認)"
+limitation = ""

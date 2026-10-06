@@ -23,6 +23,7 @@ crate has today.
 | `docs/coverage/mat.toml` | 121 | 23 | 13 | 5 | 80 | 0 |
 | `docs/coverage/mbd.toml` | 139 | 36 | 2 | 13 | 88 | 0 |
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
+| `docs/coverage/nonlin.toml` | 96 | 1 | 2 | 0 | 93 | 0 |
 | `docs/coverage/nuclear.toml` | 123 | 0 | 1 | 0 | 122 | 0 |
 | `docs/coverage/num.toml` | 101 | 22 | 0 | 5 | 73 | 1 |
 | `docs/coverage/opt.toml` | 120 | 1 | 0 | 0 | 118 | 1 |
@@ -35,9 +36,10 @@ crate has today.
 | `docs/coverage/rigid.toml` | 119 | 77 | 4 | 8 | 29 | 1 |
 | `docs/coverage/sense.toml` | 92 | 19 | 2 | 2 | 69 | 0 |
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
+| `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 3610 | 537 | 73 | 104 | 2890 | 6 |
+| **total** | 3813 | 538 | 75 | 104 | 3090 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -356,6 +358,23 @@ crate has today.
 | surface tension | 15 | 4 | 1 | 1 | 9 | 0 |
 | two-phase momentum | 6 | 0 | 0 | 0 | 6 | 0 |
 
+## `docs/coverage/nonlin.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| benchmark | 13 | 0 | 0 | 0 | 13 | 0 |
+| bifurcation | 11 | 0 | 0 | 0 | 11 | 0 |
+| cellular-automaton | 8 | 0 | 0 | 0 | 8 | 0 |
+| determinism | 4 | 0 | 1 | 0 | 3 | 0 |
+| hamiltonian | 7 | 0 | 0 | 0 | 7 | 0 |
+| lyapunov | 6 | 0 | 0 | 0 | 6 | 0 |
+| map | 6 | 0 | 0 | 0 | 6 | 0 |
+| ode-system | 11 | 1 | 1 | 0 | 9 | 0 |
+| pattern | 10 | 0 | 0 | 0 | 10 | 0 |
+| section | 8 | 0 | 0 | 0 | 8 | 0 |
+| soliton | 4 | 0 | 0 | 0 | 4 | 0 |
+| synchronisation | 8 | 0 | 0 | 0 | 8 | 0 |
+
 ## `docs/coverage/nuclear.toml`
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
@@ -572,6 +591,24 @@ crate has today.
 | solver | 12 | 3 | 0 | 0 | 9 | 0 |
 | time integration / damping | 4 | 2 | 0 | 0 | 2 | 0 |
 | topology change | 5 | 1 | 0 | 0 | 4 | 0 |
+
+## `docs/coverage/stat.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| benchmark | 13 | 0 | 0 | 0 | 13 | 0 |
+| critical | 9 | 0 | 0 | 0 | 9 | 0 |
+| estimator | 7 | 0 | 0 | 0 | 7 | 0 |
+| free-energy | 6 | 0 | 0 | 0 | 6 | 0 |
+| kinetic-mc | 7 | 0 | 0 | 0 | 7 | 0 |
+| lattice-model | 13 | 0 | 0 | 0 | 13 | 0 |
+| mc-advanced | 9 | 0 | 0 | 0 | 9 | 0 |
+| mc-local | 10 | 0 | 0 | 0 | 10 | 0 |
+| md-ensemble | 6 | 0 | 0 | 0 | 6 | 0 |
+| nonequilibrium | 7 | 0 | 0 | 0 | 7 | 0 |
+| sequence | 4 | 0 | 0 | 0 | 4 | 0 |
+| stochastic-dynamics | 12 | 0 | 0 | 0 | 12 | 0 |
+| transport | 4 | 0 | 0 | 0 | 4 | 0 |
 
 ## `docs/coverage/struct.toml`
 

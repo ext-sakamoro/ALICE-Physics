@@ -1,0 +1,1179 @@
+# Statistical mechanics (STAT) coverage of ALICE-Physics, against an external
+# reference frame.
+#
+# What this table is: every capability that the standard texts (Landau-Binder,
+# A Guide to Monte Carlo Simulations in Statistical Physics; Newman-Barkema,
+# Monte Carlo Methods in Statistical Physics; Frenkel-Smit, Understanding
+# Molecular Simulation), reference implementations (the feature lists of ALPS,
+# the thermostat / ensemble fixes of LAMMPS) and standard benchmarks (the 2-D
+# Ising model with Onsager's critical temperature and Yang's spontaneous
+# magnetisation, exact small-lattice enumeration, Kramers escape, the dragged
+# harmonic trap of the Jarzynski equality) expect of a simulator of
+# statistical mechanics, one [[item]] per capability, with what the crate has
+# today. The rows are written by hand: the axes and the items come from the
+# reference frame, not from the modules that exist, so a missing capability is
+# visible instead of absent.
+#
+# Axes: lattice-model / mc-local / mc-advanced / estimator / critical /
+# md-ensemble / stochastic-dynamics / kinetic-mc / nonequilibrium / transport /
+# free-energy / sequence / benchmark.
+#
+# What counts as implemented: an API that performs the capability. Parts a
+# caller could combine (the seeded generator, the pair potentials, the
+# periodic box) are cited in `evidence`, and the row stays `missing`.
+#
+# Random numbers are written as sequences built deterministically from a seed
+# and a stream (src/rng.rs::DeterministicRng, PCG, bit-identical on every
+# platform, COV-ENGINE-001 / 002). A Monte Carlo run is then a deterministic
+# function of the seed; the rows say "drawn from the seeded sequence", not
+# "random".
+#
+# Boundary with the other tables (one capability goes in one table only; rows
+# of the same grain are not made here, the id is cited instead, and a row that
+# refines one of them says "COV-X-NNN の子" at the head of `evidence`):
+#   - molecular dynamics: force fields, integrators, neighbour lists, periodic
+#     box, the NVE observables and the named thermostats and barostats
+#     (Berendsen, Nose-Hoover, Langevin, Andersen / Bussi, DPD, Parrinello-
+#     Rahman), Brownian dynamics, initial Maxwell-Boltzmann velocities, g(r),
+#     mean squared displacement, Green-Kubo, S(k), Lees-Edwards: the particle
+#     table (COV-PART-035 to 046, 055, 057, 102 to 110); here the ensemble
+#     theory around them (checks that a thermostat samples the right ensemble,
+#     fluctuation formulas, the transport coefficients that refine COV-PART-104)
+#   - quantum lattice models (Hubbard, transverse-field Ising, Heisenberg
+#     chains, Bose-Hubbard) and quantum Monte Carlo: the quantum table
+#     (COV-QUANTUM-088 to 090, 094, 132); here the classical lattice models
+#   - the generator itself, its streams and its fixed-point distributions, the
+#     generator state in a snapshot, and seeded scenario variation: the engine
+#     table (COV-ENGINE-001 to 003, 145); here how a Monte Carlo run uses it
+#   - the plain Monte Carlo estimator of an integral and variance reduction:
+#     the numerical-foundations table (COV-NUM-095 / 096); stochastic decay
+#     counts: COV-NUCLEAR-012; Monte Carlo particle and photon transport: the
+#     nuclear and optics tables; ensemble data assimilation and global
+#     population optimisers: the optimisation table (COV-OPT-047, 082)
+#   - reaction rate laws and deterministic kinetics: the chemistry table; here
+#     the stochastic (Gillespie / kinetic Monte Carlo) simulation of reactions
+#   - chaos, bifurcations, cellular automata, pattern formation and
+#     synchronisation: the nonlinear-dynamics table (COV-NONLIN-*)
+#   - numerical integrators as such (ODE, symplectic): the numerical-
+#     foundations table (COV-NUM-045 to 055)
+#
+# Fixed-point notes (Fix128 is Q64.64: integer part +-9.2e18, resolution
+# 2^-64 ~ 5.4e-20):
+#   - k_B in SI is below the resolution, so molecular simulation runs in reduced
+#     units (COV-PART-037)
+#   - Fix128::exp has a relative error of about 1e-6 for |x| <= 40, returns 0
+#     below -44 and saturates above 43 (src/math.rs::exp): Boltzmann factors
+#     beyond that range and partition functions or densities of states of more
+#     than about 2^63 states are not representable, so a flat-histogram method
+#     has to keep ln g(E), and an acceptance test inherits the 1e-6 error of
+#     the factor
+#   - sums of squared extensive quantities over many samples approach the
+#     integer range on large lattices (the estimator rows give the numbers)
+#   - multiplication truncates toward minus infinity, which is a bias of the
+#     same sign at every product (src/math.rs::Fix128)
+#
+# Search notes (word collisions found while judging): ising -> localising /
+# normalising; critical -> critical damping, critical buckling load, critical
+# speed; ensemble -> the NVE ensemble of molecular dynamics only; boltzmann ->
+# the constant in molecular dynamics; thermostat -> the bimetal reference in
+# bimaterial; histogram -> analytics and pipeline counters; entropy ->
+# privacy. No hit for monte, metropolis, langevin, brownian, potts, wolff,
+# swendsen, landau, gillespie, jarzynski, kubo, fokker, percolat, partition
+# function, free energy, random walk, order parameter, autocorrel.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this crate (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-STAT-NNN) / axis / item / source (book, topic, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate /
+# limitation (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+
+[[item]]
+id = "COV-STAT-001"
+axis = "lattice-model"
+item = "2-D Ising model on the square lattice with periodic boundaries (coupling J, field h), spins stored as integers and the energy summed exactly"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (Ising model); Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 3); ALPS (classical spin models)"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件) ising で当たるのは localising / normalising の語尾だけ (COV-QUANTUM-089 と同じ確認) 整数のエネルギーは Fix128 でも厳密に足せる"
+oracle_candidate = "2x2 / 4x4 の全状態列挙による分配関数・平均エネルギーと MC の平均を突合 (COV-STAT-098)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-002"
+axis = "lattice-model"
+item = "3-D Ising model on the simple cubic lattice"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (3-D Ising); Newman-Barkema, Monte Carlo Methods in Statistical Physics"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "COV-STAT-100 の Binder 交点"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-003"
+axis = "lattice-model"
+item = "1-D Ising chain with the transfer-matrix solution (free energy, correlation length)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Baxter, Exactly Solved Models (transfer matrix)"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "転送行列の閉形式 (自由エネルギー、相関長 xi = -1 / ln tanh(beta J) の h = 0 の場合) と MC を突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-004"
+axis = "lattice-model"
+item = "Ising model on other lattices and on a general graph (triangular, honeycomb, adjacency list)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; ALPS (lattice library)"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "三角格子の反強磁性 Ising の基底状態縮退 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-005"
+axis = "lattice-model"
+item = "q-state Potts model"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Wu, The Potts model (Rev. Mod. Phys. 1982)"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "COV-STAT-099"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-006"
+axis = "lattice-model"
+item = "q-state clock (Z_q) model"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; ALPS"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "q = 2 で Ising、q = 4 で Ising 2 枚に写像される関係を数値で確認"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-007"
+axis = "lattice-model"
+item = "classical XY (plane rotator) model"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Kosterlitz-Thouless (1973)"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "COV-STAT-101"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-008"
+axis = "lattice-model"
+item = "classical Heisenberg (O(3)) model"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; ALPS"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "高温展開の帯磁率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-009"
+axis = "lattice-model"
+item = "lattice gas (site occupation 0 / 1, conserved particle number, mapping to the Ising model)"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "Ising との写像 (mu と h、epsilon と J の関係) による同じ相図"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-010"
+axis = "lattice-model"
+item = "Blume-Capel (spin-1) model and site dilution"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件)"
+oracle_candidate = "三重臨界点の位置 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-011"
+axis = "lattice-model"
+item = "Edwards-Anderson spin glass (+-J or Gaussian couplings, quenched disorder drawn per sample from the seeded sequence)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (spin glasses); Newman-Barkema, Monte Carlo Methods in Statistical Physics"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件) 乱れの生成に使える部品は src/rng.rs::DeterministicRng (COV-ENGINE-001)"
+oracle_candidate = "小さい試料の全状態列挙による基底状態エネルギーとの突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-012"
+axis = "lattice-model"
+item = "random-field Ising model (quenched field per site from the seeded sequence)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "格子模型の型も格子 MC の driver も無い (推測: ising / potts / lattice model で src 0 件) 部品は src/rng.rs::DeterministicRng (COV-ENGINE-001)"
+oracle_candidate = "同じ seed の試料で MC の結果が bit 一致すること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-013"
+axis = "lattice-model"
+item = "self-avoiding walks and lattice polymers (pivot algorithm)"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Madras-Sokal, J. Stat. Phys. (1988) pivot algorithm"
+status = "missing"
+evidence = "src 0 件 (推測: self-avoiding / polymer)"
+oracle_candidate = "2-D の端点間距離の指数 nu = 3/4 (Nienhuis の厳密値)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-014"
+axis = "mc-local"
+item = "Metropolis single-spin-flip update with the acceptance factors of the few possible energy changes tabulated"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 3); Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) 一様乱数は src/rng.rs::next_fix128 (64 bit の小数) 受理確率の表を src/math.rs::exp で作ると相対誤差 約 1e-6 が係数に乗る (COV-STAT-094)"
+oracle_candidate = "COV-STAT-098 の 4x4 全状態列挙と MC の平均エネルギー・|m| を統計誤差内で突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-015"
+axis = "mc-local"
+item = "heat-bath (Glauber) single-site update"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "COV-STAT-098 と同じ突合 Metropolis と同じ平衡値に収束すること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-016"
+axis = "mc-local"
+item = "Kawasaki spin exchange (conserved magnetisation)"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (conserved-order-parameter dynamics)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "磁化が step ごとに厳密に保存されること + 固定磁化の全状態列挙と突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-017"
+axis = "mc-local"
+item = "sweep orders: sequential, seeded random site order, and checkerboard (sublattice) updates that allow a parallel update with the same bits"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (vectorised and parallel Ising codes)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) world の並列 step は thread 数によらず同じ bit (COV-ENGINE-005) 格子 MC では site ごとの乱数の割当てが要る (COV-STAT-091)"
+oracle_candidate = "1 / 2 / 8 thread の checkerboard 更新が同じ hash になること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-018"
+axis = "mc-local"
+item = "continuous-spin Metropolis with a step size tuned to a target acceptance, and overrelaxation moves (XY, Heisenberg)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Creutz (overrelaxation)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "overrelaxation がエネルギーを厳密に保つこと + Metropolis と同じ平衡値"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-019"
+axis = "mc-local"
+item = "off-lattice NVT Monte Carlo of particles (displacement moves) with the pair potentials of molecular dynamics"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 3); LAMMPS (fix gcmc / MC moves)"
+status = "missing"
+evidence = "対ポテンシャル src/pair_potential.rs::LennardJones と周期箱 src/molecular_dynamics.rs::PeriodicBox はあるが、試行移動と受理判定の driver は無い"
+oracle_candidate = "COV-STAT-107、LJ の状態方程式 (COV-PART-108、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-020"
+axis = "mc-local"
+item = "NPT Monte Carlo (volume moves in ln V)"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 5)"
+status = "missing"
+evidence = "MC が無い 箱は固定長 (COV-PART-044 と同じ根拠)"
+oracle_candidate = "理想気体で <V> = (N + 1) k T / P の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-021"
+axis = "mc-local"
+item = "grand-canonical Monte Carlo (insertion and deletion moves)"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 5); LAMMPS fix gcmc"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "理想気体で <N> = z V の閉形式 (z は activity)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-022"
+axis = "mc-local"
+item = "Gibbs-ensemble Monte Carlo for phase coexistence"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 8); Panagiotopoulos (1987)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) 共存の benchmark は COV-PART-109"
+oracle_candidate = "LJ の共存密度 (COV-PART-109、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-023"
+axis = "mc-local"
+item = "detailed-balance check of a move set: the visit histogram of every state of a small system against its Boltzmann weight"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (detailed balance); Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "2x2 Ising 16 状態の訪問回数と exp(-beta E) / Z の比を chi-square で突合 (seed 固定で bit 再現)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-024"
+axis = "mc-advanced"
+item = "Wolff single-cluster update (bond probability 1 - exp(-2 beta J))"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 4); Wolff (1989)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "Metropolis と同じ平衡値 + 臨界点の自己相関時間が短いこと (COV-STAT-044)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-025"
+axis = "mc-advanced"
+item = "Swendsen-Wang multi-cluster update with cluster labelling (union-find)"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 4); Swendsen-Wang (1987)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) クラスタ分けは COV-STAT-046 と共通"
+oracle_candidate = "Wolff と同じ平衡値"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-026"
+axis = "mc-advanced"
+item = "cluster updates for O(n) models by the Wolff embedding"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Wolff (1989)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "XY 模型で Metropolis と同じ平衡値"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-027"
+axis = "mc-advanced"
+item = "Wang-Landau flat-histogram estimate of the density of states ln g(E)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 7); Wang-Landau (2001)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) Fix128 では g(E) 自体が 2^63 を超えると表せない (L = 16 の Ising で 2^256 状態) ⇒ ln g で持つ必要がある ln は src/math.rs::ln"
+oracle_candidate = "2-D Ising の厳密な g(E) (Beale 1996、参照値要確認) と ln g を突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-028"
+axis = "mc-advanced"
+item = "multicanonical sampling with weights from a density-of-states estimate"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 7); Berg-Neuhaus (1992)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "一次転移の q = 10 Potts で界面自由エネルギー (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-029"
+axis = "mc-advanced"
+item = "parallel tempering (replica exchange over a temperature ladder)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Newman-Barkema, Monte Carlo Methods in Statistical Physics; Hukushima-Nemoto (1996)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) 複数 world を並べる部品は COV-ENGINE-041 (剛体 world 用)"
+oracle_candidate = "各温度の平均が単独 MC と一致し、交換受理率が閉形式の期待と合うこと"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-030"
+axis = "mc-advanced"
+item = "simulated annealing with a cooling schedule (the Metropolis chain used as an optimiser)"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Kirkpatrick-Gelatt-Vecchi (1983)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) 最適化の表の集団法 (COV-OPT-082) に焼きなましの行は無いのでここに置く"
+oracle_candidate = "小さい spin glass の全状態列挙の基底状態に到達すること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-031"
+axis = "mc-advanced"
+item = "single-histogram reweighting to nearby temperatures (Ferrenberg-Swendsen)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 7); Ferrenberg-Swendsen (1988)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "1 温度の run から外挿した <E> を別温度の直接 run と突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-032"
+axis = "mc-advanced"
+item = "multiple-histogram reweighting (WHAM equations solved self-consistently)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Ferrenberg-Swendsen (1989)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "COV-STAT-097 の有限格子の比熱と突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-033"
+axis = "estimator"
+item = "thermodynamic estimators per site: energy, |m|, m^2, and specific heat and susceptibility from fluctuations"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 3); Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) 汎用の平均・分散は COV-NUM-095 (missing) Fix128 の範囲: L = 1024 の Ising で |E| は最大 2N (約 2.1e6)、E^2 は約 4.4e12、1e6 sample の和は約 4.4e18 で整数部の上限 (約 9.2e18) に迫る ⇒ 逐次平均 (Welford) か site あたりの量で持つ"
+oracle_candidate = "COV-STAT-098 の C と chi を有限格子で突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-034"
+axis = "estimator"
+item = "integrated autocorrelation time with automatic windowing"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 3); Madras-Sokal (1988)"
+status = "missing"
+evidence = "src 0 件 (autocorrel で 0 件)"
+oracle_candidate = "AR(1) 列 (seed から決定論的に作る) の tau_int = (1 + a) / (2 (1 - a)) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-035"
+axis = "estimator"
+item = "binning (blocking) error analysis"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Flyvbjerg-Petersen (1989)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "AR(1) 列で block 誤差が閉形式の漸近値に収束すること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-036"
+axis = "estimator"
+item = "jackknife and bootstrap errors of derived quantities (resampling indices from the seeded sequence)"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Efron (bootstrap)"
+status = "missing"
+evidence = "src 0 件 (推測) 部品は src/rng.rs::DeterministicRng (COV-ENGINE-001)"
+oracle_candidate = "平均の jackknife 誤差が標本標準誤差と一致すること (線形量で厳密)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-037"
+axis = "estimator"
+item = "equilibration (burn-in) detection"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics; Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "整列状態と乱れた状態から始めた 2 run の時系列が合流する step の判定"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-038"
+axis = "estimator"
+item = "spin-spin correlation function and the second-moment correlation length"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Newman-Barkema, Monte Carlo Methods in Statistical Physics"
+status = "missing"
+evidence = "src 0 件 (correlation で 0 件)"
+oracle_candidate = "1-D Ising の厳密な相関 tanh(beta J)^r"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-039"
+axis = "estimator"
+item = "energy and order-parameter histograms P(E), P(m)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 4)"
+status = "missing"
+evidence = "src 0 件 histogram は計測の集計 (src/analytics_bridge.rs、src/pipeline.rs) の別語義"
+oracle_candidate = "COV-STAT-098 の P(E) と突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-040"
+axis = "critical"
+item = "Binder cumulant U_4 = 1 - <m^4> / (3 <m^2>^2) and its crossing between lattice sizes"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 4); Binder (1981)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件) critical で当たるのは臨界減衰・座屈荷重・臨界速度などの別語義"
+oracle_candidate = "COV-STAT-095"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-041"
+axis = "critical"
+item = "finite-size scaling fits of the susceptibility peak, magnetisation and specific heat (gamma / nu, beta / nu, alpha / nu)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 4); Newman-Barkema, Monte Carlo Methods in Statistical Physics"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "2-D Ising の厳密な指数 (gamma = 7/4, beta = 1/8, nu = 1) との突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-042"
+axis = "critical"
+item = "data collapse of scaled observables onto one scaling function"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 4)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "2-D Ising で複数 L の chi L^(-7/4) を (T - Tc) L 軸で重ねた残差"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-043"
+axis = "critical"
+item = "corrections to scaling and the shift of the pseudo-critical temperature Tc(L) - Tc ~ L^(-1/nu)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 4)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "2-D Ising の Tc(L) の外挿が Onsager の値に向かうこと"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-044"
+axis = "critical"
+item = "dynamic critical exponent z and critical slowing down (local versus cluster updates)"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 4); Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "Metropolis の z と Wolff の z の比較 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-045"
+axis = "critical"
+item = "Berezinskii-Kosterlitz-Thouless transition: helicity modulus and its universal jump 2 T / pi"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Nelson-Kosterlitz (1977)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "COV-STAT-101"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-046"
+axis = "critical"
+item = "site and bond percolation with cluster labelling (Hoshen-Kopelman / union-find) and the cluster-size distribution"
+source = "Stauffer-Aharony, Introduction to Percolation Theory; Newman-Barkema, Monte Carlo Methods in Statistical Physics"
+status = "missing"
+evidence = "src 0 件 (percolat で 0 件)"
+oracle_candidate = "1-D の厳密なクラスタ数 n_s = (1 - p)^2 p^s"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-047"
+axis = "critical"
+item = "spanning probability and the percolation threshold by finite-size scaling"
+source = "Stauffer-Aharony; Newman-Ziff (2000)"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "COV-STAT-102"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-048"
+axis = "critical"
+item = "first-order transitions: double-peaked energy histogram, latent heat and interface free energy (Binder's method)"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics (ch. 4); Lee-Kosterlitz (1990)"
+status = "missing"
+evidence = "MC の driver が無い (monte / metropolis で src 0 件)"
+oracle_candidate = "q = 10 Potts の潜熱 (Baxter の厳密値、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-049"
+axis = "md-ensemble"
+item = "check that a thermostat samples the canonical ensemble: kinetic-energy distribution and equipartition per degree of freedom"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 6); LAMMPS (thermostat validation)"
+status = "missing"
+evidence = "MD は NVE のみ (COV-PART-036) 熱浴は COV-PART-038〜041 で全部 missing"
+oracle_candidate = "運動エネルギーの分布が自由度 3N - 3 の Gamma 分布になること (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-050"
+axis = "md-ensemble"
+item = "conserved extended-system energy of a deterministic thermostat as a correctness check"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 6); Martyna-Klein-Tuckerman (1992)"
+status = "missing"
+evidence = "COV-PART-039 の子 Nose-Hoover が無い"
+oracle_candidate = "拡張系のエネルギーの誤差が O(h^2) で有界なこと"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-051"
+axis = "md-ensemble"
+item = "non-ergodicity of a single Nose-Hoover thermostat on a harmonic oscillator and its repair by chains"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 6); Martyna-Klein-Tuckerman (1992)"
+status = "missing"
+evidence = "COV-PART-039 の子"
+oracle_candidate = "単一 NH では位置の分布が Gaussian にならず、鎖では閉形式の Gaussian になること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-052"
+axis = "md-ensemble"
+item = "Gaussian isokinetic thermostat (kinetic energy held by a constraint)"
+source = "Frenkel-Smit, Understanding Molecular Simulation; Evans-Morriss, Statistical Mechanics of Nonequilibrium Liquids"
+status = "missing"
+evidence = "MD は NVE のみ (src/molecular_dynamics.rs::VelocityVerlet)"
+oracle_candidate = "運動エネルギーが step ごとに丸めの範囲で一定"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-053"
+axis = "md-ensemble"
+item = "effect of a stochastic thermostat on dynamics (diffusion coefficient versus friction)"
+source = "Frenkel-Smit, Understanding Molecular Simulation; LAMMPS fix langevin"
+status = "missing"
+evidence = "COV-PART-040 の子"
+oracle_candidate = "自由粒子の D = k T / (m gamma) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-054"
+axis = "md-ensemble"
+item = "fluctuation formulas in the NVT and NPT ensembles (heat capacity from energy fluctuations, compressibility from volume fluctuations)"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 2, 5); Allen-Tildesley"
+status = "missing"
+evidence = "MD に熱浴も圧力浴も無い (COV-PART-038〜045)"
+oracle_candidate = "理想気体の C_V = 3 N k / 2 と kappa_T = 1 / P"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-055"
+axis = "stochastic-dynamics"
+item = "general stochastic differential equation integrator with a caller-supplied drift and diffusion (Euler-Maruyama)"
+source = "Kloeden-Platen, Numerical Solution of Stochastic Differential Equations; Gardiner, Stochastic Methods"
+status = "missing"
+evidence = "src 0 件 (推測: langevin / stochastic で 0 件) 正規乱数は src/rng.rs::next_gaussian (分布の突合は COV-ENGINE-002 で未) 増分 sqrt(dt) xi の dt が小さいと Fix128 の分解能 2^-64 に近づく点は未評価"
+oracle_candidate = "幾何 Brown 運動の平均 exp(mu t) と分散の閉形式 (弱収束 1 次)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-056"
+axis = "stochastic-dynamics"
+item = "Milstein and weak second-order schemes (stochastic Heun)"
+source = "Kloeden-Platen"
+status = "missing"
+evidence = "COV-STAT-055 が無い"
+oracle_candidate = "幾何 Brown 運動の強収束 1 次"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-057"
+axis = "stochastic-dynamics"
+item = "exact Ornstein-Uhlenbeck update (decay exp(-gamma dt) and the matching noise amplitude)"
+source = "Gardiner, Stochastic Methods; Gillespie, Phys. Rev. E (1996) exact OU"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "定常分散 sigma^2 / (2 gamma) と自己相関 exp(-gamma t) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-058"
+axis = "stochastic-dynamics"
+item = "underdamped Langevin splitting integrators (BAOAB, GJF) with their configurational sampling accuracy"
+source = "Leimkuhler-Matthews, Molecular Dynamics (2015); LAMMPS fix gjf"
+status = "missing"
+evidence = "COV-PART-040 の子"
+oracle_candidate = "調和ポテンシャルで <x^2> = k T / k の dt 依存 (BAOAB は高精度) を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-059"
+axis = "stochastic-dynamics"
+item = "Brownian dynamics with hydrodynamic interactions (Ermak-McCammon with the Rotne-Prager-Yamakawa tensor)"
+source = "Ermak-McCammon (1978); Rotne-Prager (1969)"
+status = "missing"
+evidence = "COV-PART-035 の子"
+oracle_candidate = "2 粒子の相互拡散係数の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-060"
+axis = "stochastic-dynamics"
+item = "rotational Brownian motion of a body (orientation diffusion)"
+source = "Gardiner; Favro (1960)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "<u(t) . u(0)> = exp(-2 D_r t) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-061"
+axis = "stochastic-dynamics"
+item = "active Brownian particles (self-propulsion with rotational diffusion)"
+source = "Romanczuk et al., Eur. Phys. J. Spec. Top. (2012)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "MSD の閉形式 (弾道から拡散への遷移)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-062"
+axis = "stochastic-dynamics"
+item = "Langevin heat bath on the bodies of the rigid world (friction plus a seeded random impulse per step with the fluctuation-dissipation amplitude)"
+source = "Frenkel-Smit, Understanding Molecular Simulation; LAMMPS fix langevin"
+status = "missing"
+evidence = "world は線形減衰 ( src/solver.rs::with_linear_damping ) を持つが揺動の項は無い 乱数の部品は src/rng.rs::DeterministicRng"
+oracle_candidate = "自由剛体の並進運動エネルギーの平均が 3 k T / 2 になること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-063"
+axis = "stochastic-dynamics"
+item = "coloured noise and the generalised Langevin equation with a friction kernel"
+source = "Kubo, The fluctuation-dissipation theorem (1966); Zwanzig, Nonequilibrium Statistical Mechanics"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "指数核の GLE を補助変数で Markov 化し、定常分布が Boltzmann になること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-064"
+axis = "stochastic-dynamics"
+item = "Fokker-Planck equation in 1-D by finite volumes (Chang-Cooper / Scharfetter-Gummel flux, positivity and mass conservation)"
+source = "Risken, The Fokker-Planck Equation; Chang-Cooper (1970)"
+status = "missing"
+evidence = "src 0 件 (fokker で 0 件) 移流拡散の格子 solver (COV-CFD) は流体の速度場用で、確率密度の FP には使わない"
+oracle_candidate = "定常解が exp(-U / k T) / Z に一致し質量が厳密に保存されること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-065"
+axis = "stochastic-dynamics"
+item = "Fokker-Planck in phase space (Kramers equation) and in several dimensions"
+source = "Risken; Kramers (1940)"
+status = "missing"
+evidence = "COV-STAT-064 が無い"
+oracle_candidate = "調和ポテンシャルの定常 Gaussian"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-066"
+axis = "stochastic-dynamics"
+item = "mean first-passage time estimated from seeded trajectories"
+source = "Gardiner; Redner, A Guide to First-Passage Processes"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "1-D 拡散で反射壁 (x = 0) から吸収壁 (x = L) までの MFPT の閉形式 L^2 / (2 D)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-067"
+axis = "kinetic-mc"
+item = "Gillespie direct method (stochastic simulation algorithm) for a reaction network"
+source = "Gillespie, J. Comput. Phys. (1976) / J. Phys. Chem. (1977)"
+status = "missing"
+evidence = "src 0 件 (gillespie で 0 件) 決定論的な反応速度は化学の表、指数待ち時間の生成は COV-NUCLEAR-012 (missing)"
+oracle_candidate = "COV-STAT-106"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-068"
+axis = "kinetic-mc"
+item = "next-reaction method with a priority queue (Gibson-Bruck)"
+source = "Gibson-Bruck (2000)"
+status = "missing"
+evidence = "COV-STAT-067 が無い"
+oracle_candidate = "direct method と同じ分布 (同じ seed では別の列)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-069"
+axis = "kinetic-mc"
+item = "tau-leaping with Poisson increments"
+source = "Gillespie (2001); Cao-Gillespie-Petzold (2006)"
+status = "missing"
+evidence = "COV-STAT-067 が無い Poisson 変量も無い (COV-NUCLEAR-012)"
+oracle_candidate = "大分子数で決定論的速度式の解に近づくこと"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-070"
+axis = "kinetic-mc"
+item = "chemical master equation of a small system solved directly"
+source = "van Kampen, Stochastic Processes in Physics and Chemistry"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "SSA の時刻 t の分布と CME の解を突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-071"
+axis = "kinetic-mc"
+item = "lattice kinetic Monte Carlo (residence-time / n-fold way) with Arrhenius rates"
+source = "Bortz-Kalos-Lebowitz (1975); Voter, Introduction to the Kinetic Monte Carlo Method"
+status = "missing"
+evidence = "src 0 件 (推測: arrhenius は化学反応と creep の別用途)"
+oracle_candidate = "2-D 正方格子の単一 adatom の拡散係数 D = Gamma a^2 (Gamma = nu exp(-E / k T) は 1 方向あたりの跳躍率)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-072"
+axis = "kinetic-mc"
+item = "stochastic surface growth (Eden, ballistic deposition) and roughness exponents"
+source = "Barabasi-Stanley, Fractal Concepts in Surface Growth"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "1-D KPZ の roughness exponent 1/2 と growth exponent 1/3 (厳密値)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-073"
+axis = "kinetic-mc"
+item = "diffusion-limited aggregation"
+source = "Witten-Sander (1981); Barabasi-Stanley"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "2-D DLA のフラクタル次元 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-074"
+axis = "nonequilibrium"
+item = "Jarzynski equality: free-energy difference from the exponential average of the work of nonequilibrium switching"
+source = "Jarzynski, Phys. Rev. Lett. (1997)"
+status = "missing"
+evidence = "src 0 件 (jarzynski で 0 件) 仕事の積算を持つ確率力学が無い (COV-STAT-055)"
+oracle_candidate = "COV-STAT-105"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-075"
+axis = "nonequilibrium"
+item = "Crooks fluctuation theorem (forward and reverse work distributions cross at the free-energy difference)"
+source = "Crooks, Phys. Rev. E (1999)"
+status = "missing"
+evidence = "COV-STAT-074 が無い"
+oracle_candidate = "引きずられる調和トラップの前進・逆過程の仕事の分布が Delta F で交わること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-076"
+axis = "nonequilibrium"
+item = "steady-state fluctuation theorem for the entropy production (Evans-Searles / Gallavotti-Cohen)"
+source = "Evans-Searles (1994); Gallavotti-Cohen (1995)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "定常駆動の Langevin 粒子で P(sigma) / P(-sigma) = exp(sigma t)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-077"
+axis = "nonequilibrium"
+item = "stochastic thermodynamics along a trajectory (work, heat and entropy production of a driven Langevin particle)"
+source = "Seifert, Rep. Prog. Phys. (2012); Sekimoto, Stochastic Energetics"
+status = "missing"
+evidence = "COV-STAT-055 が無い"
+oracle_candidate = "第 1 法則 W = Delta U + Q が軌道ごとに丸めの範囲で成り立つこと"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-078"
+axis = "nonequilibrium"
+item = "totally asymmetric simple exclusion process with open boundaries"
+source = "Derrida et al., J. Phys. A (1993); Schutz, Exactly Solvable Models"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "最大流相の流れ J = 1/4 と低密度相 J = alpha (1 - alpha) の厳密解"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-079"
+axis = "nonequilibrium"
+item = "non-equilibrium MD for thermal conductivity (reverse NEMD, Muller-Plathe)"
+source = "Muller-Plathe, J. Chem. Phys. (1997); LAMMPS fix thermal/conductivity"
+status = "missing"
+evidence = "MD に熱流の駆動が無い (src/molecular_dynamics.rs::VelocityVerlet は NVE のみ)"
+oracle_candidate = "Green-Kubo (COV-STAT-082) との突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-080"
+axis = "nonequilibrium"
+item = "non-equilibrium MD for shear viscosity (SLLOD equations with sliding periodic boundaries)"
+source = "Evans-Morriss; Frenkel-Smit, Understanding Molecular Simulation"
+status = "missing"
+evidence = "COV-PART-057 (Lees-Edwards) の子"
+oracle_candidate = "Green-Kubo (COV-STAT-081) との突合 (低せん断率の外挿)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-081"
+axis = "transport"
+item = "shear viscosity from the stress autocorrelation (Green-Kubo)"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 4); Allen-Tildesley"
+status = "missing"
+evidence = "COV-PART-104 の子 応力 tensor (COV-PART-043) が前提"
+oracle_candidate = "LJ 流体の粘性 (参照値要確認) と NEMD の外挿"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-082"
+axis = "transport"
+item = "thermal conductivity from the heat-current autocorrelation (Green-Kubo)"
+source = "Frenkel-Smit, Understanding Molecular Simulation; Allen-Tildesley"
+status = "missing"
+evidence = "COV-PART-104 の子 熱流の微視的表式が無い"
+oracle_candidate = "reverse NEMD との突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-083"
+axis = "transport"
+item = "Einstein-Helfand forms (mean squared displacement of the integrated current) for viscosity and conductivity"
+source = "Helfand, Phys. Rev. (1960); Allen-Tildesley"
+status = "missing"
+evidence = "COV-PART-103 / 104 の子"
+oracle_candidate = "同じ軌道の Green-Kubo と一致"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-084"
+axis = "transport"
+item = "finite-size correction of the diffusion coefficient in a periodic box (Yeh-Hummer)"
+source = "Yeh-Hummer, J. Phys. Chem. B (2004)"
+status = "missing"
+evidence = "COV-PART-103 の子"
+oracle_candidate = "D(L) が 1/L で外挿され補正式の傾き k T xi / (6 pi eta L) と合うこと"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-085"
+axis = "free-energy"
+item = "thermodynamic integration over a coupling parameter"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 7)"
+status = "missing"
+evidence = "src 0 件 (free energy で 0 件)"
+oracle_candidate = "調和振動子のばね定数を変えた Delta F = (k T / 2) ln(k1 / k0) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-086"
+axis = "free-energy"
+item = "free-energy perturbation (Zwanzig) and the Bennett acceptance ratio"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 7); Bennett (1976)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "調和振動子の Delta F の閉形式 + BAR の方が分散が小さいこと"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-087"
+axis = "free-energy"
+item = "Widom test-particle insertion for the excess chemical potential"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 7); Widom (1963)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "理想気体で mu_ex = 0、低密度 LJ で第 2 virial 係数から 2 B_2 rho k T"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-088"
+axis = "free-energy"
+item = "umbrella sampling along a collective variable (bias windows combined by the multiple-histogram equations of COV-STAT-031)"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 7); Torrie-Valleau (1977)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "二重井戸の平均力ポテンシャルの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-089"
+axis = "free-energy"
+item = "metadynamics (history-dependent bias deposited along a collective variable)"
+source = "Laio-Parrinello, PNAS (2002)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "二重井戸の自由エネルギー差の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-090"
+axis = "free-energy"
+item = "absolute free energy of a solid by the Einstein-crystal method (Frenkel-Ladd)"
+source = "Frenkel-Smit, Understanding Molecular Simulation (ch. 10); Frenkel-Ladd (1984)"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "調和結晶で閉形式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-091"
+axis = "sequence"
+item = "per-site or per-event random streams (counter-based or seeded per index) so that a lattice update gives the same bits for any thread count and domain split"
+source = "Salmon et al., Parallel random numbers: as easy as 1, 2, 3 (SC 2011); ALPS (parallel RNG)"
+status = "missing"
+evidence = "stream は src/rng.rs::new_with_stream で作れる (COV-ENGINE-001) が、site や event の添字から列を引く仕組みは無い 生成器の状態の保存は COV-ENGINE-003 (missing)"
+oracle_candidate = "同じ seed の格子 MC が 1 / 2 / 8 thread と領域分割の違いで同じ hash"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-092"
+axis = "sequence"
+item = "skip-ahead of a stream by n draws in O(log n)"
+source = "Brown, Random number generation with arbitrary strides (1994); O'Neill, PCG (2014)"
+status = "missing"
+evidence = "src/rng.rs::DeterministicRng に jump / advance は無い (LCG の状態遷移なので閉形式で飛ばせる)"
+oracle_candidate = "n 回の逐次生成と飛ばした状態の一致 (n = 1, 2^20, 2^40)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-093"
+axis = "sequence"
+item = "a fixed statistical test battery of the generator (subsets of TestU01 SmallCrush or PractRand) kept as a test"
+source = "L'Ecuyer-Simard, TestU01 (2007)"
+status = "missing"
+evidence = "一様性の chi-square は src/rng.rs::next_bounded の 1 本だけ (tests/analytic_rng_wiring.rs::bounded_is_uniform_chi_square) 系列相関・高次元の検定は無い"
+oracle_candidate = "gap test / serial test / birthday spacing を固定 seed で回し p 値の範囲を固定"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-094"
+axis = "sequence"
+item = "precision of the acceptance test u < exp(-beta Delta E) in fixed point (64-bit u, the error of the exponential) and its effect on detailed balance"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 16, random numbers in MC); the crate's fixed-point contract"
+status = "missing"
+evidence = "MC が無い 部品の精度: u は 64 bit の小数 (src/rng.rs::next_fix128)、src/math.rs::exp は |x| <= 40 で相対誤差 約 1e-6、-44 未満で 0 ⇒ 受理確率に 1e-6 程度の系統誤差が入り、平均値の偏りもその桁と見込まれる (推測、未測定)"
+oracle_candidate = "4x4 Ising の全状態列挙の平均と、表を f64 で作った場合・Fix128::exp で作った場合の MC 平均の差が 1e-6 の桁に収まること"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-095"
+axis = "benchmark"
+item = "2-D Ising critical temperature by Binder crossing against Onsager's k Tc / J = 2 / ln(1 + sqrt 2)"
+source = "Onsager (1944); Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "COV-STAT-001 が無い"
+oracle_candidate = "Binder 交点の Tc と閉形式の差が誤差内 (閉形式は式で持ち、数値を手書きしない)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-096"
+axis = "benchmark"
+item = "2-D Ising spontaneous magnetisation against Yang's (1 - sinh(2 beta J)^-4)^(1/8)"
+source = "Yang (1952); Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics"
+status = "missing"
+evidence = "COV-STAT-001 が無い"
+oracle_candidate = "T < Tc の |m| の L 外挿と閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-097"
+axis = "benchmark"
+item = "2-D Ising exact finite-lattice energy and specific heat (Kaufman, Ferdinand-Fisher)"
+source = "Kaufman (1949); Ferdinand-Fisher (1969); Beale (1996)"
+status = "missing"
+evidence = "COV-STAT-001 が無い"
+oracle_candidate = "L = 8, 16 の C(T) を厳密な有限格子の式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-098"
+axis = "benchmark"
+item = "exact enumeration of small lattices (2x2 to 4x4) as the reference for every Monte Carlo update"
+source = "Newman-Barkema, Monte Carlo Methods in Statistical Physics (ch. 3)"
+status = "missing"
+evidence = "COV-STAT-001 が無い"
+oracle_candidate = "Z、<E>、<|m|>、C、chi を全状態列挙で出し MC と突合 (列挙自体は 2^16 状態で軽い)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-099"
+axis = "benchmark"
+item = "2-D q-state Potts critical temperature against beta_c J = ln(1 + sqrt q)"
+source = "Baxter (1973); Wu (1982)"
+status = "missing"
+evidence = "Potts の行が missing"
+oracle_candidate = "q = 3 の Binder 交点"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-100"
+axis = "benchmark"
+item = "3-D Ising critical temperature and Binder cumulant at criticality"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Ferrenberg-Landau (1991)"
+status = "missing"
+evidence = "3-D Ising の行が missing"
+oracle_candidate = "Tc と U_4* (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-101"
+axis = "benchmark"
+item = "2-D XY BKT temperature from the helicity-modulus jump"
+source = "Landau-Binder, A Guide to Monte Carlo Simulations in Statistical Physics; Hasenbusch (2005)"
+status = "missing"
+evidence = "XY の行が missing"
+oracle_candidate = "T_BKT (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-102"
+axis = "benchmark"
+item = "site percolation threshold on the square lattice"
+source = "Newman-Ziff (2000)"
+status = "missing"
+evidence = "COV-STAT-046 が無い"
+oracle_candidate = "p_c (参照値要確認) bond percolation の p_c = 1/2 (厳密) を先に"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-103"
+axis = "benchmark"
+item = "free Brownian diffusion: MSD = 2 d D t and the Einstein relation D = k T / gamma (gamma the friction coefficient)"
+source = "Einstein (1905); Gardiner"
+status = "missing"
+evidence = "COV-STAT-055 / COV-PART-035 が無い"
+oracle_candidate = "seed 固定の 1e4 軌道で MSD の傾き"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-104"
+axis = "benchmark"
+item = "Kramers escape rate over a barrier in the moderate-to-strong friction regime"
+source = "Kramers (1940); Hanggi-Talkner-Borkovec, Rev. Mod. Phys. (1990)"
+status = "missing"
+evidence = "COV-STAT-055 が無い"
+oracle_candidate = "二重井戸の脱出率と Kramers の閉形式 (障壁 >> k T)"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-105"
+axis = "benchmark"
+item = "harmonic trap dragged at constant speed: zero free-energy change, Gaussian work distribution with a closed form"
+source = "Mazonka-Jarzynski (1999); van Zon-Cohen (2003)"
+status = "missing"
+evidence = "COV-STAT-074 が無い"
+oracle_candidate = "<exp(-beta W)> = 1 と <W> の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-106"
+axis = "benchmark"
+item = "birth-death process with a Poisson stationary distribution"
+source = "Gillespie (1977); van Kampen"
+status = "missing"
+evidence = "COV-STAT-067 が無い"
+oracle_candidate = "定常分布の平均 = 分散 = k_b / k_d"
+limitation = ""
+
+[[item]]
+id = "COV-STAT-107"
+axis = "benchmark"
+item = "the same LJ state point by NVT Monte Carlo and by thermostatted MD (same mean potential energy and pressure)"
+source = "Frenkel-Smit, Understanding Molecular Simulation"
+status = "missing"
+evidence = "COV-STAT-019 と熱浴 (COV-PART-038〜041) が無い"
+oracle_candidate = "両経路の <U> / N の差が統計誤差内"
+limitation = ""
