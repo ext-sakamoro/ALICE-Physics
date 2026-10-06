@@ -326,9 +326,8 @@ impl TriMesh {
 
         for tri_idx in candidates {
             let tri = &self.triangles[tri_idx as usize];
-            // Find closest point on capsule segment to closest point on triangle
-            let tri_cp = closest_point_segment_triangle(a, b, tri);
-            let seg_cp = closest_point_on_segment(a, b, tri_cp);
+            // the exact closest pair between the capsule's segment and the triangle
+            let (seg_cp, tri_cp) = closest_points_segment_triangle(a, b, tri);
             let delta = seg_cp - tri_cp;
             let dist_sq = delta.length_squared();
             let r_sq = radius * radius;
@@ -580,38 +579,108 @@ fn ray_to_aabb(ray: &Ray, max_t: Fix128) -> AABB {
     )
 }
 
-/// Closest point on a line segment to a target point
-fn closest_point_on_segment(a: Vec3Fix, b: Vec3Fix, p: Vec3Fix) -> Vec3Fix {
-    let ab = b - a;
-    let len_sq = ab.length_squared();
-    if len_sq.is_zero() {
-        return a;
+/// Closest pair `(point on segment, point on triangle)` between the segment
+/// `seg_a`–`seg_b` and `tri`, exact: zero distance where the segment crosses
+/// the triangle, otherwise the nearest of the two endpoints against the
+/// triangle and the segment against each of the three edges (the distance
+/// between a segment and a triangle that do not cross is attained at one of
+/// these). Ties keep the first candidate in that order.
+fn closest_points_segment_triangle(
+    seg_a: Vec3Fix,
+    seg_b: Vec3Fix,
+    tri: &Triangle,
+) -> (Vec3Fix, Vec3Fix) {
+    if let Some(p) = segment_crosses_triangle(seg_a, seg_b, tri) {
+        return (p, p);
     }
-    let t = (p - a).dot(ab) / len_sq;
-    let t = if t < Fix128::ZERO {
-        Fix128::ZERO
-    } else if t > Fix128::ONE {
-        Fix128::ONE
-    } else {
-        t
+    let mut best = (seg_a, tri.closest_point(seg_a));
+    let mut best_d = (best.0 - best.1).length_squared();
+    let mut consider = |pair: (Vec3Fix, Vec3Fix)| {
+        let d = (pair.0 - pair.1).length_squared();
+        if d < best_d {
+            best_d = d;
+            best = pair;
+        }
     };
-    a + ab * t
+    consider((seg_b, tri.closest_point(seg_b)));
+    for (e0, e1) in [(tri.v0, tri.v1), (tri.v1, tri.v2), (tri.v2, tri.v0)] {
+        consider(closest_points_segment_segment(seg_a, seg_b, e0, e1));
+    }
+    best
 }
 
-/// Closest point on triangle to a segment — iteratively refines the closest pair
-/// between the segment and triangle for better convergence.
-fn closest_point_segment_triangle(seg_a: Vec3Fix, seg_b: Vec3Fix, tri: &Triangle) -> Vec3Fix {
-    // Start from segment midpoint
-    let mid = (seg_a + seg_b) * Fix128::from_ratio(1, 2);
-    let mut tri_cp = tri.closest_point(mid);
-
-    // Iterate: segment→triangle→segment→triangle (2 refinement passes)
-    for _ in 0..2 {
-        let seg_cp = closest_point_on_segment(seg_a, seg_b, tri_cp);
-        tri_cp = tri.closest_point(seg_cp);
+/// The point where the segment `a`–`b` crosses the triangle, if it does
+/// (Moller-Trumbore with the unnormalised direction, parameter in `[0, 1]`).
+fn segment_crosses_triangle(a: Vec3Fix, b: Vec3Fix, tri: &Triangle) -> Option<Vec3Fix> {
+    let d = b - a;
+    let e1 = tri.v1 - tri.v0;
+    let e2 = tri.v2 - tri.v0;
+    let h = d.cross(e2);
+    let det = e1.dot(h);
+    if det.is_zero() {
+        return None;
     }
+    let inv = Fix128::ONE / det;
+    let s = a - tri.v0;
+    let u = s.dot(h) * inv;
+    if u < Fix128::ZERO || u > Fix128::ONE {
+        return None;
+    }
+    let q = s.cross(e1);
+    let v = d.dot(q) * inv;
+    if v < Fix128::ZERO || u + v > Fix128::ONE {
+        return None;
+    }
+    let t = e2.dot(q) * inv;
+    if t < Fix128::ZERO || t > Fix128::ONE {
+        return None;
+    }
+    Some(a + d * t)
+}
 
-    tri_cp
+/// Closest points between the segments `p1`–`q1` and `p2`–`q2` (Ericson,
+/// Real-Time Collision Detection 5.1.9), each parameter clamped to `[0, 1]`.
+fn closest_points_segment_segment(
+    p1: Vec3Fix,
+    q1: Vec3Fix,
+    p2: Vec3Fix,
+    q2: Vec3Fix,
+) -> (Vec3Fix, Vec3Fix) {
+    let clamp01 = |x: Fix128| x.max(Fix128::ZERO).min(Fix128::ONE);
+    let d1 = q1 - p1;
+    let d2 = q2 - p2;
+    let r = p1 - p2;
+    let a = d1.dot(d1);
+    let e = d2.dot(d2);
+    let f = d2.dot(r);
+    let (s, t) = if a.is_zero() && e.is_zero() {
+        (Fix128::ZERO, Fix128::ZERO)
+    } else if a.is_zero() {
+        (Fix128::ZERO, clamp01(f / e))
+    } else {
+        let c = d1.dot(r);
+        if e.is_zero() {
+            (clamp01(-c / a), Fix128::ZERO)
+        } else {
+            let b = d1.dot(d2);
+            let denom = a * e - b * b;
+            let mut s = if denom.is_zero() {
+                Fix128::ZERO
+            } else {
+                clamp01((b * f - c * e) / denom)
+            };
+            let mut t = (b * s + f) / e;
+            if t < Fix128::ZERO {
+                t = Fix128::ZERO;
+                s = clamp01(-c / a);
+            } else if t > Fix128::ONE {
+                t = Fix128::ONE;
+                s = clamp01((b - c) / a);
+            }
+            (s, t)
+        }
+    };
+    (p1 + d1 * s, p2 + d2 * t)
 }
 
 #[inline]
@@ -637,6 +706,23 @@ fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn segment_segment_closest_points_clamp_both_ends() {
+        let v = |x: i64, y: i64, z: i64| Vec3Fix::from_int(x, y, z);
+        // the lines meet at (4, 0, 0), past the second segment's end: t clamps to
+        // 1 at (3, 1, 0) and s is re-solved for that point, (3, 0, 0)
+        let (a, b) = closest_points_segment_segment(v(0, 0, 0), v(4, 0, 0), v(1, 3, 0), v(3, 1, 0));
+        assert_eq!((a, b), (v(3, 0, 0), v(3, 1, 0)));
+        // crossing skew segments: the common perpendicular, (1, 0, 0) and (1, 0, 2)
+        let (a, b) =
+            closest_points_segment_segment(v(0, 0, 0), v(2, 0, 0), v(1, -1, 2), v(1, 1, 2));
+        assert_eq!((a, b), (v(1, 0, 0), v(1, 0, 2)));
+        // the first segment ends before the foot (s clamps to 1), then t follows
+        let (a, b) =
+            closest_points_segment_segment(v(0, 0, 0), v(1, 0, 0), v(3, -1, 0), v(3, 1, 0));
+        assert_eq!((a, b), (v(1, 0, 0), v(3, 0, 0)));
+    }
 
     fn make_ground_mesh() -> TriMesh {
         // Simple ground plane as two triangles

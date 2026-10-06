@@ -721,7 +721,7 @@ fn seg_tri_dist_sampled(a: Vec3Fix, b: Vec3Fix, t: &Triangle, n: usize) -> f64 {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-014: 線分-三角形の最近点を 2 回の交互射影で近似するため距離を過大評価する (250 配置中 63 件で標本より悪い、最悪 +0.55)"]
+// AUD-A-S4W2-014
 fn collide_capsule_depth_equals_radius_minus_segment_triangle_distance() {
     let mut r = Rng(0xCA95_0000_0000_0001);
     let mut contacts = 0;
@@ -1021,7 +1021,7 @@ fn collide_aabb_slanted_triangle_clipping_a_box_corner_is_a_contact() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-014: 整数例 (線分 (6,8,-7)-(-5,0,5)、三角形 (6,2,-2) (-5,-2,5) (6,4,5)、半径 2.5) で真の距離 1.756 < r なのに接触なし (実装の近似距離 3.377)"]
+// AUD-A-S4W2-014
 fn collide_capsule_integer_example_with_oblique_segment_is_a_contact() {
     // 手計算の例: 三角形 (6,2,-2) (-5,-2,5) (6,4,5)、線分 (6,8,-7)-(-5,0,5)、半径 2.5
     // 線分上の標本 3000 点の最小距離は 1.7558 (< 2.5) だが、実装の近似距離は 3.377
@@ -1125,7 +1125,13 @@ fn collide_capsule_parallel_above_a_plane_has_closed_form_contact() {
         .collide_capsule(v3(-16, 8, 0), v3(16, 8, 0), Fix128::ONE)
         .expect("contact");
     assert!((ct.depth.to_f64() - 0.5).abs() < 1e-9);
-    assert_eq!(f(ct.normal), [0.0, 1.0, 0.0]);
+    // the contact point projects a segment end onto the triangle, a Fix128
+    // division with non-dyadic barycentric weights: exact to about 1e-18
+    let n = f(ct.normal);
+    assert!(
+        n[0].abs() < 1e-15 && (n[1] - 1.0).abs() < 1e-15 && n[2].abs() < 1e-15,
+        "{n:?}"
+    );
     let (pa, pb) = (f(ct.point_a), f(ct.point_b));
     assert!((pa[1] + 0.5).abs() < 1e-9 && pb[1].abs() < 1e-9);
     assert!((pa[0] - pb[0]).abs() < 1e-9 && (pa[2] - pb[2]).abs() < 1e-9);
