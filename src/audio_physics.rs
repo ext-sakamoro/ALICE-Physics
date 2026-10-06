@@ -316,6 +316,26 @@ impl AudioGenerator {
         }
     }
 
+    /// `speed / max_velocity` clamped to `[0, 1]`; a `max_velocity <= 0` puts
+    /// every positive speed above the maximum (ratio 1), as the field's doc
+    /// reads, rather than dividing by zero.
+    fn speed_ratio(&self, speed: Fix128) -> Fix128 {
+        let max = self.config.max_velocity;
+        if max <= Fix128::ZERO {
+            return if speed > Fix128::ZERO {
+                Fix128::ONE
+            } else {
+                Fix128::ZERO
+            };
+        }
+        let ratio = speed / max;
+        if ratio > Fix128::ONE {
+            Fix128::ONE
+        } else {
+            ratio
+        }
+    }
+
     /// Volume: impact velocity mapped to 0..1 with sqrt curve
     fn compute_volume(
         &self,
@@ -323,13 +343,7 @@ impl AudioGenerator {
         _mat_a: &AudioMaterial,
         _mat_b: &AudioMaterial,
     ) -> Fix128 {
-        let normalized = speed / self.config.max_velocity;
-        let clamped = if normalized > Fix128::ONE {
-            Fix128::ONE
-        } else {
-            normalized
-        };
-        clamped.sqrt()
+        self.speed_ratio(speed).sqrt()
     }
 
     /// Pitch: higher velocity = slightly higher pitch, adjusted by material density
@@ -375,12 +389,7 @@ impl AudioGenerator {
         mat_b: &AudioMaterial,
     ) -> Fix128 {
         let avg_hardness = (mat_a.hardness + mat_b.hardness).half();
-        let speed_factor = speed / self.config.max_velocity;
-        let speed_factor = if speed_factor > Fix128::ONE {
-            Fix128::ONE
-        } else {
-            speed_factor
-        };
+        let speed_factor = self.speed_ratio(speed);
 
         avg_hardness * (Fix128::from_ratio(1, 2) + speed_factor.half())
     }
@@ -393,12 +402,7 @@ impl AudioGenerator {
         mat_b: &AudioMaterial,
     ) -> Fix128 {
         let avg_hardness = (mat_a.hardness + mat_b.hardness).half();
-        let speed_factor = tangential_speed / self.config.max_velocity;
-        let speed_factor = if speed_factor > Fix128::ONE {
-            Fix128::ONE
-        } else {
-            speed_factor
-        };
+        let speed_factor = self.speed_ratio(tangential_speed);
 
         speed_factor * avg_hardness
     }

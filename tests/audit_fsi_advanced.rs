@@ -202,7 +202,7 @@ fn buoyancy_archimedes_closed_form() {
 /// Y component is conventionally negative (-9.81), and that flips the
 /// buoyancy downward: F_b(g = -10) = -rho V 10 instead of +rho V 10.
 #[test]
-#[ignore = "known defect: AUD-A-S4W1-002: buoyancy_force doc says rho*V*|g| but g=-10 gives F_y=-10000 (downward); no abs"]
+// AUD-A-S4W1-002
 fn buoyancy_uses_gravity_magnitude() {
     let s = smp(Vec3Fix::default(), Vec3Fix::default(), 0.0, 1.0);
     let up = buoyancy_force(&s, fx(1000.0), fx(10.0)).y.to_f64();

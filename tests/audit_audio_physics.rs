@@ -240,7 +240,7 @@ fn event_position_is_the_contact_point_on_body_a() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-008: with config.max_velocity = 0 every speed is 'above max velocity' (doc: velocities above this = max volume) but speed / 0 is ZERO in Fix128, so volume is 0 and every event is silently discarded by the min_volume gate"]
+// AUD-A-S3W2-008
 fn zero_max_velocity_saturates_volume_instead_of_silencing() {
     let cfg = AudioConfig {
         max_velocity: Fix128::ZERO,

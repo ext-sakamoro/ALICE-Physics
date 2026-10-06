@@ -98,7 +98,8 @@ pub fn buoyancy_force(
     fluid_density: Fix128,
     gravity_m_per_s2: Fix128,
 ) -> Vec3Fix {
-    let mag = fluid_density * sample.volume_m3 * gravity_m_per_s2;
+    // the magnitude of g: a gravity component of -9.81 still lifts
+    let mag = fluid_density * sample.volume_m3 * gravity_m_per_s2.abs();
     Vec3Fix::new(Fix128::ZERO, mag, Fix128::ZERO)
 }
 

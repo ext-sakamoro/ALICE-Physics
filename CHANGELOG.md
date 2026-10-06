@@ -341,6 +341,8 @@ were introduced during that release window.
 - `joint::SpringJoint` の `stiffness` と `damping` が実質 `k / h` と `c / h` として効き、刻み幅で硬さが変わっていた (位置に `F · dt` を足していたため) XPBD の compliance `1/k` に直した また減衰を陽的に足していたため、吊るした body の平衡の伸びが `m g / k` より `c g h / k` だけ短く、`c h / m` が大きいと不安定だった Macklin et al. 2016 eq. 26 の減衰付き XPBD (substep ごとの後退 Euler) に直し、平衡の伸びは `m g / k` に一致する
 
 - `molecular_dynamics::MdParticipant` と `crowd_force::CrowdParticipant` が範囲外を検出せずに wrap した値で進んでいた 分子動力学は質量 `2⁻⁶²` で kick `F h/(2m)` が範囲外になっても `Ok` を返し、群衆は `v = 2⁶¹`・`τ = 2⁻²⁴` で駆動力 `m (v0 ê − v)/τ` が wrap しても `Ok` を返していた 両参加者は `try_step` で進むようにし、範囲外は `ParticipantFault::OutOfRange` (状態は不変) を返す 分子動力学の対が `r = 2⁻⁴⁰` まで近づいた時も、一致した粒子 (`InvalidState`) でなく `OutOfRange` を返す
+- `fsi_advanced::buoyancy_force`: doc は `ρ · V · |g|` を +Y だが重力を符号つきで掛けていたので、慣例の負の g (−10) で浮力が下向きになった g の大きさを使う (AUD-A-S4W1-002)
+- `audio_physics`: `max_velocity = 0` (doc では「これを超える速さは最大音量」) で速さ / 0 が 0 になり、全ての音が最小音量の閾値で捨てられていた `max_velocity ≤ 0` では正の速さを全て最大とみなす (volume・brightness・roughness で共通) (AUD-A-S3W2-008)
 - `box_collider::OrientedBox` / `wedge::Wedge` / `ellipsoid::Ellipsoid`: 姿勢の quaternion を正規化せずに使っていたので、単位でない回転 ((0,0,0,2) 等) が形を |q|² 倍に拡大した (箱の角 (1,1,1) が (4,4,4)) 単位でない時だけ正規化する (単位の時は bit 単位で不変) (AUD-A-S5W2-018, AUD-A-S5W2-019, AUD-A-S5W2-020)
 - `torus::Torus`: 負の minor radius を受け付け、support(+X) が最遠点でなく最近点 (R = 5, r = −1 で x = 4) を返していた 半径は全 method で絶対値として読む (AUD-A-S5W3-005)
 - `linear_elastic_fem::mark_bulk`: doc は「total の θ 以上を運ぶ最小の集合」だが、`θ · total` を切り捨てていたので、数 ulp の indicator では θ 未満で止まった (`[5, 5]` ulp・θ = 0.55 で 1 要素 = 50 %) 目標を 2⁻⁶⁴ の格子へ切り上げる (割り切れる時は変わらない) (AUD-A-S1W3-002)
