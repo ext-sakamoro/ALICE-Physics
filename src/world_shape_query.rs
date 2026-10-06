@@ -166,6 +166,18 @@ pub struct WorldShapeHit {
     pub body: Option<usize>,
 }
 
+/// One collider a capsule overlaps (see [`PhysicsWorld::capsule_penetrations`]).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Penetration {
+    /// The collider.
+    pub(crate) target: RayTarget,
+    /// How far the capsule reaches into it, `r −` the segment's distance (`> 0`).
+    pub(crate) depth: Fix128,
+    /// Unit normal of the collider at the nearest point, toward the segment:
+    /// moving the capsule by `depth · normal` makes it touch.
+    pub(crate) normal: Vec3Fix,
+}
+
 // ============================================================================
 // Distances
 // ============================================================================
@@ -1803,6 +1815,42 @@ impl PhysicsWorld {
         });
         out.sort_unstable();
         out
+    }
+
+    /// The colliders the capsule (segment `a`–`b` grown by `r`) overlaps, each
+    /// with its penetration along the normal at the segment point nearest it,
+    /// sorted by target (the pieces of one target, such as compound children, in
+    /// their order); `None` when the segment itself meets a solid (no distance, so
+    /// no push-out direction). Used by [`PhysicsWorld::move_character`] to push a capsule out.
+    pub(crate) fn capsule_penetrations(
+        &self,
+        a: Vec3Fix,
+        b: Vec3Fix,
+        r: Fix128,
+        filter: &RayFilter,
+    ) -> Option<Vec<Penetration>> {
+        let query = core_box(a, b, r);
+        let cap = r + r + Fix128::ONE;
+        let mut out = Vec::new();
+        let mut core_inside = false;
+        for_each_target(self, filter, &query, |target, _, pieces| {
+            for piece in pieces {
+                match piece.dist(a, b, cap) {
+                    Dist::Inside => core_inside = true,
+                    Dist::Outside { dist, normal, .. } if dist < r => out.push(Penetration {
+                        target,
+                        depth: r - dist,
+                        normal,
+                    }),
+                    _ => {}
+                }
+            }
+        });
+        if core_inside {
+            return None;
+        }
+        out.sort_by_key(|x| x.target);
+        Some(out)
     }
 
     /// The nearest hit of the core `a`–`b` grown by `r > 0` (or `r = 0` with
