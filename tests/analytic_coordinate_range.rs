@@ -539,6 +539,58 @@ fn position_wrap_at_2_pow_63_raises_the_overflow_flag() {
     }
 }
 
+/// 何もしない参加者 (範囲外の検出が参加者の substep の後で fault になるかを見る)
+#[cfg(feature = "std")]
+struct Quiet;
+
+#[cfg(feature = "std")]
+impl alice_physics::world_participant::Participant for Quiet {
+    fn kind(&self) -> alice_physics::world_participant::ParticipantKind {
+        alice_physics::world_participant::ParticipantKind::new(1)
+    }
+    fn substep(
+        &mut self,
+        _: &mut alice_physics::world_participant::SubstepCtx<'_>,
+        _: Fix128,
+    ) -> Result<(), alice_physics::world_participant::ParticipantFault> {
+        Ok(())
+    }
+    fn observe(&self, _: &mut alice_physics::world_participant::ObservationSink) {}
+    fn write_state(&self, _: &mut Vec<u8>) {}
+    fn check_state(&self, _: &[u8]) -> Result<(), alice_physics::world_participant::StateError> {
+        Ok(())
+    }
+    fn read_state(&mut self, _: &[u8]) {}
+}
+
+/// 参加者を登録した world でも、TGS の範囲外はその step のうちに
+/// `WorldFault::RigidOverflow` として記録される (参加者がいる時の TGS は substep
+/// ごとに複製を戻すので、印もその場で world に畳む必要がある)
+#[cfg(feature = "std")]
+#[test]
+fn tgs_overflow_with_a_participant_is_recorded_as_a_fault() {
+    use alice_physics::world_participant::WorldFault;
+    for backend in [SolverBackend::default(), SolverBackend::Tgs] {
+        let mut w = washing_world(backend);
+        w.add_participant(Box::new(Quiet)).expect("登録できる");
+        let dt = Fix128::from_int(1 << 20);
+        let mut faulted = false;
+        for _ in 0..4 {
+            let _ = w.try_step(dt);
+            if w.fault().is_some() {
+                faulted = true;
+                break;
+            }
+        }
+        assert!(faulted, "{backend:?}: fault が記録されない");
+        assert_eq!(w.fault(), Some(WorldFault::RigidOverflow), "{backend:?}");
+        assert!(
+            w.get_body(0).unwrap().position.y <= Fix128::ZERO,
+            "{backend:?}: y が正"
+        );
+    }
+}
+
 fn washing_world(backend: SolverBackend) -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::new(Fix128::ZERO, -Fix128::from_int(1 << 30), Fix128::ZERO),
