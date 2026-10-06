@@ -524,16 +524,18 @@ fn sweep_sphere_max_t_zero_before_contact_misses() {
 }
 
 /// oracle: two unit spheres already coincident at the start. Expanded
-/// sphere center (0,0,0) r=2 (1+1), ray from (0,0,0): oc=(0,0,0), b=0,
-/// c=-4, disc=4, sqrt=2; near root -2 rejected (t<0), far root t=2 used
-/// (the far separation time, not an immediate t=0 contact).
+/// sphere center (0,0,0) r=2 (1+1), ray from (0,0,0): oc=(0,0,0). The sweep
+/// starts in the deepest overlap, so it is an initial overlap at t=0 with the
+/// fallback normal -d=(-1,0,0); the exit root t=2 is never reported (the
+/// sphere-cast convention of AUD-A-S3W3-007 / 013).
 #[test]
-fn sweep_sphere_already_overlapping_uses_far_separation_time() {
+fn sweep_sphere_already_overlapping_is_initial_overlap_at_t0() {
     let a = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
     let b = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
-    let hit = sweep_sphere(&a, Vec3Fix::UNIT_X, &b, r(100)).expect("must still report a hit");
-    assert_eq!(hit.t, r(2), "far root, not t=0");
-    assert_eq!(hit.point, v(2, 0, 0));
+    let hit = sweep_sphere(&a, Vec3Fix::UNIT_X, &b, r(100)).expect("must report the overlap");
+    assert_eq!(hit.t, Fix128::ZERO, "initial overlap, not the exit t=2");
+    assert_eq!(hit.point, v(0, 0, 0));
+    assert_eq!(hit.normal, v(-1, 0, 0));
 }
 
 /// oracle: zero direction. `Ray::new`'s documented fallback for a

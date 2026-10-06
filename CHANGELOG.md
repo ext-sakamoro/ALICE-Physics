@@ -242,6 +242,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- **Behavior change:** `raycast::sweep_sphere` は、重なった状態から始まる sweep を `sphere_cast` と同じく初期の重なりとして扱う (深くなる向きは `t = 0`、点は開始中心、法線は相手中心から開始中心への向き、出る向きは hit なし、従来は遠い側の出口を返していた) また `sphere_cast` / `CharacterController::move_and_slide` / `sweep_sphere` は中心が一致した開始を `t = 0`・法線 `-direction` の重なりとして返す (従来は hit なし) 球の cast の規約で、光線の raycast (`ray_sphere` / `raycast_spheres` / `PhysicsWorld::raycast` / wasm の `raycast`) は内側から始まる光線に遠い側の出口を返す従来の規約のまま (AUD-A-S3W3-007 / AUD-A-S3W3-013 と同型)
 - `math::powf_pos` の整数指数部の上限 64 を撤廃した (64 以下の結果は不変) (AUD-A-S1W5-021)
 - `compressible::{riemann_invariants, stagnation_pressure_ratio}` が γ = 1 の等温極限を扱う (AUD-A-S1W5-007)
 - `coupled_iteration` / `creep_longterm` / `non_newtonian` / `wind_zone` / `anisotropic_friction` で二乗・冪の途中に `Fix128` が wrap していた (AUD-A-S3W3-011 / S2W1-003 / S2W2-002 / S3W3-001 / S2W3-002)
