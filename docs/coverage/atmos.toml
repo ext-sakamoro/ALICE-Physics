@@ -1,0 +1,1553 @@
+# Atmospheric dynamics, cloud physics and tropical cyclones (ATMOS) coverage of
+# ALICE-Physics, against an external reference frame.
+#
+# What this table is: every capability that the standard references for the
+# physics side of numerical weather prediction expect, together with the
+# verification of deliberate interventions (cloud seeding, sea-surface cooling),
+# one [[item]] per capability, with what the crate has today. The reference
+# frame: Rogers-Yau, A Short Course in Cloud Physics; Pruppacher-Klett,
+# Microphysics of Clouds and Precipitation; Holton, An Introduction to Dynamic
+# Meteorology; Emanuel, Atmospheric Convection, and the papers on the potential
+# intensity of tropical cyclones (Emanuel 1986, Bister-Emanuel 1998);
+# Wallace-Hobbs, Atmospheric Science; the physics feature lists of WRF, CM1 and
+# ICON; and standard benchmarks (the 1-D kinematic Kessler warm-rain column, the
+# Weisman-Klemp supercell, the Rotunno-Emanuel axisymmetric tropical cyclone,
+# Held-Suarez, the resting atmosphere over steep terrain, the closed-form
+# potential intensity). The axes and items come from that frame, not from the
+# modules that exist. The rows are written by hand.
+#
+# The crate has no atmospheric model: no prognostic water species, no
+# microphysics, no rotating frame, no radiation scheme and no tropical-cyclone
+# code. The only implemented row is a scene composed from the incompressible
+# Boussinesq flow solver. The table is a statement of the scope, so that the
+# laws can be placed when they are written.
+#
+# Here: the atmospheric equation sets and their balances, moist thermodynamics
+# beyond the closed forms of the environment table, aerosol activation, warm and
+# ice microphysics, convection and its parameterisation, the surface fluxes and
+# radiation as they drive weather, tropical cyclones and their coupling to the
+# ocean mixed layer, the verification of interventions, the seeded ensembles,
+# the numerics that are specific to atmospheric models, and the benchmarks.
+#
+# Boundary with the environment table (ENV): ENV keeps the closed forms and
+# fields of the environment. Rows of ENV that fall inside this scope are not
+# repeated at the same granularity; this table cites them and adds only finer
+# rows (each such row names its ENV parent in `evidence`) and capabilities ENV
+# does not list:
+#   - moist air: COV-ENV-014 to 018 (saturation vapour pressure, humidity
+#     measures, virtual temperature, potential temperature and the dry lapse
+#     rate, the moist lapse rate and the lifting condensation level); parcel
+#     theory COV-ENV-019 (equivalent potential temperature, CAPE / CIN); static
+#     stability COV-ENV-020 (N^2)
+#   - dynamics: COV-ENV-021 (pressure gradient and Coriolis in a rotating Earth
+#     frame; the rotating frame of the flow solver is COV-CFD-067, of an orbit
+#     COV-ORBIT-082), COV-ENV-022 (geostrophic and gradient wind), COV-ENV-023
+#     (thermal wind), COV-ENV-024 (Ekman spiral), COV-ENV-025 (primitive
+#     equations and a nonhydrostatic core, one row there; split here)
+#   - weather: COV-ENV-063 (raindrop terminal velocity), COV-ENV-064 (drop-size
+#     spectrum and rain rate), COV-ENV-065 (snowfall), COV-ENV-066 (cloud
+#     microphysics in one row; the microphysics axes here are its children),
+#     COV-ENV-067 (cloud formation and cover), COV-ENV-068 (fog and visibility),
+#     COV-ENV-070 (precipitation particles in the wind), COV-ENV-071 (solar
+#     position and clear-sky irradiance)
+#   - boundary layer: COV-ENV-026 to 031 (wind profiles, Monin-Obukhov,
+#     stability classes, boundary-layer height); vortex wind fields
+#     COV-ENV-049; wind stress on the sea COV-ENV-092
+# Boundary with the other tables:
+#   - the numerical solution of the flow (pressure projection, advection
+#     schemes, LES closures, Boussinesq buoyancy of the incompressible solver):
+#     the CFD table (COV-CFD-017, 043, 059, 060, 065, 106); compressible flow and
+#     shocks: the SHOCK table; general operator splitting: COV-NUM-056
+#   - heat of phase change in a solid / liquid / gas cell, conduction and
+#     engineering radiation (blackbody, view factors, participating media as a
+#     heat-transfer solver): the THERM table (COV-THERM-059, 066, 067, 068, 069)
+#   - evaporation and condensation at a resolved liquid-gas interface: the
+#     MULTIPHASE table (COV-MULTIPHASE-054, 061); here only the sub-grid
+#     condensate of a cloud (no interface is resolved)
+#   - aerosol chemistry and soot: the CHEM table (COV-CHEM-050); here the
+#     aerosol enters only as cloud condensation and ice nuclei
+#   - radiance transport in a scattering medium as optics: the OPTICS table
+#     (COV-OPTICS-062, 065, 066)
+#   - seeded generators, snapshots, bit-identical replay: the ENGINE and NUM
+#     tables (COV-ENGINE-001, 012, 016, COV-NUM-073); here the use of them for an
+#     atmospheric state; state estimation filters: COV-SENSE-050
+# Ensembles are sets of initial states (and of physics perturbations) built
+# deterministically from a seed and a member index; the rows here do not use the
+# language of estimation.
+#
+# Search notes: "cloud" (src/cfd_solver.rs particle cloud), "vorticity"
+# (vorticity confinement of the particle fluid), "seeding" (particle reseeding,
+# rank seeding in the grid tests), "collection" (streamline buffers and other
+# containers), "activation" (Arrhenius activation energy, network activation),
+# "freezing" / "hail" (frozen bodies, other words), "ensemble" (the NVE ensemble
+# of molecular dynamics), "angular momentum" (orbits), "Rayleigh damping"
+# (structural damping, src/damping_rayleigh.rs) and "latent" / "condensation"
+# (the phase-change effect layer, COV-THERM-069) match other meanings only. Rows
+# below that say "src 0 件" were checked word by word.
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented (or composed from existing parts), no such
+#                          test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`).
+#
+# keys: id (COV-ATMOS-NNN) / axis / item / source (book, chapter, standard or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed. Chapter and section
+# numbers of the sources have not been checked against the originals. Ids of
+# other tables were checked against those tables when this table was written.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-ATMOS-001"
+axis = "equations"
+item = "hydrostatic primitive equations (momentum with the hydrostatic approximation, continuity, thermodynamic and moisture equations)"
+source = "Holton ch.3-4; ICON / IFS hydrostatic cores"
+status = "missing"
+evidence = "COV-ENV-025 の子 大気の方程式系は src に無い (推測: primitive / hydrostatic で当たるのは src/cfd_solver.rs の静水圧と固体の静水圧成分だけ)"
+oracle_candidate = "静止大気が静水圧平衡のまま留まる (流速 0 を保つ)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-002"
+axis = "equations"
+item = "nonhydrostatic fully compressible equations (prognostic w, pressure from the equation of state)"
+source = "Klemp-Wilhelmson 1978; WRF ARW (Skamarock et al.) ch.2; CM1"
+status = "missing"
+evidence = "COV-ENV-025 の子 流れ solver は非圧縮の MAC 格子 (src/cfd_solver.rs::CfdSolver) で、圧縮性は 1-D の衝撃の表"
+oracle_candidate = "音波と重力波の分散関係を線形解と突合"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-003"
+axis = "equations"
+item = "anelastic approximation (reference-state density in the continuity equation; Ogura-Phillips / Lipps-Hemler)"
+source = "Ogura-Phillips 1962; Lipps-Hemler 1982; Durran, Numerical Methods ch.8"
+status = "missing"
+evidence = "COV-ENV-025 の子 src 0 件 (anelastic) 密度は一定 (COV-CFD-065 missing)"
+oracle_candidate = "等温基本場での重力波の振動数を閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-004"
+axis = "equations"
+item = "pseudo-incompressible approximation (Durran)"
+source = "Durran 1989"
+status = "missing"
+evidence = "COV-ENV-025 の子 src 0 件 (推測)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-005"
+axis = "equations"
+item = "Boussinesq equations with a stratified background (buoyancy from the potential-temperature perturbation about a profile theta_0(z))"
+source = "Holton ch.2.8; Vallis, Atmospheric and Oceanic Fluid Dynamics ch.2"
+status = "missing"
+evidence = "流れ solver の Boussinesq は一様な基準温度 1 つ (src/cfd_solver.rs::CfdSolver の reference_temp_k、COV-CFD-060) で、高さで変わる基本場を持たない 浮力は鉛直 (gravity.y) の面にだけ入る (src/cfd_solver.rs::apply_body_forces)"
+oracle_candidate = "一様成層 N で内部重力波の分散関係 omega = N k_h / |k|"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-006"
+axis = "equations"
+item = "rotating shallow-water equations (f-plane / beta-plane, height and velocity)"
+source = "Vallis ch.3; Williamson et al. 1992"
+status = "missing"
+evidence = "src 0 件 (推測) 回転の無い浅水方程式は COV-ENV-090 (河川・洪水・津波) で missing"
+oracle_candidate = "地衡調節の定常解 (Rossby 変形半径の幅)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-007"
+axis = "equations"
+item = "prognostic moisture: water vapour and condensate species advected with sources and sinks (q_v, q_c, q_r, q_i, q_s, q_g)"
+source = "WRF ARW ch.2.2; Kessler 1969"
+status = "missing"
+evidence = "COV-ENV-066 の子 流れ solver が運ぶ scalar は温度と level set だけ (src/cfd_solver.rs::CfdSolver)"
+oracle_candidate = "源項 0 で全水量が保存されること"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-008"
+axis = "equations"
+item = "Exner function and the potential temperature as the prognostic thermodynamic variable"
+source = "WRF ARW ch.2; CM1 documentation"
+status = "missing"
+evidence = "COV-ENV-017 (温位の閉形式) の子 src 0 件 (exner)"
+oracle_candidate = "Exner と theta から p, T を戻す往復が恒等"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-009"
+axis = "equations"
+item = "vertical coordinates: height, pressure, terrain-following sigma / hybrid, isentropic"
+source = "Holton ch.3.2; Kasahara 1974; WRF hybrid eta"
+status = "missing"
+evidence = "COV-ENV-025 の子 src 0 件 (sigma / eta / terrain-following)"
+oracle_candidate = "地形上の静止大気で気圧傾度誤差が出ないこと (COV-ATMOS-138)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-010"
+axis = "equations"
+item = "global grids on the sphere: latitude-longitude with polar filtering, cubed sphere, icosahedral-triangular (ICON)"
+source = "Williamson 2007 (review); ICON documentation; Durran ch.6"
+status = "missing"
+evidence = "COV-ENV-025 の子 球面の地面と重力は軌道の表 (COV-ORBIT-088 から 091)、大気の格子は src 0 件"
+oracle_candidate = "球面上の固体回転流の移流 (Williamson test 1)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-011"
+axis = "rotation-balance"
+item = "f-plane and beta-plane approximations (Coriolis parameter f = 2 Omega sin(phi), beta = df/dy)"
+source = "Holton ch.4; Vallis ch.2"
+status = "missing"
+evidence = "COV-ENV-021 の子 src 0 件 (coriolis / beta)"
+oracle_candidate = "f(phi) の閉形式と 45 度での値"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-012"
+axis = "rotation-balance"
+item = "Rossby number, Ekman number and Burger number of a flow"
+source = "Holton ch.2.4; Vallis ch.2.8"
+status = "missing"
+evidence = "src 0 件 (rossby) 無次元数の表は熱の表 COV-THERM-047 に Re / Pr 等だけ"
+oracle_candidate = "定義からの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-013"
+axis = "rotation-balance"
+item = "Rossby radius of deformation (barotropic and baroclinic)"
+source = "Gill, Atmosphere-Ocean Dynamics ch.7; Vallis ch.3"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "L_R = N H / f の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-014"
+axis = "rotation-balance"
+item = "inertial oscillation (period 2 pi / f) of a parcel without pressure gradient"
+source = "Holton ch.3.2"
+status = "missing"
+evidence = "COV-ENV-021 の子 Coriolis が無いので組めない"
+oracle_candidate = "周期 2 pi / f、円軌道の半径 U / f"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-015"
+axis = "rotation-balance"
+item = "cyclostrophic balance (pressure gradient against centrifugal force, small-scale vortices)"
+source = "Holton ch.3.2"
+status = "missing"
+evidence = "COV-ENV-022 (地衡風・傾度風) の子 src 0 件 (cyclostroph)"
+oracle_candidate = "Rankine 渦の気圧低下の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-016"
+axis = "rotation-balance"
+item = "relative, absolute and potential vorticity (Ertel PV) diagnostics and PV conservation"
+source = "Holton ch.4; Hoskins-McIntyre-Robertson 1985"
+status = "missing"
+evidence = "src 0 件 (ertel / potential vorticity) vorticity は粒子流体の閉じ込め (src/fluid.rs::apply_vorticity_confinement) の別語義、流れ場の渦度の出力は COV-CFD-095 missing"
+oracle_candidate = "断熱・非粘性で PV が粒子に沿って保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-017"
+axis = "rotation-balance"
+item = "quasi-geostrophic equations (QG potential vorticity, omega equation)"
+source = "Holton ch.6; Vallis ch.5"
+status = "missing"
+evidence = "src 0 件 (quasi-geostroph)"
+oracle_candidate = "Eady モデルの最大成長率"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-018"
+axis = "rotation-balance"
+item = "Rossby waves on a beta-plane (dispersion relation, westward phase speed)"
+source = "Holton ch.7.7; Vallis ch.6"
+status = "missing"
+evidence = "src 0 件 (rossby)"
+oracle_candidate = "omega = -beta k / (k^2 + l^2) の分散関係"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-019"
+axis = "rotation-balance"
+item = "inertia-gravity waves (dispersion omega^2 = f^2 + N^2 k_h^2 / m^2)"
+source = "Holton ch.7.4; Gill ch.8"
+status = "missing"
+evidence = "COV-ENV-020 (N^2) の子 回転も成層の基本場も無い"
+oracle_candidate = "分散関係を数値の位相速度と突合"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-020"
+axis = "rotation-balance"
+item = "geostrophic adjustment of an initial height or pressure step (Rossby adjustment problem)"
+source = "Gill ch.7.2-7.3"
+status = "missing"
+evidence = "COV-ENV-022 の子 src 0 件"
+oracle_candidate = "最終定常状態の幅 = 変形半径、エネルギーの変換比 1/3 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-021"
+axis = "rotation-balance"
+item = "Ekman pumping (vertical velocity from the curl of the surface stress) in the atmosphere and the ocean"
+source = "Holton ch.5.4; Vallis ch.5.7"
+status = "missing"
+evidence = "COV-ENV-024 (Ekman spiral) と COV-ENV-092 (海面の風応力) の子 src 0 件 (ekman)"
+oracle_candidate = "w_E = curl(tau) / (rho f) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-022"
+axis = "rotation-balance"
+item = "baroclinic instability (Eady and Charney models, growth rate and wavelength)"
+source = "Holton ch.8; Vallis ch.9"
+status = "missing"
+evidence = "COV-ENV-023 (温度風) の子 src 0 件 (baroclinic)"
+oracle_candidate = "Eady の最大成長率 0.31 f U_z / N (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-023"
+axis = "thermodynamics"
+item = "dry static energy and moist static energy (c_p T + g z + L_v q), frozen moist static energy"
+source = "Emanuel, Atmospheric Convection ch.4; Wallace-Hobbs ch.3"
+status = "missing"
+evidence = "src 0 件 (static energy) 凝結熱を含む閉形式の群は COV-ENV-014 から 019 で missing"
+oracle_candidate = "乾燥断熱上昇で dry static energy が保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-024"
+axis = "thermodynamics"
+item = "virtual potential temperature and density potential temperature (with condensate loading)"
+source = "Emanuel ch.4.3; Bryan-Fritsch 2002"
+status = "missing"
+evidence = "COV-ENV-016 (仮温度) と COV-ENV-017 (温位) の子 src 0 件"
+oracle_candidate = "凝結物 0 で theta_v と一致、loading で浮力が減る量"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-025"
+axis = "thermodynamics"
+item = "liquid-water potential temperature and total water as conserved variables (theta_l, q_t)"
+source = "Betts 1973; Emanuel ch.4"
+status = "missing"
+evidence = "COV-ENV-017 の子 src 0 件"
+oracle_candidate = "可逆な湿潤断熱で theta_l と q_t が保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-026"
+axis = "thermodynamics"
+item = "wet-bulb temperature and wet-bulb potential temperature"
+source = "Wallace-Hobbs ch.3.5; Emanuel ch.4"
+status = "missing"
+evidence = "COV-ENV-015 (湿度の量) の子 src 0 件 (wet-bulb)"
+oracle_candidate = "psychrometric 式の反復解を表値と突合 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-027"
+axis = "thermodynamics"
+item = "temperature dependence of the latent heats (Kirchhoff: L_v(T), L_s(T), L_f(T))"
+source = "Emanuel ch.4.1; Rogers-Yau ch.2"
+status = "missing"
+evidence = "COV-ENV-014 の子 潜熱は相変化の効果層の定数 (src/phase_change.rs::process_transitions、COV-THERM-069 partial) で温度依存を持たない"
+oracle_candidate = "dL/dT = c_pv - c_l の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-028"
+axis = "thermodynamics"
+item = "saturation equivalent potential temperature theta_e* and the reversible vs pseudo-adiabatic distinction"
+source = "Emanuel ch.4.5; Bolton 1980"
+status = "missing"
+evidence = "COV-ENV-019 (相当温位・CAPE / CIN) の子 src 0 件"
+oracle_candidate = "Bolton の近似式と数値積分の差 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-029"
+axis = "thermodynamics"
+item = "level of free convection and equilibrium level of a lifted parcel"
+source = "Emanuel ch.6; Wallace-Hobbs ch.3.6"
+status = "missing"
+evidence = "COV-ENV-019 の子 src 0 件"
+oracle_candidate = "解析的な気温の高さ変化の sounding で浮力 0 の高さを閉形式と突合"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-030"
+axis = "thermodynamics"
+item = "stability indices of a sounding (lifted index, K index, Showalter)"
+source = "Wallace-Hobbs ch.3.6; NWS sounding analysis"
+status = "missing"
+evidence = "COV-ENV-019 の子 src 0 件 (推測)"
+oracle_candidate = "定義どおりの手計算 sounding との一致"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-031"
+axis = "thermodynamics"
+item = "conditional and potential (convective) instability criteria (d theta_e / dz)"
+source = "Holton ch.2.9; Emanuel ch.6"
+status = "missing"
+evidence = "COV-ENV-020 (N^2) の子 湿潤の N^2 も無い"
+oracle_candidate = "theta_e が高さで減る層の判定"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-032"
+axis = "thermodynamics"
+item = "hypsometric equation with virtual temperature (layer thickness between pressure levels)"
+source = "Wallace-Hobbs ch.3.2; Holton ch.1"
+status = "missing"
+evidence = "COV-ENV-010 (任意の温度の高さ変化の静水圧積分) と COV-ENV-016 の子 ISA は層ごとの閉形式のみ (src/atmosphere.rs::Isa1976)"
+oracle_candidate = "等温層の厚さ R T_v / g ln(p1 / p2)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-033"
+axis = "thermodynamics"
+item = "moist entropy and the energy budget of a moist column (conservation diagnostics)"
+source = "Emanuel ch.4.6; Pauluis-Held 2002"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "閉じた柱で全エネルギーが保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-034"
+axis = "aerosol-activation"
+item = "Kelvin equation: equilibrium saturation ratio over a curved droplet"
+source = "Rogers-Yau ch.6.1; Pruppacher-Klett ch.6"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (kelvin / curvature) Kelvin は熱弾性の別語義 (COV-THERM-046) のみ"
+oracle_candidate = "S = exp(2 sigma / (rho_w R_v T r)) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-035"
+axis = "aerosol-activation"
+item = "Raoult solute effect and the Köhler curve of a solution droplet"
+source = "Köhler 1936; Rogers-Yau ch.6.2; Pruppacher-Klett ch.6"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (kohler / raoult)"
+oracle_candidate = "Köhler 曲線の極大"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-036"
+axis = "aerosol-activation"
+item = "critical supersaturation and critical radius for activation of a given dry particle"
+source = "Rogers-Yau ch.6.2; Seinfeld-Pandis ch.17"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (supersat、activation は Arrhenius の活性化エネルギーの別語義)"
+oracle_candidate = "s_c = sqrt(4 A^3 / (27 B)) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-037"
+axis = "aerosol-activation"
+item = "hygroscopicity parameter kappa-Köhler for mixed aerosol"
+source = "Petters-Kreidenweis 2007"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (推測)"
+oracle_candidate = "kappa = 0 で Kelvin 式に戻る"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-038"
+axis = "aerosol-activation"
+item = "CCN activation spectrum N = C s^k (Twomey) and activated number from an updraft"
+source = "Twomey 1959; Rogers-Yau ch.6.3"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (推測) エアロゾルの化学は CHEM の表"
+oracle_candidate = "上昇速度に対する活性化数の冪の閉形式 (Twomey の近似)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-039"
+axis = "aerosol-activation"
+item = "activation parameterisation for a modal aerosol (Abdul-Razzak-Ghan)"
+source = "Abdul-Razzak-Ghan 2000; WRF-Chem"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (推測)"
+oracle_candidate = "parcel model の活性化率との比較 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-040"
+axis = "aerosol-activation"
+item = "adiabatic parcel model with explicit droplet growth (supersaturation peak above cloud base)"
+source = "Rogers-Yau ch.7; Pruppacher-Klett ch.13"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (推測)"
+oracle_candidate = "最大過飽和度が上昇速度の冪に従うこと"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-041"
+axis = "warm-microphysics"
+item = "diffusional (condensation) growth of a droplet r dr/dt = G(T, p) S with vapour and heat diffusion terms"
+source = "Rogers-Yau ch.7.1; Pruppacher-Klett ch.13"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (推測) 界面を解く蒸発・凝縮は MULTIPHASE の表 (COV-MULTIPHASE-054)"
+oracle_candidate = "r^2 が時間に線形 (S 一定)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-042"
+axis = "warm-microphysics"
+item = "ventilation coefficient of a falling drop (enhanced vapour transfer)"
+source = "Pruppacher-Klett ch.13.2; Beard-Pruppacher 1971"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "Re = 0 で 1、相関式の値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-043"
+axis = "warm-microphysics"
+item = "evaporation of rain below cloud base"
+source = "Rogers-Yau ch.7; Kessler 1969"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (evapor)"
+oracle_candidate = "未飽和層を落ちる雨滴の蒸発距離"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-044"
+axis = "warm-microphysics"
+item = "saturation adjustment (condensation / evaporation of cloud water to exact saturation in a time step)"
+source = "Soong-Ogura 1973; WRF Kessler scheme"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "調整後の状態が飽和、theta_l と q_t が保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-045"
+axis = "warm-microphysics"
+item = "gravitational collision kernel with collision efficiencies (Hall, Long)"
+source = "Pruppacher-Klett ch.14-15; Hall 1980; Long 1974"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (collision kernel、collision は剛体の衝突の別語義)"
+oracle_candidate = "幾何断面 x 落下速度差の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-046"
+axis = "warm-microphysics"
+item = "continuous collection growth of a drop falling through cloud (Bowen)"
+source = "Rogers-Yau ch.8.2"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (accretion / collection)"
+oracle_candidate = "効率一定で dR/dt = E w_L V / (4 rho_w) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-047"
+axis = "warm-microphysics"
+item = "kinetic collection equation for the drop number density (Smoluchowski coalescence equation)"
+source = "Pruppacher-Klett ch.15.3; Smoluchowski 1916"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (smoluchowski / coalesc)"
+oracle_candidate = "Golovin 核の厳密解 (COV-ATMOS-132)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-048"
+axis = "warm-microphysics"
+item = "Kessler autoconversion (threshold on cloud water) and accretion of cloud by rain"
+source = "Kessler 1969; Klemp-Wilhelmson 1978"
+status = "missing"
+evidence = "COV-ENV-066 の子 (ENV-066 は Kessler の方式を 1 行にまとめている) src 0 件 (autoconver)"
+oracle_candidate = "閾値以下で 0、閾値超で線形の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-049"
+axis = "warm-microphysics"
+item = "physically based autoconversion and accretion (Khairoutdinov-Kogan, Seifert-Beheng)"
+source = "Khairoutdinov-Kogan 2000; Seifert-Beheng 2001"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "bin 方式の結果との比較 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-050"
+axis = "warm-microphysics"
+item = "one-moment and two-moment bulk warm-rain schemes (mass, and mass plus number)"
+source = "Kessler 1969; Morrison et al. 2005; WRF microphysics options"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "全水量の保存、数濃度が負にならない"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-051"
+axis = "warm-microphysics"
+item = "bin (spectral) microphysics on a mass-doubling grid (Berry-Reinhardt, Bott flux method)"
+source = "Berry-Reinhardt 1974; Bott 1998; Khain et al. 2015 (review)"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (推測)"
+oracle_candidate = "Golovin 核の厳密解との突合 (COV-ATMOS-132)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-052"
+axis = "warm-microphysics"
+item = "Lagrangian super-droplet method (each computational particle a multiplicity of identical drops, pair selection from a seeded deterministic sequence)"
+source = "Shima et al. 2009"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 粒子系 (src/particle.rs) は効果粒子で衝突併合を持たない"
+oracle_candidate = "同じ seed で bit 一致、Golovin 核の解との一致"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-053"
+axis = "warm-microphysics"
+item = "size spectrum of drops: gamma n(D) = N0 D^mu exp(-Lambda D), its moments and the slope from mass and number"
+source = "Ulbrich 1983; Seifert-Beheng 2006"
+status = "missing"
+evidence = "COV-ENV-064 (Marshall-Palmer と降雨強度) の子 src 0 件"
+oracle_candidate = "mu = 0 で Marshall-Palmer、moment の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-054"
+axis = "warm-microphysics"
+item = "drop breakup (collisional and spontaneous, maximum stable drop size)"
+source = "Pruppacher-Klett ch.10; Low-List 1982"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (breakup は破壊の表の別語義)"
+oracle_candidate = "最大安定径 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-055"
+axis = "warm-microphysics"
+item = "sedimentation flux of hydrometeors (mass-weighted and number-weighted fall speeds, upwind / semi-Lagrangian sedimentation)"
+source = "WRF microphysics; Rotunno-Emanuel 1987"
+status = "missing"
+evidence = "COV-ENV-063 (雨滴の終端速度) と COV-ENV-070 の子 src 0 件"
+oracle_candidate = "一様落下で質量保存、CFL を超える落下速度で負値が出ない"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-056"
+axis = "ice-microphysics"
+item = "saturation vapour pressure over ice vs water and the supersaturation with respect to ice"
+source = "Rogers-Yau ch.2; Murphy-Koop 2005"
+status = "missing"
+evidence = "COV-ENV-014 (水と氷の飽和水蒸気圧) の子 src 0 件"
+oracle_candidate = "0 度で両者が一致、-12 度付近で差が最大 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-057"
+axis = "ice-microphysics"
+item = "homogeneous freezing of droplets (about -38 C) and of solution drops (Koop)"
+source = "Pruppacher-Klett ch.7; Koop et al. 2000"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (freezing は別語義のみ)"
+oracle_candidate = "温度閾値の判定"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-058"
+axis = "ice-microphysics"
+item = "heterogeneous ice nucleation: deposition, condensation and immersion freezing (Fletcher, Meyers, DeMott)"
+source = "Pruppacher-Klett ch.9; Meyers et al. 1992; DeMott et al. 2010"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (ice nucle)"
+oracle_candidate = "Fletcher の閉形式 N = n0 exp(b dT)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-059"
+axis = "ice-microphysics"
+item = "depositional growth of ice crystals (capacitance model)"
+source = "Rogers-Yau ch.9.2; Pruppacher-Klett ch.13.3"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "球の capacitance で水滴の式と一致"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-060"
+axis = "ice-microphysics"
+item = "Wegener-Bergeron-Findeisen process (ice grows at the expense of supercooled water)"
+source = "Rogers-Yau ch.9; Korolev 2007"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (bergeron)"
+oracle_candidate = "混相 parcel で液水が減り氷が増える符号と速度"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-061"
+axis = "ice-microphysics"
+item = "riming and graupel formation"
+source = "Pruppacher-Klett ch.16; Lin et al. 1983"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (rime / graupel)"
+oracle_candidate = "集積の質量保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-062"
+axis = "ice-microphysics"
+item = "hail growth (dry and wet growth regimes, Schumann-Ludlam limit)"
+source = "Pruppacher-Klett ch.16.3; List 1985"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件 (hail)"
+oracle_candidate = "熱収支から決まる wet / dry の境界 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-063"
+axis = "ice-microphysics"
+item = "aggregation of ice crystals into snowflakes"
+source = "Pruppacher-Klett ch.16; Mitchell 1988"
+status = "missing"
+evidence = "COV-ENV-065 (降雪) と COV-ENV-066 の子 src 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-064"
+axis = "ice-microphysics"
+item = "melting of falling ice (melting layer) and shedding"
+source = "Pruppacher-Klett ch.16.3; Rasmussen-Heymsfield 1987"
+status = "missing"
+evidence = "COV-ENV-066 の子 相変化の効果層 (COV-THERM-069) は落下粒子の融解ではない"
+oracle_candidate = "融解に要る熱量と落下距離"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-065"
+axis = "ice-microphysics"
+item = "secondary ice production (Hallett-Mossop rime splintering)"
+source = "Hallett-Mossop 1974"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "-3 から -8 度の窓での生成率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-066"
+axis = "ice-microphysics"
+item = "temperature dependence of ice crystal habit and fall speed of snow, graupel and hail"
+source = "Magono-Lee 1966; Locatelli-Hobbs 1974; Heymsfield-Kajikawa 1987"
+status = "missing"
+evidence = "COV-ENV-065 (雪片の落下速度) の子 src 0 件"
+oracle_candidate = "冪則 V = a D^b の係数 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-067"
+axis = "ice-microphysics"
+item = "mixed-phase bulk schemes (Lin, Thompson, Morrison, P3)"
+source = "Lin et al. 1983; Thompson et al. 2008; Morrison-Milbrandt 2015"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "全水量と全エネルギーの保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-068"
+axis = "convection"
+item = "parcel buoyancy with condensate loading and the virtual temperature excess"
+source = "Emanuel ch.6; Houze, Cloud Dynamics ch.7"
+status = "missing"
+evidence = "COV-ENV-019 の子 src 0 件"
+oracle_candidate = "loading 0 で仮温度差の浮力に戻る"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-069"
+axis = "convection"
+item = "entraining plume model (entrainment and detrainment rates, Morton-Taylor-Turner)"
+source = "Morton-Taylor-Turner 1956; Emanuel ch.8"
+status = "missing"
+evidence = "src 0 件 (entrain / plume) 燃焼の浮力 plume は COV-MULTIPHASE-072 missing"
+oracle_candidate = "点源 plume の相似解 (半径が高さに比例)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-070"
+axis = "convection"
+item = "deep cumulus mass-flux parameterisation (Arakawa-Schubert, Tiedtke, Kain-Fritsch, Zhang-McFarlane) with a CAPE or quasi-equilibrium closure"
+source = "Arakawa-Schubert 1974; Kain-Fritsch 1990; Tiedtke 1989; WRF cumulus options"
+status = "missing"
+evidence = "src 0 件 (cumulus / mass flux / arakawa / kain / tiedtke)"
+oracle_candidate = "閉じた柱で湿潤静的エネルギーが保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-071"
+axis = "convection"
+item = "shallow cumulus parameterisation"
+source = "Tiedtke 1989; Park-Bretherton 2009"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "BOMEX の柱 (COV-ATMOS-136)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-072"
+axis = "convection"
+item = "convective adjustment (dry and moist Manabe adjustment, Betts-Miller relaxation)"
+source = "Manabe et al. 1965; Betts-Miller 1986"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "調整後の温度の高さ変化が断熱減率に一致、エネルギー保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-073"
+axis = "convection"
+item = "convective downdraft and cold pool (density current propagation speed)"
+source = "Houze ch.7; Benjamin 1968"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "密度流の前進速度 c = k sqrt(g' h) の閉形式 (k は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-074"
+axis = "convection"
+item = "organised convection and squall-line maintenance by shear (RKW theory)"
+source = "Rotunno-Klemp-Weisman 1988"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "c / Delta u の釣り合い (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-075"
+axis = "convection"
+item = "dry thermal (warm bubble) rising in a neutral Boussinesq fluid"
+source = "Robert 1993 (compressible version); Turner, Buoyancy Effects in Fluids ch.6"
+status = "implemented-no-oracle"
+evidence = "流れ solver の温度場と Boussinesq 浮力 (src/cfd_solver.rs::CfdSolver、src/cfd_solver.rs::apply_body_forces、COV-CFD-060) で温かい塊を置いた場面は組める 上昇の速さ・形を突合する test は無い 成層の基本場は無い (COV-ATMOS-005)"
+oracle_candidate = "熱気泡の上昇速度 ~ sqrt(g beta dT R) の scaling (係数は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-076"
+axis = "convection"
+item = "Rayleigh-Benard convection onset and the convective boundary layer scaling (Deardorff velocity w*)"
+source = "Chandrasekhar 1961; Deardorff 1970"
+status = "missing"
+evidence = "臨界 Rayleigh 数の場面は CFD の表 (COV-CFD-106 missing、流体の熱伝導が無い) w* は src 0 件 境界層の高さは COV-ENV-031"
+oracle_candidate = "w* = (g / theta H_0 z_i)^(1/3) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-077"
+axis = "surface-boundary-layer"
+item = "bulk aerodynamic surface fluxes of momentum, sensible and latent heat (C_D, C_H, C_E)"
+source = "Stull, Boundary Layer Meteorology ch.7; Fairall et al. 2003 (COARE)"
+status = "missing"
+evidence = "src 0 件 (sensible heat / latent heat flux) 安定度補正は COV-ENV-029 (Monin-Obukhov) missing"
+oracle_candidate = "flux = rho C_H |U| (T_s - T_a) の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-078"
+axis = "surface-boundary-layer"
+item = "sea-surface roughness (Charnock relation) and the saturation of the drag coefficient at high wind"
+source = "Charnock 1955; Powell et al. 2003; Donelan et al. 2004"
+status = "missing"
+evidence = "src 0 件 (charnock)"
+oracle_candidate = "z0 = alpha u*^2 / g の閉形式 (alpha は参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-079"
+axis = "surface-boundary-layer"
+item = "sub-grid turbulence kinetic energy closure for LES of the atmosphere (Deardorff 1.5-order)"
+source = "Deardorff 1980; CM1 / WRF LES options"
+status = "missing"
+evidence = "Smagorinsky は CFD の表 (COV-CFD-043 implemented+oracle) で、成層を考慮した長さ尺度と TKE の予報式は src 0 件"
+oracle_candidate = "減衰する等方乱流の TKE"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-080"
+axis = "surface-boundary-layer"
+item = "planetary boundary-layer schemes (YSU nonlocal K-profile, MYNN)"
+source = "Hong et al. 2006; Nakanishi-Niino 2009; WRF PBL options"
+status = "missing"
+evidence = "COV-ENV-031 (境界層の高さと日変化) の子 src 0 件"
+oracle_candidate = "中立境界層で対数則 (COV-ENV-110) に戻る"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-081"
+axis = "surface-boundary-layer"
+item = "land-surface model: soil moisture and temperature, evapotranspiration (Penman-Monteith), surface energy balance"
+source = "Pielke, Mesoscale Meteorological Modeling ch.11; Noah LSM"
+status = "missing"
+evidence = "src 0 件 (推測: soil / evapotranspiration)"
+oracle_candidate = "地表のエネルギー収支 R_n = H + LE + G の閉じ"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-082"
+axis = "radiation"
+item = "two-stream radiative transfer for a plane-parallel atmosphere (Eddington, delta-Eddington)"
+source = "Liou, An Introduction to Atmospheric Radiation ch.6; Joseph et al. 1976"
+status = "missing"
+evidence = "src 0 件 (two-stream / eddington) 放射輝度の輸送は光学の表 (COV-OPTICS-065)、熱伝達の RTE は COV-THERM-066"
+oracle_candidate = "非散乱で Beer-Lambert に戻る、保存散乱で吸収 0"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-083"
+axis = "radiation"
+item = "gaseous absorption by band / correlated-k models (RRTMG) for shortwave and longwave"
+source = "Mlawer et al. 1997; Iacono et al. 2008"
+status = "missing"
+evidence = "COV-THERM-067 (バンド放射) の子 src 0 件 (correlated-k)"
+oracle_candidate = "line-by-line の参照との比較 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-084"
+axis = "radiation"
+item = "longwave cooling and heating rates of a column (grey atmosphere, emissivity)"
+source = "Liou ch.4; Pierrehumbert, Principles of Planetary Climate ch.4"
+status = "missing"
+evidence = "src 0 件 (longwave / emissivity)"
+oracle_candidate = "灰色大気の放射平衡温度 (COV-ATMOS-085)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-085"
+axis = "radiation"
+item = "radiative equilibrium of a grey atmosphere (surface temperature T_s = T_e (1 + 3 tau / 4)^(1/4) family)"
+source = "Pierrehumbert ch.4; Goody-Yung"
+status = "missing"
+evidence = "src 0 件 (推測) 黒体の閉形式は COV-THERM-059 missing"
+oracle_candidate = "閉形式との突合"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-086"
+axis = "radiation"
+item = "cloud optical depth from liquid water path and effective radius (tau = 3 LWP / (2 rho_w r_e))"
+source = "Stephens 1978; Liou ch.5"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-087"
+axis = "radiation"
+item = "cloud albedo and its sensitivity to droplet number (Twomey effect)"
+source = "Twomey 1977; Platnick-Twomey 1994"
+status = "missing"
+evidence = "src 0 件 (albedo / twomey)"
+oracle_candidate = "dA / d ln N = A (1 - A) / 3 の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-088"
+axis = "radiation"
+item = "radiative-convective equilibrium of a single column"
+source = "Manabe-Wetherald 1967; Wing et al. 2018 (RCEMIP)"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "対流圏の減率と地表温度の平衡値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-089"
+axis = "radiation"
+item = "radiative forcing of the surface and the diurnal cycle of solar heating"
+source = "Liou ch.2-3; Stull ch.7"
+status = "missing"
+evidence = "COV-ENV-071 (太陽位置と晴天日射) と COV-THERM-068 の子 src 0 件 (solar)"
+oracle_candidate = "大気上端日射の日積算の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-090"
+axis = "tropical-cyclone"
+item = "parametric vortex wind and pressure profiles (Holland 1980, modified Rankine)"
+source = "Holland 1980; Willoughby et al. 2006"
+status = "missing"
+evidence = "COV-ENV-049 (Rankine 渦・竜巻) の子 src 0 件 (holland) src/force.rs::ForceField の Vortex は力で風速場ではない"
+oracle_candidate = "傾度風平衡と気圧の半径変化の整合"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-091"
+axis = "tropical-cyclone"
+item = "gradient-wind balance of the vortex (radius of maximum wind, Coriolis plus cyclostrophic)"
+source = "Holton ch.3.2; Emanuel 1986"
+status = "missing"
+evidence = "COV-ENV-022 の子 src 0 件"
+oracle_candidate = "Holland の profileでの傾度風の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-092"
+axis = "tropical-cyclone"
+item = "warm-core structure from hydrostatic and thermal-wind balance (temperature anomaly aloft, surface pressure deficit)"
+source = "Emanuel 1986; Holton ch.9"
+status = "missing"
+evidence = "COV-ENV-023 (温度風) の子 src 0 件"
+oracle_candidate = "温位偏差の柱から静水圧で地表の気圧低下"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-093"
+axis = "tropical-cyclone"
+item = "potential intensity closed form (Emanuel / Bister-Emanuel: V_max^2 = (C_k / C_D) (T_s - T_o) / T_o (k_s* - k))"
+source = "Emanuel 1986; Bister-Emanuel 1998, 2002"
+status = "missing"
+evidence = "src 0 件 (potential intensity / carnot) 必要な熱力学 (COV-ENV-019) と海面 flux (COV-ATMOS-077) が無い"
+oracle_candidate = "Carnot 効率と flux 比からの閉形式、既知の sounding での PI (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-094"
+axis = "tropical-cyclone"
+item = "wind-induced surface heat exchange (WISHE): surface enthalpy flux increasing with wind speed as the intensification feedback"
+source = "Emanuel 1986; Rotunno-Emanuel 1987"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "flux を風速に依らない値に固定すると強化が止まる (同じ初期状態での比較)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-095"
+axis = "tropical-cyclone"
+item = "angular-momentum surfaces and the slantwise eyewall; eye subsidence"
+source = "Emanuel 1986; Shapiro-Willoughby 1982"
+status = "missing"
+evidence = "src 0 件 (eyewall、angular momentum は軌道の別語義 src/kepler.rs::specific_angular_momentum)"
+oracle_candidate = "M = r v + f r^2 / 2 が上昇流に沿って保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-096"
+axis = "tropical-cyclone"
+item = "balanced secondary circulation (Sawyer-Eliassen equation)"
+source = "Shapiro-Willoughby 1982; Eliassen 1951"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "点熱源に対する解析解 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-097"
+axis = "tropical-cyclone"
+item = "axisymmetric nonhydrostatic tropical-cyclone model"
+source = "Rotunno-Emanuel 1987; Bryan-Rotunno 2009 (CM1 axisymmetric)"
+status = "missing"
+evidence = "src 0 件 方程式系 (COV-ATMOS-002)・湿潤 (COV-ATMOS-007)・海面 flux (COV-ATMOS-077) が前提"
+oracle_candidate = "定常強度を PI と比較 (COV-ATMOS-135)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-098"
+axis = "tropical-cyclone"
+item = "eyewall replacement cycle and secondary eyewall formation"
+source = "Willoughby et al. 1982; Houze et al. 2007"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-099"
+axis = "tropical-cyclone"
+item = "intensity and size diagnostics (maximum wind, minimum pressure, radius of maximum wind, integrated kinetic energy, pressure-wind relations)"
+source = "Powell-Reinhold 2007; Knaff-Zehr 2007"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Holland の profileでの閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-100"
+axis = "tropical-cyclone"
+item = "storm motion: steering by the environmental flow and beta drift"
+source = "Chan 2005; Fiorino-Elsberry 1989"
+status = "missing"
+evidence = "src 0 件 (beta は回転の行 COV-ATMOS-011 が前提)"
+oracle_candidate = "beta 平面の孤立渦の北西進 (方向と速さは参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-101"
+axis = "tropical-cyclone"
+item = "effect of vertical wind shear on intensity (ventilation)"
+source = "Tang-Emanuel 2010"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-102"
+axis = "tropical-cyclone"
+item = "boundary-layer inflow of the vortex (inflow angle, supergradient wind)"
+source = "Kepert 2001; Smith-Montgomery 2010"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "線形境界層解との比較 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-103"
+axis = "ocean-coupling"
+item = "slab ocean mixed layer with a heat budget (prognostic sea-surface temperature)"
+source = "Hansen et al. 1984; Pierrehumbert ch.7"
+status = "missing"
+evidence = "src 0 件 (mixed layer / sea surface temp) 海の波は ENV の表 (COV-ENV-072 から 093) で温度を持たない"
+oracle_candidate = "一定 flux で SST が線形に変わる (dT/dt = F / (rho c_p h))"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-104"
+axis = "ocean-coupling"
+item = "wind-driven mixed-layer deepening by entrainment (Kraus-Turner, Price-Weller-Pinkel) and the cold wake under a cyclone"
+source = "Kraus-Turner 1967; Price et al. 1986; Price 1981"
+status = "missing"
+evidence = "src 0 件 (entrain)"
+oracle_candidate = "混合後の温度 = 層平均 (熱量保存)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-105"
+axis = "ocean-coupling"
+item = "upwelling under a cyclone from Ekman pumping"
+source = "Price 1981; Gill ch.9"
+status = "missing"
+evidence = "COV-ATMOS-021 (Ekman pumping) の子 src 0 件"
+oracle_candidate = "w_E の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-106"
+axis = "ocean-coupling"
+item = "two-way coupling of the cyclone and the ocean (intensity reduced by sea-surface cooling)"
+source = "Schade-Emanuel 1999; Bender-Ginis 2000"
+status = "missing"
+evidence = "src 0 件 結合の枠は連成の表、ここは大気海洋の物理"
+oracle_candidate = "固定 SST と連成 SST の 2 本を同じ初期状態から回し強度差の符号"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-107"
+axis = "intervention"
+item = "glaciogenic cloud seeding (artificial ice nuclei added to a supercooled cloud)"
+source = "Bruintjes 1999 (review); Rogers-Yau ch.13; WMO weather modification statements"
+status = "missing"
+evidence = "src 0 件 (seeding は粒子の再配置・格子 test の別語義) 氷の核形成 (COV-ATMOS-058) と WBF (COV-ATMOS-060) が前提"
+oracle_candidate = "同じ初期状態から seeding 有無の 2 本、seeding 側だけ氷が増える符号と量"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-108"
+axis = "intervention"
+item = "hygroscopic seeding (large CCN to accelerate warm rain)"
+source = "Cooper et al. 1997; Rosenfeld et al. 2010"
+status = "missing"
+evidence = "src 0 件 活性化 (COV-ATMOS-036) と衝突併合 (COV-ATMOS-047) が前提"
+oracle_candidate = "同じ初期状態からの比較で最初の雨の時刻が早まる"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-109"
+axis = "intervention"
+item = "marine cloud brightening (added CCN raising droplet number and cloud albedo)"
+source = "Latham 1990; Wood 2021"
+status = "missing"
+evidence = "src 0 件 Twomey 効果 (COV-ATMOS-087) が前提"
+oracle_candidate = "同じ初期状態からの比較でアルベドの増分が閉形式の感度と一致"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-110"
+axis = "intervention"
+item = "sea-surface cooling as an intervention on a tropical cyclone (prescribed SST reduction in a region and time window)"
+source = "Klima et al. 2011; Emanuel 1986 (sensitivity of PI to SST)"
+status = "missing"
+evidence = "src 0 件 slab 海洋 (COV-ATMOS-103) と熱帯低気圧の model (COV-ATMOS-097) が前提"
+oracle_candidate = "PI の閉形式の SST 感度と数値の強度差の比較"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-111"
+axis = "intervention"
+item = "twin experiment: control and intervention runs from a bit-identical initial state, with the difference fields"
+source = "Bruintjes 1999; standard practice of model-based attribution"
+status = "missing"
+evidence = "大気の状態が無いので組めない 部品: 剛体の world の分岐 (src/solver/world_snapshot.rs::snapshot_world、COV-ENGINE-012 partial)、world 外の状態の snapshot は COV-ENGINE-016 missing、流れ solver の bit 一致は COV-NUM-073 (tests/determinism_golden.rs::determinism_fluid_step)"
+oracle_candidate = "介入 0 の twin で差分場が全格子で bit 0"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-112"
+axis = "intervention"
+item = "replay of an intervention run: the same initial state, intervention schedule and seed give a bit-identical result"
+source = "deterministic lockstep practice; COV-ENGINE-023"
+status = "missing"
+evidence = "大気の状態が無いので組めない 入力の記録と再実行の一般形は COV-ENGINE-022 missing"
+oracle_candidate = "2 回の実行の hash 一致"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-113"
+axis = "intervention"
+item = "intervention schedule as data (where, when, how much) applied identically across ensemble members"
+source = "WRF / CM1 namelist forcing practice"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "同じ schedule で member 間の差が初期値の差だけ"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-114"
+axis = "intervention"
+item = "detectability of an intervention: the intervention-minus-control difference compared with the spread of a seeded control ensemble"
+source = "Bruintjes 1999; NRC 2003, Critical Issues in Weather Modification Research"
+status = "missing"
+evidence = "src 0 件 ensemble の行 (COV-ATMOS-116) が前提"
+oracle_candidate = "介入 0 で差が spread の内側、既知の大きさの介入で外側"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-115"
+axis = "intervention"
+item = "water and energy budget closure of an intervention run (added nuclei, precipitation, storage, sources)"
+source = "WRF diagnostics practice; Emanuel ch.4"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "収支の残差が丸め誤差の範囲"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-116"
+axis = "ensemble"
+item = "ensemble of initial states perturbed deterministically from a seed and a member index (bit-identical per member, independent of thread count)"
+source = "Leutbecher-Palmer 2008; ECMWF ENS documentation"
+status = "missing"
+evidence = "大気の状態が無い 部品の seed 付き生成器は src/rng.rs::DeterministicRng (COV-ENGINE-001、独立な stream)"
+oracle_candidate = "member k の初期値が何度作っても bit 一致、member 間で異なる"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-117"
+axis = "ensemble"
+item = "bred vectors and singular vectors for the initial perturbations"
+source = "Toth-Kalnay 1997; Buizza-Palmer 1995"
+status = "missing"
+evidence = "src 0 件 (推測)"
+oracle_candidate = "Lorenz 96 で breeding の成長率 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-118"
+axis = "ensemble"
+item = "perturbed physics tendencies per member from a seed (SPPT-type multiplicative perturbations, perturbed parameters)"
+source = "Buizza et al. 1999; Palmer et al. 2009"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "同じ seed で bit 一致、摂動 0 で非摂動解と一致"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-119"
+axis = "ensemble"
+item = "ensemble mean and spread of fields"
+source = "Leutbecher-Palmer 2008"
+status = "missing"
+evidence = "src 0 件 汎用の平均・分散は数値の表 (COV-NUM-095 missing)"
+oracle_candidate = "定数の member で spread 0"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-120"
+axis = "ensemble"
+item = "assimilation of observations into the initial state (nudging, 3D-Var / 4D-Var)"
+source = "Kalnay, Atmospheric Modeling, Data Assimilation and Predictability ch.5; WRF FDDA"
+status = "missing"
+evidence = "src 0 件 (nudging / assimil) 観測を取り込む filter は SENSE の表 (COV-SENSE-050 missing)"
+oracle_candidate = "nudging 係数で観測値への緩和の時定数が閉形式どおり"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-121"
+axis = "numerics"
+item = "split-explicit time integration of the acoustic modes (Klemp-Wicker, small steps inside RK3)"
+source = "Wicker-Skamarock 2002; Klemp et al. 2007"
+status = "missing"
+evidence = "src 0 件 時間積分の一般は数値の表"
+oracle_candidate = "線形音波の安定限界"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-122"
+axis = "numerics"
+item = "semi-implicit semi-Lagrangian dynamics (two-time-level SISL)"
+source = "Staniforth-Côté 1991; ECMWF IFS documentation"
+status = "missing"
+evidence = "semi-Lagrangian の移流は CFD の表 (COV-CFD-017 implemented+oracle)、重力波の陰的扱いは src 0 件"
+oracle_candidate = "大 Courant 数で重力波が安定"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-123"
+axis = "numerics"
+item = "positive-definite / monotonic advection of moisture species"
+source = "Skamarock 2006; Wang et al. 2009"
+status = "missing"
+evidence = "src 0 件 (推測) 流れ solver の MacCormack の clamp は COV-CFD-018、水物質の scalar は無い (COV-ATMOS-007)"
+oracle_candidate = "負値が出ないこと、全量保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-124"
+axis = "numerics"
+item = "absorbing upper boundary (Rayleigh damping sponge layer, implicit w damping)"
+source = "Klemp-Lilly 1978; Klemp et al. 2008"
+status = "missing"
+evidence = "src 0 件 (sponge) Rayleigh damping は構造の減衰 (src/damping_rayleigh.rs::RayleighCoefficients) の別語義"
+oracle_candidate = "山岳波の上端反射率"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-125"
+axis = "numerics"
+item = "lateral boundary relaxation for limited-area models (Davies relaxation zone)"
+source = "Davies 1976; WRF specified boundary"
+status = "missing"
+evidence = "src 0 件 (davies)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-126"
+axis = "numerics"
+item = "spectral transform on the sphere (spherical harmonics, Legendre transform)"
+source = "Durran ch.6; ECMWF IFS"
+status = "missing"
+evidence = "src 0 件 FFT も無い (COV-NUM-093 missing)"
+oracle_candidate = "球面調和関数の往復"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-127"
+axis = "numerics"
+item = "conservation diagnostics of dry-air mass, total water and total energy"
+source = "Thuburn 2008; Lauritzen et al. 2014"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "閉じた領域で丸め以内で保存"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-128"
+axis = "numerics"
+item = "time splitting of microphysics, radiation and dynamics (process order and call frequency)"
+source = "WRF ARW ch.5; Williamson 2002"
+status = "missing"
+evidence = "src 0 件 汎用の operator splitting は COV-NUM-056 missing"
+oracle_candidate = "Strang 分割の 2 次"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-129"
+axis = "diagnostics"
+item = "surface precipitation rate and accumulation"
+source = "WRF output; Kessler 1969"
+status = "missing"
+evidence = "COV-ENV-064 (降雨強度) の子 src 0 件 (precip)"
+oracle_candidate = "落下 flux の時間積分と柱の水量変化の一致"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-130"
+axis = "diagnostics"
+item = "radar reflectivity factor from the size spectrum (Z = integral n(D) D^6 dD) and Z-R relations"
+source = "Doviak-Zrnić ch.8; Marshall-Palmer 1948"
+status = "missing"
+evidence = "COV-ENV-064 の子 src 0 件 (radar は音響・電磁の別語義)"
+oracle_candidate = "Marshall-Palmer の粒径スペクトルでの Z-R の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-131"
+axis = "diagnostics"
+item = "cloud fraction from relative humidity or the sub-grid variability (Sundqvist and similar)"
+source = "Sundqvist et al. 1989; Tompkins 2002"
+status = "missing"
+evidence = "COV-ENV-067 (雲の形成と雲量) の子 src 0 件"
+oracle_candidate = "RH 臨界値で 0、飽和で 1"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-132"
+axis = "benchmark"
+item = "Golovin kernel: exact solution of the collection equation"
+source = "Golovin 1963; Scott 1968"
+status = "missing"
+evidence = "src 0 件 衝突併合 (COV-ATMOS-047) が前提"
+oracle_candidate = "厳密解の質量 moment の時間発展"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-133"
+axis = "benchmark"
+item = "1-D kinematic warm-rain column with the Kessler scheme (KiD)"
+source = "Shipway-Hill 2012 (KiD); Kessler 1969"
+status = "missing"
+evidence = "COV-ENV-066 の子 src 0 件"
+oracle_candidate = "地表の積算降水 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-134"
+axis = "benchmark"
+item = "Weisman-Klemp supercell"
+source = "Weisman-Klemp 1982; CM1 test case"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "上昇流の最大値 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-135"
+axis = "benchmark"
+item = "Rotunno-Emanuel axisymmetric tropical cyclone (steady intensity against the potential intensity)"
+source = "Rotunno-Emanuel 1987; Bryan-Rotunno 2009"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "定常の最大風速と PI の比 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-136"
+axis = "benchmark"
+item = "BOMEX / RICO shallow cumulus LES intercomparison"
+source = "Siebesma et al. 2003; vanZanten et al. 2011"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "雲量の高さ変化 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-137"
+axis = "benchmark"
+item = "Held-Suarez dynamical core test (Newtonian relaxation and Rayleigh friction)"
+source = "Held-Suarez 1994"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "東西平均の東西風の緯度・高さ断面 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-138"
+axis = "benchmark"
+item = "resting atmosphere over steep terrain stays at rest (pressure-gradient error of the vertical coordinate)"
+source = "Klemp 2011; Zängl 2012"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "最大の偽の風速 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-139"
+axis = "benchmark"
+item = "potential intensity closed form against a reference sounding"
+source = "Bister-Emanuel 2002; Gilford 2021 (pyPI)"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "参照の sounding での PI (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-140"
+axis = "benchmark"
+item = "moist warm bubble in a saturated neutral atmosphere (Bryan-Fritsch)"
+source = "Bryan-Fritsch 2002"
+status = "missing"
+evidence = "src 0 件 乾燥の Boussinesq 熱気泡は COV-ATMOS-075 (implemented-no-oracle)"
+oracle_candidate = "theta_e の保存、上昇高さ (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-141"
+axis = "benchmark"
+item = "nonhydrostatic inertia-gravity waves in a channel (Skamarock-Klemp)"
+source = "Skamarock-Klemp 1994"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "線形解析解との突合"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-142"
+axis = "benchmark"
+item = "linear hydrostatic mountain waves (Schär) and density current (Straka)"
+source = "Schär et al. 2002; Straka et al. 1993"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "線形解析解 (山岳波)、前線位置 (密度流、参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-143"
+axis = "benchmark"
+item = "Williamson shallow-water tests and the Jablonowski-Williamson baroclinic wave on the sphere"
+source = "Williamson et al. 1992; Jablonowski-Williamson 2006"
+status = "missing"
+evidence = "src 0 件 球面の格子 (COV-ATMOS-010) が前提"
+oracle_candidate = "test 2 の定常地衡流が保たれる"
+limitation = ""
+
+[[item]]
+id = "COV-ATMOS-144"
+axis = "benchmark"
+item = "radiative-convective equilibrium intercomparison (RCEMIP)"
+source = "Wing et al. 2018"
+status = "missing"
+evidence = "src 0 件"
+oracle_candidate = "平衡の地表温度と降水 (参照値要確認)"
+limitation = ""
