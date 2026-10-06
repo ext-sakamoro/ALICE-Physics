@@ -297,6 +297,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `interfacial_bond_strength_mpa`: 同じ名前で降伏強さの違う 2 材の接合強度が引数の順で変わっていた (先の材の降伏強さを返していた) 弱い方の降伏強さを返す (AUD-A-S4W3-011)
 - `DebugDrawData::arrow`: doc どおり矢印の頭 (先端から軸に沿って長さの 0.2 戻った点の両側への 2 本の線) を描くようにした これまでは頭の点を計算して捨て、軸と先端の点だけを記録していた **Behavior change:** 矢印 1 本の線は 1 本から 3 本に (`axes` は 3 本から 9 本) なる (AUD-A-S4W3-008)
 - fatigue の Miner 和: 繰り返し数 `n` が `i64::MAX` を超えると `as i64` で負に wrap し damage が負になっていた 整数商と余りに分けて計算し、表せない大きさと和の溢れは飽和させる (AUD-A-S4W2-007)
 - `HeightField::aabb`: spacing が 0 以下の場は空の場と同じく原点の点 AABB を返す (`collide_sphere` は面が無いとして扱う) これまでは負の spacing で max < min の反転した箱になっていた (AUD-A-S4W3-007)
