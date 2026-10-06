@@ -578,4 +578,221 @@ mod tests {
         apply_motors(&[JointMotor::new(0, pd)], &joints, &mut bodies, dt);
         assert_eq!(bodies[1].velocity, Vec3Fix::from_int(5, 0, 0));
     }
+
+    fn assert_vec_near(actual: Vec3Fix, expected: Vec3Fix, what: &str) {
+        let tol = Fix128::from_ratio(1, 1_000_000_000);
+        let d = actual - expected;
+        assert!(
+            d.x.abs() < tol && d.y.abs() < tol && d.z.abs() < tol,
+            "{what}: {actual:?} vs {expected:?}"
+        );
+    }
+
+    /// A quaternion of a turn about `Z` with `cos(θ/2) = 3/5`, `sin(θ/2) = 4/5`
+    /// (a unit quaternion: 9/25 + 16/25 = 1), stored with the sign `sign`.
+    fn turn_z(sign: i64) -> QuatFix {
+        let s = Fix128::from_int(sign);
+        QuatFix::new(
+            Fix128::ZERO,
+            Fix128::ZERO,
+            Fix128::from_ratio(4, 5) * s,
+            Fix128::from_ratio(3, 5) * s,
+        )
+    }
+
+    /// Position mode of the 3-axis controller with target identity and current
+    /// rotation `q = (0, 0, 4/5, 3/5)`: the error quaternion is `q⁻¹ =
+    /// (0, 0, -4/5, 3/5)`, whose vector part doubled is `(0, 0, -8/5)`. With
+    /// `kp = 10`, `kd = 1`, current `ω = (0, 0, 2)` and target `ω = 0` the torque
+    /// is `10·(-8/5) + 1·(-2) = -18` about `Z`. The same rotation stored as `-q`
+    /// (`w < 0`) must give the same torque (shortest arc, not the long way round).
+    /// With `max_torque = 9` the torque keeps its direction and is scaled to 9.
+    #[test]
+    fn controller_3d_position_mode_follows_the_shortest_arc_and_clamps_the_magnitude() {
+        let mut pd = PdController3D::new(
+            Vec3Fix::from_int(10, 10, 10),
+            Vec3Fix::from_int(1, 1, 1),
+            Fix128::from_int(100),
+        );
+        pd.set_rotation_target(QuatFix::IDENTITY);
+        let omega = Vec3Fix::from_int(0, 0, 2);
+        let expected = Vec3Fix::from_int(0, 0, -18);
+        assert_vec_near(pd.compute_torque(turn_z(1), omega), expected, "w > 0");
+        assert_vec_near(pd.compute_torque(turn_z(-1), omega), expected, "w < 0");
+
+        pd.max_torque = Fix128::from_int(9);
+        assert_vec_near(
+            pd.compute_torque(turn_z(-1), omega),
+            Vec3Fix::from_int(0, 0, -9),
+            "clamped",
+        );
+
+        pd.mode = MotorMode::Off;
+        assert_eq!(pd.compute_torque(turn_z(1), omega), Vec3Fix::ZERO);
+    }
+
+    /// Velocity mode of the 3-axis controller is `τ = kp ⊙ (ω_t - ω)` per axis:
+    /// `kp = (2, 3, 4)`, `ω_t = (1, 1, 1)`, `ω = (0, 1, 0)` gives `(2, 0, 4)`
+    /// (`|τ| = √20 < 100`, unclamped). With `kp = 10`, error `(3, 4, 0)` gives
+    /// `(30, 40, 0)` of magnitude 50; `max_torque = 25` halves it to `(15, 20, 0)`.
+    #[test]
+    fn controller_3d_velocity_mode_is_per_axis_proportional_and_clamped_by_magnitude() {
+        let mut pd = PdController3D::new(
+            Vec3Fix::from_int(2, 3, 4),
+            Vec3Fix::ZERO,
+            Fix128::from_int(100),
+        );
+        pd.target_angular_velocity = Vec3Fix::from_int(1, 1, 1);
+        pd.mode = MotorMode::Velocity;
+        assert_eq!(
+            pd.compute_torque(QuatFix::IDENTITY, Vec3Fix::from_int(0, 1, 0)),
+            Vec3Fix::from_int(2, 0, 4)
+        );
+
+        pd.kp = Vec3Fix::from_int(10, 10, 10);
+        pd.max_torque = Fix128::from_int(25);
+        pd.target_angular_velocity = Vec3Fix::from_int(3, 4, 0);
+        assert_vec_near(
+            pd.compute_torque(QuatFix::IDENTITY, Vec3Fix::ZERO),
+            Vec3Fix::from_int(15, 20, 0),
+            "clamped",
+        );
+    }
+
+    /// Two dynamic bodies at the identity with world inverse inertias 1 and 2
+    /// (isotropic), joined by a ball joint.
+    fn spinning_pair() -> (Vec<RigidBody>, Vec<Joint>) {
+        let (mut bodies, joints) = motor_scene(1, 1);
+        bodies[0].inv_inertia = Vec3Fix::from_int(1, 1, 1);
+        bodies[1].inv_inertia = Vec3Fix::from_int(2, 2, 2);
+        (bodies, joints)
+    }
+
+    /// `apply_motors_3d` controls the relative rate `ω_b - ω_a`: with
+    /// `kp = (2, 3, 4)`, `ω_t = (1, 1, 1)` and `ω_b - ω_a = (0, 1, 0)` the torque is
+    /// `(2, 0, 4)`; over `dt = 1/2` the impulse `(1, 0, 2)` goes `+I_b⁻¹` to B
+    /// (`ω_b = (0, 1, 0) + 2·(1, 0, 2) = (2, 1, 4)`) and `-I_a⁻¹` to A
+    /// (`ω_a = (-1, 0, -2)`). The pair's angular momentum
+    /// `I_a ω_a + I_b ω_b = (0, 1/2, 0)` is unchanged. A static A is left alone.
+    #[test]
+    fn apply_motors_3d_applies_equal_and_opposite_angular_impulses() {
+        let mut pd = PdController3D::new(
+            Vec3Fix::from_int(2, 3, 4),
+            Vec3Fix::ZERO,
+            Fix128::from_int(100),
+        );
+        pd.target_angular_velocity = Vec3Fix::from_int(1, 1, 1);
+        pd.mode = MotorMode::Velocity;
+        let dt = Fix128::from_ratio(1, 2);
+
+        let (mut bodies, joints) = spinning_pair();
+        bodies[1].angular_velocity = Vec3Fix::from_int(0, 1, 0);
+        apply_motors_3d(&[(0, pd)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[0].angular_velocity, Vec3Fix::from_int(-1, 0, -2));
+        assert_eq!(bodies[1].angular_velocity, Vec3Fix::from_int(2, 1, 4));
+        let half = Fix128::from_ratio(1, 2);
+        let momentum = bodies[0].angular_velocity + bodies[1].angular_velocity * half;
+        assert_eq!(momentum, Vec3Fix::new(Fix128::ZERO, half, Fix128::ZERO));
+
+        let (mut fixed_a, joints) = spinning_pair();
+        fixed_a[0].inv_mass = Fix128::ZERO;
+        fixed_a[1].angular_velocity = Vec3Fix::from_int(0, 1, 0);
+        apply_motors_3d(&[(0, pd)], &joints, &mut fixed_a, dt);
+        assert_eq!(fixed_a[0].angular_velocity, Vec3Fix::ZERO);
+        assert_eq!(fixed_a[1].angular_velocity, Vec3Fix::from_int(2, 1, 4));
+    }
+
+    /// `apply_motors_3d` does nothing for an `Off` motor, a joint index past the
+    /// end, a joint naming a body past the end, or a rate already at target (zero
+    /// torque); the last call (same motor, rate off target) does act, so the skips
+    /// are not a motor that never runs.
+    #[test]
+    fn apply_motors_3d_skips_off_out_of_range_and_zero_torque() {
+        let mut pd = PdController3D::new(
+            Vec3Fix::from_int(1, 1, 1),
+            Vec3Fix::ZERO,
+            Fix128::from_int(100),
+        );
+        pd.target_angular_velocity = Vec3Fix::from_int(0, 0, 1);
+        pd.mode = MotorMode::Velocity;
+        let dt = Fix128::ONE;
+        let (mut bodies, joints) = spinning_pair();
+        let mut off = pd;
+        off.mode = MotorMode::Off;
+        apply_motors_3d(&[(0, off), (1, pd)], &joints, &mut bodies, dt);
+        let far = [Joint::Ball(BallJoint::new(
+            0,
+            5,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        ))];
+        apply_motors_3d(&[(0, pd)], &far, &mut bodies, dt);
+        assert_eq!(bodies[0].angular_velocity, Vec3Fix::ZERO);
+        assert_eq!(bodies[1].angular_velocity, Vec3Fix::ZERO);
+
+        bodies[1].angular_velocity = Vec3Fix::from_int(0, 0, 1);
+        apply_motors_3d(&[(0, pd)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[0].angular_velocity, Vec3Fix::ZERO);
+        assert_eq!(bodies[1].angular_velocity, Vec3Fix::from_int(0, 0, 1));
+
+        bodies[1].angular_velocity = Vec3Fix::ZERO;
+        apply_motors_3d(&[(0, pd)], &joints, &mut bodies, dt);
+        assert_eq!(bodies[0].angular_velocity, Vec3Fix::from_int(0, 0, -1));
+        assert_eq!(bodies[1].angular_velocity, Vec3Fix::from_int(0, 0, 2));
+    }
+
+    /// A hinge motor about `Y` between two dynamic bodies (world inverse inertia 1)
+    /// in velocity mode, `kp = 4`, target rate 1, both at rest: torque
+    /// `4·(1 - 0) = 4`, impulse over `dt = 1/4` is `1` about `Y`: `ω_b = (0, 1, 0)`,
+    /// `ω_a = (0, -1, 0)`. A target of `-10` with `max_force = 2` clamps the torque
+    /// to `-2` (impulse `-1/2`). A pair already turning at the target rate
+    /// (`ω_b - ω_a = 1`) gets zero torque and is left as it is.
+    #[test]
+    fn hinge_motor_drives_the_relative_rate_about_the_axis_and_clamps_below() {
+        let hinge = || {
+            Joint::Hinge(crate::joint::HingeJoint::new(
+                0,
+                1,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+                Vec3Fix::UNIT_Y,
+                Vec3Fix::UNIT_Y,
+            ))
+        };
+        let pair = || {
+            let (mut bodies, _) = motor_scene(1, 1);
+            bodies[0].inv_inertia = Vec3Fix::from_int(1, 1, 1);
+            bodies[1].inv_inertia = Vec3Fix::from_int(1, 1, 1);
+            bodies
+        };
+        let dt = Fix128::from_ratio(1, 4);
+        let mut pd = PdController::new(Fix128::from_int(4), Fix128::ZERO, Fix128::from_int(100));
+        pd.set_velocity_target(Fix128::ONE);
+
+        let mut bodies = pair();
+        apply_motors(&[JointMotor::new(0, pd)], &[hinge()], &mut bodies, dt);
+        assert_eq!(bodies[0].angular_velocity, Vec3Fix::from_int(0, -1, 0));
+        assert_eq!(bodies[1].angular_velocity, Vec3Fix::from_int(0, 1, 0));
+
+        let mut slow = pd;
+        slow.max_force = Fix128::from_int(2);
+        slow.set_velocity_target(Fix128::from_int(-10));
+        let mut bodies = pair();
+        apply_motors(&[JointMotor::new(0, slow)], &[hinge()], &mut bodies, dt);
+        let half = Fix128::from_ratio(1, 2);
+        assert_eq!(
+            bodies[0].angular_velocity,
+            Vec3Fix::new(Fix128::ZERO, half, Fix128::ZERO)
+        );
+        assert_eq!(
+            bodies[1].angular_velocity,
+            Vec3Fix::new(Fix128::ZERO, -half, Fix128::ZERO)
+        );
+
+        let mut bodies = pair();
+        bodies[1].angular_velocity = Vec3Fix::from_int(0, 1, 0);
+        apply_motors(&[JointMotor::new(0, pd)], &[hinge()], &mut bodies, dt);
+        assert_eq!(bodies[0].angular_velocity, Vec3Fix::ZERO);
+        assert_eq!(bodies[1].angular_velocity, Vec3Fix::from_int(0, 1, 0));
+    }
 }

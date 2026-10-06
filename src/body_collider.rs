@@ -496,4 +496,332 @@ mod tests {
             QuatFix::IDENTITY
         ));
     }
+
+    use crate::collider::{Capsule, ConvexHull};
+
+    fn fx(num: i64, den: i64) -> Fix128 {
+        Fix128::from_ratio(num, den)
+    }
+
+    fn v(x: Fix128, y: Fix128, z: Fix128) -> Vec3Fix {
+        Vec3Fix::new(x, y, z)
+    }
+
+    fn assert_near(actual: Fix128, expected: f64, tol: f64, what: &str) {
+        let a = actual.to_f64();
+        assert!(
+            (a - expected).abs() <= tol,
+            "{what}: {a} vs expected {expected} (tol {tol})"
+        );
+    }
+
+    fn assert_vec_near(actual: Vec3Fix, expected: [f64; 3], tol: f64, what: &str) {
+        assert_near(actual.x, expected[0], tol, what);
+        assert_near(actual.y, expected[1], tol, what);
+        assert_near(actual.z, expected[2], tol, what);
+    }
+
+    fn cube(half: Fix128) -> BodyCollider {
+        BodyCollider::Shape(Shape::Box {
+            half_extents: v(half, half, half),
+        })
+    }
+
+    /// A quarter turn about `Z` halved: the box turned into a diamond in `XY`.
+    fn eighth_turn_z() -> QuatFix {
+        QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI.half())
+    }
+
+    /// Two unit compound spheres (radius 1/2) at body-local `x = ±2`: a dumbbell
+    /// with an empty gap at the origin that its convex hull would fill.
+    fn dumbbell() -> BodyCollider {
+        let mut c = CompoundShape::new();
+        for x in [-2, 2] {
+            c.add_sphere(
+                Sphere::new(Vec3Fix::ZERO, fx(1, 2)),
+                Vec3Fix::from_int(x, 0, 0),
+                QuatFix::IDENTITY,
+            );
+        }
+        BodyCollider::Compound(c)
+    }
+
+    /// The bounding radius of a box collider is the length of its half-extent
+    /// vector (the corner is the farthest point): `|(1, 2, 2)| = 3`.
+    #[test]
+    fn a_box_colliders_bounding_radius_is_its_corner_distance() {
+        let c = BodyCollider::Shape(Shape::Box {
+            half_extents: Vec3Fix::from_int(1, 2, 2),
+        });
+        assert_near(c.bounding_radius(), 3.0, 1e-12, "box bounding radius");
+    }
+
+    /// Two axis-aligned unit cubes whose centres are 9/10 apart along `X` overlap
+    /// by `1 - 9/10 = 1/10` (sum of half-extents minus the distance), and the
+    /// normal points from `b` (at the origin) to `a` (at `+x`): `(1, 0, 0)`.
+    /// Moved to 12/10 apart the gap is 1/5 and there is no contact.
+    #[test]
+    fn two_overlapping_cubes_report_the_face_overlap_and_the_b_to_a_normal() {
+        let (a, b) = (cube(fx(1, 2)), cube(fx(1, 2)));
+        let at = |x: Fix128| (v(x, Fix128::ZERO, Fix128::ZERO), QuatFix::IDENTITY);
+        let origin = (Vec3Fix::ZERO, QuatFix::IDENTITY);
+
+        let hit = contact_between(&a, at(fx(9, 10)), &b, origin).expect("cubes overlap");
+        assert_near(hit.depth, 0.1, 1e-9, "depth");
+        assert_vec_near(hit.normal, [1.0, 0.0, 0.0], 1e-9, "normal");
+        assert!(colliders_meet(&a, at(fx(9, 10)), &b, origin));
+
+        assert!(contact_between(&a, at(fx(12, 10)), &b, origin).is_none());
+        assert!(!colliders_meet(&a, at(fx(12, 10)), &b, origin));
+    }
+
+    /// Two unit cubes turned 1/8 turn about `Z` are diamonds `|x| + |y| <= √2/2`
+    /// in `XY`; their world boxes have half-width `√2/2 ≈ 0.707`. With centres at
+    /// the origin and at `(1, 1, 0)` the boxes overlap (`1 < 2·0.707`) but the
+    /// diamonds do not: along the diagonal the L1 distance 2 exceeds the sum of the
+    /// L1 radii `√2`. The box test alone would report a contact; the shapes must not.
+    #[test]
+    fn turned_cubes_whose_world_boxes_overlap_but_whose_solids_do_not_are_apart() {
+        let (a, b) = (cube(fx(1, 2)), cube(fx(1, 2)));
+        let pose_a = (Vec3Fix::from_int(1, 1, 0), eighth_turn_z());
+        let pose_b = (Vec3Fix::ZERO, eighth_turn_z());
+        assert!(a
+            .world_aabb(pose_a.0, pose_a.1)
+            .intersects(&b.world_aabb(pose_b.0, pose_b.1)));
+        assert!(contact_between(&a, pose_a, &b, pose_b).is_none());
+        assert!(!colliders_meet(&a, pose_a, &b, pose_b));
+
+        // Moved to (1/2, 1/2, 0) the L1 distance is 1 < √2: the diamonds overlap
+        // along the diagonal by (√2 - 1) in L1, i.e. (√2 - 1)/√2 = 1 - √2/2 along
+        // the unit diagonal normal (the faces are perpendicular to (1, 1)/√2).
+        let near = (v(fx(1, 2), fx(1, 2), Fix128::ZERO), eighth_turn_z());
+        let hit = contact_between(&a, near, &b, pose_b).expect("diamonds overlap");
+        let s = 0.5 * core::f64::consts::SQRT_2;
+        assert_near(hit.depth, 1.0 - s, 1e-9, "diamond depth");
+        assert_vec_near(hit.normal, [s, s, 0.0], 1e-9, "diamond normal");
+        assert!(colliders_meet(&a, near, &b, pose_b));
+    }
+
+    /// A compound is the union of its children, not their hull: a sphere sitting
+    /// in the dumbbell's gap touches nothing, although the hull would contain it.
+    /// The same sphere at `x = 2.8` overlaps the `x = 2` child by
+    /// `1/2 + 1/2 - 0.8 = 0.2`; the normal points from body B to body A, so it is
+    /// `-x` when the collider is A and `+x` when the sphere is A.
+    #[test]
+    fn a_compound_meets_a_sphere_through_its_children_not_its_hull() {
+        let c = dumbbell();
+        let pose = (Vec3Fix::ZERO, QuatFix::IDENTITY);
+        let in_gap = Sphere::new(Vec3Fix::ZERO, fx(1, 2));
+        assert!(!collider_meets_sphere(&c, pose, in_gap));
+        assert!(contact_with_sphere(&c, pose, in_gap, true).is_none());
+        assert!(contact_with_sphere(&c, pose, in_gap, false).is_none());
+
+        let far = Sphere::new(Vec3Fix::from_int(5, 0, 0), fx(1, 2));
+        assert!(!collider_meets_sphere(&c, pose, far));
+        assert!(contact_with_sphere(&c, pose, far, true).is_none());
+
+        let touching = Sphere::new(v(fx(28, 10), Fix128::ZERO, Fix128::ZERO), fx(1, 2));
+        assert!(collider_meets_sphere(&c, pose, touching));
+        // EPA approximates two round surfaces by a polytope: the depth agrees to
+        // 1e-3 and the normal to 1e-2 (measured 4.6e-3 off axis).
+        let as_a = contact_with_sphere(&c, pose, touching, true).expect("overlap");
+        assert_near(as_a.depth, 0.2, 1e-3, "depth (collider is A)");
+        assert_vec_near(
+            as_a.normal,
+            [-1.0, 0.0, 0.0],
+            1e-2,
+            "normal (collider is A)",
+        );
+        let as_b = contact_with_sphere(&c, pose, touching, false).expect("overlap");
+        assert_near(as_b.depth, 0.2, 1e-3, "depth (sphere is A)");
+        assert_vec_near(as_b.normal, [1.0, 0.0, 0.0], 1e-2, "normal (sphere is A)");
+    }
+
+    /// A compound against a convex collider: a unit cube centred at `x = 2.9`
+    /// reaches down to `x = 2.4` and overlaps the dumbbell's `x = 2` child (which
+    /// reaches `x = 2.5`) by `0.1`, pushing the compound (A) towards `-x`. Turning
+    /// the dumbbell a quarter turn about `Z` swings that child to `y = 2`, out of
+    /// the cube's reach, so the turned compound is clear of it.
+    #[test]
+    fn a_compound_against_a_box_uses_its_posed_children() {
+        let c = dumbbell();
+        let block = cube(fx(1, 2));
+        let pose_c = (Vec3Fix::ZERO, QuatFix::IDENTITY);
+        let pose_block = (v(fx(29, 10), Fix128::ZERO, Fix128::ZERO), QuatFix::IDENTITY);
+        let hit = contact_between(&c, pose_c, &block, pose_block).expect("child overlaps");
+        assert_near(hit.depth, 0.1, 1e-3, "depth");
+        assert_vec_near(hit.normal, [-1.0, 0.0, 0.0], 1e-3, "normal");
+        assert!(colliders_meet(&c, pose_c, &block, pose_block));
+
+        let turned = (
+            Vec3Fix::ZERO,
+            QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI),
+        );
+        assert!(contact_between(&c, turned, &block, pose_block).is_none());
+        assert!(!colliders_meet(&c, turned, &block, pose_block));
+        // Both sides compound: the other dumbbell shifted by 4.8 along x puts its
+        // x = -2 child at 2.8, 0.2 into this one's x = 2 child.
+        let other = (v(fx(48, 10), Fix128::ZERO, Fix128::ZERO), QuatFix::IDENTITY);
+        let hit = contact_between(&c, pose_c, &dumbbell(), other).expect("children overlap");
+        assert_near(hit.depth, 0.2, 1e-3, "compound-compound depth");
+        assert!(colliders_meet(&c, pose_c, &dumbbell(), other));
+    }
+
+    /// The half-space `y < 0` (distance `y`, outward normal `+y`), fixed at the
+    /// origin.
+    #[cfg(feature = "std")]
+    fn floor() -> SdfCollider {
+        SdfCollider::new_static(
+            Box::new(crate::sdf_collider::ClosureSdf::new(
+                |_, y, _| y,
+                |_, _, _| (0.0, 1.0, 0.0),
+            )),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        )
+    }
+
+    /// Each convex shape against a flat floor reports its lowest point's depth
+    /// below `y = 0` with the floor's normal `+y`:
+    /// - an upright unit cube centred at `y = 0.4` reaches `0.4 - 1/2 = -0.1`;
+    /// - the same cube turned 1/8 turn about `Z` at `y = 0.6` stands on an edge at
+    ///   `0.6 - √2/2`;
+    /// - a ball (ellipsoid of equal radii 1/2) at `y = 0.3` reaches `-0.2`;
+    /// - an ellipsoid of radii `(1, 1/2, 1)` at `y = 0.4` reaches `-0.1` (its
+    ///   support point along `-y`);
+    /// - a cylinder of radius 1/2 and half-height 1/2 at `y = 0.45` reaches `-0.05`;
+    /// - the upright cube lifted to `y = 2` does not reach the floor.
+    ///
+    /// The field is evaluated in `f32`, hence the tolerance.
+    #[cfg(feature = "std")]
+    #[test]
+    fn convex_shapes_on_a_flat_floor_report_their_lowest_points_depth() {
+        let floor = floor();
+        let up = |y: Fix128| v(Fix128::ZERO, y, Fix128::ZERO);
+        let cases: [(BodyCollider, Fix128, QuatFix, f64); 5] = [
+            (cube(fx(1, 2)), fx(4, 10), QuatFix::IDENTITY, 0.1),
+            (
+                cube(fx(1, 2)),
+                fx(6, 10),
+                eighth_turn_z(),
+                0.5 * core::f64::consts::SQRT_2 - 0.6,
+            ),
+            (
+                BodyCollider::Shape(Shape::Ellipsoid {
+                    radii: v(fx(1, 2), fx(1, 2), fx(1, 2)),
+                }),
+                fx(3, 10),
+                QuatFix::IDENTITY,
+                0.2,
+            ),
+            (
+                BodyCollider::Shape(Shape::Ellipsoid {
+                    radii: v(Fix128::ONE, fx(1, 2), Fix128::ONE),
+                }),
+                fx(4, 10),
+                QuatFix::IDENTITY,
+                0.1,
+            ),
+            (
+                BodyCollider::Shape(Shape::Cylinder {
+                    radius: fx(1, 2),
+                    half_height: fx(1, 2),
+                }),
+                fx(45, 100),
+                QuatFix::IDENTITY,
+                0.05,
+            ),
+        ];
+        for (i, (collider, y, rotation, depth)) in cases.iter().enumerate() {
+            let hit = collider
+                .sdf_contact(up(*y), *rotation, &floor)
+                .unwrap_or_else(|| panic!("case {i}: no contact"));
+            assert_near(hit.depth, *depth, 1e-5, "floor depth");
+            assert_vec_near(hit.normal, [0.0, 1.0, 0.0], 1e-6, "floor normal");
+        }
+        assert!(cube(fx(1, 2))
+            .sdf_contact(up(Fix128::from_int(2)), QuatFix::IDENTITY, &floor)
+            .is_none());
+    }
+
+    /// Each kind of compound child against the floor, placed by the body's pose:
+    /// - a sphere child (radius 1/4) at body-local `(-3/2, 0, 0)` on a body at
+    ///   `y = 1` turned a quarter turn about `Z` lands at world `(0, -1/2, 0)`
+    ///   (the turn maps local `-x` to world `-y`): depth `1/2 + 1/4 = 3/4`
+    ///   (unturned it would sit at `y = 1`, clear of the floor);
+    /// - a capsule child along `y` from `-1/2` to `1/2`, radius 1/4, body at
+    ///   `y = 0.6`: lowest point `0.6 - 1/2 - 1/4 = -0.15`;
+    /// - a unit-cube child turned 1/8 turn about `Z`, body at `y = 0.6`: lowest
+    ///   edge at `0.6 - √2/2`;
+    /// - a hull child with vertices `(0, -1, 0), (±1, 0, 0), (0, 0, 1)`, body at
+    ///   `y = 0.75`: lowest vertex at `-0.25`.
+    ///
+    /// A compound holding the capsule and the hull reports the deeper (the hull).
+    #[cfg(feature = "std")]
+    #[test]
+    fn compound_children_on_a_flat_floor_report_the_deepest_child() {
+        let floor = floor();
+        let up = |y: Fix128| v(Fix128::ZERO, y, Fix128::ZERO);
+        let half = fx(1, 2);
+        let quarter = fx(1, 4);
+
+        let mut sphere = CompoundShape::new();
+        sphere.add_sphere(
+            Sphere::new(Vec3Fix::ZERO, quarter),
+            v(fx(-3, 2), Fix128::ZERO, Fix128::ZERO),
+            QuatFix::IDENTITY,
+        );
+        let sphere = BodyCollider::Compound(sphere);
+        let quarter_turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI);
+        let hit = sphere
+            .sdf_contact(up(Fix128::ONE), quarter_turn, &floor)
+            .expect("turned sphere child reaches the floor");
+        assert_near(hit.depth, 0.75, 1e-5, "sphere child depth");
+        assert!(sphere
+            .sdf_contact(up(Fix128::ONE), QuatFix::IDENTITY, &floor)
+            .is_none());
+
+        let capsule = Capsule::new(v(Fix128::ZERO, -half, Fix128::ZERO), up(half), quarter);
+        let mut c = CompoundShape::new();
+        c.add_capsule(capsule, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        let hit = BodyCollider::Compound(c)
+            .sdf_contact(up(fx(6, 10)), QuatFix::IDENTITY, &floor)
+            .expect("capsule child reaches the floor");
+        assert_near(hit.depth, 0.15, 1e-5, "capsule child depth");
+
+        let mut c = CompoundShape::new();
+        c.add_box(
+            OrientedBox::new(Vec3Fix::ZERO, v(half, half, half), eighth_turn_z()),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        );
+        let hit = BodyCollider::Compound(c)
+            .sdf_contact(up(fx(6, 10)), QuatFix::IDENTITY, &floor)
+            .expect("box child reaches the floor");
+        assert_near(
+            hit.depth,
+            0.5 * core::f64::consts::SQRT_2 - 0.6,
+            1e-5,
+            "box child depth",
+        );
+
+        let hull = || {
+            ConvexHull::new(vec![
+                Vec3Fix::from_int(0, -1, 0),
+                Vec3Fix::from_int(1, 0, 0),
+                Vec3Fix::from_int(-1, 0, 0),
+                Vec3Fix::from_int(0, 0, 1),
+            ])
+        };
+        let mut both = CompoundShape::new();
+        both.add_capsule(capsule, Vec3Fix::ZERO, QuatFix::IDENTITY);
+        both.add_convex_hull(hull(), Vec3Fix::ZERO, QuatFix::IDENTITY);
+        // Body at y = 0.75: capsule bottom at 0.75 - 3/4 = 0 (touching, no
+        // contact), hull bottom at -0.25.
+        let hit = BodyCollider::Compound(both)
+            .sdf_contact(up(fx(3, 4)), QuatFix::IDENTITY, &floor)
+            .expect("hull child reaches the floor");
+        assert_near(hit.depth, 0.25, 1e-5, "deepest child depth");
+        assert_vec_near(hit.normal, [0.0, 1.0, 0.0], 1e-6, "floor normal");
+    }
 }
