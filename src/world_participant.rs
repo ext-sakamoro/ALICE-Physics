@@ -53,6 +53,9 @@
 //! | `PRES` | `0x5052_4553` | `pressure::PressureModifier` |
 //! | `FRAC` | `0x4652_4143` | `fracture::FractureModifier` |
 //! | `EROS` | `0x4552_4f53` | `erosion::ErosionModifier` |
+//! | `CRWD` | `0x4352_5744` | `crowd_force::CrowdParticipant` |
+//! | `MDVV` | `0x4d44_5656` | `molecular_dynamics::MdParticipant` |
+//! | `MEDM` | `0x4d45_444d` | `coupling_medium::DragMedium` |
 //!
 //! # Coupling through ports
 //!

@@ -343,9 +343,12 @@ fn snapshot_restore_continues_bit_for_bit() {
 
 /// The same scene on XPBD and on TGS gives the same velocities to within the
 /// propagated XPBD bound of the module documentation (not bit for bit: XPBD
-/// derives velocities from positions). Both paths hand the participants the
-/// same width `h = dt / substeps`. The XPBD-TGS difference is also measured
-/// non-zero, so the bound is not compared against two identical runs.
+/// derives velocities from positions). XPBD hands the participants
+/// `h = dt / substeps` and TGS its own solve width `dt * (1 / substeps as f32)`;
+/// the comparison runs only for the cases where the two widths are the same
+/// value, and the other cases are checked to really have different widths.
+/// The XPBD-TGS difference is also measured non-zero, so the bound is not
+/// compared against two identical runs.
 ///
 /// Tightens to bit equality once XPBD keeps the predicted velocity of bodies
 /// its constraints did not move.
@@ -353,8 +356,17 @@ fn snapshot_restore_continues_bit_for_bit() {
 fn xpbd_and_tgs_agree_within_the_rounding_bound() {
     let sum_m: f64 = MASSES.iter().map(|&m| m as f64).sum::<f64>() + 3.0;
     let m_min: f64 = 1.0;
+    let mut compared = 0;
     for (num, den, substeps) in CASES {
         let dt = Fix128::from_ratio(num, den);
+        let xpbd_h = dt / Fix128::from_int(substeps as i64);
+        let tgs_h = dt * Fix128::from_f32(1.0 / substeps as f32);
+        if xpbd_h != tgs_h {
+            // different widths: the two runs solve different discretisations
+            assert!(substeps != 1 && !substeps.is_power_of_two());
+            continue;
+        }
+        compared += 1;
         let h = num as f64 / den as f64 / substeps as f64;
         let mut x = momentum_scene(SolverBackend::Xpbd, substeps);
         let mut t = momentum_scene(SolverBackend::Tgs, substeps);
@@ -384,6 +396,7 @@ fn xpbd_and_tgs_agree_within_the_rounding_bound() {
             "{num}/{den} s{substeps}: the paths never differed"
         );
     }
+    assert!(compared >= 2, "too few cases with equal widths: {compared}");
 }
 
 // ---------------------------------------------------------------------------

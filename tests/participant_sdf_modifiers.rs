@@ -941,9 +941,18 @@ fn in_crate_kinds() -> Vec<(&'static str, ParticipantKind)> {
         ("PressureModifier", PressureModifier::PARTICIPANT_KIND),
         ("FractureModifier", FractureModifier::PARTICIPANT_KIND),
         ("ErosionModifier", ErosionModifier::PARTICIPANT_KIND),
-        // reserved for the crowd and molecular dynamics participants
-        ("crowd", fourcc(b"CRWD")),
-        ("molecular dynamics", fourcc(b"MDVV")),
+        (
+            "CrowdParticipant",
+            alice_physics::crowd_force::CROWD_PARTICIPANT_KIND,
+        ),
+        (
+            "MdParticipant",
+            alice_physics::molecular_dynamics::MD_PARTICIPANT_KIND,
+        ),
+        (
+            "DragMedium",
+            alice_physics::coupling_medium::DRAG_MEDIUM_KIND,
+        ),
     ]
 }
 
