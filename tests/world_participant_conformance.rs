@@ -25,9 +25,9 @@ use std::sync::{Arc, Mutex};
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 use alice_physics::world_participant::{
-    AccumulateError, ForceAccumulator, ObservationSink, Observed, Participant, ParticipantFault,
-    ParticipantKind, ParticipantMismatch, RegisterError, StateError, StepError, StepRule,
-    SubstepCtx, Verdict, WorldFault,
+    execution_order, AccumulateError, ForceAccumulator, ObservationSink, Observed, OrderError,
+    Participant, ParticipantFault, ParticipantKind, ParticipantMismatch, Port, PortAccess, PortId,
+    RegisterError, StateError, StepError, StepRule, SubstepCtx, Verdict, WorldFault,
 };
 
 // ============================================================================
@@ -53,6 +53,7 @@ struct Tether {
     calls: u64,
     fail_on_call: Option<u64>,
     log: Option<CallLog>,
+    ports: Vec<Port>,
 }
 
 /// `(participant id, substep index)` per call, shared across participants.
@@ -71,7 +72,13 @@ impl Tether {
             calls: 0,
             fail_on_call: None,
             log: None,
+            ports: Vec::new(),
         }
+    }
+
+    fn with_ports(mut self, ports: &[Port]) -> Self {
+        self.ports = ports.to_vec();
+        self
     }
 
     fn with_kind(mut self, kind: ParticipantKind) -> Self {
@@ -110,6 +117,10 @@ fn get_fix(b: &[u8]) -> Fix128 {
 impl Participant for Tether {
     fn kind(&self) -> ParticipantKind {
         self.kind
+    }
+
+    fn ports(&self) -> &[Port] {
+        &self.ports
     }
 
     fn substep(&mut self, ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
@@ -502,6 +513,153 @@ fn fault_tags_round_trip_and_unknown_tags_are_refused() {
 }
 
 // ============================================================================
+// Execution order from declared ports (pure, no world needed)
+// ============================================================================
+
+const PORT_A: PortId = PortId::new(1);
+const PORT_B: PortId = PortId::new(2);
+const PORT_C: PortId = PortId::new(3);
+
+/// A participant that keeps the default `ports`.
+struct Silent;
+
+impl Participant for Silent {
+    fn kind(&self) -> ParticipantKind {
+        ParticipantKind::new(0)
+    }
+    fn substep(&mut self, _: &mut SubstepCtx<'_>, _: Fix128) -> Result<(), ParticipantFault> {
+        Ok(())
+    }
+    fn observe(&self, _: &mut ObservationSink) {}
+    fn write_state(&self, _: &mut Vec<u8>) {}
+    fn check_state(&self, _: &[u8]) -> Result<(), StateError> {
+        Ok(())
+    }
+    fn read_state(&mut self, _: &[u8]) {}
+}
+
+#[test]
+fn ports_are_typed_and_default_to_none() {
+    assert!(Silent.ports().is_empty());
+    let r = Port::reads(PORT_A);
+    let w = Port::writes(PORT_A);
+    assert_eq!((r.id(), r.access()), (PORT_A, PortAccess::Read));
+    assert_eq!((w.id(), w.access()), (PORT_A, PortAccess::Write));
+    assert_ne!(r, w);
+    assert_eq!(PortId::new(7).get(), 7);
+}
+
+/// Oracle: with nothing declared the order is the registration order (the
+/// behaviour before ports existed).
+#[test]
+fn execution_order_without_ports_is_registration_order() {
+    assert_eq!(execution_order(&[]), Ok(vec![]));
+    assert_eq!(execution_order(&[&[], &[], &[], &[]]), Ok(vec![0, 1, 2, 3]));
+    // a participant reading and writing its own port is not ordered against itself
+    let own: &[Port] = &[Port::reads(PORT_A), Port::writes(PORT_A)];
+    assert_eq!(execution_order(&[own, &[]]), Ok(vec![0, 1]));
+    // reads without a writer, writes without a reader: no constraint
+    assert_eq!(
+        execution_order(&[&[Port::reads(PORT_A)], &[Port::writes(PORT_B)]]),
+        Ok(vec![0, 1])
+    );
+}
+
+/// Oracle: a writer runs before its readers, whatever the registration order.
+#[test]
+fn execution_order_runs_writers_before_readers() {
+    assert_eq!(
+        execution_order(&[&[Port::reads(PORT_A)], &[Port::writes(PORT_A)]]),
+        Ok(vec![1, 0])
+    );
+    // chain 2 → 1 → 0 registered backwards
+    assert_eq!(
+        execution_order(&[
+            &[Port::reads(PORT_B)],
+            &[Port::reads(PORT_A), Port::writes(PORT_B)],
+            &[Port::writes(PORT_A)],
+        ]),
+        Ok(vec![2, 1, 0])
+    );
+    // a reader of two ports waits for both writers
+    assert_eq!(
+        execution_order(&[
+            &[Port::reads(PORT_A), Port::reads(PORT_B)],
+            &[Port::writes(PORT_A)],
+            &[Port::writes(PORT_B)],
+        ]),
+        Ok(vec![1, 2, 0])
+    );
+}
+
+/// Oracle: among participants free to run, registration order decides; the
+/// same declarations always give the same order.
+#[test]
+fn execution_order_keeps_registration_order_among_equals() {
+    // 1 and 3 are free; 2 must precede 0. Free ones are taken lowest first:
+    // 1, 2, then 0 (now free, lower than 3), 3.
+    let decl: [&[Port]; 4] = [&[Port::reads(PORT_A)], &[], &[Port::writes(PORT_A)], &[]];
+    assert_eq!(execution_order(&decl), Ok(vec![1, 2, 0, 3]));
+    assert_eq!(execution_order(&decl), execution_order(&decl));
+    // two writers of one port keep their registration order, both before the reader
+    assert_eq!(
+        execution_order(&[
+            &[Port::reads(PORT_A)],
+            &[Port::writes(PORT_A)],
+            &[Port::writes(PORT_A)],
+        ]),
+        Ok(vec![1, 2, 0])
+    );
+    // two independent chains interleave by registration order
+    assert_eq!(
+        execution_order(&[
+            &[Port::writes(PORT_A)],
+            &[Port::writes(PORT_B)],
+            &[Port::reads(PORT_A)],
+            &[Port::reads(PORT_B)],
+        ]),
+        Ok(vec![0, 1, 2, 3])
+    );
+}
+
+/// Oracle: a loop is refused, naming exactly the participants on it; nothing
+/// is ordered silently.
+#[test]
+fn execution_order_refuses_a_cycle() {
+    // 0 ⇄ 1 through A and B; 2 only reads from the loop; 3 is free
+    let err = execution_order(&[
+        &[Port::reads(PORT_A), Port::writes(PORT_B)],
+        &[Port::reads(PORT_B), Port::writes(PORT_A)],
+        &[Port::reads(PORT_A)],
+        &[],
+    ]);
+    assert_eq!(
+        err,
+        Err(OrderError::Cycle {
+            members: vec![0, 1]
+        })
+    );
+    // three-way loop registered after a free participant and a writer feeding it
+    let err = execution_order(&[
+        &[],
+        &[Port::writes(PORT_C)],
+        &[
+            Port::reads(PORT_C),
+            Port::reads(PORT_A),
+            Port::writes(PORT_B),
+        ],
+        &[Port::reads(PORT_B), Port::writes(PORT_C)],
+        &[Port::reads(PORT_C), Port::writes(PORT_A)],
+    ]);
+    assert_eq!(
+        err,
+        Err(OrderError::Cycle {
+            members: vec![2, 3, 4]
+        })
+    );
+}
+
+// ============================================================================
 // World layer: receivers for entry points that do not exist yet
 // ============================================================================
 
@@ -639,7 +797,7 @@ fn failing_participant_leaves_itself_and_the_world_unchanged() {
     world::add_participant(&mut w, Box::new(failing)).expect("register");
     let mut reference = scene();
 
-    let expected = WorldFault {
+    let expected = WorldFault::Participant {
         index: 0,
         kind: KIND_TETHER,
         fault: ParticipantFault::OutOfRange,
@@ -911,8 +1069,10 @@ fn version_1_blob_reads_as_zero_participants() {
         &1u16.to_le_bytes(),
         "fixture must be a version-1 blob"
     );
-    // The fixture is captured before the version moves; keep it as bytes once
-    // the writer emits version 2 (see the design notes on the version bump).
+    // The fixture is captured before the version moves. The commit that makes
+    // the writer emit version 2 replaces it with these bytes fixed in the
+    // test, the way a golden hash is updated: the old and the new bytes are
+    // shown side by side in that commit.
     let restored = PhysicsWorld::from_world_snapshot(&v1).expect("v1 blob");
     assert!(world::participant_kinds(&restored).is_empty());
     let mut target = scene();
@@ -925,6 +1085,144 @@ fn version_1_blob_reads_as_zero_participants() {
             world: 1
         })
     );
+}
+
+/// A participant that pushes body `body` with a constant force every substep.
+struct Push {
+    body: usize,
+    force: Vec3Fix,
+}
+
+const KIND_PUSH: ParticipantKind = ParticipantKind::new(0x5055_5348);
+
+impl Participant for Push {
+    fn kind(&self) -> ParticipantKind {
+        KIND_PUSH
+    }
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, _: Fix128) -> Result<(), ParticipantFault> {
+        ctx.add_force(self.body, self.force)
+            .map_err(|_| ParticipantFault::InvalidState)
+    }
+    fn observe(&self, _: &mut ObservationSink) {}
+    fn write_state(&self, _: &mut Vec<u8>) {}
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        if bytes.is_empty() {
+            Ok(())
+        } else {
+            Err(StateError::Length {
+                expected: 0,
+                found: bytes.len(),
+            })
+        }
+    }
+    fn read_state(&mut self, _: &[u8]) {}
+}
+
+/// Ports change the order the world calls participants in: the reader
+/// registered first runs after the writer registered second, in every
+/// substep.
+#[test]
+#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::add_participant runs participants in execution_order"]
+fn substeps_call_participants_in_port_order() {
+    let log = Arc::new(Mutex::new(Vec::new()));
+    let mut w = scene();
+    let reader = Tether::new(7, 1)
+        .logging(&log)
+        .with_ports(&[Port::reads(PORT_A)]);
+    let writer = Tether::new(3, 2)
+        .logging(&log)
+        .with_ports(&[Port::writes(PORT_A)]);
+    world::add_participant(&mut w, Box::new(reader)).expect("register");
+    world::add_participant(&mut w, Box::new(writer)).expect("register");
+    world::try_step(&mut w, dt()).expect("step");
+    let expected: Vec<(u32, usize)> = (0..4).flat_map(|s| [(3, s), (7, s)]).collect();
+    assert_eq!(*log.lock().expect("log"), expected);
+}
+
+/// A participant that would close a loop of ports is refused at
+/// registration and the world keeps the participants it had.
+#[test]
+#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::add_participant refuses a cycle of ports"]
+fn registering_a_port_cycle_is_refused_and_changes_nothing() {
+    let mut w = scene();
+    let a = Tether::new(0, 1).with_ports(&[Port::reads(PORT_A), Port::writes(PORT_B)]);
+    let b = Tether::new(1, 2)
+        .with_kind(KIND_OTHER)
+        .with_ports(&[Port::reads(PORT_B), Port::writes(PORT_A)]);
+    assert_eq!(world::add_participant(&mut w, Box::new(a)), Ok(0));
+    let before = w.snapshot_world();
+    assert_eq!(
+        world::add_participant(&mut w, Box::new(b)),
+        Err(RegisterError::Order(OrderError::Cycle {
+            members: vec![0, 1]
+        }))
+    );
+    assert_eq!(world::participant_kinds(&w), vec![KIND_TETHER]);
+    assert_eq!(w.snapshot_world(), before);
+}
+
+/// A world with one dynamic body at rest in zero gravity, stepped until the
+/// body is parked (sleeping, skipped by the step).
+fn parked_scene() -> PhysicsWorld {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps: 4,
+        iterations: 4,
+        gravity: Vec3Fix::ZERO,
+        ..Default::default()
+    });
+    w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+    w.set_sleep_skip(true);
+    for _ in 0..120 {
+        w.step(dt());
+    }
+    assert!(w.is_sleeping(0), "fixture: the body must be parked");
+    w
+}
+
+/// A parked body is woken by a participant force above the wake threshold.
+/// The force (1000 N on 1 kg, a velocity change of about 4 m/s per substep)
+/// is far above any threshold of the form discussed in the design notes
+/// (fraction of the sleep velocity threshold per substep, or of `m·|g|`).
+#[test]
+#[ignore = "src gap: WORLD-V1-S1 a parked body wakes above the force threshold"]
+fn a_force_above_the_wake_threshold_wakes_a_parked_body() {
+    let mut w = parked_scene();
+    let push = Push {
+        body: 0,
+        force: Vec3Fix::from_int(1000, 0, 0),
+    };
+    world::add_participant(&mut w, Box::new(push)).expect("register");
+    world::try_step(&mut w, dt()).expect("step");
+    assert!(!w.is_sleeping(0), "the body stayed parked");
+    assert!(
+        w.bodies[0].velocity.x > Fix128::ZERO,
+        "the force had no effect"
+    );
+}
+
+/// A parked body is not woken by a participant force below the threshold,
+/// and the force has no effect on it (the sleep contract is unchanged). The
+/// force (2⁻³⁰ N on 1 kg) changes the velocity by far less than the sleep
+/// threshold of 0.01 m/s.
+#[test]
+#[ignore = "src gap: WORLD-V1-S1 a parked body stays parked below the force threshold"]
+fn a_force_below_the_wake_threshold_leaves_a_parked_body_parked() {
+    let mut w = parked_scene();
+    let before = motion(&w);
+    let tiny = Fix128 { hi: 0, lo: 1 << 34 };
+    let push = Push {
+        body: 0,
+        force: Vec3Fix::new(tiny, Fix128::ZERO, Fix128::ZERO),
+    };
+    world::add_participant(&mut w, Box::new(push)).expect("register");
+    for _ in 0..10 {
+        world::try_step(&mut w, dt()).expect("step");
+    }
+    assert!(
+        w.is_sleeping(0),
+        "a force below the threshold woke the body"
+    );
+    assert_eq!(motion(&w), before, "the force moved a parked body");
 }
 
 /// (h) With no participant registered, the checked step is the existing step
