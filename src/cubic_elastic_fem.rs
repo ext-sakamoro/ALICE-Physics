@@ -876,6 +876,12 @@ pub fn solve_cubic(
         prescribed_value[d] = value;
         is_free[d] = false;
     }
+    if is_free.iter().filter(|f| !**f).count() < 6 {
+        // Three translations and three rotations need six constraints; fewer
+        // leaves the stiffness singular whatever the mesh looks like (the P1
+        // solver and solve_cubic_hyperelastic refuse the same)
+        return Err(FemError::UnderConstrained);
+    }
     if is_free.iter().all(|f| !*f) {
         // Fully prescribed: the answer is the boundary data itself. Nothing was
         // solved, so nothing was relaxed, and the tolerance that was honoured is

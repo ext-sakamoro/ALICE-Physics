@@ -598,7 +598,7 @@ fn corner_only_clamp_still_solves() {
     assert!(s.is_ok(), "{:?}", s.err());
 }
 
-/// KNOWN DEFECT: `FemError::UnderConstrained` is documented as "reported when
+/// Fixed (AUD-A-S2W1-008): `FemError::UnderConstrained` is documented as "reported when
 /// fewer than six degrees of freedom are prescribed", and the P1 solver
 /// follows it (`Err(UnderConstrained)` for the same input). `solve_cubic` has
 /// no such check: with nothing prescribed and a single nodal load it returns
@@ -608,7 +608,6 @@ fn corner_only_clamp_still_solves() {
 /// The oracle is the equilibrium
 /// every `Ok` answer owes: reactions plus applied loads must balance.
 #[test]
-#[ignore = "known defect: AUD-A-S2W1-008: solve_cubic returns Ok (u ~ 1e11 mm, relative_residual 0) for a body with no constraints; P1 solve returns Err(UnderConstrained) for the same input"]
 fn solve_cubic_never_reports_ok_for_a_body_nothing_holds() {
     let c = CubicMesh::from_tet_mesh(&two_tets([0, 1, 2, 3], [1, 2, 3, 4])).unwrap();
     let mut b = BoundaryConditions::new();
@@ -616,19 +615,30 @@ fn solve_cubic_never_reports_ok_for_a_body_nothing_holds() {
     // nu built with from_ratio: with `from_f64(0.35)` (1 ulp elsewhere) the same
     // input ends in Err(Stagnated) instead, so the outcome is rounding-chaotic
     let mat = ElasticMaterial::new(Fix128::from_int(3500), Fix128::from_ratio(35, 100)).unwrap();
-    match solve_cubic(&c, &mat, &b, &config()) {
-        Err(_) => {}
-        Ok(s) => {
-            let worst = s
-                .displacements
-                .iter()
-                .flat_map(|d| d.iter())
-                .map(|v| v.to_f64().abs())
-                .fold(0.0f64, f64::max);
-            // a 10 N load on a 3500 MPa, 3 mm body cannot move it by a metre
-            assert!(worst < 1.0e3, "Ok with max |u| = {worst} mm");
-        }
+    // AUD-A-S2W1-008: refused as the P1 solver refuses it, before any iteration
+    assert!(
+        matches!(
+            solve_cubic(&c, &mat, &b, &config()),
+            Err(FemError::UnderConstrained)
+        ),
+        "{:?}",
+        solve_cubic(&c, &mat, &b, &config()).map(|s| s.iterations)
+    );
+    // five constraints are still too few, six pass the count
+    let mut b5 = b.clone();
+    for (node, axis) in [
+        (0, Axis::X),
+        (0, Axis::Y),
+        (0, Axis::Z),
+        (1, Axis::X),
+        (1, Axis::Y),
+    ] {
+        b5.prescribe(node, axis, Fix128::ZERO);
     }
+    assert!(matches!(
+        solve_cubic(&c, &mat, &b5, &config()),
+        Err(FemError::UnderConstrained)
+    ));
 }
 
 // --------------------------------------------------------------- hyperelastic
