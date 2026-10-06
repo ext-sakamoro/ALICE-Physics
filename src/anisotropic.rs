@@ -310,12 +310,27 @@ pub struct FailureReport {
 }
 
 /// Evaluate a failure criterion for a given stress state.
+///
+/// A zero (or negative) allowable means no strength in that direction: a
+/// nonzero stress component against it fails under every criterion, with the
+/// saturating index `Fix128::from_int(i64::MAX >> 8)` and a reserve factor of
+/// about 0. The allowable of a normal component is the tension or
+/// compression value by the sign of the stress; a zero stress against a zero
+/// allowable is not a failure.
 #[must_use]
 pub fn evaluate_failure(
     stress: &OrthotropicStress,
     strength: &AnisotropicStrength,
     criterion: FailureCriterion,
 ) -> FailureReport {
+    if loads_a_direction_without_strength(stress, strength) {
+        let index = Fix128::from_int(i64::MAX >> 8);
+        return FailureReport {
+            failure_index: index,
+            reserve_factor: Fix128::ONE / index,
+            is_safe: false,
+        };
+    }
     // `d` is the load-linear index: `1 / d` is the load factor that brings
     // the criterion to exactly 1 (see `FailureReport::reserve_factor`).
     let (idx, d) = match criterion {
@@ -339,6 +354,26 @@ pub fn evaluate_failure(
         reserve_factor: Fix128::ONE / denom,
         is_safe: idx < Fix128::ONE,
     }
+}
+
+/// True when a nonzero stress component meets an allowable `<= 0` in its
+/// direction (the tension or compression allowable by sign for the normals).
+fn loads_a_direction_without_strength(stress: &OrthotropicStress, s: &AnisotropicStrength) -> bool {
+    let normal = |v: Fix128, tension: Fix128, compression: Fix128| {
+        let allow = if v >= Fix128::ZERO {
+            tension
+        } else {
+            compression
+        };
+        !v.is_zero() && allow <= Fix128::ZERO
+    };
+    let shear = |v: Fix128, allow: Fix128| !v.is_zero() && allow <= Fix128::ZERO;
+    normal(stress.sigma_l, s.x_l_tension_mpa, s.x_l_compression_mpa)
+        || normal(stress.sigma_t, s.x_t_tension_mpa, s.x_t_compression_mpa)
+        || normal(stress.sigma_z, s.x_z_tension_mpa, s.x_z_compression_mpa)
+        || shear(stress.tau_lt, s.s_lt_mpa)
+        || shear(stress.tau_lz, s.s_lz_mpa)
+        || shear(stress.tau_tz, s.s_tz_mpa)
 }
 
 /// Maximum-stress failure index (largest ratio across all components).

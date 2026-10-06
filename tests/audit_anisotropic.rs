@@ -449,7 +449,7 @@ fn reserve_factor_tsai_wu_with_negative_linear_part_is_exact() {
 
 /// A zero allowable means "no strength in that direction": any stress there must fail.
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-005: a zero strength is treated as unlimited (max-stress skips the component, Hill/Tsai-Wu drop the term): stress 10 MPa against X_Z=0 reports index 0 / safe"]
+// AUD-A-S1W6-005
 fn zero_strength_with_nonzero_stress_is_not_safe() {
     let mut a = composite();
     a.x_z_tension_mpa = Fix128::ZERO;
@@ -461,7 +461,32 @@ fn zero_strength_with_nonzero_stress_is_not_safe() {
     ] {
         let r = evaluate_failure(&st(0.0, 0.0, 10.0, 0.0, 0.0, 0.0), &a, c);
         assert!(!r.is_safe, "{c:?}: index {}", r.failure_index.to_f64());
+        assert_eq!(r.failure_index, Fix128::from_int(i64::MAX >> 8), "{c:?}");
+        // no stress in that direction: the zero allowable does not matter
+        let r = evaluate_failure(&st(100.0, 0.0, 0.0, 0.0, 0.0, 0.0), &a, c);
+        let base = evaluate_failure(&st(100.0, 0.0, 0.0, 0.0, 0.0, 0.0), &composite(), c);
+        assert_eq!(r.is_safe, base.is_safe, "{c:?}");
     }
+    // a zero shear allowable with shear stress, and a zero compression
+    // allowable under tension (only the loaded direction counts)
+    let mut b = composite();
+    b.s_lt_mpa = Fix128::ZERO;
+    assert!(
+        !evaluate_failure(
+            &st(0.0, 0.0, 0.0, 1.0, 0.0, 0.0),
+            &b,
+            FailureCriterion::Hill
+        )
+        .is_safe
+    );
+    let mut c = composite();
+    c.x_l_compression_mpa = Fix128::ZERO;
+    let t = evaluate_failure(
+        &st(10.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+        &c,
+        FailureCriterion::MaximumStress,
+    );
+    assert!(t.is_safe, "tension against a zero compression allowable");
 }
 
 #[test]
