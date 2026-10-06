@@ -183,9 +183,11 @@ pub fn fix128_hard_tanh(values: &mut [Fix128]) {
 /// ```
 ///
 /// Its Taylor series agrees with tanh through `x¹³`. On `|x| ≤ 4.5` the ratio
-/// is odd, strictly increasing and below 1 (0.99980 at 4.5), and beyond that
-/// the output is clamped to `±1`, so the result is bounded by 1 and
-/// monotone everywhere. Maximum error against tanh is about 2.5·10⁻⁴ (at the
+/// is odd, increasing and below 1 (0.99980 at 4.5), and beyond that the output
+/// is clamped to `±1`, so the result is bounded by 1 everywhere and monotone up
+/// to the rounding of the Fix128 products (adjacent inputs 2⁻⁶⁴ apart can come
+/// out 1 raw unit in the wrong order). The clamp is a step of 2.05·10⁻⁴ up to 1
+/// at `|x| = 9/2` (the ratio itself reaches 1 only at `|x| ≈ 4.97`). Maximum error against tanh is about 2.5·10⁻⁴ (at the
 /// clamp, where tanh(4.5) = 0.99975).
 /// Uses only Fix128 add/mul/div — no transcendental functions.
 pub fn fix128_tanh_approx(values: &mut [Fix128]) {
