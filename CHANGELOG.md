@@ -402,6 +402,7 @@ were introduced during that release window.
 - `sdf_destruction::destruction_from_impact` が `min_radius > max_radius` で `f32::clamp` の assert により panic していた 2 つの境界はどちらの順でも同じ範囲として扱う (AUD-A-S5W3-010)
 - **Behavior change:** `sdf_destruction::destruction_from_projectile` が穴の中心を正規化していない `direction` で置いていた (`(0,0,2)`・深さ 4 で中心 z = 4) 中心は `entry + 単位方向 * depth/2` になり、`direction` の長さに依らない 単位方向の入力は不変 (AUD-A-S5W3-011)
 - **Behavior change:** `sdf_destruction::destruction_from_projectile` の回転が、±Y から約 2.6 度以内の方向を極に丸めていた (2 度で穴の軸が 0.035 / 単位長ずれる) 極の扱いは方向が厳密に Y 軸上にある時だけにした ちょうど ±Y の入力は不変 (AUD-A-S5W3-012)
+- `PhysicsWorld` の形状問い合わせ (`cast_capsule` / `overlap_aabb` / 保守前進と move_character の押し戻し) で GJK が 2 つの凸集合を交差とみなす閾値が `|v|² ≤ 2⁻¹⁶` (`|v| ≤ 2⁻⁸ ≈ 0.0039`) になっていた (`lo` を 2⁻¹²⁸ 単位と取り違えた定数) 間隙 2⁻⁸ 未満の対が重なりとして返り、その距離から始まる cast は t = 0 になっていた 閾値を `|v|² ≤ 2⁻⁶⁴` (`|v| ≤ 2⁻³²`、保守前進の許容差と同じ) にした
 ## [1.4.0] - 2026-09-17
 
 ### Changed

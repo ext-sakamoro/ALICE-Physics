@@ -121,8 +121,12 @@ const GJK_RELATIVE: Fix128 = Fix128 {
     lo: 0x0000_0000_0100_0000,
 };
 
-/// GJK treats `|v|² ≤ 2⁻⁸⁰` as intersecting: `|v| ≤ 2⁻⁴⁰`.
-const GJK_INTERSECT: Fix128 = Fix128 { hi: 0, lo: 1 << 48 };
+/// GJK treats `|v|² ≤ 2⁻⁶⁴` as intersecting: `|v| ≤ 2⁻³²`, the conservative
+/// advancement tolerance. `lo` is a 64-bit fraction (`lo = 1` is `2⁻⁶⁴`, the
+/// smallest positive `Fix128`), so this is the smallest threshold a squared
+/// length can be compared with; a larger one (`lo = 1 << 48` is `2⁻¹⁶`, `|v| ≤
+/// 2⁻⁸`) would count any pair nearer than about `0.0039` as intersecting.
+const GJK_INTERSECT: Fix128 = Fix128 { hi: 0, lo: 1 };
 
 const GJK_MAX_ITERATIONS: usize = 64;
 
@@ -497,7 +501,7 @@ fn weighted(s: &(Vec<Vertex>, Vec<Fix128>)) -> Vec3Fix {
 }
 
 /// The distance between two convex sets by GJK: `(distance, point on a, point on
-/// b)`, or `None` when they intersect (closer than `2⁻⁴⁰`).
+/// b)`, or `None` when they intersect (closer than `2⁻³²`).
 fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix, Vec3Fix)> {
     let mut simplex = vec![vertex(a, b, Vec3Fix::UNIT_X)];
     let mut weights = vec![Fix128::ONE];
