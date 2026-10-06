@@ -133,49 +133,58 @@ fn main() {
     );
 
     // ------------------------------------------------------------------
-    // 4. recommended_fillet_radius_mm -- binary search over `r/d` on the
-    //    same piecewise Peterson curve-fit as `kt_shaft_shoulder_bending`
-    //    (Norton Fig 4-36), inverted to find the smallest fillet radius
-    //    that keeps K_t <= target for a given shoulder step.
+    // 4. recommended_fillet_radius_mm -- binary search over `r/d` on
+    //    `kt_shaft_shoulder_bending` (the Peterson curve fit for a stepped
+    //    round bar in bending, Pilkey 2nd ed.), inverted to find the
+    //    smallest fillet radius that keeps K_t <= target.
     //
-    //    Shaft: small_dia = 25mm, large_dia = 45mm -> D/d = 1.8,
-    //    scale = 1 + 0.1*(D/d - 1) = 1 + 0.1*0.8 = 1.08 (the module's own
-    //    documented scaling of the piecewise K_t-base table). Target
-    //    K_t = 2.0.
-    //
-    //    Hand-derived from the doc comment's own piecewise table
-    //    (K_t-base * scale at each r/d breakpoint):
-    //      r/d <  0.02         -> 3.00 * 1.08 = 3.240
-    //      0.02 <= r/d < 0.05   -> 2.90 * 1.08 = 3.132
-    //      0.05 <= r/d < 0.10   -> 2.20 * 1.08 = 2.376
-    //      0.10 <= r/d < 0.20   -> 1.80 * 1.08 = 1.944  <- first <= 2.0
-    //      0.20 <= r/d < 0.30   -> 1.50 * 1.08 = 1.620
-    //      r/d >= 0.30          -> 1.30 * 1.08 = 1.404
-    //    The smallest r/d bracket whose K_t <= 2.0 is r/d = 0.10 exactly
-    //    (K_t jumps from 2.376 to 1.944 at that breakpoint), so the
-    //    bisection in `recommended_fillet_radius_mm` must converge to
-    //    r/d = 0.10 from above, i.e. radius = 0.10 * 25mm = 2.5mm.
+    //    Shaft: small_dia = 25mm, large_dia = 45mm: step h = 10 mm,
+    //    t = 2h/D = 20/45. With x = h/r the fit is
+    //      K_t = C1 + C2 t + C3 t^2 + C4 t^3, Ci = ai + bi sqrt(x) + ci x
+    //    (the 2 <= x <= 20 set below); K_t = 2 is solved for x by f64
+    //    bisection here, then r = h / x (about 1.76 mm, x about 5.7).
     // ------------------------------------------------------------------
     let small_dia = Fix128::from_int(25);
     let large_dia = Fix128::from_int(45);
     let kt_target = Fix128::from_int(2);
     let r_needed = recommended_fillet_radius_mm(small_dia, large_dia, kt_target);
+    let t = 20.0_f64 / 45.0;
+    let fit_high = |x: f64| {
+        let s = x.sqrt();
+        let c1 = 1.232 + 0.832 * s - 0.008 * x;
+        let c2 = -3.813 + 0.968 * s - 0.260 * x;
+        let c3 = 7.423 - 4.868 * s + 0.869 * x;
+        let c4 = -3.839 + 3.070 * s - 0.600 * x;
+        c1 + c2 * t + c3 * t * t + c4 * t * t * t
+    };
+    let (mut lo, mut hi) = (2.0_f64, 20.0_f64); // K_t rises with x
+    assert!(fit_high(lo) < 2.0 && fit_high(hi) > 2.0, "root bracketed");
+    for _ in 0..100 {
+        let mid = 0.5 * (lo + hi);
+        if fit_high(mid) > 2.0 {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    let r_closed = 10.0 / lo;
     assert_rel(
         r_needed,
-        2.5,
+        r_closed,
         1e-6,
-        "recommended_fillet_radius_mm(d=25,D=45,Kt<=2) radius = 0.10*d breakpoint (Norton Fig 4-36)",
+        "recommended_fillet_radius_mm(d=25,D=45,Kt<=2) radius from the fit solved in f64",
     );
 
-    // Cross-check the achieved K_t at that radius against the same
-    // hand-derived breakpoint value (1.944), via the already-wired
+    // Cross-check the achieved K_t at that radius, via the already-wired
     // `kt_shaft_shoulder_bending` (not the function under test here) --
     // confirms the returned radius actually satisfies the target, not
     // just that the bisection landed on the expected r/d.
     let kt_achieved = kt_shaft_shoulder_bending(r_needed, small_dia, large_dia);
+    // continuous in r, so the minimal radius meets the target with equality
+    // (to the bisection's 30 halvings of r/d in [0, 0.5])
     assert_abs(
         kt_achieved,
-        1.944,
+        2.0,
         1e-6,
         "kt_shaft_shoulder_bending(r_needed,25,45) K_t at recommended radius",
     );
