@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 64 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2334 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2422 |
 | live | reached without examples (crate-internal roots or a binding) | 432 |
-| | **total** | **2830** |
+| | **total** | **2918** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -177,7 +177,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2334)
+## L1 — example-only (2422)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -347,3 +347,4 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/warp_risk.rs`: `EnvConditions`, `EnvConditions::enclosed_abs`, `EnvConditions::open_air_pla`, `Footprint`, `Footprint::rectangle`, `WarpRiskCategory`, `WarpRiskReport`, `analyze_warp_risk`
 - `src/wave_ship.rs`: `Jonswap`, `Jonswap::north_sea`, `Jonswap::peak_omega`, `Jonswap::spectrum_density`, `ShipResponse`, `ShipResponse::advance`, `WaveComponent`, `free_surface_elevation`, `froude_krylov_vertical_n`
 - `src/wind_zone.rs`: `WindZone`, `WindZone::force_on`, `WindZone::force_on_particle`, `WindZone::instantaneous_wind_vector`, `WindZone::light_breeze`, `WindZone::storm`
+- `src/world_participant.rs`: `AccumulateError`, `ExchangeError`, `FieldAccessError`, `FieldBoard`, `FieldBoard::check_values`, `FieldBoard::declare`, `FieldBoard::ids`, `FieldBoard::layout`, `FieldBoard::mode`, `FieldBoard::new`, `FieldBoard::read_values`, `FieldBoard::set`, `FieldBoard::value`, `FieldBoard::write_values`, `FieldError`, `FieldLayout`, `FieldLayout::samples`, `FieldMode`, `FieldPortError`, `FieldStage`, `FieldStage::is_empty`, `FieldStage::new`, `FieldStage::staged`, `ForceAccumulator`, `ForceAccumulator::add_force`, `ForceAccumulator::add_torque`, `ForceAccumulator::clear`, `ForceAccumulator::force`, `ForceAccumulator::is_empty`, `ForceAccumulator::len`, `ForceAccumulator::merge`, `ForceAccumulator::new`, `ForceAccumulator::torque`, `ObservationSink`, `ObservationSink::new`, `ObservationSink::push`, `ObservationSink::values`, `Observed`, `Observed::verdict`, `OrderError`, `Participant`, `ParticipantFault`, `ParticipantFault::from_tag`, `ParticipantFault::tag`, `ParticipantKind`, `ParticipantKind::get`, `ParticipantKind::new`, `ParticipantMismatch`, `ParticipantMismatch::classify`, `ParticipantPlan`, `ParticipantPlan::new`, `ParticipantPlan::order`, `Port`, `Port::access`, `Port::id`, `Port::reads`, `Port::reads_committed`, `Port::writes`, `PortAccess`, `PortId`, `PortId::get`, `PortId::new`, `RegisterError`, `RemapError`, `StateError`, `StepError`, `StepRule`, `StepRule::steps_per_substep`, `SubstepCtx`, `SubstepCtx::add_force`, `SubstepCtx::add_torque`, `SubstepCtx::bodies`, `SubstepCtx::field`, `SubstepCtx::h`, `SubstepCtx::new`, `SubstepCtx::stage_field`, `SubstepCtx::substep_index`, `SubstepCtx::substeps`, `SubstepCtx::with_fields`, `SubstepTime`, `Verdict`, `WorldFault`, `check_field_ports`, `deposit_bodies`, `execution_order`, `remap_conserving`, `run_substep`, `wakes_parked_body`
