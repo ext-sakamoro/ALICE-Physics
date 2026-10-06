@@ -483,7 +483,12 @@ impl MetricEntry {
         use crate::sketch::FnvHasher;
 
         let mut name_buf = [0u8; 64];
-        let len = name.len().min(64);
+        // at most 64 bytes, cut at a character boundary (a cut inside a
+        // multi-byte character made name_str() return the empty string)
+        let mut len = name.len().min(64);
+        while !name.is_char_boundary(len) {
+            len -= 1;
+        }
         name_buf[..len].copy_from_slice(&name.as_bytes()[..len]);
 
         Self {
@@ -603,9 +608,9 @@ pub struct MetricSnapshot {
     pub p99: f64,
     /// Mean value
     pub mean: f64,
-    /// Min value
+    /// Min value (0 without histogram data, as `mean` and the quantiles)
     pub min: f64,
-    /// Max value
+    /// Max value (0 without histogram data, as `mean` and the quantiles)
     pub max: f64,
     /// Event count
     pub event_count: u64,
@@ -622,8 +627,18 @@ impl From<&MetricSlot> for MetricSnapshot {
             p95: slot.ddsketch.quantile(0.95),
             p99: slot.ddsketch.quantile(0.99),
             mean: slot.ddsketch.mean(),
-            min: slot.ddsketch.min(),
-            max: slot.ddsketch.max(),
+            // like mean and the quantiles, 0 when the slot holds no histogram
+            // data (the sketch's empty extrema are +inf / -inf)
+            min: if slot.ddsketch.count() == 0 {
+                0.0
+            } else {
+                slot.ddsketch.min()
+            },
+            max: if slot.ddsketch.count() == 0 {
+                0.0
+            } else {
+                slot.ddsketch.max()
+            },
             event_count: slot.event_count,
         }
     }

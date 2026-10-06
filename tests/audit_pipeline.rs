@@ -340,7 +340,7 @@ fn entry_truncates_long_names_to_64_bytes_but_hashes_the_full_name() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-018: MetricEntry::new truncates the name at byte 64 even inside a multi-byte character, and name_str() then returns the empty string (63 'a' + 'e-acute': name_str() == \"\" instead of 63 'a')"]
+// AUD-A-S5W3-018
 fn entry_name_truncated_inside_a_multibyte_character_is_not_lost() {
     let name = format!("{}\u{e9}", "a".repeat(63));
     let e = MetricEntry::new(&name, MetricType::Counter);
@@ -401,16 +401,14 @@ fn pipeline_histogram_with_alpha_one_percent_keeps_quantiles_for_values_above_fi
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-020: a snapshot of a slot without histogram data reports min = +inf and max = -inf while mean and the quantiles report 0.0"]
+// AUD-A-S5W3-020
 fn snapshot_of_a_slot_without_histogram_data_has_finite_extrema() {
     let mut slot = MetricSlot::new(1, 0.05);
     slot.process(&MetricEvent::counter(1, 1.0));
     let snap = MetricSnapshot::from(&slot);
-    assert!(
-        snap.min.is_finite() && snap.max.is_finite(),
-        "min {} max {}",
-        snap.min,
-        snap.max
+    assert_eq!(
+        (snap.min, snap.max, snap.mean, snap.p50),
+        (0.0, 0.0, 0.0, 0.0)
     );
 }
 
