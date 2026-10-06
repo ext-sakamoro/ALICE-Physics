@@ -85,8 +85,11 @@ fn sq_over(a: Fix128, b: Fix128) -> Option<Fix128> {
 }
 
 /// `Σ terms`, or [`FAILED_INDEX`] when a term is missing (did not fit) or the
-/// sum leaves Fix128: every criterion here is a positive quadratic form, so a
-/// term too large to represent means an index far above 1.
+/// sum leaves Fix128: the criteria are positive quadratic forms for strengths
+/// of a real ply, so a term too large to represent means an index far above 1.
+/// (Tsai-Hill's form is indefinite only when `Y > 2X`; there a ratio
+/// `Y/X ≳ 3·10⁹` could let the cross term cancel an unrepresentable square,
+/// which no material reaches.)
 fn index_sum(terms: &[Option<Fix128>]) -> Fix128 {
     let mut acc: i128 = 0;
     for t in terms {
