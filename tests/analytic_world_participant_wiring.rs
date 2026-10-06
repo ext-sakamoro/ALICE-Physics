@@ -29,7 +29,7 @@
 use std::sync::{Arc, Mutex};
 
 use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{
     PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, WorldSnapshotError,
 };
@@ -993,6 +993,90 @@ fn a_torque_changes_the_angular_velocity_by_inv_inertia_tau_h() {
     );
     assert_eq!(w.bodies[0].angular_velocity.y, Fix128::ZERO);
     assert_eq!(w.bodies[0].angular_velocity.z, Fix128::ZERO);
+}
+
+/// The rotation matrix of a unit quaternion, in `f64` from its components
+/// (independent of the crate's quaternion product).
+fn rotation_f64(q: QuatFix) -> [[f64; 3]; 3] {
+    let (x, y, z, w) = (q.x.to_f64(), q.y.to_f64(), q.z.to_f64(), q.w.to_f64());
+    [
+        [
+            1.0 - 2.0 * (y * y + z * z),
+            2.0 * (x * y - z * w),
+            2.0 * (x * z + y * w),
+        ],
+        [
+            2.0 * (x * y + z * w),
+            1.0 - 2.0 * (x * x + z * z),
+            2.0 * (y * z - x * w),
+        ],
+        [
+            2.0 * (x * z - y * w),
+            2.0 * (y * z + x * w),
+            1.0 - 2.0 * (x * x + y * y),
+        ],
+    ]
+}
+
+/// One substep of a world-frame torque `τ = (3, -1, 2)` on a free body at
+/// rest, turned about `(1, 2, 3)` by `0.7` rad, with the body-frame inverse
+/// inertia `diag(1, 2, 4)`: the change of ω is the world-frame
+/// `R · diag(inv_inertia) · Rᵀ · τ · h` (oracle: that product in `f64`, with
+/// `R` built from the body's own quaternion components by
+/// [`rotation_f64`]). With the identity rotation or an isotropic inertia the
+/// rotation drops out of the oracle; here the frame and every axis of the
+/// inertia matter.
+///
+/// The tolerance: XPBD re-derives ω from the orientation change at the end
+/// of the substep (`q += ½·h·ω⊗q`, normalized). For an ω that is not an
+/// eigenvector of the inertia the re-derived value differs from the applied
+/// one to first order in `|ω|·h`, and `|ω| ∝ h` here, so the relative
+/// difference shrinks with `h`. Measured relative difference at
+/// `h = 1/16384`: `7.6e-9`; the tolerance is `1e-7`.
+#[test]
+fn a_torque_on_a_rotated_anisotropic_body_follows_r_diag_rt() {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps: 1,
+        gravity: Vec3Fix::ZERO,
+        damping: Fix128::ONE,
+        ..Default::default()
+    });
+    let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+    b.angular_damping = Fix128::ONE;
+    b.inv_inertia = Vec3Fix::from_int(1, 2, 4);
+    b.rotation = QuatFix::from_axis_angle(Vec3Fix::from_int(1, 2, 3), Fix128::from_ratio(7, 10));
+    b.prev_rotation = b.rotation;
+    w.add_body(b);
+    let q = w.bodies[0].rotation;
+    w.add_participant(Box::new(Twist::new(Vec3Fix::from_int(3, -1, 2))))
+        .expect("register");
+    let hd = 16384_i64;
+    w.try_step(Fix128::from_ratio(1, hd)).expect("step");
+
+    let tau = [3.0_f64, -1.0, 2.0];
+    let inv = [1.0_f64, 2.0, 4.0];
+    let r = rotation_f64(q);
+    let mut local = [0.0_f64; 3];
+    for (i, l) in local.iter_mut().enumerate() {
+        *l = (0..3).map(|j| r[j][i] * tau[j]).sum::<f64>() * inv[i];
+    }
+    let h = 1.0 / hd as f64;
+    let expected: Vec<f64> = (0..3)
+        .map(|i| (0..3).map(|j| r[i][j] * local[j]).sum::<f64>() * h)
+        .collect();
+    let omega = w.bodies[0].angular_velocity;
+    let got = [omega.x.to_f64(), omega.y.to_f64(), omega.z.to_f64()];
+    let norm = expected.iter().map(|v| v * v).sum::<f64>().sqrt();
+    let rel = (0..3)
+        .map(|i| (got[i] - expected[i]).powi(2))
+        .sum::<f64>()
+        .sqrt()
+        / norm;
+    assert!(
+        rel < 1e-7,
+        "ω {got:?} vs R·diag(I⁻¹)·Rᵀ·τ·h {expected:?} (relative {rel:e})"
+    );
+    assert_eq!(w.fault(), None);
 }
 
 /// A light body (mass `2⁻²⁰`, so `inv_inertia ≈ 2.6e6`) under `τ = 2⁵⁰`:
