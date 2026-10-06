@@ -104,12 +104,17 @@ impl Rope {
         let n = num_segments + 1; // number of particles
         let total_length = (end - start).length();
         let segment_length = total_length / Fix128::from_int(num_segments as i64);
+        // lumped masses: each segment's mass `mass_per_unit * segment_length` is
+        // split between its two particles, so interior particles carry one
+        // segment mass, the two ends half of one, and the total is
+        // `mass_per_unit * total_length`
         let particle_mass = mass_per_unit * segment_length;
         let inv_mass = if particle_mass.is_zero() {
             Fix128::ZERO
         } else {
             Fix128::ONE / particle_mass
         };
+        let end_inv_mass = inv_mass.double();
 
         let mut positions = Vec::with_capacity(n);
         for i in 0..n {
@@ -123,7 +128,9 @@ impl Rope {
         }
 
         let rest_lengths = vec![segment_length; num_segments];
-        let inv_masses = vec![inv_mass; n];
+        let mut inv_masses = vec![inv_mass; n];
+        inv_masses[0] = end_inv_mass;
+        inv_masses[n - 1] = end_inv_mass;
 
         Self {
             prev_positions: positions.clone(),
