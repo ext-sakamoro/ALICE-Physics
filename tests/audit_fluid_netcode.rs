@@ -63,13 +63,22 @@ fn serialized_layout_is_hi_then_lo_little_endian_per_component() {
     assert_eq!(s.frame, 3);
 }
 
+/// FNV-1a of [len(pos bytes) as u64 LE] pos bytes [len(vel bytes) as u64 LE] vel bytes
+fn state_checksum(p: &[Vec3Fix], v: &[Vec3Fix]) -> u64 {
+    let (pb, vb) = (le_bytes(p), le_bytes(v));
+    let mut all = (pb.len() as u64).to_le_bytes().to_vec();
+    all.extend(&pb);
+    all.extend((vb.len() as u64).to_le_bytes());
+    all.extend(&vb);
+    fnv1a(&all)
+}
+
 #[test]
 fn checksum_is_fnv1a_of_positions_then_velocities() {
+    // each array prefixed by its byte length, u64 little-endian
     let (p, v) = sample(4);
     let s = FluidSnapshot::capture(&p, &v, 0);
-    let mut all = le_bytes(&p);
-    all.extend(le_bytes(&v));
-    assert_eq!(s.checksum, fnv1a(&all));
+    assert_eq!(s.checksum, state_checksum(&p, &v));
     // known vector: FNV-1a of "a" is 0xaf63dc4c8601ec8c (sanity of the reference itself)
     assert_eq!(fnv1a(b"a"), 0xaf63_dc4c_8601_ec8c);
 }
@@ -178,14 +187,18 @@ fn verify_is_true_only_for_the_captured_arrays() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-012: the checksum hashes positions then velocities as one byte stream with no length, so unequal-length inputs collide: capture(&[a,b], &[c]) and capture(&[a], &[b,c]) have the same checksum and verify() accepts the other split"]
+// AUD-A-S5W2-012
 fn checksum_distinguishes_where_the_position_stream_ends() {
+    // [a, b] + [c, d] and [a] + [b, c, d] are the same byte stream; the
+    // checksum must still tell the splits apart, so verify() rejects the other
     let a = v3(1.0, 2.0, 3.0);
     let b = v3(4.0, 5.0, 6.0);
     let c = v3(7.0, 8.0, 9.0);
-    let s1 = FluidSnapshot::capture(&[a, b], &[c], 0);
-    let s2 = FluidSnapshot::capture(&[a], &[b, c], 0);
-    assert_ne!(s1.checksum, s2.checksum);
+    let d = v3(10.0, 11.0, 12.0);
+    let s = FluidSnapshot::capture(&[a, b], &[c, d], 0);
+    assert!(s.verify(&[a, b], &[c, d]));
+    assert!(!s.verify(&[a], &[b, c, d]));
+    assert!(!s.verify(&[a, b, c], &[d]));
 }
 
 #[test]
@@ -260,9 +273,7 @@ fn delta_metadata_and_checksum_describe_the_full_new_state() {
     new.0[2] = old.0[2] + v3(1.0, 0.0, 0.0);
     let d = delta(&old, &new, Fix128::ZERO);
     assert_eq!((d.base_frame, d.frame), (4, 5));
-    let mut all = le_bytes(&new.0);
-    all.extend(le_bytes(&new.1));
-    assert_eq!(d.checksum, fnv1a(&all));
+    assert_eq!(d.checksum, state_checksum(&new.0, &new.1));
 }
 
 #[test]

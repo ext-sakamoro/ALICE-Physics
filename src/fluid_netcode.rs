@@ -31,7 +31,9 @@ pub struct FluidSnapshot {
     pub positions: Vec<u8>,
     /// Serialized velocities (N * 3 * 16 bytes)
     pub velocities: Vec<u8>,
-    /// State checksum for desync detection
+    /// State checksum for desync detection: FNV-1a 64 over the positions'
+    /// byte length (u64 little-endian) and bytes, then the velocities' length
+    /// and bytes
     pub checksum: u64,
     /// Frame number
     pub frame: u64,
@@ -273,10 +275,20 @@ fn deserialize_vec3_array(data: &[u8], count: usize) -> Option<Vec<Vec3Fix>> {
     Some(vecs)
 }
 
-/// FNV-1a 64-bit hash for checksum
+/// FNV-1a 64-bit hash for checksum, over each array's byte length (u64,
+/// little-endian) followed by its bytes: positions, then velocities. The
+/// lengths make the split part of the hash, so the same bytes divided
+/// differently between the two arrays do not collide.
 fn compute_checksum(pos_data: &[u8], vel_data: &[u8]) -> u64 {
+    let pos_len = (pos_data.len() as u64).to_le_bytes();
+    let vel_len = (vel_data.len() as u64).to_le_bytes();
     let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in pos_data.iter().chain(vel_data.iter()) {
+    for &byte in pos_len
+        .iter()
+        .chain(pos_data)
+        .chain(vel_len.iter())
+        .chain(vel_data)
+    {
         hash ^= byte as u64;
         hash = hash.wrapping_mul(0x100000001b3);
     }
