@@ -84,7 +84,42 @@ fn bench_physics_step(c: &mut Criterion) {
         );
     });
 
+    // The same scene through `step_parallel` (rayon, every core): the numbers
+    // above are one core; this one shows what the parallel constraint batches
+    // and island dispatch add. Run with `--features parallel`.
+    #[cfg(feature = "parallel")]
+    group.bench_function("thousand_overlapping_spheres_1_step_parallel", |b| {
+        b.iter_batched(
+            thousand_overlapping_spheres,
+            |mut world| {
+                world.step_parallel(black_box(Fix128::from_ratio(1, 60)));
+                world.bodies[0].position
+            },
+            criterion::BatchSize::LargeInput,
+        );
+    });
+
     group.finish();
+}
+
+/// 1000 spheres of radius 1 on a 10³ grid with spacing 1.5 (every neighbour
+/// pair overlaps).
+#[cfg(feature = "parallel")]
+fn thousand_overlapping_spheres() -> PhysicsWorld {
+    let mut world = PhysicsWorld::new(PhysicsConfig::default());
+    for x in 0..10i64 {
+        for y in 0..10i64 {
+            for z in 0..10i64 {
+                let pos = Vec3Fix::new(
+                    Fix128::from_ratio(3 * x, 2),
+                    Fix128::from_ratio(3 * y, 2) + Fix128::from_int(20),
+                    Fix128::from_ratio(3 * z, 2),
+                );
+                world.add_body_with_radius(RigidBody::new_dynamic(pos, Fix128::ONE), Fix128::ONE);
+            }
+        }
+    }
+    world
 }
 
 // ============================================================================
