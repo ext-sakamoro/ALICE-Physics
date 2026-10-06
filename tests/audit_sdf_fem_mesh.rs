@@ -545,7 +545,7 @@ fn boundary_faces_are_sorted_unique_and_match_the_box_surface_count() {
 /// `[a, mid, c, d]` / `[mid, b, c, d]` keep the parent's winding only when the split edge is
 /// (v0, v1) or an even permutation of it; for the other edges half the children are inverted.
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-012: try_refine_conforming / try_refine_marked emit children with mixed winding (372 of 745 tets have negative signed volume after refining a 60-tet block at 0.45), bypassing push_tet's uniform-winding guarantee"]
+// AUD-A-S2W3-012
 fn refinement_keeps_every_element_positively_wound() {
     let mut m = block();
     assert!(m.tets.iter().all(|t| signed_vol6(&m, t.vertices) > 0.0));

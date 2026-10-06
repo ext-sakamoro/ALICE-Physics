@@ -110,7 +110,7 @@ pub enum BoundaryFaceError {
     },
 }
 
-/// The six edges of a tetrahedron, in the order `split_edge_remaining` expects.
+/// The six edges of a tetrahedron as vertex-index pairs, in a fixed order.
 fn tet_edges(vs: [u32; 4]) -> [(u32, u32); 6] {
     [
         (vs[0], vs[1]),
@@ -301,13 +301,9 @@ impl SdfTetMesh {
                 changed = true;
                 let (a, b) = tet_edges(tet.vertices)[k];
                 let mid = self.midpoint_of(a, b, &mut midpoints);
-                let (c, d) = split_edge_remaining(tet.vertices, k);
-                new_tets.push(Tetrahedron {
-                    vertices: [a, mid, c, d],
-                });
-                new_tets.push(Tetrahedron {
-                    vertices: [mid, b, c, d],
-                });
+                let [first, second] = split_children(tet.vertices, a, b, mid);
+                new_tets.push(Tetrahedron { vertices: first });
+                new_tets.push(Tetrahedron { vertices: second });
             }
             self.tets = new_tets;
             if !changed {
@@ -408,13 +404,9 @@ impl SdfTetMesh {
                 changed = true;
                 let (a, b) = tet_edges(tet.vertices)[k];
                 let mid = self.midpoint_of(a, b, &mut midpoints);
-                let (c, d) = split_edge_remaining(tet.vertices, k);
-                new_tets.push(Tetrahedron {
-                    vertices: [a, mid, c, d],
-                });
-                new_tets.push(Tetrahedron {
-                    vertices: [mid, b, c, d],
-                });
+                let [first, second] = split_children(tet.vertices, a, b, mid);
+                new_tets.push(Tetrahedron { vertices: first });
+                new_tets.push(Tetrahedron { vertices: second });
             }
             self.tets = new_tets;
             if !changed {
@@ -555,19 +547,15 @@ impl SdfTetMesh {
     }
 }
 
-/// For a tetrahedron with vertex list `[v0, v1, v2, v3]` and an
-/// enumeration-index `best_edge ∈ 0..6` naming which edge was picked,
-/// return the two remaining vertex indices.
-fn split_edge_remaining(vs: [u32; 4], best_edge: usize) -> (u32, u32) {
-    match best_edge {
-        0 => (vs[2], vs[3]), // (v0, v1)
-        1 => (vs[1], vs[3]), // (v0, v2)
-        2 => (vs[1], vs[2]), // (v0, v3)
-        3 => (vs[0], vs[3]), // (v1, v2)
-        4 => (vs[0], vs[2]), // (v1, v3)
-        5 => (vs[0], vs[1]), // (v2, v3)
-        _ => unreachable!("best_edge out of range"),
-    }
+/// The two children of bisecting the edge `(a, b)` of a tetrahedron at its
+/// midpoint `mid`: the parent with `b` replaced by `mid`, and with `a`
+/// replaced by `mid`. Replacing a vertex in place by a point on an edge from
+/// it keeps the orientation, so both children are wound as the parent is
+/// (listing them as `[a, mid, c, d]` / `[mid, b, c, d]` inverted half of them
+/// for the edges that are not `(v0, v1)` up to an even permutation).
+fn split_children(vs: [u32; 4], a: u32, b: u32, mid: u32) -> [[u32; 4]; 2] {
+    let replace = |from: u32| vs.map(|v| if v == from { mid } else { v });
+    [replace(b), replace(a)]
 }
 
 /// Whole cells of size `cell` across `[min, max]` on each axis, at least 1.
