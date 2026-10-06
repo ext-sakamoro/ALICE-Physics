@@ -60,6 +60,10 @@ jobs:
         run: python scripts/test_mutants_ratchet.py
       - name: Bench count check (tests)
         run: python scripts/test_bench_counts_check.py
+      - name: Heavy workflows stay off the landing path (tests)
+        run: python scripts/test_ci_load_check.py
+      - name: Heavy workflows stay off the landing path
+        run: python scripts/ci_load_check.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)
         run: python scripts/coverage_check.py
       # SCIP integration ledger (docs/integration-status.md): the analysis is

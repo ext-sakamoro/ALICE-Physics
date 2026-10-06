@@ -8,7 +8,7 @@ name: Bench gate (instruction counts)
 # does not repeat.
 on:
   push:
-    branches: [main, 'ci/**']
+    branches: [main]
     paths:
       - 'src/**'
       - 'benches/instruction_counts.rs'
@@ -18,8 +18,10 @@ on:
 permissions:
   contents: read
 
+# main only and one run at a time (a newer push cancels the older run): the
+# measurement must not take runners from the ci/** branches the landing script waits on
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}
   cancel-in-progress: true
 
 env:

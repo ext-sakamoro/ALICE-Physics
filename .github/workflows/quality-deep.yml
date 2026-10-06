@@ -1,7 +1,8 @@
 # quality-deep — 週次 / 手動の深い品質検査 (crate 厳密評価の CI 層、2026-09-15 制定)
 #
-# 週次 + workflow_dispatch が基本 (時間がかかる / ノイズがある)、mutants だけは push の差分にも掛かる:
-# - mutants : cargo-mutants (test が bug を検出できるかの逆検査)  push / PR では --in-diff で差分のみ (見逃しは失敗)、
+# 週次 + 夜間 + workflow_dispatch だけで動き、push では動かない: どれも重く、runner を
+# 占有すると取り込み (ci/** の CI 待ち) を止めるため 夜間は前日 main に入った変更の行だけを変異試験:
+# - mutants : cargo-mutants (test が bug を検出できるかの逆検査)  夜間 / PR では --in-diff で差分のみ (見逃しは失敗)、
 #             週次は core shard の見逃しを scripts/mutants-missed-baseline.txt と比べる (scripts/mutants_ratchet.py)
 # - miri    : UB 検出 (unsafe / parallel 持ち crate)  SIMD / FFI / wasm は miri 非対応のため除外
 # - bench   : criterion 回帰 (main baseline vs HEAD、critcmp)  GH runner のノイズがあるため informational
@@ -13,7 +14,8 @@ name: Quality Deep
 
 on:
   schedule:
-    - cron: '0 18 * * 0'   # 日曜 03:00 JST
+    - cron: '0 18 * * 0'     # 日曜 03:00 JST: 全項目 (core shard の変異試験 + ratchet / Miri / loom / bench / ignored)
+    - cron: '30 17 * * 1-6'   # 月〜土 02:30 JST: その日 main に入った変更の行だけを変異試験 (見逃しで失敗)
   workflow_dispatch:
     inputs:
       scope:
@@ -38,16 +40,11 @@ on:
       - 'src/**'
       - 'Cargo.toml'
       - '.github/workflows/quality-deep.yml'
-  # every push that changes the source mutates just the changed lines (gate:
-  # a missed mutant fails); main is reached by local rebase + push, not by PRs
-  push:
-    branches: [main, 'ci/**']
-    paths:
-      - 'src/**'
-      - 'Cargo.toml'
-      - '.github/workflows/quality-deep.yml'
-      - 'scripts/mutants_ratchet.py'
-      - 'scripts/mutants-missed-baseline.txt'
+
+# one run at a time (the weekly run waits for the nightly one instead of doubling the load)
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -123,13 +120,16 @@ jobs:
     # Mac 実測 66 s → 28 s) + timeout 300 に変更 shard 2 の score: caught 64 / missed 192 = 25%
     # 2026-09-15 3 回目実測: default feature だけだと `#[cfg(feature = "parallel")]` / gpu-solver-bridge 内の
     # code が compile されず「変異しても変わらない = missed」に数えられる (solver.rs で 163 / 575) → feature 軸を追加
-    name: Mutation testing (cargo-mutants${{ (github.event_name == 'pull_request' || github.event_name == 'push') && ', in-diff' || format(', core shard {0}/16', matrix.shard) }}, ${{ matrix.features == '' && 'default' || matrix.features }})
+    name: Mutation testing (cargo-mutants${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && ', in-diff' || format(', core shard {0}/16', matrix.shard) }}, ${{ matrix.features == '' && 'default' || matrix.features }})
     runs-on: ubuntu-latest
     timeout-minutes: 300
     strategy:
       fail-fast: false
+      # at most four mutation jobs at once: the weekly 32 jobs ran together and
+      # held the runners the landing CI needed for hours
+      max-parallel: 4
       matrix:
-        shard: ${{ (github.event_name == 'pull_request' || github.event_name == 'push') && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]') }}
+        shard: ${{ (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6') && fromJSON('[0]') || fromJSON('[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]') }}
         features: ['', 'parallel,gpu-solver-bridge']
     steps:
       - uses: actions/checkout@v5
@@ -139,17 +139,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
-      - name: Mutants (push / PR = in-diff, a missed mutant fails)
-        if: github.event_name == 'pull_request' || github.event_name == 'push'
-        env:
-          BEFORE: ${{ github.event.before }}
+      - name: Mutants (nightly / PR = in-diff, a missed mutant fails)
+        if: (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6')
         run: |
           if [ "${{ github.event_name }}" = pull_request ]; then
             base="origin/${{ github.base_ref }}"
-          elif [ -n "$BEFORE" ] && [ "$BEFORE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
-            base="$BEFORE"
           else
-            base=$(git merge-base origin/main HEAD)   # a new branch: its commits beyond main
+            # nightly: the changes main received since the previous night
+            base=$(git rev-list -1 --before="25 hours ago" HEAD)
           fi
           git diff "$base" HEAD -- src Cargo.toml > /tmp/change.diff
           if [ ! -s /tmp/change.diff ]; then echo "no source change between $base and HEAD"; exit 0; fi
@@ -167,7 +164,7 @@ jobs:
             *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc ;;
           esac
       - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
-        if: github.event_name != 'pull_request' && github.event_name != 'push'
+        if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
         run: |
           ulimit -v 6291456
           set +e
@@ -213,7 +210,7 @@ jobs:
     # entries alone. Record a new baseline with `--write` after reviewing it.
     name: Mutation ratchet (weekly shards vs the missed baseline)
     needs: mutants
-    if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
+    if: always() && (github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -226,7 +223,7 @@ jobs:
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)
-    if: github.event_name != 'push'  # push runs only the in-diff mutants
+    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -245,7 +242,7 @@ jobs:
 
   miri:
     name: Miri (UB 検出、parallel feature)
-    if: github.event_name != 'push'  # push runs only the in-diff mutants
+    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -289,7 +286,7 @@ jobs:
     # PR では走らせない (本 file の他 job と同じ方針): `runtime:` の 1 本だけで
     # CI Test job に +154..+309 s かかる実測がある (armaly_backward_step.rs の理由文)
     name: Ignored tests (runtime = must pass / src gap = must fail)
-    if: github.event_name != 'pull_request' && github.event_name != 'push'
+    if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -314,7 +311,7 @@ jobs:
 
   bench-regress:
     name: Bench regression (criterion, informational)
-    if: github.event_name != 'push'  # push runs only the in-diff mutants
+    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

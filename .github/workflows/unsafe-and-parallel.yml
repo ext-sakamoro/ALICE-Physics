@@ -3,11 +3,11 @@ name: Miri and loom (changed unsafe or parallel code)
 # The raw-pointer slice wrappers of the parallel step (src/solver.rs) are the
 # crate's only unsafe code; Miri checks them for undefined behaviour and loom
 # explores the thread interleavings of one colour batch. quality-deep.yml runs
-# both weekly; this workflow runs them, as a gate, whenever a push changes the
-# unsafe or parallel code they cover.
+# both weekly; this workflow runs them after a push to main changes the unsafe or
+# parallel code they cover (not on ci/** branches: those carry the landing path).
 on:
   push:
-    branches: [main, 'ci/**']
+    branches: [main]
     paths:
       - 'src/solver.rs'
       - 'src/solver_tgs*.rs'
@@ -22,8 +22,10 @@ on:
 permissions:
   contents: read
 
+# heavy analysis never runs on the ci/** branches the landing script waits on, and
+# never more than one run at a time: a newer push to main cancels the older run
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}
   cancel-in-progress: true
 
 jobs:
