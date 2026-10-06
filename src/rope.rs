@@ -38,7 +38,9 @@ pub struct RopeConfig {
     pub damping: Fix128,
     /// Distance constraint compliance (0 = rigid)
     pub compliance: Fix128,
-    /// Friction coefficient against SDF surfaces
+    /// Coulomb friction coefficient against SDF surfaces: a contact takes at
+    /// most `sdf_friction` times its normal velocity change off the tangential
+    /// speed (independent of the substep count)
     pub sdf_friction: Fix128,
 }
 
@@ -329,12 +331,27 @@ impl Rope {
 
                     self.positions[i] = self.positions[i] + normal * depth;
 
-                    // Friction: dampen tangential velocity
+                    // Restitution 0.1 on an approaching normal velocity only; a
+                    // particle already moving out keeps it. Coulomb friction: the
+                    // tangential speed drops by at most `sdf_friction` times the
+                    // normal velocity change of the contact (stops at zero), so
+                    // the loss over a frame is `mu * (1 + e) * g * dt` for a
+                    // resting particle whatever the substep count.
                     let vel = self.velocities[i];
-                    let vn = normal * vel.dot(normal);
-                    let vt = vel - vn;
-                    self.velocities[i] =
-                        vn * Fix128::from_f32(-0.1) + vt * (Fix128::ONE - self.config.sdf_friction);
+                    let vn_mag = vel.dot(normal);
+                    let vt = vel - normal * vn_mag;
+                    if vn_mag < Fix128::ZERO {
+                        let restitution = Fix128::from_ratio(1, 10);
+                        let dvn = -(Fix128::ONE + restitution) * vn_mag;
+                        let vt_mag = vt.length();
+                        let drop = self.config.sdf_friction * dvn;
+                        let vt_new = if vt_mag <= drop || vt_mag.is_zero() {
+                            Vec3Fix::ZERO
+                        } else {
+                            vt * ((vt_mag - drop) / vt_mag)
+                        };
+                        self.velocities[i] = normal * (-restitution * vn_mag) + vt_new;
+                    }
                 }
             }
         }
