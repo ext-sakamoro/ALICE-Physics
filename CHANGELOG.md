@@ -296,6 +296,10 @@ were introduced during that release window.
 
 - `SdfTetMesh::refine_by_max_edge_length`: `try_refine_conforming` を使う (戻り値が完了と打ち切りを区別しないため)
 
+### Removed
+
+- crate 内部 (`pub(crate)`) の TGS 参照実装 3 module を削除 `solver_tgs_hooks` (質点の `PgsHooks` / `PgsConfig` / `SimpleBodyState` / `SimpleContact`)、`solver_tgs_hooks_6dof` (姿勢を持たない `Pgs6DofHooks` / `Pgs6DofConfig` / `Body6DofState` / `Contact6Dof`)、`solver_tgs_hooks_6dof_scoped` (`solve_island_isolated` / `solve_islands_serial` / `solve_islands_parallel`) と、それらの test だけが呼んでいた `ImpulseCache::len` / `Body6DofOrientedState::local_to_world` `SolverBackend::Tgs` は姿勢を持つ `Pgs6DofOrientedHooks` / `solve_oriented_islands_serial` だけを使っており、削除した module は world から呼ばれていなかった 公開 API の変更なし (`docs/PUBLIC_API_SNAPSHOT.txt` は差分 0) 閉形式で確かめられる test (2 質点の Newton の反発則、Coulomb の摩擦錐の上限、warm start の `Δv = J / m`、Baumgarte の位置補正量、既定値での自由落下と静止接触) は姿勢を持つ hooks に対する test として `solver_tgs_hooks_6dof_oriented_scoped` に移し、`AdaptiveSubStepConfig` の既定値の test は `solver_tgs` に移した
+
 ### Fixed
 
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 (`replay` は in-memory の保存先で同 target に対応、Added 参照)

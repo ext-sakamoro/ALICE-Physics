@@ -4,11 +4,11 @@ _Generated from `scripts/wiring-baseline.txt` and `scripts/wiring_guard.py` (no 
 
 ## Status
 
-🟡 **17 baseline items** — Permitted violations, ratchet in place
+🟡 **5 baseline items** — Permitted violations, ratchet in place
 
 ---
 
-## 📋 Baseline (17 permitted)
+## 📋 Baseline (5 permitted)
 
 Violations explicitly allowed via `scripts/wiring-baseline.txt`.
 Must resolve or remove from baseline to reduce ratchet.
@@ -17,38 +17,23 @@ Must resolve or remove from baseline to reduce ratchet.
 
 | File | Baseline lines |
 |------|----------------|
-| `src/solver_tgs_hooks.rs` | 5 |
-| `src/solver_tgs_hooks_6dof_scoped.rs` | 4 |
 | `src/solver_tgs.rs` | 2 |
-| `src/solver_tgs_hooks_6dof.rs` | 2 |
-| `src/solver_tgs_hooks_6dof_oriented.rs` | 2 |
 | `src/solver_tgs_hooks_6dof_oriented_scoped.rs` | 2 |
+| `src/solver_tgs_hooks_6dof_oriented.rs` | 1 |
 
-### Dead Code (6)
+### Dead Code (3)
 
 ```
 dead_code src/solver_tgs.rs 1
-dead_code src/solver_tgs_hooks.rs 1
-dead_code src/solver_tgs_hooks_6dof.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented.rs 1
 dead_code src/solver_tgs_hooks_6dof_oriented_scoped.rs 1
-dead_code src/solver_tgs_hooks_6dof_scoped.rs 1
 ```
 
-### Unwired Items (11)
+### Unwired Items (2)
 
 ```
 unwired src/solver_tgs.rs::par_dispatch_islands
-unwired src/solver_tgs_hooks.rs::PgsConfig
-unwired src/solver_tgs_hooks.rs::PgsHooks
-unwired src/solver_tgs_hooks.rs::SimpleBodyState
-unwired src/solver_tgs_hooks.rs::SimpleContact
-unwired src/solver_tgs_hooks_6dof.rs::Pgs6DofHooks
-unwired src/solver_tgs_hooks_6dof_oriented.rs::local_to_world
 unwired src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
-unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_island_isolated
-unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel
-unwired src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial
 ```
 
 ---

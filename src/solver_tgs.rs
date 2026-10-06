@@ -209,12 +209,6 @@ impl ImpulseCache {
         self.entries.retain(|k, _| self.live.contains_key(k));
         self.live.clear();
     }
-
-    /// Number of impulses currently cached.
-    #[must_use]
-    pub(crate) fn len(&self) -> usize {
-        self.entries.len()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1841,5 +1835,29 @@ mod tests {
             0
         });
         assert!(none.is_empty());
+    }
+
+    /// `AdaptiveSubStepConfig::default()`: 0.1 world units per sub-step,
+    /// clamp `[1, 16]`. A body at `v` world units/s over `dt = 1/60` needs
+    /// `ceil(v / 6)` sub-steps, and a static scene needs exactly 1.
+    #[test]
+    fn adaptive_substep_default_gives_ceil_of_travel_over_tenth() {
+        let cfg = AdaptiveSubStepConfig::default();
+        assert_eq!((cfg.min_substeps, cfg.max_substeps), (1, 16));
+        assert!((cfg.max_translation_per_step.to_f64() - 0.1).abs() < 1e-12);
+        struct V(Fix128);
+        impl HasVelocity for V {
+            fn velocity_l_inf(&self) -> Fix128 {
+                self.0
+            }
+        }
+        let dt = Fix128::from_ratio(1, 60);
+        let n = |v: i64| adaptive_substeps_for(&[V(Fix128::from_int(v))], dt, &cfg);
+        assert_eq!(n(0), 1, "static scene");
+        assert_eq!(n(6), 1, "travel exactly 0.1");
+        assert_eq!(n(7), 2, "travel 0.1167 -> 2 sub-steps");
+        assert_eq!(n(60), 10, "travel 1.0 -> 10 sub-steps");
+        assert_eq!(n(96), 16, "travel 1.6 -> 16 (cap)");
+        assert_eq!(n(10_000), 16, "clamped at max_substeps");
     }
 }
