@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Added
 
+- `tests/analytic_coordinate_range.rs`: 演算ごとの許容座標範囲の実測 (`Fix128` の四則・平方根・三角関数・指数、`Vec3Fix` / `QuatFix` / `Mat3Fix`、剛体の積分と衝撃、球の接触、点力場、broadphase、`SpatialGrid`、SDF の問い合わせ) 境界の入力 (2³⁰〜2⁶²) で正しい / wrap / saturate / panic / 明示の Err のどれかを独立の参照計算と比べて pin する 剛体 world の step は 2⁶¹ まで平行移動で bit 一致、あふれは位置の絶対値でなく差・半径・速度・力の大きさ (`|·| ≥ 2³¹·⁵` の 2 乗) で起きる 範囲外で fault にならない 6 件 (位置の ±2⁶³ wrap、TGS 経路の overflow flag、角速度の消失、大半径の球の接触見逃し、点力場、`SpatialGrid::hash`) は `src gap: WORLD-V1-RANGE` の ignore で置いた
 - `docs/coverage/orbit.toml`: 天体・軌道 (2 体問題・N 体・摂動・制限 3 体・軌道遷移・宇宙機の姿勢・座標系と時刻系・地表の重力) の網羅表 (Vallado / Curtis / Murray–Dermott / Battin、REBOUND / GMAT / Orekit の積分器・力モデル・座標系、Kepler 軌道の閉合・figure-eight・Pythagorean 3 体・J2 歳差・L4 の Trojan・Hohmann の標準ベンチマークの範囲に対する 109 項目) partial 3 項目の制限は `src/kepler.rs` と `src/nbody.rs` に `LIMITATION(<id>)` コメントで示す (コメントのみ、挙動の変更なし)
 - `docs/coverage/cfd.toml`: 非圧縮流体・乱流 (CFD) の網羅表 (Ferziger–Perić / Pope / Versteeg–Malalasekera、OpenFOAM / Fluent のソルバ・モデル、Ghia / Armaly / Taylor–Green 等の標準ベンチマークの範囲に対する 117 項目、軸は離散化 / 圧力-速度連成 / 移流 / 時間積分 / 境界条件 / 乱流 / 物理 / 圧力ソルバ / 粒子法 / 出力 / ベンチマーク) partial 6 項目の制限は `src/cfd_solver.rs` と `src/fluid.rs` に `LIMITATION(COV-CFD-NNN)` コメントで対応付け (挙動の変更なし)
 - `docs/coverage/multiphase.toml`: 多相流・自由表面の網羅表 (界面捕獲 VOF / level set / PLIC、表面張力、二相の運動量、粒子法の自由表面、界面の相変化条件、非ニュートン相、気泡・液滴、平均化モデル、燃焼の流れ、標準ベンチマークに対する 86 項目) partial 3 項目の制限を `src/multiphase.rs` の `LIMITATION(<id>)` コメントで示す (挙動変更なし)
