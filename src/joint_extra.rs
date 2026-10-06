@@ -594,8 +594,8 @@ fn solve_gear(joint: &GearJoint, bodies: &mut [RigidBody], dt: Fix128) {
     }
 
     let compliance_term = joint.compliance / (dt * dt);
-    let w_a = body_a.inv_inertia.length();
-    let w_b = body_b.inv_inertia.length();
+    let w_a = inv_inertia_about(&body_a, Vec3Fix::UNIT_Z);
+    let w_b = inv_inertia_about(&body_b, Vec3Fix::UNIT_Z);
     let w_sum = w_a + joint.ratio * joint.ratio * w_b + compliance_term;
 
     if w_sum.is_zero() {
@@ -663,8 +663,12 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
     let (correction_axis, error_mag) = error_vec.normalize_with_length();
 
     if !error_mag.is_zero() {
+        // inverse inertia of each body about the error axis, so the correction
+        // is split like the position projection's (w_a : w_b)
         let compliance_term = joint.compliance / (dt * dt);
-        let w_ang = body_a.inv_inertia.length() + body_b.inv_inertia.length() + compliance_term;
+        let w_a = inv_inertia_about(&body_a, correction_axis);
+        let w_b = inv_inertia_about(&body_b, correction_axis);
+        let w_ang = w_a + w_b + compliance_term;
 
         if !w_ang.is_zero() {
             let inv_w_ang = Fix128::ONE / w_ang;
@@ -676,7 +680,8 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
                 joint.body_a,
                 joint.body_b,
                 correction_axis,
-                angular_lambda,
+                angular_lambda * w_a,
+                angular_lambda * w_b,
             );
         }
     }
@@ -710,7 +715,7 @@ fn solve_rack_and_pinion(joint: &RackAndPinionJoint, bodies: &mut [RigidBody], d
 
     let compliance_term = joint.compliance / (dt * dt);
     let w_linear = body_rack.inv_mass;
-    let w_angular = body_pinion.inv_inertia.length();
+    let w_angular = inv_inertia_about(&body_pinion, world_pinion_axis);
     let w_sum = w_linear + joint.ratio * joint.ratio * w_angular + compliance_term;
 
     if w_sum.is_zero() {
@@ -816,34 +821,36 @@ fn extract_angle_around_axis(q: QuatFix, axis: Vec3Fix) -> Fix128 {
     twist.double()
 }
 
-/// Apply angular correction to two bodies (utility).
+/// Inverse moment of inertia of `body` about the world axis `axis` (unit):
+/// `n_localᵀ diag(inv_inertia) n_local` with `n_local` the axis in the body
+/// frame. Zero for a static body (it takes no correction).
+fn inv_inertia_about(body: &RigidBody, axis: Vec3Fix) -> Fix128 {
+    if body.inv_mass.is_zero() {
+        return Fix128::ZERO;
+    }
+    let n = body.rotation.conjugate().rotate_vec(axis);
+    let i = body.inv_inertia;
+    i.x * n.x * n.x + i.y * n.y * n.y + i.z * n.z * n.z
+}
+
+/// Rotate body `a` by `angle_a` and body `b` by `-angle_b` about `axis`
+/// (small-angle quaternion steps, as the position projection moves them).
 fn apply_angular_correction(
     bodies: &mut [RigidBody],
     idx_a: usize,
     idx_b: usize,
     axis: Vec3Fix,
-    magnitude: Fix128,
+    angle_a: Fix128,
+    angle_b: Fix128,
 ) {
-    let half_mag = magnitude.half();
-    let inv_mass_a = bodies[idx_a].inv_mass;
-    let inv_mass_b = bodies[idx_b].inv_mass;
-
-    if !inv_mass_a.is_zero() {
-        let dq = QuatFix::new(
-            axis.x * half_mag,
-            axis.y * half_mag,
-            axis.z * half_mag,
-            Fix128::ONE,
-        );
+    if !bodies[idx_a].inv_mass.is_zero() && !angle_a.is_zero() {
+        let h = angle_a.half();
+        let dq = QuatFix::new(axis.x * h, axis.y * h, axis.z * h, Fix128::ONE);
         bodies[idx_a].rotation = dq.mul(bodies[idx_a].rotation).normalize();
     }
-    if !inv_mass_b.is_zero() {
-        let dq = QuatFix::new(
-            -(axis.x * half_mag),
-            -(axis.y * half_mag),
-            -(axis.z * half_mag),
-            Fix128::ONE,
-        );
+    if !bodies[idx_b].inv_mass.is_zero() && !angle_b.is_zero() {
+        let h = angle_b.half();
+        let dq = QuatFix::new(-(axis.x * h), -(axis.y * h), -(axis.z * h), Fix128::ONE);
         bodies[idx_b].rotation = dq.mul(bodies[idx_b].rotation).normalize();
     }
 }

@@ -265,7 +265,7 @@ fn weld_angular_correction_is_independent_of_quaternion_sign() {
 /// inverse inertia `i` about the error axis is one XPBD projection: one solve closes the
 /// angular error (to first order in the angle).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-013: solve_weld's angular effective inverse mass is |inv_inertia| (vector norm, sqrt(3) for the isotropic case) and the correction is split equally between the bodies instead of by inverse inertia; one solve leaves 0.0085 of 0.02 rad (closes 1/sqrt(3))"]
+// AUD-A-S3W1-013
 fn rigid_weld_closes_a_small_angular_error_in_one_projection() {
     let phi = 0.02;
     let mut b = body(Vec3Fix::ZERO, 1.0);
@@ -280,7 +280,7 @@ fn rigid_weld_closes_a_small_angular_error_in_one_projection() {
 /// With both bodies rotating, the correction is distributed by inverse inertia
 /// (`w_a : w_b`), the same rule as the position projection.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-013: apply_angular_correction rotates both bodies by the same angle regardless of inv_inertia (1:1 measured for w_a:w_b = 1:3)"]
+// AUD-A-S3W1-013
 fn weld_angular_correction_is_split_by_inverse_inertia() {
     let mut a = body(Vec3Fix::ZERO, 1.0);
     a.inv_inertia = v3(1.0, 1.0, 1.0);
@@ -590,7 +590,7 @@ fn rack_and_pinion_ignores_rotation_about_other_axes() {
 /// error `lin - ratio * ang` by `w_lin + ratio^2 w_axis`: rack moved 0.4, ratio 2 ->
 /// lambda = 0.4 / (1 + 4) and the rack ends at 0.32.
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-013: rack-and-pinion (and gear / weld) use |inv_inertia| (sqrt(3) for isotropic i = 1) instead of the inverse inertia about the axis, rack ends at 0.3495 instead of 0.32"]
+// AUD-A-S3W1-013
 fn rack_and_pinion_uses_the_axis_inverse_inertia() {
     let mut rack = body(v3(0.4, 0.0, 0.0), 1.0);
     rack.prev_position = Vec3Fix::ZERO;
