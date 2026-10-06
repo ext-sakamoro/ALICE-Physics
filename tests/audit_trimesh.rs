@@ -605,7 +605,7 @@ fn mesh_closest_point_equals_brute_force_for_nearby_queries() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-010: 候補を点の ±1000 の箱で絞るため、メッシュから 1000 より遠い点では候補が 0 件になり triangles[0].v0 (index 0) を返す (点 (5000,0,0): 返値までの距離 5006.44、最近は 4990.32)"]
+// AUD-A-S4W2-010
 fn mesh_closest_point_is_correct_for_queries_far_from_the_mesh() {
     // doc: "Closest point on mesh to a given point" に距離の制限は無い。実装は ±1000 の箱で候補を絞る
     let mut r = Rng(5150);
@@ -1184,4 +1184,18 @@ fn collide_aabb_on_a_two_triangle_floor_picks_the_triangle_under_the_box() {
     let ct = m.collide_aabb(&AABB::new(c - h, c + h)).unwrap();
     assert_eq!(f(ct.point_b), [2.0, 0.0, 3.0]);
     assert_eq!(f(ct.point_a), [2.0, -0.5, 3.0]);
+}
+
+/// An exact tie (the shared vertex of two triangles straight under the point)
+/// answers the smallest triangle index, whichever order the triangles are given in
+#[test]
+fn closest_point_ties_go_to_the_smallest_index() {
+    let left = Triangle::new(v3(0, 0, 0), v3(-16, 0, 0), v3(0, 16, 0));
+    let right = Triangle::new(v3(0, 0, 0), v3(16, 0, 0), v3(0, -16, 0));
+    for tris in [vec![left, right], vec![right, left]] {
+        let m = TriMesh::from_triangles(tris);
+        let (p, idx) = m.closest_point(v3(0, 0, 16));
+        assert_eq!(f(p), [0.0, 0.0, 0.0]);
+        assert_eq!(idx, 0);
+    }
 }
