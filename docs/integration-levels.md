@@ -159,7 +159,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `shape_raycast` | standalone | 0 / 0 / 0 / 20 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 9 / 3 | — |
-| `sketch` | standalone (step 1 of 12 items) | 1 / 0 / 0 / 10 / 1 | C ABI, Python, WebAssembly |
+| `sketch` | standalone (step 1 of 70 items) | 1 / 0 / 0 / 69 / 0 | C ABI, Python, WebAssembly |
 | `smoke_fire` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `spatial` | standalone | 0 / 0 / 0 / 7 / 0 | — |

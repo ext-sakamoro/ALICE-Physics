@@ -274,7 +274,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `anomaly` | streaming anomaly detection (EWMA, MAD, z-score) | std | [`anomaly_detectors`](../examples/anomaly_detectors.rs) | standalone |
 | `pipeline` | ring-buffer metric aggregation | std | [`pipeline_events`](../examples/pipeline_events.rs) | standalone |
 | `privacy` | local differential privacy (Laplace noise, RAPPOR, randomized response) | std | [`privacy_budget_and_rappor`](../examples/privacy_budget_and_rappor.rs) | standalone (step 2 of 44 items) |
-| `sketch` | Count-Min, HyperLogLog, DDSketch and heavy hitters | std | [`sketch_streams`](../examples/sketch_streams.rs) | standalone (step 1 of 12 items) |
+| `sketch` | Count-Min, HyperLogLog, DDSketch and heavy hitters | std | [`sketch_streams`](../examples/sketch_streams.rs), [`sketch_sizes`](../examples/sketch_sizes.rs) | standalone (step 1 of 70 items) |
 
 ## Bindings and bridges
 

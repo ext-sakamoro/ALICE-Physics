@@ -72,7 +72,6 @@ src/sdf_collider.rs::SdfCollider::update_cache
 src/sim_modifier.rs::SingleModifiedSdf
 src/sim_modifier.rs::SingleModifiedSdf::new
 src/sim_modifier.rs::SingleModifiedSdf::update
-src/sketch.rs::HeavyHitterEntry
 src/solver.rs::PhysicsWorld::begin_frame
 src/solver.rs::PhysicsWorld::end_frame
 src/solver.rs::TgsCacheStats::new
@@ -96,30 +95,3 @@ src/torus.rs::Torus::aabb
 src/torus.rs::Torus::surface_area
 src/wedge.rs::Wedge::aabb
 src/wedge.rs::Wedge::with_rotation
-unindexed: src/sketch.rs::BINS
-unindexed: src/sketch.rs::DEPTH
-unindexed: src/sketch.rs::K
-unindexed: src/sketch.rs::M
-unindexed: src/sketch.rs::P
-unindexed: src/sketch.rs::WIDTH
-unindexed: src/sketch.rs::alpha
-unindexed: src/sketch.rs::cardinality
-unindexed: src/sketch.rs::clear
-unindexed: src/sketch.rs::cms
-unindexed: src/sketch.rs::confidence
-unindexed: src/sketch.rs::count
-unindexed: src/sketch.rs::error_bound
-unindexed: src/sketch.rs::estimate
-unindexed: src/sketch.rs::estimate_bytes
-unindexed: src/sketch.rs::estimate_hash
-unindexed: src/sketch.rs::insert
-unindexed: src/sketch.rs::insert_bytes
-unindexed: src/sketch.rs::insert_hash
-unindexed: src/sketch.rs::max
-unindexed: src/sketch.rs::mean
-unindexed: src/sketch.rs::min
-unindexed: src/sketch.rs::quantile
-unindexed: src/sketch.rs::registers
-unindexed: src/sketch.rs::sum
-unindexed: src/sketch.rs::top
-unindexed: src/sketch.rs::total

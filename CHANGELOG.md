@@ -133,6 +133,8 @@ were introduced during that release window.
 
 ### Changed
 
+- `sketch`: 大きさごとの型 (`HyperLogLog10` / `HyperLogLog12` / `HyperLogLog14` / `HyperLogLog16` / `DDSketch128` 〜 `DDSketch2048` / `CountMinSketch1024x5` / `CountMinSketch2048x7` / `CountMinSketch4096x5` / `HeavyHitters5` / `HeavyHitters10` / `HeavyHitters20` と既定の `HyperLogLog` / `DDSketch` / `CountMinSketch` / `HeavyHitters`) を `macro_rules!` で 1 型ずつ生成するのをやめ、const generic の `HyperLogLogN<M>` / `DDSketchN<BINS>` / `CountMinSketchN<W, D>` / `HeavyHittersN<K, W, D>` の `pub type` にした hash と演算は変えておらず結果は bit 一致 (改変前の出力を `tests/analytic_sketch_generic.rs` に regression pin として固定)、既存の利用コード (`HyperLogLog::new()` / `::M` / `::P` / `Foo { .. }` / trait impl) はそのまま通る `HyperLogLogN<M>` の `M` は 2 の冪でなければ compile error 挙動の変化: `Debug` 出力と `core::any::type_name` は generic の名前を示す (例 `HeavyHittersN { .. }` / `alice_physics::sketch::HyperLogLogN<1024>`) cargo-semver-checks は旧 struct 名に `struct_missing` を報告するが、名前は alias として使える 全サイズを閉形式で確かめる `examples/sketch_sizes.rs` を追加
+
 - `PhysicsWorld::raycast` と `query::batch_raycast` の doc に、body を外接球で近似し static collider と SDF collider を見ないことを明記 (挙動は不変、実形状は `PhysicsWorld::cast_ray`)
 - **Behavior change:** joint (ball / hinge / fixed / slider / cone-twist) の位置拘束が lever arm と回転補正を含むようになり、D6 の角度誤差は `local_frame_b` 基準になった 全 joint の位置拘束の結果が変わる (AUD-A-S1W6-006 / 010)
 - **Behavior change:** hinge の `angle_min` / `angle_max` と slider の `limit_min` / `limit_max` を片側だけ設定した場合も、その側の limit が効く (従来は黙って無視) (AUD-A-S1W6-007)
