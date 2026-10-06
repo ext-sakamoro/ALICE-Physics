@@ -32,10 +32,10 @@
 //! | `QuatFix::rotate_vec` (単位 q) | `\|v\| ≤ 2⁶²` で wrap しない | 絶対誤差が `\|v\|` に比例 |
 //! | `Mat3Fix::inverse` | `2⁻⁶³ < \|det\| < 2⁶³` | 符号反転した逆行列 / `None` |
 //! | `Shape::mass_and_inertia` | `ρ·8·L⁵ < 2⁶¹` | 明示の `Err` |
-//! | 剛体の位置積分 | `\|x\| < 2⁶³` | wrap、overflow flag は立たない |
-//! | 角速度の積分 | `\|ω\| < 2³¹·⁵` | 回転が止まり ω が 0 に消える |
+//! | 剛体の位置積分 | `\|x\| < 2⁶³` | 位置を据え置いて overflow flag (XPBD / TGS) |
+//! | 角速度の積分 | `\|ω\|·h < 2⁶³` (`\|ω\| ≥ 2³¹·⁵` は 2 乗を経ない長さ) | 回さずに overflow flag |
 //! | `apply_impulse_at` の torque | `\|r\|·\|J\| < 2⁶²` | wrap |
-//! | 球同士の接触 | 半径和・中心距離 `< 2³¹·⁵` | 重なりを見逃す |
+//! | 球同士の接触 | 半径和 `< 2⁶³` (2 乗が範囲外の対は 2 乗を経ない長さで比べる) | 接触を作らずに overflow flag |
 //! | `ForceField::Point` | 全域 (距離 `≥ 2³¹·⁵` は 2 乗を経ない式、範囲内は従来の式と bit 一致) | — |
 //! | `LinearBvh` の節点 AABB | 座標 `< 2³¹` (i32) | 候補が全対になる (結果は不変) |
 //! | `SpatialGrid::hash` | `\|x / cell\| < 2⁶³` かつ `hi + half` が i64 に収まる | wrap / debug で panic |
@@ -416,37 +416,36 @@ fn edge_world(backend: SolverBackend) -> PhysicsWorld {
     w
 }
 
-/// characterization: `+x` の端 (`2⁶³ − 1`) を越えて進む物体は `−2⁶³` 側へ wrap し、
-/// overflow flag は立たない (XPBD / TGS とも)
+/// `+x` の端 (`2⁶³ − 1`) を越えて進む物体は、位置の加算が範囲外になった
+/// substep で **位置を据え置き** overflow flag を立てる (XPBD / TGS とも)
+/// 端に置いた物体はまず 1 未満の余りを進み、越える substep で止まる
 ///
-/// flag の検査は `velocity·dt` と速度導出の積だけで、位置の加算は見ない
-/// 速度導出 `(x − x_prev)/h` も wrap した差で正しい速度を出すので、物体は
-/// 反対側の端から何事もなく動き続ける
+/// 修正前は `−2⁶³` 側へ wrap して反対側の端から動き続け、flag は立たなかった
+/// (速度導出 `(x − x_prev)/h` も wrap した差で正しい速度を出すので、どの
+/// 不変条件でも見えなかった) 据え置きは積 `v·dt` が範囲外の時の扱いと同じ
 #[test]
-fn characterization_position_wraps_at_2_pow_63_without_the_flag() {
-    for backend in [SolverBackend::default(), SolverBackend::Tgs] {
-        let mut w = edge_world(backend);
-        w.step(frame());
-        let b = w.get_body(0).unwrap();
-        assert!(
-            b.position.x.is_negative(),
-            "{backend:?}: 端で wrap していない"
-        );
-        assert!(b.velocity.x > Fix128::from_int(100), "{backend:?}");
-        assert!(
-            !w.overflow_detected(),
-            "{backend:?}: flag が立った (表を更新)"
-        );
-    }
-}
-
-#[test]
-#[ignore = "src gap: WORLD-V1-RANGE position add at +-2^63 wraps without raising overflow_detected"]
 fn position_wrap_at_2_pow_63_raises_the_overflow_flag() {
+    let edge = Fix128::from_raw(i64::MAX, 0);
     for backend in [SolverBackend::default(), SolverBackend::Tgs] {
         let mut w = edge_world(backend);
         w.step(frame());
         assert!(w.overflow_detected(), "{backend:?}");
+        let b = w.get_body(0).unwrap();
+        // 加算が範囲内の substep だけ進み (端の 1 未満の余り)、越える substep で止まる
+        assert!(
+            b.position.x >= edge && !b.position.x.is_negative(),
+            "{backend:?}: 端で wrap した ({:?})",
+            b.position.x
+        );
+        // 対照: 端から 1 離れて範囲内で動く物体は flag を立てずに進む
+        let mut near = edge_world(backend);
+        near.bodies[0].position.x = edge - Fix128::from_int(1000);
+        near.step(frame());
+        assert!(!near.overflow_detected(), "{backend:?}: 範囲内で flag");
+        assert!(
+            near.get_body(0).unwrap().position.x > edge - Fix128::from_int(1000),
+            "{backend:?}: 範囲内で進まない"
+        );
     }
 }
 
@@ -460,32 +459,44 @@ fn washing_world(backend: SolverBackend) -> PhysicsWorld {
     w
 }
 
-/// characterization: 積 `v·dt` が範囲外になる scene (重力 `−2³⁰`, `dt = 2²⁰`) で、
-/// XPBD は flag を立てて位置を止めるが、TGS は flag を立てず位置が wrap して
-/// 正の側へ飛ぶ (落下しているのに `y > 0`)
+/// 積 `v·dt` が範囲外になる scene (重力 `−2³⁰`, `dt = 2²⁰`) で、XPBD も TGS も
+/// flag を立て、落下中の物体が正の側へ飛ばない
+///
+/// 修正前の TGS は flag を立てず、位置が wrap して `y ≈ +6.8e18` に飛んでいた
+/// (TGS は world の body の複製の上で積分するので、複製に溜めた印を戻す時に
+/// world の flag へ畳み込む)
 #[test]
-fn characterization_tgs_backend_does_not_raise_the_overflow_flag() {
-    let dt = Fix128::from_int(1 << 20);
-    let mut xpbd = washing_world(SolverBackend::default());
-    let mut tgs = washing_world(SolverBackend::Tgs);
-    for _ in 0..4 {
-        xpbd.step(dt);
-        tgs.step(dt);
-    }
-    assert!(xpbd.overflow_detected());
-    assert_eq!(xpbd.get_body(0).unwrap().position.y, Fix128::ZERO);
-    assert!(!tgs.overflow_detected());
-    assert!(tgs.get_body(0).unwrap().position.y > pow2(60));
-}
-
-#[test]
-#[ignore = "src gap: WORLD-V1-RANGE TGS backend never raises overflow_detected"]
 fn tgs_backend_raises_the_overflow_flag() {
-    let mut tgs = washing_world(SolverBackend::Tgs);
-    for _ in 0..4 {
-        tgs.step(Fix128::from_int(1 << 20));
+    let dt = Fix128::from_int(1 << 20);
+    for backend in [SolverBackend::default(), SolverBackend::Tgs] {
+        let mut w = washing_world(backend);
+        let mut flagged_at = None;
+        for k in 0..4 {
+            w.step(dt);
+            if flagged_at.is_none() && w.overflow_detected() {
+                flagged_at = Some(k);
+            }
+            // 落下だけの scene なので y は増えない (wrap すると正に飛ぶ)
+            assert!(
+                w.get_body(0).unwrap().position.y <= Fix128::ZERO,
+                "{backend:?} step {k}: y が正"
+            );
+        }
+        assert!(flagged_at.is_some(), "{backend:?}: flag が立たない");
+        // sticky: 立った後の step でも落ちない
+        w.step(Fix128::from_ratio(1, 60));
+        assert!(w.overflow_detected(), "{backend:?}: flag が落ちた");
     }
-    assert!(tgs.overflow_detected());
+    // 対照: 同じ重力でも dt が小さければ範囲内で、どちらも flag は立たない
+    for backend in [SolverBackend::default(), SolverBackend::Tgs] {
+        let mut w = washing_world(backend);
+        w.step(frame());
+        assert!(!w.overflow_detected(), "{backend:?}");
+        assert!(
+            w.get_body(0).unwrap().position.y < Fix128::ZERO,
+            "{backend:?}"
+        );
+    }
 }
 
 fn spinning_world(w: Fix128) -> PhysicsWorld {
@@ -496,29 +507,83 @@ fn spinning_world(w: Fix128) -> PhysicsWorld {
     world
 }
 
-/// characterization: `|ω| ≥ 2³¹·⁵` rad/s では `normalize_with_length` の長さが 0 に
-/// なり回転が積分されず、速度導出で ω 自体も 0 に消える (flag なし)
-#[test]
-fn characterization_angular_speed_from_2_pow_31_5_is_erased() {
-    let mut ok = spinning_world(pow2(30));
-    ok.step(frame());
-    assert_ne!(ok.get_body(0).unwrap().rotation, QuatFix::IDENTITY);
-
-    let mut w = spinning_world(pow2(31));
-    w.step(frame());
-    let b = w.get_body(0).unwrap();
-    assert_eq!(b.rotation, QuatFix::IDENTITY);
-    assert_eq!(b.angular_velocity, Vec3Fix::ZERO);
-    assert!(!w.overflow_detected());
+/// 参照: 軸 `(1,1,1)/√3` 回りに `ω_axis·√3·h` を substep の数だけ回した
+/// 単位 quaternion (f64、角は substep ごとに Fix128 の `h` から作る)
+fn spin_reference(w_axis: f64, substeps: usize, h: f64) -> [f64; 4] {
+    let angle = w_axis * 3f64.sqrt() * h;
+    // 同じ軸の回転は角の和 (順序に依らない)
+    let total = angle * substeps as f64;
+    let half = total / 2.0;
+    let s = half.sin() / 3f64.sqrt();
+    [s, s, s, half.cos()]
 }
 
+/// `|ω| ≥ 2³¹·⁵` rad/s でも、軸 `(1,1,1)` 回りに `|ω|·h` ずつ正しく回り、
+/// ω は 0 に消えない
+///
+/// 修正前は `normalize_with_length` の長さが wrap して 0 になり、回転が止まり
+/// 速度導出で ω 自体も 0 に消えていた (flag なし) 長さと向きは 2 乗を経ない
+/// 版で求める (`|ω|·h` が表せる限り flag は立てない)
 #[test]
-#[ignore = "src gap: WORLD-V1-RANGE angular speed beyond 2^31.5 is erased without a fault"]
 fn angular_speed_beyond_range_is_kept_or_flagged() {
-    let mut w = spinning_world(pow2(31));
+    let substeps = PhysicsConfig::default().substeps;
+    let h = frame() / Fix128::from_int(substeps as i64);
+    for (k, w_axis) in [(30u32, pow2(30)), (31, pow2(31)), (40, pow2(40))] {
+        let mut w = spinning_world(w_axis);
+        w.step(frame());
+        let b = w.get_body(0).unwrap();
+        assert!(!w.overflow_detected(), "2^{k}: flag");
+        let r = spin_reference(w_axis.to_f64(), substeps, h.to_f64());
+        let q = b.rotation;
+        let got = [q.x.to_f64(), q.y.to_f64(), q.z.to_f64(), q.w.to_f64()];
+        // q と −q は同じ回転
+        let sign = if got[3] * r[3] + got[0] * r[0] < 0.0 {
+            -1.0
+        } else {
+            1.0
+        };
+        for c in 0..4 {
+            assert!(
+                (sign * got[c] - r[c]).abs() < 1e-6,
+                "2^{k}: q[{c}] = {} 参照 {}",
+                got[c],
+                r[c]
+            );
+        }
+        // ω は軸 (1,1,1) の向きのまま残る (大きさは h ごとの回転から導くので
+        // |ω|·h > π では別の値に折り返す、範囲内の 2^30 と同じ扱い)
+        let om = b.angular_velocity;
+        assert_ne!(om, Vec3Fix::ZERO, "2^{k}: ω が消えた");
+        assert!(om.x == om.y && om.y == om.z, "2^{k}: ω の向き {om:?}");
+    }
+}
+
+/// `|ω|` 自体か `|ω|·h` が `≥ 2⁶³` で表せない時は回さずに flag を立てる
+#[test]
+fn angular_step_beyond_representable_raises_the_overflow_flag() {
+    // |ω| = 3·2⁶¹·√3 ≈ 1.2e19 ≥ 2⁶³: 長さが表せない
+    let mut w = spinning_world(Fix128::from_raw(3 << 61, 0));
     w.step(frame());
-    let b = w.get_body(0).unwrap();
-    assert!(w.overflow_detected() || b.angular_velocity != Vec3Fix::ZERO);
+    assert!(w.overflow_detected());
+    assert_eq!(w.get_body(0).unwrap().rotation, QuatFix::IDENTITY);
+
+    // |ω| = 2⁶² (1 軸) は表せるが、h = 2 で |ω|·h = 2⁶³ が表せない
+    let mut w = zero_gravity_world();
+    let mut b = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+    b.angular_velocity = Vec3Fix::new(pow2(62), Fix128::ZERO, Fix128::ZERO);
+    w.add_body(b);
+    let substeps = PhysicsConfig::default().substeps as i64;
+    w.step(Fix128::from_int(2 * substeps));
+    assert!(w.overflow_detected());
+
+    // 対照: 同じ ω でも h が小さく |ω|·h が表せれば flag は立たない
+    let mut w = zero_gravity_world();
+    let mut b = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+    b.angular_velocity = Vec3Fix::new(pow2(62), Fix128::ZERO, Fix128::ZERO);
+    w.add_body(b);
+    w.step(frame());
+    assert!(!w.overflow_detected());
+    assert_ne!(w.get_body(0).unwrap().rotation, QuatFix::IDENTITY);
 }
 
 /// characterization: `apply_impulse_at` の torque `r × J` は `|r|·|J| ≥ 2⁶³` で wrap
@@ -559,28 +624,54 @@ fn sphere_pair(r: i64, d: i64) -> (Fix128, Fix128) {
     )
 }
 
-/// characterization: 半径和が `2³¹·⁵` を越える球の対は、重なっていても
-/// `dist² < (r_a + r_b)²` の両辺が wrap して接触を見逃す
+/// 半径和が `2³¹·⁵` を越える球の対も、重なっていれば押し離される
 ///
-/// 同じ配置を 2⁻¹⁰ に縮めると押し離される (対照)
+/// 修正前は `dist² < (r_a + r_b)²` の両辺が wrap して接触を見逃していた
+/// oracle: 重力なしの 2 体の接触は長さについて線形なので、同じ配置を 2⁻¹⁰ に
+/// 縮めた scene (2 乗が範囲内、従来の経路) の結果の 2¹⁰ 倍と一致する
+/// (相対 1e-9、丸めの差だけ)
 #[test]
-fn characterization_sphere_pair_beyond_2_pow_31_5_is_missed() {
-    let (a, b) = sphere_pair(3 << 19, 3_000_000_000 >> 10);
+fn sphere_pair_beyond_range_is_separated_or_flagged() {
+    // 中心距離 2_999_999_488 = 2_929_687 · 2¹⁰ (縮めても整数のまま)
+    let small_d = 2_929_687;
+    let (sa, sb) = sphere_pair(3 << 19, small_d);
     assert!(
-        a < Fix128::ZERO && b > Fix128::from_int(3_000_000_000 >> 10),
-        "対照が離れていない"
+        sa < Fix128::ZERO && sb > Fix128::from_int(small_d),
+        "縮めた scene が離れていない"
     );
-
-    let (a, b) = sphere_pair(3 << 29, 3_000_000_000);
-    assert_eq!(a, Fix128::ZERO);
-    assert_eq!(b, Fix128::from_int(3_000_000_000));
+    let (a, b) = sphere_pair(3 << 29, small_d << 10);
+    assert!(a < Fix128::ZERO, "押し離されていない");
+    let scale = 1024.0;
+    for (big, small) in [(a, sa), (b, sb)] {
+        let want = small.to_f64() * scale;
+        let rel = (big.to_f64() - want).abs() / want.abs();
+        assert!(
+            rel < 1e-9,
+            "{} vs 2^10 × {}: 相対 {rel}",
+            big.to_f64(),
+            small.to_f64()
+        );
+    }
 }
 
+/// 半径和そのものが `≥ 2⁶³` で表せない対は、接触を作らずに flag を立てる
+/// (wrap した負の半径和で比べない)
 #[test]
-#[ignore = "src gap: WORLD-V1-RANGE sphere pair with combined radius beyond 2^31.5 is not separated and no fault is raised"]
-fn sphere_pair_beyond_range_is_separated_or_flagged() {
-    let (a, _) = sphere_pair(3 << 29, 3_000_000_000);
-    assert!(a < Fix128::ZERO);
+fn sphere_radius_sum_beyond_2_pow_63_raises_the_overflow_flag() {
+    let mut w = zero_gravity_world();
+    let r = Fix128::from_raw(1i64 << 62, 0);
+    w.add_body_with_radius(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE), r);
+    w.add_body_with_radius(RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE), r);
+    w.step(frame());
+    assert!(w.overflow_detected());
+    // 対照: 半径 2⁴⁰ (和は表せ、2 乗は範囲外) なら flag は立たず押し離される
+    let mut w = zero_gravity_world();
+    let r = Fix128::from_raw(1i64 << 40, 0);
+    w.add_body_with_radius(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE), r);
+    w.add_body_with_radius(RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE), r);
+    w.step(frame());
+    assert!(!w.overflow_detected());
+    assert!(w.get_body(0).unwrap().position.x < Fix128::ZERO);
 }
 
 fn point_force(pos: Vec3Fix, strength: Fix128) -> Vec3Fix {
@@ -1212,3 +1303,211 @@ fn reference_product_is_correct_on_known_values() {
     assert_eq!(mul_ref(pow2(32), pow2(32)), (0, false));
     assert_eq!(from_raw128(raw(Fix128::from_int(-5))), Fix128::from_int(-5));
 }
+
+// ---------------------------------------------------------------------------
+// 範囲内は修正前と bit 一致
+// ---------------------------------------------------------------------------
+
+/// FNV-1a 64 (blob の指紋、比較のためだけ)
+fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for &b in bytes {
+        h ^= u64::from(b);
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    h
+}
+
+/// 範囲の検査を足した経路 (積分の位置の加算、角速度の長さ、球の接触の 2 乗と
+/// 半径和、TGS の積分と関節投影) をすべて通る、範囲内の代表 scene
+///
+/// 境界の直下 (|ω| = 3_037_000_000 < 2³¹·⁵、半径和 2³¹、位置 2⁶²) を含む
+fn in_range_scene(id: u32, backend: SolverBackend) -> PhysicsWorld {
+    let one = Fix128::ONE;
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        solver_backend: backend,
+        ..PhysicsConfig::default()
+    });
+    match id {
+        // 床の上の 3×3×3 の球の山 (接触・摩擦・反発・sleep)
+        0 => {
+            w.add_body_with_radius(
+                RigidBody::new_static(Vec3Fix::from_int(0, -100, 0)),
+                Fix128::from_int(100),
+            );
+            for i in 0..3 {
+                for j in 0..3 {
+                    for k in 0..3 {
+                        let p = Vec3Fix::new(
+                            Fix128::from_ratio(2 * i64::from(i) * 101, 100),
+                            Fix128::from_ratio(1 + 2 * i64::from(j) * 101, 100) + one,
+                            Fix128::from_ratio(2 * i64::from(k) * 103, 100),
+                        );
+                        w.add_body_with_radius(RigidBody::new_dynamic(p, one), one);
+                    }
+                }
+            }
+        }
+        // 回る箱 2 個の衝突 (collider の経路と gyroscopic の分割)
+        1 => {
+            w.config.gravity = Vec3Fix::ZERO;
+            let s = Shape::Box {
+                half_extents: Vec3Fix::new(one, Fix128::from_ratio(1, 2), Fix128::from_int(2)),
+            };
+            let i = w
+                .add_shaped_body(&s, one, Vec3Fix::from_int(-3, 0, 0))
+                .unwrap();
+            let j = w
+                .add_shaped_body(&s, one, Vec3Fix::from_int(3, 1, 0))
+                .unwrap();
+            let a = w.get_body_mut(i).unwrap();
+            a.velocity = Vec3Fix::from_int(4, 0, 0);
+            a.angular_velocity = Vec3Fix::from_int(3, 1, 2);
+            let b = w.get_body_mut(j).unwrap();
+            b.velocity = Vec3Fix::from_int(-4, 0, 0);
+            b.angular_velocity = Vec3Fix::from_int(-1, 5, 0);
+        }
+        // 境界の直下の角速度 (等方な慣性、|ω|² < 2⁶³) と速い回転
+        2 => {
+            w.config.gravity = Vec3Fix::ZERO;
+            let mut a = RigidBody::new(Vec3Fix::ZERO, one);
+            a.angular_velocity =
+                Vec3Fix::new(Fix128::from_int(3_037_000_000), Fix128::ZERO, Fix128::ZERO);
+            w.add_body(a);
+            let mut b = RigidBody::new(Vec3Fix::from_int(10, 0, 0), one);
+            b.angular_velocity = Vec3Fix::from_int(1 << 30, 1 << 30, 1 << 30);
+            w.add_body(b);
+            let mut c = RigidBody::new(Vec3Fix::from_int(20, 0, 0), one);
+            c.angular_velocity = Vec3Fix::from_int(1, -2, 3);
+            w.add_body(c);
+        }
+        // 半径和 2³¹ の球の重なり (2 乗 2⁶² は範囲内)
+        3 => {
+            w.config.gravity = Vec3Fix::ZERO;
+            let r = Fix128::from_int(1 << 30);
+            w.add_body_with_radius(RigidBody::new(Vec3Fix::ZERO, one), r);
+            w.add_body_with_radius(
+                RigidBody::new(Vec3Fix::from_int((1 << 31) - (1 << 20), 1 << 10, 0), one),
+                r,
+            );
+        }
+        // 位置 2⁶² 付近の衝突 (位置は差でしか積に入らない)
+        //
+        // ⚠️ 3 と同じ world に置くと、2⁶² 離れた対の `|delta|²` が範囲外になり
+        // (修正前は wrap した値で比べていた) 範囲内の scene でなくなる
+        5 => {
+            w.config.gravity = Vec3Fix::ZERO;
+            let far = Fix128::from_raw(1 << 62, 0);
+            let mut a = RigidBody::new(Vec3Fix::new(far, far, far), one);
+            a.velocity = Vec3Fix::from_int(5, 0, 0);
+            w.add_body_with_radius(a, one);
+            let mut b = RigidBody::new(
+                Vec3Fix::new(
+                    far + Fix128::from_int(3),
+                    far,
+                    far + Fix128::from_ratio(1, 3),
+                ),
+                one,
+            );
+            b.velocity = Vec3Fix::from_int(-5, 0, 0);
+            w.add_body_with_radius(b, one);
+        }
+        // 関節でつないだ振り子 (TGS は substep ごとに関節を投影する)
+        4 => {
+            let a = w.add_body_with_radius(RigidBody::new_static(Vec3Fix::from_int(0, 5, 0)), one);
+            let mut bb = RigidBody::new_dynamic(Vec3Fix::from_int(2, 5, 0), one);
+            bb.angular_velocity = Vec3Fix::from_int(0, 0, 1);
+            let b = w.add_body_with_radius(bb, Fix128::from_ratio(1, 2));
+            w.add_joint(alice_physics::Joint::Ball(alice_physics::BallJoint::new(
+                a,
+                b,
+                Vec3Fix::ZERO,
+                Vec3Fix::from_int(-2, 0, 0),
+            )));
+            let c = w.add_body_with_radius(
+                RigidBody::new_dynamic(Vec3Fix::from_int(4, 5, 1), one),
+                Fix128::from_ratio(1, 2),
+            );
+            w.add_joint(alice_physics::Joint::Ball(alice_physics::BallJoint::new(
+                b,
+                c,
+                Vec3Fix::from_int(1, 0, 0),
+                Vec3Fix::new(-one, Fix128::ZERO, -one),
+            )));
+        }
+        // 既存の検出経路 (積 v·dt が範囲外、XPBD は修正前から flag を立てる)
+        _ => {
+            w.config.gravity = Vec3Fix::new(Fix128::ZERO, -Fix128::from_int(1 << 30), Fix128::ZERO);
+            w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, one));
+        }
+    }
+    w
+}
+
+/// 各 scene を 60 frame 進めた `serialize_state` の指紋
+fn in_range_fingerprints() -> Vec<(u32, SolverBackend, u64)> {
+    let mut out = Vec::new();
+    for backend in [SolverBackend::default(), SolverBackend::Tgs] {
+        for id in 0..7 {
+            // 範囲外の検出経路の scene は修正で TGS の挙動が変わる (それが修正) ので XPBD だけ
+            if id == 6 && backend == SolverBackend::Tgs {
+                continue;
+            }
+            let mut w = in_range_scene(id, backend);
+            let dt = if id == 6 {
+                Fix128::from_int(1 << 20)
+            } else {
+                frame()
+            };
+            let steps = if id == 6 { 4 } else { 60 };
+            for _ in 0..steps {
+                w.step(dt);
+            }
+            out.push((id, backend, fnv1a(&w.serialize_state())));
+        }
+    }
+    out
+}
+
+/// 範囲内の scene は、範囲の検査を足す前の solver と `serialize_state` が
+/// bit 一致する (指紋は修正前の commit で同じ関数を走らせて記録した値)
+///
+/// `parallel` は積分と速度導出を rayon で回すが、body ごとに独立な計算なので
+/// 同じ値になる (修正前の commit で両方を測って一致を確認)
+#[test]
+fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
+    let got = in_range_fingerprints();
+    for (id, backend, h) in &got {
+        println!("scene {id} {backend:?} {h:#018x}");
+    }
+    let want: [(u32, SolverBackend, u64); 13] = PREVIOUS_FINGERPRINTS;
+    assert_eq!(got.len(), want.len());
+    for (g, w) in got.iter().zip(want.iter()) {
+        assert_eq!(g, w, "scene {} {:?} の状態が修正前と違う", w.0, w.1);
+    }
+    // 範囲内の scene で flag は立たない (範囲外の scene 6 は除く)
+    for id in 0..6 {
+        let mut w = in_range_scene(id, SolverBackend::default());
+        for _ in 0..60 {
+            w.step(frame());
+        }
+        assert!(!w.overflow_detected(), "scene {id}");
+    }
+}
+
+/// [`in_range_fingerprints`] を範囲の検査を足す前の solver で走らせた値
+const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
+    (0, SolverBackend::Xpbd, 0x96d8862902a5e20e_u64),
+    (1, SolverBackend::Xpbd, 0x5f0450309bb6bbd8_u64),
+    (2, SolverBackend::Xpbd, 0x7413325ab6d09153_u64),
+    (3, SolverBackend::Xpbd, 0xee886f5765d11d9f_u64),
+    (4, SolverBackend::Xpbd, 0xad1a2717d4f33e7d_u64),
+    (5, SolverBackend::Xpbd, 0x001b5e81c7e8bae2_u64),
+    (6, SolverBackend::Xpbd, 0xbc92d7768c7f84fa_u64),
+    (0, SolverBackend::Tgs, 0x98fab73c15c719bd_u64),
+    (1, SolverBackend::Tgs, 0x4ffae91e2b8e5e12_u64),
+    (2, SolverBackend::Tgs, 0x1dddca010d2df650_u64),
+    (3, SolverBackend::Tgs, 0xa26ed4428533826f_u64),
+    (4, SolverBackend::Tgs, 0x95bf9815df272c77_u64),
+    (5, SolverBackend::Tgs, 0x8375e72116bbe2e0_u64),
+];

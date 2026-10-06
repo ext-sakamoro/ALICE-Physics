@@ -43,6 +43,7 @@ pub(crate) fn body_to_tgs(body: &RigidBody, stable_id: u64) -> Body6DofOrientedS
         inv_inertia_local: [body.inv_inertia.x, body.inv_inertia.y, body.inv_inertia.z],
         is_dynamic: body.is_dynamic(),
         stable_id,
+        overflow: false,
     }
 }
 

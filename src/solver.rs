@@ -904,8 +904,18 @@ fn tgs_cache_key(
 /// velocity become the split's end state, and the split is returned so that
 /// `update_velocities` can rebuild `ω` from it. Any other body (isotropic,
 /// at rest, infinite moments) turns about `ω` by `|ω| dt`, as before.
+///
+/// `|ω|² ≥ 2⁶³` (`|ω| ≥ 2³¹·⁵ ≈ 3.04e9` rad/s) では `normalize_with_length` の
+/// 長さが wrap して 0 になり、回転が止まって速度導出で ω まで 0 に消える
+/// その範囲だけ、2 乗を経ない長さと向き ([`Vec3Fix::checked_length_scaled`] /
+/// [`Vec3Fix::try_normalize_scaled`]) で回す 長さ自体か `|ω|·dt` が表せない
+/// 時は回さずに `overflow` を立てる 範囲内は従来の式のまま (bit 不変)
 #[inline]
-fn predict_rotation(body: &mut RigidBody, dt: Fix128) -> Option<crate::gyroscopic::FreeRotation> {
+fn predict_rotation(
+    body: &mut RigidBody,
+    dt: Fix128,
+    overflow: &mut bool,
+) -> Option<crate::gyroscopic::FreeRotation> {
     let split = crate::gyroscopic::split_free_rotation(
         body.angular_velocity,
         body.rotation,
@@ -918,11 +928,29 @@ fn predict_rotation(body: &mut RigidBody, dt: Fix128) -> Option<crate::gyroscopi
             body.rotation = f.rotation;
         }
         None => {
-            // single sqrt via normalize_with_length
-            let (axis, ang_speed) = body.angular_velocity.normalize_with_length();
-            if !ang_speed.is_zero() {
-                let delta_rot = QuatFix::from_axis_angle(axis, ang_speed * dt);
-                body.rotation = delta_rot.mul(body.rotation).normalize();
+            let omega = body.angular_velocity;
+            if let Some(speed_sq) = omega.checked_length_squared() {
+                // `normalize_with_length` の式を展開したもの (single sqrt、
+                // `Some` の 2 乗は `length_squared` と bit 一致)
+                let ang_speed = speed_sq.sqrt();
+                if !ang_speed.is_zero() {
+                    let axis = omega * (Fix128::ONE / ang_speed);
+                    let delta_rot = QuatFix::from_axis_angle(axis, ang_speed * dt);
+                    body.rotation = delta_rot.mul(body.rotation).normalize();
+                }
+            } else {
+                // |ω|² が範囲外: ω は非零 (零なら 2 乗は 0) なので向きは必ずある
+                let turn = omega
+                    .checked_length_scaled()
+                    .and_then(|s| s.checked_mul(dt))
+                    .zip(omega.try_normalize_scaled());
+                match turn {
+                    Some((angle, axis)) => {
+                        let delta_rot = QuatFix::from_axis_angle(axis, angle);
+                        body.rotation = delta_rot.mul(body.rotation).normalize();
+                    }
+                    None => *overflow = true,
+                }
             }
         }
     }
@@ -3415,13 +3443,14 @@ impl PhysicsWorld {
             .collect();
         self.solve_joints_dispatch(sub_dt);
         let inv_dt = Fix128::ONE / sub_dt;
+        let mut overflow = false;
         for (&i, (p0, q0)) in jointed.iter().zip(before) {
             let body = &mut self.bodies[i];
             if body.is_dynamic() {
                 if body.position != p0 {
                     match (body.position - p0).checked_scale(inv_dt) {
                         Some(dv) => body.velocity = body.velocity + dv,
-                        None => self.overflow_detected = true,
+                        None => overflow = true,
                     }
                 }
                 if body.rotation != q0 {
@@ -3438,6 +3467,9 @@ impl PhysicsWorld {
                 body.angular_velocity.y,
                 body.angular_velocity.z,
             ];
+        }
+        if overflow {
+            self.note_rigid_overflow();
         }
     }
 
@@ -3679,6 +3711,12 @@ impl PhysicsWorld {
         debug_assert_eq!(tgs_bodies.len(), n);
         for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
             tgs_to_body(state, body);
+        }
+        // TGS は複製 `tgs_bodies` の上で積分するので、範囲外は複製の各 body の
+        // `overflow` に溜まる (その body の位置は据え置き、XPBD の積分と同じ扱い)
+        // 戻す時に world の sticky flag へ畳み込む
+        if tgs_bodies.iter().any(|s| s.overflow) {
+            self.note_rigid_overflow();
         }
 
         // Phase 3.2: The world's static colliders. A static contact is a
@@ -3968,13 +4006,22 @@ impl PhysicsWorld {
                     // ⚠️ parallel branch でも同じ検出を行う — 片方だけだと
                     // `--features parallel` で guard が silent に消える
                     // (closure から `self` に書けないので bool を reduce する)
-                    match body.velocity.checked_scale(dt) {
-                        Some(d) => body.position = body.position + d,
+                    // 位置の加算も検査する (`|x| ≥ 2⁶³` で反対側の端へ wrap するため)
+                    match body
+                        .velocity
+                        .checked_scale(dt)
+                        .and_then(|d| body.position.checked_add(d))
+                    {
+                        Some(p) => body.position = p,
                         None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                     }
 
                     // Predict rotation, with the gyroscopic term ω × Iω
-                    *free = predict_rotation(body, dt);
+                    let mut spin_overflow = false;
+                    *free = predict_rotation(body, dt, &mut spin_overflow);
+                    if spin_overflow {
+                        overflow.store(true, core::sync::atomic::Ordering::Relaxed);
+                    }
                 });
             self.free_rotation = free;
         }
@@ -4030,20 +4077,30 @@ impl PhysicsWorld {
                 // ⚠️ `checked_scale` で範囲外を検出する (WM-01 / B-12)
                 // 範囲外なら **位置を動かさず** flag を立てる — 0 加算されて
                 // 「原点で静止した自己整合な状態」に落ちるのを表に出すため
-                match self.bodies[i].velocity.checked_scale(dt) {
-                    Some(d) => self.bodies[i].position = self.bodies[i].position + d,
-                    None => self.overflow_detected = true,
+                // 位置の加算も検査する (`|x| ≥ 2⁶³` で反対側の端へ wrap するため)
+                let body = &mut self.bodies[i];
+                match body
+                    .velocity
+                    .checked_scale(dt)
+                    .and_then(|d| body.position.checked_add(d))
+                {
+                    Some(p) => body.position = p,
+                    None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                 }
 
                 // Predict rotation, with the gyroscopic term ω × Iω
-                free[i] = predict_rotation(&mut self.bodies[i], dt);
+                let mut spin_overflow = false;
+                free[i] = predict_rotation(&mut self.bodies[i], dt, &mut spin_overflow);
+                if spin_overflow {
+                    overflow.store(true, core::sync::atomic::Ordering::Relaxed);
+                }
             }
             self.free_rotation = free;
         }
 
         // ⚠️ 受け皿を sticky flag に畳み込む (1 度立ったら落ちない)
         if overflow.load(core::sync::atomic::Ordering::Relaxed) {
-            self.overflow_detected = true;
+            self.note_rigid_overflow();
         }
     }
 
@@ -4273,7 +4330,7 @@ impl PhysicsWorld {
 
         // ⚠️ 受け皿を sticky flag に畳み込む (1 度立ったら落ちない)
         if overflow.load(core::sync::atomic::Ordering::Relaxed) {
-            self.overflow_detected = true;
+            self.note_rigid_overflow();
         }
     }
 
@@ -5639,6 +5696,7 @@ impl PhysicsWorld {
             is_sensor: bool,
         }
         let mut results: Vec<ContactInfo> = Vec::new();
+        let mut radius_overflow = false;
 
         for (a32, b32) in pairs {
             let a = a32 as usize;
@@ -5667,16 +5725,26 @@ impl PhysicsWorld {
             // plain head-on collision accelerated both bodies (4 m/s → 114 m/s
             // in 4 frames). `tests/analytic_physics.rs::head_on_collision_*`.
             let delta = self.bodies[a].position - self.bodies[b].position;
-            let combined_radius = radius_a + radius_b;
+            // 半径和が `|·| ≥ 2⁶³` だと wrap して負になり、どの距離とも比べられない
+            // (`velocity_of` が `self` を借りているので、印は loop の後で立てる)
+            let Some(combined_radius) = radius_a.checked_add(radius_b) else {
+                radius_overflow = true;
+                continue;
+            };
             // Squared-distance early out *first*: the BVH candidate set is a
             // superset of the overlapping pairs (49k candidates for 2.7k contacts
             // on the 1000-sphere grid) and the quantised leaf AABBs cannot be
             // tightened without a BVH API change, so every candidate pays only
-            // 3 multiplies + a compare here; the filter / static / sleep lookups
+            // 4 checked multiplies + 2 checked adds + a compare here; the filter / static / sleep lookups
             // and the sqrt + 3 divisions of `normalize_with_length` run only for
             // real overlaps. Same `dist < combined_radius` decision (both sides
             // exact for |delta| < 2^31), same contact order.
-            let dist_sq = delta.length_squared();
+            //
+            // `|delta|` か半径和が `2³¹·⁵ ≈ 3.04e9` 以上だと 2 乗が wrap して
+            // 重なりを見逃す (両辺が黙って別の値になる) 2 乗がどちらも範囲内
+            // なら従来の比較のまま (bit 不変)、どちらかが範囲外の対だけ 2 乗を
+            // 経ない長さで比べ、法線と距離もその長さから作る (`scaled`)
+            let mut scaled: Option<(Vec3Fix, Fix128)> = None;
             // A pair involving a collider is decided by GJK on the collider, with
             // the other body's collider or, for a plain body, its sphere; such a
             // pair can overlap with coincident centres, where the sphere path
@@ -5686,8 +5754,29 @@ impl PhysicsWorld {
             let collider_a = self.body_colliders.get(a).and_then(Option::as_ref);
             let collider_b = self.body_colliders.get(b).and_then(Option::as_ref);
             if collider_a.is_none() && collider_b.is_none() {
-                if dist_sq >= combined_radius * combined_radius || dist_sq.is_zero() {
-                    continue;
+                let squares = delta
+                    .checked_length_squared()
+                    .zip(combined_radius.checked_mul(combined_radius));
+                match squares {
+                    Some((d2, r2)) => {
+                        if d2 >= r2 || d2.is_zero() {
+                            continue;
+                        }
+                    }
+                    None => {
+                        // 中心距離が `≥ 2⁶³` (表せない) なら、どの半径和
+                        // (`< 2⁶³`、上で検査済) とも重ならない
+                        let Some(dist) = delta.checked_length_scaled() else {
+                            continue;
+                        };
+                        if dist >= combined_radius || dist.is_zero() {
+                            continue;
+                        }
+                        let Some(normal) = delta.try_normalize_scaled() else {
+                            continue;
+                        };
+                        scaled = Some((normal, dist));
+                    }
                 }
             } else if !self
                 .broadphase_box(a, radius_a)
@@ -5762,7 +5851,7 @@ impl PhysicsWorld {
                 continue;
             }
 
-            let (normal, dist) = delta.normalize_with_length();
+            let (normal, dist) = scaled.unwrap_or_else(|| delta.normalize_with_length());
 
             if dist < combined_radius && !dist.is_zero() {
                 let depth = combined_radius - dist;
@@ -5790,6 +5879,10 @@ impl PhysicsWorld {
                     is_sensor,
                 });
             }
+        }
+
+        if radius_overflow {
+            self.note_rigid_overflow();
         }
 
         // Apply results
@@ -5870,6 +5963,17 @@ impl PhysicsWorld {
     #[must_use]
     pub const fn overflow_detected(&self) -> bool {
         self.overflow_detected
+    }
+
+    /// 剛体の経路が範囲外の値を踏んだことを [`Self::overflow_detected`] に立てる
+    ///
+    /// sticky flag を立てるのはこの関数だけ (積分の `v·dt` と位置の加算、
+    /// 速度導出、球の接触の距離と半径和、角速度の大きさ、TGS の積分、
+    /// TGS の関節投影の速度への繰り越し) 落とす経路は [`Self::reset_world`] と
+    /// 状態の復元だけ
+    #[inline]
+    pub(crate) fn note_rigid_overflow(&mut self) {
+        self.overflow_detected = true;
     }
 
     /// [`Self::serialize_state`] blob の magic

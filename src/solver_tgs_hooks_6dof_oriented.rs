@@ -105,6 +105,11 @@ pub(crate) struct Body6DofOrientedState {
     pub(crate) is_dynamic: bool,
     /// Stable identity used for warm-start indexing across frames.
     pub(crate) stable_id: u64,
+    /// The position step `p + v·dt` of a sub-step left the `Fix128` range
+    /// (`|v·dt|` or `|p + v·dt| ≥ 2⁶³`); the position was then left where it
+    /// was. Sticky over the sub-steps of a tick: the world folds it into
+    /// its overflow flag when it copies the state back.
+    pub(crate) overflow: bool,
 }
 
 impl Default for Body6DofOrientedState {
@@ -118,6 +123,7 @@ impl Default for Body6DofOrientedState {
             inv_inertia_local: V_ZERO,
             is_dynamic: false,
             stable_id: 0,
+            overflow: false,
         }
     }
 }
@@ -132,6 +138,23 @@ impl BodyLike for Body6DofOrientedState {
 }
 
 impl Body6DofOrientedState {
+    /// `p += v · dt`, checked: a product or a sum that leaves the `Fix128`
+    /// range (`|·| ≥ 2⁶³`) would wrap — a sign flip of the step, or a jump to
+    /// the opposite end of the range — so the position is left where it was
+    /// and [`Self::overflow`] is set instead. In range the sum is the
+    /// unchecked `p + v * dt` bit for bit.
+    fn advance_position(&mut self, sub_dt: Fix128) {
+        let step = |k: usize| {
+            self.linear_velocity[k]
+                .checked_mul(sub_dt)
+                .and_then(|d| self.position[k].checked_add(d))
+        };
+        match (step(0), step(1), step(2)) {
+            (Some(x), Some(y), Some(z)) => self.position = [x, y, z],
+            _ => self.overflow = true,
+        }
+    }
+
     /// Advance the body's linear position, angular velocity is left
     /// intact, and the orientation is integrated by
     /// [`integrate_orientation`].
@@ -140,11 +163,7 @@ impl Body6DofOrientedState {
             return;
         }
         // Linear position: p += v · dt.
-        self.position = [
-            self.position[0] + self.linear_velocity[0] * sub_dt,
-            self.position[1] + self.linear_velocity[1] * sub_dt,
-            self.position[2] + self.linear_velocity[2] * sub_dt,
-        ];
+        self.advance_position(sub_dt);
         // Orientation: standard quaternion integration.
         self.orientation = integrate_orientation(self.orientation, self.angular_velocity, sub_dt);
     }
@@ -160,11 +179,7 @@ impl Body6DofOrientedState {
         if !self.is_dynamic {
             return;
         }
-        self.position = [
-            self.position[0] + self.linear_velocity[0] * sub_dt,
-            self.position[1] + self.linear_velocity[1] * sub_dt,
-            self.position[2] + self.linear_velocity[2] * sub_dt,
-        ];
+        self.advance_position(sub_dt);
         let correction = v_sub(self.angular_velocity, from_vec3fix(free.omega));
         self.orientation = if correction == V_ZERO {
             free.rotation
