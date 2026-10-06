@@ -12687,6 +12687,9 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
+pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -17159,6 +17162,9 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
+pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -18972,6 +18978,7 @@ impl core::marker::Unpin for alice_physics::wind_zone::WindZone
 impl core::marker::UnsafeUnpin for alice_physics::wind_zone::WindZone
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::wind_zone::WindZone
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::wind_zone::WindZone
+pub mod alice_physics::world_character
 pub mod alice_physics::world_participant
 #[non_exhaustive] pub enum alice_physics::world_participant::AccumulateError
 pub alice_physics::world_participant::AccumulateError::BodyOutOfRange
@@ -23426,6 +23433,9 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray(&self, alice_physics::math:
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
+pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
