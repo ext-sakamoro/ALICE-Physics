@@ -469,9 +469,10 @@ fn sweep_sphere_section() {
     println!("[raycast] sweep_sphere (max_t=0): None as expected (contact is at t=7)");
 
     // Degenerate: spheres already coincident at the start (overlapping).
-    // Expanded sphere center (0,0,0) r=2 (1+1), ray from (0,0,0): oc=(0,0,0),
-    // b=0, c=-4, disc=4, sqrt=2; near root -2 rejected (t<0), far root used:
-    // t=2, point=(2,0,0).
+    // Expanded sphere center (0,0,0) r=2 (1+1), ray from (0,0,0): oc=(0,0,0).
+    // A sweep that starts overlapping is an initial overlap: t=0 at the start
+    // centre, with the fallback normal -direction=(-1,0,0) for coincident
+    // centres. The exit root t=2 is never reported as a contact.
     let coincident_a = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
     let coincident_b = Sphere::new(Vec3Fix::ZERO, Fix128::ONE);
     let coincident_hit = sweep_sphere(
@@ -480,12 +481,18 @@ fn sweep_sphere_section() {
         &coincident_b,
         Fix128::from_int(100),
     )
-    .expect("already-overlapping spheres still report the far separation time");
-    assert_eq!(coincident_hit.t, Fix128::from_int(2), "far root, not t=0");
-    assert_eq!(coincident_hit.point, Vec3Fix::from_int(2, 0, 0));
+    .expect("already-overlapping spheres report the initial overlap");
+    assert_eq!(
+        coincident_hit.t,
+        Fix128::ZERO,
+        "initial overlap, not the exit t=2"
+    );
+    assert_eq!(coincident_hit.point, Vec3Fix::ZERO);
+    assert_eq!(coincident_hit.normal, Vec3Fix::from_int(-1, 0, 0));
     println!(
-        "[raycast] sweep_sphere (already overlapping): far t={}",
-        coincident_hit.t.to_f64()
+        "[raycast] sweep_sphere (already overlapping): initial overlap t={} normal={:?}",
+        coincident_hit.t.to_f64(),
+        v3f(coincident_hit.normal)
     );
 
     // Degenerate: zero direction. `Ray::new` documents falling back to

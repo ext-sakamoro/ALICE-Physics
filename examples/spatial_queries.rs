@@ -245,10 +245,10 @@ fn main() {
     // --- sphere_cast: ray starting inside a body -----------------------------
     //
     // body at (5,0,0), body_radius 1, cast_radius 1 (combined_radius 2).
-    // origin (4,0,0) is inside (distance 1 < 2). oc=(-1,0,0) b=-1
-    // c=1-4=-3 disc=1-(-3)=4 sqrt=2. Near root t=1-2=-1 is rejected
-    // (t < 0), far root t=1+2=3 is taken: the documented behavior for an
-    // interior origin is the *exit* point, not t=0.
+    // origin (4,0,0) is inside (distance 1 < 2). oc=(-1,0,0) b=oc.d=-1 < 0
+    // (moving deeper) c=1-4=-3 <= 0: the cast starts in an initial overlap,
+    // reported at t=0 at the origin with normal oc/|oc|=(-1,0,0). The exit
+    // root t=1+2=3 is never a contact.
     let inside_body = vec![RigidBody::new_static(Vec3Fix::from_int(5, 0, 0))];
     let inside_hit = sphere_cast(
         Vec3Fix::from_int(4, 0, 0),
@@ -258,16 +258,22 @@ fn main() {
         &inside_body,
         Fix128::ONE,
     )
-    .expect("sphere_cast from inside the body must still report the exit point");
+    .expect("sphere_cast from inside the body reports the initial overlap");
     assert_eq!(
         inside_hit.t,
-        Fix128::from_int(3),
-        "interior origin resolves to the exit point, not TOI=0"
+        Fix128::ZERO,
+        "interior origin moving deeper is an initial overlap, not the exit t=3"
     );
-    assert_eq!(inside_hit.point, Vec3Fix::from_int(7, 0, 0));
+    assert_eq!(inside_hit.point, Vec3Fix::from_int(4, 0, 0));
+    assert_eq!(inside_hit.normal, Vec3Fix::from_int(-1, 0, 0));
     println!(
-        "[spatial_queries] sphere_cast from inside a body: exit t={} (not 0)",
-        inside_hit.t.to_f64()
+        "[spatial_queries] sphere_cast from inside a body: initial overlap t={} normal={:?}",
+        inside_hit.t.to_f64(),
+        (
+            inside_hit.normal.x.to_f64(),
+            inside_hit.normal.y.to_f64(),
+            inside_hit.normal.z.to_f64()
+        )
     );
 
     // --- capsule_cast: three sub-casts, closest wins -------------------------
