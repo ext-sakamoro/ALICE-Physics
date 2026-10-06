@@ -52,8 +52,8 @@
 #
 # keys: id (COV-EM-NNN) / axis / item / source (book, chapter, paper or
 # reference-implementation feature; no quoted text) / status / evidence
-# (`src/x.rs:line`, `tests/x.rs::test_fn`) / oracle_candidate / limitation
-# (`<file>:<line> '<verbatim quote>'`, required for partial). Benchmark
+# (`src/x.rs::symbol`, `tests/x.rs::test_fn`) / oracle_candidate / limitation
+# (`<file>::<symbol> '<verbatim quote>'` or `<file> '<quote>'` for module docs, required for partial). Benchmark
 # reference values marked "参照値要確認" are to be checked against the original
 # source before they become an oracle.
 
