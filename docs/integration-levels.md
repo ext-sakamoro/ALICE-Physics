@@ -89,7 +89,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `erosion` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 131 / 0 | — |
-| `fatigue` | standalone | 0 / 0 / 0 / 14 / 0 | — |
+| `fatigue` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `filament_db` | standalone | 0 / 0 / 0 / 37 / 0 | — |
 | `fillet_stress` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `filter` | standalone (step 3 of 18 items) | 3 / 0 / 0 / 15 / 0 | C ABI, Python, WebAssembly |
