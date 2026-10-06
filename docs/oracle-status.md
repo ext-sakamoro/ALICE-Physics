@@ -6,20 +6,21 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5128 |
-| 🔴 Red by design | 221 |
+| 🟢 Not ignored (run by CI) | 5160 |
+| 🔴 Red by design | 225 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5375** |
+| **Total** | **5411** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (221)
+## 🔴 Red by design (225)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
 
+- `a_crowd_velocity_out_of_range_is_a_fault` (indep_participant_laws.rs) — src gap: CrowdParticipant velocity/position overflow is not detected (wraps)
 - `a_force_above_the_wake_threshold_wakes_a_parked_body` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 a parked body wakes above the force threshold
 - `a_force_below_the_wake_threshold_leaves_a_parked_body_parked` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 a parked body stays parked below the force threshold
 - `a_force_exactly_at_the_wake_threshold_leaves_a_parked_body_parked` (world_participant_conformance.rs) — src gap: WORLD-V1-S1 a parked body stays parked at exactly the wake threshold
@@ -31,6 +32,8 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `aabb_of_a_negative_spacing_field_is_not_inverted` (audit_heightfield.rs) — known defect: AUD-A-S4W3-007: HeightField::new accepts spacing <= 0 (debug_assert checks only the length); col…
 - `aabb_plane_toi_is_consistent_with_the_two_sided_sphere_version` (audit_ccd.rs) — known defect: AUD-A-S2W2-012: aabb_plane_toi treats the back side of the plane as solid (support distance <= 0…
 - `adaptive_toi_substeps_bounds_euclidean_travel_per_substep` (audit_ccd.rs) — known defect: AUD-A-S2W2-014: adaptive_toi_substeps sizes sub-steps from the L-infinity speed, so a body movin…
+- `an_md_kick_out_of_range_is_a_fault` (indep_participant_laws.rs) — src gap: MdParticipant kick/drift overflow is not detected (wraps)
+- `an_md_pair_closer_than_the_length_resolution_is_out_of_range` (indep_participant_laws.rs) — src gap: MD pair at r < 2^-32 is reported as InvalidState, not OutOfRange
 - `angular_speed_beyond_range_is_kept_or_flagged` (analytic_coordinate_range.rs) — src gap: WORLD-V1-RANGE angular speed beyond 2^31.5 is erased without a fault
 - `applied_cycles_above_i64_max_do_not_flip_the_damage_sign` (audit_fatigue.rs) — known defect: AUD-A-S4W2-007: n as i64 で n > i64::MAX が負に wrap し damage が負になる (n = u64::MAX -> D < 0)
 - `arrow_records_head_geometry_besides_the_shaft` (audit_debug_render.rs) — known defect: AUD-A-S4W3-008: arrow() documents 'line + arrowhead' but the computed head_point is discarded (`…
@@ -41,6 +44,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `capsule_cast_misses_nothing_along_the_segment` (audit_query.rs) — known defect: AUD-A-S3W3-014: capsule_cast casts only 3 spheres (both ends + midpoint) so a body above the qua…
 - `capsule_plane_toi_behind_the_plane_uses_the_nearer_endpoint` (audit_ccd.rs) — known defect: AUD-A-S2W2-010: capsule_plane_toi always takes the endpoint with the smaller signed distance, co…
 - `capsule_plane_toi_straddling_capsule_is_already_touching` (audit_ccd.rs) — known defect: AUD-A-S2W2-010: capsule_plane_toi judges only one endpoint sphere, so a capsule a=(0,-5,0) b=(0,…
+- `checked_mul_has_no_false_positive_when_the_middle_sum_wraps` (mat3_inverse_range.rs) — src gap: checked_mul returns None for an in-range product when hl + lh wraps i128
 - `checked_mul_is_complete` (audit_math.rs) — known defect: AUD-A-S1W5-026: checked_mul returns None for in-range products: the guard `i64::try_from(hh)` te…
 - `checksum_distinguishes_where_the_position_stream_ends` (audit_fluid_netcode.rs) — known defect: AUD-A-S5W2-012: the checksum hashes positions then velocities as one byte stream with no length,…
 - `closest_and_all_agree_on_equidistant_aabbs` (audit_raycast.rs) — known defect: AUD-A-S5W1-004: tie-breaking differs: raycast_aabbs picks the last of equal-t candidates, raycas…
@@ -297,7 +301,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5128)
+## 🟢 Not ignored (5160)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -457,6 +461,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_rope.rs` | 14 |
 | `audit_sketch.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
+| `indep_participant_laws.rs` | 14 |
 | `sleep_skip.rs` | 14 |
 | `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
@@ -521,6 +526,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_rolling_contact.rs` | 11 |
 | `audit_wedge.rs` | 11 |
 | `indep_linear_solver_krylov.rs` | 11 |
+| `indep_participant_order.rs` | 11 |
 | `analytic_atmosphere_isa1976.rs` | 10 |
 | `analytic_bridging_wiring.rs` | 10 |
 | `analytic_cfd_flow_bc.rs` | 10 |
@@ -614,6 +620,7 @@ Per-file counts (the test names are in `tests/`):
 | `elastoplastic_increment_api.rs` | 7 |
 | `fsi_advanced_sub_iteration.rs` | 7 |
 | `indep_aero_rotor.rs` | 7 |
+| `mat3_inverse_range.rs` | 7 |
 | `mesh_quality.rs` | 7 |
 | `wm07_reset_and_rollback_contract.rs` | 7 |
 | `analytic_analytics_bridge_wiring.rs` | 6 |
