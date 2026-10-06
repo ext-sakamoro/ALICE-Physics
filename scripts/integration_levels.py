@@ -6,8 +6,8 @@ an example calls passes it without being integrated anywhere. This script
 measures integration directly and does not count examples as evidence of it:
 
   module levels    every pub item is reached (SCIP, scripts/scip_reach.py) from
-                   `PhysicsWorld::step*` (step), another `PhysicsWorld` pub method
-                   (world API), a binding file (binding), or none of these; a module
+                   `PhysicsWorld::step*` (step), another `PhysicsWorld` pub method in
+                   any file's `impl PhysicsWorld` block (world API), a binding file (binding), or none of these; a module
                    takes the highest level any of its items has:
                      step         runs when the world steps
                      world API    used through a `PhysicsWorld` method
@@ -46,6 +46,7 @@ import scip_reach  # noqa: E402
 
 FFI_FILE = "src/ffi.rs"
 WORLD_PREFIX = "src/solver.rs::PhysicsWorld"
+WORLD_TYPE = "PhysicsWorld"
 LEVELS = ("step", "world API", "binding", "standalone", "unused")
 BINDING_LABELS = {"src/python.rs": "Python", "src/ffi.rs": "C ABI", "src/wasm.rs": "WebAssembly"}
 SUMMARY_MARK = "<!-- integration-levels: summary -->"
@@ -178,11 +179,23 @@ def module_of(key: str) -> str:
     return parts[0][:-3] if len(parts) == 1 else parts[0]
 
 
+def is_world_key(key: str) -> bool:
+    """The `PhysicsWorld` type, or a pub method of an `impl PhysicsWorld` block in any
+    file (`src/x.rs::PhysicsWorld::m`): the methods split out of src/solver.rs
+    (ray casts, shape queries, sensors, character moves, snapshots) are world API
+    as much as those left in it. `PhysicsWorld2D` and other names that only start
+    with `PhysicsWorld` are not the world."""
+    if key == WORLD_PREFIX:
+        return True
+    parts = key.split("::")
+    return len(parts) == 3 and parts[0].startswith("src/") and parts[1] == WORLD_TYPE
+
+
 class Levels:
     def __init__(self, root: Path, scip_paths: list[Path]):
         a = scip_reach.analyze(root, scip_paths, keep_graph=True)
         self.analysis = a
-        world = [k for k in a.items if k == WORLD_PREFIX or k.startswith(WORLD_PREFIX + "::")]
+        world = [k for k in a.items if is_world_key(k)]
         step = [k for k in world if k.rsplit("::", 1)[-1].startswith("step")]
         syms = lambda keys: set().union(*(a.items[k] for k in keys)) if keys else set()  # noqa: E731
         self.step_entries = sorted(k.rsplit("::", 1)[-1] for k in step)

@@ -143,6 +143,71 @@ class ModuleLevels(unittest.TestCase):
         self.assertEqual(c["unused"], 1)
 
 
+ZETA = """use crate::solver::PhysicsWorld;
+impl PhysicsWorld {
+    pub fn cast(&self) { crate::omega::o_cast(); }
+}"""
+TWOD = """pub struct PhysicsWorld2D;
+impl PhysicsWorld2D {
+    pub fn cast2(&self) { crate::omega2::o_two(); }
+}"""
+EXAMPLE2 = "fn main() { w.cast(); w2.cast2(); }"
+
+
+def split_impl_docs() -> list[Doc]:
+    """The fixture crate plus a `PhysicsWorld` impl block outside src/solver.rs
+    (`zeta`) and a type whose name only starts with `PhysicsWorld` (`twod`)."""
+    docs = [d for d in crate_docs() if d.path not in ("src/lib.rs", "examples/demo.rs")]
+    lib = LIB + "\npub mod zeta;\npub mod omega;\npub mod twod;\npub mod omega2;"
+    return docs + [
+        Doc("src/lib.rs", lib),
+        (Doc("src/zeta.rs", ZETA)
+         .ref("solver/PhysicsWorld#", 1, "PhysicsWorld")
+         .define("zeta/impl#[PhysicsWorld]cast().", 2, "cast", end_line=2)
+         .ref("omega/o_cast().", 2, "o_cast")),
+        Doc("src/omega.rs", "pub fn o_cast() {}").define("omega/o_cast().", 0, "o_cast"),
+        (Doc("src/twod.rs", TWOD)
+         .define("twod/PhysicsWorld2D#", 0, "PhysicsWorld2D")
+         .define("twod/impl#[PhysicsWorld2D]cast2().", 2, "cast2", end_line=2)
+         .ref("omega2/o_two().", 2, "o_two")),
+        Doc("src/omega2.rs", "pub fn o_two() {}").define("omega2/o_two().", 0, "o_two"),
+        (Doc("examples/demo.rs", EXAMPLE + "\n" + EXAMPLE2)
+         .ref("delta/d_example().", 0, "d_example")
+         .ref("mixed/m2().", 0, "m2").ref("mixed/m3().", 0, "m3")
+         .ref("zeta/impl#[PhysicsWorld]cast().", 1, "cast")
+         .ref("twod/impl#[PhysicsWorld2D]cast2().", 1, "cast2")),
+    ]
+
+
+class WorldMethodsOutsideSolver(unittest.TestCase):
+    """A `PhysicsWorld` method is world API wherever its impl block lives."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.root = build(split_impl_docs())
+        cls.lv = il.Levels(cls.root, scip(cls.root))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.root, ignore_errors=True)
+
+    def test_a_world_method_in_another_file_is_world_api(self):
+        self.assertEqual(self.lv.item_level["src/zeta.rs::PhysicsWorld::cast"], "world API")
+        self.assertEqual(self.lv.module_level["zeta"], "world API")
+
+    def test_what_that_method_calls_is_world_api(self):
+        self.assertEqual(self.lv.module_level["omega"], "world API")
+
+    def test_a_type_whose_name_starts_with_physicsworld_is_not_the_world(self):
+        self.assertEqual(self.lv.module_level["twod"], "standalone")
+        self.assertEqual(self.lv.module_level["omega2"], "standalone")
+
+    def test_the_solver_methods_keep_their_levels(self):
+        self.assertEqual(self.lv.module_level["alpha"], "step")
+        self.assertEqual(self.lv.module_level["beta"], "world API")
+        self.assertEqual(self.lv.step_entries, ["step"])
+
+
 class CAbiCoverage(unittest.TestCase):
     def setUp(self):
         self.root = make_root()
