@@ -2,17 +2,24 @@
 //! ([`alice_physics::world_participant`]) and driven by hand through the
 //! substep context, the way the world will drive it: a point oscillator that
 //! pulls a body along y, its snapshot payload, a failing call that leaves it
-//! unchanged, the checks a restore makes on the participant list, and the
-//! execution order the world derives from the ports participants declare.
+//! unchanged, the checks a restore makes on the participant list, the
+//! execution order the world derives from the ports participants declare,
+//! two participants coupled through shared fields (each reads what the other
+//! writes, one substep later), moving an amount between grids without losing
+//! any, and the wake threshold for a parked body.
 //!
 //! Run: `cargo run --example world_participant_contract`
 
 use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics::sleeping::SleepConfig;
 use alice_physics::solver::RigidBody;
 use alice_physics::world_participant::{
-    execution_order, AccumulateError, ForceAccumulator, ObservationSink, Observed, OrderError,
-    Participant, ParticipantFault, ParticipantKind, ParticipantMismatch, Port, PortAccess, PortId,
-    RegisterError, StateError, StepError, StepRule, SubstepCtx, Verdict, WorldFault,
+    check_field_ports, deposit_bodies, execution_order, remap_conserving, run_substep,
+    wakes_parked_body, AccumulateError, ExchangeError, FieldAccessError, FieldBoard, FieldError,
+    FieldLayout, FieldMode, FieldPortError, FieldStage, ForceAccumulator, ObservationSink,
+    Observed, OrderError, Participant, ParticipantFault, ParticipantKind, ParticipantMismatch,
+    ParticipantPlan, Port, PortAccess, PortId, RegisterError, RemapError, StateError, StepError,
+    StepRule, SubstepCtx, SubstepTime, Verdict, WorldFault,
 };
 
 const KIND: ParticipantKind = ParticipantKind::new(1);
@@ -98,6 +105,230 @@ impl Participant for Oscillator {
         self.x = fix(&bytes[0..16]);
         self.v = fix(&bytes[16..32]);
     }
+}
+
+/// Heat a body gives off per substep (a load, so a `Sum` field).
+const HEAT: PortId = PortId::new(3);
+/// Heat held in each cell of a grid (a state, so a `Replace` field).
+const CELL_HEAT: PortId = PortId::new(4);
+const SOURCE_PORTS: &[Port] = &[Port::writes(HEAT), Port::reads_committed(CELL_HEAT)];
+const STORE_PORTS: &[Port] = &[Port::reads_committed(HEAT), Port::writes(CELL_HEAT)];
+
+/// Gives off 1/10 J per substep from body 0, and stops once the grid holds
+/// more than `limit`.
+struct Source {
+    limit: Fix128,
+}
+
+/// Collects the heat the bodies gave off into the grid cell under each body.
+struct Store;
+
+macro_rules! stateless {
+    () => {
+        fn observe(&self, _: &mut ObservationSink) {}
+        fn write_state(&self, _: &mut Vec<u8>) {}
+        fn check_state(&self, b: &[u8]) -> Result<(), StateError> {
+            if b.is_empty() {
+                Ok(())
+            } else {
+                Err(StateError::Length {
+                    expected: 0,
+                    found: b.len(),
+                })
+            }
+        }
+        fn read_state(&mut self, _: &[u8]) {}
+    };
+}
+
+impl Participant for Source {
+    fn kind(&self) -> ParticipantKind {
+        ParticipantKind::new(3)
+    }
+    fn ports(&self) -> &[Port] {
+        SOURCE_PORTS
+    }
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, _: Fix128) -> Result<(), ParticipantFault> {
+        let held = ctx
+            .field(CELL_HEAT)
+            .map_err(|_: FieldAccessError| ParticipantFault::InvalidState)?
+            .iter()
+            .fold(Fix128::ZERO, |a, b| a + *b);
+        if held > self.limit {
+            return Err(ParticipantFault::OutOfRange);
+        }
+        ctx.stage_field(HEAT)
+            .map_err(|_| ParticipantFault::InvalidState)?[0] = Fix128::from_ratio(1, 10);
+        Ok(())
+    }
+    stateless!();
+}
+
+impl Participant for Store {
+    fn kind(&self) -> ParticipantKind {
+        ParticipantKind::new(4)
+    }
+    fn ports(&self) -> &[Port] {
+        STORE_PORTS
+    }
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, _: Fix128) -> Result<(), ParticipantFault> {
+        let heat = ctx
+            .field(HEAT)
+            .map_err(|_| ParticipantFault::InvalidState)?;
+        let layout = FieldLayout::Grid {
+            origin: Vec3Fix::from_int(-1, 0, -1),
+            cell: Fix128::ONE,
+            dims: [2, 2, 2],
+        };
+        let added = deposit_bodies(ctx.bodies(), heat, &layout)
+            .map_err(|_: RemapError| ParticipantFault::OutOfRange)?;
+        let cells = ctx
+            .stage_field(CELL_HEAT)
+            .map_err(|_| ParticipantFault::InvalidState)?;
+        for (c, a) in cells.iter_mut().zip(added) {
+            *c = *c + a;
+        }
+        Ok(())
+    }
+    stateless!();
+}
+
+/// Two participants coupled through two fields, each reading the other's
+/// output of the previous substep; then the grid moved to a coarser one, the
+/// snapshot bytes of the fields, and the wake threshold.
+fn shared_fields() {
+    let bodies = vec![RigidBody::new_dynamic(
+        Vec3Fix::new(
+            Fix128::from_ratio(1, 2),
+            Fix128::from_ratio(1, 2),
+            Fix128::ZERO,
+        ),
+        Fix128::ONE,
+    )];
+    let grid = FieldLayout::Grid {
+        origin: Vec3Fix::from_int(-1, 0, -1),
+        cell: Fix128::ONE,
+        dims: [2, 2, 2],
+    };
+    let mut board = FieldBoard::new();
+    board
+        .declare(HEAT, FieldLayout::PerBody { bodies: 1 }, FieldMode::Sum)
+        .expect("declare");
+    board
+        .declare(CELL_HEAT, grid, FieldMode::Replace)
+        .expect("declare");
+    let dup: Result<(), FieldError> =
+        board.declare(HEAT, FieldLayout::PerBody { bodies: 1 }, FieldMode::Sum);
+    println!(
+        "[world_participant] fields {:?} samples {:?} (again: {dup:?})",
+        board.ids().iter().map(|i| i.get()).collect::<Vec<_>>(),
+        board.layout(CELL_HEAT).and_then(|l| l.samples())
+    );
+    // A loop through committed reads is accepted; a second writer of a
+    // Replace field is not.
+    let ok = check_field_ports(&board, &[SOURCE_PORTS, STORE_PORTS]);
+    let twice: Result<(), FieldPortError> = check_field_ports(&board, &[STORE_PORTS, STORE_PORTS]);
+    println!("[world_participant] ports {ok:?}, two writers {twice:?}");
+
+    let mut ps: Vec<Box<dyn Participant>> = vec![
+        Box::new(Source {
+            limit: Fix128::from_ratio(1, 4),
+        }),
+        Box::new(Store),
+    ];
+    let plan = ParticipantPlan::new(&ps, &board).expect("no loop, one writer each");
+    let mut frozen = vec![false; ps.len()];
+    let mut forces = ForceAccumulator::new(bodies.len());
+    let h = Fix128::from_ratio(1, 240);
+    for index in 0..6 {
+        let time = SubstepTime { index, count: 6, h };
+        let faults = run_substep(
+            &mut ps,
+            &plan,
+            &mut frozen,
+            &bodies,
+            &mut board,
+            &mut forces,
+            time,
+        )
+        .expect("inputs fit");
+        let cells = board.value(CELL_HEAT).expect("declared");
+        println!(
+            "[world_participant] substep {index}: order {:?} heat {:?} cell under the body {:.3} faults {faults:?}",
+            plan.order(),
+            board.value(HEAT).map(|v| v[0].to_f64()),
+            cells[5].to_f64()
+        );
+    }
+    let misfit: Result<Vec<WorldFault>, ExchangeError> = run_substep(
+        &mut ps,
+        &plan,
+        &mut [],
+        &bodies,
+        &mut board,
+        &mut forces,
+        SubstepTime {
+            index: 0,
+            count: 1,
+            h,
+        },
+    );
+    println!("[world_participant] mismatched flags: {misfit:?}");
+
+    // Moving the grid's heat to one coarse cell keeps the total exactly.
+    let coarse = FieldLayout::Grid {
+        origin: Vec3Fix::from_int(-1, 0, -1),
+        cell: Fix128::from_int(2),
+        dims: [1, 1, 1],
+    };
+    let cells = board.value(CELL_HEAT).expect("declared");
+    let sum = cells.iter().fold(Fix128::ZERO, |a, b| a + *b);
+    let moved = remap_conserving(&grid, cells, &coarse).expect("nested");
+    let back = remap_conserving(&coarse, &moved, &grid).expect("nested");
+    println!(
+        "[world_participant] grid total {:.3} coarse {:.3} equal={} refined total equal={}",
+        sum.to_f64(),
+        moved[0].to_f64(),
+        moved[0] == sum,
+        back.iter().fold(Fix128::ZERO, |a, b| a + *b) == sum
+    );
+
+    // The world's snapshot section for the fields.
+    let mut blob = Vec::new();
+    board.write_values(&mut blob);
+    let mut copy = FieldBoard::new();
+    copy.declare(HEAT, FieldLayout::PerBody { bodies: 1 }, FieldMode::Sum)
+        .expect("declare");
+    copy.declare(CELL_HEAT, grid, FieldMode::Replace)
+        .expect("declare");
+    copy.check_values(&blob).expect("same declarations");
+    copy.read_values(&blob);
+    copy.set(HEAT, &[Fix128::ZERO]).expect("one body");
+    let stage = FieldStage::new();
+    println!(
+        "[world_participant] fields section {} bytes, cells equal={}, modes {:?}/{:?}, empty stage {} {:?}",
+        blob.len(),
+        copy.value(CELL_HEAT) == board.value(CELL_HEAT),
+        copy.mode(HEAT),
+        copy.mode(CELL_HEAT),
+        stage.is_empty(),
+        stage.staged(HEAT)
+    );
+
+    // Wake threshold A: the velocity change of one substep against the sleep
+    // threshold (0.01 m/s by default).
+    let sleep = SleepConfig::default();
+    for newtons in [1, 3, 1000] {
+        let wakes = wakes_parked_body(
+            &bodies[0],
+            Vec3Fix::from_int(newtons, 0, 0),
+            Vec3Fix::ZERO,
+            h,
+            &sleep,
+        );
+        println!("[world_participant] {newtons} N for 1/240 s on 1 kg wakes: {wakes}");
+    }
+    let _ = PortAccess::ReadCommitted;
 }
 
 fn state(p: &dyn Participant) -> Vec<u8> {
@@ -246,4 +477,5 @@ fn main() {
     let refused_registration = looped.clone().map_err(RegisterError::Order);
     println!("[world_participant] loop {looped:?} -> registration {refused_registration:?}");
     assert!(refused_registration.is_err());
+    shared_fields();
 }
