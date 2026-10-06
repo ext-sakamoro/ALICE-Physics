@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 64 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2422 |
-| live | reached without examples (crate-internal roots or a binding) | 432 |
-| | **total** | **2918** |
+| L0 | not reached by any non-test code, examples included | 174 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2472 |
+| live | reached without examples (crate-internal roots or a binding) | 435 |
+| | **total** | **3081** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 22 unwired items.
 
-### L0 here but not in the baseline (39)
+### L0 here but not in the baseline (149)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -48,7 +48,117 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/motor.rs::PdController3D`
 - `src/motor.rs::PdController3D::compute_torque`
 - `src/motor.rs::PdController3D::new`
-- `src/sketch.rs::HeavyHitterEntry`
+- `src/sketch.rs::CountMinSketch1024x5::clear`
+- `src/sketch.rs::CountMinSketch2048x7`
+- `src/sketch.rs::CountMinSketch2048x7::DEPTH`
+- `src/sketch.rs::CountMinSketch2048x7::WIDTH`
+- `src/sketch.rs::CountMinSketch2048x7::clear`
+- `src/sketch.rs::CountMinSketch2048x7::confidence`
+- `src/sketch.rs::CountMinSketch2048x7::error_bound`
+- `src/sketch.rs::CountMinSketch2048x7::estimate`
+- `src/sketch.rs::CountMinSketch2048x7::estimate_bytes`
+- `src/sketch.rs::CountMinSketch2048x7::estimate_hash`
+- `src/sketch.rs::CountMinSketch2048x7::insert`
+- `src/sketch.rs::CountMinSketch2048x7::insert_bytes`
+- `src/sketch.rs::CountMinSketch2048x7::insert_hash`
+- `src/sketch.rs::CountMinSketch2048x7::new`
+- `src/sketch.rs::CountMinSketch2048x7::total`
+- `src/sketch.rs::CountMinSketch4096x5`
+- `src/sketch.rs::CountMinSketch4096x5::DEPTH`
+- `src/sketch.rs::CountMinSketch4096x5::WIDTH`
+- `src/sketch.rs::CountMinSketch4096x5::clear`
+- `src/sketch.rs::CountMinSketch4096x5::confidence`
+- `src/sketch.rs::CountMinSketch4096x5::error_bound`
+- `src/sketch.rs::CountMinSketch4096x5::estimate`
+- `src/sketch.rs::CountMinSketch4096x5::estimate_bytes`
+- `src/sketch.rs::CountMinSketch4096x5::estimate_hash`
+- `src/sketch.rs::CountMinSketch4096x5::insert`
+- `src/sketch.rs::CountMinSketch4096x5::insert_bytes`
+- `src/sketch.rs::CountMinSketch4096x5::insert_hash`
+- `src/sketch.rs::CountMinSketch4096x5::new`
+- `src/sketch.rs::CountMinSketch4096x5::total`
+- `src/sketch.rs::DDSketch1024`
+- `src/sketch.rs::DDSketch1024::BINS`
+- `src/sketch.rs::DDSketch1024::alpha`
+- `src/sketch.rs::DDSketch1024::clear`
+- `src/sketch.rs::DDSketch1024::count`
+- `src/sketch.rs::DDSketch1024::insert`
+- `src/sketch.rs::DDSketch1024::max`
+- `src/sketch.rs::DDSketch1024::mean`
+- `src/sketch.rs::DDSketch1024::min`
+- `src/sketch.rs::DDSketch1024::new`
+- `src/sketch.rs::DDSketch1024::quantile`
+- `src/sketch.rs::DDSketch1024::sum`
+- `src/sketch.rs::DDSketch128`
+- `src/sketch.rs::DDSketch128::BINS`
+- `src/sketch.rs::DDSketch128::alpha`
+- `src/sketch.rs::DDSketch128::clear`
+- `src/sketch.rs::DDSketch128::count`
+- `src/sketch.rs::DDSketch128::insert`
+- `src/sketch.rs::DDSketch128::max`
+- `src/sketch.rs::DDSketch128::mean`
+- `src/sketch.rs::DDSketch128::min`
+- `src/sketch.rs::DDSketch128::new`
+- `src/sketch.rs::DDSketch128::quantile`
+- `src/sketch.rs::DDSketch128::sum`
+- `src/sketch.rs::DDSketch2048::clear`
+- `src/sketch.rs::DDSketch2048::sum`
+- `src/sketch.rs::DDSketch256::BINS`
+- `src/sketch.rs::DDSketch256::alpha`
+- `src/sketch.rs::DDSketch256::sum`
+- `src/sketch.rs::DDSketch512`
+- `src/sketch.rs::DDSketch512::BINS`
+- `src/sketch.rs::DDSketch512::alpha`
+- `src/sketch.rs::DDSketch512::clear`
+- `src/sketch.rs::DDSketch512::count`
+- `src/sketch.rs::DDSketch512::insert`
+- `src/sketch.rs::DDSketch512::max`
+- `src/sketch.rs::DDSketch512::mean`
+- `src/sketch.rs::DDSketch512::min`
+- `src/sketch.rs::DDSketch512::new`
+- `src/sketch.rs::DDSketch512::quantile`
+- `src/sketch.rs::DDSketch512::sum`
+- `src/sketch.rs::HeavyHitters10::clear`
+- `src/sketch.rs::HeavyHitters20`
+- `src/sketch.rs::HeavyHitters20::K`
+- `src/sketch.rs::HeavyHitters20::clear`
+- `src/sketch.rs::HeavyHitters20::cms`
+- `src/sketch.rs::HeavyHitters20::insert_hash`
+- `src/sketch.rs::HeavyHitters20::new`
+- `src/sketch.rs::HeavyHitters20::top`
+- `src/sketch.rs::HeavyHitters5`
+- `src/sketch.rs::HeavyHitters5::K`
+- `src/sketch.rs::HeavyHitters5::clear`
+- `src/sketch.rs::HeavyHitters5::cms`
+- `src/sketch.rs::HeavyHitters5::insert_hash`
+- `src/sketch.rs::HeavyHitters5::new`
+- `src/sketch.rs::HeavyHitters5::top`
+- `src/sketch.rs::HyperLogLog10::P`
+- `src/sketch.rs::HyperLogLog10::insert`
+- `src/sketch.rs::HyperLogLog10::insert_bytes`
+- `src/sketch.rs::HyperLogLog10::registers`
+- `src/sketch.rs::HyperLogLog12`
+- `src/sketch.rs::HyperLogLog12::M`
+- `src/sketch.rs::HyperLogLog12::P`
+- `src/sketch.rs::HyperLogLog12::cardinality`
+- `src/sketch.rs::HyperLogLog12::clear`
+- `src/sketch.rs::HyperLogLog12::insert`
+- `src/sketch.rs::HyperLogLog12::insert_bytes`
+- `src/sketch.rs::HyperLogLog12::insert_hash`
+- `src/sketch.rs::HyperLogLog12::new`
+- `src/sketch.rs::HyperLogLog12::registers`
+- `src/sketch.rs::HyperLogLog14::P`
+- `src/sketch.rs::HyperLogLog14::clear`
+- `src/sketch.rs::HyperLogLog16`
+- `src/sketch.rs::HyperLogLog16::M`
+- `src/sketch.rs::HyperLogLog16::P`
+- `src/sketch.rs::HyperLogLog16::cardinality`
+- `src/sketch.rs::HyperLogLog16::clear`
+- `src/sketch.rs::HyperLogLog16::insert`
+- `src/sketch.rs::HyperLogLog16::insert_bytes`
+- `src/sketch.rs::HyperLogLog16::insert_hash`
+- `src/sketch.rs::HyperLogLog16::new`
+- `src/sketch.rs::HyperLogLog16::registers`
 - `src/solver.rs::PhysicsWorld::begin_frame`
 - `src/solver.rs::PhysicsWorld::end_frame`
 - `src/solver.rs::TgsCacheStats::new`
@@ -69,7 +179,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (64)
+## L0 — unreached (174)
 
 - `src/bvh.rs::BroadphaseHybrid`
 - `src/bvh.rs::BroadphaseHybrid::build_dynamic`
@@ -115,7 +225,117 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/motor.rs::apply_motors`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/plastic.rs::PlasticModel::with_hardening`
-- `src/sketch.rs::HeavyHitterEntry`
+- `src/sketch.rs::CountMinSketch1024x5::clear`
+- `src/sketch.rs::CountMinSketch2048x7`
+- `src/sketch.rs::CountMinSketch2048x7::DEPTH`
+- `src/sketch.rs::CountMinSketch2048x7::WIDTH`
+- `src/sketch.rs::CountMinSketch2048x7::clear`
+- `src/sketch.rs::CountMinSketch2048x7::confidence`
+- `src/sketch.rs::CountMinSketch2048x7::error_bound`
+- `src/sketch.rs::CountMinSketch2048x7::estimate`
+- `src/sketch.rs::CountMinSketch2048x7::estimate_bytes`
+- `src/sketch.rs::CountMinSketch2048x7::estimate_hash`
+- `src/sketch.rs::CountMinSketch2048x7::insert`
+- `src/sketch.rs::CountMinSketch2048x7::insert_bytes`
+- `src/sketch.rs::CountMinSketch2048x7::insert_hash`
+- `src/sketch.rs::CountMinSketch2048x7::new`
+- `src/sketch.rs::CountMinSketch2048x7::total`
+- `src/sketch.rs::CountMinSketch4096x5`
+- `src/sketch.rs::CountMinSketch4096x5::DEPTH`
+- `src/sketch.rs::CountMinSketch4096x5::WIDTH`
+- `src/sketch.rs::CountMinSketch4096x5::clear`
+- `src/sketch.rs::CountMinSketch4096x5::confidence`
+- `src/sketch.rs::CountMinSketch4096x5::error_bound`
+- `src/sketch.rs::CountMinSketch4096x5::estimate`
+- `src/sketch.rs::CountMinSketch4096x5::estimate_bytes`
+- `src/sketch.rs::CountMinSketch4096x5::estimate_hash`
+- `src/sketch.rs::CountMinSketch4096x5::insert`
+- `src/sketch.rs::CountMinSketch4096x5::insert_bytes`
+- `src/sketch.rs::CountMinSketch4096x5::insert_hash`
+- `src/sketch.rs::CountMinSketch4096x5::new`
+- `src/sketch.rs::CountMinSketch4096x5::total`
+- `src/sketch.rs::DDSketch1024`
+- `src/sketch.rs::DDSketch1024::BINS`
+- `src/sketch.rs::DDSketch1024::alpha`
+- `src/sketch.rs::DDSketch1024::clear`
+- `src/sketch.rs::DDSketch1024::count`
+- `src/sketch.rs::DDSketch1024::insert`
+- `src/sketch.rs::DDSketch1024::max`
+- `src/sketch.rs::DDSketch1024::mean`
+- `src/sketch.rs::DDSketch1024::min`
+- `src/sketch.rs::DDSketch1024::new`
+- `src/sketch.rs::DDSketch1024::quantile`
+- `src/sketch.rs::DDSketch1024::sum`
+- `src/sketch.rs::DDSketch128`
+- `src/sketch.rs::DDSketch128::BINS`
+- `src/sketch.rs::DDSketch128::alpha`
+- `src/sketch.rs::DDSketch128::clear`
+- `src/sketch.rs::DDSketch128::count`
+- `src/sketch.rs::DDSketch128::insert`
+- `src/sketch.rs::DDSketch128::max`
+- `src/sketch.rs::DDSketch128::mean`
+- `src/sketch.rs::DDSketch128::min`
+- `src/sketch.rs::DDSketch128::new`
+- `src/sketch.rs::DDSketch128::quantile`
+- `src/sketch.rs::DDSketch128::sum`
+- `src/sketch.rs::DDSketch2048::clear`
+- `src/sketch.rs::DDSketch2048::sum`
+- `src/sketch.rs::DDSketch256::BINS`
+- `src/sketch.rs::DDSketch256::alpha`
+- `src/sketch.rs::DDSketch256::sum`
+- `src/sketch.rs::DDSketch512`
+- `src/sketch.rs::DDSketch512::BINS`
+- `src/sketch.rs::DDSketch512::alpha`
+- `src/sketch.rs::DDSketch512::clear`
+- `src/sketch.rs::DDSketch512::count`
+- `src/sketch.rs::DDSketch512::insert`
+- `src/sketch.rs::DDSketch512::max`
+- `src/sketch.rs::DDSketch512::mean`
+- `src/sketch.rs::DDSketch512::min`
+- `src/sketch.rs::DDSketch512::new`
+- `src/sketch.rs::DDSketch512::quantile`
+- `src/sketch.rs::DDSketch512::sum`
+- `src/sketch.rs::HeavyHitters10::clear`
+- `src/sketch.rs::HeavyHitters20`
+- `src/sketch.rs::HeavyHitters20::K`
+- `src/sketch.rs::HeavyHitters20::clear`
+- `src/sketch.rs::HeavyHitters20::cms`
+- `src/sketch.rs::HeavyHitters20::insert_hash`
+- `src/sketch.rs::HeavyHitters20::new`
+- `src/sketch.rs::HeavyHitters20::top`
+- `src/sketch.rs::HeavyHitters5`
+- `src/sketch.rs::HeavyHitters5::K`
+- `src/sketch.rs::HeavyHitters5::clear`
+- `src/sketch.rs::HeavyHitters5::cms`
+- `src/sketch.rs::HeavyHitters5::insert_hash`
+- `src/sketch.rs::HeavyHitters5::new`
+- `src/sketch.rs::HeavyHitters5::top`
+- `src/sketch.rs::HyperLogLog10::P`
+- `src/sketch.rs::HyperLogLog10::insert`
+- `src/sketch.rs::HyperLogLog10::insert_bytes`
+- `src/sketch.rs::HyperLogLog10::registers`
+- `src/sketch.rs::HyperLogLog12`
+- `src/sketch.rs::HyperLogLog12::M`
+- `src/sketch.rs::HyperLogLog12::P`
+- `src/sketch.rs::HyperLogLog12::cardinality`
+- `src/sketch.rs::HyperLogLog12::clear`
+- `src/sketch.rs::HyperLogLog12::insert`
+- `src/sketch.rs::HyperLogLog12::insert_bytes`
+- `src/sketch.rs::HyperLogLog12::insert_hash`
+- `src/sketch.rs::HyperLogLog12::new`
+- `src/sketch.rs::HyperLogLog12::registers`
+- `src/sketch.rs::HyperLogLog14::P`
+- `src/sketch.rs::HyperLogLog14::clear`
+- `src/sketch.rs::HyperLogLog16`
+- `src/sketch.rs::HyperLogLog16::M`
+- `src/sketch.rs::HyperLogLog16::P`
+- `src/sketch.rs::HyperLogLog16::cardinality`
+- `src/sketch.rs::HyperLogLog16::clear`
+- `src/sketch.rs::HyperLogLog16::insert`
+- `src/sketch.rs::HyperLogLog16::insert_bytes`
+- `src/sketch.rs::HyperLogLog16::insert_hash`
+- `src/sketch.rs::HyperLogLog16::new`
+- `src/sketch.rs::HyperLogLog16::registers`
 - `src/solver.rs::PhysicsWorld::begin_frame`
 - `src/solver.rs::PhysicsWorld::end_frame`
 - `src/solver.rs::TgsCacheStats::new`
@@ -136,37 +356,11 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_parallel`
 - `src/solver_tgs_hooks_6dof_scoped.rs::solve_islands_serial`
 
-## Not indexed (27)
+## Not indexed (0)
 
 `pub` items in the source that the SCIP index has no definition for (items inside a `macro_rules` body). Their reach is not checked; the baseline lists them so the set cannot grow unnoticed.
 
-- `src/sketch.rs::BINS`
-- `src/sketch.rs::DEPTH`
-- `src/sketch.rs::K`
-- `src/sketch.rs::M`
-- `src/sketch.rs::P`
-- `src/sketch.rs::WIDTH`
-- `src/sketch.rs::alpha`
-- `src/sketch.rs::cardinality`
-- `src/sketch.rs::clear`
-- `src/sketch.rs::cms`
-- `src/sketch.rs::confidence`
-- `src/sketch.rs::count`
-- `src/sketch.rs::error_bound`
-- `src/sketch.rs::estimate`
-- `src/sketch.rs::estimate_bytes`
-- `src/sketch.rs::estimate_hash`
-- `src/sketch.rs::insert`
-- `src/sketch.rs::insert_bytes`
-- `src/sketch.rs::insert_hash`
-- `src/sketch.rs::max`
-- `src/sketch.rs::mean`
-- `src/sketch.rs::min`
-- `src/sketch.rs::quantile`
-- `src/sketch.rs::registers`
-- `src/sketch.rs::sum`
-- `src/sketch.rs::top`
-- `src/sketch.rs::total`
+- (none)
 
 ## Limits
 
@@ -177,7 +371,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2422)
+## L1 — example-only (2472)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -256,7 +450,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/laminate_failure.rs`: `FailureCriterion`, `FailureMode`, `InvalidStrengthError`, `LaminateStrengths`, `LaminateStrengths::cfrp_ud`, `LaminateStrengths::gfrp_ud`, `LaminateStrengths::try_new`, `StressState`, `StressState::zero`, `failure_index`, `hashin_failure_mode`, `puck_failure_mode`, `tsai_hill_failure_index`, `tsai_wu_failure_index`
 - `src/layer_adhesion.rs`: `EffectiveStrength`, `EffectiveStrength::for_material`, `EffectiveStrength::fos_normal_x`, `EffectiveStrength::fos_normal_z`, `EffectiveStrength::fos_shear_xy`, `EffectiveStrength::fos_shear_xz`, `EffectiveStrength::min_fos`, `PrintOrientation`
 - `src/lift_drag.rs`: `AeroCoefficients`, `AeroLoad`, `LiftDragError`, `LiftDragParams`, `LiftDragSurface`, `LiftDragSurface::apply`, `LiftDragSurface::coefficients`, `LiftDragSurface::lift_slope_per_rad`, `LiftDragSurface::load`, `LiftDragSurface::new`, `LiftDragSurface::params`, `THIN_AIRFOIL_LIFT_SLOPE`
-- `src/linear_elastic_fem.rs`: `AdaptiveConfig`, `AdaptiveConfig::bulk_fraction`, `AdaptiveConfig::linear`, `AdaptiveConfig::max_refine_passes`, `AdaptiveConfig::max_rounds`, `AdaptiveConfig::try_new`, `AdaptiveSolution`, `Axis`, `Axis::ALL`, `Axis::index`, `BoundaryConditions`, `BoundaryConditions::add_load`, `BoundaryConditions::fix`, `BoundaryConditions::load_count`, `BoundaryConditions::loads`, `BoundaryConditions::new`, `BoundaryConditions::prescribe`, `BoundaryConditions::prescribe_all`, `BoundaryConditions::prescribed`, `BoundaryConditions::prescribed_count`, `CorotationalConfig`, `CorotationalConfig::consistent_tangent`, `CorotationalConfig::hyperelastic`, `CorotationalConfig::increments`, `CorotationalConfig::linear`, `CorotationalConfig::newton_iterations`, `CorotationalConfig::newton_tolerance`, `CorotationalConfig::polar_iterations`, `CorotationalConfig::try_new`, `CorotationalConfig::with_consistent_tangent`, `CorotationalConfig::with_hyperelastic`, `CorotationalSolution`, `DiagonalStats`, `ElasticMaterial`, `ElasticMaterial::default_poissons_ratio`, `ElasticMaterial::from_filament`, `ElasticMaterial::lame`, `ElasticMaterial::new`, `ElasticMaterial::poissons_ratio`, `ElasticMaterial::with_poisson`, `ElasticMaterial::youngs_modulus_mpa`, `ElastoplasticConfig`, `ElastoplasticConfig::try_new`, `ElastoplasticIncrement`, `ElastoplasticIncrement::commit`, `ElastoplasticIncrement::newton_iterations`, `ElastoplasticIncrementRequest`, `ElastoplasticIncrementRequest::factor`, `ElastoplasticIncrementRequest::new`, `ElastoplasticIncrementRequest::softening`, `ElastoplasticIncrementRequest::thermal`, `ElastoplasticIncrementRequest::with_thermal`, `ElastoplasticProblem`, `ElastoplasticProblem::step`, `ElastoplasticProblem::try_new`, `ElastoplasticProblem::virgin_state`, `ElastoplasticSolution`, `ElastoplasticState`, `ElastoplasticState::displacements`, `ElastoplasticState::dissipation`, `ElastoplasticState::equivalent_plastic_strain`, `ElastoplasticState::newton_iterations`, `FemError`, `FemSolution`, `FemSolution::max_von_mises_mpa`, `PlasticHeating`, `PlasticHeating::taylor_quinney`, `PlasticHeating::temperature_rise`, `PlasticHeating::try_new`, `PlasticHeating::volumetric_heat_capacity_mpa_per_k`, `RESIDUAL_NORM_FLOOR`, `SolverConfig`, `SolverConfig::max_iterations`, `SolverConfig::preconditioner`, `SolverConfig::relative_tolerance`, `SolverConfig::stagnation_min_improvement`, `SolverConfig::stagnation_min_window`, `SolverConfig::stagnation_window_fraction`, `SolverConfig::try_new`, `SolverConfig::with_preconditioner`, `SolverConfig::with_stagnation`, `SolverConfig::with_stagnation_fraction`, `StressTensor`, `StressTensor::complementary_energy_density`, `StressTensor::hydrostatic`, `StressTensor::von_mises`, `ThermalExpansion`, `ThermalExpansion::alpha_per_k`, `ThermalExpansion::field`, `ThermalExpansion::from_rise`, `ThermalSoftening`, `ThermalSoftening::hardening_per_k`, `ThermalSoftening::none`, `ThermalSoftening::try_new`, `ThermalSoftening::yield_per_k`, `ThermoplasticCoupling`, `ThermoplasticCoupling::relaxation`, `ThermoplasticCoupling::residual_floor_fraction`, `ThermoplasticCoupling::try_new`, `ThermoplasticIncrement`, `adaptive_refinement_loop`, `corner_indicators_squared`, `corotational_reactions`, `deposit_increment_heat`, `deposit_plastic_heat`, `error_indicators_squared`, `hyperelastic_volumetric_modulus`, `mark_bulk`, `plastic_temperature_rise`, `reactions`, `solve`, `solve_adaptive`, `solve_corotational`, `solve_elastoplastic`, `solve_with_eigenstrain`, `step_thermoplastic`, `stiffness_diagonal_stats`
+- `src/linear_elastic_fem.rs`: `AdaptiveConfig`, `AdaptiveConfig::bulk_fraction`, `AdaptiveConfig::linear`, `AdaptiveConfig::max_refine_passes`, `AdaptiveConfig::max_rounds`, `AdaptiveConfig::try_new`, `AdaptiveSolution`, `Axis`, `Axis::ALL`, `Axis::index`, `BoundaryConditions`, `BoundaryConditions::add_load`, `BoundaryConditions::fix`, `BoundaryConditions::load_count`, `BoundaryConditions::loads`, `BoundaryConditions::new`, `BoundaryConditions::prescribe`, `BoundaryConditions::prescribe_all`, `BoundaryConditions::prescribed`, `BoundaryConditions::prescribed_count`, `CorotationalConfig`, `CorotationalConfig::consistent_tangent`, `CorotationalConfig::hyperelastic`, `CorotationalConfig::increments`, `CorotationalConfig::linear`, `CorotationalConfig::newton_iterations`, `CorotationalConfig::newton_tolerance`, `CorotationalConfig::polar_iterations`, `CorotationalConfig::try_new`, `CorotationalConfig::with_consistent_tangent`, `CorotationalConfig::with_hyperelastic`, `CorotationalSolution`, `DiagonalStats`, `ElasticMaterial`, `ElasticMaterial::default_poissons_ratio`, `ElasticMaterial::from_filament`, `ElasticMaterial::lame`, `ElasticMaterial::new`, `ElasticMaterial::poissons_ratio`, `ElasticMaterial::with_poisson`, `ElasticMaterial::youngs_modulus_mpa`, `ElastoplasticConfig`, `ElastoplasticConfig::try_new`, `ElastoplasticIncrement`, `ElastoplasticIncrement::commit`, `ElastoplasticIncrement::newton_iterations`, `ElastoplasticIncrementRequest`, `ElastoplasticIncrementRequest::factor`, `ElastoplasticIncrementRequest::new`, `ElastoplasticIncrementRequest::softening`, `ElastoplasticIncrementRequest::thermal`, `ElastoplasticIncrementRequest::with_thermal`, `ElastoplasticProblem`, `ElastoplasticProblem::step`, `ElastoplasticProblem::try_new`, `ElastoplasticProblem::virgin_state`, `ElastoplasticSolution`, `ElastoplasticState`, `ElastoplasticState::displacements`, `ElastoplasticState::dissipation`, `ElastoplasticState::equivalent_plastic_strain`, `ElastoplasticState::newton_iterations`, `FemError`, `FemSolution`, `FemSolution::max_von_mises_mpa`, `PlasticHeating`, `PlasticHeating::taylor_quinney`, `PlasticHeating::temperature_rise`, `PlasticHeating::try_new`, `PlasticHeating::volumetric_heat_capacity_mpa_per_k`, `RESIDUAL_NORM_FLOOR`, `SolverConfig::max_iterations`, `SolverConfig::preconditioner`, `SolverConfig::relative_tolerance`, `SolverConfig::stagnation_min_improvement`, `SolverConfig::stagnation_min_window`, `SolverConfig::stagnation_window_fraction`, `SolverConfig::try_new`, `SolverConfig::with_preconditioner`, `SolverConfig::with_stagnation`, `SolverConfig::with_stagnation_fraction`, `StressTensor`, `StressTensor::complementary_energy_density`, `StressTensor::hydrostatic`, `StressTensor::von_mises`, `ThermalExpansion`, `ThermalExpansion::alpha_per_k`, `ThermalExpansion::field`, `ThermalExpansion::from_rise`, `ThermalSoftening`, `ThermalSoftening::hardening_per_k`, `ThermalSoftening::none`, `ThermalSoftening::try_new`, `ThermalSoftening::yield_per_k`, `ThermoplasticCoupling`, `ThermoplasticCoupling::relaxation`, `ThermoplasticCoupling::residual_floor_fraction`, `ThermoplasticCoupling::try_new`, `ThermoplasticIncrement`, `adaptive_refinement_loop`, `corner_indicators_squared`, `corotational_reactions`, `deposit_increment_heat`, `deposit_plastic_heat`, `error_indicators_squared`, `hyperelastic_volumetric_modulus`, `mark_bulk`, `plastic_temperature_rise`, `reactions`, `solve`, `solve_adaptive`, `solve_corotational`, `solve_elastoplastic`, `solve_with_eigenstrain`, `step_thermoplastic`, `stiffness_diagonal_stats`
 - `src/linear_elastic_fem/consistent_tangent.rs`: `StepReport`, `TangentField`, `TangentField::apply`, `TangentField::at`, `backtrack`, `newton_krylov_step`, `newton_step`
 - `src/linear_solver.rs`: `BREAKDOWN_RELATIVE`, `BreakdownKind`, `DenseMatrix`, `DenseMatrix::dim`, `DenseMatrix::get`, `DenseMatrix::try_new`, `FnOperator`, `FnOperator::new`, `KrylovConfig`, `KrylovConfig::DEFAULT_RESTART`, `KrylovConfig::DEFAULT_STAGNATION_WINDOW`, `KrylovConfig::try_new`, `KrylovConfig::with_absolute_tolerance`, `KrylovConfig::with_restart`, `KrylovConfig::with_stagnation_window`, `KrylovConfigFault`, `KrylovSolution`, `KrylovStats`, `LinearOperator`, `LinearSolverError`, `Preconditioner`
 - `src/linear_solver/bicgstab.rs`: `bicgstab`
@@ -291,7 +485,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/prestressed.rs`: `bolt_load_fraction`, `bolt_peak_tension`, `cable_pretension_n`, `preload_from_torque`, `recommended_preload_n`, `separation_load_n`, `tensioned_cable_stiffness_n_per_mm`
 - `src/print_orientation.rs`: `LoadDirection`, `LoadDirection::axis_x`, `LoadDirection::axis_y`, `LoadDirection::axis_z`, `LoadDirection::length`, `LoadDirection::length_squared`, `OrientationCandidate`, `OrientationCandidate::IDENTITY`, `OrientationReport`, `angle_to_z_axis`, `effective_yield_at_angle`, `optimize_analytical`, `optimize_grid`
 - `src/print_pipeline_solver.rs`: `PrintPipelineInputs`, `PrintSafetyReport`, `PrintSafetyReport::print`, `analyze_print_pipeline`
-- `src/privacy.rs`: `LaplaceNoise`, `LaplaceNoise::new`, `LaplaceNoise::privatize`, `LaplaceNoise::privatize_int`, `LaplaceNoise::sample`, `LaplaceNoise::scale`, `LaplaceNoise::with_seed`, `PrivacyBudget`, `PrivacyBudget::is_exhausted`, `PrivacyBudget::new`, `PrivacyBudget::query_count`, `PrivacyBudget::remaining`, `PrivacyBudget::reset`, `PrivacyBudget::spent`, `PrivacyBudget::try_spend`, `PrivateAggregator`, `PrivateAggregator::add`, `PrivateAggregator::count`, `PrivateAggregator::estimate_mean`, `PrivateAggregator::estimate_sum`, `PrivateAggregator::new`, `PrivateAggregator::reset`, `PrivateAggregator::standard_error`, `RAPPOR_BITS`, `RandomizedResponse`, `RandomizedResponse::estimate_proportion`, `RandomizedResponse::new`, `RandomizedResponse::p_true`, `RandomizedResponse::privatize`, `RandomizedResponse::privatize_bit`, `RandomizedResponse::with_probability`, `Rappor`, `Rappor::BITS`, `Rappor::default_params`, `Rappor::new`, `Rappor::params`, `Rappor::privatize`, `XorShift64`, `XorShift64::next_bool`, `XorShift64::next_f64`, `XorShift64::next_f64_range`, `XorShift64::next_u64`
+- `src/privacy.rs`: `LaplaceNoise`, `LaplaceNoise::new`, `LaplaceNoise::privatize`, `LaplaceNoise::privatize_int`, `LaplaceNoise::sample`, `LaplaceNoise::scale`, `LaplaceNoise::with_seed`, `PrivacyBudget`, `PrivacyBudget::is_exhausted`, `PrivacyBudget::new`, `PrivacyBudget::query_count`, `PrivacyBudget::remaining`, `PrivacyBudget::reset`, `PrivacyBudget::spent`, `PrivacyBudget::try_spend`, `PrivateAggregator`, `PrivateAggregator::add`, `PrivateAggregator::count`, `PrivateAggregator::estimate_mean`, `PrivateAggregator::estimate_sum`, `PrivateAggregator::new`, `PrivateAggregator::reset`, `PrivateAggregator::standard_error`, `RAPPOR_BITS`, `RandomizedResponse`, `RandomizedResponse::estimate_proportion`, `RandomizedResponse::new`, `RandomizedResponse::p_true`, `RandomizedResponse::privatize`, `RandomizedResponse::privatize_bit`, `RandomizedResponse::with_probability`, `Rappor`, `Rappor::BITS`, `Rappor::default_params`, `Rappor::new`, `Rappor::params`, `Rappor::privatize`, `XorShift64::next_bool`, `XorShift64::next_f64`, `XorShift64::next_f64_range`, `XorShift64::next_u64`
 - `src/profiling.rs`: `PhysicsProfiler`, `PhysicsProfiler::average_ticks`, `PhysicsProfiler::begin_frame`, `PhysicsProfiler::get`, `PhysicsProfiler::last_ticks`, `PhysicsProfiler::new`, `PhysicsProfiler::record`, `PhysicsProfiler::reset`, `PhysicsProfiler::summary`, `ProfileEntry`, `ProfileEntry::average_ticks`, `ProfileEntry::new`, `ProfileEntry::record`, `ProfileEntry::reset`, `STAGE_BROADPHASE`, `STAGE_CCD`, `STAGE_CONTACT_CACHE`, `STAGE_INTEGRATION`, `STAGE_NARROWPHASE`, `STAGE_SOLVER`, `STAGE_TOTAL_STEP`, `StepStats`, `TickCounter`, `TickCounter::advance`, `TickCounter::elapsed`, `TickCounter::new`, `TickCounter::now`, `TickCounter::start`
 - `src/quadratic_elastic_fem.rs`: `AdaptiveQuadraticSolution`, `QuadraticMesh`, `QuadraticMesh::corner_count`, `QuadraticMesh::edge_count`, `QuadraticMesh::edge_node`, `QuadraticMesh::element_count`, `QuadraticMesh::element_nodes`, `QuadraticMesh::from_tet_mesh`, `QuadraticMesh::node_count`, `QuadraticMesh::node_position`, `reactions`, `solve_adaptive_quadratic`, `solve_quadratic`, `solve_quadratic_hyperelastic`
 - `src/query.rs`: `BatchRayQuery`, `OverlapResult`, `ShapeCastHit`, `batch_raycast`, `batch_sphere_cast`, `capsule_cast`, `overlap_aabb`, `overlap_aabb_bvh`, `overlap_aabb_expanded`, `overlap_sphere`, `overlap_sphere_bvh`, `sphere_cast`
@@ -303,7 +497,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/rope.rs`: `PinConstraint`, `Rope`, `Rope::add_pin`, `Rope::current_length`, `Rope::new`, `Rope::particle_count`, `Rope::pin_end`, `Rope::pin_start`, `Rope::segment_count`, `Rope::step`, `Rope::step_with_sdf`, `Rope::update_pin_targets`, `RopeConfig`
 - `src/rope_attach.rs`: `RopeAttachment`, `RopeAttachment::compliance`, `RopeAttachment::new`, `RopeAttachment::with_break_force`, `solve_rope_attachments`, `solve_rope_attachments_two_way`
 - `src/rotor.rs`: `Rotor`, `Rotor::apply`, `Rotor::disk_area_m2`, `Rotor::load`, `Rotor::new`, `Rotor::params`, `Rotor::shaft_torque_nm`, `Rotor::speed_for_thrust`, `Rotor::thrust_n`, `RotorError`, `RotorLoad`, `RotorParams`, `RotorSpin`, `hover_induced_velocity_m_s`, `ideal_hover_power_w`
-- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `PhysicsConfig`, `PhysicsConfig::new`, `PhysicsScene`, `PhysicsScene::new`, `SerializedBody`, `SerializedJoint`, `load_scene`, `load_scene_json`, `save_scene`, `save_scene_json`
+- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `PhysicsConfig::new`, `PhysicsScene`, `PhysicsScene::new`, `SerializedBody`, `SerializedJoint`, `load_scene`, `load_scene_json`, `save_scene`, `save_scene_json`
 - `src/sdf_adaptive.rs`: `AdaptiveConfig`, `AdaptiveSdfEvaluator`, `AdaptiveSdfEvaluator::begin_frame`, `AdaptiveSdfEvaluator::evaluate`, `AdaptiveSdfEvaluator::invalidate`, `AdaptiveSdfEvaluator::invalidate_all`, `AdaptiveSdfEvaluator::new`, `AdaptiveSdfEvaluator::resize`, `AdaptiveSdfEvaluator::stats`, `EvalLevel`
 - `src/sdf_ccd.rs`: `PhysicsWorld::sdf_ccd_hits`, `SdfCcdConfig`, `batch_sphere_trace_sdf`, `ray_march_sdf`, `sphere_trace_sdf`, `sphere_trace_sdf_field`
 - `src/sdf_character.rs`: `GroundContact`, `MoveOutcome`, `MoveOutcome::resolved_position`, `SdfCharacter`, `SdfCharacter::apply_central_gravity`, `SdfCharacter::apply_gravity`, `SdfCharacter::ground_contact`, `SdfCharacter::is_grounded`, `SdfCharacter::locomotion_context`, `SdfCharacter::move_and_slide`, `SdfCharacter::new`, `SdfCharacter::step`, `SdfCharacter::step_on_sphere`
@@ -318,7 +512,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/shape_raycast.rs`: `LocalHit`, `PhysicsWorld::cast_ray`, `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `PhysicsWorld::ray_caster`, `RayFilter`, `RayFilter::excluding_body`, `RayFilter::new`, `RayFilter::with_layer_mask`, `RayFilter::with_sdf`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `RayFilter::with_static`, `RayTarget`, `WorldRayCaster`, `WorldRayCaster::all`, `WorldRayCaster::any`, `WorldRayCaster::candidates`, `WorldRayCaster::closest`, `WorldRayHit`
 - `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::clear`, `ScalarField3D::contains`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::max_value`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`, `VectorField3D`, `VectorField3D::clear`, `VectorField3D::decay`, `VectorField3D::new`, `VectorField3D::sample`, `VectorField3D::splat`
 - `src/sim_modifier.rs`: `ModifiedSdf`, `ModifiedSdf::add_modifier`, `ModifiedSdf::clear_modifiers`, `ModifiedSdf::modifier_count`, `ModifiedSdf::modifier_mut`, `ModifiedSdf::new`, `ModifiedSdf::update`, `ModifiedSdf::with_modifier`, `PhysicsModifier`, `SingleModifiedSdf`, `SingleModifiedSdf::new`, `SingleModifiedSdf::update`
-- `src/sketch.rs`: `CountMinSketch`, `DDSketch`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitters`, `HyperLogLog`, `Mergeable`
+- `src/sketch.rs`: `CountMinSketch`, `CountMinSketch1024x5`, `CountMinSketch1024x5::DEPTH`, `CountMinSketch1024x5::WIDTH`, `CountMinSketch1024x5::confidence`, `CountMinSketch1024x5::error_bound`, `CountMinSketch1024x5::estimate`, `CountMinSketch1024x5::estimate_bytes`, `CountMinSketch1024x5::estimate_hash`, `CountMinSketch1024x5::insert`, `CountMinSketch1024x5::insert_bytes`, `CountMinSketch1024x5::insert_hash`, `CountMinSketch1024x5::new`, `CountMinSketch1024x5::total`, `DDSketch`, `DDSketch2048`, `DDSketch2048::BINS`, `DDSketch2048::alpha`, `DDSketch2048::count`, `DDSketch2048::insert`, `DDSketch2048::max`, `DDSketch2048::mean`, `DDSketch2048::min`, `DDSketch2048::new`, `DDSketch2048::quantile`, `DDSketch256`, `DDSketch256::clear`, `DDSketch256::count`, `DDSketch256::insert`, `DDSketch256::max`, `DDSketch256::mean`, `DDSketch256::min`, `DDSketch256::new`, `DDSketch256::quantile`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitterEntry`, `HeavyHitters`, `HeavyHitters10`, `HeavyHitters10::K`, `HeavyHitters10::cms`, `HeavyHitters10::insert_hash`, `HeavyHitters10::new`, `HeavyHitters10::top`, `HyperLogLog`, `HyperLogLog10`, `HyperLogLog10::M`, `HyperLogLog10::cardinality`, `HyperLogLog10::clear`, `HyperLogLog10::insert_hash`, `HyperLogLog10::new`, `HyperLogLog14`, `HyperLogLog14::M`, `HyperLogLog14::cardinality`, `HyperLogLog14::insert`, `HyperLogLog14::insert_bytes`, `HyperLogLog14::insert_hash`, `HyperLogLog14::new`, `HyperLogLog14::registers`, `Mergeable`
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`
