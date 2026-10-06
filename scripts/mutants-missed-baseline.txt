@@ -1,0 +1,616 @@
+# missed mutants of the weekly run, without line numbers: [axis] file: mutation
+# written by scripts/mutants_ratchet.py --write; a new missed mutant fails
+[default] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
+[default] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
+[default] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
+[default] src/bvh.rs: replace + with * in LinearBvh::build_recursive
+[default] src/bvh.rs: replace + with * in LinearBvh::find_split
+[default] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
+[default] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
+[default] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
+[default] src/bvh.rs: replace - with + in LinearBvh::find_split
+[default] src/bvh.rs: replace - with + in LinearBvh::find_split
+[default] src/bvh.rs: replace - with / in LinearBvh::find_split
+[default] src/bvh.rs: replace - with / in LinearBvh::find_split
+[default] src/bvh.rs: replace < with <= in LinearBvh::query_callback
+[default] src/bvh.rs: replace < with <= in LinearBvh::query_callback
+[default] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
+[default] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
+[default] src/bvh.rs: replace > with >= in point_to_morton
+[default] src/bvh.rs: replace > with >= in point_to_morton
+[default] src/bvh.rs: replace >> with << in LinearBvh::find_split
+[default] src/bvh.rs: replace BroadphaseHybrid::clear_dynamic with ()
+[default] src/bvh.rs: replace LinearBvh::debug_verify_escape_forward -> bool with false
+[default] src/bvh.rs: replace | with ^ in BvhNode::leaf
+[default] src/bvh.rs: replace | with ^ in LinearBvh::build_recursive
+[default] src/bvh.rs: replace | with ^ in expand_bits
+[default] src/bvh.rs: replace | with ^ in expand_bits
+[default] src/bvh.rs: replace | with ^ in expand_bits
+[default] src/bvh.rs: replace | with ^ in expand_bits
+[default] src/bvh.rs: replace | with ^ in expand_bits
+[default] src/bvh.rs: replace | with ^ in morton_code
+[default] src/bvh.rs: replace | with ^ in morton_code
+[default] src/bvh.rs: replace || with && in LinearBvh::find_pairs
+[default] src/ccd.rs: replace * with / in sphere_plane_toi
+[default] src/ccd.rs: replace * with / in sphere_plane_toi
+[default] src/ccd.rs: replace < with <= in sphere_capsule_toi
+[default] src/ccd.rs: replace < with <= in swept_aabb
+[default] src/ccd.rs: replace < with <= in swept_aabb
+[default] src/ccd.rs: replace < with <= in swept_aabb
+[default] src/ccd.rs: replace < with <= in swept_aabb
+[default] src/ccd.rs: replace > with >= in slab_test
+[default] src/ccd.rs: replace > with >= in sphere_capsule_toi
+[default] src/ccd.rs: replace > with >= in swept_aabb
+[default] src/ccd.rs: replace > with >= in swept_aabb
+[default] src/ccd.rs: replace > with >= in swept_aabb
+[default] src/collider.rs: delete - in add_face
+[default] src/collider.rs: replace - with + in do_simplex_tetrahedron
+[default] src/collider.rs: replace - with + in do_simplex_tetrahedron
+[default] src/collider.rs: replace - with + in do_simplex_tetrahedron
+[default] src/collider.rs: replace < with <= in AABB::union
+[default] src/collider.rs: replace < with <= in AABB::union
+[default] src/collider.rs: replace < with <= in AABB::union
+[default] src/collider.rs: replace < with <= in add_face
+[default] src/collider.rs: replace < with == in add_face
+[default] src/collider.rs: replace > with >= in AABB::union
+[default] src/collider.rs: replace > with >= in AABB::union
+[default] src/collider.rs: replace > with >= in AABB::union
+[default] src/collider.rs: replace > with >= in epa
+[default] src/contact_cache.rs: replace == with != in ContactCache::find
+[default] src/contact_cache.rs: replace == with != in ContactCache::get_or_create
+[default] src/joint.rs: delete - in solve_cone_twist_joint
+[default] src/joint.rs: delete - in solve_fixed_joint
+[default] src/joint.rs: delete - in solve_fixed_joint
+[default] src/joint.rs: replace * with / in solve_ball_joint
+[default] src/joint.rs: replace * with / in solve_fixed_joint
+[default] src/joint.rs: replace * with / in solve_hinge_joint
+[default] src/joint.rs: replace / with * in solve_fixed_joint
+[default] src/joint.rs: replace / with * in solve_hinge_joint
+[default] src/joint.rs: replace < with <= in solve_cone_twist_joint
+[default] src/joint.rs: replace < with <= in solve_d6_joint
+[default] src/joint.rs: replace < with <= in solve_d6_joint
+[default] src/joint.rs: replace < with <= in solve_hinge_joint
+[default] src/joint.rs: replace < with <= in solve_slider_joint
+[default] src/joint.rs: replace < with == in solve_cone_twist_joint
+[default] src/joint.rs: replace > with >= in solve_cone_twist_joint
+[default] src/joint.rs: replace > with >= in solve_cone_twist_joint
+[default] src/joint.rs: replace > with >= in solve_cone_twist_joint
+[default] src/joint.rs: replace > with >= in solve_d6_joint
+[default] src/joint.rs: replace > with >= in solve_d6_joint
+[default] src/joint.rs: replace > with >= in solve_hinge_joint
+[default] src/joint.rs: replace > with >= in solve_slider_joint
+[default] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace + with - in cordic_sin_cos
+[default] src/math.rs: replace - with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace - with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace - with + in Vec3Fix::cross_simd
+[default] src/math.rs: replace - with + in cordic_sin_cos
+[default] src/math.rs: replace - with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace - with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace - with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace - with / in cordic_sin_cos
+[default] src/math.rs: replace < with <= in Fix128::from_f64
+[default] src/math.rs: replace < with <= in Fix128::from_ratio
+[default] src/math.rs: replace < with <= in Fix128::from_ratio
+[default] src/math.rs: replace < with <= in cordic_sin_cos
+[default] src/math.rs: replace < with <= in cordic_sin_cos
+[default] src/math.rs: replace < with == in cordic_sin_cos
+[default] src/math.rs: replace > with == in cordic_sin_cos
+[default] src/math.rs: replace > with >= in cordic_atan
+[default] src/math.rs: replace > with >= in cordic_sin_cos
+[default] src/math.rs: replace > with >= in cordic_sin_cos
+[default] src/math.rs: replace > with >= in cordic_sin_cos
+[default] src/math.rs: replace Vec3Fix::cross_simd -> Self with Default::default()
+[default] src/math.rs: replace Vec3Fix::dot_batch_4 -> [Fix128; 4] with [Default::default(); 4]
+[default] src/math.rs: replace simd_width -> usize with 1
+[default] src/math.rs: replace | with ^ in <impl Div for Fix128>::div
+[default] src/math.rs: replace | with ^ in <impl Div for Fix128>::div
+[default] src/math.rs: replace | with ^ in Fix128::double
+[default] src/math.rs: replace | with ^ in Fix128::half
+[default] src/math.rs: replace | with ^ in Fix128::shr_bits
+[default] src/math.rs: replace | with ^ in Fix128::sqrt
+[default] src/math.rs: replace | with ^ in Fix128::sqrt
+[default] src/math.rs: replace | with ^ in Fix128::sqrt
+[default] src/math.rs: replace | with ^ in Fix128::sqrt
+[default] src/math.rs: replace | with ^ in select_fix128
+[default] src/math.rs: replace | with ^ in select_fix128
+[default] src/solver.rs: delete ! in PhysicsWorld::integrate_positions
+[default] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
+[default] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
+[default] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_constraints_batched
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_constraints_batched
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_contact_constraints_with_bridge
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_contact_constraints_with_bridge
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_contact_constraints_with_bridge
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: delete ! in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: delete ! in PhysicsWorld::step_parallel
+[default] src/solver.rs: delete ! in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: delete ! in PhysicsWorld::substep_batched
+[default] src/solver.rs: delete ! in PhysicsWorld::substep_with_bridge
+[default] src/solver.rs: delete - in PhysicsWorld::update_velocities
+[default] src/solver.rs: delete - in PhysicsWorld::update_velocities
+[default] src/solver.rs: delete - in PhysicsWorld::update_velocities
+[default] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::build_one_contact_world
+[default] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::hub_world
+[default] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
+[default] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
+[default] src/solver.rs: replace && with || in PhysicsWorld::detect_collisions
+[default] src/solver.rs: replace && with || in PhysicsWorld::remove_body
+[default] src/solver.rs: replace && with || in PhysicsWorld::step
+[default] src/solver.rs: replace && with || in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace && with || in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with + in PhysicsWorld::resolve_sdf_collisions
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace * with / in PhysicsWorld::resolve_sdf_collisions
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace + with * in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace + with * in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace + with * in PhysicsWorld::resolve_sdf_collisions
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with * in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace + with - in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace + with - in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace + with - in PhysicsWorld::resolve_sdf_collisions
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace + with - in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace - with + in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace - with + in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace - with + in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with + in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace - with / in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace - with / in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace - with / in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace - with / in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace / with % in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace / with % in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace / with % in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace / with % in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace / with % in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace / with % in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace / with * in PhysicsWorld::integrate_positions
+[default] src/solver.rs: replace / with * in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace / with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace / with * in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace / with * in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace / with * in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
+[default] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
+[default] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
+[default] src/solver.rs: replace < with <= in PhysicsWorld::detect_collisions
+[default] src/solver.rs: replace < with <= in PhysicsWorld::raycast
+[default] src/solver.rs: replace < with <= in PhysicsWorld::raycast
+[default] src/solver.rs: replace < with <= in PhysicsWorld::raycast
+[default] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
+[default] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
+[default] src/solver.rs: replace < with <= in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace < with <= in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace < with == in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace < with == in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace < with == in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace < with == in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace < with == in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace < with == in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace < with == in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace < with > in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace < with > in PhysicsWorld::solve_distance_pair
+[default] src/solver.rs: replace < with > in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace < with > in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace < with > in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace < with > in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace < with > in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
+[default] src/solver.rs: replace <= with > in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace <= with > in PhysicsWorld::step_with_bridge
+[default] src/solver.rs: replace == with != in PhysicsWorld::batches_are_body_disjoint
+[default] src/solver.rs: replace == with != in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace > with >= in PhysicsWorld::raycast
+[default] src/solver.rs: replace > with >= in PhysicsWorld::raycast
+[default] src/solver.rs: replace > with >= in PhysicsWorld::raycast
+[default] src/solver.rs: replace > with >= in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace BodyRef<'_>::get -> &RigidBody with Box::leak(Box::new(Default::default()))
+[default] src/solver.rs: replace BodyRef<'_>::set_position with ()
+[default] src/solver.rs: replace PhysicsWorld::gpu_solver_bridge_installed -> bool with false
+[default] src/solver.rs: replace PhysicsWorld::gpu_solver_bridge_installed -> bool with true
+[default] src/solver.rs: replace PhysicsWorld::pre_process_contacts with ()
+[default] src/solver.rs: replace PhysicsWorld::set_gpu_solver_bridge with ()
+[default] src/solver.rs: replace PhysicsWorld::solve_constraints_batched with ()
+[default] src/solver.rs: replace PhysicsWorld::solve_contact_constraints_with_bridge with ()
+[default] src/solver.rs: replace PhysicsWorld::solve_contact_pair with ()
+[default] src/solver.rs: replace PhysicsWorld::solve_distance_pair with ()
+[default] src/solver.rs: replace PhysicsWorld::solve_joints_dispatch with ()
+[default] src/solver.rs: replace PhysicsWorld::solve_joints_with_bridge with ()
+[default] src/solver.rs: replace PhysicsWorld::step_parallel with ()
+[default] src/solver.rs: replace PhysicsWorld::step_with_bridge with ()
+[default] src/solver.rs: replace PhysicsWorld::substep_batched with ()
+[default] src/solver.rs: replace PhysicsWorld::substep_with_bridge with ()
+[default] src/solver.rs: replace PhysicsWorld::take_gpu_solver_bridge -> Option<Box<dyn crate::gpu_bridge::GpuSolverBridge +Send +Sync>> with None
+[default] src/solver.rs: replace PhysicsWorld::take_gpu_solver_bridge -> Option<Box<dyn crate::gpu_bridge::GpuSolverBridge +Send +Sync>> with Some(Box::new(Default::default()))
+[default] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
+[default] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
+[default] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
+[default] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
+[default] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
+[default] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
+[default] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_constraints_with_bridge
+[default] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_pair
+[default] src/solver_tgs.rs: replace < with <= in adaptive_substeps_for_ccd
+[default] src/solver_tgs.rs: replace > with >= in adaptive_substeps_for
+[default] src/solver_tgs.rs: replace par_dispatch_islands with ()
+[parallel] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
+[parallel] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
+[parallel] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
+[parallel] src/bvh.rs: replace + with * in LinearBvh::build_recursive
+[parallel] src/bvh.rs: replace + with * in LinearBvh::find_split
+[parallel] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
+[parallel] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
+[parallel] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
+[parallel] src/bvh.rs: replace - with + in LinearBvh::find_split
+[parallel] src/bvh.rs: replace - with + in LinearBvh::find_split
+[parallel] src/bvh.rs: replace - with / in LinearBvh::find_split
+[parallel] src/bvh.rs: replace - with / in LinearBvh::find_split
+[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_callback
+[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_callback
+[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
+[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
+[parallel] src/bvh.rs: replace > with >= in point_to_morton
+[parallel] src/bvh.rs: replace > with >= in point_to_morton
+[parallel] src/bvh.rs: replace >> with << in LinearBvh::find_split
+[parallel] src/bvh.rs: replace BroadphaseHybrid::clear_dynamic with ()
+[parallel] src/bvh.rs: replace LinearBvh::debug_verify_escape_forward -> bool with false
+[parallel] src/bvh.rs: replace | with ^ in BvhNode::leaf
+[parallel] src/bvh.rs: replace | with ^ in LinearBvh::build_recursive
+[parallel] src/bvh.rs: replace | with ^ in expand_bits
+[parallel] src/bvh.rs: replace | with ^ in expand_bits
+[parallel] src/bvh.rs: replace | with ^ in expand_bits
+[parallel] src/bvh.rs: replace | with ^ in expand_bits
+[parallel] src/bvh.rs: replace | with ^ in expand_bits
+[parallel] src/bvh.rs: replace | with ^ in morton_code
+[parallel] src/bvh.rs: replace | with ^ in morton_code
+[parallel] src/bvh.rs: replace || with && in LinearBvh::find_pairs
+[parallel] src/ccd.rs: replace * with / in sphere_plane_toi
+[parallel] src/ccd.rs: replace * with / in sphere_plane_toi
+[parallel] src/ccd.rs: replace < with <= in sphere_capsule_toi
+[parallel] src/ccd.rs: replace < with <= in swept_aabb
+[parallel] src/ccd.rs: replace < with <= in swept_aabb
+[parallel] src/ccd.rs: replace < with <= in swept_aabb
+[parallel] src/ccd.rs: replace < with <= in swept_aabb
+[parallel] src/ccd.rs: replace > with >= in slab_test
+[parallel] src/ccd.rs: replace > with >= in sphere_capsule_toi
+[parallel] src/ccd.rs: replace > with >= in swept_aabb
+[parallel] src/ccd.rs: replace > with >= in swept_aabb
+[parallel] src/ccd.rs: replace > with >= in swept_aabb
+[parallel] src/collider.rs: delete - in add_face
+[parallel] src/collider.rs: replace - with + in do_simplex_tetrahedron
+[parallel] src/collider.rs: replace - with + in do_simplex_tetrahedron
+[parallel] src/collider.rs: replace - with + in do_simplex_tetrahedron
+[parallel] src/collider.rs: replace < with <= in AABB::union
+[parallel] src/collider.rs: replace < with <= in AABB::union
+[parallel] src/collider.rs: replace < with <= in AABB::union
+[parallel] src/collider.rs: replace < with <= in add_face
+[parallel] src/collider.rs: replace < with == in add_face
+[parallel] src/collider.rs: replace > with >= in AABB::union
+[parallel] src/collider.rs: replace > with >= in AABB::union
+[parallel] src/collider.rs: replace > with >= in AABB::union
+[parallel] src/collider.rs: replace > with >= in epa
+[parallel] src/contact_cache.rs: replace == with != in ContactCache::find
+[parallel] src/contact_cache.rs: replace == with != in ContactCache::get_or_create
+[parallel] src/joint.rs: delete - in solve_cone_twist_joint
+[parallel] src/joint.rs: delete - in solve_fixed_joint
+[parallel] src/joint.rs: delete - in solve_fixed_joint
+[parallel] src/joint.rs: replace * with / in solve_ball_joint
+[parallel] src/joint.rs: replace * with / in solve_fixed_joint
+[parallel] src/joint.rs: replace * with / in solve_hinge_joint
+[parallel] src/joint.rs: replace / with * in solve_fixed_joint
+[parallel] src/joint.rs: replace / with * in solve_hinge_joint
+[parallel] src/joint.rs: replace < with <= in solve_cone_twist_joint
+[parallel] src/joint.rs: replace < with <= in solve_d6_joint
+[parallel] src/joint.rs: replace < with <= in solve_d6_joint
+[parallel] src/joint.rs: replace < with <= in solve_hinge_joint
+[parallel] src/joint.rs: replace < with <= in solve_slider_joint
+[parallel] src/joint.rs: replace < with == in solve_cone_twist_joint
+[parallel] src/joint.rs: replace > with >= in solve_cone_twist_joint
+[parallel] src/joint.rs: replace > with >= in solve_cone_twist_joint
+[parallel] src/joint.rs: replace > with >= in solve_cone_twist_joint
+[parallel] src/joint.rs: replace > with >= in solve_d6_joint
+[parallel] src/joint.rs: replace > with >= in solve_d6_joint
+[parallel] src/joint.rs: replace > with >= in solve_hinge_joint
+[parallel] src/joint.rs: replace > with >= in solve_slider_joint
+[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace + with - in cordic_sin_cos
+[parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace - with + in cordic_sin_cos
+[parallel] src/math.rs: replace - with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace - with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace - with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace - with / in cordic_sin_cos
+[parallel] src/math.rs: replace < with <= in Fix128::from_f64
+[parallel] src/math.rs: replace < with <= in Fix128::from_ratio
+[parallel] src/math.rs: replace < with <= in Fix128::from_ratio
+[parallel] src/math.rs: replace < with <= in cordic_sin_cos
+[parallel] src/math.rs: replace < with <= in cordic_sin_cos
+[parallel] src/math.rs: replace < with == in cordic_sin_cos
+[parallel] src/math.rs: replace > with == in cordic_sin_cos
+[parallel] src/math.rs: replace > with >= in cordic_atan
+[parallel] src/math.rs: replace > with >= in cordic_sin_cos
+[parallel] src/math.rs: replace > with >= in cordic_sin_cos
+[parallel] src/math.rs: replace > with >= in cordic_sin_cos
+[parallel] src/math.rs: replace Vec3Fix::cross_simd -> Self with Default::default()
+[parallel] src/math.rs: replace Vec3Fix::dot_batch_4 -> [Fix128; 4] with [Default::default(); 4]
+[parallel] src/math.rs: replace simd_width -> usize with 1
+[parallel] src/math.rs: replace | with ^ in <impl Div for Fix128>::div
+[parallel] src/math.rs: replace | with ^ in <impl Div for Fix128>::div
+[parallel] src/math.rs: replace | with ^ in Fix128::double
+[parallel] src/math.rs: replace | with ^ in Fix128::half
+[parallel] src/math.rs: replace | with ^ in Fix128::shr_bits
+[parallel] src/math.rs: replace | with ^ in Fix128::sqrt
+[parallel] src/math.rs: replace | with ^ in Fix128::sqrt
+[parallel] src/math.rs: replace | with ^ in Fix128::sqrt
+[parallel] src/math.rs: replace | with ^ in Fix128::sqrt
+[parallel] src/math.rs: replace | with ^ in select_fix128
+[parallel] src/math.rs: replace | with ^ in select_fix128
+[parallel] src/solver.rs: delete ! in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
+[parallel] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
+[parallel] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_constraints_batched
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_constraints_batched
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_contact_constraints_with_bridge
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_contact_constraints_with_bridge
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_contact_constraints_with_bridge
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: delete ! in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: delete ! in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: delete ! in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: delete ! in PhysicsWorld::substep_batched
+[parallel] src/solver.rs: delete ! in PhysicsWorld::substep_with_bridge
+[parallel] src/solver.rs: delete - in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: delete - in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: delete - in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::build_one_contact_world
+[parallel] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::hub_world
+[parallel] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
+[parallel] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
+[parallel] src/solver.rs: replace && with || in PhysicsWorld::detect_collisions
+[parallel] src/solver.rs: replace && with || in PhysicsWorld::remove_body
+[parallel] src/solver.rs: replace && with || in PhysicsWorld::step
+[parallel] src/solver.rs: replace && with || in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace && with || in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::resolve_sdf_collisions
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::resolve_sdf_collisions
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace + with * in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace + with * in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace + with * in PhysicsWorld::resolve_sdf_collisions
+[parallel] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace + with * in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::resolve_sdf_collisions
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace + with - in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace - with + in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace - with + in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace - with + in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace - with + in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace - with / in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace - with / in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace - with / in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace / with % in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace / with * in PhysicsWorld::integrate_positions
+[parallel] src/solver.rs: replace / with * in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace / with * in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace / with * in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace / with * in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace / with * in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::detect_collisions
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::raycast
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::raycast
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::raycast
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::step
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::step
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace < with == in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace < with == in PhysicsWorld::solve_distance_pair
+[parallel] src/solver.rs: replace < with == in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace < with == in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace < with == in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace < with == in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace < with == in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace < with > in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace < with > in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace < with > in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace < with > in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace < with > in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace < with > in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
+[parallel] src/solver.rs: replace <= with > in PhysicsWorld::step_parallel
+[parallel] src/solver.rs: replace <= with > in PhysicsWorld::step_with_bridge
+[parallel] src/solver.rs: replace == with != in PhysicsWorld::batches_are_body_disjoint
+[parallel] src/solver.rs: replace == with != in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace > with >= in PhysicsWorld::raycast
+[parallel] src/solver.rs: replace > with >= in PhysicsWorld::raycast
+[parallel] src/solver.rs: replace > with >= in PhysicsWorld::raycast
+[parallel] src/solver.rs: replace > with >= in PhysicsWorld::update_velocities
+[parallel] src/solver.rs: replace PhysicsWorld::pre_process_contacts with ()
+[parallel] src/solver.rs: replace PhysicsWorld::solve_contact_pair with ()
+[parallel] src/solver.rs: replace PhysicsWorld::step_parallel with ()
+[parallel] src/solver.rs: replace PhysicsWorld::step_with_bridge with ()
+[parallel] src/solver.rs: replace PhysicsWorld::substep_with_bridge with ()
+[parallel] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
+[parallel] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
+[parallel] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
+[parallel] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
+[parallel] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
+[parallel] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_constraints_with_bridge
+[parallel] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_pair
+[parallel] src/solver_tgs.rs: replace < with <= in adaptive_substeps_for_ccd
+[parallel] src/solver_tgs.rs: replace > with >= in adaptive_substeps_for
