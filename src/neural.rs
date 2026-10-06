@@ -109,8 +109,10 @@ impl FixedTernaryWeight {
 
 /// Fixed-point ternary matrix-vector multiply (core kernel).
 ///
-/// With ternary weights {-1, 0, +1}, this is **pure addition/subtraction**.
-/// No floating-point multiplication. No rounding error. Bit-exact everywhere.
+/// With ternary weights {-1, 0, +1}, the sum is **pure addition/subtraction**:
+/// no floating-point arithmetic and no rounding. The single multiply by the
+/// layer scale is a Q64.64 product, rounded toward negative infinity to the
+/// 2⁻⁶⁴ grid (the rounding of [`Fix128`]'s `Mul`). Bit-exact everywhere.
 ///
 /// ```text
 /// output[i] = scale * Σ_j (w[i,j] ⊙ input[j])
@@ -171,31 +173,43 @@ pub fn fix128_hard_tanh(values: &mut [Fix128]) {
     }
 }
 
-/// Fixed-point Tanh approximation via Padé rational function:
+/// Fixed-point Tanh approximation via the Padé [7/6] approximant of tanh
+/// (the fourth convergent of Lambert's continued fraction
+/// `x / (1 + x²/(3 + x²/(5 + x²/(7 + …))))`):
 ///
 /// ```text
-/// tanh(x) ≈ x · (27 + x²) / (27 + 9·x²)
+/// tanh(x) ≈ x · (135135 + 17325·x² + 378·x⁴ + x⁶)
+///             / (135135 + 62370·x² + 3150·x⁴ + 28·x⁶)
 /// ```
 ///
-/// Accurate to ~0.004 max error for |x| < 4.5.
+/// Its Taylor series agrees with tanh through `x¹³`. On `|x| ≤ 4.5` the ratio
+/// is odd, strictly increasing and below 1 (0.99980 at 4.5), and beyond that
+/// the output is clamped to `±1`, so the result is bounded by 1 and
+/// monotone everywhere. Maximum error against tanh is about 2.5·10⁻⁴ (at the
+/// clamp, where tanh(4.5) = 0.99975).
 /// Uses only Fix128 add/mul/div — no transcendental functions.
 pub fn fix128_tanh_approx(values: &mut [Fix128]) {
-    let c27 = Fix128::from_int(27);
-    let c9 = Fix128::from_int(9);
+    let limit = Fix128::from_ratio(9, 2);
+    let neg_limit = -limit;
+    let n0 = Fix128::from_int(135_135);
+    let n1 = Fix128::from_int(17_325);
+    let n2 = Fix128::from_int(378);
+    let d1 = Fix128::from_int(62_370);
+    let d2 = Fix128::from_int(3_150);
+    let d3 = Fix128::from_int(28);
 
     for v in values.iter_mut() {
         let x = *v;
-        let x2 = x * x;
-
-        // Clamp extreme values to avoid unnecessary division
-        if x > Fix128::from_int(4) {
+        // Clamp before squaring so extreme magnitudes never reach the multiply
+        if x > limit {
             *v = Fix128::ONE;
-        } else if x < Fix128::from_int(-4) {
+        } else if x < neg_limit {
             *v = Fix128::NEG_ONE;
         } else {
-            // Padé approximant: x * (27 + x²) / (27 + 9*x²)
-            let numer = x * (c27 + x2);
-            let denom = c27 + c9 * x2;
+            let x2 = x * x;
+            // Horner in x²
+            let numer = x * (n0 + x2 * (n1 + x2 * (n2 + x2)));
+            let denom = n0 + x2 * (d1 + x2 * (d2 + x2 * d3));
             *v = numer / denom;
         }
     }
@@ -293,9 +307,13 @@ impl DeterministicNetwork {
 
     /// Run forward pass (deterministic, zero allocation).
     ///
-    /// Returns a reference to the final output buffer.
+    /// Returns a reference to the final output buffer. A network with no
+    /// layers has no outputs and returns an empty slice.
     pub fn forward(&mut self, input: &[Fix128]) -> &[Fix128] {
         let n = self.layers.len();
+        if n == 0 {
+            return &[];
+        }
 
         // First layer: reads from external input
         {
@@ -347,13 +365,17 @@ impl DeterministicNetwork {
     /// Input dimension (in_features of first layer).
     #[inline]
     pub fn input_size(&self) -> usize {
-        self.layers[0].in_features()
+        self.layers
+            .first()
+            .map_or(0, FixedTernaryWeight::in_features)
     }
 
     /// Output dimension (out_features of last layer).
     #[inline]
     pub fn output_size(&self) -> usize {
-        self.layers[self.layers.len() - 1].out_features()
+        self.layers
+            .last()
+            .map_or(0, FixedTernaryWeight::out_features)
     }
 }
 
