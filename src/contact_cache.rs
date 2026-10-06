@@ -296,18 +296,15 @@ impl ContactCache {
     ) -> &mut ContactManifold {
         // Find existing using HashMap (O(1)) with std feature, or linear scan (O(n)) without
         //
-        // `manifolds` is `pub`, so an external `clear()`/`retain()`/`truncate()` on it
-        // can leave `pair_index` pointing past the end; a stale index is treated as
-        // not-found (a fresh manifold is pushed) rather than panicking.
+        // `manifolds` is `pub`, so an external `clear()`/`retain()`/`remove()` on it
+        // can leave `pair_index` pointing past the end or at another pair's slot;
+        // `locate` checks the slot and falls back to a scan, and a hit found by
+        // the scan is re-indexed here.
+        let pos = self.locate(&pair);
         #[cfg(feature = "std")]
-        let pos = self
-            .pair_index
-            .get(&pair)
-            .copied()
-            .filter(|&idx| idx < self.manifolds.len());
-
-        #[cfg(not(feature = "std"))]
-        let pos = self.manifolds.iter().position(|m| m.pair == pair);
+        if let Some(idx) = pos {
+            self.pair_index.insert(pair, idx);
+        }
 
         if let Some(idx) = pos {
             &mut self.manifolds[idx]
@@ -335,25 +332,30 @@ impl ContactCache {
 
     /// Find manifold for a body pair (read-only)
     ///
-    /// `manifolds` is `pub`, so an external `clear()`/`retain()`/`truncate()`
-    /// on it can leave the private `pair_index` pointing past the end; a
-    /// stale index is treated as not-found rather than panicking.
+    /// `manifolds` is `pub`, so an external `clear()`/`retain()`/`remove()`
+    /// on it can leave the private `pair_index` pointing past the end or at
+    /// another pair's slot; the slot is checked, so a stale index neither
+    /// panics nor answers another pair.
     #[must_use]
     pub fn find(&self, pair: &BodyPairKey) -> Option<&ContactManifold> {
-        // Use HashMap (O(1)) with std feature, or linear scan (O(n)) without
+        self.locate(pair).map(|idx| &self.manifolds[idx])
+    }
+
+    /// Slot of the manifold for `pair`. With `std` the pair index answers in
+    /// O(1): a pair it does not hold has no manifold (the miss stays O(1), so
+    /// creating new pairs stays linear per frame), and an entry left stale by a
+    /// direct edit of `manifolds` (past the end, or shifted onto another
+    /// pair's slot) falls back to the O(n) scan, so another pair's manifold is
+    /// never answered. Without `std` it is the scan.
+    fn locate(&self, pair: &BodyPairKey) -> Option<usize> {
         #[cfg(feature = "std")]
         {
-            self.pair_index
-                .get(pair)
-                .copied()
-                .filter(|&idx| idx < self.manifolds.len())
-                .map(|idx| &self.manifolds[idx])
+            let idx = *self.pair_index.get(pair)?;
+            if self.manifolds.get(idx).is_some_and(|m| m.pair == *pair) {
+                return Some(idx);
+            }
         }
-
-        #[cfg(not(feature = "std"))]
-        {
-            self.manifolds.iter().find(|m| m.pair == *pair)
-        }
+        self.manifolds.iter().position(|m| m.pair == *pair)
     }
 
     /// Mark all manifolds as potentially stale (call at start of frame)
@@ -1087,5 +1089,19 @@ mod tests {
         assert_eq!(u1.y, Fix128::ZERO);
         assert!(u1.x < Fix128::ZERO && u1.z > Fix128::ZERO, "{u1:?}");
         assert_eq!(u2, n2.cross(u1));
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn a_stale_index_found_by_the_scan_is_re_indexed() {
+        let mut cache = ContactCache::new();
+        let (a, b) = (BodyPairKey::new(0, 1), BodyPairKey::new(2, 3));
+        cache.get_or_create(a, Fix128::ONE, Fix128::ZERO);
+        cache.get_or_create(b, Fix128::ONE, Fix128::ZERO);
+        cache.manifolds.remove(0); // b moves to slot 0, its index still says 1
+        assert_eq!(cache.pair_index.get(&b), Some(&1));
+        assert_eq!(cache.get_or_create(b, Fix128::ONE, Fix128::ZERO).pair, b);
+        assert_eq!(cache.pair_index.get(&b), Some(&0));
+        assert_eq!(cache.manifolds.len(), 1, "no duplicate manifold for b");
     }
 }
