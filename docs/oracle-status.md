@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4843 |
-| 🔴 Red by design | 217 |
+| 🟢 Not ignored (run by CI) | 4846 |
+| 🔴 Red by design | 215 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5085** |
+| **Total** | **5086** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (217)
+## 🔴 Red by design (215)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -33,8 +33,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `applied_cycles_above_i64_max_do_not_flip_the_damage_sign` (audit_fatigue.rs) — known defect: AUD-A-S4W2-007: n as i64 で n > i64::MAX が負に wrap し damage が負になる (n = u64::MAX -> D < 0)
 - `arrow_records_head_geometry_besides_the_shaft` (audit_debug_render.rs) — known defect: AUD-A-S4W3-008: arrow() documents 'line + arrowhead' but the computed head_point is discarded (`…
 - `bond_strength_is_symmetric_for_equal_names_with_different_yield` (audit_bimaterial.rs) — known defect: AUD-A-S4W3-011: interfacial_bond_strength_mpa is not symmetric when the two materials share a na…
-- `boundary_residual_covers_accumulated_pushes` (audit_cloth_fluid.rs) — known defect: AUD-A-S2W2-004: boundary residual under-reports accumulated pushes (two same-direction pushes of…
-- `boundary_residual_is_the_norm_of_the_net_velocity_change` (audit_cloth_fluid.rs) — known defect: AUD-A-S2W2-004: boundary residual reports the largest single-pair correction component, not the …
 - `buoyancy_field_holds_a_body_at_its_equilibrium_depth` (analytic_external_force_substep.rs) — src gap: the buoyancy field is a frame-head impulse while gravity is per substep, so a floating body at equili…
 - `buoyancy_uses_gravity_magnitude` (audit_fsi_advanced.rs) — known defect: AUD-A-S4W1-002: buoyancy_force doc says rho*V*|g| but g=-10 gives F_y=-10000 (downward); no abs
 - `capsule_bottom_does_not_sink_into_a_static_body_it_lands_on` (audit_character.rs) — known defect: AUD-A-S3W3-009: sweep_against_bodies casts a point-sphere from the capsule centre, so landing on…
@@ -292,7 +290,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4843)
+## 🟢 Not ignored (4846)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -421,6 +419,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_body_collider.rs` | 15 |
 | `analytic_self_contact.rs` | 15 |
 | `analytic_thermoplastic_coupling.rs` | 15 |
+| `audit_cloth_fluid.rs` | 15 |
 | `audit_ellipsoid.rs` | 15 |
 | `audit_sdf_force.rs` | 15 |
 | `analytic_collision_mesh.rs` | 14 |
@@ -480,7 +479,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
-| `audit_cloth_fluid.rs` | 12 |
 | `audit_plane_collider.rs` | 12 |
 | `audit_plastic.rs` | 12 |
 | `audit_turbulence.rs` | 12 |
