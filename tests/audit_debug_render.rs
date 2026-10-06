@@ -414,7 +414,7 @@ fn axes_flag_draws_three_arrows_per_body_at_the_body_pose() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-009: draw_joints draws only distance_constraints; the world's joint list (ball / hinge / fixed / slider / spring / d6 / cone-twist) is never drawn although the flag is documented as 'joint connections'"]
+// AUD-A-S4W3-009
 fn draw_joints_also_draws_the_world_joint_list() {
     let mut w = PhysicsWorld::new(SolverConfig::default());
     let a = w.add_body(RigidBody::new_static(v3(0.0, 0.0, 0.0)));
@@ -438,7 +438,7 @@ fn draw_joints_also_draws_the_world_joint_list() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-033: DebugDrawFlags documents draw_aabbs (Draw body AABBs, on by default) and draw_bvh (Draw BVH nodes), but debug_draw_world() never reads either flag, so enabling them draws nothing; the parts to wire exist: DebugDrawData::aabb draws a 12-edge box and PhysicsWorld::broadphase_proxy_aabb returns a body box (only under Broadphase::DynamicTree; the default BVH is rebuilt every step and not kept) -- escalated: this oracle does not call PhysicsWorld::step() first, so the only in-scope source of a real box (PhysicsWorld::broadphase_proxy_aabb) is still empty; the per-body collision radius and BVH node boxes live in private fields of src/solver.rs and src/dynamic_bvh.rs (outside this item's file-exclusive scope), so a correct fix needs new pub API there, and a scope-respecting fallback (e.g. a degenerate box at body.position) has no single well-defined convention -- design decision"]
+// AUD-A-S4W3-033
 fn draw_aabbs_flag_draws_something() {
     let mut w = PhysicsWorld::new(SolverConfig::default());
     let mut b = RigidBody::new_dynamic(v3(0.0, 2.0, 0.0), Fix128::ONE);
@@ -464,4 +464,61 @@ fn draw_aabbs_flag_draws_something() {
         &mut d,
     );
     assert!(d.primitive_count() > 0, "draw_bvh = true drew nothing");
+}
+
+/// AUD-A-S4W3-033 (values): one body of collision radius 0.5 at (0, 2, 0) has
+/// the box [-0.5, 1.5, -0.5]..[0.5, 2.5, 0.5]; the BVH is one leaf whose box is
+/// that rounded outward to whole units, [-1, 1, -1]..[1, 3, 1]: 12 magenta edges.
+#[test]
+fn draw_bvh_draws_the_leaf_box_on_the_integer_lattice() {
+    let mut w = PhysicsWorld::new(SolverConfig::default());
+    w.add_body_with_radius(
+        RigidBody::new_dynamic(v3(0.0, 2.0, 0.0), Fix128::ONE),
+        fx(0.5),
+    );
+    let mut d = DebugDrawData::new();
+    debug_draw_world(
+        &w,
+        &DebugDrawFlags {
+            draw_bvh: true,
+            ..none()
+        },
+        &mut d,
+    );
+    assert_eq!(d.lines.len(), 12);
+    let ends: Vec<Vec3Fix> = d.lines.iter().flat_map(|l| [l.start, l.end]).collect();
+    let lo = Vec3Fix::from_int(-1, 1, -1);
+    let hi = Vec3Fix::from_int(1, 3, 1);
+    assert!(ends.contains(&lo) && ends.contains(&hi), "{ends:?}");
+    assert!(d.lines.iter().all(|l| l.color == DebugColor::MAGENTA));
+}
+
+/// AUD-A-S4W3-009 (values): the joint line runs between the two bodies'
+/// positions, in cyan, next to a distance constraint's line.
+#[test]
+fn draw_joints_lines_join_the_two_bodies() {
+    let mut w = PhysicsWorld::new(SolverConfig::default());
+    let a = w.add_body(RigidBody::new_static(v3(1.0, 0.0, 0.0)));
+    let b = w.add_body(RigidBody::new_dynamic(v3(0.0, 2.0, 0.0), Fix128::ONE));
+    w.add_joint(Joint::Ball(BallJoint::new(
+        a,
+        b,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+    )));
+    let mut d = DebugDrawData::new();
+    debug_draw_world(
+        &w,
+        &DebugDrawFlags {
+            draw_joints: true,
+            ..none()
+        },
+        &mut d,
+    );
+    assert_eq!(d.lines.len(), 1);
+    assert_eq!(
+        (d.lines[0].start, d.lines[0].end),
+        (v3(1.0, 0.0, 0.0), v3(0.0, 2.0, 0.0))
+    );
+    assert_eq!(d.lines[0].color, DebugColor::CYAN);
 }

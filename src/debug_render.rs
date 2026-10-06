@@ -124,9 +124,13 @@ pub struct DebugDrawFlags {
     pub draw_contacts: bool,
     /// Draw contact normals
     pub draw_contact_normals: bool,
-    /// Draw joint connections
+    /// Draw joint connections: a cyan line between the two bodies of every
+    /// distance constraint and every joint of the world's joint list.
     pub draw_joints: bool,
-    /// Draw BVH nodes
+    /// Draw BVH nodes: the boxes of the bounding volume hierarchy the default
+    /// broad-phase builds from the body boxes of `draw_aabbs` in the current
+    /// state, in magenta (node boxes are kept on the integer lattice, so they
+    /// are the bodies' boxes rounded outward to whole units).
     pub draw_bvh: bool,
     /// Draw body axes (local coordinate frame)
     pub draw_axes: bool,
@@ -372,10 +376,44 @@ pub fn debug_draw_world(
 
     if flags.draw_joints {
         // Draw joint connections as colored lines
+        let position = |i: usize| world.bodies.get(i).map(|b| b.position);
         for constraint in &world.distance_constraints {
-            let pos_a = world.bodies[constraint.body_a].position;
-            let pos_b = world.bodies[constraint.body_b].position;
-            data.line(pos_a, pos_b, DebugColor::CYAN);
+            if let (Some(a), Some(b)) = (position(constraint.body_a), position(constraint.body_b)) {
+                data.line(a, b, DebugColor::CYAN);
+            }
+        }
+        for joint in &world.joints {
+            let (ia, ib) = joint.bodies();
+            if let (Some(a), Some(b)) = (position(ia), position(ib)) {
+                data.line(a, b, DebugColor::CYAN);
+            }
+        }
+    }
+
+    if flags.draw_bvh {
+        // the hierarchy the default broad-phase builds from the body boxes
+        let primitives: Vec<crate::bvh::BvhPrimitive> = world
+            .bodies
+            .iter()
+            .enumerate()
+            .filter_map(|(i, body)| {
+                let (radius, _) = world.ray_geometry(i)?;
+                let half = Vec3Fix::new(radius, radius, radius);
+                Some(crate::bvh::BvhPrimitive {
+                    aabb: AABB::from_center_half(body.position, half),
+                    index: i as u32,
+                    morton: 0,
+                })
+            })
+            .collect();
+        if !primitives.is_empty() {
+            let bvh = crate::bvh::LinearBvh::build(primitives);
+            let corner =
+                |c: [i32; 3]| Vec3Fix::from_int(i64::from(c[0]), i64::from(c[1]), i64::from(c[2]));
+            for node in &bvh.nodes {
+                let aabb = AABB::new(corner(node.aabb_min), corner(node.aabb_max));
+                data.aabb(&aabb, DebugColor::MAGENTA);
+            }
         }
     }
 }
