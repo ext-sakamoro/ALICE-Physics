@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 22 |
 | world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 125 |
+| standalone | a Rust API that only examples call | 126 |
 | unused | no caller outside tests | 0 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -86,6 +86,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `convex_decompose` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `coupled_field` | standalone | 0 / 0 / 0 / 42 / 0 | — |
 | `coupled_iteration` | standalone | 0 / 0 / 0 / 24 / 2 | — |
+| `coupling_medium` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `creep_longterm` | standalone | 0 / 0 / 0 / 9 / 1 | — |
 | `crowd_force` | standalone | 0 / 0 / 0 / 22 / 0 | — |
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |

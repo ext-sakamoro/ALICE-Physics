@@ -2799,6 +2799,84 @@ pub const alice_physics::coupled_iteration::L2_TERM_FLOOR: alice_physics::math::
 pub fn alice_physics::coupled_iteration::residual_norm_inf(&[alice_physics::math::Fix128]) -> alice_physics::math::Fix128
 pub fn alice_physics::coupled_iteration::residual_norm_l2_checked(&[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::math::Fix128, alice_physics::coupled_iteration::CoupledIterationError>
 pub fn alice_physics::coupled_iteration::run_sub_iteration<F>(alice_physics::coupled_iteration::SubIterationConfig, F) -> core::result::Result<alice_physics::coupled_iteration::SubIterationReport, alice_physics::coupled_iteration::CoupledIterationError> where F: core::ops::function::FnMut(u32) -> alice_physics::math::Fix128
+pub mod alice_physics::coupling_medium
+#[non_exhaustive] pub enum alice_physics::coupling_medium::DragMediumError
+pub alice_physics::coupling_medium::DragMediumError::DuplicateBody
+pub alice_physics::coupling_medium::DragMediumError::DuplicateBody::body: usize
+pub alice_physics::coupling_medium::DragMediumError::MomentumOutOfRange
+pub alice_physics::coupling_medium::DragMediumError::NegativeCoefficient
+pub alice_physics::coupling_medium::DragMediumError::NegativeCoefficient::body: usize
+pub alice_physics::coupling_medium::DragMediumError::NonPositiveMass
+impl core::clone::Clone for alice_physics::coupling_medium::DragMediumError
+pub fn alice_physics::coupling_medium::DragMediumError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupling_medium::DragMediumError
+impl core::cmp::PartialEq for alice_physics::coupling_medium::DragMediumError
+pub fn alice_physics::coupling_medium::DragMediumError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::coupling_medium::DragMediumError
+impl core::fmt::Debug for alice_physics::coupling_medium::DragMediumError
+pub fn alice_physics::coupling_medium::DragMediumError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::coupling_medium::DragMediumError
+pub fn alice_physics::coupling_medium::DragMediumError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupling_medium::DragMediumError
+impl core::marker::StructuralPartialEq for alice_physics::coupling_medium::DragMediumError
+impl core::marker::Freeze for alice_physics::coupling_medium::DragMediumError
+impl core::marker::Send for alice_physics::coupling_medium::DragMediumError
+impl core::marker::Sync for alice_physics::coupling_medium::DragMediumError
+impl core::marker::Unpin for alice_physics::coupling_medium::DragMediumError
+impl core::marker::UnsafeUnpin for alice_physics::coupling_medium::DragMediumError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupling_medium::DragMediumError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupling_medium::DragMediumError
+pub struct alice_physics::coupling_medium::DragCoupling
+pub alice_physics::coupling_medium::DragCoupling::body: usize
+pub alice_physics::coupling_medium::DragCoupling::coefficient: alice_physics::math::Fix128
+impl core::clone::Clone for alice_physics::coupling_medium::DragCoupling
+pub fn alice_physics::coupling_medium::DragCoupling::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::coupling_medium::DragCoupling
+impl core::cmp::PartialEq for alice_physics::coupling_medium::DragCoupling
+pub fn alice_physics::coupling_medium::DragCoupling::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::coupling_medium::DragCoupling
+pub fn alice_physics::coupling_medium::DragCoupling::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::coupling_medium::DragCoupling
+impl core::marker::StructuralPartialEq for alice_physics::coupling_medium::DragCoupling
+impl core::marker::Freeze for alice_physics::coupling_medium::DragCoupling
+impl core::marker::Send for alice_physics::coupling_medium::DragCoupling
+impl core::marker::Sync for alice_physics::coupling_medium::DragCoupling
+impl core::marker::Unpin for alice_physics::coupling_medium::DragCoupling
+impl core::marker::UnsafeUnpin for alice_physics::coupling_medium::DragCoupling
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupling_medium::DragCoupling
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupling_medium::DragCoupling
+pub struct alice_physics::coupling_medium::DragMedium
+impl alice_physics::coupling_medium::DragMedium
+pub fn alice_physics::coupling_medium::DragMedium::couple(&mut self, usize, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::coupling_medium::DragMediumError>
+pub fn alice_physics::coupling_medium::DragMedium::couplings(&self) -> &[alice_physics::coupling_medium::DragCoupling]
+pub const fn alice_physics::coupling_medium::DragMedium::mass(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::coupling_medium::DragMedium::momentum(&self) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::coupling_medium::DragMedium::new(alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<Self, alice_physics::coupling_medium::DragMediumError>
+pub fn alice_physics::coupling_medium::DragMedium::total_momentum(&self, &[alice_physics::solver::RigidBody]) -> core::option::Option<alice_physics::math::Vec3Fix>
+pub fn alice_physics::coupling_medium::DragMedium::velocity(&self) -> core::option::Option<alice_physics::math::Vec3Fix>
+impl alice_physics::world_participant::Participant for alice_physics::coupling_medium::DragMedium
+pub fn alice_physics::coupling_medium::DragMedium::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::coupling_medium::DragMedium::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::coupling_medium::DragMedium::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::coupling_medium::DragMedium::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::coupling_medium::DragMedium::read_state(&mut self, &[u8])
+pub fn alice_physics::coupling_medium::DragMedium::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::coupling_medium::DragMedium::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::coupling_medium::DragMedium::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics::coupling_medium::DragMedium
+pub fn alice_physics::coupling_medium::DragMedium::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::coupling_medium::DragMedium
+pub fn alice_physics::coupling_medium::DragMedium::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::coupling_medium::DragMedium
+impl core::marker::Send for alice_physics::coupling_medium::DragMedium
+impl core::marker::Sync for alice_physics::coupling_medium::DragMedium
+impl core::marker::Unpin for alice_physics::coupling_medium::DragMedium
+impl core::marker::UnsafeUnpin for alice_physics::coupling_medium::DragMedium
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupling_medium::DragMedium
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupling_medium::DragMedium
+pub const alice_physics::coupling_medium::DRAG_MEDIUM_KIND: alice_physics::world_participant::ParticipantKind
+pub const alice_physics::coupling_medium::MEDIUM_OBS_MOMENTUM: u32
+pub const alice_physics::coupling_medium::MEDIUM_OBS_VELOCITY: u32
 pub mod alice_physics::creep_longterm
 pub struct alice_physics::creep_longterm::FindleyParameters
 pub alice_physics::creep_longterm::FindleyParameters::epsilon_0: alice_physics::math::Fix128
@@ -20286,6 +20364,15 @@ pub fn alice_physics::world_participant::Participant::read_state(&mut self, &[u8
 pub fn alice_physics::world_participant::Participant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::world_participant::Participant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::world_participant::Participant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::coupling_medium::DragMedium
+pub fn alice_physics::coupling_medium::DragMedium::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::coupling_medium::DragMedium::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::coupling_medium::DragMedium::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::coupling_medium::DragMedium::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::coupling_medium::DragMedium::read_state(&mut self, &[u8])
+pub fn alice_physics::coupling_medium::DragMedium::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::coupling_medium::DragMedium::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::coupling_medium::DragMedium::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics::world_participant::Participant for alice_physics::crowd_force::CrowdParticipant
 pub fn alice_physics::crowd_force::CrowdParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
 pub fn alice_physics::crowd_force::CrowdParticipant::kind(&self) -> alice_physics::world_participant::ParticipantKind

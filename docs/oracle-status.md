@@ -447,6 +447,7 @@ Per-file counts (the test names are in `tests/`):
 | `sleep_skip.rs` | 14 |
 | `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
+| `analytic_coupling_medium.rs` | 13 |
 | `analytic_csf_wiring.rs` | 13 |
 | `analytic_cubic_elastic_fem_wiring.rs` | 13 |
 | `analytic_erosion_wiring.rs` | 13 |
