@@ -68,7 +68,14 @@ fn jonswap_reference(hs: f64, omega_p: f64, gamma: f64, omega: f64) -> f64 {
     }
     let sigma = if omega <= omega_p { 0.07 } else { 0.09 };
     let r = (-(omega - omega_p).powi(2) / (2.0 * sigma * sigma * omega_p * omega_p)).exp();
-    let pm = 5.0 / 16.0 * hs * hs * omega_p.powi(4) / omega.powi(5);
+    // DNV-RP-C205 eq. 3.5.5-3.5.7 normalization (1 - 0.287 ln gamma), which
+    // keeps H_s = 4 sqrt(m0); gamma <= 0 is treated as gamma = 1
+    let normalization = if gamma <= 0.0 {
+        1.0
+    } else {
+        1.0 - 0.287 * gamma.ln()
+    };
+    let pm = 5.0 / 16.0 * normalization * hs * hs * omega_p.powi(4) / omega.powi(5);
     let cutoff = (-1.25 * (omega_p / omega).powi(4)).exp();
     let enhancement = if gamma <= 0.0 { 1.0 } else { gamma.powf(r) };
     pm * cutoff * enhancement
@@ -111,22 +118,12 @@ fn main() {
     // reduction the existing oracle test checks -- here the peak-enhancement
     // factor does not cancel out of the formula, so this exercises it.)
     //
-    // NOTE (finding, not a wiring bug -- tracked separately): the textbook identity
-    // `Hs = 4*sqrt(m0)` only holds as coded here when gamma = 1. The
-    // standard JONSWAP normalisation (DNV-RP-C205 eq. 3.5.7; also Goda,
-    // *Random Seas and Design of Maritime Structures*) applies a correction
-    // factor `(1 - 0.287*ln(gamma))` to the alpha/Hs^2 prefactor specifically
-    // so that `4*sqrt(m0)` keeps reproducing the nominal Hs for gamma != 1.
-    // `Jonswap::spectrum_density` (src/wave_ship.rs) uses the bare
-    // `5/16 * Hs^2 * omega_p^4` prefactor with no such correction, so at
-    // `Jonswap::north_sea()`'s default gamma = 3.3 the spectrum's actual
-    // moment-based significant height is `Hs / sqrt(1 - 0.287*ln(gamma))`,
-    // about 23% above the nominal Hs = 3 m. This example asserts against
-    // that DERIVED value (confirmed independently below, not copied from a
-    // crate call) rather than against the nominal Hs, so the check is
-    // still a real oracle -- it documents what the formula as implemented
-    // actually integrates to, rather than silently loosening a tolerance
-    // to hide the gap.
+    // The standard JONSWAP normalisation (DNV-RP-C205 eq. 3.5.7; also Goda,
+    // *Random Seas and Design of Maritime Structures*) multiplies the
+    // `5/16 * Hs^2 * omega_p^4` prefactor by `(1 - 0.287*ln(gamma))` so that
+    // `Hs = 4*sqrt(m0)` keeps reproducing the nominal Hs for gamma != 1, and
+    // `Jonswap::spectrum_density` applies it: the moment recovers the
+    // nominal Hs = 3 m (the factor is an approximation, good to about 1 %).
     let (mut m0, dw) = (0.0_f64, omega_p / 400.0);
     let mut w = dw;
     while w < 15.0 * omega_p {
@@ -134,16 +131,12 @@ fn main() {
         w += dw;
     }
     let hs_recovered = 4.0 * m0.sqrt();
-    let dnv_correction = (1.0 - 0.287 * gamma.ln()).sqrt();
-    let hs_predicted_uncorrected = hs / dnv_correction;
     println!(
-        "[wave_ship] Hs recovered from m0 = 4*sqrt({m0:e}) = {hs_recovered} \
-         (nominal preset Hs = {hs}, DNV-uncorrected prediction = {hs_predicted_uncorrected})"
+        "[wave_ship] Hs recovered from m0 = 4*sqrt({m0:e}) = {hs_recovered} (nominal preset Hs = {hs})"
     );
     assert!(
-        rel_err(hs_recovered, hs_predicted_uncorrected) < 0.01,
-        "Hs recovery from JONSWAP moment should match the DNV-uncorrected \
-         prediction Hs/sqrt(1-0.287 ln(gamma)): {hs_recovered} vs {hs_predicted_uncorrected}"
+        rel_err(hs_recovered, hs) < 0.01,
+        "Hs recovery from the JONSWAP moment should match the nominal Hs: {hs_recovered} vs {hs}"
     );
 
     // --- WaveComponent + free_surface_elevation: 4-component superposition -
