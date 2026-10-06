@@ -169,9 +169,12 @@ pub fn free_surface_elevation(components: &[WaveComponent], x_m: Fix128, t_s: Fi
 /// Approximates the pressure integral by treating the box as a small
 /// horizontal plate:
 ///
-/// `F_z = ρ_w · g · A_water · (d_mean + η)`
+/// `F_z = ρ_w · g · A_water · max(d_mean + η, 0)`
 ///
-/// Positive = upward buoyancy in excess of the mean.
+/// Positive = upward. This is the total upthrust of the wet draft, not the
+/// excess over the mean: at `η = 0` it is the displaced weight
+/// `ρ_w g A d_mean`. When the trough drops below the keel (`d_mean + η < 0`)
+/// nothing is wet and the force is 0, never a downward pull.
 #[must_use]
 pub fn froude_krylov_vertical_n(
     density_water: Fix128,
@@ -180,7 +183,8 @@ pub fn froude_krylov_vertical_n(
     mean_draft_m: Fix128,
     wave_elevation_m: Fix128,
 ) -> Fix128 {
-    density_water * gravity_m_per_s2 * area_waterplane_m2 * (mean_draft_m + wave_elevation_m)
+    let wet_draft = (mean_draft_m + wave_elevation_m).max(Fix128::ZERO);
+    density_water * gravity_m_per_s2 * area_waterplane_m2 * wet_draft
 }
 
 // ============================================================================

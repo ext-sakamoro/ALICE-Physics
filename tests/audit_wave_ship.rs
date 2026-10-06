@@ -265,19 +265,25 @@ fn froude_krylov_equals_displaced_weight_at_mean_level() {
 /// wave trough drops below the keel (eta < -d) nothing is wet and the buoyancy is 0, never
 /// negative (buoyancy cannot pull a hull down).
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-004: froude_krylov_vertical_n returns negative force (rho g A (d+eta) = -2.4e5 N at d=1, eta=-3) when the keel is out of the water; no wet-draft clamp"]
 fn froude_krylov_is_not_negative_when_the_keel_is_out_of_the_water() {
-    let f = froude_krylov_vertical_n(fx(1000.0), fx(10.0), fx(12.0), fx(1.0), fx(-3.0));
-    assert!(f >= Fix128::ZERO, "F = {}", f.to_f64());
+    // AUD-A-S2W3-004: a dry keel has no buoyancy, exactly 0 (the trough at
+    // eta = -d is the boundary, also 0)
+    for eta in [-3.0, -1.0, -1.5] {
+        let f = froude_krylov_vertical_n(fx(1000.0), fx(10.0), fx(12.0), fx(1.0), fx(eta));
+        assert_eq!(f, Fix128::ZERO, "F = {} at eta = {eta}", f.to_f64());
+    }
 }
 
-/// Doc: "Positive = upward buoyancy in excess of the mean." The returned value at the mean
-/// level (eta = 0) is rho g A d, not 0, so it is the total upthrust, not the excess over the mean.
+/// AUD-A-S2W3-005 (doc fix): the doc said "buoyancy in excess of the mean",
+/// but the force is the total upthrust of the wet draft. At the mean level it
+/// is the displaced weight, and it is linear in eta while the keel is wet.
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-005: doc says result is buoyancy in excess of the mean, but eta = 0 returns the full upthrust rho g A d (doc/impl mismatch, doc fix)"]
-fn froude_krylov_doc_excess_over_mean_is_zero_at_mean_level() {
-    let f = froude_krylov_vertical_n(fx(1000.0), fx(10.0), fx(12.0), fx(1.0), Fix128::ZERO);
-    assert_eq!(f, Fix128::ZERO);
+fn froude_krylov_is_the_total_upthrust_not_the_excess_over_the_mean() {
+    let at_mean = froude_krylov_vertical_n(fx(1000.0), fx(10.0), fx(12.0), fx(1.0), Fix128::ZERO);
+    assert_eq!(at_mean, fx(120_000.0));
+    let up = froude_krylov_vertical_n(fx(1000.0), fx(10.0), fx(12.0), fx(1.0), fx(0.5));
+    let down = froude_krylov_vertical_n(fx(1000.0), fx(10.0), fx(12.0), fx(1.0), fx(-0.5));
+    assert_eq!(up - at_mean, at_mean - down);
 }
 
 fn advance(s: &mut ShipResponse, f: f64, m: f64, k: f64, c: f64, dt: f64) {
