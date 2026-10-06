@@ -106,7 +106,7 @@ impl Wedge {
 
         let mut result = [Vec3Fix::ZERO; 6];
         for (i, lv) in local_verts.iter().enumerate() {
-            result[i] = self.center + self.rotation.rotate_vec(*lv);
+            result[i] = self.center + self.rotation.unit_rotation().rotate_vec(*lv);
         }
         result
     }

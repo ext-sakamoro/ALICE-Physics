@@ -56,9 +56,9 @@ impl OrientedBox {
         let local_y = Vec3Fix::new(Fix128::ZERO, self.half_extents.y, Fix128::ZERO);
         let local_z = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.half_extents.z);
 
-        let world_x = self.rotation.rotate_vec(local_x);
-        let world_y = self.rotation.rotate_vec(local_y);
-        let world_z = self.rotation.rotate_vec(local_z);
+        let world_x = self.rotation.unit_rotation().rotate_vec(local_x);
+        let world_y = self.rotation.unit_rotation().rotate_vec(local_y);
+        let world_z = self.rotation.unit_rotation().rotate_vec(local_z);
 
         // Extent on each world axis is sum of absolute projections
         let extent = Vec3Fix::new(
@@ -89,7 +89,7 @@ impl OrientedBox {
             -self.half_extents.z
         };
         let local = Vec3Fix::new(sx, sy, sz);
-        self.center + self.rotation.rotate_vec(local)
+        self.center + self.rotation.unit_rotation().rotate_vec(local)
     }
 
     /// Get all 8 corner vertices
@@ -139,7 +139,11 @@ impl OrientedBox {
 impl Support for OrientedBox {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         // Transform direction to local space
-        let local_dir = self.rotation.conjugate().rotate_vec(direction);
+        let local_dir = self
+            .rotation
+            .unit_rotation()
+            .conjugate()
+            .rotate_vec(direction);
 
         // In local space, support is simply sign(dir) * half_extents
         let local_support = Vec3Fix::new(
@@ -161,7 +165,7 @@ impl Support for OrientedBox {
         );
 
         // Transform back to world space
-        self.center + self.rotation.rotate_vec(local_support)
+        self.center + self.rotation.unit_rotation().rotate_vec(local_support)
     }
 }
 

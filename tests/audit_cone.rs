@@ -306,7 +306,7 @@ fn support_tiny_direction_still_picks_the_right_rim_point() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-002: support() with |dir|=5e9 (xz_len_sq wraps in Fix128) returns x=1.953 instead of the rim radius 1.0"]
+// AUD-A-S4W3-002
 fn support_huge_direction_does_not_wrap() {
     // |d| = 5e9 : the squared XZ length (2.5e19) exceeds the i64 integer range of Fix128.
     let cone = Cone::new(Vec3Fix::ZERO, fx(1.0), fx(1.0));

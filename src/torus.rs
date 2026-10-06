@@ -28,9 +28,11 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 pub struct Torus {
     /// Center position in world space
     pub center: Vec3Fix,
-    /// Major radius (from center to tube center)
+    /// Major radius (from center to tube center); a negative value is read as
+    /// its magnitude by every method
     pub major_radius: Fix128,
-    /// Minor radius (tube cross-section radius)
+    /// Minor radius (tube cross-section radius); a negative value is read as
+    /// its magnitude by every method
     pub minor_radius: Fix128,
     /// Orientation quaternion
     pub rotation: QuatFix,
@@ -72,7 +74,7 @@ impl Torus {
     pub fn volume(&self) -> Fix128 {
         let pi = Fix128::PI;
         let two = Fix128::from_int(2);
-        two * pi * pi * self.major_radius * self.minor_radius * self.minor_radius
+        two * pi * pi * self.major_radius.abs() * self.minor_radius.abs() * self.minor_radius.abs()
     }
 
     /// Surface area: 4 * pi^2 * R * r
@@ -81,7 +83,7 @@ impl Torus {
     pub fn surface_area(&self) -> Fix128 {
         let pi = Fix128::PI;
         let four = Fix128::from_int(4);
-        four * pi * pi * self.major_radius * self.minor_radius
+        four * pi * pi * self.major_radius.abs() * self.minor_radius.abs()
     }
 
     /// The smallest world-axis box enclosing this torus.
@@ -94,12 +96,20 @@ impl Torus {
     pub fn aabb(&self) -> AABB {
         // a stored non-unit rotation would scale the ring (as in `support`)
         let q = self.rotation.unit_rotation();
-        let u = q.rotate_vec(Vec3Fix::new(self.major_radius, Fix128::ZERO, Fix128::ZERO));
-        let w = q.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.major_radius));
+        let u = q.rotate_vec(Vec3Fix::new(
+            self.major_radius.abs(),
+            Fix128::ZERO,
+            Fix128::ZERO,
+        ));
+        let w = q.rotate_vec(Vec3Fix::new(
+            Fix128::ZERO,
+            Fix128::ZERO,
+            self.major_radius.abs(),
+        ));
         let total = Vec3Fix::new(
-            hypot3(u.x, w.x, Fix128::ZERO) + self.minor_radius,
-            hypot3(u.y, w.y, Fix128::ZERO) + self.minor_radius,
-            hypot3(u.z, w.z, Fix128::ZERO) + self.minor_radius,
+            hypot3(u.x, w.x, Fix128::ZERO) + self.minor_radius.abs(),
+            hypot3(u.y, w.y, Fix128::ZERO) + self.minor_radius.abs(),
+            hypot3(u.z, w.z, Fix128::ZERO) + self.minor_radius.abs(),
         );
         AABB::new(self.center - total, self.center + total)
     }
@@ -111,8 +121,8 @@ impl Torus {
     /// - Iyy  = m * (3/4 * r^2 + R^2)
     #[must_use]
     pub fn inertia_diagonal(&self, mass: Fix128) -> Vec3Fix {
-        let r2 = self.minor_radius * self.minor_radius;
-        let big_r2 = self.major_radius * self.major_radius;
+        let r2 = self.minor_radius.abs() * self.minor_radius.abs();
+        let big_r2 = self.major_radius.abs() * self.major_radius.abs();
 
         let ixx = mass * (Fix128::from_ratio(5, 8) * r2 + Fix128::from_ratio(1, 2) * big_r2);
         let iyy = mass * (Fix128::from_ratio(3, 4) * r2 + big_r2);
@@ -143,13 +153,13 @@ impl Support for Torus {
         let xz_len_sq = local_dir.x * local_dir.x + local_dir.z * local_dir.z;
         let ring_point = if xz_len_sq.is_zero() {
             // Direction is purely along Y — pick any point on the ring
-            Vec3Fix::new(self.major_radius, Fix128::ZERO, Fix128::ZERO)
+            Vec3Fix::new(self.major_radius.abs(), Fix128::ZERO, Fix128::ZERO)
         } else {
             let xz_len = xz_len_sq.sqrt();
             Vec3Fix::new(
-                self.major_radius * local_dir.x / xz_len,
+                self.major_radius.abs() * local_dir.x / xz_len,
                 Fix128::ZERO,
-                self.major_radius * local_dir.z / xz_len,
+                self.major_radius.abs() * local_dir.z / xz_len,
             )
         };
 
@@ -157,12 +167,12 @@ impl Support for Torus {
         //    minor radius
         let dir_len = local_dir.length();
         let sphere_offset = if dir_len.is_zero() {
-            Vec3Fix::new(self.minor_radius, Fix128::ZERO, Fix128::ZERO)
+            Vec3Fix::new(self.minor_radius.abs(), Fix128::ZERO, Fix128::ZERO)
         } else {
             Vec3Fix::new(
-                self.minor_radius * local_dir.x / dir_len,
-                self.minor_radius * local_dir.y / dir_len,
-                self.minor_radius * local_dir.z / dir_len,
+                self.minor_radius.abs() * local_dir.x / dir_len,
+                self.minor_radius.abs() * local_dir.y / dir_len,
+                self.minor_radius.abs() * local_dir.z / dir_len,
             )
         };
 

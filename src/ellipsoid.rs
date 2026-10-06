@@ -77,7 +77,7 @@ impl Ellipsoid {
     /// ellipsoid along `ê_i`.
     #[must_use]
     pub fn aabb(&self) -> AABB {
-        let r = self.rotation;
+        let r = self.rotation.unit_rotation();
         let ex = r.rotate_vec(Vec3Fix::new(self.radii.x, Fix128::ZERO, Fix128::ZERO));
         let ey = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, self.radii.y, Fix128::ZERO));
         let ez = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.radii.z));
@@ -125,7 +125,11 @@ impl Support for Ellipsoid {
         // squares below neither underflow nor overflow
         let direction = direction.rescaled_direction();
         // Transform direction to local space
-        let local_dir = self.rotation.conjugate().rotate_vec(direction);
+        let local_dir = self
+            .rotation
+            .unit_rotation()
+            .conjugate()
+            .rotate_vec(direction);
 
         // Scale direction by radii (componentwise)
         let scaled = Vec3Fix::new(
@@ -148,7 +152,7 @@ impl Support for Ellipsoid {
         };
 
         // Transform back to world space
-        self.center + self.rotation.rotate_vec(local_support)
+        self.center + self.rotation.unit_rotation().rotate_vec(local_support)
     }
 }
 

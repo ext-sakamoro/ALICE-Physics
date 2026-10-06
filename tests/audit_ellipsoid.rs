@@ -384,10 +384,14 @@ fn support_of_a_huge_direction_is_still_the_extreme_point() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-019: the orientation quaternion is not normalised or checked, so a non-unit rotation scales the ellipsoid (rotation (0,0,0,2) turns the +X semi-axis point of radius 1 into a point at distance 4)"]
+// AUD-A-S5W2-019
 fn non_unit_rotation_must_not_scale_the_ellipsoid() {
     let q = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, fx(2.0));
     let e = Ellipsoid::with_rotation(Vec3Fix::ZERO, v3(1.0, 1.0, 1.0), q);
     let p = arr(e.support(Vec3Fix::UNIT_X));
     assert!((p[0] - 1.0).abs() < 1e-9, "{p:?}");
+    // the bounding box too: the unit sphere's box is [-1, 1]^3
+    let b = e.aabb();
+    assert!((arr(b.max)[0] - 1.0).abs() < 1e-9, "{:?}", arr(b.max));
+    assert!((arr(b.min)[1] + 1.0).abs() < 1e-9, "{:?}", arr(b.min));
 }

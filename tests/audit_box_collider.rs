@@ -318,7 +318,7 @@ fn support_opposite_directions_are_antipodal_about_center() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-018: the orientation quaternion is not normalised or checked, so a non-unit rotation scales the box (rotation (0,0,0,2) maps corner (1,1,1) to corner (4,4,4) about the centre; aabb, corner and support all inherit the factor 4)"]
+// AUD-A-S5W2-018
 fn non_unit_rotation_must_not_scale_the_box() {
     let q = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, fx(2.0));
     let b = OrientedBox::new(Vec3Fix::ZERO, v3(1.0, 1.0, 1.0), q);

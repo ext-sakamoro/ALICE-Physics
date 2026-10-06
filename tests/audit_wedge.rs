@@ -349,7 +349,7 @@ fn support_picks_the_correct_depth_side() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-020: the orientation quaternion is not normalised or checked, so a non-unit rotation scales the wedge (rotation (0,0,0,2) maps vertex (1,-1,-1) to (4,-4,-4) about the centre; vertices, aabb and support inherit the factor 4)"]
+// AUD-A-S5W2-020
 fn non_unit_rotation_must_not_scale_the_wedge() {
     let q = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, fx(2.0));
     let w = Wedge::with_rotation(Vec3Fix::ZERO, fx(2.0), fx(2.0), fx(2.0), q);

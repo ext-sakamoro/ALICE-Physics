@@ -367,7 +367,7 @@ fn non_unit_rotation_does_not_scale_the_torus() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-005: Torus::new accepts a negative minor radius; support(+X) with R=5, r=-1 returns x = 4 (the surface point nearest the axis, minimiser not maximiser)"]
+// AUD-A-S5W3-005
 fn negative_minor_radius_is_rejected_or_still_maximises() {
     let t = Torus::new(Vec3Fix::ZERO, fx(5.0), fx(-1.0));
     let p = t.support(Vec3Fix::UNIT_X);
