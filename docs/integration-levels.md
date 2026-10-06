@@ -59,14 +59,14 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `anomaly` | standalone | 0 / 0 / 0 / 54 / 0 | — |
 | `articulation` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `atmosphere` | standalone | 0 / 0 / 0 / 7 / 0 | — |
-| `audio_physics` | standalone | 0 / 0 / 0 / 15 / 0 | — |
+| `audio_physics` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `beam_stress` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `bimaterial` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `box_collider` | standalone (step 3, world API 2 of 9 items) | 3 / 2 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `ccd` | standalone (binding 1 of 12 items) | 0 / 0 / 1 / 11 / 0 | C ABI, Python, WebAssembly |
+| `ccd` | standalone (binding 1 of 13 items) | 0 / 0 / 1 / 12 / 0 | C ABI, Python, WebAssembly |
 | `cfd_solver` | standalone | 0 / 0 / 0 / 41 / 0 | — |
 | `character` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -83,7 +83,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `db_bridge` | standalone | 0 / 0 / 0 / 9 / 0 | — |
-| `debug_render` | standalone | 0 / 0 / 0 / 27 / 0 | — |
+| `debug_render` | standalone | 0 / 0 / 0 / 28 / 0 | — |
 | `deformable` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -100,7 +100,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `fsi_advanced` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `gpu_bridge` | standalone (step 1 of 3 items) | 1 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `gpu_sdf` | standalone (step 2 of 23 items) | 2 / 0 / 0 / 21 / 0 | C ABI, Python, WebAssembly |
-| `heatmap` | standalone | 0 / 0 / 0 / 6 / 0 | — |
+| `heatmap` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `hyperelastic` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `ik_physics_bridge` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `interface_capture` | standalone | 0 / 0 / 0 / 4 / 0 | — |
@@ -152,14 +152,14 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `scene_io` | standalone (binding 1 of 11 items) | 0 / 0 / 1 / 10 / 0 | Python, WebAssembly |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_ccd` | standalone (binding 2 of 6 items) | 0 / 0 / 2 / 4 / 0 | C ABI, Python, WebAssembly |
-| `sdf_character` | standalone | 0 / 0 / 0 / 13 / 0 | — |
+| `sdf_character` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `sdf_fem_mesh` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `sdf_force` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_manifold` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `sdf_sph` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
-| `sensors` | standalone | 0 / 0 / 0 / 26 / 0 | — |
+| `sensors` | standalone | 0 / 0 / 0 / 30 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `sketch` | standalone (step 1 of 70 items) | 1 / 0 / 0 / 69 / 0 | C ABI, Python, WebAssembly |

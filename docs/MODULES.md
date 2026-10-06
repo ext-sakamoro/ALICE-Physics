@@ -99,7 +99,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | binding |
 | `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | binding |
 | `query` | sphere / capsule casts and overlap queries |  | [`spatial_queries`](../examples/spatial_queries.rs) | standalone |
-| `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone (binding 1 of 12 items) |
+| `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone (binding 1 of 13 items) |
 | `contact_cache` | persistent contact manifolds with warm starting, as an opt-in tool outside `PhysicsWorld::step` |  | [`contact_warm_start_cache`](../examples/contact_warm_start_cache.rs) | step |
 
 ## Joints and articulated bodies
