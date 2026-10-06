@@ -6,11 +6,16 @@
 //! Where the participants run: in every step loop ([`PhysicsWorld::try_step`]
 //! for XPBD and TGS, [`PhysicsWorld::try_step_parallel`],
 //! [`PhysicsWorld::step_with_bridge`]) at the start of each substep, before
-//! the substep body. Per substep, with `h = dt / substeps` (a [`Fix128`]
-//! division) on XPBD, the parallel path and the bridge, and under
-//! [`super::SolverBackend::Tgs`] the width the TGS solve itself uses,
-//! `dt · from_f32(1 / substeps)` (equal to `dt / substeps` when `substeps`
-//! is a power of two, otherwise it can differ in the last bits):
+//! the substep body. The width `h` is the one of the substep loop that runs,
+//! so it depends on the path, not only on the backend: `h = dt / substeps`
+//! (a [`Fix128`] division) on [`PhysicsWorld::try_step`] with XPBD, and on
+//! [`PhysicsWorld::try_step_parallel`] and [`PhysicsWorld::step_with_bridge`]
+//! whatever the backend (both always run the XPBD substep loop); only
+//! [`PhysicsWorld::try_step`] under [`super::SolverBackend::Tgs`] hands the
+//! width the TGS solve itself uses, `dt · from_f32(1 / substeps)` (equal to
+//! `dt / substeps` when `substeps` is a power of two, otherwise it can differ
+//! in the last bits). Step rules are checked against that same width. Per
+//! substep:
 //!
 //! 1. [`run_substep`] calls the participants in their run order with the
 //!    bodies as they are at the start of the substep and commits the staged
@@ -362,8 +367,8 @@ impl PhysicsWorld {
     /// `dt` changes nothing and is `Ok`; every participant's step rule is
     /// checked against the substep width `h` the participants are handed
     /// (`dt / substeps`, or the TGS width under
-    /// [`super::SolverBackend::Tgs`], see the module documentation;
-    /// [`StepError::Rule`]) and every
+    /// [`super::SolverBackend::Tgs`], see the module documentation and
+    /// [`Self::try_step_parallel`]; [`StepError::Rule`]) and every
     /// [`FieldLayout::PerBody`] field against the body count
     /// ([`StepError::BodyCount`]), refused unchanged. Then the step runs (see
     /// the module documentation of [`crate::world_participant`] and
@@ -377,7 +382,7 @@ impl PhysicsWorld {
     ///
     /// See above.
     pub fn try_step(&mut self, dt: Fix128) -> Result<(), StepError> {
-        if !self.check_step(dt)? {
+        if !self.check_step(dt, self.participant_substep_width(dt))? {
             return Ok(());
         }
         self.run_step(dt);
@@ -387,14 +392,17 @@ impl PhysicsWorld {
 
     /// [`Self::try_step`] on the batched (parallel) path of
     /// [`Self::step_parallel`]. Participants are called one after the other,
-    /// as in [`Self::try_step`].
+    /// as in [`Self::try_step`]. This path runs the XPBD substep loop whatever
+    /// [`super::SolverBackend`] is configured, so the participants are handed
+    /// `h = dt / substeps` and step rules are checked against that width, also
+    /// under [`super::SolverBackend::Tgs`].
     ///
     /// # Errors
     ///
     /// As [`Self::try_step`].
     #[cfg(feature = "parallel")]
     pub fn try_step_parallel(&mut self, dt: Fix128) -> Result<(), StepError> {
-        if !self.check_step(dt)? {
+        if !self.check_step(dt, Self::divided_substep_width(dt, self.config.substeps))? {
             return Ok(());
         }
         self.run_step_parallel(dt);
@@ -404,7 +412,11 @@ impl PhysicsWorld {
 
     /// The checks at the start of a step: `Ok(true)` to run, `Ok(false)` for
     /// a non-positive `dt` (nothing to do), `Err` to refuse. Changes nothing.
-    pub(super) fn check_step(&self, dt: Fix128) -> Result<bool, StepError> {
+    /// `h` is the substep width the calling path hands its participants
+    /// ([`Self::participant_substep_width`] on [`Self::try_step`],
+    /// [`Self::divided_substep_width`] on the paths that always run the XPBD
+    /// substep loop); the step rules are checked against it.
+    pub(super) fn check_step(&self, dt: Fix128, h: Fix128) -> Result<bool, StepError> {
         if let Some(f) = self.fault {
             return Err(StepError::Faulted(f));
         }
@@ -415,7 +427,6 @@ impl PhysicsWorld {
         {
             let list = self.lock_participants();
             if !list.is_empty() {
-                let h = self.participant_substep_width(dt);
                 for (index, p) in list.iter().enumerate() {
                     p.step_rule()
                         .steps_per_substep(h)
@@ -438,19 +449,27 @@ impl PhysicsWorld {
         Ok(true)
     }
 
-    /// The substep width `h` participants are handed for a step of `dt`:
-    /// `dt / substeps` (a [`Fix128`] division) on the XPBD, parallel and
-    /// bridge paths, and under [`super::SolverBackend::Tgs`] the width the
-    /// TGS solve itself uses, `dt · from_f32(1 / substeps)`, which can differ
-    /// from `dt / substeps` in the last bits when `substeps` is not a power of
-    /// two. Zero substeps give `dt / 0` on every backend, which every step
-    /// rule refuses.
+    /// The substep width `h` [`Self::try_step`] hands its participants for a
+    /// step of `dt`: `dt / substeps` (a [`Fix128`] division) with XPBD, and
+    /// under [`super::SolverBackend::Tgs`] the width the TGS solve itself
+    /// uses, `dt · from_f32(1 / substeps)`, which can differ from
+    /// `dt / substeps` in the last bits when `substeps` is not a power of
+    /// two. Only [`Self::try_step`] dispatches on the backend; the parallel
+    /// path and the bridge use [`Self::divided_substep_width`]. Zero substeps
+    /// give `dt / 0`, which every step rule refuses.
     pub(super) fn participant_substep_width(&self, dt: Fix128) -> Fix128 {
         let substeps = self.config.substeps;
         #[cfg(feature = "std")]
         if substeps > 0 && matches!(self.config.solver_backend, super::SolverBackend::Tgs) {
             return dt * Fix128::from_f32(1.0 / substeps as f32);
         }
+        Self::divided_substep_width(dt, substeps)
+    }
+
+    /// `dt / substeps` (a [`Fix128`] division): the width the XPBD substep
+    /// loop hands its participants, on [`Self::try_step`] with XPBD and on
+    /// the parallel path and the bridge whatever the backend.
+    pub(super) fn divided_substep_width(dt: Fix128, substeps: usize) -> Fix128 {
         dt / Fix128::from_int(substeps as i64)
     }
 

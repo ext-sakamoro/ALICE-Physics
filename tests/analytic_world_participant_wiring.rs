@@ -334,6 +334,75 @@ fn a_fixed_step_rule_is_checked_against_the_tgs_width() {
     assert_eq!(refused.snapshot_world(), before);
 }
 
+/// The parallel path and the bridge run the XPBD substep loop whatever the
+/// backend, so a world configured for TGS hands its participants
+/// `h = dt / substeps` there, and a [`StepRule::Fixed`] step is checked
+/// against that width: with 3 substeps a fixed step equal to `dt / 3` runs
+/// and is handed `dt / 3` in each substep, one equal to TGS's own width
+/// (which differs from `dt / 3` in the low bits) is refused, the world
+/// unchanged and the participant not called. `step_path` steps once and
+/// returns whether the step ran, or `None` on a path that does not report it.
+#[cfg(any(feature = "parallel", feature = "gpu-solver-bridge"))]
+fn a_tgs_configured_world_checks_the_width_the_path_hands_out(
+    step_path: fn(&mut PhysicsWorld, Fix128) -> Option<bool>,
+) {
+    let dt = Fix128::from_ratio(1, 60);
+    let tgs = dt * Fix128::from_f32(1.0 / 3.0);
+    let divided = dt / Fix128::from_int(3);
+    assert_ne!(divided, tgs, "fixture: the two widths must differ");
+    let build = |step: Fix128| {
+        let mut w = PhysicsWorld::new(PhysicsConfig {
+            substeps: 3,
+            solver_backend: SolverBackend::Tgs,
+            ..Default::default()
+        });
+        w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        let mut push = Push::new(0, Vec3Fix::ZERO);
+        push.rule = StepRule::Fixed(step);
+        let seen = Arc::clone(&push.seen_h);
+        w.add_participant(Box::new(push)).expect("register");
+        (w, seen)
+    };
+    let (mut accepted, seen) = build(divided);
+    let before = accepted.snapshot_world();
+    assert_ne!(step_path(&mut accepted, dt), Some(false));
+    assert_eq!(*seen.lock().expect("lock"), vec![divided; 3]);
+    assert_ne!(
+        accepted.snapshot_world(),
+        before,
+        "fixture: the step must move the body"
+    );
+    let (mut refused, seen) = build(tgs);
+    let before = refused.snapshot_world();
+    assert_ne!(step_path(&mut refused, dt), Some(true));
+    assert!(seen.lock().expect("lock").is_empty());
+    assert_eq!(refused.snapshot_world(), before);
+}
+
+/// See [`a_tgs_configured_world_checks_the_width_the_path_hands_out`].
+#[cfg(feature = "parallel")]
+#[test]
+fn a_tgs_configured_world_on_the_parallel_path_checks_the_width_it_hands_out() {
+    a_tgs_configured_world_checks_the_width_the_path_hands_out(|w, dt| {
+        match w.try_step_parallel(dt) {
+            Ok(()) => Some(true),
+            Err(StepError::Rule { index: 0, .. }) => Some(false),
+            other => panic!("unexpected {other:?}"),
+        }
+    });
+}
+
+/// See [`a_tgs_configured_world_checks_the_width_the_path_hands_out`]. The
+/// bridge reports nothing: a refused step is one that does nothing.
+#[cfg(feature = "gpu-solver-bridge")]
+#[test]
+fn a_tgs_configured_world_on_the_bridge_checks_the_width_it_hands_out() {
+    a_tgs_configured_world_checks_the_width_the_path_hands_out(|w, dt| {
+        w.step_with_bridge(&mut bridge::Idle, dt);
+        None
+    });
+}
+
 // ── Zero participants ────────────────────────────────────────────────────
 
 fn stacked(backend: SolverBackend) -> PhysicsWorld {
