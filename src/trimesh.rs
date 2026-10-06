@@ -361,9 +361,13 @@ impl TriMesh {
     /// axis theorem on the 13 axes of a triangle-box pair (the 3 box faces,
     /// the triangle normal and the 9 cross products of box and triangle
     /// edges): a triangle overlaps the box exactly when no axis separates them.
-    /// The contact is the axis of least overlap: `depth` is that overlap and
-    /// `normal` the direction that pushes the box out (from the mesh to the
-    /// box); `point_b` is the point of the triangle closest to the box's
+    /// The contact of an overlapping triangle is taken along its face normal
+    /// (not the axis of least overlap, which on a flat mesh can be an internal
+    /// edge): `depth` is the box's overlap along the face normal, the smaller
+    /// of the two ways out, and `normal` that way (from the mesh to the box).
+    /// A box hanging over a convex edge (a step or a ledge) therefore overlaps
+    /// the riser's face by more than its minimum translation and can be
+    /// pushed sideways; `point_b` is the point of the triangle closest to the box's
     /// deepest point along `-normal` (on a tie in depth, the triangle whose
     /// point is nearest it), and `point_a = point_b - normal * depth`
     /// (the invariant every `Contact` of this module keeps).
@@ -500,22 +504,37 @@ pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> 
         return None;
     }
 
-    let inv_det = Fix128::ONE / det;
+    // Division-free: compare the barycentric and distance numerators with det
+    // (sign folded into det > 0) and divide once, after t <= max_t is known.
+    // 1/det does not fit Fix128 once |det| <= 2^-63 (a triangle 2^-20 m on a
+    // side met at a grazing angle), and its truncation to 0 used to put every
+    // such hit at t = 0, the ray origin
+    let flip = det.is_negative();
+    let signed = |x: Fix128| if flip { -x } else { x };
+    let det = det.abs();
     let s = ray.origin - tri.v0;
-    let u = s.dot(h) * inv_det;
-
-    if u < Fix128::ZERO || u > Fix128::ONE {
+    let u = signed(s.dot(h));
+    if u < Fix128::ZERO || u > det {
         return None;
     }
 
     let q = s.cross(e1);
-    let v = ray.direction.dot(q) * inv_det;
-
-    if v < Fix128::ZERO || u + v > Fix128::ONE {
+    let v = signed(ray.direction.dot(q));
+    if v < Fix128::ZERO || u + v > det {
         return None;
     }
 
-    let t = e2.dot(q) * inv_det;
+    let t_num = signed(e2.dot(q));
+    // t_num <= max_t * det; when the product overflows it exceeds every t_num,
+    // and t_num / det < max_t still fits
+    let within = match max_t.checked_mul(det) {
+        Some(limit) => t_num <= limit,
+        None => true,
+    };
+    if t_num < Fix128::ZERO || !within {
+        return None;
+    }
+    let t = t_num / det;
 
     if t >= Fix128::ZERO && t <= max_t {
         let point = ray.at(t);

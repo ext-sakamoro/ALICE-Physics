@@ -415,7 +415,8 @@ fn ray_triangle_includes_edges_and_vertices() {
 #[test]
 // AUD-A-S4W2-012
 fn small_triangles_are_not_invisible_to_rays() {
-    // 辺 1e-4 m (0.1 mm) の三角形に真上から ray。面積 5e-9 < MT_EPSILON (2^-24 = 6e-8) で det が閾値を下回る
+    // 辺 1e-4 m (0.1 mm) の三角形に真上から ray。面積 5e-9 < 2^-24 = 6e-8 なので、
+    // 以前の絶対閾値 |det| < 2^-24 ではこの三角形がどの ray からも見えなかった
     let e = Fix128::from_ratio(1, 10_000);
     let t = Triangle::new(
         Vec3Fix::ZERO,
@@ -428,6 +429,100 @@ fn small_triangles_are_not_invisible_to_rays() {
         ray_triangle(&ray, &t, Fix128::from_int(10)).is_some(),
         "0.1 mm triangle is missed by a ray through its centroid"
     );
+}
+
+#[test]
+fn a_grazing_ray_past_a_micro_triangle_still_hits_the_wall() {
+    // 辺 l = 2^-20 m の三角形 (平面 z = 0、ray から横に 0.5 m) と x = 10 の壁
+    // 方向 (1, 0, -k 2^-24) の ray は三角形の平面とほぼ平行で det = k 2^-64 (k ulp)
+    // 1/det は Fix128 に収まらない (|det| <= 2^-63 で整数部が切り捨てられる) ので、
+    // 1/det を掛ける実装はこの三角形を t = 0 (ray の原点) で当ててしまう
+    // 幾何学的には三角形から 0.5 m 離れているので、当たるのは壁の t = 10
+    let l = Fix128::from_raw(0, 1 << 44); // 2^-20
+    let half = Fix128::from_ratio(1, 2);
+    let five = Fix128::from_int(5);
+    let micro = Triangle::new(
+        Vec3Fix::new(five, half, Fix128::ZERO),
+        Vec3Fix::new(five + l, half, Fix128::ZERO),
+        Vec3Fix::new(five, half + l, Fix128::ZERO),
+    );
+    let ten = Fix128::from_int(10);
+    let fifty = Fix128::from_int(50);
+    let wall = Triangle::new(
+        Vec3Fix::new(ten, -fifty, -fifty),
+        Vec3Fix::new(ten, fifty, -fifty),
+        Vec3Fix::new(ten, Fix128::ZERO, fifty),
+    );
+    let m = TriMesh::from_triangles(vec![wall, micro]);
+    for k in 1..=64_u64 {
+        let dz = Fix128::from_raw(0, k << 40); // k 2^-24
+        let dir = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, -dz);
+        for ray in [
+            Ray::new(Vec3Fix::ZERO, dir),
+            Ray {
+                origin: Vec3Fix::ZERO,
+                direction: dir,
+            },
+        ] {
+            assert!(
+                ray_triangle(&ray, &micro, Fix128::from_int(100)).is_none(),
+                "k {k}: the micro triangle 0.5 m off the ray was hit"
+            );
+            let h = m.raycast(&ray, Fix128::from_int(100)).expect("the wall");
+            assert_eq!(h.body_index, 0, "k {k}: hit triangle {}", h.body_index);
+            assert!(
+                (h.t.to_f64() - 10.0).abs() < 1e-3,
+                "k {k}: t {}",
+                h.t.to_f64()
+            );
+        }
+    }
+}
+
+#[test]
+fn rays_aimed_just_outside_a_micro_triangle_miss_it() {
+    // 辺 1e-6 m の三角形 (平面 z = 0) の外 0.5 l を、距離 1〜8 m の様々な方向から狙う
+    // 狙った点は三角形の外なので必ず外れ、重心を狙えば重心に当たる
+    let l = 1e-6_f64;
+    let fx = Fix128::from_f64;
+    let t = Triangle::new(
+        Vec3Fix::ZERO,
+        Vec3Fix::new(fx(l), Fix128::ZERO, Fix128::ZERO),
+        Vec3Fix::new(Fix128::ZERO, fx(l), Fix128::ZERO),
+    );
+    let outside = [(-0.5 * l, 0.25 * l), (0.25 * l, -0.5 * l), (l, l)];
+    let centroid = (l / 3.0, l / 3.0);
+    let mut r = Rng(7);
+    for _ in 0..200 {
+        // 上半球の方向 (z 成分は 0.2 以上)
+        let (a, b) = (
+            r.grid(-16, 16) as f64 / 256.0,
+            r.grid(-16, 16) as f64 / 256.0,
+        );
+        let dist = 1.0 + (r.grid(0, 7) as f64) / 16.0;
+        let n = (a * a + b * b + 1.0).sqrt();
+        let (dx, dy, dz) = (a / n, b / n, 1.0 / n);
+        let shoot = |px: f64, py: f64| {
+            let origin = Vec3Fix::new(fx(px + dx * dist), fx(py + dy * dist), fx(dz * dist));
+            let dir = Vec3Fix::new(fx(-dx), fx(-dy), fx(-dz));
+            ray_triangle(&Ray::new(origin, dir), &t, Fix128::from_int(20))
+        };
+        for (px, py) in outside {
+            assert!(
+                shoot(px, py).is_none(),
+                "aimed at ({px:e}, {py:e}) from {dist}"
+            );
+        }
+        // the hit lands on the triangle to within its own size: det and t's
+        // numerator are about l^2 |d_z| = 1e-12 with an absolute resolution of
+        // 2^-64, so t carries a relative error of about 2^-64 / (l^2 |d_z|),
+        // at most 8 m * 5.4e-20 / (1e-12 * 0.5) = 8.6e-7 < l here — the Q64.64
+        // floor for a micro triangle (the same with the earlier 1/det form)
+        let h = shoot(centroid.0, centroid.1).expect("centroid ray hits");
+        let (hx, hy, hz) = (h.point.x.to_f64(), h.point.y.to_f64(), h.point.z.to_f64());
+        let miss = ((hx - centroid.0).powi(2) + (hy - centroid.1).powi(2) + hz * hz).sqrt();
+        assert!(miss < l, "hit {miss:e} from the centroid");
+    }
 }
 
 #[test]
@@ -607,7 +702,8 @@ fn mesh_closest_point_equals_brute_force_for_nearby_queries() {
 #[test]
 // AUD-A-S4W2-010
 fn mesh_closest_point_is_correct_for_queries_far_from_the_mesh() {
-    // doc: "Closest point on mesh to a given point" に距離の制限は無い。実装は ±1000 の箱で候補を絞る
+    // doc: "Closest point on mesh to a given point" に距離の制限は無い (以前の実装は
+    // ±1000 の箱で候補を絞っていたので、それより遠い点では None になった)
     let mut r = Rng(5150);
     let m = rand_mesh(&mut r, 20, 10);
     for p in [
