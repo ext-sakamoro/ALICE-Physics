@@ -110,7 +110,6 @@ def item_spans(lines: list[str], name: str) -> list[tuple[int, int]]:
 # with the reason. Each entry must name a partial item that has no comment;
 # a stale entry fails.
 MARKER_EXEMPT: dict[str, str] = {
-    "COV-RIGID-068": "印を置く file を別の変更が書き換え中、その取り込み後に印を入れて外す",
     "COV-RIGID-080": "印を置く file を別の変更が書き換え中、その取り込み後に印を入れて外す",
     "COV-RIGID-083": "印を置く file を別の変更が書き換え中、その取り込み後に印を入れて外す",
 }

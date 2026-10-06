@@ -258,6 +258,7 @@ impl BodyCollider {
     /// ([`convex_sdf_contact`]). Against a flat field every one of these is exact;
     /// against a curved one a face or an edge can reach deeper than the points
     /// sampled.
+    // LIMITATION(COV-RIGID-068): against a curved one a face or an edge can reach deeper than the points sampled.
     pub(crate) fn sdf_contact(
         &self,
         position: Vec3Fix,
