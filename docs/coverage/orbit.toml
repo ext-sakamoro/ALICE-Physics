@@ -32,6 +32,18 @@
 #   - attitude determination and control (estimation, sensors): the sensing and
 #     control table
 #
+# Astrophysics axis (second wave, low priority for the crate's uses): collisionless
+# N-body, cosmology, stellar structure and accretion discs. Every row is missing.
+# The tree code and fast multipole sums stay in the particle table (COV-PART-029);
+# the direct softened sum and leapfrog rows above (COV-ORBIT-027, 028, 034) are
+# what a small-N benchmark would run on. Fix128 keeps 64 integer bits (up to
+# 2^63, about 9.2e18), so astronomical quantities in SI units are out of range:
+# the Sun's GM (about 1.327e20 m^3/s^2), one astronomical unit squared (about
+# 2.2e22 m^2), the solar mass (about 2.0e30 kg), one megaparsec (about 3.1e22 m)
+# (values to be checked against the source). The same limit is why the
+# geomagnetic dipole is missing in the geophysics table. These rows assume
+# dimensionless (N-body or Hubble) units; the rows say where that matters.
+#
 # status (exactly one of):
 #   implemented+oracle     implemented, and at least one non-ignored test checks
 #                          it against an independent reference
@@ -1146,5 +1158,195 @@ item = "eclipse, visibility and access windows (line of sight to a ground statio
 source = "Vallado, Fundamentals of Astrodynamics and Applications §5.3; Orekit EventDetector (EclipseDetector / ElevationDetector)"
 status = "missing"
 evidence = "src/ で eclipse / access の grep 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-110"
+axis = "astrophysics"
+item = "collisionless N-body of a stellar system (softened gravity at large N, two-body relaxation time, choice of softening)"
+source = "Binney-Tremaine, Galactic Dynamics ch.1, ch.3; Aarseth, Gravitational N-Body Simulations"
+status = "missing"
+evidence = "softening 付きの直接和は COV-ORBIT-027 / 028 (I+O) だが O(N^2) で、無衝突系に要る N を回す長距離和 (tree code) は粒子の表 COV-PART-029 (missing) 緩和時間の診断も無い Fix128 の整数部は 2^63 ≈ 9.2e18 で止まるので SI では書けない量がある (天の川の質量 ≈ 1e42 kg、1 kpc ≈ 3.1e19 m、参照値要確認) ⇒ 無次元化 (G = 1 の N 体単位) が前提"
+oracle_candidate = "Plummer 球の平衡 (行 COV-ORBIT-124)"
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-111"
+axis = "astrophysics"
+item = "particle-mesh gravity: mass assignment (CIC / TSC), FFT Poisson solve on a periodic mesh, force interpolation, and the TreePM split"
+source = "Hockney-Eastwood, Computer Simulation Using Particles; Springel 2005 (GADGET-2)"
+status = "missing"
+evidence = "FFT は数値の表 COV-NUM-093 / 094 (missing)、静電の mesh Ewald COV-PART-027 (missing) が同じ算法の電荷版"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-112"
+axis = "astrophysics"
+item = "cosmological N-body in comoving coordinates (expansion factor, peculiar velocities, Zel'dovich initial conditions)"
+source = "Peebles, Large-Scale Structure of the Universe; Efstathiou et al. 1985"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 Fix128 の整数部は 2^63 ≈ 9.2e18 で止まるので SI では書けない量がある (1 Mpc ≈ 3.1e22 m) ⇒ 共動座標の無次元化が前提"
+oracle_candidate = "Zel'dovich の pancake (行 COV-ORBIT-127)"
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-113"
+axis = "astrophysics"
+item = "Friedmann equations: expansion factor a(t) for matter, radiation, curvature and a cosmological constant; Hubble parameter H(z)"
+source = "Peacock, Cosmological Physics ch.3; Weinberg, Cosmology ch.1"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 SI の H0 ≈ 2.2e-18 1/s は Fix128 の分解能 2^-64 ≈ 5.4e-20 に対して有効桁が 2 桁程度 (桁の計算) ⇒ H0 を単位にした無次元の時間が前提"
+oracle_candidate = "Einstein-de Sitter の a ∝ t^(2/3) (行 COV-ORBIT-126)"
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-114"
+axis = "astrophysics"
+item = "cosmological distances and times (comoving, luminosity and angular-diameter distance, lookback time, age)"
+source = "Hogg 1999 (distance measures); Peacock ch.3"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 Fix128 の整数部は 2^63 ≈ 9.2e18 で止まるので SI では書けない量がある (1 Gpc ≈ 3.1e25 m)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-115"
+axis = "astrophysics"
+item = "linear growth of density perturbations (growth factor D(a)) (推測、優先度低)"
+source = "Peebles 1980; Heath 1977"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-116"
+axis = "astrophysics"
+item = "Lane-Emden equation of polytropes (closed forms for n = 0, 1, 5; numerical for other n) and the polytropic mass-radius relation"
+source = "Chandrasekhar, An Introduction to the Study of Stellar Structure ch.4; Kippenhahn-Weigert-Weiss ch.19"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 方程式は無次元で Fix128 の範囲に収まるが、物理量に戻すと太陽質量 ≈ 2.0e30 kg が 2^63 を超える (参照値要確認) 汎用の ODE の口は COV-NUM-045 (missing)"
+oracle_candidate = "n = 1 の第 1 零点 xi_1 = pi (行 COV-ORBIT-125)"
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-117"
+axis = "astrophysics"
+item = "stellar structure equations (hydrostatic equilibrium, mass continuity, energy generation, radiative and convective transport with an opacity law)"
+source = "Kippenhahn-Weigert-Weiss, Stellar Structure and Evolution ch.1-10; MESA instrument papers"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 Fix128 の整数部は 2^63 ≈ 9.2e18 で止まるので SI では書けない量がある (太陽光度 ≈ 3.8e26 W、太陽質量、参照値要確認) 原子核の反応率は原子核の表の行"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-118"
+axis = "astrophysics"
+item = "virial theorem, dynamical and Kelvin-Helmholtz timescales, Jeans mass and length"
+source = "Binney-Tremaine ch.4; Kippenhahn-Weigert-Weiss ch.3"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 Fix128 の整数部は 2^63 ≈ 9.2e18 で止まるので SI では書けない量がある (太陽の GM ≈ 1.327e20 m^3/s^2、参照値要確認)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-119"
+axis = "astrophysics"
+item = "degenerate stars: white-dwarf mass-radius relation and the Chandrasekhar limit"
+source = "Chandrasekhar 1931; Shapiro-Teukolsky, Black Holes, White Dwarfs and Neutron Stars ch.3"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 縮退 Fermi 気体は量子の表 COV-QUANTUM-111 (missing) Fix128 の整数部は 2^63 ≈ 9.2e18 で止まるので SI では書けない量がある"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-120"
+axis = "astrophysics"
+item = "thin accretion disc: Shakura-Sunyaev alpha-disc steady structure (T proportional to r^(-3/4), disc luminosity) and the Eddington luminosity"
+source = "Shakura-Sunyaev 1973; Frank-King-Raine, Accretion Power in Astrophysics ch.5"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 Fix128 の整数部は 2^63 ≈ 9.2e18 で止まるので SI では書けない量がある"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-121"
+axis = "astrophysics"
+item = "viscous evolution of an accretion disc (spreading ring, Lynden-Bell-Pringle Green's function)"
+source = "Lynden-Bell-Pringle 1974; Pringle 1981"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件"
+oracle_candidate = "行 COV-ORBIT-128"
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-122"
+axis = "astrophysics"
+item = "spherical accretion (Bondi) and the sonic point"
+source = "Bondi 1952; Frank-King-Raine ch.2"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-123"
+axis = "astrophysics"
+item = "galactic potentials and rotation curves (Plummer, Hernquist, NFW, exponential disc) and the epicyclic frequency"
+source = "Binney-Tremaine ch.2-3; Navarro-Frenk-White 1997"
+status = "missing"
+evidence = "恒星・銀河・宇宙論を扱う module は無い grep: lane_emden / friedmann / cosmolog / accretion / plummer_sphere / galax は src/ で 0 件 天体の表の重力は点質量・softening・一様球 (COV-ORBIT-093 missing) まで"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-124"
+axis = "benchmark"
+item = "Plummer sphere in virial equilibrium stays stationary (Lagrangian radii, virial ratio)"
+source = "Plummer 1911; Aarseth-Hénon-Wielen 1974 (initial conditions)"
+status = "missing"
+evidence = "初期条件の生成と診断が無い 小さい N なら既存の直接和 COV-ORBIT-027 / 028 と leapfrog COV-ORBIT-034 で回せる (G = 1 の N 体単位)"
+oracle_candidate = "virial 比 2T / |W| = 1 の保持"
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-125"
+axis = "benchmark"
+item = "Lane-Emden first zeros: xi_1 = sqrt(6) for n = 0 and pi for n = 1"
+source = "Chandrasekhar ch.4"
+status = "missing"
+evidence = "Lane-Emden が無い (行 COV-ORBIT-116)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-126"
+axis = "benchmark"
+item = "Einstein-de Sitter expansion a proportional to t^(2/3) and the age of a flat Lambda-CDM universe (参照値要確認)"
+source = "Peacock ch.3"
+status = "missing"
+evidence = "Friedmann 方程式が無い (行 COV-ORBIT-113)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-127"
+axis = "benchmark"
+item = "Zel'dovich pancake collapse in a cosmological particle-mesh code"
+source = "Zel'dovich 1970; Efstathiou et al. 1985"
+status = "missing"
+evidence = "宇宙論の N 体が無い (行 COV-ORBIT-112)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-ORBIT-128"
+axis = "benchmark"
+item = "spreading ring of a viscous disc against the Green's-function solution"
+source = "Lynden-Bell-Pringle 1974"
+status = "missing"
+evidence = "円盤の粘性進化が無い (行 COV-ORBIT-121)"
 oracle_candidate = ""
 limitation = ""

@@ -1,0 +1,519 @@
+# Manufacturing processes other than additive manufacturing (MFG) coverage of
+# ALICE-Physics, against an external reference frame.
+#
+# What this table is: every capability that the standard references for casting,
+# welding, injection moulding, metal forming and machining expect of a process
+# simulation, one [[item]] per capability, with what the crate has today. The
+# reference frame: Campbell, Complete Casting Handbook; Stefanescu, Science and
+# Engineering of Casting Solidification; Kou, Welding Metallurgy; Radaj, Welding
+# Residual Stresses and Distortion; Tadmor-Gogos, Principles of Polymer
+# Processing; Marciniak-Duncan-Hu, Mechanics of Sheet Metal Forming;
+# Hosford-Caddell, Metal Forming; Dieter, Mechanical Metallurgy; Shaw, Metal
+# Cutting Principles; Altintas, Manufacturing Automation; Kalpakjian-Schmid,
+# Manufacturing Engineering and Technology; the feature lists of MAGMASOFT,
+# ProCAST, Moldflow, AutoForm and Simufact; and standard benchmarks (Rosenthal
+# t8/5, centre-gated disc filling, Merchant forces, Taylor tool life, NUMISHEET).
+# The axes and items come from that frame, not from the modules that exist. The
+# rows are written by hand.
+#
+# Why a separate table and not an axis of the additive-manufacturing table: that
+# table and its ids (COV-AM-NNN) are scoped to printing (orientation, supports,
+# slicer, layer adhesion), and the processes here have their own references
+# and benchmarks. The process physics the two share is cited, not repeated.
+#
+# Boundary with the other tables (one capability goes in one table only):
+#   - heat solvers, the moving point / line heat source (Rosenthal,
+#     COV-THERM-045), the solidification-time closed forms (Chvorinov,
+#     COV-THERM-077), Joule and frictional heating (COV-THERM-042, 044) and
+#     phase change: the heat-transfer table. Here only how a process uses them.
+#   - free-surface flow and non-Newtonian viscosity: the multiphase and
+#     materials tables (COV-MULTIPHASE-001, COV-MAT-096, 099).
+#   - constitutive laws and data (Hill and Barlat yield, Johnson-Cook, sheet
+#     data): the materials table (COV-MAT-012, 066, 067, 075).
+#   - weld and bolt strength checks of a finished joint: the structural table
+#     (COV-STRUCT-122).
+#   - inherent strain and melt-pool cooling of printed metal: the
+#     additive-manufacturing table (COV-AM-034, 039).
+#   - cutting of soft bodies and the cutting force from a separation criterion:
+#     the soft-body and fracture tables (COV-SOFT-076, COV-FRACT-095).
+#
+# status (exactly one of):
+#   implemented+oracle     implemented, and at least one non-ignored test checks
+#                          it against an independent reference
+#   implemented-no-oracle  implemented, no such test
+#   partial                implemented with a restriction that the source states;
+#                          `limitation` quotes it, and the source carries a
+#                          `LIMITATION(<id>)` comment at that place
+#   missing                not implemented
+#   out-of-scope           not a capability of this field (reason in `evidence`)
+#
+# This axis is separate from the test ignore reasons (`known defect: ...`,
+# `src gap: ...`, `diagnostic`, `runtime`). A capability that exists with a
+# recorded defect keeps its status and cites the known-defect test in
+# `evidence`; it is not `missing`.
+#
+# keys: id (COV-MFG-NNN) / axis / item / source (book, chapter, paper or
+# reference-implementation feature; no quoted text) / status / evidence
+# (`src/...rs::symbol`, `tests/...rs::test_fn`) / oracle_candidate / limitation
+# (verbatim quote of the source, required for `partial`).
+#
+# Reference values marked "参照値要確認" are to be checked against the original
+# publication before any test uses them. Lines marked "(推測)" were judged from
+# a search that found nothing and are to be confirmed.
+#
+# Search notes: "cast" matches type casts and ray / shape casts; "weld" matches
+# the weld (fixed) joint of the rigid-body solver; "cutting" matches soft-body
+# cutting; "forming" matches the word "performing". None of these is a
+# manufacturing capability.
+#
+# Checked by scripts/coverage_check.py (tests: scripts/test_coverage_check.py).
+
+[[item]]
+id = "COV-MFG-001"
+axis = "casting"
+item = "feeder (riser) sizing by the modulus method and feeding distance"
+source = "Campbell, Complete Casting Handbook ch.12; Wlodawer, Directional Solidification of Steel Castings"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 凝固時間の Chvorinov 則は熱の表 COV-THERM-077 (missing) が持ち、本行はそれを使う設計側"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-002"
+axis = "casting"
+item = "gating-system design (Bernoulli velocities, choke area, pouring time)"
+source = "Campbell ch.12; Kalpakjian-Schmid, Manufacturing Engineering and Technology ch.10"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "Torricelli の流速と注湯時間の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-003"
+axis = "casting"
+item = "mould filling as free-surface flow with heat loss and solidification (cold shuts, misruns)"
+source = "Hirt-Nichols 1981 (VOF); MAGMASOFT and ProCAST feature lists"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 自由表面流は多相の表 (VOF COV-MULTIPHASE-001 partial)、凝固は熱の表 (COV-THERM-069 partial) で、両者を組む口が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-004"
+axis = "casting"
+item = "heat transfer between casting and mould (interfacial heat-transfer coefficient, sand and permanent moulds, air gap)"
+source = "Campbell ch.4; Stefanescu, Science and Engineering of Casting Solidification ch.4"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 接触の熱 conductance は熱の表 COV-THERM-088 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-005"
+axis = "casting"
+item = "shrinkage porosity prediction (Niyama criterion) and hot tearing"
+source = "Niyama et al. 1982; Campbell ch.7"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-006"
+axis = "casting"
+item = "solidification microstructure from the thermal history (secondary dendrite arm spacing from cooling rate, columnar-to-equiaxed transition)"
+source = "Kurz-Fisher, Fundamentals of Solidification ch.4; Hunt 1984"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 溶融池の冷却速度は積層造形の表 COV-AM-034 (missing) と同じ量"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-007"
+axis = "casting"
+item = "residual stress and distortion of castings during cooling (thermo-elastoplastic)"
+source = "Stefanescu ch.12"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 熱と塑性の連成は熱の表 COV-THERM-084 (I+O、塑性仕事の発熱と温度軟化) にあるが、冷却の過程の歪みを解く経路は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-008"
+axis = "welding"
+item = "volumetric weld heat source (Goldak double ellipsoid) with arc efficiency and heat input per length"
+source = "Goldak-Chakravarti-Bibby 1984; Kou, Welding Metallurgy ch.2"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 点・線の移動熱源 (Rosenthal) は熱の表 COV-THERM-045 (missing) が持つ 本行は体積の熱源 model"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-009"
+axis = "welding"
+item = "cooling time t8/5, heat-affected zone and carbon-equivalent hardness estimate"
+source = "Kou ch.2, ch.11; EN 1011-2"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "Rosenthal 厚板の t8/5 閉形式 (行 COV-MFG-039)"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-010"
+axis = "welding"
+item = "welding residual stress and distortion (thermo-elastoplastic analysis, inherent strain, shrinkage force)"
+source = "Radaj, Welding Residual Stresses and Distortion; Ueda-Murakawa (inherent strain)"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 固有ひずみ法は積層造形の表 COV-AM-039 (missing) と同じ方法 J2 塑性の FE は COV-FEM-033 (I+O) にあるが移動熱源と温度依存の材料が無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-011"
+axis = "welding"
+item = "weld-pool fluid flow (Marangoni and electromagnetic forces) (推測、優先度低)"
+source = "Kou ch.4; DebRoy-David 1995"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-012"
+axis = "welding"
+item = "resistance spot welding (contact resistance, Joule heating, nugget growth)"
+source = "Zhang-Senkara, Resistance Welding ch.2"
+status = "missing"
+evidence = "製造の過程を扱う module は無い Joule 発熱は熱の表 COV-THERM-042 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-013"
+axis = "welding"
+item = "friction welding and friction-stir welding (frictional and plastic heat, material flow around the tool)"
+source = "Mishra-Ma 2005; Schmidt-Hattel 2005"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 塑性仕事の発熱は COV-THERM-041 (I+O)、滑りの摩擦発熱は COV-THERM-044 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-014"
+axis = "injection-moulding"
+item = "cavity filling of a thin part as generalised Newtonian Hele-Shaw flow with a moving melt front"
+source = "Tadmor-Gogos, Principles of Polymer Processing ch.13; Hieber-Shen 1980; Moldflow feature list"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 溶融樹脂の粘度は材料の表 (Cross COV-MAT-096、WLF COV-MAT-099、いずれも missing) を使う"
+oracle_candidate = "中心 gate の円板の放射流の圧力 (行 COV-MFG-040)"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-015"
+axis = "injection-moulding"
+item = "packing and holding with a pvT equation of state of the polymer (Tait)"
+source = "Tadmor-Gogos ch.13; Zoller-Walsh, Standard Pressure-Volume-Temperature Data for Polymers"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-016"
+axis = "injection-moulding"
+item = "cooling time of a moulded part (slab closed form, mould-temperature control)"
+source = "Tadmor-Gogos ch.13; Menges-Michaeli-Mohren, How to Make Injection Molds ch.8"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "平板の冷却時間の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-017"
+axis = "injection-moulding"
+item = "shrinkage and warpage from pvT, orientation and differential cooling"
+source = "Fischer, Handbook of Molded Part Shrinkage and Warpage"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 積層造形の反りの簡易判定 COV-AM-035 (partial) は印刷の層の応力で、成形品の pvT 収縮ではない"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-018"
+axis = "injection-moulding"
+item = "fibre orientation in filled polymers (Folgar-Tucker, Advani-Tucker tensors)"
+source = "Advani-Tucker 1987; Folgar-Tucker 1984"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-019"
+axis = "injection-moulding"
+item = "clamp force from projected area and cavity pressure, and machine-size estimate"
+source = "Rosato, Injection Molding Handbook ch.3"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "投影面積 × 型内圧の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-020"
+axis = "injection-moulding"
+item = "weld lines and air traps located from the meeting flow fronts (推測)"
+source = "Tadmor-Gogos ch.13"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-021"
+axis = "forming"
+item = "sheet bending: bend allowance, minimum bend radius and springback (closed form)"
+source = "Marciniak-Duncan-Hu, Mechanics of Sheet Metal Forming ch.6; Kalpakjian-Schmid ch.16"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 板金の材料 data は材料の表 COV-MAT-012 (I-no-O、SUS304 / A5052) にある"
+oracle_candidate = "弾完全塑性の曲げの springback 比の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-022"
+axis = "forming"
+item = "deep drawing: limiting drawing ratio, drawing force and blank-holder force"
+source = "Marciniak-Duncan-Hu ch.5; Hosford-Caddell, Metal Forming ch.14"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-023"
+axis = "forming"
+item = "forming limit diagram and strain-path dependence (Keeler-Brazier curve, Marciniak-Kuczynski analysis)"
+source = "Marciniak-Kuczynski 1967; Hosford-Caddell ch.15"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 板の異方性の降伏は材料の表 (Hill 1948 COV-MAT-066 I+O、Barlat COV-MAT-067 missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-024"
+axis = "forming"
+item = "incremental finite-element simulation of sheet forming (shell elements, tool contact, explicit time stepping)"
+source = "Wagoner-Chenot, Metal Forming Analysis; AutoForm and LS-DYNA forming feature lists"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 固体 FE の表で shell 要素 COV-FEM-005 と剛体工具との接触 COV-FEM-099 が missing"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-025"
+axis = "forming"
+item = "open-die forging and upsetting force by the slab method (friction hill)"
+source = "Hosford-Caddell ch.6; Dieter, Mechanical Metallurgy ch.19"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "円柱の据え込みの平均圧力の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-026"
+axis = "forming"
+item = "flat rolling: roll force and torque (Orowan, Sims, Bland-Ford), bite condition"
+source = "Roberts, Cold Rolling of Steel; Dieter ch.17"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-027"
+axis = "forming"
+item = "extrusion and wire drawing: pressure and drawing stress (ideal work, friction and redundant work)"
+source = "Hosford-Caddell ch.7-8; Dieter ch.20"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "理想仕事の押し出し圧力 Y ln R の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-028"
+axis = "forming"
+item = "hot forming flow stress against strain rate and temperature (Zener-Hollomon)"
+source = "Sellars-Tegart 1966; Dieter ch.15"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 速度・温度依存の流動応力は材料の表 (Johnson-Cook COV-MAT-075、速度依存 COV-MAT-076、いずれも missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-029"
+axis = "machining"
+item = "orthogonal cutting mechanics (Merchant shear-angle relation, cutting and thrust forces, specific cutting energy, material removal rate)"
+source = "Shaw, Metal Cutting Principles ch.3; Merchant 1945; Altintas, Manufacturing Automation ch.2"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 破壊の表の切断力 COV-FRACT-095 (missing) は分離の判定からの力で、本行は切りくずの剪断面の力学"
+oracle_candidate = "Merchant の切削力 (行 COV-MFG-041)"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-030"
+axis = "machining"
+item = "mechanistic cutting-force models for turning, milling and drilling (cutting-force coefficients, instantaneous chip thickness)"
+source = "Altintas ch.2"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-031"
+axis = "machining"
+item = "tool life (Taylor equation) and tool wear (flank wear, Usui wear rate)"
+source = "Taylor 1907; Usui-Shirakashi-Kitagawa 1984"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 摩耗の行は破壊の表 (浸食・摩耗の軸) が持つが工具の行は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-032"
+axis = "machining"
+item = "cutting temperature (heat from the shear plane and the tool-chip interface, partition to chip, tool and workpiece)"
+source = "Komanduri-Hou 2000; Shaw ch.12"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-033"
+axis = "machining"
+item = "regenerative chatter and stability lobes"
+source = "Altintas ch.3; Tlusty 1963"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "1 自由度の安定限界の閉形式"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-034"
+axis = "machining"
+item = "surface roughness from feed and tool nose radius (R_a about f^2 / (32 r))"
+source = "Shaw ch.20; Kalpakjian-Schmid ch.21"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = "閉形式そのもの"
+limitation = ""
+
+[[item]]
+id = "COV-MFG-035"
+axis = "machining"
+item = "chip-formation simulation with damage and thermal softening (FE or particle methods)"
+source = "Arrazola et al. 2013 (review)"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 損傷の連続体は破壊の表 (damage 軸、missing が多い)、Johnson-Cook は材料の表 COV-MAT-075 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-036"
+axis = "machining"
+item = "grinding and abrasive processes (specific grinding energy, grit chip thickness) (推測、優先度低)"
+source = "Malkin-Guo, Grinding Technology"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-037"
+axis = "process-chain"
+item = "process-induced state handed to the part analysis (residual stress, porosity, microstructure and thickness mapped onto the part)"
+source = "Simufact and ESI process-chain feature lists"
+status = "missing"
+evidence = "製造の過程を扱う module は無い 積層造形の一括検査 COV-AM-081 (I+O) は印刷の判定だけを束ね、過程の状態を部品の強度解析に渡す経路は無い 場の受け渡しの枠組みは COV-COUPLE-121 (missing)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-038"
+axis = "process-chain"
+item = "process selection and cost estimate per part (cycle time, material use, tooling) (推測、優先度低)"
+source = "Ashby, Materials Selection in Mechanical Design ch.18; Boothroyd-Dewhurst-Knight"
+status = "missing"
+evidence = "製造の過程を扱う module は無い"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-039"
+axis = "benchmark"
+item = "t8/5 cooling time of a thick-plate weld from the Rosenthal solution against EN 1011-2 (参照値要確認)"
+source = "EN 1011-2 annex D"
+status = "missing"
+evidence = "溶接の熱が無い (行 COV-MFG-009)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-040"
+axis = "benchmark"
+item = "pressure of radial Hele-Shaw filling of a centre-gated disc (Newtonian closed form)"
+source = "Tadmor-Gogos ch.13"
+status = "missing"
+evidence = "充填が無い (行 COV-MFG-014)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-041"
+axis = "benchmark"
+item = "Merchant cutting and thrust forces for given shear angle, rake angle and friction"
+source = "Merchant 1945"
+status = "missing"
+evidence = "切削の力学が無い (行 COV-MFG-029)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-042"
+axis = "benchmark"
+item = "Taylor tool-life exponent of a published turning data set (参照値要確認)"
+source = "Taylor 1907; Machining Data Handbook"
+status = "missing"
+evidence = "工具寿命が無い (行 COV-MFG-031)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-043"
+axis = "benchmark"
+item = "NUMISHEET forming benchmarks (cup drawing earing, S-rail springback, 参照値要確認)"
+source = "NUMISHEET 1993 / 2005 benchmark reports"
+status = "missing"
+evidence = "板成形の FE が無い (行 COV-MFG-024)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-044"
+axis = "benchmark"
+item = "roll force of cold flat rolling against the Bland-Ford / Sims solution (参照値要確認)"
+source = "Roberts, Cold Rolling of Steel"
+status = "missing"
+evidence = "圧延が無い (行 COV-MFG-026)"
+oracle_candidate = ""
+limitation = ""
+
+[[item]]
+id = "COV-MFG-045"
+axis = "benchmark"
+item = "Chvorinov constant of a sand casting against measured solidification times (参照値要確認)"
+source = "Campbell ch.12"
+status = "missing"
+evidence = "凝固時間の閉形式は熱の表 COV-THERM-077 (missing)、鋳造の過程が無い"
+oracle_candidate = ""
+limitation = ""

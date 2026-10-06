@@ -11,33 +11,34 @@ crate has today.
 | `docs/coverage/atmos.toml` | 144 | 0 | 1 | 0 | 143 | 0 |
 | `docs/coverage/bio.toml` | 135 | 0 | 4 | 0 | 131 | 0 |
 | `docs/coverage/cfd.toml` | 117 | 39 | 2 | 6 | 70 | 0 |
-| `docs/coverage/chem.toml` | 112 | 7 | 2 | 0 | 103 | 0 |
+| `docs/coverage/chem.toml` | 132 | 7 | 2 | 0 | 123 | 0 |
 | `docs/coverage/couple.toml` | 121 | 10 | 3 | 4 | 104 | 0 |
 | `docs/coverage/em.toml` | 111 | 20 | 2 | 5 | 84 | 0 |
 | `docs/coverage/engine.toml` | 145 | 63 | 9 | 6 | 67 | 0 |
-| `docs/coverage/env.toml` | 116 | 20 | 3 | 2 | 91 | 0 |
+| `docs/coverage/env.toml` | 142 | 20 | 3 | 2 | 117 | 0 |
 | `docs/coverage/fem.toml` | 133 | 36 | 0 | 6 | 88 | 3 |
 | `docs/coverage/fract.toml` | 106 | 15 | 2 | 4 | 85 | 0 |
 | `docs/coverage/geo.toml` | 125 | 0 | 2 | 0 | 123 | 0 |
 | `docs/coverage/geotech.toml` | 89 | 0 | 2 | 0 | 87 | 0 |
-| `docs/coverage/mat.toml` | 121 | 23 | 13 | 5 | 80 | 0 |
+| `docs/coverage/mat.toml` | 136 | 23 | 13 | 5 | 95 | 0 |
 | `docs/coverage/mbd.toml` | 139 | 36 | 2 | 13 | 88 | 0 |
+| `docs/coverage/mfg.toml` | 45 | 0 | 0 | 0 | 45 | 0 |
 | `docs/coverage/multiphase.toml` | 86 | 11 | 2 | 3 | 70 | 0 |
 | `docs/coverage/nuclear.toml` | 123 | 0 | 1 | 0 | 122 | 0 |
-| `docs/coverage/num.toml` | 101 | 22 | 0 | 5 | 73 | 1 |
+| `docs/coverage/num.toml` | 120 | 26 | 0 | 5 | 88 | 1 |
 | `docs/coverage/opt.toml` | 120 | 1 | 0 | 0 | 118 | 1 |
 | `docs/coverage/optics.toml` | 119 | 0 | 0 | 0 | 119 | 0 |
-| `docs/coverage/orbit.toml` | 109 | 23 | 4 | 3 | 79 | 0 |
+| `docs/coverage/orbit.toml` | 128 | 23 | 4 | 3 | 98 | 0 |
 | `docs/coverage/part.toml` | 120 | 26 | 2 | 3 | 89 | 0 |
 | `docs/coverage/plasma.toml` | 143 | 0 | 4 | 0 | 139 | 0 |
-| `docs/coverage/quantum.toml` | 135 | 0 | 0 | 0 | 135 | 0 |
+| `docs/coverage/quantum.toml` | 163 | 0 | 0 | 0 | 163 | 0 |
 | `docs/coverage/rel.toml` | 112 | 0 | 0 | 0 | 112 | 0 |
 | `docs/coverage/rigid.toml` | 119 | 77 | 4 | 8 | 29 | 1 |
 | `docs/coverage/sense.toml` | 92 | 19 | 2 | 2 | 69 | 0 |
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
-| `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 3610 | 537 | 73 | 104 | 2890 | 6 |
+| `docs/coverage/therm.toml` | 123 | 17 | 0 | 3 | 103 | 0 |
+| **total** | 3803 | 541 | 73 | 104 | 3079 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -133,7 +134,8 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| benchmark | 11 | 1 | 1 | 0 | 9 | 0 |
+| battery | 16 | 0 | 0 | 0 | 16 | 0 |
+| benchmark | 15 | 1 | 1 | 0 | 13 | 0 |
 | combustion | 19 | 2 | 0 | 0 | 17 | 0 |
 | electrochemistry | 6 | 0 | 0 | 0 | 6 | 0 |
 | equilibrium | 6 | 0 | 0 | 0 | 6 | 0 |
@@ -215,8 +217,9 @@ crate has today.
 | aerodynamics | 12 | 5 | 0 | 0 | 7 | 0 |
 | atmosphere | 13 | 4 | 1 | 0 | 8 | 0 |
 | atmospheric-dynamics | 5 | 0 | 0 | 0 | 5 | 0 |
-| benchmark | 9 | 3 | 1 | 0 | 5 | 0 |
+| benchmark | 14 | 3 | 1 | 0 | 10 | 0 |
 | boundary-layer | 6 | 0 | 0 | 0 | 6 | 0 |
+| cryosphere | 21 | 0 | 0 | 0 | 21 | 0 |
 | environmental-load | 5 | 0 | 0 | 1 | 4 | 0 |
 | moist-air | 7 | 0 | 0 | 0 | 7 | 0 |
 | ocean-coastal | 5 | 0 | 0 | 0 | 5 | 0 |
@@ -303,7 +306,7 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| benchmark | 7 | 1 | 0 | 0 | 6 | 0 |
+| benchmark | 11 | 1 | 0 | 0 | 10 | 0 |
 | contact material | 12 | 3 | 2 | 0 | 7 | 0 |
 | damage-fracture data | 3 | 0 | 0 | 0 | 3 | 0 |
 | data | 16 | 0 | 6 | 0 | 10 | 0 |
@@ -311,6 +314,7 @@ crate has today.
 | elasticity | 12 | 3 | 1 | 1 | 7 | 0 |
 | electromagnetic data | 4 | 0 | 1 | 0 | 3 | 0 |
 | hyperelasticity | 14 | 6 | 1 | 0 | 7 | 0 |
+| lubrication | 11 | 0 | 0 | 0 | 11 | 0 |
 | plasticity | 16 | 5 | 0 | 2 | 9 | 0 |
 | rheology | 12 | 3 | 0 | 2 | 7 | 0 |
 | thermal data | 6 | 0 | 2 | 0 | 4 | 0 |
@@ -337,6 +341,18 @@ crate has today.
 | suspension | 7 | 2 | 0 | 1 | 4 | 0 |
 | tyre | 14 | 3 | 0 | 2 | 9 | 0 |
 | vehicle | 8 | 2 | 0 | 1 | 5 | 0 |
+
+## `docs/coverage/mfg.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| benchmark | 7 | 0 | 0 | 0 | 7 | 0 |
+| casting | 7 | 0 | 0 | 0 | 7 | 0 |
+| forming | 8 | 0 | 0 | 0 | 8 | 0 |
+| injection-moulding | 7 | 0 | 0 | 0 | 7 | 0 |
+| machining | 8 | 0 | 0 | 0 | 8 | 0 |
+| process-chain | 2 | 0 | 0 | 0 | 2 | 0 |
+| welding | 6 | 0 | 0 | 0 | 6 | 0 |
 
 ## `docs/coverage/multiphase.toml`
 
@@ -377,13 +393,14 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| benchmark | 9 | 3 | 0 | 0 | 6 | 0 |
+| benchmark | 10 | 3 | 0 | 0 | 7 | 0 |
 | coupling | 7 | 3 | 0 | 0 | 4 | 0 |
 | distributed | 6 | 0 | 0 | 0 | 6 | 0 |
 | eigen | 9 | 2 | 0 | 0 | 7 | 0 |
 | krylov | 10 | 4 | 0 | 1 | 5 | 0 |
 | linear_direct | 7 | 1 | 0 | 0 | 6 | 0 |
 | matrix_function | 2 | 0 | 0 | 0 | 2 | 0 |
+| mesh | 18 | 4 | 0 | 0 | 14 | 0 |
 | mesh_adaptivity | 1 | 0 | 0 | 0 | 1 | 0 |
 | nonlinear | 9 | 0 | 0 | 0 | 9 | 0 |
 | preconditioner | 10 | 2 | 0 | 1 | 7 | 0 |
@@ -437,8 +454,9 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
+| astrophysics | 14 | 0 | 0 | 0 | 14 | 0 |
 | attitude | 6 | 0 | 0 | 0 | 6 | 0 |
-| benchmark | 13 | 3 | 0 | 0 | 10 | 0 |
+| benchmark | 18 | 3 | 0 | 0 | 15 | 0 |
 | elements | 7 | 2 | 0 | 1 | 4 | 0 |
 | frames-time | 7 | 0 | 0 | 0 | 7 | 0 |
 | maneuver | 9 | 0 | 1 | 0 | 8 | 0 |
@@ -497,7 +515,7 @@ crate has today.
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | approximation | 8 | 0 | 0 | 0 | 8 | 0 |
-| benchmark | 14 | 0 | 0 | 0 | 14 | 0 |
+| benchmark | 20 | 0 | 0 | 0 | 20 | 0 |
 | closed-form | 16 | 0 | 0 | 0 | 16 | 0 |
 | foundation | 8 | 0 | 0 | 0 | 8 | 0 |
 | many-body | 14 | 0 | 0 | 0 | 14 | 0 |
@@ -505,6 +523,7 @@ crate has today.
 | quantum-information | 12 | 0 | 0 | 0 | 12 | 0 |
 | scattering | 8 | 0 | 0 | 0 | 8 | 0 |
 | semiclassical | 7 | 0 | 0 | 0 | 7 | 0 |
+| solid-state | 22 | 0 | 0 | 0 | 22 | 0 |
 | spin | 11 | 0 | 0 | 0 | 11 | 0 |
 | stationary | 9 | 0 | 0 | 0 | 9 | 0 |
 | statistics | 8 | 0 | 0 | 0 | 8 | 0 |
@@ -596,7 +615,7 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| benchmark | 11 | 2 | 0 | 0 | 9 | 0 |
+| benchmark | 15 | 2 | 0 | 0 | 13 | 0 |
 | boundary condition | 10 | 1 | 0 | 0 | 9 | 0 |
 | closed-form conduction | 10 | 1 | 0 | 0 | 9 | 0 |
 | conduction | 18 | 8 | 0 | 1 | 9 | 0 |
@@ -607,3 +626,4 @@ crate has today.
 | output | 3 | 1 | 0 | 0 | 2 | 0 |
 | phase change | 9 | 0 | 0 | 1 | 8 | 0 |
 | radiation | 10 | 0 | 0 | 0 | 10 | 0 |
+| thermodynamics | 17 | 0 | 0 | 0 | 17 | 0 |
