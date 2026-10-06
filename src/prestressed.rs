@@ -92,10 +92,15 @@ pub fn bolt_peak_tension(preload_n: Fix128, bolt_fraction: Fix128, p_ext_n: Fix1
 /// Below `P_sep` the joint stays compressed (bolt fully preloaded plus a
 /// small increment). Above, the members no longer contact — the bolt must
 /// carry the full external load and cyclic fatigue rises sharply.
+///
+/// `C >= 1` (the bolt takes the whole external load, or a fraction outside
+/// the `[0, 1]` that `bolt_load_fraction` returns) never unloads the members,
+/// so the joint never separates: the saturating sentinel
+/// `Fix128::from_int(i64::MAX >> 8)`, never a negative load.
 #[must_use]
 pub fn separation_load_n(preload_n: Fix128, bolt_fraction: Fix128) -> Fix128 {
     let one_minus_c = Fix128::ONE - bolt_fraction;
-    if one_minus_c.is_zero() {
+    if one_minus_c <= Fix128::ZERO {
         return Fix128::from_int(i64::MAX >> 8);
     }
     preload_n / one_minus_c
