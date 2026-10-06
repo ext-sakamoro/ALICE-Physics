@@ -237,10 +237,9 @@ jobs:
         run: bash scripts/run_js_binding_tests.sh
       # every feature that applies in a browser, built for the browser target
       # (parallel / python / ffi do not apply; simd has no wasm path and falls
-      # back to scalar; replay is excluded: alice-db stores to files through
-      # fs2 / mmap, which do not exist in a browser)
+      # back to scalar; replay records to memory there)
       - name: Build for wasm32-unknown-unknown with every browser feature
-        run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
+        run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,replay,analytics,gpu-solver-bridge,simd"
 
   wasm-test:
     name: Test (wasm32-wasip1 via wasmtime)

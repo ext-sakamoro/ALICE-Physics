@@ -136,7 +136,7 @@ cargo test --test determinism_golden_contacts --target wasm32-wasip1 --no-run
 
 step "wasm32-unknown-unknown build with every browser feature (CI job js-binding)"
 rustup target list --installed | grep -q wasm32-unknown-unknown || rustup target add wasm32-unknown-unknown
-cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
+cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,replay,analytics,gpu-solver-bridge,simd"
 
 step "rustdoc -D warnings (default + docs.rs feature set)"
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps

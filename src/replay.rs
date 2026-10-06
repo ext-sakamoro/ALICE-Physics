@@ -17,12 +17,21 @@
 //! components = 6 (record_frame: pos_x, pos_y, pos_z, vel_x, vel_y, vel_z)
 //!            | 3 (record_positions: pos_x, pos_y, pos_z)
 //! ```
-//! The recorder writes the layout (`body_count`, `components`) to
-//! `<path>/replay_layout` so the player can decode without being told.
+//! The recorder stores the layout (`body_count`, `components`) as a blob in
+//! the database (and, for file recordings, also in `<path>/replay_layout`,
+//! which older players read) so the player can decode without being told.
 //! Before 1.2.0 the layout was `channel * MAX_FRAMES + frame` (one block of
 //! 10⁷ keys per channel); inside one flushed segment those keys are sparse
 //! and irregular, so every read landed on the wrong sample
 //! (`scan_positions_matches_get_position_per_frame_and_body`).
+//!
+//! # Storage
+//!
+//! - File: [`ReplayRecorder::new`] / [`ReplayPlayer::open`] (not on
+//!   `wasm32-unknown-unknown`, which has no filesystem)
+//! - Memory: [`ReplayRecorder::in_memory`] / [`ReplayRecorder::to_bytes`] /
+//!   [`ReplayPlayer::from_bytes`], on every target including the browser
+//!   (keep the bytes wherever the host stores data)
 //!
 //! # Example
 //!
@@ -53,14 +62,19 @@
 use crate::solver::PhysicsWorld;
 use alice_db::AliceDB;
 use std::io;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::path::Path;
 
 /// Components per body when velocities are recorded: pos_x, pos_y, pos_z, vel_x, vel_y, vel_z
 const FULL_COMPONENTS: usize = 6;
 /// Components per body for position-only recordings
 const POSITION_COMPONENTS: usize = 3;
-/// Layout manifest written next to the ALICE-DB files
+/// Layout manifest written next to the ALICE-DB files (read by players
+/// before the layout moved into the database)
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 const LAYOUT_FILE: &str = "replay_layout";
+/// Blob key of the layout inside the database (travels with `to_bytes`)
+const LAYOUT_KEY: &[u8] = b"alice-physics/replay_layout";
 
 /// A replay of a deterministic engine must read back the bits it wrote.
 /// ALICE-DB fits procedural models (polynomial / Fourier) to a series and,
@@ -68,42 +82,97 @@ const LAYOUT_FILE: &str = "replay_layout";
 /// a *lossy* reconstruction. `FitConfig::lossless` stores the per-sample
 /// residuals so the model + residual is exact (requires alice-db ≥
 /// 0.2.0-beta.2, where the mmap read path applies them).
-fn open_lossless(path: &Path) -> io::Result<AliceDB> {
-    let config = alice_db::StorageConfig {
-        data_dir: path.to_path_buf(),
+fn lossless_config() -> alice_db::StorageConfig {
+    alice_db::StorageConfig {
         fit_config: alice_db::FitConfig {
             lossless: true,
             ..alice_db::FitConfig::default()
         },
         ..alice_db::StorageConfig::default()
-    };
-    AliceDB::with_config(config)
+    }
 }
 
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn open_lossless(path: &Path) -> io::Result<AliceDB> {
+    AliceDB::with_config(alice_db::StorageConfig {
+        data_dir: path.to_path_buf(),
+        ..lossless_config()
+    })
+}
+
+fn encode_layout(body_count: usize, components: usize) -> String {
+    format!("{body_count} {components}\n")
+}
+
+fn parse_layout(text: &str) -> io::Result<(usize, usize)> {
+    let mut it = text.split_whitespace();
+    let parse = |s: Option<&str>| s.and_then(|v| v.parse::<usize>().ok());
+    match (parse(it.next()), parse(it.next())) {
+        (Some(b), Some(c)) if c == FULL_COMPONENTS || c == POSITION_COMPONENTS => Ok((b, c)),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "malformed replay_layout",
+        )),
+    }
+}
+
+/// The layout stored in the database, if the recording has one
+fn read_layout_blob(db: &AliceDB) -> io::Result<Option<(usize, usize)>> {
+    match db.get_blob(LAYOUT_KEY)? {
+        Some(bytes) => {
+            let text = std::str::from_utf8(&bytes).map_err(|_| {
+                io::Error::new(io::ErrorKind::InvalidData, "malformed replay_layout")
+            })?;
+            parse_layout(text).map(Some)
+        }
+        None => Ok(None),
+    }
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 fn layout_path(db_path: &Path) -> std::path::PathBuf {
     db_path.join(LAYOUT_FILE)
 }
 
-fn write_layout(db_path: &Path, body_count: usize, components: usize) -> io::Result<()> {
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn write_layout_file(db_path: &Path, body_count: usize, components: usize) -> io::Result<()> {
     std::fs::create_dir_all(db_path)?;
-    std::fs::write(layout_path(db_path), format!("{body_count} {components}\n"))
+    std::fs::write(layout_path(db_path), encode_layout(body_count, components))
 }
 
-fn read_layout(db_path: &Path) -> io::Result<Option<(usize, usize)>> {
-    match std::fs::read_to_string(layout_path(db_path)) {
-        Ok(text) => {
-            let mut it = text.split_whitespace();
-            let parse = |s: Option<&str>| s.and_then(|v| v.parse::<usize>().ok());
-            match (parse(it.next()), parse(it.next())) {
-                (Some(b), Some(c)) if c == FULL_COMPONENTS || c == POSITION_COMPONENTS => {
-                    Ok(Some((b, c)))
-                }
-                _ => Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "malformed replay_layout",
-                )),
-            }
+/// Whether `name` is a file ALICE-DB or the recorder writes in a recording
+/// directory
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn is_recording_file(name: &str) -> bool {
+    name == LAYOUT_FILE
+        || name == "blob.wal"
+        || name.ends_with(".alice")
+        || name.ends_with(".tmp")
+        || (name.starts_with("seg_") && name.ends_with(".rkyv"))
+        || (name.starts_with("blob") && name.ends_with(".sst"))
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn remove_recording_files(db_path: &Path) -> io::Result<()> {
+    let entries = match std::fs::read_dir(db_path) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_type()?.is_file() && entry.file_name().to_str().is_some_and(is_recording_file)
+        {
+            std::fs::remove_file(entry.path())?;
         }
+    }
+    Ok(())
+}
+
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+fn read_layout_file(db_path: &Path) -> io::Result<Option<(usize, usize)>> {
+    match std::fs::read_to_string(layout_path(db_path)) {
+        Ok(text) => parse_layout(&text).map(Some),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(e),
     }
@@ -124,29 +193,70 @@ pub struct ReplayRecorder {
     /// Components per body (6 after `record_frame`, 3 after
     /// `record_positions`); fixed by the first recorded frame.
     components: Option<usize>,
-    db_path: std::path::PathBuf,
+    /// Directory of a file recording (`None` for an in-memory one)
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+    db_path: Option<std::path::PathBuf>,
     /// Reusable batch buffer — allocated once, cleared each frame
     batch_buf: Vec<(i64, f32)>,
 }
 
 impl ReplayRecorder {
-    /// Create a new replay recorder.
+    /// Create a new replay recorder that stores to a directory.
+    ///
+    /// A recording already in `path` is replaced, like [`std::fs::File::create`]:
+    /// the files ALICE-DB and the recorder write (`*.alice`, `seg_*.rkyv`,
+    /// `blob*.sst`, `blob.wal`, `*.tmp`, `replay_layout`) are removed first, so
+    /// frames of the old recording cannot show through a shorter new one. Other
+    /// files in the directory are left alone.
     ///
     /// # Arguments
     /// * `path` - Directory for ALICE-DB storage
     /// * `body_count` - Number of bodies to record per frame
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn new<P: AsRef<Path>>(path: P, body_count: usize) -> io::Result<Self> {
         let db_path = path.as_ref().to_path_buf();
+        remove_recording_files(&db_path)?;
         let db = open_lossless(&db_path)?;
-        let batch_buf = Vec::with_capacity(body_count * FULL_COMPONENTS);
-        Ok(Self {
+        Ok(Self::with_db(db, body_count, Some(db_path)))
+    }
+
+    /// Create a new replay recorder that keeps everything in process memory
+    /// (no filesystem; available on `wasm32-unknown-unknown`).
+    ///
+    /// Take the recording out with [`Self::to_bytes`] and play it back with
+    /// [`ReplayPlayer::from_bytes`].
+    pub fn in_memory(body_count: usize) -> io::Result<Self> {
+        let db = AliceDB::in_memory(lossless_config())?;
+        Ok(Self::with_db(
+            db,
+            body_count,
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+            None,
+        ))
+    }
+
+    fn with_db(
+        db: AliceDB,
+        body_count: usize,
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))] db_path: Option<
+            std::path::PathBuf,
+        >,
+    ) -> Self {
+        Self {
             db,
             frame: 0,
             body_count,
             components: None,
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             db_path,
-            batch_buf,
-        })
+            batch_buf: Vec::with_capacity(body_count * FULL_COMPONENTS),
+        }
+    }
+
+    /// The whole recording as one byte buffer (flushes first), for
+    /// [`ReplayPlayer::from_bytes`]. Works for file and in-memory recorders.
+    pub fn to_bytes(&self) -> io::Result<Vec<u8>> {
+        self.db.to_bytes()
     }
 
     /// Fix the layout on the first recorded frame (and reject mixing
@@ -155,7 +265,14 @@ impl ReplayRecorder {
     fn set_components(&mut self, components: usize) -> io::Result<()> {
         match self.components {
             None => {
-                write_layout(&self.db_path, self.body_count, components)?;
+                self.db.put_blob(
+                    LAYOUT_KEY,
+                    encode_layout(self.body_count, components).as_bytes(),
+                )?;
+                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                if let Some(path) = &self.db_path {
+                    write_layout_file(path, self.body_count, components)?;
+                }
                 self.components = Some(components);
                 Ok(())
             }
@@ -257,19 +374,39 @@ pub struct ReplayPlayer {
 }
 
 impl ReplayPlayer {
-    /// Open a replay for playback.
+    /// Open a replay stored in a directory.
+    ///
+    /// `body_count` is used only when the recording carries no layout.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn open<P: AsRef<Path>>(path: P, body_count: usize) -> io::Result<Self> {
-        let layout = read_layout(path.as_ref())?;
+        // the file is the layout a file recording shows (and the only one in
+        // recordings made before the layout moved into the database)
+        let file_layout = read_layout_file(path.as_ref())?;
         let db = open_lossless(path.as_ref())?;
-        let (body_count, components) = match layout {
-            Some((b, c)) => (b, c),
-            None => (body_count, FULL_COMPONENTS),
+        let layout = match file_layout {
+            Some(layout) => Some(layout),
+            None => read_layout_blob(&db)?,
         };
-        Ok(Self {
+        Ok(Self::with_layout(db, layout, body_count))
+    }
+
+    /// Play back a recording taken out with [`ReplayRecorder::to_bytes`]
+    /// (kept in process memory; available on `wasm32-unknown-unknown`).
+    ///
+    /// `body_count` is used only when the recording carries no layout.
+    pub fn from_bytes(bytes: &[u8], body_count: usize) -> io::Result<Self> {
+        let db = AliceDB::from_bytes(lossless_config(), bytes)?;
+        let layout = read_layout_blob(&db)?;
+        Ok(Self::with_layout(db, layout, body_count))
+    }
+
+    fn with_layout(db: AliceDB, layout: Option<(usize, usize)>, body_count: usize) -> Self {
+        let (body_count, components) = layout.unwrap_or((body_count, FULL_COMPONENTS));
+        Self {
             db,
             body_count,
             components,
-        })
+        }
     }
 
     #[inline]

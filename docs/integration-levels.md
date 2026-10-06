@@ -82,7 +82,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `crowd_force` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
-| `db_bridge` | standalone | 0 / 0 / 0 / 8 / 0 | — |
+| `db_bridge` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `debug_render` | standalone | 0 / 0 / 0 / 27 / 0 | — |
 | `deformable` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
@@ -143,7 +143,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `query` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `ragdoll` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `raycast` | standalone (binding 6 of 16 items) | 0 / 0 / 6 / 10 / 0 | C ABI, Python, WebAssembly |
-| `replay` | standalone | 0 / 0 / 0 / 14 / 0 | — |
+| `replay` | standalone | 0 / 0 / 0 / 17 / 0 | — |
 | `rng` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `rolling_contact` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `rope` | standalone | 0 / 0 / 0 / 13 / 0 | — |

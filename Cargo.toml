@@ -69,13 +69,18 @@ wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 # J-4 restoration: sibling 3 crate (今日 crates.io publish 済)
 alice-ml = { version = "0.2", optional = true, default-features = false, features = ["std"] }
-alice-db = { version = "0.2.0-beta.2", optional = true, default-features = false }
+# 0.3: the file backend is the `fs` feature (added below for targets with a
+# filesystem); without it alice-db keeps everything in memory (browser)
+alice-db = { version = "0.3.0-beta.1", optional = true, default-features = false }
 alice-analytics = { version = "0.1", optional = true, default-features = false, features = ["std"] }
 # 1.3.0: `det_math` moved to its own crate so alice-sdf (and anything else)
 # evaluates the same transcendental law; re-exported as `alice_physics::det_math`.
 # no_std-capable (software sqrt without `std`), so the module is no longer
 # gated on `std`.
 alice-det-math = { version = "0.3", default-features = false }
+
+[target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
+alice-db = { version = "0.3.0-beta.1", optional = true, default-features = false, features = ["fs"] }
 
 [target.'cfg(target_os = "linux")'.dev-dependencies]
 gungraun = "0.20"
@@ -429,6 +434,10 @@ required-features = ["std"]
 # entry point needs both `std` and `replay`, not just `std`.
 [[example]]
 name = "db_bridge_roundtrip"
+required-features = ["std", "replay"]
+
+[[example]]
+name = "replay_in_memory"
 required-features = ["std", "replay"]
 
 # Production entry point for `alice_physics::fluid_netcode` (wiring_guard:

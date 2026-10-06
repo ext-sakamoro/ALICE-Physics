@@ -5,7 +5,20 @@
 
 use alice_db::AliceDB;
 use std::io;
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::path::Path;
+
+/// lossless: metric series must read back exactly (alice-db keeps a fitted
+/// model + residuals; default mode is a lossy approximation)
+fn lossless_config() -> alice_db::StorageConfig {
+    alice_db::StorageConfig {
+        fit_config: alice_db::FitConfig {
+            lossless: true,
+            ..alice_db::FitConfig::default()
+        },
+        ..alice_db::StorageConfig::default()
+    }
+}
 
 /// Physics metrics sink backed by ALICE-DB.
 ///
@@ -21,25 +34,31 @@ pub struct PhysicsMetricsSink {
 
 impl PhysicsMetricsSink {
     /// Open physics metrics databases at the given directory.
+    #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn open<P: AsRef<Path>>(dir: P) -> io::Result<Self> {
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir)?;
-        // lossless: metric series must read back exactly (alice-db keeps a
-        // fitted model + residuals; default mode is a lossy approximation)
         let open = |name: &str| {
             AliceDB::with_config(alice_db::StorageConfig {
                 data_dir: dir.join(name),
-                fit_config: alice_db::FitConfig {
-                    lossless: true,
-                    ..alice_db::FitConfig::default()
-                },
-                ..alice_db::StorageConfig::default()
+                ..lossless_config()
             })
         };
         Ok(Self {
             energy_db: open("energy")?,
             bodies_db: open("bodies")?,
             contacts_db: open("contacts")?,
+        })
+    }
+
+    /// Keep the metrics in process memory (no filesystem; available on
+    /// `wasm32-unknown-unknown`).
+    pub fn in_memory() -> io::Result<Self> {
+        let open = || AliceDB::in_memory(lossless_config());
+        Ok(Self {
+            energy_db: open()?,
+            bodies_db: open()?,
+            contacts_db: open()?,
         })
     }
 
