@@ -322,7 +322,7 @@ fn with_rotation_and_new_store_their_fields() {
 /// `half_height` gives a negative volume and a negative `radius` flips the rim
 /// point to the far side, so `support` is no longer the maximum.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-008: half_height=-1 gives volume -6.283, radius=-2 gives support x=-2 for +X (no dimension check)"]
+// AUD-A-S6W1-008
 fn negative_dimensions_do_not_break_volume_or_support() {
     let c = Cylinder::new(Vec3Fix::ZERO, fx(-1.0), fx(1.0));
     assert!(c.volume().to_f64() >= 0.0);
@@ -335,7 +335,7 @@ fn negative_dimensions_do_not_break_volume_or_support() {
 /// scales `rotate_vec` by |q|^2 = 4 in both the direction transform and the
 /// back transform, so the support point lands 4x too far from the centre.
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-009: rotation quaternion (0,0,0,2) gives support (4,4,0) instead of (1,1,0), 4x too far from the center (no normalisation)"]
+// AUD-A-S6W1-009
 fn non_unit_rotation_does_not_scale_the_support_point() {
     let unit = QuatFix::IDENTITY;
     let two = QuatFix::new(fx(0.0), fx(0.0), fx(0.0), fx(2.0));
@@ -343,4 +343,21 @@ fn non_unit_rotation_does_not_scale_the_support_point() {
     let b = Cylinder::with_rotation(Vec3Fix::ZERO, fx(1.0), fx(1.0), two);
     let d = v3(1.0, 0.0, 0.0);
     assert_eq!(arr(a.support(d)), arr(b.support(d)));
+}
+
+/// Every method reads negative dimensions as magnitudes and a non-unit
+/// rotation as its normalised quaternion: the box and the surface area match
+/// the plain cylinder's
+#[test]
+fn aabb_and_surface_area_ignore_signs_and_rotation_scale() {
+    let plain = Cylinder::new(Vec3Fix::ZERO, fx(1.0), fx(0.5));
+    let signed = Cylinder::new(Vec3Fix::ZERO, fx(-1.0), fx(-0.5));
+    assert_eq!(signed.aabb(), plain.aabb());
+    assert_eq!(signed.surface_area(), plain.surface_area());
+    let radius_only = Cylinder::new(Vec3Fix::ZERO, fx(1.0), fx(-0.5));
+    assert_eq!(radius_only.surface_area(), plain.surface_area());
+    assert_eq!(radius_only.aabb(), plain.aabb());
+    let two = QuatFix::new(fx(0.0), fx(0.0), fx(0.0), fx(2.0));
+    let scaled = Cylinder::with_rotation(Vec3Fix::ZERO, fx(1.0), fx(0.5), two);
+    assert_eq!(scaled.aabb(), plain.aabb());
 }
