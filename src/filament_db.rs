@@ -195,8 +195,11 @@ impl MaterialProperties {
     /// Anisotropic effective Young's modulus given a load direction angle
     /// `theta` (radians) from the XY plane.
     ///
-    /// Uses a simple squared-cosine mixing model (Reuss-like lower bound):
-    /// E(θ) = E_xy · cos²(θ) + E_z · sin²(θ)
+    /// Uses the Reuss (iso-stress) mixing of the two moduli, a lower bound:
+    /// 1/E(θ) = cos²(θ)/E_xy + sin²(θ)/E_z
+    /// (the arithmetic `E_xy cos² + E_z sin²` used before is the Voigt
+    /// upper bound, 4.7 % stiffer than this at 45° for PLA). A zero modulus
+    /// in a direction the load has a component along gives 0.
     ///
     /// At θ = 0 (pure XY load) returns `youngs_modulus_gpa`; at θ = π/2
     // LIMITATION(COV-MAT-035): This is a first-order engineering approximation; use `anisotropic.rs` (Phase B1) for the full Hill / Tsai-Wu criterion.
@@ -208,7 +211,21 @@ impl MaterialProperties {
         let (s, c) = theta.sin_cos();
         let c2 = c * c;
         let s2 = s * s;
-        self.youngs_modulus_gpa * c2 + self.youngs_z() * s2
+        let (e_xy, e_z) = (self.youngs_modulus_gpa, self.youngs_z());
+        // compliance of each direction, weighted by the share of the load along it
+        let part = |share: Fix128, e: Fix128| {
+            if share.is_zero() {
+                Some(Fix128::ZERO)
+            } else if e <= Fix128::ZERO {
+                None
+            } else {
+                Some(share / e)
+            }
+        };
+        match (part(c2, e_xy), part(s2, e_z)) {
+            (Some(a), Some(b)) if !(a + b).is_zero() => Fix128::ONE / (a + b),
+            _ => Fix128::ZERO,
+        }
     }
 
     /// Anisotropic effective yield strength (MPa) given a load direction angle.

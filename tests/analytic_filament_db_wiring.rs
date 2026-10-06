@@ -230,7 +230,8 @@ fn yield_and_youngs_at_angle_quarter_pi_matches_an_independent_f32_trig_oracle()
     let e_xy_gpa = pla.youngs_modulus_gpa.to_f64();
     let e_z_gpa = pla.youngs_z().to_f64();
     let expected_yield = sigma_xy_mpa * c * c + sigma_z_mpa * s * s;
-    let expected_youngs = e_xy_gpa * c * c + e_z_gpa * s * s;
+    // Reuss (iso-stress) mixing of the moduli (AUD-A-S1W5-012)
+    let expected_youngs = 1.0 / (c * c / e_xy_gpa + s * s / e_z_gpa);
 
     let got_yield = pla.yield_at_angle(theta).to_f64();
     let got_youngs = pla.youngs_at_angle(theta).to_f64();

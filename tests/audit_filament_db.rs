@@ -184,9 +184,10 @@ fn angle_models_closed_form_and_symmetry() {
     for k in 0..16 {
         let th = k as f64 * 0.2 - 1.6;
         let (s, c) = (th.sin(), th.cos());
+        // Reuss mixing (AUD-A-S1W5-012; this test used to pin the Voigt form)
         near(
             pla.youngs_at_angle(f(th)),
-            e * c * c + ez * s * s,
+            1.0 / (c * c / e + s * s / ez),
             "E(theta)",
         );
         near(
@@ -215,7 +216,7 @@ fn angle_models_closed_form_and_symmetry() {
 /// 1/E = cos^2/E_xy + sin^2/E_z; the implementation is the arithmetic (Voigt) mixture, an
 /// UPPER bound.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-012: youngs_at_angle doc says 'Reuss-like lower bound' but E_xy cos2 + E_z sin2 is the Voigt (arithmetic) upper bound; at 45 deg PLA gives 2.8875 vs Reuss 2.7576 GPa (doc correction)"]
+// AUD-A-S1W5-012
 fn youngs_at_angle_is_a_lower_bound_reuss_form() {
     let pla = MaterialProperties::pla();
     let (e, ez) = (pla.youngs_modulus_gpa.to_f64(), pla.youngs_z().to_f64());
@@ -339,4 +340,21 @@ fn filament_db_try_register_refuses_past_the_u16_id_range() {
 fn register_panics_when_every_filament_id_is_in_use() {
     let mut db = full_db();
     let _ = db.register(MaterialProperties::pla());
+}
+
+/// A direction without stiffness (anisotropy_z_ratio = 0, E_z = 0): any load
+/// with a component along Z sees no stiffness (Reuss: the compliance is
+/// infinite), while a pure in-plane load keeps E_xy
+#[test]
+fn a_zero_z_modulus_gives_zero_stiffness_off_the_plane() {
+    let mut m = MaterialProperties::pla();
+    m.anisotropy_z_ratio = Fix128::ZERO;
+    // cos^2(0) from the CORDIC is a few ulps below 1
+    near(
+        m.youngs_at_angle(Fix128::ZERO),
+        m.youngs_modulus_gpa.to_f64(),
+        "E(0)",
+    );
+    assert_eq!(m.youngs_at_angle(f(0.3)), Fix128::ZERO);
+    assert_eq!(m.youngs_at_angle(Fix128::HALF_PI), Fix128::ZERO);
 }
