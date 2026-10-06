@@ -171,8 +171,8 @@ def docs_only(paths: list[str]) -> bool:
 
 
 # files whose change can alter how every other file builds or tests
-BUILD_WIDE_RE = re.compile(r"^(Cargo\.(toml|lock)$|build\.rs$|\.cargo/|rust-toolchain|clippy\.toml$|"
-                           r"src/lib\.rs$|scripts/preflight\.sh$)")
+BUILD_WIDE_RE = re.compile(r"((^|/)Cargo\.(toml|lock)$|(^|/)build\.rs$|^\.cargo/|^rust-toolchain|^clippy\.toml$|"
+                           r"^deny\.toml$|^src/lib\.rs$|(^|/)mod\.rs$|^scripts/|^\.github/|^include/)")
 
 
 def overlaps(ours: list[str], theirs: list[str]) -> bool:
@@ -181,7 +181,7 @@ def overlaps(ours: list[str], theirs: list[str]) -> bool:
     build-wide file. Disjoint source changes are left to a compile check here and
     to main's CI, so a landing is not re-tested in full every time main moves."""
     mine = {p for p in ours if not DOCS_RE.match(p)}
-    return any(p in mine or BUILD_WIDE_RE.match(p) for p in theirs if not DOCS_RE.match(p))
+    return any(p in mine or BUILD_WIDE_RE.search(p) for p in theirs if not DOCS_RE.match(p))
 
 
 def message_problems(message: str) -> list[str]:
@@ -226,7 +226,9 @@ class Lander:
         self.sh("bash", "scripts/preflight.sh", "--fast")
 
     def run_compile_check(self) -> None:
-        self.sh("cargo", "check", "-q", "--all-targets", "--features", NATIVE)
+        # clippy with -D warnings, as CI: a caller removed on each side can leave
+        # dead code that only the lint (not a plain check) refuses
+        self.sh("cargo", "clippy", "-q", "--all-targets", "--features", NATIVE, "--", "-D", "warnings")
 
     def regenerate(self) -> None:
         self.sh("bash", "scripts/scip_index.sh")
