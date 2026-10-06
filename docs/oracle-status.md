@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4942 |
-| 🔴 Red by design | 218 |
+| 🟢 Not ignored (run by CI) | 4945 |
+| 🔴 Red by design | 215 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **5186** |
@@ -15,7 +15,7 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (218)
+## 🔴 Red by design (215)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -100,7 +100,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `hover_with_add_force_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: add_force is a frame-head impulse while gravity is per substep, so a hovering body climbs n g dt^2 (s…
 - `hover_with_force_field_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: force fields are applied once at the head of the frame while gravity is per substep, so a field-held …
 - `huge_stress_must_not_wrap_to_safe` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-004: sigma1 = 3.2e9 MPa で sigma1^2 が 2^63 を超え wrap、Tsai-Hill FI = -3.6e12 (負)
-- `impact_with_inverted_radius_range_does_not_panic` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-010: destruction_from_impact panics (f32::clamp assertion) when min_radius > max_radi…
 - `in_contact_is_false_on_the_frame_the_contact_ends` (audit_solver.rs) — known defect: AUD-A-S1W2-003: observe_body.in_contact is true on the frame of an End event (any contact event …
 - `invalid_parameters_do_not_produce_non_finite_output` (audit_privacy.rs) — known defect: AUD-A-S4W3-024: parameters that make a mechanism meaningless are accepted silently: Laplace with…
 - `joint_solve_through_a_reference_bridge_matches_the_cpu_solve` (audit_solver.rs) — known defect: AUD-A-S1W2-006: solve_joints_with_bridge writes back positions only; the rotation corrections of…
@@ -142,8 +141,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `plate_with_negative_dimension_is_rejected_like_the_beam_with_negative_length` (audit_modal.rs) — known defect: AUD-A-S3W2-002: plate_natural_frequency_hz treats negative thickness / side as its absolute valu…
 - `point_slightly_outside_surface_is_not_reported_as_a_hairline_wall` (audit_thin_wall.rs) — known defect: AUD-A-S2W1-005: measure_thickness_at returns Some(0.01) for a surface point 0.011 mm outside the…
 - `polar_rotation_is_idempotent_bit_for_bit_on_general_gradients` (audit_math.rs) — known defect: AUD-A-S1W5-027: polar_rotation is not idempotent for general (non-diagonal) gradients: 105 of 20…
-- `projectile_centre_does_not_depend_on_the_length_of_the_direction` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-011: destruction_from_projectile places the centre at entry + direction * depth/2 wit…
-- `projectile_direction_near_the_pole_is_not_snapped_to_it` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-012: a direction within about 2.6 degrees of +Y or -Y is snapped to the pole (dot > 0…
 - `puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-005: sigma1 = 0, sigma2 = -50, tau = 75 (> S) の puck が FibreTension を返す (Hashin の fib…
 - `pulley_ratio_two_conserves_the_rope_length` (audit_c_joint_extra.rs) — known defect: AUD-A-S34-012: same root as AUD-A-S3W1-011 for ratio 2: `solve_pulley` uses `error = Fix128::ZER…
 - `rack_and_pinion_uses_the_axis_inverse_inertia` (audit_joint_extra.rs) — known defect: AUD-A-S3W1-013: rack-and-pinion (and gear / weld) use |inv_inertia| (sqrt(3) for isotropic i = 1…
@@ -294,7 +291,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4942)
+## 🟢 Not ignored (4945)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -362,6 +359,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_wave_ship_wiring.rs` | 20 |
 | `audit_pipeline.rs` | 20 |
 | `audit_print_pipeline_solver.rs` | 20 |
+| `audit_sdf_destruction.rs` | 20 |
 | `analytic_compressible_wiring.rs` | 19 |
 | `analytic_debug_render_wiring.rs` | 19 |
 | `analytic_elastoplastic_fem.rs` | 19 |
@@ -398,7 +396,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_coupled_field.rs` | 17 |
 | `audit_cubic_elastic_fem.rs` | 17 |
 | `audit_neural.rs` | 17 |
-| `audit_sdf_destruction.rs` | 17 |
 | `audit_thin_wall.rs` | 17 |
 | `analytic_audio_physics_wiring.rs` | 16 |
 | `analytic_damping_rayleigh_wiring.rs` | 16 |
