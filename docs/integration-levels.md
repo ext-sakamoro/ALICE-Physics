@@ -45,7 +45,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 37 of 173 items) | 37 / 84 / 7 / 45 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 38 of 174 items) | 38 / 84 / 7 / 45 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `shape_raycast` | binding | 0 / 0 / 24 / 10 / 0 | C ABI, Python, WebAssembly |
