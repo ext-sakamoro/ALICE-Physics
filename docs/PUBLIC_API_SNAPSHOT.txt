@@ -12757,10 +12757,21 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::debug_draw(&self, &alice_physics::debug_render::DebugDrawFlags, &mut alice_physics::debug_render::DebugDrawData)
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::emit_contact_audio(&self, &mut alice_physics::audio_physics::AudioGenerator)
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::lidar_scan(&self, &mut alice_physics::sensors::Lidar) -> alice_physics::sensors::LidarScan
+pub fn alice_physics::solver::PhysicsWorld::lidar_scan_from_body(&self, &mut alice_physics::sensors::Lidar, usize) -> core::option::Option<alice_physics::sensors::LidarScan>
+pub fn alice_physics::solver::PhysicsWorld::read_contact_sensor(&self, &mut alice_physics::sensors::ContactSensor, alice_physics::math::Fix128) -> alice_physics::sensors::ContactReading
+pub fn alice_physics::solver::PhysicsWorld::sample_imu(&self, &mut alice_physics::sensors::Imu, alice_physics::math::Fix128) -> core::option::Option<alice_physics::sensors::ImuReading>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
 pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::stress_heatmap(&self, alice_physics::math::Fix128, &alice_physics::heatmap::HeatmapConfig) -> alice_physics::heatmap::Heatmap
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
@@ -17232,10 +17243,21 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::debug_draw(&self, &alice_physics::debug_render::DebugDrawFlags, &mut alice_physics::debug_render::DebugDrawData)
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::emit_contact_audio(&self, &mut alice_physics::audio_physics::AudioGenerator)
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::lidar_scan(&self, &mut alice_physics::sensors::Lidar) -> alice_physics::sensors::LidarScan
+pub fn alice_physics::solver::PhysicsWorld::lidar_scan_from_body(&self, &mut alice_physics::sensors::Lidar, usize) -> core::option::Option<alice_physics::sensors::LidarScan>
+pub fn alice_physics::solver::PhysicsWorld::read_contact_sensor(&self, &mut alice_physics::sensors::ContactSensor, alice_physics::math::Fix128) -> alice_physics::sensors::ContactReading
+pub fn alice_physics::solver::PhysicsWorld::sample_imu(&self, &mut alice_physics::sensors::Imu, alice_physics::math::Fix128) -> core::option::Option<alice_physics::sensors::ImuReading>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
 pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::stress_heatmap(&self, alice_physics::math::Fix128, &alice_physics::heatmap::HeatmapConfig) -> alice_physics::heatmap::Heatmap
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
@@ -23504,10 +23526,21 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::debug_draw(&self, &alice_physics::debug_render::DebugDrawFlags, &mut alice_physics::debug_render::DebugDrawData)
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::emit_contact_audio(&self, &mut alice_physics::audio_physics::AudioGenerator)
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::lidar_scan(&self, &mut alice_physics::sensors::Lidar) -> alice_physics::sensors::LidarScan
+pub fn alice_physics::solver::PhysicsWorld::lidar_scan_from_body(&self, &mut alice_physics::sensors::Lidar, usize) -> core::option::Option<alice_physics::sensors::LidarScan>
+pub fn alice_physics::solver::PhysicsWorld::read_contact_sensor(&self, &mut alice_physics::sensors::ContactSensor, alice_physics::math::Fix128) -> alice_physics::sensors::ContactReading
+pub fn alice_physics::solver::PhysicsWorld::sample_imu(&self, &mut alice_physics::sensors::Imu, alice_physics::math::Fix128) -> core::option::Option<alice_physics::sensors::ImuReading>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::move_character(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix) -> alice_physics::character::MoveResult
 pub fn alice_physics::solver::PhysicsWorld::move_character_with_filter(&self, &mut alice_physics::character::CharacterController, alice_physics::math::Vec3Fix, &alice_physics::shape_raycast::RayFilter) -> alice_physics::character::MoveResult
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::sdf_ccd_hits(&self, alice_physics::math::Fix128, &alice_physics::sdf_ccd::SdfCcdConfig) -> alloc::vec::Vec<(usize, usize, alice_physics::ccd::TOI)>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::stress_heatmap(&self, alice_physics::math::Fix128, &alice_physics::heatmap::HeatmapConfig) -> alice_physics::heatmap::Heatmap
 impl core::fmt::Debug for alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::solver::PhysicsWorld
