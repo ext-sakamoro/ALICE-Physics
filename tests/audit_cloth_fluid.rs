@@ -325,7 +325,7 @@ fn boundary_residual_is_the_largest_component_of_the_net_change() {
 /// a +x velocity. The implementation adds `mean fluid velocity * surface_tension`,
 /// which is zero for fluid at rest.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-005: surface_tension term is mean_fluid_velocity * k (zero for resting fluid), not a pull toward the fluid centre as the doc claims; cloth velocity stays (0,0,0) for fluid at +x"]
+// AUD-A-S2W2-005
 fn surface_tension_pulls_the_cloth_toward_the_fluid_centre() {
     let c = ClothFluidCoupling {
         drag_coefficient: Fix128::ZERO,
@@ -431,7 +431,7 @@ fn boundary_residual_is_a_non_negative_magnitude() {
 /// before multiplication by dt, so it must not depend on dt. At dt == 0 the guard
 /// returns 0 instead, so the reading jumps from F to 0 at exactly dt = 0.
 #[test]
-#[ignore = "known defect: AUD-A-S2W2-017: apply_fluid_forces_to_cloth_with_residual returns 0 at dt == 0 although the report is documented as the dt-independent interface force (drag 10 N at dt = 1/60 and 1e-9, 0 at dt = 0)"]
+// AUD-A-S2W2-017
 fn reported_force_does_not_vanish_at_zero_step() {
     let c = drag_only(fx(1, 2));
     let at = |dt: Fix128| {
@@ -448,4 +448,67 @@ fn reported_force_does_not_vanish_at_zero_step() {
     };
     assert_eq!(at(fx(1, 60)), Fix128::from_int(10));
     assert_eq!(at(Fix128::ZERO), at(fx(1, 60)));
+}
+
+/// AUD-A-S2W2-005 (centroid): with two fluid neighbours at (0.3, 0, 0) and
+/// (0.1, 0.2, 0) the pull is toward their centroid (0.2, 0.1, 0): with k = 1,
+/// no drag or buoyancy and dt = 1/60 the cloth velocity becomes (0.2, 0.1, 0)/60.
+#[test]
+fn surface_tension_pulls_toward_the_centroid_of_the_neighbours() {
+    let c = ClothFluidCoupling {
+        drag_coefficient: Fix128::ZERO,
+        buoyancy_factor: Fix128::ZERO,
+        surface_tension: Fix128::ONE,
+    };
+    let mut vel = [Vec3Fix::ZERO];
+    let f = apply_fluid_forces_to_cloth_with_residual(
+        &c,
+        &[Vec3Fix::ZERO],
+        &mut vel,
+        &[
+            v(fx(3, 10), Fix128::ZERO, Fix128::ZERO),
+            v(fx(1, 10), fx(2, 10), Fix128::ZERO),
+        ],
+        &[Vec3Fix::ZERO, Vec3Fix::ZERO],
+        Fix128::ONE,
+        fx(1, 60),
+    );
+    assert!(
+        (vel[0].x.to_f64() - 0.2 / 60.0).abs() < 1e-15,
+        "{}",
+        vel[0].x.to_f64()
+    );
+    assert!(
+        (vel[0].y.to_f64() - 0.1 / 60.0).abs() < 1e-15,
+        "{}",
+        vel[0].y.to_f64()
+    );
+    assert!((f.to_f64() - 0.2).abs() < 1e-15, "reported {}", f.to_f64());
+}
+
+/// The pull is the offset from the cloth particle, not the centroid's position:
+/// cloth at (1, 1, 0), fluid at (1.3, 1, 0), k = 1, dt = 1/60 gives vx = 0.3/60.
+#[test]
+fn surface_tension_is_the_offset_from_the_cloth_particle() {
+    let c = ClothFluidCoupling {
+        drag_coefficient: Fix128::ZERO,
+        buoyancy_factor: Fix128::ZERO,
+        surface_tension: Fix128::ONE,
+    };
+    let mut vel = [Vec3Fix::ZERO];
+    apply_fluid_forces_to_cloth(
+        &c,
+        &[v(Fix128::ONE, Fix128::ONE, Fix128::ZERO)],
+        &mut vel,
+        &[v(fx(13, 10), Fix128::ONE, Fix128::ZERO)],
+        &[Vec3Fix::ZERO],
+        Fix128::ONE,
+        fx(1, 60),
+    );
+    assert!(
+        (vel[0].x.to_f64() - 0.3 / 60.0).abs() < 1e-15,
+        "{}",
+        vel[0].x.to_f64()
+    );
+    assert!(vel[0].y.to_f64().abs() < 1e-15, "{}", vel[0].y.to_f64());
 }

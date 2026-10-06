@@ -242,8 +242,22 @@ fn expected_terms(
     let drag = (cloth_velocity - fluid_velocity) * (coupling.drag_coefficient * density_factor);
     let buoyancy = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
         * (coupling.buoyancy_factor * Fix128::ONE);
-    let tension = fluid_velocity * coupling.surface_tension;
+    // the pull toward the fluid centroid: the single neighbour sits at
+    // `fluid_at()` and the cloth particle at the origin
+    let _ = fluid_velocity;
+    let tension = fluid_at() * coupling.surface_tension;
     (drag, buoyancy, tension)
+}
+
+/// Where the single fluid neighbour of the one-on-one scenes sits: inside the
+/// interaction radius 1/2 of the cloth particle at the origin, off every axis,
+/// so the surface tension pull has three non-zero components.
+fn fluid_at() -> Vec3Fix {
+    Vec3Fix::new(
+        Fix128::from_ratio(1, 4),
+        Fix128::from_ratio(-1, 8),
+        Fix128::from_ratio(1, 16),
+    )
 }
 
 /// A small deterministic set of one-on-one scenes. No single scene can pin all
@@ -309,7 +323,7 @@ fn the_reported_force_is_the_sum_of_all_three_terms() {
             &coupling,
             &[Vec3Fix::ZERO],
             &mut state,
-            &[Vec3Fix::ZERO],
+            &[fluid_at()],
             &[fluid_velocity],
             fluid_density,
             dt,
@@ -368,7 +382,7 @@ fn each_force_term_keeps_its_own_multiplication_by_the_step() {
             &coupling,
             &[Vec3Fix::ZERO],
             &mut state,
-            &[Vec3Fix::ZERO],
+            &[fluid_at()],
             &[fluid_velocity],
             fluid_density,
             dt,

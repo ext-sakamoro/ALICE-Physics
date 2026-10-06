@@ -23,7 +23,9 @@ pub struct ClothFluidCoupling {
     pub drag_coefficient: Fix128,
     /// Buoyancy factor controlling upward force on submerged cloth.
     pub buoyancy_factor: Fix128,
-    /// Surface tension factor at the fluid-cloth interface.
+    /// Surface tension factor at the fluid-cloth interface: the force on a
+    /// cloth particle is this factor times the offset from the particle to the
+    /// centroid of its fluid neighbours (a pull toward the local fluid).
     pub surface_tension: Fix128,
 }
 
@@ -143,7 +145,8 @@ pub fn apply_fluid_forces_to_cloth_with_residual(
     dt: Fix128,
 ) -> Fix128 {
     let mut interface_force = Fix128::ZERO;
-    if dt.is_zero() || fluid_positions.is_empty() || cloth_positions.is_empty() {
+    // a zero dt still evaluates (and reports) the forces; it applies nothing
+    if fluid_positions.is_empty() || cloth_positions.is_empty() {
         return interface_force;
     }
 
@@ -157,6 +160,7 @@ pub fn apply_fluid_forces_to_cloth_with_residual(
         let cv = cloth_velocities[ci];
 
         let mut avg_fluid_vel = Vec3Fix::ZERO;
+        let mut fluid_centroid = Vec3Fix::ZERO;
         let mut neighbor_count = Fix128::ZERO;
 
         // Find fluid particles within interaction radius
@@ -166,6 +170,7 @@ pub fn apply_fluid_forces_to_cloth_with_residual(
 
             if dist_sq < radius_sq {
                 avg_fluid_vel = avg_fluid_vel + fluid_velocities[fi];
+                fluid_centroid = fluid_centroid + fluid_positions[fi];
                 neighbor_count = neighbor_count + Fix128::ONE;
             }
         }
@@ -176,6 +181,7 @@ pub fn apply_fluid_forces_to_cloth_with_residual(
 
         // Average fluid velocity near this cloth particle
         avg_fluid_vel = avg_fluid_vel / neighbor_count;
+        fluid_centroid = fluid_centroid / neighbor_count;
 
         // Drag force: F_drag = -C_d * (v_cloth - v_fluid) * density_factor
         let relative_vel = cv - avg_fluid_vel;
@@ -186,7 +192,7 @@ pub fn apply_fluid_forces_to_cloth_with_residual(
         let buoyancy_force = buoyancy_dir * (coupling.buoyancy_factor * neighbor_count);
 
         // Surface tension: pulls cloth toward local fluid center
-        let tension_force = avg_fluid_vel * coupling.surface_tension;
+        let tension_force = (fluid_centroid - cp) * coupling.surface_tension;
 
         // Drag is advanced with one implicit Euler step on the relative
         // velocity: u' = u / (1 + c dt), i.e. u - u c dt / (1 + c dt), with

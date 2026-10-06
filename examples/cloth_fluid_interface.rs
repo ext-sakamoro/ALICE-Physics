@@ -7,16 +7,17 @@
 //!
 //! Closed forms, from the documented model:
 //! - fluid -> cloth, for a cloth particle with `N` fluid neighbours within
-//!   `1/2` whose mean velocity is `v_f`: with `u = v_c - v_f` and
-//!   `c = C_d * rho * N`, the drag is one implicit step
+//!   `1/2` whose mean velocity is `v_f` and centroid `x_f`: with
+//!   `u = v_c - v_f` and `c = C_d * rho * N`, the drag is one implicit step
 //!   `u -> u / (1 + c dt)`, buoyancy adds `b N dt` along `+y` and surface
-//!   tension adds `s v_f dt`. The reported force is
-//!   `|| b N y_hat + s v_f - c u ||_inf`, evaluated before `dt`.
-//!   With the default coupling (`C_d = 1/2`, `b = 1/10`, `s = 1/100`),
-//!   `rho = 1`, `N = 1`, `dt = 1/2`, `v_c = (2, 0, 0)` and
-//!   `v_f = (0, 0, 1)`: `c dt = 1/4`, so the drag removes `u / 5`, and
-//!   `v_c' = (8/5, 1/20, 41/200)`; the reported force is
-//!   `max(|-1|, |1/10|, |1/100 + 1/2|) = 1`
+//!   tension pulls toward the fluid, adding `s (x_f - x_c) dt`. The reported
+//!   force is `|| b N y_hat + s (x_f - x_c) - c u ||_inf`, evaluated before
+//!   `dt`. With the default coupling (`C_d = 1/2`, `b = 1/10`, `s = 1/100`),
+//!   `rho = 1`, `N = 1`, `dt = 1/2`, `v_c = (2, 0, 0)`, `v_f = (0, 0, 1)` and
+//!   the neighbour `1/4` along `+x`: `c dt = 1/4`, so the drag removes
+//!   `u / 5`, tension adds `(1/800, 0, 0)`, and
+//!   `v_c' = (8/5 + 1/800, 1/20, 1/5)`; the reported force is
+//!   `max(|1/400 - 1|, |1/10|, |1/2|) = 399/400`
 //! - cloth -> fluid: a fluid particle at distance `d < 1/4` from a cloth
 //!   particle is pushed along the cloth normal (sign by side) by
 //!   `strength * (1/4 - d) / d`. With strength `1/2`: `d = 1/8` gives `1/2`,
@@ -88,9 +89,16 @@ fn main() {
         cloth_vel[0].z.to_f64(),
         force.to_f64()
     );
-    close(cloth_vel[0], (1.6, 0.05, 0.205), "submerged cloth particle");
+    close(
+        cloth_vel[0],
+        (1.6 + 1.0 / 800.0, 0.05, 0.2),
+        "submerged cloth particle",
+    );
     assert_eq!(cloth_vel[1], cloth_vel0[1], "no neighbour, no force");
-    assert!((force.to_f64() - 1.0).abs() < 1e-12, "interface force");
+    assert!(
+        (force.to_f64() - 399.0 / 400.0).abs() < 1e-12,
+        "interface force"
+    );
 
     let mut via_wrapper = cloth_vel0;
     apply_fluid_forces_to_cloth(
