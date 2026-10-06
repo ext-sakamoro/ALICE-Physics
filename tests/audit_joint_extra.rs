@@ -620,3 +620,60 @@ fn mouse_clamp_and_mass_scaling() {
     // double mass, half the step
     assert!((run(2.0, 0.4, 100.0) * 2.0 - run(1.0, 0.4, 100.0)).abs() < 1e-12);
 }
+
+/// The weld's angular correction keeps the angular momentum of the correction:
+/// each body turns by `I⁻¹ (λ n)` in world space, so `I_a Δθ_a + I_b Δθ_b = 0`
+/// even for anisotropic inertias whose principal axes are tilted against the
+/// error axis. Bodies: inverse inertia (0.25, 1, 4) turned 0.7 rad about
+/// (1,1,0)/√2, and (3, 0.5, 1.5) turned so the relative error is 0.012 rad.
+#[test]
+fn weld_correction_conserves_angular_momentum_for_tilted_anisotropic_bodies() {
+    fn axis_angle(x: f64, y: f64, z: f64, theta: f64) -> QuatFix {
+        let n = (x * x + y * y + z * z).sqrt();
+        let (s, c) = ((theta / 2.0).sin(), (theta / 2.0).cos());
+        QuatFix::new(fx(x / n * s), fx(y / n * s), fx(z / n * s), fx(c))
+    }
+    fn arr(q: QuatFix) -> [f64; 4] {
+        [q.x.to_f64(), q.y.to_f64(), q.z.to_f64(), q.w.to_f64()]
+    }
+    // rotation vector of q_after * conj(q_before) (small angle: 2 * xyz)
+    fn turned(before: QuatFix, after: QuatFix) -> [f64; 3] {
+        let d = arr(after.mul(before.conjugate()));
+        let s = if d[3] < 0.0 { -2.0 } else { 2.0 };
+        [s * d[0], s * d[1], s * d[2]]
+    }
+    // I_world w = R diag(1 / inv) R^T w
+    fn momentum(q: QuatFix, inv: [f64; 3], w: [f64; 3]) -> [f64; 3] {
+        let lw = q.conjugate().rotate_vec(v3(w[0], w[1], w[2]));
+        let l = [
+            lw.x.to_f64() / inv[0],
+            lw.y.to_f64() / inv[1],
+            lw.z.to_f64() / inv[2],
+        ];
+        let r = q.rotate_vec(v3(l[0], l[1], l[2]));
+        [r.x.to_f64(), r.y.to_f64(), r.z.to_f64()]
+    }
+    let qa = axis_angle(1.0, 1.0, 0.0, 0.7);
+    let qb = qa.mul(axis_angle(0.0, 0.3, 1.0, 0.012));
+    let mut a = body(Vec3Fix::ZERO, 1.0);
+    a.inv_inertia = v3(0.25, 1.0, 4.0);
+    a.rotation = qa;
+    let mut b = body(Vec3Fix::ZERO, 1.0);
+    b.inv_inertia = v3(3.0, 0.5, 1.5);
+    b.rotation = qb;
+    let mut bodies = vec![a, b];
+    let j = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY);
+    solve(&mut bodies, ExtraJoint::Weld(j), 1.0 / 16.0);
+    let la = momentum(qa, [0.25, 1.0, 4.0], turned(qa, bodies[0].rotation));
+    let lb = momentum(qb, [3.0, 0.5, 1.5], turned(qb, bodies[1].rotation));
+    let mag = (la[0] * la[0] + la[1] * la[1] + la[2] * la[2]).sqrt();
+    assert!(mag > 1e-4, "no correction applied");
+    for k in 0..3 {
+        assert!(
+            (la[k] + lb[k]).abs() < 1e-3 * mag,
+            "component {k}: {} + {}",
+            la[k],
+            lb[k]
+        );
+    }
+}

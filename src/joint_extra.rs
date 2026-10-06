@@ -675,14 +675,13 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
             let two = Fix128::from_int(2);
             let angular_lambda = (error_mag * two) * inv_w_ang;
 
-            apply_angular_correction(
-                bodies,
-                joint.body_a,
-                joint.body_b,
-                correction_axis,
-                angular_lambda * w_a,
-                angular_lambda * w_b,
-            );
+            // XPBD: each body turns by I⁻¹ (λ n) in world space, which keeps the
+            // angular momentum of the correction (Σ I Δθ = 0) also for an
+            // anisotropic inertia whose principal axes are not along n
+            let turn_a = world_inv_inertia_times(&body_a, correction_axis * angular_lambda);
+            let turn_b = world_inv_inertia_times(&body_b, correction_axis * angular_lambda);
+            rotate_by(bodies, joint.body_a, turn_a);
+            rotate_by(bodies, joint.body_b, -turn_b);
         }
     }
 }
@@ -833,26 +832,25 @@ fn inv_inertia_about(body: &RigidBody, axis: Vec3Fix) -> Fix128 {
     i.x * n.x * n.x + i.y * n.y * n.y + i.z * n.z * n.z
 }
 
-/// Rotate body `a` by `angle_a` and body `b` by `-angle_b` about `axis`
-/// (small-angle quaternion steps, as the position projection moves them).
-fn apply_angular_correction(
-    bodies: &mut [RigidBody],
-    idx_a: usize,
-    idx_b: usize,
-    axis: Vec3Fix,
-    angle_a: Fix128,
-    angle_b: Fix128,
-) {
-    if !bodies[idx_a].inv_mass.is_zero() && !angle_a.is_zero() {
-        let h = angle_a.half();
-        let dq = QuatFix::new(axis.x * h, axis.y * h, axis.z * h, Fix128::ONE);
-        bodies[idx_a].rotation = dq.mul(bodies[idx_a].rotation).normalize();
+/// `I⁻¹ v` with the body's inverse inertia in world space (`R diag(i) Rᵀ v`);
+/// zero for a static body.
+fn world_inv_inertia_times(body: &RigidBody, v: Vec3Fix) -> Vec3Fix {
+    if body.inv_mass.is_zero() {
+        return Vec3Fix::ZERO;
     }
-    if !bodies[idx_b].inv_mass.is_zero() && !angle_b.is_zero() {
-        let h = angle_b.half();
-        let dq = QuatFix::new(-(axis.x * h), -(axis.y * h), -(axis.z * h), Fix128::ONE);
-        bodies[idx_b].rotation = dq.mul(bodies[idx_b].rotation).normalize();
+    let q = body.rotation;
+    let local = q.conjugate().rotate_vec(v);
+    let i = body.inv_inertia;
+    q.rotate_vec(Vec3Fix::new(i.x * local.x, i.y * local.y, i.z * local.z))
+}
+
+/// Turn a dynamic body by the small rotation vector `w` (radians).
+fn rotate_by(bodies: &mut [RigidBody], idx: usize, w: Vec3Fix) {
+    if bodies[idx].inv_mass.is_zero() || w.length_squared().is_zero() {
+        return;
     }
+    let dq = QuatFix::new(w.x.half(), w.y.half(), w.z.half(), Fix128::ONE);
+    bodies[idx].rotation = dq.mul(bodies[idx].rotation).normalize();
 }
 
 // ============================================================================
