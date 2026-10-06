@@ -2069,6 +2069,7 @@ impl Mat3Fix {
 /// - AVX2 (`x86_64)`: 8 lanes (256-bit / 32-bit float)
 /// - SSE2 / no-AVX2 (`x86_64` without avx2): 4 lanes (128-bit)
 /// - NEON (aarch64): 4 lanes (128-bit)
+/// - Other targets with `simd` (wasm32, ...): 1, no SIMD path, the scalar code runs
 /// - Scalar fallback (no `simd` feature): 1
 ///
 /// Use the [`SIMD_WIDTH`] constant for a zero-cost compile-time value.
@@ -2086,6 +2087,14 @@ pub const fn simd_width() -> usize {
     #[cfg(all(feature = "simd", target_arch = "aarch64"))]
     {
         4
+    }
+    // no SIMD path for other targets (wasm32, ...): the scalar code runs
+    #[cfg(all(
+        feature = "simd",
+        not(any(target_arch = "x86_64", target_arch = "aarch64"))
+    ))]
+    {
+        1
     }
     #[cfg(not(feature = "simd"))]
     {
@@ -3879,5 +3888,10 @@ mod tests {
         assert!(matches!(simd_width(), 4 | 8));
         #[cfg(all(feature = "simd", target_arch = "aarch64"))]
         assert_eq!(simd_width(), 4);
+        #[cfg(all(
+            feature = "simd",
+            not(any(target_arch = "x86_64", target_arch = "aarch64"))
+        ))]
+        assert_eq!(simd_width(), 1);
     }
 }

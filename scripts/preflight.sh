@@ -133,6 +133,10 @@ rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_f32 --target wasm32-wasip1 --no-run
 
+step "wasm32-unknown-unknown build with every browser feature (CI job js-binding)"
+rustup target list --installed | grep -q wasm32-unknown-unknown || rustup target add wasm32-unknown-unknown
+cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
+
 step "rustdoc -D warnings (default + docs.rs feature set)"
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps --features "$NATIVE"
