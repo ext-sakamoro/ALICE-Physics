@@ -402,7 +402,6 @@ fn intermediate_products_that_cancel_stay_in_range() {
 /// 越えるので `None` になる `Mat3Fix::inverse` はこのため `checked_mul` を使わず
 /// 積を 256 bit で厳密に計算する (本 test は `checked_mul` 側の未修正の記録)
 #[test]
-#[ignore = "src gap: checked_mul returns None for an in-range product when hl + lh wraps i128"]
 fn checked_mul_has_no_false_positive_when_the_middle_sum_wraps() {
     for (a, b) in [
         (
