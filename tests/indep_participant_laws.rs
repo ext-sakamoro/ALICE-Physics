@@ -887,10 +887,9 @@ fn an_md_yukawa_overflow_is_out_of_range_and_keeps_the_bytes() {
 }
 
 /// The pair comes to `r = 2⁻⁴⁰`, where `k q q/r²` is out of range by far
-/// more than at `2⁻³⁰`; `d.length()` rounds `|d|² = 2⁻⁸⁰` to zero, so the
-/// pair is reported as coincident (`InvalidState`) instead of out of range.
+/// more than at `2⁻³⁰`; `|d|² = 2⁻⁸⁰` rounds to zero, which the participant
+/// reports as out of range (not as a coincident pair, `InvalidState`).
 #[test]
-#[ignore = "src gap: MD pair at r < 2^-32 is reported as InvalidState, not OutOfRange"]
 fn an_md_pair_closer_than_the_length_resolution_is_out_of_range() {
     let h = Fix128::from_ratio(1, 64);
     let p = yukawa_approach(h, Fix128::from_raw(0, 1 << 24));
@@ -909,13 +908,12 @@ fn an_md_pair_closer_than_the_length_resolution_is_out_of_range() {
 }
 
 // ============================================================================
-// Values the laws do not check (reported, not part of the documented range)
+// Values out of the range: a fault, never a wrapped value
 // ============================================================================
 
 /// A velocity-Verlet kick `v + F·h/(2m)` whose product leaves the `Fix128`
-/// range: the step returns `Ok` with a wrapped velocity instead of a fault.
+/// range is a fault, not a wrapped velocity.
 #[test]
-#[ignore = "src gap: MdParticipant kick/drift overflow is not detected (wraps)"]
 fn an_md_kick_out_of_range_is_a_fault() {
     // two Morse particles at r = 1.1 (the minimum) would feel no force; put
     // them at r = 0.6 where the Morse force is 2·D·a·e(e−1) ≈ 28 (e = e¹),
@@ -952,10 +950,9 @@ fn an_md_kick_out_of_range_is_a_fault() {
     assert_eq!(bytes(rig.ps[0].as_ref()), before);
 }
 
-/// A pedestrian whose velocity update `v + F·h/m` leaves the `Fix128` range:
-/// the step returns `Ok` with a wrapped velocity instead of a fault.
+/// A pedestrian whose driving term `m (v0 ê − v)/τ` leaves the `Fix128`
+/// range is a fault, not a wrapped velocity.
 #[test]
-#[ignore = "src gap: CrowdParticipant velocity/position overflow is not detected (wraps)"]
 fn a_crowd_velocity_out_of_range_is_a_fault() {
     let mut p = crowd_people()[0];
     p.velocity = Vec2Fix::new(Fix128::from_int(1 << 61), Fix128::ZERO);
@@ -973,8 +970,12 @@ fn a_crowd_velocity_out_of_range_is_a_fault() {
     let mut rig = Rig::new(vec![Box::new(c)]);
     let faults = rig.substep(Fix128::from_ratio(1, 100));
     assert_eq!(
-        faults.len(),
-        1,
+        faults,
+        vec![WorldFault::Participant {
+            index: 0,
+            kind: CROWD_PARTICIPANT_KIND,
+            fault: ParticipantFault::OutOfRange,
+        }],
         "a driving term m·v/τ ≈ 70·2^85 was accepted, v after the step = {:?}",
         {
             let mut back = crowd();
