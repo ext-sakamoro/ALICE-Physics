@@ -1,0 +1,75 @@
+name: Miri and loom (changed unsafe or parallel code)
+
+# The raw-pointer slice wrappers of the parallel step (src/solver.rs) are the
+# crate's only unsafe code; Miri checks them for undefined behaviour and loom
+# explores the thread interleavings of one colour batch. quality-deep.yml runs
+# both weekly; this workflow runs them, as a gate, whenever a push changes the
+# unsafe or parallel code they cover.
+on:
+  push:
+    branches: [main, 'ci/**']
+    paths:
+      - 'src/solver.rs'
+      - 'src/solver_tgs*.rs'
+      - 'src/bvh.rs'
+      - 'src/contact_cache.rs'
+      - 'src/multi_world.rs'
+      - 'src/query.rs'
+      - 'src/laminate.rs'
+      - 'Cargo.toml'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/unsafe-and-parallel.yml'
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  loom:
+    name: loom (batch colouring protocol, --cfg loom)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # loom explores every interleaving of the threads that write one colour
+      # batch; a colouring that put two constraints sharing a dynamic body into
+      # the same batch shows up as an unsynchronised access (the invariant the
+      # raw-pointer slice wrappers rely on)
+      - name: loom model tests
+        run: cargo test --lib --features parallel loom_ -- --nocapture
+        env:
+          RUSTFLAGS: --cfg loom
+          LOOM_MAX_PREEMPTIONS: 3
+
+  miri:
+    name: Miri (UB 検出、parallel feature)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install nightly + miri
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: miri
+      - uses: Swatinem/rust-cache@v2
+      # 全 1378 test は数時間かかるため unsafe / 並列に触る test を指名
+      # Mac 実測 (2026-09-15): coloring 4 test 12 s / bvh+contact_cache 26 test 17 s / solver::tests 全 52 は 10 分超
+      # 対象を増やす時は本 list に追記 (solver = BodySlicePtr raw pointer 並列、bvh = escape pointer、
+      # contact_cache = HashMap index、math = SIMD 以外の unsafe なし)
+      # rayon (crossbeam-epoch 0.9 の tagged pointer) は Stacked Borrows では偽 UB を報告する
+      # (2026-09-15 実測: `parallel_step_rebuilds_*` が SB で fail / Tree Borrows で pass) ため
+      # parallel test は -Zmiri-tree-borrows、pool thread の終了待ちなしは -Zmiri-ignore-leaks で許容
+      # parallel_step_static_hub_matches_sequential_solver (200 spoke × step) は miri ではメモリ不足で kill される
+      # (Mac 実測 2026-09-15) ため対象外、rebuilds_* 1 本 (TB 32 s) のみ
+      - name: Miri (solver coloring + parallel step, Tree Borrows)
+        run: cargo +nightly miri test --lib --features parallel -- solver::tests::coloring solver::tests::parallel_step_rebuilds
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation -Zmiri-tree-borrows -Zmiri-ignore-leaks
+      - name: Miri (bvh / contact_cache, Stacked Borrows)
+        run: cargo +nightly miri test --lib -- bvh::tests contact_cache::tests
+        env:
+          MIRIFLAGS: -Zmiri-disable-isolation
