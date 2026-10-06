@@ -26,11 +26,16 @@
 //!
 //! # Collision
 //!
-//! The solver detects collisions between spheres. A shaped body is registered
-//! with the **bounding sphere about its centre of mass** as its collision radius:
-//! it encloses the whole solid and is reached by it. A pair of boxes is therefore
-//! detected as a pair of spheres; a narrow-phase on the shape itself is a separate
-//! piece of work.
+//! A shaped body is registered with the **bounding sphere about its centre of
+//! mass** as its collision radius: it encloses the whole solid. A pair in which
+//! at least one body carries a shape or a compound is decided by GJK/EPA on the
+//! collider itself, with a plain body's collision sphere entering as a sphere
+//! support; two plain bodies keep the exact sphere test. The broadphase box of a
+//! body with a collider is its closed-form world box, clipped to the cube of the
+//! collision sphere.
+//!
+//! GJK works on support points, so a solid that is not convex collides as its
+//! convex hull: a ball cannot enter the hole of a [`Torus`].
 //!
 //! Author: Moroya Sakamoto
 
