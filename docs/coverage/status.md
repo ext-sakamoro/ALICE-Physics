@@ -8,6 +8,7 @@ crate has today.
 |---|---:|---:|---:|---:|---:|---:|
 | `docs/coverage/acous.toml` | 101 | 8 | 3 | 3 | 87 | 0 |
 | `docs/coverage/am.toml` | 90 | 10 | 0 | 7 | 73 | 0 |
+| `docs/coverage/atmos.toml` | 144 | 0 | 1 | 0 | 143 | 0 |
 | `docs/coverage/bio.toml` | 133 | 0 | 4 | 0 | 129 | 0 |
 | `docs/coverage/cfd.toml` | 117 | 39 | 2 | 6 | 70 | 0 |
 | `docs/coverage/chem.toml` | 111 | 7 | 2 | 0 | 102 | 0 |
@@ -33,7 +34,7 @@ crate has today.
 | `docs/coverage/soft.toml` | 90 | 21 | 4 | 6 | 59 | 0 |
 | `docs/coverage/struct.toml` | 134 | 33 | 0 | 10 | 91 | 0 |
 | `docs/coverage/therm.toml` | 102 | 17 | 0 | 3 | 82 | 0 |
-| **total** | 3093 | 535 | 68 | 104 | 2381 | 5 |
+| **total** | 3237 | 535 | 69 | 104 | 2524 | 5 |
 
 ## `docs/coverage/acous.toml`
 
@@ -69,6 +70,27 @@ crate has today.
 | thermal history | 8 | 0 | 0 | 0 | 8 | 0 |
 | vat photopolymerisation | 4 | 0 | 0 | 0 | 4 | 0 |
 | warp and residual stress | 9 | 0 | 0 | 2 | 7 | 0 |
+
+## `docs/coverage/atmos.toml`
+
+| axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
+|---|---:|---:|---:|---:|---:|---:|
+| aerosol-activation | 7 | 0 | 0 | 0 | 7 | 0 |
+| benchmark | 13 | 0 | 0 | 0 | 13 | 0 |
+| convection | 9 | 0 | 1 | 0 | 8 | 0 |
+| diagnostics | 3 | 0 | 0 | 0 | 3 | 0 |
+| ensemble | 5 | 0 | 0 | 0 | 5 | 0 |
+| equations | 10 | 0 | 0 | 0 | 10 | 0 |
+| ice-microphysics | 12 | 0 | 0 | 0 | 12 | 0 |
+| intervention | 9 | 0 | 0 | 0 | 9 | 0 |
+| numerics | 8 | 0 | 0 | 0 | 8 | 0 |
+| ocean-coupling | 4 | 0 | 0 | 0 | 4 | 0 |
+| radiation | 8 | 0 | 0 | 0 | 8 | 0 |
+| rotation-balance | 12 | 0 | 0 | 0 | 12 | 0 |
+| surface-boundary-layer | 5 | 0 | 0 | 0 | 5 | 0 |
+| thermodynamics | 11 | 0 | 0 | 0 | 11 | 0 |
+| tropical-cyclone | 13 | 0 | 0 | 0 | 13 | 0 |
+| warm-microphysics | 15 | 0 | 0 | 0 | 15 | 0 |
 
 ## `docs/coverage/bio.toml`
 
