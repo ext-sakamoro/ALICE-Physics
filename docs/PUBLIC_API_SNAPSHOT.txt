@@ -14137,30 +14137,12 @@ pub trait alice_physics::prelude::Mergeable
 pub fn alice_physics::prelude::Mergeable::merge(&mut self, &Self)
 impl alice_physics::sketch::Mergeable for alice_physics::pipeline::MetricSlot
 pub fn alice_physics::pipeline::MetricSlot::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::CountMinSketch1024x5::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::CountMinSketch2048x7::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch4096x5
-pub fn alice_physics::sketch::CountMinSketch4096x5::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch1024
-pub fn alice_physics::sketch::DDSketch1024::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch128
-pub fn alice_physics::sketch::DDSketch128::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch2048
-pub fn alice_physics::sketch::DDSketch2048::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch256
-pub fn alice_physics::sketch::DDSketch256::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch512
-pub fn alice_physics::sketch::DDSketch512::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog10
-pub fn alice_physics::sketch::HyperLogLog10::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog12
-pub fn alice_physics::sketch::HyperLogLog12::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog14
-pub fn alice_physics::sketch::HyperLogLog14::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog16
-pub fn alice_physics::sketch::HyperLogLog16::merge(&mut self, &Self)
+impl<const BINS: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketchN<BINS>
+pub fn alice_physics::sketch::DDSketchN<BINS>::merge(&mut self, &Self)
+impl<const M: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLogN<M>
+pub fn alice_physics::sketch::HyperLogLogN<M>::merge(&mut self, &Self)
+impl<const W: usize, const D: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::merge(&mut self, &Self)
 pub trait alice_physics::prelude::PhysicsModifier: core::marker::Send + core::marker::Sync
 pub fn alice_physics::prelude::PhysicsModifier::is_active(&self) -> bool
 pub fn alice_physics::prelude::PhysicsModifier::modify_distance(&self, f32, f32, f32, f32) -> f32
@@ -16456,226 +16438,62 @@ pub fn alice_physics::thermal::ThermalModifier::modify_distance(&self, f32, f32,
 pub fn alice_physics::thermal::ThermalModifier::name(&self) -> &'static str
 pub fn alice_physics::thermal::ThermalModifier::update(&mut self, f32)
 pub mod alice_physics::sketch
-pub struct alice_physics::sketch::CountMinSketch1024x5
-impl alice_physics::sketch::CountMinSketch1024x5
-pub const alice_physics::sketch::CountMinSketch1024x5::DEPTH: usize
-pub const alice_physics::sketch::CountMinSketch1024x5::WIDTH: usize
-pub fn alice_physics::sketch::CountMinSketch1024x5::clear(&mut self)
-pub fn alice_physics::sketch::CountMinSketch1024x5::confidence(&self) -> f64
-pub fn alice_physics::sketch::CountMinSketch1024x5::error_bound(&self) -> f64
-pub fn alice_physics::sketch::CountMinSketch1024x5::estimate<T: core::hash::Hash>(&self, &T) -> u64
-pub fn alice_physics::sketch::CountMinSketch1024x5::estimate_bytes(&self, &[u8]) -> u64
-pub fn alice_physics::sketch::CountMinSketch1024x5::estimate_hash(&self, u64) -> u64
-pub fn alice_physics::sketch::CountMinSketch1024x5::insert<T: core::hash::Hash>(&mut self, &T)
-pub fn alice_physics::sketch::CountMinSketch1024x5::insert_bytes(&mut self, &[u8])
-pub fn alice_physics::sketch::CountMinSketch1024x5::insert_hash(&mut self, u64, u64)
-pub const fn alice_physics::sketch::CountMinSketch1024x5::new() -> Self
-pub const fn alice_physics::sketch::CountMinSketch1024x5::total(&self) -> u64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::CountMinSketch1024x5::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::CountMinSketch1024x5::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::CountMinSketch1024x5::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::CountMinSketch1024x5::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::CountMinSketch1024x5
-impl core::marker::Send for alice_physics::sketch::CountMinSketch1024x5
-impl core::marker::Sync for alice_physics::sketch::CountMinSketch1024x5
-impl core::marker::Unpin for alice_physics::sketch::CountMinSketch1024x5
-impl core::marker::UnsafeUnpin for alice_physics::sketch::CountMinSketch1024x5
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::CountMinSketch1024x5
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::CountMinSketch1024x5
-pub struct alice_physics::sketch::CountMinSketch2048x7
-impl alice_physics::sketch::CountMinSketch2048x7
-pub const alice_physics::sketch::CountMinSketch2048x7::DEPTH: usize
-pub const alice_physics::sketch::CountMinSketch2048x7::WIDTH: usize
-pub fn alice_physics::sketch::CountMinSketch2048x7::clear(&mut self)
-pub fn alice_physics::sketch::CountMinSketch2048x7::confidence(&self) -> f64
-pub fn alice_physics::sketch::CountMinSketch2048x7::error_bound(&self) -> f64
-pub fn alice_physics::sketch::CountMinSketch2048x7::estimate<T: core::hash::Hash>(&self, &T) -> u64
-pub fn alice_physics::sketch::CountMinSketch2048x7::estimate_bytes(&self, &[u8]) -> u64
-pub fn alice_physics::sketch::CountMinSketch2048x7::estimate_hash(&self, u64) -> u64
-pub fn alice_physics::sketch::CountMinSketch2048x7::insert<T: core::hash::Hash>(&mut self, &T)
-pub fn alice_physics::sketch::CountMinSketch2048x7::insert_bytes(&mut self, &[u8])
-pub fn alice_physics::sketch::CountMinSketch2048x7::insert_hash(&mut self, u64, u64)
-pub const fn alice_physics::sketch::CountMinSketch2048x7::new() -> Self
-pub const fn alice_physics::sketch::CountMinSketch2048x7::total(&self) -> u64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::CountMinSketch2048x7::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::CountMinSketch2048x7::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::CountMinSketch2048x7::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::CountMinSketch2048x7::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::CountMinSketch2048x7
-impl core::marker::Send for alice_physics::sketch::CountMinSketch2048x7
-impl core::marker::Sync for alice_physics::sketch::CountMinSketch2048x7
-impl core::marker::Unpin for alice_physics::sketch::CountMinSketch2048x7
-impl core::marker::UnsafeUnpin for alice_physics::sketch::CountMinSketch2048x7
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::CountMinSketch2048x7
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::CountMinSketch2048x7
-pub struct alice_physics::sketch::CountMinSketch4096x5
-impl alice_physics::sketch::CountMinSketch4096x5
-pub const alice_physics::sketch::CountMinSketch4096x5::DEPTH: usize
-pub const alice_physics::sketch::CountMinSketch4096x5::WIDTH: usize
-pub fn alice_physics::sketch::CountMinSketch4096x5::clear(&mut self)
-pub fn alice_physics::sketch::CountMinSketch4096x5::confidence(&self) -> f64
-pub fn alice_physics::sketch::CountMinSketch4096x5::error_bound(&self) -> f64
-pub fn alice_physics::sketch::CountMinSketch4096x5::estimate<T: core::hash::Hash>(&self, &T) -> u64
-pub fn alice_physics::sketch::CountMinSketch4096x5::estimate_bytes(&self, &[u8]) -> u64
-pub fn alice_physics::sketch::CountMinSketch4096x5::estimate_hash(&self, u64) -> u64
-pub fn alice_physics::sketch::CountMinSketch4096x5::insert<T: core::hash::Hash>(&mut self, &T)
-pub fn alice_physics::sketch::CountMinSketch4096x5::insert_bytes(&mut self, &[u8])
-pub fn alice_physics::sketch::CountMinSketch4096x5::insert_hash(&mut self, u64, u64)
-pub const fn alice_physics::sketch::CountMinSketch4096x5::new() -> Self
-pub const fn alice_physics::sketch::CountMinSketch4096x5::total(&self) -> u64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch4096x5
-pub fn alice_physics::sketch::CountMinSketch4096x5::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::CountMinSketch4096x5
-pub fn alice_physics::sketch::CountMinSketch4096x5::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::CountMinSketch4096x5
-pub fn alice_physics::sketch::CountMinSketch4096x5::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::CountMinSketch4096x5
-pub fn alice_physics::sketch::CountMinSketch4096x5::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::CountMinSketch4096x5
-impl core::marker::Send for alice_physics::sketch::CountMinSketch4096x5
-impl core::marker::Sync for alice_physics::sketch::CountMinSketch4096x5
-impl core::marker::Unpin for alice_physics::sketch::CountMinSketch4096x5
-impl core::marker::UnsafeUnpin for alice_physics::sketch::CountMinSketch4096x5
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::CountMinSketch4096x5
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::CountMinSketch4096x5
-pub struct alice_physics::sketch::DDSketch1024
-impl alice_physics::sketch::DDSketch1024
-pub const alice_physics::sketch::DDSketch1024::BINS: usize
-pub const fn alice_physics::sketch::DDSketch1024::alpha(&self) -> f64
-pub fn alice_physics::sketch::DDSketch1024::clear(&mut self)
-pub const fn alice_physics::sketch::DDSketch1024::count(&self) -> u64
-pub fn alice_physics::sketch::DDSketch1024::insert(&mut self, f64)
-pub const fn alice_physics::sketch::DDSketch1024::max(&self) -> f64
-pub fn alice_physics::sketch::DDSketch1024::mean(&self) -> f64
-pub const fn alice_physics::sketch::DDSketch1024::min(&self) -> f64
-pub fn alice_physics::sketch::DDSketch1024::new(f64) -> Self
-pub fn alice_physics::sketch::DDSketch1024::quantile(&self, f64) -> f64
-pub const fn alice_physics::sketch::DDSketch1024::sum(&self) -> f64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch1024
-pub fn alice_physics::sketch::DDSketch1024::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::DDSketch1024
-pub fn alice_physics::sketch::DDSketch1024::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::sketch::DDSketch1024
-pub fn alice_physics::sketch::DDSketch1024::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::DDSketch1024
-impl core::marker::Send for alice_physics::sketch::DDSketch1024
-impl core::marker::Sync for alice_physics::sketch::DDSketch1024
-impl core::marker::Unpin for alice_physics::sketch::DDSketch1024
-impl core::marker::UnsafeUnpin for alice_physics::sketch::DDSketch1024
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::DDSketch1024
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::DDSketch1024
-pub struct alice_physics::sketch::DDSketch128
-impl alice_physics::sketch::DDSketch128
-pub const alice_physics::sketch::DDSketch128::BINS: usize
-pub const fn alice_physics::sketch::DDSketch128::alpha(&self) -> f64
-pub fn alice_physics::sketch::DDSketch128::clear(&mut self)
-pub const fn alice_physics::sketch::DDSketch128::count(&self) -> u64
-pub fn alice_physics::sketch::DDSketch128::insert(&mut self, f64)
-pub const fn alice_physics::sketch::DDSketch128::max(&self) -> f64
-pub fn alice_physics::sketch::DDSketch128::mean(&self) -> f64
-pub const fn alice_physics::sketch::DDSketch128::min(&self) -> f64
-pub fn alice_physics::sketch::DDSketch128::new(f64) -> Self
-pub fn alice_physics::sketch::DDSketch128::quantile(&self, f64) -> f64
-pub const fn alice_physics::sketch::DDSketch128::sum(&self) -> f64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch128
-pub fn alice_physics::sketch::DDSketch128::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::DDSketch128
-pub fn alice_physics::sketch::DDSketch128::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::sketch::DDSketch128
-pub fn alice_physics::sketch::DDSketch128::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::DDSketch128
-impl core::marker::Send for alice_physics::sketch::DDSketch128
-impl core::marker::Sync for alice_physics::sketch::DDSketch128
-impl core::marker::Unpin for alice_physics::sketch::DDSketch128
-impl core::marker::UnsafeUnpin for alice_physics::sketch::DDSketch128
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::DDSketch128
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::DDSketch128
-pub struct alice_physics::sketch::DDSketch2048
-impl alice_physics::sketch::DDSketch2048
-pub const alice_physics::sketch::DDSketch2048::BINS: usize
-pub const fn alice_physics::sketch::DDSketch2048::alpha(&self) -> f64
-pub fn alice_physics::sketch::DDSketch2048::clear(&mut self)
-pub const fn alice_physics::sketch::DDSketch2048::count(&self) -> u64
-pub fn alice_physics::sketch::DDSketch2048::insert(&mut self, f64)
-pub const fn alice_physics::sketch::DDSketch2048::max(&self) -> f64
-pub fn alice_physics::sketch::DDSketch2048::mean(&self) -> f64
-pub const fn alice_physics::sketch::DDSketch2048::min(&self) -> f64
-pub fn alice_physics::sketch::DDSketch2048::new(f64) -> Self
-pub fn alice_physics::sketch::DDSketch2048::quantile(&self, f64) -> f64
-pub const fn alice_physics::sketch::DDSketch2048::sum(&self) -> f64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch2048
-pub fn alice_physics::sketch::DDSketch2048::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::DDSketch2048
-pub fn alice_physics::sketch::DDSketch2048::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::sketch::DDSketch2048
-pub fn alice_physics::sketch::DDSketch2048::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::DDSketch2048
-impl core::marker::Send for alice_physics::sketch::DDSketch2048
-impl core::marker::Sync for alice_physics::sketch::DDSketch2048
-impl core::marker::Unpin for alice_physics::sketch::DDSketch2048
-impl core::marker::UnsafeUnpin for alice_physics::sketch::DDSketch2048
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::DDSketch2048
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::DDSketch2048
-pub struct alice_physics::sketch::DDSketch256
-impl alice_physics::sketch::DDSketch256
-pub const alice_physics::sketch::DDSketch256::BINS: usize
-pub const fn alice_physics::sketch::DDSketch256::alpha(&self) -> f64
-pub fn alice_physics::sketch::DDSketch256::clear(&mut self)
-pub const fn alice_physics::sketch::DDSketch256::count(&self) -> u64
-pub fn alice_physics::sketch::DDSketch256::insert(&mut self, f64)
-pub const fn alice_physics::sketch::DDSketch256::max(&self) -> f64
-pub fn alice_physics::sketch::DDSketch256::mean(&self) -> f64
-pub const fn alice_physics::sketch::DDSketch256::min(&self) -> f64
-pub fn alice_physics::sketch::DDSketch256::new(f64) -> Self
-pub fn alice_physics::sketch::DDSketch256::quantile(&self, f64) -> f64
-pub const fn alice_physics::sketch::DDSketch256::sum(&self) -> f64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch256
-pub fn alice_physics::sketch::DDSketch256::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::DDSketch256
-pub fn alice_physics::sketch::DDSketch256::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::sketch::DDSketch256
-pub fn alice_physics::sketch::DDSketch256::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::DDSketch256
-impl core::marker::Send for alice_physics::sketch::DDSketch256
-impl core::marker::Sync for alice_physics::sketch::DDSketch256
-impl core::marker::Unpin for alice_physics::sketch::DDSketch256
-impl core::marker::UnsafeUnpin for alice_physics::sketch::DDSketch256
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::DDSketch256
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::DDSketch256
-pub struct alice_physics::sketch::DDSketch512
-impl alice_physics::sketch::DDSketch512
-pub const alice_physics::sketch::DDSketch512::BINS: usize
-pub const fn alice_physics::sketch::DDSketch512::alpha(&self) -> f64
-pub fn alice_physics::sketch::DDSketch512::clear(&mut self)
-pub const fn alice_physics::sketch::DDSketch512::count(&self) -> u64
-pub fn alice_physics::sketch::DDSketch512::insert(&mut self, f64)
-pub const fn alice_physics::sketch::DDSketch512::max(&self) -> f64
-pub fn alice_physics::sketch::DDSketch512::mean(&self) -> f64
-pub const fn alice_physics::sketch::DDSketch512::min(&self) -> f64
-pub fn alice_physics::sketch::DDSketch512::new(f64) -> Self
-pub fn alice_physics::sketch::DDSketch512::quantile(&self, f64) -> f64
-pub const fn alice_physics::sketch::DDSketch512::sum(&self) -> f64
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch512
-pub fn alice_physics::sketch::DDSketch512::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::DDSketch512
-pub fn alice_physics::sketch::DDSketch512::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::sketch::DDSketch512
-pub fn alice_physics::sketch::DDSketch512::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::DDSketch512
-impl core::marker::Send for alice_physics::sketch::DDSketch512
-impl core::marker::Sync for alice_physics::sketch::DDSketch512
-impl core::marker::Unpin for alice_physics::sketch::DDSketch512
-impl core::marker::UnsafeUnpin for alice_physics::sketch::DDSketch512
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::DDSketch512
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::DDSketch512
+pub struct alice_physics::sketch::CountMinSketchN<const W: usize, const D: usize>
+impl<const W: usize, const D: usize> alice_physics::sketch::CountMinSketchN<W, D>
+pub const alice_physics::sketch::CountMinSketchN<W, D>::DEPTH: usize
+pub const alice_physics::sketch::CountMinSketchN<W, D>::WIDTH: usize
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::clear(&mut self)
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::confidence(&self) -> f64
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::error_bound(&self) -> f64
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::estimate<T: core::hash::Hash>(&self, &T) -> u64
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::estimate_bytes(&self, &[u8]) -> u64
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::estimate_hash(&self, u64) -> u64
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::insert<T: core::hash::Hash>(&mut self, &T)
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::insert_bytes(&mut self, &[u8])
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::insert_hash(&mut self, u64, u64)
+pub const fn alice_physics::sketch::CountMinSketchN<W, D>::new() -> Self
+pub const fn alice_physics::sketch::CountMinSketchN<W, D>::total(&self) -> u64
+impl<const W: usize, const D: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::merge(&mut self, &Self)
+impl<const W: usize, const D: usize> core::clone::Clone for alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::clone(&self) -> Self
+impl<const W: usize, const D: usize> core::default::Default for alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::default() -> Self
+impl<const W: usize, const D: usize> core::fmt::Debug for alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const W: usize, const D: usize> core::marker::Freeze for alice_physics::sketch::CountMinSketchN<W, D> where [[u64; W]; D]: core::marker::Freeze
+impl<const W: usize, const D: usize> core::marker::Send for alice_physics::sketch::CountMinSketchN<W, D> where [[u64; W]; D]: core::marker::Send
+impl<const W: usize, const D: usize> core::marker::Sync for alice_physics::sketch::CountMinSketchN<W, D> where [[u64; W]; D]: core::marker::Sync
+impl<const W: usize, const D: usize> core::marker::Unpin for alice_physics::sketch::CountMinSketchN<W, D> where [[u64; W]; D]: core::marker::Unpin
+impl<const W: usize, const D: usize> core::marker::UnsafeUnpin for alice_physics::sketch::CountMinSketchN<W, D> where [[u64; W]; D]: core::marker::UnsafeUnpin
+impl<const W: usize, const D: usize> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::CountMinSketchN<W, D> where [[u64; W]; D]: core::panic::unwind_safe::RefUnwindSafe
+impl<const W: usize, const D: usize> core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::CountMinSketchN<W, D> where [[u64; W]; D]: core::panic::unwind_safe::UnwindSafe
+pub struct alice_physics::sketch::DDSketchN<const BINS: usize>
+impl<const BINS: usize> alice_physics::sketch::DDSketchN<BINS>
+pub const alice_physics::sketch::DDSketchN<BINS>::BINS: usize
+pub const fn alice_physics::sketch::DDSketchN<BINS>::alpha(&self) -> f64
+pub fn alice_physics::sketch::DDSketchN<BINS>::clear(&mut self)
+pub const fn alice_physics::sketch::DDSketchN<BINS>::count(&self) -> u64
+pub fn alice_physics::sketch::DDSketchN<BINS>::insert(&mut self, f64)
+pub const fn alice_physics::sketch::DDSketchN<BINS>::max(&self) -> f64
+pub fn alice_physics::sketch::DDSketchN<BINS>::mean(&self) -> f64
+pub const fn alice_physics::sketch::DDSketchN<BINS>::min(&self) -> f64
+pub fn alice_physics::sketch::DDSketchN<BINS>::new(f64) -> Self
+pub fn alice_physics::sketch::DDSketchN<BINS>::quantile(&self, f64) -> f64
+pub const fn alice_physics::sketch::DDSketchN<BINS>::sum(&self) -> f64
+impl<const BINS: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketchN<BINS>
+pub fn alice_physics::sketch::DDSketchN<BINS>::merge(&mut self, &Self)
+impl<const BINS: usize> core::clone::Clone for alice_physics::sketch::DDSketchN<BINS>
+pub fn alice_physics::sketch::DDSketchN<BINS>::clone(&self) -> Self
+impl<const BINS: usize> core::fmt::Debug for alice_physics::sketch::DDSketchN<BINS>
+pub fn alice_physics::sketch::DDSketchN<BINS>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const BINS: usize> core::marker::Freeze for alice_physics::sketch::DDSketchN<BINS> where [u64; BINS]: core::marker::Freeze + core::marker::Freeze
+impl<const BINS: usize> core::marker::Send for alice_physics::sketch::DDSketchN<BINS> where [u64; BINS]: core::marker::Send + core::marker::Send
+impl<const BINS: usize> core::marker::Sync for alice_physics::sketch::DDSketchN<BINS> where [u64; BINS]: core::marker::Sync + core::marker::Sync
+impl<const BINS: usize> core::marker::Unpin for alice_physics::sketch::DDSketchN<BINS> where [u64; BINS]: core::marker::Unpin + core::marker::Unpin
+impl<const BINS: usize> core::marker::UnsafeUnpin for alice_physics::sketch::DDSketchN<BINS> where [u64; BINS]: core::marker::UnsafeUnpin + core::marker::UnsafeUnpin
+impl<const BINS: usize> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::DDSketchN<BINS> where [u64; BINS]: core::panic::unwind_safe::RefUnwindSafe + core::panic::unwind_safe::RefUnwindSafe
+impl<const BINS: usize> core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::DDSketchN<BINS> where [u64; BINS]: core::panic::unwind_safe::UnwindSafe + core::panic::unwind_safe::UnwindSafe
 pub struct alice_physics::sketch::FnvHasher
 impl alice_physics::sketch::FnvHasher
 pub fn alice_physics::sketch::FnvHasher::hash_bytes(&[u8]) -> u64
@@ -16722,205 +16540,82 @@ impl core::marker::Unpin for alice_physics::sketch::HeavyHitterEntry
 impl core::marker::UnsafeUnpin for alice_physics::sketch::HeavyHitterEntry
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HeavyHitterEntry
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HeavyHitterEntry
-pub struct alice_physics::sketch::HeavyHitters10
-impl alice_physics::sketch::HeavyHitters10
-pub const alice_physics::sketch::HeavyHitters10::K: usize
-pub fn alice_physics::sketch::HeavyHitters10::clear(&mut self)
-pub const fn alice_physics::sketch::HeavyHitters10::cms(&self) -> &alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::HeavyHitters10::insert_hash(&mut self, u64)
-pub const fn alice_physics::sketch::HeavyHitters10::new() -> Self
-pub fn alice_physics::sketch::HeavyHitters10::top(&self) -> impl core::iter::traits::iterator::Iterator<Item = &alice_physics::sketch::HeavyHitterEntry>
-impl core::clone::Clone for alice_physics::sketch::HeavyHitters10
-pub fn alice_physics::sketch::HeavyHitters10::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::HeavyHitters10
-pub fn alice_physics::sketch::HeavyHitters10::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::HeavyHitters10
-pub fn alice_physics::sketch::HeavyHitters10::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::HeavyHitters10
-impl core::marker::Send for alice_physics::sketch::HeavyHitters10
-impl core::marker::Sync for alice_physics::sketch::HeavyHitters10
-impl core::marker::Unpin for alice_physics::sketch::HeavyHitters10
-impl core::marker::UnsafeUnpin for alice_physics::sketch::HeavyHitters10
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HeavyHitters10
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HeavyHitters10
-pub struct alice_physics::sketch::HeavyHitters20
-impl alice_physics::sketch::HeavyHitters20
-pub const alice_physics::sketch::HeavyHitters20::K: usize
-pub fn alice_physics::sketch::HeavyHitters20::clear(&mut self)
-pub const fn alice_physics::sketch::HeavyHitters20::cms(&self) -> &alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::HeavyHitters20::insert_hash(&mut self, u64)
-pub const fn alice_physics::sketch::HeavyHitters20::new() -> Self
-pub fn alice_physics::sketch::HeavyHitters20::top(&self) -> impl core::iter::traits::iterator::Iterator<Item = &alice_physics::sketch::HeavyHitterEntry>
-impl core::clone::Clone for alice_physics::sketch::HeavyHitters20
-pub fn alice_physics::sketch::HeavyHitters20::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::HeavyHitters20
-pub fn alice_physics::sketch::HeavyHitters20::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::HeavyHitters20
-pub fn alice_physics::sketch::HeavyHitters20::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::HeavyHitters20
-impl core::marker::Send for alice_physics::sketch::HeavyHitters20
-impl core::marker::Sync for alice_physics::sketch::HeavyHitters20
-impl core::marker::Unpin for alice_physics::sketch::HeavyHitters20
-impl core::marker::UnsafeUnpin for alice_physics::sketch::HeavyHitters20
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HeavyHitters20
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HeavyHitters20
-pub struct alice_physics::sketch::HeavyHitters5
-impl alice_physics::sketch::HeavyHitters5
-pub const alice_physics::sketch::HeavyHitters5::K: usize
-pub fn alice_physics::sketch::HeavyHitters5::clear(&mut self)
-pub const fn alice_physics::sketch::HeavyHitters5::cms(&self) -> &alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::HeavyHitters5::insert_hash(&mut self, u64)
-pub const fn alice_physics::sketch::HeavyHitters5::new() -> Self
-pub fn alice_physics::sketch::HeavyHitters5::top(&self) -> impl core::iter::traits::iterator::Iterator<Item = &alice_physics::sketch::HeavyHitterEntry>
-impl core::clone::Clone for alice_physics::sketch::HeavyHitters5
-pub fn alice_physics::sketch::HeavyHitters5::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::HeavyHitters5
-pub fn alice_physics::sketch::HeavyHitters5::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::HeavyHitters5
-pub fn alice_physics::sketch::HeavyHitters5::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::HeavyHitters5
-impl core::marker::Send for alice_physics::sketch::HeavyHitters5
-impl core::marker::Sync for alice_physics::sketch::HeavyHitters5
-impl core::marker::Unpin for alice_physics::sketch::HeavyHitters5
-impl core::marker::UnsafeUnpin for alice_physics::sketch::HeavyHitters5
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HeavyHitters5
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HeavyHitters5
-pub struct alice_physics::sketch::HyperLogLog10
-impl alice_physics::sketch::HyperLogLog10
-pub const alice_physics::sketch::HyperLogLog10::M: usize
-pub const alice_physics::sketch::HyperLogLog10::P: usize
-pub fn alice_physics::sketch::HyperLogLog10::cardinality(&self) -> f64
-pub fn alice_physics::sketch::HyperLogLog10::clear(&mut self)
-pub fn alice_physics::sketch::HyperLogLog10::insert<T: core::hash::Hash>(&mut self, &T)
-pub fn alice_physics::sketch::HyperLogLog10::insert_bytes(&mut self, &[u8])
-pub fn alice_physics::sketch::HyperLogLog10::insert_hash(&mut self, u64)
-pub const fn alice_physics::sketch::HyperLogLog10::new() -> Self
-pub const fn alice_physics::sketch::HyperLogLog10::registers(&self) -> &[u8]
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog10
-pub fn alice_physics::sketch::HyperLogLog10::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::HyperLogLog10
-pub fn alice_physics::sketch::HyperLogLog10::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::HyperLogLog10
-pub fn alice_physics::sketch::HyperLogLog10::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::HyperLogLog10
-pub fn alice_physics::sketch::HyperLogLog10::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::HyperLogLog10
-impl core::marker::Send for alice_physics::sketch::HyperLogLog10
-impl core::marker::Sync for alice_physics::sketch::HyperLogLog10
-impl core::marker::Unpin for alice_physics::sketch::HyperLogLog10
-impl core::marker::UnsafeUnpin for alice_physics::sketch::HyperLogLog10
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HyperLogLog10
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HyperLogLog10
-pub struct alice_physics::sketch::HyperLogLog12
-impl alice_physics::sketch::HyperLogLog12
-pub const alice_physics::sketch::HyperLogLog12::M: usize
-pub const alice_physics::sketch::HyperLogLog12::P: usize
-pub fn alice_physics::sketch::HyperLogLog12::cardinality(&self) -> f64
-pub fn alice_physics::sketch::HyperLogLog12::clear(&mut self)
-pub fn alice_physics::sketch::HyperLogLog12::insert<T: core::hash::Hash>(&mut self, &T)
-pub fn alice_physics::sketch::HyperLogLog12::insert_bytes(&mut self, &[u8])
-pub fn alice_physics::sketch::HyperLogLog12::insert_hash(&mut self, u64)
-pub const fn alice_physics::sketch::HyperLogLog12::new() -> Self
-pub const fn alice_physics::sketch::HyperLogLog12::registers(&self) -> &[u8]
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog12
-pub fn alice_physics::sketch::HyperLogLog12::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::HyperLogLog12
-pub fn alice_physics::sketch::HyperLogLog12::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::HyperLogLog12
-pub fn alice_physics::sketch::HyperLogLog12::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::HyperLogLog12
-pub fn alice_physics::sketch::HyperLogLog12::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::HyperLogLog12
-impl core::marker::Send for alice_physics::sketch::HyperLogLog12
-impl core::marker::Sync for alice_physics::sketch::HyperLogLog12
-impl core::marker::Unpin for alice_physics::sketch::HyperLogLog12
-impl core::marker::UnsafeUnpin for alice_physics::sketch::HyperLogLog12
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HyperLogLog12
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HyperLogLog12
-pub struct alice_physics::sketch::HyperLogLog14
-impl alice_physics::sketch::HyperLogLog14
-pub const alice_physics::sketch::HyperLogLog14::M: usize
-pub const alice_physics::sketch::HyperLogLog14::P: usize
-pub fn alice_physics::sketch::HyperLogLog14::cardinality(&self) -> f64
-pub fn alice_physics::sketch::HyperLogLog14::clear(&mut self)
-pub fn alice_physics::sketch::HyperLogLog14::insert<T: core::hash::Hash>(&mut self, &T)
-pub fn alice_physics::sketch::HyperLogLog14::insert_bytes(&mut self, &[u8])
-pub fn alice_physics::sketch::HyperLogLog14::insert_hash(&mut self, u64)
-pub const fn alice_physics::sketch::HyperLogLog14::new() -> Self
-pub const fn alice_physics::sketch::HyperLogLog14::registers(&self) -> &[u8]
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog14
-pub fn alice_physics::sketch::HyperLogLog14::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::HyperLogLog14
-pub fn alice_physics::sketch::HyperLogLog14::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::HyperLogLog14
-pub fn alice_physics::sketch::HyperLogLog14::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::HyperLogLog14
-pub fn alice_physics::sketch::HyperLogLog14::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::HyperLogLog14
-impl core::marker::Send for alice_physics::sketch::HyperLogLog14
-impl core::marker::Sync for alice_physics::sketch::HyperLogLog14
-impl core::marker::Unpin for alice_physics::sketch::HyperLogLog14
-impl core::marker::UnsafeUnpin for alice_physics::sketch::HyperLogLog14
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HyperLogLog14
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HyperLogLog14
-pub struct alice_physics::sketch::HyperLogLog16
-impl alice_physics::sketch::HyperLogLog16
-pub const alice_physics::sketch::HyperLogLog16::M: usize
-pub const alice_physics::sketch::HyperLogLog16::P: usize
-pub fn alice_physics::sketch::HyperLogLog16::cardinality(&self) -> f64
-pub fn alice_physics::sketch::HyperLogLog16::clear(&mut self)
-pub fn alice_physics::sketch::HyperLogLog16::insert<T: core::hash::Hash>(&mut self, &T)
-pub fn alice_physics::sketch::HyperLogLog16::insert_bytes(&mut self, &[u8])
-pub fn alice_physics::sketch::HyperLogLog16::insert_hash(&mut self, u64)
-pub const fn alice_physics::sketch::HyperLogLog16::new() -> Self
-pub const fn alice_physics::sketch::HyperLogLog16::registers(&self) -> &[u8]
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog16
-pub fn alice_physics::sketch::HyperLogLog16::merge(&mut self, &Self)
-impl core::clone::Clone for alice_physics::sketch::HyperLogLog16
-pub fn alice_physics::sketch::HyperLogLog16::clone(&self) -> Self
-impl core::default::Default for alice_physics::sketch::HyperLogLog16
-pub fn alice_physics::sketch::HyperLogLog16::default() -> Self
-impl core::fmt::Debug for alice_physics::sketch::HyperLogLog16
-pub fn alice_physics::sketch::HyperLogLog16::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::sketch::HyperLogLog16
-impl core::marker::Send for alice_physics::sketch::HyperLogLog16
-impl core::marker::Sync for alice_physics::sketch::HyperLogLog16
-impl core::marker::Unpin for alice_physics::sketch::HyperLogLog16
-impl core::marker::UnsafeUnpin for alice_physics::sketch::HyperLogLog16
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HyperLogLog16
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HyperLogLog16
+pub struct alice_physics::sketch::HeavyHittersN<const K: usize, const W: usize, const D: usize>
+impl<const K: usize, const W: usize, const D: usize> alice_physics::sketch::HeavyHittersN<K, W, D>
+pub const alice_physics::sketch::HeavyHittersN<K, W, D>::K: usize
+pub fn alice_physics::sketch::HeavyHittersN<K, W, D>::clear(&mut self)
+pub const fn alice_physics::sketch::HeavyHittersN<K, W, D>::cms(&self) -> &alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::HeavyHittersN<K, W, D>::insert_hash(&mut self, u64)
+pub const fn alice_physics::sketch::HeavyHittersN<K, W, D>::new() -> Self
+pub fn alice_physics::sketch::HeavyHittersN<K, W, D>::top(&self) -> impl core::iter::traits::iterator::Iterator<Item = &alice_physics::sketch::HeavyHitterEntry>
+impl<const K: usize, const W: usize, const D: usize> core::clone::Clone for alice_physics::sketch::HeavyHittersN<K, W, D>
+pub fn alice_physics::sketch::HeavyHittersN<K, W, D>::clone(&self) -> Self
+impl<const K: usize, const W: usize, const D: usize> core::default::Default for alice_physics::sketch::HeavyHittersN<K, W, D>
+pub fn alice_physics::sketch::HeavyHittersN<K, W, D>::default() -> Self
+impl<const K: usize, const W: usize, const D: usize> core::fmt::Debug for alice_physics::sketch::HeavyHittersN<K, W, D>
+pub fn alice_physics::sketch::HeavyHittersN<K, W, D>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const K: usize, const W: usize, const D: usize> core::marker::Freeze for alice_physics::sketch::HeavyHittersN<K, W, D> where alice_physics::sketch::CountMinSketchN<W, D>: core::marker::Freeze, [alice_physics::sketch::HeavyHitterEntry; K]: core::marker::Freeze
+impl<const K: usize, const W: usize, const D: usize> core::marker::Send for alice_physics::sketch::HeavyHittersN<K, W, D> where alice_physics::sketch::CountMinSketchN<W, D>: core::marker::Send, [alice_physics::sketch::HeavyHitterEntry; K]: core::marker::Send
+impl<const K: usize, const W: usize, const D: usize> core::marker::Sync for alice_physics::sketch::HeavyHittersN<K, W, D> where alice_physics::sketch::CountMinSketchN<W, D>: core::marker::Sync, [alice_physics::sketch::HeavyHitterEntry; K]: core::marker::Sync
+impl<const K: usize, const W: usize, const D: usize> core::marker::Unpin for alice_physics::sketch::HeavyHittersN<K, W, D> where alice_physics::sketch::CountMinSketchN<W, D>: core::marker::Unpin, [alice_physics::sketch::HeavyHitterEntry; K]: core::marker::Unpin
+impl<const K: usize, const W: usize, const D: usize> core::marker::UnsafeUnpin for alice_physics::sketch::HeavyHittersN<K, W, D> where alice_physics::sketch::CountMinSketchN<W, D>: core::marker::UnsafeUnpin, [alice_physics::sketch::HeavyHitterEntry; K]: core::marker::UnsafeUnpin
+impl<const K: usize, const W: usize, const D: usize> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HeavyHittersN<K, W, D> where alice_physics::sketch::CountMinSketchN<W, D>: core::panic::unwind_safe::RefUnwindSafe, [alice_physics::sketch::HeavyHitterEntry; K]: core::panic::unwind_safe::RefUnwindSafe
+impl<const K: usize, const W: usize, const D: usize> core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HeavyHittersN<K, W, D> where alice_physics::sketch::CountMinSketchN<W, D>: core::panic::unwind_safe::UnwindSafe, [alice_physics::sketch::HeavyHitterEntry; K]: core::panic::unwind_safe::UnwindSafe
+pub struct alice_physics::sketch::HyperLogLogN<const M: usize>
+impl<const M: usize> alice_physics::sketch::HyperLogLogN<M>
+pub const alice_physics::sketch::HyperLogLogN<M>::M: usize
+pub const alice_physics::sketch::HyperLogLogN<M>::P: usize
+pub fn alice_physics::sketch::HyperLogLogN<M>::cardinality(&self) -> f64
+pub fn alice_physics::sketch::HyperLogLogN<M>::clear(&mut self)
+pub fn alice_physics::sketch::HyperLogLogN<M>::insert<T: core::hash::Hash>(&mut self, &T)
+pub fn alice_physics::sketch::HyperLogLogN<M>::insert_bytes(&mut self, &[u8])
+pub fn alice_physics::sketch::HyperLogLogN<M>::insert_hash(&mut self, u64)
+pub const fn alice_physics::sketch::HyperLogLogN<M>::new() -> Self
+pub const fn alice_physics::sketch::HyperLogLogN<M>::registers(&self) -> &[u8]
+impl<const M: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLogN<M>
+pub fn alice_physics::sketch::HyperLogLogN<M>::merge(&mut self, &Self)
+impl<const M: usize> core::clone::Clone for alice_physics::sketch::HyperLogLogN<M>
+pub fn alice_physics::sketch::HyperLogLogN<M>::clone(&self) -> Self
+impl<const M: usize> core::default::Default for alice_physics::sketch::HyperLogLogN<M>
+pub fn alice_physics::sketch::HyperLogLogN<M>::default() -> Self
+impl<const M: usize> core::fmt::Debug for alice_physics::sketch::HyperLogLogN<M>
+pub fn alice_physics::sketch::HyperLogLogN<M>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<const M: usize> core::marker::Freeze for alice_physics::sketch::HyperLogLogN<M> where [u8; M]: core::marker::Freeze
+impl<const M: usize> core::marker::Send for alice_physics::sketch::HyperLogLogN<M> where [u8; M]: core::marker::Send
+impl<const M: usize> core::marker::Sync for alice_physics::sketch::HyperLogLogN<M> where [u8; M]: core::marker::Sync
+impl<const M: usize> core::marker::Unpin for alice_physics::sketch::HyperLogLogN<M> where [u8; M]: core::marker::Unpin
+impl<const M: usize> core::marker::UnsafeUnpin for alice_physics::sketch::HyperLogLogN<M> where [u8; M]: core::marker::UnsafeUnpin
+impl<const M: usize> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sketch::HyperLogLogN<M> where [u8; M]: core::panic::unwind_safe::RefUnwindSafe
+impl<const M: usize> core::panic::unwind_safe::UnwindSafe for alice_physics::sketch::HyperLogLogN<M> where [u8; M]: core::panic::unwind_safe::UnwindSafe
 pub trait alice_physics::sketch::Mergeable
 pub fn alice_physics::sketch::Mergeable::merge(&mut self, &Self)
 impl alice_physics::sketch::Mergeable for alice_physics::pipeline::MetricSlot
 pub fn alice_physics::pipeline::MetricSlot::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::CountMinSketch1024x5::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::CountMinSketch2048x7::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch4096x5
-pub fn alice_physics::sketch::CountMinSketch4096x5::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch1024
-pub fn alice_physics::sketch::DDSketch1024::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch128
-pub fn alice_physics::sketch::DDSketch128::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch2048
-pub fn alice_physics::sketch::DDSketch2048::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch256
-pub fn alice_physics::sketch::DDSketch256::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch512
-pub fn alice_physics::sketch::DDSketch512::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog10
-pub fn alice_physics::sketch::HyperLogLog10::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog12
-pub fn alice_physics::sketch::HyperLogLog12::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog14
-pub fn alice_physics::sketch::HyperLogLog14::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog16
-pub fn alice_physics::sketch::HyperLogLog16::merge(&mut self, &Self)
+impl<const BINS: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketchN<BINS>
+pub fn alice_physics::sketch::DDSketchN<BINS>::merge(&mut self, &Self)
+impl<const M: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLogN<M>
+pub fn alice_physics::sketch::HyperLogLogN<M>::merge(&mut self, &Self)
+impl<const W: usize, const D: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::merge(&mut self, &Self)
 pub type alice_physics::sketch::CountMinSketch = alice_physics::sketch::CountMinSketch1024x5
+pub type alice_physics::sketch::CountMinSketch1024x5 = alice_physics::sketch::CountMinSketchN<1024, 5>
+pub type alice_physics::sketch::CountMinSketch2048x7 = alice_physics::sketch::CountMinSketchN<2048, 7>
+pub type alice_physics::sketch::CountMinSketch4096x5 = alice_physics::sketch::CountMinSketchN<4096, 5>
 pub type alice_physics::sketch::DDSketch = alice_physics::sketch::DDSketch2048
+pub type alice_physics::sketch::DDSketch1024 = alice_physics::sketch::DDSketchN<1024>
+pub type alice_physics::sketch::DDSketch128 = alice_physics::sketch::DDSketchN<128>
+pub type alice_physics::sketch::DDSketch2048 = alice_physics::sketch::DDSketchN<2048>
+pub type alice_physics::sketch::DDSketch256 = alice_physics::sketch::DDSketchN<256>
+pub type alice_physics::sketch::DDSketch512 = alice_physics::sketch::DDSketchN<512>
 pub type alice_physics::sketch::HeavyHitters = alice_physics::sketch::HeavyHitters10
+pub type alice_physics::sketch::HeavyHitters10 = alice_physics::sketch::HeavyHittersN<10, 1024, 5>
+pub type alice_physics::sketch::HeavyHitters20 = alice_physics::sketch::HeavyHittersN<20, 2048, 7>
+pub type alice_physics::sketch::HeavyHitters5 = alice_physics::sketch::HeavyHittersN<5, 1024, 5>
 pub type alice_physics::sketch::HyperLogLog = alice_physics::sketch::HyperLogLog14
+pub type alice_physics::sketch::HyperLogLog10 = alice_physics::sketch::HyperLogLogN<1024>
+pub type alice_physics::sketch::HyperLogLog12 = alice_physics::sketch::HyperLogLogN<4096>
+pub type alice_physics::sketch::HyperLogLog14 = alice_physics::sketch::HyperLogLogN<16384>
+pub type alice_physics::sketch::HyperLogLog16 = alice_physics::sketch::HyperLogLogN<65536>
 pub mod alice_physics::sleeping
 pub enum alice_physics::sleeping::SleepState
 pub alice_physics::sleeping::SleepState::Awake
@@ -25242,30 +24937,12 @@ pub trait alice_physics::Mergeable
 pub fn alice_physics::Mergeable::merge(&mut self, &Self)
 impl alice_physics::sketch::Mergeable for alice_physics::pipeline::MetricSlot
 pub fn alice_physics::pipeline::MetricSlot::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch1024x5
-pub fn alice_physics::sketch::CountMinSketch1024x5::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch2048x7
-pub fn alice_physics::sketch::CountMinSketch2048x7::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketch4096x5
-pub fn alice_physics::sketch::CountMinSketch4096x5::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch1024
-pub fn alice_physics::sketch::DDSketch1024::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch128
-pub fn alice_physics::sketch::DDSketch128::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch2048
-pub fn alice_physics::sketch::DDSketch2048::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch256
-pub fn alice_physics::sketch::DDSketch256::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketch512
-pub fn alice_physics::sketch::DDSketch512::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog10
-pub fn alice_physics::sketch::HyperLogLog10::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog12
-pub fn alice_physics::sketch::HyperLogLog12::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog14
-pub fn alice_physics::sketch::HyperLogLog14::merge(&mut self, &Self)
-impl alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLog16
-pub fn alice_physics::sketch::HyperLogLog16::merge(&mut self, &Self)
+impl<const BINS: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::DDSketchN<BINS>
+pub fn alice_physics::sketch::DDSketchN<BINS>::merge(&mut self, &Self)
+impl<const M: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::HyperLogLogN<M>
+pub fn alice_physics::sketch::HyperLogLogN<M>::merge(&mut self, &Self)
+impl<const W: usize, const D: usize> alice_physics::sketch::Mergeable for alice_physics::sketch::CountMinSketchN<W, D>
+pub fn alice_physics::sketch::CountMinSketchN<W, D>::merge(&mut self, &Self)
 pub trait alice_physics::PhysicsModifier: core::marker::Send + core::marker::Sync
 pub fn alice_physics::PhysicsModifier::is_active(&self) -> bool
 pub fn alice_physics::PhysicsModifier::modify_distance(&self, f32, f32, f32, f32) -> f32

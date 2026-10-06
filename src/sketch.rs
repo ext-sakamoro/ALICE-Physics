@@ -220,129 +220,152 @@ impl Hasher for FnvHasher {
 // HyperLogLog++ - Cardinality Estimation
 // ============================================================================
 
-/// Macro to generate `HyperLogLog` implementations for specific sizes
-macro_rules! impl_hyperloglog {
-    ($name:ident, $p:expr, $m:expr) => {
-        /// `HyperLogLog++` for cardinality (unique count) estimation
-        ///
-        /// Memory: `$m` bytes
-        /// Error: ~1.04 / sqrt(`$m`)
-        #[derive(Clone, Debug)]
-        pub struct $name {
-            /// Registers storing maximum leading zeros + 1
-            registers: [u8; $m],
-        }
-
-        impl $name {
-            /// Number of registers (m = 2^P)
-            pub const M: usize = $m;
-            /// Bits used for register index
-            pub const P: usize = $p;
-
-            /// Alpha constant for bias correction
-            const ALPHA: f64 = 0.7213 / (1.0 + 1.079 / ($m as f64));
-
-            /// Create a new empty `HyperLogLog`
-            #[inline]
-            pub const fn new() -> Self {
-                Self {
-                    registers: [0u8; $m],
-                }
-            }
-
-            /// Insert an already-hashed value
-            #[inline]
-            pub fn insert_hash(&mut self, hash: u64) {
-                let idx = (hash as usize) & (Self::M - 1);
-                let w = hash >> $p;
-                // rho = position of first 1 bit in the (64-P) remaining bits
-                // leading_zeros(w) includes the P bits we shifted away, so subtract them
-                let rho = if w == 0 {
-                    (64 - $p + 1) as u8
-                } else {
-                    (w.leading_zeros() as usize - $p + 1) as u8
-                };
-                if rho > self.registers[idx] {
-                    self.registers[idx] = rho;
-                }
-            }
-
-            /// Insert a hashable value
-            #[inline]
-            pub fn insert<T: Hash>(&mut self, value: &T) {
-                let mut hasher = FnvHasher::new();
-                value.hash(&mut hasher);
-                self.insert_hash(hasher.finish());
-            }
-
-            /// Insert raw bytes
-            #[inline]
-            pub fn insert_bytes(&mut self, bytes: &[u8]) {
-                self.insert_hash(FnvHasher::hash_bytes(bytes));
-            }
-
-            /// Estimate cardinality using `HyperLogLog++` algorithm
-            /// Optimized with LUT for 2^{-k} values
-            pub fn cardinality(&self) -> f64 {
-                let mut sum = 0.0f64;
-                let mut zeros = 0usize;
-
-                // Use LUT instead of expensive powi() calls
-                for &reg in &self.registers {
-                    // LUT has 65 entries (0..=64), clamp to be safe
-                    let idx = (reg as usize).min(64);
-                    sum += POW2_NEG_LUT[idx];
-                    if reg == 0 {
-                        zeros += 1;
-                    }
-                }
-
-                let m = Self::M as f64;
-                let raw_estimate = Self::ALPHA * m * m / sum;
-
-                if raw_estimate <= 2.5 * m && zeros > 0 {
-                    m * crate::det_math::ln64(m / zeros as f64)
-                } else {
-                    raw_estimate
-                }
-            }
-
-            /// Get raw registers
-            #[inline]
-            pub const fn registers(&self) -> &[u8] {
-                &self.registers
-            }
-
-            /// Reset all registers to zero
-            #[inline]
-            pub fn clear(&mut self) {
-                self.registers = [0u8; $m];
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-
-        impl Mergeable for $name {
-            fn merge(&mut self, other: &Self) {
-                for (dst, &src) in self.registers.iter_mut().zip(other.registers.iter()) {
-                    if src > *dst {
-                        *dst = src;
-                    }
-                }
-            }
-        }
-    };
+/// `HyperLogLog++` for cardinality (unique count) estimation, generic over the
+/// register count `M` (a power of two, `M = 2^P`).
+///
+/// Memory: `M` bytes. Error: ~1.04 / sqrt(`M`). The named sizes
+/// [`HyperLogLog10`] / [`HyperLogLog12`] / [`HyperLogLog14`] /
+/// [`HyperLogLog16`] and the default [`HyperLogLog`] are aliases of this type.
+///
+/// ```
+/// use alice_physics::sketch::{HyperLogLog12, HyperLogLogN};
+///
+/// let mut hll: HyperLogLogN<4096> = HyperLogLog12::new();
+/// hll.insert(&7u64);
+/// assert_eq!(HyperLogLogN::<4096>::P, 12);
+/// ```
+///
+/// A register count that is not a power of two does not compile:
+///
+/// ```compile_fail,E0080
+/// let _ = alice_physics::sketch::HyperLogLogN::<1000>::new();
+/// ```
+#[derive(Clone, Debug)]
+pub struct HyperLogLogN<const M: usize> {
+    /// Registers storing maximum leading zeros + 1
+    registers: [u8; M],
 }
 
-// Generate common HyperLogLog sizes
-impl_hyperloglog!(HyperLogLog10, 10, 1024); // 1KB, ~3.2% error
-impl_hyperloglog!(HyperLogLog12, 12, 4096); // 4KB, ~1.6% error
-impl_hyperloglog!(HyperLogLog14, 14, 16384); // 16KB, ~0.8% error
-impl_hyperloglog!(HyperLogLog16, 16, 65536); // 64KB, ~0.4% error
+impl<const M: usize> HyperLogLogN<M> {
+    /// Number of registers (m = 2^P)
+    pub const M: usize = M;
+    /// Bits used for register index
+    pub const P: usize = {
+        assert!(
+            M.is_power_of_two(),
+            "HyperLogLogN<M>: M must be a power of two"
+        );
+        M.trailing_zeros() as usize
+    };
+
+    /// Alpha constant for bias correction
+    const ALPHA: f64 = 0.7213 / (1.0 + 1.079 / (M as f64));
+
+    /// Create a new empty `HyperLogLog`
+    #[inline]
+    pub const fn new() -> Self {
+        // Evaluating `P` runs the power-of-two check at compile time for every
+        // instantiation, since every value of this type starts here.
+        let _p: usize = Self::P;
+        Self {
+            registers: [0u8; M],
+        }
+    }
+
+    /// Insert an already-hashed value
+    #[inline]
+    pub fn insert_hash(&mut self, hash: u64) {
+        let idx = (hash as usize) & (Self::M - 1);
+        let w = hash >> Self::P;
+        // rho = position of first 1 bit in the (64-P) remaining bits
+        // leading_zeros(w) includes the P bits we shifted away, so subtract them
+        let rho = if w == 0 {
+            (64 - Self::P + 1) as u8
+        } else {
+            (w.leading_zeros() as usize - Self::P + 1) as u8
+        };
+        if rho > self.registers[idx] {
+            self.registers[idx] = rho;
+        }
+    }
+
+    /// Insert a hashable value
+    #[inline]
+    pub fn insert<T: Hash>(&mut self, value: &T) {
+        let mut hasher = FnvHasher::new();
+        value.hash(&mut hasher);
+        self.insert_hash(hasher.finish());
+    }
+
+    /// Insert raw bytes
+    #[inline]
+    pub fn insert_bytes(&mut self, bytes: &[u8]) {
+        self.insert_hash(FnvHasher::hash_bytes(bytes));
+    }
+
+    /// Estimate cardinality using `HyperLogLog++` algorithm
+    /// Optimized with LUT for 2^{-k} values
+    pub fn cardinality(&self) -> f64 {
+        let mut sum = 0.0f64;
+        let mut zeros = 0usize;
+
+        // Use LUT instead of expensive powi() calls
+        for &reg in &self.registers {
+            // LUT has 65 entries (0..=64), clamp to be safe
+            let idx = (reg as usize).min(64);
+            sum += POW2_NEG_LUT[idx];
+            if reg == 0 {
+                zeros += 1;
+            }
+        }
+
+        let m = Self::M as f64;
+        let raw_estimate = Self::ALPHA * m * m / sum;
+
+        if raw_estimate <= 2.5 * m && zeros > 0 {
+            m * crate::det_math::ln64(m / zeros as f64)
+        } else {
+            raw_estimate
+        }
+    }
+
+    /// Get raw registers
+    #[inline]
+    pub const fn registers(&self) -> &[u8] {
+        &self.registers
+    }
+
+    /// Reset all registers to zero
+    #[inline]
+    pub fn clear(&mut self) {
+        self.registers = [0u8; M];
+    }
+}
+
+impl<const M: usize> Default for HyperLogLogN<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const M: usize> Mergeable for HyperLogLogN<M> {
+    fn merge(&mut self, other: &Self) {
+        for (dst, &src) in self.registers.iter_mut().zip(other.registers.iter()) {
+            if src > *dst {
+                *dst = src;
+            }
+        }
+    }
+}
+
+/// `HyperLogLog` with 2^10 registers (1KB, ~3.2% error)
+pub type HyperLogLog10 = HyperLogLogN<1024>;
+/// `HyperLogLog` with 2^12 registers (4KB, ~1.6% error)
+pub type HyperLogLog12 = HyperLogLogN<4096>;
+/// `HyperLogLog` with 2^14 registers (16KB, ~0.8% error)
+pub type HyperLogLog14 = HyperLogLogN<16384>;
+/// `HyperLogLog` with 2^16 registers (64KB, ~0.4% error)
+pub type HyperLogLog16 = HyperLogLogN<65536>;
 
 /// Type alias for the most common `HyperLogLog` size (16KB, ~0.8% error)
 pub type HyperLogLog = HyperLogLog14;
@@ -351,12 +374,15 @@ pub type HyperLogLog = HyperLogLog14;
 // DDSketch - Relative Error Quantile Estimation
 // ============================================================================
 
-/// `DDSketch` for quantile estimation with relative error guarantee
+/// `DDSketch` for quantile estimation with relative error guarantee, generic
+/// over the number of bins per side `BINS`.
 ///
 /// Guarantees that for any quantile q, the returned value v satisfies:
 /// |v - `true_value`| <= α * `true_value`
 ///
-/// where α is the relative accuracy (e.g., 0.01 for 1% error)
+/// where α is the relative accuracy (e.g., 0.01 for 1% error), chosen at
+/// construction and independent of `BINS`. The named sizes [`DDSketch128`] …
+/// [`DDSketch2048`] and the default [`DDSketch`] are aliases of this type.
 ///
 /// # Example
 /// ```
@@ -371,235 +397,232 @@ pub type HyperLogLog = HyperLogLog14;
 /// let p99 = sketch.quantile(0.99);
 /// // p99 ≈ 500.0 (within 1% relative error)
 /// ```
-/// Macro to generate `DDSketch` implementations for specific bin counts
-macro_rules! impl_ddsketch {
-    ($name:ident, $bins:expr) => {
-        /// `DDSketch` with relative-error quantile guarantee.
-        #[derive(Clone, Debug)]
-        pub struct $name {
-            positive_bins: [u64; $bins],
-            negative_bins: [u64; $bins],
-            zero_count: u64,
-            count: u64,
-            min: f64,
-            max: f64,
-            sum: f64,
-            gamma: f64,
-            ln_gamma: f64,
-            alpha: f64,
-            offset: i32,
-        }
-
-        impl $name {
-            /// Number of bins per side (positive / negative).
-            pub const BINS: usize = $bins;
-
-            /// Create a new sketch with given relative accuracy `alpha`.
-            pub fn new(alpha: f64) -> Self {
-                let gamma = (1.0 + alpha) / (1.0 - alpha);
-                let ln_gamma = crate::det_math::ln64(gamma);
-                // Offset to center around 1.0 (ln(1.0) = 0)
-                // For typical latencies (1ms - 10s), we want indices to fit in BINS
-                // With offset at BINS/4, we can handle values from gamma^(-BINS/4) to gamma^(3*BINS/4)
-                let offset = ($bins / 4) as i32;
-
-                Self {
-                    positive_bins: [0u64; $bins],
-                    negative_bins: [0u64; $bins],
-                    zero_count: 0,
-                    count: 0,
-                    min: f64::INFINITY,
-                    max: f64::NEG_INFINITY,
-                    sum: 0.0,
-                    gamma,
-                    ln_gamma,
-                    alpha,
-                    offset,
-                }
-            }
-
-            /// Insert a value into the sketch.
-            ///
-            /// NaN and ±infinity are rejected outright (not counted, not
-            /// binned, `sum` / `min` / `max` untouched): NaN would be
-            /// counted as a zero value (neither `> 0.0` nor `< 0.0`) and
-            /// poison `sum`/`mean` permanently, and ±infinity would make
-            /// `bucket_index`'s `ceil() as i32 + self.offset` overflow
-            /// (panic in debug builds, silently wrap in release).
-            #[inline]
-            pub fn insert(&mut self, value: f64) {
-                if !value.is_finite() {
-                    return;
-                }
-                self.count += 1;
-                self.sum += value;
-
-                if value < self.min {
-                    self.min = value;
-                }
-                if value > self.max {
-                    self.max = value;
-                }
-
-                if value > 0.0 {
-                    let idx = self.bucket_index(value);
-                    if idx < $bins {
-                        self.positive_bins[idx] += 1;
-                    }
-                } else if value < 0.0 {
-                    let idx = self.bucket_index(-value);
-                    if idx < $bins {
-                        self.negative_bins[idx] += 1;
-                    }
-                } else {
-                    self.zero_count += 1;
-                }
-            }
-
-            /// Bucket index calculation
-            /// Uses standard `ln()` for quantile accuracy (`DDSketch` requires precise buckets)
-            #[inline]
-            fn bucket_index(&self, value: f64) -> usize {
-                let idx =
-                    (crate::det_math::ln64(value) / self.ln_gamma).ceil() as i32 + self.offset;
-                idx.max(0) as usize
-            }
-
-            #[inline]
-            fn bucket_lower_bound(&self, idx: usize) -> f64 {
-                let exp = (idx as i32 - self.offset) as f64;
-                crate::det_math::powf64(self.gamma, exp - 1.0)
-            }
-
-            /// Estimate the value at quantile `q` (0.0–1.0).
-            ///
-            /// Returns the matched bucket's lower edge `γ^(i−1)`, not the
-            /// paper's mid-point estimator `2γ^i/(γ+1)`. The relative-error
-            /// guarantee on the mid-point is `α`; on the edge it is
-            /// `2α/(1+α)` (worst case, measured: ~1.98% at `α = 0.01`), not
-            /// `α` itself — a caller reading this doc as an `α`-accurate
-            /// quantile estimator (open issue
-            /// `sketch-quantile-edge-vs-midpoint`) was getting up to
-            /// 2× the documented error.
-            pub fn quantile(&self, q: f64) -> f64 {
-                if self.count == 0 {
-                    return 0.0;
-                }
-
-                let rank = (q * self.count as f64).ceil() as u64;
-                let mut cumulative = 0u64;
-
-                for (idx, &count) in self.negative_bins.iter().enumerate().rev() {
-                    cumulative += count;
-                    if cumulative >= rank {
-                        return -self.bucket_lower_bound(idx);
-                    }
-                }
-
-                cumulative += self.zero_count;
-                if cumulative >= rank {
-                    return 0.0;
-                }
-
-                for (idx, &count) in self.positive_bins.iter().enumerate() {
-                    cumulative += count;
-                    if cumulative >= rank {
-                        return self.bucket_lower_bound(idx);
-                    }
-                }
-
-                self.max
-            }
-
-            /// Total number of inserted values.
-            #[inline]
-            pub const fn count(&self) -> u64 {
-                self.count
-            }
-
-            /// Sum of all inserted values.
-            #[inline]
-            pub const fn sum(&self) -> f64 {
-                self.sum
-            }
-
-            /// Arithmetic mean of inserted values.
-            #[inline]
-            pub fn mean(&self) -> f64 {
-                if self.count == 0 {
-                    0.0
-                } else {
-                    self.sum / self.count as f64
-                }
-            }
-
-            /// Minimum inserted value.
-            #[inline]
-            pub const fn min(&self) -> f64 {
-                self.min
-            }
-
-            /// Maximum inserted value.
-            #[inline]
-            pub const fn max(&self) -> f64 {
-                self.max
-            }
-
-            /// Relative accuracy parameter.
-            #[inline]
-            pub const fn alpha(&self) -> f64 {
-                self.alpha
-            }
-
-            /// Reset the sketch to empty state.
-            pub fn clear(&mut self) {
-                self.positive_bins = [0u64; $bins];
-                self.negative_bins = [0u64; $bins];
-                self.zero_count = 0;
-                self.count = 0;
-                self.min = f64::INFINITY;
-                self.max = f64::NEG_INFINITY;
-                self.sum = 0.0;
-            }
-        }
-
-        impl Mergeable for $name {
-            fn merge(&mut self, other: &Self) {
-                for (dst, &src) in self
-                    .positive_bins
-                    .iter_mut()
-                    .zip(other.positive_bins.iter())
-                {
-                    *dst += src;
-                }
-                for (dst, &src) in self
-                    .negative_bins
-                    .iter_mut()
-                    .zip(other.negative_bins.iter())
-                {
-                    *dst += src;
-                }
-                self.zero_count += other.zero_count;
-                self.count += other.count;
-                self.sum += other.sum;
-
-                if other.min < self.min {
-                    self.min = other.min;
-                }
-                if other.max > self.max {
-                    self.max = other.max;
-                }
-            }
-        }
-    };
+#[derive(Clone, Debug)]
+pub struct DDSketchN<const BINS: usize> {
+    positive_bins: [u64; BINS],
+    negative_bins: [u64; BINS],
+    zero_count: u64,
+    count: u64,
+    min: f64,
+    max: f64,
+    sum: f64,
+    gamma: f64,
+    ln_gamma: f64,
+    alpha: f64,
+    offset: i32,
 }
 
-// Generate common DDSketch sizes
-impl_ddsketch!(DDSketch128, 128); // Small, use alpha >= 0.1
-impl_ddsketch!(DDSketch256, 256); // Medium, use alpha >= 0.05
-impl_ddsketch!(DDSketch512, 512); // Good balance
-impl_ddsketch!(DDSketch1024, 1024); // High accuracy, alpha >= 0.02
-impl_ddsketch!(DDSketch2048, 2048); // Very high accuracy, alpha >= 0.01
+impl<const BINS: usize> DDSketchN<BINS> {
+    /// Number of bins per side (positive / negative).
+    pub const BINS: usize = BINS;
+
+    /// Create a new sketch with given relative accuracy `alpha`.
+    pub fn new(alpha: f64) -> Self {
+        let gamma = (1.0 + alpha) / (1.0 - alpha);
+        let ln_gamma = crate::det_math::ln64(gamma);
+        // Offset to center around 1.0 (ln(1.0) = 0)
+        // For typical latencies (1ms - 10s), we want indices to fit in BINS
+        // With offset at BINS/4, we can handle values from gamma^(-BINS/4) to gamma^(3*BINS/4)
+        let offset = (BINS / 4) as i32;
+
+        Self {
+            positive_bins: [0u64; BINS],
+            negative_bins: [0u64; BINS],
+            zero_count: 0,
+            count: 0,
+            min: f64::INFINITY,
+            max: f64::NEG_INFINITY,
+            sum: 0.0,
+            gamma,
+            ln_gamma,
+            alpha,
+            offset,
+        }
+    }
+
+    /// Insert a value into the sketch.
+    ///
+    /// NaN and ±infinity are rejected outright (not counted, not
+    /// binned, `sum` / `min` / `max` untouched): NaN would be
+    /// counted as a zero value (neither `> 0.0` nor `< 0.0`) and
+    /// poison `sum`/`mean` permanently, and ±infinity would make
+    /// `bucket_index`'s `ceil() as i32 + self.offset` overflow
+    /// (panic in debug builds, silently wrap in release).
+    #[inline]
+    pub fn insert(&mut self, value: f64) {
+        if !value.is_finite() {
+            return;
+        }
+        self.count += 1;
+        self.sum += value;
+
+        if value < self.min {
+            self.min = value;
+        }
+        if value > self.max {
+            self.max = value;
+        }
+
+        if value > 0.0 {
+            let idx = self.bucket_index(value);
+            if idx < BINS {
+                self.positive_bins[idx] += 1;
+            }
+        } else if value < 0.0 {
+            let idx = self.bucket_index(-value);
+            if idx < BINS {
+                self.negative_bins[idx] += 1;
+            }
+        } else {
+            self.zero_count += 1;
+        }
+    }
+
+    /// Bucket index calculation
+    /// Uses standard `ln()` for quantile accuracy (`DDSketch` requires precise buckets)
+    #[inline]
+    fn bucket_index(&self, value: f64) -> usize {
+        let idx = (crate::det_math::ln64(value) / self.ln_gamma).ceil() as i32 + self.offset;
+        idx.max(0) as usize
+    }
+
+    #[inline]
+    fn bucket_lower_bound(&self, idx: usize) -> f64 {
+        let exp = (idx as i32 - self.offset) as f64;
+        crate::det_math::powf64(self.gamma, exp - 1.0)
+    }
+
+    /// Estimate the value at quantile `q` (0.0–1.0).
+    ///
+    /// Returns the matched bucket's lower edge `γ^(i−1)`, not the
+    /// paper's mid-point estimator `2γ^i/(γ+1)`. The relative-error
+    /// guarantee on the mid-point is `α`; on the edge it is
+    /// `2α/(1+α)` (worst case, measured: ~1.98% at `α = 0.01`), not
+    /// `α` itself — a caller reading this doc as an `α`-accurate
+    /// quantile estimator (open issue
+    /// `sketch-quantile-edge-vs-midpoint`) was getting up to
+    /// 2× the documented error.
+    pub fn quantile(&self, q: f64) -> f64 {
+        if self.count == 0 {
+            return 0.0;
+        }
+
+        let rank = (q * self.count as f64).ceil() as u64;
+        let mut cumulative = 0u64;
+
+        for (idx, &count) in self.negative_bins.iter().enumerate().rev() {
+            cumulative += count;
+            if cumulative >= rank {
+                return -self.bucket_lower_bound(idx);
+            }
+        }
+
+        cumulative += self.zero_count;
+        if cumulative >= rank {
+            return 0.0;
+        }
+
+        for (idx, &count) in self.positive_bins.iter().enumerate() {
+            cumulative += count;
+            if cumulative >= rank {
+                return self.bucket_lower_bound(idx);
+            }
+        }
+
+        self.max
+    }
+
+    /// Total number of inserted values.
+    #[inline]
+    pub const fn count(&self) -> u64 {
+        self.count
+    }
+
+    /// Sum of all inserted values.
+    #[inline]
+    pub const fn sum(&self) -> f64 {
+        self.sum
+    }
+
+    /// Arithmetic mean of inserted values.
+    #[inline]
+    pub fn mean(&self) -> f64 {
+        if self.count == 0 {
+            0.0
+        } else {
+            self.sum / self.count as f64
+        }
+    }
+
+    /// Minimum inserted value.
+    #[inline]
+    pub const fn min(&self) -> f64 {
+        self.min
+    }
+
+    /// Maximum inserted value.
+    #[inline]
+    pub const fn max(&self) -> f64 {
+        self.max
+    }
+
+    /// Relative accuracy parameter.
+    #[inline]
+    pub const fn alpha(&self) -> f64 {
+        self.alpha
+    }
+
+    /// Reset the sketch to empty state.
+    pub fn clear(&mut self) {
+        self.positive_bins = [0u64; BINS];
+        self.negative_bins = [0u64; BINS];
+        self.zero_count = 0;
+        self.count = 0;
+        self.min = f64::INFINITY;
+        self.max = f64::NEG_INFINITY;
+        self.sum = 0.0;
+    }
+}
+
+impl<const BINS: usize> Mergeable for DDSketchN<BINS> {
+    fn merge(&mut self, other: &Self) {
+        for (dst, &src) in self
+            .positive_bins
+            .iter_mut()
+            .zip(other.positive_bins.iter())
+        {
+            *dst += src;
+        }
+        for (dst, &src) in self
+            .negative_bins
+            .iter_mut()
+            .zip(other.negative_bins.iter())
+        {
+            *dst += src;
+        }
+        self.zero_count += other.zero_count;
+        self.count += other.count;
+        self.sum += other.sum;
+
+        if other.min < self.min {
+            self.min = other.min;
+        }
+        if other.max > self.max {
+            self.max = other.max;
+        }
+    }
+}
+
+/// `DDSketch` with 128 bins per side. Small, use alpha >= 0.1
+pub type DDSketch128 = DDSketchN<128>;
+/// `DDSketch` with 256 bins per side. Medium, use alpha >= 0.05
+pub type DDSketch256 = DDSketchN<256>;
+/// `DDSketch` with 512 bins per side. Good balance
+pub type DDSketch512 = DDSketchN<512>;
+/// `DDSketch` with 1024 bins per side. High accuracy, alpha >= 0.02
+pub type DDSketch1024 = DDSketchN<1024>;
+/// `DDSketch` with 2048 bins per side. Very high accuracy, alpha >= 0.01
+pub type DDSketch2048 = DDSketchN<2048>;
 
 /// Type alias for the most common `DDSketch` size (good for alpha=0.01)
 pub type DDSketch = DDSketch2048;
@@ -608,139 +631,141 @@ pub type DDSketch = DDSketch2048;
 // Count-Min Sketch - Frequency Estimation
 // ============================================================================
 
-/// Macro to generate `CountMinSketch` implementations
-macro_rules! impl_countmin {
-    ($name:ident, $w:expr, $d:expr) => {
-        /// Count-Min Sketch for frequency estimation
-        #[derive(Clone, Debug)]
-        pub struct $name {
-            counters: [[u64; $w]; $d],
-            total: u64,
-        }
-
-        impl $name {
-            /// Number of columns (width).
-            pub const WIDTH: usize = $w;
-            /// Number of hash rows (depth).
-            pub const DEPTH: usize = $d;
-
-            /// Create an empty sketch.
-            #[inline]
-            pub const fn new() -> Self {
-                Self {
-                    counters: [[0u64; $w]; $d],
-                    total: 0,
-                }
-            }
-
-            #[inline]
-            const fn hash_for_row(hash: u64, row: usize) -> usize {
-                let h = hash.wrapping_add((row as u64).wrapping_mul(0x9e3779b97f4a7c15));
-                let mixed = h ^ (h >> 33);
-                let mixed = mixed.wrapping_mul(0xff51afd7ed558ccd);
-                let mixed = mixed ^ (mixed >> 33);
-                (mixed as usize) % $w
-            }
-
-            /// Insert a pre-hashed item with the given count.
-            #[inline]
-            pub fn insert_hash(&mut self, hash: u64, count: u64) {
-                self.total += count;
-                for row in 0..$d {
-                    let col = Self::hash_for_row(hash, row);
-                    self.counters[row][col] = self.counters[row][col].saturating_add(count);
-                }
-            }
-
-            /// Insert a hashable item with count 1.
-            #[inline]
-            pub fn insert<T: Hash>(&mut self, item: &T) {
-                let mut hasher = FnvHasher::new();
-                item.hash(&mut hasher);
-                self.insert_hash(hasher.finish(), 1);
-            }
-
-            /// Insert raw bytes with count 1.
-            #[inline]
-            pub fn insert_bytes(&mut self, bytes: &[u8]) {
-                self.insert_hash(FnvHasher::hash_bytes(bytes), 1);
-            }
-
-            /// Estimate frequency of a pre-hashed item.
-            #[inline]
-            pub fn estimate_hash(&self, hash: u64) -> u64 {
-                let mut min_count = u64::MAX;
-                for row in 0..$d {
-                    let col = Self::hash_for_row(hash, row);
-                    min_count = min_count.min(self.counters[row][col]);
-                }
-                min_count
-            }
-
-            /// Estimate frequency of a hashable item.
-            #[inline]
-            pub fn estimate<T: Hash>(&self, item: &T) -> u64 {
-                let mut hasher = FnvHasher::new();
-                item.hash(&mut hasher);
-                self.estimate_hash(hasher.finish())
-            }
-
-            /// Estimate frequency of raw bytes.
-            #[inline]
-            pub fn estimate_bytes(&self, bytes: &[u8]) -> u64 {
-                self.estimate_hash(FnvHasher::hash_bytes(bytes))
-            }
-
-            /// Total count of all insertions.
-            #[inline]
-            pub const fn total(&self) -> u64 {
-                self.total
-            }
-
-            /// Reset all counters to zero.
-            #[inline]
-            pub fn clear(&mut self) {
-                self.counters = [[0u64; $w]; $d];
-                self.total = 0;
-            }
-
-            /// Theoretical error bound (ε = e / width).
-            #[inline]
-            pub fn error_bound(&self) -> f64 {
-                core::f64::consts::E / ($w as f64)
-            }
-
-            /// Confidence level (1 − e^{−depth}).
-            #[inline]
-            pub fn confidence(&self) -> f64 {
-                1.0 - crate::det_math::exp64(-($d as f64))
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-
-        impl Mergeable for $name {
-            fn merge(&mut self, other: &Self) {
-                self.total += other.total;
-                for row in 0..$d {
-                    for col in 0..$w {
-                        self.counters[row][col] =
-                            self.counters[row][col].saturating_add(other.counters[row][col]);
-                    }
-                }
-            }
-        }
-    };
+/// Count-Min Sketch for frequency estimation, generic over the width `W`
+/// (columns) and depth `D` (hash rows).
+///
+/// The named sizes [`CountMinSketch1024x5`] / [`CountMinSketch2048x7`] /
+/// [`CountMinSketch4096x5`] and the default [`CountMinSketch`] are aliases of
+/// this type.
+#[derive(Clone, Debug)]
+pub struct CountMinSketchN<const W: usize, const D: usize> {
+    counters: [[u64; W]; D],
+    total: u64,
 }
 
-// Generate common CountMinSketch sizes
-impl_countmin!(CountMinSketch1024x5, 1024, 5);
-impl_countmin!(CountMinSketch2048x7, 2048, 7);
-impl_countmin!(CountMinSketch4096x5, 4096, 5);
+impl<const W: usize, const D: usize> CountMinSketchN<W, D> {
+    /// Number of columns (width).
+    pub const WIDTH: usize = W;
+    /// Number of hash rows (depth).
+    pub const DEPTH: usize = D;
+
+    /// Create an empty sketch.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            counters: [[0u64; W]; D],
+            total: 0,
+        }
+    }
+
+    #[inline]
+    const fn hash_for_row(hash: u64, row: usize) -> usize {
+        let h = hash.wrapping_add((row as u64).wrapping_mul(0x9e3779b97f4a7c15));
+        let mixed = h ^ (h >> 33);
+        let mixed = mixed.wrapping_mul(0xff51afd7ed558ccd);
+        let mixed = mixed ^ (mixed >> 33);
+        (mixed as usize) % W
+    }
+
+    /// Insert a pre-hashed item with the given count.
+    #[inline]
+    pub fn insert_hash(&mut self, hash: u64, count: u64) {
+        self.total += count;
+        for row in 0..D {
+            let col = Self::hash_for_row(hash, row);
+            self.counters[row][col] = self.counters[row][col].saturating_add(count);
+        }
+    }
+
+    /// Insert a hashable item with count 1.
+    #[inline]
+    pub fn insert<T: Hash>(&mut self, item: &T) {
+        let mut hasher = FnvHasher::new();
+        item.hash(&mut hasher);
+        self.insert_hash(hasher.finish(), 1);
+    }
+
+    /// Insert raw bytes with count 1.
+    #[inline]
+    pub fn insert_bytes(&mut self, bytes: &[u8]) {
+        self.insert_hash(FnvHasher::hash_bytes(bytes), 1);
+    }
+
+    /// Estimate frequency of a pre-hashed item.
+    #[inline]
+    pub fn estimate_hash(&self, hash: u64) -> u64 {
+        let mut min_count = u64::MAX;
+        for row in 0..D {
+            let col = Self::hash_for_row(hash, row);
+            min_count = min_count.min(self.counters[row][col]);
+        }
+        min_count
+    }
+
+    /// Estimate frequency of a hashable item.
+    #[inline]
+    pub fn estimate<T: Hash>(&self, item: &T) -> u64 {
+        let mut hasher = FnvHasher::new();
+        item.hash(&mut hasher);
+        self.estimate_hash(hasher.finish())
+    }
+
+    /// Estimate frequency of raw bytes.
+    #[inline]
+    pub fn estimate_bytes(&self, bytes: &[u8]) -> u64 {
+        self.estimate_hash(FnvHasher::hash_bytes(bytes))
+    }
+
+    /// Total count of all insertions.
+    #[inline]
+    pub const fn total(&self) -> u64 {
+        self.total
+    }
+
+    /// Reset all counters to zero.
+    #[inline]
+    pub fn clear(&mut self) {
+        self.counters = [[0u64; W]; D];
+        self.total = 0;
+    }
+
+    /// Theoretical error bound (ε = e / width).
+    #[inline]
+    pub fn error_bound(&self) -> f64 {
+        core::f64::consts::E / (W as f64)
+    }
+
+    /// Confidence level (1 − e^{−depth}).
+    #[inline]
+    pub fn confidence(&self) -> f64 {
+        1.0 - crate::det_math::exp64(-(D as f64))
+    }
+}
+
+impl<const W: usize, const D: usize> Default for CountMinSketchN<W, D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const W: usize, const D: usize> Mergeable for CountMinSketchN<W, D> {
+    fn merge(&mut self, other: &Self) {
+        self.total += other.total;
+        for row in 0..D {
+            for col in 0..W {
+                self.counters[row][col] =
+                    self.counters[row][col].saturating_add(other.counters[row][col]);
+            }
+        }
+    }
+}
+
+/// Count-Min Sketch with 1024 columns and 5 rows
+pub type CountMinSketch1024x5 = CountMinSketchN<1024, 5>;
+/// Count-Min Sketch with 2048 columns and 7 rows
+pub type CountMinSketch2048x7 = CountMinSketchN<2048, 7>;
+/// Count-Min Sketch with 4096 columns and 5 rows
+pub type CountMinSketch4096x5 = CountMinSketchN<4096, 5>;
 
 /// Type alias for the default Count-Min Sketch
 pub type CountMinSketch = CountMinSketch1024x5;
@@ -758,106 +783,109 @@ pub struct HeavyHitterEntry {
     pub count: u64,
 }
 
-/// Macro to generate `HeavyHitters` implementations
-macro_rules! impl_heavy_hitters {
-    ($name:ident, $cms_name:ident, $k:expr) => {
-        /// Heavy Hitters tracker using Count-Min Sketch
-        #[derive(Clone, Debug)]
-        pub struct $name {
-            cms: $cms_name,
-            top_k: [HeavyHitterEntry; $k],
-            count: usize,
-        }
-
-        impl $name {
-            /// Maximum tracked heavy hitters.
-            pub const K: usize = $k;
-
-            /// Create a new empty tracker.
-            #[inline]
-            pub const fn new() -> Self {
-                Self {
-                    cms: $cms_name::new(),
-                    top_k: [HeavyHitterEntry { hash: 0, count: 0 }; $k],
-                    count: 0,
-                }
-            }
-
-            /// Insert a pre-hashed item and update top-K.
-            pub fn insert_hash(&mut self, hash: u64) {
-                self.cms.insert_hash(hash, 1);
-                let estimated = self.cms.estimate_hash(hash);
-
-                let mut found_idx = None;
-                for i in 0..self.count {
-                    if self.top_k[i].hash == hash {
-                        found_idx = Some(i);
-                        break;
-                    }
-                }
-
-                if let Some(idx) = found_idx {
-                    self.top_k[idx].count = estimated;
-                    self.sort_top_k();
-                } else if self.count < $k {
-                    self.top_k[self.count] = HeavyHitterEntry {
-                        hash,
-                        count: estimated,
-                    };
-                    self.count += 1;
-                    self.sort_top_k();
-                } else if estimated > self.top_k[0].count {
-                    self.top_k[0] = HeavyHitterEntry {
-                        hash,
-                        count: estimated,
-                    };
-                    self.sort_top_k();
-                }
-            }
-
-            fn sort_top_k(&mut self) {
-                for i in 1..self.count {
-                    let entry = self.top_k[i];
-                    let mut j = i;
-                    while j > 0 && self.top_k[j - 1].count > entry.count {
-                        self.top_k[j] = self.top_k[j - 1];
-                        j -= 1;
-                    }
-                    self.top_k[j] = entry;
-                }
-            }
-
-            /// Iterate top-K entries in descending frequency order.
-            pub fn top(&self) -> impl Iterator<Item = &HeavyHitterEntry> {
-                self.top_k[..self.count].iter().rev()
-            }
-
-            /// Access the underlying Count-Min Sketch.
-            #[inline]
-            pub const fn cms(&self) -> &$cms_name {
-                &self.cms
-            }
-
-            /// Reset the tracker and its underlying sketch.
-            pub fn clear(&mut self) {
-                self.cms.clear();
-                self.top_k = [HeavyHitterEntry { hash: 0, count: 0 }; $k];
-                self.count = 0;
-            }
-        }
-
-        impl Default for $name {
-            fn default() -> Self {
-                Self::new()
-            }
-        }
-    };
+/// Heavy Hitters tracker using Count-Min Sketch, generic over the number of
+/// tracked entries `K` and the underlying sketch's width `W` and depth `D`.
+///
+/// The named sizes [`HeavyHitters5`] / [`HeavyHitters10`] (on a
+/// [`CountMinSketch1024x5`]) / [`HeavyHitters20`] (on a
+/// [`CountMinSketch2048x7`]) and the default [`HeavyHitters`] are aliases of
+/// this type.
+#[derive(Clone, Debug)]
+pub struct HeavyHittersN<const K: usize, const W: usize, const D: usize> {
+    cms: CountMinSketchN<W, D>,
+    top_k: [HeavyHitterEntry; K],
+    count: usize,
 }
 
-// Generate HeavyHitters variants
-impl_heavy_hitters!(HeavyHitters10, CountMinSketch1024x5, 10);
-impl_heavy_hitters!(HeavyHitters20, CountMinSketch2048x7, 20);
-impl_heavy_hitters!(HeavyHitters5, CountMinSketch1024x5, 5);
+impl<const K: usize, const W: usize, const D: usize> HeavyHittersN<K, W, D> {
+    /// Maximum tracked heavy hitters.
+    pub const K: usize = K;
+
+    /// Create a new empty tracker.
+    #[inline]
+    pub const fn new() -> Self {
+        Self {
+            cms: CountMinSketchN::new(),
+            top_k: [HeavyHitterEntry { hash: 0, count: 0 }; K],
+            count: 0,
+        }
+    }
+
+    /// Insert a pre-hashed item and update top-K.
+    pub fn insert_hash(&mut self, hash: u64) {
+        self.cms.insert_hash(hash, 1);
+        let estimated = self.cms.estimate_hash(hash);
+
+        let mut found_idx = None;
+        for i in 0..self.count {
+            if self.top_k[i].hash == hash {
+                found_idx = Some(i);
+                break;
+            }
+        }
+
+        if let Some(idx) = found_idx {
+            self.top_k[idx].count = estimated;
+            self.sort_top_k();
+        } else if self.count < K {
+            self.top_k[self.count] = HeavyHitterEntry {
+                hash,
+                count: estimated,
+            };
+            self.count += 1;
+            self.sort_top_k();
+        } else if estimated > self.top_k[0].count {
+            self.top_k[0] = HeavyHitterEntry {
+                hash,
+                count: estimated,
+            };
+            self.sort_top_k();
+        }
+    }
+
+    fn sort_top_k(&mut self) {
+        for i in 1..self.count {
+            let entry = self.top_k[i];
+            let mut j = i;
+            while j > 0 && self.top_k[j - 1].count > entry.count {
+                self.top_k[j] = self.top_k[j - 1];
+                j -= 1;
+            }
+            self.top_k[j] = entry;
+        }
+    }
+
+    /// Iterate top-K entries in descending frequency order.
+    pub fn top(&self) -> impl Iterator<Item = &HeavyHitterEntry> {
+        self.top_k[..self.count].iter().rev()
+    }
+
+    /// Access the underlying Count-Min Sketch.
+    #[inline]
+    pub const fn cms(&self) -> &CountMinSketchN<W, D> {
+        &self.cms
+    }
+
+    /// Reset the tracker and its underlying sketch.
+    pub fn clear(&mut self) {
+        self.cms.clear();
+        self.top_k = [HeavyHitterEntry { hash: 0, count: 0 }; K];
+        self.count = 0;
+    }
+}
+
+impl<const K: usize, const W: usize, const D: usize> Default for HeavyHittersN<K, W, D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Heavy Hitters tracking the top 10 on a [`CountMinSketch1024x5`]
+pub type HeavyHitters10 = HeavyHittersN<10, 1024, 5>;
+/// Heavy Hitters tracking the top 20 on a [`CountMinSketch2048x7`]
+pub type HeavyHitters20 = HeavyHittersN<20, 2048, 7>;
+/// Heavy Hitters tracking the top 5 on a [`CountMinSketch1024x5`]
+pub type HeavyHitters5 = HeavyHittersN<5, 1024, 5>;
 
 /// Type alias for the default Heavy Hitters tracker
 pub type HeavyHitters = HeavyHitters10;
