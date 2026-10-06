@@ -297,6 +297,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `interpolation::slerp`: 名前と doc は SLERP だが中身は NLERP で、角速度が一定でなかった (90° の弧で t = 1/4 が 21.6°、弧が大きいほどずれる) `atan2` / `sin` による SLERP にし、5° 未満 (`a · b > 0.999`) だけ NLERP を使う 運動学的物体の substep 間の姿勢 (`kinematic_substep_pose`) と `AnimationBlender` も同じ実装を使う **Behavior change:** 補間した姿勢の値が変わる (AUD-A-S2W3-006)
 - `Rope::new`: 全粒子に 1 区間分の質量を与えていたので、綱の総質量が `mass_per_unit * L * (N+1)/N` (1 区間なら 2 倍) になっていた 区間の質量を両端の粒子に分ける集中質量にし、両端の粒子は半分、総質量は `mass_per_unit * L` **Behavior change:** 端の粒子の逆質量が 2 倍になる (AUD-A-S3W1-003)
 - `analyze_column` / `BeamAnalysis` の Euler 座屈荷重: 柱は最も弱い軸まわりに座屈するので、断面二次モーメントを弱軸 `min(I_x, I_y)` で取る (I 形は両フランジ `2·t_f·b³/12` + ウェブ) これまでは水平軸まわり (縦長断面では強軸) の I を使ったので、同じ棒を 10 × 20 と 20 × 10 と書くと臨界荷重が 4 倍違い、縦長断面で危険側だった 長さ 0 の柱は応力 0 でなく降伏応力 (λ → 0 の Johnson 式の極限) を返す **Behavior change:** 縦長断面・I 形の座屈荷重が小さくなる (AUD-A-S2W2-006 / 007)
 - `froude_krylov_vertical_n`: 波の谷が喫水を下回る (`d + η < 0`) と負の浮力を返していた 濡れ喫水を 0 で打ち切る doc の「平均からの超過分」は誤りで、返すのは濡れ喫水の全浮力 (`η = 0` で排水重量) と書き直した **Behavior change:** 喫水が水面から出た時の力は 0 (AUD-A-S2W3-004 / 005)

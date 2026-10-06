@@ -160,7 +160,7 @@
 //! - [`audio_physics`]: Physics-based audio parameter generation
 //! - [`netcode`]: Deterministic simulation with frame input, checksum, rollback
 //! - [`fluid_netcode`]: Deterministic fluid netcode with delta compression (`std`)
-//! - [`interpolation`]: Substep interpolation with NLERP quaternion blending
+//! - [`interpolation`]: Substep interpolation with SLERP quaternion blending
 //! - [`debug_render`]: Wireframe visualization API (bodies, contacts, joints, BVH)
 //! - [`profiling`]: Per-stage timer and per-frame statistics
 //!

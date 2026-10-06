@@ -14,7 +14,7 @@ crate has today.
 | `docs/coverage/chem.toml` | 140 | 7 | 2 | 0 | 131 | 0 |
 | `docs/coverage/couple.toml` | 123 | 10 | 3 | 4 | 106 | 0 |
 | `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
-| `docs/coverage/engine.toml` | 153 | 64 | 10 | 7 | 72 | 0 |
+| `docs/coverage/engine.toml` | 153 | 65 | 10 | 6 | 72 | 0 |
 | `docs/coverage/env.toml` | 152 | 20 | 3 | 2 | 127 | 0 |
 | `docs/coverage/fem.toml` | 137 | 36 | 0 | 6 | 92 | 3 |
 | `docs/coverage/fract.toml` | 112 | 15 | 2 | 4 | 91 | 0 |
@@ -210,7 +210,7 @@ crate has today.
 | game-engine | 4 | 0 | 0 | 0 | 4 | 0 |
 | network | 18 | 7 | 0 | 0 | 11 | 0 |
 | state | 26 | 5 | 0 | 3 | 18 | 0 |
-| world | 11 | 7 | 0 | 1 | 3 | 0 |
+| world | 11 | 8 | 0 | 0 | 3 | 0 |
 
 ## `docs/coverage/env.toml`
 

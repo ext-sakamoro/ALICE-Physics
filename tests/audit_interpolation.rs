@@ -175,9 +175,9 @@ fn slerp_is_symmetric_under_swap() {
 }
 
 /// Doc: `slerp` / "interpolate_rotation (SLERP)". True SLERP has constant angular velocity:
-/// a 90 degree arc at t = 1/4 is exactly 22.5 degrees. The NLERP actually used gives ~21.6.
+/// a 90 degree arc at t = 1/4 is exactly 22.5 degrees (the NLERP used before gave ~21.6).
 #[test]
-#[ignore = "known defect: AUD-A-S2W3-006: slerp is NLERP; 90 deg arc at t=1/4 is 21.6 deg not 22.5 (angular speed non-uniform, 4% at 90 deg, growing with the arc); doc discloses NLERP but names/describes it slerp"]
+// AUD-A-S2W3-006
 fn slerp_has_constant_angular_velocity() {
     let a = roty(0.0);
     let b = roty(90.0);
@@ -192,21 +192,28 @@ fn slerp_has_constant_angular_velocity() {
     }
 }
 
-/// NLERP closed form (what the implementation promises in its doc): the angle at t is
-/// 2 atan( t sin(th/2) / ((1-t) + t cos(th/2)) ). Pinning it checks the weights and normalisation.
+/// SLERP closed form (Shoemake 1985): the angle swept at t is exactly t * theta, for
+/// arcs up to nearly 180 degrees; below about 5 degrees the doc's NLERP branch is
+/// used, whose angle 2 atan(t sin(th/2) / ((1-t) + t cos(th/2))) differs from t * theta
+/// by under 1e-4 degrees there
 #[test]
-fn slerp_matches_the_nlerp_angle_formula() {
-    for theta in [30.0f64, 90.0, 150.0] {
-        let a = roty(0.0);
-        let b = roty(theta);
-        for t in [0.125f64, 0.25, 0.5, 0.75] {
-            let h = theta.to_radians() / 2.0;
-            let want = (2.0 * (t * h.sin() / ((1.0 - t) + t * h.cos())).atan()).to_degrees();
+fn slerp_sweeps_t_times_the_arc() {
+    for theta in [10.0f64, 30.0, 90.0, 150.0, 179.0] {
+        let (a, b) = (roty(0.0), roty(theta));
+        for t in [0.125f64, 0.25, 0.5, 0.75, 0.9] {
             let got = angle_between(a, slerp(a, b, fx(t)));
             assert!(
-                (got - want).abs() < 1e-8,
-                "theta {theta} t {t}: {got} vs {want}"
+                (got - t * theta).abs() < 1e-7,
+                "theta {theta} t {t}: {got} vs {}",
+                t * theta
             );
+        }
+    }
+    for theta in [1.0f64, 4.0] {
+        let (a, b) = (roty(0.0), roty(theta));
+        for t in [0.25f64, 0.5, 0.75] {
+            let got = angle_between(a, slerp(a, b, fx(t)));
+            assert!((got - t * theta).abs() < 1e-4, "theta {theta} t {t}: {got}");
         }
     }
 }
