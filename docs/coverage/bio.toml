@@ -1426,3 +1426,23 @@ status = "missing"
 evidence = "無い (行 COV-BIO-078 と COV-BIO-077 が前提)"
 oracle_candidate = "波速が Moens-Korteweg と一致、反射なしの伝播"
 limitation = ""
+
+[[item]]
+id = "COV-BIO-134"
+axis = "bioheat-transport"
+item = "whole-body heat balance of a person (metabolic heat, convection, radiation and sweat evaporation, clothing insulation; core and skin temperature, cold and heat stress)"
+source = "Gagge et al. 1971 (two-node model); Fiala et al. 1999; ISO 7730 and ISO 11079"
+status = "missing"
+evidence = "無い (推測: thermoregulation で src 0 件) 組織の伝熱 (COV-BIO-115) と布の温度 (COV-COUPLE-108) も missing"
+oracle_candidate = "定常の熱収支 M − W = C + R + E を ISO 7730 の条件で満たす皮膚温 (参照値要確認)"
+limitation = ""
+
+[[item]]
+id = "COV-BIO-135"
+axis = "impact-injury"
+item = "injury as a state variable of a body (damage per segment reduces joint strength and range of motion, recovers over time)"
+source = "AIS (Abbreviated Injury Scale) severity coding; injury-to-performance models in human body simulation (推測)"
+status = "missing"
+evidence = "怪我の指標の計算 (COV-BIO-106〜114) も missing、指標を運動能力に戻す状態量は無い world の接触から指標を出す連成は COV-COUPLE-117"
+oracle_candidate = "損傷 0 で元の関節トルク上限、損傷 1 で 0 になる単調な写像"
+limitation = ""

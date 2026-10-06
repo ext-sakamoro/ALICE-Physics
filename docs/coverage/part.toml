@@ -1249,3 +1249,13 @@ status = "missing"
 evidence = "MPM / DEM が無い (行 COV-PART-069)"
 oracle_candidate = "縦横比に対する流走距離のスケーリング (参照値要確認)"
 limitation = ""
+
+[[item]]
+id = "COV-PART-120"
+axis = "crowd"
+item = "pedestrians interacting with vehicles in the crowd model (vehicles as moving obstacles in the social force, yielding and gap acceptance at crossings)"
+source = "Zeng et al. 2014 (Transp. Res. C 40, pedestrian-vehicle social force); Anvari et al. 2015"
+status = "missing"
+evidence = "群衆の相手は歩行者と静止した壁だけ (src/crowd_force.rs::SocialForce、COV-PART-097) 車両を動く障害物として読む口が無い 物理的な衝突と反力は COV-COUPLE-103"
+oracle_candidate = "一定速度で横切る車両の前で歩行者が止まり、通過後に歩き出す (間隙の閾値の閉形式)"
+limitation = ""

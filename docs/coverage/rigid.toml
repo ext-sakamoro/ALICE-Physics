@@ -1208,3 +1208,33 @@ status = "out-of-scope"
 evidence = "閉形式の応力・寿命 (src/rolling_contact.rs) で剛体の接触解法の機能ではない tests/engineering_oracles_misc.rs::rolling_contact_hertz_sphere_sphere_matches_johnson"
 oracle_candidate = ""
 limitation = ""
+
+[[item]]
+id = "COV-RIGID-117"
+axis = "contact"
+item = "tool-object interaction (lever and fulcrum, striking to split, scooping and digging with a tool held by a body)"
+source = "Mason, Mechanics of Robotic Manipulation ch.5; tool-use benchmarks in physics engines (e.g. MuJoCo, Isaac Gym)"
+status = "missing"
+evidence = "道具として使う型・判定は無い 部品として剛体の接触と摩擦 (COV-RIGID-078〜091)、切断 (COV-FRACT-095 / 096) はある 土の切削抵抗は土の側の表"
+oracle_candidate = "てこの釣り合い F_1 l_1 = F_2 l_2 を剛体の板と支点で再現"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-118"
+axis = "benchmark"
+item = "dry-stack masonry stability (blocks held by friction alone: arch, wall and tilting-table collapse angle)"
+source = "Heyman, The Stone Skeleton; Lemos 2007 (discrete element modelling of masonry, Int. J. Archit. Heritage 1)"
+status = "missing"
+evidence = "積み上げの静止 (COV-RIGID-106) も missing 組積の釣り合いを突き合わせる test は無い"
+oracle_candidate = "傾斜台の上のブロック柱が tan θ = b / h で転倒、μ で滑りが先か転倒が先かが決まる (閉形式)"
+limitation = ""
+
+[[item]]
+id = "COV-RIGID-119"
+axis = "benchmark"
+item = "collapse of a jointed block structure (mortar or adhesive joints with strength, progressive collapse into rigid fragments)"
+source = "Lourenço, Computational strategies for masonry structures (1996); LS-DYNA / 3DEC jointed block models"
+status = "missing"
+evidence = "部品として力・トルクの閾値で切れる関節 (COV-RIGID-031、src/joint.rs::solve_joints_breakable) はあるが、継手の強度で組んだ構造物の崩壊を突き合わせる test は無い 破片の剛体化は fract.toml"
+oracle_candidate = "片持ちに積んだブロックの継手が曲げモーメントの閾値で根元から切れる"
+limitation = ""

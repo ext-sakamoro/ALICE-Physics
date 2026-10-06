@@ -968,3 +968,13 @@ status = "implemented+oracle"
 evidence = "tests/analytic_sensors.rs::lidar_is_bit_reproducible_and_noise_has_the_stated_statistics tests/analytic_sensors.rs::gaussian_is_bit_reproducible"
 oracle_candidate = ""
 limitation = ""
+
+[[item]]
+id = "COV-SENSE-092"
+axis = "range"
+item = "RGB camera: colour image of the world rendered from a sensor pose (pinhole projection, shading, deterministic pixels)"
+source = "Gazebo / Isaac Sim camera sensors; CARLA RGB camera"
+status = "missing"
+evidence = "画像を作る sensor は無い (推測: camera で src 0 件) 光線を投げる部品 (src/shape_raycast.rs::ray_caster) はある 深度画像は COV-SENSE-022、放射量の model は COV-OPTICS-107"
+oracle_candidate = "既知の色の平面を正面から撮った画素値が一様"
+limitation = ""
