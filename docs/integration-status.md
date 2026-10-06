@@ -9,8 +9,8 @@ References are resolved to one definition each, so items that share a name are t
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 21 |
 | L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2487 |
-| live | reached without examples (crate-internal roots or a binding) | 522 |
-| | **total** | **3030** |
+| live | reached without examples (crate-internal roots or a binding) | 529 |
+| | **total** | **3037** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
