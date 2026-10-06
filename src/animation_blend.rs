@@ -351,8 +351,11 @@ impl AnimationBlender {
             self.blend_weight = self.target_weight;
         }
 
-        // Auto-switch mode when transition completes
-        if self.mode == BlendMode::Blend {
+        // Auto-switch mode when the transition completes: only once the weight
+        // has reached its target. Testing the endpoints alone switched a just
+        // started transition (weight still at the start, e.g. after dt = 0 or
+        // with transition_speed 0) to the mode it was leaving.
+        if self.mode == BlendMode::Blend && self.blend_weight == self.target_weight {
             if self.blend_weight >= Fix128::ONE {
                 self.mode = BlendMode::Ragdoll;
             } else if self.blend_weight <= Fix128::ZERO {
