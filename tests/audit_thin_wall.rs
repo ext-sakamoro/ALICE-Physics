@@ -265,22 +265,27 @@ fn start_offset_is_added_to_the_distance() {
     assert!((t - 0.07).abs() < 1e-6, "got {t}");
 }
 
-/// KNOWN DEFECT: a surface point that lies just OUTSIDE the SDF zero set by
+/// Fixed (AUD-A-S2W1-005): a surface point that lies just OUTSIDE the SDF zero set by
 /// more than `start_offset_mm` (0.01 mm), e.g. a mesh vertex off the field by
 /// 0.011 mm, makes the first march query land outside (d >= 0) and the
 /// function reports `Some(0.01)` -- "exited through the opposite surface after
 /// 0.01 mm" -- instead of the true 10 mm. The caller gets a silent false thin
 /// region.
 #[test]
-#[ignore = "known defect: AUD-A-S2W1-005: measure_thickness_at returns Some(0.01) for a surface point 0.011 mm outside the SDF (R=5 sphere at x=5.011; true 10.0)"]
 fn point_slightly_outside_surface_is_not_reported_as_a_hairline_wall() {
     let cfg = ThinWallConfig::default();
     let s = sphere(5.0);
     let t = thick(&s, v(5.011, 0.0, 0.0), (1.0, 0.0, 0.0), &cfg);
+    // traced onto the surface at x = 5, then the 10 mm chord to x = -5 (the
+    // march exits within the minimum step of the far face)
+    let t = t.expect("a point 0.011 mm off a 10 mm solid is measurable");
     assert!(
-        t.map_or(true, |t| t > 5.0),
-        "0.011 mm off the surface of a 10 mm solid reported {t:?}"
+        (t - 10.0).abs() < 2e-2,
+        "0.011 mm off the surface of a 10 mm solid reported {t}"
     );
+    // further off (1 mm, inside the march budget): the same chord
+    let t = thick(&s, v(6.0, 0.0, 0.0), (1.0, 0.0, 0.0), &cfg).unwrap();
+    assert!((t - 10.0).abs() < 2e-2, "1 mm off: {t}");
 }
 
 // ------------------------------------------------------ analyze_thickness
@@ -374,23 +379,38 @@ fn surface_exactly_on_a_node_yields_one_crossing_each() {
 
 /// R = 5 sphere, unit grid: x-lines through (y,z) with y^2+z^2 < 25 cross
 /// twice. Lattice points strictly inside the circle of radius 5: 81 - 12 = 69.
-/// Every point lies on the grid line it was found on and within 0.05 mm of the
-/// true surface (linear-interpolation error bound h^2/8 * d'' / |d'| is
-/// about 0.045 mm on the most grazing lines at h = 1; measured 0.013).
+/// The sphere is symmetric in the axes, so the Y and Z lines (AUD-A-S2W1-004)
+/// add the same 2 * 69 each: 3 * 2 * 69 = 414. Every point lies on the grid
+/// line it was found on (two of its coordinates are grid values) and within
+/// 0.05 mm of the true surface (linear-interpolation error bound
+/// h^2/8 * d'' / |d'| is about 0.045 mm on the most grazing lines at h = 1;
+/// measured 0.013).
 #[test]
 fn sphere_unit_grid_crossing_count_and_accuracy() {
     let s = sphere(5.0);
     let pts = sample_surface_points(&s, v(-7.0, -7.0, -7.0), v(7.0, 7.0, 7.0), Fix128::ONE);
-    assert_eq!(pts.len(), 2 * 69);
-    for p in &pts {
-        let (x, y, z) = (p.x.to_f64(), p.y.to_f64(), p.z.to_f64());
-        assert!((y - y.round()).abs() < 1e-9 && (z - z.round()).abs() < 1e-9);
-        let r = (x * x + y * y + z * z).sqrt();
-        assert!((r - 5.0).abs() < 0.05, "point {x},{y},{z} at r={r}");
+    assert_eq!(pts.len(), 3 * 2 * 69);
+    // X lines first, then Y, then Z: block k holds the crossings of the axis-k
+    // lines, whose two other coordinates are grid values
+    for (k, block) in pts.chunks(2 * 69).enumerate() {
+        for p in block {
+            let c = [p.x.to_f64(), p.y.to_f64(), p.z.to_f64()];
+            for (j, v) in c.iter().enumerate() {
+                if j != k {
+                    assert!(
+                        (v - v.round()).abs() < 1e-9,
+                        "axis {k} point {c:?} is off its line"
+                    );
+                }
+            }
+            let r = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt();
+            assert!((r - 5.0).abs() < 0.05, "point {c:?} at r={r}");
+        }
     }
 }
 
-/// Grid pipeline on a solid 10 mm sphere reports the diameter for every point.
+/// Grid pipeline on a solid 10 mm sphere reports the diameter for every point
+/// (414 samples: the crossings of the X, Y and Z lines, see above).
 #[test]
 fn grid_pipeline_on_solid_sphere_measures_diameter() {
     let s = sphere(5.0);
@@ -401,14 +421,14 @@ fn grid_pipeline_on_solid_sphere_measures_diameter() {
         Fix128::ONE,
         &ThinWallConfig::default(),
     );
-    assert_eq!(r.sampled_count, 138);
+    assert_eq!(r.sampled_count, 414);
     assert_eq!(r.unbounded_count, 0);
     assert!(!r.has_thin_walls());
     assert!(r.max_thickness_seen.to_f64() <= 10.0 + 1e-3);
     assert!(r.min_thickness_seen.to_f64() > 9.9);
 }
 
-/// KNOWN DEFECT: the grid scan finds surface points only by sign changes
+/// Fixed (AUD-A-S2W1-004): the grid scan found surface points only by sign changes
 /// along X. A thin plate lying parallel to the X axis (z-thin, 0.4 mm) is
 /// crossed by x-lines only at its two end faces, so the pipeline measures the
 /// 20 mm plate length and reports no thin wall (measured: 158 samples, 0
@@ -416,7 +436,6 @@ fn grid_pipeline_on_solid_sphere_measures_diameter() {
 /// 0.4 mm wall, below the 0.8 mm default threshold. The doc of
 /// `analyze_thickness_grid` says "sign changes between adjacent grid cells".
 #[test]
-#[ignore = "known defect: AUD-A-S2W1-004: analyze_thickness_grid only scans X-lines; a 0.4 mm z-thin plate parallel to X is reported as 20.0 mm (158 samples, 0 regions)"]
 fn grid_pipeline_detects_thin_plate_parallel_to_scan_axis() {
     let s = boxed(10.0, 10.0, 0.2);
     let r = analyze_thickness_grid(
@@ -434,13 +453,12 @@ fn grid_pipeline_detects_thin_plate_parallel_to_scan_axis() {
     );
 }
 
-/// KNOWN DEFECT: doc says points are extracted "inside `[aabb_min,
+/// Fixed (AUD-A-S2W1-006): doc says points are extracted "inside `[aabb_min,
 /// aabb_max]`", but `axis_steps` uses `ceil`, so the last sample coordinate
 /// is up to one step beyond `aabb_max`. R = 5 sphere, AABB x in [-6, 4.5],
 /// y in [0, 0.5], step 1: crossings are returned at x = 5 and on the line
 /// y = 1, both outside the box.
 #[test]
-#[ignore = "known defect: AUD-A-S2W1-006: sample_surface_points returns points beyond aabb_max (ceil in axis_steps): x=5 > 4.5, y=1 > 0.5"]
 fn sampled_points_stay_inside_the_aabb() {
     let s = sphere(5.0);
     let (lo, hi) = (v(-6.0, 0.0, 0.0), v(4.5, 0.5, 0.0));
@@ -455,4 +473,35 @@ fn sampled_points_stay_inside_the_aabb() {
             p.z.to_f64()
         );
     }
+}
+
+/// The last sample of each axis is `max` itself (AUD-A-S2W1-006): a surface
+/// between the last grid point and `max` is still found. R = 4.2 sphere, AABB
+/// x in [-6, 4.5], step 1: grid points end at x = 4 (inside), then 4.5
+/// (outside), so the +x crossing on the line y = z = 0 is found near 4.2
+#[test]
+fn a_surface_between_the_last_grid_point_and_max_is_found() {
+    let s = sphere(4.2);
+    let (lo, hi) = (v(-6.0, 0.0, 0.0), v(4.5, 0.0, 0.0));
+    let pts = sample_surface_points(&s, lo, hi, Fix128::ONE);
+    let xs: Vec<f64> = pts.iter().map(|p| p.x.to_f64()).collect();
+    assert_eq!(xs.len(), 2, "{xs:?}");
+    assert!(
+        (xs[0] + 4.2).abs() < 0.05 && (xs[1] - 4.2).abs() < 0.05,
+        "{xs:?}"
+    );
+}
+
+/// The inward approach of an off-surface point and the measurement share the
+/// march distance budget: 5 mm outside a 10 mm solid with a 12 mm budget is
+/// 15 mm of marching, so it is not measured (5 + 10 > 12); within the budget
+/// (1 mm outside, 11 mm) it is
+#[test]
+fn the_inward_approach_counts_against_the_march_budget() {
+    let mut cfg = ThinWallConfig::default();
+    cfg.max_march_distance_mm = Fix128::from_int(12);
+    let s = sphere(5.0);
+    assert_eq!(thick(&s, v(10.0, 0.0, 0.0), (1.0, 0.0, 0.0), &cfg), None);
+    let t = thick(&s, v(6.0, 0.0, 0.0), (1.0, 0.0, 0.0), &cfg).unwrap();
+    assert!((t - 10.0).abs() < 2e-2, "{t}");
 }

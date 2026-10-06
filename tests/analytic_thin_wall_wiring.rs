@@ -336,25 +336,29 @@ fn sample_surface_points_sphere_grid_matches_hand_enumerated_crossings() {
     // oracle (by hand, see module doc comment above): y, z visit {-6,0,6};
     // y^2+z^2 < 25 only for (0,0); on that line the SDF |x|-5 is exactly
     // piecewise-linear so interpolation lands exactly on x = -5 and x = +5.
+    // The Y and Z lines (AUD-A-S2W1-004) do the same through the axis:
+    // (0, -5, 0), (0, 5, 0), (0, 0, -5), (0, 0, 5), in that order.
     let pts = sample_surface_points(
         &sdf,
         Vec3Fix::from_int(-6, -6, -6),
         Vec3Fix::from_int(6, 6, 6),
         Fix128::from_int(6),
     );
-    assert_eq!(pts.len(), 2, "exactly 2 crossings expected, got {pts:?}");
-
-    let mut xs: Vec<f32> = pts.iter().map(|p| p.x.to_f32()).collect();
-    xs.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    assert!((xs[0] - (-5.0)).abs() < 1e-3, "got {}", xs[0]);
-    assert!((xs[1] - 5.0).abs() < 1e-3, "got {}", xs[1]);
+    assert_eq!(pts.len(), 6, "exactly 6 crossings expected, got {pts:?}");
+    let want = [
+        (-5, 0, 0),
+        (5, 0, 0),
+        (0, -5, 0),
+        (0, 5, 0),
+        (0, 0, -5),
+        (0, 0, 5),
+    ];
+    for (p, (x, y, z)) in pts.iter().zip(want) {
+        assert_eq!(*p, Vec3Fix::from_int(x, y, z), "got {pts:?}");
+    }
 
     for p in &pts {
         let (x, y, z) = p.to_f32();
-        assert!(
-            y.abs() < 1e-6 && z.abs() < 1e-6,
-            "expected y=z=0, got ({x},{y},{z})"
-        );
         // Points genuinely lie on the surface: SDF value ~ 0.
         let d = sdf.distance(x, y, z);
         assert!(d.abs() < 1e-2, "surface point sdf = {d}, expected ~0");
@@ -448,9 +452,9 @@ fn analyze_thickness_grid_sphere_matches_hand_derived_diameter() {
         Fix128::from_int(6),
         &cfg,
     );
-    // oracle: 2 diametrically-opposite surface points, opposite-face
-    // distance = diameter = 10mm, well above the 0.8mm threshold.
-    assert_eq!(report.sampled_count, 2);
+    // oracle: 6 surface points (2 diametrically opposite on each axis),
+    // opposite-face distance = diameter = 10mm, well above the 0.8mm threshold.
+    assert_eq!(report.sampled_count, 6);
     assert_eq!(report.regions.len(), 0);
     assert_eq!(report.thin_fraction(), Fix128::ZERO);
     assert!(!report.has_thin_walls());
@@ -479,9 +483,9 @@ fn analyze_thickness_grid_large_nozzle_flags_sphere_as_thin() {
         Fix128::from_int(6),
         &cfg,
     );
-    assert_eq!(report.sampled_count, 2);
-    // oracle: 10mm diameter < 12mm threshold -> both points flagged.
-    assert_eq!(report.regions.len(), 2);
+    assert_eq!(report.sampled_count, 6);
+    // oracle: 10mm diameter < 12mm threshold -> every point flagged.
+    assert_eq!(report.regions.len(), 6);
     assert_eq!(report.thin_fraction(), Fix128::ONE);
     assert!(report.has_thin_walls());
 }
