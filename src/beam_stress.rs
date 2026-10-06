@@ -400,7 +400,9 @@ impl ColumnEndCondition {
 
 /// Critical Euler buckling load (N) for a slender column.
 ///
-/// `P_cr = π²·E·I / (K·L)²`
+/// `P_cr = π²·E·I / (K·L)²`, with `I` about the weak axis
+/// (`buckling::weak_axis_second_moment_mm4`): the column buckles about
+/// its least stiff axis.
 ///
 /// If the axial compressive load exceeds this value the column buckles
 /// laterally regardless of the yield strength of the material. Applicable
@@ -413,7 +415,7 @@ pub(crate) fn euler_critical_load_n(
     e_mpa: Fix128,
     end_condition: ColumnEndCondition,
 ) -> Fix128 {
-    let i = section.second_moment_of_area_mm4();
+    let i = crate::buckling::weak_axis_second_moment_mm4(section);
     let kl = end_condition.k_factor() * length_mm;
     let kl2 = kl * kl;
     if kl2.is_zero() {

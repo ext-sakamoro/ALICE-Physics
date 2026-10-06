@@ -167,11 +167,13 @@ fn beam_stress_cantilever_end_load_matches_roark() {
         FIX_TOL,
         "δ = P L³ / (3 E I)",
     );
+    // buckling about the weak axis: I_y = h b³ / 12
+    let i_weak = h * b * b * b / 12.0;
     assert_rel(
         report.euler_critical_load_n,
-        PI * PI * e * i / (l * l),
+        PI * PI * e * i_weak / (l * l),
         FIX_TOL,
-        "P_cr = π² E I / L²",
+        "P_cr = π² E I_weak / L²",
     );
     assert_rel(
         report.factor_of_safety,

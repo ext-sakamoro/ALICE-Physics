@@ -51,18 +51,60 @@ use crate::math::Fix128;
 // Radius of gyration & slenderness
 // ============================================================================
 
-/// Radius of gyration `r = √(I / A)` (mm).
+/// Radius of gyration `r = √(I_weak / A)` (mm), about the weak axis
+/// ([`weak_axis_second_moment_mm4`]).
 ///
 /// Governs how far the cross-section extends from the neutral axis on
 /// average — the natural "size" for buckling calculations.
 #[must_use]
 pub(crate) fn radius_of_gyration_mm(section: &CrossSection) -> Fix128 {
     let a = section.area_mm2();
-    let i = section.second_moment_of_area_mm4();
+    let i = weak_axis_second_moment_mm4(section);
     if a.is_zero() {
         return Fix128::ZERO;
     }
     (i / a).sqrt()
+}
+
+/// Second moment of area about the weak axis, `min(I_x, I_y)` (mm⁴): a column
+/// buckles about the axis of least stiffness, so the same bar gives the same
+/// answer however its width and height are labelled.
+/// `CrossSection::second_moment_of_area_mm4` is about the horizontal axis
+/// (the strong axis for a section taller than wide); `I_y` swaps the roles of
+/// width and height, and for the I-beam is the two flanges `2·t_f·b³/12`
+/// plus the web `(h − 2·t_f)·t_w³/12`.
+#[must_use]
+pub(crate) fn weak_axis_second_moment_mm4(section: &CrossSection) -> Fix128 {
+    let twelve = Fix128::from_int(12);
+    let cube = |v: Fix128| v * v * v;
+    let i_x = section.second_moment_of_area_mm4();
+    let i_y = match *section {
+        CrossSection::Rectangular {
+            width_mm,
+            height_mm,
+        } => height_mm * cube(width_mm) / twelve,
+        CrossSection::Circular { .. } | CrossSection::HollowCircular { .. } => i_x,
+        CrossSection::HollowRectangular {
+            outer_width_mm,
+            outer_height_mm,
+            wall_mm,
+        } => {
+            let inner_w = outer_width_mm - wall_mm.double();
+            let inner_h = outer_height_mm - wall_mm.double();
+            (outer_height_mm * cube(outer_width_mm) - inner_h * cube(inner_w)) / twelve
+        }
+        CrossSection::IBeam {
+            flange_width_mm,
+            height_mm,
+            flange_thickness_mm,
+            web_thickness_mm,
+        } => {
+            let web_h = height_mm - flange_thickness_mm.double();
+            (flange_thickness_mm.double() * cube(flange_width_mm) + web_h * cube(web_thickness_mm))
+                / twelve
+        }
+    };
+    i_x.min(i_y)
 }
 
 /// Slenderness ratio `λ = K·L / r`. Dimensionless.
@@ -117,7 +159,8 @@ pub enum BucklingRegime {
 /// - Euler:  `σ_cr = π²·E / λ²`
 /// - Johnson: `σ_cr = σ_y · (1 − (σ_y / (4·π²·E)) · λ²)`
 ///
-/// Returns 0 if `slenderness` is zero (degenerate input).
+/// Zero slenderness (a zero-length column) is pure yielding at `σ_y`, the
+/// `λ → 0⁺` limit of the Johnson formula.
 #[must_use]
 pub(crate) fn critical_stress_mpa(
     slenderness: Fix128,
@@ -125,7 +168,7 @@ pub(crate) fn critical_stress_mpa(
     sigma_y_mpa: Fix128,
 ) -> (Fix128, BucklingRegime) {
     if slenderness.is_zero() {
-        return (Fix128::ZERO, BucklingRegime::Yielding);
+        return (sigma_y_mpa, BucklingRegime::Yielding);
     }
     let lambda_t = transition_slenderness(e_mpa, sigma_y_mpa);
     if slenderness >= lambda_t {
@@ -317,16 +360,17 @@ mod tests {
 
     #[test]
     fn radius_of_gyration_rectangle() {
-        // 10x20 rectangle: I = 6666.67, A = 200, r = √33.33 ≈ 5.774
+        // 10x20 rectangle about the weak axis: I = 20·10³/12 = 1666.67,
+        // A = 200, r = √8.333 ≈ 2.887
         let s = CrossSection::Rectangular {
             width_mm: Fix128::from_int(10),
             height_mm: Fix128::from_int(20),
         };
         let r = radius_of_gyration_mm(&s);
-        let expected = Fix128::from_ratio(5774, 1000);
+        let expected = Fix128::from_ratio(2887, 1000);
         assert!(
             approx_eq(r, expected, Fix128::from_ratio(1, 100)),
-            "got {}, expected ~5.774",
+            "got {}, expected ~2.887",
             r.to_f32()
         );
     }
@@ -351,11 +395,11 @@ mod tests {
             width_mm: Fix128::from_int(10),
             height_mm: Fix128::from_int(20),
         };
-        // L = 500mm, r ≈ 5.77 → λ ≈ 86.6
+        // L = 500mm, r ≈ 2.887 (weak axis) → λ ≈ 173.2
         let lambda = slenderness_ratio(&s, Fix128::from_int(500), ColumnEndCondition::PinPin);
         assert!(
-            approx_eq(lambda, Fix128::from_ratio(866, 10), Fix128::from_int(1)),
-            "got {}, expected ~86.6",
+            approx_eq(lambda, Fix128::from_ratio(1732, 10), Fix128::from_int(1)),
+            "got {}, expected ~173.2",
             lambda.to_f32()
         );
     }
