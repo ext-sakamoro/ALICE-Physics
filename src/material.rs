@@ -23,7 +23,7 @@ pub type MaterialId = u16;
 pub const DEFAULT_MATERIAL: MaterialId = 0;
 
 /// Number of distinct `MaterialId` values (`u16::MAX as usize + 1`).
-const MATERIAL_ID_CAPACITY: usize = MaterialId::MAX as usize + 1;
+pub(crate) const MATERIAL_ID_CAPACITY: usize = MaterialId::MAX as usize + 1;
 
 /// Combine rule for friction/restitution when two materials interact
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]

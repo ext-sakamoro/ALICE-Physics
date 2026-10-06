@@ -279,6 +279,7 @@ were introduced during that release window.
 - `SolverBackend::Tgs` が `PhysicsWorld::add_joint` のジョイントと `PhysicsWorld::add_static_collider` の静的コライダーを無視していた (TGS では距離拘束しか解いていなかった) `step_tgs` で `solve_joints_dispatch` と `resolve_static_collisions` を呼ぶ 位置補正は速度にも反映する (静的接触は面に向かう速度を除き、ジョイントは `Δx / dt` と回転変化の角速度を加える)
 - C ヘッダ `include/alice_physics.h` が `alice_physics_world_step_n` の戻り値を `void` と宣言していた (実装は `uint8_t`) また `alice_physics_body_get_position_fix128_raw` を `include/alice_physics.h` と `bindings/AlicePhysics.h` が、`alice_physics_last_error` / `alice_physics_clear_last_error` / `alice_physics_string_free` を `bindings/AlicePhysics.h` が、`alice_physics_world_step_n` と 4 つの一括 API と `alice_physics_body_get_position_fix128_raw` を Unity の `bindings/AlicePhysics.cs` が宣言していなかった
 - Unreal Engine プラグイン: `UAlicePhysicsWorldComponent` が重力の UE の X / Y 成分を入れ替えて渡し、`GetBodyRotation` が回転の軸を位置と違う写像で返していた 重力・回転とも位置 (`ToAlice` / `FromAlice`) と同じ軸の写像に揃えた (水平成分を持つ重力と、UE の X / Y 軸まわりの回転が影響を受ける)
+- `PhysicsWorld::restore_world` / `from_world_snapshot` が material 表の件数と id を検査していなかった 0 件の表は復元後の `MaterialTable::get` で panic し、id が位置と一致しない表 (並べ替え・重複・欠番) は `get` が別の material を返していた 件数が 1〜65,536 でない表と `materials[i].id != i` の表を `WorldSnapshotError::InvalidValue { section: "material_table" }` で拒否し、復元先の world は変更しない (`snapshot_world` が書く表は常にこの条件を満たすので、正当な snapshot の復元結果と bit 列は不変)
 
 ## [1.4.0] - 2026-09-17
 
