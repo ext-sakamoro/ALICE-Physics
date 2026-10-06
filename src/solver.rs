@@ -48,7 +48,9 @@ use alloc::vec::Vec;
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
 
+mod participants;
 mod world_snapshot;
+pub use participants::DeclareFieldError;
 pub use world_snapshot::WorldSnapshotError;
 
 // ============================================================================
@@ -1495,6 +1497,21 @@ pub struct PhysicsWorld {
     park_generation: u64,
     /// Work counters of the last `step`.
     stage_work: StageWork,
+    /// Participants in registration order (see [`crate::world_participant`]).
+    /// Held behind a mutex so that the world stays `Sync` while a participant
+    /// is only `Send`; every access during a step goes through `&mut self`
+    /// ([`std::sync::Mutex::get_mut`], no locking).
+    #[cfg(feature = "std")]
+    participants: std::sync::Mutex<Vec<Box<dyn crate::world_participant::Participant>>>,
+    /// Run order and declared ports of `participants`, rebuilt whenever a
+    /// participant or a field is added; `None` while no participant is
+    /// registered.
+    #[cfg(feature = "std")]
+    participant_plan: Option<crate::world_participant::ParticipantPlan>,
+    /// The first fault recorded (sticky until [`Self::clear_fault`]).
+    fault: Option<crate::world_participant::WorldFault>,
+    /// Shared fields, owned by the world.
+    fields: crate::world_participant::FieldBoard,
 }
 
 /// Fold `bytes` into `hash` with FNV-1a (64-bit).
@@ -1618,6 +1635,12 @@ impl PhysicsWorld {
             park: ParkState::default(),
             park_generation: 0,
             stage_work: StageWork::default(),
+            #[cfg(feature = "std")]
+            participants: std::sync::Mutex::new(Vec::new()),
+            #[cfg(feature = "std")]
+            participant_plan: None,
+            fault: None,
+            fields: crate::world_participant::FieldBoard::new(),
         }
     }
 
@@ -2944,12 +2967,21 @@ impl PhysicsWorld {
     ///   whatever `iterations` is.
     /// - Convergence of a rigid joint chain depends on `substeps` only, not on
     ///   `iterations`.
+    ///
+    /// # Participants
+    ///
+    /// `step` is [`Self::try_step`] with the result dropped: while a fault is
+    /// recorded ([`Self::fault`]) it leaves the world unchanged. Without
+    /// registered participants no fault is ever recorded and `step` runs as
+    /// it always has.
     pub fn step(&mut self, dt: Fix128) {
-        // Guard: non-positive dt produces no physics update
-        if dt <= Fix128::ZERO {
-            return;
-        }
+        let _ = self.try_step(dt);
+    }
+
+    /// The step body behind [`Self::try_step`] (checks already done, `dt > 0`).
+    fn run_step(&mut self, dt: Fix128) {
         self.stage_work = StageWork::default();
+        let mut frozen = self.participant_flags();
 
         // `SolverBackend::Tgs` dispatch (std-only, see `SolverBackend` doc for
         // the no-std fallback). This `matches!` is `false` for every caller
@@ -2958,7 +2990,7 @@ impl PhysicsWorld {
         // executed exactly as before: no new code runs on the default path.
         #[cfg(feature = "std")]
         if matches!(self.config.solver_backend, SolverBackend::Tgs) {
-            self.step_tgs(dt);
+            self.step_tgs(dt, &mut frozen);
             return;
         }
 
@@ -3011,7 +3043,11 @@ impl PhysicsWorld {
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
             self.park.first_substep = i == 0;
+            // Participants run before the substep body (not inside `substep`,
+            // which the unit tests call on its own).
+            let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
             self.substep(substep_dt);
+            self.participants_end_substep(overflow_at_start, &frozen);
         }
         self.kinematic_substeps_left = 0;
         self.park.first_substep = false;
@@ -3454,7 +3490,7 @@ impl PhysicsWorld {
     /// [`Self::advance_kinematic_targets_for_tgs`] /
     /// [`Self::resolve_sdf_collisions`] for the last two.
     #[cfg(feature = "std")]
-    fn step_tgs(&mut self, dt: Fix128) {
+    fn step_tgs(&mut self, dt: Fix128, frozen: &mut [bool]) {
         use crate::solver_tgs::{build_islands, DistanceRef};
         use crate::solver_tgs_backend::{body_to_tgs, contact_to_tgs, tgs_to_body};
         use crate::solver_tgs_hooks_6dof_oriented::Pgs6DofOrientedConfig;
@@ -3628,7 +3664,10 @@ impl PhysicsWorld {
             velocity_iters: self.config.iterations.max(1) as u32,
             ..crate::solver_tgs::TgsConfig::default()
         };
-        if self.joints.is_empty() {
+        // Participants need a substep loop of their own: with none registered
+        // the joint-free path below is the single call it always was.
+        let with_participants = !frozen.is_empty();
+        if self.joints.is_empty() && !with_participants {
             solve_oriented_islands_serial(
                 &mut tgs_bodies,
                 &mut tgs_contacts,
@@ -3651,9 +3690,40 @@ impl PhysicsWorld {
                 substeps: 1,
                 ..tgs_cfg
             };
-            let sub_dt = dt * Fix128::from_f32(1.0 / tgs_cfg.substeps as f32);
+            //
+            // With participants the substep width is `dt / substeps` in
+            // `Fix128`, the same `h` as every other path, so a participant sees
+            // the same `h` whichever backend runs; without them the width
+            // stays the one this path always used.
+            let substeps = self.config.substeps;
+            let sub_dt = if with_participants {
+                dt / Fix128::from_int(substeps as i64)
+            } else {
+                dt * Fix128::from_f32(1.0 / tgs_cfg.substeps as f32)
+            };
             let jointed = self.jointed_bodies();
-            for _ in 0..tgs_cfg.substeps {
+            for s in 0..tgs_cfg.substeps {
+                let overflow_at_start = if with_participants {
+                    // Participants read the bodies as they are at the start of
+                    // this substep, and their forces change the velocities
+                    // the TGS solve starts from.
+                    for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
+                        tgs_to_body(state, body);
+                    }
+                    let flag =
+                        self.participants_begin_substep(s as usize, substeps, sub_dt, frozen);
+                    for (state, body) in tgs_bodies.iter_mut().zip(self.bodies.iter()) {
+                        state.linear_velocity = [body.velocity.x, body.velocity.y, body.velocity.z];
+                        state.angular_velocity = [
+                            body.angular_velocity.x,
+                            body.angular_velocity.y,
+                            body.angular_velocity.z,
+                        ];
+                    }
+                    flag
+                } else {
+                    false
+                };
                 solve_oriented_islands_serial(
                     &mut tgs_bodies,
                     &mut tgs_contacts,
@@ -3664,7 +3734,17 @@ impl PhysicsWorld {
                     &one_substep,
                     sub_dt,
                 );
-                self.tgs_project_joints(&mut tgs_bodies, &jointed, sub_dt);
+                if !self.joints.is_empty() {
+                    self.tgs_project_joints(&mut tgs_bodies, &jointed, sub_dt);
+                }
+                if with_participants {
+                    // Copy back every substep so the end-of-substep checks see
+                    // this substep's bodies.
+                    for (body, state) in self.bodies.iter_mut().zip(tgs_bodies.iter()) {
+                        tgs_to_body(state, body);
+                    }
+                    self.participants_end_substep(overflow_at_start, frozen);
+                }
             }
         }
         // Every contact for this tick has now been visited (each contact's
@@ -3745,12 +3825,20 @@ impl PhysicsWorld {
     /// ordering than constraint index order, and Gauss–Seidel is order
     /// dependent. Lockstep / rollback peers must therefore all use the same
     /// path (`fuzz/fuzz_targets/fuzz_step_parity.rs` checks both properties).
+    ///
+    /// # Participants
+    ///
+    /// `step_parallel` is [`Self::try_step_parallel`] with the result dropped.
     #[cfg(feature = "parallel")]
     pub fn step_parallel(&mut self, dt: Fix128) {
-        // Guard: non-positive dt produces no physics update
-        if dt <= Fix128::ZERO {
-            return;
-        }
+        let _ = self.try_step_parallel(dt);
+    }
+
+    /// The step body behind [`Self::try_step_parallel`] (checks already done,
+    /// `dt > 0`).
+    #[cfg(feature = "parallel")]
+    fn run_step_parallel(&mut self, dt: Fix128) {
+        let mut frozen = self.participant_flags();
 
         // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
         // in every substep since 1.2.0, see `substep`)
@@ -3779,7 +3867,9 @@ impl PhysicsWorld {
         let n = self.config.substeps;
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
+            let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
             self.substep_batched(substep_dt);
+            self.participants_end_substep(overflow_at_start, &frozen);
         }
         self.kinematic_substeps_left = 0;
 
@@ -4928,10 +5018,13 @@ impl PhysicsWorld {
         bridge: &mut B,
         dt: Fix128,
     ) {
-        // Guard: non-positive dt produces no physics update
-        if dt <= Fix128::ZERO {
+        // The checks of `try_step` (a recorded fault, a non-positive `dt`, a
+        // participant step rule or a per-body field that does not fit): when
+        // one fails nothing runs, as `step` does.
+        if !matches!(self.check_step(dt), Ok(true)) {
             return;
         }
+        let mut frozen = self.participant_flags();
 
         // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
         // in every substep since 1.2.0, see `substep`)
@@ -4959,7 +5052,9 @@ impl PhysicsWorld {
         let n = self.config.substeps;
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
+            let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
             self.substep_with_bridge(bridge, substep_dt);
+            self.participants_end_substep(overflow_at_start, &frozen);
         }
         self.kinematic_substeps_left = 0;
 
@@ -4993,6 +5088,10 @@ impl PhysicsWorld {
     /// produces `self.bodies` and `self.contact_constraints` state
     /// byte-identical to what a CPU-only `substep(dt)` call produces
     /// from the same initial state and configuration.
+    ///
+    /// Called on its own, this runs no participant: the participants of
+    /// [`crate::world_participant`] are called by the step loops
+    /// ([`Self::step_with_bridge`], [`Self::try_step`]) around each substep.
     #[cfg(feature = "gpu-solver-bridge")]
     pub fn substep_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
