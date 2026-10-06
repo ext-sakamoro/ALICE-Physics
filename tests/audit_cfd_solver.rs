@@ -21,7 +21,7 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::cfd_solver::{
-    AdvectionScheme, CfdSolver, PressureSolver, StepOptions, WallModel,
+    AdvectionScheme, CfdSolver, PressureSolver, StepError, StepOptions, WallModel,
 };
 use alice_physics::eulerian_grid::FaceBc;
 use alice_physics::math::{Fix128, Vec3Fix};
@@ -786,7 +786,7 @@ fn reinit_zero_means_never() {
 // --------------------------------------------------------- explicit diffusion
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-005: step / step_with_options accept nu dt / dx^2 = 0.6 > 1/6 and the checkerboard mode grows by 1.4 per step; step_rans refuses the same input with DiffusionUnstable (the guard exists but only on one entry point)"]
+// AUD-A-S1W4-005
 fn step_with_options_refuses_or_bounds_an_unstable_explicit_diffusion_number() {
     let (nx, ny, nz) = (4usize, 8usize, 4usize);
     let mut s = bare(nx, ny, nz, int(1));
@@ -801,8 +801,13 @@ fn step_with_options_refuses_or_bounds_an_unstable_explicit_diffusion_number() {
         }
     }
     let opts = StepOptions::new(PressureSolver::RedBlackGs { sweeps: 1 });
+    let before = s.grid.u.clone();
     match s.step_with_options(int(1), &opts) {
-        Err(_) => {}
+        Err(StepError::DiffusionUnstable { diffusion_number }) => {
+            assert_eq!(diffusion_number, q(6, 10));
+            assert_eq!(s.grid.u, before, "refused before anything changed");
+        }
+        Err(e) => panic!("unexpected refusal {e:?}"),
         Ok(_) => {
             let peak = s
                 .grid

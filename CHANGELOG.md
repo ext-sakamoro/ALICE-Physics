@@ -296,6 +296,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `CfdSolver::step_with_options`: 陽解法の分子拡散が安定限界 `ν dt / dx² ≤ 1/6` を超えても受け付け、市松模様の誤差が 1 step ごとに 1.4 倍に増えていた (`step_rans` は同じ入力を拒否していた) `StepError::DiffusionUnstable` を返し、何も変えずに拒否する `step` は error を返せないので doc に限界を書いた **Behavior change:** 限界を超える `dt` が `Err` になる (AUD-A-S1W4-005)
 - `TurbulenceSummary::clamped`: doc は打ち切ったセルの数だが、k-ω では k と ω の打ち切りを別々に数え、1 セルを 2 回数えていた (一様な 3³ で 54) セルごとに 1 回だけ数える (AUD-A-S1W4-010)
 - `sdf_fem_mesh::generate` / `generate_marching_tets`: 格子のセル数を f32 の商の切り捨てで決めていたので、幅がセルの整数倍でも商が 1 ulp 下に出ると最後の層が落ちた (幅 1.3 / セル 0.1 で 12 セル) 商を f64 で取り、1e-6 の相対余裕を付けて切り捨てる 端数のセルは従来どおり含めない (AUD-A-S2W3-010)
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 (`replay` は in-memory の保存先で同 target に対応、Added 参照)
