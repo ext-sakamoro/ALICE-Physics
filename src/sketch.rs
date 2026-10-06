@@ -495,7 +495,12 @@ impl<const BINS: usize> DDSketchN<BINS> {
     /// when the key lies outside it.
     fn add_at_key(&mut self, negative: bool, key: i64, n: u64) {
         let mut idx = key.saturating_add(i64::from(self.offset));
-        if idx < 0 || idx >= BINS as i64 {
+        // below a window whose top bucket is in use: the window cannot move
+        // down without dropping that bucket, so the key collapses into bucket
+        // 0 exactly as `make_room` would decide, without its O(BINS) pass
+        if idx < 0 && (self.positive_bins[BINS - 1] != 0 || self.negative_bins[BINS - 1] != 0) {
+            idx = 0;
+        } else if idx < 0 || idx >= BINS as i64 {
             self.make_room(key);
             // after a collapse the key may still lie below the window
             idx = key
