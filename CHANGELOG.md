@@ -298,6 +298,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `TriMesh::collide_aabb`: 箱の中心への三角形の最近点が箱の外なら接触なしとしていたので、斜めの三角形が箱の角を切る場合など重なる箱の約 13 % を取りこぼした 三角形と箱の重なりを分離軸 13 本で判定する 接触は三角形の法線方向 (隣の三角形と共有する辺の向きには押さない) `point_a` が `center - normal * depth` で箱の表面でも最深点でもなく、`point_a - point_b = -normal * depth` を満たさなかった `point_b` を箱の最深点に最も近い三角形の点 (深さが等しい時は近い方の三角形) とし `point_a = point_b - normal * depth` にした (AUD-A-S4W2-013 / 017)
 - `ray_triangle` (`TriMesh::raycast`): 平行判定の閾値 `MT_EPSILON` (2⁻²⁴) を `det` の絶対値と比べていたので、辺が約 2.4e-4 m より短い三角形は真上からの ray でも当たらなかった 閾値を辺の長さの積で割合にし、大きさに依らず ray と面の角度で判定する (AUD-A-S4W2-012)
 - `ScalarField3D::diffuse` (pressure / thermal / phase change / fracture / erosion の拡散): 陽解法の安定限界 `rate·dt·(2/dx²+2/dy²+2/dz²) ≤ 1` を超える step も 1 回で進め、正の山が負の値に振れていた 限界を超える step は 1 つあたり 1/2 以下の等分 sub-step に分ける 限界内は従来どおり 1 step (結果は変わらない) (AUD-A-S6W1-004)
 - `PressureModifier`: `apply_impact` を同じ点に 2 回掛けると次の `update` まで凹みが `max_deformation` の 2 倍になっていた 掛けた直後に上限で切る 負の `internal_pressure` は無視されていた 負は面を内側へ引く (AUD-A-S6W1-003 / 006)
