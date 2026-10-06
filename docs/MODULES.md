@@ -97,6 +97,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `spatial` | spatial hash grid |  |  | standalone |
 | `raycast` | ray and shape casts |  | [`spatial_raycast_queries`](../examples/spatial_raycast_queries.rs) | standalone (binding 5 of 16 items) |
 | `shape_raycast` | world ray queries against the geometry bodies collide as: shapes, compound children, static colliders and SDF colliders (closest / all / any, layer filter, BVH culling) |  | [`shape_raycast_sensors`](../examples/shape_raycast_sensors.rs) | standalone |
+| `world_shape_query` | world sphere / capsule casts and sphere / box overlaps against the same geometry as `shape_raycast` (closed-form Minkowski sums where they exist, GJK distance and conservative advancement otherwise) |  | [`world_shape_query`](../examples/world_shape_query.rs) | standalone |
 | `query` | sphere / capsule casts and overlap queries |  | [`spatial_queries`](../examples/spatial_queries.rs) | standalone |
 | `ccd` | continuous collision detection (time of impact, conservative advancement, speculative contacts) |  | [`continuous_collision_detection`](../examples/continuous_collision_detection.rs) | standalone |
 | `contact_cache` | persistent contact manifolds with warm starting, as an opt-in tool outside `PhysicsWorld::step` |  | [`contact_warm_start_cache`](../examples/contact_warm_start_cache.rs) | step |

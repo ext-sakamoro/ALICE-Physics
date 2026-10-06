@@ -85,7 +85,7 @@ use crate::static_collider::StaticCollider;
 use alloc::{vec, vec::Vec};
 
 /// Denominators below this are treated as zero (a ray parallel to a face): `2⁻³²`.
-const PARALLEL_EPSILON: Fix128 = Fix128 {
+pub(crate) const PARALLEL_EPSILON: Fix128 = Fix128 {
     hi: 0,
     lo: 0x0000_0001_0000_0000,
 };
@@ -106,8 +106,8 @@ const TORUS_NEWTON_STEPS: usize = 4;
 /// unit direction and the normal there (unit, see the module conventions).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct LocalHit {
-    t: Fix128,
-    normal: Vec3Fix,
+    pub(crate) t: Fix128,
+    pub(crate) normal: Vec3Fix,
 }
 
 /// The hit at `t = 0` of a ray that starts inside a solid.
@@ -119,7 +119,7 @@ fn inside_hit(direction: Vec3Fix) -> LocalHit {
 }
 
 /// Keep the nearer of two hits; on a tie the first one.
-fn nearer(a: Option<LocalHit>, b: Option<LocalHit>) -> Option<LocalHit> {
+pub(crate) fn nearer(a: Option<LocalHit>, b: Option<LocalHit>) -> Option<LocalHit> {
     match (a, b) {
         (Some(x), Some(y)) => Some(if y.t < x.t { y } else { x }),
         (x, None) => x,
@@ -156,7 +156,7 @@ fn quadratic_roots(a: Fix128, half_b: Fix128, c: Fix128) -> [Option<Fix128>; 2] 
 }
 
 /// A ray moved into a solid's frame: `(origin, direction)` in local coordinates.
-fn to_local(
+pub(crate) fn to_local(
     origin: Vec3Fix,
     direction: Vec3Fix,
     center: Vec3Fix,
@@ -167,7 +167,7 @@ fn to_local(
 }
 
 /// A local hit turned back into the world.
-fn to_world(hit: Option<LocalHit>, rotation: QuatFix) -> Option<LocalHit> {
+pub(crate) fn to_world(hit: Option<LocalHit>, rotation: QuatFix) -> Option<LocalHit> {
     hit.map(|h| LocalHit {
         t: h.t,
         normal: rotation.rotate_vec(h.normal),
@@ -177,7 +177,7 @@ fn to_world(hit: Option<LocalHit>, rotation: QuatFix) -> Option<LocalHit> {
 /// A ray against the convex region `n·x ≤ e` of every `(n, e)` (unit `n`), by
 /// clipping the segment `[0, max_t]` plane by plane (Cyrus–Beck). The entry
 /// normal is the plane the segment enters last.
-fn ray_planes(
+pub(crate) fn ray_planes(
     origin: Vec3Fix,
     direction: Vec3Fix,
     planes: &[(Vec3Fix, Fix128)],
@@ -222,7 +222,7 @@ fn ray_planes(
 }
 
 /// A solid sphere.
-fn ray_solid_sphere(
+pub(crate) fn ray_solid_sphere(
     origin: Vec3Fix,
     direction: Vec3Fix,
     center: Vec3Fix,
@@ -250,7 +250,7 @@ fn ray_solid_sphere(
 
 /// A solid capsule (segment `a`–`b`, radius `r`): the side of the cylinder between
 /// the end planes, and the two end spheres.
-fn ray_solid_capsule(
+pub(crate) fn ray_solid_capsule(
     origin: Vec3Fix,
     direction: Vec3Fix,
     capsule: &Capsule,
@@ -308,7 +308,7 @@ fn clamp(x: Fix128, lo: Fix128, hi: Fix128) -> Fix128 {
 
 /// Unit axis vectors and their negatives as the 6 planes of a box of half-extents
 /// `h` centred at the origin.
-fn box_planes(h: Vec3Fix) -> [(Vec3Fix, Fix128); 6] {
+pub(crate) fn box_planes(h: Vec3Fix) -> [(Vec3Fix, Fix128); 6] {
     [
         (Vec3Fix::UNIT_X, h.x),
         (-Vec3Fix::UNIT_X, h.x),
@@ -333,7 +333,7 @@ fn ray_box(
 }
 
 /// A solid cylinder along local `Y`, in local coordinates.
-fn ray_local_cylinder(
+pub(crate) fn ray_local_cylinder(
     o: Vec3Fix,
     d: Vec3Fix,
     radius: Fix128,
@@ -491,13 +491,13 @@ fn wedge_planes(width: Fix128, height: Fix128, depth: Fix128) -> [(Vec3Fix, Fix1
 
 /// The exact signed distance of a torus (ring of `major` in the local `XZ` plane,
 /// tube of `minor`).
-fn torus_distance(p: Vec3Fix, major: Fix128, minor: Fix128) -> Fix128 {
+pub(crate) fn torus_distance(p: Vec3Fix, major: Fix128, minor: Fix128) -> Fix128 {
     let ring = (p.x * p.x + p.z * p.z).sqrt() - major;
     (ring * ring + p.y * p.y).sqrt() - minor
 }
 
 /// A solid torus, in local coordinates.
-fn ray_local_torus(
+pub(crate) fn ray_local_torus(
     o: Vec3Fix,
     d: Vec3Fix,
     major: Fix128,
@@ -588,7 +588,7 @@ fn ray_posed_shape(
 
 /// The face planes of a convex hull (unit outward normals), or `None` when its
 /// points span no volume.
-fn hull_planes(hull: &ConvexHull) -> Option<Vec<(Vec3Fix, Fix128)>> {
+pub(crate) fn hull_planes(hull: &ConvexHull) -> Option<Vec<(Vec3Fix, Fix128)>> {
     let mesh = crate::convex_mesh_builder::build_hull_mesh(&hull.vertices)?;
     Some(
         mesh.faces
@@ -991,7 +991,7 @@ impl RayFilter {
         self
     }
 
-    fn sees_body(&self, world: &PhysicsWorld, i: usize) -> bool {
+    pub(crate) fn sees_body(&self, world: &PhysicsWorld, i: usize) -> bool {
         let Some(body) = world.bodies.get(i) else {
             return false;
         };
@@ -1018,6 +1018,18 @@ impl PhysicsWorld {
     /// built here, once.
     #[must_use]
     pub fn ray_caster(&self, filter: RayFilter) -> WorldRayCaster<'_> {
+        let (bvh, boxes) = self.query_body_bvh(&filter);
+        WorldRayCaster {
+            world: self,
+            filter,
+            bvh,
+            boxes,
+        }
+    }
+
+    /// The BVH of the collider boxes of the bodies `filter` sees, and each body's
+    /// box by body index (unused for bodies not in the tree).
+    pub(crate) fn query_body_bvh(&self, filter: &RayFilter) -> (LinearBvh, Vec<AABB>) {
         let mut primitives = Vec::new();
         let mut boxes = vec![AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO); self.bodies.len()];
         for (i, slot) in boxes.iter_mut().enumerate() {
@@ -1039,12 +1051,7 @@ impl PhysicsWorld {
                 morton: 0,
             });
         }
-        WorldRayCaster {
-            world: self,
-            filter,
-            bvh: LinearBvh::build(primitives),
-            boxes,
-        }
+        (LinearBvh::build(primitives), boxes)
     }
 
     /// The nearest hit of a ray with the world's geometry (see [`crate::shape_raycast`]).

@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 4705 |
+| 🟢 Not ignored (run by CI) | 4734 |
 | 🔴 Red by design | 221 |
 | ⏱ Gated (runtime / diagnostic / manual) | 25 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **4951** |
+| **Total** | **4980** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -296,7 +296,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (4705)
+## 🟢 Not ignored (4734)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -314,6 +314,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_coupled_iteration.rs` | 34 |
 | `engineering_oracles_solid.rs` | 34 |
 | `world_participant_conformance.rs` | 33 |
+| `analytic_world_shape_query.rs` | 29 |
 | `audit_math.rs` | 29 |
 | `analytic_crowd_force.rs` | 28 |
 | `audit_raycast.rs` | 28 |

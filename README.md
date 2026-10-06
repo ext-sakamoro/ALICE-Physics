@@ -169,7 +169,7 @@ Every public module, grouped by area and with a one-line summary, is listed in [
 | Area | Highlights |
 |------|-----------|
 | Rigid bodies | XPBD solver with an optional temporal Gauss-Seidel backend, sleeping and islands, CCD, rollback-ready state serialization |
-| Collision | GJK / EPA, linear BVH or persistent dynamic AABB tree broad-phase, box, sphere, capsule, cylinder, cone, ellipsoid, torus, wedge, convex hull, compound, triangle mesh, height field, SDF colliders; world ray queries against those shapes (`PhysicsWorld::cast_ray`) |
+| Collision | GJK / EPA, linear BVH or persistent dynamic AABB tree broad-phase, box, sphere, capsule, cylinder, cone, ellipsoid, torus, wedge, convex hull, compound, triangle mesh, height field, SDF colliders; world ray, sphere / capsule cast and sphere / box overlap queries against those shapes (`PhysicsWorld::cast_ray`, `cast_sphere`, `cast_capsule`, `overlap_sphere`, `overlap_aabb`) |
 | Joints | ball, hinge, fixed, slider, spring, D6, cone-twist, plus pulley, gear, weld, rack-and-pinion and mouse joints; breakable joints and PD motors |
 | Soft bodies | XPBD rope and cloth (with self-collision), position-based fluids, FEM-XPBD deformables, cutting |
 | Gameplay | character controller, vehicles (a simple model and a per-wheel dynamics model with tyres, brakes, ABS, road surfaces and weather), ragdolls, IK bridge, client-side prediction, deterministic RNG with Gaussian draws, contact events, simulated lidar / contact / IMU sensors |
@@ -199,7 +199,7 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | step: runs when `PhysicsWorld` steps | 17 |
 | world API: used through another `PhysicsWorld` method | 6 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 135 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 136 |
 | unused: no caller outside tests | 1 |
 
 ## Vehicle dynamics

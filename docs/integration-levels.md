@@ -15,7 +15,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | step | runs when `PhysicsWorld` steps | 17 |
 | world API | used through another `PhysicsWorld` method | 6 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 135 |
+| standalone | a Rust API that only examples call | 136 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -156,7 +156,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_sph` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `sensors` | standalone | 0 / 0 / 0 / 26 / 0 | — |
-| `shape_raycast` | standalone | 0 / 0 / 0 / 20 / 0 | — |
+| `shape_raycast` | standalone | 0 / 0 / 0 / 34 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 12 / 0 | — |
 | `sketch` | standalone (step 1 of 12 items) | 1 / 0 / 0 / 10 / 1 | C ABI, Python, WebAssembly |
@@ -180,6 +180,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `world_participant` | standalone | 0 / 0 / 0 / 88 / 0 | — |
+| `world_shape_query` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `motor` | unused (standalone 6 of 15 items) | 0 / 0 / 0 / 6 / 9 | — |
 
 ### C ABI (`--features ffi`)

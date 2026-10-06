@@ -153,7 +153,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | 分野 | 主な内容 |
 |------|---------|
 | 剛体 | XPBD ソルバー (時間方向 Gauss-Seidel バックエンドも選択可)、スリープとアイランド、CCD、ロールバック用の状態シリアライズ |
-| 衝突 | GJK / EPA、線形 BVH または永続的な動的 AABB 木のブロードフェーズ、箱・球・カプセル・円柱・円錐・楕円体・トーラス・くさび・凸包・複合形状・三角形メッシュ・高さ場・SDF コライダー、それらの実形状に対する world の ray クエリ (`PhysicsWorld::cast_ray`) |
+| 衝突 | GJK / EPA、線形 BVH または永続的な動的 AABB 木のブロードフェーズ、箱・球・カプセル・円柱・円錐・楕円体・トーラス・くさび・凸包・複合形状・三角形メッシュ・高さ場・SDF コライダー、それらの実形状に対する world の ray・球 / カプセルの掃引・球 / 箱の重なりのクエリ (`PhysicsWorld::cast_ray`、`cast_sphere`、`cast_capsule`、`overlap_sphere`、`overlap_aabb`) |
 | ジョイント | ボール、ヒンジ、固定、スライダー、ばね、D6、コーンツイストと、プーリー、ギア、溶接、ラックアンドピニオン、マウス 破断とPD モーター |
 | 柔軟体 | XPBD のロープと布 (自己衝突あり)、位置ベース流体、FEM-XPBD 変形体、切断 |
 | ゲーム用途 | キャラクターコントローラー、車両 (簡易モデルと、タイヤ・ブレーキ・ABS・路面・天候を持つ輪ごとの車両運動モデル)、ラグドール、IK 連携、クライアント側予測、決定論的乱数 (正規分布を含む)、接触イベント、模擬センサー (lidar / 接触 / IMU) |
@@ -177,7 +177,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | step: `PhysicsWorld` の step で実行される | 17 |
 | world API: `PhysicsWorld` の他のメソッドから使われる | 6 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 135 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 136 |
 | unused: テスト以外に呼び出し元がない | 1 |
 
 ## 車両運動

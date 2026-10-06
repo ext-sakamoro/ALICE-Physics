@@ -476,6 +476,7 @@ pub mod warp_risk;
 pub mod wave_ship;
 pub mod wind_zone;
 pub mod world_participant;
+pub mod world_shape_query;
 
 pub mod physics2d;
 

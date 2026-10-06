@@ -12648,6 +12648,11 @@ pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::cast_capsule(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
+pub fn alice_physics::solver::PhysicsWorld::overlap_aabb(&self, &alice_physics::collider::AABB, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
+pub fn alice_physics::solver::PhysicsWorld::overlap_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::cast_ray(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::shape_raycast::WorldRayHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
@@ -17411,6 +17416,11 @@ pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::cast_capsule(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
+pub fn alice_physics::solver::PhysicsWorld::overlap_aabb(&self, &alice_physics::collider::AABB, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
+pub fn alice_physics::solver::PhysicsWorld::overlap_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::cast_ray(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::shape_raycast::WorldRayHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
@@ -19917,6 +19927,29 @@ pub fn alice_physics::world_participant::execution_order(&[&[alice_physics::worl
 pub fn alice_physics::world_participant::remap_conserving(&alice_physics::world_participant::FieldLayout, &[alice_physics::math::Fix128], &alice_physics::world_participant::FieldLayout) -> core::result::Result<alloc::vec::Vec<alice_physics::math::Fix128>, alice_physics::world_participant::RemapError>
 pub fn alice_physics::world_participant::run_substep(&mut [alloc::boxed::Box<dyn alice_physics::world_participant::Participant>], &alice_physics::world_participant::ParticipantPlan, &mut [bool], &[alice_physics::solver::RigidBody], &mut alice_physics::world_participant::FieldBoard, &mut alice_physics::world_participant::ForceAccumulator, alice_physics::world_participant::SubstepTime) -> core::result::Result<alloc::vec::Vec<alice_physics::world_participant::WorldFault>, alice_physics::world_participant::ExchangeError>
 pub fn alice_physics::world_participant::wakes_parked_body(&alice_physics::solver::RigidBody, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sleeping::SleepConfig) -> bool
+pub mod alice_physics::world_shape_query
+#[non_exhaustive] pub struct alice_physics::world_shape_query::WorldShapeHit
+pub alice_physics::world_shape_query::WorldShapeHit::body: core::option::Option<usize>
+pub alice_physics::world_shape_query::WorldShapeHit::normal: alice_physics::math::Vec3Fix
+pub alice_physics::world_shape_query::WorldShapeHit::point: alice_physics::math::Vec3Fix
+pub alice_physics::world_shape_query::WorldShapeHit::t: alice_physics::math::Fix128
+pub alice_physics::world_shape_query::WorldShapeHit::target: alice_physics::shape_raycast::RayTarget
+impl core::clone::Clone for alice_physics::world_shape_query::WorldShapeHit
+pub fn alice_physics::world_shape_query::WorldShapeHit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::world_shape_query::WorldShapeHit
+impl core::cmp::PartialEq for alice_physics::world_shape_query::WorldShapeHit
+pub fn alice_physics::world_shape_query::WorldShapeHit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::world_shape_query::WorldShapeHit
+pub fn alice_physics::world_shape_query::WorldShapeHit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::world_shape_query::WorldShapeHit
+impl core::marker::StructuralPartialEq for alice_physics::world_shape_query::WorldShapeHit
+impl core::marker::Freeze for alice_physics::world_shape_query::WorldShapeHit
+impl core::marker::Send for alice_physics::world_shape_query::WorldShapeHit
+impl core::marker::Sync for alice_physics::world_shape_query::WorldShapeHit
+impl core::marker::Unpin for alice_physics::world_shape_query::WorldShapeHit
+impl core::marker::UnsafeUnpin for alice_physics::world_shape_query::WorldShapeHit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_shape_query::WorldShapeHit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_shape_query::WorldShapeHit
 pub enum alice_physics::BlendMode
 pub alice_physics::BlendMode::Animated
 pub alice_physics::BlendMode::Blend
@@ -23642,6 +23675,11 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::cast_capsule(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
+pub fn alice_physics::solver::PhysicsWorld::cast_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::world_shape_query::WorldShapeHit>
+pub fn alice_physics::solver::PhysicsWorld::overlap_aabb(&self, &alice_physics::collider::AABB, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
+pub fn alice_physics::solver::PhysicsWorld::overlap_sphere(&self, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::RayTarget>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::cast_ray(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> core::option::Option<alice_physics::shape_raycast::WorldRayHit>
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> alloc::vec::Vec<alice_physics::shape_raycast::WorldRayHit>
