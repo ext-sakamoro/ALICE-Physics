@@ -52,12 +52,11 @@
 //! itself overflowing; truncating that to the low 64 bits (`hi` of the
 //! result) gives `2¹²⁶ − 2⁶⁴ + 1 ≡ 1 (mod 2⁶⁴)` (both `2¹²⁶` and `2⁶⁴` are
 //! multiples of `2⁶⁴`), so `σ1·σ1` wraps to exactly `Fix128::ONE` — not an
-//! astronomically large value. With strengths all `Fix128::ONE`, every
-//! criterion's formula collapses algebraically to exactly the unity failure
-//! boundary (`FI = 1` for Tsai–Wu/Tsai–Hill, `FibreTension` for
-//! Hashin/Puck): a stress that overflowed its way back down to a modest
-//! magnitude is reported as "exactly borderline failure", not as the
-//! obviously-failing enormous value real arithmetic would give.
+//! astronomically large value. The criteria check their squared terms
+//! (AUD-A-S4W2-004), so with strengths all `Fix128::ONE` this stress is
+//! reported as failed: Tsai–Wu / Tsai–Hill return the largest Fix128 and
+//! Hashin / Puck `FibreTension` (before, the wrapped square made it "exactly
+//! borderline", `FI = 1`).
 //!
 //! Author: Moroya Sakamoto
 
@@ -395,14 +394,14 @@ fn zero_strengths_report_failed_at_any_nonzero_stress() {
 // ============================================================================
 // Section 7: degenerate input — stress that overflows Fix128's ±2^63
 // integer range. sigma1 = Fix128::from_int(i64::MAX) squared wraps to
-// exactly Fix128::ONE (derived by hand in the module doc above); with
-// strengths all Fix128::ONE every criterion's formula collapses to exactly
-// the unity failure boundary, not to a panic and not to an astronomically
-// large failure index.
+// exactly Fix128::ONE in raw Fix128 arithmetic (derived by hand in the module
+// doc above). The criteria check their squared terms (AUD-A-S4W2-004): the
+// index of a stress this far beyond unit strengths is the largest Fix128 for
+// Tsai-Wu / Tsai-Hill (failed), and Hashin / Puck report fibre tension.
 // ============================================================================
 
 #[test]
-fn extreme_overflowing_stress_wraps_to_the_exact_unity_boundary() {
+fn extreme_overflowing_stress_saturates_instead_of_wrapping() {
     let unity_strengths = LaminateStrengths {
         xt: Fix128::ONE,
         xc: Fix128::ONE,
@@ -426,9 +425,10 @@ fn extreme_overflowing_stress_wraps_to_the_exact_unity_boundary() {
         "(i64::MAX)^2 must wrap to exactly Fix128::ONE in Fix128"
     );
 
+    let largest = Fix128::from_raw(i64::MAX, u64::MAX);
     for (criterion, want) in [
-        (FailureCriterion::TsaiWu, Fix128::ONE),
-        (FailureCriterion::TsaiHill, Fix128::ONE),
+        (FailureCriterion::TsaiWu, largest),
+        (FailureCriterion::TsaiHill, largest),
         (FailureCriterion::Hashin, Fix128::ONE),
         (FailureCriterion::Puck, Fix128::ONE),
     ] {
@@ -440,7 +440,7 @@ fn extreme_overflowing_stress_wraps_to_the_exact_unity_boundary() {
         });
         assert_eq!(
             got, want,
-            "{criterion:?} at overflowing stress must land exactly on the unity boundary"
+            "{criterion:?} at overflowing stress saturates (failed), it does not wrap"
         );
     }
 

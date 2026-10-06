@@ -69,6 +69,39 @@ impl std::error::Error for InvalidStrengthError {}
 /// same saturation value `Fix128` division returns on overflow.
 const FAILED_INDEX: Fix128 = Fix128::from_raw(i64::MAX, u64::MAX);
 
+/// `a · c / b²`, or `None` when it does not fit Fix128. Computed as written
+/// while `a · c` and `b²` fit, otherwise as `(a / b)(c / b)`, so a stress far
+/// beyond its strength saturates instead of wrapping its square past `2⁶³`.
+fn mul_over_sq(a: Fix128, c: Fix128, b: Fix128) -> Option<Fix128> {
+    match (a.checked_mul(c), b.checked_mul(b)) {
+        (Some(ac), Some(bb)) => Some(ac / bb),
+        _ => (a / b).checked_mul(c / b),
+    }
+}
+
+/// `a² / b²` (see [`mul_over_sq`]).
+fn sq_over(a: Fix128, b: Fix128) -> Option<Fix128> {
+    mul_over_sq(a, a, b)
+}
+
+/// `Σ terms`, or [`FAILED_INDEX`] when a term is missing (did not fit) or the
+/// sum leaves Fix128: every criterion here is a positive quadratic form, so a
+/// term too large to represent means an index far above 1.
+fn index_sum(terms: &[Option<Fix128>]) -> Fix128 {
+    let mut acc: i128 = 0;
+    for t in terms {
+        let Some(t) = t else {
+            return FAILED_INDEX;
+        };
+        let raw = (i128::from(t.hi) << 64) | i128::from(t.lo);
+        match acc.checked_add(raw) {
+            Some(v) => acc = v,
+            None => return FAILED_INDEX,
+        }
+    }
+    Fix128::from_raw((acc >> 64) as i64, acc as u64)
+}
+
 impl LaminateStrengths {
     /// Validated constructor: every strength must be strictly positive.
     ///
@@ -232,12 +265,17 @@ pub fn tsai_wu_failure_index(strengths: LaminateStrengths, stress: StressState) 
         tau_12,
     } = stress;
 
-    f1 * sigma_1
-        + f2 * sigma_2
-        + f11 * sigma_1 * sigma_1
-        + f22 * sigma_2 * sigma_2
-        + f66 * tau_12 * tau_12
-        + Fix128::from_int(2) * f12 * sigma_1 * sigma_2
+    // the products in the order written, each checked: a stress far beyond
+    // the strengths would wrap a squared term past 2^63
+    let term = |k: Fix128, a: Fix128, b: Fix128| k.checked_mul(a).and_then(|t| t.checked_mul(b));
+    index_sum(&[
+        f1.checked_mul(sigma_1),
+        f2.checked_mul(sigma_2),
+        term(f11, sigma_1, sigma_1),
+        term(f22, sigma_2, sigma_2),
+        term(f66, tau_12, tau_12),
+        term(Fix128::from_int(2) * f12, sigma_1, sigma_2),
+    ])
 }
 
 /// Tsai–Hill failure index (orthotropic von Mises).
@@ -273,11 +311,13 @@ pub fn tsai_hill_failure_index(strengths: LaminateStrengths, stress: StressState
     };
     let s = strengths.s;
 
-    let a = sigma_1 * sigma_1 / (x * x);
-    let b = sigma_2 * sigma_2 / (y * y);
-    let c = tau_12 * tau_12 / (s * s);
-    let cross = sigma_1 * sigma_2 / (x * x);
-    a - cross + b + c
+    let cross = mul_over_sq(sigma_1, sigma_2, x).map(|c| -c);
+    index_sum(&[
+        sq_over(sigma_1, x),
+        cross,
+        sq_over(sigma_2, y),
+        sq_over(tau_12, s),
+    ])
 }
 
 /// Hashin failure mode classifier for the in-plane 2-D form.
@@ -315,13 +355,13 @@ pub fn hashin_failure_mode(strengths: LaminateStrengths, stress: StressState) ->
 
     // Fibre tension: σ1 ≥ 0.
     if sigma_1 >= Fix128::ZERO {
-        let fi = sigma_1 * sigma_1 / (s.xt * s.xt) + tau_12 * tau_12 / (s.s * s.s);
+        let fi = index_sum(&[sq_over(sigma_1, s.xt), sq_over(tau_12, s.s)]);
         if fi >= Fix128::ONE {
             return FailureMode::FibreTension;
         }
     } else {
         // Fibre compression: σ1 < 0.
-        let fi = sigma_1 * sigma_1 / (s.xc * s.xc);
+        let fi = index_sum(&[sq_over(sigma_1, s.xc)]);
         if fi >= Fix128::ONE {
             return FailureMode::FibreCompression;
         }
@@ -329,7 +369,7 @@ pub fn hashin_failure_mode(strengths: LaminateStrengths, stress: StressState) ->
 
     // Matrix tension: σ2 ≥ 0.
     if sigma_2 >= Fix128::ZERO {
-        let fi = sigma_2 * sigma_2 / (s.yt * s.yt) + tau_12 * tau_12 / (s.s * s.s);
+        let fi = index_sum(&[sq_over(sigma_2, s.yt), sq_over(tau_12, s.s)]);
         if fi >= Fix128::ONE {
             return FailureMode::MatrixTension;
         }
@@ -338,7 +378,7 @@ pub fn hashin_failure_mode(strengths: LaminateStrengths, stress: StressState) ->
         let yc_over_2s = s.yc / (Fix128::from_int(2) * s.s);
         let coeff = (yc_over_2s * yc_over_2s - Fix128::ONE) * sigma_2 / s.yc;
         let ratio = sigma_2 / (Fix128::from_int(2) * s.s);
-        let fi = ratio * ratio + coeff + tau_12 * tau_12 / (s.s * s.s);
+        let fi = index_sum(&[ratio.checked_mul(ratio), Some(coeff), sq_over(tau_12, s.s)]);
         if fi >= Fix128::ONE {
             return FailureMode::MatrixCompression;
         }
@@ -393,7 +433,11 @@ pub fn puck_failure_mode(strengths: LaminateStrengths, stress: StressState) -> F
     };
     let ratio_shear = tau_12.abs() / s.s;
 
-    if ratio_normal * ratio_normal + ratio_shear * ratio_shear < Fix128::ONE {
+    let fi = index_sum(&[
+        ratio_normal.checked_mul(ratio_normal),
+        ratio_shear.checked_mul(ratio_shear),
+    ]);
+    if fi < Fix128::ONE {
         return FailureMode::Safe;
     }
 

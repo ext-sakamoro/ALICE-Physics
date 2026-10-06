@@ -362,7 +362,7 @@ fn single_zero_strength_s_must_not_drop_shear_term() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W2-004: sigma1 = 3.2e9 MPa で sigma1^2 が 2^63 を超え wrap、Tsai-Hill FI = -3.6e12 (負)"]
+// AUD-A-S4W2-004
 fn huge_stress_must_not_wrap_to_safe() {
     // σ1 = 3.2e9 MPa: Xt = 1500 -> FI ~ 4.5e6 であるべき。Fix128 の乗算は 2^63 を超えると wrap する
     let p = LaminateStrengths::cfrp_ud();
@@ -440,5 +440,34 @@ fn zero_transverse_or_shear_strength_is_a_failed_ply_when_that_component_is_load
     assert_eq!(
         hashin_failure_mode(zs, st(100.0, 10.0, 0.0)),
         FailureMode::Safe
+    );
+}
+
+fn unit_strengths() -> LaminateStrengths {
+    LaminateStrengths {
+        xt: Fix128::ONE,
+        xc: Fix128::ONE,
+        yt: Fix128::ONE,
+        yc: Fix128::ONE,
+        s: Fix128::ONE,
+    }
+}
+
+/// AUD-A-S4W2-004 (sum): with unit strengths and sigma1 = -sigma2 = 2.5e9 each
+/// Tsai-Hill term (6.25e18) fits Fix128 but their sum 1.875e19 does not; the
+/// index is reported as failed (the largest Fix128), not wrapped.
+#[test]
+fn tsai_hill_terms_that_fit_but_sum_past_the_range_are_failed() {
+    let fi = tsai_hill_failure_index(unit_strengths(), st(2.5e9, -2.5e9, 0.0));
+    assert_eq!(fi, Fix128::from_raw(i64::MAX, u64::MAX));
+}
+
+/// AUD-A-S4W2-004 (Puck): sigma2 = 4e9 on unit strengths has a normal ratio
+/// whose square (1.6e19) does not fit; Puck reports inter-fibre mode A, not Safe.
+#[test]
+fn puck_ratio_square_past_the_range_is_not_safe() {
+    assert_eq!(
+        puck_failure_mode(unit_strengths(), st(0.0, 4e9, 0.0)),
+        FailureMode::InterFibreA
     );
 }
