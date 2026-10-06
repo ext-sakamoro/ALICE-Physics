@@ -15,7 +15,7 @@ crate has today.
 | `docs/coverage/couple.toml` | 123 | 10 | 3 | 4 | 106 | 0 |
 | `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
 | `docs/coverage/engine.toml` | 153 | 63 | 9 | 7 | 74 | 0 |
-| `docs/coverage/env.toml` | 152 | 20 | 3 | 2 | 127 | 0 |
+| `docs/coverage/env.toml` | 152 | 21 | 2 | 2 | 127 | 0 |
 | `docs/coverage/fem.toml` | 137 | 36 | 0 | 6 | 92 | 3 |
 | `docs/coverage/fract.toml` | 112 | 15 | 2 | 4 | 91 | 0 |
 | `docs/coverage/geo.toml` | 125 | 0 | 2 | 0 | 123 | 0 |
@@ -40,7 +40,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4177 | 543 | 75 | 104 | 3449 | 6 |
+| **total** | 4177 | 544 | 74 | 104 | 3449 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -219,7 +219,7 @@ crate has today.
 | aerodynamics | 14 | 5 | 0 | 0 | 9 | 0 |
 | atmosphere | 13 | 4 | 1 | 0 | 8 | 0 |
 | atmospheric-dynamics | 5 | 0 | 0 | 0 | 5 | 0 |
-| benchmark | 14 | 3 | 1 | 0 | 10 | 0 |
+| benchmark | 14 | 4 | 0 | 0 | 10 | 0 |
 | boundary-layer | 6 | 0 | 0 | 0 | 6 | 0 |
 | cryosphere | 21 | 0 | 0 | 0 | 21 | 0 |
 | environmental-load | 5 | 0 | 0 | 1 | 4 | 0 |
