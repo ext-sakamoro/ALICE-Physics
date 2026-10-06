@@ -296,6 +296,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `TurbulenceSummary::clamped`: doc は打ち切ったセルの数だが、k-ω では k と ω の打ち切りを別々に数え、1 セルを 2 回数えていた (一様な 3³ で 54) セルごとに 1 回だけ数える (AUD-A-S1W4-010)
 - `sdf_fem_mesh::generate` / `generate_marching_tets`: 格子のセル数を f32 の商の切り捨てで決めていたので、幅がセルの整数倍でも商が 1 ulp 下に出ると最後の層が落ちた (幅 1.3 / セル 0.1 で 12 セル) 商を f64 で取り、1e-6 の相対余裕を付けて切り捨てる 端数のセルは従来どおり含めない (AUD-A-S2W3-010)
 - `simd` feature が wasm32 などの x86_64 / aarch64 以外の target で build できなかった (`math::simd_width` の本体が空になり型エラー) 該当 target では幅 1 の scalar 経路になる wasm32-unknown-unknown で browser 向け feature (`std,wasm,neural,analytics,gpu-solver-bridge,simd`) をまとめて build する step を CI に追加 (`replay` は in-memory の保存先で同 target に対応、Added 参照)
 - **Behavior change:** `physics2d::PhysicsWorld2D::check_collision_2d` が capsule–capsule / capsule–polygon / edge–polygon / edge–capsule の接触を返す (従来は `None` で互いにすり抜けていた) 各形状を芯 (線分または凸多角形) と半径に分け、芯が離れていれば最近接点間の距離から、重なっていれば両芯の辺法線での最小重なり量に半径を足して深さを求め、法線は body_a → body_b edge 同士は面積を持たないため意図的に接触しない (`Shape2D::Edge` の doc に明記)
