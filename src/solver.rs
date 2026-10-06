@@ -138,6 +138,59 @@ pub struct RigidBody {
     pub kinematic_target: Option<(Vec3Fix, QuatFix)>,
 }
 
+/// `a - b`, or `None` when the difference leaves the range of [`Fix128`];
+/// when it is `Some` it is bit for bit `a - b`.
+fn checked_fix_sub(a: Fix128, b: Fix128) -> Option<Fix128> {
+    let s = fix_wide(a).checked_sub(fix_wide(b))?;
+    Some(fix_narrow(s))
+}
+
+/// The Q64.64 bits of `f` as one `i128`.
+fn fix_wide(f: Fix128) -> i128 {
+    (i128::from(f.hi) << 64) | i128::from(f.lo)
+}
+
+/// The inverse of [`fix_wide`].
+fn fix_narrow(s: i128) -> Fix128 {
+    Fix128::from_raw((s >> 64) as i64, s as u64)
+}
+
+/// [`QuatFix::mul`] with every product, sum and difference checked, in the
+/// same order.
+fn checked_quat_mul(a: QuatFix, b: QuatFix) -> Option<QuatFix> {
+    let m = |x: Fix128, y: Fix128| x.checked_mul(y);
+    let x = checked_fix_sub(
+        Fix128::checked_add(
+            Fix128::checked_add(m(a.w, b.x)?, m(a.x, b.w)?)?,
+            m(a.y, b.z)?,
+        )?,
+        m(a.z, b.y)?,
+    )?;
+    let y = Fix128::checked_add(
+        Fix128::checked_add(checked_fix_sub(m(a.w, b.y)?, m(a.x, b.z)?)?, m(a.y, b.w)?)?,
+        m(a.z, b.x)?,
+    )?;
+    let z = Fix128::checked_add(
+        checked_fix_sub(
+            Fix128::checked_add(m(a.w, b.z)?, m(a.x, b.y)?)?,
+            m(a.y, b.x)?,
+        )?,
+        m(a.z, b.w)?,
+    )?;
+    let w = checked_fix_sub(
+        checked_fix_sub(checked_fix_sub(m(a.w, b.w)?, m(a.x, b.x)?)?, m(a.y, b.y)?)?,
+        m(a.z, b.z)?,
+    )?;
+    Some(QuatFix::new(x, y, z, w))
+}
+
+/// [`QuatFix::rotate_vec`] (`q v q*`) with every operation checked.
+fn checked_rotate_vec(q: QuatFix, v: Vec3Fix) -> Option<Vec3Fix> {
+    let qv = QuatFix::new(v.x, v.y, v.z, Fix128::ZERO);
+    let r = checked_quat_mul(checked_quat_mul(q, qv)?, q.conjugate())?;
+    Some(Vec3Fix::new(r.x, r.y, r.z))
+}
+
 impl RigidBody {
     /// Create a new dynamic rigid body at the given position with the given mass.
     ///
@@ -325,6 +378,31 @@ impl RigidBody {
             local.z * self.inv_inertia.z,
         );
         self.rotation.rotate_vec(scaled)
+    }
+
+    /// [`Self::world_inv_inertia_apply`] with every product, sum and
+    /// difference checked: `None` when one of them leaves the range of
+    /// [`Fix128`].
+    ///
+    /// # Claims
+    /// - when it is `Some`, the value is bit for bit the one of
+    ///   [`Self::world_inv_inertia_apply`] (the same operations in the same
+    ///   order; a wrapping sum whose every partial sum is in range is exact)
+    /// - a product goes through [`Fix128::checked_mul`]; an intermediate
+    ///   partial sum out of range is `None` even if the final value would be
+    ///   in range (the rotation of a unit quaternion keeps the partial sums
+    ///   within a small factor of `|τ|`, so this only matters near the edge
+    ///   of the range)
+    #[must_use]
+    pub(crate) fn checked_world_inv_inertia_apply(&self, torque: Vec3Fix) -> Option<Vec3Fix> {
+        let q = self.rotation;
+        let local = checked_rotate_vec(q.conjugate(), torque)?;
+        let scaled = Vec3Fix::new(
+            local.x.checked_mul(self.inv_inertia.x)?,
+            local.y.checked_mul(self.inv_inertia.y)?,
+            local.z.checked_mul(self.inv_inertia.z)?,
+        );
+        checked_rotate_vec(q, scaled)
     }
 
     /// Apply impulse at world-space point

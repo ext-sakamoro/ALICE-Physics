@@ -801,3 +801,223 @@ fn reset_world_drops_participants_fault_and_fields() {
     assert_eq!(w.fault(), None);
     assert!(w.fields().ids().is_empty());
 }
+
+// ── Torque ───────────────────────────────────────────────────────────────
+
+const KIND_TWIST: ParticipantKind = ParticipantKind::new(0x5457_5354);
+
+/// Stages `torque` on body 0 in every substep and counts its calls (the
+/// count is its state, so a restore that reads it is visible).
+struct Twist {
+    torque: Vec3Fix,
+    calls: u64,
+}
+
+impl Twist {
+    fn new(torque: Vec3Fix) -> Self {
+        Self { torque, calls: 0 }
+    }
+}
+
+impl Participant for Twist {
+    fn kind(&self) -> ParticipantKind {
+        KIND_TWIST
+    }
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, _: Fix128) -> Result<(), ParticipantFault> {
+        ctx.add_torque(0, self.torque)
+            .map_err(|_| ParticipantFault::InvalidState)?;
+        self.calls += 1;
+        Ok(())
+    }
+    fn observe(&self, _: &mut ObservationSink) {}
+    fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&self.calls.to_le_bytes());
+    }
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        if bytes.len() == 8 {
+            Ok(())
+        } else {
+            Err(StateError::Length {
+                expected: 8,
+                found: bytes.len(),
+            })
+        }
+    }
+    fn read_state(&mut self, bytes: &[u8]) {
+        let mut b = [0_u8; 8];
+        b.copy_from_slice(bytes);
+        self.calls = u64::from_le_bytes(b);
+    }
+}
+
+/// A light body (mass `2⁻²⁰`, so `inv_inertia ≈ 2.6e6`) under `τ = 2⁵⁰`:
+/// `I⁻¹·τ ≈ 2.9e21` is past the range of [`Fix128`] (`2⁶³`) before it is
+/// scaled by `h`. The torque is not applied (the body turns as in a world
+/// without the participant) and the fault names the body.
+#[test]
+fn an_out_of_range_inv_inertia_torque_is_a_fault_and_leaves_the_body_alone() {
+    let build = || {
+        let mut w = PhysicsWorld::new(free_config(SolverBackend::Xpbd));
+        w.add_body(RigidBody::new_dynamic(
+            Vec3Fix::ZERO,
+            Fix128::from_ratio(1, 1 << 20),
+        ));
+        w
+    };
+    let mut w = build();
+    let inv_i = w.bodies[0].inv_inertia.x;
+    assert!(
+        inv_i.checked_mul(Fix128::from_int(1 << 50)).is_none(),
+        "fixture: I⁻¹τ must leave the range, inv_inertia {}",
+        inv_i.to_f64()
+    );
+    w.add_participant(Box::new(Twist::new(Vec3Fix::new(
+        Fix128::from_int(1 << 50),
+        Fix128::ZERO,
+        Fix128::ZERO,
+    ))))
+    .expect("register");
+    let mut reference = build();
+    let fault = WorldFault::ForceOutOfRange { body: 0 };
+    assert_eq!(w.try_step(dyadic_dt()), Err(StepError::FaultRaised(fault)));
+    reference.step(dyadic_dt());
+    assert_eq!(
+        w.bodies[0].angular_velocity,
+        reference.bodies[0].angular_velocity
+    );
+    assert_eq!(w.bodies[0].rotation, reference.bodies[0].rotation);
+    assert_eq!(w.bodies[0].velocity, reference.bodies[0].velocity);
+    assert_eq!(w.fault(), Some(fault));
+}
+
+/// A parked body (mass 1/4, so `inv_mass = 4`, and `inv_inertia` set to 4)
+/// under a torque or a force of `2⁶²`: `I⁻¹·τ` and `F·inv_mass` are `2⁶⁴`,
+/// past the range of [`Fix128`]; a wrapping product would be exactly 0 and
+/// leave the body parked. A change too large to represent wakes the body
+/// ([`alice_physics::world_participant::wakes_parked_body`]) and applying it
+/// is then the fault of the awake case, with the body unchanged.
+fn parked_light_body() -> PhysicsWorld {
+    let mut w = PhysicsWorld::new(free_config(SolverBackend::Xpbd));
+    w.add_body(RigidBody::new_dynamic(
+        Vec3Fix::ZERO,
+        Fix128::from_ratio(1, 4),
+    ));
+    for _ in 0..120 {
+        w.step(dyadic_dt());
+    }
+    assert!(w.is_sleeping(0), "fixture: the body must be asleep");
+    w.bodies[0].inv_inertia = Vec3Fix::from_int(4, 4, 4);
+    w
+}
+
+#[test]
+fn an_out_of_range_inv_inertia_torque_wakes_a_parked_body_and_is_a_fault() {
+    let mut w = parked_light_body();
+    let before = (w.bodies[0].rotation, w.bodies[0].angular_velocity);
+    w.add_participant(Box::new(Twist::new(Vec3Fix::new(
+        Fix128::from_int(1 << 62),
+        Fix128::ZERO,
+        Fix128::ZERO,
+    ))))
+    .expect("register");
+    let fault = WorldFault::ForceOutOfRange { body: 0 };
+    assert_eq!(w.try_step(dyadic_dt()), Err(StepError::FaultRaised(fault)));
+    assert!(
+        !w.is_sleeping(0),
+        "an unrepresentable change wakes the body"
+    );
+    assert_eq!((w.bodies[0].rotation, w.bodies[0].angular_velocity), before);
+}
+
+#[test]
+fn an_out_of_range_force_wakes_a_parked_body_and_is_a_fault() {
+    let mut w = parked_light_body();
+    let before = (w.bodies[0].position, w.bodies[0].velocity);
+    w.add_participant(Box::new(Push::new(
+        0,
+        Vec3Fix::new(Fix128::from_int(1 << 62), Fix128::ZERO, Fix128::ZERO),
+    )))
+    .expect("register");
+    let fault = WorldFault::ForceOutOfRange { body: 0 };
+    assert_eq!(w.try_step(dyadic_dt()), Err(StepError::FaultRaised(fault)));
+    assert!(
+        !w.is_sleeping(0),
+        "an unrepresentable change wakes the body"
+    );
+    assert_eq!((w.bodies[0].position, w.bodies[0].velocity), before);
+}
+
+/// `I⁻¹·τ·h` with a negative component just inside the range edge: with
+/// `inv_inertia = 1`, `h = 1/256` and `τ.x = −3037000499.5·256`, the change
+/// is `Δω.x = −3037000499.5`, whose square `≈ 9.2233720339e18` is below
+/// `2⁶³ ≈ 9.2233720369e18`. Every product on the way is in range, so the
+/// torque is applied and no fault is recorded.
+fn edge_torque() -> Vec3Fix {
+    // −3037000499.5 · 256 = −777472127872
+    Vec3Fix::new(
+        Fix128::from_int(-777_472_127_872),
+        Fix128::ZERO,
+        Fix128::ZERO,
+    )
+}
+
+fn edge_body() -> RigidBody {
+    let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+    b.inv_inertia = Vec3Fix::from_int(1, 1, 1);
+    b
+}
+
+#[test]
+fn a_torque_with_a_negative_component_near_the_range_edge_is_applied() {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps: 1,
+        ..free_config(SolverBackend::Xpbd)
+    });
+    w.add_body(edge_body());
+    w.add_participant(Box::new(Twist::new(edge_torque())))
+        .expect("register");
+    // h = 1/256 with substeps 1
+    let r = w.try_step(Fix128::from_ratio(1, 256));
+    assert_ne!(
+        r,
+        Err(StepError::FaultRaised(WorldFault::ForceOutOfRange {
+            body: 0
+        })),
+        "an in-range I⁻¹τh was reported out of range"
+    );
+    assert_ne!(
+        w.fault(),
+        Some(WorldFault::ForceOutOfRange { body: 0 }),
+        "an in-range I⁻¹τh was reported out of range"
+    );
+}
+
+/// The same edge change on a parked body whose angular sleep threshold is
+/// `3037000499.75` (square `≈ 9.2233720354e18`, still below `2⁶³`):
+/// `|Δω|² < threshold²`, so the body stays parked and the torque has no
+/// effect.
+#[test]
+fn a_change_near_the_range_edge_below_the_threshold_leaves_a_parked_body_parked() {
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps: 1,
+        ..free_config(SolverBackend::Xpbd)
+    });
+    w.add_body(edge_body());
+    for _ in 0..120 {
+        w.step(Fix128::from_ratio(1, 256));
+    }
+    assert!(w.is_sleeping(0), "fixture: the body must be asleep");
+    w.set_sleep_config(alice_physics::sleeping::SleepConfig {
+        angular_threshold: Fix128::from_ratio(12_148_001_999, 4),
+        ..Default::default()
+    });
+    let before = (w.bodies[0].rotation, w.bodies[0].angular_velocity);
+    w.add_participant(Box::new(Twist::new(edge_torque())))
+        .expect("register");
+    w.try_step(Fix128::from_ratio(1, 256)).expect("step");
+    assert!(
+        w.is_sleeping(0),
+        "a change below the threshold woke the body"
+    );
+    assert_eq!((w.bodies[0].rotation, w.bodies[0].angular_velocity), before);
+}
