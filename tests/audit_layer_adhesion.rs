@@ -99,7 +99,7 @@ fn min_fos_is_independent_of_self_and_uses_supplied_allowables() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-030 (downstream: component_fos): for applied = 2^-64 or 2^-63 the quotient allowable / |applied| exceeds the Fix128 range, Fix128::div truncates it and the FoS comes back as 0 (PLA 50 MPa / 2^-64 -> 0), while applied == 0 returns the large sentinel, so 0 and 2^-64 give opposite answers"]
+// AUD-A-S1W5-030
 fn fos_is_never_below_one_when_applied_is_below_allowable() {
     // FoS = allowable/|applied| >= 1 iff |applied| <= allowable (閉形式)
     // 極小の applied (2^-64 .. 2^-40) でも商が i64 を超える範囲で符号が反転しないこと

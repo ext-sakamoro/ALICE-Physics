@@ -154,26 +154,18 @@ fn main() {
     );
 
     // Extreme magnitude: the smallest representable positive Fix128 (2^-64)
-    // as the applied stress, against PLA's ordinary integer-MPa allowable
-    // (50 MPa). The true FoS is 50 * 2^64, far beyond Fix128's ~9.2e18
-    // integer range. `Fix128::div` computes the integer quotient in u128
-    // and then casts it to `i64` (truncating to the low 64 bits): for *any*
-    // integer-valued allowable k (fractional part lo == 0), the true
-    // quotient is exactly k * 2^64, an exact multiple of 2^64 — so its low
-    // 64 bits, and therefore the cast result, are always zero. The division
-    // silently reports FoS == 0 for a load that is in truth negligible: the
-    // opposite of the correct answer. This assertion does not claim that is
-    // correct — it pins the current, surprising behaviour so a future fix
-    // to the overflow handling shows up as a visible test change, not a
-    // silent one.
+    // as the applied stress, against PLA's 50 MPa. The true FoS is 50 * 2^64,
+    // far beyond Fix128's ~9.2e18 integer range: it is capped at the same
+    // "infinite" sentinel (i64::MAX >> 8) a zero applied stress returns,
+    // rather than letting the division wrap (to exactly 0, a broken part).
     let tiny_applied = Fix128::from_raw(0, 1); // 2^-64
     let extreme = catch_unwind(AssertUnwindSafe(|| s.fos_normal_x(tiny_applied)));
     println!("[layer_adhesion] fos_normal_x(2^-64 MPa) = {extreme:?} (no panic)");
     assert!(extreme.is_ok(), "extreme-magnitude division must not panic");
     assert_eq!(
         extreme.unwrap(),
-        Fix128::ZERO,
-        "integer-MPa allowable / 2^-64 overflows the i64 integer part and wraps to exactly zero"
+        Fix128::from_int(i64::MAX >> 8),
+        "a negligible load is the infinite-FoS sentinel"
     );
 
     println!(

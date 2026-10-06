@@ -94,14 +94,21 @@ impl EffectiveStrength {
     }
 
     /// Factor of safety for a given applied stress (MPa) at a specified
-    /// component. Returns positive infinity sentinel for zero applied stress.
+    /// component. Returns the "infinite" sentinel `i64::MAX >> 8` for zero
+    /// applied stress, and caps the quotient there for a stress so small that
+    /// `allowable / |applied|` would leave the Fix128 range (it used to wrap,
+    /// and `2^-64` MPa on PLA read as FoS 0, a broken part).
     fn component_fos(&self, applied: Fix128, allowable: Fix128) -> Fix128 {
+        let cap = Fix128::from_int(i64::MAX >> 8);
         let mag = applied.abs();
         if mag.is_zero() {
-            return Fix128::from_int(i64::MAX >> 8);
+            return cap;
         }
         if allowable.is_zero() {
             return Fix128::ZERO;
+        }
+        if mag <= allowable / cap {
+            return cap;
         }
         allowable / mag
     }

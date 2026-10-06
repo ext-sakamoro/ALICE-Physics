@@ -329,24 +329,13 @@ fn fos_normal_x_extreme_large_applied_stress_gives_tiny_but_exact_fos() {
 }
 
 #[test]
-fn fos_normal_x_extreme_tiny_applied_stress_overflows_and_wraps_to_zero() {
+fn fos_normal_x_extreme_tiny_applied_stress_saturates_at_the_sentinel() {
     // The smallest representable positive Fix128 (2^-64) as the applied
-    // stress, against an ordinary integer-MPa allowable (PLA: 50 MPa). The
-    // true FoS is 50 * 2^64, far beyond Fix128's ~9.2e18 integer range.
-    //
-    // `Fix128::div` computes the integer quotient in u128 and casts it to
-    // `i64` (truncating to the low 64 bits). For *any* integer-valued
-    // allowable k (fractional part `lo == 0`), the true quotient is
-    // exactly `k * 2^64`, an exact multiple of 2^64 -- so its low 64 bits,
-    // and therefore the cast result, are always zero, independent of k.
-    // That is derived from the arithmetic alone (k * 2^64 mod 2^64 == 0
-    // for every integer k), not by calling the function under test.
-    //
-    // The division silently reports FoS == 0 for a load that is in truth
-    // negligible: the opposite of the correct answer. This test does not
-    // assert that is correct -- it pins the current, surprising behaviour
-    // (and that it does not panic) so a future overflow-handling fix shows
-    // up as a visible, intentional test change rather than a silent one.
+    // stress, against PLA's 50 MPa. The true FoS is 50 * 2^64, far beyond
+    // Fix128's ~9.2e18 integer range; the raw division would wrap to exactly
+    // 0 (k * 2^64 mod 2^64 = 0 for an integer k), the opposite of the truth.
+    // The FoS is capped at the same "infinite" sentinel `i64::MAX >> 8` that
+    // a zero applied stress returns (AUD-A-S1W5-030).
     let pla = MaterialProperties::pla();
     let s = EffectiveStrength::for_material(&pla, PrintOrientation::XYFlat);
     let tiny_applied = Fix128::from_raw(0, 1); // 2^-64
@@ -354,9 +343,7 @@ fn fos_normal_x_extreme_tiny_applied_stress_overflows_and_wraps_to_zero() {
         s.fos_normal_x(tiny_applied)
     }));
     assert!(result.is_ok(), "must not panic on extreme magnitude input");
-    assert_eq!(
-        result.unwrap(),
-        Fix128::ZERO,
-        "50 MPa / 2^-64 overflows the i64 integer part and wraps to exactly zero"
-    );
+    let sentinel = Fix128::from_int(i64::MAX >> 8);
+    assert_eq!(result.unwrap(), sentinel);
+    assert_eq!(s.fos_normal_x(Fix128::ZERO), sentinel, "same as no load");
 }
