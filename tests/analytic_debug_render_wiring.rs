@@ -143,10 +143,32 @@ fn arrow_records_line_verbatim_and_head_point_size_is_fifth_of_length() {
     let end = start + Vec3Fix::from_int(3, 4, 0); // |delta| = 5 exactly
     data.arrow(start, end, DebugColor::ORANGE);
 
-    assert_eq!(data.lines.len(), 1);
+    // shaft + two barbs (AUD-A-S4W3-008: the head used to be computed and dropped)
+    assert_eq!(data.lines.len(), 3);
     assert_eq!(
         data.lines[0],
         DebugLine::new(start, end, DebugColor::ORANGE)
+    );
+    // barbs start at the tip and end head_len back along the shaft, offset
+    // head_len / 2 to either side: the shaft is (3,4,0)/5, head_len = 1, so
+    // head_point = end - (0.6, 0.8, 0) and the side is (3,4,0)/5 × Y = (0, 0, 0.6)/|..| = ±Z
+    let head_point = end
+        - Vec3Fix::new(
+            Fix128::from_ratio(3, 5),
+            Fix128::from_ratio(4, 5),
+            Fix128::ZERO,
+        );
+    let half = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_ratio(1, 2));
+    let ends = [data.lines[1].end, data.lines[2].end];
+    for b in &data.lines[1..] {
+        assert_eq!(b.start, end);
+        assert_eq!(b.color, DebugColor::ORANGE);
+    }
+    let close = |a: Vec3Fix, b: Vec3Fix| (a - b).length().to_f64() < 1e-9;
+    assert!(
+        (close(ends[0], head_point + half) && close(ends[1], head_point - half))
+            || (close(ends[0], head_point - half) && close(ends[1], head_point + half)),
+        "barb ends {ends:?}"
     );
 
     assert_eq!(data.points.len(), 1);
@@ -206,14 +228,15 @@ fn axes_emits_three_arrows_hardcoded_rgb_in_xyz_order() {
     let mut data = DebugDrawData::new();
     data.axes(Vec3Fix::ZERO, QuatFix::IDENTITY, Fix128::ONE);
 
-    assert_eq!(data.lines.len(), 3);
+    // each arrow is a shaft followed by its two barbs
+    assert_eq!(data.lines.len(), 9);
     assert_eq!(data.points.len(), 3);
     assert_eq!(data.lines[0].color, DebugColor::RED);
-    assert_eq!(data.lines[1].color, DebugColor::GREEN);
-    assert_eq!(data.lines[2].color, DebugColor::BLUE);
+    assert_eq!(data.lines[3].color, DebugColor::GREEN);
+    assert_eq!(data.lines[6].color, DebugColor::BLUE);
     assert_eq!(data.lines[0].end, Vec3Fix::UNIT_X);
-    assert_eq!(data.lines[1].end, Vec3Fix::UNIT_Y);
-    assert_eq!(data.lines[2].end, Vec3Fix::UNIT_Z);
+    assert_eq!(data.lines[3].end, Vec3Fix::UNIT_Y);
+    assert_eq!(data.lines[6].end, Vec3Fix::UNIT_Z);
 }
 
 // --- debug_draw_world: production entry point ------------------------------
@@ -222,11 +245,11 @@ fn axes_emits_three_arrows_hardcoded_rgb_in_xyz_order() {
 /// enabled except `draw_velocities` (hand count, also checked against the
 /// implementation in `examples/debug_render_primitives.rs`):
 ///   centers:         2 bodies x 1 point                  = 2 points
-///   axes:            2 bodies x 3 arrows (line + point)   = 6 lines, 6 points
+///   axes:            2 bodies x 3 arrows (3 lines + point) = 18 lines, 6 points
 ///   contact points:  point_a + point_b                    = 2 points
-///   contact normal:  1 arrow, depth != 0 -> line + point  = 1 line, 1 point
+///   contact normal:  1 arrow, depth != 0 -> 3 lines + point = 3 lines, 1 point
 ///   joint:           1 distance constraint -> 1 line      = 1 line
-///   total:           8 lines, 11 points, 19 primitives
+///   total:           22 lines, 11 points, 33 primitives
 #[test]
 fn debug_draw_world_primitive_count_matches_closed_form() {
     let world = scene_with_one_contact_and_one_joint();
@@ -243,9 +266,9 @@ fn debug_draw_world_primitive_count_matches_closed_form() {
     let mut data = DebugDrawData::new();
     debug_draw_world(&world, &flags, &mut data);
 
-    assert_eq!(data.lines.len(), 8);
+    assert_eq!(data.lines.len(), 22);
     assert_eq!(data.points.len(), 11);
-    assert_eq!(data.primitive_count(), 19);
+    assert_eq!(data.primitive_count(), 33);
 }
 
 /// Both-directions complement of the test above: every flag that
@@ -299,9 +322,9 @@ fn draw_velocities_only_adds_an_arrow_for_the_non_static_body() {
     let mut data = DebugDrawData::new();
     debug_draw_world(&world, &flags, &mut data);
 
-    // Exactly one velocity arrow (the dynamic body): line + head point,
-    // since |velocity| = 5 != 0.
-    assert_eq!(data.lines.len(), 1);
+    // Exactly one velocity arrow (the dynamic body): shaft + two barbs + head
+    // point, since |velocity| = 5 != 0.
+    assert_eq!(data.lines.len(), 3);
     assert_eq!(data.points.len(), 1);
     assert_eq!(data.lines[0].color, DebugColor::YELLOW);
     assert_eq!(data.lines[0].start, Vec3Fix::from_int(0, 2, 0));
@@ -386,6 +409,7 @@ fn extreme_coordinates_do_not_panic_through_arrow_and_line_endpoints_are_the_raw
 
     // The stored line endpoints are the raw inputs, independent of whatever
     // `length()`/`normalize()` computed internally for the head marker.
+    // the squared length wraps to zero at this magnitude, so no head is drawn
     assert_eq!(data.lines.len(), 1);
     assert_eq!(data.lines[0].start, Vec3Fix::ZERO);
     assert_eq!(data.lines[0].end, pos);

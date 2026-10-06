@@ -164,8 +164,27 @@ fn sphere_rings_are_closed_loops() {
 // ----------------------------------------------------------------- arrow / axes
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-008: arrow() documents 'line + arrowhead' but the computed head_point is discarded (`let _ = head_point`); only the shaft line and a point marker at the tip are recorded, no head geometry"]
+fn an_arrow_along_y_still_has_a_head_of_two_distinct_barbs() {
+    // the side direction is dir x Y, which vanishes for a vertical shaft; the
+    // head must then use dir x X instead of collapsing onto the shaft
+    let mut d = DebugDrawData::new();
+    d.arrow(Vec3Fix::ZERO, v3(0.0, 5.0, 0.0), DebugColor::ORANGE);
+    assert_eq!(d.lines.len(), 3);
+    let (b1, b2) = (d.lines[1].end, d.lines[2].end);
+    assert!(
+        (b1 - b2).length().to_f64() > 0.99,
+        "barbs {b1:?} {b2:?} collapse"
+    );
+    // both barb ends are 1 below the tip (head_len = 1) and 0.5 to either side in the xz plane
+    for b in [b1, b2] {
+        assert!((b.y.to_f64() - 4.0).abs() < 1e-9);
+        assert!(((b.x.to_f64().powi(2) + b.z.to_f64().powi(2)).sqrt() - 0.5).abs() < 1e-9);
+    }
+}
+
+#[test]
 fn arrow_records_head_geometry_besides_the_shaft() {
+    // AUD-A-S4W3-008
     let mut d = DebugDrawData::new();
     d.arrow(Vec3Fix::ZERO, v3(3.0, 4.0, 0.0), DebugColor::ORANGE);
     assert!(
@@ -183,11 +202,12 @@ fn axes_follow_the_rotation_scale_and_position() {
     let s = 2.5;
     let mut d = DebugDrawData::new();
     d.axes(v3(p[0], p[1], p[2]), q, fx(s));
-    assert_eq!(d.lines.len(), 3);
+    // each axis is a shaft (line 3k) followed by its two arrowhead barbs
+    assert_eq!(d.lines.len(), 9);
     let want = [[0.0, s, 0.0], [-s, 0.0, 0.0], [0.0, 0.0, s]];
     let colors = [DebugColor::RED, DebugColor::GREEN, DebugColor::BLUE];
     for k in 0..3 {
-        let l = &d.lines[k];
+        let l = &d.lines[3 * k];
         assert_eq!(l.color, colors[k]);
         assert!(close3(arr(l.start), p, 1e-12), "axis {k} start");
         let e = arr(l.end);
@@ -198,7 +218,7 @@ fn axes_follow_the_rotation_scale_and_position() {
     assert_eq!(d.points.len(), 3);
     for k in 0..3 {
         assert!((d.points[k].size.to_f64() - 0.2 * s).abs() < 1e-9);
-        assert_eq!(d.points[k].position, d.lines[k].end);
+        assert_eq!(d.points[k].position, d.lines[3 * k].end);
     }
 }
 
@@ -305,8 +325,8 @@ fn contact_points_and_normal_arrow_follow_the_contact() {
     for p in &d.points[..2] {
         assert!((p.size.to_f64() - 0.05).abs() < 1e-12);
     }
-    // normal arrow from point_a along normal * depth
-    assert_eq!(d.lines.len(), 1);
+    // normal arrow from point_a along normal * depth (shaft, then two barbs)
+    assert_eq!(d.lines.len(), 3);
     assert_eq!(
         d.lines[0],
         DebugLine::new(v3(0.5, 0.0, 0.0), v3(0.5, 0.25, 0.0), DebugColor::RED)
@@ -325,7 +345,7 @@ fn velocity_arrow_goes_from_the_body_by_its_velocity_for_dynamic_bodies_only() {
         },
         &mut d,
     );
-    assert_eq!(d.lines.len(), 1);
+    assert_eq!(d.lines.len(), 3); // shaft + two barbs
     assert_eq!(arr(d.lines[0].start), [0.0, 2.0, 0.0]);
     assert_eq!(arr(d.lines[0].end), [1.0, 0.0, 0.5]);
     assert_eq!(d.lines[0].color, DebugColor::YELLOW);
@@ -363,10 +383,11 @@ fn axes_flag_draws_three_arrows_per_body_at_the_body_pose() {
         },
         &mut d,
     );
-    assert_eq!(d.lines.len(), 6);
-    // second body's x axis (line index 3) points along +y after the 90 degree rotation
-    assert!(close3(arr(d.lines[3].start), [0.0, 2.0, 0.0], 1e-12));
-    assert!(close3(arr(d.lines[3].end), [0.0, 3.0, 0.0], 1e-8));
+    // 2 bodies x 3 arrows x (shaft + two barbs)
+    assert_eq!(d.lines.len(), 18);
+    // second body's x axis (shaft at line index 9) points along +y after the 90 degree rotation
+    assert!(close3(arr(d.lines[9].start), [0.0, 2.0, 0.0], 1e-12));
+    assert!(close3(arr(d.lines[9].end), [0.0, 3.0, 0.0], 1e-8));
     assert!(close3(arr(d.lines[0].end), [1.0, 0.0, 0.0], 1e-12));
 }
 
