@@ -538,6 +538,21 @@ class OwnImplIsNotWiring(unittest.TestCase):
         r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
         self.assertIn("src/a.rs::Wrap", keys(wg.check(r)))
 
+    def test_a_path_qualified_inherent_impl_does_not_wire_the_type(self):
+        src = "pub struct Grid { n: u8 }\nimpl crate::a::Grid {\n    pub fn new() -> Grid { Grid { n: 0 } }\n}\n"
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        self.assertIn("src/a.rs::Grid", keys(wg.check(r)))
+
+    def test_a_path_qualified_trait_impl_does_not_wire_the_type(self):
+        src = "pub struct Grid { n: u8 }\nimpl Clone for crate::a::Grid {\n    fn clone(&self) -> Grid { Grid { n: self.n } }\n}\n"
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        self.assertIn("src/a.rs::Grid", keys(wg.check(r)))
+
+    def test_a_path_qualified_generic_impl_does_not_wire_the_type(self):
+        src = "pub struct Wrap<T> { v: T }\nimpl<T: Copy> crate::a::Wrap<T> {\n    pub fn get(&self) -> T { self.v }\n}\n"
+        r = crate({"src/lib.rs": LIB, "src/a.rs": src, "src/b.rs": "pub fn x() {}\n"})
+        self.assertIn("src/a.rs::Wrap", keys(wg.check(r)))
+
     def test_a_struct_used_from_another_file_is_wired(self):
         r = crate({"src/lib.rs": LIB, "src/a.rs": self.LONELY_STRUCT,
                    "src/b.rs": "pub fn x() -> usize { let g = crate::a::Grid::new(3); let _ = g; 0 }\n",
