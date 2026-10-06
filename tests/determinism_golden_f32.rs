@@ -573,7 +573,11 @@ fn golden_sdf_collision_family() {
 //
 // Earlier re-pin, same day: `generate` began alternating the 5-tet cube
 // decomposition (81 vertices after refinement, was 91).
-const GOLDEN_SDF_SOFT: &str = "da3481748bcd75abb105a5ccffc22eda58dded060d1f82ac817ddc11349d1d18";
+//
+// Re-pinned (AUD-A-S5W2-010): `extract_contacts` adds each query's radius
+// (0.2 here) to the penetration, so the contacts recorded at the end change;
+// everything hashed before them is untouched.
+const GOLDEN_SDF_SOFT: &str = "20a8eabfcdf8e3399784593b9fbf4ba7b6a91059e154fe5c3645cad3811b6e34";
 
 #[test]
 fn golden_sdf_soft_family() {

@@ -176,13 +176,18 @@ impl GpuSdfBatch {
         }
     }
 
-    /// Check results for collisions and return contacts
+    /// Check results for collisions and return contacts.
+    ///
+    /// A query is a sphere of its own `radius` (0 for a point) grown by the
+    /// common `collision_radius`: it penetrates by
+    /// `collision_radius + radius − distance` when that is positive.
     #[must_use]
     pub fn extract_contacts(&self, collision_radius: f32) -> Vec<GpuSdfContact> {
         let mut contacts = Vec::new();
 
         for (i, result) in self.results.iter().enumerate() {
-            let penetration = collision_radius - result.distance;
+            let radius = self.queries.get(i).map_or(0.0, |q| q.radius);
+            let penetration = collision_radius + radius - result.distance;
             if penetration > 0.0 {
                 contacts.push(GpuSdfContact {
                     body_index: self.body_indices[i],
@@ -251,10 +256,15 @@ impl GpuSdfMultiDispatch {
     /// Append a batch of queries for a single SDF.
     ///
     /// `sdf_id` identifies which GPU-side SDF buffer to bind during this
-    /// dispatch. Multiple calls with the same `sdf_id` produce separate
-    /// batches (they are *not* merged); callers should consolidate beforehand
-    /// if a single large dispatch is preferred.
-    pub fn add_batch(&mut self, sdf_id: u32, queries: Vec<GpuSdfQuery>) {
+    /// dispatch. Queries for an `sdf_id` that already has a batch are appended
+    /// to it (in call order), so there is one batch, and one dispatch, per
+    /// unique `sdf_id`; batches keep the order of their first `add_batch`.
+    pub fn add_batch(&mut self, sdf_id: u32, mut queries: Vec<GpuSdfQuery>) {
+        if let Some(b) = self.batches.iter_mut().find(|b| b.sdf_id == sdf_id) {
+            b.queries.append(&mut queries);
+            b.query_count = b.queries.len() as u32;
+            return;
+        }
         self.batches.push(GpuSdfInstancedBatch {
             sdf_id,
             query_count: queries.len() as u32,
@@ -268,7 +278,8 @@ impl GpuSdfMultiDispatch {
         self.batches.iter().map(|b| b.queries.len()).sum()
     }
 
-    /// Number of GPU kernel dispatches that will be issued (one per batch).
+    /// Number of GPU kernel dispatches that will be issued (one per batch, so
+    /// one per unique `sdf_id`).
     #[must_use]
     pub fn total_dispatches(&self) -> usize {
         self.batches.len()

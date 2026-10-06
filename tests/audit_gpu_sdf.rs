@@ -300,7 +300,7 @@ fn max_queries_bounds_what_one_dispatch_covers() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-010: GpuSdfQuery::radius (\"for sphere-SDF test\") is carried to the buffer but never used by execute_batch_cpu, extract_contacts or SDF_EVAL_WGSL; penetration uses one global collision_radius, so a radius-0.5 sphere centred 0.3 from the surface produces no contact at collision_radius 0 (expected penetration 0.2)"]
+// AUD-A-S5W2-010
 fn per_query_radius_contributes_to_penetration() {
     let mut b = GpuSdfBatch::new(GpuDispatchConfig::default());
     // centre at distance 0.3 outside the unit sphere
@@ -317,7 +317,7 @@ fn per_query_radius_contributes_to_penetration() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W2-011: GpuSdfMultiDispatch docs say one dispatch per unique sdf_id, but add_batch never merges, so two batches with the same sdf_id give total_dispatches() == 2 (unique ids: 1)"]
+// AUD-A-S5W2-011
 fn total_dispatches_counts_unique_sdf_ids() {
     let q = vec![GpuSdfQuery {
         x: 0.0,
@@ -376,4 +376,28 @@ fn dispatch_covers_every_query_with_the_shader_workgroup_size() {
             b.num_workgroups()
         );
     }
+}
+
+/// AUD-A-S5W2-011 (order): queries for a repeated sdf_id are appended to the
+/// existing batch in call order, `query_count` follows, and the batches keep
+/// the order of their first `add_batch`.
+#[test]
+fn repeated_sdf_ids_append_to_their_first_batch_in_call_order() {
+    let q = |x: f32| GpuSdfQuery {
+        x,
+        y: 0.0,
+        z: 0.0,
+        radius: 0.0,
+    };
+    let mut d = GpuSdfMultiDispatch::new();
+    d.add_batch(7, vec![q(1.0)]);
+    d.add_batch(3, vec![q(2.0)]);
+    d.add_batch(7, vec![q(3.0), q(4.0)]);
+    let ids: Vec<u32> = d.batches.iter().map(|b| b.sdf_id).collect();
+    assert_eq!(ids, [7, 3]);
+    let xs: Vec<f32> = d.batches[0].queries.iter().map(|q| q.x).collect();
+    assert_eq!(xs, [1.0, 3.0, 4.0]);
+    assert_eq!(d.batches[0].query_count, 3);
+    assert_eq!(d.batches[1].query_count, 1);
+    assert_eq!((d.total_queries(), d.total_dispatches()), (4, 2));
 }
