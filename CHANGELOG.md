@@ -133,6 +133,8 @@ were introduced during that release window.
 
 ### Changed
 
+- CI: 新しい job `examples` (ubuntu) が全 example を release で build して実行する (`scripts/run_examples.py`、example 一覧と required-features は `cargo metadata` から取り、非 0 終了・example ごとの timeout 300 s・実行 0 本で red) `scripts/preflight.sh` の full mode も同じ script を引数なしで呼ぶ
+- example `buckmaster_alpoge_euler_r3` / `buckmaster_alpoge_boussinesq_r2` の既定の step 数を 40 / 100 に減らし、従来の 400 / 500 step は `-- --full` で走る (euler_r3 は release で 10 分を超えていた) 両方とも各診断値が有限であることを、euler_r3 は射影後の最大発散が初期値より小さいことも assert する
 - `PhysicsWorld::raycast` と `query::batch_raycast` の doc に、body を外接球で近似し static collider と SDF collider を見ないことを明記 (挙動は不変、実形状は `PhysicsWorld::cast_ray`)
 - **Behavior change:** joint (ball / hinge / fixed / slider / cone-twist) の位置拘束が lever arm と回転補正を含むようになり、D6 の角度誤差は `local_frame_b` 基準になった 全 joint の位置拘束の結果が変わる (AUD-A-S1W6-006 / 010)
 - **Behavior change:** hinge の `angle_min` / `angle_max` と slider の `limit_min` / `limit_max` を片側だけ設定した場合も、その側の limit が効く (従来は黙って無視) (AUD-A-S1W6-007)
@@ -242,6 +244,8 @@ were introduced during that release window.
 
 ### Fixed
 
+- example 3 本の assert が library 側の修正前の挙動を期待して panic していた 期待値を現在の契約の閉形式に合わせた `spatial_queries` (内側から深くなる向きの `sphere_cast` は t = 0 の初期 overlap、外へ向かう cast は接触なし) / `sdf_force_fields` (2^62 付近の Attract は `max_force` = 30 で clamp される) / `wave_ship_spectrum` (参照式に `(1 − 0.287 ln γ)` の正規化を入れ、m₀ から戻した H_s を公称値と 2% で比較)
+- example `privacy_budget_and_rappor` の randomized response の閉形式表示を `(e^ε − 1)/(e^ε + 1)` に直し、`RandomizedResponse::new(ε).p_true()` との一致を assert する
 - `math::powf_pos` の整数指数部の上限 64 を撤廃した (64 以下の結果は不変) (AUD-A-S1W5-021)
 - `compressible::{riemann_invariants, stagnation_pressure_ratio}` が γ = 1 の等温極限を扱う (AUD-A-S1W5-007)
 - `coupled_iteration` / `creep_longterm` / `non_newtonian` / `wind_zone` / `anisotropic_friction` で二乗・冪の途中に `Fix128` が wrap していた (AUD-A-S3W3-011 / S2W1-003 / S2W2-002 / S3W3-001 / S2W3-002)

@@ -22,8 +22,9 @@
 //!
 //! ```text
 //! peak frequency     : omega_p = 2*pi / T_p
-//! JONSWAP spectrum   : S(omega) = 5/16 * Hs^2 * omega_p^4 / omega^5
+//! JONSWAP spectrum   : S(omega) = A * Hs^2 * omega_p^4 / omega^5
 //!                                  * exp(-5/4 * (omega_p/omega)^4) * gamma^r
+//!                      A = 5/16 * (1 - 0.287 * ln(gamma))   (DNV-RP-C205 eq. 3.5.7)
 //!                      r = exp(-(omega - omega_p)^2 / (2 * sigma^2 * omega_p^2))
 //!                      sigma = 0.07 for omega <= omega_p, else 0.09
 //! zeroth moment      : m0 = integral S(omega) d(omega)
@@ -60,15 +61,21 @@ fn rel_err(actual: f64, expected: f64) -> f64 {
     }
 }
 
-/// Independent f64 evaluation of the JONSWAP spectrum (Chakrabarti eq. 4.29),
-/// written down from the paper formula, never by calling [`Jonswap::spectrum_density`].
+/// Independent f64 evaluation of the JONSWAP spectrum (Chakrabarti eq. 4.29)
+/// with the DNV-RP-C205 eq. 3.5.7 normalisation `A = 5/16 (1 - 0.287 ln gamma)`,
+/// written down from the published formula, never by calling [`Jonswap::spectrum_density`].
 fn jonswap_reference(hs: f64, omega_p: f64, gamma: f64, omega: f64) -> f64 {
     if omega <= 0.0 || omega_p <= 0.0 {
         return 0.0;
     }
     let sigma = if omega <= omega_p { 0.07 } else { 0.09 };
     let r = (-(omega - omega_p).powi(2) / (2.0 * sigma * sigma * omega_p * omega_p)).exp();
-    let pm = 5.0 / 16.0 * hs * hs * omega_p.powi(4) / omega.powi(5);
+    let normalisation = if gamma <= 0.0 {
+        1.0
+    } else {
+        1.0 - 0.287 * gamma.ln()
+    };
+    let pm = 5.0 / 16.0 * normalisation * hs * hs * omega_p.powi(4) / omega.powi(5);
     let cutoff = (-1.25 * (omega_p / omega).powi(4)).exp();
     let enhancement = if gamma <= 0.0 { 1.0 } else { gamma.powf(r) };
     pm * cutoff * enhancement
@@ -111,22 +118,14 @@ fn main() {
     // reduction the existing oracle test checks -- here the peak-enhancement
     // factor does not cancel out of the formula, so this exercises it.)
     //
-    // NOTE (finding, not a wiring bug -- tracked separately): the textbook identity
-    // `Hs = 4*sqrt(m0)` only holds as coded here when gamma = 1. The
-    // standard JONSWAP normalisation (DNV-RP-C205 eq. 3.5.7; also Goda,
-    // *Random Seas and Design of Maritime Structures*) applies a correction
-    // factor `(1 - 0.287*ln(gamma))` to the alpha/Hs^2 prefactor specifically
-    // so that `4*sqrt(m0)` keeps reproducing the nominal Hs for gamma != 1.
-    // `Jonswap::spectrum_density` (src/wave_ship.rs) uses the bare
-    // `5/16 * Hs^2 * omega_p^4` prefactor with no such correction, so at
-    // `Jonswap::north_sea()`'s default gamma = 3.3 the spectrum's actual
-    // moment-based significant height is `Hs / sqrt(1 - 0.287*ln(gamma))`,
-    // about 23% above the nominal Hs = 3 m. This example asserts against
-    // that DERIVED value (confirmed independently below, not copied from a
-    // crate call) rather than against the nominal Hs, so the check is
-    // still a real oracle -- it documents what the formula as implemented
-    // actually integrates to, rather than silently loosening a tolerance
-    // to hide the gap.
+    // The `(1 - 0.287 ln gamma)` factor in A (DNV-RP-C205 eq. 3.5.7; Goda,
+    // *Random Seas and Design of Maritime Structures*) is there so that
+    // `Hs = 4*sqrt(m0)` (Chakrabarti eq. 4.9) reproduces the nominal Hs for
+    // gamma != 1. The factor is an empirical fit, accurate to about 1-2% over
+    // 1 <= gamma <= 7, so the recovered height is compared with the nominal
+    // Hs at 2%. Without the factor the recovered height would be
+    // Hs / sqrt(1 - 0.287 ln gamma), about 23% above nominal at gamma = 3.3,
+    // which this tolerance rejects.
     let (mut m0, dw) = (0.0_f64, omega_p / 400.0);
     let mut w = dw;
     while w < 15.0 * omega_p {
@@ -134,16 +133,14 @@ fn main() {
         w += dw;
     }
     let hs_recovered = 4.0 * m0.sqrt();
-    let dnv_correction = (1.0 - 0.287 * gamma.ln()).sqrt();
-    let hs_predicted_uncorrected = hs / dnv_correction;
+    let hs_without_normalisation = hs / (1.0 - 0.287 * gamma.ln()).sqrt();
     println!(
         "[wave_ship] Hs recovered from m0 = 4*sqrt({m0:e}) = {hs_recovered} \
-         (nominal preset Hs = {hs}, DNV-uncorrected prediction = {hs_predicted_uncorrected})"
+         (nominal preset Hs = {hs}; without the DNV normalisation it would be {hs_without_normalisation})"
     );
     assert!(
-        rel_err(hs_recovered, hs_predicted_uncorrected) < 0.01,
-        "Hs recovery from JONSWAP moment should match the DNV-uncorrected \
-         prediction Hs/sqrt(1-0.287 ln(gamma)): {hs_recovered} vs {hs_predicted_uncorrected}"
+        rel_err(hs_recovered, hs) < 0.02,
+        "Hs recovered from the JONSWAP moment should match the nominal Hs: {hs_recovered} vs {hs}"
     );
 
     // --- WaveComponent + free_surface_elevation: 4-component superposition -
