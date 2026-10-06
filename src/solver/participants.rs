@@ -182,6 +182,65 @@ impl PhysicsWorld {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// The participants in registration order, for the snapshot writer.
+    #[cfg(feature = "std")]
+    pub(super) fn write_participants(&self, out: &mut Vec<(u32, Vec<u8>)>) {
+        for p in self.lock_participants().iter() {
+            let mut payload = Vec::new();
+            p.write_state(&mut payload);
+            out.push((p.kind().get(), payload));
+        }
+    }
+
+    /// Check snapshot payloads against the registered participants (kinds,
+    /// count, order, then every payload) without changing anything.
+    pub(super) fn check_participants(
+        &mut self,
+        stored: &[(u32, Vec<u8>)],
+    ) -> Result<(), super::WorldSnapshotError> {
+        #[cfg(feature = "std")]
+        {
+            let list = list_mut(&mut self.participants);
+            let snapshot: Vec<ParticipantKind> =
+                stored.iter().map(|s| ParticipantKind::new(s.0)).collect();
+            let world: Vec<ParticipantKind> = list.iter().map(|p| p.kind()).collect();
+            if let Some(m) =
+                crate::world_participant::ParticipantMismatch::classify(&snapshot, &world)
+            {
+                return Err(super::WorldSnapshotError::ParticipantMismatch(m));
+            }
+            for (index, (p, (_, payload))) in list.iter().zip(stored).enumerate() {
+                p.check_state(payload).map_err(|error| {
+                    super::WorldSnapshotError::ParticipantState { index, error }
+                })?;
+            }
+            Ok(())
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            if stored.is_empty() {
+                Ok(())
+            } else {
+                Err(super::WorldSnapshotError::ParticipantMismatch(
+                    crate::world_participant::ParticipantMismatch::Count {
+                        snapshot: stored.len(),
+                        world: 0,
+                    },
+                ))
+            }
+        }
+    }
+
+    /// Read payloads [`Self::check_participants`] accepted.
+    pub(super) fn read_participants(&mut self, stored: &[(u32, Vec<u8>)]) {
+        #[cfg(feature = "std")]
+        for (p, (_, payload)) in list_mut(&mut self.participants).iter_mut().zip(stored) {
+            p.read_state(payload);
+        }
+        #[cfg(not(feature = "std"))]
+        debug_assert!(stored.is_empty(), "checked by check_participants");
+    }
+
     // ── Faults ───────────────────────────────────────────────────────────
 
     /// The first fault recorded, if any. While one is recorded,
@@ -196,6 +255,11 @@ impl PhysicsWorld {
     /// overflow flag ([`Self::overflow_detected`]) is not touched.
     pub fn clear_fault(&mut self) {
         self.fault = None;
+    }
+
+    /// The fault as stored (snapshot writer and reader).
+    pub(super) fn set_fault(&mut self, fault: Option<WorldFault>) {
+        self.fault = fault;
     }
 
     fn record_fault(&mut self, fault: WorldFault) {
@@ -267,6 +331,11 @@ impl PhysicsWorld {
     /// unchanged.
     pub fn set_field(&mut self, id: PortId, values: &[Fix128]) -> Result<(), FieldError> {
         self.fields.set(id, values)
+    }
+
+    /// The field section as stored (snapshot writer and reader).
+    pub(super) fn fields_mut(&mut self) -> &mut FieldBoard {
+        &mut self.fields
     }
 
     // ── Checked step ─────────────────────────────────────────────────────

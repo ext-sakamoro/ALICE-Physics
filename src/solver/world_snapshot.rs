@@ -34,6 +34,7 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::shape::Shape;
 use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
 use crate::static_collider::StaticCollider;
+use crate::world_participant::WorldFault;
 
 #[cfg(not(feature = "std"))]
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -60,6 +61,10 @@ use std::collections::{BTreeMap, BTreeSet};
 /// | a joint / constraint / contact / SDF collider / batch / proxy index past its target | [`Self::DanglingIndex`] |
 /// | target world holds a different number of SDF fields | [`Self::SdfFieldCountMismatch`] |
 /// | target world holds a different number of hooks / modifiers / bridges | [`Self::CallbackCountMismatch`] |
+/// | target world holds other participants (count, kinds, order) | [`Self::ParticipantMismatch`] |
+/// | a participant of the target world refuses its payload | [`Self::ParticipantState`] |
+/// | the target world declares other shared fields | [`Self::FieldState`] |
+/// | unknown fault code / participant fault tag, field mode or layout tag | [`Self::InvalidValue`] |
 ///
 /// On every error the target world is left untouched.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -126,6 +131,23 @@ pub enum WorldSnapshotError {
         /// Count in the target world.
         world: usize,
     },
+    /// The target world's participants differ from the snapshot's in number,
+    /// kinds or order (participants are code and are not in the blob; the
+    /// target world must already hold the same ones).
+    ParticipantMismatch(crate::world_participant::ParticipantMismatch),
+    /// Participant `index` of the target world refused its payload
+    /// ([`crate::world_participant::Participant::check_state`]). Every
+    /// payload is checked before any is read.
+    ParticipantState {
+        /// Registration index of the participant.
+        index: usize,
+        /// Why it refused.
+        error: crate::world_participant::StateError,
+    },
+    /// The snapshot's shared fields do not match the target world's
+    /// declared fields (ids, modes, layouts;
+    /// [`crate::world_participant::FieldBoard::check_values`]).
+    FieldState(crate::world_participant::StateError),
 }
 
 impl core::fmt::Display for WorldSnapshotError {
@@ -163,6 +185,18 @@ impl core::fmt::Display for WorldSnapshotError {
             } => write!(
                 f,
                 "world snapshot was taken with {snapshot} {section}, target world has {world}"
+            ),
+            Self::ParticipantMismatch(m) => write!(
+                f,
+                "world snapshot participants differ from the target world's: {m:?}"
+            ),
+            Self::ParticipantState { index, error } => write!(
+                f,
+                "participant {index} of the target world refused its snapshot payload: {error:?}"
+            ),
+            Self::FieldState(error) => write!(
+                f,
+                "world snapshot fields differ from the target world's: {error:?}"
             ),
         }
     }
@@ -1417,6 +1451,13 @@ struct Decoded {
     overflow_detected: bool,
     /// (entries sorted by id, hits, misses)
     tgs_cache: (Vec<(u64, [Fix128; 3])>, u64, u64),
+    /// (kind, payload) per participant, registration order (version 2)
+    participants: Vec<(u32, Vec<u8>)>,
+    /// The recorded fault (version 2)
+    fault: Option<WorldFault>,
+    /// The bytes of `FieldBoard::write_values` (version 2; an empty board for
+    /// version 1)
+    fields: Vec<u8>,
 }
 
 /// Encoded tag of a static SDF collider's body index ([`crate::sdf_collider::SDF_STATIC`]),
@@ -1428,9 +1469,11 @@ impl PhysicsWorld {
     /// [`Self::STATE_MAGIC`] of the rollback blob).
     pub const WORLD_SNAPSHOT_MAGIC: [u8; 4] = *b"APWS";
 
-    /// Format version of a [`Self::snapshot_world`] blob. A blob of another
+    /// Format version of a [`Self::snapshot_world`] blob. Version 1 blobs
+    /// (no `participants`, `fault` or `fields` section) are still read, as a
+    /// world without participants, fault or fields; a blob of any other
     /// version is rejected with [`WorldSnapshotError::UnsupportedVersion`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 1;
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 2;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1493,6 +1536,10 @@ impl PhysicsWorld {
     /// | `overflow_detected` | saved | sticky flag |
     /// | `kinematic_substeps_left` | rebuilt | always 0 outside `step` (reset at the end of every step), and a snapshot is only taken between steps |
     /// | `tgs_impulse_cache` (std) | saved | entries sorted by id, hit / miss counters; the live set is rebuilt empty (the `sweep` at the end of every step empties it) |
+    /// | `participants` (std) | saved / not covered | each participant's kind and its [`crate::world_participant::Participant::write_state`] payload are saved; the participant itself is code, so the target world must hold the same kinds in the same order ([`WorldSnapshotError::ParticipantMismatch`]), and every payload is checked before any is read ([`WorldSnapshotError::ParticipantState`]) |
+    /// | `participant_plan` (std) | not covered | derived from the target world's own participants and fields |
+    /// | `fault` | saved | the recorded fault, so a restored branch is still faulted |
+    /// | `fields` | saved | the committed values once ([`crate::world_participant::FieldBoard::write_values`]); the target world must declare the same fields ([`WorldSnapshotError::FieldState`]) |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
     /// motors the caller applies itself with [`crate::motor::apply_motors`]
@@ -1508,7 +1555,7 @@ impl PhysicsWorld {
     /// step. The structure is private to [`crate::sleeping`] and has no
     /// non-mutating accessor, so it cannot be copied from `&self`.
     ///
-    /// # Format (version 1)
+    /// # Format (version 2)
     ///
     /// | range | content |
     /// |---|---|
@@ -1518,6 +1565,15 @@ impl PhysicsWorld {
     /// | `[8..16)` | payload length u64 |
     /// | `[16..16+len)` | payload (the sections in the table above, little endian) |
     /// | last 8 | FNV-1a 64 of every preceding byte |
+    ///
+    /// Version 2 appends three sections to the version 1 payload, after the
+    /// TGS cache, in this order:
+    ///
+    /// | section | content |
+    /// |---|---|
+    /// | `participants` | `count: u64`, then per participant `kind: u32`, `payload_len: u64`, payload |
+    /// | `fault` | `u8` code: `0` none, `1` participant (`index: u64`, `kind: u32`, fault tag `u8`), `2` rigid overflow, `3` force out of range (`body: u64`), `4` field out of range (`field: u32`, `index: u64`) |
+    /// | `fields` | [`crate::world_participant::FieldBoard::write_values`] |
     #[must_use]
     pub fn snapshot_world(&self) -> Vec<u8> {
         let mut w = W(Vec::new());
@@ -1698,6 +1754,23 @@ impl PhysicsWorld {
             w.u64(0);
         }
 
+        #[cfg(feature = "std")]
+        let participants = {
+            let mut out = Vec::new();
+            self.write_participants(&mut out);
+            out
+        };
+        #[cfg(not(feature = "std"))]
+        let participants: Vec<(u32, Vec<u8>)> = Vec::new();
+        w.usize(participants.len());
+        for (kind, payload) in &participants {
+            w.u32(*kind);
+            w.usize(payload.len());
+            w.0.extend_from_slice(payload);
+        }
+        w_fault(&mut w, self.fault());
+        self.fields().write_values(&mut w.0);
+
         let mut data = w.0;
         let payload_len = (data.len() - HEADER_LEN) as u64;
         data[8..16].copy_from_slice(&payload_len.to_le_bytes());
@@ -1738,6 +1811,10 @@ impl PhysicsWorld {
     pub fn restore_world(&mut self, data: &[u8]) -> Result<(), WorldSnapshotError> {
         let d = decode(data)?;
         self.check_attachable(&d)?;
+        self.check_participants(&d.participants)?;
+        self.fields()
+            .check_values(&d.fields)
+            .map_err(WorldSnapshotError::FieldState)?;
         self.install(d);
         Ok(())
     }
@@ -1841,6 +1918,11 @@ impl PhysicsWorld {
         }
         #[cfg(not(feature = "std"))]
         let _ = d.tgs_cache; // the TGS backend falls back to XPBD without std
+
+        // Checked by `restore_world` before anything was installed.
+        self.read_participants(&d.participants);
+        self.set_fault(d.fault);
+        self.fields_mut().read_values(&d.fields);
     }
 }
 
@@ -1852,7 +1934,7 @@ fn decode(data: &[u8]) -> Res<Decoded> {
         return Err(WorldSnapshotError::BadMagic);
     }
     let version = u16::from_le_bytes([data[4], data[5]]);
-    if version != PhysicsWorld::WORLD_SNAPSHOT_VERSION {
+    if version != 1 && version != PhysicsWorld::WORLD_SNAPSHOT_VERSION {
         return Err(WorldSnapshotError::UnsupportedVersion {
             found: version,
             supported: PhysicsWorld::WORLD_SNAPSHOT_VERSION,
@@ -1887,7 +1969,7 @@ fn decode(data: &[u8]) -> Res<Decoded> {
         data: &data[..body_end],
         pos: HEADER_LEN,
     };
-    let d = decode_payload(&mut r)?;
+    let d = decode_payload(&mut r, version)?;
     if r.pos != body_end {
         return Err(WorldSnapshotError::TrailingBytes {
             extra: body_end - r.pos,
@@ -1897,7 +1979,7 @@ fn decode(data: &[u8]) -> Res<Decoded> {
     Ok(d)
 }
 
-fn decode_payload(r: &mut R<'_>) -> Res<Decoded> {
+fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
     let config = r_config(r)?;
 
     let n = r.len("bodies", 1)?;
@@ -2087,6 +2169,21 @@ fn decode_payload(r: &mut R<'_>) -> Res<Decoded> {
     }
     let tgs_cache = (entries, r.u64()?, r.u64()?);
 
+    let (participants, fault, fields) = if version >= 2 {
+        let n = r.len("participants", 12)?;
+        let mut participants = Vec::with_capacity(n);
+        for _ in 0..n {
+            let kind = r.u32()?;
+            let len = r.len("participants", 1)?;
+            participants.push((kind, r.take(len)?.to_vec()));
+        }
+        (participants, r_fault(r)?, r_fields(r)?)
+    } else {
+        let mut empty = Vec::new();
+        crate::world_participant::FieldBoard::new().write_values(&mut empty);
+        (Vec::new(), None, empty)
+    };
+
     Ok(Decoded {
         config,
         bodies,
@@ -2117,7 +2214,87 @@ fn decode_payload(r: &mut R<'_>) -> Res<Decoded> {
         body_filters,
         overflow_detected,
         tgs_cache,
+        participants,
+        fault,
+        fields,
     })
+}
+
+fn w_fault(w: &mut W, fault: Option<WorldFault>) {
+    match fault {
+        None => w.u8(0),
+        Some(WorldFault::Participant { index, kind, fault }) => {
+            w.u8(1);
+            w.usize(index);
+            w.u32(kind.get());
+            w.u8(fault.tag());
+        }
+        Some(WorldFault::RigidOverflow) => w.u8(2),
+        Some(WorldFault::ForceOutOfRange { body }) => {
+            w.u8(3);
+            w.usize(body);
+        }
+        Some(WorldFault::FieldOutOfRange { field, index }) => {
+            w.u8(4);
+            w.u32(field.get());
+            w.usize(index);
+        }
+    }
+}
+
+fn r_fault(r: &mut R<'_>) -> Res<Option<WorldFault>> {
+    const SECTION: &str = "fault";
+    Ok(match r.u8()? {
+        0 => None,
+        1 => {
+            let index = r.usize(SECTION)?;
+            let kind = crate::world_participant::ParticipantKind::new(r.u32()?);
+            let fault = crate::world_participant::ParticipantFault::from_tag(r.u8()?)
+                .ok_or(WorldSnapshotError::InvalidValue { section: SECTION })?;
+            Some(WorldFault::Participant { index, kind, fault })
+        }
+        2 => Some(WorldFault::RigidOverflow),
+        3 => Some(WorldFault::ForceOutOfRange {
+            body: r.usize(SECTION)?,
+        }),
+        4 => Some(WorldFault::FieldOutOfRange {
+            field: crate::world_participant::PortId::new(r.u32()?),
+            index: r.usize(SECTION)?,
+        }),
+        _ => return Err(WorldSnapshotError::InvalidValue { section: SECTION }),
+    })
+}
+
+/// The bytes of the `fields` section (`FieldBoard::write_values`), walked to
+/// find where it ends; whether they fit the target world is checked on
+/// restore (`FieldBoard::check_values`).
+fn r_fields(r: &mut R<'_>) -> Res<Vec<u8>> {
+    const SECTION: &str = "fields";
+    let start = r.pos;
+    let n = r.len(SECTION, 4 + 1 + 1 + 8)?;
+    for _ in 0..n {
+        r.u32()?;
+        if r.u8()? > 1 {
+            return Err(WorldSnapshotError::InvalidValue { section: SECTION });
+        }
+        let samples = match r.u8()? {
+            0 => r.usize(SECTION)?,
+            1 => {
+                let origin = r.vec3()?;
+                let cell = r.fix()?;
+                let dims = [r.usize(SECTION)?, r.usize(SECTION)?, r.usize(SECTION)?];
+                crate::world_participant::FieldLayout::Grid { origin, cell, dims }
+                    .samples()
+                    .ok_or(WorldSnapshotError::InvalidValue { section: SECTION })?
+            }
+            _ => return Err(WorldSnapshotError::InvalidValue { section: SECTION }),
+        };
+        let bytes = samples
+            .checked_mul(16)
+            .ok_or(WorldSnapshotError::Truncated)?;
+        r.take(bytes)?;
+    }
+    Ok(r.data[start..r.pos].to_vec())
 }
 
 /// Reject indices that `step` would follow past the end of a `Vec`.
