@@ -67,7 +67,6 @@ fn zero_segments_panics_as_documented() {
 /// segment mass `mass_per_unit * L / N`, so the total is `mass_per_unit * L * (N+1)/N`
 /// (2x for a one-segment rope).
 #[test]
-#[ignore = "known defect: AUD-A-S3W1-003: Rope::new total particle mass = mpu*L*(N+1)/N, not mpu*L (measured N=1: 12 vs 6); end particles are not half mass"]
 fn total_particle_mass_is_mass_per_unit_times_length() {
     for (n, mpu, len) in [(1usize, 2.0, 3.0), (4, 0.5, 8.0), (10, 1.0, 5.0)] {
         let r = Rope::new(Vec3Fix::ZERO, v3(len, 0.0, 0.0), n, fx(mpu));
@@ -80,13 +79,19 @@ fn total_particle_mass_is_mass_per_unit_times_length() {
     }
 }
 
-/// Inverse mass is `1/(mpu * L/N)` for every particle (the convention `new` uses today).
+/// Lumped masses (AUD-A-S3W1-003): interior particles carry one segment mass
+/// `mpu * L/N`, the two ends half of it.
 #[test]
-fn inverse_mass_is_one_over_segment_mass() {
+fn inverse_mass_is_one_over_the_lumped_particle_mass() {
     let r = Rope::new(Vec3Fix::ZERO, v3(6.0, 0.0, 0.0), 3, fx(0.25));
-    // segment length 2, particle mass 0.5, inv mass 2
-    for w in &r.inv_masses {
-        assert!((w.to_f64() - 2.0).abs() < 1e-12);
+    // segment length 2, segment mass 0.5: interior inv mass 2, ends 4
+    let want = [4.0, 2.0, 2.0, 4.0];
+    for (w, want) in r.inv_masses.iter().zip(want) {
+        assert!(
+            (w.to_f64() - want).abs() < 1e-12,
+            "{} vs {want}",
+            w.to_f64()
+        );
     }
 }
 
@@ -203,14 +208,16 @@ fn compliance_softens_the_correction_by_alpha_over_dt_squared() {
     r.prev_positions = r.positions.clone();
     let dt = 0.25;
     r.step(fx(dt));
-    // w0 = w1 = 1; error 2; alpha/dt^2 = 1.0; lambda = 2/(2+1) = 2/3
-    let lambda = 2.0 / (2.0 + alpha / (dt * dt));
+    // one segment of mass 1: both particles are ends of half mass, w0 = w1 = 2;
+    // error 2; alpha/dt^2 = 1.0; lambda = 2/(4+1) = 0.4; each moves w*lambda = 0.8
+    let w = 2.0;
+    let lambda = 2.0 / (2.0 * w + alpha / (dt * dt));
     assert!(
-        (r.positions[0].x.to_f64() - lambda).abs() < 1e-9,
+        (r.positions[0].x.to_f64() - w * lambda).abs() < 1e-9,
         "{}",
         r.positions[0].x.to_f64()
     );
-    assert!((r.positions[1].x.to_f64() - (3.0 - lambda)).abs() < 1e-9);
+    assert!((r.positions[1].x.to_f64() - (3.0 - w * lambda)).abs() < 1e-9);
 }
 
 /// A compressed segment (shorter than rest) is pushed apart (error < 0).
