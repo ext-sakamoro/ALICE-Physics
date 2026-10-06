@@ -56,7 +56,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 29 of 148 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 35 of 171 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 10 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
@@ -74,7 +74,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `profiling` | per-stage timers and per-frame statistics |  | [`profiling_stages`](../examples/profiling_stages.rs) | standalone |
 | `debug_render` | wireframe primitives for bodies, contacts, joints, BVH and forces |  | [`debug_render_primitives`](../examples/debug_render_primitives.rs) | world API |
 | `gpu_bridge` | `GpuSolverBridge` trait for external GPU solvers that must match the CPU result bit for bit | gpu-solver-bridge | [`world_api_tour`](../examples/world_api_tour.rs) | standalone (step 1 of 3 items) |
-| `world_participant` | the contract a law signs to take part in the world's substep loop: participant trait, read-only substep context, per-body force accumulator, snapshot payload checks, three-valued observations |  | [`world_participant_contract`](../examples/world_participant_contract.rs) | standalone |
+| `world_participant` | the contract a law signs to take part in the world's substep loop: participant trait, read-only substep context, per-body force accumulator, snapshot payload checks, three-valued observations |  | [`world_participant_contract`](../examples/world_participant_contract.rs) | standalone (step 37, world API 1 of 88 items) |
 
 ## Collision shapes and queries
 
@@ -211,7 +211,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `cfd_solver` | grid CFD driver: pressure projection (several solvers), turbulence, level set, surface tension, buoyancy, boundary conditions | std | [`cfd_smoke_plume`](../examples/cfd_smoke_plume.rs) | standalone |
+| `cfd_solver` | grid CFD driver: pressure projection (several solvers), turbulence, level set, surface tension, buoyancy, boundary conditions | std | [`cfd_smoke_plume`](../examples/cfd_smoke_plume.rs) | standalone (step 1 of 41 items) |
 | `eulerian_grid` | staggered MAC grid with FLIP / PIC transfer and domain decomposition |  | [`flip_scatter`](../examples/flip_scatter.rs) | standalone |
 | `multiphase` | VOF and level-set multiphase flow |  | [`vof_level_set_transport`](../examples/vof_level_set_transport.rs) | standalone |
 | `interface_capture` | fast-sweeping level set and PLIC interface reconstruction |  | [`plic_interface_reconstruction`](../examples/plic_interface_reconstruction.rs) | standalone |

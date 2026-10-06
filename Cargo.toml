@@ -103,6 +103,10 @@ loom = "0.7"
 name = "basic_physics"
 required-features = ["std"]
 
+[[example]]
+name = "world_participants"
+required-features = ["std"]
+
 # Measurement harness for the HPC-parallel work: reports how far the current
 # single-process engine is from the hundreds-of-millions-of-elements target, in
 # both time and memory. Needs `std` for `Instant`.

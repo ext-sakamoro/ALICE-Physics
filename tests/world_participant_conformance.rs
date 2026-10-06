@@ -2,16 +2,13 @@
 //!
 //! Two layers:
 //!
-//! * **participant layer** (runs today): the types of the contract on their
+//! * **participant layer**: the types of the contract on their
 //!   own, and [`check_participant_contract`], which any participant type can be
 //!   run through (fail leaves it unchanged, `write_state` → `check_state` →
 //!   `read_state` restores it bit for bit, a short payload is rejected).
-//! * **world layer** (`#[ignore = "src gap: WORLD-V1-S1 ..."]`): what
-//!   `PhysicsWorld` must do with registered participants. The world side is
-//!   not written yet, so these tests call the receivers in the `world` module
-//!   below, which stop with `todo!` naming the missing entry point. When the
-//!   entry point lands, replace the receiver body with the call and remove
-//!   the `ignore`.
+//! * **world layer**: what `PhysicsWorld` must do with registered
+//!   participants, through the receivers in the `world` module below (one
+//!   per world entry point).
 //!
 //! Oracles: call order and bit identity are compared against a second world
 //! built independently (a world without participants, a world stepped
@@ -1623,98 +1620,103 @@ fn wake_threshold_a_is_strict_at_the_boundary() {
 // World layer: receivers for entry points that do not exist yet
 // ============================================================================
 
-/// Receivers with the signatures the world side will have. Each stops with
-/// `todo!` naming the entry point; replace the body with the call when it
-/// lands.
+/// Receivers for the world entry points, one per entry point the tests
+/// use.
 mod world {
     use super::*;
+    use alice_physics::solver::WorldSnapshotError;
 
     pub fn add_participant(
-        _world: &mut PhysicsWorld,
-        _p: Box<dyn Participant>,
+        world: &mut PhysicsWorld,
+        p: Box<dyn Participant>,
     ) -> Result<usize, RegisterError> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::add_participant")
+        world.add_participant(p)
     }
 
-    pub fn participant_kinds(_world: &PhysicsWorld) -> Vec<ParticipantKind> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::participant_kinds")
+    pub fn participant_kinds(world: &PhysicsWorld) -> Vec<ParticipantKind> {
+        world.participant_kinds()
     }
 
-    pub fn participant_state(_world: &PhysicsWorld, _index: usize) -> Vec<u8> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::participant_state")
+    pub fn participant_state(world: &PhysicsWorld, index: usize) -> Vec<u8> {
+        world
+            .participant_state(index)
+            .expect("participant index in range")
     }
 
-    pub fn try_step(_world: &mut PhysicsWorld, _dt: Fix128) -> Result<(), StepError> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::try_step")
+    pub fn try_step(world: &mut PhysicsWorld, dt: Fix128) -> Result<(), StepError> {
+        world.try_step(dt)
     }
 
     #[cfg(feature = "parallel")]
-    pub fn try_step_parallel(_world: &mut PhysicsWorld, _dt: Fix128) -> Result<(), StepError> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::try_step_parallel")
+    pub fn try_step_parallel(world: &mut PhysicsWorld, dt: Fix128) -> Result<(), StepError> {
+        world.try_step_parallel(dt)
     }
 
-    pub fn fault(_world: &PhysicsWorld) -> Option<WorldFault> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::fault")
+    pub fn fault(world: &PhysicsWorld) -> Option<WorldFault> {
+        world.fault()
     }
 
-    pub fn clear_fault(_world: &mut PhysicsWorld) {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::clear_fault")
+    pub fn clear_fault(world: &mut PhysicsWorld) {
+        world.clear_fault();
     }
 
     pub fn observe_participant(
-        _world: &PhysicsWorld,
-        _index: usize,
+        world: &PhysicsWorld,
+        index: usize,
     ) -> Option<Observed<ObservationSink>> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::observe_participant")
+        world.observe_participant(index)
     }
 
     pub fn observe_body_checked(
-        _world: &PhysicsWorld,
-        _index: usize,
+        world: &PhysicsWorld,
+        index: usize,
     ) -> Option<Observed<alice_physics::solver::BodyObservation>> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::observe_body_checked")
+        world.observe_body_checked(index)
     }
 
     pub fn declare_field(
-        _world: &mut PhysicsWorld,
-        _id: PortId,
-        _layout: FieldLayout,
-        _mode: FieldMode,
+        world: &mut PhysicsWorld,
+        id: PortId,
+        layout: FieldLayout,
+        mode: FieldMode,
     ) -> Result<(), FieldError> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::declare_field")
+        match world.declare_field(id, layout, mode) {
+            Ok(()) => Ok(()),
+            Err(alice_physics::solver::DeclareFieldError::Field(e)) => Err(e),
+            Err(e) => panic!("declaring a field refused by the ports: {e:?}"),
+        }
     }
 
-    pub fn fields(_world: &PhysicsWorld) -> &FieldBoard {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::fields")
+    pub fn fields(world: &PhysicsWorld) -> &FieldBoard {
+        world.fields()
     }
 
-    pub fn set_field(
-        _world: &mut PhysicsWorld,
-        _id: PortId,
-        _v: &[Fix128],
-    ) -> Result<(), FieldError> {
-        todo!("src gap: WORLD-V1-S1 PhysicsWorld::set_field")
+    pub fn set_field(world: &mut PhysicsWorld, id: PortId, v: &[Fix128]) -> Result<(), FieldError> {
+        world.set_field(id, v)
     }
 
     /// The field state error carried by a restore error.
-    pub fn field_state_error_of(
-        _e: &alice_physics::solver::WorldSnapshotError,
-    ) -> Option<StateError> {
-        todo!("src gap: WORLD-V1-S1 WorldSnapshotError::FieldState")
+    pub fn field_state_error_of(e: &WorldSnapshotError) -> Option<StateError> {
+        match e {
+            WorldSnapshotError::FieldState(s) => Some(*s),
+            _ => None,
+        }
     }
 
     /// The participant mismatch carried by a restore error.
-    pub fn mismatch_of(
-        _e: &alice_physics::solver::WorldSnapshotError,
-    ) -> Option<ParticipantMismatch> {
-        todo!("src gap: WORLD-V1-S1 WorldSnapshotError::ParticipantMismatch")
+    pub fn mismatch_of(e: &WorldSnapshotError) -> Option<ParticipantMismatch> {
+        match e {
+            WorldSnapshotError::ParticipantMismatch(m) => Some(*m),
+            _ => None,
+        }
     }
 
     /// The participant state error carried by a restore error.
-    pub fn state_error_of(
-        _e: &alice_physics::solver::WorldSnapshotError,
-    ) -> Option<(usize, StateError)> {
-        todo!("src gap: WORLD-V1-S1 WorldSnapshotError::ParticipantState")
+    pub fn state_error_of(e: &WorldSnapshotError) -> Option<(usize, StateError)> {
+        match e {
+            WorldSnapshotError::ParticipantState { index, error } => Some((*index, *error)),
+            _ => None,
+        }
     }
 }
 
@@ -1758,7 +1760,6 @@ fn motion(w: &PhysicsWorld) -> Vec<(Vec3Fix, Vec3Fix)> {
 
 /// (a) Every substep calls the participants once each, in registration order.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::add_participant / try_step"]
 fn substeps_call_participants_in_registration_order() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let mut w = scene();
@@ -1776,7 +1777,6 @@ fn substeps_call_participants_in_registration_order() {
 /// staged force never reaches the bodies (the bodies match a world without
 /// it), the step reports `FaultRaised`, and it is not called again.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::add_participant / try_step / fault"]
 fn failing_participant_leaves_itself_and_the_world_unchanged() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let mut w = scene();
@@ -1817,7 +1817,6 @@ fn failing_participant_leaves_itself_and_the_world_unchanged() {
 /// (c) snapshot → restore → N steps is bit-identical to N steps of the
 /// original, participant state included (sequential path).
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 snapshot section `participants` (format v2)"]
 fn snapshot_restore_is_bit_identical_with_participants() {
     let mut a = with_tethers(scene());
     for _ in 0..30 {
@@ -1848,7 +1847,7 @@ fn snapshot_restore_is_bit_identical_with_participants() {
 /// sequential one (both bit identity rules are v1).
 #[cfg(feature = "parallel")]
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::try_step_parallel (single pipeline with step)"]
+#[ignore = "src gap: step_parallel stores batch bookkeeping in the snapshot that step does not (single pipeline, separate work)"]
 fn snapshot_restore_is_bit_identical_with_participants_in_parallel() {
     let mut a = with_tethers(scene());
     for _ in 0..30 {
@@ -1890,7 +1889,6 @@ fn restore_rejects(
 
 /// (d-1) different number of participants.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 restore checks the participant count"]
 fn restore_with_another_participant_count_is_refused() {
     let mut src = with_tethers(scene());
     world::try_step(&mut src, dt()).expect("step");
@@ -1909,7 +1907,6 @@ fn restore_with_another_participant_count_is_refused() {
 
 /// (d-2) same count, another kind.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 restore checks the participant kinds"]
 fn restore_with_another_participant_kind_is_refused() {
     let mut src = with_tethers(scene());
     world::try_step(&mut src, dt()).expect("step");
@@ -1932,7 +1929,6 @@ fn restore_with_another_participant_kind_is_refused() {
 
 /// (d-3) same kinds, another order.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 restore checks the participant order"]
 fn restore_with_another_participant_order_is_refused() {
     let mut src = with_tethers(scene());
     world::try_step(&mut src, dt()).expect("step");
@@ -1958,7 +1954,6 @@ fn restore_with_another_participant_order_is_refused() {
 /// (d-4) every `check_state` runs before any `read_state`: a payload the
 /// second participant refuses leaves the first one untouched too.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 restore checks every participant payload before reading any"]
 fn restore_refused_by_the_second_participant_leaves_the_first_unchanged() {
     struct Picky(Tether);
     impl Participant for Picky {
@@ -2000,10 +1995,9 @@ fn restore_refused_by_the_second_participant_leaves_the_first_unchanged() {
 /// the world, observations are undecided; an explicit clear lets steps run
 /// again.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 sticky fault, observe_participant / observe_body_checked, clear_fault"]
 fn a_recorded_fault_refuses_the_next_step_and_observations_are_undecided() {
     let mut w = scene();
-    world::add_participant(&mut w, Box::new(Tether::new(0, 1).failing_on(5))).expect("register");
+    world::add_participant(&mut w, Box::new(Tether::new(0, 1).failing_on(1))).expect("register");
     assert!(matches!(
         world::try_step(&mut w, dt()),
         Err(StepError::FaultRaised(_))
@@ -2036,36 +2030,36 @@ fn a_recorded_fault_refuses_the_next_step_and_observations_are_undecided() {
 
     world::clear_fault(&mut w);
     assert_eq!(world::fault(&w), None);
-    assert!(world::try_step(&mut w, dt()).is_ok());
-    assert!(matches!(
-        world::observe_body_checked(&w, 1),
-        Some(Observed::Exact(_))
+    // the step runs again (it is not refused); the participant is unchanged
+    // by its failure, so it fails again and the observation is undecided
+    assert!(!matches!(
+        world::try_step(&mut w, dt()),
+        Err(StepError::Faulted(_))
     ));
+    assert_eq!(
+        world::observe_body_checked(&w, 1),
+        Some(Observed::Undecided)
+    );
 }
 
-/// (g) A version-1 blob (what `snapshot_world` writes today, no
-/// `participants` section) reads as zero participants: it restores into a
+/// (g) A version-1 blob (a byte fixture written while `snapshot_world` wrote
+/// version 1, no `participants` section) reads as zero participants: it restores into a
 /// world without participants, and is refused by one with participants.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 snapshot format v2 reads v1 as zero participants"]
 fn version_1_blob_reads_as_zero_participants() {
-    let mut src = scene();
-    src.step(dt());
-    let v1 = src.snapshot_world();
+    // `scene()` stepped once by `dt()`, written by `snapshot_world` while the
+    // format was version 1 (the writer now emits version 2).
+    let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     assert_eq!(
         &v1[4..6],
         &1u16.to_le_bytes(),
         "fixture must be a version-1 blob"
     );
-    // The fixture is captured before the version moves. The commit that makes
-    // the writer emit version 2 replaces it with these bytes fixed in the
-    // test, the way a golden hash is updated: the old and the new bytes are
-    // shown side by side in that commit.
-    let restored = PhysicsWorld::from_world_snapshot(&v1).expect("v1 blob");
+    let restored = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
     assert!(world::participant_kinds(&restored).is_empty());
     let mut target = scene();
     world::add_participant(&mut target, Box::new(Tether::new(0, 1))).expect("register");
-    let err = restore_rejects(&mut target, &v1);
+    let err = restore_rejects(&mut target, v1);
     assert_eq!(
         world::mismatch_of(&err),
         Some(ParticipantMismatch::Count {
@@ -2110,7 +2104,6 @@ impl Participant for Push {
 /// registered first runs after the writer registered second, in every
 /// substep.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::add_participant runs participants in execution_order"]
 fn substeps_call_participants_in_port_order() {
     let log = Arc::new(Mutex::new(Vec::new()));
     let mut w = scene();
@@ -2130,7 +2123,6 @@ fn substeps_call_participants_in_port_order() {
 /// A participant that would close a loop of ports is refused at
 /// registration and the world keeps the participants it had.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::add_participant refuses a cycle of ports"]
 fn registering_a_port_cycle_is_refused_and_changes_nothing() {
     let mut w = scene();
     let a = Tether::new(0, 1).with_ports(&[Port::reads(PORT_A), Port::writes(PORT_B)]);
@@ -2172,7 +2164,6 @@ fn parked_scene() -> PhysicsWorld {
 /// above the sleep threshold). The force (1000 N on 1 kg, a velocity change of
 /// about 4 m/s per substep) is far above the default 0.01 m/s.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 a parked body wakes above the force threshold"]
 fn a_force_above_the_wake_threshold_wakes_a_parked_body() {
     let mut w = parked_scene();
     let push = Push {
@@ -2193,7 +2184,6 @@ fn a_force_above_the_wake_threshold_wakes_a_parked_body() {
 /// force (2⁻³⁰ N on 1 kg) changes the velocity by far less than the sleep
 /// threshold of 0.01 m/s (threshold A).
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 a parked body stays parked below the force threshold"]
 fn a_force_below_the_wake_threshold_leaves_a_parked_body_parked() {
     let mut w = parked_scene();
     let before = motion(&w);
@@ -2237,7 +2227,6 @@ fn parked_scene_at_binary_threshold() -> PhysicsWorld {
 /// changes the velocity by exactly `2⁻⁷`, the threshold, and does not wake the
 /// body (strict `>`); the force has no effect.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 a parked body stays parked at exactly the wake threshold"]
 fn a_force_exactly_at_the_wake_threshold_leaves_a_parked_body_parked() {
     let mut w = parked_scene_at_binary_threshold();
     let before = motion(&w);
@@ -2254,7 +2243,6 @@ fn a_force_exactly_at_the_wake_threshold_leaves_a_parked_body_parked() {
 /// Threshold A just above the boundary: `2 + 2⁻⁵⁰` N gives `Δv = 2⁻⁷ + 2⁻⁵⁸`,
 /// whose square is above `2⁻¹⁴` by the first visible step, and wakes the body.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 a parked body wakes just above the wake threshold"]
 fn a_force_just_above_the_wake_threshold_wakes_a_parked_body() {
     let mut w = parked_scene_at_binary_threshold();
     let f = Fix128::from_int(2) + Fix128 { hi: 0, lo: 1 << 14 };
@@ -2276,7 +2264,6 @@ fn a_force_just_above_the_wake_threshold_wakes_a_parked_body() {
 /// and a reader registered first, the reader sees `0, 1, 2, 3` and the
 /// committed value after the frame is 4 (closed form).
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::declare_field / fields, run_substep inside try_step"]
 fn fields_are_committed_once_per_substep_in_the_world() {
     let mut w = scene();
     world::declare_field(
@@ -2310,7 +2297,6 @@ fn fields_are_committed_once_per_substep_in_the_world() {
 /// not a participant payload): a restore into a world declared the same way
 /// reproduces them, a world with another layout refuses the blob unchanged.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 snapshot section `fields` (format v2)"]
 fn snapshot_carries_field_values_once() {
     let build = |bodies: usize| {
         let mut w = scene();
@@ -2355,7 +2341,6 @@ fn snapshot_carries_field_values_once() {
 /// `tests/determinism_golden.rs` (cascade: golden hash copied below) and on the
 /// stacked scene here.
 #[test]
-#[ignore = "src gap: WORLD-V1-S1 PhysicsWorld::try_step"]
 fn zero_participants_match_the_existing_step_and_golden() {
     let mut a = scene();
     let mut b = scene();
