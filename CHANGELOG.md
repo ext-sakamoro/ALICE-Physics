@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Added
 
+- `world_participant`: world の substep の内側で状態を進める法則の契約 (`Participant` trait、剛体を読みだけで渡す `SubstepCtx`、body ごとの力・トルクの和 `ForceAccumulator`、`StepRule`、snapshot payload の検査、復元時の参加者の数・種類・順の照合 `ParticipantMismatch::classify`、確定値と未定の `Observed` / 3 値の `Verdict`) と、その適合試験 `tests/world_participant_conformance.rs` (契約の型と参加者側の規則は通る、world 側の配線を要する 11 本は `src gap` で ignore) world 側の登録・step・snapshot はまだ無く、既存の挙動の変更なし 使用例 `examples/world_participant_contract.rs`
 - `docs/coverage/orbit.toml`: 天体・軌道 (2 体問題・N 体・摂動・制限 3 体・軌道遷移・宇宙機の姿勢・座標系と時刻系・地表の重力) の網羅表 (Vallado / Curtis / Murray–Dermott / Battin、REBOUND / GMAT / Orekit の積分器・力モデル・座標系、Kepler 軌道の閉合・figure-eight・Pythagorean 3 体・J2 歳差・L4 の Trojan・Hohmann の標準ベンチマークの範囲に対する 109 項目) partial 3 項目の制限は `src/kepler.rs` と `src/nbody.rs` に `LIMITATION(<id>)` コメントで示す (コメントのみ、挙動の変更なし)
 - `docs/coverage/cfd.toml`: 非圧縮流体・乱流 (CFD) の網羅表 (Ferziger–Perić / Pope / Versteeg–Malalasekera、OpenFOAM / Fluent のソルバ・モデル、Ghia / Armaly / Taylor–Green 等の標準ベンチマークの範囲に対する 117 項目、軸は離散化 / 圧力-速度連成 / 移流 / 時間積分 / 境界条件 / 乱流 / 物理 / 圧力ソルバ / 粒子法 / 出力 / ベンチマーク) partial 6 項目の制限は `src/cfd_solver.rs` と `src/fluid.rs` に `LIMITATION(COV-CFD-NNN)` コメントで対応付け (挙動の変更なし)
 - `docs/coverage/multiphase.toml`: 多相流・自由表面の網羅表 (界面捕獲 VOF / level set / PLIC、表面張力、二相の運動量、粒子法の自由表面、界面の相変化条件、非ニュートン相、気泡・液滴、平均化モデル、燃焼の流れ、標準ベンチマークに対する 86 項目) partial 3 項目の制限を `src/multiphase.rs` の `LIMITATION(<id>)` コメントで示す (挙動変更なし)

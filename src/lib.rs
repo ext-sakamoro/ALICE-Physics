@@ -475,6 +475,7 @@ pub mod vibration_wall;
 pub mod warp_risk;
 pub mod wave_ship;
 pub mod wind_zone;
+pub mod world_participant;
 
 pub mod physics2d;
 
