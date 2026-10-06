@@ -214,7 +214,7 @@ fn destruction_from_impact_clamps_abs_speed_times_scale_into_the_radius_range() 
 
 #[test]
 fn destruction_from_projectile_closed_form_center_and_rotation() {
-    // direction = +Y: dot(up, up) = 1 > 0.999 => identity rotation.
+    // direction = +Y: exactly on the Y axis => identity rotation.
     let up =
         destruction_from_projectile(Vec3Fix::from_f32(0.0, 0.0, 0.0), Vec3Fix::UNIT_Y, 1.0, 2.0);
     assert_eq!(up.rotation, QuatFix::IDENTITY);
@@ -230,7 +230,7 @@ fn destruction_from_projectile_closed_form_center_and_rotation() {
         other => panic!("expected Cylinder, got {other:?}"),
     }
 
-    // direction = -Y: dot(up, -up) = -1 < -0.999 => the documented 180-degree
+    // direction = -Y: exactly on the -Y axis => the documented 180-degree
     // special case, QuatFix::new(ONE, ZERO, ZERO, ZERO).
     let down =
         destruction_from_projectile(Vec3Fix::from_f32(0.0, 0.0, 0.0), -Vec3Fix::UNIT_Y, 1.0, 2.0);

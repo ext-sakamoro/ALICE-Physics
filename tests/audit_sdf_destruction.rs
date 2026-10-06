@@ -305,7 +305,6 @@ fn impact_crater_is_centred_on_point_b_and_uses_the_speed_magnitude() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-010: destruction_from_impact panics (f32::clamp assertion) when min_radius > max_radius, with no documented precondition (min 2.0, max 1.0)"]
 fn impact_with_inverted_radius_range_does_not_panic() {
     let contact = Contact {
         depth: fx(0.1),
@@ -317,6 +316,16 @@ fn impact_with_inverted_radius_range_does_not_panic() {
         destruction_from_impact(&contact, fx(4.0), 0.25, 2.0, 1.0)
     }));
     assert!(r.is_ok(), "panicked on min_radius > max_radius");
+    // An inverted pair spans the same range as the ordered one: [1, 2].
+    for (v, want) in [(4.0, 1.0), (6.0, 1.5), (0.0, 1.0), (100.0, 2.0)] {
+        let s = destruction_from_impact(&contact, fx(v), 0.25, 2.0, 1.0);
+        match s.shape {
+            DestructionType::Sphere { radius } => {
+                assert!((radius - want).abs() < 1e-6, "v={v}: {radius} != {want}")
+            }
+            ref o => panic!("expected sphere, got {o:?}"),
+        }
+    }
 }
 
 #[test]
@@ -384,7 +393,6 @@ fn projectile_bore_end_caps_sit_at_entry_and_entry_plus_depth_for_a_unit_directi
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-011: destruction_from_projectile places the centre at entry + direction * depth/2 without normalising, so a non-unit direction (0,0,2), depth 4 gives centre z = 4 instead of 2"]
 fn projectile_centre_does_not_depend_on_the_length_of_the_direction() {
     let a = destruction_from_projectile(v3(0.0, 0.0, 0.0), v3(0.0, 0.0, 1.0), 0.5, 4.0);
     let b = destruction_from_projectile(v3(0.0, 0.0, 0.0), v3(0.0, 0.0, 2.0), 0.5, 4.0);
@@ -392,7 +400,6 @@ fn projectile_centre_does_not_depend_on_the_length_of_the_direction() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S5W3-012: a direction within about 2.6 degrees of +Y or -Y is snapped to the pole (dot > 0.999): direction (sin 2deg, cos 2deg, 0) gives identity rotation, so the bore axis is off by 2 degrees (0.035 per unit length)"]
 fn projectile_direction_near_the_pole_is_not_snapped_to_it() {
     let a = 2.0_f64.to_radians();
     for sign in [1.0, -1.0] {

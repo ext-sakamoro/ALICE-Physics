@@ -360,6 +360,9 @@ were introduced during that release window.
 - `SingleModifiedSdf` が `is_active() == false` の modifier を適用していた (AUD-A-S5W3-007)
 - **Behavior change:** `PlaneCollider::intersect_aabb` が面の完全に裏にある箱で `point_b` に箱の中心の射影を返していた 最も深い頂点の射影を返し、`point_b - point_a = depth · normal` がどの場合も成り立つ (AUD-A-S3W1-002)
 - **Behavior change:** `smoke_fire::reaction_rate_kg_per_m3_s` が `E_a/(R T)` が 40 以上で速度をちょうど 0 にしていた (`exp_fix` の飽和) 指数を分けて前指数因子に掛けるようにし、0 になるのは真の値が Fix128 の分解能を下回る時だけになった (PLA 450 K で 0 → 1.94e-9 kg/(m³·s)) 指数 16 を超える領域では値の丸めも変わる (AUD-A-S3W2-001)
+- `sdf_destruction::destruction_from_impact` が `min_radius > max_radius` で `f32::clamp` の assert により panic していた 2 つの境界はどちらの順でも同じ範囲として扱う (AUD-A-S5W3-010)
+- **Behavior change:** `sdf_destruction::destruction_from_projectile` が穴の中心を正規化していない `direction` で置いていた (`(0,0,2)`・深さ 4 で中心 z = 4) 中心は `entry + 単位方向 * depth/2` になり、`direction` の長さに依らない 単位方向の入力は不変 (AUD-A-S5W3-011)
+- **Behavior change:** `sdf_destruction::destruction_from_projectile` の回転が、±Y から約 2.6 度以内の方向を極に丸めていた (2 度で穴の軸が 0.035 / 単位長ずれる) 極の扱いは方向が厳密に Y 軸上にある時だけにした ちょうど ±Y の入力は不変 (AUD-A-S5W3-012)
 ## [1.4.0] - 2026-09-17
 
 ### Changed

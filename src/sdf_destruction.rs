@@ -337,6 +337,11 @@ fn smooth_subtraction(d_a: f32, d_b: f32, k: f32) -> f32 {
 ///
 /// Generates a spherical crater at the contact point with size
 /// proportional to impact velocity.
+///
+/// The radius is `|impact_velocity| * velocity_to_radius_scale` clamped into
+/// the range spanned by `min_radius` and `max_radius`. The two bounds may be
+/// given in either order: an inverted pair (`min_radius > max_radius`) is
+/// treated as the same range with the bounds swapped (AUD-A-S5W3-010).
 #[cfg(feature = "std")]
 #[must_use]
 pub fn destruction_from_impact(
@@ -347,7 +352,12 @@ pub fn destruction_from_impact(
     max_radius: f32,
 ) -> DestructionShape {
     let speed = impact_velocity.to_f32().abs();
-    let radius = (speed * velocity_to_radius_scale).clamp(min_radius, max_radius);
+    let (lo, hi) = if min_radius <= max_radius {
+        (min_radius, max_radius)
+    } else {
+        (max_radius, min_radius)
+    };
+    let radius = (speed * velocity_to_radius_scale).clamp(lo, hi);
 
     DestructionShape::sphere(contact.point_b, radius)
 }
@@ -365,6 +375,11 @@ pub const fn destruction_from_explosion(
 }
 
 /// Create a projectile bore (cylindrical destruction along a ray).
+///
+/// The bore runs from `entry_point` to `entry_point + bore_depth * dir`,
+/// where `dir` is `direction` normalised: only the direction of `direction`
+/// matters, not its length (AUD-A-S5W3-011). A zero `direction` yields an
+/// unrotated bore centred on `entry_point`.
 #[must_use]
 pub fn destruction_from_projectile(
     entry_point: Vec3Fix,
@@ -372,8 +387,9 @@ pub fn destruction_from_projectile(
     bore_radius: f32,
     bore_depth: f32,
 ) -> DestructionShape {
-    // Cylinder centered at entry + direction * depth/2
-    let center = entry_point + direction * Fix128::from_f32(bore_depth * 0.5);
+    // Cylinder centered at entry + unit_direction * depth/2
+    let unit_direction = direction.normalize();
+    let center = entry_point + unit_direction * Fix128::from_f32(bore_depth * 0.5);
 
     // Compute rotation to align cylinder Y-axis with direction
     let rotation = rotation_from_direction(direction);
@@ -390,15 +406,20 @@ fn rotation_from_direction(dir: Vec3Fix) -> QuatFix {
     let d = dir.normalize();
 
     let dot = up.dot(d);
-    if dot > Fix128::from_f32(0.999) {
+    // up x d = (d.z, 0, -d.x): it vanishes exactly when d lies on the Y axis,
+    // independent of rounding in `normalize`. Only that case (or an off-axis
+    // part too small for its length to be representable) takes the pole
+    // branches; a direction a few degrees off the pole goes through the
+    // general half-angle formula (AUD-A-S5W3-012).
+    let axis = up.cross(d).normalize();
+    if axis.x.is_zero() && axis.z.is_zero() {
+        if dot.is_negative() {
+            // 180 degree rotation around X
+            return QuatFix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+        }
         return QuatFix::IDENTITY;
     }
-    if dot < Fix128::from_f32(-0.999) {
-        // 180 degree rotation around X
-        return QuatFix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
-    }
 
-    let axis = up.cross(d).normalize();
     let angle_cos = dot;
     // half angle: cos(a/2) = sqrt((1+cos(a))/2)
     let half_cos = ((Fix128::ONE + angle_cos).half()).sqrt();
