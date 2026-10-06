@@ -287,14 +287,9 @@ fn main() {
     //     keeps the sum-of-squares used by the sphere's distance formula
     //     well under f32::MAX (~3.4e38) -- so no NaN/Inf is ever produced.
     //
-    //     ⚠️ Finding (not fixed here, see report): at this magnitude
-    //     `strength * dist_fix` itself overflows Fix128's representable
-    //     range and wraps (mod 2^128, `Mul`'s documented contract in
-    //     math.rs), so `min(wrapped, max_force)` can pick the wrapped
-    //     value instead of the intended clamp. The assertion below pins
-    //     the actual (wrapped, not clamped) behavior via the same public
-    //     Fix128 primitives the implementation uses, rather than
-    //     asserting the clamp holds (it does not, at this magnitude).
+    //     At this magnitude `strength * dist` exceeds Fix128's range; the
+    //     force is still clamped to `max_force` (the overflow used to wrap
+    //     and slip past the clamp), pointing towards the surface.
     // ------------------------------------------------------------------
     let extreme_pos = Vec3Fix::new(
         Fix128::from_raw(i64::MAX / 2, u64::MAX),
@@ -305,12 +300,9 @@ fn main() {
     let extreme_attract = panic::catch_unwind(AssertUnwindSafe(|| {
         compute_sdf_force(&body_extreme, &sphere, &attract.force_type)
     }));
-    let (lx, _, _) = extreme_pos.to_f32();
-    let dist_f32 = lx - 1.0; // same formula as unit_sphere()'s eval_fn at (lx, 0, 0)
-    let dist_fix = Fix128::from_f32(dist_f32);
-    let wrapped_force_mag = (Fix128::from_int(3) * dist_fix.abs()).min(Fix128::from_int(30));
-    let expect_extreme = -Vec3Fix::UNIT_X * wrapped_force_mag;
-    println!("[sdf_force] extreme position, attract(): {extreme_attract:?} (expect {expect_extreme}, overflow-wrapped not clamped)");
+    // clamped at max_force = 30, towards the sphere (-x)
+    let expect_extreme = -Vec3Fix::UNIT_X * Fix128::from_int(30);
+    println!("[sdf_force] extreme position, attract(): {extreme_attract:?} (expect {expect_extreme}, clamped to max_force)");
     assert!(extreme_attract.is_ok());
     assert_eq!(extreme_attract.unwrap(), expect_extreme);
 

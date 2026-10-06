@@ -23,7 +23,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `bvh` | step | 21 / 2 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `collider` | step | 20 / 1 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `cone` | step | 5 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
-| `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
+| `contact_cache` | step | 9 / 1 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
 | `cylinder` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
@@ -91,7 +91,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `eulerian_grid` | standalone | 0 / 0 / 0 / 131 / 0 | — |
 | `fatigue` | standalone | 0 / 0 / 0 / 15 / 0 | — |
 | `filament_db` | standalone | 0 / 0 / 0 / 37 / 0 | — |
-| `fillet_stress` | standalone | 0 / 0 / 0 / 5 / 0 | — |
+| `fillet_stress` | standalone | 0 / 0 / 0 / 2 / 0 | — |
 | `filter` | standalone (step 3 of 18 items) | 3 / 0 / 0 / 15 / 0 | C ABI, Python, WebAssembly |
 | `flow_viz` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `fluid` | standalone | 0 / 0 / 0 / 7 / 0 | — |
@@ -134,7 +134,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `pipeline` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `plastic` | standalone | 0 / 0 / 0 / 12 / 1 | — |
 | `pressure` | standalone | 0 / 0 / 0 / 7 / 0 | — |
-| `prestressed` | standalone | 0 / 0 / 0 / 7 / 0 | — |
+| `prestressed` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `print_orientation` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `print_pipeline_solver` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `privacy` | standalone (step 3 of 44 items) | 3 / 0 / 0 / 41 / 0 | C ABI, Python, WebAssembly |
@@ -172,14 +172,14 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `surface_tension_csf` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `thermal` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `thermal_stress` | standalone | 0 / 0 / 0 / 3 / 0 | — |
-| `thin_wall` | standalone | 0 / 0 / 0 / 10 / 0 | — |
+| `thin_wall` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `transient_thermal` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `turbulence` | standalone | 0 / 0 / 0 / 33 / 0 | — |
 | `vehicle` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `vehicle_dynamics` | standalone | 0 / 0 / 0 / 83 / 0 | — |
-| `vibration_wall` | standalone | 0 / 0 / 0 / 4 / 0 | — |
+| `vibration_wall` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
-| `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
+| `wave_ship` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `world_character` | standalone | 0 / 0 / 0 / 2 / 0 | — |
 | `world_participant` | standalone | 0 / 0 / 0 / 88 / 0 | — |
