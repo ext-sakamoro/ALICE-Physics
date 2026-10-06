@@ -498,7 +498,9 @@ impl<const BINS: usize> DDSketchN<BINS> {
         if idx < 0 || idx >= BINS as i64 {
             self.make_room(key);
             // after a collapse the key may still lie below the window
-            idx = key.saturating_add(i64::from(self.offset)).clamp(0, BINS as i64 - 1);
+            idx = key
+                .saturating_add(i64::from(self.offset))
+                .clamp(0, BINS as i64 - 1);
         }
         let bins = if negative {
             &mut self.negative_bins
