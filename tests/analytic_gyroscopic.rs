@@ -449,8 +449,10 @@ fn isotropic_scene(backend: SolverBackend) -> PhysicsWorld {
 /// pre-solve restitution and static friction of the contact response, which
 /// change the colliding pair, and again for the exact-logarithm velocity
 /// re-derivation, which changes every spinning XPBD body; the term itself
-/// leaves every body of this scene on its previous path).
-const GOLDEN_ISOTROPIC_XPBD: u64 = 0xa78f_4abf_b26c_12be;
+/// leaves every body of this scene on its previous path; re-recorded when
+/// XPBD began keeping the predicted velocity of bodies the solve did not move,
+/// `v = v_pred + Δx_corr / h`).
+const GOLDEN_ISOTROPIC_XPBD: u64 = 0xf7a1_c604_426d_f42d;
 // The TGS value was re-recorded when the TGS orientation integrator became
 // the exact exponential map.
 const GOLDEN_ISOTROPIC_TGS: u64 = 0x106c_4a10_6420_8aa4;

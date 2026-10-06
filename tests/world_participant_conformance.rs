@@ -2391,7 +2391,9 @@ fn zero_participants_match_the_existing_step_and_golden() {
     assert_eq!(cascade_hash(&w), GOLDEN_CASCADE);
 }
 
-const GOLDEN_CASCADE: &str = "f442b544c0eab74a004567061ab7b573d6892158b2c31480b6d133e2e5970be2";
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
+const GOLDEN_CASCADE: &str = "95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381";
 
 fn cascade_hash(w: &PhysicsWorld) -> String {
     use sha2::{Digest, Sha256};

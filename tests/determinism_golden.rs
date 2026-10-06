@@ -121,7 +121,9 @@ fn assert_golden(scenario: &str, actual: [u8; 32], expected_hex: &str) {
 /// never used. Contacts are pinned by `tests/determinism_golden_contacts.rs`.
 /// No SIMD-only paths involved (SIMD is opt-in via `simd` feature; this test
 /// runs with default features).
-const GOLDEN_CASCADE: &str = "f442b544c0eab74a004567061ab7b573d6892158b2c31480b6d133e2e5970be2";
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
+const GOLDEN_CASCADE: &str = "95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381";
 
 #[test]
 fn determinism_cascade() {
@@ -169,7 +171,9 @@ fn determinism_cascade() {
 /// **Scenario 2**: two dynamic spheres with only gravity, no interaction,
 /// for 60 steps. Simplest possible fixture — divergence here indicates
 /// a fundamental Fix128 / gravity integration bug.
-const GOLDEN_FREEFALL: &str = "49598cff32da429d198e5b281f9d46d89cb5dc6a430d368942b0e5249c779905";
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
+const GOLDEN_FREEFALL: &str = "cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b";
 
 #[test]
 fn determinism_freefall() {
@@ -208,8 +212,10 @@ fn determinism_freefall() {
 /// **Scenario 3**: single dynamic body with an initial velocity vector,
 /// no gravity, 120 steps. Exercises pure kinematic integration without
 /// any constraint / contact / gravity coupling.
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_KINEMATIC_DRIFT: &str =
-    "c79a3ee897fe95bde1bb5660ceb49552aacec0741ec4b8a2f5d46fd6c62ae099";
+    "7d12c7c0d5d74a33655b3eaa10bfdb9ffc5a82fa2cfc670746adddded772fe9e";
 
 #[test]
 fn determinism_kinematic_drift() {
@@ -263,8 +269,10 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 /// linked by a fixed-length `DistanceConstraint`; one heavy pivot,
 /// one lighter swinging mass. Exercises constraint iteration under
 /// gravity for 240 steps.
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_JOINT_PENDULUM: &str =
-    "96bf5b9e1c565b5331c94eeb1e73dc209e7c7ccec1582b617779541eeb4e3c1e";
+    "4c28a6fb32ae076f393c762e590466e9d2e9786a5efacc2c1a114cdc66be5978";
 
 #[test]
 fn determinism_joint_pendulum() {
@@ -401,8 +409,10 @@ fn determinism_fluid_step() {
 /// **Scenario 7**: dynamic body glancing past a static SDF sphere with
 /// speculative CCD enabled, 90 steps. Exercises the SDF collision path
 /// with continuous collision detection.
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_SDF_CCD_GLANCE: &str =
-    "822813e3a278e960c30acb54ece430b0c51ddda325aa4ebb72009b26a6f62a4e";
+    "df2929b16c76a1ceeddfc9740674062a8ab9386b0af95a34ded0170dbba78f0f";
 
 /// Unit sphere SDF centred at origin (f32-native per `SdfField` trait).
 ///

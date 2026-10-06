@@ -212,8 +212,10 @@ fn assert_no_rotation(scenario: &str, w: &PhysicsWorld) {
 ///   the ball rests on the ground: `|y − 1/2| < 1e-3 m` and `|v| < 2 g h`
 ///   (the restitution threshold, below which an approach is treated as
 ///   resting and does not bounce).
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_BOUNCE: &str =
-    "98ffdc63cf108e4c24c42509bc1e5f4351d6a2e06ffccd1116feb74a540d98fa";
+    "90afe915e76856fcc40198c731e8df34594f7b455c0a39324ef5878c294fc7e0";
 
 #[test]
 fn determinism_contact_bounce() {
@@ -294,8 +296,10 @@ fn determinism_contact_bounce() {
 /// closed form by up to `μ g h` and the position by `μ g h t`; doubled:
 /// `2 μ g h` for `v` and `2 μ g h t` for `x`. The ground tilt at `x` adds a
 /// tangential `g x / R ≤ 2.3e-5 m/s²`, below `1e-4 m` over the run.
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_SLIDE: &str =
-    "0dd44b4f158d51042a09e46c737a285159046a47795f6cb45f1a732fded01b91";
+    "82c881583c268069f3b7751ce6afa09353343620d4354028592e06363ce8a591";
 
 #[test]
 fn determinism_contact_slide() {
@@ -415,8 +419,10 @@ fn determinism_contact_slope() {
 ///   (all normals are vertical). The sag bound is `n³ g h² ≈ 1.2e-3 m` for
 ///   `n = 3`: one iteration leaves each contact an overlap of the order of
 ///   the weight it carries times `g h²`.
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_STACK: &str =
-    "7ae4d4fc88416f79adb5bbcde4185a62cc2cfad22e8dfdc682b3adcfd5a48f61";
+    "532dc2852b71eb9da1ca3a62a4f4063f2e1151561744d15852f9fd9dee6b28ad";
 
 #[test]
 fn determinism_contact_stack() {
@@ -478,8 +484,10 @@ fn determinism_contact_stack() {
 ///   `|y − 1/2| < 1e-3 m` and `|v| < 2 g h` after 2 s (bounce series ends at
 ///   `t_f (1 + e) / (1 − e) ≈ 1.3 s`), `x` within `1e-4` of `3` (the ground
 ///   tilt `3e-6` at `x = 3`).
+/// Re-recorded when XPBD began keeping the predicted velocity of bodies the
+/// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_VETO: &str =
-    "9dad1dc782bc7b83bc77ceeba69d3612a18fdc0f33060231bbdd4b0d7915cb94";
+    "cf1a50cd1de2b13ddf8e8b067f44a878c73f327dd3788102831369776117fb0d";
 
 #[test]
 fn determinism_contact_veto() {
