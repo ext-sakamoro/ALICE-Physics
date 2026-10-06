@@ -178,7 +178,15 @@ impl LaplaceNoise {
     #[inline]
     pub fn sample(&mut self) -> f64 {
         // Inverse transform sampling: X = μ - b * sign(U - 0.5) * ln(1 - 2|U - 0.5|)
-        let u = self.rng.next_f64() - 0.5;
+        // U is drawn from [0, 1); U = 0 would give ln(0) = -inf, so that one value
+        // is moved half a step in (2^-54), every other draw is unchanged
+        let raw = self.rng.next_f64();
+        let raw = if raw == 0.0 {
+            0.5 / (1u64 << 53) as f64
+        } else {
+            raw
+        };
+        let u = raw - 0.5;
         let sign = if u < 0.0 { -1.0 } else { 1.0 };
         -sign * self.scale * crate::det_math::ln64(2.0f64.mul_add(-u.abs(), 1.0))
     }
