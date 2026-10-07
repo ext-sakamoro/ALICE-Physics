@@ -18,6 +18,8 @@
 //!   `SolverBackend::Xpbd` and `SolverBackend::Tgs`, give bit-identical
 //!   positions, velocities and angular velocities for runs that differ only
 //!   in the initial orientations of the two spheres;
+//! - a body with only two equal moments keeps the rotated response (a quarter
+//!   turn moves its odd moment to the swapped axis);
 //! - (c) an anisotropic body (`inv_inertia = (1, 1/2, 1/4)`) tumbling under a
 //!   torque and sliding on the ground keeps the state hash it had before the
 //!   isotropic case was handled separately (pinned constants, both backends).
@@ -113,6 +115,49 @@ fn isotropic_impulse_at_point_response_is_c_r_cross_j_for_every_orientation() {
         differ += usize::from(b.angular_velocity != expected);
     }
     assert_eq!(differ, 0, "{differ}/64 orientations differ from c·(r×J)");
+}
+
+/// oracle: a body with only two equal principal moments is not isotropic and
+/// keeps the rotated response. A quarter turn about a body axis `k` swaps the
+/// other two axes, so for `inv_inertia` with `c` on two axes and `d = 1/4` on
+/// the third, `R diag Rᵀ` is the diagonal with `d` moved to the swapped axis:
+/// `ω = (c τ_x, d τ_y, c τ_z)` for `d` on body z turned about x, and so on.
+/// The closed form is compared to `1e-12` (the quarter-turn quaternion is not
+/// exact in fixed point); the short-circuit would put `c` on every axis.
+#[test]
+fn two_equal_moments_keep_the_rotated_response() {
+    let d = fr(1, 4);
+    let t = tau();
+    let cases = [
+        // (inv_inertia, turn axis, expected per-axis factor)
+        (v3(c(), c(), d), Vec3Fix::UNIT_X, [c(), d, c()]),
+        (v3(d, c(), c()), Vec3Fix::UNIT_Y, [c(), c(), d]),
+        (v3(c(), d, c()), Vec3Fix::UNIT_Z, [d, c(), c()]),
+    ];
+    for (n, (inv, axis, k)) in cases.into_iter().enumerate() {
+        let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        b.inv_inertia = inv;
+        b.set_rotation(QuatFix::from_axis_angle(axis, Fix128::HALF_PI).normalize());
+        b.add_torque(t, Fix128::ONE);
+        let got = [
+            b.angular_velocity.x.to_f64(),
+            b.angular_velocity.y.to_f64(),
+            b.angular_velocity.z.to_f64(),
+        ];
+        let want = [
+            (t.x * k[0]).to_f64(),
+            (t.y * k[1]).to_f64(),
+            (t.z * k[2]).to_f64(),
+        ];
+        for i in 0..3 {
+            assert!(
+                (got[i] - want[i]).abs() < 1e-12,
+                "case {n} axis {i}: ω {} vs closed form {}",
+                got[i],
+                want[i]
+            );
+        }
+    }
 }
 
 const GROUND_R: i64 = 1_000_000;
