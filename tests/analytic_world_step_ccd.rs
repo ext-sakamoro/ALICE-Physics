@@ -628,16 +628,21 @@ fn an_overlap_with_a_still_body_does_not_hide_the_wall() {
 /// binary).
 const TALL_PLATE_STOP: f64 = 5.0 - 1.0 / 64.0 - 0.25;
 
+/// The angle `2πk/n` of the `k`-th of `n` points on a ring.
+fn ring_angle(k: usize, n: usize) -> Fix128 {
+    Fix128::TWO_PI * Fix128::from_int(k as i64) / Fix128::from_int(n as i64)
+}
+
 /// `n` still spheres of radius `1/4` on a ring in the plane `x = 0`, each
 /// `1/2 − 2⁻¹²` from the origin: a sphere of radius `1/4` at the origin
 /// overlaps every one of them by `2⁻¹²`, and the normal of every overlap has
 /// no `x` component (moving along `+x` does not move into any of them).
 fn ring_of_spheres(w: &mut PhysicsWorld, n: usize) {
-    let dist = 0.5 - 1.0 / 4096.0;
+    let dist = f(0.5 - 1.0 / 4096.0);
     for k in 0..n {
-        let a = core::f64::consts::TAU * k as f64 / n as f64;
+        let (s, c) = ring_angle(k, n).sin_cos();
         w.add_body_with_radius(
-            RigidBody::new_static(v3(0.0, dist * a.cos(), dist * a.sin())),
+            RigidBody::new_static(Vec3Fix::new(Fix128::ZERO, dist * c, dist * s)),
             f(0.25),
         );
     }
@@ -648,11 +653,11 @@ fn ring_of_spheres(w: &mut PhysicsWorld, n: usize) {
 /// it: a sphere of radius `1/4` at the origin overlaps every one by `2⁻¹²`.
 fn ring_of_planes(w: &mut PhysicsWorld, n: usize) {
     for k in 0..n {
-        let a = core::f64::consts::TAU * k as f64 / n as f64;
+        let (s, c) = ring_angle(k, n).sin_cos();
         // Outward normal `u`; the solid is `u·p ≥ 1/4 − 2⁻¹²`, the plane's
         // normal (toward the free side) is `−u`.
         w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
-            v3(0.0, -a.cos(), -a.sin()),
+            Vec3Fix::new(Fix128::ZERO, -c, -s),
             f(-(0.25 - 1.0 / 4096.0)),
         )));
     }
