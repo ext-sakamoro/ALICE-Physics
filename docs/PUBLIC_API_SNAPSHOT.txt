@@ -13447,6 +13447,9 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::continuous_collision(&self) -> alice_physics::WorldCcdConfig
+pub fn alice_physics::solver::PhysicsWorld::set_continuous_collision(&mut self, alice_physics::WorldCcdConfig)
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::debug_draw(&self, &alice_physics::debug_render::DebugDrawFlags, &mut alice_physics::debug_render::DebugDrawData)
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::emit_contact_audio(&self, &mut alice_physics::audio_physics::AudioGenerator)
@@ -14905,6 +14908,32 @@ impl core::marker::Unpin for alice_physics::joint_extra::WeldJoint
 impl core::marker::UnsafeUnpin for alice_physics::joint_extra::WeldJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint_extra::WeldJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint_extra::WeldJoint
+#[non_exhaustive] pub struct alice_physics::prelude::WorldCcdConfig
+impl alice_physics::WorldCcdConfig
+pub const fn alice_physics::WorldCcdConfig::is_enabled(&self) -> bool
+pub const fn alice_physics::WorldCcdConfig::motion_threshold(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::WorldCcdConfig::new() -> Self
+pub const fn alice_physics::WorldCcdConfig::on() -> Self
+pub const fn alice_physics::WorldCcdConfig::with_enabled(self, bool) -> Self
+pub const fn alice_physics::WorldCcdConfig::with_motion_threshold(self, alice_physics::math::Fix128) -> Self
+impl core::clone::Clone for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::WorldCcdConfig
+impl core::cmp::PartialEq for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::default() -> Self
+impl core::fmt::Debug for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::WorldCcdConfig
+impl core::marker::StructuralPartialEq for alice_physics::WorldCcdConfig
+impl core::marker::Freeze for alice_physics::WorldCcdConfig
+impl core::marker::Send for alice_physics::WorldCcdConfig
+impl core::marker::Sync for alice_physics::WorldCcdConfig
+impl core::marker::Unpin for alice_physics::WorldCcdConfig
+impl core::marker::UnsafeUnpin for alice_physics::WorldCcdConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::WorldCcdConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::WorldCcdConfig
 pub struct alice_physics::prelude::WorldSnapshot
 pub alice_physics::prelude::WorldSnapshot::bodies: alloc::vec::Vec<alice_physics::interpolation::BodySnapshot>
 impl alice_physics::interpolation::WorldSnapshot
@@ -18041,6 +18070,9 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::continuous_collision(&self) -> alice_physics::WorldCcdConfig
+pub fn alice_physics::solver::PhysicsWorld::set_continuous_collision(&mut self, alice_physics::WorldCcdConfig)
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::debug_draw(&self, &alice_physics::debug_render::DebugDrawFlags, &mut alice_physics::debug_render::DebugDrawData)
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::emit_contact_audio(&self, &mut alice_physics::audio_physics::AudioGenerator)
@@ -18216,6 +18248,32 @@ impl core::marker::Unpin for alice_physics::solver::TgsCacheStats
 impl core::marker::UnsafeUnpin for alice_physics::solver::TgsCacheStats
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::TgsCacheStats
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::TgsCacheStats
+#[non_exhaustive] pub struct alice_physics::solver::WorldCcdConfig
+impl alice_physics::WorldCcdConfig
+pub const fn alice_physics::WorldCcdConfig::is_enabled(&self) -> bool
+pub const fn alice_physics::WorldCcdConfig::motion_threshold(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::WorldCcdConfig::new() -> Self
+pub const fn alice_physics::WorldCcdConfig::on() -> Self
+pub const fn alice_physics::WorldCcdConfig::with_enabled(self, bool) -> Self
+pub const fn alice_physics::WorldCcdConfig::with_motion_threshold(self, alice_physics::math::Fix128) -> Self
+impl core::clone::Clone for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::WorldCcdConfig
+impl core::cmp::PartialEq for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::default() -> Self
+impl core::fmt::Debug for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::WorldCcdConfig
+impl core::marker::StructuralPartialEq for alice_physics::WorldCcdConfig
+impl core::marker::Freeze for alice_physics::WorldCcdConfig
+impl core::marker::Send for alice_physics::WorldCcdConfig
+impl core::marker::Sync for alice_physics::WorldCcdConfig
+impl core::marker::Unpin for alice_physics::WorldCcdConfig
+impl core::marker::UnsafeUnpin for alice_physics::WorldCcdConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::WorldCcdConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::WorldCcdConfig
 pub trait alice_physics::solver::ContactModifier: core::marker::Send + core::marker::Sync
 pub fn alice_physics::solver::ContactModifier::modify_contact(&self, usize, usize, &mut alice_physics::collider::Contact, &mut alice_physics::math::Fix128, &mut alice_physics::math::Fix128) -> bool
 pub type alice_physics::solver::PhysicsConfig = alice_physics::solver::SolverConfig
@@ -24474,6 +24532,9 @@ pub fn alice_physics::solver::PhysicsWorld::cast_ray_all(&self, alice_physics::m
 pub fn alice_physics::solver::PhysicsWorld::cast_ray_any(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::shape_raycast::RayFilter) -> bool
 pub fn alice_physics::solver::PhysicsWorld::ray_caster(&self, alice_physics::shape_raycast::RayFilter) -> alice_physics::shape_raycast::WorldRayCaster<'_>
 impl alice_physics::solver::PhysicsWorld
+pub fn alice_physics::solver::PhysicsWorld::continuous_collision(&self) -> alice_physics::WorldCcdConfig
+pub fn alice_physics::solver::PhysicsWorld::set_continuous_collision(&mut self, alice_physics::WorldCcdConfig)
+impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::debug_draw(&self, &alice_physics::debug_render::DebugDrawFlags, &mut alice_physics::debug_render::DebugDrawData)
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::emit_contact_audio(&self, &mut alice_physics::audio_physics::AudioGenerator)
@@ -26040,6 +26101,32 @@ impl core::marker::Unpin for alice_physics::joint_extra::WeldJoint
 impl core::marker::UnsafeUnpin for alice_physics::joint_extra::WeldJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint_extra::WeldJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint_extra::WeldJoint
+#[non_exhaustive] pub struct alice_physics::WorldCcdConfig
+impl alice_physics::WorldCcdConfig
+pub const fn alice_physics::WorldCcdConfig::is_enabled(&self) -> bool
+pub const fn alice_physics::WorldCcdConfig::motion_threshold(&self) -> alice_physics::math::Fix128
+pub const fn alice_physics::WorldCcdConfig::new() -> Self
+pub const fn alice_physics::WorldCcdConfig::on() -> Self
+pub const fn alice_physics::WorldCcdConfig::with_enabled(self, bool) -> Self
+pub const fn alice_physics::WorldCcdConfig::with_motion_threshold(self, alice_physics::math::Fix128) -> Self
+impl core::clone::Clone for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::WorldCcdConfig
+impl core::cmp::PartialEq for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::eq(&self, &Self) -> bool
+impl core::default::Default for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::default() -> Self
+impl core::fmt::Debug for alice_physics::WorldCcdConfig
+pub fn alice_physics::WorldCcdConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::WorldCcdConfig
+impl core::marker::StructuralPartialEq for alice_physics::WorldCcdConfig
+impl core::marker::Freeze for alice_physics::WorldCcdConfig
+impl core::marker::Send for alice_physics::WorldCcdConfig
+impl core::marker::Sync for alice_physics::WorldCcdConfig
+impl core::marker::Unpin for alice_physics::WorldCcdConfig
+impl core::marker::UnsafeUnpin for alice_physics::WorldCcdConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::WorldCcdConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::WorldCcdConfig
 pub struct alice_physics::WorldSnapshot
 pub alice_physics::WorldSnapshot::bodies: alloc::vec::Vec<alice_physics::interpolation::BodySnapshot>
 impl alice_physics::interpolation::WorldSnapshot

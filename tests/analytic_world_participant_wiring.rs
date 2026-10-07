@@ -438,21 +438,27 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
     }
 }
 
-/// The version 2 blob of a world without participants is the version 1
-/// payload followed by an empty `participants` section, no fault and an empty
-/// `fields` section; only the version, the length and the checksum differ.
+/// The version 3 blob of a world without participants is the version 1
+/// payload followed by an empty `participants` section, no fault, an empty
+/// `fields` section and the continuous collision section of the default
+/// setting (off, threshold 1); only the version, the length and the checksum
+/// differ.
 #[test]
-fn a_version_2_blob_extends_the_version_1_payload() {
+fn a_version_3_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
-    let v2 = w.snapshot_world();
-    assert_eq!(&v2[0..4], &v1[0..4]);
-    assert_eq!(&v2[4..6], &2u16.to_le_bytes());
+    let v3 = w.snapshot_world();
+    assert_eq!(&v3[0..4], &v1[0..4]);
+    assert_eq!(&v3[4..6], &3u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
-    let (l1, l2) = (len(v1), len(&v2));
-    assert_eq!(l2, l1 + 8 + 1 + 8);
-    assert_eq!(&v2[16..16 + l1], &v1[16..16 + l1]);
-    assert_eq!(&v2[16 + l1..16 + l2], &[0u8; 17][..]);
+    let (l1, l3) = (len(v1), len(&v3));
+    let mut tail = vec![0u8; 17];
+    tail.push(0); // continuous collision off
+    tail.extend_from_slice(&1i64.to_le_bytes()); // threshold 1: hi
+    tail.extend_from_slice(&0u64.to_le_bytes()); // lo
+    assert_eq!(l3, l1 + tail.len());
+    assert_eq!(&v3[16..16 + l1], &v1[16..16 + l1]);
+    assert_eq!(&v3[16 + l1..16 + l3], &tail[..]);
 }
 
 /// The version 1 fixture steps on as the world it was taken from: a world
@@ -769,9 +775,10 @@ fn an_unknown_fault_code_is_refused() {
     let mut w = PhysicsWorld::new(free_config(SolverBackend::Xpbd));
     w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     let mut blob = w.snapshot_world();
-    // the fault code sits before the empty fields section (8 bytes) and the
-    // checksum (8 bytes)
-    let at = blob.len() - 8 - 8 - 1;
+    // the fault code sits before the empty fields section (8 bytes), the
+    // continuous collision section (17 bytes, version 3) and the checksum
+    // (8 bytes)
+    let at = blob.len() - 8 - 8 - 17 - 1;
     assert_eq!(blob[at], 0);
     blob[at] = 9;
     let body_end = blob.len() - 8;
