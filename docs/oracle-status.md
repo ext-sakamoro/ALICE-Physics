@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5301 |
+| 🟢 Not ignored (run by CI) | 5309 |
 | 🔴 Red by design | 199 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5526** |
+| **Total** | **5534** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -275,14 +275,14 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5301)
+## 🟢 Not ignored (5309)
 
 Per-file counts (the test names are in `tests/`):
 
 | File | Tests |
 |------|-------|
 | `integration_physics.rs` | 75 |
-| `world_participant_conformance.rs` | 51 |
+| `world_participant_conformance.rs` | 52 |
 | `audit_joint.rs` | 46 |
 | `audit_solver.rs` | 42 |
 | `engineering_oracles_fluid.rs` | 40 |
@@ -339,6 +339,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_vehicle_dynamics.rs` | 21 |
 | `audit_torus.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
+| `analytic_coupling_medium.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
 | `analytic_joint_extra_wiring.rs` | 20 |
 | `analytic_linear_solver.rs` | 20 |
@@ -442,7 +443,6 @@ Per-file counts (the test names are in `tests/`):
 | `sleep_skip.rs` | 14 |
 | `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
-| `analytic_coupling_medium.rs` | 13 |
 | `analytic_csf_wiring.rs` | 13 |
 | `analytic_cubic_elastic_fem_wiring.rs` | 13 |
 | `analytic_erosion_wiring.rs` | 13 |
