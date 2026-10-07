@@ -1292,4 +1292,569 @@ mod tests {
         dedup.dedup();
         assert_eq!(dedup.len(), pairs.len(), "no duplicate pairs");
     }
+
+    fn params(strength: i64, range: i64, k: i64, kappa: i64) -> InteractionParams {
+        InteractionParams {
+            strength_n: Fix128::from_int(strength),
+            range_m: Fix128::from_int(range),
+            body_stiffness: Fix128::from_int(k),
+            sliding_friction: Fix128::from_int(kappa),
+        }
+    }
+
+    fn v2(x: i64, y: i64) -> Vec2Fix {
+        Vec2Fix::new(Fix128::from_int(x), Fix128::from_int(y))
+    }
+
+    fn ped_at(position: Vec2Fix) -> Pedestrian {
+        Pedestrian {
+            position,
+            velocity: Vec2Fix::ZERO,
+            radius_m: Fix128::from_ratio(1, 2),
+            mass_kg: Fix128::ONE,
+            desired_speed_m_s: Fix128::ZERO,
+            desired_direction: Vec2Fix::ZERO,
+            relaxation_time_s: Fix128::ONE,
+        }
+    }
+
+    fn model(ped: InteractionParams, wall: InteractionParams, anisotropy: Fix128) -> SocialForce {
+        SocialForce::new(ped, wall, anisotropy, Fix128::from_int(5)).expect("valid model")
+    }
+
+    /// oracle: every parameter check of `SocialForce::new` and of a
+    /// pedestrian names its own error, and each error prints the message of
+    /// its documentation (a step error forwards the crowd error's message).
+    #[test]
+    fn construction_errors_and_messages() {
+        let ok = params(1, 1, 0, 0);
+        let new = |p, w, a: Fix128, c: Fix128| SocialForce::new(p, w, a, c).err();
+        assert_eq!(
+            new(params(1, 0, 0, 0), ok, Fix128::ZERO, Fix128::ONE),
+            Some(CrowdForceError::NonPositiveRange)
+        );
+        assert_eq!(
+            new(ok, params(1, 1, -1, 0), Fix128::ZERO, Fix128::ONE),
+            Some(CrowdForceError::NegativeCoefficient)
+        );
+        assert_eq!(
+            new(ok, ok, Fix128::from_int(2), Fix128::ONE),
+            Some(CrowdForceError::AnisotropyOutOfRange)
+        );
+        assert_eq!(
+            new(ok, ok, -Fix128::ONE, Fix128::ONE),
+            Some(CrowdForceError::AnisotropyOutOfRange)
+        );
+        assert_eq!(
+            new(ok, ok, Fix128::ZERO, Fix128::ZERO),
+            Some(CrowdForceError::NonPositiveCutoff)
+        );
+        let m = model(ok, ok, Fix128::ZERO);
+        let base = ped_at(Vec2Fix::ZERO);
+        let bad = [
+            (
+                Pedestrian {
+                    relaxation_time_s: Fix128::ZERO,
+                    ..base
+                },
+                CrowdForceError::NonPositiveRelaxationTime { index: 0 },
+            ),
+            (
+                Pedestrian {
+                    mass_kg: Fix128::ZERO,
+                    ..base
+                },
+                CrowdForceError::NonPositiveMass { index: 0 },
+            ),
+            (
+                Pedestrian {
+                    radius_m: -Fix128::ONE,
+                    ..base
+                },
+                CrowdForceError::NegativeRadius { index: 0 },
+            ),
+            (
+                Pedestrian {
+                    desired_speed_m_s: -Fix128::ONE,
+                    ..base
+                },
+                CrowdForceError::NegativeDesiredSpeed { index: 0 },
+            ),
+        ];
+        for (p, e) in bad {
+            assert_eq!(m.driving_force(&p), Err(e));
+        }
+        let messages = [
+            (
+                CrowdForceError::NonPositiveRange,
+                "interaction range B must be positive",
+            ),
+            (
+                CrowdForceError::NegativeCoefficient,
+                "interaction strength, stiffness and friction must be non-negative",
+            ),
+            (
+                CrowdForceError::AnisotropyOutOfRange,
+                "view-angle weight must be in [0, 1]",
+            ),
+            (
+                CrowdForceError::NonPositiveCutoff,
+                "pair cutoff must be positive",
+            ),
+            (
+                CrowdForceError::NonPositiveRelaxationTime { index: 3 },
+                "pedestrian 3: relaxation time must be positive",
+            ),
+            (
+                CrowdForceError::NonPositiveMass { index: 3 },
+                "pedestrian 3: mass must be positive",
+            ),
+            (
+                CrowdForceError::NegativeRadius { index: 3 },
+                "pedestrian 3: radius must be non-negative",
+            ),
+            (
+                CrowdForceError::NegativeDesiredSpeed { index: 3 },
+                "pedestrian 3: desired speed must be non-negative",
+            ),
+            (
+                CrowdForceError::NonPositiveTimeStep,
+                "time step must be positive",
+            ),
+            (
+                CrowdForceError::NonPositiveSpeedCap,
+                "speed-cap ratio must be positive",
+            ),
+        ];
+        for (e, text) in messages {
+            assert_eq!(e.to_string(), text);
+            assert_eq!(CrowdStepError::from(e).to_string(), text);
+        }
+        assert_eq!(
+            CrowdStepError::Overflow.to_string(),
+            "a value of the step is outside the fixed-point range"
+        );
+    }
+
+    /// oracle: the driving force is `m·(v₀·ê − v)/τ`: `m = 2, τ = 1/2,
+    /// v₀ = 3, ê = (0, 1), v = (1, 0)` gives `(−1, 3)·4 = (−4, 12)`. The view
+    /// weight is `λ + (1 − λ)(1 + cos φ)/2` with `cos φ = −n·ê`: for
+    /// `λ = 1/4, ê = (1, 0)` it is 1 for `n = (−1, 0)`, 1/4 for `n = (1, 0)`
+    /// and 5/8 for `n = (0, 1)`; a pedestrian with no heading weighs 1.
+    #[test]
+    fn driving_force_and_view_weight_closed_form() {
+        let m = model(
+            params(1, 1, 0, 0),
+            params(1, 1, 0, 0),
+            Fix128::from_ratio(1, 4),
+        );
+        let p = Pedestrian {
+            velocity: v2(1, 0),
+            mass_kg: Fix128::from_int(2),
+            desired_speed_m_s: Fix128::from_int(3),
+            desired_direction: v2(0, 1),
+            relaxation_time_s: Fix128::from_ratio(1, 2),
+            ..ped_at(Vec2Fix::ZERO)
+        };
+        assert_eq!(m.driving_force(&p), Ok(v2(-4, 12)));
+        let walker = Pedestrian {
+            desired_direction: v2(1, 0),
+            ..ped_at(Vec2Fix::ZERO)
+        };
+        assert_eq!(m.anisotropy_weight(&walker, v2(-1, 0)), Fix128::ONE);
+        assert_eq!(
+            m.anisotropy_weight(&walker, v2(1, 0)),
+            Fix128::from_ratio(1, 4)
+        );
+        assert_eq!(
+            m.anisotropy_weight(&walker, v2(0, 1)),
+            Fix128::from_ratio(5, 8)
+        );
+        assert_eq!(
+            m.anisotropy_weight(&ped_at(Vec2Fix::ZERO), v2(1, 0)),
+            Fix128::ONE
+        );
+    }
+
+    /// oracle: two pedestrians of radius 1/2 at distance 2 (no overlap,
+    /// `r − d = −1`) repel with `A·exp((r − d)/B) = 2/e` along the line
+    /// between them, equal and opposite; with strength 0 and centres 1/2
+    /// apart (overlap 1/2), the contact force on A is `k·(1/2)·n +
+    /// κ·(1/2)·Δvₜ·t` with `n = (−1, 0)`, `t = n⊥ = (0, −1)`, `Δvₜ =
+    /// (v_B − v_A)·t = −2`: `(−2, 0) + (0, 3) = (−2, 3)` for `k = 4, κ = 3`.
+    /// Coincident centres give no force.
+    #[test]
+    fn pair_forces_closed_form() {
+        let social = model(params(2, 1, 0, 0), params(1, 1, 0, 0), Fix128::ONE);
+        let a = ped_at(Vec2Fix::ZERO);
+        let b = ped_at(v2(2, 0));
+        let (fa, fb) = social.pair_forces(&a, &b);
+        let want = 2.0 / core::f64::consts::E;
+        // the fixed-point exp is accurate to about 1e-8
+        assert!((fa.x.to_f64() + want).abs() < 1e-7, "{fa:?}");
+        assert!(fa.y.is_zero());
+        assert_eq!(fb, -fa);
+
+        let contact = model(params(0, 1, 4, 3), params(1, 1, 0, 0), Fix128::ONE);
+        let b = Pedestrian {
+            velocity: v2(0, 2),
+            ..ped_at(Vec2Fix::new(Fix128::from_ratio(1, 2), Fix128::ZERO))
+        };
+        let (fa, fb) = contact.pair_forces(&a, &b);
+        assert_eq!(fa, v2(-2, 3));
+        assert_eq!(fb, v2(2, -3));
+        assert_eq!(contact.pair_forces(&a, &a), (Vec2Fix::ZERO, Vec2Fix::ZERO));
+    }
+
+    /// oracle: a pedestrian of radius 1/2 at `(0, 1)` above the wall
+    /// `(−1, 0)–(1, 0)` (distance 1, `r − d = −1/2`) is pushed along `+y` by
+    /// `A·exp(−1/2)` (`A = 2, B = 1`); at `(0, 1/4)` (overlap 1/4) moving at
+    /// `(2, 0)` with strength 0, `k = 4, κ = 3`, the force is
+    /// `n·k·(1/4) − t·κ·(1/4)·(v·t) = (0, 1) − (−1, 0)·(−3/2) = (−3/2, 1)`.
+    /// A wall of zero length acts from its start point; a pedestrian on the
+    /// wall line feels nothing.
+    #[test]
+    fn wall_force_closed_form() {
+        let wall = WallSegment {
+            start: v2(-1, 0),
+            end: v2(1, 0),
+        };
+        let social = model(params(1, 1, 0, 0), params(2, 1, 0, 0), Fix128::ONE);
+        let f = social.wall_force(&ped_at(v2(0, 1)), &wall);
+        assert!(f.x.is_zero());
+        assert!(
+            // 2·exp(−1/2)
+            (f.y.to_f64() - 1.213_061_319_425_266_8).abs() < 1e-7,
+            "{f:?}"
+        );
+
+        let contact = model(params(1, 1, 0, 0), params(0, 1, 4, 3), Fix128::ONE);
+        let p = Pedestrian {
+            velocity: v2(2, 0),
+            ..ped_at(Vec2Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 4)))
+        };
+        assert_eq!(
+            contact.wall_force(&p, &wall),
+            Vec2Fix::new(Fix128::from_ratio(-3, 2), Fix128::ONE)
+        );
+        let point = WallSegment {
+            start: v2(0, -1),
+            end: v2(0, -1),
+        };
+        let f = social.wall_force(&ped_at(v2(0, 1)), &point);
+        assert!(f.x.is_zero() && f.y > Fix128::ZERO);
+        assert_eq!(social.wall_force(&ped_at(v2(0, 0)), &wall), Vec2Fix::ZERO);
+    }
+
+    /// oracle: with view weight 1 every pair force is equal and opposite and
+    /// nobody is driven (`v₀ = 0, v = 0`), so the forces of a crowd sum to
+    /// exactly zero while the neighbours push each other; a pedestrian
+    /// beyond the cutoff 5 feels nothing. Both neighbour searches agree,
+    /// and an invalid pedestrian is reported with its index.
+    #[test]
+    fn total_forces_cancel_in_pairs() {
+        let m = model(params(2, 1, 0, 0), params(1, 1, 0, 0), Fix128::ONE);
+        let peds = [
+            ped_at(v2(0, 0)),
+            ped_at(v2(1, 0)),
+            ped_at(v2(0, 2)),
+            ped_at(v2(40, 0)),
+        ];
+        let mut direct = Vec::new();
+        m.total_forces(&peds, &[], NeighborSearch::Direct, &mut direct)
+            .expect("valid crowd");
+        let mut cells = Vec::new();
+        m.total_forces(&peds, &[], NeighborSearch::CellList, &mut cells)
+            .expect("valid crowd");
+        assert_eq!(direct, cells);
+        let sum = direct.iter().fold(Vec2Fix::ZERO, |s, f| s + *f);
+        assert_eq!(sum, Vec2Fix::ZERO);
+        assert_ne!(direct[0], Vec2Fix::ZERO);
+        assert_eq!(direct[3], Vec2Fix::ZERO);
+        let mut bad = peds;
+        bad[2].mass_kg = Fix128::ZERO;
+        assert_eq!(
+            m.total_forces(&bad, &[], NeighborSearch::Direct, &mut direct),
+            Err(CrowdForceError::NonPositiveMass { index: 2 })
+        );
+    }
+
+    fn walker() -> Pedestrian {
+        Pedestrian {
+            desired_speed_m_s: Fix128::ONE,
+            desired_direction: v2(1, 0),
+            relaxation_time_s: Fix128::from_ratio(1, 2),
+            ..ped_at(Vec2Fix::ZERO)
+        }
+    }
+
+    /// oracle: a lone walker at rest (`m = 1, τ = 1/2, v₀ = 1, ê = (1, 0)`)
+    /// feels `(2, 0)`; one step of `h = 1/4` (semi-implicit Euler) gives
+    /// `v = (1/2, 0)` and `x = (1/8, 0)`, for `step` and `try_step` alike.
+    /// A speed cap of `1/4·v₀` limits `v` to `(1/4, 0)`, `x = (1/16, 0)`.
+    /// A wall beyond the cutoff changes nothing.
+    #[test]
+    fn step_and_try_step_closed_form() {
+        let m = model(params(2, 1, 0, 0), params(2, 1, 0, 0), Fix128::ONE);
+        let far_wall = [WallSegment {
+            start: v2(-1, 30),
+            end: v2(1, 30),
+        }];
+        let h = Fix128::from_ratio(1, 4);
+        for cap in [None, Some(Fix128::from_ratio(1, 4))] {
+            let (v, x) = if cap.is_some() {
+                (Fix128::from_ratio(1, 4), Fix128::from_ratio(1, 16))
+            } else {
+                (Fix128::from_ratio(1, 2), Fix128::from_ratio(1, 8))
+            };
+            let want_v = Vec2Fix::new(v, Fix128::ZERO);
+            let want_x = Vec2Fix::new(x, Fix128::ZERO);
+            for search in [NeighborSearch::Direct, NeighborSearch::CellList] {
+                let mut a = [walker()];
+                m.step(&mut a, &far_wall, h, search, cap).expect("step");
+                assert_eq!((a[0].velocity, a[0].position), (want_v, want_x), "{cap:?}");
+                let mut b = [walker()];
+                m.try_step(&mut b, &far_wall, h, search, cap)
+                    .expect("try_step");
+                assert_eq!((b[0].velocity, b[0].position), (want_v, want_x), "{cap:?}");
+            }
+        }
+    }
+
+    /// oracle: `try_step` refuses a non-positive step, a non-positive cap and
+    /// an invalid pedestrian, and reports `Overflow` (leaving the crowd as
+    /// it was) when the new position `x + v·h` with `v = 2⁶²`, `h = 4`
+    /// leaves the fixed-point range; `step` refuses the same inputs.
+    #[test]
+    fn try_step_refusals_leave_the_crowd_unchanged() {
+        let m = model(params(2, 1, 0, 0), params(2, 1, 0, 0), Fix128::ONE);
+        let mut peds = [walker()];
+        let h = Fix128::from_ratio(1, 4);
+        assert_eq!(
+            m.try_step(&mut peds, &[], Fix128::ZERO, NeighborSearch::Direct, None),
+            Err(CrowdStepError::Crowd(CrowdForceError::NonPositiveTimeStep))
+        );
+        assert_eq!(
+            m.try_step(
+                &mut peds,
+                &[],
+                h,
+                NeighborSearch::Direct,
+                Some(Fix128::ZERO)
+            ),
+            Err(CrowdStepError::Crowd(CrowdForceError::NonPositiveSpeedCap))
+        );
+        assert_eq!(
+            m.step(&mut peds, &[], Fix128::ZERO, NeighborSearch::Direct, None),
+            Err(CrowdForceError::NonPositiveTimeStep)
+        );
+        assert_eq!(
+            m.step(
+                &mut peds,
+                &[],
+                h,
+                NeighborSearch::Direct,
+                Some(Fix128::ZERO)
+            ),
+            Err(CrowdForceError::NonPositiveSpeedCap)
+        );
+        let mut bad = [Pedestrian {
+            mass_kg: Fix128::ZERO,
+            ..walker()
+        }];
+        assert_eq!(
+            m.try_step(&mut bad, &[], h, NeighborSearch::Direct, None),
+            Err(CrowdStepError::Crowd(CrowdForceError::NonPositiveMass {
+                index: 0
+            }))
+        );
+        let fast = Pedestrian {
+            velocity: Vec2Fix::new(Fix128::from_int(1 << 62), Fix128::ZERO),
+            ..walker()
+        };
+        let mut runaway = [fast];
+        assert_eq!(
+            m.try_step(
+                &mut runaway,
+                &[],
+                Fix128::from_int(4),
+                NeighborSearch::Direct,
+                None
+            ),
+            Err(CrowdStepError::Overflow)
+        );
+        assert_eq!(runaway, [fast]);
+        assert_eq!(peds, [walker()]);
+    }
+
+    fn crowd() -> CrowdParticipant {
+        let m = model(params(2, 1, 0, 0), params(2, 1, 0, 0), Fix128::ONE);
+        CrowdParticipant::new(
+            m,
+            vec![walker()],
+            vec![WallSegment {
+                start: v2(-1, 30),
+                end: v2(1, 30),
+            }],
+            NeighborSearch::Direct,
+            None,
+        )
+        .expect("valid crowd")
+    }
+
+    /// oracle: `CrowdParticipant::new` refuses a non-positive cap and an
+    /// invalid pedestrian; the accessors hand back what was given. Its kind
+    /// is `"CRWD"` read big endian; the payload is version 1, the model
+    /// digest, the count and 10 `Fix128` per pedestrian (20 + 160 bytes for
+    /// one), read back into the same pedestrians; a short payload, another
+    /// version or digest, or a count that does not match the length is
+    /// refused. Observations: the count (2) and the mean speed (`|(3, 4)|/2 =
+    /// 5/2`).
+    #[test]
+    fn crowd_participant_state_and_observations() {
+        let m = model(params(2, 1, 0, 0), params(2, 1, 0, 0), Fix128::ONE);
+        assert_eq!(
+            CrowdParticipant::new(
+                m,
+                vec![],
+                vec![],
+                NeighborSearch::Direct,
+                Some(Fix128::ZERO)
+            )
+            .err(),
+            Some(CrowdForceError::NonPositiveSpeedCap)
+        );
+        let bad = Pedestrian {
+            radius_m: -Fix128::ONE,
+            ..walker()
+        };
+        assert_eq!(
+            CrowdParticipant::new(
+                m,
+                vec![walker(), bad],
+                vec![],
+                NeighborSearch::CellList,
+                None
+            )
+            .err(),
+            Some(CrowdForceError::NegativeRadius { index: 1 })
+        );
+
+        let mut c = crowd();
+        assert_eq!(c.pedestrians(), &[walker()]);
+        assert_eq!(c.walls().len(), 1);
+        assert_eq!(*c.model(), m);
+        assert_eq!(Participant::kind(&c), ParticipantKind::new(0x4352_5744));
+        c.pedestrians_mut()[0].velocity = v2(3, 4);
+        let mut bytes = Vec::new();
+        c.write_state(&mut bytes);
+        assert_eq!(bytes.len(), 20 + 160);
+        assert_eq!(bytes[..4], 1_u32.to_le_bytes());
+        assert_eq!(bytes[12..20], 1_u64.to_le_bytes());
+        assert_eq!(c.check_state(&bytes), Ok(()));
+        let mut d = crowd();
+        d.read_state(&bytes);
+        assert_eq!(d.pedestrians(), c.pedestrians());
+
+        assert_eq!(
+            c.check_state(&bytes[..10]),
+            Err(StateError::Length {
+                expected: 20,
+                found: 10
+            })
+        );
+        let mut version = bytes.clone();
+        version[0] = 2;
+        assert_eq!(c.check_state(&version), Err(StateError::InvalidValue));
+        let mut digest = bytes.clone();
+        digest[4] ^= 1;
+        assert_eq!(c.check_state(&digest), Err(StateError::InvalidValue));
+        assert_eq!(
+            c.check_state(&bytes[..100]),
+            Err(StateError::Length {
+                expected: 180,
+                found: 100
+            })
+        );
+        let mut huge = bytes.clone();
+        huge[12..20].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(matches!(
+            c.check_state(&huge),
+            Err(StateError::Length { .. })
+        ));
+        // a different cap gives a different model digest
+        let capped = CrowdParticipant::new(
+            m,
+            vec![walker()],
+            c.walls().to_vec(),
+            NeighborSearch::Direct,
+            Some(Fix128::ONE),
+        )
+        .expect("valid crowd");
+        assert_eq!(capped.check_state(&bytes), Err(StateError::InvalidValue));
+
+        c.pedestrians_mut()[0].velocity = v2(3, 4);
+        let mut two = crowd();
+        two.pedestrians = vec![c.pedestrians()[0], walker()];
+        let mut sink = ObservationSink::new();
+        two.observe(&mut sink);
+        assert_eq!(
+            sink.values(),
+            &[
+                (CROWD_OBS_COUNT, Fix128::from_int(2)),
+                (CROWD_OBS_MEAN_SPEED, Fix128::from_ratio(5, 2))
+            ]
+        );
+        two.pedestrians.clear();
+        let mut sink = ObservationSink::new();
+        two.observe(&mut sink);
+        assert_eq!(sink.values(), &[(CROWD_OBS_COUNT, Fix128::ZERO)]);
+    }
+
+    /// oracle: in a world of one substep `h = 1/4` the lone walker reaches
+    /// `v = (1/2, 0)`, so the mean speed reads 1/2; a walker whose step
+    /// leaves the fixed-point range records an out-of-range participant
+    /// fault.
+    #[test]
+    fn crowd_participant_in_a_world() {
+        let world_of = |c: CrowdParticipant| {
+            let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
+                substeps: 1,
+                ..Default::default()
+            });
+            world.add_participant(Box::new(c)).expect("register");
+            world.step(Fix128::from_ratio(1, 4));
+            world
+        };
+        let world = world_of(crowd());
+        let Some(crate::world_participant::Observed::Exact(sink)) = world.observe_participant(0)
+        else {
+            panic!("observation");
+        };
+        assert_eq!(
+            sink.values(),
+            &[
+                (CROWD_OBS_COUNT, Fix128::ONE),
+                (CROWD_OBS_MEAN_SPEED, Fix128::from_ratio(1, 2))
+            ]
+        );
+
+        let mut runaway = crowd();
+        runaway.pedestrians_mut()[0].position =
+            Vec2Fix::new(Fix128::from_int(i64::MAX - 1), Fix128::ZERO);
+        runaway.pedestrians_mut()[0].velocity =
+            Vec2Fix::new(Fix128::from_int(1 << 62), Fix128::ZERO);
+        let world = world_of(runaway);
+        assert!(
+            matches!(
+                world.fault(),
+                Some(crate::world_participant::WorldFault::Participant {
+                    fault: ParticipantFault::OutOfRange,
+                    ..
+                })
+            ),
+            "{:?}",
+            world.fault()
+        );
+    }
 }
