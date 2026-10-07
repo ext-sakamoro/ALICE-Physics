@@ -3,4 +3,15 @@
 # Mutants inside `#[cfg(test)] mod tests` helpers (`tests::snapshot_world`,
 # `tests::near`, …) are not production code and only dilute the score; the
 # lib tests are the oracle, not the subject.
-exclude_re = ["tests::"]
+#
+# Equivalent mutants, excluded with the reason (every entry must be proven to
+# give bit-identical results, not just results inside a test tolerance):
+#
+# `replace > with >= in scaled_exp_neg` (src/smoke_fire.rs): the two forms
+#   differ only when the remaining exponent is exactly the step (16). `>`
+#   returns `a * exp_fix(-16)`; `>=` takes one more step and returns
+#   `a * exp_fix(-16) * exp_fix(0)`, and `exp_fix(0)` is exactly 1 (the Taylor
+#   series leaves only its first term), so the bits are the same for every `a`.
+#   Any loop boundary of this function has the same property: the result is
+#   continuous at the boundary, which is what makes the mutant equivalent.
+exclude_re = ["tests::", "replace > with >= in scaled_exp_neg"]
