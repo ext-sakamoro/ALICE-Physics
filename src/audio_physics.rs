@@ -621,4 +621,138 @@ mod tests {
         assert_eq!(gen.get_events().len(), 1);
         assert_eq!(gen.get_events()[0].position, Vec3Fix::from_int(3, 0, 0));
     }
+
+    fn custom(density: i64, hardness: Fix128) -> AudioMaterial {
+        AudioMaterial {
+            material_type: MaterialType::Custom(7),
+            density: Fix128::from_int(density),
+            hardness,
+            resonance: Fix128::ZERO,
+            damping: Fix128::ZERO,
+        }
+    }
+
+    /// oracle: `set_material` past the table grows it with wood; a body
+    /// never given a material is wood.
+    #[test]
+    fn set_material_grows_with_wood() {
+        let mut gen = AudioGenerator::new(1, AudioConfig::default());
+        gen.set_material(4, AudioMaterial::METAL);
+        assert_eq!(gen.materials.len(), 5);
+        assert_eq!(gen.materials[2], AudioMaterial::WOOD);
+        assert_eq!(gen.get_material(4), AudioMaterial::METAL);
+        assert_eq!(gen.get_material(99), AudioMaterial::WOOD);
+    }
+
+    /// `v/20` is not a dyadic number, so pitches are compared to 1e-15
+    fn assert_near(got: Fix128, want: Fix128) {
+        assert!(
+            (got - want).abs() < Fix128::from_ratio(1, 1_000_000_000_000_000),
+            "{got:?} vs {want:?}"
+        );
+    }
+
+    /// oracle: pitch is `1 + v/20` times the density factor `1000/ρ̄` clamped
+    /// to `[1/2, 2]`: for `v = 2` that is `11/10` for `ρ̄ = 0` (no factor),
+    /// `11/5` for `ρ̄ = 100` (factor 10 → 2), `11/20` for `ρ̄ = 4000` (factor
+    /// 1/4 → 1/2). Volume, brightness and roughness saturate at
+    /// `v ≥ v_max = 20`: volume 1, brightness `h̄·(1/2 + 1/2) = h̄`,
+    /// roughness `h̄`.
+    #[test]
+    fn pitch_density_clamp_and_saturation() {
+        let gen = AudioGenerator::new(2, AudioConfig::default());
+        let v = Fix128::from_int(2);
+        let h = Fix128::from_ratio(1, 2);
+        let zero = custom(0, h);
+        assert_near(
+            gen.compute_pitch(v, &zero, &zero),
+            Fix128::from_ratio(11, 10),
+        );
+        let light = custom(100, h);
+        assert_near(
+            gen.compute_pitch(v, &light, &light),
+            Fix128::from_ratio(11, 5),
+        );
+        let heavy = custom(4000, h);
+        assert_near(
+            gen.compute_pitch(v, &heavy, &heavy),
+            Fix128::from_ratio(11, 20),
+        );
+        let fast = Fix128::from_int(40);
+        assert_eq!(gen.compute_volume(fast, &light, &light), Fix128::ONE);
+        assert_eq!(gen.compute_brightness(fast, &light, &light), h);
+        assert_eq!(gen.compute_roughness(fast, &light, &light), h);
+    }
+
+    /// oracle: a persisting contact whose relative velocity is along the
+    /// normal (no tangential part) rolls; an event whose volume
+    /// `sqrt(v/20)` is below `min_volume` is dropped (`v = 1`: `0.22 < 1/2`).
+    #[test]
+    fn roll_and_quiet_events() {
+        let contact = Contact {
+            depth: Fix128::from_ratio(1, 10),
+            normal: Vec3Fix::UNIT_Y,
+            point_a: Vec3Fix::ZERO,
+            point_b: Vec3Fix::ZERO,
+        };
+        let mut gen = AudioGenerator::new(2, AudioConfig::default());
+        gen.process_contact(0, 1, &contact, Vec3Fix::from_int(0, -2, 0), false);
+        assert_eq!(gen.events.len(), 1);
+        assert_eq!(gen.events[0].event_type, AudioEventType::Roll);
+        assert_eq!(gen.events[0].roughness, Fix128::ZERO);
+
+        let mut quiet = AudioGenerator::new(
+            2,
+            AudioConfig {
+                min_volume: Fix128::from_ratio(1, 2),
+                ..AudioConfig::default()
+            },
+        );
+        quiet.process_contact(0, 1, &contact, Vec3Fix::from_int(0, -1, 0), true);
+        assert!(quiet.events.is_empty());
+    }
+
+    /// oracle: from the world's contact events, `emit_contact_audio` sends a
+    /// begin as an impact and a persist as a slide (the bodies' tangential
+    /// velocity `(3, 0, 0)` exceeds 1/2), at the event point, with relative
+    /// velocity `n·v_rel + tangential = (3, −5, 0)`: volume
+    /// `sqrt(√34 / 20)`. An end event and an event naming a body that does not
+    /// exist make no sound.
+    #[test]
+    fn world_contact_events_become_audio() {
+        use crate::event::{ContactEvent, ContactEventType};
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig::default());
+        let mut a = crate::solver::RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+        a.velocity = Vec3Fix::from_int(3, 0, 0);
+        world.add_body(a);
+        world.add_body(crate::solver::RigidBody::new_static(Vec3Fix::from_int(
+            0, -1, 0,
+        )));
+        let ev = |event_type, body_b| ContactEvent {
+            body_a: 0,
+            body_b,
+            event_type,
+            normal: Vec3Fix::UNIT_Y,
+            point: Vec3Fix::from_int(1, 2, 3),
+            depth: Fix128::from_ratio(1, 10),
+            relative_velocity: Fix128::from_int(-5),
+        };
+        world.events.contact_events = vec![
+            ev(ContactEventType::Begin, 1),
+            ev(ContactEventType::End, 1),
+            ev(ContactEventType::Begin, 9),
+            ev(ContactEventType::Persist, 1),
+        ];
+        let mut gen = AudioGenerator::new(2, AudioConfig::default());
+        gen.begin_frame();
+        world.emit_contact_audio(&mut gen);
+        assert_eq!(gen.events.len(), 2);
+        assert_eq!(gen.events[0].event_type, AudioEventType::Impact);
+        assert_eq!(gen.events[1].event_type, AudioEventType::Slide);
+        let want = (34.0_f64.sqrt() / 20.0).sqrt();
+        for e in &gen.events {
+            assert_eq!(e.position, Vec3Fix::from_int(1, 2, 3));
+            assert!((e.volume.to_f64() - want).abs() < 1e-9, "{:?}", e.volume);
+        }
+    }
 }
