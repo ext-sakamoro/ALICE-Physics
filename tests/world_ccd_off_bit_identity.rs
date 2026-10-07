@@ -1,12 +1,36 @@
 //! World-step continuous collision (`PhysicsWorld::set_continuous_collision`)
-//! switched off: the step must be the step that existed before the setting.
+//! switched off: the step must be the step without the setting.
 //!
-//! oracle: the `serialize_state` bytes of the same scenes run by the engine
-//! before the setting was added (the `GOLDEN_*` hashes below were recorded on
-//! that tree and on `main` of the time, with and without `--features
-//! parallel`; all four scenes were equal on both). Every scene contains a
-//! body fast enough to be swept when the setting is on, so a step that ran any
-//! part of the sweep while it is off changes the hash.
+//! oracle: the same scene run in the same build without any sweep. Each
+//! scene is built several times and stepped 90 frames with `step` (and, with
+//! `--features parallel`, also with `step_parallel`); the `serialize_state`
+//! bytes of the copies must be equal bit for bit:
+//!
+//! - (a) the default world, which never calls the setting;
+//! - (b) the setting written as off, both as `WorldCcdConfig::new()` and as
+//!   `WorldCcdConfig::on().with_enabled(false)`, so that a default that is on
+//!   (in `PhysicsWorld::new` or in `WorldCcdConfig::new`) separates (a) or
+//!   one of the two from the others;
+//! - (d) the setting on with a threshold no body reaches: the sweep chooses
+//!   its bodies, finds none and moves nothing. This copy is the reference
+//!   that does not go through the off branch, so a step that sweeps while the
+//!   setting is off separates (a) and (b) from it in the fast scenes (each
+//!   fast scene has a body the default threshold sweeps);
+//! - (c) in the slow scenes only, the setting on with its default threshold:
+//!   no body moves more than its radius in a substep, so nothing is swept and
+//!   the step is the step without the setting (the test checks the speeds of
+//!   the slow scenes against that bound).
+//!
+//! Two controls show that the comparison can fail: the fast scene with the
+//! setting on differs from off, and a slow scene with the threshold `0`
+//! (every moving body swept) differs from off.
+//!
+//! When the setting was added, the off step was also compared with the engine
+//! without the setting at the same base, and 30 of 30 state hashes were equal
+//! (5 scenes, XPBD and TGS, `step` in the default build, `step` and
+//! `step_parallel` in the parallel build). That comparison is not kept here
+//! as fixed hashes: a change of the engine itself moves them, and such
+//! changes are the business of the engine's golden tests.
 
 #![cfg(feature = "std")]
 
@@ -14,8 +38,9 @@ use alice_physics::plane_collider::PlaneCollider;
 use alice_physics::shape::Shape;
 use alice_physics::static_collider::StaticCollider;
 use alice_physics::trimesh::TriMesh;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
-use sha2::{Digest, Sha256};
+use alice_physics::{
+    Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix, WorldCcdConfig,
+};
 
 fn v(x: i64, y: i64, z: i64) -> Vec3Fix {
     Vec3Fix::from_int(x, y, z)
@@ -27,11 +52,6 @@ fn r(n: i64, d: i64) -> Fix128 {
 
 fn dt() -> Fix128 {
     r(1, 60)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    digest.iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// A sphere at 300 m/s toward a static box 2 cm thick, plus a slow sphere
@@ -113,94 +133,277 @@ fn pile() -> PhysicsWorld {
     w
 }
 
-fn run(mut w: PhysicsWorld, steps: usize, parallel: bool) -> String {
-    for _ in 0..steps {
-        if parallel {
-            #[cfg(feature = "parallel")]
-            w.step_parallel(dt());
-            #[cfg(not(feature = "parallel"))]
-            unreachable!();
-        } else {
-            w.step(dt());
-        }
+/// Spheres and a box dropped onto a plane from rest, the spheres starting on
+/// or just above it. Nothing falls far enough to move its radius in one
+/// substep.
+fn slow_pile(backend: SolverBackend) -> PhysicsWorld {
+    let config = PhysicsConfig {
+        solver_backend: backend,
+        ..PhysicsConfig::default()
+    };
+    let mut w = PhysicsWorld::new(config);
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        v(0, 1, 0),
+        Fix128::ZERO,
+    )));
+    w.add_body_with_radius(
+        RigidBody::new_dynamic(
+            Vec3Fix::new(Fix128::ZERO, r(1, 2), Fix128::ZERO),
+            Fix128::ONE,
+        ),
+        r(1, 2),
+    );
+    for k in 1..5 {
+        let body = RigidBody::new_dynamic(
+            Vec3Fix::new(r(k, 5), Fix128::from_int(k) + r(1, 2), r(k, 9)),
+            Fix128::ONE,
+        );
+        w.add_body_with_radius(body, r(1, 2));
     }
-    hex(&w.serialize_state())
+    w.add_shaped_body(
+        &Shape::Box {
+            half_extents: Vec3Fix::new(r(1, 2), r(1, 4), r(1, 2)),
+        },
+        Fix128::ONE,
+        v(0, 8, 0),
+    )
+    .unwrap();
+    w
 }
 
-fn scenes() -> Vec<(&'static str, PhysicsWorld)> {
+/// On a plane: a sphere sliding at 4 m/s into a static box, and two spheres
+/// closing at 2 m/s each. Every sphere starts `1/8` above the plane.
+fn slow_slide(backend: SolverBackend) -> PhysicsWorld {
+    let config = PhysicsConfig {
+        solver_backend: backend,
+        ..PhysicsConfig::default()
+    };
+    let mut w = PhysicsWorld::new(config);
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        v(0, 1, 0),
+        Fix128::ZERO,
+    )));
+    let wall = w.add_body(RigidBody::new_static(v(2, 1, 0)));
+    w.set_body_shape(
+        wall,
+        &Shape::Box {
+            half_extents: Vec3Fix::new(r(1, 10), Fix128::ONE, Fix128::from_int(2)),
+        },
+    );
+    let mut slider = RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::ZERO, r(5, 8), Fix128::ZERO),
+        Fix128::ONE,
+    );
+    slider.velocity = v(4, 0, 0);
+    w.add_body_with_radius(slider, r(1, 2));
+    let mut a = RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::from_int(-2), r(5, 8), Fix128::from_int(3)),
+        Fix128::ONE,
+    );
+    a.velocity = v(2, 0, 0);
+    w.add_body_with_radius(a, r(1, 2));
+    let mut b = RigidBody::new_dynamic(
+        Vec3Fix::new(Fix128::from_int(2), r(5, 8), Fix128::from_int(3)),
+        Fix128::from_int(2),
+    );
+    b.velocity = v(-2, 0, 0);
+    w.add_body_with_radius(b, r(1, 2));
+    w
+}
+
+type Build = fn() -> PhysicsWorld;
+
+fn thin_wall_xpbd() -> PhysicsWorld {
+    thin_wall(SolverBackend::Xpbd)
+}
+
+fn thin_wall_tgs() -> PhysicsWorld {
+    thin_wall(SolverBackend::Tgs)
+}
+
+fn slow_pile_xpbd() -> PhysicsWorld {
+    slow_pile(SolverBackend::Xpbd)
+}
+
+fn slow_pile_tgs() -> PhysicsWorld {
+    slow_pile(SolverBackend::Tgs)
+}
+
+fn slow_slide_xpbd() -> PhysicsWorld {
+    slow_slide(SolverBackend::Xpbd)
+}
+
+fn slow_slide_tgs() -> PhysicsWorld {
+    slow_slide(SolverBackend::Tgs)
+}
+
+/// Scenes with a body the default threshold sweeps.
+const FAST: &[(&str, Build)] = &[
+    ("thin_wall_xpbd", thin_wall_xpbd),
+    ("thin_wall_tgs", thin_wall_tgs),
+    ("head_on", head_on),
+    ("pile", pile),
+];
+
+/// Scenes in which no body moves its radius (`1/2`, the smallest in them) in
+/// one substep.
+const SLOW: &[(&str, Build)] = &[
+    ("slow_pile_xpbd", slow_pile_xpbd),
+    ("slow_pile_tgs", slow_pile_tgs),
+    ("slow_slide_xpbd", slow_slide_xpbd),
+    ("slow_slide_tgs", slow_slide_tgs),
+];
+
+fn slow_min_radius() -> Fix128 {
+    r(1, 2)
+}
+
+const FRAMES: usize = 90;
+
+#[derive(Clone, Copy, Debug)]
+enum Stepper {
+    Step,
+    #[cfg(feature = "parallel")]
+    StepParallel,
+}
+
+fn steppers() -> Vec<Stepper> {
+    #[cfg(feature = "parallel")]
+    return vec![Stepper::Step, Stepper::StepParallel];
+    #[cfg(not(feature = "parallel"))]
+    vec![Stepper::Step]
+}
+
+/// The setting is on, with a threshold (in radii) no body of these scenes
+/// reaches: the fastest moves `300 / 480` m in a substep with a radius of
+/// `1/4`, a ratio of `2.5`.
+fn on_unreached() -> WorldCcdConfig {
+    WorldCcdConfig::on().with_motion_threshold(Fix128::from_int(1 << 20))
+}
+
+/// The copies that must step alike in every scene: (a), (b) twice, (d).
+fn off_like() -> Vec<(&'static str, Option<WorldCcdConfig>)> {
     vec![
-        ("thin_wall_xpbd", thin_wall(SolverBackend::Xpbd)),
-        ("thin_wall_tgs", thin_wall(SolverBackend::Tgs)),
-        ("head_on", head_on()),
-        ("pile", pile()),
+        ("on, threshold not reached", Some(on_unreached())),
+        ("default (setting never called)", None),
+        ("WorldCcdConfig::new()", Some(WorldCcdConfig::new())),
+        (
+            "WorldCcdConfig::on().with_enabled(false)",
+            Some(WorldCcdConfig::on().with_enabled(false)),
+        ),
     ]
 }
 
-fn check(golden: &[(&str, &str)], parallel: bool) {
-    let mut actual = Vec::new();
-    for (name, w) in scenes() {
-        actual.push((name, run(w, 90, parallel)));
+/// Runs a fresh copy of the scene and returns its state and the largest
+/// squared body speed seen at the end of any frame.
+fn run(build: Build, ccd: Option<WorldCcdConfig>, stepper: Stepper) -> (Vec<u8>, Fix128) {
+    let mut w = build();
+    assert!(
+        !w.continuous_collision().is_enabled(),
+        "a new world must start with the setting off"
+    );
+    if let Some(config) = ccd {
+        w.set_continuous_collision(config);
     }
-    for (name, got) in &actual {
-        println!("(\"{name}\", \"{got}\"),");
+    let mut max_speed_sq = Fix128::ZERO;
+    for _ in 0..FRAMES {
+        match stepper {
+            Stepper::Step => w.step(dt()),
+            #[cfg(feature = "parallel")]
+            Stepper::StepParallel => w.step_parallel(dt()),
+        }
+        for b in &w.bodies {
+            let s = b.velocity.length_squared();
+            if s > max_speed_sq {
+                max_speed_sq = s;
+            }
+        }
     }
-    for ((name, got), (gname, want)) in actual.iter().zip(golden) {
-        assert_eq!(name, gname);
-        assert_eq!(got, want, "{name}: the off step changed");
+    (w.serialize_state(), max_speed_sq)
+}
+
+fn assert_all_equal(name: &str, build: Build, copies: &[(&str, Option<WorldCcdConfig>)]) {
+    for stepper in steppers() {
+        let (reference, _) = run(build, copies[0].1, stepper);
+        for (label, ccd) in &copies[1..] {
+            let (got, _) = run(build, *ccd, stepper);
+            assert!(
+                got == reference,
+                "{name} ({stepper:?}): `{label}` differs from `{}`",
+                copies[0].0
+            );
+        }
     }
 }
 
-/// `step`, the same with and without `--features parallel`.
-const GOLDEN_STEP: &[(&str, &str)] = &[
-    (
-        "thin_wall_xpbd",
-        "ea03a080984ec9c559a659a0a24666d46be5332879637a70466cf3954f2a2376",
-    ),
-    (
-        "thin_wall_tgs",
-        "4cf2c5b4d8bada719209223f8110ae1e03b3726cf2ddf9304270e7ce473da421",
-    ),
-    (
-        "head_on",
-        "f76f335739078224d80ba6af7f89f9dbc2d8fa171d3cae08a65c67ace4ee9a83",
-    ),
-    (
-        "pile",
-        "b713fba3a3b5a6a3ef1975f50fe3a369fc530a869a23c193a92a89f7414b2a8c",
-    ),
-];
-
-/// `step_parallel`, which runs the XPBD substep whatever the backend, so the
-/// TGS scene gives the XPBD hash.
-#[cfg(feature = "parallel")]
-const GOLDEN_STEP_PARALLEL: &[(&str, &str)] = &[
-    (
-        "thin_wall_xpbd",
-        "ea03a080984ec9c559a659a0a24666d46be5332879637a70466cf3954f2a2376",
-    ),
-    (
-        "thin_wall_tgs",
-        "ea03a080984ec9c559a659a0a24666d46be5332879637a70466cf3954f2a2376",
-    ),
-    (
-        "head_on",
-        "f76f335739078224d80ba6af7f89f9dbc2d8fa171d3cae08a65c67ace4ee9a83",
-    ),
-    (
-        "pile",
-        "b713fba3a3b5a6a3ef1975f50fe3a369fc530a869a23c193a92a89f7414b2a8c",
-    ),
-];
-
+/// (a), (b) and (d) in the scenes with a fast body.
 #[test]
-fn off_step_matches_the_engine_before_the_setting() {
-    check(GOLDEN_STEP, false);
-    assert_eq!(GOLDEN_STEP.len(), 4, "golden table incomplete");
+fn off_steps_like_the_step_without_a_sweep_in_fast_scenes() {
+    assert_eq!(FAST.len(), 4);
+    for (name, build) in FAST {
+        assert_all_equal(name, *build, &off_like());
+    }
 }
 
-#[cfg(feature = "parallel")]
+/// (a), (b), (d) and (c) in the slow scenes.
 #[test]
-fn off_step_parallel_matches_the_engine_before_the_setting() {
-    check(GOLDEN_STEP_PARALLEL, true);
-    assert_eq!(GOLDEN_STEP_PARALLEL.len(), 4, "golden table incomplete");
+fn on_without_a_fast_body_steps_like_off() {
+    assert_eq!(SLOW.len(), 4);
+    // |v| h <= r / 2 with h = 1 / (60 substeps), as |v|^2 <= (60 substeps r / 2)^2.
+    let substeps = PhysicsConfig::default().substeps as i64;
+    let bound = Fix128::from_int(60 * substeps) * slow_min_radius() * r(1, 2);
+    let bound_sq = bound * bound;
+    for (name, build) in SLOW {
+        let mut copies = off_like();
+        copies.push(("on, default threshold", Some(WorldCcdConfig::on())));
+        assert_all_equal(name, *build, &copies);
+        for stepper in steppers() {
+            let (_, max_speed_sq) = run(*build, None, stepper);
+            assert!(
+                max_speed_sq <= bound_sq,
+                "{name} ({stepper:?}): a squared speed of {} reached the bound {} \
+                 (half the radius per substep): the scene is not slow",
+                max_speed_sq.to_f64(),
+                bound_sq.to_f64()
+            );
+        }
+    }
+}
+
+/// Control: with the default threshold the fast scene is swept and the step
+/// differs from off, so the comparison above is not blind to a sweep.
+#[test]
+fn control_fast_scene_swept_differs_from_off() {
+    for stepper in steppers() {
+        let (off, _) = run(thin_wall_xpbd, None, stepper);
+        let (on, _) = run(thin_wall_xpbd, Some(WorldCcdConfig::on()), stepper);
+        assert!(
+            off != on,
+            "thin_wall_xpbd ({stepper:?}): the sweep changed nothing"
+        );
+    }
+}
+
+/// Control: with the threshold `0` every moving body of a slow XPBD scene is
+/// swept and the step differs from off, so the slow scenes are not blind to a
+/// sweep either; they agree with off under the default threshold only because
+/// nothing reaches it. (The TGS backend does not sweep, so its slow scenes
+/// have no such control.)
+#[test]
+fn control_slow_scenes_swept_at_threshold_zero_differ_from_off() {
+    let xpbd: [(&str, Build); 2] = [
+        ("slow_pile_xpbd", slow_pile_xpbd),
+        ("slow_slide_xpbd", slow_slide_xpbd),
+    ];
+    for (name, build) in xpbd {
+        for stepper in steppers() {
+            let (off, _) = run(build, None, stepper);
+            let (on, _) = run(
+                build,
+                Some(WorldCcdConfig::on().with_motion_threshold(Fix128::ZERO)),
+                stepper,
+            );
+            assert!(off != on, "{name} ({stepper:?}): the sweep changed nothing");
+        }
+    }
 }

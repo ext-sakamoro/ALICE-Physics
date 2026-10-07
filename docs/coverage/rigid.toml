@@ -785,7 +785,7 @@ axis = "ccd"
 item = "continuous collision in the world step (no tunnelling of fast bodies)"
 source = "Box2D bullet bodies / TOI sub-stepping; PhysX eENABLE_CCD; Bullet ccdMotionThreshold"
 status = "implemented+oracle"
-evidence = "src/solver/world_ccd.rs::ccd_sweep (PhysicsWorld::set_continuous_collision、既定 off、XPBD の substep で並進する球を掃引) tests/analytic_world_step_ccd.rs::on_a_fast_sphere_stops_on_a_thin_plate_and_bounces tests/analytic_world_step_ccd.rs::on_unequal_spheres_keep_momentum_and_separate_at_e_times_approach tests/analytic_world_step_ccd.rs::on_an_oblique_impact_has_the_closed_form_point_normal_and_velocity tests/world_ccd_off_bit_identity.rs::off_step_matches_the_engine_before_the_setting"
+evidence = "src/solver/world_ccd.rs::ccd_sweep (PhysicsWorld::set_continuous_collision、既定 off、XPBD の substep で並進する球を掃引) tests/analytic_world_step_ccd.rs::on_a_fast_sphere_stops_on_a_thin_plate_and_bounces tests/analytic_world_step_ccd.rs::on_unequal_spheres_keep_momentum_and_separate_at_e_times_approach tests/analytic_world_step_ccd.rs::on_an_oblique_impact_has_the_closed_form_point_normal_and_velocity tests/world_ccd_off_bit_identity.rs::off_steps_like_the_step_without_a_sweep_in_fast_scenes"
 oracle_candidate = ""
 limitation = "src/solver/world_ccd.rs 'Rotation during the substep'"
 
