@@ -302,17 +302,6 @@ fn v_cross(a: Vec3, b: Vec3) -> Vec3 {
         a[0] * b[1] - a[1] * b[0],
     ]
 }
-#[inline]
-fn diag_mul(diag: Vec3, v: Vec3) -> Vec3 {
-    [diag[0] * v[0], diag[1] * v[1], diag[2] * v[2]]
-}
-
-/// Rotate a world-frame vector into the body-local principal-axes
-/// frame using `q⁻¹`.
-#[inline]
-fn world_to_local(q: QuatFix, world: Vec3) -> Vec3 {
-    from_vec3fix(q.conjugate().rotate_vec(to_vec3fix(world)))
-}
 
 /// Rotate a body-local vector into the world frame using `q`.
 #[inline]
@@ -323,12 +312,17 @@ fn local_to_world_v(q: QuatFix, local: Vec3) -> Vec3 {
 /// Apply the diagonal inverse inertia in the body's principal-axes
 /// frame: `I_world⁻¹ · j = R · diag(inv_I_local) · Rᵀ · j`. The full
 /// symmetric world-frame inverse inertia is realised implicitly by
-/// this three-step transform without materialising a 3×3 matrix.
+/// this three-step transform without materialising a 3×3 matrix; an
+/// isotropic `inv_I_local` is the plain product, independent of `q`
+/// (the rule of [`crate::solver::inv_inertia_world_apply`], which this
+/// calls so both backends apply an inverse inertia the same way).
 #[inline]
 fn inv_inertia_apply(q: QuatFix, inv_i_local: Vec3, j_world: Vec3) -> Vec3 {
-    let j_local = world_to_local(q, j_world);
-    let dw_local = diag_mul(inv_i_local, j_local);
-    local_to_world_v(q, dw_local)
+    from_vec3fix(crate::solver::inv_inertia_world_apply(
+        q,
+        to_vec3fix(inv_i_local),
+        to_vec3fix(j_world),
+    ))
 }
 
 // ---------------------------------------------------------------------------
