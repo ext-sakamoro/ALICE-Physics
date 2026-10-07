@@ -5,10 +5,13 @@
 //!   short-distance precision changes: those apply below `|v| = 2⁻¹⁶`, to GJK
 //!   simplices with edges below `2⁻⁸` and to the support directions of rounded
 //!   solids, none of which these casts reach.
-//! - Against rounded solids (a cone, a cylinder, a height field) the results did
-//!   move (by up to a few `2⁻³²`, toward the closed form) and are pinned to this
-//!   implementation, so that the time a bracketed gap ends on stays the clear
-//!   end for these radii.
+//! - Against curved solids the results changed at every radius: the direction
+//!   given to the support mappings of ellipsoids, cylinders and cones is scaled
+//!   up, and small GJK simplices (which a curved surface produces) are scaled up
+//!   for their barycentric weights. So a cone, a cylinder and a height field are
+//!   pinned to this implementation instead, which also keeps the time a
+//!   bracketed gap ends on at the clear end for these radii. They are not bit
+//!   for bit the same as before.
 //!
 //! # Expected values
 //!
