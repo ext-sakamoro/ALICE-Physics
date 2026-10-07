@@ -4137,4 +4137,77 @@ mod tests {
         ))]
         assert_eq!(simd_width(), 1);
     }
+
+    fn p2(e: u32) -> Fix128 {
+        Fix128::from_int(1_i64 << e)
+    }
+
+    /// oracle: `checked_normalize` is `None` for the zero vector and when the
+    /// squared length leaves the range (`|v| = 2⁴⁰`), and `v/|v|` otherwise
+    /// (`(3, 4, 0)/5`).
+    #[test]
+    fn checked_normalize_closed_form() {
+        assert_eq!(Vec3Fix::ZERO.checked_normalize(), None);
+        assert_eq!(
+            Vec3Fix::new(p2(40), Fix128::ZERO, Fix128::ZERO).checked_normalize(),
+            None
+        );
+        let n = Vec3Fix::from_int(3, 4, 0)
+            .checked_normalize()
+            .expect("in range");
+        assert!((n.x.to_f64() - 0.6).abs() < 1e-15 && (n.y.to_f64() - 0.8).abs() < 1e-15);
+        assert!(n.z.is_zero());
+    }
+
+    /// oracle: past the squared range the length of `(2⁴⁰, 0, 0)` is exactly
+    /// `2⁴⁰`, of `(2⁴⁰, 2⁴⁰, 0)` is `√2·2⁴⁰` and of `(2⁶², 2⁶², 2⁶²)` is
+    /// `√3·2⁶² < 2⁶³` (to 1e-15 relative); a length of `√3·3·2⁶¹ ≥ 2⁶³` does
+    /// not fit (`None`).
+    #[test]
+    fn checked_length_scaled_closed_form() {
+        assert_eq!(
+            Vec3Fix::new(p2(40), Fix128::ZERO, Fix128::ZERO).checked_length_scaled(),
+            Some(p2(40))
+        );
+        let l = Vec3Fix::new(p2(40), p2(40), Fix128::ZERO)
+            .checked_length_scaled()
+            .expect("fits");
+        assert!(
+            (l.to_f64() / 1_099_511_627_776.0 - 2f64.sqrt()).abs() < 1e-15,
+            "{l:?}"
+        );
+        let l = Vec3Fix::new(p2(62), p2(62), p2(62))
+            .checked_length_scaled()
+            .expect("√3·2⁶² < 2⁶³ fits");
+        assert!(
+            (l.to_f64() / 4_611_686_018_427_387_904.0 - 3f64.sqrt()).abs() < 1e-15,
+            "{l:?}"
+        );
+        let c = Fix128::from_int(3_i64 << 61);
+        assert_eq!(Vec3Fix::new(c, c, c).checked_length_scaled(), None);
+    }
+
+    /// oracle: `try_normalize_scaled` gives the unit vector `(1, 0, 0)` for
+    /// `(2⁴⁰, 0, 0)` (squared length out of range) and for `(2⁻⁴⁰, 0, 0)`
+    /// (squared length below the resolution), `(0, −1, 0)` for `(0, −2⁴⁰, 0)`,
+    /// and `None` for the zero vector.
+    #[test]
+    fn try_normalize_scaled_closed_form() {
+        let unit_x = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(
+            Vec3Fix::new(p2(40), Fix128::ZERO, Fix128::ZERO).try_normalize_scaled(),
+            Some(unit_x)
+        );
+        let tiny = Fix128::ONE / p2(40);
+        assert_eq!(
+            Vec3Fix::new(tiny, Fix128::ZERO, Fix128::ZERO).try_normalize_scaled(),
+            Some(unit_x)
+        );
+        assert_eq!(
+            Vec3Fix::new(Fix128::ZERO, -p2(40), Fix128::ZERO).try_normalize_scaled(),
+            Some(Vec3Fix::new(Fix128::ZERO, -Fix128::ONE, Fix128::ZERO))
+        );
+        assert_eq!(Vec3Fix::ZERO.try_normalize_scaled(), None);
+        assert_eq!(Vec3Fix::ZERO.split_pow2(), (Vec3Fix::ZERO, 0));
+    }
 }
