@@ -11,8 +11,8 @@
 //! after the positions are predicted and before the discrete contacts are
 //! detected:
 //!
-//! 1. **Which bodies.** A dynamic, awake, non-sensor body with a collision
-//!    radius `r` is swept when its displacement in the substep `d` is longer
+//! 1. **Which bodies.** A dynamic awake or a kinematic, non-sensor body with
+//!    a collision radius `r` is swept when its displacement in the substep `d` is longer
 //!    than `motion_threshold · r` (strictly). With the default threshold `1`,
 //!    a body that moves at most its radius per substep is left to the discrete
 //!    detection, which then always sees it on the near side of a surface of
@@ -23,13 +23,18 @@
 //!    shapes) and the static colliders. SDF colliders are not swept (they keep
 //!    their discrete push-out). The bodies are then put back at their predicted
 //!    poses. The cast sees what its filter sees: bodies on the layers of the
-//!    swept body's mask, no sensors; a hit on a body the pair filter does not
-//!    let it collide with is dropped.
+//!    swept body's mask, no sensors. The cast returns only the nearest target,
+//!    so a target that cannot answer the sweep is hidden and the cast repeated
+//!    (up to 8 targets): a body the pair filter does not let it collide with,
+//!    and a target the swept body overlaps at the start of the substep and
+//!    does not move further into (a sphere rolling on a floor still sees the
+//!    wall ahead). Moving further into a target it overlaps is a hit at
+//!    `t = 0` along the separating normal of the discrete contact.
 //! 3. **Moving obstacles.** A hit on a body that moved in the substep is
 //!    re-timed by the relative motion of the two bounding spheres
 //!    ([`crate::ccd::sphere_sphere_toi`]), exact for two plain spheres and
 //!    early (never late) for a shaped body. When the bounding spheres do not
-//!    meet under the relative motion, the hit is dropped.
+//!    meet under the relative motion, the target is hidden as above.
 //! 4. **Response.** For the first hit at fraction `t` of the substep with
 //!    normal `n` (from the obstacle toward the swept body), both bodies are
 //!    placed at their poses at `t`, after which the pair moves as one along
@@ -40,6 +45,12 @@
 //!    the bodies had before the substep's solve. A static or kinematic
 //!    obstacle is not moved. A hit on a static collider has no body to carry
 //!    a contact: the body stops at the surface along `n` and slides along it.
+//!
+//! A **kinematic** body is swept for the dynamic bodies it would pass
+//! through and only those (static geometry and other kinematic bodies are
+//! hidden). It is not placed: it follows its target, and step 4 with its
+//! infinite mass carries the dynamic body along `n` to touch it and gives it
+//! `(1 + e)` times the approach speed, as a wall moving into a free body.
 //!
 //! Step 4 makes a single head-on impact of two spheres come out as the
 //! textbook collision: the momentum along `n` is kept and the separation
@@ -68,8 +79,11 @@
 //! - Rotation during the substep (`COV-RIGID-075`): the sweep is a translating
 //!   sphere, the bounding sphere for a shaped body.
 //! - The TGS backend ([`crate::solver::SolverBackend::Tgs`]) does not sweep.
-//! - A swept body that overlaps something at the start of the substep is left
-//!   to the discrete contacts for that obstacle.
+//! - A target the swept body overlaps at the start and moves out of or along
+//!   is left to the discrete contacts.
+//! - The displacement is measured with
+//!   [`Vec3Fix::checked_length_scaled`](crate::math::Vec3Fix::checked_length_scaled);
+//!   a body whose displacement in one substep is `2⁶³` or more is not swept.
 //! - Only the first hit of a substep is answered; a second obstacle reached
 //!   by the slide after it is left to the discrete detection of later
 //!   substeps.
@@ -230,11 +244,12 @@ impl PhysicsWorld {
         let mut swept = Vec::new();
         for i in 0..n {
             let b = &self.bodies[i];
-            if b.body_type != BodyType::Dynamic
-                || b.is_sensor
-                || self.islands.is_sleeping(i)
-                || self.park.is_parked(i)
-            {
+            let mover = match b.body_type {
+                BodyType::Dynamic => !self.islands.is_sleeping(i),
+                BodyType::Kinematic => true,
+                BodyType::Static => false,
+            };
+            if !mover || b.is_sensor || self.park.is_parked(i) {
                 continue;
             }
             let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) else {
@@ -283,27 +298,100 @@ impl PhysicsWorld {
 
     /// The first hit of body `i` (at its start pose, the world at the start of
     /// the substep), moving by `d` of length `travel`.
+    ///
+    /// The cast returns only the nearest target, so a target that cannot
+    /// answer the sweep is hidden and the cast repeated (at most
+    /// [`MAX_HIDDEN`] times): a target the body overlaps at the start and does
+    /// not move further into, a body the pair filter rejects, a moving body
+    /// whose bounding sphere the relative motion misses, and, for a kinematic
+    /// body, everything but the dynamic bodies it can push. Hidden targets are
+    /// put back before returning.
     fn ccd_first_hit(
-        &self,
+        &mut self,
         i: usize,
         radius: Fix128,
         d: Vec3Fix,
         travel: Fix128,
     ) -> Option<CcdHit> {
         let own = self.body_filter(i);
+        let kinematic = self.bodies[i].body_type == BodyType::Kinematic;
         let filter = crate::shape_raycast::RayFilter::new()
             .with_layer_mask(own.mask)
             .with_sdf(false)
+            .with_static(!kinematic)
             .excluding_body(i);
         let start = self.bodies[i].position;
-        let hit = self.cast_sphere(start, radius, d, travel, &filter)?;
-        // Overlapping at the start: the query reports the body's own centre;
-        // that obstacle is the discrete contacts' (module doc, "Not covered").
+        let mut hidden_bodies: Vec<(usize, u32)> = Vec::new();
+        let mut hidden_statics: Vec<(usize, crate::static_collider::StaticCollider)> = Vec::new();
+        let mut found = None;
+        for _ in 0..=MAX_HIDDEN {
+            let Some(hit) = self.cast_sphere(start, radius, d, travel, &filter) else {
+                break;
+            };
+            match self.ccd_judge(i, radius, d, travel, kinematic, &hit) {
+                Judged::Hit(h) => {
+                    found = Some(h);
+                    break;
+                }
+                Judged::Hide => match hit.target {
+                    crate::shape_raycast::RayTarget::Body(j) => {
+                        hidden_bodies.push((j, self.body_filters[j].layer));
+                        self.body_filters[j].layer = 0;
+                    }
+                    crate::shape_raycast::RayTarget::StaticCollider(k) => {
+                        let empty = crate::static_collider::StaticCollider::TriMesh(
+                            crate::trimesh::TriMesh::from_indexed(&[], &[]),
+                        );
+                        hidden_statics
+                            .push((k, core::mem::replace(&mut self.static_colliders[k], empty)));
+                    }
+                    crate::shape_raycast::RayTarget::Sdf(_) => break,
+                },
+            }
+        }
+        for (j, layer) in hidden_bodies.into_iter().rev() {
+            self.body_filters[j].layer = layer;
+        }
+        for (k, c) in hidden_statics.into_iter().rev() {
+            self.static_colliders[k] = c;
+        }
+        found
+    }
+
+    /// What one cast hit means for the sweep of body `i` (see
+    /// [`Self::ccd_first_hit`]).
+    fn ccd_judge(
+        &self,
+        i: usize,
+        radius: Fix128,
+        d: Vec3Fix,
+        travel: Fix128,
+        kinematic: bool,
+        hit: &crate::world_shape_query::WorldShapeHit,
+    ) -> Judged {
+        let start = self.bodies[i].position;
+        // Overlapping at the start: the query reports the body's own centre.
+        // Moving further into the target is a hit at `t = 0` along the
+        // separating normal; anything else is left to the discrete contacts.
         if hit.t.is_zero() && hit.point == start {
-            return None;
+            return match self.ccd_start_normal(i, radius, hit.target) {
+                Some(n) if d.dot(n) < Fix128::ZERO && self.ccd_accepts(i, hit.body, kinematic) => {
+                    Judged::Hit(CcdHit {
+                        body: i,
+                        other: hit.body,
+                        t: Fix128::ZERO,
+                        normal: n,
+                        point: start - n * radius,
+                    })
+                }
+                _ => Judged::Hide,
+            };
+        }
+        if !self.ccd_accepts(i, hit.body, kinematic) {
+            return Judged::Hide;
         }
         let Some(j) = hit.body else {
-            return Some(CcdHit {
+            return Judged::Hit(CcdHit {
                 body: i,
                 other: None,
                 t: fraction(hit.t, travel),
@@ -311,9 +399,6 @@ impl PhysicsWorld {
                 point: hit.point,
             });
         };
-        if !crate::filter::CollisionFilter::can_collide(&own, &self.body_filter(j)) {
-            return None;
-        }
         // The swapped body holds its predicted position in `prev_position`.
         let dj = match self.bodies[j].body_type {
             BodyType::Static => Vec3Fix::ZERO,
@@ -321,7 +406,7 @@ impl PhysicsWorld {
             _ => self.bodies[j].prev_position - self.bodies[j].position,
         };
         if dj == Vec3Fix::ZERO {
-            return Some(CcdHit {
+            return Judged::Hit(CcdHit {
                 body: i,
                 other: Some(j),
                 t: fraction(hit.t, travel),
@@ -329,17 +414,69 @@ impl PhysicsWorld {
                 point: hit.point,
             });
         }
-        let rj = self.body_collision_radii.get(j).and_then(|r| *r)?;
+        let Some(rj) = self.body_collision_radii.get(j).and_then(|r| *r) else {
+            return Judged::Hide;
+        };
         // Obstacle as sphere A, the swept body as sphere B: the normal points
         // from the obstacle toward the swept body.
-        let toi = crate::ccd::sphere_sphere_toi(self.bodies[j].position, rj, dj, start, radius, d)?;
-        Some(CcdHit {
-            body: i,
-            other: Some(j),
-            t: toi.t,
-            normal: toi.normal,
-            point: toi.point,
-        })
+        match crate::ccd::sphere_sphere_toi(self.bodies[j].position, rj, dj, start, radius, d) {
+            Some(toi) => Judged::Hit(CcdHit {
+                body: i,
+                other: Some(j),
+                t: toi.t,
+                normal: toi.normal,
+                point: toi.point,
+            }),
+            None => Judged::Hide,
+        }
+    }
+
+    /// Whether a hit of body `i` on `other` (`None`: a static collider) is
+    /// answered: the pair filter lets them collide, and a kinematic body only
+    /// answers dynamic bodies it can move.
+    fn ccd_accepts(&self, i: usize, other: Option<usize>, kinematic: bool) -> bool {
+        match other {
+            None => !kinematic,
+            Some(j) => {
+                crate::filter::CollisionFilter::can_collide(
+                    &self.body_filter(i),
+                    &self.body_filter(j),
+                ) && (!kinematic || self.ccd_movable(j))
+            }
+        }
+    }
+
+    /// The separating normal (toward body `i`'s sphere at its start) of a
+    /// target `i` overlaps at the start of the substep, as the discrete
+    /// contacts compute it; `None` when there is none to take.
+    fn ccd_start_normal(
+        &self,
+        i: usize,
+        radius: Fix128,
+        target: crate::shape_raycast::RayTarget,
+    ) -> Option<Vec3Fix> {
+        let start = self.bodies[i].position;
+        match target {
+            crate::shape_raycast::RayTarget::Body(j) => {
+                let pose = (self.bodies[j].position, self.bodies[j].rotation);
+                match self.body_colliders.get(j).and_then(Option::as_ref) {
+                    Some(c) => crate::body_collider::contact_with_sphere(
+                        c,
+                        pose,
+                        crate::collider::Sphere::new(start, radius),
+                        false,
+                    )
+                    .map(|c| c.normal),
+                    None => (start - pose.0).try_normalize_scaled(),
+                }
+            }
+            crate::shape_raycast::RayTarget::StaticCollider(k) => self
+                .static_colliders
+                .get(k)
+                .and_then(|c| c.collide_sphere(start, radius))
+                .map(|c| c.normal),
+            crate::shape_raycast::RayTarget::Sdf(_) => None,
+        }
     }
 
     /// The first hit of body `i` (at its start pose, radius `radius`, moving by
@@ -353,6 +490,9 @@ impl PhysicsWorld {
         let mut best: Option<CcdHit> = None;
         for j in 0..self.bodies.len() {
             if j == i || self.bodies[j].is_sensor {
+                continue;
+            }
+            if self.bodies[i].body_type == BodyType::Kinematic && !self.ccd_movable(j) {
                 continue;
             }
             let Some(rj) = self.body_collision_radii.get(j).and_then(|r| *r) else {
@@ -427,8 +567,11 @@ impl PhysicsWorld {
             let tangent = d - n * d.dot(n);
             p0 + d * hit.t + (tangent + n * along) * rest
         };
-        let pi = place(self.bodies[hit.body].prev_position, di);
-        self.bodies[hit.body].position = pi;
+        // A kinematic body follows its target: it is not placed.
+        if self.ccd_movable(hit.body) {
+            let pi = place(self.bodies[hit.body].prev_position, di);
+            self.bodies[hit.body].position = pi;
+        }
         if let Some(j) = hit.other {
             if self.ccd_movable(j) {
                 let pj = place(self.bodies[j].prev_position, dj);
@@ -477,6 +620,18 @@ impl PhysicsWorld {
             self.add_contact_with_material(i, j, contact);
         }
     }
+}
+
+/// How many targets one sweep may hide before it gives up (each hidden
+/// target costs one more cast).
+const MAX_HIDDEN: usize = 8;
+
+/// The verdict on one cast hit.
+enum Judged {
+    /// The sweep's answer.
+    Hit(CcdHit),
+    /// Hide the target and cast again.
+    Hide,
 }
 
 /// `hit / travel` as a fraction of the substep, `1` at or past the end.
