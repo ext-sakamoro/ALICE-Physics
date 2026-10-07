@@ -451,4 +451,202 @@ mod tests {
             "Windward face should be more exposed: windward={exp_windward}, leeward={exp_leeward}"
         );
     }
+
+    fn chemical(rate: f32) -> ErosionConfig {
+        ErosionConfig {
+            erosion_type: ErosionType::Chemical,
+            rate,
+            hardness: 0.0,
+            max_depth: 10.0,
+            smoothing: 0.0,
+            ..Default::default()
+        }
+    }
+
+    /// oracle (module doc table): with `base = rate·(1 − hardness)`, wind is
+    /// `base·v·e`, water `1.5·base·v·e`, chemical `base·e` (no speed),
+    /// ablation `base·v²·e`. `rate 2, hardness 1/2, v 3, e 1/2`: base 1, so
+    /// 1.5 / 2.25 / 0.5 / 4.5.
+    #[test]
+    fn compute_rate_per_erosion_type() {
+        for (ty, want) in [
+            (ErosionType::Wind, 1.5_f32),
+            (ErosionType::Water, 2.25),
+            (ErosionType::Chemical, 0.5),
+            (ErosionType::Ablation, 4.5),
+        ] {
+            let m = ErosionModifier::new(
+                ErosionConfig {
+                    erosion_type: ty,
+                    rate: 2.0,
+                    hardness: 0.5,
+                    flow_speed: 3.0,
+                    ..Default::default()
+                },
+                2,
+                (0.0, 0.0, 0.0),
+                (1.0, 1.0, 1.0),
+            );
+            assert!((m.compute_rate(0.5) - want).abs() < 1e-6, "{ty:?}");
+        }
+    }
+
+    /// oracle: a disabled modifier leaves the distance as it is and its
+    /// `update` changes nothing, even with full exposure.
+    #[test]
+    fn disabled_erosion_is_inert() {
+        let mut m = ErosionModifier::new(chemical(1.0), 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.erosion_depth.data[0] = 0.25;
+        m.exposure.data[0] = 1.0;
+        m.enabled = false;
+        assert!(!m.is_active());
+        assert_eq!(m.modify_distance(0.0, 0.0, 0.0, 0.5), 0.5);
+        m.update(1.0);
+        assert_eq!(m.erosion_depth.data[0], 0.25);
+        assert_eq!(m.exposure.data[0], 1.0);
+    }
+
+    /// oracle: a zero flow direction falls back to `+x`: on the ground plane
+    /// (`distance = y`, normal `+y`) the windward alignment `−n·f = 0`, so
+    /// every near-surface cell gets exposure 0, the same as for flow `+x`.
+    #[test]
+    fn zero_flow_direction_falls_back_to_plus_x() {
+        let ground = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+        let mut m = ErosionModifier::new(
+            ErosionConfig {
+                flow_direction: (0.0, 0.0, 0.0),
+                ..Default::default()
+            },
+            3,
+            (-1.0, -1.0, -1.0),
+            (1.0, 1.0, 1.0),
+        );
+        m.exposure.data.fill(7.0);
+        m.compute_exposure_from_normals(&ground, 0.5);
+        // the middle layer (y = 0) is on the surface: exposure 0 there
+        for iz in 0..3 {
+            for ix in 0..3 {
+                let i = m.exposure.index(ix, 1, iz);
+                assert_eq!(m.exposure.data[i], 0.0, "({ix}, 1, {iz})");
+            }
+        }
+        // the layers at y = ±1 are farther than 0.5: untouched
+        assert_eq!(m.exposure.data[m.exposure.index(0, 0, 0)], 7.0);
+    }
+
+    fn sample_modifier(ty: ErosionType) -> ErosionModifier {
+        let mut m = ErosionModifier::new(
+            ErosionConfig {
+                erosion_type: ty,
+                rate: 0.75,
+                hardness: 0.25,
+                max_depth: 3.5,
+                smoothing: 0.125,
+                flow_direction: (0.0, 1.0, -1.0),
+                flow_speed: 2.5,
+            },
+            2,
+            (-1.0, -2.0, -3.0),
+            (1.0, 2.0, 3.0),
+        );
+        for (i, v) in m.erosion_depth.data.iter_mut().enumerate() {
+            *v = i as f32 * 0.5;
+        }
+        m.exposure.data[3] = 0.875;
+        m.enabled = false;
+        m
+    }
+
+    /// oracle: the participant kind is `"EROS"` read big endian; a payload
+    /// written by `write_state` is accepted and read back into a different
+    /// modifier, which then writes the same bytes and has the original
+    /// config, flag and fields, for every erosion type.
+    #[test]
+    fn participant_state_round_trip() {
+        assert_eq!(
+            ErosionModifier::PARTICIPANT_KIND,
+            ParticipantKind::new(0x4552_4f53)
+        );
+        for ty in [
+            ErosionType::Wind,
+            ErosionType::Water,
+            ErosionType::Chemical,
+            ErosionType::Ablation,
+        ] {
+            let src = sample_modifier(ty);
+            assert_eq!(Participant::kind(&src), ErosionModifier::PARTICIPANT_KIND);
+            let mut bytes = Vec::new();
+            src.write_state(&mut bytes);
+            assert_eq!(src.check_state(&bytes), Ok(()));
+            let mut dst = ErosionModifier::new(
+                ErosionConfig::default(),
+                1,
+                (0.0, 0.0, 0.0),
+                (1.0, 1.0, 1.0),
+            );
+            dst.read_state(&bytes);
+            assert_eq!(dst.config, src.config);
+            assert!(!dst.enabled);
+            assert_eq!(dst.erosion_depth.data, src.erosion_depth.data);
+            assert_eq!(dst.exposure.data, src.exposure.data);
+            assert_eq!(
+                (dst.exposure.min, dst.exposure.max),
+                ((-1.0, -2.0, -3.0), (1.0, 2.0, 3.0))
+            );
+            let mut again = Vec::new();
+            dst.write_state(&mut again);
+            assert_eq!(again, bytes);
+        }
+    }
+
+    /// oracle: the erosion type is the byte after the 4-byte version; tag 4
+    /// names no type, a missing last byte or an extra byte is a length error.
+    #[test]
+    fn participant_state_refusals() {
+        let src = sample_modifier(ErosionType::Wind);
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        let mut bad_tag = bytes.clone();
+        bad_tag[4] = 4;
+        assert_eq!(src.check_state(&bad_tag), Err(StateError::InvalidValue));
+        assert!(matches!(
+            src.check_state(&bytes[..bytes.len() - 1]),
+            Err(StateError::Length { .. })
+        ));
+        let mut long = bytes.clone();
+        long.push(0);
+        assert!(matches!(
+            src.check_state(&long),
+            Err(StateError::Length { .. })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "read_state called with a payload check_state refuses")]
+    fn participant_read_state_panics_on_a_refused_payload() {
+        let mut m = sample_modifier(ErosionType::Wind);
+        m.read_state(&[1, 0, 0, 0, 9]);
+    }
+
+    /// oracle: in a world of one substep, the participant runs `update(dt)`
+    /// once: chemical erosion with rate 1, hardness 0, exposure 1 on one cell
+    /// and `dt = 1/4` deepens that cell by `1·1·(1/4) = 1/4`, so channel 0
+    /// (deepest cell) and channel 1 (sum of cells) both read 1/4.
+    #[test]
+    fn participant_substep_in_a_world() {
+        let mut m = ErosionModifier::new(chemical(1.0), 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.exposure.data[0] = 1.0;
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
+            substeps: 1,
+            ..Default::default()
+        });
+        world.add_participant(Box::new(m)).expect("register");
+        world.step(Fix128::from_ratio(1, 4));
+        let Some(crate::world_participant::Observed::Exact(sink)) = world.observe_participant(0)
+        else {
+            panic!("observation");
+        };
+        let quarter = Fix128::from_ratio(1, 4);
+        assert_eq!(sink.values(), &[(0, quarter), (1, quarter)]);
+    }
 }
