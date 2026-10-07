@@ -27,7 +27,7 @@
 //! | the value behind a port that is not a shared field is state of the participant that holds it, so it is in that participant's [`Participant::write_state`] payload | participant side |
 //! | the summed force and torque reach a body through `v += F·h·inv_mass`, `ω += I⁻¹·τ·h`; a product out of range is a fault ([`WorldFault::ForceOutOfRange`]), never clamped | world side |
 //! | the rigid integration going out of range ([`WorldFault::RigidOverflow`]) is a fault like a participant's | world side |
-//! | a parked (sleeping) body is woken by participant forces only when the velocity change they make in this substep is above the sleep threshold ([`wakes_parked_body`]: the squared norm of `F·inv_mass·h` above `linear_threshold²`, or that of `I⁻¹τ·h` above `angular_threshold²`); below it the force has no effect on the body | world side calls [`wakes_parked_body`] |
+//! | a parked (sleeping) dynamic body is woken (and unparked) by participant forces whenever the change the world applies for the forces and torques of all participants, `Δv = F·inv_mass·h` or `Δω = I⁻¹τ·h`, is non-zero in any component; there is no threshold, so a participant force never leaves a sleeping body unchanged while the participant books its reaction; when both changes round to exactly zero the body stays asleep ([`wakes_parked_body`]; this replaces the earlier rule, which left a body asleep below the sleep thresholds) | world side calls [`wakes_parked_body`] |
 //! | a shared field ([`FieldBoard`]) is owned by the world alone; a participant reads the value committed before the substep began and writes only into its own [`FieldStage`] | type: [`SubstepCtx::field`] hands out `&[Fix128]` of the board, [`SubstepCtx::stage_field`] a buffer of the stage |
 //! | staged field writes are committed at the end of the substep, in [`execution_order`], all fields at once; a commit that would leave the range of [`Fix128`] changes no field and is a fault ([`WorldFault::FieldOutOfRange`]) | [`run_substep`] |
 //! | a participant that returned `Err` has its staged field writes dropped with its forces | [`run_substep`] |
@@ -1796,38 +1796,37 @@ pub fn deposit_bodies(
 // Waking a parked body
 // ============================================================================
 
-fn above(d: Option<Vec3Fix>, threshold: Fix128) -> bool {
-    let sq = d.and_then(|d| {
-        let x = d.x.checked_mul(d.x)?;
-        let y = d.y.checked_mul(d.y)?;
-        let z = d.z.checked_mul(d.z)?;
-        checked_add(checked_add(x, y)?, z)
-    });
-    match (sq, threshold.checked_mul(threshold)) {
-        (None, _) => true,
-        (Some(_), None) => false,
-        (Some(s), Some(t)) => s > t,
-    }
+/// Whether a change is non-zero in a component; a change too large to
+/// represent (`None`) counts as non-zero.
+fn changes(d: Option<Vec3Fix>) -> bool {
+    d.is_none_or(|d| !(d.x.is_zero() && d.y.is_zero() && d.z.is_zero()))
 }
 
-/// Whether participant force `force` and torque `torque` (summed over this
-/// substep) wake the parked body `body`: the velocity change they make in one
-/// substep of width `h` is above the sleep threshold,
-/// `|F·inv_mass·h|² > linear_threshold²` or `|I⁻¹τ·h|² > angular_threshold²`
-/// (`I⁻¹` in the world frame), strictly. The change is the one the world
-/// applies (`F·inv_mass` then `·h`), the squares are taken in [`Fix128`] and
-/// compared without a square root, so the decision is the same on every
-/// platform. A change too large to represent wakes the body (the world then
-/// reports it as [`WorldFault::ForceOutOfRange`]). A static body never wakes.
-/// Below the threshold the world leaves the body parked and the force has no
-/// effect on it.
+/// Whether participant force `force` and torque `torque` (summed over every
+/// participant for this substep) wake the parked or sleeping body `body`: the
+/// change the world would apply in one substep of width `h`,
+/// `Δv = (F·inv_mass)·h` or `Δω = (I⁻¹τ)·h` (`I⁻¹` in the world frame, the
+/// same [`Fix128`] products the world uses), is non-zero in any component.
+/// There is no threshold: a participant force that changes the body at all
+/// wakes it, so the momentum a participant books for its force always
+/// reaches the body. When both changes round to exactly zero the body stays
+/// asleep (a force of a few raw units does not keep bodies awake). A change
+/// too large to represent wakes the body (the world then reports it as
+/// [`WorldFault::ForceOutOfRange`]). A static body never wakes.
+///
+/// This replaces the earlier rule for participant forces, which compared the
+/// change with the sleep thresholds of `sleep` and left a body asleep below
+/// them (the force then had no effect on it). `sleep` is no longer read; it
+/// stays in the signature of this unstable function. Wakes from contacts,
+/// impulses and other sources keep their own thresholds, and waking spreads
+/// through an island by the existing rules.
 #[must_use]
 pub fn wakes_parked_body(
     body: &RigidBody,
     force: Vec3Fix,
     torque: Vec3Fix,
     h: Fix128,
-    sleep: &SleepConfig,
+    _sleep: &SleepConfig,
 ) -> bool {
     if body.is_static() {
         return false;
@@ -1838,5 +1837,5 @@ pub fn wakes_parked_body(
     let dw = body
         .checked_world_inv_inertia_apply(torque)
         .and_then(|a| a.checked_scale(h));
-    above(dv, sleep.linear_threshold) || above(dw, sleep.angular_threshold)
+    changes(dv) || changes(dw)
 }
