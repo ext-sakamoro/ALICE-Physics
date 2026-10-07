@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5526 |
+| 🟢 Not ignored (run by CI) | 5533 |
 | 🔴 Red by design | 91 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5643** |
+| **Total** | **5650** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -164,7 +164,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5526)
+## 🟢 Not ignored (5533)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -526,6 +526,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
 | `analytic_world_query_long_paths.rs` | 5 |
 | `analytic_world_query_twisted_cells.rs` | 5 |
+| `analytic_xpbd_velocity.rs` | 5 |
 | `audit_c_buckling.rs` | 5 |
 | `audit_c_collider.rs` | 5 |
 | `audit_c_force.rs` | 5 |
@@ -583,6 +584,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_rotation_integration.rs` | 2 |
 | `analytic_tgs_backend_coverage.rs` | 2 |
 | `analytic_tgs_rotation.rs` | 2 |
+| `analytic_xpbd_angular_velocity.rs` | 2 |
 | `audit_c_fatigue.rs` | 2 |
 | `audit_c_replay.rs` | 2 |
 | `audit_neural_alloc.rs` | 2 |
