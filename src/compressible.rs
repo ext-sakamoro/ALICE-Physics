@@ -588,4 +588,140 @@ mod tests {
         // ρ = 0 guard returns 0 rather than dividing by zero.
         assert_eq!(g.speed_of_sound_from_pd(p, Fix128::ZERO), Fix128::ZERO);
     }
+
+    /// Relative difference `|a − b| / |b|` in f64 (test-side check only).
+    fn rel(a: Fix128, b: f64) -> f64 {
+        ((a.to_f64() - b) / b).abs()
+    }
+
+    #[test]
+    fn zero_guards_of_the_state_equation_return_zero() {
+        let g = IdealGas::air();
+        let p = Fix128::from_int(101_325);
+        assert_eq!(g.density(p, Fix128::ZERO), Fix128::ZERO);
+        assert_eq!(g.temperature(p, Fix128::ZERO), Fix128::ZERO);
+        // T = 0 has no sound speed, so no Mach number either
+        assert_eq!(
+            g.mach_number(Fix128::from_int(10), Fix128::ZERO),
+            Fix128::ZERO
+        );
+        // T = p / (ρ R) closes the state equation p = ρ R T
+        let t = g.temperature(Fix128::from_int(287 * 300), Fix128::ONE);
+        assert_eq!(t, Fix128::from_int(300));
+    }
+
+    #[test]
+    fn stagnation_temperature_ratio_saturates_beyond_the_documented_mach() {
+        // air: (γ−1)/2 · M² leaves Fix128 for M ≳ 6.8e9; M = 1e10 saturates at MAX
+        let air = IdealGas::air();
+        let m = Fix128::from_int(10_000_000_000);
+        assert_eq!(stagnation_temp_ratio(&air, m), RATIO_SATURATED);
+        // γ < 1: the ratio decreases, so it saturates at the most negative value
+        let sub = IdealGas {
+            gas_constant: Fix128::from_int(287),
+            gamma: Fix128::from_ratio(1, 2),
+        };
+        assert_eq!(stagnation_temp_ratio(&sub, m), -RATIO_SATURATED);
+        // and the pressure ratio of a γ < 1 gas is the documented 1
+        assert_eq!(
+            stagnation_pressure_ratio(&sub, Fix128::from_int(2)),
+            Fix128::ONE
+        );
+    }
+
+    #[test]
+    fn stagnation_pressure_ratio_isothermal_limit_and_saturation() {
+        let iso = IdealGas {
+            gas_constant: Fix128::from_int(287),
+            gamma: Fix128::ONE,
+        };
+        // γ = 1: p0/p = exp(M²/2); M = 2 gives e² (to Fix128 exp's ~1e-8)
+        let e_sq = core::f64::consts::E * core::f64::consts::E;
+        let r = stagnation_pressure_ratio(&iso, Fix128::from_int(2));
+        assert!(rel(r, e_sq) < 1e-7, "{} vs {e_sq}", r.to_f64());
+        // M² beyond Fix128 saturates at MAX
+        let m = Fix128::from_int(10_000_000_000);
+        assert_eq!(stagnation_pressure_ratio(&iso, m), RATIO_SATURATED);
+        // air at M = 1e4: (1 + 0.2·1e8)^3.5 ≈ 3.6e25 > 2^63, so MAX
+        let air = IdealGas::air();
+        assert_eq!(
+            stagnation_pressure_ratio(&air, Fix128::from_int(10_000)),
+            RATIO_SATURATED
+        );
+        // air at M = 1: 1.2^3.5 (Anderson table A.1, 1.8929)
+        assert!(
+            rel(
+                stagnation_pressure_ratio(&air, Fix128::ONE),
+                1.892_929_158_737_854
+            ) < 1e-9
+        );
+    }
+
+    #[test]
+    fn isothermal_normal_shock_is_m_squared_with_unit_temperature() {
+        // γ = 1: ρ2/ρ1 = p2/p1 = M1², T2/T1 = 1, M2 = 1/M1
+        let iso = IdealGas {
+            gas_constant: Fix128::from_int(287),
+            gamma: Fix128::ONE,
+        };
+        let s = normal_shock_jump(&iso, Fix128::from_int(2));
+        assert_eq!(s.density_ratio, Fix128::from_int(4));
+        assert_eq!(s.pressure_ratio, Fix128::from_int(4));
+        assert_eq!(s.temperature_ratio, Fix128::ONE);
+        assert!(rel(s.mach_downstream, 0.5) < 1e-12);
+        // beyond the M1² range: density and pressure saturate, M2 = 1/M1
+        let m = Fix128::from_int(10_000_000_000);
+        let s = normal_shock_jump(&iso, m);
+        assert_eq!(s.density_ratio, RATIO_SATURATED);
+        assert_eq!(s.pressure_ratio, RATIO_SATURATED);
+        assert_eq!(s.temperature_ratio, Fix128::ONE);
+        assert!(rel(s.mach_downstream, 1e-10) < 1e-6);
+    }
+
+    #[test]
+    fn strong_shock_follows_rankine_hugoniot_divided_by_m_squared() {
+        let air = IdealGas::air();
+        // M1 = 2e9: M1² = 4e18 fits, (γ+1) M1² = 9.6e18 does not
+        let m1 = 2_000_000_000_f64;
+        let s = normal_shock_jump(&air, Fix128::from_int(2_000_000_000));
+        // ρ2/ρ1 = (γ+1)M²/((γ−1)M² + 2) → 6 as M → ∞
+        let rho = 2.4 * m1 * m1 / (0.4 * m1 * m1 + 2.0);
+        assert!(rel(s.density_ratio, rho) < 1e-9);
+        // p2/p1 = 1 + 2γ/(γ+1)(M² − 1)
+        let p = 1.0 + 2.8 / 2.4 * (m1 * m1 - 1.0);
+        assert!(rel(s.pressure_ratio, p) < 1e-9);
+        // T2/T1 = (p2/p1)(ρ1/ρ2)
+        assert!(rel(s.temperature_ratio, p / rho) < 1e-9);
+        // M2² = ((γ−1)M² + 2)/(2γM² − (γ−1)) → (γ−1)/(2γ) = 1/7
+        let m2 = ((0.4 * m1 * m1 + 2.0) / (2.8 * m1 * m1 - 0.4)).sqrt();
+        assert!(rel(s.mach_downstream, m2) < 1e-9);
+
+        // M1 = 1e10: p2/p1 and T2/T1 leave the range and saturate, while the
+        // density ratio and M2 approach their limits 6 and √(1/7)
+        let s = normal_shock_jump(&air, Fix128::from_int(10_000_000_000));
+        assert_eq!(s.pressure_ratio, RATIO_SATURATED);
+        assert_eq!(s.temperature_ratio, RATIO_SATURATED);
+        assert!(rel(s.density_ratio, 6.0) < 1e-9);
+        assert!(rel(s.mach_downstream, (1.0_f64 / 7.0).sqrt()) < 1e-9);
+    }
+
+    #[test]
+    fn isothermal_riemann_invariants_use_the_signed_sentinel() {
+        let iso = IdealGas {
+            gas_constant: Fix128::from_int(287),
+            gamma: Fix128::ONE,
+        };
+        let u = Fix128::from_int(3);
+        // a = 0: both invariants are u
+        assert_eq!(riemann_invariants(&iso, u, Fix128::ZERO), (u, u));
+        let inf = Fix128::from_int(i64::MAX >> 8);
+        assert_eq!(
+            riemann_invariants(&iso, u, Fix128::from_int(340)),
+            (u + inf, u - inf)
+        );
+        assert_eq!(
+            riemann_invariants(&iso, u, Fix128::from_int(-340)),
+            (u - inf, u + inf)
+        );
+    }
 }
