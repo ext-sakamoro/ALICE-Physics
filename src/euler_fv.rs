@@ -1223,4 +1223,315 @@ mod tests {
         assert_eq!(mul(-a, b), -mul(a, b));
         assert_eq!(half(-a), -half(a));
     }
+
+    fn two() -> Fix128 {
+        Fix128::from_int(2)
+    }
+
+    fn state(rho: i64, u: Fix128, p: i64) -> Primitive {
+        Primitive {
+            rho: Fix128::from_int(rho),
+            u,
+            p: Fix128::from_int(p),
+        }
+    }
+
+    fn near(a: Fix128, b: Fix128, tol: f64) -> bool {
+        (a - b).abs().to_f64() < tol
+    }
+
+    /// oracle: every error prints the message its documentation gives.
+    #[test]
+    fn error_messages() {
+        for (e, text) in [
+            (EulerError::NoCells, "euler_fv: no cells"),
+            (EulerError::GammaNotAboveOne, "euler_fv: gamma must be > 1"),
+            (
+                EulerError::CflOutOfRange,
+                "euler_fv: CFL number must be in (0, 1]",
+            ),
+            (
+                EulerError::NonPositiveSpacing,
+                "euler_fv: cell width must be > 0",
+            ),
+            (
+                EulerError::NonPositiveTimeStep,
+                "euler_fv: time step must be > 0",
+            ),
+            (
+                EulerError::PeriodicMismatch,
+                "euler_fv: periodic boundary must be used on both ends",
+            ),
+            (
+                EulerError::NonPositiveDensity { cell: 4 },
+                "euler_fv: non-positive density in cell 4",
+            ),
+            (
+                EulerError::NonPositivePressure { cell: 4 },
+                "euler_fv: non-positive pressure in cell 4",
+            ),
+            (
+                EulerError::VacuumGenerated,
+                "euler_fv: Riemann problem generates vacuum",
+            ),
+            (
+                EulerError::RiemannNotConverged,
+                "euler_fv: star-pressure iteration did not converge",
+            ),
+        ] {
+            assert_eq!(e.to_string(), text);
+        }
+    }
+
+    /// oracle: for `γ = 2` the state `ρ = 1, u = 2, p = 3` has momentum 2 and
+    /// energy `p/(γ − 1) + ρu²/2 = 3 + 2 = 5`, and flux
+    /// `(ρu, ρu² + p, u(E + p)) = (2, 7, 16)`; the conversion back gives the
+    /// state again. A non-positive density or pressure is refused.
+    #[test]
+    fn conserved_primitive_and_flux_closed_form() {
+        let w = state(1, two(), 3);
+        let c = Conserved::from_primitive(two(), &w);
+        let want = Conserved {
+            rho: Fix128::ONE,
+            mom: two(),
+            energy: Fix128::from_int(5),
+        };
+        assert_eq!(c, want);
+        assert_eq!(c.to_primitive(two()), Ok(w));
+        assert_eq!(
+            physical_flux(two(), &w),
+            Conserved {
+                rho: two(),
+                mom: Fix128::from_int(7),
+                energy: Fix128::from_int(16)
+            }
+        );
+        let empty = Conserved::default();
+        assert_eq!(
+            empty.to_primitive(two()),
+            Err(EulerError::NonPositiveDensity { cell: 0 })
+        );
+        let cold = Conserved {
+            energy: Fix128::from_int(2),
+            ..want
+        };
+        assert_eq!(
+            cold.to_primitive(two()),
+            Err(EulerError::NonPositivePressure { cell: 0 })
+        );
+    }
+
+    /// oracle: minmod picks the smaller slope of equal sign and 0 across a
+    /// sign change; van Leer gives `2ab/(a + b)` (`2·3/4 = 3/2` for 1 and 3)
+    /// and 0 across a sign change.
+    #[test]
+    fn limiters_closed_form() {
+        let (one, three) = (Fix128::ONE, Fix128::from_int(3));
+        assert_eq!(limit(Limiter::Minmod, one, three), one);
+        assert_eq!(limit(Limiter::Minmod, -one, -three), -one);
+        assert_eq!(limit(Limiter::Minmod, one, -three), Fix128::ZERO);
+        assert_eq!(
+            limit(Limiter::VanLeer, one, three),
+            Fix128::from_ratio(3, 2)
+        );
+        assert_eq!(limit(Limiter::VanLeer, one, -three), Fix128::ZERO);
+    }
+
+    /// oracle: a Riemann problem between equal states has the star state of
+    /// that state (`p* = 3`, `u* = 1/2`) and samples to it; the Godunov and
+    /// HLLC fluxes are then the physical flux. Two states flying apart with
+    /// `u_R − u_L = 200 ≥ 2(a_L + a_R)/(γ − 1)` open a vacuum (6 does not); a supersonic
+    /// pair (`u = ±10`, `a = √6`) takes the upwind physical flux exactly.
+    #[test]
+    fn riemann_problems_closed_form() {
+        let w = state(1, Fix128::from_ratio(1, 2), 3);
+        let star = exact_riemann(two(), &w, &w).expect("converges");
+        assert!(near(star.p, Fix128::from_int(3), 1e-12), "{star:?}");
+        assert!(near(star.u, Fix128::from_ratio(1, 2), 1e-12), "{star:?}");
+        for s in [-Fix128::from_int(5), Fix128::ZERO, Fix128::from_int(5)] {
+            let got = star.sample(two(), &w, &w, s);
+            assert!(
+                near(got.rho, w.rho, 1e-12) && near(got.u, w.u, 1e-12) && near(got.p, w.p, 1e-12)
+            );
+        }
+        let f = physical_flux(two(), &w);
+        for solver in [RiemannSolver::Exact, RiemannSolver::Hllc] {
+            let g = numerical_flux(solver, two(), &w, &w).expect("flux");
+            assert!(
+                near(g.rho, f.rho, 1e-12)
+                    && near(g.mom, f.mom, 1e-12)
+                    && near(g.energy, f.energy, 1e-12),
+                "{solver:?}"
+            );
+        }
+        let apart = (
+            state(1, -Fix128::from_int(100), 3),
+            state(1, Fix128::from_int(100), 3),
+        );
+        assert_eq!(
+            exact_riemann(two(), &apart.0, &apart.1),
+            Err(EulerError::VacuumGenerated)
+        );
+        // `u_R − u_L = 6 < 2(a_L + a_R) = 4√6 ≈ 9.8`: a star state, no vacuum
+        let near_apart = (
+            state(1, -Fix128::from_int(3), 3),
+            state(1, Fix128::from_int(3), 3),
+        );
+        assert!(exact_riemann(two(), &near_apart.0, &near_apart.1).is_ok());
+        let left = state(2, Fix128::from_int(-10), 3);
+        let fast = state(1, Fix128::from_int(10), 3);
+        assert_eq!(
+            numerical_flux(
+                RiemannSolver::Hllc,
+                two(),
+                &fast,
+                &state(2, Fix128::from_int(10), 3)
+            ),
+            Ok(physical_flux(two(), &fast))
+        );
+        assert_eq!(
+            numerical_flux(
+                RiemannSolver::Hllc,
+                two(),
+                &state(2, Fix128::from_int(-10), 3),
+                &left
+            ),
+            Ok(physical_flux(two(), &left))
+        );
+    }
+
+    /// oracle: the solver refuses `γ ≤ 1`, a CFL outside `(0, 1]`, a periodic
+    /// boundary on one end only, no cells, a non-positive width, a bad cell
+    /// (with its index) and a non-positive step.
+    #[test]
+    fn solver_refusals() {
+        let w = [state(1, Fix128::ZERO, 1)];
+        let dx = Fix128::ONE;
+        let cfg = EulerConfig::godunov(two());
+        let new =
+            |c: EulerConfig, dx: Fix128, cells: &[Primitive]| EulerFv1d::new(c, dx, cells).err();
+        assert_eq!(
+            new(EulerConfig::godunov(Fix128::ONE), dx, &w),
+            Some(EulerError::GammaNotAboveOne)
+        );
+        assert_eq!(
+            new(
+                EulerConfig {
+                    cfl: Fix128::ZERO,
+                    ..cfg
+                },
+                dx,
+                &w
+            ),
+            Some(EulerError::CflOutOfRange)
+        );
+        assert_eq!(
+            new(EulerConfig { cfl: two(), ..cfg }, dx, &w),
+            Some(EulerError::CflOutOfRange)
+        );
+        assert_eq!(
+            new(
+                EulerConfig {
+                    left: Boundary::Periodic,
+                    ..cfg
+                },
+                dx,
+                &w
+            ),
+            Some(EulerError::PeriodicMismatch)
+        );
+        assert_eq!(new(cfg, dx, &[]), Some(EulerError::NoCells));
+        assert_eq!(
+            new(cfg, Fix128::ZERO, &w),
+            Some(EulerError::NonPositiveSpacing)
+        );
+        assert_eq!(
+            new(cfg, dx, &[w[0], state(0, Fix128::ZERO, 1)]),
+            Some(EulerError::NonPositiveDensity { cell: 1 })
+        );
+        assert_eq!(
+            new(cfg, dx, &[w[0], w[0], state(1, Fix128::ZERO, 0)]),
+            Some(EulerError::NonPositivePressure { cell: 2 })
+        );
+        let mut s = EulerFv1d::new(cfg, dx, &w).expect("valid");
+        assert_eq!(
+            s.step_with_dt(Fix128::ZERO),
+            Err(EulerError::NonPositiveTimeStep)
+        );
+    }
+
+    /// oracle: a uniform state is a steady solution for every scheme and
+    /// boundary (identical interface fluxes cancel): the cells stay exactly
+    /// as given while time advances by the CFL step
+    /// `cfl·dx/(|u| + √(γp/ρ))`. Walls need `u = 0`. `advance_to` stops
+    /// exactly at the end time. Totals are 8 times the cell.
+    #[test]
+    fn uniform_state_is_steady_for_every_scheme() {
+        let moving = Fix128::from_ratio(1, 2);
+        let cases = [
+            (EulerConfig::godunov(two()), moving),
+            (
+                EulerConfig::muscl(two(), RiemannSolver::Hllc, Limiter::Minmod),
+                moving,
+            ),
+            (
+                EulerConfig::muscl(two(), RiemannSolver::Exact, Limiter::VanLeer),
+                moving,
+            ),
+            (
+                EulerConfig {
+                    left: Boundary::Periodic,
+                    right: Boundary::Periodic,
+                    ..EulerConfig::muscl(two(), RiemannSolver::Hllc, Limiter::VanLeer)
+                },
+                moving,
+            ),
+            (
+                EulerConfig {
+                    left: Boundary::ReflectiveWall,
+                    right: Boundary::ReflectiveWall,
+                    ..EulerConfig::godunov(two())
+                },
+                Fix128::ZERO,
+            ),
+            (
+                EulerConfig {
+                    left: Boundary::ReflectiveWall,
+                    right: Boundary::ReflectiveWall,
+                    ..EulerConfig::muscl(two(), RiemannSolver::Exact, Limiter::Minmod)
+                },
+                Fix128::ZERO,
+            ),
+        ];
+        for (cfg, u) in cases {
+            let w = state(1, u, 3);
+            let dx = Fix128::from_ratio(1, 8);
+            let mut s = EulerFv1d::new(cfg, dx, &[w; 8]).expect("valid");
+            assert_eq!(*s.config(), cfg);
+            assert_eq!(s.dx(), dx);
+            let cell = Conserved::from_primitive(two(), &w);
+            assert_eq!(s.totals(), cell.scale(Fix128::from_int(8)));
+            let speed = u.to_f64() + 6f64.sqrt();
+            assert!(
+                (s.max_wave_speed().to_f64() - speed).abs() < 1e-12,
+                "{cfg:?}"
+            );
+            let dt = s.step().expect("step");
+            assert!(
+                (dt.to_f64() - cfg.cfl.to_f64() / 8.0 / speed).abs() < 1e-12,
+                "{cfg:?}"
+            );
+            assert_eq!(s.time(), dt);
+            assert!(s.cells().iter().all(|c| *c == cell), "{cfg:?}");
+            let t_end = Fix128::from_ratio(1, 4);
+            let steps = s.advance_to(t_end).expect("advance");
+            assert!(steps >= 1);
+            assert_eq!(s.time(), t_end);
+            assert!(s.cells().iter().all(|c| *c == cell), "{cfg:?}");
+            assert!(s
+                .primitives()
+                .iter()
+                .all(|p| near(p.p, w.p, 1e-12) && p.u == w.u));
+        }
+    }
 }
