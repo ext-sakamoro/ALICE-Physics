@@ -447,3 +447,49 @@ impl Support for PosedShape {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The geometric centre is the centre of mass moved back along the shape's
+    /// offset turned by the orientation; a quaternion of norm 2 must turn it the
+    /// same as the unit one, not stretch the offset by `|q|^2`.
+    #[test]
+    fn geometric_center_ignores_the_orientation_norm() {
+        let unit = QuatFix::from_axis_angle(
+            Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ZERO).normalize(),
+            Fix128::from_ratio(7, 10),
+        );
+        let two = Fix128::from_int(2);
+        let doubled = QuatFix::new(unit.x * two, unit.y * two, unit.z * two, unit.w * two);
+        let shapes = [
+            Shape::Cone {
+                radius: Fix128::ONE,
+                half_height: Fix128::from_int(2),
+            },
+            Shape::Wedge {
+                width: Fix128::from_int(2),
+                height: Fix128::from_int(3),
+                depth: Fix128::ONE,
+            },
+        ];
+        for shape in shapes {
+            let posed = |rotation| PosedShape {
+                shape,
+                position: Vec3Fix::from_int(1, -2, 3),
+                rotation,
+            };
+            let gap = (posed(doubled).geometric_center() - posed(unit).geometric_center()).length();
+            assert!(
+                gap < Fix128::from_f64(1e-15),
+                "{shape:?}: centre moved by {:e} under a quaternion of norm 2",
+                gap.to_f64()
+            );
+            assert!(
+                !shape.center_of_mass_offset().length_squared().is_zero(),
+                "{shape:?} has no centre-of-mass offset, so the case measures nothing"
+            );
+        }
+    }
+}

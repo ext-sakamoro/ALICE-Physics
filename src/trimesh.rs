@@ -485,9 +485,13 @@ fn triangle_box_overlap(
 /// Moller-Trumbore parallel-check epsilon (~2^-24), relative: the ray counts
 /// as parallel to the triangle when `|det| < MT_EPSILON * |e1 × e2| * |d|`,
 /// i.e. when the sine of the angle between the ray and the triangle's plane is
-/// below it, whatever the triangle's size or shape (`det = −d · (e1 × e2)`; a
-/// threshold on `|e1| |e2|` also scaled with the sine of the corner angle at
-/// `v0`, and dropped slivers seen head-on when `v0` was their sharp corner)
+/// below it, for any shape of triangle and any length of `d` (`det = −d · (e1 ×
+/// e2)`; a threshold on `|e1| |e2|` also scaled with the sine of the corner
+/// angle at `v0`, and dropped slivers seen head-on when `v0` was their sharp
+/// corner). The size is not free: `det` is a `Fix128` with steps of `2^-64`, so
+/// for edges of about `1e-6` m and below a ray whose sine is well above `2^-24`
+/// can still be reported as parallel or miss, because `det` and the barycentric
+/// numerators are quantised.
 const MT_EPSILON: Fix128 = Fix128 {
     hi: 0,
     lo: 0x0000010000000000,
@@ -727,6 +731,43 @@ fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
 #[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
+
+    /// Whether a grazing ray counts as parallel depends on the angle alone: the
+    /// same ray with its direction scaled by 4 or 1/4 (as a `Ray` built without
+    /// `Ray::new` may carry) gets the same answer on both sides of `2^-24`.
+    #[test]
+    fn the_parallel_threshold_does_not_depend_on_the_direction_length() {
+        let tri = Triangle {
+            v0: Vec3Fix::ZERO,
+            v1: Vec3Fix::UNIT_X,
+            v2: Vec3Fix::UNIT_Y,
+        };
+        let target = Vec3Fix::new(
+            Fix128::from_ratio(1, 4),
+            Fix128::from_ratio(1, 4),
+            Fix128::ZERO,
+        );
+        let hits = |sine: Fix128, scale: Fix128| {
+            let direction = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, sine);
+            let ray = Ray {
+                origin: target - direction,
+                direction: direction * scale,
+            };
+            ray_triangle(&ray, &tri, Fix128::from_int(100)).is_some()
+        };
+        let below = Fix128::from_ratio(1, 1 << 25);
+        let above = Fix128::from_ratio(1, 1 << 23);
+        for scale in [Fix128::ONE, Fix128::from_int(4), Fix128::from_ratio(1, 4)] {
+            assert!(
+                !hits(below, scale),
+                "sine 2^-25 at direction scale {scale:?} hit"
+            );
+            assert!(
+                hits(above, scale),
+                "sine 2^-23 at direction scale {scale:?} missed"
+            );
+        }
+    }
 
     #[test]
     fn segment_segment_closest_points_clamp_both_ends() {

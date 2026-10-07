@@ -1067,6 +1067,34 @@ mod tests {
         solve_extra_joints(bodies, &joints, dt());
     }
 
+    /// A compliant weld removes the fraction `w / (w + alpha)` of the error about
+    /// every axis (`w = 2` for two unit inverse inertias, `alpha = compliance /
+    /// dt^2 = 1` here), so `1/3` of it is left whichever axis it is about.
+    #[test]
+    fn compliant_weld_leaves_the_closed_form_fraction_about_every_axis() {
+        let d = dt();
+        let compliance = d * d;
+        for axis in [Vec3Fix::UNIT_X, Vec3Fix::UNIT_Y, Vec3Fix::UNIT_Z] {
+            let err = QuatFix::from_axis_angle(axis, Fix128::from_ratio(1, 1000));
+            let one = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
+            let mut bodies = [
+                weld_body(one, QuatFix::IDENTITY, true),
+                weld_body(one, err, true),
+            ];
+            let before = turn_angle(bodies[0].rotation, bodies[1].rotation);
+            let joints = [ExtraJoint::Weld(
+                WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY)
+                    .with_compliance(compliance),
+            )];
+            solve_extra_joints(&mut bodies, &joints, d);
+            let ratio = turn_angle(bodies[0].rotation, bodies[1].rotation) / before;
+            assert!(
+                (ratio - 1.0 / 3.0).abs() < 1e-5,
+                "about {axis:?} a compliant weld left {ratio} of the error, expected 1/3"
+            );
+        }
+    }
+
     /// Bodies held to planar rotation (inverse inertia only about z) have a
     /// singular effective mass; the weld must still close a z error between
     /// them, and with a static partner, in one solve.
