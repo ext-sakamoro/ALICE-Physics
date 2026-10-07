@@ -333,8 +333,11 @@ fn anisotropic_hash(backend: SolverBackend, parallel: bool) -> String {
     hash_world(&w)
 }
 
+// The XPBD value was re-recorded when XPBD changed how it derives the
+// velocities from the position change (unrelated to the isotropic rule: the
+// anisotropic bodies of this scene never take it).
 const GOLDEN_ANISOTROPIC_XPBD: &str =
-    "bb98469e8cde970a96c668693e3bc9df91f48347caa08bc05bfd67d016542949";
+    "8a452449c79b52f0cc3efe5be060e24a36b8da2970b3ff81b439d239b88fae28";
 const GOLDEN_ANISOTROPIC_TGS: &str =
     "095f684372ceec9a468250679ad90119a010fdf225140d3adce059da0ccb0409";
 
