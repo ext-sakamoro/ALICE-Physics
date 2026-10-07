@@ -1817,4 +1817,157 @@ mod tests {
         assert_eq!(hit.t, r(1, 8));
         assert_eq!(hit.point, v3i(1, 0, 1));
     }
+
+    // ---- coverage: closed-form boundaries (2026-10-07) -----------------
+
+    /// `sphere_plane_toi` with the sphere wholly behind the plane
+    /// (dist = -5 < -r = -1) and no velocity: it never reaches the plane,
+    /// so there is no impact in this step.
+    #[test]
+    fn sphere_plane_toi_behind_the_plane_without_velocity_is_a_miss() {
+        assert!(
+            sphere_plane_toi(v3i(0, -5, 0), fi(1), Vec3Fix::ZERO, v3i(0, 1, 0), fi(0)).is_none()
+        );
+        // control: the same sphere moving up at 8 crosses y = -1 (near
+        // surface at y = -4) after t = (-1 - (-5)) / 8 = 1/2
+        let hit = sphere_plane_toi(v3i(0, -5, 0), fi(1), v3i(0, 8, 0), v3i(0, 1, 0), fi(0))
+            .expect("rising sphere reaches the plane");
+        assert_eq!(hit.t, r(1, 2));
+    }
+
+    /// `swept_aabb` slab exits.
+    ///
+    /// - x: moving [2e6, 2e6 + 1] with vx = 1 against target [0, 1]: the
+    ///   x slab is t in [(0 - (2e6 + 1)) / 1, (1 - 2e6) / 1], which ends
+    ///   before the initial window (-1e6) begins -> None.
+    /// - z: vz = 0 and z ranges [0, 1] vs [5, 6] never overlap -> None,
+    ///   although x and y alone would hit.
+    /// - control: the same boxes with target z [0, 1] enter at
+    ///   t = (2 - 1) / 4 = 1/4 for vx = 4.
+    #[test]
+    fn swept_aabb_x_window_and_static_z_separation_are_misses() {
+        let far = AABB::new(v3i(2_000_000, 0, 0), v3i(2_000_001, 1, 1));
+        let unit = AABB::new(v3i(0, 0, 0), v3i(1, 1, 1));
+        assert!(swept_aabb(&far, v3i(1, 0, 0), &unit).is_none());
+
+        let mover = AABB::new(v3i(0, 0, 0), v3i(1, 1, 1));
+        let off_z = AABB::new(v3i(2, 0, 5), v3i(3, 1, 6));
+        assert!(swept_aabb(&mover, v3i(4, 0, 0), &off_z).is_none());
+        let in_z = AABB::new(v3i(2, 0, 0), v3i(3, 1, 1));
+        assert_eq!(swept_aabb(&mover, v3i(4, 0, 0), &in_z), Some(r(1, 4)));
+    }
+
+    /// `adaptive_toi_substeps` on a collision course: the count is the
+    /// smallest n with n * step >= v_max * dt, where v_max is the L-inf
+    /// norm of the faster velocity and step = min(r_min / 2, 1/10).
+    ///
+    /// A (r = 1/8) at the origin moving (1, 2, 8), B (r = 1) at (0, 0, 2)
+    /// at rest, dt = 1/8: v_max = 8 (the z component), travel = 1,
+    /// step = (1/8) / 2 = 1/16, n = 16. Swapping the roles (B moving, the
+    /// small radius second) gives the same 16.
+    #[test]
+    fn adaptive_toi_substeps_uses_the_z_dominated_speed_and_the_smaller_radius() {
+        let n = adaptive_toi_substeps(
+            Vec3Fix::ZERO,
+            v3i(1, 2, 8),
+            r(1, 8),
+            v3i(0, 0, 2),
+            Vec3Fix::ZERO,
+            fi(1),
+            r(1, 8),
+            100,
+        );
+        assert_eq!(n, 16);
+        let swapped = adaptive_toi_substeps(
+            v3i(0, 0, 2),
+            Vec3Fix::ZERO,
+            fi(1),
+            Vec3Fix::ZERO,
+            v3i(1, 2, 8),
+            r(1, 8),
+            r(1, 8),
+            100,
+        );
+        assert_eq!(swapped, 16);
+    }
+
+    fn sweep_world() -> (crate::solver::PhysicsWorld, usize) {
+        use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+        let a = w.add_body_with_radius(RigidBody::new(Vec3Fix::ZERO, fi(1)), r(1, 2));
+        (w, a)
+    }
+
+    /// `PhysicsWorld::time_of_impact` against a static sphere.
+    ///
+    /// Mover r = 1/2 at the origin, obstacle r = 1/4 at (3, 0, 0),
+    /// velocity (3, 0, 0), dt = 3/2: travel 9/2, gap 3 - 1/2 - 1/4 = 9/4,
+    /// t = (9/4) / (9/2) = 1/2, contact on the obstacle at x = 11/4.
+    #[test]
+    fn world_time_of_impact_is_gap_over_travel() {
+        use crate::solver::RigidBody;
+        let (mut w, a) = sweep_world();
+        w.add_body_with_radius(RigidBody::new_static(v3i(3, 0, 0)), r(1, 4));
+        let f = crate::shape_raycast::RayFilter::default();
+        let hit = w.time_of_impact(a, v3i(3, 0, 0), r(3, 2), &f).expect("hit");
+        let tol = r(1, 1_000_000);
+        assert!((hit.t - r(1, 2)).abs() < tol, "t = {:?}", hit.t);
+        assert!(
+            (hit.point.x - r(11, 4)).abs() < tol,
+            "x = {:?}",
+            hit.point.x
+        );
+        assert!(hit.point.y.abs() < tol && hit.point.z.abs() < tol);
+
+        // moving away: nothing ahead within the travel
+        assert_eq!(w.time_of_impact(a, v3i(-3, 0, 0), r(3, 2), &f), None);
+        // documented `None` inputs: dt = 0, dt < 0, zero displacement,
+        // body index out of range
+        assert_eq!(w.time_of_impact(a, v3i(3, 0, 0), fi(0), &f), None);
+        assert_eq!(w.time_of_impact(a, v3i(3, 0, 0), fi(-1), &f), None);
+        assert_eq!(w.time_of_impact(a, Vec3Fix::ZERO, fi(1), &f), None);
+        assert_eq!(w.time_of_impact(99, v3i(3, 0, 0), fi(1), &f), None);
+    }
+
+    /// A body without a collision radius collides with nothing.
+    #[test]
+    fn world_time_of_impact_of_a_body_without_radius_is_none() {
+        use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+        let mut w = PhysicsWorld::new(PhysicsConfig::default());
+        let bare = w.add_body(RigidBody::new(Vec3Fix::ZERO, fi(1)));
+        w.add_body_with_radius(RigidBody::new_static(v3i(2, 0, 0)), fi(1));
+        let f = crate::shape_raycast::RayFilter::default();
+        assert_eq!(w.time_of_impact(bare, v3i(4, 0, 0), fi(1), &f), None);
+    }
+
+    /// Contact exactly at the end of the step: gap 3 - 1/2 - 1/2 = 2 and
+    /// travel |(2, 0, 0)| * 1 = 2, so t = 1 (never past 1).
+    #[test]
+    fn world_time_of_impact_touching_at_the_end_of_the_step_is_one() {
+        use crate::solver::RigidBody;
+        let (mut w, a) = sweep_world();
+        w.add_body_with_radius(RigidBody::new_static(v3i(3, 0, 0)), r(1, 2));
+        let f = crate::shape_raycast::RayFilter::default();
+        let hit = w.time_of_impact(a, v3i(2, 0, 0), fi(1), &f).expect("hit");
+        assert!(hit.t <= fi(1));
+        assert!((fi(1) - hit.t) < r(1, 1_000_000), "t = {:?}", hit.t);
+        // half the step is not enough: gap 2 > travel 1
+        assert_eq!(w.time_of_impact(a, v3i(2, 0, 0), r(1, 2), &f), None);
+    }
+
+    /// Already overlapping (centres 1 apart < 1/2 + 3/4): t = 0 and the
+    /// point is the mover's own centre (the documented overlap report), in
+    /// either direction of motion.
+    #[test]
+    fn world_time_of_impact_when_already_overlapping_is_zero_at_the_centre() {
+        use crate::solver::RigidBody;
+        let (mut w, a) = sweep_world();
+        w.add_body_with_radius(RigidBody::new_static(v3i(1, 0, 0)), r(3, 4));
+        let f = crate::shape_raycast::RayFilter::default();
+        for vel in [v3i(1, 0, 0), v3i(-1, 0, 0)] {
+            let hit = w.time_of_impact(a, vel, fi(1), &f).expect("overlap");
+            assert_eq!(hit.t, Fix128::ZERO);
+            assert_eq!(hit.point, Vec3Fix::ZERO);
+        }
+    }
 }
