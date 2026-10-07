@@ -360,6 +360,7 @@ were introduced during that release window.
 - `profiling::ProfileEntry::record`: 合計 tick を `+=` で足していたので、`u64` を超えると debug で panic、release で wrap して合計が減り平均が狂った 合計と呼び出し回数を `u64::MAX` で飽和させる (AUD-A-S4W1-001)
 - `cfd_solver` (k-ε): doc は点源項を陽的 Euler の 1 step としていたが、k を先に進めて ε の式が新しい k を読んでいた (k₀ = ε₀ = 1・dt = 0.01 で ε₁ = 0.980606、陽的 Euler は 0.9808) k と ε をどちらも step 始めの値から進める **Behavior change:** k-ε の場の値がわずかに変わる (AUD-A-S1W4-009)
 - `joint::solve_joints`: 両端が同じ body の joint (`BallJoint(a, a)` に異なる anchor) で、両側の補正を同じ body に掛けて速度を注入していた (1 frame で x = 36、30 frame で 28920) body は自分に対して動けないので、その joint は解かずに自由な body のままにする (AUD-A-S34-010)
+- `PhysicsWorld::solve_joints_with_bridge` (`gpu-solver-bridge`): 両端が同じ body の joint もそのまま `send_joints` で backend に送っていたので、列を上から解く backend では両側の補正が 1 つの body に掛かりうる その joint を除いた列を元の順序のまま送り、残りが無ければ bridge を呼ばない (`tests/audit_bridge_self_joint.rs`)
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
 - `joint::SpringJoint` の減衰が 2 体を結ぶ方向 (半径方向) にしか効いていなかった rest length 0 で使うと中心力になり、角運動量が保存されて接線方向の速度が減衰せず、錨点の周りを周回していた rest length 0 では相対速度の全成分に効くようにした
