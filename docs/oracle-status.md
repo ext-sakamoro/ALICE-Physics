@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5577 |
+| 🟢 Not ignored (run by CI) | 5588 |
 | 🔴 Red by design | 80 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5683** |
+| **Total** | **5694** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5577)
+## 🟢 Not ignored (5588)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -430,6 +430,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_rans_wall_function.rs` | 9 |
 | `analytic_structural_creep_per_material.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
+| `analytic_world_query_precision.rs` | 9 |
 | `audit_c_trimesh.rs` | 9 |
 | `audit_heatmap.rs` | 9 |
 | `audit_non_newtonian.rs` | 9 |
@@ -587,6 +588,7 @@ Per-file counts (the test names are in `tests/`):
 | `mesh_to_fem_stress.rs` | 2 |
 | `tgs_joints_static_colliders.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
+| `world_query_previous_bits.rs` | 2 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_pd_step_response.rs` | 1 |
