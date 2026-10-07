@@ -35,13 +35,13 @@ crate has today.
 | `docs/coverage/quantum.toml` | 169 | 0 | 0 | 0 | 169 | 0 |
 | `docs/coverage/rel.toml` | 112 | 0 | 0 | 0 | 112 | 0 |
 | `docs/coverage/rigid.toml` | 121 | 78 | 4 | 7 | 31 | 1 |
-| `docs/coverage/sense.toml` | 92 | 19 | 2 | 2 | 69 | 0 |
+| `docs/coverage/sense.toml` | 92 | 20 | 1 | 2 | 69 | 0 |
 | `docs/coverage/shock.toml` | 115 | 29 | 7 | 2 | 77 | 0 |
-| `docs/coverage/soft.toml` | 96 | 21 | 4 | 6 | 65 | 0 |
+| `docs/coverage/soft.toml` | 96 | 22 | 3 | 6 | 65 | 0 |
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4292 | 582 | 78 | 102 | 3524 | 6 |
+| **total** | 4292 | 584 | 76 | 102 | 3524 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -587,7 +587,7 @@ crate has today.
 
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
-| benchmark | 11 | 4 | 1 | 0 | 6 | 0 |
+| benchmark | 11 | 5 | 0 | 0 | 6 | 0 |
 | contact-force | 6 | 1 | 0 | 2 | 3 | 0 |
 | control | 14 | 2 | 0 | 0 | 12 | 0 |
 | estimation | 17 | 1 | 0 | 0 | 16 | 0 |
@@ -620,7 +620,7 @@ crate has today.
 | axis | items | implemented+oracle | implemented-no-oracle | partial | missing | out-of-scope |
 |---|---:|---:|---:|---:|---:|---:|
 | attachment / external force | 6 | 1 | 0 | 2 | 3 | 0 |
-| benchmark | 8 | 3 | 1 | 0 | 4 | 0 |
+| benchmark | 8 | 4 | 0 | 0 | 4 | 0 |
 | cloth model | 14 | 2 | 0 | 0 | 12 | 0 |
 | collision | 16 | 4 | 0 | 2 | 10 | 0 |
 | integration / output | 4 | 2 | 0 | 0 | 2 | 0 |
