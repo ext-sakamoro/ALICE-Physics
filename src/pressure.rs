@@ -389,4 +389,151 @@ mod tests {
             "Pressure should decay, before={before}, after={after}"
         );
     }
+
+    fn sample_modifier() -> PressureModifier {
+        let mut m = PressureModifier::new(
+            PressureConfig {
+                diffusion_rate: 0.125,
+                decay_rate: 0.25,
+                yield_threshold: 3.5,
+                deformation_rate: 0.75,
+                max_deformation: 1.5,
+                internal_pressure: 2.0,
+                expansion_rate: 0.0625,
+            },
+            2,
+            (-1.0, -2.0, -3.0),
+            (1.0, 2.0, 3.0),
+        );
+        for (i, v) in m.pressure.data.iter_mut().enumerate() {
+            *v = i as f32 * 0.5;
+        }
+        m.deformation.data[5] = 0.375;
+        m.enabled = false;
+        m
+    }
+
+    /// oracle: an internal pressure `p` with expansion rate `k` moves the
+    /// surface out by `p·k` (`2 · 1/16 = 1/8`); a disabled modifier leaves
+    /// the distance and its fields as they are.
+    #[test]
+    fn internal_pressure_and_disabled_modifier() {
+        let mut m = PressureModifier::new(
+            PressureConfig {
+                internal_pressure: 2.0,
+                expansion_rate: 0.0625,
+                ..Default::default()
+            },
+            1,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        assert_eq!(m.modify_distance(0.5, 0.5, 0.5, 1.0), 0.875);
+        m.pressure.data[0] = 50.0;
+        m.enabled = false;
+        assert!(!m.is_active());
+        assert_eq!(m.modify_distance(0.5, 0.5, 0.5, 1.0), 1.0);
+        m.update(1.0);
+        assert_eq!(m.pressure.data[0], 50.0);
+        assert_eq!(m.deformation.data[0], 0.0);
+    }
+
+    /// oracle: the participant kind is `"PRES"` read big endian; a payload
+    /// written by `write_state` is accepted and read back into a different
+    /// modifier, which then has the original config, flag and fields and
+    /// writes the same bytes.
+    #[test]
+    fn participant_state_round_trip() {
+        assert_eq!(
+            PressureModifier::PARTICIPANT_KIND,
+            ParticipantKind::new(0x5052_4553)
+        );
+        let src = sample_modifier();
+        assert_eq!(Participant::kind(&src), PressureModifier::PARTICIPANT_KIND);
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        assert_eq!(src.check_state(&bytes), Ok(()));
+        let mut dst = PressureModifier::new(
+            PressureConfig::default(),
+            1,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        dst.read_state(&bytes);
+        assert_eq!(dst.config, src.config);
+        assert!(!dst.enabled);
+        assert_eq!(dst.pressure.data, src.pressure.data);
+        assert_eq!(dst.deformation.data, src.deformation.data);
+        let mut again = Vec::new();
+        dst.write_state(&mut again);
+        assert_eq!(again, bytes);
+    }
+
+    /// oracle: the enabled flag is the byte after the version (4) and seven
+    /// `f32`s (28), offset 32; a value other than 0/1 there is refused, as
+    /// is a payload one byte short or one byte long.
+    #[test]
+    fn participant_state_refusals() {
+        let src = sample_modifier();
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        assert_eq!(bytes[32], 0);
+        let mut bad = bytes.clone();
+        bad[32] = 2;
+        assert_eq!(src.check_state(&bad), Err(StateError::InvalidValue));
+        assert!(matches!(
+            src.check_state(&bytes[..bytes.len() - 1]),
+            Err(StateError::Length { .. })
+        ));
+        let mut long = bytes;
+        long.push(0);
+        assert!(matches!(
+            src.check_state(&long),
+            Err(StateError::Length { .. })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "read_state called with a payload check_state refuses")]
+    fn participant_read_state_panics_on_a_refused_payload() {
+        let mut m = sample_modifier();
+        m.read_state(&[]);
+    }
+
+    /// oracle: in a world of one substep `dt = 1/4`, a one-cell modifier with
+    /// pressure 3 above the yield threshold 1, deformation rate 1, no
+    /// diffusion or decay, yields `(3 − 1)·1·(1/4) = 1/2` of deformation;
+    /// the pressure stays 3. Channel 0 is the highest pressure (3), channel
+    /// 1 the total deformation (1/2).
+    #[test]
+    fn participant_substep_in_a_world() {
+        let mut m = PressureModifier::new(
+            PressureConfig {
+                diffusion_rate: 0.0,
+                decay_rate: 0.0,
+                yield_threshold: 1.0,
+                deformation_rate: 1.0,
+                max_deformation: 10.0,
+                ..Default::default()
+            },
+            1,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        m.pressure.data[0] = 3.0;
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
+            substeps: 1,
+            ..Default::default()
+        });
+        world.add_participant(Box::new(m)).expect("register");
+        world.step(Fix128::from_ratio(1, 4));
+        let Some(crate::world_participant::Observed::Exact(sink)) = world.observe_participant(0)
+        else {
+            panic!("observation");
+        };
+        assert_eq!(
+            sink.values(),
+            &[(0, Fix128::from_int(3)), (1, Fix128::from_ratio(1, 2))]
+        );
+    }
 }
