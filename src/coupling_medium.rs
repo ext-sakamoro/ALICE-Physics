@@ -484,4 +484,162 @@ mod tests {
         a.couple(0, Fix128::ONE).expect("couple");
         assert_ne!(a.digest, before);
     }
+
+    fn x(v: Fix128) -> Vec3Fix {
+        Vec3Fix::new(v, Fix128::ZERO, Fix128::ZERO)
+    }
+
+    /// oracle: construction refuses a non-positive mass and a momentum
+    /// `m·u` out of range; coupling refuses a negative coefficient and a body
+    /// coupled twice; each error prints its documented message.
+    #[test]
+    fn construction_errors_and_messages() {
+        assert_eq!(
+            DragMedium::new(Fix128::ZERO, Vec3Fix::ZERO).err(),
+            Some(DragMediumError::NonPositiveMass)
+        );
+        assert_eq!(
+            DragMedium::new(Fix128::from_int(1 << 40), x(Fix128::from_int(1 << 40))).err(),
+            Some(DragMediumError::MomentumOutOfRange)
+        );
+        let mut m = DragMedium::new(Fix128::ONE, Vec3Fix::ZERO).expect("medium");
+        assert_eq!(
+            m.couple(3, -Fix128::ONE),
+            Err(DragMediumError::NegativeCoefficient { body: 3 })
+        );
+        m.couple(3, Fix128::ONE).expect("couple");
+        assert_eq!(
+            m.couple(3, Fix128::ONE),
+            Err(DragMediumError::DuplicateBody { body: 3 })
+        );
+        for (e, text) in [
+            (
+                DragMediumError::NonPositiveMass,
+                "medium mass must be positive",
+            ),
+            (
+                DragMediumError::NegativeCoefficient { body: 3 },
+                "drag coefficient of body 3 is negative",
+            ),
+            (
+                DragMediumError::DuplicateBody { body: 3 },
+                "body 3 is already coupled",
+            ),
+            (
+                DragMediumError::MomentumOutOfRange,
+                "medium momentum out of range",
+            ),
+        ] {
+            assert_eq!(e.to_string(), text);
+        }
+    }
+
+    /// oracle: a medium of mass 2 at `u = (1, 2, 3)` has momentum
+    /// `(2, 4, 6)` and gives `u` back; with a coupled body of mass 4 at
+    /// `(1, 0, 0)` the total momentum is `(2 + 4, 4, 6)`; a coupled static
+    /// body adds nothing; a coupled body that does not exist gives `None`.
+    #[test]
+    fn accessors_and_total_momentum() {
+        let mut m =
+            DragMedium::new(Fix128::from_int(2), Vec3Fix::from_int(1, 2, 3)).expect("medium");
+        assert_eq!(m.mass(), Fix128::from_int(2));
+        assert_eq!(m.momentum(), Vec3Fix::from_int(2, 4, 6));
+        assert_eq!(m.velocity(), Some(Vec3Fix::from_int(1, 2, 3)));
+        let mut body = RigidBody::new(Vec3Fix::ZERO, Fix128::from_int(4));
+        body.velocity = Vec3Fix::from_int(1, 0, 0);
+        let bodies = [body, RigidBody::new_static(Vec3Fix::ZERO)];
+        m.couple(0, Fix128::ONE).expect("couple");
+        m.couple(1, Fix128::ONE).expect("couple");
+        assert_eq!(m.couplings().len(), 2);
+        assert_eq!(m.total_momentum(&bodies), Some(Vec3Fix::from_int(6, 4, 6)));
+        m.couple(5, Fix128::ONE).expect("couple");
+        assert_eq!(m.total_momentum(&bodies), None);
+    }
+
+    /// oracle: one exchange of `h = 1/4` between a medium of mass 2 at
+    /// `u = (1, 0, 0)` and a body of mass 1 at rest with coefficient 2 stages
+    /// `F = c(u − v) = (2, 0, 0)` on the body, whose velocity change
+    /// `F·h/m = (1/2, 0, 0)` the medium gives up: momentum `(2 − 1/2, 0, 0)`.
+    /// A coupling to a body that does not exist is an invalid state.
+    #[test]
+    fn exchange_closed_form() {
+        let mut m = DragMedium::new(Fix128::from_int(2), x(Fix128::ONE)).expect("medium");
+        m.couple(0, Fix128::from_int(2)).expect("couple");
+        let bodies = [RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)];
+        let mut staged = Vec::new();
+        let momentum = m
+            .exchange(&bodies, Fix128::from_ratio(1, 4), |b, f| {
+                staged.push((b, f));
+                Ok(())
+            })
+            .expect("exchange");
+        assert_eq!(momentum, x(Fix128::from_ratio(3, 2)));
+        assert_eq!(staged, vec![(0, x(Fix128::from_int(2)))]);
+        m.couple(7, Fix128::ONE).expect("couple");
+        assert_eq!(
+            m.exchange(&bodies, Fix128::ONE, |_, _| Ok(())),
+            Err(ParticipantFault::InvalidState)
+        );
+    }
+
+    /// oracle: in a world without gravity, of one substep `dt = 1/4`, the same
+    /// exchange moves the body to `(1/2, 0, 0)` and leaves the medium at
+    /// momentum `(3/2, 0, 0)`, velocity `(3/4, 0, 0)`; the total momentum
+    /// stays 2. The state payload is version 1, the digest and the momentum
+    /// (60 bytes), read back into the medium; a wrong length, version or
+    /// digest is refused.
+    #[test]
+    fn participant_in_a_world_and_state() {
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
+            substeps: 1,
+            gravity: Vec3Fix::ZERO,
+            damping: Fix128::ONE,
+            ..Default::default()
+        });
+        let body = world.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+        let mut m = DragMedium::new(Fix128::from_int(2), x(Fix128::ONE)).expect("medium");
+        m.couple(body, Fix128::from_int(2)).expect("couple");
+        assert_eq!(Participant::kind(&m), ParticipantKind::new(0x4d45_444d));
+        world
+            .add_participant(Box::new(m.clone()))
+            .expect("register");
+        world.step(Fix128::from_ratio(1, 4));
+        assert_eq!(world.bodies[body].velocity, x(Fix128::from_ratio(1, 2)));
+        let Some(crate::world_participant::Observed::Exact(sink)) = world.observe_participant(0)
+        else {
+            panic!("observation");
+        };
+        let z = Fix128::ZERO;
+        assert_eq!(
+            sink.values(),
+            &[
+                (MEDIUM_OBS_VELOCITY, Fix128::from_ratio(3, 4)),
+                (MEDIUM_OBS_VELOCITY + 1, z),
+                (MEDIUM_OBS_VELOCITY + 2, z),
+                (MEDIUM_OBS_MOMENTUM, Fix128::from_ratio(3, 2)),
+                (MEDIUM_OBS_MOMENTUM + 1, z),
+                (MEDIUM_OBS_MOMENTUM + 2, z),
+            ]
+        );
+
+        let bytes = world.participant_state(0).expect("state");
+        assert_eq!(bytes.len(), 60);
+        assert_eq!(bytes[..4], 1_u32.to_le_bytes());
+        assert_eq!(m.check_state(&bytes), Ok(()));
+        m.read_state(&bytes);
+        assert_eq!(m.momentum(), x(Fix128::from_ratio(3, 2)));
+        assert_eq!(
+            m.check_state(&bytes[..59]),
+            Err(StateError::Length {
+                expected: 60,
+                found: 59
+            })
+        );
+        let mut version = bytes.clone();
+        version[0] = 9;
+        assert_eq!(m.check_state(&version), Err(StateError::InvalidValue));
+        let mut digest = bytes;
+        digest[4] ^= 1;
+        assert_eq!(m.check_state(&digest), Err(StateError::InvalidValue));
+    }
 }
