@@ -680,4 +680,213 @@ mod tests {
         assert!((modified.distance(0.0, 2.0, 0.0) - 0.5).abs() < 1e-6);
         assert_eq!(modified.modifier_count(), 2);
     }
+
+    /// A modifier that would move the surface by `amount` but reports itself
+    /// inactive, so both wrappers must skip it.
+    struct InactiveModifier {
+        amount: f32,
+        updates: u32,
+    }
+
+    impl PhysicsModifier for InactiveModifier {
+        fn modify_distance(&self, _x: f32, _y: f32, _z: f32, d: f32) -> f32 {
+            d - self.amount
+        }
+        fn update(&mut self, _dt: f32) {
+            self.updates += 1;
+        }
+        fn name(&self) -> &'static str {
+            "inactive"
+        }
+        fn is_active(&self) -> bool {
+            false
+        }
+    }
+
+    /// oracle: on the ground `distance = y`, an expansion by `a` gives
+    /// `distance = y − a` and normal `(0, 1, 0)`; an inactive modifier leaves
+    /// `y`; `SingleModifiedSdf::update` advances the modifier (`GrowModifier`
+    /// grows by `dt`) whether or not it is active.
+    #[test]
+    fn distance_and_normal_of_both_wrappers_on_the_ground() {
+        let multi = ModifiedSdf::new(Box::new(ground()))
+            .with_modifier(Box::new(ExpandModifier { amount: 0.5 }))
+            .with_modifier(Box::new(InactiveModifier {
+                amount: 9.0,
+                updates: 0,
+            }));
+        let (d, n) = multi.distance_and_normal(0.0, 2.0, 0.0);
+        assert!((d - 1.5).abs() < 1e-6, "{d}");
+        assert!(
+            n.0.abs() < 1e-6 && (n.1 - 1.0).abs() < 1e-6 && n.2.abs() < 1e-6,
+            "{n:?}"
+        );
+
+        let mut grow = SingleModifiedSdf::new(Box::new(ground()), GrowModifier { amount: 0.25 });
+        grow.update(0.5);
+        let (d, n) = grow.distance_and_normal(0.0, 2.0, 0.0);
+        assert!((d - 1.25).abs() < 1e-6, "{d}");
+        assert!(
+            n.0.abs() < 1e-6 && (n.1 - 1.0).abs() < 1e-6 && n.2.abs() < 1e-6,
+            "{n:?}"
+        );
+        let n = grow.normal(1.0, 3.0, -1.0);
+        assert!((n.1 - 1.0).abs() < 1e-6, "{n:?}");
+
+        let mut off = SingleModifiedSdf::new(
+            Box::new(ground()),
+            InactiveModifier {
+                amount: 9.0,
+                updates: 0,
+            },
+        );
+        off.update(0.5);
+        off.update(0.5);
+        assert_eq!(off.modifier.updates, 2);
+        assert!((off.distance(0.0, 2.0, 0.0) - 2.0).abs() < 1e-6);
+    }
+
+    /// oracle: the payload is the version `1` as 4 little-endian bytes, then
+    /// each item little endian: a `u8` as itself, a `bool` as 0/1, a `u64` /
+    /// `usize` as 8 bytes, an `f32` as its 4 bit bytes, a vector as three
+    /// `f32`s, a field as `nx, ny, nz` (u64), `min`, `max`, then the cells.
+    #[test]
+    fn state_writer_byte_layout() {
+        let mut out = Vec::new();
+        let mut w = StateWriter::new(&mut out);
+        w.u8(7);
+        w.bool(true);
+        w.bool(false);
+        w.u64(0x0102_0304_0506_0708);
+        w.usize(5);
+        w.f32(1.5);
+        w.vec3((1.0, -2.0, 0.5));
+        let mut f = ScalarField3D::new(2, 1, 1, (0.0, 0.0, 0.0), (2.0, 1.0, 1.0));
+        f.data = vec![0.25, -4.0];
+        w.field(&f);
+
+        let mut want: Vec<u8> = vec![
+            1, 0, 0, 0, 7, 1, 0, 8, 7, 6, 5, 4, 3, 2, 1, 5, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        for v in [1.5_f32, 1.0, -2.0, 0.5] {
+            want.extend_from_slice(&v.to_bits().to_le_bytes());
+        }
+        for n in [2_u64, 1, 1] {
+            want.extend_from_slice(&n.to_le_bytes());
+        }
+        for v in [0.0_f32, 0.0, 0.0, 2.0, 1.0, 1.0, 0.25, -4.0] {
+            want.extend_from_slice(&v.to_bits().to_le_bytes());
+        }
+        assert_eq!(out, want);
+
+        // read back what was written
+        let mut r = StateReader::new(&out).expect("version 1");
+        assert_eq!(r.u8(), Ok(7));
+        assert_eq!(r.bool(), Ok(true));
+        assert_eq!(r.bool(), Ok(false));
+        assert_eq!(r.u64(), Ok(0x0102_0304_0506_0708));
+        assert_eq!(r.usize(), Ok(5));
+        assert_eq!(r.f32(), Ok(1.5));
+        assert_eq!(r.vec3(), Ok((1.0, -2.0, 0.5)));
+        let g = r.field().expect("field");
+        assert_eq!(
+            (g.nx, g.ny, g.nz, g.min, g.max),
+            (2, 1, 1, (0.0, 0.0, 0.0), (2.0, 1.0, 1.0))
+        );
+        assert_eq!(g.data, vec![0.25, -4.0]);
+        assert_eq!(r.finish(), Ok(()));
+    }
+
+    /// oracle: the reader refuses a version other than 1, a `bool` byte other
+    /// than 0/1, bytes that end early (`Length { expected: end, found: len }`),
+    /// a count whose items cannot fit, a field whose cell count overflows, and
+    /// trailing bytes (`Length { expected: read, found: len }`).
+    #[test]
+    fn state_reader_refusals() {
+        assert_eq!(
+            StateReader::new(&[2, 0, 0, 0]).err(),
+            Some(StateError::InvalidValue)
+        );
+        assert_eq!(
+            StateReader::new(&[1, 0]).err(),
+            Some(StateError::Length {
+                expected: 4,
+                found: 2
+            })
+        );
+        let mut r = StateReader::new(&[1, 0, 0, 0, 2]).expect("version");
+        assert_eq!(r.bool(), Err(StateError::InvalidValue));
+        let mut r = StateReader::new(&[1, 0, 0, 0, 9, 9]).expect("version");
+        assert_eq!(
+            r.f32(),
+            Err(StateError::Length {
+                expected: 8,
+                found: 6
+            })
+        );
+
+        // a count of 3 items of 4 bytes with only 4 bytes left
+        let mut bytes = vec![1, 0, 0, 0];
+        bytes.extend_from_slice(&3_u64.to_le_bytes());
+        bytes.extend_from_slice(&[0; 4]);
+        let mut r = StateReader::new(&bytes).expect("version");
+        assert_eq!(
+            r.count(4),
+            Err(StateError::Length {
+                expected: 24,
+                found: 16
+            })
+        );
+        // a count whose byte size overflows usize
+        let mut bytes = vec![1, 0, 0, 0];
+        bytes.extend_from_slice(&u64::MAX.to_le_bytes());
+        let mut r = StateReader::new(&bytes).expect("version");
+        assert_eq!(r.count(2), Err(StateError::InvalidValue));
+        let mut r = StateReader::new(&bytes[..]).expect("version");
+        assert_eq!(r.count(1), Err(StateError::InvalidValue));
+
+        // a field of u64::MAX × 2 × 1 cells overflows the cell count
+        let mut bytes = vec![1, 0, 0, 0];
+        for n in [u64::MAX, 2, 1] {
+            bytes.extend_from_slice(&n.to_le_bytes());
+        }
+        bytes.extend_from_slice(&[0; 24]);
+        let mut r = StateReader::new(&bytes).expect("version");
+        assert_eq!(r.field().err(), Some(StateError::InvalidValue));
+
+        // trailing byte after one u8
+        let mut r = StateReader::new(&[1, 0, 0, 0, 5, 6]).expect("version");
+        assert_eq!(r.u8(), Ok(5));
+        assert_eq!(
+            r.finish(),
+            Err(StateError::Length {
+                expected: 5,
+                found: 6
+            })
+        );
+    }
+
+    /// oracle: `observe_max` pushes the largest non-NaN cell (3 of
+    /// `[1, NaN, 3, −2]`) and nothing for a field without cells;
+    /// `observe_sum` pushes `1 + 3 − 2 + 0.5 = 2.5` exactly.
+    #[test]
+    fn observe_max_and_sum_closed_form() {
+        let mut f = ScalarField3D::new(4, 1, 1, (0.0, 0.0, 0.0), (4.0, 1.0, 1.0));
+        f.data = vec![1.0, f32::NAN, 3.0, -2.0];
+        let mut out = ObservationSink::new();
+        observe_max(&mut out, 4, &f);
+        assert_eq!(out.values(), &[(4, Fix128::from_int(3))]);
+
+        let mut g = ScalarField3D::new(4, 1, 1, (0.0, 0.0, 0.0), (4.0, 1.0, 1.0));
+        g.data = vec![1.0, 0.5, 3.0, -2.0];
+        let mut out = ObservationSink::new();
+        observe_sum(&mut out, 1, &g);
+        assert_eq!(out.values(), &[(1, Fix128::from_ratio(5, 2))]);
+
+        let mut empty = ScalarField3D::new(1, 1, 1, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        empty.data.clear();
+        let mut out = ObservationSink::new();
+        observe_max(&mut out, 0, &empty);
+        assert!(out.values().is_empty());
+    }
 }
