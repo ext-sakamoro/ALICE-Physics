@@ -722,9 +722,9 @@ id = "COV-MBD-067"
 axis = "mechanism"
 item = "four-bar driven through a crank revolution (rocker angle follows the Freudenstein relation)"
 source = "Norton ch.4; Freudenstein 1955"
-status = "implemented-no-oracle"
-evidence = "src/kinematic_loop.rs::four_bar_linkage 回して確かめているのはリンク長の保持だけ (tests/engineering_oracles_misc.rs::kinematic_loop_four_bar_preserves_link_lengths_under_solver)"
-oracle_candidate = "crank 角を回して rocker 角を Freudenstein の式と突合"
+status = "implemented+oracle"
+evidence = "src/kinematic_loop.rs::four_bar_linkage / tests/analytic_four_bar_freudenstein.rs::rocker_angle_matches_freudenstein_relation_across_a_crank_revolution (crank を24分割で駆動し、各角度の rocker 角を円-円交点の閉形式 [Freudenstein の式と同値] に突合、Grashof 境界の長さ組は change-point 特異点を踏むため避けている)"
+oracle_candidate = ""
 limitation = ""
 
 [[item]]
