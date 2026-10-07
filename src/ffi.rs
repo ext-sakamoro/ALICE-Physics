@@ -2063,7 +2063,10 @@ mod tests {
             // 1.2.0 pin: y = 10 − 4.1406 = 5.8594, the discrete closed form
             // of frame damping with 8 substeps (`tests/analytic_physics.rs`,
             // `default_config_free_fall_reaches_analytic_within_frame_damping`).
-            const GOLDEN: [(i64, u64); 3] = [(0, 0), (5, 15_853_912_786_096_156_128), (0, 0)];
+            // y.lo 15_853_912_786_096_156_128 → 15_853_912_786_096_175_825:
+            // XPBD derives the velocity as the predicted velocity plus the
+            // position correction / h (only the low bits move).
+            const GOLDEN: [(i64, u64); 3] = [(0, 0), (5, 15_853_912_786_096_175_825), (0, 0)];
             let y = raw.y.hi as f64 + raw.y.lo as f64 / (1u128 << 64) as f64;
             assert!((y - 5.859_4).abs() < 1e-3, "FFI free fall y = {y}");
             assert_eq!(
