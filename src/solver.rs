@@ -10271,6 +10271,375 @@ mod tests {
         assert!(text.contains("bodies: 2"), "{text}");
         assert!(text.contains("joints: 0"), "{text}");
     }
+
+    // ── closed-form unit tests of the shape / motor / contact-force /
+    //    participant paths (they are otherwise exercised only from tests/) ──
+
+    fn half_unit_box() -> crate::shape::Shape {
+        crate::shape::Shape::Box {
+            half_extents: Vec3Fix::from_int(1, 1, 1),
+        }
+    }
+
+    /// oracle: a box of half-extent 1 at the origin and a sphere of radius 1
+    /// meet when the sphere centre is within `1 + 1 = 2` of the box face along
+    /// `x` (1.5: overlap, 2.5: clear), whichever side carries the shape; two
+    /// shaped boxes meet when the centres are under `1 + 1 = 2` apart; two
+    /// plain spheres of radius 1 meet when the centres are under 2 apart.
+    /// An index past the bodies, or a body with no collider, never overlaps,
+    /// and `set_body_shape` refuses an index past the bodies.
+    #[test]
+    fn colliders_overlap_follows_the_closed_form_gaps() {
+        let mut world = quiet_world();
+        let shaped = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        assert!(world.set_body_shape(shaped, &half_unit_box()));
+        assert!(!world.set_body_shape(99, &half_unit_box()));
+        let near = world.add_body_with_radius(
+            RigidBody::new(
+                Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO),
+                Fix128::ONE,
+            ),
+            Fix128::ONE,
+        );
+        let far = world.add_body_with_radius(
+            RigidBody::new(
+                Vec3Fix::new(Fix128::from_ratio(5, 2), Fix128::ZERO, Fix128::ZERO),
+                Fix128::ONE,
+            ),
+            Fix128::ONE,
+        );
+        let bare = world.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+        // shape against sphere, both argument orders
+        assert!(world.colliders_overlap(shaped, near));
+        assert!(world.colliders_overlap(near, shaped));
+        assert!(!world.colliders_overlap(shaped, far));
+        assert!(!world.colliders_overlap(far, shaped));
+        // two plain spheres 1 apart (< 2) overlap
+        assert!(world.colliders_overlap(near, far));
+        // a body without a collider, or an index past the bodies
+        assert!(!world.colliders_overlap(shaped, bare));
+        assert!(!world.colliders_overlap(near, bare));
+        assert!(!world.colliders_overlap(near, 99));
+        // shape against shape: the far body becomes a box 2.5 away (clear),
+        // then the near one a box 1.5 away (overlapping)
+        assert!(world.set_body_shape(far, &half_unit_box()));
+        assert!(!world.colliders_overlap(shaped, far));
+        assert!(world.set_body_shape(near, &half_unit_box()));
+        assert!(world.colliders_overlap(shaped, near));
+    }
+
+    /// oracle: a sphere of radius 1/2 dropped onto the top face (`y = 1`) of a
+    /// static box of half-extent 1 comes to rest with its centre at
+    /// `1 + 1/2 = 3/2`, the contact of a shaped body with a plain sphere
+    /// (the GJK path of the narrow phase), for either body order.
+    #[test]
+    fn sphere_rests_on_a_shaped_box_at_face_plus_radius() {
+        for box_first in [true, false] {
+            let mut world = PhysicsWorld::new(SolverConfig::default());
+            let ball = || {
+                RigidBody::new(
+                    Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(8, 5), Fix128::ZERO),
+                    Fix128::ONE,
+                )
+            };
+            let (floor, b) = if box_first {
+                let f = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+                let b = world.add_body_with_radius(ball(), Fix128::from_ratio(1, 2));
+                (f, b)
+            } else {
+                let b = world.add_body_with_radius(ball(), Fix128::from_ratio(1, 2));
+                let f = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+                (f, b)
+            };
+            assert!(world.set_body_shape(floor, &half_unit_box()));
+            for _ in 0..120 {
+                world.step(Fix128::from_ratio(1, 60));
+            }
+            let y = world.bodies[b].position.y.to_f64();
+            assert!((y - 1.5).abs() < 0.02, "box_first {box_first}: y {y}");
+            assert!(world.bodies[b].position.x.abs() < Fix128::from_ratio(1, 1000));
+        }
+    }
+
+    /// oracle: the motor accessors report `false` / `None` for an index that
+    /// was never returned, set the mode they name, and `remove_joint`
+    /// drops the motors of the removed joint and re-points those of the
+    /// last joint to the freed index (swap-remove).
+    #[test]
+    fn joint_motor_accessors_and_removal_remap() {
+        let mut world = quiet_world();
+        for x in 0..3 {
+            world.add_body(RigidBody::new(Vec3Fix::from_int(x, 0, 0), Fix128::ONE));
+        }
+        let ball = |a, b| {
+            Joint::Ball(crate::joint::BallJoint::new(
+                a,
+                b,
+                Vec3Fix::ZERO,
+                Vec3Fix::ZERO,
+            ))
+        };
+        let j0 = world.add_joint(ball(0, 1));
+        let j1 = world.add_joint(ball(1, 2));
+        let pd = crate::motor::PdController::new(Fix128::ONE, Fix128::ONE, Fix128::from_int(10));
+        let m0 = world.add_joint_motor(j0, pd);
+        let m1 = world.add_joint_motor(j1, pd);
+        assert!(world.set_joint_motor_velocity_target(m1, Fix128::from_int(2)));
+        assert!(!world.set_joint_motor_velocity_target(9, Fix128::ONE));
+        assert_eq!(
+            world.joint_motor_mut(m1).unwrap().controller.mode,
+            crate::motor::MotorMode::Velocity
+        );
+        assert!(world.disable_joint_motor(m1));
+        assert!(!world.disable_joint_motor(9));
+        assert_eq!(
+            world.joint_motor_mut(m1).unwrap().controller.mode,
+            crate::motor::MotorMode::Off
+        );
+        assert!(world.joint_motor_mut(9).is_none());
+
+        let r0 = world.add_joint_motor_3d(
+            j0,
+            Vec3Fix::from_int(1, 1, 1),
+            Vec3Fix::from_int(1, 1, 1),
+            Fix128::from_int(5),
+        );
+        let r1 = world.add_joint_motor_3d(
+            j1,
+            Vec3Fix::from_int(1, 1, 1),
+            Vec3Fix::from_int(1, 1, 1),
+            Fix128::from_int(5),
+        );
+        let target = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 1, 0), Fix128::from_ratio(1, 4));
+        assert!(world.set_joint_motor_3d_rotation_target(r1, target));
+        assert!(!world.set_joint_motor_3d_rotation_target(9, target));
+        assert_eq!(
+            world.joint_motor_3d_mut(r1).unwrap().target_rotation,
+            target
+        );
+        assert!(world.joint_motor_3d_mut(9).is_none());
+        let _ = (m0, r0);
+
+        assert!(world.remove_joint(7).is_none());
+        assert!(world.remove_joint(j0).is_some());
+        // the motors of joint 0 are gone, the ones of joint 1 now name joint 0
+        assert_eq!(world.joint_motors.len(), 1);
+        assert_eq!(world.joint_motors[0].joint_index, 0);
+        assert_eq!(world.joint_motors_3d.len(), 1);
+        assert_eq!(world.joint_motors_3d[0].0, 0);
+        assert_eq!(world.joint_motors_3d[0].1.target_rotation, target);
+    }
+
+    /// oracle: a contact carrying `λ` between a body of mass 1 (`w = 1`) and a
+    /// static body (`w = 0`), in a frame `dt = 1` of 8 substeps (`h = 1/8`),
+    /// carries the force `F = λ / (w·h²) = 64·λ`; with `λ = 1/2` that is 32.
+    /// It gives one normal arrow of 32, two friction arrows of `μ·F = 0.3·32`
+    /// and one cone of height 32. A contact between two static bodies
+    /// carries none.
+    #[test]
+    fn contact_forces_are_lambda_over_w_h_squared() {
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        let a = world.add_body(RigidBody::new(Vec3Fix::from_int(0, 1, 0), Fix128::ONE));
+        let b = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        let s = world.add_body(RigidBody::new_static(Vec3Fix::from_int(5, 0, 0)));
+        let contact = Contact {
+            depth: Fix128::from_ratio(1, 100),
+            normal: Vec3Fix::from_int(0, 1, 0),
+            point_a: Vec3Fix::from_int(0, 1, 0),
+            point_b: Vec3Fix::ZERO,
+        };
+        let mut c = ContactConstraint::new(a, b, contact);
+        c.cached_lambda = Fix128::from_ratio(1, 2);
+        let mut dead = ContactConstraint::new(b, s, contact);
+        dead.cached_lambda = Fix128::ONE;
+        world.contact_constraints = vec![c, dead];
+        let dt = Fix128::ONE;
+        let forces = world.contact_forces(dt);
+        assert_eq!(forces.len(), 1);
+        assert_eq!(forces[0].0, Vec3Fix::from_int(0, 1, 0));
+        assert_eq!(forces[0].1, Vec3Fix::from_int(0, 1, 0));
+        assert_eq!(forces[0].2, Fix128::from_int(32));
+        assert_eq!(
+            world.contact_constraint_force(&world.contact_constraints[0], dt),
+            Some(Fix128::from_int(32))
+        );
+        assert_eq!(
+            world.contact_constraint_force(&world.contact_constraints[1], dt),
+            None
+        );
+        let arrows = world.contact_arrows(dt);
+        assert_eq!(arrows.len(), 1);
+        assert_eq!(arrows[0].force_magnitude, Fix128::from_int(32));
+        let friction = world.contact_friction_arrows(dt);
+        assert_eq!(friction.len(), 2);
+        let mu_f = (Fix128::from_int(32) * Fix128::from_ratio(3, 10)).to_f64();
+        for f in &friction {
+            assert!((f.force_magnitude.to_f64() - 9.6).abs() < 1e-9 && (mu_f - 9.6).abs() < 1e-9);
+        }
+        let cones = world.contact_friction_cones(dt);
+        assert_eq!(cones.len(), 1);
+        assert_eq!(cones[0].height, Fix128::from_int(32));
+    }
+
+    /// oracle: static colliders are indexed in insertion order, `remove`
+    /// shifts the later ones down and refuses an index past the end.
+    #[test]
+    fn static_collider_add_remove_count() {
+        let mut world = quiet_world();
+        let plane = |h: i64| {
+            crate::static_collider::StaticCollider::Plane(
+                crate::plane_collider::PlaneCollider::new(
+                    Vec3Fix::from_int(0, 1, 0),
+                    Fix128::from_int(h),
+                ),
+            )
+        };
+        assert_eq!(world.add_static_collider(plane(0)), 0);
+        assert_eq!(world.add_static_collider(plane(1)), 1);
+        assert_eq!(world.static_collider_count(), 2);
+        assert!(world.remove_static_collider(2).is_none());
+        assert!(world.remove_static_collider(0).is_some());
+        assert_eq!(world.static_collider_count(), 1);
+        // the plane at height 1 moved to index 0: a sphere of radius 1/2 at
+        // y = 1 (its centre on that plane) touches it with depth 1/2
+        let c = world.static_colliders_slice()[0]
+            .collide_sphere(Vec3Fix::from_int(0, 1, 0), Fix128::from_ratio(1, 2))
+            .expect("touching the plane at y = 1");
+        assert!((c.depth.to_f64() - 0.5).abs() < 1e-9, "{c:?}");
+    }
+
+    /// oracle: with the dynamic-tree broad-phase every body with a collision
+    /// radius has a proxy after a step, and its fattened box contains the
+    /// sphere's own box (`centre ± r`); a body without a radius has none.
+    /// With the hybrid broad-phase two overlapping spheres (gap −1/2) are
+    /// found and pushed apart, while a far one is left at rest.
+    #[test]
+    fn dynamic_tree_and_hybrid_broadphases_find_the_pairs() {
+        for kind in [Broadphase::DynamicTree, Broadphase::Hybrid] {
+            let mut world = quiet_world();
+            world.set_broadphase(kind);
+            assert_eq!(world.broadphase(), kind);
+            let a =
+                world.add_body_with_radius(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE), Fix128::ONE);
+            let b = world.add_body_with_radius(
+                RigidBody::new(
+                    Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO),
+                    Fix128::ONE,
+                ),
+                Fix128::ONE,
+            );
+            let far = world.add_body_with_radius(
+                RigidBody::new(Vec3Fix::from_int(50, 0, 0), Fix128::ONE),
+                Fix128::ONE,
+            );
+            let bare = world.add_body(RigidBody::new(Vec3Fix::from_int(-50, 0, 0), Fix128::ONE));
+            world.step(Fix128::from_ratio(1, 60));
+            let gap = (world.bodies[b].position - world.bodies[a].position).length();
+            assert!(gap > Fix128::from_ratio(3, 2), "{kind:?}: gap {gap:?}");
+            assert_eq!(world.bodies[far].position, Vec3Fix::from_int(50, 0, 0));
+            if kind == Broadphase::DynamicTree {
+                assert_eq!(world.broadphase_stats().proxies, 3);
+                let bx = world.broadphase_proxy_aabb(far).expect("proxy");
+                assert!(bx.min.x <= Fix128::from_int(49) && bx.max.x >= Fix128::from_int(51));
+                assert!(world.broadphase_proxy_aabb(bare).is_none());
+                assert!(world.broadphase_proxy_aabb(99).is_none());
+            }
+        }
+    }
+
+    /// A participant adding a constant force to one body (or failing).
+    struct ConstantPush {
+        body: usize,
+        force: Vec3Fix,
+        fail: bool,
+    }
+
+    impl crate::world_participant::Participant for ConstantPush {
+        fn kind(&self) -> crate::world_participant::ParticipantKind {
+            crate::world_participant::ParticipantKind::new(0x5055_5348)
+        }
+        fn substep(
+            &mut self,
+            ctx: &mut crate::world_participant::SubstepCtx<'_>,
+            _h: Fix128,
+        ) -> Result<(), crate::world_participant::ParticipantFault> {
+            if self.fail {
+                return Err(crate::world_participant::ParticipantFault::InvalidState);
+            }
+            ctx.add_force(self.body, self.force)
+                .map_err(|_| crate::world_participant::ParticipantFault::InvalidState)
+        }
+        fn observe(&self, _: &mut crate::world_participant::ObservationSink) {}
+        fn write_state(&self, _: &mut Vec<u8>) {}
+        fn check_state(&self, _: &[u8]) -> Result<(), crate::world_participant::StateError> {
+            Ok(())
+        }
+        fn read_state(&mut self, _: &[u8]) {}
+    }
+
+    /// oracle: under the TGS backend, with no gravity and no damping, a
+    /// participant applying `F = (4, 0, 0)` to a body of mass 2 for one frame
+    /// `dt = 1/64` (8 dyadic substeps) gives `Δv = F·dt/m = 1/32` along `x`,
+    /// with and without a joint in the world; a participant that fails
+    /// records a participant fault and applies nothing.
+    #[test]
+    fn tgs_participant_force_gives_f_dt_over_m() {
+        for with_joint in [false, true] {
+            for fail in [false, true] {
+                let mut world = PhysicsWorld::new(SolverConfig {
+                    gravity: Vec3Fix::ZERO,
+                    damping: Fix128::ONE,
+                    solver_backend: SolverBackend::Tgs,
+                    ..Default::default()
+                });
+                let body = world.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::from_int(2)));
+                if with_joint {
+                    let other =
+                        world.add_body(RigidBody::new(Vec3Fix::from_int(0, 10, 0), Fix128::ONE));
+                    let anchor = world.add_body(RigidBody::new_static(Vec3Fix::from_int(0, 12, 0)));
+                    world.add_joint(Joint::Ball(crate::joint::BallJoint::new(
+                        other,
+                        anchor,
+                        Vec3Fix::ZERO,
+                        Vec3Fix::from_int(0, -2, 0),
+                    )));
+                }
+                world
+                    .add_participant(Box::new(ConstantPush {
+                        body,
+                        force: Vec3Fix::from_int(4, 0, 0),
+                        fail,
+                    }))
+                    .expect("register");
+                world.step(Fix128::from_ratio(1, 64));
+                let v = world.bodies[body].velocity;
+                if fail {
+                    assert_eq!(v, Vec3Fix::ZERO, "joint {with_joint}");
+                    assert!(
+                        matches!(
+                            world.fault(),
+                            Some(crate::world_participant::WorldFault::Participant {
+                                index: 0,
+                                ..
+                            })
+                        ),
+                        "joint {with_joint}: {:?}",
+                        world.fault()
+                    );
+                } else {
+                    assert!(
+                        (v.x.to_f64() - 1.0 / 32.0).abs() < 1e-12,
+                        "joint {with_joint}: v {v:?}"
+                    );
+                    assert!(
+                        v.y.is_zero() && v.z.is_zero(),
+                        "joint {with_joint}: v {v:?}"
+                    );
+                    assert_eq!(world.fault(), None);
+                }
+            }
+        }
+    }
 }
 
 /// loom model of the invariant `BodySlicePtr` / `DistConstraintSlicePtr` /
