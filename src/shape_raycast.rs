@@ -1098,7 +1098,7 @@ fn query_direction(direction: Vec3Fix, max_t: Fix128) -> Option<Vec3Fix> {
     if max_t <= Fix128::ZERO {
         return None;
     }
-    direction.try_normalize()
+    direction.try_normalize_scaled()
 }
 
 /// Whether the ray segment `[0, max_t]` passes through `aabb`.
