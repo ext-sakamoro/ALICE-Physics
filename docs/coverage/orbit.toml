@@ -736,9 +736,9 @@ id = "COV-ORBIT-067"
 axis = "maneuver"
 item = "impulsive delta-v applied to a state and the resulting elements"
 source = "Vallado, Fundamentals of Astrodynamics and Applications §6.2; GMAT ImpulsiveBurn"
-status = "implemented-no-oracle"
-evidence = "StateVector の速度に Δv を足して src/kepler.rs::from_state に通せば新しい要素になる (専用 API と突合 test は無い)"
-oracle_candidate = "円軌道の接線方向 Δv で近点・遠点が vis-viva の閉形式に一致 (S)"
+status = "implemented+oracle"
+evidence = "src/kepler.rs::OrbitalElements::from_state / tests/analytic_impulsive_burn_vis_viva.rs::prograde_tangential_burn_raises_apoapsis_periapsis_matches_vis_viva + retrograde_tangential_burn_lowers_periapsis_matches_vis_viva (円軌道に接線 Δv、新半長径・離心率を vis-viva 閉形式に突合、vis_viva_speed でも遠点速度を独立確認)"
+oracle_candidate = ""
 limitation = ""
 
 [[item]]
