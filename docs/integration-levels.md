@@ -31,7 +31,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 5 / 1 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 60 / 15 / 1 / 19 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 61 / 15 / 1 / 19 / 0 | C ABI, Python, WebAssembly |
 | `metric` | step | 5 / 3 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
@@ -54,7 +54,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | world API | 0 / 28 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 37 of 173 items) | 37 / 107 / 7 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 38 of 174 items) | 38 / 107 / 7 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API | 0 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
