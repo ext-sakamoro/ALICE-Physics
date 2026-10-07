@@ -905,4 +905,102 @@ mod tests {
         assert_eq!(outcome.iterations, 0);
         assert!(outcome.converged);
     }
+
+    fn sphere_of(r: f32) -> ClosureSdf {
+        ClosureSdf::new(
+            move |x, y, z| (x * x + y * y + z * z).sqrt() - r,
+            |x, y, z| {
+                let len = (x * x + y * y + z * z).sqrt().max(1.0e-6);
+                (x / len, y / len, z / len)
+            },
+        )
+    }
+
+    /// oracle: `resolved_position` is the position when the resolution
+    /// converged and the best position found otherwise.
+    #[test]
+    fn resolved_position_falls_back_to_the_best() {
+        let mut o = MoveOutcome {
+            position: [1.0, 2.0, 3.0],
+            converged: true,
+            iterations: 1,
+            best_position: [4.0, 5.0, 6.0],
+            best_distance: 0.5,
+        };
+        assert_eq!(o.resolved_position(), [1.0, 2.0, 3.0]);
+        o.converged = false;
+        assert_eq!(o.resolved_position(), [4.0, 5.0, 6.0]);
+    }
+
+    /// oracle: on a planet of radius 10 a character of radius 1/2 standing at
+    /// the north pole `(0, 10.5, 0)` that walks along `+x` at
+    /// `v = r·(π/2)/dt` (`r = 10.5`, `dt = 1`) is carried a quarter of a great
+    /// circle to `(10.5, 0, 0)` (snapped onto the skin band, within 1e-3), and
+    /// its up axis turns to `+x`. Central gravity `g = 2` for `dt = 1/2` adds
+    /// `−g·dt` along the radius: velocity `(−1, 0, 0)`.
+    #[test]
+    fn step_on_sphere_moves_a_quarter_great_circle() {
+        let planet = sphere_of(10.0);
+        let mut ch = SdfCharacter::new([0.0, 10.5, 0.0], 0.5, 1.8);
+        let v = 10.5 * core::f32::consts::FRAC_PI_2;
+        let _ = ch.step_on_sphere(&planet, [0.0; 3], 1.0, [v, 0.0, 0.0]);
+        let [x, y, z] = ch.position;
+        assert!(
+            (x - 10.5).abs() < 1e-3 && y.abs() < 1e-3 && z.abs() < 1e-3,
+            "{:?}",
+            ch.position
+        );
+        assert!(
+            (ch.up[0] - 1.0).abs() < 1e-5 && ch.up[1].abs() < 1e-5,
+            "{:?}",
+            ch.up
+        );
+        ch.velocity = [0.0; 3];
+        ch.apply_central_gravity([0.0; 3], 2.0, 0.5);
+        assert!(
+            (ch.velocity[0] + 1.0).abs() < 1e-5 && ch.velocity[1].abs() < 1e-5,
+            "{:?}",
+            ch.velocity
+        );
+    }
+
+    /// oracle: a character at the centre has no up axis: the arc move is
+    /// skipped and, far from the surface of a planet of radius 10 (distance
+    /// 10 inside, so `|d| ≥ band`) with no velocity, it stays where it is.
+    #[test]
+    fn step_on_sphere_at_the_centre_stays() {
+        let planet = sphere_of(10.0);
+        let mut ch = SdfCharacter::new([0.0; 3], 0.5, 1.8);
+        let _ = ch.step_on_sphere(&planet, [0.0; 3], 1.0, [1.0, 0.0, 0.0]);
+        assert_eq!(ch.position, [0.0; 3]);
+    }
+
+    /// oracle: the world's field is the nearest of its SDF colliders: with a
+    /// ground plane at `y = 0` the distance at `(0, 3, 0)` is 3 and the
+    /// normal `+y`; without colliders it is `+∞` with normal `+y`. Moving a
+    /// character of radius 1/2 by `(0, −1, 0)` from `y = 1` through the
+    /// world pushes it back out to `y ≥ 1/2`.
+    #[test]
+    fn world_sdf_field_and_character_move() {
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig::default());
+        let empty = world.sdf_field();
+        assert_eq!(empty.distance(0.0, 3.0, 0.0), f32::INFINITY);
+        assert_eq!(
+            empty.distance_and_normal(0.0, 3.0, 0.0),
+            (f32::INFINITY, (0.0, 1.0, 0.0))
+        );
+        world.add_sdf_collider(crate::sdf_collider::SdfCollider::new_static(
+            Box::new(ground_plane()),
+            crate::math::Vec3Fix::ZERO,
+            crate::math::QuatFix::IDENTITY,
+        ));
+        let field = world.sdf_field();
+        assert!((field.distance(0.0, 3.0, 0.0) - 3.0).abs() < 1e-6);
+        let (nx, ny, nz) = field.normal(0.0, 3.0, 0.0);
+        assert!(nx.abs() < 1e-6 && (ny - 1.0).abs() < 1e-6 && nz.abs() < 1e-6);
+        let mut ch = SdfCharacter::new([0.0, 1.0, 0.0], 0.5, 1.8);
+        let out = world.move_sdf_character(&mut ch, 1.0, [0.0, -1.0, 0.0]);
+        assert!(out.converged);
+        assert!(ch.position[1] >= 0.5 - 1e-4, "{:?}", ch.position);
+    }
 }
