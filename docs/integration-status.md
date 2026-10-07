@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 7 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2596 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2602 |
 | live | reached without examples (crate-internal roots or a binding) | 578 |
-| | **total** | **3181** |
+| | **total** | **3187** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -60,7 +60,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2596)
+## L1 — example-only (2602)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -84,7 +84,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cfd_solver.rs`: `AdvectionScheme`, `CfdSolver`, `CfdSolver::MAX_DT_CAP`, `CfdSolver::compute_max_dt`, `CfdSolver::new`, `CfdSolver::step`, `CfdSolver::step_adaptive`, `CfdSolver::step_flip`, `CfdSolver::step_flip_with`, `CfdSolver::step_multigrid`, `CfdSolver::step_rans`, `CfdSolver::step_with_options`, `CfdSolver::step_with_pressure_solver`, `LevelSetReinit`, `PressureSolver`, `ProjectionReport`, `RansReport`, `RansState`, `RansState::cell_dims`, `RansState::eddy_viscosity`, `RansState::epsilon`, `RansState::k`, `RansState::model`, `RansState::new`, `RansState::prescribed`, `RansState::set`, `RansState::uniform`, `StepError`, `StepOptions`, `StepOptions::new`, `StepOptions::pressure`, `StepOptions::wall_model`, `StepOptions::with_level_set_reinit`, `StepOptions::with_wall_model`, `StepReport`, `TurbulenceModel`, `TurbulenceSummary`, `WallModel`, `WallModel::log_law`, `WallShearSummary`
 - `src/character.rs`: `CharacterConfig`, `CharacterController`, `CharacterController::apply_gravity`, `CharacterController::compute_push_impulses`, `CharacterController::feet_position`, `CharacterController::get_platform_velocity`, `CharacterController::move_and_slide`, `CharacterController::new`, `CharacterController::new_default`, `MoveResult`, `PushImpulse`
 - `src/character_state.rs`: `CharacterState`, `CharacterState::accepts_locomotion`, `CharacterState::name`, `CharacterStateContext`, `CharacterStateContext::standing`, `transition`
-- `src/cloth.rs`: `Cloth`, `Cloth::compute_normals`, `Cloth::new_grid`, `Cloth::particle_count`, `Cloth::pin`, `Cloth::pin_top_row`, `Cloth::remaining_self_contact_crossings`, `Cloth::step`, `Cloth::step_with_sdf`, `ClothConfig`
+- `src/cloth.rs`: `Cloth`, `Cloth::clear_rest_tether`, `Cloth::compute_normals`, `Cloth::new_grid`, `Cloth::particle_count`, `Cloth::pin`, `Cloth::pin_top_row`, `Cloth::remaining_self_contact_crossings`, `Cloth::rest_positions`, `Cloth::rest_tether`, `Cloth::set_rest_positions`, `Cloth::set_rest_tether`, `Cloth::step`, `Cloth::step_with_sdf`, `ClothConfig`, `RestPositionsMismatch`
 - `src/cloth_fluid.rs`: `ClothFluidCoupling`, `apply_cloth_boundary_to_fluid`, `apply_cloth_boundary_to_fluid_with_residual`, `apply_fluid_forces_to_cloth`, `apply_fluid_forces_to_cloth_with_residual`
 - `src/collider.rs`: `AABB::from_metric_ball`, `ConvexHull::new`, `ScaledShape`, `ScaledShape::new`, `gjk`
 - `src/collision_mesh_gen.rs`: `CollisionMesh`, `CollisionMesh::to_static_collider`, `CollisionMeshConfig`, `compute_mesh_aabb`, `generate_collision_mesh`, `simplify_collision_mesh`
