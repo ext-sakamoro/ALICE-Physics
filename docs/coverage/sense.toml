@@ -944,9 +944,9 @@ id = "COV-SENSE-089"
 axis = "benchmark"
 item = "PD-controlled mass step response against the second-order closed form (zeta, omega_n, overshoot)"
 source = "Astrom-Murray, Feedback Systems ch.5.3"
-status = "implemented-no-oracle"
-evidence = "src/motor.rs::apply_motors の PD を質量に掛ければ組めるが、2 次系の閉形式と突合する test は無い (単軸 PD 則自体は COV-RIGID-030)"
-oracle_candidate = "overshoot = exp(−ζπ/√(1−ζ²))"
+status = "implemented+oracle"
+evidence = "src/motor.rs::PdController::compute / tests/analytic_pd_step_response.rs::pd_controlled_mass_overshoot_matches_second_order_closed_form (世界を実際に回し、ζ=0.5 の step 応答 peak を overshoot = exp(−ζπ/√(1−ζ²)) に突合、単軸 PD 則自体は COV-RIGID-030)"
+oracle_candidate = ""
 limitation = ""
 
 [[item]]
