@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5315 |
+| 🟢 Not ignored (run by CI) | 5318 |
 | 🔴 Red by design | 199 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5540** |
+| **Total** | **5543** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -275,7 +275,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5315)
+## 🟢 Not ignored (5318)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -676,6 +676,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_math.rs` | 3 |
 | `audit_c_turbulence.rs` | 3 |
 | `audit_gpu_bridge.rs` | 3 |
+| `audit_nonunit_quaternion_compound.rs` | 3 |
 | `determinism_physics2d_step_digest.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
