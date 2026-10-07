@@ -921,9 +921,9 @@ id = "COV-SOFT-087"
 axis = "benchmark"
 item = "hanging chain against the catenary"
 source = "classical catenary y = a cosh(x/a); Irvine, Cable Structures ch.1"
-status = "implemented-no-oracle"
-evidence = "両端を pin した rope は組める (src/rope.rs::pin_end) tests/integration_physics.rs::test_rope_sag_under_gravity は垂れる向きだけを見る 質量の離散化に known defect (tests/audit_rope.rs::total_particle_mass_is_mass_per_unit_times_length)"
-oracle_candidate = "両端 pin、総長 > 端点間距離で静止させ、節点を等質量鎖の離散 catenary の閉形式と比較"
+status = "implemented+oracle"
+evidence = "src/rope.rs::Rope (add_pin + step) / tests/analytic_rope_catenary.rs::hanging_rope_settles_to_the_catenary_shape (両端 pin、総長 8 > 端点間距離 6 で静止させ、等弧長に並ぶ節点を a sinh(半径間/a)=半長 の二分法で解いた閉形式に突合、既知の質量離散化欠陥 AUD-A-S3W1-003 は全粒子に一様な定数倍なので catenary の形には影響しないことを確認した上で無視)"
+oracle_candidate = ""
 limitation = ""
 
 [[item]]
