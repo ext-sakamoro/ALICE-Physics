@@ -638,13 +638,67 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
             col1: wa.col1 + wb.col1 + Vec3Fix::new(Fix128::ZERO, compliance_term, Fix128::ZERO),
             col2: wa.col2 + wb.col2 + Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, compliance_term),
         };
-        if let Some(k_inv) = k.inverse() {
-            let theta = correction_axis * (error_mag * Fix128::from_int(2));
-            let lambda = k_inv.mul_vec(theta);
-            rotate_by(bodies, joint.body_a, wa.mul_vec(lambda));
-            rotate_by(bodies, joint.body_b, -wb.mul_vec(lambda));
+        let theta = correction_axis * (error_mag * Fix128::from_int(2));
+        if let Some((turn_a, turn_b)) = weld_turns(k, wa, wb, theta) {
+            rotate_by(bodies, joint.body_a, turn_a);
+            rotate_by(bodies, joint.body_b, turn_b);
         }
     }
+}
+
+/// The weld's rotation corrections `(+W_a lambda, -W_b lambda)` for the error
+/// rotation vector `theta`, with `K lambda = theta` solved inside a trust region.
+///
+/// The undamped solve is used whenever it exists and neither body turns by more
+/// than twice the error, which is every well-conditioned case. Two cases fall
+/// outside it:
+///
+/// - `K` singular: both bodies are locked about a common axis (inverse inertia
+///   zero there, as for bodies held to planar rotation). The damped solve closes
+///   the error in the directions they can still turn and leaves the rest.
+/// - `K` nearly singular with the locked axes of the two bodies slightly apart:
+///   the linear solution then turns both bodies by radians in the same
+///   direction (0.01 rad of error gave 1.5 rad per body), far outside the small
+///   angle range the correction is linearised in.
+///
+/// Both are solved with `K + mu I`, `mu` starting at `trace(K) 2^-20` and
+/// doubling until each body turns by at most twice the error. The start keeps
+/// `mu^2`, the determinant of a rank-1 `K` once damped, about 2^24 steps of
+/// `Fix128` above zero (at `2^-32` it is one step and the inverse is noise);
+/// the damping then leaves about `2^-20` of the error. A fixed count of steps
+/// keeps it deterministic; if none fits, no correction is applied.
+fn weld_turns(
+    k: crate::math::Mat3Fix,
+    wa: crate::math::Mat3Fix,
+    wb: crate::math::Mat3Fix,
+    theta: Vec3Fix,
+) -> Option<(Vec3Fix, Vec3Fix)> {
+    let bound_sq = theta.length_squared() * Fix128::from_int(4);
+    let turns = |k: crate::math::Mat3Fix| {
+        let lambda = k.inverse()?.mul_vec(theta);
+        let (turn_a, turn_b) = (wa.mul_vec(lambda), -wb.mul_vec(lambda));
+        (turn_a.length_squared() <= bound_sq && turn_b.length_squared() <= bound_sq)
+            .then_some((turn_a, turn_b))
+    };
+    if let Some(found) = turns(k) {
+        return Some(found);
+    }
+    let mut mu = (k.col0.x + k.col1.y + k.col2.z) * Fix128::from_ratio(1, 1 << 20);
+    for _ in 0..64 {
+        if mu.is_zero() {
+            return None;
+        }
+        let damped = crate::math::Mat3Fix {
+            col0: k.col0 + Vec3Fix::new(mu, Fix128::ZERO, Fix128::ZERO),
+            col1: k.col1 + Vec3Fix::new(Fix128::ZERO, mu, Fix128::ZERO),
+            col2: k.col2 + Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, mu),
+        };
+        if let Some(found) = turns(damped) {
+            return Some(found);
+        }
+        mu = mu * Fix128::from_int(2);
+    }
+    None
 }
 
 /// Solve rack-and-pinion: `linear_displacement = ratio * angular_displacement`.
@@ -983,6 +1037,95 @@ mod tests {
     }
 
     // --- WeldJoint ---
+
+    /// A body whose inverse inertia is `inv` and orientation `rotation`.
+    fn weld_body(inv: Vec3Fix, rotation: QuatFix, dynamic: bool) -> RigidBody {
+        let mut b = if dynamic {
+            RigidBody::new(Vec3Fix::ZERO, Fix128::ONE)
+        } else {
+            RigidBody::new_static(Vec3Fix::ZERO)
+        };
+        b.inv_inertia = inv;
+        b.rotation = rotation;
+        b
+    }
+
+    /// Angle of the rotation taking `from` to `to`, in radians.
+    fn turn_angle(from: QuatFix, to: QuatFix) -> f64 {
+        let d = shortest_arc(to.mul(from.conjugate()));
+        2.0 * Vec3Fix::new(d.x, d.y, d.z).length().to_f64()
+    }
+
+    fn solve_one_weld(bodies: &mut [RigidBody]) {
+        let joints = [ExtraJoint::Weld(WeldJoint::new(
+            0,
+            1,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ))];
+        solve_extra_joints(bodies, &joints, dt());
+    }
+
+    /// Bodies held to planar rotation (inverse inertia only about z) have a
+    /// singular effective mass; the weld must still close a z error between
+    /// them, and with a static partner, in one solve.
+    #[test]
+    fn weld_closes_the_error_of_bodies_locked_to_planar_rotation() {
+        let planar = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE);
+        let err = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 100));
+        for a_dynamic in [true, false] {
+            let mut bodies = [
+                weld_body(planar, QuatFix::IDENTITY, a_dynamic),
+                weld_body(planar, err, true),
+            ];
+            solve_one_weld(&mut bodies);
+            let residual = turn_angle(bodies[0].rotation, bodies[1].rotation);
+            // 6e-8 is the small-angle step of `rotate_by`, the same as for a
+            // well-conditioned weld; an unsolved error stays at 1e-2.
+            assert!(
+                residual < 1e-6,
+                "planar weld (a dynamic: {a_dynamic}) left {residual:e} rad of a 0.01 rad error"
+            );
+        }
+    }
+
+    /// Nearly locked axes a little apart make the linear solve turn both bodies
+    /// by radians; the correction stays within twice the error and still
+    /// reduces it.
+    #[test]
+    fn weld_turns_stay_bounded_when_the_effective_mass_is_nearly_singular() {
+        let base = QuatFix::from_axis_angle(Vec3Fix::UNIT_X, Fix128::from_ratio(3, 10));
+        let err = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 100));
+        for small in [Fix128::from_f64(1e-6), Fix128::from_f64(1e-12)] {
+            let inv = Vec3Fix::new(Fix128::ONE, Fix128::ONE, small);
+            let mut bodies = [
+                weld_body(inv, base, true),
+                weld_body(inv, err.mul(base), true),
+            ];
+            let before = [bodies[0].rotation, bodies[1].rotation];
+            let error_before = turn_angle(before[0], before[1]);
+            solve_one_weld(&mut bodies);
+            for (i, b) in bodies.iter().enumerate() {
+                let turned = turn_angle(before[i], b.rotation);
+                assert!(
+                    turned <= 2.0 * error_before * (1.0 + 1e-9),
+                    "inverse inertia {:e}: body {i} turned {turned:e} rad for a \
+                     {error_before:e} rad error",
+                    small.to_f64()
+                );
+            }
+            let error_after = turn_angle(bodies[0].rotation, bodies[1].rotation);
+            // Measured 1.00e-2 -> 9.5e-3: the bounded step still corrects,
+            // where giving up would leave the error as it was.
+            assert!(
+                error_after < 0.99 * error_before,
+                "inverse inertia {:e}: error {error_before:e} -> {error_after:e}, \
+                 no correction within the bound",
+                small.to_f64()
+            );
+        }
+    }
 
     #[test]
     fn test_weld_joint_creation() {
