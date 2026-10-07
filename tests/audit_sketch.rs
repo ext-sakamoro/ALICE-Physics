@@ -461,3 +461,30 @@ fn data_spanning_exactly_bins_buckets_keeps_every_quantile() {
         );
     }
 }
+
+/// The fast path for a value below a full window puts it in bucket 0, where
+/// the shifting path puts it too. Large value then two far small ones: the
+/// first small one collapses the window (the large one now in the top bucket)
+/// and the second takes the fast path; inserting the small ones first and the
+/// large one last collapses both through the shifting path. Every quantile
+/// agrees bit for bit.
+#[test]
+fn a_collapsed_value_lands_in_the_lowest_bucket_either_way() {
+    let (lo, lower, hi) = (1e-30_f64, 1e-35_f64, 1e30_f64);
+    let mut fast = DDSketch128::new(0.1);
+    for v in [hi, lo, lower] {
+        fast.insert(v);
+    }
+    let mut shifted = DDSketch128::new(0.1);
+    for v in [lo, lower, hi] {
+        shifted.insert(v);
+    }
+    for k in 0..=6 {
+        let q = f64::from(k) / 6.0;
+        assert_eq!(
+            fast.quantile(q).to_bits(),
+            shifted.quantile(q).to_bits(),
+            "q {q}"
+        );
+    }
+}
