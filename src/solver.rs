@@ -49,8 +49,10 @@ use alloc::vec::Vec;
 use rayon::prelude::*;
 
 mod participants;
+mod world_ccd;
 mod world_snapshot;
 pub use participants::DeclareFieldError;
+pub use world_ccd::WorldCcdConfig;
 pub use world_snapshot::WorldSnapshotError;
 
 // ============================================================================
@@ -1705,6 +1707,8 @@ pub struct PhysicsWorld {
     fault: Option<crate::world_participant::WorldFault>,
     /// Shared fields, owned by the world.
     fields: crate::world_participant::FieldBoard,
+    /// Continuous collision of the step ([`Self::set_continuous_collision`]).
+    ccd: WorldCcdConfig,
 }
 
 /// Fold `bytes` into `hash` with FNV-1a (64-bit).
@@ -1835,6 +1839,7 @@ impl PhysicsWorld {
             participant_plan: None,
             fault: None,
             fields: crate::world_participant::FieldBoard::new(),
+            ccd: WorldCcdConfig::new(),
         }
     }
 
@@ -4186,10 +4191,21 @@ impl PhysicsWorld {
         self.integrate_positions(dt);
         self.reset_lambdas();
 
+        // 1.1. Continuous collision of fast bodies (`world_ccd`, off by
+        //      default: nothing runs while it is off).
+        let ccd_hits = if self.ccd.is_enabled() {
+            self.ccd_sweep()
+        } else {
+            Vec::new()
+        };
+
         // 1.2. Collision detection on the predicted positions (Small Steps).
         //      Contacts live for exactly one substep.
         self.clear_contacts();
         self.detect_collisions();
+        if !ccd_hits.is_empty() {
+            self.ccd_add_contacts(&ccd_hits);
+        }
 
         // 1.5. Resolve SDF collisions (implicit surface contacts)
         #[cfg(feature = "std")]
@@ -4224,9 +4240,19 @@ impl PhysicsWorld {
         self.integrate_positions(dt);
         self.reset_lambdas();
 
+        // 1.1. Continuous collision of fast bodies, as in `substep`.
+        let ccd_hits = if self.ccd.is_enabled() {
+            self.ccd_sweep()
+        } else {
+            Vec::new()
+        };
+
         // 1.2. Collision detection on the predicted positions (Small Steps).
         self.clear_contacts();
         self.detect_collisions();
+        if !ccd_hits.is_empty() {
+            self.ccd_add_contacts(&ccd_hits);
+        }
         self.rebuild_batches();
 
         // 1.5. Resolve SDF collisions

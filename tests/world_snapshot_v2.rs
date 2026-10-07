@@ -239,11 +239,11 @@ fn header_errors() {
     );
 
     let mut x = b.clone();
-    x[4..6].copy_from_slice(&3u16.to_le_bytes());
+    x[4..6].copy_from_slice(&4u16.to_le_bytes());
     assert_eq!(
         restore_err(&reseal(x)),
         WorldSnapshotError::UnsupportedVersion {
-            found: 3,
+            found: 4,
             supported: PhysicsWorld::WORLD_SNAPSHOT_VERSION
         }
     );
