@@ -2898,6 +2898,10 @@ impl PhysicsWorld {
 
     /// The nearest hit of the core `a`–`b` grown by `r > 0` (or `r = 0` with
     /// `a ≠ b`) moving along `direction`.
+    ///
+    /// `direction` must have gone through `tame_direction` (both callers do):
+    /// the `try_normalize` below squares it and wraps for components of `2³¹·⁵`
+    /// or more.
     fn cast_core(
         &self,
         a: Vec3Fix,
