@@ -698,15 +698,27 @@ impl Joint {
 ///   calls. The effective stiffness therefore grows with the number of calls.
 pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     for joint in joints {
-        match joint {
-            Joint::Ball(j) => solve_ball_joint(j, bodies, dt),
-            Joint::Hinge(j) => solve_hinge_joint(j, bodies, dt),
-            Joint::Fixed(j) => solve_fixed_joint(j, bodies, dt),
-            Joint::Slider(j) => solve_slider_joint(j, bodies, dt),
-            Joint::Spring(j) => solve_spring_joint(j, bodies, dt),
-            Joint::D6(j) => solve_d6_joint(j, bodies, dt),
-            Joint::ConeTwist(j) => solve_cone_twist_joint(j, bodies, dt),
-        }
+        solve_one(joint, bodies, dt);
+    }
+}
+
+/// Solve one joint. A joint whose two bodies are the same body constrains
+/// nothing a motion could satisfy (a body cannot move relative to itself), so
+/// it is skipped and the body stays a free body; solving it would apply both
+/// sides' corrections to that one body and inject motion.
+fn solve_one(joint: &Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+    let (a, b) = joint.bodies();
+    if a == b {
+        return;
+    }
+    match joint {
+        Joint::Ball(j) => solve_ball_joint(j, bodies, dt),
+        Joint::Hinge(j) => solve_hinge_joint(j, bodies, dt),
+        Joint::Fixed(j) => solve_fixed_joint(j, bodies, dt),
+        Joint::Slider(j) => solve_slider_joint(j, bodies, dt),
+        Joint::Spring(j) => solve_spring_joint(j, bodies, dt),
+        Joint::D6(j) => solve_d6_joint(j, bodies, dt),
+        Joint::ConeTwist(j) => solve_cone_twist_joint(j, bodies, dt),
     }
 }
 
@@ -751,15 +763,7 @@ pub fn solve_joints_breakable(
         if broken.binary_search(&i).is_ok() {
             continue;
         }
-        match joint {
-            Joint::Ball(j) => solve_ball_joint(j, bodies, dt),
-            Joint::Hinge(j) => solve_hinge_joint(j, bodies, dt),
-            Joint::Fixed(j) => solve_fixed_joint(j, bodies, dt),
-            Joint::Slider(j) => solve_slider_joint(j, bodies, dt),
-            Joint::Spring(j) => solve_spring_joint(j, bodies, dt),
-            Joint::D6(j) => solve_d6_joint(j, bodies, dt),
-            Joint::ConeTwist(j) => solve_cone_twist_joint(j, bodies, dt),
-        }
+        solve_one(joint, bodies, dt);
     }
 
     // Sort descending for safe removal

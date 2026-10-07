@@ -77,7 +77,7 @@ fn self_referential_ball_joint_with_coincident_anchors_is_a_free_body() {
 /// on the same body the constraint is unsatisfiable by any motion, and the only
 /// motion-free answer is to leave the body as a free body.
 #[test]
-#[ignore = "known defect: AUD-A-S34-010: `solve_ball_joint` with `BallJoint(a, a)` and distinct local anchors (1,0,0) / (-1,0,0) applies the correction to the same body as A and B and injects velocity: x = 36 after 1 frame and 28920 after 30 frames (dt 1/64, 8 substeps) instead of 0 for the free body"]
+// AUD-A-S34-010
 fn self_referential_ball_joint_with_distinct_anchors_is_a_free_body() {
     let frames = 30_i64;
     let la = Vec3Fix::from_int(1, 0, 0);
