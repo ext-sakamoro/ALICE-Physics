@@ -1458,6 +1458,8 @@ struct Decoded {
     /// The bytes of `FieldBoard::write_values` (version 2; an empty board for
     /// version 1)
     fields: Vec<u8>,
+    /// The continuous collision setting (version 3; off for versions 1 and 2)
+    ccd: super::WorldCcdConfig,
 }
 
 /// Encoded tag of a static SDF collider's body index ([`crate::sdf_collider::SDF_STATIC`]),
@@ -1471,9 +1473,11 @@ impl PhysicsWorld {
 
     /// Format version of a [`Self::snapshot_world`] blob. Version 1 blobs
     /// (no `participants`, `fault` or `fields` section) are still read, as a
-    /// world without participants, fault or fields; a blob of any other
-    /// version is rejected with [`WorldSnapshotError::UnsupportedVersion`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 2;
+    /// world without participants, fault or fields, and version 1 and 2 blobs
+    /// (no `continuous_collision` section) as a world with continuous
+    /// collision off; a blob of any other version is rejected with
+    /// [`WorldSnapshotError::UnsupportedVersion`].
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 3;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1540,6 +1544,7 @@ impl PhysicsWorld {
     /// | `participant_plan` (std) | not covered | derived from the target world's own participants and fields |
     /// | `fault` | saved | the recorded fault, so a restored branch is still faulted |
     /// | `fields` | saved | the committed values once ([`crate::world_participant::FieldBoard::write_values`]); the target world must declare the same fields ([`WorldSnapshotError::FieldState`]) |
+    /// | `ccd` | saved | [`PhysicsWorld::continuous_collision`] (version 3) |
     ///
     /// Not in the table because they are not [`PhysicsWorld`] fields:
     /// motors the caller applies itself with [`crate::motor::apply_motors`]
@@ -1555,7 +1560,7 @@ impl PhysicsWorld {
     /// step. The structure is private to [`crate::sleeping`] and has no
     /// non-mutating accessor, so it cannot be copied from `&self`.
     ///
-    /// # Format (version 2)
+    /// # Format (version 3)
     ///
     /// | range | content |
     /// |---|---|
@@ -1574,6 +1579,16 @@ impl PhysicsWorld {
     /// | `participants` | `count: u64`, then per participant `kind: u32`, `payload_len: u64`, payload |
     /// | `fault` | `u8` code: `0` none, `1` participant (`index: u64`, `kind: u32`, fault tag `u8`), `2` rigid overflow, `3` force out of range (`body: u64`), `4` field out of range (`field: u32`, `index: u64`) |
     /// | `fields` | [`crate::world_participant::FieldBoard::write_values`] |
+    ///
+    /// Version 3 appends one section after `fields`:
+    ///
+    /// | section | content |
+    /// |---|---|
+    /// | `continuous_collision` | `enabled: u8` (`0` / `1`), `motion_threshold` ([`PhysicsWorld::continuous_collision`]) |
+    ///
+    /// The version is raised for it because the reader rejects trailing
+    /// bytes: a section appended to a version 2 blob could not be told apart
+    /// from a corrupt one.
     #[must_use]
     pub fn snapshot_world(&self) -> Vec<u8> {
         let mut w = W(Vec::new());
@@ -1770,6 +1785,8 @@ impl PhysicsWorld {
         }
         w_fault(&mut w, self.fault());
         self.fields().write_values(&mut w.0);
+        w.bool(self.ccd.is_enabled());
+        w.fix(self.ccd.motion_threshold());
 
         let mut data = w.0;
         let payload_len = (data.len() - HEADER_LEN) as u64;
@@ -1923,6 +1940,7 @@ impl PhysicsWorld {
         self.read_participants(&d.participants);
         self.set_fault(d.fault);
         self.fields_mut().read_values(&d.fields);
+        self.ccd = d.ccd;
     }
 }
 
@@ -1934,7 +1952,7 @@ fn decode(data: &[u8]) -> Res<Decoded> {
         return Err(WorldSnapshotError::BadMagic);
     }
     let version = u16::from_le_bytes([data[4], data[5]]);
-    if version != 1 && version != PhysicsWorld::WORLD_SNAPSHOT_VERSION {
+    if !(1..=PhysicsWorld::WORLD_SNAPSHOT_VERSION).contains(&version) {
         return Err(WorldSnapshotError::UnsupportedVersion {
             found: version,
             supported: PhysicsWorld::WORLD_SNAPSHOT_VERSION,
@@ -2183,6 +2201,13 @@ fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
         crate::world_participant::FieldBoard::new().write_values(&mut empty);
         (Vec::new(), None, empty)
     };
+    let ccd = if version >= 3 {
+        super::WorldCcdConfig::new()
+            .with_enabled(r.bool("continuous_collision")?)
+            .with_motion_threshold(r.fix()?)
+    } else {
+        super::WorldCcdConfig::new()
+    };
 
     Ok(Decoded {
         config,
@@ -2217,6 +2242,7 @@ fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
         participants,
         fault,
         fields,
+        ccd,
     })
 }
 
