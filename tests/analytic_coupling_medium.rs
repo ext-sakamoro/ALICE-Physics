@@ -236,7 +236,7 @@ const CASES: [(i64, i64, usize); 3] = [(1, 64, 4), (1, 60, 8), (1, 64, 3)];
 /// Exact momentum conservation holds when (all four are true here): every
 /// coupled body has a power-of-two mass `≥ 1` (so `dv / inv_mass` and
 /// `v · m` are exact), no other participant pushes those bodies, nothing else
-/// changes their momentum (no gravity, damping, contact or sleep), and the
+/// changes their momentum (no gravity, damping or contact), and the
 /// world keeps the integrated velocity (TGS). On TGS the sum is the same bit
 /// pattern in every frame; on XPBD it stays within the bound of the module
 /// documentation.
@@ -734,4 +734,292 @@ fn state_payload_is_checked() {
     assert_eq!(b.momentum(), a.momentum());
     a.couple(1, Fix128::ONE).expect("couple");
     assert_eq!(a.check_state(&bytes), Err(StateError::InvalidValue));
+}
+
+// ---------------------------------------------------------------------------
+// 4. Bookkeeping helpers and edge cases
+// ---------------------------------------------------------------------------
+
+/// A medium of the configuration of [`momentum_scene`] holding the state
+/// participant 0 of `w` reports.
+fn medium_from_world(w: &PhysicsWorld) -> DragMedium {
+    let mut m = medium(3.0, [0.0, 0.0, 0.0], &COEFF);
+    let bytes = w.participant_state(0).expect("participant");
+    assert_eq!(m.check_state(&bytes), Ok(()));
+    m.read_state(&bytes);
+    m
+}
+
+/// [`DragMedium::total_momentum`] equals `P + Σ m_i v_i` computed here with
+/// the integer masses (an exact product), before and after the exchange; a
+/// coupled index past the last body gives `None`.
+#[test]
+fn total_momentum_matches_the_independent_sum() {
+    for backend in BACKENDS {
+        let mut w = momentum_scene(backend, 4);
+        for frame in 0..=30 {
+            if frame > 0 {
+                w.try_step(Fix128::from_ratio(1, 60)).expect("step");
+            }
+            let m = medium_from_world(&w);
+            assert_eq!(
+                m.total_momentum(&w.bodies),
+                Some(total_momentum(&w, &MASSES)),
+                "{backend:?} frame {frame}"
+            );
+        }
+        // The bodies carry momentum of their own: a sum that dropped or
+        // negated them would differ from `P`.
+        let m = medium_from_world(&w);
+        let bodies_part = m.total_momentum(&w.bodies).expect("sum") - m.momentum();
+        assert!(max_abs(bodies_part) > 0.25);
+        assert_eq!(m.total_momentum(&w.bodies[..3]), None);
+    }
+}
+
+/// A payload longer than 60 bytes is refused like a shorter one.
+#[test]
+fn a_too_long_payload_is_refused() {
+    let a = medium(3.0, [1.0, 2.0, 3.0], &[(0, 1.0)]);
+    let mut bytes = Vec::new();
+    a.write_state(&mut bytes);
+    bytes.push(0);
+    assert_eq!(
+        a.check_state(&bytes),
+        Err(StateError::Length {
+            expected: 60,
+            found: 61
+        })
+    );
+}
+
+/// A dynamic body with `inv_mass = 0` gets no force and gives no reaction:
+/// the medium coupled to it and to a body of mass 2 evolves bit for bit like
+/// one coupled to the second body alone (the first body moves as the world
+/// moves it without the medium), and [`DragMedium::total_momentum`] leaves it out.
+#[test]
+fn a_dynamic_body_without_inverse_mass_is_skipped() {
+    for backend in BACKENDS {
+        let build = |couple_both: bool| {
+            let mut w = world(backend, 4);
+            let mut heavy = RigidBody::new_dynamic(v3(0.0, -100.0, 0.0), Fix128::from_int(2));
+            heavy.inv_mass = Fix128::ZERO;
+            heavy.velocity = v3(0.5, 0.0, 0.0);
+            assert!(heavy.is_dynamic());
+            w.add_body(heavy);
+            add_bodies(&mut w, &[2], &[[3.0, 0.0, 0.0]]);
+            let couplings: &[(usize, f64)] = if couple_both {
+                &[(0, 1.0), (1, 1.0)]
+            } else {
+                &[(1, 1.0)]
+            };
+            w.add_participant(Box::new(medium(3.0, [-1.0, 0.0, 0.0], couplings)))
+                .expect("register");
+            w
+        };
+        let mut both = build(true);
+        let mut one = build(false);
+        for _ in 0..60 {
+            both.try_step(Fix128::from_ratio(1, 60)).expect("step");
+            one.try_step(Fix128::from_ratio(1, 60)).expect("step");
+        }
+        assert_eq!(bodies_bits(&both), bodies_bits(&one), "{backend:?}");
+        assert_eq!(observed(&both, 0), observed(&one, 0), "{backend:?}");
+        let m = {
+            let mut m = medium(3.0, [0.0, 0.0, 0.0], &[(0, 1.0), (1, 1.0)]);
+            m.read_state(&both.participant_state(0).expect("participant"));
+            m
+        };
+        assert_eq!(
+            m.total_momentum(&both.bodies),
+            Some(m.momentum() + both.bodies[1].velocity * Fix128::from_int(2))
+        );
+    }
+}
+
+/// `2⁶⁴ mod m`: the remainder that makes `inv_mass = 1/m` inexact,
+/// `inv_mass = (2⁶⁴ − r)/m · 2⁻⁶⁴`.
+fn remainder(m: u128) -> u128 {
+    (1u128 << 64) % m
+}
+
+/// The exactness condition of the module documentation for an integer mass
+/// `m`: with `dv = D · 2⁻⁶⁴`, the reaction `dv / inv_mass` is
+/// `D m + ⌊D m r / (2⁶⁴ − r)⌋` units of `2⁻⁶⁴`, so it equals the momentum the
+/// body receives, `m · dv`, exactly when `(D m + 1) r < 2⁶⁴`. Checked on the
+/// division itself for masses 3, 5, 6, 7 (`r` = 1, 1, 4, 2) and 8 (`r = 0`)
+/// on both sides of the threshold, and in the world: one substep of the
+/// medium changes `P + m v` by exactly that excess (mass 3, `c = 3`, relative
+/// velocity 100, `M = 4`, `dt = 1/60`: 4 units).
+#[test]
+fn integer_masses_are_exact_below_the_documented_threshold() {
+    let unit = 1u128 << 64;
+    for m in [3u128, 5, 6, 7, 8] {
+        let r = remainder(m);
+        let inv = Fix128::ONE / Fix128::from_int(m as i64);
+        assert_eq!(inv.lo as u128, (unit - r) / m, "inv_mass of {m}");
+        // The largest D that the condition admits, and a spread around it.
+        let edge = unit.checked_div(r).map_or(1 << 70, |q| (q - 1) / m);
+        for d in [
+            1u128,
+            1000,
+            edge.saturating_sub(1),
+            edge,
+            edge + 1,
+            edge * 3,
+        ] {
+            let dv = Fix128 {
+                hi: (d >> 64) as i64,
+                lo: d as u64,
+            };
+            let given = dv / inv;
+            let given_raw = ((given.hi as i128) << 64 | given.lo as i128) as u128;
+            let excess = if r == 0 { 0 } else { d * m * r / (unit - r) };
+            assert_eq!(given_raw, d * m + excess, "m {m} D {d}");
+            assert_eq!(excess == 0, r == 0 || (d * m + 1) * r < unit, "m {m} D {d}");
+        }
+    }
+    for backend in BACKENDS {
+        let mut w = world(backend, 1);
+        add_bodies(&mut w, &[3], &[[100.0, 0.0, 0.0]]);
+        w.add_participant(Box::new(medium(4.0, [0.0, 0.0, 0.0], &[(0, 3.0)])))
+            .expect("register");
+        let v0 = w.bodies[0].velocity.x;
+        let start = total_momentum(&w, &[3]);
+        w.try_step(Fix128::from_ratio(1, 60)).expect("step");
+        if backend == SolverBackend::Tgs {
+            let dv = v0 - w.bodies[0].velocity.x;
+            assert_eq!(dv.hi, 1, "|dv| ≈ 5/3");
+            let d = (dv.hi as u128) << 64 | dv.lo as u128;
+            let excess = d * 3 / (unit - 1);
+            assert_eq!(excess, 4);
+            let drift = total_momentum(&w, &[3]) - start;
+            assert_eq!(
+                drift,
+                Vec3Fix::new(Fix128::from_raw(0, 4), Fix128::ZERO, Fix128::ZERO)
+            );
+        }
+    }
+}
+
+/// The medium keeps `P = M · u` rounded to [`Fix128`] (the product rounds
+/// down to a multiple of `2⁻⁶⁴`), and its velocity is `P / M`, so the
+/// velocity it starts with differs from `u` by less than `2⁻⁶⁴ / M + 2⁻⁶⁴`
+/// per component: for `M = 2⁻⁶⁴` and `u = (0.3, −0.7, 1)` it is `(0, −1, 1)`.
+#[test]
+fn a_tiny_medium_mass_quantises_the_velocity() {
+    let u = v3(0.3, -0.7, 1.0);
+    let tiny = DragMedium::new(Fix128::from_raw(0, 1), u).expect("medium");
+    assert_eq!(
+        tiny.momentum(),
+        Vec3Fix::new(
+            Fix128::ZERO,
+            Fix128::from_raw(-1, u64::MAX),
+            Fix128::from_raw(0, 1)
+        )
+    );
+    assert_eq!(
+        tiny.velocity(),
+        Some(Vec3Fix::new(
+            Fix128::ZERO,
+            Fix128::from_int(-1),
+            Fix128::ONE
+        ))
+    );
+    for k in [64u32, 48, 32, 16, 0] {
+        let mass = Fix128::from_raw(0, 1) * Fix128::from_int(1i64 << (64 - k).min(62));
+        let mass = if k == 0 { Fix128::from_int(4) } else { mass };
+        let m = DragMedium::new(mass, u).expect("medium");
+        let got = to_f(m.velocity().expect("velocity") - u);
+        let bound = ULP / mass.to_f64() + ULP;
+        for (axis, g) in got.iter().enumerate() {
+            assert!(
+                g.abs() < bound,
+                "M {} axis {axis}: {g:e} ≥ {bound:e}",
+                mass.to_f64()
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 5. Sleeping bodies
+// ---------------------------------------------------------------------------
+
+/// Bodies of masses 1, 2, 4, 8 nearly at rest (one moving at `0.001`), the
+/// medium (`M = 3`, `u = (0.004, 0, 0)`), `dt = 1/60`, 4 substeps, 600
+/// frames, the default sleep settings. The drag would let the bodies fall
+/// asleep after 60 frames under the sleep thresholds; the world wakes a body
+/// whenever a participant force changes it, so the sum stays as without sleep
+/// (TGS: the same bit pattern in every frame; XPBD: within the rounding bound
+/// of the module documentation).
+#[test]
+fn momentum_is_conserved_while_coupled_bodies_sleep() {
+    let vel = [
+        [0.0, 0.0, 0.0],
+        [0.001, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0],
+    ];
+    let sum_m: f64 = MASSES.iter().map(|&m| m as f64).sum();
+    let h = 1.0 / 240.0;
+    for backend in BACKENDS {
+        let mut w = PhysicsWorld::new(PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            damping: Fix128::ONE,
+            substeps: 4,
+            solver_backend: backend,
+            ..PhysicsConfig::default()
+        });
+        add_bodies(&mut w, &MASSES, &vel);
+        w.add_participant(Box::new(medium(3.0, [0.004, 0.0, 0.0], &COEFF)))
+            .expect("register");
+        let start = total_momentum(&w, &MASSES);
+        for frame in 1..=600 {
+            w.try_step(Fix128::from_ratio(1, 60)).expect("step");
+            let now = total_momentum(&w, &MASSES);
+            if backend == SolverBackend::Tgs {
+                assert_eq!(now, start, "TGS frame {frame}");
+            } else {
+                let bound = (frame * 4) as f64 * sum_m * ULP * (1.0 / h + V_BOUND * h + 2.0);
+                let d = max_abs(now - start);
+                assert!(d <= bound, "XPBD frame {frame}: |ΔP| {d:e} > {bound:e}");
+            }
+        }
+        // The bodies did reach the common velocity (well below the sleep
+        // threshold of 0.01) and are still exchanging momentum.
+        let (u, _) = observed(&w, 0);
+        assert!(max_abs(u) < 0.01 && max_abs(u) > 0.0, "{backend:?}");
+    }
+}
+
+/// A medium at rest relative to the bodies (`u = v = 0`) stages zero forces,
+/// which change nothing: the bodies fall asleep as without the medium, and
+/// the medium keeps its momentum.
+#[test]
+fn a_medium_at_rest_relative_to_the_bodies_lets_them_sleep() {
+    for backend in BACKENDS {
+        let mut w = PhysicsWorld::new(PhysicsConfig {
+            gravity: Vec3Fix::ZERO,
+            damping: Fix128::ONE,
+            substeps: 4,
+            solver_backend: backend,
+            ..PhysicsConfig::default()
+        });
+        add_bodies(&mut w, &MASSES, &[[0.0; 3]; 4]);
+        w.add_participant(Box::new(medium(3.0, [0.0, 0.0, 0.0], &COEFF)))
+            .expect("register");
+        // Asleep after 60 frames, and they stay asleep.
+        for frame in 1..=200 {
+            w.try_step(Fix128::from_ratio(1, 60)).expect("step");
+            for i in 0..MASSES.len() {
+                assert_eq!(
+                    w.is_sleeping(i),
+                    frame >= 60,
+                    "{backend:?}: body {i} frame {frame}"
+                );
+            }
+        }
+        assert_eq!(observed(&w, 0).1, Vec3Fix::ZERO);
+    }
 }

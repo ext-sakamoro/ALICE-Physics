@@ -487,37 +487,57 @@ fn a_version_1_blob_restores_the_world_it_was_taken_from() {
 
 // ── Waking ───────────────────────────────────────────────────────────────
 
-/// A body that is sleeping but not parked (sleep skip off) follows the same
-/// rule as a parked one: woken above the threshold, untouched below it.
+/// A sleeping body, parked (sleep skip on) or not (skip off), is woken by any
+/// participant force whose applied change `Δv = F·inv_mass·h` is non-zero,
+/// however small: 2 N on 1 kg (`Δv = 1/128`, below the default sleep
+/// threshold `0.01`) and a force of 256 raw units (`Δv` = one raw unit) both
+/// wake it. A force of one raw unit gives `Δv = 0` (the product rounds to
+/// zero): the body stays asleep and does not move.
 #[test]
-fn a_sleeping_body_without_the_skip_wakes_only_above_the_threshold() {
-    let build = || {
-        let mut w = PhysicsWorld::new(free_config(SolverBackend::Xpbd));
-        w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
-        w.set_sleep_skip(false);
-        for _ in 0..120 {
-            w.step(dyadic_dt());
+fn a_sleeping_body_wakes_on_any_non_zero_applied_change() {
+    for skip in [true, false] {
+        let build = || {
+            let mut w = PhysicsWorld::new(free_config(SolverBackend::Xpbd));
+            w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+            w.set_sleep_skip(skip);
+            for _ in 0..120 {
+                w.step(dyadic_dt());
+            }
+            assert!(w.is_sleeping(0), "fixture: the body must be asleep");
+            w
+        };
+        // h = 1/256; one raw unit · 1/256 rounds to zero
+        let mut zero = build();
+        let before = (zero.bodies[0].position, zero.bodies[0].velocity);
+        zero.add_participant(Box::new(Push::new(
+            0,
+            Vec3Fix::new(Fix128::from_raw(0, 1), Fix128::ZERO, Fix128::ZERO),
+        )))
+        .expect("register");
+        zero.try_step(dyadic_dt()).expect("step");
+        assert!(
+            zero.is_sleeping(0),
+            "skip {skip}: a zero change woke the body"
+        );
+        assert_eq!((zero.bodies[0].position, zero.bodies[0].velocity), before);
+        for force in [
+            Vec3Fix::new(Fix128::from_raw(0, 256), Fix128::ZERO, Fix128::ZERO),
+            Vec3Fix::from_int(2, 0, 0),
+        ] {
+            let mut w = build();
+            w.add_participant(Box::new(Push::new(0, force)))
+                .expect("register");
+            w.try_step(dyadic_dt()).expect("step");
+            assert!(!w.is_sleeping(0), "skip {skip}: {force:?} did not wake");
         }
-        assert!(w.is_sleeping(0), "fixture: the body must be asleep");
-        w
-    };
-    // h = 1/256; threshold 0.01: 2 N on 1 kg gives Δv = 1/128 < 0.01
-    let mut below = build();
-    let before = below.bodies[0].position;
-    below
-        .add_participant(Box::new(Push::new(0, Vec3Fix::from_int(2, 0, 0))))
-        .expect("register");
-    below.try_step(dyadic_dt()).expect("step");
-    assert!(below.is_sleeping(0));
-    assert_eq!(below.bodies[0].position, before);
-    // 3 N gives Δv = 3/256 > 0.01
-    let mut above = build();
-    above
-        .add_participant(Box::new(Push::new(0, Vec3Fix::from_int(3, 0, 0))))
-        .expect("register");
-    above.try_step(dyadic_dt()).expect("step");
-    assert!(!above.is_sleeping(0));
-    assert!(above.bodies[0].velocity.x > Fix128::ZERO);
+        // The woken body was integrated (XPBD derives the velocity again from
+        // the position change, which drops a one-unit `Δv`, so look at 2 N).
+        let mut w = build();
+        w.add_participant(Box::new(Push::new(0, Vec3Fix::from_int(2, 0, 0))))
+            .expect("register");
+        w.try_step(dyadic_dt()).expect("step");
+        assert!(w.bodies[0].velocity.x > Fix128::ZERO, "skip {skip}");
+    }
 }
 
 /// A parked body woken by a participant force moves exactly as the same body
@@ -1222,11 +1242,12 @@ fn a_torque_with_a_negative_component_near_the_range_edge_is_applied() {
 }
 
 /// The same edge change on a parked body whose angular sleep threshold is
-/// `3037000499.75` (square `≈ 9.2233720354e18`, still below `2⁶³`):
-/// `|Δω|² < threshold²`, so the body stays parked and the torque has no
-/// effect.
+/// `3037000499.75` (square `≈ 9.2233720354e18`, still below `2⁶³`): the
+/// threshold does not matter for a participant torque, the change is
+/// non-zero, so the body wakes and the torque is applied (not reported out
+/// of range).
 #[test]
-fn a_change_near_the_range_edge_below_the_threshold_leaves_a_parked_body_parked() {
+fn a_change_near_the_range_edge_wakes_a_parked_body_whatever_the_threshold() {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         substeps: 1,
         ..free_config(SolverBackend::Xpbd)
@@ -1240,15 +1261,13 @@ fn a_change_near_the_range_edge_below_the_threshold_leaves_a_parked_body_parked(
         angular_threshold: Fix128::from_ratio(12_148_001_999, 4),
         ..Default::default()
     });
-    let before = (w.bodies[0].rotation, w.bodies[0].angular_velocity);
+    let before = w.bodies[0].angular_velocity;
     w.add_participant(Box::new(Twist::new(edge_torque())))
         .expect("register");
-    w.try_step(Fix128::from_ratio(1, 256)).expect("step");
-    assert!(
-        w.is_sleeping(0),
-        "a change below the threshold woke the body"
-    );
-    assert_eq!((w.bodies[0].rotation, w.bodies[0].angular_velocity), before);
+    let _ = w.try_step(Fix128::from_ratio(1, 256));
+    assert_ne!(w.fault(), Some(WorldFault::ForceOutOfRange { body: 0 }));
+    assert!(!w.is_sleeping(0), "a non-zero change left the body asleep");
+    assert_ne!(w.bodies[0].angular_velocity, before);
 }
 
 // ── Rigid trajectory with a participant that stages nothing ─────────────

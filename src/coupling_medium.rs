@@ -45,6 +45,25 @@
 //! same bit pattern before and after the exchange. `M` can be any positive
 //! value: it only enters `u`, never the bookkeeping.
 //!
+//! Other integer masses `m` are exact while the change stays small. The
+//! world's `inv_mass = 1 / m` is truncated to `(2⁶⁴ − r) / m · 2⁻⁶⁴` with
+//! `r = 2⁶⁴ mod m` (`r = 1` for `m = 3, 5`, `4` for `6`, `2` for `7`, `0` for
+//! a power of two), and the [`Fix128`] division truncates as well, so for a
+//! component `dv = D · 2⁻⁶⁴` of one substep's change the reaction is
+//!
+//! ```text
+//! dv / inv_mass = (D m + ⌊D m r / (2⁶⁴ − r)⌋) · 2⁻⁶⁴,
+//! ```
+//!
+//! which is the momentum the body receives, `m · dv`, exactly when
+//! `(D m + 1) r < 2⁶⁴`, i.e. about `|dv| · m · r < 1` per component and
+//! substep (`|dv| < 1/3` for `m = 3`, `< 1/24` for `m = 6`). Above it the
+//! medium books `⌊D m r / (2⁶⁴ − r)⌋` raw units too many per component and
+//! substep, and `P + Σ m_i v_i` drifts by that much. Measured: mass 3,
+//! `c = 3`, relative velocity 100, `M = 4`, `dt = 1/60` with one substep
+//! (`|dv| ≈ 5/3`) drifts by 4 raw units per frame; masses 5, 6, 7 with
+//! `c = 1` and relative velocity 1 stay exact.
+//!
 //! Whether that sum stays the same bit pattern over a whole step also depends
 //! on what the world does with the body velocities after the exchange:
 //!
@@ -71,12 +90,8 @@
 //!   every participant before it multiplies by `inv_mass · h`; with a second
 //!   participant pushing the same body the rounding of the sum differs from
 //!   the rounding of the medium's share.
-//! * **Awake bodies.** A sleeping (parked) body is woken only by a force above
-//!   the wake threshold ([`crate::world_participant::wakes_parked_body`]);
-//!   below it the force has no effect on the body, but the medium cannot see
-//!   whether a body is parked and has already taken the reaction. Keep the
-//!   coupled bodies awake (moving, or sleeping turned off) where the sum must
-//!   hold.
+//! * **Masses.** Powers of two `≥ 1`, or other integer masses under the
+//!   condition above.
 //! * **No damping, no gravity along the measured axis.** Frame damping and
 //!   gravity change the body momentum by themselves; a contact changes it
 //!   along its normal.
@@ -87,6 +102,35 @@
 //!
 //! Static and kinematic bodies, and a dynamic body with `inv_mass = 0`, get
 //! no force and give no reaction: they are skipped.
+//!
+//! # Sleeping bodies
+//!
+//! Sleeping does not need to be turned off. The world wakes a sleeping or
+//! parked body whenever the change a participant force makes to it is
+//! non-zero ([`crate::world_participant::wakes_parked_body`]), so every drag
+//! force the medium books reaches its body. A body moving with the medium
+//! (`v_i = u`, drag exactly zero) falls asleep as without the medium; a body
+//! that still differs from `u` by any amount the drag resolves stays awake.
+//! The cost is that coupled bodies relaxing toward `u` keep stepping instead
+//! of sleeping. Measured in release (1000 free bodies of masses 1 to 8 all
+//! coupled, `M = 1000`, `c = 1/2`, `dt = 1/60`, 4 substeps, 300 frames after
+//! the first sleep, best of 5, three runs on a loaded machine): the bodies
+//! fall asleep once every 60 frames and are woken in the next substep
+//! (asleep in 1.7 % of the frames), and the step costs as much as with sleep
+//! turned off, XPBD 4.5 / 4.4, 10.4 / 7.3 and 12.7 / 10.4 ms per frame (sleep
+//! on / off, the waking of all parked bodies every 60 frames costs 2–43 %),
+//! TGS 5.3 / 5.1, 6.1 / 5.8 and 5.5 / 5.9 ms. The same bodies without the
+//! medium sleep in every frame and step in 0.02 ms (XPBD) and 0.5 ms (TGS).
+//!
+//! # Small medium masses
+//!
+//! [`DragMedium::new`] keeps `P = M · u` rounded down to a multiple of
+//! `2⁻⁶⁴` (the [`Fix128`] product) and the medium moves with `P / M`, so the
+//! velocity it starts with differs from `u` by less than `2⁻⁶⁴ / M + 2⁻⁶⁴`
+//! per component. That is negligible for `M` of order one, but for a tiny
+//! mass it is not: `M = 2⁻⁶⁴` with `u = (0.3, −0.7, 1)` gives
+//! `P = (0, −2⁻⁶⁴, 2⁻⁶⁴)` and the velocity `(0, −1, 1)`. Read the starting
+//! velocity back with [`DragMedium::velocity`] where it matters.
 //!
 //! # Snapshot payload
 //!
@@ -277,6 +321,9 @@ fn get_fix(bytes: &[u8], at: usize) -> Fix128 {
 
 impl DragMedium {
     /// A medium of mass `mass` moving with `velocity`, coupled to no body.
+    /// The state is the momentum `mass · velocity` rounded to [`Fix128`], so
+    /// for a very small `mass` the medium's velocity ([`Self::velocity`]) can
+    /// differ from `velocity` (module documentation, small medium masses).
     ///
     /// # Errors
     ///

@@ -27,9 +27,10 @@
 //!    the sums themselves are not checked: [`ForceAccumulator`] adds with the
 //!    wrapping addition of [`Fix128`] (in [`run_substep`] and in
 //!    [`ForceAccumulator::merge`]), so staged forces whose sum leaves the
-//!    range wrap before this step sees them; a sleeping body is woken
-//!    only when [`wakes_parked_body`] says so, otherwise the force has no
-//!    effect on it;
+//!    range wrap before this step sees them; a sleeping or parked body is
+//!    woken (and unparked) when the change applied to it, `Δv` or `Δω`, is
+//!    non-zero in any component ([`wakes_parked_body`], no sleep threshold),
+//!    and left asleep only when both round to exactly zero;
 //! 3. the substep body runs as before;
 //! 4. when the world's overflow flag ([`PhysicsWorld::overflow_detected`])
 //!    went up during the substep, [`WorldFault::RigidOverflow`] is recorded.

@@ -6,7 +6,7 @@
 //! execution order the world derives from the ports participants declare,
 //! two participants coupled through shared fields (each reads what the other
 //! writes, one substep later), moving an amount between grids without losing
-//! any, and the wake threshold for a parked body.
+//! any, and the wake rule for a parked body.
 //!
 //! Run: `cargo run --example world_participant_contract`
 
@@ -195,7 +195,7 @@ impl Participant for Store {
 
 /// Two participants coupled through two fields, each reading the other's
 /// output of the previous substep; then the grid moved to a coarser one, the
-/// snapshot bytes of the fields, and the wake threshold.
+/// snapshot bytes of the fields, and the wake rule.
 fn shared_fields() {
     let bodies = vec![RigidBody::new_dynamic(
         Vec3Fix::new(
@@ -315,18 +315,21 @@ fn shared_fields() {
         stage.staged(HEAT)
     );
 
-    // Wake threshold A: the velocity change of one substep against the sleep
-    // threshold (0.01 m/s by default).
+    // Waking: any non-zero change of one substep wakes a sleeping body; a
+    // force of one raw unit rounds to a zero change and does not.
     let sleep = SleepConfig::default();
-    for newtons in [1, 3, 1000] {
+    for force in [Fix128::from_raw(0, 1), Fix128::ONE, Fix128::from_int(1000)] {
         let wakes = wakes_parked_body(
             &bodies[0],
-            Vec3Fix::from_int(newtons, 0, 0),
+            Vec3Fix::new(force, Fix128::ZERO, Fix128::ZERO),
             Vec3Fix::ZERO,
             h,
             &sleep,
         );
-        println!("[world_participant] {newtons} N for 1/240 s on 1 kg wakes: {wakes}");
+        println!(
+            "[world_participant] {:e} N for 1/240 s on 1 kg wakes: {wakes}",
+            force.to_f64()
+        );
     }
     let _ = PortAccess::ReadCommitted;
 }

@@ -1523,7 +1523,7 @@ fn depositing_bodies_keeps_the_total() {
 }
 
 // ============================================================================
-// Waking a parked body (threshold A, pure)
+// Waking a parked body (pure)
 // ============================================================================
 
 fn sleep_cfg(t: Fix128) -> SleepConfig {
@@ -1534,86 +1534,93 @@ fn sleep_cfg(t: Fix128) -> SleepConfig {
     }
 }
 
-/// Oracle (exact in binary): with threshold `t = 2⁻⁷`, mass 1 and `h = 1/4`, a
-/// force of 2⁻⁵ N changes the velocity by exactly `t` and does not wake
-/// (strict `>`); `Δv = t + 2⁻⁵⁸` wakes (`Δv² − t² = 2⁻⁶⁴` + less, the first
-/// visible step of the squared norm); `Δv = t + 2⁻⁵⁹` does not (its square
-/// truncates to `t²`). The same for torque with `I⁻¹ = 1`.
+/// Oracle (exact in binary): a participant force wakes a parked body when the
+/// change the world applies, `Δv = (F·inv_mass)·h` or `Δω = (I⁻¹τ)·h`, is
+/// non-zero in any component, whatever the sleep thresholds. With mass 1,
+/// `I⁻¹ = 1` and `h = 1/4`: a force of 4 raw units gives `Δv` = one raw unit
+/// and wakes; 1 or 3 raw units give `Δv = 0` (the product rounds down) and do
+/// not; −1 raw unit gives `Δv` = −1 raw unit (rounded toward −∞) and wakes.
+/// The former boundary `Δv = t = 2⁻⁷` wakes under every threshold. The same
+/// for torque.
 #[test]
-fn wake_threshold_a_is_strict_at_the_boundary() {
-    let t = Fix128::from_ratio(1, 128);
-    let cfg = sleep_cfg(t);
+fn a_parked_body_wakes_on_any_non_zero_applied_change() {
     let h = Fix128::from_ratio(1, 4);
     let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
     body.inv_inertia = Vec3Fix::from_int(1, 1, 1);
-    let at = Fix128::from_ratio(1, 32);
-    let ulps = |k: u32| Fix128 { hi: 0, lo: 1 << k };
+    let raw = |k: i64| Fix128 {
+        hi: if k < 0 { -1 } else { 0 },
+        lo: k as u64,
+    };
     let x = |f: Fix128| Vec3Fix::new(f, Fix128::ZERO, Fix128::ZERO);
     let z = Vec3Fix::ZERO;
-    assert!(
-        !wakes_parked_body(&body, x(at), z, h, &cfg),
-        "at the threshold"
-    );
-    assert!(
-        wakes_parked_body(&body, x(at + ulps(8)), z, h, &cfg),
-        "Δv = t + 2⁻⁵⁸"
-    );
-    assert!(
-        !wakes_parked_body(&body, x(at + ulps(7)), z, h, &cfg),
-        "Δv = t + 2⁻⁵⁹"
-    );
-    assert!(
-        !wakes_parked_body(&body, z, x(at), h, &cfg),
-        "torque at the threshold"
-    );
-    assert!(
-        wakes_parked_body(&body, z, x(at + ulps(8)), h, &cfg),
-        "torque above"
-    );
-    // the components add: 3/4 of t on each of two axes, the norm above t
-    let s = Fix128::from_ratio(3, 128);
-    let both = Vec3Fix::new(s, s, Fix128::ZERO);
-    assert!(
-        wakes_parked_body(&body, both, z, h, &cfg),
-        "|Δv|² = 2·(3/512)² > t²"
-    );
-    assert!(!wakes_parked_body(&body, z, z, h, &cfg));
-    assert!(!wakes_parked_body(
-        &RigidBody::new_static(Vec3Fix::ZERO),
-        x(Fix128::from_int(1000)),
-        z,
-        h,
-        &cfg
-    ));
-    // a change too large to represent wakes (the world reports it as a fault)
-    let huge = Fix128 {
-        hi: i64::MAX,
-        lo: 0,
-    };
-    assert!(wakes_parked_body(
-        &body,
-        x(huge),
-        z,
-        Fix128::from_int(4),
-        &cfg
-    ));
-    // the existing world tests' inputs, on the default threshold
-    let parked = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
-    let d = SleepConfig::default();
-    assert!(wakes_parked_body(
-        &parked,
-        Vec3Fix::from_int(1000, 0, 0),
-        z,
-        h_sub(),
-        &d
-    ));
-    assert!(!wakes_parked_body(
-        &parked,
-        x(Fix128 { hi: 0, lo: 1 << 34 }),
-        z,
-        h_sub(),
-        &d
-    ));
+    for cfg in [
+        sleep_cfg(Fix128::from_ratio(1, 128)),
+        SleepConfig::default(),
+        sleep_cfg(Fix128::from_int(1000)),
+    ] {
+        assert!(
+            wakes_parked_body(&body, x(raw(4)), z, h, &cfg),
+            "Δv = 1 raw"
+        );
+        assert!(
+            !wakes_parked_body(&body, x(raw(1)), z, h, &cfg),
+            "Δv rounds to 0"
+        );
+        assert!(
+            !wakes_parked_body(&body, x(raw(3)), z, h, &cfg),
+            "Δv rounds to 0"
+        );
+        assert!(
+            wakes_parked_body(&body, x(raw(-1)), z, h, &cfg),
+            "Δv = −1 raw"
+        );
+        assert!(
+            wakes_parked_body(&body, z, x(raw(4)), h, &cfg),
+            "Δω = 1 raw"
+        );
+        assert!(
+            !wakes_parked_body(&body, z, x(raw(3)), h, &cfg),
+            "Δω rounds to 0"
+        );
+        let former = Fix128::from_ratio(1, 32);
+        assert!(wakes_parked_body(&body, x(former), z, h, &cfg));
+        assert!(wakes_parked_body(&body, z, x(former), h, &cfg));
+        assert!(!wakes_parked_body(&body, z, z, h, &cfg));
+        assert!(!wakes_parked_body(
+            &RigidBody::new_static(Vec3Fix::ZERO),
+            x(Fix128::from_int(1000)),
+            z,
+            h,
+            &cfg
+        ));
+        // a change too large to represent wakes (the world reports it as a fault)
+        let huge = Fix128 {
+            hi: i64::MAX,
+            lo: 0,
+        };
+        assert!(wakes_parked_body(
+            &body,
+            x(huge),
+            z,
+            Fix128::from_int(4),
+            &cfg
+        ));
+        // the world tests' inputs
+        assert!(wakes_parked_body(
+            &body,
+            Vec3Fix::from_int(1000, 0, 0),
+            z,
+            h_sub(),
+            &cfg
+        ));
+        assert!(wakes_parked_body(
+            &body,
+            x(Fix128 { hi: 0, lo: 1 << 34 }),
+            z,
+            h_sub(),
+            &cfg
+        ));
+    }
 }
 
 // ============================================================================
@@ -2159,12 +2166,11 @@ fn parked_scene() -> PhysicsWorld {
     w
 }
 
-/// A parked body is woken by a participant force above the wake threshold
-/// (threshold A, [`wakes_parked_body`]: the velocity change of the substep is
-/// above the sleep threshold). The force (1000 N on 1 kg, a velocity change of
-/// about 4 m/s per substep) is far above the default 0.01 m/s.
+/// A parked body is woken by a participant force that changes it
+/// ([`wakes_parked_body`]). The force (1000 N on 1 kg, a velocity change of
+/// about 4 m/s per substep) is far from zero.
 #[test]
-fn a_force_above_the_wake_threshold_wakes_a_parked_body() {
+fn a_force_wakes_a_parked_body() {
     let mut w = parked_scene();
     let push = Push {
         body: 0,
@@ -2179,27 +2185,37 @@ fn a_force_above_the_wake_threshold_wakes_a_parked_body() {
     );
 }
 
-/// A parked body is not woken by a participant force below the threshold,
-/// and the force has no effect on it (the sleep contract is unchanged). The
-/// force (2⁻³⁰ N on 1 kg) changes the velocity by far less than the sleep
-/// threshold of 0.01 m/s (threshold A).
+/// A force far below the sleep threshold still wakes a parked body when its
+/// change is not zero: 2⁻³⁰ N on 1 kg over `h = 1/240` changes the velocity
+/// by about `4e-12` m/s (threshold 0.01 m/s).
 #[test]
-fn a_force_below_the_wake_threshold_leaves_a_parked_body_parked() {
+fn a_force_below_the_sleep_threshold_wakes_a_parked_body() {
     let mut w = parked_scene();
-    let before = motion(&w);
     let tiny = Fix128 { hi: 0, lo: 1 << 34 };
     let push = Push {
         body: 0,
         force: Vec3Fix::new(tiny, Fix128::ZERO, Fix128::ZERO),
     };
     world::add_participant(&mut w, Box::new(push)).expect("register");
+    world::try_step(&mut w, dt()).expect("step");
+    assert!(!w.is_sleeping(0), "a non-zero change left the body asleep");
+}
+
+/// A force whose change rounds to zero (one raw unit on 1 kg over
+/// `h = 1/240`) leaves a parked body parked, and the body does not move.
+#[test]
+fn a_force_whose_change_rounds_to_zero_leaves_a_parked_body_parked() {
+    let mut w = parked_scene();
+    let before = motion(&w);
+    let push = Push {
+        body: 0,
+        force: Vec3Fix::new(Fix128 { hi: 0, lo: 1 }, Fix128::ZERO, Fix128::ZERO),
+    };
+    world::add_participant(&mut w, Box::new(push)).expect("register");
     for _ in 0..10 {
         world::try_step(&mut w, dt()).expect("step");
     }
-    assert!(
-        w.is_sleeping(0),
-        "a force below the threshold woke the body"
-    );
+    assert!(w.is_sleeping(0), "a zero change woke the body");
     assert_eq!(motion(&w), before, "the force moved a parked body");
 }
 
@@ -2223,25 +2239,27 @@ fn parked_scene_at_binary_threshold() -> PhysicsWorld {
     w
 }
 
-/// Threshold A at the boundary, in the world: 2 N on 1 kg over `h = 1/256`
-/// changes the velocity by exactly `2⁻⁷`, the threshold, and does not wake the
-/// body (strict `>`); the force has no effect.
+/// At the sleep threshold, in the world: 2 N on 1 kg over `h = 1/256`
+/// changes the velocity by exactly `2⁻⁷`, the threshold; the change is not
+/// zero, so the body wakes and moves (the threshold plays no part).
 #[test]
-fn a_force_exactly_at_the_wake_threshold_leaves_a_parked_body_parked() {
+fn a_force_exactly_at_the_sleep_threshold_wakes_a_parked_body() {
     let mut w = parked_scene_at_binary_threshold();
-    let before = motion(&w);
     let push = Push {
         body: 0,
         force: Vec3Fix::from_int(2, 0, 0),
     };
     world::add_participant(&mut w, Box::new(push)).expect("register");
     world::try_step(&mut w, Fix128::from_ratio(1, 64)).expect("step");
-    assert!(w.is_sleeping(0), "a force at the threshold woke the body");
-    assert_eq!(motion(&w), before, "the force moved a parked body");
+    assert!(!w.is_sleeping(0), "the body stayed parked");
+    assert!(
+        w.bodies[0].velocity.x > Fix128::ZERO,
+        "the force had no effect"
+    );
 }
 
-/// Threshold A just above the boundary: `2 + 2⁻⁵⁰` N gives `Δv = 2⁻⁷ + 2⁻⁵⁸`,
-/// whose square is above `2⁻¹⁴` by the first visible step, and wakes the body.
+/// Just above the sleep threshold: `2 + 2⁻⁵⁰` N gives `Δv = 2⁻⁷ + 2⁻⁵⁸` and
+/// wakes the body.
 #[test]
 fn a_force_just_above_the_wake_threshold_wakes_a_parked_body() {
     let mut w = parked_scene_at_binary_threshold();
