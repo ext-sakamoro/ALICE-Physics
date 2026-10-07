@@ -21,7 +21,7 @@ crate has today.
 | `docs/coverage/geo.toml` | 125 | 0 | 2 | 0 | 123 | 0 |
 | `docs/coverage/geotech.toml` | 89 | 0 | 2 | 0 | 87 | 0 |
 | `docs/coverage/mat.toml` | 146 | 23 | 13 | 5 | 105 | 0 |
-| `docs/coverage/mbd.toml` | 161 | 37 | 2 | 12 | 110 | 0 |
+| `docs/coverage/mbd.toml` | 161 | 38 | 1 | 12 | 110 | 0 |
 | `docs/coverage/mfg.toml` | 45 | 0 | 0 | 0 | 45 | 0 |
 | `docs/coverage/multiphase.toml` | 92 | 12 | 2 | 2 | 76 | 0 |
 | `docs/coverage/nonlin.toml` | 96 | 1 | 2 | 0 | 93 | 0 |
@@ -41,7 +41,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4292 | 581 | 79 | 102 | 3524 | 6 |
+| **total** | 4292 | 582 | 78 | 102 | 3524 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -333,7 +333,7 @@ crate has today.
 | brakes | 7 | 2 | 1 | 0 | 4 | 0 |
 | character | 12 | 8 | 0 | 1 | 3 | 0 |
 | formulation | 9 | 0 | 0 | 0 | 9 | 0 |
-| mechanism | 6 | 1 | 1 | 0 | 4 | 0 |
+| mechanism | 6 | 2 | 0 | 0 | 4 | 0 |
 | powertrain | 17 | 6 | 0 | 0 | 11 | 0 |
 | ragdoll | 12 | 5 | 0 | 1 | 6 | 0 |
 | robot-control | 5 | 0 | 0 | 1 | 4 | 0 |
