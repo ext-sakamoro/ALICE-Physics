@@ -480,6 +480,29 @@ mod tests {
         assert_eq!(translated.col2.z, props.inertia_tensor.col2.z);
     }
 
+    /// A tensor nearly diagonal, with an off-diagonal term `e` between moments 1
+    /// and 2, has its first axis tilted by `-e` (first order): the rotation of a
+    /// term just above the skip threshold must not be doubled by `tau^2`
+    /// leaving Fix128.
+    #[test]
+    fn principal_axes_resolve_a_tiny_off_diagonal_term() {
+        for k in [30u32, 36, 40] {
+            let off = Fix128::ONE / Fix128::from_int(1i64 << k);
+            let tensor = Mat3Fix::from_cols(
+                Vec3Fix::new(Fix128::ONE, off, Fix128::ZERO),
+                Vec3Fix::new(off, Fix128::from_int(2), Fix128::ZERO),
+                Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::from_int(3)),
+            );
+            let (_, axes) = principal_axes(tensor);
+            let tilt = axes.col0.y.to_f64() * axes.col0.x.to_f64().signum();
+            let expected = -off.to_f64();
+            assert!(
+                ((tilt - expected) / expected).abs() < 1e-6,
+                "off-diagonal 2^-{k}: axis tilted {tilt:e}, expected {expected:e}"
+            );
+        }
+    }
+
     #[test]
     fn test_density_scaling() {
         let props1 = sphere_mass_properties(Fix128::ONE, Fix128::ONE);
@@ -551,7 +574,14 @@ pub fn principal_axes(tensor: Mat3Fix) -> (Vec3Fix, Mat3Fix) {
             } else {
                 -Fix128::ONE
             };
-            let t_rot = sign / (tau.abs() + (Fix128::ONE + tau * tau).sqrt());
+            // Past 2^30, tau^2 would leave Fix128 (an off-diagonal term just
+            // above `tiny` gives |tau| up to 2^43), and 1 / (|tau| + sqrt(1 +
+            // tau^2)) is 1 / (2 |tau|) to within 2^-62 relative.
+            let t_rot = if tau.abs() > Fix128::from_int(1 << 30) {
+                sign / (tau.abs() + tau.abs())
+            } else {
+                sign / (tau.abs() + (Fix128::ONE + tau * tau).sqrt())
+            };
             let c = Fix128::ONE / (Fix128::ONE + t_rot * t_rot).sqrt();
             let s = t_rot * c;
             // A ← Jᵀ A J on rows/columns p and q.
