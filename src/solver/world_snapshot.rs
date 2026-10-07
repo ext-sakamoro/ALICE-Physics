@@ -2954,4 +2954,348 @@ mod tests {
             "rejected restore leaves the target untouched"
         );
     }
+
+    // ---- coverage: codec variants and reader boundaries (2026-10-07) ----
+
+    /// A world holding every `Shape` variant, a compound with every child
+    /// kind, every force field kind, a `Multiply` material and the hybrid
+    /// broadphase (none of which the round-trip scene uses).
+    fn variant_world() -> PhysicsWorld {
+        use crate::body_collider::BodyCollider;
+        use crate::collider::{Capsule, ConvexHull, Sphere};
+        use crate::material::{CombineRule, PhysicsMaterial};
+        let mut w = PhysicsWorld::new(SolverConfig::default());
+        w.set_broadphase(Broadphase::Hybrid);
+        let shapes = [
+            Shape::Box {
+                half_extents: Vec3Fix::new(fx(1, 2), fx(1, 4), fx(1, 2)),
+            },
+            Shape::Cylinder {
+                radius: fx(1, 2),
+                half_height: fx(3, 4),
+            },
+            Shape::Cone {
+                radius: fx(1, 2),
+                half_height: fx(1, 1),
+            },
+            Shape::Ellipsoid {
+                radii: Vec3Fix::new(fx(1, 2), fx(3, 4), fx(1, 4)),
+            },
+            Shape::Wedge {
+                width: fx(1, 1),
+                height: fx(1, 2),
+                depth: fx(3, 2),
+            },
+            Shape::Torus {
+                major_radius: fx(1, 1),
+                minor_radius: fx(1, 4),
+            },
+        ];
+        for (k, shape) in shapes.iter().enumerate() {
+            let i = w.add_body_with_radius(
+                RigidBody::new_dynamic(v(3 * k as i64, 4, 0), Fix128::ONE),
+                fx(3, 2),
+            );
+            w.body_colliders[i] = Some(BodyCollider::Shape(*shape));
+        }
+        let mut c = CompoundShape::new();
+        c.add_sphere(
+            Sphere::new(Vec3Fix::ZERO, fx(1, 4)),
+            v(1, 0, 0),
+            QuatFix::IDENTITY,
+        );
+        c.add_capsule(
+            Capsule::new(v(0, -1, 0), v(0, 1, 0), fx(1, 4)),
+            v(-1, 0, 0),
+            QuatFix::IDENTITY,
+        );
+        c.add_box(
+            crate::box_collider::OrientedBox {
+                center: Vec3Fix::ZERO,
+                half_extents: Vec3Fix::new(fx(1, 4), fx(1, 4), fx(1, 4)),
+                rotation: QuatFix::IDENTITY,
+            },
+            v(0, 0, 1),
+            QuatFix::from_axis_angle(v(0, 1, 0), fx(1, 3)),
+        );
+        c.add_convex_hull(
+            ConvexHull::new(vec![v(0, 0, 0), v(1, 0, 0), v(0, 1, 0), v(0, 0, 1)]),
+            v(0, 0, -1),
+            QuatFix::IDENTITY,
+        );
+        let comp =
+            w.add_body_with_radius(RigidBody::new_dynamic(v(0, 8, 4), Fix128::ONE), fx(2, 1));
+        w.body_colliders[comp] = Some(BodyCollider::Compound(c));
+
+        let mut mat = PhysicsMaterial::new(0, fx(1, 3), fx(1, 5));
+        mat.friction_combine = CombineRule::Multiply;
+        mat.restitution_combine = CombineRule::Multiply;
+        let id = w.material_table.register(mat);
+        w.material_table.default_friction_combine = CombineRule::Multiply;
+        w.set_body_material(comp, id);
+
+        w.add_force_field(
+            ForceFieldInstance::new(ForceField::Point {
+                center: v(0, 10, 0),
+                strength: fx(5, 1),
+                repulsive: true,
+                max_force: fx(50, 1),
+            })
+            .with_affected_bodies(vec![0, comp]),
+        );
+        w.add_force_field(ForceFieldInstance::new(ForceField::Buoyancy {
+            surface_y: fx(2, 1),
+            density: fx(1000, 1),
+            drag: fx(1, 2),
+        }));
+        w.add_force_field(ForceFieldInstance::new(ForceField::Magnetic {
+            position: v(0, 0, 0),
+            moment: v(0, 1, 0),
+            strength: fx(1, 10),
+        }));
+        w
+    }
+
+    /// Every codec variant survives a round trip: the restored world equals
+    /// the original field by field, now and after the same later steps.
+    #[test]
+    fn round_trip_covers_every_shape_child_and_force_field_kind() {
+        let mut a = variant_world();
+        let blob = a.snapshot_world();
+        let mut b = PhysicsWorld::from_world_snapshot(&blob).expect("restore");
+        assert!(differing(&mut a, &mut b).is_empty());
+        for _ in 0..5 {
+            a.step(dt());
+            b.step(dt());
+        }
+        assert_eq!(differing(&mut a, &mut b), Vec::<&str>::new());
+        assert_eq!(a.snapshot_world(), b.snapshot_world());
+    }
+
+    /// A dynamic SDF collider (attached to a body, not static) round-trips
+    /// into a target holding the same field.
+    #[test]
+    fn round_trip_keeps_a_body_attached_sdf_collider() {
+        let mut a = target_world();
+        a.add_body_with_radius(RigidBody::new_dynamic(v(0, 3, 0), Fix128::ONE), fx(1, 2));
+        let blob = a.snapshot_world();
+        let mut b = target_world();
+        b.restore_world(&blob).expect("restore");
+        assert!(differing(&mut a, &mut b).is_empty());
+    }
+
+    /// Every error renders a message naming its values.
+    #[test]
+    fn error_display_names_the_values() {
+        use crate::world_participant::{ParticipantMismatch, StateError};
+        let cases: [(WorldSnapshotError, &[&str]); 13] = [
+            (WorldSnapshotError::Truncated, &["truncated"]),
+            (WorldSnapshotError::BadMagic, &["magic"]),
+            (
+                WorldSnapshotError::UnsupportedVersion {
+                    found: 77,
+                    supported: 88,
+                },
+                &["77", "88"],
+            ),
+            (WorldSnapshotError::ReservedNotZero, &["reserved"]),
+            (WorldSnapshotError::TrailingBytes { extra: 5 }, &["5"]),
+            (
+                WorldSnapshotError::ChecksumMismatch {
+                    stored: 0x10,
+                    computed: 0x20,
+                },
+                &["0x0000000000000010", "0x0000000000000020"],
+            ),
+            (
+                WorldSnapshotError::InvalidValue { section: "joints" },
+                &["joints"],
+            ),
+            (
+                WorldSnapshotError::DanglingIndex {
+                    section: "contacts",
+                    index: 9,
+                    len: 4,
+                },
+                &["contacts", "9", "4"],
+            ),
+            (
+                WorldSnapshotError::SdfFieldCountMismatch {
+                    snapshot: 2,
+                    world: 3,
+                },
+                &["2", "3"],
+            ),
+            (
+                WorldSnapshotError::CallbackCountMismatch {
+                    section: "contact_modifiers",
+                    snapshot: 6,
+                    world: 7,
+                },
+                &["contact_modifiers", "6", "7"],
+            ),
+            (
+                WorldSnapshotError::ParticipantMismatch(ParticipantMismatch::Count {
+                    snapshot: 11,
+                    world: 12,
+                }),
+                &["11", "12"],
+            ),
+            (
+                WorldSnapshotError::ParticipantState {
+                    index: 13,
+                    error: StateError::InvalidValue,
+                },
+                &["13", "InvalidValue"],
+            ),
+            (
+                WorldSnapshotError::FieldState(StateError::Length {
+                    expected: 14,
+                    found: 15,
+                }),
+                &["14", "15"],
+            ),
+        ];
+        for (e, parts) in cases {
+            let text = e.to_string();
+            for p in parts {
+                assert!(text.contains(p), "{e:?} -> {text:?} lacks {p:?}");
+            }
+        }
+    }
+
+    /// Header checks that do not depend on the format version: a blob
+    /// shorter than a header, a wrong magic, non-zero reserved bytes, a
+    /// declared payload longer than the blob, extra bytes after the
+    /// checksum and a corrupted payload byte are all rejected, and the
+    /// target world is left untouched each time.
+    #[test]
+    fn restore_rejects_malformed_headers_and_corruption() {
+        let src = variant_world();
+        let blob = src.snapshot_world();
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        let before = digest(&mut t);
+
+        assert_eq!(
+            t.restore_world(&blob[..10]),
+            Err(WorldSnapshotError::Truncated)
+        );
+
+        let mut bad = blob.clone();
+        bad[0] ^= 0xFF;
+        assert_eq!(t.restore_world(&bad), Err(WorldSnapshotError::BadMagic));
+
+        let mut bad = blob.clone();
+        bad[6] = 1;
+        assert_eq!(
+            t.restore_world(&bad),
+            Err(WorldSnapshotError::ReservedNotZero)
+        );
+
+        let mut bad = blob.clone();
+        bad[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert_eq!(t.restore_world(&bad), Err(WorldSnapshotError::Truncated));
+
+        let mut bad = blob.clone();
+        bad.extend_from_slice(&[0, 0, 0]);
+        assert_eq!(
+            t.restore_world(&bad),
+            Err(WorldSnapshotError::TrailingBytes { extra: 3 })
+        );
+
+        let mut bad = blob.clone();
+        bad[20] ^= 0x01;
+        assert!(matches!(
+            t.restore_world(&bad),
+            Err(WorldSnapshotError::ChecksumMismatch { stored, computed }) if stored != computed
+        ));
+
+        assert_eq!(digest(&mut t), before);
+        // control: the untouched blob restores
+        assert!(t.restore_world(&blob).is_ok());
+    }
+
+    fn reader(data: &[u8]) -> super::R<'_> {
+        super::R { data, pos: 0 }
+    }
+
+    /// The leaf readers reject an unknown tag in their own section.
+    #[test]
+    fn leaf_readers_reject_unknown_tags() {
+        let inv = |section| Some(WorldSnapshotError::InvalidValue { section });
+        assert_eq!(
+            super::r_shape(&mut reader(&[6])).err(),
+            inv("body_colliders")
+        );
+        assert_eq!(
+            super::r_body_collider(&mut reader(&[3])).err(),
+            inv("body_colliders")
+        );
+        // a compound with one child of unknown kind 4
+        let mut w = super::W(Vec::new());
+        w.u8(2);
+        w.usize(1);
+        w.u8(4);
+        assert_eq!(
+            super::r_body_collider(&mut reader(&w.0)).err(),
+            inv("body_colliders")
+        );
+        assert_eq!(
+            super::r_force_field(&mut reader(&[7])).err(),
+            inv("force_fields")
+        );
+        assert_eq!(super::r_d6_motion(&mut reader(&[3])).err(), inv("joints"));
+        assert_eq!(
+            super::r_combine(&mut reader(&[4])).err(),
+            inv("material_table")
+        );
+        assert_eq!(super::r_fault(&mut reader(&[5])).err(), inv("fault"));
+        // config: a valid encoding with its backend tag replaced
+        let mut w = super::W(Vec::new());
+        super::w_config(&mut w, &SolverConfig::default());
+        *w.0.last_mut().expect("backend tag") = 2;
+        assert_eq!(super::r_config(&mut reader(&w.0)).err(), inv("config"));
+        // empty input is truncation, not a value error
+        assert_eq!(
+            super::r_shape(&mut reader(&[])).err(),
+            Some(WorldSnapshotError::Truncated)
+        );
+    }
+
+    /// The fault codec round-trips every variant.
+    #[test]
+    fn fault_codec_round_trips_every_variant() {
+        use crate::world_participant::{ParticipantFault, ParticipantKind, PortId, WorldFault};
+        let faults = [
+            None,
+            Some(WorldFault::Participant {
+                index: 3,
+                kind: ParticipantKind::new(0xABCD),
+                fault: ParticipantFault::InvalidState,
+            }),
+            Some(WorldFault::RigidOverflow),
+            Some(WorldFault::ForceOutOfRange { body: 17 }),
+            Some(WorldFault::FieldOutOfRange {
+                field: PortId::new(9),
+                index: 21,
+            }),
+        ];
+        for f in faults {
+            let mut w = super::W(Vec::new());
+            super::w_fault(&mut w, f);
+            let mut r = reader(&w.0);
+            assert_eq!(super::r_fault(&mut r), Ok(f));
+            assert_eq!(r.pos, w.0.len(), "{f:?} reads exactly what it wrote");
+        }
+        // a participant fault with an unknown fault tag
+        let mut w = super::W(Vec::new());
+        w.u8(1);
+        w.usize(0);
+        w.u32(1);
+        w.u8(0xEE);
+        assert_eq!(
+            super::r_fault(&mut reader(&w.0)),
+            Err(WorldSnapshotError::InvalidValue { section: "fault" })
+        );
+    }
 }
