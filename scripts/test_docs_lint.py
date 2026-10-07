@@ -96,7 +96,7 @@ class Vocabulary(unittest.TestCase):
         self.assertTrue(any("internal tracker `Backlog`" in x for x in e), e)
 
     def test_session_name(self):
-        e = errors({"README_JP.md": README + "ys-3a が検出\n"})
+        e = errors({"README_JP.md": README + "ys-00 が検出\n"})
         self.assertTrue(any("session name" in x for x in e), e)
 
     def test_private_names_are_matched_by_hash_including_phrases(self):
@@ -161,9 +161,28 @@ class Vocabulary(unittest.TestCase):
         self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", h) for h in dl.PRIVATE_NAME_HASHES))
 
     def test_private_address_and_device(self):
-        e = errors({"README.md": README + "runs on Jetson at 100.79.87.42\n"})
+        # separate inputs: a device name and an address are tested apart, never as a pair
+        e = errors({"README.md": README + "the build host is a Jetson board\n"})
         self.assertTrue(any("device `Jetson`" in x for x in e), e)
-        self.assertTrue(any("private address `100.79.87.42`" in x for x in e), e)
+        e = errors({"README.md": README + "the service listens on 100.127.255.254\n"})
+        self.assertTrue(any("private address `100.127.255.254`" in x for x in e), e)
+
+    def test_owned_device_names_are_held_as_hashes(self):
+        self.assertGreaterEqual(len(dl.DEVICE_NAME_HASHES), 3)
+        self.assertTrue(all(re.fullmatch(r"[0-9a-f]{64}", h) for h in dl.DEVICE_NAME_HASHES))
+        self.assertLessEqual(dl.DEVICE_NAME_HASHES, dl.PRIVATE_NAME_HASHES)
+
+    def test_a_hashed_device_name_is_found_in_documents_and_the_tree(self):
+        import hashlib
+        saved = dl.PRIVATE_NAME_HASHES
+        try:
+            dl.PRIVATE_NAME_HASHES = saved | {hashlib.sha256(b"qx-9000").hexdigest()}
+            e = errors({"README.md": README + "measured on the QX-9000\n",
+                        "src/a.rs": "// measured on the qx-9000\n"})
+        finally:
+            dl.PRIVATE_NAME_HASHES = saved
+        self.assertTrue(any(x.startswith("README.md:") and "`QX-9000`" in x for x in e), e)
+        self.assertTrue(any(x.startswith("src/a.rs:1:") and "`qx-9000`" in x for x in e), e)
 
     def test_ordinary_english_is_not_flagged(self):
         # "memory footprint" and a netcode "session" are ordinary words
@@ -188,7 +207,7 @@ class DevelopmentVocabulary(unittest.TestCase):
 
     def test_an_english_word_next_to_japanese_is_found(self):
         # `\b` sees no boundary between "worker" and "が"; this is the case that slipped through
-        e = errors({"README_JP.md": README + "3 件とも thin_wall workerが見つけた\n"})
+        e = errors({"README_JP.md": README + "3 件とも workerが見つけた\n"})
         self.assertTrue(any("agent process `worker`" in x for x in e), e)
         e = errors({"README_JP.md": README + "詳細はBacklogに記録\n"})
         self.assertTrue(any("internal tracker `Backlog`" in x for x in e), e)
@@ -212,25 +231,25 @@ class DevelopmentVocabulary(unittest.TestCase):
 
     def test_vocabulary_is_checked_in_every_tracked_file(self):
         for rel, text, label in (("src/a.rs", "// see the Backlog\n", "internal tracker"),
-                                 ("docs/ROADMAP.md", "worker 5 本で実施\n", "agent process"),
-                                 ("tests/b.rs", "// (ys-08 判断)\n", "session name"),
+                                 ("docs/ROADMAP.md", "worker で実施\n", "agent process"),
+                                 ("tests/b.rs", "// (ys-00 判断)\n", "session name"),
                                  ("examples/c.rs", "//! user 裁定: 追加しない\n", "instruction source"),
-                                 ("src/d.rs", "/// oracle: `sakamoro-ff`'s derivation\n", "session name")):
+                                 ("src/d.rs", "/// oracle: `sakamoro-00`'s derivation\n", "session name")):
             e = errors({rel: text})
             self.assertTrue(any(x.startswith(f"{rel}:1: {label}") for x in e), (rel, e))
 
     def test_private_note_names(self):
-        for text in ("// see [[feedback_degenerate_case_as_silent_wrong_answer]]",
-                     "//! `feedback_mms_degree_blind_on_structured_lattice` measured",
-                     "# canonical CI template: [[reference_alice_ci_canonical_template]]",
-                     "/// (`project_alice_physics_world_auditor_engine_gaps`)",
+        for text in ("// see [[feedback_sample_note_name]]",
+                     "//! `feedback_another_sample_note` measured",
+                     "# canonical CI template: [[reference_alice_sample_note]]",
+                     "/// (`project_alice_sample_note`)",
                      "// `memory/feedback_x.md`"):
             e = errors({"src/a.rs": text + "\n"})
             self.assertTrue(any("internal note" in x or "internal tracker" in x for x in e), (text, e))
 
     def test_internal_rule_and_template_references(self):
         for text, label in (("/// (see skill §1 経路 5)", "agent process"),
-                            ("# 罠 #22 に従う", "internal note"),
+                            ("# 罠 #1 に従う", "internal note"),
                             ("# canonical CI template", "internal note")):
             e = errors({"src/a.rs": text + "\n"})
             self.assertTrue(any(label in x for x in e), (text, e))
