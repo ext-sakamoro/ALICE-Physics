@@ -2183,7 +2183,7 @@ impl Tethers2D {
 /// `e^(−x)` for `x >= 0`, accurate to a few units of 2⁻⁶⁴: Taylor series on `x / 2^k <= 1/2`
 /// followed by `k` squarings. (`Fix128::exp` is ≲ 1e-6 relative, which compounds over the
 /// substeps of a kinematic drive.)
-fn exp_neg(x: Fix128) -> Fix128 {
+pub(crate) fn exp_neg(x: Fix128) -> Fix128 {
     if x <= Fix128::ZERO {
         return Fix128::ONE;
     }

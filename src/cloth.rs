@@ -141,6 +141,162 @@ struct RestTether {
     damping: Fix128,
 }
 
+/// One exact step of the damped oscillator `ë = −ω² e − γ ė + a` (constant `a`) over `h`:
+///
+/// ```text
+/// e(h) = A e0 + B v0 + C a          A = B' + γ B,   C = ∫₀ʰ B
+/// v(h) = −ω² B e0 + B' v0 + B a     B = impulse response (B(0) = 0, B'(0) = 1)
+/// ```
+///
+/// With `p = γh/2` and `q = (ω² − γ²/4) h²`, `B = h e^(−p) S(q)`, `A = e^(−p) (K(q) + p S(q))`,
+/// `B' = e^(−p) (K(q) − p S(q))`, where `S(q) = sin √q / √q` and `K(q) = cos √q` (`sinh` /
+/// `cosh` of `√−q` for `q < 0`) are entire in `q`. Three branches:
+///
+/// - `|q| <= 1/4` (near critical): `S`, `K` by their series, no division by `√q`;
+/// - `q > 1/4` (underdamped): the series at `q / 4ᵐ <= 1/4`, then `m` doublings
+///   `S(4q) = S(q) K(q)`, `K(4q) = 2 K(q)² − 1`;
+/// - `q < −1/4` (overdamped): the two decay rates `λ₁ h = ω²h² / λ₂ h`, `λ₂ h = p + √−q`
+///   (no cancellation) and their exponentials.
+///
+/// `C = h² (1 − A) / (ω²h²)` when `ω²h² >= 1/16`; below that (where the quotient would cancel)
+/// by the Taylor series of `B` (near critical) or `h² (φ₁(λ₁h) − φ₁(λ₂h)) / (λ₂h − λ₁h)`,
+/// `φ₁(x) = (1 − e^(−x)) / x` (overdamped). Every function is evaluated in `Fix128` with
+/// fixed term counts, so the step is deterministic; `e^(−x)` is the crate's 2D-drive
+/// `exp_neg` (a few units of 2⁻⁶⁴, the `Fix128::exp` CORDIC is only ~1e-6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct OscillatorStep {
+    /// `A`
+    pos_e: Fix128,
+    /// `B`
+    pos_v: Fix128,
+    /// `C`
+    pos_a: Fix128,
+    /// `−ω² B`
+    vel_e: Fix128,
+    /// `B'`
+    vel_v: Fix128,
+    /// `B`
+    vel_a: Fix128,
+}
+
+impl OscillatorStep {
+    /// Coefficients for `ω² = omega_sq >= 0`, `γ = gamma >= 0` and step `h > 0`.
+    fn new(omega_sq: Fix128, gamma: Fix128, h: Fix128) -> Self {
+        let quarter = Fix128::from_ratio(1, 4);
+        let p = (gamma * h).half();
+        let w2h2 = omega_sq * h * h;
+        let q = w2h2 - p * p;
+        let h2 = h * h;
+        let (b_over_h, a, bd, c_over_h2) = if q > quarter {
+            // underdamped
+            let (s, k) = sinc_cos(q);
+            let e = crate::physics2d::exp_neg(p);
+            let a = e * (k + p * s);
+            (e * s, a, e * (k - p * s), (Fix128::ONE - a) / w2h2)
+        } else if q < Fix128::ZERO - quarter {
+            // overdamped
+            let r = (Fix128::ZERO - q).sqrt();
+            let l2 = p + r;
+            let l1 = w2h2 / l2;
+            let d = r.double();
+            let e1 = crate::physics2d::exp_neg(l1);
+            let e2 = crate::physics2d::exp_neg(l2);
+            let a = (l2 * e1 - l1 * e2) / d;
+            let c = if w2h2 >= Fix128::from_ratio(1, 16) {
+                (Fix128::ONE - a) / w2h2
+            } else {
+                (phi1(l1) - phi1(l2)) / d
+            };
+            ((e1 - e2) / d, a, (l2 * e2 - l1 * e1) / d, c)
+        } else {
+            // near critical
+            let (s, k) = sinc_cos_series(q);
+            let e = crate::physics2d::exp_neg(p);
+            let a = e * (k + p * s);
+            let c = if w2h2 >= Fix128::from_ratio(1, 16) {
+                (Fix128::ONE - a) / w2h2
+            } else {
+                impulse_integral_series(p.double(), w2h2)
+            };
+            (e * s, a, e * (k - p * s), c)
+        };
+        let b = h * b_over_h;
+        Self {
+            pos_e: a,
+            pos_v: b,
+            pos_a: h2 * c_over_h2,
+            vel_e: Fix128::ZERO - omega_sq * b,
+            vel_v: bd,
+            vel_a: b,
+        }
+    }
+}
+
+/// `(S(q), K(q))` = `(sin √q / √q, cos √q)` for `|q| <= 1/4` by their series (the remainder
+/// after 14 terms is below `4⁻¹⁴ / 28!`).
+fn sinc_cos_series(q: Fix128) -> (Fix128, Fix128) {
+    let minus_q = Fix128::ZERO - q;
+    let (mut s, mut k) = (Fix128::ONE, Fix128::ONE);
+    let (mut ts, mut tk) = (Fix128::ONE, Fix128::ONE);
+    for n in 1..=14_i64 {
+        ts = ts * minus_q / Fix128::from_int((2 * n) * (2 * n + 1));
+        tk = tk * minus_q / Fix128::from_int((2 * n - 1) * (2 * n));
+        s = s + ts;
+        k = k + tk;
+    }
+    (s, k)
+}
+
+/// `(S(q), K(q))` for `q > 0`: the series at `q / 4ᵐ <= 1/4`, then `m` doublings.
+fn sinc_cos(q: Fix128) -> (Fix128, Fix128) {
+    let quarter = Fix128::from_ratio(1, 4);
+    let mut r = q;
+    let mut m = 0_u32;
+    while r > quarter {
+        r = r.shr_bits(2);
+        m += 1;
+    }
+    let (mut s, mut k) = sinc_cos_series(r);
+    for _ in 0..m {
+        s = s * k;
+        k = (k * k).double() - Fix128::ONE;
+    }
+    (s, k)
+}
+
+/// `φ₁(x) = (1 − e^(−x)) / x` for `x >= 0` (series below 1/2, where the quotient cancels).
+fn phi1(x: Fix128) -> Fix128 {
+    if x > Fix128::from_ratio(1, 2) {
+        return (Fix128::ONE - crate::physics2d::exp_neg(x)) / x;
+    }
+    // Σ (−x)ⁿ / (n+1)!
+    let mut sum = Fix128::ONE;
+    let mut term = Fix128::ONE;
+    for n in 1..=26_i64 {
+        term = Fix128::ZERO - term * x / Fix128::from_int(n + 1);
+        sum = sum + term;
+    }
+    sum
+}
+
+/// `C / h² = ∫₀¹ B̃` for the scaled impulse response `B̃'' + g B̃' + s B̃ = 0`, `B̃(0) = 0`,
+/// `B̃'(0) = 1` (`g = γh`, `s = ω²h²`), from its Taylor coefficients
+/// `b_{n+2} = −(g (n+1) b_{n+1} + s b_n) / ((n+2)(n+1))`. Used near critical damping with
+/// `s < 1/16` (so `g <= 1.12`), where 40 terms leave a remainder below 2⁻⁸⁰.
+fn impulse_integral_series(g: Fix128, s: Fix128) -> Fix128 {
+    let (mut b0, mut b1) = (Fix128::ZERO, Fix128::ONE);
+    // Σ b_n / (n+1): n = 0 contributes 0, n = 1 contributes 1/2
+    let mut sum = Fix128::ONE.half();
+    for n in 0..40_i64 {
+        let b2 = Fix128::ZERO
+            - (g * b1 * Fix128::from_int(n + 1) + s * b0) / Fix128::from_int((n + 2) * (n + 1));
+        sum = sum + b2 / Fix128::from_int(n + 3);
+        b0 = b1;
+        b1 = b2;
+    }
+    sum
+}
+
 /// Returned by [`Cloth::set_rest_positions`] when the slice does not have one position per
 /// particle.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -292,12 +448,14 @@ impl Cloth {
     /// `stiffness` is in N/m and `damping` in N·s/m, per particle; with particle mass `m`
     /// (`1 / inv_masses[i]`), angular frequency `ω = sqrt(k/m)` and damping ratio
     /// `ζ = c / (2 sqrt(k m))`. `ζ < 1` springs back through the rest position and
-    /// oscillates, `ζ = 1` returns without overshoot. Solved inside each substep as an XPBD
-    /// constraint with damping (Macklin et al. 2016, eq. 26) on `C = x − rest`, with one
-    /// multiplier per particle accumulated over the iterations, so the law does not depend
-    /// on `iterations`; alone it is backward Euler per substep. It is solved after the edge
-    /// and bending constraints in every iteration, so the sheet's own constraints still
-    /// act. Pinned particles (`inv_mass = 0`) are not affected.
+    /// oscillates, `ζ = 1` returns without overshoot. Each substep advances every free
+    /// particle's `(x − rest, v)` by the exact solution of the damped oscillator over the
+    /// substep (with gravity and wind as a constant acceleration), evaluated in `Fix128`
+    /// (see `OscillatorStep`), so a particle without constraints follows the continuous
+    /// law for any `substeps` and `iterations` — no numerical damping, no stability limit
+    /// on `ω h`. The edge, bending and self-contact constraints then act as before, and add
+    /// what they moved the particle by to its velocity. Pinned particles (`inv_mass = 0`)
+    /// are not affected.
     ///
     /// The rest positions are the current positions unless [`set_rest_positions`] was
     /// called before. Negative values are treated as 0; `stiffness = damping = 0` is
@@ -411,19 +569,29 @@ impl Cloth {
     fn substep(&mut self, dt: Fix128) {
         let n = self.particle_count();
 
-        // 1. Predict positions
-        for i in 0..n {
-            if self.inv_masses[i].is_zero() {
-                continue;
-            }
-            self.prev_positions[i] = self.positions[i];
+        // 1. Predict positions (with the rest tether: the exact damped-oscillator step,
+        //    which also returns the predicted positions for the velocity update)
+        let tether = self
+            .rest_tether
+            .filter(|t| !(t.stiffness.is_zero() && t.damping.is_zero()));
+        let predicted = match tether {
+            Some(t) => self.predict_with_rest_tether(t, dt),
+            None => {
+                for i in 0..n {
+                    if self.inv_masses[i].is_zero() {
+                        continue;
+                    }
+                    self.prev_positions[i] = self.positions[i];
 
-            // Gravity + wind
-            let wind_force = self.compute_wind_force(i);
-            self.velocities[i] =
-                self.velocities[i] + (self.config.gravity + wind_force * self.inv_masses[i]) * dt;
-            self.positions[i] = self.positions[i] + self.velocities[i] * dt;
-        }
+                    // Gravity + wind
+                    let wind_force = self.compute_wind_force(i);
+                    self.velocities[i] = self.velocities[i]
+                        + (self.config.gravity + wind_force * self.inv_masses[i]) * dt;
+                    self.positions[i] = self.positions[i] + self.velocities[i] * dt;
+                }
+                Vec::new()
+            }
+        };
 
         // 2. Solve constraints
         //
@@ -439,53 +607,72 @@ impl Cloth {
         } else {
             (Vec::new(), Vec::new())
         };
-        let mut tether_lambda = match self.rest_tether {
-            Some(_) => vec![Vec3Fix::ZERO; n],
-            None => Vec::new(),
-        };
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
                 self.solve_self_collision(&candidates, &edge_candidates);
             }
-            if let Some(tether) = self.rest_tether {
-                self.solve_rest_tether(tether, dt, &mut tether_lambda);
-            }
         }
 
         // 3. Update velocities
         let inv_dt = Fix128::ONE / dt;
-        for i in 0..n {
-            if self.inv_masses[i].is_zero() {
-                continue;
+        if predicted.is_empty() {
+            for i in 0..n {
+                if self.inv_masses[i].is_zero() {
+                    continue;
+                }
+                self.velocities[i] = (self.positions[i] - self.prev_positions[i]) * inv_dt;
             }
-            self.velocities[i] = (self.positions[i] - self.prev_positions[i]) * inv_dt;
+        } else {
+            // The exact step left the oscillator's velocity in `velocities`; the
+            // constraints add what they moved the particle by (for the plain symplectic
+            // Euler prediction this is the same as `(x − x_prev) / h`).
+            for (i, x_pred) in predicted.iter().enumerate() {
+                if self.inv_masses[i].is_zero() {
+                    continue;
+                }
+                self.velocities[i] = self.velocities[i] + (self.positions[i] - *x_pred) * inv_dt;
+            }
         }
     }
 
-    /// One XPBD-with-damping iteration of the rest tether over all particles, accumulating
-    /// each particle's multiplier in `lambdas[i]` (zeroed at the start of the substep).
-    fn solve_rest_tether(&mut self, tether: RestTether, h: Fix128, lambdas: &mut [Vec3Fix]) {
-        // Same vector update as the 2D mouse joint, multiplied through by k h² so that
-        // k = 0 (a pure damper) needs no division:
-        //   Δλ = (−k h² C − λ − c h (x − x_prev)) / ((k h² + c h) w + 1),   x += w Δλ
-        let kh2 = tether.stiffness * h * h;
-        let ch = tether.damping * h;
-        for (i, lambda) in lambdas.iter_mut().enumerate() {
+    /// Predict step with the rest tether: every free particle's error `e = x − rest` and
+    /// velocity `v` advance by the exact solution of `ë = −ω² e − γ ė + a` over `h`
+    /// (`ω² = k w`, `γ = c w`, `a` = gravity + wind · w, constant over the substep).
+    /// Returns the predicted positions; `velocities` holds the oscillator's velocity.
+    fn predict_with_rest_tether(&mut self, tether: RestTether, h: Fix128) -> Vec<Vec3Fix> {
+        let n = self.particle_count();
+        let mut predicted = Vec::with_capacity(n);
+        // The coefficients depend only on the inverse mass; a cloth usually has one.
+        let mut cache: Option<(Fix128, OscillatorStep)> = None;
+        for i in 0..n {
             let w = self.inv_masses[i];
+            let x = self.positions[i];
             if w.is_zero() {
+                predicted.push(x);
                 continue;
             }
-            let x = self.positions[i];
-            let c = x - self.rest_positions[i];
-            let moved = x - self.prev_positions[i];
-            let denom = (kh2 + ch) * w + Fix128::ONE;
-            let numer = c * (Fix128::ZERO - kh2) - *lambda - moved * ch;
-            let dlambda = numer / denom;
-            *lambda = *lambda + dlambda;
-            self.positions[i] = x + dlambda * w;
+            let step = match cache {
+                Some((cw, s)) if cw == w => s,
+                _ => {
+                    let s = OscillatorStep::new(tether.stiffness * w, tether.damping * w, h);
+                    cache = Some((w, s));
+                    s
+                }
+            };
+            self.prev_positions[i] = x;
+            let accel = self.config.gravity + self.compute_wind_force(i) * w;
+            let rest = self.rest_positions[i];
+            let e0 = x - rest;
+            let v0 = self.velocities[i];
+            let x1 = rest + e0 * step.pos_e + v0 * step.pos_v + accel * step.pos_a;
+            let v1 = e0 * step.vel_e + v0 * step.vel_v + accel * step.vel_a;
+            self.positions[i] = x1;
+            self.velocities[i] = v1;
+            predicted.push(x1);
         }
+        predicted
     }
 
     /// Compute approximate wind force on a particle
@@ -4079,9 +4266,171 @@ mod tests {
         c
     }
 
+    /// `(sin x, cos x)` for `|x| <= π` by Taylor series (reference only).
+    fn sin_cos_ref(x: f64) -> (f64, f64) {
+        let (mut s, mut c, mut term) = (0.0_f64, 0.0_f64, 1.0_f64);
+        for n in 0..40_u32 {
+            match n % 4 {
+                0 => c += term,
+                1 => s += term,
+                2 => c -= term,
+                _ => s -= term,
+            }
+            term *= x / f64::from(n + 1);
+        }
+        (s, c)
+    }
+
+    /// `(A, B, C, B')` of one exact step from the closed forms in `f64` (reference only):
+    /// underdamped via sin / cos, critical, overdamped via the two rates.
+    fn oscillator_ref(w2: f64, g: f64, h: f64) -> (f64, f64, f64, f64) {
+        use crate::det_math::exp64;
+        let al = g / 2.0;
+        let disc = w2 - al * al;
+        let (b, bd) = if disc.abs() < 1e-300 {
+            (h * exp64(-al * h), exp64(-al * h) * (1.0 - al * h))
+        } else if disc > 0.0 {
+            let wd = disc.sqrt();
+            let (s, c) = sin_cos_ref(wd * h);
+            let e = exp64(-al * h);
+            (e * s / wd, e * (c - al * s / wd))
+        } else {
+            let r = (-disc).sqrt();
+            let (l1, l2) = (al - r, al + r);
+            let (e1, e2) = (exp64(-l1 * h), exp64(-l2 * h));
+            ((e1 - e2) / (l2 - l1), (l2 * e2 - l1 * e1) / (l2 - l1))
+        };
+        let a = bd + g * b;
+        (a, b, (1.0 - a) / w2, bd)
+    }
+
+    /// The coefficients of all three branches against the `f64` closed forms, including both
+    /// sides of the branch boundaries `q = ±1/4` and the critical point: the `Fix128` step is
+    /// at least as accurate as the `f64` reference (< 2e-15 relative to the coefficient's
+    /// scale). Also `det [[A, B], [−ω²B, B']] = e^(−γh)` (Liouville) to 1e-17.
     #[test]
-    fn rest_tether_one_substep_is_backward_euler() {
-        // m = 2, ω = 6, ζ = 0.5, h = 1/60: x' = x (1 + 2ζa) / (1 + 2ζa + a²), a = ω h
+    fn oscillator_step_matches_the_closed_forms() {
+        let h = Fix128::from_ratio(1, 60);
+        let hf = 1.0 / 60.0;
+        let mut checked = 0;
+        // ω h ∈ {0.3, 0.9, 1.2, 2, 6}, ζ from undamped to strongly overdamped
+        for wh in [3_i64, 9, 12, 20, 60] {
+            for zeta_milli in [0_i64, 200, 420, 900, 960, 1000, 1040, 1200, 3000] {
+                let w = Fix128::from_ratio(wh * 60, 10);
+                let w2 = w * w;
+                let g = Fix128::from_ratio(2 * zeta_milli, 1000) * w;
+                let s = OscillatorStep::new(w2, g, h);
+                let (a, b, c, bd) = oscillator_ref(w2.to_f64(), g.to_f64(), hf);
+                let tol = 2e-15;
+                assert!(
+                    (s.pos_e.to_f64() - a).abs() < tol,
+                    "A wh {wh} ζ {zeta_milli}"
+                );
+                assert!(
+                    (s.pos_v.to_f64() - b).abs() < tol * hf,
+                    "B wh {wh} ζ {zeta_milli}"
+                );
+                assert!(
+                    (s.vel_v.to_f64() - bd).abs() < tol,
+                    "B' wh {wh} ζ {zeta_milli}"
+                );
+                assert!(
+                    (s.pos_a.to_f64() - c).abs() < tol * hf * hf,
+                    "C wh {wh} ζ {zeta_milli}: {} vs {c}",
+                    s.pos_a.to_f64()
+                );
+                assert_eq!(s.vel_a, s.pos_v);
+                assert_eq!(s.vel_e, Fix128::ZERO - w2 * s.pos_v);
+                let det = s.pos_e * s.vel_v - s.pos_v * s.vel_e;
+                let want = crate::physics2d::exp_neg(g * h);
+                assert!(
+                    (det - want).abs().to_f64() < 1e-17,
+                    "det wh {wh} ζ {zeta_milli}: {}",
+                    (det - want).to_f64()
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 45);
+    }
+
+    /// Small `ω h` (the series branches of `C`) and `k = 0`: `C = h²/2 − γh³/6 + …` (Taylor to h⁵),
+    /// `B = h − γh²/2 + …`; and the step tends to free flight as `k, c → 0`.
+    #[test]
+    fn oscillator_step_small_arguments() {
+        // 4 units of 2⁻⁶⁴: the grid of Fix128 (h = 1/1000 itself is rounded to it)
+        const ULP4: f64 = 2.2e-19;
+        let h = Fix128::from_ratio(1, 1000);
+        // ω² h² = 1e-6, γ h = 2e-4 (near critical branch, series for C)
+        let s = OscillatorStep::new(Fix128::ONE, Fix128::from_ratio(1, 5), h);
+        let (a, b, c, bd) = oscillator_ref(1.0, 0.2, 1e-3);
+        assert!((s.pos_e.to_f64() - a).abs() < ULP4);
+        assert!((s.pos_v.to_f64() - b).abs() < ULP4);
+        assert!((s.vel_v.to_f64() - bd).abs() < ULP4);
+        // the f64 reference's (1 − A)/ω² cancels here; compare with the series directly
+        // Taylor of C to h⁵: b₂ = −γ/2, b₃ = (γ² − ω²)/6, b₄ = −(3γ b₃ + ω² b₂)/12
+        let want_c = 1e-6 / 2.0 - 0.2 * 1e-9 / 6.0
+            + (0.04 - 1.0) * 1e-12 / 24.0
+            + (0.096 + 0.1) / 12.0 * 1e-15 / 5.0;
+        assert!(
+            (s.pos_a.to_f64() - want_c).abs() < ULP4,
+            "{} vs {want_c} ({c})",
+            s.pos_a.to_f64()
+        );
+        // overdamped with ω² h² < 1/16: φ₁ branch; k = 0 is the pure damper
+        let g = Fix128::from_int(3000);
+        let s = OscillatorStep::new(Fix128::ZERO, g, h);
+        let e = crate::det_math::exp64(-3.0);
+        assert!((s.pos_e.to_f64() - 1.0).abs() < ULP4);
+        assert!((s.vel_v.to_f64() - e).abs() < ULP4);
+        assert!((s.pos_v.to_f64() - (1.0 - e) / 3000.0).abs() < ULP4);
+        let want_c = (1e-3 - (1.0 - e) / 3000.0) / 3000.0;
+        assert!(
+            (s.pos_a.to_f64() - want_c).abs() < ULP4,
+            "{} vs {want_c}",
+            s.pos_a.to_f64()
+        );
+        // φ₁ below and above its switch
+        assert_eq!(phi1(Fix128::ZERO), Fix128::ONE);
+        let x = Fix128::from_ratio(1, 2);
+        assert!((phi1(x).to_f64() - (1.0 - crate::det_math::exp64(-0.5)) / 0.5).abs() < 1e-16);
+        // free flight limit
+        let s = OscillatorStep::new(Fix128::ZERO, Fix128::ZERO, h);
+        assert_eq!(s.pos_e, Fix128::ONE);
+        assert_eq!(s.vel_v, Fix128::ONE);
+        assert!((s.pos_v - h).abs().to_f64() < ULP4);
+        assert!((s.pos_a.to_f64() - 0.5e-6).abs() < ULP4);
+    }
+
+    /// `sinc_cos` for large `q` (many doublings): cos √q against the reduced reference; the
+    /// doublings cost about `4ᵐ` units of 2⁻⁶⁴ (`m = 15` here, θ = 2⁷·π·100).
+    #[test]
+    fn sinc_cos_large_argument() {
+        for theta in [1.0_f64, 3.0, 40.0, 1000.0, 12_345.0] {
+            let tf = Fix128::from_f64(theta);
+            let (s, k) = sinc_cos(tf * tf);
+            let tq = tf.to_f64();
+            let r = tq.rem_euclid(2.0 * core::f64::consts::PI);
+            let r = if r > core::f64::consts::PI {
+                r - 2.0 * core::f64::consts::PI
+            } else {
+                r
+            };
+            let (sr, cr) = sin_cos_ref(r);
+            let tol = 1e-15 + theta * 4e-16;
+            assert!(
+                (k.to_f64() - cr).abs() < tol,
+                "θ {theta}: {} vs {cr}",
+                k.to_f64()
+            );
+            assert!((s.to_f64() * tq - sr).abs() < tol, "θ {theta}");
+        }
+    }
+
+    #[test]
+    fn rest_tether_one_substep_is_the_exact_oscillator() {
+        // m = 2, ω = 6, ζ = 0.5, h = 1/60 (ω h = 0.1): from rest at e0 = 1,
+        // e = e^(−ζωh) (cos ω_d h + ζω/ω_d sin ω_d h), ω_d = ω sqrt(3)/2
         let mut c = lone_particle();
         c.set_rest_tether(Fix128::from_int(72), Fix128::from_int(12));
         assert_eq!(
@@ -4091,10 +4440,13 @@ mod tests {
         assert_eq!(c.rest_positions(), &[Vec3Fix::ZERO]);
         c.positions[0] = Vec3Fix::from_int(1, 0, 0);
         c.step(Fix128::from_ratio(1, 60));
-        let a = 0.1_f64;
-        let want = (1.0 + a) / (1.0 + a + a * a);
+        let (zw, wd) = (0.05_f64, 0.05 * 3.0_f64.sqrt());
+        let (s, co) = sin_cos_ref(wd);
+        let d = crate::det_math::exp64(-zw);
+        let want = d * (co + zw / wd * s);
+        let want_v = -d * (36.0 / 60.0 / 60.0) / wd * s * 60.0;
         assert!((c.positions[0].x.to_f64() - want).abs() < 1e-15);
-        assert!((c.velocities[0].x.to_f64() - (want - 1.0) * 60.0).abs() < 1e-12);
+        assert!((c.velocities[0].x.to_f64() - want_v).abs() < 1e-13);
     }
 
     #[test]
@@ -4112,9 +4464,13 @@ mod tests {
         c.set_rest_tether(Fix128::from_int(-1), Fix128::from_int(-1));
         assert_eq!(c.rest_tether(), Some((Fix128::ZERO, Fix128::ZERO)));
         assert_eq!(c.rest_positions(), &[Vec3Fix::from_int(0, 4, 0)]);
-        c.set_rest_tether(Fix128::from_int(1_000_000_000_000), Fix128::ZERO);
+        // critically damped and far stiffer than the step: lands on rest within the frame
+        c.set_rest_tether(
+            Fix128::from_int(1_000_000_000_000),
+            Fix128::from_int(4_000_000),
+        );
         c.step(Fix128::from_ratio(1, 60));
-        assert!((c.positions[0].y.to_f64() - 4.0).abs() < 1e-6);
+        assert!((c.positions[0].y.to_f64() - 4.0).abs() < 1e-12);
         c.clear_rest_tether();
         assert_eq!(c.rest_tether(), None);
         // a pinned particle is not pulled
