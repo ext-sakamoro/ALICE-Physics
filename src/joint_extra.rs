@@ -659,7 +659,11 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
 ///   back as rounding, positive or negative, a few steps of `2^-64` in `K`'s own
 ///   units; read as free, it turned bodies by up to 0.06 rad for an error that
 ///   lay wholly in the locked direction. No correction is asked for along a
-///   locked direction and the rest of the error is closed.
+///   locked direction and the rest of the error is closed. In physical terms
+///   an axis is treated as locked when its inverse inertia (summed over the
+///   two bodies) is at most `1.4e-17` (an inertia above about `7e16` kg m^2)
+///   or `2^-50` of the largest; such an axis gets no rotation correction at
+///   all rather than a less accurate one.
 /// - The undamped solution is used unless a body would turn by more than
 ///   `max(4 |theta|, 1/8 rad)`, which every well-conditioned weld stays within
 ///   (rods whose cheap long axes take several times the error included).
@@ -1219,6 +1223,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A free axis far smaller than the others but above the locked floor is
+    /// still corrected: inverse inertia (1e-9, 1e-9, 1e-15) with a static
+    /// partner closes an error about that axis.
+    #[test]
+    fn weld_corrects_a_small_but_free_axis() {
+        let inv = Vec3Fix::new(
+            Fix128::from_f64(1e-9),
+            Fix128::from_f64(1e-9),
+            Fix128::from_f64(1e-15),
+        );
+        let err = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 100));
+        let left = weld_residual(
+            inv,
+            QuatFix::IDENTITY,
+            inv,
+            QuatFix::IDENTITY,
+            false,
+            err,
+            1,
+        );
+        assert!(
+            left < 1e-5,
+            "a free axis of inverse inertia 1e-15 left {left:e} of 1e-2"
+        );
     }
 
     /// Planar bodies whose free axis is tilted away from every world axis: the
