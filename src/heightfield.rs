@@ -144,18 +144,39 @@ impl HeightField {
     #[must_use]
     pub fn sample_normal(&self, world_x: Fix128, world_z: Fix128) -> Vec3Fix {
         let eps = self.spacing.half();
-        let hx_neg = self.sample_height(world_x - eps, world_z);
-        let hx_pos = self.sample_height(world_x + eps, world_z);
-        let hz_neg = self.sample_height(world_x, world_z - eps);
-        let hz_pos = self.sample_height(world_x, world_z + eps);
-
-        let dx = hx_pos - hx_neg;
-        let dz = hz_pos - hz_neg;
+        // The two samples on each axis are kept on the grid: past an edge the
+        // height is clamped flat, and a central difference reaching over it
+        // halved the slope at the border points.
+        let span = |lo: Fix128, cells: u32, at: Fix128| {
+            let hi = lo + self.spacing * Fix128::from_int(i64::from(cells.saturating_sub(1)));
+            let a = if at - eps < lo { lo } else { at - eps };
+            let b = if at + eps > hi { hi } else { at + eps };
+            (a, b)
+        };
+        let (x0, x1) = span(self.origin.x, self.width, world_x);
+        let (z0, z1) = span(self.origin.z, self.depth, world_z);
+        let slope = |h0: Fix128, h1: Fix128, a: Fix128, b: Fix128| {
+            if b > a {
+                (h1 - h0) / (b - a)
+            } else {
+                Fix128::ZERO
+            }
+        };
+        let sx = slope(
+            self.sample_height(x0, world_z),
+            self.sample_height(x1, world_z),
+            x0,
+            x1,
+        );
+        let sz = slope(
+            self.sample_height(world_x, z0),
+            self.sample_height(world_x, z1),
+            z0,
+            z1,
+        );
 
         // Normal = (-dh/dx, 1, -dh/dz) normalized
-        // But we need to account for the spacing
-        let inv_eps2 = Fix128::ONE / eps.double();
-        Vec3Fix::new(-(dx * inv_eps2), Fix128::ONE, -(dz * inv_eps2)).normalize()
+        Vec3Fix::new(-sx, Fix128::ONE, -sz).normalize()
     }
 
     /// Sphere vs `HeightField` collision
@@ -173,11 +194,14 @@ impl HeightField {
         let (gx_f, gz_f) = self.world_to_grid(center);
 
         // Check if within bounds (with margin)
+        // the same 2 cells past the first and the last grid point (index
+        // `width - 1`, not `width`)
         let margin = Fix128::from_int(2);
-        if gx_f < -margin || gx_f > Fix128::from_int(self.width as i64) + margin {
+        let last = |n: u32| Fix128::from_int(i64::from(n) - 1);
+        if gx_f < -margin || gx_f > last(self.width) + margin {
             return None;
         }
-        if gz_f < -margin || gz_f > Fix128::from_int(self.depth as i64) + margin {
+        if gz_f < -margin || gz_f > last(self.depth) + margin {
             return None;
         }
 

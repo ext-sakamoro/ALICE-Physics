@@ -181,7 +181,15 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
         ForceField::Directional {
             direction,
             strength,
-        } => *direction * *strength,
+        } => {
+            // `direction` is documented as normalized; a non-unit one is
+            // normalized here rather than scaling the force by its length
+            if direction.length_squared() == Fix128::ONE {
+                *direction * *strength
+            } else {
+                direction.normalize() * *strength
+            }
+        }
 
         ForceField::Point {
             center,
@@ -349,17 +357,18 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             // Falloff: (1 - dist/radius)^falloff_power
             let ratio = Fix128::ONE - dist / *radius;
 
-            // Integer-power approximation for falloff_power via repeated multiplication.
-            // For non-integer powers this is a truncated approximation; sufficient
-            // for game-quality explosion curves.
-            let power_int = falloff_power.hi.max(0) as u32;
-            let mut falloff = Fix128::ONE;
-            let mut i = 0u32;
-            while i < power_int {
-                falloff = falloff * ratio;
-                i += 1;
-            }
-            // If power is 0, falloff stays ONE (constant force within radius).
+            // `ratio^power` by `Fix128::powf_pos`: a whole power up to 64 is
+            // left-to-right multiplication (the same steps as before), a
+            // fractional part follows the documented formula, and a large
+            // power takes O(log n) squarings (the loop used to truncate 0.5 to
+            // 0 and run 2e9 times for 2e9). Power 0 is a constant force within
+            // the radius.
+            let power = if falloff_power.is_negative() {
+                Fix128::ZERO
+            } else {
+                *falloff_power
+            };
+            let falloff = ratio.powf_pos(power);
 
             direction * (*strength * falloff)
         }

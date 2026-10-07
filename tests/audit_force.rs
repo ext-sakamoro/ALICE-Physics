@@ -55,7 +55,6 @@ fn directional_force_is_direction_times_strength() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-014: Directional documents `direction` as normalized but does not normalize or check it (Vortex axis and Magnetic moment are normalized internally): direction (0,3,0) with strength 10 gives a force of magnitude 30"]
 fn directional_force_magnitude_is_the_strength_for_a_non_unit_direction() {
     let f = ForceField::Directional {
         direction: v3(0.0, 3.0, 0.0),
@@ -287,7 +286,6 @@ fn explosion_points_away_from_the_center_and_vanishes_at_and_beyond_the_radius()
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-015: Explosion documents the falloff as (1 - dist/radius)^falloff_power but truncates the exponent to its integer part (hi): power 0.5 is treated as 0 (constant 100 at distance 4), power 1.5 as 1"]
 fn explosion_fractional_power_follows_the_documented_formula() {
     for &n in &[0.5, 1.5, 2.5] {
         let want = 100.0 * 0.6f64.powf(n);
@@ -301,7 +299,6 @@ fn explosion_fractional_power_follows_the_documented_formula() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-016: Explosion evaluates (1 - d/R)^n by an n-iteration loop on the truncated exponent with no bound: falloff_power = 2e9 does not return within 3 s (a 4e9 value would loop 4e9 times)"]
 fn explosion_with_a_huge_power_returns_promptly() {
     let (tx, rx) = mpsc::channel();
     std::thread::spawn(move || {

@@ -229,7 +229,6 @@ fn normal_is_unit_length() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-003: sample_normal at a grid border point of a plane returns half the slope (clamped outside sample halves the central difference): ramp 0.5, expected nx=-0.4472 got about -0.2425"]
 fn normal_on_the_border_of_a_plane_is_the_plane_normal() {
     let f = field_from(8, 8, 1.0, [0.0; 3], |x, _| 0.5 * x);
     let got = arr(f.sample_normal(fx(0.0), fx(3.0)));
@@ -326,7 +325,6 @@ fn sphere_far_outside_the_grid_does_not_collide() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-004: collide_sphere margin is 2 cells before the origin but 3 cells past the last vertex (bound uses width, not width-1): a sphere 2.5 cells past the far edge collides, 2.5 cells before the near edge does not"]
 fn lateral_margin_is_the_same_on_both_sides() {
     let f = HeightField::flat(8, 8, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
     let near = f.collide_sphere(v3(-2.5, 0.0, 3.0), Fix128::ONE).is_some();

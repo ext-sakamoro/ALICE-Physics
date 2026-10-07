@@ -345,7 +345,14 @@ pub fn ray_capsule(ray: &Ray, capsule: &Capsule, max_t: Fix128) -> Option<RayHit
     let sqrt_d = discriminant.sqrt();
     let two_a = a_coeff.double();
     if two_a.is_zero() {
-        return None;
+        // Parallel to the axis: inside the radius the ray meets an end cap
+        // (outside it, both cap spheres miss as well)
+        let sphere_a = Sphere::new(capsule.a, capsule.radius);
+        let sphere_b = Sphere::new(capsule.b, capsule.radius);
+        return closer_hit(
+            ray_sphere(ray, &sphere_a, max_t),
+            ray_sphere(ray, &sphere_b, max_t),
+        );
     }
 
     let t = (-b_coeff - sqrt_d) / two_a;
@@ -426,7 +433,8 @@ pub fn ray_plane(
     }
 }
 
-/// Cast a ray against multiple AABBs and return the closest hit
+/// Cast a ray against multiple AABBs and return the closest hit; among hits
+/// at the same `t` the first in `aabbs` wins (the head of [`raycast_all_aabbs`]).
 #[must_use]
 pub fn raycast_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> Option<RayHit> {
     let mut closest: Option<RayHit> = None;
@@ -434,6 +442,10 @@ pub fn raycast_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> Optio
 
     for &(ref aabb, body_idx) in aabbs {
         if let Some(mut hit) = ray_aabb(ray, aabb, best_t) {
+            // an equal t keeps the earlier candidate, as `raycast_all_*` does
+            if closest.is_some() && hit.t >= best_t {
+                continue;
+            }
             hit.body_index = body_idx;
             best_t = hit.t;
             closest = Some(hit);
@@ -443,7 +455,9 @@ pub fn raycast_aabbs(ray: &Ray, aabbs: &[(AABB, usize)], max_t: Fix128) -> Optio
     closest
 }
 
-/// Cast a ray against multiple Spheres and return the closest hit
+/// Cast a ray against multiple Spheres and return the closest hit; among hits
+/// at the same `t` the first in `spheres` wins (the head of
+/// [`raycast_all_spheres`]).
 #[must_use]
 pub fn raycast_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) -> Option<RayHit> {
     let mut closest: Option<RayHit> = None;
@@ -451,6 +465,10 @@ pub fn raycast_spheres(ray: &Ray, spheres: &[(Sphere, usize)], max_t: Fix128) ->
 
     for &(ref sphere, body_idx) in spheres {
         if let Some(mut hit) = ray_sphere(ray, sphere, best_t) {
+            // an equal t keeps the earlier candidate, as `raycast_all_*` does
+            if closest.is_some() && hit.t >= best_t {
+                continue;
+            }
             hit.body_index = body_idx;
             best_t = hit.t;
             closest = Some(hit);

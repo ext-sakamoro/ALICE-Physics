@@ -90,7 +90,6 @@ fn ray_capsule_oblique_axis_side_hit() {
 /// A ray along the capsule axis hits the near hemispherical cap: capsule
 /// (-1,0,0)-(1,0,0), radius 0.5, ray from x = -5: t = 5 - 1 - 0.5 = 3.5.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-003: ray_capsule returns None for a ray parallel to the capsule axis (a_coeff == 0 early return) even though the ray passes through both end caps"]
 fn ray_capsule_along_axis_hits_near_cap() {
     let cap = Capsule::new(v(-1.0, 0.0, 0.0), v(1.0, 0.0, 0.0), fx(0.5));
     let ray = Ray::new(v(-5.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
@@ -103,7 +102,6 @@ fn ray_capsule_along_axis_hits_near_cap() {
 /// Axis-parallel ray offset inside the radius hits the cap sphere at
 /// x = -1 - sqrt(0.5^2 - 0.3^2) = -1.4 with normal (-0.8, 0.6, 0).
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-003: ray_capsule returns None for a ray parallel to the capsule axis (a_coeff == 0 early return) even though the ray passes through both end caps"]
 fn ray_capsule_parallel_offset_inside_radius_hits_cap() {
     let cap = Capsule::new(v(-1.0, 0.0, 0.0), v(1.0, 0.0, 0.0), fx(0.5));
     let ray = Ray::new(v(-5.0, 0.3, 0.0), v(1.0, 0.0, 0.0));
@@ -163,7 +161,6 @@ fn ray_plane_miss_cases_and_max_t_boundary() {
 /// Two identical spheres at equal distance: the single-hit query and the
 /// first element of the all-hits query must agree on which body is nearest.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-004: tie-breaking differs: raycast_spheres picks the last of equal-t candidates (max_t narrowed to best_t, later equal hit replaces), raycast_all_spheres[0] keeps input order (first)"]
 fn closest_and_all_agree_on_equidistant_spheres() {
     let ray = Ray::new(v(-5.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
     let s = Sphere::new(v(0.0, 0.0, 0.0), fx(1.0));
@@ -175,7 +172,6 @@ fn closest_and_all_agree_on_equidistant_spheres() {
 
 /// Same tie-break question for AABBs.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-004: tie-breaking differs: raycast_aabbs picks the last of equal-t candidates, raycast_all_aabbs[0] keeps input order (first)"]
 fn closest_and_all_agree_on_equidistant_aabbs() {
     let ray = Ray::new(v(-5.0, 0.0, 0.0), v(1.0, 0.0, 0.0));
     let b = AABB::new(v(-1.0, -1.0, -1.0), v(1.0, 1.0, 1.0));
