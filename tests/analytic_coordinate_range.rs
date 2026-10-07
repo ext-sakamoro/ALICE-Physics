@@ -1683,21 +1683,22 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 
 /// [`in_range_fingerprints`] を範囲の検査を足す前の solver で走らせた値
 ///
-/// scene 4 (XPBD / TGS) と scene 0 / 5 (TGS) は、等方の慣性の `I⁻¹` を回転せず
-/// `c·τ` で適用するようになった後の solver で取り直した (関節と接触の角の応答の
-/// 丸めが変わる、範囲の検査とは無関係) 他の 9 件はその変更で不変
+/// scene 4 (XPBD / TGS) と scene 0 / 5 (TGS) は、XPBD の速度の導出を変えた後に
+/// 等方の慣性の `I⁻¹` を回転せず `c·τ` で適用するようになった solver で取り直した
+/// (関節と接触の角の応答の丸めが変わる、範囲の検査とは無関係) 他の 9 件は
+/// その変更で不変 (短絡を外すと 13 件すべてが直前の値に戻る)
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
     (0, SolverBackend::Xpbd, 0x79d933c173a1a0c7_u64),
     (1, SolverBackend::Xpbd, 0x51b5e2b44f42b2ff_u64),
     (2, SolverBackend::Xpbd, 0x589d4e7a2f6fc4e5_u64),
     (3, SolverBackend::Xpbd, 0x8bcfaa14ace2278a_u64),
-    (4, SolverBackend::Xpbd, 0x9cac1936387a99b9_u64),
+    (4, SolverBackend::Xpbd, 0xce2cc8f59fbec9ad_u64),
     (5, SolverBackend::Xpbd, 0x1d1e32ac5820cda0_u64),
     (6, SolverBackend::Xpbd, 0x889f5af1eee580f3_u64),
-    (0, SolverBackend::Tgs, 0xee4540846c7fb023_u64),
+    (0, SolverBackend::Tgs, 0x7b82f390329a7bfc_u64),
     (1, SolverBackend::Tgs, 0x8e94b5381f0f500a_u64),
     (2, SolverBackend::Tgs, 0xcbe984649e141396_u64),
     (3, SolverBackend::Tgs, 0xa26ed4428533826f_u64),
-    (4, SolverBackend::Tgs, 0xfcfc7c87e42c7dcc_u64),
-    (5, SolverBackend::Tgs, 0x7f8706eb6b237466_u64),
+    (4, SolverBackend::Tgs, 0xb9822fcdacf1a6e6_u64),
+    (5, SolverBackend::Tgs, 0x325cfe392ac7b7b0_u64),
 ];
