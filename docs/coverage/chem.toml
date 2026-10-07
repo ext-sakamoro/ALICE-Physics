@@ -1104,9 +1104,9 @@ id = "COV-CHEM-102"
 axis = "benchmark"
 item = "first-order exponential decay of a reactant (closed form exp(-k t))"
 source = "Turns ch.4"
-status = "implemented-no-oracle"
-evidence = "src/sim_field.rs::decay `ScalarField3D::decay` が格子上の量を exp(-rate·dt) 倍するので、rate = k として渡せば定温 1 次反応の濃度減衰になる (原子核の表の指数崩壊の行と同じ部品) 反応物としての API と、k と半減期を入れた検査は無い src/smoke_fire.rs は 1 点の速度・発熱を返す閉形式で状態を持たない"
-oracle_candidate = "定温 1 次反応で ln C が時間に線形、半減期 ln2 / k"
+status = "implemented+oracle"
+evidence = "src/sim_field.rs::ScalarField3D::decay / tests/analytic_scalar_field_first_order_decay.rs::concentration_follows_first_order_closed_form_c0_exp_minus_kt + half_life_matches_ln2_over_k (C(t) = C0 exp(-k t) を複数時刻で突合、半減期 ln2/k も確認 smoke_fire.rs の Arrhenius 反応速度は燃料・酸化剤密度の2次なのでこの行の対象ではない)"
+oracle_candidate = ""
 limitation = ""
 
 [[item]]
