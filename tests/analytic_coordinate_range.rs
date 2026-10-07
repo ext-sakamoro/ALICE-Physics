@@ -1682,6 +1682,10 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 }
 
 /// [`in_range_fingerprints`] を範囲の検査を足す前の solver で走らせた値
+///
+/// scene 4 (XPBD / TGS) と scene 0 / 5 (TGS) は、等方の慣性の `I⁻¹` を回転せず
+/// `c·τ` で適用するようになった後の solver で取り直した (関節と接触の角の応答の
+/// 丸めが変わる、範囲の検査とは無関係) 他の 9 件はその変更で不変
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
     (0, SolverBackend::Xpbd, 0x79d933c173a1a0c7_u64),
     (1, SolverBackend::Xpbd, 0x51b5e2b44f42b2ff_u64),
