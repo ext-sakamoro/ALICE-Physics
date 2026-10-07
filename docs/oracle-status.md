@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5546 |
+| 🟢 Not ignored (run by CI) | 5577 |
 | 🔴 Red by design | 91 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5663** |
+| **Total** | **5694** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -164,7 +164,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5546)
+## 🟢 Not ignored (5577)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -195,6 +195,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_cfd_solver.rs` | 28 |
 | `audit_raycast.rs` | 28 |
 | `analytic_static_collider.rs` | 27 |
+| `analytic_world_step_ccd.rs` | 27 |
 | `audit_motor.rs` | 27 |
 | `engineering_oracles_misc.rs` | 27 |
 | `analytic_euler_fv.rs` | 26 |
@@ -581,6 +582,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
+| `analytic_cast_large_direction.rs` | 2 |
 | `analytic_gjk_separation_distance.rs` | 2 |
 | `analytic_rotation_integration.rs` | 2 |
 | `analytic_tgs_backend_coverage.rs` | 2 |
@@ -593,6 +595,7 @@ Per-file counts (the test names are in `tests/`):
 | `mesh_to_fem_stress.rs` | 2 |
 | `tgs_joints_static_colliders.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
+| `world_ccd_off_bit_identity.rs` | 2 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_wind_zone_terminal_velocity.rs` | 1 |
 | `analytic_world_query_near_contact.rs` | 1 |
