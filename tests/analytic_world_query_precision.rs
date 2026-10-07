@@ -489,3 +489,127 @@ fn plane_approach_below_parallel_threshold_is_a_hit() {
     assert!((h.t.to_f64() - 64.0).abs() < 1e-6, "t = {}", h.t.to_f64());
     assert!((h.normal.y.to_f64() - 1.0).abs() < 1e-12);
 }
+
+// ============================================================================
+// Small spheres on an ellipsoid
+// ============================================================================
+
+/// Signed distance from `y` (in the ellipsoid's frame) to the ellipsoid of semi
+/// axes `e`, in `f64` (Eberly, *Distance from a Point to an Ellipse, an
+/// Ellipsoid, or a Hyperellipsoid*): the nearest point is
+/// `x_i = e_i² y_i / (s + e_i²)` with `s` the root of
+/// `Σ (e_i y_i / (s + e_i²))² = 1`, found by bisection.
+fn ellipsoid_distance(e: [f64; 3], y: [f64; 3]) -> f64 {
+    let y = [y[0].abs(), y[1].abs(), y[2].abs()];
+    let f: f64 = (0..3).map(|i| (y[i] / e[i]) * (y[i] / e[i])).sum();
+    let g = |s: f64| {
+        (0..3)
+            .map(|i| {
+                let q = e[i] * y[i] / (s + e[i] * e[i]);
+                q * q
+            })
+            .sum::<f64>()
+            - 1.0
+    };
+    let emin = e[0].min(e[1]).min(e[2]);
+    let (mut lo, mut hi) = if f > 1.0 {
+        (0.0, 100.0)
+    } else {
+        (-emin * emin * (1.0 - 1e-15), 0.0)
+    };
+    for _ in 0..400 {
+        let m = 0.5 * (lo + hi);
+        if g(m) > 0.0 {
+            lo = m;
+        } else {
+            hi = m;
+        }
+    }
+    let s = 0.5 * (lo + hi);
+    let d = (0..3)
+        .map(|i| {
+            let x = e[i] * e[i] * y[i] / (s + e[i] * e[i]) - y[i];
+            x * x
+        })
+        .sum::<f64>()
+        .sqrt();
+    if f > 1.0 {
+        d
+    } else {
+        -d
+    }
+}
+
+/// `v` rotated by the inverse of the unit quaternion `q = (w, x, y, z)`.
+fn rotate_back(q: [f64; 4], v: [f64; 3]) -> [f64; 3] {
+    let (w, x, y, z) = (q[0], -q[1], -q[2], -q[3]);
+    let t = [
+        2.0 * (y * v[2] - z * v[1]),
+        2.0 * (z * v[0] - x * v[2]),
+        2.0 * (x * v[1] - y * v[0]),
+    ];
+    [
+        v[0] + w * t[0] + (y * t[2] - z * t[1]),
+        v[1] + w * t[1] + (z * t[0] - x * t[2]),
+        v[2] + w * t[2] + (x * t[1] - y * t[0]),
+    ]
+}
+
+#[test]
+fn small_sphere_on_an_ellipsoid_stops_at_the_surface() {
+    let e = [1.2, 0.5, 0.8];
+    let mut seed = 0x9e37_79b9_7f4a_7c15u64;
+    let mut u = || {
+        seed = seed
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        ((seed >> 11) as f64) / ((1u64 << 53) as f64)
+    };
+    let mut worst = (0.0f64, 0.0f64);
+    for tilted in [false, true] {
+        let mut w = world();
+        let i = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        assert!(w.set_body_shape(i, &Shape::Ellipsoid { radii: p3(e) }));
+        if tilted {
+            let k = (0.36f64 + 0.49 + 0.04).sqrt();
+            w.bodies[i].rotation = alice_physics::math::QuatFix::from_axis_angle(
+                v3(0.6 / k, 0.7 / k, -0.2 / k),
+                fx(0.9),
+            );
+        }
+        let q = w.bodies[i].rotation;
+        let q = [q.w.to_f64(), q.x.to_f64(), q.y.to_f64(), q.z.to_f64()];
+        for k in [17, 16, 15, 14, 12, 10, 8, 6, 4, 1] {
+            let r = 1.0 / ((1u64 << k) as f64);
+            for _ in 0..24 {
+                // from 4 away toward a point near the centre
+                let mut c = [2.0 * u() - 1.0, 2.0 * u() - 1.0, 2.0 * u() - 1.0];
+                let l = (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt().max(1e-3);
+                for x in &mut c {
+                    *x *= 4.0 / l;
+                }
+                let aim = [0.6 * u() - 0.3, 0.4 * u() - 0.2, 0.6 * u() - 0.3];
+                let mut d = [aim[0] - c[0], aim[1] - c[1], aim[2] - c[2]];
+                let dl = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+                for x in &mut d {
+                    *x /= dl;
+                }
+                let h = sphere_cast(&w, c, r, d, 10.0)
+                    .unwrap_or_else(|| panic!("r = 2^-{k} from {c:?}: missed the ellipsoid"));
+                let t = h.t.to_f64();
+                let p = [c[0] + t * d[0], c[1] + t * d[1], c[2] + t * d[2]];
+                // oracle: the sphere's centre is r from the surface at the
+                // contact: gap = distance − r, within 2⁻³² (not inside by more
+                // than the tolerance, not short of it by more than twice it).
+                let gap = (ellipsoid_distance(e, rotate_back(q, p)) - r) / TOL;
+                worst = (worst.0.min(gap), worst.1.max(gap));
+                assert!(
+                    (-1.0..=2.0).contains(&gap),
+                    "tilted {tilted} r = 2^-{k} from {c:?} along {d:?}: t = {t}, gap {gap:+.3}·2⁻³²"
+                );
+            }
+        }
+    }
+    // the whole range was seen (not vacuous): both ends within the tolerance
+    assert!(worst.0 > -1.0 && worst.1 < 2.0, "{worst:?}");
+}
