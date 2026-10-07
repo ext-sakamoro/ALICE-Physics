@@ -754,4 +754,81 @@ mod tests {
             );
         }
     }
+
+    fn rel_f64(got: Fix128, want: f64, tol: f64) {
+        let g = got.to_f64();
+        assert!(
+            (g - want).abs() <= tol * want.abs(),
+            "got {g}, closed form {want}"
+        );
+    }
+
+    #[test]
+    fn weak_axis_of_box_tube_and_i_beam_matches_closed_form() {
+        // box tube 20 x 30, wall 2: weak axis is the 20 mm width,
+        // I_y = (H B^3 - h b^3) / 12
+        let hr = CrossSection::HollowRectangular {
+            outer_width_mm: Fix128::from_int(20),
+            outer_height_mm: Fix128::from_int(30),
+            wall_mm: Fix128::from_int(2),
+        };
+        let i = (30.0 * 8000.0 - 26.0 * 4096.0) / 12.0;
+        let i_box = i;
+        rel_f64(weak_axis_second_moment_mm4(&hr), i, 1e-12);
+        let a = 20.0 * 30.0 - 16.0 * 26.0;
+        rel_f64(radius_of_gyration_mm(&hr), (i / a).sqrt(), 1e-12);
+
+        // I-beam: two flanges 2 t_f b^3 / 12 plus the web (h - 2 t_f) t_w^3 / 12
+        let ib = CrossSection::IBeam {
+            flange_width_mm: Fix128::from_int(50),
+            height_mm: Fix128::from_int(100),
+            flange_thickness_mm: Fix128::from_int(6),
+            web_thickness_mm: Fix128::from_int(4),
+        };
+        let i = (2.0 * 6.0 * 125_000.0 + 88.0 * 64.0) / 12.0;
+        let strong = (50.0 * 1_000_000.0 - 46.0 * 681_472.0) / 12.0;
+        assert!(i < strong);
+        rel_f64(weak_axis_second_moment_mm4(&ib), i, 1e-12);
+        let a = 2.0 * 50.0 * 6.0 + 4.0 * 88.0;
+        rel_f64(radius_of_gyration_mm(&ib), (i / a).sqrt(), 1e-12);
+
+        // the same tube turned on its side gives the same weak-axis value
+        // (I_x and I_y round their quotient by 12 separately: within 1e-12)
+        let turned = CrossSection::HollowRectangular {
+            outer_width_mm: Fix128::from_int(30),
+            outer_height_mm: Fix128::from_int(20),
+            wall_mm: Fix128::from_int(2),
+        };
+        rel_f64(weak_axis_second_moment_mm4(&turned), i_box, 1e-12);
+    }
+
+    #[test]
+    fn zero_area_section_has_no_radius_and_no_slenderness() {
+        let flat = CrossSection::Rectangular {
+            width_mm: Fix128::ZERO,
+            height_mm: Fix128::from_int(5),
+        };
+        assert_eq!(radius_of_gyration_mm(&flat), Fix128::ZERO);
+        assert_eq!(
+            slenderness_ratio(&flat, Fix128::from_int(100), ColumnEndCondition::PinPin),
+            Fix128::ZERO
+        );
+    }
+
+    #[test]
+    fn zero_yield_and_zero_slenderness_limits() {
+        assert_eq!(
+            transition_slenderness(Fix128::from_int(3500), Fix128::ZERO),
+            Fix128::ZERO
+        );
+        // a zero-length column is pure yielding at sigma_y (lambda -> 0+ of Johnson)
+        assert_eq!(
+            critical_stress_mpa(
+                Fix128::ZERO,
+                Fix128::from_int(200_000),
+                Fix128::from_int(250)
+            ),
+            (Fix128::from_int(250), BucklingRegime::Yielding)
+        );
+    }
 }

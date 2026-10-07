@@ -1129,4 +1129,248 @@ mod tests {
         // The sweep must actually exercise contacts, not compare None to None.
         assert!(hits > 100, "only {hits} contacts in the sweep");
     }
+
+    fn half() -> Fix128 {
+        Fix128::from_ratio(1, 2)
+    }
+
+    fn quarter() -> Fix128 {
+        Fix128::from_ratio(1, 4)
+    }
+
+    fn vq(x: Fix128, y: Fix128, z: Fix128) -> Vec3Fix {
+        Vec3Fix::new(x, y, z)
+    }
+
+    /// within 2^-40 per component (the closest point on a triangle rounds in
+    /// its last bits)
+    fn assert_near(got: Vec3Fix, want: Vec3Fix) {
+        let tol = Fix128 { hi: 0, lo: 1 << 24 };
+        let d = got - want;
+        assert!(
+            d.x.abs() <= tol && d.y.abs() <= tol && d.z.abs() <= tol,
+            "{got:?} vs {want:?}"
+        );
+    }
+
+    #[test]
+    fn trailing_indices_are_ignored_and_an_empty_mesh_answers_the_query_point() {
+        let vertices = [
+            Vec3Fix::from_int(0, 0, 0),
+            Vec3Fix::from_int(1, 0, 0),
+            Vec3Fix::from_int(0, 0, 1),
+        ];
+        let mesh = TriMesh::from_indexed(&vertices, &[0, 1, 2, 0, 1]);
+        assert_eq!(mesh.triangle_count(), 1);
+        assert_eq!(mesh.triangles[0].v2, Vec3Fix::from_int(0, 0, 1));
+
+        let empty = TriMesh::from_indexed(&vertices, &[]);
+        assert_eq!(empty.triangle_count(), 0);
+        let p = Vec3Fix::from_int(3, -2, 7);
+        assert_eq!(empty.closest_point(p), (p, 0));
+    }
+
+    #[test]
+    fn capsule_parallel_above_the_floor_has_depth_radius_minus_gap() {
+        // the segment runs along x a quarter above y = 0, parallel to two
+        // floor edges: depth 1/2 - 1/4, normal +y, contact under the segment
+        let mesh = make_ground_mesh();
+        let c = mesh
+            .collide_capsule(
+                vq(Fix128::from_int(-1), quarter(), Fix128::ZERO),
+                vq(Fix128::from_int(1), quarter(), Fix128::ZERO),
+                half(),
+            )
+            .expect("a quarter gap under a half radius is a contact");
+        assert_eq!(c.depth, quarter());
+        assert_near(c.normal, Vec3Fix::UNIT_Y);
+        assert_eq!(c.point_b.y, Fix128::ZERO);
+        assert_eq!(c.point_a, c.point_b - c.normal * c.depth);
+        // a gap equal to the radius is not a contact
+        assert!(mesh
+            .collide_capsule(
+                vq(Fix128::from_int(-1), half(), Fix128::ZERO),
+                vq(Fix128::from_int(1), half(), Fix128::ZERO),
+                half(),
+            )
+            .is_none());
+    }
+
+    #[test]
+    fn capsule_above_or_crossing_the_floor() {
+        let mesh = make_ground_mesh();
+        // vertical, bottom end a quarter above the floor: the plane lies
+        // before the segment's start, depth 1/2 - 1/4 at (2, 0, -3)
+        let c = mesh
+            .collide_capsule(
+                vq(Fix128::from_int(2), quarter(), Fix128::from_int(-3)),
+                Vec3Fix::from_int(2, 3, -3),
+                half(),
+            )
+            .unwrap();
+        assert_eq!(c.depth, quarter());
+        assert_near(c.normal, Vec3Fix::UNIT_Y);
+        assert_near(c.point_b, Vec3Fix::from_int(2, 0, -3));
+
+        // crossing the floor at (5, 0, -5) (inside one triangle, outside the
+        // other): zero distance, depth = radius along the triangle's normal
+        let c = mesh
+            .collide_capsule(
+                Vec3Fix::from_int(5, -1, -5),
+                Vec3Fix::from_int(5, 1, -5),
+                half(),
+            )
+            .unwrap();
+        assert_eq!(c.depth, half());
+        assert_near(c.point_b, Vec3Fix::from_int(5, 0, -5));
+        assert_eq!(c.normal.x, Fix128::ZERO);
+        assert_eq!(c.normal.y.abs(), Fix128::ONE);
+        assert_eq!(c.normal.z, Fix128::ZERO);
+
+        // a zero-length capsule is a sphere: depth radius - height
+        let p = vq(Fix128::from_int(-3), quarter(), Fix128::from_int(4));
+        let c = mesh.collide_capsule(p, p, half()).unwrap();
+        assert_eq!(c.depth, quarter());
+        assert_near(c.normal, Vec3Fix::UNIT_Y);
+        assert_near(c.point_b, Vec3Fix::from_int(-3, 0, 4));
+    }
+
+    #[test]
+    fn segment_segment_degenerate_and_parallel_cases() {
+        let v = |x: i64, y: i64, z: i64| Vec3Fix::from_int(x, y, z);
+        // both segments points
+        assert_eq!(
+            closest_points_segment_segment(v(1, 2, 3), v(1, 2, 3), v(4, 5, 6), v(4, 5, 6)),
+            (v(1, 2, 3), v(4, 5, 6))
+        );
+        // first a point: its foot on the second, clamped to the end
+        assert_eq!(
+            closest_points_segment_segment(v(1, 5, 0), v(1, 5, 0), v(0, 0, 0), v(4, 0, 0)),
+            (v(1, 5, 0), v(1, 0, 0))
+        );
+        assert_eq!(
+            closest_points_segment_segment(v(9, 5, 0), v(9, 5, 0), v(0, 0, 0), v(4, 0, 0)),
+            (v(9, 5, 0), v(4, 0, 0))
+        );
+        // second a point: its foot on the first
+        assert_eq!(
+            closest_points_segment_segment(v(0, 0, 0), v(4, 0, 0), v(3, 2, 0), v(3, 2, 0)),
+            (v(3, 0, 0), v(3, 2, 0))
+        );
+        // parallel: s starts at 0, t = -1/2 clamps to 0 and s is re-solved
+        // for the second segment's start (distance 1, the parallel gap)
+        assert_eq!(
+            closest_points_segment_segment(v(0, 0, 0), v(4, 0, 0), v(1, 1, 0), v(3, 1, 0)),
+            (v(1, 0, 0), v(1, 1, 0))
+        );
+        // t below 0 clamps to the second segment's start and s is re-solved
+        assert_eq!(
+            closest_points_segment_segment(v(0, 0, 0), v(4, 0, 0), v(2, 1, 0), v(2, 3, 0)),
+            (v(2, 0, 0), v(2, 1, 0))
+        );
+    }
+
+    #[test]
+    fn segment_crossing_rejects_parallel_and_outside_segments() {
+        let tri = Triangle::new(
+            Vec3Fix::from_int(0, 0, 0),
+            Vec3Fix::from_int(2, 0, 0),
+            Vec3Fix::from_int(0, 0, 2),
+        );
+        let v = |x: i64, y: i64, z: i64| Vec3Fix::from_int(x, y, z);
+        // through the interior
+        assert_eq!(
+            segment_crosses_triangle(v(1, 1, 0), v(1, -1, 0), &tri),
+            Some(v(1, 0, 0))
+        );
+        // parallel to the plane
+        assert_eq!(segment_crosses_triangle(v(0, 1, 0), v(2, 1, 0), &tri), None);
+        // through the plane beside the triangle on either barycentric side
+        assert_eq!(
+            segment_crosses_triangle(v(-1, 1, 1), v(-1, -1, 1), &tri),
+            None
+        );
+        assert_eq!(
+            segment_crosses_triangle(v(1, 1, -1), v(1, -1, -1), &tri),
+            None
+        );
+        assert_eq!(
+            segment_crosses_triangle(v(2, 1, 2), v(2, -1, 2), &tri),
+            None
+        );
+        // short of the plane on either end
+        assert_eq!(segment_crosses_triangle(v(1, 3, 0), v(1, 1, 0), &tri), None);
+        assert_eq!(
+            segment_crosses_triangle(v(1, -1, 0), v(1, -3, 0), &tri),
+            None
+        );
+    }
+
+    #[test]
+    fn box_resting_mostly_above_the_floor_is_pushed_up() {
+        // centre y = 1/2, half 1: the box reaches 1/2 below the floor
+        let mesh = make_ground_mesh();
+        let aabb = AABB::new(
+            vq(Fix128::NEG_ONE, -half(), Fix128::NEG_ONE),
+            vq(Fix128::ONE, Fix128::from_ratio(3, 2), Fix128::ONE),
+        );
+        let c = mesh.collide_aabb(&aabb).unwrap();
+        assert_eq!(c.depth, half());
+        assert_eq!(c.normal, Vec3Fix::UNIT_Y);
+        assert_eq!(c.point_b, Vec3Fix::ZERO);
+        assert_eq!(c.point_a, vq(Fix128::ZERO, -half(), Fix128::ZERO));
+    }
+
+    #[test]
+    fn box_touching_separated_by_a_slanted_face_or_degenerate_has_no_contact() {
+        // resting exactly on the floor: zero depth is not a contact
+        let mesh = make_ground_mesh();
+        let touching = AABB::new(Vec3Fix::from_int(-1, 0, -1), Vec3Fix::from_int(1, 2, 1));
+        assert!(mesh.collide_aabb(&touching).is_none());
+
+        // x + y + z = 2: the boxes overlap but the face normal separates them
+        // (the triangle is 2/sqrt3 from the centre, the box reaches 1.5/sqrt3)
+        let slanted = TriMesh::from_indexed(
+            &[
+                Vec3Fix::from_int(2, 0, 0),
+                Vec3Fix::from_int(0, 2, 0),
+                Vec3Fix::from_int(0, 0, 2),
+            ],
+            &[0, 1, 2],
+        );
+        let cube = AABB::new(vq(-half(), -half(), -half()), vq(half(), half(), half()));
+        assert!(slanted.bounds.min.x < cube.max.x);
+        assert!(slanted.collide_aabb(&cube).is_none());
+
+        // a zero-area triangle through the box has no face to push along
+        let sliver = TriMesh::from_indexed(
+            &[
+                Vec3Fix::from_int(-1, 0, 0),
+                Vec3Fix::from_int(0, 0, 0),
+                Vec3Fix::from_int(1, 0, 0),
+            ],
+            &[0, 1, 2],
+        );
+        assert!(sliver.collide_aabb(&cube).is_none());
+    }
+
+    #[test]
+    fn ray_hit_with_a_max_t_whose_product_overflows() {
+        // |det| = 400 for this floor triangle; max_t * 400 overflows Fix128
+        let tri = Triangle::new(
+            Vec3Fix::from_int(-10, 0, -10),
+            Vec3Fix::from_int(10, 0, -10),
+            Vec3Fix::from_int(10, 0, 10),
+        );
+        let ray = Ray::new(
+            Vec3Fix::from_int(1, 5, -1),
+            Vec3Fix::new(Fix128::ZERO, Fix128::NEG_ONE, Fix128::ZERO),
+        );
+        let max_t = Fix128::from_int(1_i64 << 60);
+        assert!(max_t.checked_mul(Fix128::from_int(400)).is_none());
+        let hit = ray_triangle(&ray, &tri, max_t).unwrap();
+        assert_eq!(hit.t, Fix128::from_int(5));
+        assert_eq!(hit.point, Vec3Fix::from_int(1, 0, -1));
+        assert_eq!(hit.normal, Vec3Fix::UNIT_Y);
+    }
 }

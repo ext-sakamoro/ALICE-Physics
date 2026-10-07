@@ -488,4 +488,106 @@ mod tests {
         assert_eq!(core::mem::size_of::<GpuSdfQuery>(), 16);
         assert_eq!(core::mem::size_of::<GpuSdfResult>(), 16);
     }
+
+    fn q(x: f32, radius: f32) -> GpuSdfQuery {
+        GpuSdfQuery {
+            x,
+            y: 0.0,
+            z: 0.0,
+            radius,
+        }
+    }
+
+    #[test]
+    fn multi_dispatch_merges_batches_by_sdf_id_in_call_order() {
+        let mut d = GpuSdfMultiDispatch::default();
+        assert_eq!(d.total_queries(), 0);
+        assert_eq!(d.total_dispatches(), 0);
+        d.add_batch(7, vec![q(1.0, 0.0)]);
+        d.add_batch(3, vec![q(2.0, 0.0), q(3.0, 0.0)]);
+        d.add_batch(7, vec![q(4.0, 0.5), q(5.0, 0.0)]);
+        // one dispatch per unique sdf_id, in order of first appearance
+        assert_eq!(d.total_dispatches(), 2);
+        assert_eq!(d.total_queries(), 5);
+        assert_eq!(d.batches[0].sdf_id, 7);
+        assert_eq!(d.batches[1].sdf_id, 3);
+        // the repeated id appended to its batch and query_count tracks len
+        assert_eq!(d.batches[0].query_count, 3);
+        assert_eq!(
+            d.batches[0].queries,
+            vec![q(1.0, 0.0), q(4.0, 0.5), q(5.0, 0.0)]
+        );
+        assert_eq!(d.batches[1].query_count, 2);
+    }
+
+    #[test]
+    fn byte_views_cover_every_query_and_result() {
+        let mut batch = GpuSdfBatch::new(GpuDispatchConfig::default());
+        batch.add_query(4, Vec3Fix::from_f32(1.5, -2.0, 0.25), Fix128::from_f32(0.5));
+        batch.add_query(9, Vec3Fix::from_f32(0.0, 3.0, 0.0), Fix128::ZERO);
+        let bytes = batch.query_bytes();
+        assert_eq!(bytes.len(), 2 * 16);
+        let f = |k: usize| f32::from_ne_bytes([bytes[k], bytes[k + 1], bytes[k + 2], bytes[k + 3]]);
+        assert_eq!([f(0), f(4), f(8), f(12)], [1.5, -2.0, 0.25, 0.5]);
+        assert_eq!([f(16), f(20), f(24), f(28)], [0.0, 3.0, 0.0, 0.0]);
+
+        // results are empty until prepared; a GPU readback writes through the view
+        assert!(batch.result_bytes_mut().is_empty());
+        batch.prepare_output();
+        let out = batch.result_bytes_mut();
+        assert_eq!(out.len(), 2 * 16);
+        out[16..20].copy_from_slice(&(-0.75f32).to_ne_bytes());
+        out[24..28].copy_from_slice(&1.0f32.to_ne_bytes());
+        assert_eq!(batch.results[1].distance, -0.75);
+        assert_eq!(batch.results[1].normal_y, 1.0);
+        assert_eq!(batch.results[0].distance, 0.0);
+
+        batch.clear();
+        assert_eq!(batch.query_count(), 0);
+        assert!(batch.results.is_empty());
+        assert!(batch.body_indices.is_empty());
+        assert!(batch.query_bytes().is_empty());
+        assert_eq!(batch.num_workgroups(), 0);
+    }
+
+    #[test]
+    fn cpu_fallback_without_normals_and_contact_depth() {
+        // plane y = 0, normals disabled: distance only, normal left at zero
+        let plane = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
+        let mut batch = GpuSdfBatch::new(GpuDispatchConfig {
+            compute_normals: false,
+            ..GpuDispatchConfig::default()
+        });
+        batch.add_query(2, Vec3Fix::from_f32(0.0, 0.25, 0.0), Fix128::from_f32(0.5));
+        batch.add_query(5, Vec3Fix::from_f32(0.0, 2.0, 0.0), Fix128::ZERO);
+        execute_batch_cpu(&mut batch, &plane);
+        assert_eq!(batch.results[0].distance, 0.25);
+        assert_eq!(
+            (
+                batch.results[0].normal_x,
+                batch.results[0].normal_y,
+                batch.results[0].normal_z
+            ),
+            (0.0, 0.0, 0.0)
+        );
+        // penetration = collision_radius + radius - distance = 0.25 + 0.5 - 0.25
+        let contacts = batch.extract_contacts(0.25);
+        assert_eq!(contacts.len(), 1);
+        assert_eq!(contacts[0].body_index, 2);
+        assert_eq!(contacts[0].penetration, 0.5);
+        assert_eq!(contacts[0].distance, 0.25);
+    }
+
+    #[test]
+    fn workgroup_count_rounds_up() {
+        let mut batch = GpuSdfBatch::new(GpuDispatchConfig {
+            workgroup_size: 4,
+            ..GpuDispatchConfig::default()
+        });
+        for i in 0..9 {
+            batch.add_query(i, Vec3Fix::ZERO, Fix128::ZERO);
+        }
+        assert_eq!(batch.num_workgroups(), 3);
+        assert_eq!(batch_size(), crate::math::SIMD_WIDTH);
+    }
 }

@@ -715,4 +715,139 @@ mod tests {
         // Solid sphere → walls always thick → no flagged regions
         assert_eq!(report.regions.len(), 0);
     }
+
+    fn at(x: f32, y: f32, z: f32) -> Vec3Fix {
+        Vec3Fix::from_f32(x, y, z)
+    }
+
+    #[test]
+    fn for_nozzle_rejects_zero_and_negative() {
+        assert!(std::panic::catch_unwind(|| ThinWallConfig::for_nozzle(Fix128::ZERO)).is_err());
+        assert!(
+            std::panic::catch_unwind(|| ThinWallConfig::for_nozzle(Fix128::from_ratio(-4, 10)))
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn off_surface_point_is_traced_onto_the_surface_first() {
+        // 1 mm outside a 10 mm solid sphere: the gap is not wall, the chord is 10 mm
+        let cfg = ThinWallConfig::default();
+        let s = sphere_sdf(5.0);
+        let t = measure_thickness_at(&s, at(6.0, 0.0, 0.0), (1.0, 0.0, 0.0), &cfg)
+            .expect("1 mm off a 10 mm solid is measurable");
+        assert!((t.to_f64() - 10.0).abs() < 2e-2, "{}", t.to_f64());
+        // the approach shares the march budget: 5 + 10 > 12 is not measured
+        let tight = ThinWallConfig {
+            max_march_distance_mm: Fix128::from_int(12),
+            ..ThinWallConfig::default()
+        };
+        assert_eq!(
+            measure_thickness_at(&s, at(10.0, 0.0, 0.0), (1.0, 0.0, 0.0), &tight),
+            None
+        );
+        // ... and the iteration budget: 3 approach steps cannot reach a surface 20 mm away
+        let few = ThinWallConfig {
+            max_iterations: 3,
+            max_march_distance_mm: Fix128::from_int(100),
+            ..ThinWallConfig::default()
+        };
+        let slow = ClosureSdf::new(|x, _y, _z| (x - 5.0).min(1.0), |_, _, _| (1.0, 0.0, 0.0));
+        assert_eq!(
+            measure_thickness_at(&slow, at(25.0, 0.0, 0.0), (1.0, 0.0, 0.0), &few),
+            None
+        );
+    }
+
+    #[test]
+    fn iteration_budget_and_min_step_floor() {
+        // slab |z| - 2 from its top face: a few iterations are not enough
+        let slab = ClosureSdf::new(
+            |_x, _y, z| z.abs() - 2.0,
+            |_x, _y, z| (0.0, 0.0, if z >= 0.0 { 1.0 } else { -1.0 }),
+        );
+        let mut cfg = ThinWallConfig {
+            max_iterations: 3,
+            ..ThinWallConfig::default()
+        };
+        assert!(measure_thickness_at(&slab, at(0.0, 0.0, 2.0), (0.0, 0.0, 1.0), &cfg).is_none());
+        cfg.max_iterations = 64;
+        let t = measure_thickness_at(&slab, at(0.0, 0.0, 2.0), (0.0, 0.0, 1.0), &cfg).unwrap();
+        assert!((t.to_f64() - 4.0).abs() < 5e-3, "{}", t.to_f64());
+
+        // |d| = 1e-4 until z = -0.5: the 1e-3 floor lands within one step of 0.5
+        let shallow = ClosureSdf::new(
+            |_x, _y, z| if z > -0.5 { -1e-4 } else { 1e-4 },
+            |_x, _y, _z| (0.0, 0.0, 1.0),
+        );
+        let mut cfg = ThinWallConfig {
+            max_iterations: 1000,
+            ..ThinWallConfig::default()
+        };
+        let t = measure_thickness_at(&shallow, at(0.0, 0.0, 0.0), (0.0, 0.0, 1.0), &cfg)
+            .unwrap()
+            .to_f64();
+        assert!((0.5..=0.5 + 1.1e-3).contains(&t), "{t}");
+        // without the floor 1000 iterations of 1e-4 are not enough
+        cfg.min_step_mm = 1e-4;
+        assert!(measure_thickness_at(&shallow, at(0.0, 0.0, 0.0), (0.0, 0.0, 1.0), &cfg).is_none());
+    }
+
+    #[test]
+    fn a_step_below_the_f32_spacing_is_not_measured() {
+        // at 1e9 the f32 spacing is 64, so the 0.01 start offset does not move
+        let plane = ClosureSdf::new(|x, _y, _z| x - 1.0e9, |_, _, _| (1.0, 0.0, 0.0));
+        let cfg = ThinWallConfig::default();
+        assert_eq!(
+            measure_thickness_at(&plane, at(1.0e9, 0.0, 0.0), (1.0, 0.0, 0.0), &cfg),
+            None
+        );
+        // at 1e5 the spacing is 2^-7: the 0.01 offset moves one spacing, the
+        // 1e-3 steps after it do not
+        let flat = ClosureSdf::new(
+            |x, _y, _z| if x >= 1.0e5 { 0.0 } else { -1.0e-3 },
+            |_, _, _| (1.0, 0.0, 0.0),
+        );
+        assert_eq!(
+            measure_thickness_at(&flat, at(1.0e5, 0.0, 0.0), (1.0, 0.0, 0.0), &cfg),
+            None
+        );
+    }
+
+    #[test]
+    fn unbounded_samples_count_and_zero_extrema_when_none_succeed() {
+        // degenerate (zero) normals for x > 5 cannot be marched
+        let s = ClosureSdf::new(
+            |_x, _y, z| z.abs() - 0.3,
+            |x, _y, _z| {
+                if x > 5.0 {
+                    (0.0, 0.0, 0.0)
+                } else {
+                    (0.0, 0.0, 1.0)
+                }
+            },
+        );
+        let cfg = ThinWallConfig::default();
+        let r = analyze_thickness(&s, &[at(-1.0, 0.0, 0.3), at(6.0, 0.0, 0.3)], &cfg);
+        assert_eq!(r.sampled_count, 2);
+        assert_eq!(r.unbounded_count, 1);
+        assert_eq!(r.regions.len(), 1);
+        assert_eq!(r.thin_fraction(), Fix128::from_ratio(1, 2));
+        let none = analyze_thickness(&s, &[at(6.0, 0.0, 0.3), at(7.0, 0.0, 0.3)], &cfg);
+        assert_eq!(none.unbounded_count, 2);
+        assert_eq!(none.min_thickness_seen, Fix128::ZERO);
+        assert_eq!(none.max_thickness_seen, Fix128::ZERO);
+        assert!(!none.has_thin_walls());
+    }
+
+    #[test]
+    fn non_positive_step_and_inverted_box_sample_nothing() {
+        let s = sphere_sdf(1.0);
+        let lo = at(-2.0, -2.0, -2.0);
+        let hi = at(2.0, 2.0, 2.0);
+        assert!(sample_surface_points(&s, lo, hi, Fix128::ZERO).is_empty());
+        assert!(sample_surface_points(&s, lo, hi, Fix128::from_int(-1)).is_empty());
+        assert!(sample_surface_points(&s, hi, lo, Fix128::from_ratio(1, 2)).is_empty());
+        assert!(!sample_surface_points(&s, lo, hi, Fix128::from_ratio(1, 2)).is_empty());
+    }
 }

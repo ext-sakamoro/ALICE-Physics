@@ -137,4 +137,25 @@ mod tests {
         assert!(v[1].abs() < 1.0e-3);
         assert!(v[2] > 0.0);
     }
+
+    #[test]
+    fn nan_distance_gives_nan_wind_not_still_air() {
+        let sdf = ClosureSdf::new(|_x, _y, _z| f32::NAN, |_x, _y, _z| (0.0, 1.0, 0.0));
+        let field = SdfWindField::new(&sdf, [1.0, 0.0, 0.0], 10.0);
+        let v = field.sample([0.0, 1.0, 0.0]);
+        assert!(v.iter().all(|c| c.is_nan()), "{v:?}");
+    }
+
+    #[test]
+    fn zero_decay_scale_is_still_air_on_and_inside_the_surface() {
+        // limit of the ramp as the scale goes to 0+: 1 for d > 0, 0 for d <= 0
+        let sdf = ground_plane();
+        let mut field = SdfWindField::new(&sdf, [1.0, 0.0, 0.0], 3.0);
+        field.decay_scale_m = 0.0;
+        assert_eq!(field.sample([0.0, 0.0, 0.0]), [0.0, 0.0, 0.0]);
+        assert_eq!(field.sample([0.0, -2.0, 0.0]), [0.0, 0.0, 0.0]);
+        field.decay_scale_m = -1.0;
+        assert_eq!(field.sample([0.0, -2.0, 0.0]), [0.0, 0.0, 0.0]);
+        assert_eq!(field.sample([0.0, 0.5, 0.0]), [3.0, 0.0, 0.0]);
+    }
 }

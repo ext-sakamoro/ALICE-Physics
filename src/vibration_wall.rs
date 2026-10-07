@@ -316,6 +316,53 @@ mod tests {
         // Material with different E → different frequency
         assert_ne!(f_pla, f_abs);
     }
+
+    #[test]
+    fn empty_sources_is_no_excitation() {
+        let report = analyze_wall_resonance(
+            &MaterialProperties::pla(),
+            Fix128::from_ratio(35, 100),
+            Fix128::from_int(2),
+            Fix128::from_int(100),
+            Fix128::from_int(100),
+            &[],
+            Fix128::from_ratio(20, 100),
+        );
+        let f_wall = plate_natural_frequency_hz(
+            &MaterialProperties::pla(),
+            Fix128::from_ratio(35, 100),
+            Fix128::from_int(2),
+            Fix128::from_int(100),
+            Fix128::from_int(100),
+        );
+        assert_eq!(report.wall_frequency_hz, f_wall);
+        assert_eq!(report.nearest_source.name, "");
+        assert_eq!(report.nearest_source.frequency_hz, Fix128::ZERO);
+        assert_eq!(report.frequency_ratio, Fix128::ZERO);
+        assert!(!report.is_risky);
+    }
+
+    #[test]
+    fn zero_frequency_source_has_ratio_zero_and_is_not_risky() {
+        // a 0 Hz source is static load, not excitation: ratio 0 (no division)
+        let sources = [ExcitationSource {
+            name: "static",
+            frequency_hz: Fix128::ZERO,
+        }];
+        // ratio 0 lies inside (1 - band, 1 + band) only for band > 1
+        let report = analyze_wall_resonance(
+            &MaterialProperties::pla(),
+            Fix128::from_ratio(35, 100),
+            Fix128::from_int(2),
+            Fix128::from_int(100),
+            Fix128::from_int(100),
+            &sources,
+            Fix128::from_ratio(1, 2),
+        );
+        assert_eq!(report.nearest_source.name, "static");
+        assert_eq!(report.frequency_ratio, Fix128::ZERO);
+        assert!(!report.is_risky);
+    }
 }
 
 // Convenience: analyze uses default sources when caller supplies `&sources`
