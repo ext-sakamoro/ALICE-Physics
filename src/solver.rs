@@ -5484,10 +5484,14 @@ impl PhysicsWorld {
     ///   implementations surface backends that do not.
     /// - `dt` is the substep length used to compute
     ///   `compliance / (dt * dt)` inside the kernel.
-    /// - When `self.joints.is_empty()`, this method is a no-op and
-    ///   returns without touching the bridge — useful for callers
-    ///   that unconditionally route through a bridge and let this
-    ///   method decide whether there's work to do.
+    /// - A joint whose two ends are the same body is not uploaded
+    ///   (the CPU solve skips it too, the body stays free); the
+    ///   remaining joints keep their order.
+    /// - When no joint remains (`self.joints` is empty or holds only
+    ///   such joints), this method is a no-op and returns without
+    ///   touching the bridge — useful for callers that
+    ///   unconditionally route through a bridge and let this method
+    ///   decide whether there's work to do.
     ///
     /// # Byte-exact CPU parity
     ///
@@ -5502,7 +5506,20 @@ impl PhysicsWorld {
         bridge: &mut B,
         dt: Fix128,
     ) {
-        if self.joints.is_empty() {
+        // A joint whose two ends are the same body constrains nothing (a body
+        // cannot move relative to itself); the CPU solve skips it, and a
+        // backend walking the list would apply both sides' corrections to that
+        // one body. Upload only the other joints, in their original order.
+        let joints: Vec<crate::joint::Joint> = self
+            .joints
+            .iter()
+            .filter(|j| {
+                let (a, b) = j.bodies();
+                a != b
+            })
+            .copied()
+            .collect();
+        if joints.is_empty() {
             return;
         }
 
@@ -5522,7 +5539,7 @@ impl PhysicsWorld {
         }
 
         // ---- Stage B: route through bridge ----
-        bridge.send_joints(&self.joints);
+        bridge.send_joints(&joints);
         bridge.send_body_state(&positions, &inv_masses);
         bridge.send_body_rotations(&rotations);
         bridge.dispatch_joint_solve_iteration(dt);
