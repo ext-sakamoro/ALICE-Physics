@@ -815,4 +815,164 @@ mod tests {
         // Only interior cells checked; boundaries return 0
         assert_eq!(curvature_at(&g, 0, 0, 0), Fix128::ZERO);
     }
+
+    /// An `n × n × n` grid of spacing 1 that is empty except for `f = 1` at
+    /// `(i, j, k)`.
+    fn single_cell(n: usize, i: usize, j: usize, k: usize) -> Grid3d {
+        let mut g = Grid3d::new(n, n, n, Fix128::ONE, Fix128::ZERO);
+        g.set(i, j, k, Fix128::ONE);
+        g
+    }
+
+    /// Indices of the non-zero cells, in storage order.
+    fn occupied(g: &Grid3d) -> Vec<(usize, Fix128)> {
+        g.data
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|&(_, f)| !f.is_zero())
+            .collect()
+    }
+
+    #[test]
+    fn rigid_upwind_moves_a_c_cell_by_whole_cells_on_every_axis() {
+        // u = (2, −1, 1), dt = 1, dx = 1: Courant 2, 1, 1 per axis. The axis
+        // split sub-cycles x into 2 steps of c = 1, so the cell lands exactly
+        // 2 cells over in x, 1 down in y and 1 up in z, mass 1
+        let mut g = single_cell(6, 1, 3, 2);
+        let v = advect_vof_rigid(
+            &mut g,
+            VofScheme::Upwind,
+            Vec3Fix::from_int(2, -1, 1),
+            Fix128::ONE,
+        );
+        assert_eq!(v, Fix128::ONE);
+        assert_eq!(occupied(&g), vec![(g.idx(3, 2, 3), Fix128::ONE)]);
+    }
+
+    #[test]
+    fn rigid_upwind_fractional_courant_conserves_mass() {
+        // c = 3/2 → 2 sub-steps of c = 3/4: the profile spreads to
+        // (1/16, 3/8, 9/16) over 3 cells and the volume stays exactly 1
+        let mut g = single_cell(8, 2, 4, 4);
+        let v = advect_vof_rigid(
+            &mut g,
+            VofScheme::Upwind,
+            Vec3Fix::new(Fix128::from_ratio(3, 2), Fix128::ZERO, Fix128::ZERO),
+            Fix128::ONE,
+        );
+        assert_eq!(v, Fix128::ONE);
+        assert_eq!(
+            occupied(&g),
+            vec![
+                (g.idx(2, 4, 4), Fix128::from_ratio(1, 16)),
+                (g.idx(3, 4, 4), Fix128::from_ratio(3, 8)),
+                (g.idx(4, 4, 4), Fix128::from_ratio(9, 16)),
+            ]
+        );
+    }
+
+    #[test]
+    fn rigid_upwind_past_the_grid_or_the_range_empties_the_field() {
+        // Courant 7 > 6 cells: every cell has left, the inflow is empty
+        let mut g = single_cell(6, 0, 0, 0);
+        let v = advect_vof_rigid(
+            &mut g,
+            VofScheme::Upwind,
+            Vec3Fix::from_int(0, 7, 0),
+            Fix128::ONE,
+        );
+        assert_eq!(v, Fix128::ZERO);
+        assert!(occupied(&g).is_empty());
+        // |u| dt beyond Fix128 is carried off too (no panic)
+        let mut g = single_cell(6, 0, 0, 0);
+        let huge = Fix128::from_int(i64::MAX >> 1);
+        let v = advect_vof_rigid(
+            &mut g,
+            VofScheme::Upwind,
+            Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, huge),
+            Fix128::from_int(4),
+        );
+        assert_eq!(v, Fix128::ZERO);
+    }
+
+    #[test]
+    fn rigid_zero_spacing_leaves_the_field_untouched() {
+        // dx = 0: no transport, no clamp (2 stays 2), zero volume
+        let mut g = Grid3d::new(3, 3, 3, Fix128::ZERO, Fix128::from_int(2));
+        for scheme in [VofScheme::Upwind, VofScheme::SemiLagrangian] {
+            let v = advect_vof_rigid(&mut g, scheme, Vec3Fix::from_int(1, 1, 1), Fix128::ONE);
+            assert_eq!(v, Fix128::ZERO);
+            assert!(g.data.iter().all(|&f| f == Fix128::from_int(2)));
+        }
+    }
+
+    #[test]
+    fn rigid_semi_lagrangian_translates_by_the_integer_displacement() {
+        // u dt / dx = (1, 0, −2): the cell moves +1 in x and −2 in z exactly
+        let mut g = single_cell(6, 2, 2, 4);
+        let v = advect_vof_rigid(
+            &mut g,
+            VofScheme::SemiLagrangian,
+            Vec3Fix::from_int(1, 0, -2),
+            Fix128::ONE,
+        );
+        assert_eq!(v, Fix128::ONE);
+        assert_eq!(occupied(&g), vec![(g.idx(3, 2, 2), Fix128::ONE)]);
+    }
+
+    #[test]
+    fn trilinear_range_is_the_min_max_of_the_eight_corners() {
+        // f(i, j, k) = i + 2j + 4k on a 2³ grid: corners span 0..=7
+        let mut g = Grid3d::new(2, 2, 2, Fix128::ONE, Fix128::ZERO);
+        for k in 0..2 {
+            for j in 0..2 {
+                for i in 0..2 {
+                    g.set(i, j, k, Fix128::from_int((i + 2 * j + 4 * k) as i64));
+                }
+            }
+        }
+        let h = Fix128::from_ratio(1, 2);
+        assert_eq!(
+            trilinear_range(&g, h, h, h),
+            (Fix128::ZERO, Fix128::from_int(7))
+        );
+        // the cell centre samples the corner mean 3.5
+        assert_eq!(trilinear_sample(&g, h, h, h), Fix128::from_ratio(7, 2));
+        // a negative coordinate clamps to 0, past the end to the last cell
+        let far = Fix128::from_int(9);
+        assert_eq!(
+            trilinear_range(&g, -far, far, far),
+            (Fix128::from_int(6), Fix128::from_int(7))
+        );
+        // a zero extent has no corners
+        let empty = Grid3d::new(0, 2, 2, Fix128::ONE, Fix128::ONE);
+        assert_eq!(
+            trilinear_range(&empty, h, h, h),
+            (Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(trilinear_sample(&empty, h, h, h), Fix128::ZERO);
+    }
+
+    #[test]
+    fn curvature_of_a_sphere_is_two_over_r_and_scale_free() {
+        // signed distance to a sphere r = 1/2 about (1, 1, 1), dx = 1/10:
+        // at the surface cell (15, 10, 10) κ = 2/r = 4 to O(dx²/r²)
+        let dx = Fix128::from_ratio(1, 10);
+        let mut g = Grid3d::new(21, 21, 21, dx, Fix128::ZERO);
+        let one = Fix128::ONE;
+        initialize_level_set_sphere(&mut g, one, one, one, Fix128::from_ratio(1, 2));
+        let k = curvature_at(&g, 15, 10, 10).to_f64();
+        assert!((k - 4.0).abs() < 4.0 * 0.05, "κ = {k}");
+        // κ depends only on the interface: 2φ gives the same κ
+        let mut g2 = g.clone();
+        g2.data.iter_mut().for_each(|f| *f = f.double());
+        let k2 = curvature_at(&g2, 15, 10, 10).to_f64();
+        assert!((k2 - k).abs() < 1e-12, "{k2} vs {k}");
+        // no gradient (constant field) and zero spacing give 0
+        let flat = Grid3d::new(3, 3, 3, dx, one);
+        assert_eq!(curvature_at(&flat, 1, 1, 1), Fix128::ZERO);
+        let zero_dx = Grid3d::new(3, 3, 3, Fix128::ZERO, one);
+        assert_eq!(curvature_at(&zero_dx, 1, 1, 1), Fix128::ZERO);
+    }
 }
