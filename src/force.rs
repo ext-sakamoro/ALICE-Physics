@@ -796,4 +796,141 @@ mod tests {
             "Magnetic field should accelerate body"
         );
     }
+
+    fn pow2(e: i32) -> Fix128 {
+        if e >= 0 {
+            Fix128::from_int(1_i64 << e)
+        } else {
+            Fix128::ONE / Fix128::from_int(1_i64 << -e)
+        }
+    }
+
+    fn body_at(x: Fix128) -> RigidBody {
+        RigidBody::new(Vec3Fix::new(x, Fix128::ZERO, Fix128::ZERO), Fix128::ONE)
+    }
+
+    fn point(strength: Fix128, repulsive: bool, max_force: Fix128) -> ForceField {
+        ForceField::Point {
+            center: Vec3Fix::ZERO,
+            strength,
+            repulsive,
+            max_force,
+        }
+    }
+
+    /// oracle: past the square range (`r = 2³²`, `r² = 2⁶⁴`) the point force is
+    /// still `s/r²` toward the centre: `2⁶²/2⁶⁴ = 1/4` along `−x` for a body at
+    /// `+x` (`+x` when repulsive), capped at `max_force = 1/8`.
+    #[test]
+    fn point_force_beyond_the_square_range() {
+        let b = body_at(pow2(32));
+        let s = pow2(62);
+        let quarter = Fix128::from_ratio(1, 4);
+        assert_eq!(
+            compute_force(&point(s, false, pow2(10)), &b),
+            Vec3Fix::new(-quarter, Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            compute_force(&point(s, true, pow2(10)), &b),
+            Vec3Fix::new(quarter, Fix128::ZERO, Fix128::ZERO)
+        );
+        assert_eq!(
+            compute_force(&point(s, false, Fix128::from_ratio(1, 8)), &b),
+            Vec3Fix::new(-Fix128::from_ratio(1, 8), Fix128::ZERO, Fix128::ZERO)
+        );
+    }
+
+    /// oracle: when even the distance does not fit (`|δ| = 3·2⁶¹·√3 > 2⁶³`)
+    /// the force `s/r² < 2⁶²/2¹²⁴` is below `2⁻⁶⁰` and points toward the
+    /// centre (no component away from it).
+    #[test]
+    fn point_force_when_the_distance_does_not_fit() {
+        let c = Fix128::from_int(3_i64 << 61);
+        let field = ForceField::Point {
+            center: Vec3Fix::new(c, c, c),
+            strength: pow2(62),
+            repulsive: false,
+            max_force: pow2(10),
+        };
+        let f = compute_force(&field, &body_at(Fix128::ZERO));
+        for v in [f.x, f.y, f.z] {
+            assert!(v >= Fix128::ZERO && v < pow2(-60), "{f:?}");
+        }
+    }
+
+    /// oracle: near the centre (`r = 2⁻²⁰`, `r² = 2⁻⁴⁰ < 1`) the direction is
+    /// still exactly `−x` and the force `s/r² = 2⁴⁰` for `s = 1` under a cap
+    /// of `2⁵⁰`; with a cap of `2¹⁰` the floor `s/cap = 2⁻¹⁰ > r²` makes it
+    /// exactly the cap; a cap of 0 gives no force; at the centre there is
+    /// none either.
+    #[test]
+    fn point_force_near_the_centre() {
+        let b = body_at(pow2(-20));
+        let on_x = |v: Fix128| Vec3Fix::new(v, Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(
+            compute_force(&point(Fix128::ONE, false, pow2(50)), &b),
+            on_x(-pow2(40))
+        );
+        assert_eq!(
+            compute_force(&point(Fix128::ONE, false, pow2(10)), &b),
+            on_x(-pow2(10))
+        );
+        assert_eq!(
+            compute_force(&point(Fix128::ONE, false, Fix128::ZERO), &b),
+            Vec3Fix::ZERO
+        );
+        assert_eq!(
+            compute_force(&point(Fix128::ONE, false, pow2(10)), &body_at(Fix128::ZERO)),
+            Vec3Fix::ZERO
+        );
+    }
+
+    /// oracle: below the surface `y = 0` at depth 2 with density 3 the
+    /// buoyancy is `(0, 6, 0)`; moving at `(1, 0, 2)` with drag 1/2 adds
+    /// `−v/2`. A body on the vortex axis feels nothing; neither does one at
+    /// the centre of a magnet.
+    #[test]
+    fn buoyancy_drag_vortex_axis_and_magnet_centre() {
+        let mut b = RigidBody::new(Vec3Fix::from_int(0, -2, 0), Fix128::ONE);
+        b.velocity = Vec3Fix::from_int(1, 0, 2);
+        let water = ForceField::Buoyancy {
+            surface_y: Fix128::ZERO,
+            density: Fix128::from_int(3),
+            drag: Fix128::from_ratio(1, 2),
+        };
+        assert_eq!(
+            compute_force(&water, &b),
+            Vec3Fix::new(-Fix128::from_ratio(1, 2), Fix128::from_int(6), -Fix128::ONE)
+        );
+        let vortex = ForceField::Vortex {
+            center: Vec3Fix::ZERO,
+            axis: Vec3Fix::UNIT_Y,
+            strength: Fix128::ONE,
+            falloff_radius: Fix128::ONE,
+        };
+        assert_eq!(compute_force(&vortex, &b), Vec3Fix::ZERO);
+        let magnet = ForceField::Magnetic {
+            position: b.position,
+            moment: Vec3Fix::UNIT_X,
+            strength: Fix128::ONE,
+        };
+        assert_eq!(compute_force(&magnet, &b), Vec3Fix::ZERO);
+    }
+
+    /// oracle: on the dipole axis at `r = 2⁻¹⁰` (`r² < 1`) the magnetic force
+    /// is `s/r³·cos θ` along the moment with `cos θ = 1`: `2³⁰` for `s = 1`.
+    #[test]
+    fn magnetic_force_near_the_dipole() {
+        let magnet = ForceField::Magnetic {
+            position: Vec3Fix::ZERO,
+            moment: Vec3Fix::UNIT_X,
+            strength: Fix128::ONE,
+        };
+        let f = compute_force(&magnet, &body_at(pow2(-10)));
+        assert!(
+            (f.x.to_f64() / 1_073_741_824.0 - 1.0).abs() < 1e-12,
+            "{f:?}"
+        );
+        assert!(f.y.is_zero() && f.z.is_zero());
+    }
 }
