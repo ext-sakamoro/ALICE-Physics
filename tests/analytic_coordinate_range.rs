@@ -1612,7 +1612,8 @@ fn in_range_fingerprints() -> Vec<(u32, SolverBackend, u64)> {
 }
 
 /// 範囲内の scene は、範囲の検査を足す前の solver と `serialize_state` が
-/// bit 一致する (指紋は修正前の commit で同じ関数を走らせて記録した値)
+/// bit 一致する (指紋は範囲の検査を足す前の solver で同じ関数を走らせて記録した値
+/// TGS の姿勢を厳密な指数写像で積分するようになった後の solver で取り直した)
 ///
 /// `parallel` は積分と速度導出を rayon で回すが、body ごとに独立な計算なので
 /// 同じ値になる (修正前の commit で両方を測って一致を確認)
@@ -1646,10 +1647,10 @@ const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
     (4, SolverBackend::Xpbd, 0xad1a2717d4f33e7d_u64),
     (5, SolverBackend::Xpbd, 0x001b5e81c7e8bae2_u64),
     (6, SolverBackend::Xpbd, 0xbc92d7768c7f84fa_u64),
-    (0, SolverBackend::Tgs, 0x98fab73c15c719bd_u64),
-    (1, SolverBackend::Tgs, 0x4ffae91e2b8e5e12_u64),
-    (2, SolverBackend::Tgs, 0x1dddca010d2df650_u64),
+    (0, SolverBackend::Tgs, 0xee4540846c7fb023_u64),
+    (1, SolverBackend::Tgs, 0x8e94b5381f0f500a_u64),
+    (2, SolverBackend::Tgs, 0xcbe984649e141396_u64),
     (3, SolverBackend::Tgs, 0xa26ed4428533826f_u64),
-    (4, SolverBackend::Tgs, 0x95bf9815df272c77_u64),
-    (5, SolverBackend::Tgs, 0x8375e72116bbe2e0_u64),
+    (4, SolverBackend::Tgs, 0xfcfc7c87e42c7dcc_u64),
+    (5, SolverBackend::Tgs, 0x7f8706eb6b237466_u64),
 ];
