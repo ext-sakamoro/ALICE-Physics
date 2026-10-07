@@ -791,4 +791,113 @@ mod tests {
         // Bodies at (0,0,0) and (5,0,0) are inside
         assert_eq!(results.len(), 2);
     }
+
+    /// The capsule `(−1, 0, 0)`–`(1, 0, 0)` of radius 1/2 cast along
+    /// `direction` up to `max` against `bodies` of radius 1/2 (reach 1).
+    fn cast(direction: Vec3Fix, max: i64, bodies: &[RigidBody]) -> Option<ShapeCastHit> {
+        let half = Fix128::from_ratio(1, 2);
+        capsule_cast(
+            Vec3Fix::from_int(-1, 0, 0),
+            Vec3Fix::from_int(1, 0, 0),
+            half,
+            direction,
+            Fix128::from_int(max),
+            bodies,
+            half,
+        )
+    }
+
+    fn body_at(p: Vec3Fix) -> RigidBody {
+        RigidBody::new_static(p)
+    }
+
+    #[test]
+    fn capsule_cast_starting_in_overlap_hits_at_zero_only_when_closing() {
+        // the body sits 0.8 above the axis, inside the reach of 1
+        let bodies = [body_at(Vec3Fix::new(
+            Fix128::ZERO,
+            Fix128::from_ratio(4, 5),
+            Fix128::ZERO,
+        ))];
+        // moving away (−y): the distance only grows, so no contact
+        assert_eq!(cast(Vec3Fix::from_int(0, -1, 0), 10, &bodies), None);
+        // moving towards it (+y): contact at t = 0, at the axis point under it
+        let hit = cast(Vec3Fix::from_int(0, 1, 0), 10, &bodies).expect("closing overlap");
+        assert_eq!(hit.t, Fix128::ZERO);
+        assert_eq!(hit.point, Vec3Fix::ZERO);
+        // the unit normal (0, −1, 0), to the rounding of the normalisation
+        let off = (hit.normal - Vec3Fix::from_int(0, -1, 0)).length_squared();
+        assert!(
+            off < Fix128::from_ratio(1, 1_000_000_000_000),
+            "{:?}",
+            hit.normal
+        );
+        // a body centred on the axis is hit at t = 0, normal against the sweep
+        let on_axis = [body_at(Vec3Fix::ZERO)];
+        let hit = cast(Vec3Fix::from_int(0, 0, 1), 10, &on_axis).expect("on axis");
+        assert_eq!(hit.t, Fix128::ZERO);
+        assert_eq!(hit.normal, Vec3Fix::from_int(0, 0, -1));
+    }
+
+    #[test]
+    fn capsule_cast_side_and_end_cap_times_of_impact() {
+        // side: a body 5 above the axis is reached when the axis is 1 below
+        // it, t = 4, at (0, 4, 0) with the normal back down
+        let side = [body_at(Vec3Fix::from_int(0, 5, 0))];
+        let hit = cast(Vec3Fix::from_int(0, 1, 0), 10, &side).expect("side hit");
+        assert_eq!(hit.t, Fix128::from_int(4));
+        assert_eq!(hit.point, Vec3Fix::from_int(0, 4, 0));
+        assert_eq!(hit.normal, Vec3Fix::from_int(0, -1, 0));
+        // beyond max_distance: no hit
+        assert_eq!(cast(Vec3Fix::from_int(0, 1, 0), 3, &side), None);
+        // end cap: a body at x = 4 on the axis meets the end (1, 0, 0) at t = 2
+        let cap = [body_at(Vec3Fix::from_int(4, 0, 0))];
+        let hit = cast(Vec3Fix::from_int(1, 0, 0), 10, &cap).expect("cap hit");
+        assert_eq!(hit.t, Fix128::from_int(2));
+        assert_eq!(hit.point, Vec3Fix::from_int(3, 0, 0));
+        assert_eq!(hit.normal, Vec3Fix::from_int(-1, 0, 0));
+    }
+
+    #[test]
+    fn capsule_cast_picks_the_earliest_body_and_ties_go_to_the_lowest_index() {
+        let p = |y| body_at(Vec3Fix::from_int(0, y, 0));
+        // the nearer body comes second in the list
+        let hit = cast(Vec3Fix::from_int(0, 1, 0), 10, &[p(8), p(5)]).expect("hit");
+        assert_eq!((hit.body_index, hit.t), (1, Fix128::from_int(4)));
+        // equal t: the lower index is kept
+        let hit = cast(Vec3Fix::from_int(0, 1, 0), 10, &[p(5), p(5)]).expect("hit");
+        assert_eq!(hit.body_index, 0);
+    }
+
+    #[test]
+    fn capsule_cast_degenerate_inputs() {
+        let bodies = [body_at(Vec3Fix::from_int(0, 5, 0))];
+        // zero direction: no sweep
+        assert_eq!(cast(Vec3Fix::ZERO, 10, &bodies), None);
+        // zero-length capsule: the sphere cast of radius 1/2, t = 5 − 1 = 4
+        let half = Fix128::from_ratio(1, 2);
+        let hit = capsule_cast(
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+            half,
+            Vec3Fix::from_int(0, 1, 0),
+            Fix128::from_int(10),
+            &bodies,
+            half,
+        )
+        .expect("sphere fallback");
+        assert_eq!(hit.t, Fix128::from_int(4));
+        // and the sphere cast with a zero direction is None as well
+        assert_eq!(
+            sphere_cast(
+                Vec3Fix::ZERO,
+                half,
+                Vec3Fix::ZERO,
+                Fix128::ONE,
+                &bodies,
+                half
+            ),
+            None
+        );
+    }
 }
