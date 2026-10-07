@@ -47,8 +47,28 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: bench-gate
-      - name: Install Valgrind
-        run: sudo apt-get update && sudo apt-get install -y valgrind
+      # Valgrind 3.22 (the Ubuntu 24.04 package) measured 0 instructions for
+      # every benchmark on AMD EPYC 9V74 runners, at commits that measure
+      # normally on EPYC 7763; 3.25.1 is built from source and cached.
+      - name: Runner CPU
+        run: lscpu | grep -E 'Model name|Flags' | cut -c1-200
+      - uses: actions/cache@v5
+        id: valgrind-cache
+        with:
+          path: /opt/vg
+          key: valgrind-3.25.1-${{ runner.os }}-${{ runner.arch }}
+      - name: Build Valgrind 3.25.1
+        if: steps.valgrind-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -sSfL https://sourceware.org/pub/valgrind/valgrind-3.25.1.tar.bz2 | tar xj -C /tmp
+          cd /tmp/valgrind-3.25.1
+          ./configure --prefix=/opt/vg >/dev/null
+          make -j"$(nproc)" >/dev/null
+          sudo make install >/dev/null
+      - name: Use Valgrind 3.25.1
+        run: |
+          echo /opt/vg/bin >> "$GITHUB_PATH"
+          /opt/vg/bin/valgrind --version
       - name: Install gungraun-runner
         run: cargo install gungraun-runner --version "$GUNGRAUN_VERSION" --locked
       - name: Choose the base commit
