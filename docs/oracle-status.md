@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5573 |
+| 🟢 Not ignored (run by CI) | 5577 |
 | 🔴 Red by design | 80 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5679** |
+| **Total** | **5683** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5573)
+## 🟢 Not ignored (5577)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -573,8 +573,10 @@ Per-file counts (the test names are in `tests/`):
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
 | `analytic_gjk_separation_distance.rs` | 2 |
+| `analytic_impulsive_burn_vis_viva.rs` | 2 |
 | `analytic_mesh_grazing_cast.rs` | 2 |
 | `analytic_rotation_integration.rs` | 2 |
+| `analytic_scalar_field_first_order_decay.rs` | 2 |
 | `analytic_tgs_backend_coverage.rs` | 2 |
 | `analytic_tgs_rotation.rs` | 2 |
 | `analytic_xpbd_angular_velocity.rs` | 2 |
