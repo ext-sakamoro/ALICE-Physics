@@ -503,4 +503,142 @@ mod tests {
             )
         );
     }
+
+    fn only(set: impl Fn(&mut DebugDrawFlags)) -> DebugDrawFlags {
+        let mut flags = DebugDrawFlags {
+            draw_aabbs: false,
+            draw_centers: false,
+            draw_velocities: false,
+            draw_contacts: false,
+            draw_contact_normals: false,
+            draw_joints: false,
+            draw_bvh: false,
+            draw_axes: false,
+        };
+        set(&mut flags);
+        flags
+    }
+
+    /// Bodies 0 and 1 carry a collision radius of 1/4 at (1/2, 1/2, 1/2) and
+    /// (5/2, 1/2, 1/2); body 2 has none. A distance constraint joins 0–2, a
+    /// second one names a body that does not exist, and a ball joint joins 1–2.
+    fn joint_scene() -> crate::solver::PhysicsWorld {
+        use crate::joint::{BallJoint, Joint};
+        use crate::solver::{DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig};
+        let mut world = PhysicsWorld::new(SolverConfig::default());
+        let half = Fix128::from_ratio(1, 2);
+        let quarter = Fix128::from_ratio(1, 4);
+        let a = world.add_body_with_radius(
+            RigidBody::new_static(Vec3Fix::new(half, half, half)),
+            quarter,
+        );
+        let b = world.add_body_with_radius(
+            RigidBody::new_dynamic(
+                Vec3Fix::new(Fix128::from_ratio(5, 2), half, half),
+                Fix128::ONE,
+            ),
+            quarter,
+        );
+        let c = world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(0, 5, 0),
+            Fix128::ONE,
+        ));
+        let link =
+            |i, j| DistanceConstraint::new(i, j, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::from_int(5));
+        world.add_distance_constraint(link(a, c));
+        world.add_distance_constraint(link(a, 99));
+        world.add_joint(Joint::Ball(BallJoint::new(
+            b,
+            c,
+            Vec3Fix::ZERO,
+            Vec3Fix::ZERO,
+        )));
+        world
+    }
+
+    #[test]
+    fn draw_joints_draws_one_cyan_line_per_resolvable_pair() {
+        let world = joint_scene();
+        let mut data = DebugDrawData::new();
+        world.debug_draw(&only(|f| f.draw_joints = true), &mut data);
+        // the constraint naming body 99 is skipped: 2 lines, no points
+        let p = |i: usize| world.bodies[i].position;
+        assert_eq!(
+            data.lines,
+            vec![
+                DebugLine::new(p(0), p(2), DebugColor::CYAN),
+                DebugLine::new(p(1), p(2), DebugColor::CYAN),
+            ]
+        );
+        assert!(data.points.is_empty());
+    }
+
+    #[test]
+    fn draw_bvh_draws_the_single_leaf_rounded_out_to_the_lattice() {
+        let world = joint_scene();
+        let mut data = DebugDrawData::new();
+        world.debug_draw(&only(|f| f.draw_bvh = true), &mut data);
+        // two boxes (≤ 4 primitives) make one leaf: their union
+        // [1/4, 11/4] × [1/4, 3/4]² rounded outward is [0, 3] × [0, 1]²
+        assert_eq!(data.lines.len(), 12);
+        assert!(data.lines.iter().all(|l| l.color == DebugColor::MAGENTA));
+        assert_eq!(data.lines[0].start, Vec3Fix::from_int(0, 0, 0));
+        assert_eq!(data.lines[0].end, Vec3Fix::from_int(3, 0, 0));
+        assert_eq!(data.lines[6].start, Vec3Fix::from_int(3, 1, 1));
+        assert_eq!(data.lines[6].end, Vec3Fix::from_int(0, 1, 1));
+
+        // no body with a radius: no hierarchy, nothing drawn
+        let mut empty = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig::default());
+        empty.add_body(crate::solver::RigidBody::new_static(Vec3Fix::ZERO));
+        empty.debug_draw(&only(|f| f.draw_bvh = true), &mut data);
+        assert_eq!(data.primitive_count(), 0);
+    }
+
+    #[test]
+    fn draw_aabbs_centers_velocities_and_axes_counts() {
+        let mut world = joint_scene();
+        world.bodies[1].velocity = Vec3Fix::from_int(1, 0, 0);
+        let mut data = DebugDrawData::new();
+        // one 12-edge box per body with a radius (2), in the body colour
+        world.debug_draw(&only(|f| f.draw_aabbs = true), &mut data);
+        assert_eq!(data.lines.len(), 24);
+        assert_eq!(data.lines[0].color, DebugColor::GRAY);
+        assert_eq!(data.lines[12].color, DebugColor::GREEN);
+        // a centre point per body (3)
+        world.debug_draw(&only(|f| f.draw_centers = true), &mut data);
+        assert_eq!((data.lines.len(), data.points.len()), (0, 3));
+        // velocity arrows for the 2 dynamic bodies: body 1 has a full arrow
+        // (3 lines + tip point), body 2 has zero velocity (shaft only)
+        world.debug_draw(&only(|f| f.draw_velocities = true), &mut data);
+        assert_eq!((data.lines.len(), data.points.len()), (4, 1));
+        // axes: 3 arrows per body
+        world.debug_draw(&only(|f| f.draw_axes = true), &mut data);
+        assert_eq!((data.lines.len(), data.points.len()), (27, 9));
+    }
+
+    #[test]
+    fn draw_contacts_adds_two_points_and_a_normal_arrow_per_contact() {
+        use crate::collider::Contact;
+        use crate::solver::ContactConstraint;
+        let mut world = joint_scene();
+        world.add_contact(ContactConstraint::new(
+            0,
+            1,
+            Contact {
+                depth: Fix128::from_ratio(1, 10),
+                normal: Vec3Fix::UNIT_X,
+                point_a: Vec3Fix::ZERO,
+                point_b: Vec3Fix::UNIT_X,
+            },
+        ));
+        let mut data = DebugDrawData::new();
+        world.debug_draw(&only(|f| f.draw_contacts = true), &mut data);
+        assert_eq!((data.lines.len(), data.points.len()), (0, 2));
+        let flags = only(|f| {
+            f.draw_contacts = true;
+            f.draw_contact_normals = true;
+        });
+        world.debug_draw(&flags, &mut data);
+        assert_eq!((data.lines.len(), data.points.len()), (3, 3));
+    }
 }
