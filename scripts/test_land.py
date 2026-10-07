@@ -311,7 +311,8 @@ class Landing(unittest.TestCase):
         self.assertTrue(land.overlaps(["src/a.rs"], ["src/lib.rs"]))
         self.assertFalse(land.overlaps(["docs/x.md"], ["docs/x.md"]))
         for t in ["fuzz/Cargo.toml", "deny.toml", "scripts/affected_tests.py", "src/m/mod.rs",
-                  "include/alice.h", ".github/workflows/ci.yml"]:
+                  "include/alice.h", ".github/workflows/ci.yml", "examples/a.rs", "benches/b.rs",
+                  "fuzz/fuzz_targets/f.rs", "bindings/c/alice.h", "unreal-plugin/x.cpp", "cbindgen.toml"]:
             self.assertTrue(land.overlaps(["src/a.rs"], [t]), t)
 
     def test_main_moving_before_the_push_is_retried(self):

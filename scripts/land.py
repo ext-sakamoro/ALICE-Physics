@@ -172,7 +172,8 @@ def docs_only(paths: list[str]) -> bool:
 
 # files whose change can alter how every other file builds or tests
 BUILD_WIDE_RE = re.compile(r"((^|/)Cargo\.(toml|lock)$|(^|/)build\.rs$|^\.cargo/|^rust-toolchain|^clippy\.toml$|"
-                           r"^deny\.toml$|^src/lib\.rs$|(^|/)mod\.rs$|^scripts/|^\.github/|^include/)")
+                           r"^deny\.toml$|^src/lib\.rs$|(^|/)mod\.rs$|^scripts/|^\.github/|^include/|"
+                           r"^examples/|^benches/|^fuzz/|^bindings/|^unreal-plugin/|^cbindgen\.toml$)")
 
 
 def overlaps(ours: list[str], theirs: list[str]) -> bool:
