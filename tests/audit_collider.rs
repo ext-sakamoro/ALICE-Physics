@@ -445,7 +445,7 @@ fn contact_is_none_for_separated_shapes_and_normal_flips_with_argument_order() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-016: EPA depth for near-concentric spheres is 5.5 percent shallow (concentric r 1.0 + 0.5: got 1.4175, closed form 1.5; r 0.5 + 0.5: 0.9438 vs 1.0), above the documented 'a few parts in a thousand'; error vanishes once the centre distance exceeds about 0.3 (r_a + r_b)"]
+// AUD-A-S3W3-016
 fn contact_concentric_sphere_pair_reports_the_radius_sum() {
     let a = Sphere::new(v3(0.0, 0.0, 0.0), fx(1.0));
     let b = Sphere::new(v3(0.0, 0.0, 0.0), fx(0.5));

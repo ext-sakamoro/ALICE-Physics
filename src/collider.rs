@@ -721,6 +721,11 @@ pub fn epa<A: Support, B: Support>(a: &A, b: &B, initial_simplex: &[Vec3Fix]) ->
     add_face(&mut faces, &vertices, interior, 0, 2, 3);
     add_face(&mut faces, &vertices, interior, 1, 3, 2);
 
+    // The smallest support distance `h(n) = support(n) · n` seen so far, with its
+    // direction: every `h(n)` bounds the penetration depth from above, as every
+    // face distance bounds it from below
+    let mut best_upper: Option<(Fix128, Vec3Fix)> = None;
+
     for _ in 0..MAX_ITERATIONS {
         // Find face closest to origin
         let (_closest_idx, closest_face) = faces
@@ -732,6 +737,9 @@ pub fn epa<A: Support, B: Support>(a: &A, b: &B, initial_simplex: &[Vec3Fix]) ->
         // Get support point in face normal direction
         let support = minkowski_support(a, b, closest_face.normal);
         let distance = support.dot(closest_face.normal);
+        if best_upper.is_none_or(|(h, _)| distance < h) {
+            best_upper = Some((distance, closest_face.normal));
+        }
 
         // Check for convergence
         if distance - closest_face.distance < EPSILON {
@@ -788,13 +796,20 @@ pub fn epa<A: Support, B: Support>(a: &A, b: &B, initial_simplex: &[Vec3Fix]) ->
 
     // The iteration budget ran out before the polytope's nearest face stopped
     // moving — what a curved Minkowski sum (a sphere, a cylinder's rim, an
-    // ellipsoid) does at any fixed budget. The nearest face is still the best
-    // available answer, and a contact that is a few parts in a thousand shallow is
-    // worth far more to a solver than a contact that is dropped.
-    let nearest = faces.iter().min_by(|a, b| a.distance.cmp(&b.distance))?;
-    let outward = nearest.normal;
+    // ellipsoid) does at any fixed budget. The nearest face's distance is then
+    // a lower bound that can still be several percent short on a sphere (the
+    // polytope inscribed in it converges slowly); the smallest support
+    // distance seen is the upper bound, exact along any direction for a sphere
+    // and second order in the angle for smooth shapes, so it is the answer
+    let (depth, outward) = match best_upper {
+        Some(found) => found,
+        None => {
+            let nearest = faces.iter().min_by(|a, b| a.distance.cmp(&b.distance))?;
+            (nearest.distance, nearest.normal)
+        }
+    };
     Some(Contact {
-        depth: nearest.distance,
+        depth,
         normal: -outward,
         point_a: a.support(outward),
         point_b: b.support(-outward),
