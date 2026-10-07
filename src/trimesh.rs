@@ -482,20 +482,26 @@ fn triangle_box_overlap(
     Some(if up <= down { (up, n) } else { (down, -n) })
 }
 
-/// Moller-Trumbore parallel-check epsilon (~2^-24), relative: the ray counts
+/// Moller-Trumbore parallel-check epsilon (2^-48), relative: the ray counts
 /// as parallel to the triangle when `|det| < MT_EPSILON * |e1 × e2| * |d|`,
 /// i.e. when the sine of the angle between the ray and the triangle's plane is
 /// below it, for any shape of triangle and any length of `d` (`det = −d · (e1 ×
 /// e2)`; a threshold on `|e1| |e2|` also scaled with the sine of the corner
 /// angle at `v0`, and dropped slivers seen head-on when `v0` was their sharp
-/// corner). The size is not free: `det` is a `Fix128` with steps of `2^-64`, so
-/// for edges of about `1e-6` m and below a ray whose sine is well above `2^-24`
-/// can still be reported as parallel or miss, because `det` and the barycentric
-/// numerators are quantised.
+/// corner). It used to be 2^-24, which dropped real grazing hits: a sphere
+/// resting on a mesh floor and cast at a slope of 2^-31 found nothing, and a
+/// slope of 1e-8 ahead of it was skipped. A `det` of at most [`MT_DET_FLOOR`]
+/// is rounding whatever the triangle and also counts as parallel. The size is
+/// not free: for edges of about `1e-6` m and below the barycentric numerators
+/// are quantised at `2^-64`, so a grazing ray can still miss.
 const MT_EPSILON: Fix128 = Fix128 {
     hi: 0,
-    lo: 0x0000010000000000,
+    lo: 0x0000_0000_0001_0000,
 };
+
+/// A `det` this small (8 steps of `2^-64`) is the rounding of the cross and dot
+/// products, not a direction: the ray is treated as parallel.
+const MT_DET_FLOOR: Fix128 = Fix128 { hi: 0, lo: 8 };
 
 /// Ray-Triangle intersection (Moller-Trumbore algorithm)
 #[must_use]
@@ -506,7 +512,9 @@ pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> 
     let det = e1.dot(h);
     // relative to the triangle's area and the ray's length (an absolute
     // threshold made every triangle below about 2.4e-4 m on a side invisible)
-    if det.is_zero() || det.abs() < MT_EPSILON * e1.cross(e2).length() * ray.direction.length() {
+    if det.abs() <= MT_DET_FLOOR
+        || det.abs() < MT_EPSILON * e1.cross(e2).length() * ray.direction.length()
+    {
         return None;
     }
 
@@ -732,9 +740,47 @@ fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
 mod tests {
     use super::*;
 
+    /// A ray lying in the plane of a triangle 1e-9 m across is parallel to it;
+    /// the rounding of `det` (a few steps of `2^-64`) must not read as a
+    /// direction. Without [`MT_DET_FLOOR`] 1 in 6 of such rays was a hit.
+    #[test]
+    fn a_ray_in_the_plane_of_a_tiny_triangle_is_parallel() {
+        let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut rnd = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            Fix128::from_raw(0, seed) - Fix128::from_ratio(1, 2)
+        };
+        let tiny = Fix128::from_f64(1e-9);
+        let mut hits = 0;
+        for _ in 0..2000 {
+            let v0 = Vec3Fix::new(rnd(), rnd(), rnd());
+            let a = Vec3Fix::new(rnd() * tiny, rnd() * tiny, rnd() * tiny);
+            let b = Vec3Fix::new(rnd() * tiny, rnd() * tiny, rnd() * tiny);
+            let tri = Triangle {
+                v0,
+                v1: v0 + a,
+                v2: v0 + b,
+            };
+            let direction = (a + b * Fix128::from_ratio(3, 10)).normalize();
+            let ray = Ray {
+                origin: v0 + (a + b) * Fix128::from_ratio(1, 4) - direction,
+                direction,
+            };
+            if ray_triangle(&ray, &tri, Fix128::from_int(10)).is_some() {
+                hits += 1;
+            }
+        }
+        assert_eq!(
+            hits, 0,
+            "{hits} of 2000 rays in a tiny triangle's plane hit it"
+        );
+    }
+
     /// Whether a grazing ray counts as parallel depends on the angle alone: the
     /// same ray with its direction scaled by 4 or 1/4 (as a `Ray` built without
-    /// `Ray::new` may carry) gets the same answer on both sides of `2^-24`.
+    /// `Ray::new` may carry) gets the same answer on both sides of `2^-48`.
     #[test]
     fn the_parallel_threshold_does_not_depend_on_the_direction_length() {
         let tri = Triangle {
@@ -755,8 +801,8 @@ mod tests {
             };
             ray_triangle(&ray, &tri, Fix128::from_int(100)).is_some()
         };
-        let below = Fix128::from_ratio(1, 1 << 25);
-        let above = Fix128::from_ratio(1, 1 << 23);
+        let below = Fix128::ONE / Fix128::from_int(1i64 << 49);
+        let above = Fix128::ONE / Fix128::from_int(1i64 << 47);
         for scale in [Fix128::ONE, Fix128::from_int(4), Fix128::from_ratio(1, 4)] {
             assert!(
                 !hits(below, scale),
