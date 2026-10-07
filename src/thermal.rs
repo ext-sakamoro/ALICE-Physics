@@ -592,4 +592,236 @@ mod tests {
             "Heat should spread, before={center_before}, after={center_after}"
         );
     }
+
+    fn still_config() -> ThermalConfig {
+        ThermalConfig {
+            diffusion_rate: 0.0,
+            ambient_temperature: 20.0,
+            cooling_rate: 0.0,
+            melt_temperature: 200.0,
+            melt_rate: 0.0625,
+            droop_strength: 0.0,
+            expansion_coefficient: 0.0,
+            freeze_temperature: -10.0,
+            freeze_rate: 0.0,
+        }
+    }
+
+    /// oracle: on a 2³ grid over `[0, 1]³` the cells sit at `x = 0` and
+    /// `x = 1`; a volume source over `x ∈ [−1/2, 1/2]` of power 8 for
+    /// `dt = 1/4` adds `8·(1/4) = 2` to the four `x = 0` cells (20 → 22) and
+    /// nothing to the others; a point source of power 4 adds `4·dt` at its
+    /// centre cell.
+    #[test]
+    fn volume_and_point_heat_sources() {
+        let mut m = ThermalModifier::new(still_config(), 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.heat_sources.push(HeatSource::Volume {
+            min: (-0.5, -0.5, -0.5),
+            max: (0.5, 1.5, 1.5),
+            power: 8.0,
+        });
+        m.apply_heat_sources(0.25);
+        for iz in 0..2 {
+            for iy in 0..2 {
+                assert_eq!(m.temperature.get(0, iy, iz), 22.0, "(0, {iy}, {iz})");
+                assert_eq!(m.temperature.get(1, iy, iz), 20.0, "(1, {iy}, {iz})");
+            }
+        }
+        let mut p = ThermalModifier::new(still_config(), 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        p.add_heat_point(1.0, 1.0, 1.0, 4.0, 0.25);
+        p.apply_heat_sources(0.25);
+        assert!(p.temperature.get(1, 1, 1) > 20.0);
+        assert_eq!(p.temperature.get(0, 0, 0), 20.0);
+    }
+
+    /// oracle: a cell at 300 over the melt temperature 200 with melt rate 1/100
+    /// and `dt = 1` melts `100·(1/100)·1 = 1`; droop 1/2 then moves
+    /// `1·(1/2)·1 = 1/2` to the cell below and takes half of that from the
+    /// cell above: below 1/2, above 3/4.
+    #[test]
+    fn melt_and_droop_closed_form() {
+        let mut m = ThermalModifier::new(
+            ThermalConfig {
+                melt_rate: 0.01,
+                droop_strength: 0.5,
+                ..still_config()
+            },
+            2,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        let above = m.temperature.index(0, 1, 0);
+        m.temperature.data[above] = 300.0;
+        m.accumulate_melt(1.0);
+        let below = m.melt_accumulator.index(0, 0, 0);
+        assert!((m.melt_accumulator.data[below] - 0.5).abs() < 1e-6);
+        assert!((m.melt_accumulator.data[above] - 0.75).abs() < 1e-6);
+        let other = m.melt_accumulator.index(1, 1, 1);
+        assert_eq!(m.melt_accumulator.data[other], 0.0);
+    }
+
+    /// oracle: with uniform fields (so sampling is exact) the distance is
+    /// `d + melt − (T − T_amb)·α` when warm and `d − min((T_f − T)·k, 1)`
+    /// when below freezing: `1 + 1/4 − 100·(1/1000) = 1.15`;
+    /// `1 − 50·(1/100) = 1/2`; `1 − min(200·(1/100), 1) = 0`. A disabled
+    /// modifier leaves the distance and fields as they are.
+    #[test]
+    fn modify_distance_melt_expansion_freeze_and_disabled() {
+        let mut m = ThermalModifier::new(
+            ThermalConfig {
+                expansion_coefficient: 0.001,
+                freeze_rate: 0.01,
+                ..still_config()
+            },
+            2,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        m.temperature.data.fill(120.0);
+        m.melt_accumulator.data.fill(0.25);
+        assert!((m.modify_distance(0.5, 0.5, 0.5, 1.0) - 1.15).abs() < 1e-5);
+        m.melt_accumulator.data.fill(0.0);
+        m.temperature.data.fill(-60.0);
+        assert!((m.modify_distance(0.5, 0.5, 0.5, 1.0) - 0.5).abs() < 1e-5);
+        m.temperature.data.fill(-210.0);
+        assert!(m.modify_distance(0.5, 0.5, 0.5, 1.0).abs() < 1e-5);
+
+        m.enabled = false;
+        assert!(!m.is_active());
+        assert_eq!(m.modify_distance(0.5, 0.5, 0.5, 1.0), 1.0);
+        m.heat_sources.push(HeatSource::Volume {
+            min: (-1.0, -1.0, -1.0),
+            max: (2.0, 2.0, 2.0),
+            power: 100.0,
+        });
+        m.update(1.0);
+        assert!(m.temperature.data.iter().all(|&t| t == -210.0));
+    }
+
+    fn sample_modifier() -> ThermalModifier {
+        let mut m = ThermalModifier::new(
+            ThermalConfig {
+                diffusion_rate: 0.125,
+                ambient_temperature: 21.5,
+                cooling_rate: 0.25,
+                melt_temperature: 180.0,
+                melt_rate: 0.375,
+                droop_strength: 0.5,
+                expansion_coefficient: 0.0625,
+                freeze_temperature: -4.0,
+                freeze_rate: 0.75,
+            },
+            2,
+            (-1.0, -2.0, -3.0),
+            (1.0, 2.0, 3.0),
+        );
+        for (i, v) in m.temperature.data.iter_mut().enumerate() {
+            *v = 10.0 + i as f32;
+        }
+        m.melt_accumulator.data[2] = 0.5;
+        m.add_heat_point(0.5, 0.25, -0.5, 30.0, 0.75);
+        m.heat_sources.push(HeatSource::Volume {
+            min: (-1.0, -1.0, -1.0),
+            max: (0.0, 0.5, 1.0),
+            power: 12.0,
+        });
+        m.enabled = false;
+        m
+    }
+
+    /// oracle: the participant kind is `"THRM"` read big endian; a payload
+    /// written by `write_state` is accepted and read back into a different
+    /// modifier, which then has the original config, flag, fields and both
+    /// kinds of heat source and writes the same bytes. Observations: channel
+    /// 0 the hottest cell (`10 + 7 = 17`), channel 1 the total melt (1/2).
+    #[test]
+    fn participant_state_round_trip_and_observations() {
+        assert_eq!(
+            ThermalModifier::PARTICIPANT_KIND,
+            ParticipantKind::new(0x5448_524d)
+        );
+        let src = sample_modifier();
+        assert_eq!(Participant::kind(&src), ThermalModifier::PARTICIPANT_KIND);
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        assert_eq!(src.check_state(&bytes), Ok(()));
+        let mut dst = ThermalModifier::new(
+            ThermalConfig::default(),
+            1,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        dst.read_state(&bytes);
+        assert_eq!(dst.config, src.config);
+        assert!(!dst.enabled);
+        assert_eq!(dst.temperature.data, src.temperature.data);
+        assert_eq!(dst.melt_accumulator.data, src.melt_accumulator.data);
+        assert_eq!(dst.heat_sources, src.heat_sources);
+        let mut again = Vec::new();
+        dst.write_state(&mut again);
+        assert_eq!(again, bytes);
+
+        let mut sink = ObservationSink::new();
+        dst.observe(&mut sink);
+        assert_eq!(
+            sink.values(),
+            &[(0, Fix128::from_int(17)), (1, Fix128::from_ratio(1, 2))]
+        );
+    }
+
+    /// oracle: the volume source is the last 1 + 7·4 = 29 bytes, its tag
+    /// first; tag 2 names no source. A payload one byte short or long is
+    /// refused too.
+    #[test]
+    fn participant_state_refusals() {
+        let src = sample_modifier();
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        let tag = bytes.len() - 29;
+        assert_eq!(bytes[tag], 1);
+        let mut bad = bytes.clone();
+        bad[tag] = 2;
+        assert_eq!(src.check_state(&bad), Err(StateError::InvalidValue));
+        assert!(matches!(
+            src.check_state(&bytes[..bytes.len() - 1]),
+            Err(StateError::Length { .. })
+        ));
+        let mut long = bytes;
+        long.push(0);
+        assert!(matches!(
+            src.check_state(&long),
+            Err(StateError::Length { .. })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "read_state called with a payload check_state refuses")]
+    fn participant_read_state_panics_on_a_refused_payload() {
+        let mut m = sample_modifier();
+        m.read_state(&[0, 0, 0, 0]);
+    }
+
+    /// oracle: in a world of one substep `dt = 1/4`, a one-cell modifier at
+    /// 300 (melt temperature 200, melt rate 1/16, no diffusion, cooling or
+    /// droop) melts `100·(1/16)·(1/4) = 25/16`; channel 0 reads 300 and
+    /// channel 1 reads 25/16.
+    #[test]
+    fn participant_substep_in_a_world() {
+        let mut m = ThermalModifier::new(still_config(), 1, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.temperature.data[0] = 300.0;
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
+            substeps: 1,
+            ..Default::default()
+        });
+        world.add_participant(Box::new(m)).expect("register");
+        world.step(Fix128::from_ratio(1, 4));
+        let Some(crate::world_participant::Observed::Exact(sink)) = world.observe_participant(0)
+        else {
+            panic!("observation");
+        };
+        assert_eq!(
+            sink.values(),
+            &[(0, Fix128::from_int(300)), (1, Fix128::from_ratio(25, 16))]
+        );
+    }
 }
