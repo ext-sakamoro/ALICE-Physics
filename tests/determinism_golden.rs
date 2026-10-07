@@ -121,6 +121,7 @@ fn assert_golden(scenario: &str, actual: [u8; 32], expected_hex: &str) {
 /// never used. Contacts are pinned by `tests/determinism_golden_contacts.rs`.
 /// No SIMD-only paths involved (SIMD is opt-in via `simd` feature; this test
 /// runs with default features).
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CASCADE: &str = "95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381";
@@ -171,6 +172,7 @@ fn determinism_cascade() {
 /// **Scenario 2**: two dynamic spheres with only gravity, no interaction,
 /// for 60 steps. Simplest possible fixture — divergence here indicates
 /// a fundamental Fix128 / gravity integration bug.
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_FREEFALL: &str = "cf46cd7596ad87225bc7f1e17e1296622b8ed25659d7df968f063f06885a056b";
@@ -212,6 +214,7 @@ fn determinism_freefall() {
 /// **Scenario 3**: single dynamic body with an initial velocity vector,
 /// no gravity, 120 steps. Exercises pure kinematic integration without
 /// any constraint / contact / gravity coupling.
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_KINEMATIC_DRIFT: &str =
@@ -269,6 +272,7 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 /// linked by a fixed-length `DistanceConstraint`; one heavy pivot,
 /// one lighter swinging mass. Exercises constraint iteration under
 /// gravity for 240 steps.
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_JOINT_PENDULUM: &str =
@@ -409,6 +413,7 @@ fn determinism_fluid_step() {
 /// **Scenario 7**: dynamic body glancing past a static SDF sphere with
 /// speculative CCD enabled, 90 steps. Exercises the SDF collision path
 /// with continuous collision detection.
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_SDF_CCD_GLANCE: &str =

@@ -212,6 +212,7 @@ fn assert_no_rotation(scenario: &str, w: &PhysicsWorld) {
 ///   the ball rests on the ground: `|y − 1/2| < 1e-3 m` and `|v| < 2 g h`
 ///   (the restitution threshold, below which an approach is treated as
 ///   resting and does not bounce).
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_BOUNCE: &str =
@@ -296,6 +297,7 @@ fn determinism_contact_bounce() {
 /// closed form by up to `μ g h` and the position by `μ g h t`; doubled:
 /// `2 μ g h` for `v` and `2 μ g h t` for `x`. The ground tilt at `x` adds a
 /// tangential `g x / R ≤ 2.3e-5 m/s²`, below `1e-4 m` over the run.
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_SLIDE: &str =
@@ -419,6 +421,7 @@ fn determinism_contact_slope() {
 ///   (all normals are vertical). The sag bound is `n³ g h² ≈ 1.2e-3 m` for
 ///   `n = 3`: one iteration leaves each contact an overlap of the order of
 ///   the weight it carries times `g h²`.
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_STACK: &str =
@@ -484,6 +487,7 @@ fn determinism_contact_stack() {
 ///   `|y − 1/2| < 1e-3 m` and `|v| < 2 g h` after 2 s (bounce series ends at
 ///   `t_f (1 + e) / (1 − e) ≈ 1.3 s`), `x` within `1e-4` of `3` (the ground
 ///   tilt `3e-6` at `x = 3`).
+///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
 /// solve did not move (`v = v_pred + Δx_corr / h`).
 const GOLDEN_CONTACT_VETO: &str =
