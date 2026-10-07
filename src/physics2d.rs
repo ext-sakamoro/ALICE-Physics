@@ -3293,4 +3293,162 @@ mod tests {
         body.apply_force(force, dt);
         assert!(body.velocity.x > Fix128::ZERO);
     }
+
+    // ---- Tethers2D (closed-form checks; the full oracles are in
+    // tests/analytic_physics2d_tethers.rs) ----
+
+    fn tether_world(substeps: usize) -> PhysicsWorld2D {
+        PhysicsWorld2D::new(PhysicsConfig2D {
+            gravity: Vec2Fix::ZERO,
+            substeps,
+            iterations: 2,
+            damping: Fix128::ONE,
+        })
+    }
+
+    #[test]
+    fn exp_neg_matches_reference_values() {
+        // e^-1, e^-0.25, e^-5 against f64 to well below f64 resolution of Fix128 use
+        for (x, want) in [
+            (1.0, 0.367_879_441_171_442_3),
+            (0.25, 0.778_800_783_071_404_9),
+            (5.0, 0.006_737_946_999_085_467),
+        ] {
+            let got = exp_neg(Fix128::from_f64(x)).to_f64();
+            assert!((got - want).abs() < 1e-15, "e^-{x}: {got} vs {want}");
+        }
+        assert_eq!(exp_neg(Fix128::ZERO), Fix128::ONE);
+        assert_eq!(exp_neg(Fix128::from_int(-3)), Fix128::ONE);
+        assert_eq!(exp_neg(Fix128::from_int(50)), Fix128::ZERO);
+    }
+
+    #[test]
+    fn angular_tether_one_substep_is_backward_euler() {
+        // I = 2, ω = 6, ζ = 1, h = 1/60: θ' = θ (1 + 2a) / (1 + a)², a = ω h
+        let mut w = tether_world(1);
+        let mut b = RigidBody2D::new_dynamic(
+            Vec2Fix::ZERO,
+            Fix128::ONE,
+            Shape2D::Circle {
+                radius: Fix128::ONE,
+            },
+        );
+        b.inv_inertia = Fix128::from_ratio(1, 2);
+        b.angle = Fix128::ONE;
+        let idx = w.add_body(b);
+        let mut set = Tethers2D::new();
+        let id = set.add_angular(AngularTether2D::critically_damped(
+            idx,
+            Fix128::ZERO,
+            Fix128::from_int(2),
+            Fix128::from_int(6),
+        ));
+        assert_eq!(
+            set.angular(id).map(|t| t.stiffness),
+            Some(Fix128::from_int(72))
+        );
+        w.step_with_tethers(Fix128::from_ratio(1, 60), &set);
+        let a = 0.1_f64;
+        let want = (1.0 + 2.0 * a) / ((1.0 + a) * (1.0 + a));
+        assert!((w.bodies[idx].angle.to_f64() - want).abs() < 1e-15);
+        assert!((w.bodies[idx].angular_velocity.to_f64() - (want - 1.0) * 60.0).abs() < 1e-12);
+        // retarget, then remove: the set is empty again
+        set.angular_mut(id).unwrap().target_angle = Fix128::ONE;
+        assert_eq!(set.angular_count(), 1);
+        assert!(set.remove_angular(id).is_some());
+        assert!(set.angular(id).is_none() && set.angular_mut(id).is_none());
+        assert_eq!(set.angular_count(), 0);
+    }
+
+    #[test]
+    fn kinematic_drive_one_frame_is_the_closed_form() {
+        // e(t) = (e0 + (v0 + ω e0) t) e^(−ωt), composed over 4 substeps
+        let mut w = tether_world(4);
+        let mut b = RigidBody2D::new_kinematic(
+            Vec2Fix::from_int(2, -1),
+            Shape2D::Circle {
+                radius: Fix128::ONE,
+            },
+        );
+        b.angle = Fix128::from_int(3);
+        b.velocity = Vec2Fix::from_int(1, 0);
+        let idx = w.add_body(b);
+        let mut set = Tethers2D::new();
+        let id = set.add_drive(KinematicDrive2D::new(
+            idx,
+            Vec2Fix::ZERO,
+            Fix128::ONE,
+            Fix128::from_int(5),
+        ));
+        assert_eq!(set.drive_count(), 1);
+        w.step_with_tethers(Fix128::from_ratio(1, 10), &set);
+        let (om, t) = (5.0_f64, 0.1_f64);
+        let ex = |e0: f64, v0: f64| (e0 + (v0 + om * e0) * t) * crate::det_math::exp64(-om * t);
+        let body = &w.bodies[idx];
+        assert!((body.position.x.to_f64() - ex(2.0, 1.0)).abs() < 1e-14);
+        assert!((body.position.y.to_f64() - ex(-1.0, 0.0)).abs() < 1e-14);
+        assert!((body.angle.to_f64() - 1.0 - ex(2.0, 0.0)).abs() < 1e-14);
+        set.drive_mut(id).unwrap().omega = Fix128::ZERO;
+        assert_eq!(set.drive(id).map(|d| d.omega), Some(Fix128::ZERO));
+        assert!(set.remove_drive(id).is_some());
+        assert!(
+            set.drive(id).is_none()
+                && set.drive_mut(id).is_none()
+                && set.remove_drive(id).is_none()
+        );
+        assert_eq!(set.drive_count(), 0);
+    }
+
+    #[test]
+    fn tethers_skip_out_of_range_and_wrong_body_types() {
+        let mut w = tether_world(1);
+        let d = w.add_body(RigidBody2D::new_dynamic(
+            Vec2Fix::ZERO,
+            Fix128::ONE,
+            Shape2D::Circle {
+                radius: Fix128::ONE,
+            },
+        ));
+        let mut k = RigidBody2D::new_kinematic(
+            Vec2Fix::from_int(10, 0),
+            Shape2D::Circle {
+                radius: Fix128::ONE,
+            },
+        );
+        k.inv_inertia = Fix128::ONE;
+        k.angle = Fix128::ONE;
+        let k = w.add_body(k);
+        let mut set = Tethers2D::new();
+        set.add_angular(AngularTether2D::new(
+            7,
+            Fix128::ONE,
+            Fix128::ONE,
+            Fix128::ONE,
+        ));
+        set.add_angular(AngularTether2D::new(
+            k,
+            Fix128::ZERO,
+            Fix128::from_int(9),
+            Fix128::ONE,
+        ));
+        set.add_drive(KinematicDrive2D::new(
+            7,
+            Vec2Fix::ZERO,
+            Fix128::ZERO,
+            Fix128::ONE,
+        ));
+        set.add_drive(KinematicDrive2D::new(
+            d,
+            Vec2Fix::from_int(1, 1),
+            Fix128::ZERO,
+            Fix128::ONE,
+        ));
+        w.step_with_tethers(Fix128::from_ratio(1, 60), &set);
+        assert_eq!(w.bodies[d].position, Vec2Fix::ZERO);
+        assert_eq!(w.bodies[k].angle, Fix128::ONE);
+        // dt = 0: tethers see h = 0 and leave the state alone
+        let before = w.bodies[k].position;
+        w.step_with_tethers(Fix128::ZERO, &set);
+        assert_eq!(w.bodies[k].position, before);
+    }
 }

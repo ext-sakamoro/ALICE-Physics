@@ -4060,4 +4060,70 @@ mod tests {
         assert_eq!(a.positions, b.positions);
         assert_eq!(a.velocities, b.velocities);
     }
+
+    // ---- rest tether (closed-form checks; the full oracles are in
+    // tests/analytic_cloth_rest_tether.rs) ----
+
+    fn lone_particle() -> Cloth {
+        let mut c = Cloth::new_grid(
+            Vec3Fix::ZERO,
+            Fix128::ONE,
+            Fix128::ONE,
+            1,
+            1,
+            Fix128::from_int(2),
+        );
+        c.config.gravity = Vec3Fix::ZERO;
+        c.config.damping = Fix128::ONE;
+        c.config.substeps = 1;
+        c
+    }
+
+    #[test]
+    fn rest_tether_one_substep_is_backward_euler() {
+        // m = 2, ω = 6, ζ = 0.5, h = 1/60: x' = x (1 + 2ζa) / (1 + 2ζa + a²), a = ω h
+        let mut c = lone_particle();
+        c.set_rest_tether(Fix128::from_int(72), Fix128::from_int(12));
+        assert_eq!(
+            c.rest_tether(),
+            Some((Fix128::from_int(72), Fix128::from_int(12)))
+        );
+        assert_eq!(c.rest_positions(), &[Vec3Fix::ZERO]);
+        c.positions[0] = Vec3Fix::from_int(1, 0, 0);
+        c.step(Fix128::from_ratio(1, 60));
+        let a = 0.1_f64;
+        let want = (1.0 + a) / (1.0 + a + a * a);
+        assert!((c.positions[0].x.to_f64() - want).abs() < 1e-15);
+        assert!((c.velocities[0].x.to_f64() - (want - 1.0) * 60.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn rest_tether_explicit_rest_clear_and_rejects() {
+        let mut c = lone_particle();
+        let err = c.set_rest_positions(&[]).unwrap_err();
+        assert_eq!(
+            err,
+            RestPositionsMismatch {
+                expected: 1,
+                got: 0
+            }
+        );
+        c.set_rest_positions(&[Vec3Fix::from_int(0, 4, 0)]).unwrap();
+        c.set_rest_tether(Fix128::from_int(-1), Fix128::from_int(-1));
+        assert_eq!(c.rest_tether(), Some((Fix128::ZERO, Fix128::ZERO)));
+        assert_eq!(c.rest_positions(), &[Vec3Fix::from_int(0, 4, 0)]);
+        c.set_rest_tether(Fix128::from_int(1_000_000_000_000), Fix128::ZERO);
+        c.step(Fix128::from_ratio(1, 60));
+        assert!((c.positions[0].y.to_f64() - 4.0).abs() < 1e-6);
+        c.clear_rest_tether();
+        assert_eq!(c.rest_tether(), None);
+        // a pinned particle is not pulled
+        let mut p = lone_particle();
+        p.pin(0);
+        p.set_rest_positions(&[Vec3Fix::from_int(1, 1, 1)]).unwrap();
+        p.set_rest_tether(Fix128::from_int(50), Fix128::ONE);
+        p.step(Fix128::from_ratio(1, 60));
+        assert_eq!(p.positions[0], Vec3Fix::ZERO);
+        assert!(format!("{p:?}").contains("rest_tether"));
+    }
 }
