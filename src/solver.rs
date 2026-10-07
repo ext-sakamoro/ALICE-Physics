@@ -1079,18 +1079,27 @@ fn derive_linear_velocity(
 /// Angular velocity at the end of a substep. A body predicted by the
 /// splitting keeps the split's end velocity plus the rotation the position
 /// solve added beyond the split's end orientation (zero when no constraint
-/// turned it); any other body derives `ω` from its rotation change, as
+/// turned it). Any other body predicted this substep (`predicted =
+/// Some(q_pred)`, `body.angular_velocity` still the `ω_pred` that predicted
+/// `q_pred`) does the same with `ω_pred` and `q_pred`: a body the solve did
+/// not turn keeps `ω_pred` bit for bit (re-deriving it from
+/// `log(q · q_prev⁻¹)` rounds through the axis-angle, the normalisation and
+/// the logarithm). A body not predicted (`None`: static, kinematic,
+/// sleeping, parked) derives `ω` from its rotation change, as
 /// [`angular_from_rotations`] always did.
 #[inline]
 fn derived_angular_velocity(
     body: &RigidBody,
     free: Option<crate::gyroscopic::FreeRotation>,
+    predicted: Option<QuatFix>,
     inv_dt: Fix128,
 ) -> Vec3Fix {
-    match free {
-        Some(f) if body.rotation == f.rotation => f.omega,
-        Some(f) => f.omega + angular_from_rotations(body.rotation, f.rotation, inv_dt),
-        None => angular_from_rotations(body.rotation, body.prev_rotation, inv_dt),
+    match (free, predicted) {
+        (Some(f), _) if body.rotation == f.rotation => f.omega,
+        (Some(f), _) => f.omega + angular_from_rotations(body.rotation, f.rotation, inv_dt),
+        (None, Some(q)) if body.rotation == q => body.angular_velocity,
+        (None, Some(q)) => body.angular_velocity + angular_from_rotations(body.rotation, q, inv_dt),
+        (None, None) => angular_from_rotations(body.rotation, body.prev_rotation, inv_dt),
     }
 }
 
@@ -1566,13 +1575,14 @@ pub struct PhysicsWorld {
     /// `bodies`; `None`: no gyroscopic response). Transient: rebuilt every
     /// substep, so it carries no state across steps.
     free_rotation: Vec<Option<crate::gyroscopic::FreeRotation>>,
-    /// Predicted position of each body in the current substep, written by
-    /// `integrate_positions` right after `x += v·h` and read by
-    /// `update_velocities` (indexed like `bodies`; `None`: the body was not
-    /// predicted this substep — static, kinematic, sleeping or parked — and
-    /// derives its velocity from `position − prev_position`). Transient:
-    /// rebuilt every substep, so it carries no state across steps.
-    predicted_position: Vec<Option<Vec3Fix>>,
+    /// Predicted pose (position, rotation) of each body in the current
+    /// substep, written by `integrate_positions` after `x += v·h` and the
+    /// rotation prediction, and read by `update_velocities` (indexed like
+    /// `bodies`; `None`: the body was not predicted this substep — static,
+    /// kinematic, sleeping or parked — and derives its velocities from
+    /// `prev_position` / `prev_rotation`). Transient: rebuilt every substep,
+    /// so it carries no state across steps.
+    predicted_pose: Vec<Option<(Vec3Fix, QuatFix)>>,
     /// v0.11.0: installed GPU solver bridge for automatic contact-solve
     /// routing. When `Some`, every call to [`Self::step`] /
     /// [`Self::substep`] transparently routes contact-solve through the
@@ -1770,7 +1780,7 @@ impl PhysicsWorld {
             contact_discarded: Vec::new(),
             contact_pre_vn: Vec::new(),
             free_rotation: Vec::new(),
-            predicted_position: Vec::new(),
+            predicted_pose: Vec::new(),
             #[cfg(feature = "gpu-solver-bridge")]
             gpu_solver_bridge: None,
             joints: Vec::new(),
@@ -4232,7 +4242,7 @@ impl PhysicsWorld {
         let mut free = core::mem::take(&mut self.free_rotation);
         free.clear();
         free.resize(self.bodies.len(), None);
-        let mut predicted = core::mem::take(&mut self.predicted_position);
+        let mut predicted = core::mem::take(&mut self.predicted_pose);
         predicted.clear();
         predicted.resize(self.bodies.len(), None);
         #[cfg(feature = "parallel")]
@@ -4312,19 +4322,19 @@ impl PhysicsWorld {
                         None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                     }
 
-                    // The predicted position, against which `update_velocities`
-                    // measures the solve's correction
-                    *predicted = Some(body.position);
-
                     // Predict rotation, with the gyroscopic term ω × Iω
                     let mut spin_overflow = false;
                     *free = predict_rotation(body, dt, &mut spin_overflow);
                     if spin_overflow {
                         overflow.store(true, core::sync::atomic::Ordering::Relaxed);
                     }
+
+                    // The predicted pose, against which `update_velocities`
+                    // measures the solve's correction
+                    *predicted = Some((body.position, body.rotation));
                 });
             self.free_rotation = free;
-            self.predicted_position = predicted;
+            self.predicted_pose = predicted;
         }
 
         #[cfg(not(feature = "parallel"))]
@@ -4389,19 +4399,19 @@ impl PhysicsWorld {
                     None => overflow.store(true, core::sync::atomic::Ordering::Relaxed),
                 }
 
-                // The predicted position, against which `update_velocities`
-                // measures the solve's correction
-                predicted[i] = Some(self.bodies[i].position);
-
                 // Predict rotation, with the gyroscopic term ω × Iω
                 let mut spin_overflow = false;
                 free[i] = predict_rotation(&mut self.bodies[i], dt, &mut spin_overflow);
                 if spin_overflow {
                     overflow.store(true, core::sync::atomic::Ordering::Relaxed);
                 }
+
+                // The predicted pose, against which `update_velocities`
+                // measures the solve's correction
+                predicted[i] = Some((self.bodies[i].position, self.bodies[i].rotation));
             }
             self.free_rotation = free;
-            self.predicted_position = predicted;
+            self.predicted_pose = predicted;
         }
 
         // ⚠️ 受け皿を sticky flag に畳み込む (1 度立ったら落ちない)
@@ -4488,7 +4498,7 @@ impl PhysicsWorld {
             };
             self.stage_work.velocity_bodies += self.unparked_count();
             let free: &[Option<crate::gyroscopic::FreeRotation>] = &self.free_rotation;
-            let predicted: &[Option<Vec3Fix>] = &self.predicted_position;
+            let predicted: &[Option<(Vec3Fix, QuatFix)>] = &self.predicted_pose;
             self.bodies
                 .par_iter_mut()
                 .enumerate()
@@ -4499,7 +4509,8 @@ impl PhysicsWorld {
                     }
                     // ⚠️ 速度導出も範囲外を検出する (WM-01 経路 2)
                     // 範囲外なら速度を更新しない (0 に上書きされるのを防ぐ)
-                    if !derive_linear_velocity(body, predicted.get(i).copied().flatten(), inv_dt) {
+                    let pose = predicted.get(i).copied().flatten();
+                    if !derive_linear_velocity(body, pose.map(|(x, _)| x), inv_dt) {
                         overflow.store(true, core::sync::atomic::Ordering::Relaxed);
                     }
                     // Angular velocity from rotation change:
@@ -4507,7 +4518,8 @@ impl PhysicsWorld {
                     // angular_velocity = 2 * delta_q.xyz / dt  (when delta_q.w > 0)
                     // (split bodies: the split's ω plus the solve's change)
                     let f = free.get(i).copied().flatten();
-                    body.angular_velocity = derived_angular_velocity(body, f, inv_dt);
+                    body.angular_velocity =
+                        derived_angular_velocity(body, f, pose.map(|(_, q)| q), inv_dt);
                 });
         }
 
@@ -4523,15 +4535,16 @@ impl PhysicsWorld {
                 }
                 // ⚠️ 速度導出も範囲外を検出する (WM-01 経路 2)
                 // 範囲外なら速度を更新しない (0 に上書きされるのを防ぐ)
-                let predicted = self.predicted_position.get(i).copied().flatten();
-                if !derive_linear_velocity(body, predicted, inv_dt) {
+                let pose = self.predicted_pose.get(i).copied().flatten();
+                if !derive_linear_velocity(body, pose.map(|(x, _)| x), inv_dt) {
                     overflow.store(true, core::sync::atomic::Ordering::Relaxed);
                 }
                 // Angular velocity from rotation change (split bodies: the
                 // split's ω plus the solve's change)
                 let f = self.free_rotation.get(i).copied().flatten();
                 let body = &mut self.bodies[i];
-                body.angular_velocity = derived_angular_velocity(body, f, inv_dt);
+                body.angular_velocity =
+                    derived_angular_velocity(body, f, pose.map(|(_, q)| q), inv_dt);
             }
         }
 
