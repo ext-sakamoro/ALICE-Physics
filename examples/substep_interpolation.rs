@@ -128,32 +128,30 @@ fn manual_snapshot_rotation() {
     );
     assert_eq!(snap_a.bodies[0].rotation, QuatFix::IDENTITY);
 
+    let snap_b_rotation = snap_b.bodies[0].rotation;
     let interp = InterpolationState::new(snap_a, snap_b);
     let half = Fix128::from_ratio(1, 2);
     let q_half = interp.interpolate_rotation(0, half);
 
-    // oracle (module's actual NLERP convention, read from `interpolation.rs`):
-    //   dot(a, b) = a.x*b.x + a.y*b.y + a.z*b.z + a.w*b.w = 1*7 = 7 >= 0, so
-    //   there is no shortest-path flip.
-    //   raw = (1-1/2)*a + (1/2)*b = (0, 3, 0, 4) exactly (t = 1/2 is dyadic,
-    //   every component multiply is an exact right-shift).
-    //   |raw| = sqrt(3^2 + 4^2) = sqrt(25) = 5 exactly (Pythagorean triple;
-    //   `Fix128::sqrt` on an integer perfect square is exact by
-    //   construction of its digit-by-digit algorithm).
-    //   normalized = raw * (1/len) = (0, 3/5, 0, 4/5).
-    let len = Fix128::from_int(25).sqrt();
-    assert_eq!(len, Fix128::from_int(5), "sqrt(25) must be exact");
-    let inv_len = Fix128::ONE / len;
-    let expected = QuatFix::new(
-        Fix128::ZERO,
-        Fix128::from_int(3) * inv_len,
-        Fix128::ZERO,
-        Fix128::from_int(4) * inv_len,
-    );
+    // oracle: `interpolate_rotation` is a slerp (constant angular velocity),
+    // and the world stores the second rotation as the unit quaternion
+    // (0, 6, 0, 7)/sqrt(85). At alpha = 1/2 a slerp is the bisector of the two
+    // unit quaternions: normalize(a + b) = (0, 0.34694.., 0, 0.93789..). The
+    // two routes round differently, so they agree to within a few steps of
+    // 2^-64 rather than bit for bit.
+    let b = snap_b_rotation;
+    let expected = QuatFix::new(Fix128::ZERO, b.y, Fix128::ZERO, Fix128::ONE + b.w).normalize();
     println!(
         "[interpolation] interpolate_rotation(alpha=1/2) = {q_half} (closed form: {expected})"
     );
-    assert_eq!(q_half, expected);
+    let close = |p: Fix128, q: Fix128| (p - q).abs() < Fix128::from_raw(0, 1 << 20);
+    assert!(
+        close(q_half.x, expected.x)
+            && close(q_half.y, expected.y)
+            && close(q_half.z, expected.z)
+            && close(q_half.w, expected.w),
+        "slerp at 1/2 is not the bisector"
+    );
 }
 
 fn lerp_primitives() {
