@@ -452,8 +452,10 @@ fn isotropic_scene(backend: SolverBackend) -> PhysicsWorld {
 /// leaves every body of this scene on its previous path).
 const GOLDEN_ISOTROPIC_XPBD: u64 = 0xa78f_4abf_b26c_12be;
 // The TGS value was re-recorded when the TGS orientation integrator became
-// the exact exponential map.
-const GOLDEN_ISOTROPIC_TGS: u64 = 0x106c_4a10_6420_8aa4;
+// the exact exponential map, and again when an isotropic inverse inertia
+// became the plain product `c·τ` (no rotation round trip), which changes the
+// spinning colliding spheres of the TGS contact solve in the last bits.
+const GOLDEN_ISOTROPIC_TGS: u64 = 0x645f_6a73_cb85_0486;
 
 /// oracle: `I_b = s·1 ⇒ ω × (s ω) = 0`, so adding the term must leave every
 /// bit of an isotropic scene unchanged (likewise bodies the term does not
