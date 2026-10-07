@@ -215,6 +215,7 @@ fn child_sdf_contact(
     body_rotation: QuatFix,
     sdf: &SdfCollider,
 ) -> Option<Contact> {
+    let body_rotation = body_rotation.unit_rotation();
     let position = body_position + body_rotation.rotate_vec(child.local_position);
     let rotation = body_rotation.mul(child.local_rotation);
     match &child.shape {
@@ -824,5 +825,82 @@ mod tests {
             .expect("hull child reaches the floor");
         assert_near(hit.depth, 0.25, 1e-5, "deepest child depth");
         assert_vec_near(hit.normal, [0.0, 1.0, 0.0], 1e-6, "floor normal");
+    }
+
+    /// Compound children against the floor for a body whose orientation is not a
+    /// unit quaternion (norm 2 and 1/2): each child is placed by the rotation the
+    /// quaternion stands for, so the contact is the normalized orientation's, bit
+    /// for bit, and the unit orientation's up to the normalization's rounding.
+    /// Unnormalized, a child at body-local `x = 1` would sit `|q|^2` times as far
+    /// from the body origin.
+    #[cfg(feature = "std")]
+    #[test]
+    fn compound_sdf_contact_ignores_the_orientation_norm() {
+        let floor = floor();
+        let position = v(Fix128::ZERO, fx(1, 2), Fix128::ZERO);
+        let turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, fx(-6, 10));
+        let local = QuatFix::from_axis_angle(Vec3Fix::UNIT_Y, fx(3, 10));
+        let at = v(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+        let quarter = fx(1, 4);
+        let mut kinds = Vec::new();
+        let mut c = CompoundShape::new();
+        c.add_sphere(
+            Sphere::new(v(quarter, Fix128::ZERO, Fix128::ZERO), quarter),
+            at,
+            local,
+        );
+        kinds.push(("sphere", c));
+        let mut c = CompoundShape::new();
+        c.add_capsule(
+            Capsule::new(
+                v(-quarter, Fix128::ZERO, Fix128::ZERO),
+                v(quarter, Fix128::ZERO, Fix128::ZERO),
+                quarter,
+            ),
+            at,
+            local,
+        );
+        kinds.push(("capsule", c));
+        let mut c = CompoundShape::new();
+        c.add_box(
+            OrientedBox::new(
+                v(Fix128::ZERO, Fix128::ZERO, quarter),
+                v(quarter, quarter, quarter),
+                eighth_turn_z(),
+            ),
+            at,
+            local,
+        );
+        kinds.push(("box", c));
+        let mut c = CompoundShape::new();
+        c.add_convex_hull(
+            ConvexHull::new(vec![
+                Vec3Fix::from_int(0, -1, 0),
+                Vec3Fix::from_int(1, 0, 0),
+                Vec3Fix::from_int(-1, 0, 0),
+                Vec3Fix::from_int(0, 0, 1),
+            ]),
+            at,
+            local,
+        );
+        kinds.push(("hull", c));
+        for (name, c) in kinds {
+            let collider = BodyCollider::Compound(c);
+            let unit = collider
+                .sdf_contact(position, turn, &floor)
+                .unwrap_or_else(|| panic!("{name}: the unit orientation reaches the floor"));
+            for s in [Fix128::from_int(2), fx(1, 2)] {
+                let scaled = QuatFix::new(turn.x * s, turn.y * s, turn.z * s, turn.w * s);
+                let got = collider.sdf_contact(position, scaled, &floor);
+                assert_eq!(
+                    got,
+                    collider.sdf_contact(position, scaled.normalize(), &floor),
+                    "{name}, s = {}",
+                    s.to_f64()
+                );
+                let got = got.unwrap_or_else(|| panic!("{name}: no contact"));
+                assert_near(got.depth, unit.depth.to_f64(), 1e-6, name);
+            }
+        }
     }
 }

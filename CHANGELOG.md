@@ -329,6 +329,7 @@ were introduced during that release window.
 
 ### Fixed
 
+- `BodyCollider::Compound` の子 (`CompoundShape::child_world_aabb` / `world_aabb` / `overlapping_children` / `support_world`、`CompoundChild::support_world`、SDF との接触) と `world_shape_query` の body の形状 (`cast_sphere` / `cast_capsule` / `overlap_sphere` / `overlap_aabb` の箱の中心と向き、円柱とトーラスの閉形式の座標系)、`cast_ray` の形状と複合形状の子が、body の非単位の回転 quaternion をそのまま当てていて、子の位置と形が `|q|²` 倍になっていた 正規化した回転を当てる 単位 quaternion の body は bit 不変 試験 `tests/audit_nonunit_quaternion_compound.rs` (`|q| = 2` と `1/2` で正規化した回転と bit 一致)
 - `Mat3Fix::inverse` が範囲外で符号の反転した逆行列を `Some` で返していた (`|det| ≥ 2⁶³` で det が wrap、`|det| ≤ 2⁻⁶³` で `1/det` が wrap、余因子や各成分の積の wrap も同様) 余因子・det・`1/det`・各成分のどれかが Q64.64 に収まらなければ `None` を返す 余因子と det は積を 256 bit で厳密に足して判定するので、単独の積が範囲を超えても和が収まる入力は従来どおり `Some` 範囲内は修正前の式と bit 一致 (12k 行列で `assert_eq!`)
 - `Fix128::checked_mul` が、中央の項の和が i128 を越える組で範囲内の積を `None` にしていた (例: (−2⁶³ + 1 − 2⁻⁶⁴)·(−2⁻⁶⁴)、真値 ≈ 0.5) 中央の和を wrap した値と 2¹²⁸ 単位の桁上がりに分けて厳密に持ち、範囲は整数部の和で 1 回だけ判定する 端の値と乱数を 256 bit の参照と突き合わせる試験を追加
 - `joint::SpringJoint` の減衰が 2 体を結ぶ方向 (半径方向) にしか効いていなかった rest length 0 で使うと中心力になり、角運動量が保存されて接線方向の速度が減衰せず、錨点の周りを周回していた rest length 0 では相対速度の全成分に効くようにした

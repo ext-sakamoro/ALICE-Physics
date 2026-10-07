@@ -239,6 +239,7 @@ impl CompoundShape {
     #[must_use]
     pub fn child_world_aabb(&self, child_idx: usize, body_pos: Vec3Fix, body_rot: QuatFix) -> AABB {
         let child = &self.children[child_idx];
+        let body_rot = body_rot.unit_rotation();
         let world_pos = body_pos + body_rot.rotate_vec(child.local_position);
 
         match &child.shape {
@@ -428,6 +429,7 @@ impl CompoundChild {
         body_pos: Vec3Fix,
         body_rot: QuatFix,
     ) -> Vec3Fix {
+        let body_rot = body_rot.unit_rotation();
         let child_rot = body_rot.mul(self.local_rotation);
         let child_pos = body_pos + body_rot.rotate_vec(self.local_position);
         match &self.shape {
