@@ -341,21 +341,16 @@ fn snapshot_restore_continues_bit_for_bit() {
 // 4. Paths
 // ---------------------------------------------------------------------------
 
-/// The same scene on XPBD and on TGS gives the same velocities to within the
-/// propagated XPBD bound of the module documentation (not bit for bit: XPBD
-/// derives velocities from positions). XPBD hands the participants
+/// The same scene on XPBD and on TGS gives bit-identical body velocities and
+/// medium momentum, frame by frame. XPBD keeps the predicted velocity of a
+/// body its constraints did not move (`v = v_pred + Δx_corr / h`, and nothing
+/// in this scene moves a body), so both backends apply the same staged force
+/// updates to the same velocities. XPBD hands the participants
 /// `h = dt / substeps` and TGS its own solve width `dt * (1 / substeps as f32)`;
 /// the comparison runs only for the cases where the two widths are the same
 /// value, and the other cases are checked to really have different widths.
-/// The XPBD-TGS difference is also measured non-zero, so the bound is not
-/// compared against two identical runs.
-///
-/// Tightens to bit equality once XPBD keeps the predicted velocity of bodies
-/// its constraints did not move.
 #[test]
-fn xpbd_and_tgs_agree_within_the_rounding_bound() {
-    let sum_m: f64 = MASSES.iter().map(|&m| m as f64).sum::<f64>() + 3.0;
-    let m_min: f64 = 1.0;
+fn xpbd_and_tgs_agree_bit_for_bit() {
     let mut compared = 0;
     for (num, den, substeps) in CASES {
         let dt = Fix128::from_ratio(num, den);
@@ -367,34 +362,23 @@ fn xpbd_and_tgs_agree_within_the_rounding_bound() {
             continue;
         }
         compared += 1;
-        let h = num as f64 / den as f64 / substeps as f64;
         let mut x = momentum_scene(SolverBackend::Xpbd, substeps);
         let mut t = momentum_scene(SolverBackend::Tgs, substeps);
-        let mut seen = 0.0f64;
         for frame in 1..=240 {
             x.try_step(dt).expect("step");
             t.try_step(dt).expect("step");
-            let n = (frame * substeps) as f64;
-            let q = sum_m.sqrt() * ULP * (1.0 / h + V_BOUND * h + 10.0);
-            let bound = n * q / m_min.sqrt();
             for (i, (bx, bt)) in x.bodies.iter().zip(&t.bodies).enumerate() {
-                let d = max_abs(bx.velocity - bt.velocity);
-                seen = seen.max(d);
-                assert!(
-                    d <= bound,
-                    "{num}/{den} s{substeps} frame {frame} body {i}: {d:e} > {bound:e}"
+                assert_eq!(
+                    bx.velocity, bt.velocity,
+                    "{num}/{den} s{substeps} frame {frame} body {i}"
                 );
             }
-            let du = max_abs(observed(&x, 0).0 - observed(&t, 0).0);
-            assert!(
-                du <= bound,
-                "{num}/{den} s{substeps} frame {frame} medium: {du:e}"
+            assert_eq!(
+                observed(&x, 0),
+                observed(&t, 0),
+                "{num}/{den} s{substeps} frame {frame} medium"
             );
         }
-        assert!(
-            seen > 0.0,
-            "{num}/{den} s{substeps}: the paths never differed"
-        );
     }
     assert!(compared >= 2, "too few cases with equal widths: {compared}");
 }
