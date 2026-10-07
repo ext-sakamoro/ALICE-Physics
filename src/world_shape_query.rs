@@ -340,6 +340,53 @@ fn max_fix(a: Fix128, b: Fix128) -> Fix128 {
     }
 }
 
+/// Below this squared length (`|v| < 2⁻¹⁶`) a length or direction is taken from
+/// `v` scaled up by a power of two: `length_squared` keeps only multiples of
+/// `2⁻⁶⁴`, so `|v|` near `2⁻³²` would have one or two significant bits.
+const FINE_LENGTH_SQUARED: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0000_0001_0000_0000,
+};
+
+/// `v · 2ᵏ` with the largest component in `[1, 2)` and that `k`, for
+/// `0 < |v| < 1` (`k > 0`, an exact scaling); zero gives `(ZERO, 0)`.
+fn scaled_up(v: Vec3Fix) -> (Vec3Fix, u32) {
+    let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
+    let (x, y, z) = (raw(v.x), raw(v.y), raw(v.z));
+    let m = x.unsigned_abs().max(y.unsigned_abs()).max(z.unsigned_abs());
+    if m == 0 {
+        return (Vec3Fix::ZERO, 0);
+    }
+    // bit 64 is 1.0
+    let msb = 127 - m.leading_zeros();
+    if msb >= 64 {
+        return (v, 0);
+    }
+    let k = 64 - msb;
+    let up = |r: i128| {
+        let s = r << k;
+        Fix128::from_raw((s >> 64) as i64, s as u64)
+    };
+    (Vec3Fix::new(up(x), up(y), up(z)), k)
+}
+
+/// `|v|`, accurate for a short `v` too (measured on `v` scaled up, see
+/// [`FINE_LENGTH_SQUARED`]); `None` for zero. A `v` not shorter than `2⁻¹⁶`
+/// gives `v.length()`.
+fn fine_length(v: Vec3Fix) -> Option<Fix128> {
+    if v.length_squared() >= FINE_LENGTH_SQUARED {
+        let len = v.length();
+        return (!len.is_zero()).then_some(len);
+    }
+    let (s, k) = scaled_up(v);
+    let len = s.length();
+    if len.is_zero() {
+        return None;
+    }
+    let back = (((len.hi as i128) << 64) | (len.lo as i128)) >> k;
+    Some(Fix128::from_raw((back >> 64) as i64, back as u64))
+}
+
 fn clamp(x: Fix128, lo: Fix128, hi: Fix128) -> Fix128 {
     max_fix(lo, min_fix(x, hi))
 }
@@ -555,6 +602,34 @@ fn closest_on_tetrahedron(
     }
 }
 
+/// The point of the line or plane through the sub-simplex `s` (1 to 3 vertices,
+/// the one [`closest_on_simplex`] chose) nearest the origin, by projection: when
+/// the simplex is near the origin its barycentric combination cancels terms of
+/// the size of its vertices and keeps few significant bits, while `a − (a·ê)ê`
+/// and `(a·n̂)n̂` lose only rounding of that size.
+fn nearest_on_affine_hull(s: &[Vertex]) -> Vec3Fix {
+    match *s {
+        [a] => a.w,
+        [a, b] => {
+            let e = scaled_up(b.w - a.w).0;
+            let ee = e.length_squared();
+            if ee.is_zero() {
+                return a.w;
+            }
+            a.w - e * (a.w.dot(e) / ee)
+        }
+        [a, b, c, ..] => {
+            let n = scaled_up((b.w - a.w).cross(c.w - a.w)).0;
+            let nn = n.length_squared();
+            if nn.is_zero() {
+                return a.w;
+            }
+            n * (a.w.dot(n) / nn)
+        }
+        [] => Vec3Fix::ZERO,
+    }
+}
+
 fn weighted(s: &(Vec<Vertex>, Vec<Fix128>)) -> Vec3Fix {
     s.0.iter()
         .zip(&s.1)
@@ -572,8 +647,18 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         if vv <= GJK_INTERSECT {
             return None;
         }
-        let w = vertex(a, b, -v);
-        if vv - v.dot(w.w) <= vv * GJK_RELATIVE {
+        // A short `v` is compared through `u`, `v` scaled up: `|v|² − v·w ≤
+        // |v|²·ε` is `u·(v − w) ≤ (u·v)·ε`, whose terms keep their precision
+        // where `|v|²` is a few multiples of `2⁻⁶⁴`.
+        let fine = vv < FINE_LENGTH_SQUARED;
+        let u = if fine { scaled_up(v).0 } else { v };
+        let w = vertex(a, b, -u);
+        let converged = if fine {
+            u.dot(v - w.w) <= u.dot(v) * GJK_RELATIVE
+        } else {
+            vv - v.dot(w.w) <= vv * GJK_RELATIVE
+        };
+        if converged {
             break;
         }
         if simplex.iter().any(|s| s.w == w.w) {
@@ -582,8 +667,19 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         let mut grown = simplex.clone();
         grown.push(w);
         let (sub, lambda) = closest_on_simplex(&grown)?;
-        let next = weighted(&(sub.clone(), lambda.clone()));
-        if next.length_squared() >= vv {
+        let next = if fine {
+            nearest_on_affine_hull(&sub)
+        } else {
+            weighted(&(sub.clone(), lambda.clone()))
+        };
+        let no_progress = if fine {
+            // Both short: compare the lengths measured on the scaled vectors.
+            let len = |x: Vec3Fix| fine_length(x).unwrap_or(Fix128::ZERO);
+            len(next) >= len(v)
+        } else {
+            next.length_squared() >= vv
+        };
+        if no_progress {
             // No progress (rounding): keep the previous simplex.
             break;
         }
@@ -599,9 +695,12 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         .iter()
         .zip(&weights)
         .fold(Vec3Fix::ZERO, |acc, (s, &l)| acc + s.b * l);
-    let dist = v.length();
-    if dist.is_zero() {
-        return None;
+    let dist = fine_length(v)?;
+    if v.length_squared() < FINE_LENGTH_SQUARED {
+        // `v` is projected (see `nearest_on_affine_hull`), the weights are not
+        // as precise: the witness on `a` is taken as `pb + v`, so that `pa − pb`
+        // is `v` exactly.
+        return Some((dist, pb + v, pb));
     }
     Some((dist, pa, pb))
 }
@@ -618,9 +717,20 @@ fn convex_dist<S: Support>(a: Vec3Fix, b: Vec3Fix, solid: &S) -> Dist {
         Some((dist, pa, pb)) => Dist::Outside {
             dist,
             point: pb,
-            normal: (pa - pb) / dist,
+            normal: gjk_normal(pa - pb, dist),
         },
     }
+}
+
+/// The unit normal along `diff` (`pa − pb` of [`gjk_distance`]) of length
+/// `dist`: `diff / dist`, or for a short `diff` the scaled-up `diff` normalized,
+/// since a quotient of two lengths near `2⁻³²` is unit only to about `2⁻³³`.
+fn gjk_normal(diff: Vec3Fix, dist: Fix128) -> Vec3Fix {
+    if diff.length_squared() >= FINE_LENGTH_SQUARED {
+        return diff / dist;
+    }
+    let s = scaled_up(diff).0;
+    s / s.length()
 }
 
 /// The distance between two segments `p0`–`p1` and `q0`–`q1`, by GJK on the two
@@ -669,7 +779,7 @@ fn capsule_dist(a: Vec3Fix, b: Vec3Fix, capsule: &Capsule) -> Dist {
         Some((d, pa, pb)) => Dist::Outside {
             dist: d,
             point: pb,
-            normal: (pa - pb) / d,
+            normal: gjk_normal(pa - pb, d),
         }
         .shrunk(capsule.radius),
     }
@@ -1585,7 +1695,10 @@ impl Ring {
 /// double root); a gap that is not decreasing (`g′ ≥ 0`) never decreases again,
 /// which proves there is no contact. A step that lands past the root (the
 /// distance and normal are computed to within GJK's tolerance) is undone by
-/// bisection between the last clear time and that time.
+/// bisection between the last clear time and that time; once the two are within
+/// the tolerance, the tangent's root from the clear time is the contact (a core
+/// of reach `0` always ends this way, since it is touching only within GJK's
+/// intersection tolerance).
 ///
 /// Returns the contact once the gap is within [`TRACE_TOLERANCE`] and the core
 /// moves into the solid (see [`touch_is_hit`]): a core touching the solid and
@@ -1605,8 +1718,10 @@ fn toi_convex<S: Support>(
 ) -> Option<Contact> {
     let reach = r + inflate;
     let mut t = Fix128::ZERO;
-    // The last time known clear (gap above the tolerance) and its near contact.
+    // The last time known clear (gap above the tolerance), its near contact, and
+    // the gap and closing speed there.
     let mut clear: Option<Contact> = None;
+    let mut clear_gap = (Fix128::ZERO, Fix128::ZERO);
     // A time known to overlap, once a step has gone past the root.
     let mut deep: Option<Fix128> = None;
     for _ in 0..TRACE_MAX_STEPS {
@@ -1644,6 +1759,7 @@ fn toi_convex<S: Support>(
         match state {
             Some((gap, speed, contact)) => {
                 clear = Some(contact);
+                clear_gap = (gap, speed);
                 let limit = deep.unwrap_or(max_t);
                 // The tangent's root, unless it is at or past the limit.
                 if gap >= (limit - t) * speed {
@@ -1667,7 +1783,22 @@ fn toi_convex<S: Support>(
                 deep = Some(t);
                 let lo = clear.map_or(Fix128::ZERO, |c| c.t);
                 if t - lo <= TRACE_TOLERANCE {
-                    return clear;
+                    // Bracketed to within the tolerance: report the tangent's
+                    // root from the clear end, which is not past the contact
+                    // (convexity). A core of reach 0 never sees a touching gap
+                    // (GJK counts `|v| ≤ 2⁻³²` as intersecting), so every such
+                    // cast ends here; at `t` its gap is at most 2⁻³², not
+                    // necessarily below 0, so the contact is before
+                    // `t + 2⁻³² / speed`.
+                    return clear.map(|c| {
+                        let (gap, speed) = clear_gap;
+                        let slack = ratio_within(TRACE_TOLERANCE, speed, max_t);
+                        let step = ratio_within(gap, speed, t - lo + slack);
+                        Contact {
+                            t: min_fix(lo + max_fix(step, Fix128::ZERO), max_t),
+                            ..c
+                        }
+                    });
                 }
                 t = (lo + t).half();
             }
@@ -1717,6 +1848,12 @@ fn dips_below(
     max_t: Fix128,
 ) -> bool {
     let deep = |g: Option<Fix128>| g.is_none_or(|g| g < -TRACE_TOLERANCE);
+    // The far end first: a path that sinks so slowly that a doubling step
+    // changes the gap by less than its rounding would see no decrease and stop
+    // the search before it reaches the depth it has by `max_t`.
+    if deep(gap_at(max_t)) {
+        return true;
+    }
     let big = max_t + Fix128::ONE;
     let mut step = max_fix(
         ratio_within(max_fix(f0, Fix128::ZERO), speed, big),
@@ -2570,12 +2707,19 @@ fn sweep_plane(
     };
     let normal = if s.is_negative() { -n } else { n };
     let speed = -normal.dot(d);
-    if speed < PARALLEL_EPSILON {
+    if speed <= Fix128::ZERO {
+        return None;
+    }
+    let gap = s.abs() - r;
+    // A sink slower than 2⁻³² per unit of travel is a hit when the core is more
+    // than 2⁻³² inside the plane by `max_t` (the rule of `touch_is_hit` for a
+    // motion near the tangent plane); its time is bounded by `ratio_within`.
+    if speed < PARALLEL_EPSILON && gap - speed * max_t >= -TRACE_TOLERANCE {
         return None;
     }
     // A start within the tolerance inside the plane's reach (deeper is a start
     // overlap, reported before the sweep) is touching: contact at once.
-    let t = max_fix((s.abs() - r) / speed, Fix128::ZERO);
+    let t = max_fix(ratio_within(gap, speed, max_t + Fix128::ONE), Fix128::ZERO);
     if t > max_t {
         return None;
     }
