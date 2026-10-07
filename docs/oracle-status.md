@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5263 |
+| 🟢 Not ignored (run by CI) | 5301 |
 | 🔴 Red by design | 199 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5488** |
+| **Total** | **5526** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -275,7 +275,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5263)
+## 🟢 Not ignored (5301)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -288,11 +288,11 @@ Per-file counts (the test names are in `tests/`):
 | `engineering_oracles_fluid.rs` | 40 |
 | `analytic_maxwell_fdtd.rs` | 38 |
 | `analytic_raycast_wiring.rs` | 37 |
+| `analytic_world_participant_wiring.rs` | 37 |
 | `analytic_coordinate_range.rs` | 36 |
 | `analytic_shape_raycast.rs` | 36 |
 | `analytic_sdf_character_up_axis.rs` | 35 |
 | `analytic_world_api.rs` | 35 |
-| `analytic_world_participant_wiring.rs` | 34 |
 | `audit_coupled_iteration.rs` | 34 |
 | `engineering_oracles_solid.rs` | 34 |
 | `analytic_world_character.rs` | 31 |
@@ -428,6 +428,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_smoke_fire_wiring.rs` | 14 |
 | `analytic_thermal_wiring.rs` | 14 |
 | `analytic_vehicle_scenario.rs` | 14 |
+| `analytic_world_query_margins.rs` | 14 |
 | `audit_animation_blend.rs` | 14 |
 | `audit_articulation.rs` | 14 |
 | `audit_fsi_advanced.rs` | 14 |
@@ -612,6 +613,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_thermoelastic.rs` | 6 |
 | `analytic_thermoelastic_channel.rs` | 6 |
 | `analytic_warp_risk_wiring.rs` | 6 |
+| `analytic_world_query_touching.rs` | 6 |
 | `audit_contact_modifier_once.rs` | 6 |
 | `audit_layer_adhesion.rs` | 6 |
 | `audit_profiling.rs` | 6 |
@@ -629,6 +631,8 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
 | `analytic_shaped_sphere_contacts.rs` | 5 |
 | `analytic_solver_tgs_dispatch_wiring.rs` | 5 |
+| `analytic_world_query_long_paths.rs` | 5 |
+| `analytic_world_query_twisted_cells.rs` | 5 |
 | `audit_c_buckling.rs` | 5 |
 | `audit_c_collider.rs` | 5 |
 | `audit_c_force.rs` | 5 |
@@ -643,6 +647,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
+| `analytic_world_query_boundaries.rs` | 4 |
 | `audit_c_joint_extra.rs` | 4 |
 | `audit_c_laminate.rs` | 4 |
 | `audit_c_linear_elastic_fem.rs` | 4 |
@@ -689,6 +694,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm07_rollback_event_parity.rs` | 2 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_wind_zone_terminal_velocity.rs` | 1 |
+| `analytic_world_query_near_contact.rs` | 1 |
 | `audit_c_creep_longterm.rs` | 1 |
 | `audit_c_plastic.rs` | 1 |
 
