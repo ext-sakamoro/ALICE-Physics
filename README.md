@@ -162,6 +162,18 @@ and their counts must match. The field-by-field table is in the docs of
 FEM and vehicles are not `PhysicsWorld` fields and are saved by the caller. The
 crate provides the step function, not a search algorithm.
 
+**Participants (unstable).** Other physics can run inside the world's step
+through the `world_participant::Participant` trait: register it with
+`PhysicsWorld::add_participant`, advance with `try_step` (or
+`try_step_parallel`), read it with `observe_participant`. Each participant is
+called once per substep in an order fixed by the ports it declares, may push
+forces onto bodies and exchange values through shared fields, and a failure is
+recorded as a sticky fault (`fault` / `clear_fault`) instead of wrapping. `snapshot_world`
+saves each participant's state; the participants themselves are code, so the
+world being restored into must already hold the same ones in the same order. The types and rules
+of `world_participant` may still change before they are settled, and such a
+change can come in a minor release; the module docs list the current contract.
+
 ## What is included
 
 Every public module, grouped by area and with a one-line summary, is listed in [`docs/MODULES.md`](docs/MODULES.md). API details are on

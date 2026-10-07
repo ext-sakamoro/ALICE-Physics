@@ -146,6 +146,10 @@ cargo run --release --example rollback_netcode
 モーター、キャラクターコントローラー、布、流体、FEM、車両は `PhysicsWorld` のフィールドではないので呼び出し側が保存する
 本 crate が提供するのは遷移関数で、探索アルゴリズムそのものは含まない
 
+**参加者 (unstable)** 他の物理は `world_participant::Participant` trait を通じて世界の step の中で動かせる `PhysicsWorld::add_participant` で登録し、`try_step` (または `try_step_parallel`) で進め、`observe_participant` で読む
+各参加者は宣言した port で決まる順に substep ごとに 1 回呼ばれ、物体に力を加えたり、共有の場で値を受け渡したりできる 失敗は wrap せず、残り続ける fault (`fault` / `clear_fault`) として記録する `snapshot_world` は各参加者の状態を保存する 参加者そのものはコードなので、復元先の世界に同じ参加者が同じ順で登録されている必要がある
+`world_participant` の型と規則は確定までに変わることがあり、その変更は minor の版でも入りうる 現在の契約は module の doc にある
+
 ## 含まれるもの
 
 公開モジュールの全一覧 (分野別、1 行説明付き) は [`docs/MODULES.md`](docs/MODULES.md) (英語) にある
