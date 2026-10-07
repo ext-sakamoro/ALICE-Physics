@@ -78,7 +78,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
 | `character` | standalone (world API 3 of 11 items) | 0 / 3 / 0 / 8 / 0 | — |
 | `character_state` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `cloth` | standalone | 0 / 0 / 0 / 10 / 0 | — |
+| `cloth` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `cloth_fluid` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `collision_mesh_gen` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `compound` | standalone (step 8, world API 2 of 21 items) | 8 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |

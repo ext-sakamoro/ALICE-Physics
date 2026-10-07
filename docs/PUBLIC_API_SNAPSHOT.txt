@@ -1825,12 +1825,17 @@ pub alice_physics::cloth::Cloth::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics::cloth::Cloth::velocities: alloc::vec::Vec<alice_physics::math::Vec3Fix>
 pub alice_physics::cloth::Cloth::wind: alice_physics::math::Vec3Fix
 impl alice_physics::cloth::Cloth
+pub fn alice_physics::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics::math::Vec3Fix>
 pub fn alice_physics::cloth::Cloth::new_grid(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, usize, usize, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics::cloth::Cloth::pin(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics::math::Vec3Fix]) -> usize
+pub fn alice_physics::cloth::Cloth::rest_positions(&self) -> &[alice_physics::math::Vec3Fix]
+pub fn alice_physics::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics::math::Fix128, alice_physics::math::Fix128)>
+pub fn alice_physics::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics::math::Vec3Fix]) -> core::result::Result<(), alice_physics::cloth::RestPositionsMismatch>
+pub fn alice_physics::cloth::Cloth::set_rest_tether(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step_with_sdf(&mut self, alice_physics::math::Fix128, &[alice_physics::sdf_collider::SdfCollider])
 impl core::fmt::Debug for alice_physics::cloth::Cloth
@@ -1871,6 +1876,25 @@ impl core::marker::Unpin for alice_physics::cloth::ClothConfig
 impl core::marker::UnsafeUnpin for alice_physics::cloth::ClothConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cloth::ClothConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::cloth::ClothConfig
+pub struct alice_physics::cloth::RestPositionsMismatch
+pub alice_physics::cloth::RestPositionsMismatch::expected: usize
+pub alice_physics::cloth::RestPositionsMismatch::got: usize
+impl core::clone::Clone for alice_physics::cloth::RestPositionsMismatch
+pub fn alice_physics::cloth::RestPositionsMismatch::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::cloth::RestPositionsMismatch
+impl core::cmp::PartialEq for alice_physics::cloth::RestPositionsMismatch
+pub fn alice_physics::cloth::RestPositionsMismatch::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::cloth::RestPositionsMismatch
+pub fn alice_physics::cloth::RestPositionsMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::cloth::RestPositionsMismatch
+impl core::marker::StructuralPartialEq for alice_physics::cloth::RestPositionsMismatch
+impl core::marker::Freeze for alice_physics::cloth::RestPositionsMismatch
+impl core::marker::Send for alice_physics::cloth::RestPositionsMismatch
+impl core::marker::Sync for alice_physics::cloth::RestPositionsMismatch
+impl core::marker::Unpin for alice_physics::cloth::RestPositionsMismatch
+impl core::marker::UnsafeUnpin for alice_physics::cloth::RestPositionsMismatch
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::cloth::RestPositionsMismatch
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::cloth::RestPositionsMismatch
 pub mod alice_physics::cloth_fluid
 pub struct alice_physics::cloth_fluid::ClothFluidCoupling
 pub alice_physics::cloth_fluid::ClothFluidCoupling::buoyancy_factor: alice_physics::math::Fix128
@@ -10864,12 +10888,17 @@ pub alice_physics::prelude::Cloth::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics::prelude::Cloth::velocities: alloc::vec::Vec<alice_physics::math::Vec3Fix>
 pub alice_physics::prelude::Cloth::wind: alice_physics::math::Vec3Fix
 impl alice_physics::cloth::Cloth
+pub fn alice_physics::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics::math::Vec3Fix>
 pub fn alice_physics::cloth::Cloth::new_grid(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, usize, usize, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics::cloth::Cloth::pin(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics::math::Vec3Fix]) -> usize
+pub fn alice_physics::cloth::Cloth::rest_positions(&self) -> &[alice_physics::math::Vec3Fix]
+pub fn alice_physics::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics::math::Fix128, alice_physics::math::Fix128)>
+pub fn alice_physics::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics::math::Vec3Fix]) -> core::result::Result<(), alice_physics::cloth::RestPositionsMismatch>
+pub fn alice_physics::cloth::Cloth::set_rest_tether(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step_with_sdf(&mut self, alice_physics::math::Fix128, &[alice_physics::sdf_collider::SdfCollider])
 impl core::fmt::Debug for alice_physics::cloth::Cloth
@@ -21846,12 +21875,17 @@ pub alice_physics::Cloth::triangles: alloc::vec::Vec<[usize; 3]>
 pub alice_physics::Cloth::velocities: alloc::vec::Vec<alice_physics::math::Vec3Fix>
 pub alice_physics::Cloth::wind: alice_physics::math::Vec3Fix
 impl alice_physics::cloth::Cloth
+pub fn alice_physics::cloth::Cloth::clear_rest_tether(&mut self)
 pub fn alice_physics::cloth::Cloth::compute_normals(&self) -> alloc::vec::Vec<alice_physics::math::Vec3Fix>
 pub fn alice_physics::cloth::Cloth::new_grid(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128, usize, usize, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::cloth::Cloth::particle_count(&self) -> usize
 pub fn alice_physics::cloth::Cloth::pin(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::pin_top_row(&mut self, usize)
 pub fn alice_physics::cloth::Cloth::remaining_self_contact_crossings(&self, &[alice_physics::math::Vec3Fix]) -> usize
+pub fn alice_physics::cloth::Cloth::rest_positions(&self) -> &[alice_physics::math::Vec3Fix]
+pub fn alice_physics::cloth::Cloth::rest_tether(&self) -> core::option::Option<(alice_physics::math::Fix128, alice_physics::math::Fix128)>
+pub fn alice_physics::cloth::Cloth::set_rest_positions(&mut self, &[alice_physics::math::Vec3Fix]) -> core::result::Result<(), alice_physics::cloth::RestPositionsMismatch>
+pub fn alice_physics::cloth::Cloth::set_rest_tether(&mut self, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::cloth::Cloth::step_with_sdf(&mut self, alice_physics::math::Fix128, &[alice_physics::sdf_collider::SdfCollider])
 impl core::fmt::Debug for alice_physics::cloth::Cloth

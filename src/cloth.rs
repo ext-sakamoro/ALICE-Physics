@@ -128,6 +128,27 @@ pub struct Cloth {
     pub wind: Vec3Fix,
     /// Configuration
     pub config: ClothConfig,
+    /// Rest tether: per-particle spring-damper toward `rest_positions` (`None` = off)
+    rest_tether: Option<RestTether>,
+    /// Rest positions the tether pulls toward (empty until set)
+    rest_positions: Vec<Vec3Fix>,
+}
+
+/// Stiffness / damping of the rest tether (see [`Cloth::set_rest_tether`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RestTether {
+    stiffness: Fix128,
+    damping: Fix128,
+}
+
+/// Returned by [`Cloth::set_rest_positions`] when the slice does not have one position per
+/// particle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RestPositionsMismatch {
+    /// Number of particles in the cloth.
+    pub expected: usize,
+    /// Number of positions given.
+    pub got: usize,
 }
 
 impl Cloth {
@@ -201,6 +222,8 @@ impl Cloth {
             pinned: Vec::new(),
             wind: Vec3Fix::ZERO,
             config: ClothConfig::default(),
+            rest_tether: None,
+            rest_positions: Vec::new(),
         };
 
         cloth.build_constraints();
@@ -260,6 +283,73 @@ impl Cloth {
         for i in 0..res_x {
             self.pin(i);
         }
+    }
+
+    /// Pull every particle toward its rest position with the spring-damper
+    /// `F = stiffness·(rest − x) − damping·v` (a soft sheet springing back to its rest
+    /// shape).
+    ///
+    /// `stiffness` is in N/m and `damping` in N·s/m, per particle; with particle mass `m`
+    /// (`1 / inv_masses[i]`), angular frequency `ω = sqrt(k/m)` and damping ratio
+    /// `ζ = c / (2 sqrt(k m))`. `ζ < 1` springs back through the rest position and
+    /// oscillates, `ζ = 1` returns without overshoot. Solved inside each substep as an XPBD
+    /// constraint with damping (Macklin et al. 2016, eq. 26) on `C = x − rest`, with one
+    /// multiplier per particle accumulated over the iterations, so the law does not depend
+    /// on `iterations`; alone it is backward Euler per substep. It is solved after the edge
+    /// and bending constraints in every iteration, so the sheet's own constraints still
+    /// act. Pinned particles (`inv_mass = 0`) are not affected.
+    ///
+    /// The rest positions are the current positions unless [`set_rest_positions`] was
+    /// called before. Negative values are treated as 0; `stiffness = damping = 0` is
+    /// equivalent to no tether. `config.damping` is applied on top (set it to 1 for the
+    /// pure law).
+    ///
+    /// [`set_rest_positions`]: Self::set_rest_positions
+    pub fn set_rest_tether(&mut self, stiffness: Fix128, damping: Fix128) {
+        if self.rest_positions.len() != self.positions.len() {
+            self.rest_positions = self.positions.clone();
+        }
+        let clamp = |x: Fix128| if x.is_negative() { Fix128::ZERO } else { x };
+        self.rest_tether = Some(RestTether {
+            stiffness: clamp(stiffness),
+            damping: clamp(damping),
+        });
+    }
+
+    /// Set the rest positions the tether pulls toward (one per particle). Does not enable
+    /// the tether by itself.
+    ///
+    /// # Errors
+    ///
+    /// [`RestPositionsMismatch`] if `rest.len()` is not the particle count; the rest
+    /// positions are then left unchanged.
+    pub fn set_rest_positions(&mut self, rest: &[Vec3Fix]) -> Result<(), RestPositionsMismatch> {
+        if rest.len() != self.positions.len() {
+            return Err(RestPositionsMismatch {
+                expected: self.positions.len(),
+                got: rest.len(),
+            });
+        }
+        self.rest_positions.clear();
+        self.rest_positions.extend_from_slice(rest);
+        Ok(())
+    }
+
+    /// Turn the rest tether off (the rest positions are kept).
+    pub fn clear_rest_tether(&mut self) {
+        self.rest_tether = None;
+    }
+
+    /// `(stiffness, damping)` of the rest tether, if enabled.
+    #[must_use]
+    pub fn rest_tether(&self) -> Option<(Fix128, Fix128)> {
+        self.rest_tether.map(|t| (t.stiffness, t.damping))
+    }
+
+    /// Rest positions the tether pulls toward (empty until set or enabled).
+    #[must_use]
+    pub fn rest_positions(&self) -> &[Vec3Fix] {
+        &self.rest_positions
     }
 
     /// Step cloth simulation
@@ -349,11 +439,18 @@ impl Cloth {
         } else {
             (Vec::new(), Vec::new())
         };
+        let mut tether_lambda = match self.rest_tether {
+            Some(_) => vec![Vec3Fix::ZERO; n],
+            None => Vec::new(),
+        };
         for _ in 0..self.config.iterations {
             self.solve_edge_constraints(dt);
             self.solve_bend_constraints(dt);
             if self.config.self_collision {
                 self.solve_self_collision(&candidates, &edge_candidates);
+            }
+            if let Some(tether) = self.rest_tether {
+                self.solve_rest_tether(tether, dt, &mut tether_lambda);
             }
         }
 
@@ -364,6 +461,30 @@ impl Cloth {
                 continue;
             }
             self.velocities[i] = (self.positions[i] - self.prev_positions[i]) * inv_dt;
+        }
+    }
+
+    /// One XPBD-with-damping iteration of the rest tether over all particles, accumulating
+    /// each particle's multiplier in `lambdas[i]` (zeroed at the start of the substep).
+    fn solve_rest_tether(&mut self, tether: RestTether, h: Fix128, lambdas: &mut [Vec3Fix]) {
+        // Same vector update as the 2D mouse joint, multiplied through by k h² so that
+        // k = 0 (a pure damper) needs no division:
+        //   Δλ = (−k h² C − λ − c h (x − x_prev)) / ((k h² + c h) w + 1),   x += w Δλ
+        let kh2 = tether.stiffness * h * h;
+        let ch = tether.damping * h;
+        for (i, lambda) in lambdas.iter_mut().enumerate() {
+            let w = self.inv_masses[i];
+            if w.is_zero() {
+                continue;
+            }
+            let x = self.positions[i];
+            let c = x - self.rest_positions[i];
+            let moved = x - self.prev_positions[i];
+            let denom = (kh2 + ch) * w + Fix128::ONE;
+            let numer = c * (Fix128::ZERO - kh2) - *lambda - moved * ch;
+            let dlambda = numer / denom;
+            *lambda = *lambda + dlambda;
+            self.positions[i] = x + dlambda * w;
         }
     }
 
@@ -1459,6 +1580,11 @@ impl core::fmt::Debug for Cloth {
             .field("pinned", &format_args!("[{} items]", self.pinned.len()))
             .field("wind", &self.wind)
             .field("config", &self.config)
+            .field("rest_tether", &self.rest_tether)
+            .field(
+                "rest_positions",
+                &format_args!("[{} items]", self.rest_positions.len()),
+            )
             .finish()
     }
 }

@@ -127,6 +127,10 @@ name = "cloth_simulation"
 required-features = ["std"]
 
 [[example]]
+name = "cloth_rest_tether"
+required-features = ["std"]
+
+[[example]]
 name = "spherical_planet_walk"
 required-features = ["std"]
 
