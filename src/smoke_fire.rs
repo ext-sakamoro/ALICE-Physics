@@ -258,4 +258,52 @@ mod tests {
         let ch4 = ArrheniusReaction::methane_air();
         assert!(pla.soot_yield > ch4.soot_yield);
     }
+
+    /// `a · exp(−x)` in f64, the closed form `scaled_exp_neg` must follow.
+    fn closed(a: f64, x: f64) -> f64 {
+        a * crate::det_math::exp64(-x)
+    }
+
+    fn rel_err(got: Fix128, want: f64) -> f64 {
+        (got.to_f64() - want).abs() / want
+    }
+
+    /// Exponents on both sides of the step (16) and past the old cut-off (40):
+    /// one step, two steps, and the PLA ignition point of AUD-A-S3W2-001.
+    #[test]
+    fn scaled_exp_neg_follows_the_closed_form_across_steps() {
+        let a = Fix128::from_int(500_000_000);
+        for (x_num, x_den) in [(10_i64, 1_i64), (20, 1), (3209, 80), (60, 1)] {
+            let x = Fix128::from_ratio(x_num, x_den);
+            let got = scaled_exp_neg(a, x);
+            let want = closed(5.0e8, x_num as f64 / x_den as f64);
+            assert!(
+                rel_err(got, want) < 2e-2,
+                "x = {x_num}/{x_den}: got {:e} want {want:e}",
+                got.to_f64()
+            );
+        }
+    }
+
+    /// Past the old cut-off (E_a/(R T) = 40.1 for PLA at 450 K) the rate is the
+    /// closed form, not 0; below the Fix128 resolution it is exactly 0.
+    #[test]
+    fn reaction_rate_has_no_cliff_at_forty_and_underflows_only_below_resolution() {
+        let pla = ArrheniusReaction::pla_air();
+        let r = reaction_rate_kg_per_m3_s(&pla, Fix128::from_int(450), Fix128::ONE, Fix128::ONE);
+        let want = closed(5.0e8, 150_000.0 / (8.314 * 450.0));
+        assert!(
+            rel_err(r, want) < 1e-2,
+            "PLA 450 K: {:e} vs {want:e}",
+            r.to_f64()
+        );
+        let ch4 = ArrheniusReaction::methane_air();
+        let tiny = reaction_rate_kg_per_m3_s(&ch4, Fix128::from_int(300), Fix128::ONE, Fix128::ONE);
+        assert_eq!(tiny, Fix128::ZERO, "8e-27 is below the 2^-64 resolution");
+        // a huge exponent ends after a few steps with exactly 0
+        assert_eq!(
+            scaled_exp_neg(Fix128::from_int(1_000_000_000), Fix128::from_int(20_000)),
+            Fix128::ZERO
+        );
+    }
 }
