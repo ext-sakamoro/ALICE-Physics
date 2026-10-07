@@ -49,7 +49,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `shape_raycast` | binding | 0 / 0 / 24 / 10 / 0 | C ABI, Python, WebAssembly |
-| `world_shape_query` | binding | 0 / 0 / 4 / 1 / 0 | C ABI, Python, WebAssembly |
+| `world_shape_query` | binding | 0 / 0 / 4 / 3 / 0 | C ABI, Python, WebAssembly |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `aeroelasticity` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `analytics_bridge` | standalone | 0 / 0 / 0 / 14 / 0 | — |
