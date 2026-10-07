@@ -455,34 +455,64 @@ fn a_version_2_blob_extends_the_version_1_payload() {
     assert_eq!(&v2[16 + l1..16 + l2], &[0u8; 17][..]);
 }
 
-/// The version 1 fixture steps on as the world it was taken from: a world
-/// stepped once and then 60 more times equals the fixture restored and
-/// stepped 60 times.
+/// The version 1 fixture still reads as the world it was taken from (a static
+/// body at y = −1 and three unit spheres at rest at y = 1, 3, 5, substeps 4,
+/// iterations 4, gravity −10, stepped once by 1/60 s, written while
+/// `snapshot_world` wrote version 1): the restored world has that world's configuration and bodies, writing
+/// it again reproduces the fixture's payload byte for byte, and it steps on
+/// exactly like the same state restored from its own version 2 blob.
+///
+/// The fixture holds the state of the solver it was written with, and the
+/// writer no longer emits version 1, so the comparison is against the
+/// fixture's own content rather than against a world stepped again today
+/// (the solver's rounding has changed since).
 #[test]
 fn a_version_1_blob_restores_the_world_it_was_taken_from() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
-    let config = PhysicsConfig {
-        substeps: 4,
-        iterations: 4,
-        gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        ..Default::default()
-    };
-    let mut original = PhysicsWorld::new(config);
-    original.add_body(RigidBody::new_static(Vec3Fix::from_int(0, -1, 0)));
-    for i in 0..3 {
-        original.add_body_with_radius(
-            RigidBody::new_dynamic(Vec3Fix::from_int(0, 1 + 2 * i, 0), Fix128::ONE),
-            Fix128::ONE,
+    assert_eq!(
+        &v1[4..6],
+        &1u16.to_le_bytes(),
+        "fixture must be a version-1 blob"
+    );
+    let mut restored = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
+
+    // The configuration and the bodies of the world it was taken from
+    let config = &restored.config;
+    assert_eq!(config.substeps, 4);
+    assert_eq!(config.iterations, 4);
+    assert_eq!(
+        config.gravity,
+        Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO)
+    );
+    assert_eq!(restored.bodies.len(), 4);
+    assert_eq!(restored.bodies[0].position, Vec3Fix::from_int(0, -1, 0));
+    assert!(restored.bodies[0].is_static());
+    for i in 1..4 {
+        let b = &restored.bodies[i];
+        assert_eq!(b.inv_mass, Fix128::ONE, "body {i}");
+        assert_eq!(b.position.x, Fix128::ZERO, "body {i}");
+        assert_eq!(b.position.z, Fix128::ZERO, "body {i}");
+        // one frame of free fall from rest at y = 2i − 1 moves it by under 1 m
+        let drop = Fix128::from_int(2 * i as i64 - 1) - b.position.y;
+        assert!(
+            drop > Fix128::ZERO && drop < Fix128::ONE,
+            "body {i}: {drop:?}"
         );
     }
-    original.step(Fix128::from_ratio(1, 60));
-    let mut restored = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
-    assert_eq!(restored.snapshot_world(), original.snapshot_world());
+
+    // Writing it again keeps every byte of the version 1 payload
+    let v2 = restored.snapshot_world();
+    let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
+    let l1 = len(v1);
+    assert_eq!(&v2[16..16 + l1], &v1[16..16 + l1]);
+
+    // It steps on like the same state restored from the version 2 blob
+    let mut again = PhysicsWorld::from_world_snapshot(&v2).expect("v2 blob");
     for _ in 0..60 {
-        original.step(Fix128::from_ratio(1, 60));
         restored.step(Fix128::from_ratio(1, 60));
+        again.step(Fix128::from_ratio(1, 60));
     }
-    assert_eq!(restored.snapshot_world(), original.snapshot_world());
+    assert_eq!(restored.snapshot_world(), again.snapshot_world());
 }
 
 // ── Waking ───────────────────────────────────────────────────────────────
