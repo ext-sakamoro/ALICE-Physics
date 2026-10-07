@@ -202,26 +202,17 @@ fn entry_reset_is_new_and_idempotent() {
     assert_eq!(snap(&e), snap(&f));
 }
 
-/// Tick overflow: `u64::MAX` recorded twice. With debug assertions the `+=`
-/// panics; in release it wraps to `u64::MAX − 1`. Pinned per profile so that
-/// a change to saturating / checked arithmetic shows up as red here.
-// PIN: AUD-A-S4W1-001
+/// Tick overflow: `u64::MAX` recorded twice saturates the total at `u64::MAX`
+/// in every profile (it used to panic in debug and wrap to `u64::MAX − 1` in
+/// release, AUD-A-S4W1-001); the call count still counts both calls.
 #[test]
-fn entry_record_overflow_panics_in_debug_and_wraps_in_release() {
+fn entry_record_overflow_saturates_the_total() {
     let mut e = ProfileEntry::new("x");
     e.record(u64::MAX);
     let r = catch_unwind(AssertUnwindSafe(|| e.record(u64::MAX)));
-    if cfg!(debug_assertions) {
-        assert!(
-            r.is_err(),
-            "debug profile: `total_ticks += ticks` must panic on overflow"
-        );
-    } else {
-        assert!(r.is_ok(), "release profile: `+=` wraps silently");
-        assert_eq!(e.total_ticks, u64::MAX.wrapping_add(u64::MAX));
-        assert_eq!(e.total_ticks, u64::MAX - 1);
-        assert_eq!(e.call_count, 2);
-    }
+    assert!(r.is_ok(), "no panic on overflow");
+    assert_eq!(e.total_ticks, u64::MAX);
+    assert_eq!(e.call_count, 2);
 }
 
 // ---------------------------------------------------------------------------

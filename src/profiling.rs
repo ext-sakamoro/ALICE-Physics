@@ -54,10 +54,12 @@ impl ProfileEntry {
         }
     }
 
-    /// Record a measurement
+    /// Record a measurement. The total and the call count saturate at
+    /// `u64::MAX` instead of wrapping (a wrapped total would go down and make
+    /// the average lie).
     pub fn record(&mut self, ticks: u64) {
-        self.total_ticks += ticks;
-        self.call_count += 1;
+        self.total_ticks = self.total_ticks.saturating_add(ticks);
+        self.call_count = self.call_count.saturating_add(1);
         self.last_ticks = ticks;
         if ticks > self.peak_ticks {
             self.peak_ticks = ticks;
