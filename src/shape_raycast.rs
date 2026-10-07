@@ -560,6 +560,7 @@ fn ray_posed_shape(
     rotation: QuatFix,
     max_t: Fix128,
 ) -> Option<LocalHit> {
+    let rotation = rotation.unit_rotation();
     let center = position - rotation.rotate_vec(shape.center_of_mass_offset());
     let (o, d) = to_local(origin, direction, center, rotation);
     let hit = match *shape {
@@ -612,6 +613,7 @@ fn ray_compound_child(
     body_rot: QuatFix,
     max_t: Fix128,
 ) -> Option<LocalHit> {
+    let body_rot = body_rot.unit_rotation();
     let child_rot = body_rot.mul(child.local_rotation);
     let child_pos = body_pos + body_rot.rotate_vec(child.local_position);
     match &child.shape {

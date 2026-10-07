@@ -1981,11 +1981,14 @@ fn body_pieces(world: &PhysicsWorld, i: usize) -> Vec<Piece<'_>> {
                 rotation: body.rotation,
             };
             vec![match *shape {
-                Shape::Box { half_extents } => Piece::Box {
-                    center: body.position - body.rotation.rotate_vec(shape.center_of_mass_offset()),
-                    half: half_extents,
-                    rotation: body.rotation,
-                },
+                Shape::Box { half_extents } => {
+                    let rotation = body.rotation.unit_rotation();
+                    Piece::Box {
+                        center: body.position - rotation.rotate_vec(shape.center_of_mass_offset()),
+                        half: half_extents,
+                        rotation,
+                    }
+                }
                 _ => Piece::Posed(posed),
             }]
         }
@@ -1999,6 +2002,7 @@ fn body_pieces(world: &PhysicsWorld, i: usize) -> Vec<Piece<'_>> {
 
 /// One compound child, placed the way [`CompoundChild::support_world`] places it.
 fn child_piece(child: &CompoundChild, body_pos: Vec3Fix, body_rot: QuatFix) -> Piece<'_> {
+    let body_rot = body_rot.unit_rotation();
     let child_rot = body_rot.mul(child.local_rotation);
     let child_pos = body_pos + body_rot.rotate_vec(child.local_position);
     match &child.shape {
@@ -2026,12 +2030,10 @@ fn child_piece(child: &CompoundChild, body_pos: Vec3Fix, body_rot: QuatFix) -> P
 
 /// The geometric centre and frame of a posed shape.
 fn posed_frame(posed: &PosedShape) -> (Vec3Fix, QuatFix) {
+    let rotation = posed.rotation.unit_rotation();
     (
-        posed.position
-            - posed
-                .rotation
-                .rotate_vec(posed.shape.center_of_mass_offset()),
-        posed.rotation,
+        posed.position - rotation.rotate_vec(posed.shape.center_of_mass_offset()),
+        rotation,
     )
 }
 
