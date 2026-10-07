@@ -454,7 +454,6 @@ fn checked_mul_is_sound() {
 
 /// Completeness: every in-range product is reported (doc: `None` only when out of range).
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-026: checked_mul returns None for in-range products: the guard `i64::try_from(hh)` tests floor(a)*floor(b), which overshoots 2^63 for two negative operands whose product is below it (e.g. (-5.86e18) * (-1.5) = 8.79e18 -> None); 1814 of 40000 boundary-biased random cases"]
 fn checked_mul_is_complete() {
     let mut false_none = 0;
     let mut example = None;
@@ -768,7 +767,6 @@ fn exp_ln_powf_accuracy_claims() {
 /// exp is documented to saturate for x > 43 and to be accurate up to there; true e^x is representable
 /// until x = ln(2^63) = 43.668.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-020: Fix128::exp saturates from x >= 43.0 (hi >= 43) but e^43 = 4.73e18 .. e^43.66 = 9.2e18 are representable: exp(43) returns i64::MAX (9.22e18, 1.95x too large); doc says 'x > 43 saturates'"]
 fn exp_is_accurate_up_to_the_representable_maximum() {
     for &x in &[43.0, 43.2, 43.5, 43.66] {
         let got = f(x).exp().to_f64();

@@ -649,8 +649,9 @@ impl Fix128 {
     /// Deterministic `e^self` via `2^(x·log₂e)` ([`Fix128::powf_pos`] with base 2;
     /// negative arguments as `1 / e^|x|`). Relative error ≲ 1e-6 for
     /// `|x| ≤ 40` (`math::tests::exp_matches_f64_reference`); `x < −44` is
-    /// below the 2⁻⁶⁴ resolution and returns `ZERO`, `x > 43` saturates at
-    /// the representable maximum instead of wrapping.
+    /// below the 2⁻⁶⁴ resolution and returns `ZERO`, and from `x ≥ 63 · ln 2`
+    /// (≈ 43.668, where `e^x` reaches 2⁶³) it saturates at the representable
+    /// maximum instead of wrapping.
     #[must_use]
     pub fn exp(self) -> Self {
         // log₂(e) = 1.442 695 040 888 963 4 (raw pair, exact to 2⁻⁶⁴)
@@ -668,10 +669,16 @@ impl Fix128 {
             }
             return Self::ONE / pos;
         }
-        if self.hi >= 43 {
+        // e^x fits Fix128 while x · log₂e < 63 (x < 43.668); past that it
+        // saturates. `self.hi >= 44` keeps the product itself in range.
+        if self.hi >= 44 {
             return Self::from_raw(i64::MAX, u64::MAX);
         }
-        Self::from_int(2).powf_pos(self * LOG2_E)
+        let power = self * LOG2_E;
+        if power.hi >= 63 {
+            return Self::from_raw(i64::MAX, u64::MAX);
+        }
+        Self::from_int(2).powf_pos(power)
     }
 
     /// Deterministic natural log via range reduction to `[1, 2)` + atanh

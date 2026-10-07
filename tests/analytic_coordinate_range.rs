@@ -366,11 +366,14 @@ fn characterization_sin_absolute_error_grows_with_the_argument() {
     assert!(((s * s + c * c).to_f64() - 1.0).abs() < 1e-9);
 }
 
-/// `exp` は 43 以上で上限に saturate (文書どおり)、`ln` / `atan` は全域で範囲内
+/// `exp` は `e^x` が 2⁶³ に届く `x ≥ 63·ln 2 ≈ 43.668` で上限に saturate し、
+/// その手前 (43 等) は値を返す、`ln` / `atan` は全域で範囲内
 #[test]
 fn exp_saturates_and_ln_atan_stay_in_range() {
     let max = Fix128::from_raw(i64::MAX, u64::MAX);
-    assert_eq!(Fix128::from_int(43).exp(), max);
+    let e43 = Fix128::from_int(43).exp().to_f64();
+    assert!((e43 / 43f64.exp() - 1.0).abs() < 1e-5, "exp(43) = {e43:e}");
+    assert_eq!(Fix128::from_int(44).exp(), max);
     assert_eq!(Fix128::from_int(50).exp(), max);
     assert!((max.ln().to_f64() - 63.0 * core::f64::consts::LN_2).abs() < 1e-9);
     assert!((pow2(62).atan().to_f64() - core::f64::consts::FRAC_PI_2).abs() < 1e-12);
