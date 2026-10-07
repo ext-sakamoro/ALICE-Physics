@@ -112,7 +112,8 @@ fn comps(v: Vec3Fix) -> [f64; 3] {
 }
 
 /// One particle without constraints follows the continuous solution at every frame to 1e-9,
-/// for substeps 1 / 2 / 4, `ω h` from 0.1 to 2, under-, critically and over-damped, with an
+/// for substeps 1 / 2 / 4, `ω h` from 0.1 to 2 (and 6 / 30 at one substep, where only the
+/// branch for the regime is accurate), under-, critically and over-damped, with an
 /// initial velocity and a constant acceleration (gravity).
 #[test]
 fn a_lone_particle_follows_the_continuous_solution_at_every_frame() {
@@ -120,7 +121,8 @@ fn a_lone_particle_follows_the_continuous_solution_at_every_frame() {
     let mut cases = 0;
     for substeps in [1_usize, 2, 4] {
         // ω h = ω / (60 · substeps) ∈ {0.1, 0.5, 1, 2}
-        for wh_tenths in [1_i64, 5, 10, 20] {
+        let large: &[i64] = if substeps == 1 { &[60, 300] } else { &[] };
+        for wh_tenths in [1_i64, 5, 10, 20].iter().chain(large).copied() {
             let omega = 6 * wh_tenths * substeps as i64;
             for (zn, zd) in [(0_i64, 1_i64), (42, 100), (1, 1), (3, 1)] {
                 let zeta = zn as f64 / zd as f64;
@@ -173,7 +175,7 @@ fn a_lone_particle_follows_the_continuous_solution_at_every_frame() {
             }
         }
     }
-    assert_eq!(cases, 48);
+    assert_eq!(cases, 56);
 }
 
 /// `k = 0`: a pure damper `ë = −γ ė + a` (the overdamped branch with one zero rate).
@@ -201,6 +203,42 @@ fn a_pure_damper_follows_its_exponential() {
             (e[1] - ey).abs() < 1e-9 && (v[1] - vy).abs() < 1e-9,
             "frame {n} y"
         );
+    }
+}
+
+/// A soft spring under a strong damper (`ζ = 25`, `ω h = 0.1`): the overdamped branch with
+/// the slow rate `λ₁ h ≈ 1/500` below the cancellation threshold of `C`.
+#[test]
+fn a_soft_spring_under_a_strong_damper_follows_its_exponentials() {
+    let mut cloth = row(1, 1);
+    cloth.config.substeps = 1;
+    cloth.config.gravity = Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO);
+    let rest = cloth.positions[0];
+    let (k, c) = kc(1, 6, 25, 1);
+    cloth.set_rest_tether(k, c);
+    cloth.positions[0] = rest + Vec3Fix::from_int(1, 0, 0);
+    cloth.velocities[0] = Vec3Fix::from_int(0, 0, 4);
+    for n in 1..=120 {
+        cloth.step(Fix128::from_ratio(1, 60));
+        let t = n as f64 / 60.0;
+        let e = comps(cloth.positions[0] - rest);
+        let v = comps(cloth.velocities[0]);
+        for (i, (e0, v0, a)) in [(1.0, 0.0, 0.0), (0.0, 0.0, -10.0), (0.0, 4.0, 0.0)]
+            .into_iter()
+            .enumerate()
+        {
+            let (ee, ve) = exact(e0, v0, 6.0, 25.0, 300.0, a, t);
+            assert!(
+                (e[i] - ee).abs() < 1e-9,
+                "frame {n}, axis {i}: {} vs {ee}",
+                e[i]
+            );
+            assert!(
+                (v[i] - ve).abs() < 1e-9,
+                "frame {n}, axis {i}: v {} vs {ve}",
+                v[i]
+            );
+        }
     }
 }
 
