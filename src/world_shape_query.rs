@@ -348,6 +348,12 @@ const FINE_LENGTH_SQUARED: Fix128 = Fix128 {
     lo: 0x0000_0001_0000_0000,
 };
 
+/// `2⁻¹⁶`, the square root of [`FINE_LENGTH_SQUARED`].
+const FINE_LENGTH: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0001_0000_0000_0000,
+};
+
 /// `v · 2ᵏ` with the largest component in `[1, 2)` and that `k`, for
 /// `0 < |v| < 1` (`k > 0`, an exact scaling); zero gives `(ZERO, 0)`.
 fn scaled_up(v: Vec3Fix) -> (Vec3Fix, u32) {
@@ -460,6 +466,30 @@ struct ChildSupport<'a> {
     rotation: QuatFix,
 }
 
+/// A posed shape whose support mapping normalizes its direction (an ellipsoid,
+/// a cylinder, a cone), given that direction scaled up to a largest component
+/// in `[1, 2)`: GJK's direction near a contact is about as long as the gap, and
+/// such a mapping (which leaves directions down to `2⁻²⁴` unscaled) loses that
+/// many bits of the support point, enough to put it about `2⁻³²` off the
+/// surface. The scaling is exact and the direction unchanged. Polytopes are not
+/// wrapped: their support compares dot products, and a different rounding would
+/// only pick another of two tied vertices.
+struct RoundSupport<'a>(&'a PosedShape);
+
+impl Support for RoundSupport<'_> {
+    fn support(&self, direction: Vec3Fix) -> Vec3Fix {
+        self.0.support(scaled_up(direction).0)
+    }
+}
+
+/// Whether a posed shape's support mapping normalizes its direction.
+fn is_round(posed: &PosedShape) -> bool {
+    matches!(
+        posed.shape,
+        Shape::Ellipsoid { .. } | Shape::Cylinder { .. } | Shape::Cone { .. }
+    )
+}
+
 impl Support for ChildSupport<'_> {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         self.child
@@ -488,13 +518,86 @@ fn vertex<A: Support, B: Support>(a: &A, b: &B, direction: Vec3Fix) -> Vertex {
 
 /// The point of the simplex nearest the origin, the sub-simplex it lies on and
 /// its barycentric weights; `None` when the origin is inside a tetrahedron.
+///
+/// The weights are the same for the simplex scaled about the origin, and are
+/// computed on it scaled up by `2ᵏ` (exactly) when its edges are shorter than
+/// [`SMALL_SIMPLEX`]: their dot products, of the size of an edge to the fourth
+/// power, would otherwise keep few significant bits (on a curved surface the
+/// simplex shrinks around the nearest point as GJK converges).
 fn closest_on_simplex(s: &[Vertex]) -> Option<(Vec<Vertex>, Vec<Fix128>)> {
+    let k = simplex_scale(s);
+    if k == 0 {
+        return closest_on_scaled_simplex(s);
+    }
+    let up: Vec<Vertex> = s
+        .iter()
+        .map(|v| Vertex {
+            w: shift_vec(v.w, k as i32),
+            ..*v
+        })
+        .collect();
+    let (sub, lambda) = closest_on_scaled_simplex(&up)?;
+    let sub = sub
+        .into_iter()
+        .map(|v| Vertex {
+            w: shift_vec(v.w, -(k as i32)),
+            ..v
+        })
+        .collect();
+    Some((sub, lambda))
+}
+
+fn closest_on_scaled_simplex(s: &[Vertex]) -> Option<(Vec<Vertex>, Vec<Fix128>)> {
     match s.len() {
         1 => Some((s.to_vec(), vec![Fix128::ONE])),
         2 => Some(closest_on_edge(s[0], s[1])),
         3 => Some(closest_on_triangle(s[0], s[1], s[2])),
         _ => closest_on_tetrahedron(s[0], s[1], s[2], s[3]),
     }
+}
+
+/// A simplex whose edges have every component below this (`2⁻⁸`) is scaled up
+/// for its barycentric weights (see [`closest_on_simplex`]).
+const SMALL_SIMPLEX_BITS: u32 = 56;
+
+/// The `k` that brings the largest edge component of `s` to `[1, 2)`, `0` when
+/// it is at least `2⁻⁸` (or the simplex is a point), and limited so that no
+/// vertex gets a component of `2²⁴` or more.
+fn simplex_scale(s: &[Vertex]) -> u32 {
+    let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
+    let mag = |v: Vec3Fix| {
+        raw(v.x)
+            .unsigned_abs()
+            .max(raw(v.y).unsigned_abs())
+            .max(raw(v.z).unsigned_abs())
+    };
+    let Some(first) = s.first() else {
+        return 0;
+    };
+    let edge = s.iter().map(|v| mag(v.w - first.w)).max().unwrap_or(0);
+    if edge == 0 {
+        return 0;
+    }
+    // bit 64 is 1.0
+    let msb = 127 - edge.leading_zeros();
+    if msb >= SMALL_SIMPLEX_BITS {
+        return 0;
+    }
+    let far = s.iter().map(|v| mag(v.w)).max().unwrap_or(0);
+    let far_msb = 127 - far.leading_zeros();
+    // keep components below 2²⁴ (bit 88)
+    (64 - msb).min(88u32.saturating_sub(far_msb))
+}
+
+/// `v · 2ᵏ` (`k` may be negative), exact when no bit leaves the range.
+fn shift_vec(v: Vec3Fix, k: i32) -> Vec3Fix {
+    let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
+    let sh = |f: Fix128| {
+        let r = raw(f);
+        let s = if k >= 0 { r << k } else { r >> (-k) };
+        Fix128::from_raw((s >> 64) as i64, s as u64)
+    };
+    Vec3Fix::new(sh(v.x), sh(v.y), sh(v.z))
 }
 
 fn closest_on_edge(a: Vertex, b: Vertex) -> (Vec<Vertex>, Vec<Fix128>) {
@@ -1721,7 +1824,7 @@ fn toi_convex<S: Support>(
     // The last time known clear (gap above the tolerance), its near contact, and
     // the gap and closing speed there.
     let mut clear: Option<Contact> = None;
-    let mut clear_gap = (Fix128::ZERO, Fix128::ZERO);
+    let mut clear_gap = (Fix128::ZERO, Fix128::ZERO, false);
     // A time known to overlap, once a step has gone past the root.
     let mut deep: Option<Fix128> = None;
     for _ in 0..TRACE_MAX_STEPS {
@@ -1752,14 +1855,14 @@ fn toi_convex<S: Support>(
                 if !slope.is_negative() {
                     return None;
                 }
-                Some((gap, -slope, contact))
+                Some((gap, -slope, contact, dist < FINE_LENGTH))
             }
             _ => None,
         };
         match state {
-            Some((gap, speed, contact)) => {
+            Some((gap, speed, contact, fine)) => {
                 clear = Some(contact);
-                clear_gap = (gap, speed);
+                clear_gap = (gap, speed, fine);
                 let limit = deep.unwrap_or(max_t);
                 // The tangent's root, unless it is at or past the limit.
                 if gap >= (limit - t) * speed {
@@ -1783,15 +1886,19 @@ fn toi_convex<S: Support>(
                 deep = Some(t);
                 let lo = clear.map_or(Fix128::ZERO, |c| c.t);
                 if t - lo <= TRACE_TOLERANCE {
-                    // Bracketed to within the tolerance: report the tangent's
-                    // root from the clear end, which is not past the contact
-                    // (convexity). A core of reach 0 never sees a touching gap
+                    // Bracketed to within the tolerance. When the clear end is
+                    // nearer than 2⁻¹⁶ (a core of reach below that), report the
+                    // tangent's root from it, which is not past the contact
+                    // (convexity): a core of reach 0 never sees a touching gap
                     // (GJK counts `|v| ≤ 2⁻³²` as intersecting), so every such
                     // cast ends here; at `t` its gap is at most 2⁻³², not
                     // necessarily below 0, so the contact is before
-                    // `t + 2⁻³² / speed`.
+                    // `t + 2⁻³² / speed`. Otherwise the clear end itself.
+                    let (gap, speed, fine) = clear_gap;
+                    if !fine {
+                        return clear;
+                    }
                     return clear.map(|c| {
-                        let (gap, speed) = clear_gap;
                         let slack = ratio_within(TRACE_TOLERANCE, speed, max_t);
                         let step = ratio_within(gap, speed, t - lo + slack);
                         Contact {
@@ -2230,6 +2337,7 @@ impl Piece<'_> {
                         };
                         segment_min(a, b, f)
                     }
+                    _ if is_round(posed) => convex_dist(a, b, &RoundSupport(posed)),
                     _ => convex_dist(a, b, posed),
                 }
             }
@@ -2338,6 +2446,9 @@ impl Piece<'_> {
                         } else {
                             ring.sweep(a, b, r, d, max_t)
                         }
+                    }
+                    _ if is_round(posed) => {
+                        toi_convex(a, b, r, Fix128::ZERO, d, max_t, &RoundSupport(posed))
                     }
                     _ => toi_convex(a, b, r, Fix128::ZERO, d, max_t, posed),
                 }
