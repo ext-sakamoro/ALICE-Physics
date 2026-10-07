@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5315 |
+| 🟢 Not ignored (run by CI) | 5339 |
 | 🔴 Red by design | 199 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5540** |
+| **Total** | **5564** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -275,14 +275,14 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5315)
+## 🟢 Not ignored (5339)
 
 Per-file counts (the test names are in `tests/`):
 
 | File | Tests |
 |------|-------|
 | `integration_physics.rs` | 75 |
-| `world_participant_conformance.rs` | 51 |
+| `world_participant_conformance.rs` | 52 |
 | `audit_joint.rs` | 46 |
 | `audit_solver.rs` | 42 |
 | `engineering_oracles_fluid.rs` | 40 |
@@ -339,6 +339,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_vehicle_dynamics.rs` | 21 |
 | `audit_torus.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
+| `analytic_coupling_medium.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
 | `analytic_joint_extra_wiring.rs` | 20 |
 | `analytic_linear_solver.rs` | 20 |
@@ -442,7 +443,6 @@ Per-file counts (the test names are in `tests/`):
 | `sleep_skip.rs` | 14 |
 | `world_snapshot_v2.rs` | 14 |
 | `analytic_anisotropic_wiring.rs` | 13 |
-| `analytic_coupling_medium.rs` | 13 |
 | `analytic_csf_wiring.rs` | 13 |
 | `analytic_cubic_elastic_fem_wiring.rs` | 13 |
 | `analytic_erosion_wiring.rs` | 13 |
@@ -621,6 +621,7 @@ Per-file counts (the test names are in `tests/`):
 | `cloth_fluid_sub_iteration.rs` | 6 |
 | `hanging_node_effect.rs` | 6 |
 | `indep_fdtd_materials.rs` | 6 |
+| `indep_medium_conservation.rs` | 6 |
 | `p3_quadrature_fix128.rs` | 6 |
 | `wm01_overflow_is_not_silent.rs` | 6 |
 | `wm08_checksum_coverage.rs` | 6 |
@@ -641,6 +642,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden_contacts.rs` | 5 |
 | `engineering_oracles.rs` | 5 |
 | `indep_free_rotation_closed_forms.rs` | 5 |
+| `indep_world_try_step_faults.rs` | 5 |
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
@@ -678,6 +680,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_gpu_bridge.rs` | 3 |
 | `determinism_physics2d_step_digest.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
+| `indep_world_try_step_snapshot.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
 | `sleep_skip_snapshot.rs` | 3 |
 | `wm01_flag_survives_rollback.rs` | 3 |
@@ -691,6 +694,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_joint.rs` | 2 |
 | `audit_c_replay.rs` | 2 |
 | `audit_neural_alloc.rs` | 2 |
+| `indep_world_try_step_noop.rs` | 2 |
 | `mesh_to_fem_stress.rs` | 2 |
 | `tgs_joints_static_colliders.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
