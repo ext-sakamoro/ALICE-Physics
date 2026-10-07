@@ -126,3 +126,76 @@ fn solve_joints_with_a_self_ball_joint_does_not_move_the_body() {
     assert_eq!(bodies[0].position, before.position);
     assert_eq!(bodies[0].rotation, before.rotation);
 }
+
+/// Every joint kind between a body and itself leaves the body as it was (none
+/// of the seven constrains anything a motion could satisfy), and a breakable
+/// one does not break (it carries no force).
+#[test]
+fn self_joints_of_every_kind_are_skipped_and_never_break() {
+    use alice_physics::joint::{
+        solve_joints, solve_joints_breakable, BallJoint, ConeTwistJoint, D6Joint, FixedJoint,
+        HingeJoint, Joint, SliderJoint, SpringJoint,
+    };
+    use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+    use alice_physics::solver::RigidBody;
+    let la = Vec3Fix::from_int(1, 0, 0);
+    let lb = Vec3Fix::from_int(-1, 0, 0);
+    let joints = [
+        Joint::Ball(BallJoint::new(0, 0, la, lb)),
+        Joint::Hinge(HingeJoint::new(
+            0,
+            0,
+            la,
+            lb,
+            Vec3Fix::UNIT_Z,
+            Vec3Fix::UNIT_Y,
+        )),
+        Joint::Fixed(FixedJoint::new(
+            0,
+            0,
+            la,
+            lb,
+            QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::ONE),
+        )),
+        Joint::Slider(SliderJoint::new(0, 0, Vec3Fix::UNIT_X, la, lb)),
+        Joint::Spring(SpringJoint::new(
+            0,
+            0,
+            la,
+            lb,
+            Fix128::ONE,
+            Fix128::from_int(10),
+            Fix128::ONE,
+        )),
+        Joint::D6(D6Joint::new(0, 0, la, lb)),
+        Joint::ConeTwist(ConeTwistJoint::new(
+            0,
+            0,
+            la,
+            lb,
+            Vec3Fix::UNIT_X,
+            Vec3Fix::UNIT_Y,
+        )),
+    ];
+    let mut start = RigidBody::new_dynamic(Vec3Fix::from_int(1, 2, 3), Fix128::ONE);
+    start.velocity = Vec3Fix::from_int(1, -1, 2);
+    start.rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Y, Fix128::from_ratio(1, 3));
+    let dt = Fix128::from_ratio(1, 60);
+    for (k, j) in joints.iter().enumerate() {
+        let mut bodies = vec![start];
+        solve_joints(core::slice::from_ref(j), &mut bodies, dt);
+        assert_eq!(bodies[0], start, "joint kind {k} moved its own body");
+    }
+    let tiny = Fix128::from_ratio(1, 1000);
+    let breakable = [
+        Joint::Ball(BallJoint::new(0, 0, la, lb).with_break_force(tiny)),
+        Joint::Hinge(
+            HingeJoint::new(0, 0, la, lb, Vec3Fix::UNIT_Z, Vec3Fix::UNIT_Y).with_break_force(tiny),
+        ),
+        Joint::Fixed(FixedJoint::new(0, 0, la, lb, QuatFix::IDENTITY).with_break_force(tiny)),
+    ];
+    let mut bodies = vec![start];
+    let broken = solve_joints_breakable(&breakable, &mut bodies, dt);
+    assert!(broken.is_empty(), "self joints broke: {broken:?}");
+    assert_eq!(bodies[0], start);
+}

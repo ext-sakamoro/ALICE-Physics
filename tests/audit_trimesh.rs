@@ -415,7 +415,7 @@ fn ray_triangle_includes_edges_and_vertices() {
 #[test]
 // AUD-A-S4W2-012
 fn small_triangles_are_not_invisible_to_rays() {
-    // 辺 1e-4 m (0.1 mm) の三角形に真上から ray。面積 5e-9 < 2^-24 = 6e-8 なので、
+    // 辺 1e-4 m (0.1 mm) の三角形に真上から ray 面積 5e-9 < 2^-24 = 6e-8 なので、
     // 以前の絶対閾値 |det| < 2^-24 ではこの三角形がどの ray からも見えなかった
     let e = Fix128::from_ratio(1, 10_000);
     let t = Triangle::new(

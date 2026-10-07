@@ -374,7 +374,11 @@ impl PosedShape {
     /// Where the solid's geometric centre is: the centre of mass moved back by the
     /// shape's centre-of-mass offset, turned like the solid.
     fn geometric_center(&self) -> Vec3Fix {
-        self.position - self.rotation.rotate_vec(self.shape.center_of_mass_offset())
+        self.position
+            - self
+                .rotation
+                .unit_rotation()
+                .rotate_vec(self.shape.center_of_mass_offset())
     }
 
     /// The smallest world-axis box that contains the posed solid: each shape's own
@@ -386,7 +390,7 @@ impl PosedShape {
     #[must_use]
     pub(crate) fn world_aabb(&self) -> AABB {
         let center = self.geometric_center();
-        let rotation = self.rotation;
+        let rotation = self.rotation.unit_rotation();
         match self.shape {
             Shape::Box { half_extents } => OrientedBox::new(center, half_extents, rotation).aabb(),
             Shape::Cylinder {
@@ -414,7 +418,7 @@ impl PosedShape {
 impl Support for PosedShape {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {
         let center = self.geometric_center();
-        let rotation = self.rotation;
+        let rotation = self.rotation.unit_rotation();
         match self.shape {
             Shape::Box { half_extents } => {
                 OrientedBox::new(center, half_extents, rotation).support(direction)

@@ -411,3 +411,19 @@ fn aabb_of_an_upright_cone_is_tight_along_the_axis() {
     );
     assert!((bb.min.y.to_f64() + 3.0).abs() < 1e-9);
 }
+
+/// A non-unit rotation (norm 2) does not scale the cone: apex, base point,
+/// support and box are those of the unit rotation (it used to scale by 4).
+#[test]
+fn non_unit_rotation_does_not_scale_the_cone() {
+    let q = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, fx(2.0));
+    let scaled = Cone::with_rotation(Vec3Fix::ZERO, fx(1.0), fx(0.5), q);
+    let unit = Cone::new(Vec3Fix::ZERO, fx(1.0), fx(0.5));
+    assert_eq!(scaled.apex(), unit.apex());
+    assert_eq!(
+        scaled.support(Vec3Fix::UNIT_X),
+        unit.support(Vec3Fix::UNIT_X)
+    );
+    let (a, b) = (scaled.aabb(), unit.aabb());
+    assert_eq!((a.min, a.max), (b.min, b.max));
+}

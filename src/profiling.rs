@@ -173,7 +173,8 @@ impl PhysicsProfiler {
         self.entries.get(stage).map_or(0, |e| e.last_ticks)
     }
 
-    /// Get average ticks for a stage
+    /// Get average ticks for a stage. After the total has saturated at
+    /// `u64::MAX` this is `u64::MAX / count`, a lower bound on the true average.
     pub fn average_ticks(&self, stage: usize) -> u64 {
         self.entries
             .get(stage)

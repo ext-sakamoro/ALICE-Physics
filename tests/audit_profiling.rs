@@ -144,3 +144,14 @@ fn entry_total_never_decreases_on_overflow() {
         e.total_ticks
     );
 }
+
+/// The call count saturates too: from `u64::MAX - 1` two more calls stop at
+/// `u64::MAX` (no panic, no wrap to 0).
+#[test]
+fn call_count_saturates() {
+    let mut e = ProfileEntry::new("x");
+    e.call_count = u64::MAX - 1;
+    e.record(1);
+    e.record(1);
+    assert_eq!(e.call_count, u64::MAX);
+}

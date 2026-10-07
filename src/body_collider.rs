@@ -451,6 +451,38 @@ pub(crate) fn quat_from_rotation(m: Mat3Fix) -> QuatFix {
 mod tests {
     use super::*;
 
+    /// A box with a non-unit orientation (norm 2) meets a plane SDF exactly as
+    /// the unit one does: its sample points are not scaled by |q|^2.
+    #[test]
+    fn box_sdf_contact_ignores_the_orientation_norm() {
+        let plane = || {
+            crate::sdf_collider::SdfCollider::new_static(
+                Box::new(crate::sdf_collider::ClosureSdf::new(
+                    |_x, y, _z| y,
+                    |_x, _y, _z| (0.0, 1.0, 0.0),
+                )),
+                Vec3Fix::ZERO,
+                QuatFix::IDENTITY,
+            )
+        };
+        let half = Vec3Fix::new(Fix128::ONE, Fix128::from_ratio(1, 2), Fix128::ONE);
+        let center = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(1, 4), Fix128::ZERO);
+        let turn = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::from_ratio(1, 5));
+        let doubled = QuatFix::new(
+            turn.x.double(),
+            turn.y.double(),
+            turn.z.double(),
+            turn.w.double(),
+        );
+        let unit = box_sdf_contact(&OrientedBox::new(center, half, turn), &plane());
+        let scaled = box_sdf_contact(&OrientedBox::new(center, half, doubled), &plane());
+        let (u, s) = (unit.expect("touches"), scaled.expect("touches"));
+        assert!(
+            (u.depth - s.depth).abs() < Fix128::from_ratio(1, 1_000_000),
+            "{u:?} {s:?}"
+        );
+    }
+
     fn matrix(q: QuatFix) -> Mat3Fix {
         Mat3Fix::from_cols(
             q.rotate_vec(Vec3Fix::UNIT_X),

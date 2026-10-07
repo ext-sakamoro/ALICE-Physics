@@ -502,7 +502,8 @@ fn raises_dimension(points: &[Vec3Fix], p: Vec3Fix) -> bool {
 ///
 /// EPA is exact when the faces that meet at the answer are flat (boxes,
 /// cylinder caps) and approximates a curved Minkowski sum by a polytope otherwise
-/// (a few parts in a thousand for spheres at its fixed iteration count).
+/// (when the fixed iteration count runs out on such a shape, the depth is the
+/// smallest support distance seen, exact for spheres; see [`epa`]).
 ///
 /// GJK may end on a point, a segment or a triangle that contains the origin; EPA
 /// needs a tetrahedron, so the simplex is completed with Minkowski-difference
@@ -684,8 +685,9 @@ struct EpaFace {
 /// Call this after GJK returns a collision; `initial_simplex` must be a
 /// tetrahedron of Minkowski-difference points that encloses the origin.
 /// Deterministic: fixed iteration count. When the budget runs out before the
-/// nearest face stops moving (curved shapes), the nearest face at that point is
-/// returned rather than `None`.
+/// nearest face stops moving (curved shapes), the smallest support distance
+/// seen, an upper bound that is exact for spheres, is returned with its
+/// direction rather than `None`.
 ///
 /// The returned [`Contact::normal`] points from B to A (the crate-wide
 /// contact contract): translating A by `depth · normal` separates the

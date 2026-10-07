@@ -747,6 +747,11 @@ pub fn solve_joints_breakable(
     // Check which joints exceeded their break force BEFORE solving
     let mut broken = Vec::new();
     for (i, joint) in joints.iter().enumerate() {
+        let (a, b) = joint.bodies();
+        if a == b {
+            // a joint on one body constrains nothing, so it carries no force
+            continue;
+        }
         if let Some(max_force) = joint.break_force() {
             let force = joint.compute_force(bodies);
             if force > max_force {

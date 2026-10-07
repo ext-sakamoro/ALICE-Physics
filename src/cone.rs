@@ -71,14 +71,14 @@ impl Cone {
     #[must_use]
     pub fn apex(&self) -> Vec3Fix {
         let local_apex = Vec3Fix::new(Fix128::ZERO, self.half_height, Fix128::ZERO);
-        self.center + self.rotation.rotate_vec(local_apex)
+        self.center + self.rotation.unit_rotation().rotate_vec(local_apex)
     }
 
     /// World-space position of the base circle center (-Y in local space)
     #[must_use]
     pub fn base_center(&self) -> Vec3Fix {
         let local_base = Vec3Fix::new(Fix128::ZERO, -self.half_height, Fix128::ZERO);
-        self.center + self.rotation.rotate_vec(local_base)
+        self.center + self.rotation.unit_rotation().rotate_vec(local_base)
     }
 
     /// The smallest world-axis box enclosing this cone.
@@ -91,7 +91,7 @@ impl Cone {
     /// symmetric about `c` unless the axis lies in the world plane normal to `i`.
     #[must_use]
     pub fn aabb(&self) -> AABB {
-        let r = self.rotation;
+        let r = self.rotation.unit_rotation();
         let u = r.rotate_vec(Vec3Fix::new(self.radius, Fix128::ZERO, Fix128::ZERO));
         let a = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, self.half_height, Fix128::ZERO));
         let w = r.rotate_vec(Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, self.radius));
@@ -169,7 +169,11 @@ impl Support for Cone {
         // squares below neither underflow nor overflow
         let direction = direction.rescaled_direction();
         // Transform direction to local space
-        let local_dir = self.rotation.conjugate().rotate_vec(direction);
+        let local_dir = self
+            .rotation
+            .unit_rotation()
+            .conjugate()
+            .rotate_vec(direction);
 
         // The cone has:
         //   apex at (0, half_height, 0)
@@ -206,7 +210,7 @@ impl Support for Cone {
         };
 
         // Transform back to world space
-        self.center + self.rotation.rotate_vec(local_support)
+        self.center + self.rotation.unit_rotation().rotate_vec(local_support)
     }
 }
 
