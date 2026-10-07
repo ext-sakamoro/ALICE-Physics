@@ -616,4 +616,236 @@ mod tests {
             "Should solidify after cooling, got {phase_cold:?}"
         );
     }
+
+    fn still_config() -> PhaseChangeConfig {
+        PhaseChangeConfig {
+            melt_temperature: 200.0,
+            boil_temperature: 500.0,
+            latent_heat_fusion: 50.0,
+            latent_heat_vaporization: 100.0,
+            diffusion_rate: 0.0,
+            ambient_temperature: 20.0,
+            cooling_rate: 0.0,
+            liquid_flow_speed: 0.0,
+            gas_expansion_rate: 0.5,
+            gas_dissipation_rate: 0.25,
+            max_offset: 3.0,
+        }
+    }
+
+    /// oracle: a gas cell holding the full buffer `L_f + L_v = 150` at 400
+    /// (100 below boiling) condenses: it releases `min(100, 150 − 50) = 100`,
+    /// so it ends liquid at 500 with buffer `L_f = 50`.
+    #[test]
+    fn gas_condenses_to_liquid_closed_form() {
+        let mut m = PhaseChangeModifier::new(still_config(), 1, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.phase.data[0] = 2.0;
+        m.latent_heat.data[0] = 150.0;
+        m.temperature.data[0] = 400.0;
+        m.process_transitions();
+        assert_eq!(m.phase.data[0], 1.0);
+        assert_eq!(m.temperature.data[0], 500.0);
+        assert_eq!(m.latent_heat.data[0], 50.0);
+    }
+
+    /// oracle: a gas cell grows its offset by `(expansion + dissipation)·dt =
+    /// 0.75·(1/2) = 3/8` per call and stops at `max_offset`; a solid cell
+    /// gets nothing.
+    #[test]
+    fn gas_offset_grows_and_is_capped() {
+        let mut m = PhaseChangeModifier::new(still_config(), 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.phase.data[0] = 2.0;
+        m.accumulate_offsets(0.5);
+        assert_eq!(m.sdf_offset.data[0], 0.375);
+        assert_eq!(m.sdf_offset.data[1], 0.0);
+        m.accumulate_offsets(100.0);
+        assert_eq!(m.sdf_offset.data[0], 3.0);
+    }
+
+    /// oracle: with every cell liquid, flow speed 1 and `dt = 1/2`, each cell
+    /// first gains `0.1·1·(1/2) = 1/20`; then a fraction `1·(1/2)` of the
+    /// upper cell flows down: lower `1/20 + 1/40 = 3/40`, upper `1/40`. In a
+    /// column whose lower cell is at `max_offset` there is no room, and an
+    /// upper cell with a negative offset has nothing to give.
+    #[test]
+    fn liquid_flows_down_with_room_and_source() {
+        let mut m = PhaseChangeModifier::new(
+            PhaseChangeConfig {
+                liquid_flow_speed: 1.0,
+                ..still_config()
+            },
+            2,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        m.phase.data.fill(1.0);
+        let full_below = m.sdf_offset.index(1, 0, 0);
+        let full_above = m.sdf_offset.index(1, 1, 0);
+        m.sdf_offset.data[full_below] = 3.0;
+        let neg_below = m.sdf_offset.index(0, 0, 1);
+        let neg_above = m.sdf_offset.index(0, 1, 1);
+        m.sdf_offset.data[neg_above] = -1.0;
+        m.accumulate_offsets(0.5);
+        let below = m.sdf_offset.index(0, 0, 0);
+        let above = m.sdf_offset.index(0, 1, 0);
+        assert!((m.sdf_offset.data[below] - 0.075).abs() < 1e-6);
+        assert!((m.sdf_offset.data[above] - 0.025).abs() < 1e-6);
+        assert_eq!(m.sdf_offset.data[full_below], 3.0);
+        assert!((m.sdf_offset.data[full_above] - 0.05).abs() < 1e-6);
+        assert!((m.sdf_offset.data[neg_above] + 0.95).abs() < 1e-6);
+        assert!((m.sdf_offset.data[neg_below] - 0.05).abs() < 1e-6);
+    }
+
+    /// oracle: a disabled modifier leaves the distance and its fields as
+    /// they are.
+    #[test]
+    fn disabled_phase_change_is_inert() {
+        let mut m = PhaseChangeModifier::new(still_config(), 1, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.sdf_offset.data[0] = 0.5;
+        m.temperature.data[0] = 900.0;
+        m.enabled = false;
+        assert!(!m.is_active());
+        assert_eq!(m.modify_distance(0.5, 0.5, 0.5, 1.0), 1.0);
+        m.update(1.0);
+        assert_eq!(m.temperature.data[0], 900.0);
+        assert_eq!(m.phase.data[0], 0.0);
+    }
+
+    fn sample_modifier() -> PhaseChangeModifier {
+        let mut m = PhaseChangeModifier::new(
+            PhaseChangeConfig {
+                melt_temperature: 150.0,
+                boil_temperature: 450.0,
+                latent_heat_fusion: 40.0,
+                latent_heat_vaporization: 80.0,
+                diffusion_rate: 0.125,
+                ambient_temperature: 22.5,
+                cooling_rate: 0.25,
+                liquid_flow_speed: 0.5,
+                gas_expansion_rate: 0.375,
+                gas_dissipation_rate: 0.625,
+                max_offset: 2.5,
+            },
+            2,
+            (-1.0, -2.0, -3.0),
+            (1.0, 2.0, 3.0),
+        );
+        for (i, v) in m.temperature.data.iter_mut().enumerate() {
+            *v = 100.0 + i as f32;
+        }
+        m.phase.data[1] = 1.0;
+        m.phase.data[2] = 2.0;
+        m.latent_heat.data[1] = 40.0;
+        m.sdf_offset.data[2] = 0.75;
+        m.enabled = false;
+        m
+    }
+
+    /// oracle: the participant kind is `"PHAS"` read big endian; a payload
+    /// written by `write_state` is accepted and read back into a different
+    /// modifier, which then has the original config, flag and the four
+    /// fields and writes the same bytes. Observations: channel 0 the hottest
+    /// cell (107), channel 1 the liquid or gas cells (2), channel 2 the total
+    /// offset (3/4).
+    #[test]
+    fn participant_state_round_trip_and_observations() {
+        assert_eq!(
+            PhaseChangeModifier::PARTICIPANT_KIND,
+            ParticipantKind::new(0x5048_4153)
+        );
+        let src = sample_modifier();
+        assert_eq!(
+            Participant::kind(&src),
+            PhaseChangeModifier::PARTICIPANT_KIND
+        );
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        assert_eq!(src.check_state(&bytes), Ok(()));
+        let mut dst = PhaseChangeModifier::new(
+            PhaseChangeConfig::default(),
+            1,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        dst.read_state(&bytes);
+        assert_eq!(dst.config, src.config);
+        assert!(!dst.enabled);
+        assert_eq!(dst.temperature.data, src.temperature.data);
+        assert_eq!(dst.phase.data, src.phase.data);
+        assert_eq!(dst.latent_heat.data, src.latent_heat.data);
+        assert_eq!(dst.sdf_offset.data, src.sdf_offset.data);
+        let mut again = Vec::new();
+        dst.write_state(&mut again);
+        assert_eq!(again, bytes);
+
+        let mut sink = ObservationSink::new();
+        dst.observe(&mut sink);
+        assert_eq!(
+            sink.values(),
+            &[
+                (0, Fix128::from_int(107)),
+                (1, Fix128::from_int(2)),
+                (2, Fix128::from_ratio(3, 4))
+            ]
+        );
+    }
+
+    /// oracle: the enabled flag sits after the version (4) and eleven `f32`s
+    /// (44), at offset 48; a value other than 0/1 is refused, as is a
+    /// payload one byte short or long.
+    #[test]
+    fn participant_state_refusals() {
+        let src = sample_modifier();
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        assert_eq!(bytes[48], 0);
+        let mut bad = bytes.clone();
+        bad[48] = 5;
+        assert_eq!(src.check_state(&bad), Err(StateError::InvalidValue));
+        assert!(matches!(
+            src.check_state(&bytes[..bytes.len() - 1]),
+            Err(StateError::Length { .. })
+        ));
+        let mut long = bytes;
+        long.push(0);
+        assert!(matches!(
+            src.check_state(&long),
+            Err(StateError::Length { .. })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "read_state called with a payload check_state refuses")]
+    fn participant_read_state_panics_on_a_refused_payload() {
+        let mut m = sample_modifier();
+        m.read_state(&[1, 0, 0]);
+    }
+
+    /// oracle: in a world of one substep `dt = 1/4`, a one-cell solid at 220
+    /// (melt 200, fusion buffer 50, no diffusion or cooling) absorbs
+    /// `min(20, 50) = 20` into its buffer and stays solid at 200: channel 0
+    /// reads 200, channel 1 (fluid cells) 0, channel 2 (offset) 0.
+    #[test]
+    fn participant_substep_in_a_world() {
+        let mut m = PhaseChangeModifier::new(still_config(), 1, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.temperature.data[0] = 220.0;
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
+            substeps: 1,
+            ..Default::default()
+        });
+        world.add_participant(Box::new(m)).expect("register");
+        world.step(Fix128::from_ratio(1, 4));
+        let Some(crate::world_participant::Observed::Exact(sink)) = world.observe_participant(0)
+        else {
+            panic!("observation");
+        };
+        assert_eq!(
+            sink.values(),
+            &[
+                (0, Fix128::from_int(200)),
+                (1, Fix128::ZERO),
+                (2, Fix128::ZERO)
+            ]
+        );
+    }
 }
