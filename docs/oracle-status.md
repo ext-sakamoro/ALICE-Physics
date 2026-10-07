@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5526 |
+| 🟢 Not ignored (run by CI) | 5537 |
 | 🔴 Red by design | 91 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5643** |
+| **Total** | **5654** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -164,7 +164,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5526)
+## 🟢 Not ignored (5537)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -400,6 +400,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_contact_cache.rs` | 11 |
 | `audit_creep_longterm.rs` | 11 |
 | `audit_kinematic_loop.rs` | 11 |
+| `audit_nonunit_quaternion_entry.rs` | 11 |
 | `audit_piezoelectric.rs` | 11 |
 | `audit_rolling_contact.rs` | 11 |
 | `audit_sdf_wind_field.rs` | 11 |
