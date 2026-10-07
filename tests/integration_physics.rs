@@ -1847,16 +1847,12 @@ fn test_set_rotation_resets_prev() {
     let mut world = PhysicsWorld::new(config);
     let id = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
 
-    let new_rot = QuatFix {
-        x: Fix128::ZERO,
-        y: Fix128::ZERO,
-        z: Fix128::from_ratio(1, 2),
-        w: Fix128::from_ratio(1, 2),
-    };
+    // A unit quaternion (90° about z), which set_rotation stores bit for bit.
+    let new_rot = QuatFix::from_axis_angle(Vec3Fix::UNIT_Z, Fix128::HALF_PI);
     world.bodies[id].set_rotation(new_rot);
-    assert_eq!(world.bodies[id].rotation.z, new_rot.z);
+    assert_eq!(world.bodies[id].rotation, new_rot);
     assert_eq!(
-        world.bodies[id].prev_rotation.z, new_rot.z,
+        world.bodies[id].prev_rotation, new_rot,
         "set_rotation must reset prev_rotation"
     );
 }
