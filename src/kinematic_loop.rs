@@ -10,10 +10,10 @@
 //! stabilisation:
 //!
 //! ```text
-//! err   = (pos_a + local_offset_a) − (pos_b + local_offset_b)
+//! err   = (pos_a + R_a · local_offset_a) − (pos_b + R_b · local_offset_b)
 //! delta = err / (1 + compliance)
-//! pos_a −= 0.5 · delta · w_a
-//! pos_b += 0.5 · delta · w_b
+//! pos_a −= delta · w_a / (w_a + w_b)
+//! pos_b += delta · w_b / (w_a + w_b)
 //! ```
 //!
 //! where `w_a`, `w_b` are inverse-mass weights taken from the bodies.

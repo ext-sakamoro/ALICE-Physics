@@ -303,3 +303,27 @@ fn apply_closes_the_gap_between_rotated_anchors() {
     );
     assert!(c.residual(&w).length().to_f64() < 1e-9);
 }
+
+/// Both anchors rotate: B turned -90 deg about z with local anchor (0,1,0) has
+/// its anchor at world (1,0,0) from its position; A at (1,0,0) with no anchor
+/// coincides with it when B sits at the origin.
+#[test]
+fn residual_rotates_anchor_b_too() {
+    let mut w = world();
+    let a = w.add_body(RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE));
+    let b = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
+    let half_pi = Fix128::PI / Fix128::from_int(2);
+    w.bodies[b].rotation = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), -half_pi);
+    let c = LoopClosureConstraint {
+        body_a: a,
+        body_b: b,
+        local_anchor_a: Vec3Fix::ZERO,
+        local_anchor_b: Vec3Fix::from_int(0, 1, 0),
+        compliance: Fix128::ZERO,
+    };
+    assert!(
+        c.residual(&w).length().to_f64() < 1e-9,
+        "{:?}",
+        c.residual(&w)
+    );
+}

@@ -275,7 +275,7 @@ fn indexed_and_triangle_builders_answer_queries_identically() {
 
 // ---------------------------------------------------------------- ray_triangle
 
-/// 独立な f64 解 (平面交点 + 重心座標、Cramer)。`None` は命中なし、
+/// 独立な f64 解 (平面交点 + 重心座標、Cramer) `None` は命中なし、
 /// `Some(Err)` は境界・平行に近く判定を避ける
 fn ref_ray(o: [f64; 3], d: [f64; 3], t: &Triangle) -> Option<Result<f64, ()>> {
     let (a, b, c) = (f(t.v0), f(t.v1), f(t.v2));
@@ -365,7 +365,7 @@ fn ray_triangle_max_t_cutoff_and_behind_origin_misses() {
     let down = Ray::new(v3(0, 0, 80), v3(0, 0, -16));
     let five = Fix128::from_int(5);
     let eps = Fix128::from_ratio(1, 1_000_000);
-    // t は 5 (除算の丸めで 1e-15 程度ずれる)。max_t が少し上なら命中、少し下なら外れ
+    // t は 5 (除算の丸めで 1e-15 程度ずれる) max_t が少し上なら命中、少し下なら外れ
     let h = ray_triangle(&down, &t, five + eps).expect("hit below max_t");
     assert!((h.t - five).abs() < eps, "t = {}", h.t.to_f64());
     assert!(ray_triangle(&down, &t, five - eps).is_none());

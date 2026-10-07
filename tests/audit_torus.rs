@@ -403,3 +403,13 @@ fn rotated_support_follows_the_rotated_symmetry_axis() {
     let p = t.support(Vec3Fix::UNIT_Z);
     assert!((f(p.z) - RR).abs() < 1e-9, "z = {}", f(p.z));
 }
+
+/// A negative major radius is read as its magnitude by the bounding box too:
+/// R = -5, r = 1 has the box of R = 5 (x, z in [-6, 6], y in [-1, 1]).
+#[test]
+fn negative_radii_give_the_same_aabb() {
+    let neg = Torus::new(Vec3Fix::ZERO, fx(-5.0), fx(-1.0)).aabb();
+    let pos = Torus::new(Vec3Fix::ZERO, fx(5.0), fx(1.0)).aabb();
+    assert_eq!((neg.min, neg.max), (pos.min, pos.max));
+    assert!((f(pos.max.y) - 1.0).abs() < 1e-9 && (f(pos.max.x) - 6.0).abs() < 1e-9);
+}

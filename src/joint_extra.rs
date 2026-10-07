@@ -417,7 +417,11 @@ pub fn solve_extra_joints(bodies: &mut [RigidBody], joints: &[ExtraJoint], dt: F
 ///   the step, evaluated at the bodies' `prev_position` / `prev_rotation`; one
 ///   XPBD projection along the two ropes (split by inverse mass, the second
 ///   scaled by `ratio`) moves the bodies back onto it. A pulley whose bodies
-///   have not moved since the previous pose is left as it is.
+///   have not moved since the previous pose is left as it is. With a
+///   `compliance > 0` the projection closes only part of the gap, and the rest
+///   becomes the next step's starting length: a compliant pulley stretches for
+///   good rather than springing back (a persistent rest length would need a
+///   field on `PulleyJoint`).
 /// - To hold an explicit rest length instead use [`solve_pulley_to_length`].
 fn solve_pulley(joint: &PulleyJoint, bodies: &mut [RigidBody], dt: Fix128) {
     let body_a = bodies[joint.body_a];

@@ -149,3 +149,21 @@ fn fos_methods_read_their_own_pub_field_not_a_sibling() {
     assert_eq!(s.fos_shear_xy(a), Fix128::from_int(8));
     assert_eq!(s.fos_shear_xz(a), Fix128::from_int(12));
 }
+
+/// At the cap boundary `|applied| = allowable / cap` the FoS is the cap itself
+/// (not one unit above it), and one unit above the boundary it is at most the
+/// cap: the FoS never exceeds the "infinite" sentinel.
+#[test]
+fn fos_never_exceeds_the_sentinel_at_the_cap_boundary() {
+    let s = EffectiveStrength::for_material(&MaterialProperties::pla(), PrintOrientation::XYFlat);
+    let cap = Fix128::from_int(i64::MAX >> 8);
+    let allowable = s.normal_x_mpa;
+    let edge = allowable / cap;
+    for applied in [
+        edge,
+        edge + Fix128::from_raw(0, 1),
+        edge + Fix128::from_raw(0, 2),
+    ] {
+        assert!(s.fos_normal_x(applied) <= cap, "applied {applied:?}");
+    }
+}

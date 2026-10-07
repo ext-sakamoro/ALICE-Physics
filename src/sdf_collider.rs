@@ -769,7 +769,7 @@ pub(crate) fn box_sample_points(
             for &k in &steps {
                 let local =
                     Vec3Fix::new(half_extents.x * i, half_extents.y * j, half_extents.z * k);
-                points[n] = center + rotation.rotate_vec(local);
+                points[n] = center + rotation.unit_rotation().rotate_vec(local);
                 n += 1;
             }
         }
