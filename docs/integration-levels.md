@@ -56,7 +56,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `solver` | world API (step 48 of 187 items) | 48 / 109 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
-| `world_shape_query` | world API (step 2 of 7 items) | 2 / 5 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
+| `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
 | `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
