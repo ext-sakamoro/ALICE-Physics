@@ -623,6 +623,88 @@ fn an_overlap_with_a_still_body_does_not_hide_the_wall() {
     assert!((w.bodies[s].velocity.x.to_f64() + 320.0).abs() <= VEL_TOL);
 }
 
+/// The near face of [`tall_plate`] minus the radius `1/4`: where a sphere
+/// thrown at it along `+x` from the origin stops (`4.734375`, exact in
+/// binary).
+const TALL_PLATE_STOP: f64 = 5.0 - 1.0 / 64.0 - 0.25;
+
+/// `n` still spheres of radius `1/4` on a ring in the plane `x = 0`, each
+/// `1/2 − 2⁻¹²` from the origin: a sphere of radius `1/4` at the origin
+/// overlaps every one of them by `2⁻¹²`, and the normal of every overlap has
+/// no `x` component (moving along `+x` does not move into any of them).
+fn ring_of_spheres(w: &mut PhysicsWorld, n: usize) {
+    let dist = 0.5 - 1.0 / 4096.0;
+    for k in 0..n {
+        let a = core::f64::consts::TAU * k as f64 / n as f64;
+        w.add_body_with_radius(
+            RigidBody::new_static(v3(0.0, dist * a.cos(), dist * a.sin())),
+            f(0.25),
+        );
+    }
+}
+
+/// `n` still planes whose normals lie in the plane `x = 0`, spread around the
+/// `x` axis, each `1/4 − 2⁻¹²` from the origin with the solid side away from
+/// it: a sphere of radius `1/4` at the origin overlaps every one by `2⁻¹²`.
+fn ring_of_planes(w: &mut PhysicsWorld, n: usize) {
+    for k in 0..n {
+        let a = core::f64::consts::TAU * k as f64 / n as f64;
+        // Outward normal `u`; the solid is `u·p ≥ 1/4 − 2⁻¹²`, the plane's
+        // normal (toward the free side) is `−u`.
+        w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+            v3(0.0, -a.cos(), -a.sin()),
+            f(-(0.25 - 1.0 / 4096.0)),
+        )));
+    }
+}
+
+/// A sphere of radius `1/4` at the origin thrown at [`tall_plate`] at 640 m/s
+/// while it overlaps every target `surround` adds: it must stop on the near
+/// face of the plate however many targets it overlaps at the start.
+fn thrown_from_overlaps(surround: impl FnOnce(&mut PhysicsWorld)) -> (Fix128, Fix128) {
+    let mut w = bare(true);
+    tall_plate(&mut w);
+    surround(&mut w);
+    let s = sphere(&mut w, Vec3Fix::ZERO, 1, 0.25, v3(640.0, 0.0, 0.0));
+    half_bouncy(&mut w);
+    w.step(h());
+    (w.bodies[s].position.x, w.bodies[s].velocity.x)
+}
+
+/// Overlapping many still spheres at the start, none of which the sphere moves
+/// into, does not hide the plate ahead: it stops on its near face and leaves
+/// backward, for 8, 9, 16 and 32 overlaps alike (32 is more than any
+/// fixed allowance of hidden targets plus retries of the order of 8 would cover).
+// covers: COV-RIGID-074
+#[test]
+fn many_overlapped_spheres_do_not_hide_the_wall() {
+    for n in [8, 9, 16, 32] {
+        let (x, vx) = thrown_from_overlaps(|w| ring_of_spheres(w, n));
+        assert!(
+            (x.to_f64() - TALL_PLATE_STOP).abs() <= POS_TOL,
+            "{n} overlaps: x = {}",
+            x.to_f64()
+        );
+        assert!(vx.to_f64() < 0.0, "{n} overlaps: vx = {}", vx.to_f64());
+    }
+}
+
+/// The same with many still planes (static colliders) overlapped at the
+/// start: 8, 9, 12 and 32 alike.
+// covers: COV-RIGID-074
+#[test]
+fn many_overlapped_planes_do_not_hide_the_wall() {
+    for n in [8, 9, 12, 32] {
+        let (x, vx) = thrown_from_overlaps(|w| ring_of_planes(w, n));
+        assert!(
+            (x.to_f64() - TALL_PLATE_STOP).abs() <= POS_TOL,
+            "{n} overlaps: x = {}",
+            x.to_f64()
+        );
+        assert!(vx.to_f64() < 0.0, "{n} overlaps: vx = {}", vx.to_f64());
+    }
+}
+
 /// A sphere `2⁻¹⁰` into a thin floor (half thickness `1/64`) thrown down
 /// through it at 640 m/s: on, it does not pass the floor (it is held at its
 /// start and leaves upward with `e` times its approach speed); off, it passes.
