@@ -9188,6 +9188,53 @@ impl core::marker::Unpin for alice_physics::physics2d::Shape2D
 impl core::marker::UnsafeUnpin for alice_physics::physics2d::Shape2D
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::Shape2D
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::Shape2D
+#[non_exhaustive] pub struct alice_physics::physics2d::AngularTether2D
+pub alice_physics::physics2d::AngularTether2D::body: usize
+pub alice_physics::physics2d::AngularTether2D::damping: alice_physics::math::Fix128
+pub alice_physics::physics2d::AngularTether2D::stiffness: alice_physics::math::Fix128
+pub alice_physics::physics2d::AngularTether2D::target_angle: alice_physics::math::Fix128
+impl alice_physics::physics2d::AngularTether2D
+pub fn alice_physics::physics2d::AngularTether2D::critically_damped(usize, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub const fn alice_physics::physics2d::AngularTether2D::new(usize, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+impl core::clone::Clone for alice_physics::physics2d::AngularTether2D
+pub fn alice_physics::physics2d::AngularTether2D::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::physics2d::AngularTether2D
+impl core::cmp::PartialEq for alice_physics::physics2d::AngularTether2D
+pub fn alice_physics::physics2d::AngularTether2D::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::physics2d::AngularTether2D
+pub fn alice_physics::physics2d::AngularTether2D::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::physics2d::AngularTether2D
+impl core::marker::StructuralPartialEq for alice_physics::physics2d::AngularTether2D
+impl core::marker::Freeze for alice_physics::physics2d::AngularTether2D
+impl core::marker::Send for alice_physics::physics2d::AngularTether2D
+impl core::marker::Sync for alice_physics::physics2d::AngularTether2D
+impl core::marker::Unpin for alice_physics::physics2d::AngularTether2D
+impl core::marker::UnsafeUnpin for alice_physics::physics2d::AngularTether2D
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::AngularTether2D
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::AngularTether2D
+pub struct alice_physics::physics2d::AngularTetherId(_)
+impl core::clone::Clone for alice_physics::physics2d::AngularTetherId
+pub fn alice_physics::physics2d::AngularTetherId::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::physics2d::AngularTetherId
+impl core::cmp::Ord for alice_physics::physics2d::AngularTetherId
+pub fn alice_physics::physics2d::AngularTetherId::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for alice_physics::physics2d::AngularTetherId
+pub fn alice_physics::physics2d::AngularTetherId::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for alice_physics::physics2d::AngularTetherId
+pub fn alice_physics::physics2d::AngularTetherId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for alice_physics::physics2d::AngularTetherId
+pub fn alice_physics::physics2d::AngularTetherId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::physics2d::AngularTetherId
+pub fn alice_physics::physics2d::AngularTetherId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::physics2d::AngularTetherId
+impl core::marker::StructuralPartialEq for alice_physics::physics2d::AngularTetherId
+impl core::marker::Freeze for alice_physics::physics2d::AngularTetherId
+impl core::marker::Send for alice_physics::physics2d::AngularTetherId
+impl core::marker::Sync for alice_physics::physics2d::AngularTetherId
+impl core::marker::Unpin for alice_physics::physics2d::AngularTetherId
+impl core::marker::UnsafeUnpin for alice_physics::physics2d::AngularTetherId
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::AngularTetherId
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::AngularTetherId
 pub struct alice_physics::physics2d::Contact2D
 pub alice_physics::physics2d::Contact2D::body_a: usize
 pub alice_physics::physics2d::Contact2D::body_b: usize
@@ -9210,6 +9257,52 @@ impl core::marker::Unpin for alice_physics::physics2d::Contact2D
 impl core::marker::UnsafeUnpin for alice_physics::physics2d::Contact2D
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::Contact2D
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::Contact2D
+#[non_exhaustive] pub struct alice_physics::physics2d::KinematicDrive2D
+pub alice_physics::physics2d::KinematicDrive2D::body: usize
+pub alice_physics::physics2d::KinematicDrive2D::omega: alice_physics::math::Fix128
+pub alice_physics::physics2d::KinematicDrive2D::target_angle: alice_physics::math::Fix128
+pub alice_physics::physics2d::KinematicDrive2D::target_position: alice_physics::physics2d::Vec2Fix
+impl alice_physics::physics2d::KinematicDrive2D
+pub const fn alice_physics::physics2d::KinematicDrive2D::new(usize, alice_physics::physics2d::Vec2Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+impl core::clone::Clone for alice_physics::physics2d::KinematicDrive2D
+pub fn alice_physics::physics2d::KinematicDrive2D::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::physics2d::KinematicDrive2D
+impl core::cmp::PartialEq for alice_physics::physics2d::KinematicDrive2D
+pub fn alice_physics::physics2d::KinematicDrive2D::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::physics2d::KinematicDrive2D
+pub fn alice_physics::physics2d::KinematicDrive2D::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::physics2d::KinematicDrive2D
+impl core::marker::StructuralPartialEq for alice_physics::physics2d::KinematicDrive2D
+impl core::marker::Freeze for alice_physics::physics2d::KinematicDrive2D
+impl core::marker::Send for alice_physics::physics2d::KinematicDrive2D
+impl core::marker::Sync for alice_physics::physics2d::KinematicDrive2D
+impl core::marker::Unpin for alice_physics::physics2d::KinematicDrive2D
+impl core::marker::UnsafeUnpin for alice_physics::physics2d::KinematicDrive2D
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::KinematicDrive2D
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::KinematicDrive2D
+pub struct alice_physics::physics2d::KinematicDriveId(_)
+impl core::clone::Clone for alice_physics::physics2d::KinematicDriveId
+pub fn alice_physics::physics2d::KinematicDriveId::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::physics2d::KinematicDriveId
+impl core::cmp::Ord for alice_physics::physics2d::KinematicDriveId
+pub fn alice_physics::physics2d::KinematicDriveId::cmp(&self, &Self) -> core::cmp::Ordering
+impl core::cmp::PartialEq for alice_physics::physics2d::KinematicDriveId
+pub fn alice_physics::physics2d::KinematicDriveId::eq(&self, &Self) -> bool
+impl core::cmp::PartialOrd for alice_physics::physics2d::KinematicDriveId
+pub fn alice_physics::physics2d::KinematicDriveId::partial_cmp(&self, &Self) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for alice_physics::physics2d::KinematicDriveId
+pub fn alice_physics::physics2d::KinematicDriveId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for alice_physics::physics2d::KinematicDriveId
+pub fn alice_physics::physics2d::KinematicDriveId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for alice_physics::physics2d::KinematicDriveId
+impl core::marker::StructuralPartialEq for alice_physics::physics2d::KinematicDriveId
+impl core::marker::Freeze for alice_physics::physics2d::KinematicDriveId
+impl core::marker::Send for alice_physics::physics2d::KinematicDriveId
+impl core::marker::Sync for alice_physics::physics2d::KinematicDriveId
+impl core::marker::Unpin for alice_physics::physics2d::KinematicDriveId
+impl core::marker::UnsafeUnpin for alice_physics::physics2d::KinematicDriveId
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::KinematicDriveId
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::KinematicDriveId
 pub struct alice_physics::physics2d::PhysicsConfig2D
 pub alice_physics::physics2d::PhysicsConfig2D::damping: alice_physics::math::Fix128
 pub alice_physics::physics2d::PhysicsConfig2D::gravity: alice_physics::physics2d::Vec2Fix
@@ -9240,6 +9333,7 @@ pub fn alice_physics::physics2d::PhysicsWorld2D::check_collision_2d(&self, usize
 pub const fn alice_physics::physics2d::PhysicsWorld2D::new(alice_physics::physics2d::PhysicsConfig2D) -> Self
 pub fn alice_physics::physics2d::PhysicsWorld2D::remove_body(&mut self, usize) -> core::option::Option<alice_physics::physics2d::RigidBody2D>
 pub fn alice_physics::physics2d::PhysicsWorld2D::step(&mut self, alice_physics::math::Fix128)
+pub fn alice_physics::physics2d::PhysicsWorld2D::step_with_tethers(&mut self, alice_physics::math::Fix128, &alice_physics::physics2d::Tethers2D)
 impl core::fmt::Debug for alice_physics::physics2d::PhysicsWorld2D
 pub fn alice_physics::physics2d::PhysicsWorld2D::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::physics2d::PhysicsWorld2D
@@ -9282,6 +9376,32 @@ impl core::marker::Unpin for alice_physics::physics2d::RigidBody2D
 impl core::marker::UnsafeUnpin for alice_physics::physics2d::RigidBody2D
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::RigidBody2D
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::RigidBody2D
+pub struct alice_physics::physics2d::Tethers2D
+impl alice_physics::physics2d::Tethers2D
+pub fn alice_physics::physics2d::Tethers2D::add_angular(&mut self, alice_physics::physics2d::AngularTether2D) -> alice_physics::physics2d::AngularTetherId
+pub fn alice_physics::physics2d::Tethers2D::add_drive(&mut self, alice_physics::physics2d::KinematicDrive2D) -> alice_physics::physics2d::KinematicDriveId
+pub fn alice_physics::physics2d::Tethers2D::angular(&self, alice_physics::physics2d::AngularTetherId) -> core::option::Option<&alice_physics::physics2d::AngularTether2D>
+pub fn alice_physics::physics2d::Tethers2D::angular_count(&self) -> usize
+pub fn alice_physics::physics2d::Tethers2D::angular_mut(&mut self, alice_physics::physics2d::AngularTetherId) -> core::option::Option<&mut alice_physics::physics2d::AngularTether2D>
+pub fn alice_physics::physics2d::Tethers2D::drive(&self, alice_physics::physics2d::KinematicDriveId) -> core::option::Option<&alice_physics::physics2d::KinematicDrive2D>
+pub fn alice_physics::physics2d::Tethers2D::drive_count(&self) -> usize
+pub fn alice_physics::physics2d::Tethers2D::drive_mut(&mut self, alice_physics::physics2d::KinematicDriveId) -> core::option::Option<&mut alice_physics::physics2d::KinematicDrive2D>
+pub const fn alice_physics::physics2d::Tethers2D::new() -> Self
+pub fn alice_physics::physics2d::Tethers2D::remove_angular(&mut self, alice_physics::physics2d::AngularTetherId) -> core::option::Option<alice_physics::physics2d::AngularTether2D>
+pub fn alice_physics::physics2d::Tethers2D::remove_drive(&mut self, alice_physics::physics2d::KinematicDriveId) -> core::option::Option<alice_physics::physics2d::KinematicDrive2D>
+impl core::clone::Clone for alice_physics::physics2d::Tethers2D
+pub fn alice_physics::physics2d::Tethers2D::clone(&self) -> Self
+impl core::default::Default for alice_physics::physics2d::Tethers2D
+pub fn alice_physics::physics2d::Tethers2D::default() -> Self
+impl core::fmt::Debug for alice_physics::physics2d::Tethers2D
+pub fn alice_physics::physics2d::Tethers2D::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::physics2d::Tethers2D
+impl core::marker::Send for alice_physics::physics2d::Tethers2D
+impl core::marker::Sync for alice_physics::physics2d::Tethers2D
+impl core::marker::Unpin for alice_physics::physics2d::Tethers2D
+impl core::marker::UnsafeUnpin for alice_physics::physics2d::Tethers2D
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::physics2d::Tethers2D
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::physics2d::Tethers2D
 #[repr(C)] pub struct alice_physics::physics2d::Vec2Fix
 pub alice_physics::physics2d::Vec2Fix::x: alice_physics::math::Fix128
 pub alice_physics::physics2d::Vec2Fix::y: alice_physics::math::Fix128
@@ -24361,6 +24481,7 @@ pub fn alice_physics::physics2d::PhysicsWorld2D::check_collision_2d(&self, usize
 pub const fn alice_physics::physics2d::PhysicsWorld2D::new(alice_physics::physics2d::PhysicsConfig2D) -> Self
 pub fn alice_physics::physics2d::PhysicsWorld2D::remove_body(&mut self, usize) -> core::option::Option<alice_physics::physics2d::RigidBody2D>
 pub fn alice_physics::physics2d::PhysicsWorld2D::step(&mut self, alice_physics::math::Fix128)
+pub fn alice_physics::physics2d::PhysicsWorld2D::step_with_tethers(&mut self, alice_physics::math::Fix128, &alice_physics::physics2d::Tethers2D)
 impl core::fmt::Debug for alice_physics::physics2d::PhysicsWorld2D
 pub fn alice_physics::physics2d::PhysicsWorld2D::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::physics2d::PhysicsWorld2D

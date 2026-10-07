@@ -581,6 +581,14 @@ impl PhysicsWorld2D {
     /// Internally runs `config.substeps` substeps, each with collision
     /// detection, XPBD position correction, and velocity derivation.
     pub fn step(&mut self, dt: Fix128) {
+        self.step_with_tethers(dt, &Tethers2D::new());
+    }
+
+    /// [`step`](Self::step) that also solves the angular tethers and kinematic drives in
+    /// `tethers` inside every substep (drives right after the velocity integration,
+    /// tethers in the constraint iterations next to the joints). With an empty set this is
+    /// `step`, bit for bit.
+    pub fn step_with_tethers(&mut self, dt: Fix128, tethers: &Tethers2D) {
         let substeps = self.config.substeps;
         if substeps == 0 {
             return;
@@ -588,7 +596,7 @@ impl PhysicsWorld2D {
         let sub_dt = dt / Fix128::from_int(substeps as i64);
 
         for _ in 0..substeps {
-            self.substep(sub_dt);
+            self.substep(sub_dt, tethers);
         }
 
         // Apply damping
@@ -602,7 +610,7 @@ impl PhysicsWorld2D {
     }
 
     /// Perform one substep of the XPBD solver.
-    fn substep(&mut self, sub_dt: Fix128) {
+    fn substep(&mut self, sub_dt: Fix128, tethers: &Tethers2D) {
         let gravity = self.gravity;
         let iterations = self.config.iterations;
 
@@ -628,6 +636,9 @@ impl PhysicsWorld2D {
             body.position = body.position + body.velocity * sub_dt;
             body.angle = body.angle + body.angular_velocity * sub_dt;
         }
+        for drive in tethers.live_drives() {
+            apply_kinematic_drive(&mut self.bodies, drive, sub_dt);
+        }
 
         // 2. Detect collisions (pairs + the pre-solve normal velocity each
         //    pair approaches with, which the restitution pass needs)
@@ -638,6 +649,7 @@ impl PhysicsWorld2D {
             .collect();
         let mut lambda_n = vec![Fix128::ZERO; contacts.len()];
         let mut joint_lambda = vec![Vec2Fix::ZERO; self.joints.len()];
+        let mut tether_lambda = vec![Fix128::ZERO; tethers.angular.len()];
 
         // 3. Solve constraints (position-based). The penetration is
         //    re-evaluated from the current positions in every iteration
@@ -655,6 +667,12 @@ impl PhysicsWorld2D {
 
             // Solve joints
             solve_joints_2d_accumulated(&mut self.bodies, &self.joints, sub_dt, &mut joint_lambda);
+
+            for (slot, lambda) in tethers.angular.iter().zip(tether_lambda.iter_mut()) {
+                if let Some(tether) = slot {
+                    solve_angular_tether(&mut self.bodies, tether, sub_dt, lambda);
+                }
+            }
         }
 
         // 4. Derive velocity from position change
@@ -1955,6 +1973,295 @@ fn solve_mouse(
     let dlambda = total - *accumulated;
     *accumulated = total;
     bodies[body_idx].position = bodies[body_idx].position + dlambda * w;
+}
+
+// ============================================================================
+// Tethers2D (angular spring-damper + kinematic drive)
+// ============================================================================
+
+/// Angular spring-damper pulling a dynamic body's angle toward `target_angle`:
+/// `τ = stiffness·(target_angle − θ) − damping·ω`.
+///
+/// Solved inside [`PhysicsWorld2D::step_with_tethers`] as an XPBD constraint with damping
+/// (Macklin et al. 2016, eq. 26) on `C = θ − target_angle`, one multiplier per tether
+/// accumulated over the iterations of a substep, so the law is backward Euler per substep
+/// and independent of `iterations`. For moment of inertia `I`, angular frequency `ω` and
+/// damping ratio `ζ` use `stiffness = I ω²`, `damping = 2 ζ I ω`
+/// ([`AngularTether2D::critically_damped`] is `ζ = 1`, the return
+/// `θ(t) = (θ0 + (ω0 + ω θ0) t)·e^(−ωt)` about the target, without overshoot).
+///
+/// The error `θ − target_angle` is not wrapped to `(−π, π]`: a body that has spun one full
+/// turn is pulled back through that turn. Combine with [`Joint2D::Mouse`] to return both
+/// position and orientation. Only `Dynamic` bodies are affected (use
+/// [`KinematicDrive2D`] for kinematic ones). `PhysicsConfig2D::damping` is applied on top
+/// (set it to 1 for the pure law).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct AngularTether2D {
+    /// Body index.
+    pub body: usize,
+    /// Target angle in radians (same unwrapped convention as `RigidBody2D::angle`).
+    pub target_angle: Fix128,
+    /// Angular stiffness `k_θ`, in N·m/rad.
+    pub stiffness: Fix128,
+    /// Angular damping `c_θ`, in N·m·s/rad, acting on the body's angular velocity.
+    pub damping: Fix128,
+}
+
+impl AngularTether2D {
+    /// Tether with explicit angular stiffness (N·m/rad) and damping (N·m·s/rad).
+    #[must_use]
+    pub const fn new(
+        body: usize,
+        target_angle: Fix128,
+        stiffness: Fix128,
+        damping: Fix128,
+    ) -> Self {
+        Self {
+            body,
+            target_angle,
+            stiffness,
+            damping,
+        }
+    }
+
+    /// Critically damped tether for a body of moment of inertia `inertia`:
+    /// `stiffness = I ω²`, `damping = 2 I ω`.
+    #[must_use]
+    pub fn critically_damped(
+        body: usize,
+        target_angle: Fix128,
+        inertia: Fix128,
+        omega: Fix128,
+    ) -> Self {
+        Self::new(
+            body,
+            target_angle,
+            inertia * omega * omega,
+            Fix128::from_int(2) * inertia * omega,
+        )
+    }
+}
+
+/// Drives a `Kinematic` body toward `target_position` / `target_angle` along the critically
+/// damped trajectory of angular frequency `omega`, through its velocity.
+///
+/// A kinematic body has infinite mass, so this is not a constraint: at every substep of
+/// length `h` the position error `e = x − target` and velocity `v` are advanced by the exact
+/// solution of `ë = −2ω ė − ω² e`,
+/// `e' = (e + (v + ω e) h)·E`, `v' = (v − ω h (v + ω e))·E`, `E = e^(−ωh)`,
+/// and likewise for the angle. Composing substeps reproduces the continuous
+/// `e(t) = (e0 + (v0 + ω e0) t)·e^(−ωt)` for any `substeps` (up to `Fix128` rounding), so the
+/// body reaches the target without overshoot when it starts at rest. The body's `velocity`
+/// / `angular_velocity` hold `v'`, so contacts see the true velocity, and the body keeps
+/// pushing dynamic bodies it meets. The drive overrides any velocity set by hand; with
+/// several drives on one body the one added last wins. Non-kinematic bodies are ignored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct KinematicDrive2D {
+    /// Body index (must be `BodyType2D::Kinematic`).
+    pub body: usize,
+    /// Target position.
+    pub target_position: Vec2Fix,
+    /// Target angle in radians (unwrapped, like `AngularTether2D::target_angle`).
+    pub target_angle: Fix128,
+    /// Angular frequency `ω` (1/s) of the critically damped return; `<= 0` holds the body
+    /// where it is with its current velocity unchanged (the drive is inactive).
+    pub omega: Fix128,
+}
+
+impl KinematicDrive2D {
+    /// Drive toward `target_position` / `target_angle` with angular frequency `omega`.
+    #[must_use]
+    pub const fn new(
+        body: usize,
+        target_position: Vec2Fix,
+        target_angle: Fix128,
+        omega: Fix128,
+    ) -> Self {
+        Self {
+            body,
+            target_position,
+            target_angle,
+            omega,
+        }
+    }
+}
+
+/// Handle of an [`AngularTether2D`] in a [`Tethers2D`] set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct AngularTetherId(usize);
+
+/// Handle of a [`KinematicDrive2D`] in a [`Tethers2D`] set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct KinematicDriveId(usize);
+
+/// Set of angular tethers and kinematic drives, solved by
+/// [`PhysicsWorld2D::step_with_tethers`].
+///
+/// Kept outside `PhysicsWorld2D` so the world's public layout is unchanged. Handles stay
+/// valid until their own removal (slots are not reused), and entries are solved in the
+/// order they were added, so a replay is bit-identical.
+#[derive(Clone, Debug, Default)]
+pub struct Tethers2D {
+    angular: Vec<Option<AngularTether2D>>,
+    drives: Vec<Option<KinematicDrive2D>>,
+}
+
+impl Tethers2D {
+    /// Empty set. `step_with_tethers` with an empty set is `step`.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            angular: Vec::new(),
+            drives: Vec::new(),
+        }
+    }
+
+    /// Add an angular tether.
+    pub fn add_angular(&mut self, tether: AngularTether2D) -> AngularTetherId {
+        self.angular.push(Some(tether));
+        AngularTetherId(self.angular.len() - 1)
+    }
+
+    /// Remove an angular tether, returning it if the handle was live.
+    pub fn remove_angular(&mut self, id: AngularTetherId) -> Option<AngularTether2D> {
+        self.angular.get_mut(id.0).and_then(Option::take)
+    }
+
+    /// The angular tether behind `id`, if live.
+    #[must_use]
+    pub fn angular(&self, id: AngularTetherId) -> Option<&AngularTether2D> {
+        self.angular.get(id.0).and_then(Option::as_ref)
+    }
+
+    /// Mutable access (e.g. to move `target_angle`), if live.
+    pub fn angular_mut(&mut self, id: AngularTetherId) -> Option<&mut AngularTether2D> {
+        self.angular.get_mut(id.0).and_then(Option::as_mut)
+    }
+
+    /// Add a kinematic drive.
+    pub fn add_drive(&mut self, drive: KinematicDrive2D) -> KinematicDriveId {
+        self.drives.push(Some(drive));
+        KinematicDriveId(self.drives.len() - 1)
+    }
+
+    /// Remove a kinematic drive, returning it if the handle was live. The body keeps the
+    /// velocity the drive last gave it.
+    pub fn remove_drive(&mut self, id: KinematicDriveId) -> Option<KinematicDrive2D> {
+        self.drives.get_mut(id.0).and_then(Option::take)
+    }
+
+    /// The kinematic drive behind `id`, if live.
+    #[must_use]
+    pub fn drive(&self, id: KinematicDriveId) -> Option<&KinematicDrive2D> {
+        self.drives.get(id.0).and_then(Option::as_ref)
+    }
+
+    /// Mutable access (e.g. to move the targets), if live.
+    pub fn drive_mut(&mut self, id: KinematicDriveId) -> Option<&mut KinematicDrive2D> {
+        self.drives.get_mut(id.0).and_then(Option::as_mut)
+    }
+
+    /// Number of live angular tethers.
+    #[must_use]
+    pub fn angular_count(&self) -> usize {
+        self.angular.iter().filter(|t| t.is_some()).count()
+    }
+
+    /// Number of live kinematic drives.
+    #[must_use]
+    pub fn drive_count(&self) -> usize {
+        self.drives.iter().filter(|d| d.is_some()).count()
+    }
+
+    fn live_drives(&self) -> impl Iterator<Item = &KinematicDrive2D> {
+        self.drives.iter().flatten()
+    }
+}
+
+/// `e^(−x)` for `x >= 0`, accurate to a few units of 2⁻⁶⁴: Taylor series on `x / 2^k <= 1/2`
+/// followed by `k` squarings. (`Fix128::exp` is ≲ 1e-6 relative, which compounds over the
+/// substeps of a kinematic drive.)
+fn exp_neg(x: Fix128) -> Fix128 {
+    if x <= Fix128::ZERO {
+        return Fix128::ONE;
+    }
+    if x.hi >= 44 {
+        return Fix128::ZERO;
+    }
+    let half = Fix128::from_ratio(1, 2);
+    let mut y = x;
+    let mut k = 0_u32;
+    while y > half {
+        y = y * half;
+        k += 1;
+    }
+    // Σ (−y)ⁿ / n!, |y| <= 1/2: 26 terms leave a remainder below 2⁻⁶⁴·2⁻³⁰
+    let mut sum = Fix128::ONE;
+    let mut term = Fix128::ONE;
+    for n in 1..=26_i64 {
+        term = Fix128::ZERO - term * y / Fix128::from_int(n);
+        sum = sum + term;
+    }
+    for _ in 0..k {
+        sum = sum * sum;
+    }
+    sum
+}
+
+/// Advance a kinematic drive by one substep (closed-form critically damped step).
+fn apply_kinematic_drive(bodies: &mut [RigidBody2D], drive: &KinematicDrive2D, h: Fix128) {
+    let Some(body) = bodies.get_mut(drive.body) else {
+        return;
+    };
+    if body.body_type != BodyType2D::Kinematic || drive.omega <= Fix128::ZERO {
+        return;
+    }
+    let w = drive.omega;
+    let e_factor = exp_neg(w * h);
+    // linear: start of the substep is prev_position with the velocity it began with
+    let e0 = body.prev_position - drive.target_position;
+    let v0 = body.velocity;
+    let s = v0 + e0 * w;
+    body.position = drive.target_position + (e0 + s * h) * e_factor;
+    body.velocity = (v0 - s * (w * h)) * e_factor;
+    // angular
+    let a0 = body.prev_angle - drive.target_angle;
+    let om0 = body.angular_velocity;
+    let sa = om0 + w * a0;
+    body.angle = drive.target_angle + (a0 + sa * h) * e_factor;
+    body.angular_velocity = (om0 - sa * (w * h)) * e_factor;
+}
+
+/// One XPBD-with-damping iteration of an angular tether, accumulating its multiplier.
+fn solve_angular_tether(
+    bodies: &mut [RigidBody2D],
+    tether: &AngularTether2D,
+    h: Fix128,
+    accumulated: &mut Fix128,
+) {
+    let Some(body) = bodies.get_mut(tether.body) else {
+        return;
+    };
+    if body.body_type != BodyType2D::Dynamic || h.is_zero() {
+        return;
+    }
+    // Same scalar update as `solve_mouse`, multiplied through by k h²:
+    //   Δλ = (−k h² C − λ − c h (θ − θ_prev)) / ((k h² + c h) w + 1),   θ += w Δλ
+    let kh2 = tether.stiffness * h * h;
+    let ch = tether.damping * h;
+    let w = body.inv_inertia;
+    let c = body.angle - tether.target_angle;
+    let moved = body.angle - body.prev_angle;
+    let denom = (kh2 + ch) * w + Fix128::ONE;
+    if denom.is_zero() {
+        return;
+    }
+    let numer = Fix128::ZERO - kh2 * c - *accumulated - ch * moved;
+    let dlambda = numer / denom;
+    *accumulated = *accumulated + dlambda;
+    body.angle = body.angle + dlambda * w;
 }
 
 impl core::fmt::Debug for PhysicsWorld2D {
