@@ -1069,6 +1069,9 @@ fn predict_rotation(
 /// difference instead dropped the low bits that the truncating product
 /// `v_pred·h` lost, every substep, so free bodies did not conserve momentum.
 /// Any other body (`None`) derives `v = (x − x_prev) / h`, as before.
+/// A substep whose position add left the range keeps the in-range predicted
+/// velocity: the position stays put, so it equals `x_pred` and the
+/// correction is zero.
 ///
 /// Returns `false` when the scaled difference leaves the `Fix128` range; the
 /// velocity is then left unchanged.

@@ -539,6 +539,45 @@ fn position_wrap_at_2_pow_63_raises_the_overflow_flag() {
     }
 }
 
+/// XPBD: 位置の加算が範囲外になった substep でも、範囲内の予測速度は bit 単位で
+/// 保たれる (位置は据え置きなので予測位置と一致し、位置補正は 0)
+/// `−2⁶³` の端の近くを `vy = −2⁵⁰` で進む物体は最初の substep で加算が範囲外になる
+/// 減衰 1・重力 0 なので予測速度は初速そのまま
+#[test]
+fn xpbd_keeps_the_predicted_velocity_when_the_position_add_overflows() {
+    let y0 = Fix128::from_raw(i64::MIN + 1000, 0);
+    let vy = -pow2(50);
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        gravity: Vec3Fix::ZERO,
+        damping: Fix128::ONE,
+        ..PhysicsConfig::default()
+    });
+    let mut b = RigidBody::new(Vec3Fix::new(Fix128::ZERO, y0, Fix128::ZERO), Fix128::ONE);
+    b.velocity = Vec3Fix::new(Fix128::ZERO, vy, Fix128::ZERO);
+    w.add_body(b);
+    w.step(frame());
+    assert!(w.overflow_detected(), "前提: 位置の加算が範囲外になる");
+    let b = w.get_body(0).unwrap();
+    assert_eq!(b.position.y, y0, "位置は据え置き (wrap しない)");
+    assert_eq!(b.velocity.y, vy, "範囲内の予測速度が保たれていない");
+    assert_eq!(b.velocity.x, Fix128::ZERO);
+    assert_eq!(b.velocity.z, Fix128::ZERO);
+    // 対照: 範囲の内側を同じ速度で進む物体は位置が動き、速度も保たれる
+    let mut near = PhysicsWorld::new(PhysicsConfig {
+        gravity: Vec3Fix::ZERO,
+        damping: Fix128::ONE,
+        ..PhysicsConfig::default()
+    });
+    let mut c = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
+    c.velocity = Vec3Fix::new(Fix128::ZERO, vy, Fix128::ZERO);
+    near.add_body(c);
+    near.step(frame());
+    assert!(!near.overflow_detected(), "範囲内で flag");
+    let c = near.get_body(0).unwrap();
+    assert!(c.position.y < Fix128::ZERO, "範囲内で進まない");
+    assert_eq!(c.velocity.y, vy);
+}
+
 /// 何もしない参加者 (範囲外の検出が参加者の substep の後で fault になるかを見る)
 #[cfg(feature = "std")]
 struct Quiet;
