@@ -451,8 +451,9 @@ fn isotropic_scene(backend: SolverBackend) -> PhysicsWorld {
 /// re-derivation, which changes every spinning XPBD body; the term itself
 /// leaves every body of this scene on its previous path; re-recorded when
 /// XPBD began keeping the predicted velocity of bodies the solve did not move,
-/// `v = v_pred + Δx_corr / h`).
-const GOLDEN_ISOTROPIC_XPBD: u64 = 0xf7a1_c604_426d_f42d;
+/// `v = v_pred + Δx_corr / h`, and again when it began keeping the predicted
+/// angular velocity of bodies the solve did not turn).
+const GOLDEN_ISOTROPIC_XPBD: u64 = 0x4ea6_501e_e672_97d9;
 // The TGS value was re-recorded when the TGS orientation integrator became
 // the exact exponential map.
 const GOLDEN_ISOTROPIC_TGS: u64 = 0x106c_4a10_6420_8aa4;
@@ -476,8 +477,9 @@ fn d_isotropic_and_exempt_bodies_are_bit_identical_to_before() {
     }
 }
 
+/// Same scene under `step_parallel`; equal to the serial XPBD value.
 #[cfg(feature = "parallel")]
-const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0xa78f_4abf_b26c_12be;
+const GOLDEN_ISOTROPIC_PARALLEL: u64 = 0x4ea6_501e_e672_97d9;
 
 #[cfg(feature = "parallel")]
 #[test]
