@@ -29,7 +29,7 @@ crate has today.
 | `docs/coverage/num.toml` | 124 | 26 | 0 | 5 | 92 | 1 |
 | `docs/coverage/opt.toml` | 120 | 1 | 0 | 0 | 118 | 1 |
 | `docs/coverage/optics.toml` | 121 | 0 | 0 | 0 | 121 | 0 |
-| `docs/coverage/orbit.toml` | 138 | 23 | 4 | 3 | 108 | 0 |
+| `docs/coverage/orbit.toml` | 138 | 24 | 3 | 3 | 108 | 0 |
 | `docs/coverage/part.toml` | 122 | 26 | 2 | 3 | 91 | 0 |
 | `docs/coverage/plasma.toml` | 156 | 3 | 1 | 0 | 152 | 0 |
 | `docs/coverage/quantum.toml` | 169 | 0 | 0 | 0 | 169 | 0 |
@@ -40,7 +40,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4177 | 551 | 67 | 104 | 3449 | 6 |
+| **total** | 4177 | 552 | 66 | 104 | 3449 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -478,7 +478,7 @@ crate has today.
 | benchmark | 18 | 3 | 0 | 0 | 15 | 0 |
 | elements | 7 | 2 | 0 | 1 | 4 | 0 |
 | frames-time | 7 | 0 | 0 | 0 | 7 | 0 |
-| maneuver | 9 | 0 | 1 | 0 | 8 | 0 |
+| maneuver | 9 | 1 | 0 | 0 | 8 | 0 |
 | n-body integration | 14 | 3 | 1 | 1 | 9 | 0 |
 | n-body law | 7 | 4 | 0 | 1 | 2 | 0 |
 | output | 3 | 0 | 1 | 0 | 2 | 0 |
