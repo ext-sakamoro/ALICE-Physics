@@ -154,7 +154,7 @@ fn check(golden: &[(&str, &str)], parallel: bool) {
 const GOLDEN_STEP: &[(&str, &str)] = &[
     (
         "thin_wall_xpbd",
-        "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a",
+        "ea03a080984ec9c559a659a0a24666d46be5332879637a70466cf3954f2a2376",
     ),
     (
         "thin_wall_tgs",
@@ -162,11 +162,11 @@ const GOLDEN_STEP: &[(&str, &str)] = &[
     ),
     (
         "head_on",
-        "40ad6c54c6f1fb20b70227745cec259ebb39cd7030dbe679c44bbb63c17f4f62",
+        "f76f335739078224d80ba6af7f89f9dbc2d8fa171d3cae08a65c67ace4ee9a83",
     ),
     (
         "pile",
-        "a5fad8e02f869406312cdbc13a375ee3f98fede54caac7194066cfcf6a1bce73",
+        "b713fba3a3b5a6a3ef1975f50fe3a369fc530a869a23c193a92a89f7414b2a8c",
     ),
 ];
 
@@ -176,19 +176,19 @@ const GOLDEN_STEP: &[(&str, &str)] = &[
 const GOLDEN_STEP_PARALLEL: &[(&str, &str)] = &[
     (
         "thin_wall_xpbd",
-        "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a",
+        "ea03a080984ec9c559a659a0a24666d46be5332879637a70466cf3954f2a2376",
     ),
     (
         "thin_wall_tgs",
-        "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a",
+        "ea03a080984ec9c559a659a0a24666d46be5332879637a70466cf3954f2a2376",
     ),
     (
         "head_on",
-        "40ad6c54c6f1fb20b70227745cec259ebb39cd7030dbe679c44bbb63c17f4f62",
+        "f76f335739078224d80ba6af7f89f9dbc2d8fa171d3cae08a65c67ace4ee9a83",
     ),
     (
         "pile",
-        "a5fad8e02f869406312cdbc13a375ee3f98fede54caac7194066cfcf6a1bce73",
+        "b713fba3a3b5a6a3ef1975f50fe3a369fc530a869a23c193a92a89f7414b2a8c",
     ),
 ];
 
