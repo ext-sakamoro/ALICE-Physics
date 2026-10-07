@@ -6779,6 +6779,36 @@ mod tests {
             .expect("set a write timeout on a peer link");
     }
 
+    /// Reap child ranks without cutting short the exit of one that is already
+    /// leaving.
+    ///
+    /// Each child is waited for on its own first, with a deadline past the
+    /// 30 s link timeouts of [`bound_peer_link`], and only killed after that.
+    /// Killing at once cuts off a child that is still in its exit path: under
+    /// `-C instrument-coverage` that is where it writes its profile, and a
+    /// truncated profile makes the whole coverage merge fail. A child whose
+    /// links to this process have been dropped gets an end of stream and
+    /// leaves on its own well before the deadline.
+    #[cfg(feature = "std")]
+    fn reap_child_ranks(kids: &mut [std::process::Child]) {
+        use std::time::{Duration, Instant};
+
+        let deadline = Instant::now() + Duration::from_secs(60);
+        for kid in kids {
+            loop {
+                match kid.try_wait() {
+                    Ok(Some(_)) | Err(_) => break,
+                    Ok(None) if Instant::now() >= deadline => {
+                        let _ = kid.kill();
+                        let _ = kid.wait();
+                        break;
+                    }
+                    Ok(None) => std::thread::sleep(Duration::from_millis(2)),
+                }
+            }
+        }
+    }
+
     /// Accept one connection, giving up after 60 s rather than hanging when the
     /// peer rank never arrives.
     #[cfg(feature = "std")]
@@ -6821,10 +6851,7 @@ mod tests {
     #[cfg(feature = "std")]
     impl Drop for SpawnedRanks {
         fn drop(&mut self) {
-            for kid in &mut self.kids {
-                let _ = kid.kill();
-                let _ = kid.wait();
-            }
+            reap_child_ranks(&mut self.kids);
         }
     }
 
@@ -9157,10 +9184,7 @@ mod tests {
     #[cfg(feature = "std")]
     impl Drop for SlabRanks {
         fn drop(&mut self) {
-            for kid in &mut self.kids {
-                let _ = kid.kill();
-                let _ = kid.wait();
-            }
+            reap_child_ranks(&mut self.kids);
         }
     }
 
