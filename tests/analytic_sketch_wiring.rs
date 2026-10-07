@@ -427,7 +427,6 @@ fn count_min_duplicate_passes_double_every_estimate_and_merge_adds() {
     }
 }
 
-// PIN: AUD-A-S3W1-010 (`total` is a plain `+=`: panics in debug / wraps in release, asserted below)
 #[test]
 fn count_min_degenerate_inputs() {
     // Empty sketch: every estimate is 0, the bounds are already defined.
