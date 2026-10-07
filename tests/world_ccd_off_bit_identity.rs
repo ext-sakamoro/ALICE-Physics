@@ -63,8 +63,10 @@ fn thin_wall(backend: SolverBackend) -> PhysicsWorld {
 /// Two spheres closing at 400 m/s, a third crossing their line, and a thin
 /// static triangle mesh in the path of a fourth.
 fn head_on() -> PhysicsWorld {
-    let mut config = PhysicsConfig::default();
-    config.gravity = Vec3Fix::ZERO;
+    let config = PhysicsConfig {
+        gravity: Vec3Fix::ZERO,
+        ..PhysicsConfig::default()
+    };
     let mut w = PhysicsWorld::new(config);
     let mut a = RigidBody::new_dynamic(v(-6, 0, 0), Fix128::ONE);
     a.velocity = v(200, 0, 0);
@@ -92,7 +94,10 @@ fn pile() -> PhysicsWorld {
         Fix128::ZERO,
     )));
     for k in 0..5 {
-        let body = RigidBody::new_dynamic(Vec3Fix::new(r(k, 3), Fix128::from_int(1 + k), r(k, 7)), Fix128::ONE);
+        let body = RigidBody::new_dynamic(
+            Vec3Fix::new(r(k, 3), Fix128::from_int(1 + k), r(k, 7)),
+            Fix128::ONE,
+        );
         w.add_body_with_radius(body, r(1, 2));
     }
     let boxed = w
@@ -147,20 +152,44 @@ fn check(golden: &[(&str, &str)], parallel: bool) {
 
 /// `step`, the same with and without `--features parallel`.
 const GOLDEN_STEP: &[(&str, &str)] = &[
-    ("thin_wall_xpbd", "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a"),
-    ("thin_wall_tgs", "4cf2c5b4d8bada719209223f8110ae1e03b3726cf2ddf9304270e7ce473da421"),
-    ("head_on", "40ad6c54c6f1fb20b70227745cec259ebb39cd7030dbe679c44bbb63c17f4f62"),
-    ("pile", "a5fad8e02f869406312cdbc13a375ee3f98fede54caac7194066cfcf6a1bce73"),
+    (
+        "thin_wall_xpbd",
+        "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a",
+    ),
+    (
+        "thin_wall_tgs",
+        "4cf2c5b4d8bada719209223f8110ae1e03b3726cf2ddf9304270e7ce473da421",
+    ),
+    (
+        "head_on",
+        "40ad6c54c6f1fb20b70227745cec259ebb39cd7030dbe679c44bbb63c17f4f62",
+    ),
+    (
+        "pile",
+        "a5fad8e02f869406312cdbc13a375ee3f98fede54caac7194066cfcf6a1bce73",
+    ),
 ];
 
 /// `step_parallel`, which runs the XPBD substep whatever the backend, so the
 /// TGS scene gives the XPBD hash.
 #[cfg(feature = "parallel")]
 const GOLDEN_STEP_PARALLEL: &[(&str, &str)] = &[
-    ("thin_wall_xpbd", "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a"),
-    ("thin_wall_tgs", "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a"),
-    ("head_on", "40ad6c54c6f1fb20b70227745cec259ebb39cd7030dbe679c44bbb63c17f4f62"),
-    ("pile", "a5fad8e02f869406312cdbc13a375ee3f98fede54caac7194066cfcf6a1bce73"),
+    (
+        "thin_wall_xpbd",
+        "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a",
+    ),
+    (
+        "thin_wall_tgs",
+        "55bf63428684de990a46cab906181db609f5127e35c20004b9c5f32438eb812a",
+    ),
+    (
+        "head_on",
+        "40ad6c54c6f1fb20b70227745cec259ebb39cd7030dbe679c44bbb63c17f4f62",
+    ),
+    (
+        "pile",
+        "a5fad8e02f869406312cdbc13a375ee3f98fede54caac7194066cfcf6a1bce73",
+    ),
 ];
 
 #[test]
