@@ -519,4 +519,236 @@ mod tests {
         // max(-0.05, -(-0.1)) = max(-0.05, 0.1) = 0.1
         assert!(d > -0.05, "Crack should cut into the SDF, got {d}");
     }
+
+    fn seeding_config(max_cracks: usize) -> FractureConfig {
+        FractureConfig {
+            fracture_toughness: 50.0,
+            crack_width: 0.01,
+            max_cracks,
+            stress_diffusion: 0.0,
+            stress_decay: 0.0,
+            propagation_speed: 4.0,
+            max_crack_length: 10.0,
+        }
+    }
+
+    /// oracle: on a one-cell grid at `min = (1, 2, 3)` the stress 100 is above
+    /// the toughness 50, so one update seeds a crack at the cell, consumes the
+    /// stress (0) and, with a flat stress (no gradient) at cell `(0, 0, 0)`,
+    /// runs it along `(cos 0, 0, sin 0) = (1, 0, 0)`; propagation `4·(1/4)`
+    /// gives length 1 and tip `(2, 2, 3)`.
+    #[test]
+    fn one_update_seeds_and_grows_a_crack() {
+        let mut m = FractureModifier::new(seeding_config(4), 1, (1.0, 2.0, 3.0), (2.0, 3.0, 4.0));
+        m.stress.data[0] = 100.0;
+        m.update(0.25);
+        assert_eq!(m.cracks.len(), 1);
+        let c = m.cracks[0];
+        assert_eq!(c.start, (1.0, 2.0, 3.0));
+        assert_eq!(c.direction, (1.0, 0.0, 0.0));
+        assert_eq!(c.length, 1.0);
+        assert_eq!(c.end, (2.0, 2.0, 3.0));
+        assert!(c.active);
+        assert_eq!(m.stress.data[0], 0.0);
+    }
+
+    /// oracle: with every one of the 8 cells over the toughness and the cells
+    /// 1 apart (well beyond `10 · width`), `max_cracks` caps the seeds: 1
+    /// crack for a cap of 1, none for a cap of 0 (and the stress is then
+    /// left untouched).
+    #[test]
+    fn max_cracks_caps_the_seeds() {
+        let mut m = FractureModifier::new(seeding_config(1), 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        m.stress.data.fill(100.0);
+        m.update(0.25);
+        assert_eq!(m.cracks.len(), 1);
+
+        let mut none =
+            FractureModifier::new(seeding_config(0), 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));
+        none.stress.data.fill(100.0);
+        none.update(0.25);
+        assert!(none.cracks.is_empty());
+        assert!(none.stress.data.iter().all(|&s| s == 100.0));
+    }
+
+    /// oracle: a crack growing `4·1 = 4` past the cap 3 stops at length 3,
+    /// becomes inactive and its tip sits 3 along its direction; an inactive
+    /// crack does not grow. A disabled modifier leaves the distance and the
+    /// cracks as they are.
+    #[test]
+    fn crack_stops_at_the_cap_and_disabled_is_inert() {
+        let mut m = FractureModifier::new(
+            FractureConfig {
+                max_crack_length: 3.0,
+                ..seeding_config(4)
+            },
+            1,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        m.cracks.push(Crack {
+            start: (0.0, 0.0, 0.0),
+            end: (0.0, 0.0, 0.0),
+            direction: (0.0, 1.0, 0.0),
+            length: 0.0,
+            active: true,
+        });
+        m.update(1.0);
+        assert_eq!(m.cracks[0].length, 3.0);
+        assert!(!m.cracks[0].active);
+        assert_eq!(m.cracks[0].end, (0.0, 3.0, 0.0));
+        m.update(1.0);
+        assert_eq!(m.cracks[0].length, 3.0);
+
+        m.enabled = false;
+        assert!(!m.is_active());
+        assert_eq!(m.modify_distance(0.0, 1.0, 0.0, -0.5), -0.5);
+        m.stress.data[0] = 100.0;
+        m.update(1.0);
+        assert_eq!(m.cracks.len(), 1);
+        assert_eq!(m.stress.data[0], 100.0);
+    }
+
+    fn sample_modifier() -> FractureModifier {
+        let mut m = FractureModifier::new(
+            FractureConfig {
+                fracture_toughness: 12.5,
+                crack_width: 0.25,
+                max_cracks: 7,
+                stress_diffusion: 0.125,
+                stress_decay: 0.375,
+                propagation_speed: 1.5,
+                max_crack_length: 2.5,
+            },
+            2,
+            (-1.0, -2.0, -3.0),
+            (1.0, 2.0, 3.0),
+        );
+        for (i, v) in m.stress.data.iter_mut().enumerate() {
+            *v = i as f32 * 0.5;
+        }
+        m.cracks.push(Crack {
+            start: (0.5, 0.25, -0.5),
+            end: (1.0, 0.25, -0.5),
+            direction: (1.0, 0.0, 0.0),
+            length: 0.5,
+            active: true,
+        });
+        m.cracks.push(Crack {
+            start: (0.0, 0.0, 0.0),
+            end: (0.0, 0.0, 2.5),
+            direction: (0.0, 0.0, 1.0),
+            length: 2.5,
+            active: false,
+        });
+        m.enabled = false;
+        m
+    }
+
+    /// oracle: the participant kind is `"FRAC"` read big endian; a payload
+    /// written by `write_state` is accepted and read back into a different
+    /// modifier, which then has the original config, flag, stress and cracks
+    /// and writes the same bytes. Observations: channel 0 the largest stress
+    /// (cell 7: 3.5), channel 1 the cracks (2), channel 2 the growing ones (1).
+    #[test]
+    fn participant_state_round_trip_and_observations() {
+        assert_eq!(
+            FractureModifier::PARTICIPANT_KIND,
+            ParticipantKind::new(0x4652_4143)
+        );
+        let src = sample_modifier();
+        assert_eq!(Participant::kind(&src), FractureModifier::PARTICIPANT_KIND);
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        assert_eq!(src.check_state(&bytes), Ok(()));
+        let mut dst = FractureModifier::new(
+            FractureConfig::default(),
+            1,
+            (0.0, 0.0, 0.0),
+            (1.0, 1.0, 1.0),
+        );
+        dst.read_state(&bytes);
+        assert_eq!(dst.config, src.config);
+        assert!(!dst.enabled);
+        assert_eq!(dst.stress.data, src.stress.data);
+        assert_eq!(dst.cracks, src.cracks);
+        let mut again = Vec::new();
+        dst.write_state(&mut again);
+        assert_eq!(again, bytes);
+
+        let mut sink = ObservationSink::new();
+        dst.observe(&mut sink);
+        assert_eq!(
+            sink.values(),
+            &[
+                (0, Fix128::from_ratio(7, 2)),
+                (1, Fix128::from_int(2)),
+                (2, Fix128::ONE)
+            ]
+        );
+    }
+
+    /// oracle: a crack's `active` flag is the last byte of the payload; a
+    /// value other than 0/1 is refused, as are a payload one byte short or
+    /// long, and a crack count no payload of this length can hold.
+    #[test]
+    fn participant_state_refusals() {
+        let src = sample_modifier();
+        let mut bytes = Vec::new();
+        src.write_state(&mut bytes);
+        let last = bytes.len() - 1;
+        assert_eq!(bytes[last], 0);
+        let mut bad = bytes.clone();
+        bad[last] = 3;
+        assert_eq!(src.check_state(&bad), Err(StateError::InvalidValue));
+        assert!(matches!(
+            src.check_state(&bytes[..last]),
+            Err(StateError::Length { .. })
+        ));
+        let mut long = bytes.clone();
+        long.push(0);
+        assert!(matches!(
+            src.check_state(&long),
+            Err(StateError::Length { .. })
+        ));
+        // the crack count sits right before the two cracks of 41 bytes each
+        let at = bytes.len() - 2 * 41 - 8;
+        assert_eq!(bytes[at..at + 8], 2_u64.to_le_bytes());
+        let mut many = bytes;
+        many[at..at + 8].copy_from_slice(&1000_u64.to_le_bytes());
+        assert!(matches!(
+            src.check_state(&many),
+            Err(StateError::Length { .. })
+        ));
+    }
+
+    #[test]
+    #[should_panic(expected = "read_state called with a payload check_state refuses")]
+    fn participant_read_state_panics_on_a_refused_payload() {
+        let mut m = sample_modifier();
+        m.read_state(&[1, 0, 0, 0]);
+    }
+
+    /// oracle: in a world of one substep `dt = 1/4`, the participant runs the
+    /// same seeding update: one crack, stress consumed (channel 0 reads 0),
+    /// one crack still growing.
+    #[test]
+    fn participant_substep_in_a_world() {
+        let mut m = FractureModifier::new(seeding_config(4), 1, (1.0, 2.0, 3.0), (2.0, 3.0, 4.0));
+        m.stress.data[0] = 100.0;
+        let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
+            substeps: 1,
+            ..Default::default()
+        });
+        world.add_participant(Box::new(m)).expect("register");
+        world.step(Fix128::from_ratio(1, 4));
+        let Some(crate::world_participant::Observed::Exact(sink)) = world.observe_participant(0)
+        else {
+            panic!("observation");
+        };
+        assert_eq!(
+            sink.values(),
+            &[(0, Fix128::ZERO), (1, Fix128::ONE), (2, Fix128::ONE)]
+        );
+    }
 }
