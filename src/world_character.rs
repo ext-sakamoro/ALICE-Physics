@@ -363,3 +363,349 @@ impl PhysicsWorld {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Closed-form unit tests of the move: every expected position is written
+    //! from the geometry by hand (the closed form is in a comment next to each
+    //! assertion); none calls the code under test.
+    //!
+    //! Default config: radius `r = 0.3`, height `h = 1.8` (segment half `0.6`),
+    //! skin `s = 0.01`, step height `0.3`, slope limit `0.785` rad
+    //! (`cos = 0.7074`), 4 slides. A capsule standing a skin width above the
+    //! floor `y = 0` has its centre at `h/2 + s = 0.91`.
+
+    use super::*;
+    use crate::plane_collider::PlaneCollider;
+    use crate::shape::Shape;
+    use crate::solver::{PhysicsConfig, RigidBody};
+    use crate::static_collider::StaticCollider;
+
+    const TOL: f64 = 1e-9;
+    const ITER: f64 = 1e-7;
+
+    fn fx(v: f64) -> Fix128 {
+        Fix128::from_f64(v)
+    }
+
+    fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
+        Vec3Fix::new(fx(x), fx(y), fx(z))
+    }
+
+    fn world() -> PhysicsWorld {
+        PhysicsWorld::new(PhysicsConfig::default())
+    }
+
+    fn plane(w: &mut PhysicsWorld, normal: Vec3Fix, offset: f64) -> usize {
+        w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+            normal,
+            fx(offset),
+        )))
+    }
+
+    #[track_caller]
+    fn assert_pos(got: Vec3Fix, want: [f64; 3], tol: f64) {
+        let g = [got.x.to_f64(), got.y.to_f64(), got.z.to_f64()];
+        for k in 0..3 {
+            assert!(
+                (g[k] - want[k]).abs() < tol,
+                "position {g:?} but the closed form is {want:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_negative_radius_skin_or_height_refuses_the_move() {
+        let w = world();
+        for k in 0..3 {
+            let mut config = CharacterConfig::default();
+            match k {
+                0 => config.radius = fx(-0.3),
+                1 => config.skin_width = fx(-0.01),
+                _ => config.height = fx(-1.8),
+            }
+            let mut ctrl = CharacterController::new(v3(1.0, 2.0, 3.0), config);
+            ctrl.velocity = v3(4.0, 0.0, 0.0);
+            ctrl.grounded = true;
+            ctrl.platform_velocity = v3(0.5, 0.0, 0.0);
+            let r = w.move_character(&mut ctrl, v3(5.0, 0.0, 0.0));
+            // oracle: refused, the result is the controller's current state.
+            assert_eq!(r.position, v3(1.0, 2.0, 3.0));
+            assert!(r.grounded);
+            assert_eq!(r.velocity, v3(4.0, 0.0, 0.0));
+            assert_eq!(r.platform_velocity, v3(0.5, 0.0, 0.0));
+            assert_eq!(ctrl.position, v3(1.0, 2.0, 3.0));
+            assert_eq!(ctrl.velocity, v3(4.0, 0.0, 0.0));
+        }
+    }
+
+    #[test]
+    fn a_free_move_takes_the_whole_displacement() {
+        let w = world();
+        let mut ctrl = CharacterController::new_default(v3(1.0, 5.0, -2.0));
+        let r = w.move_character(&mut ctrl, v3(3.0, -1.0, 2.0));
+        // oracle: nothing in the way: start + displacement, nothing under it.
+        assert_pos(r.position, [4.0, 4.0, 0.0], TOL);
+        assert!(!r.grounded);
+        assert_eq!(r.velocity, v3(3.0, -1.0, 2.0));
+        assert_eq!(r.platform_velocity, Vec3Fix::ZERO);
+        assert_eq!(ctrl.position, r.position);
+        assert_eq!(ctrl.ground_body_index, None);
+    }
+
+    #[test]
+    fn walking_down_into_the_floor_keeps_the_tangential_part() {
+        let mut w = world();
+        plane(&mut w, Vec3Fix::UNIT_Y, 0.0);
+        let mut ctrl = CharacterController::new_default(v3(0.0, 0.91, 0.0));
+        let r = w.move_character(&mut ctrl, v3(1.0, -0.5, 2.0));
+        // oracle: starting a skin width above the plane, D − n (D·n) with
+        // n = +Y: (1, 0, 2) added, the height stays 0.91; the probe finds the
+        // floor 0.01 below (a static collider: no ground body).
+        assert_pos(r.position, [1.0, 0.91, 2.0], TOL);
+        assert!(r.grounded);
+        assert!(ctrl.grounded);
+        assert_eq!(ctrl.ground_body_index, None);
+        assert_eq!(r.platform_velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn a_wall_removes_the_normal_component() {
+        let mut w = world();
+        // The wall x = 2 (normal −X, offset −2).
+        plane(&mut w, -Vec3Fix::UNIT_X, -2.0);
+        let mut ctrl = CharacterController::new_default(Vec3Fix::ZERO);
+        let r = w.move_character(&mut ctrl, v3(3.0, 0.0, 1.0));
+        // oracle: the capsule stops a skin width from the wall, x = 2 − r − s =
+        // 1.69; the tangential part of the whole displacement is kept, z = 1.
+        assert_pos(r.position, [1.69, 0.0, 1.0], TOL);
+        assert!(!r.grounded);
+
+        // max_slides 0 is one sweep without a slide: the move along the unit
+        // direction (3, 0, 1)/√10 stops at x = 1.69, z = 1.69/3.
+        let config = CharacterConfig {
+            max_slides: 0,
+            ..CharacterConfig::default()
+        };
+        let mut ctrl = CharacterController::new(Vec3Fix::ZERO, config);
+        let r = w.move_character(&mut ctrl, v3(3.0, 0.0, 1.0));
+        assert_pos(r.position, [1.69, 0.0, 1.69 / 3.0], TOL);
+    }
+
+    #[test]
+    fn a_steep_slope_is_a_wall_that_is_not_climbed() {
+        let mut w = world();
+        // The plane through the origin with normal n = (−√3/2, 1/2, 0), 60° from
+        // horizontal: steeper than the slope limit (n·Y = 0.5 < 0.7074).
+        let s3 = 3f64.sqrt();
+        plane(&mut w, v3(-s3, 1.0, 0.0), 0.0);
+        let mut ctrl = CharacterController::new_default(v3(-5.0, 0.0, 0.0));
+        let r = w.move_character(&mut ctrl, v3(10.0, 0.0, 0.0));
+        // oracle: the lower end (x, −0.6) has n·a = −√3/2·x − 0.3; the capsule is
+        // a skin width from the plane when that is r + s = 0.31, x = −1.22/√3.
+        // The rest projected on the plane would climb (y > 0), so it is projected
+        // on the horizontal normal −X instead: 0. No walkable ground.
+        assert_pos(r.position, [-1.22 / s3, 0.0, 0.0], TOL);
+        assert!(!r.grounded);
+    }
+
+    #[test]
+    fn a_low_step_is_climbed_when_grounded() {
+        let mut w = world();
+        // A box step: half extents (1, 0.1, 5) at (3, 0.1, 0), top y = 0.2,
+        // front face x = 2 (below the 0.3 step height).
+        let b = w
+            .add_shaped_body(
+                &Shape::Box {
+                    half_extents: v3(1.0, 0.1, 5.0),
+                },
+                Fix128::ONE,
+                v3(3.0, 0.1, 0.0),
+            )
+            .expect("valid shape");
+        let mut ctrl = CharacterController::new_default(v3(0.0, 0.91, 0.0));
+        ctrl.grounded = true;
+        let r = w.move_character(&mut ctrl, v3(2.5, 0.0, 0.0));
+        // oracle: raised by the step height, swept to x = 2.5 over the step,
+        // lowered to a skin width above its top: y = 0.2 + 0.91.
+        assert_pos(r.position, [2.5, 1.11, 0.0], ITER);
+        assert!(r.grounded);
+        assert_eq!(ctrl.ground_body_index, Some(b));
+
+        // Not grounded before the move: no step. The lower hemisphere (centre
+        // y = 0.31) meets the step's edge (2, 0.2), 0.11 below it, when its
+        // centre is √(0.3² − 0.11²) = √0.0779 short of x = 2, normal
+        // n = (−√0.0779, 0.11)/0.3; it backs off s/(−d·n) = 0.003/√0.0779, and
+        // the rest, which would climb the steep normal, is cancelled.
+        let mut ctrl = CharacterController::new_default(v3(0.0, 0.91, 0.0));
+        let r = w.move_character(&mut ctrl, v3(2.5, 0.0, 0.0));
+        let q = 0.0779f64.sqrt();
+        assert_pos(r.position, [2.0 - q - 0.003 / q, 0.91, 0.0], ITER);
+    }
+
+    #[test]
+    fn a_moving_platform_becomes_ground_and_carries_the_next_move() {
+        let mut w = world();
+        // A box platform: half extents (5, 0.5, 5) at the origin, top y = 0.5,
+        // moving at (2, 0, 0).
+        let b = w
+            .add_shaped_body(
+                &Shape::Box {
+                    half_extents: v3(5.0, 0.5, 5.0),
+                },
+                Fix128::ONE,
+                Vec3Fix::ZERO,
+            )
+            .expect("valid shape");
+        w.bodies[b].velocity = v3(2.0, 0.0, 0.0);
+        let mut ctrl = CharacterController::new_default(v3(0.0, 1.41, 0.0));
+        let r = w.move_character(&mut ctrl, Vec3Fix::ZERO);
+        // oracle: standing a skin width above the top (0.5 + 0.91): no move,
+        // the platform is the ground and its velocity is inherited.
+        assert_pos(r.position, [0.0, 1.41, 0.0], TOL);
+        assert!(r.grounded);
+        assert_eq!(ctrl.ground_body_index, Some(b));
+        assert_eq!(r.platform_velocity, v3(2.0, 0.0, 0.0));
+        // oracle: the next move adds the platform velocity: x = 0 + 2.
+        let r = w.move_character(&mut ctrl, Vec3Fix::ZERO);
+        assert_pos(r.position, [2.0, 1.41, 0.0], ITER);
+        assert_eq!(r.velocity, Vec3Fix::ZERO);
+    }
+
+    #[test]
+    fn a_capsule_sunk_into_the_floor_is_pushed_out_first() {
+        let mut w = world();
+        plane(&mut w, Vec3Fix::UNIT_Y, 0.0);
+        let mut ctrl = CharacterController::new_default(v3(0.0, 0.8, 0.0));
+        let r = w.move_character(&mut ctrl, Vec3Fix::ZERO);
+        // oracle: the segment's lowest point y = 0.2 is 0.1 deeper than r: pushed
+        // up by 0.1 + s, centre 0.91.
+        assert_pos(r.position, [0.0, 0.91, 0.0], TOL);
+        assert!(r.grounded);
+    }
+
+    #[test]
+    fn a_capsule_whose_segment_crosses_a_solid_stays_put() {
+        let mut w = world();
+        plane(&mut w, Vec3Fix::UNIT_Y, 0.0);
+        // The segment runs from y = −0.1 to 1.1 and crosses the plane.
+        let mut ctrl = CharacterController::new_default(v3(0.0, 0.5, 0.0));
+        let r = w.move_character(&mut ctrl, v3(1.0, 0.0, 0.0));
+        // oracle: not freed; the cast starts overlapping (t = 0, normal
+        // −direction): the move is 0 and its projection is 0; not ground.
+        assert_pos(r.position, [0.0, 0.5, 0.0], TOL);
+        assert!(!r.grounded);
+    }
+
+    #[test]
+    fn a_capsule_between_walls_closer_than_its_diameter_is_not_freed() {
+        let mut w = world();
+        // Walls x = −0.25 and x = 0.25: a capsule of radius 0.3 at x = 0
+        // overlaps both by 0.05, and every push out of one goes into the other.
+        plane(&mut w, Vec3Fix::UNIT_X, -0.25);
+        plane(&mut w, Vec3Fix::UNIT_X, 0.25);
+        for max_slides in [4, 100] {
+            // 4 slides: overlaps remain after the pushes; 100 slides: the pushes
+            // (0.06, then 0.12 each) add up past r + h = 2.1.
+            let config = CharacterConfig {
+                max_slides,
+                ..CharacterConfig::default()
+            };
+            let mut ctrl = CharacterController::new(Vec3Fix::ZERO, config);
+            let r = w.move_character(&mut ctrl, v3(0.0, 0.0, 1.0));
+            // oracle: not freed, the cast from inside blocks the move.
+            assert_pos(r.position, [0.0, 0.0, 0.0], TOL);
+        }
+    }
+
+    #[test]
+    fn a_height_below_the_diameter_is_a_sphere() {
+        let mut w = world();
+        plane(&mut w, Vec3Fix::UNIT_Y, 0.0);
+        let config = CharacterConfig {
+            radius: fx(0.5),
+            height: fx(0.4),
+            ..CharacterConfig::default()
+        };
+        let mut ctrl = CharacterController::new(v3(0.0, 2.0, 0.0), config);
+        let r = w.move_character(&mut ctrl, v3(0.0, -5.0, 0.0));
+        // oracle: a sphere of radius 0.5 falls onto y = 0 and stops a skin width
+        // above it: centre y = 0.5 + 0.01.
+        assert_pos(r.position, [0.0, 0.51, 0.0], TOL);
+        assert!(r.grounded);
+    }
+
+    #[test]
+    fn the_filter_excludes_the_characters_own_body() {
+        let mut w = world();
+        // The character's own body: a sphere of radius 0.5 at its centre.
+        let own = w.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), fx(0.5));
+        let mut ctrl = CharacterController::new_default(Vec3Fix::ZERO);
+        let r = w.move_character(&mut ctrl, v3(1.0, 0.0, 0.0));
+        // oracle: the segment crosses its own body: not freed, no move.
+        assert_pos(r.position, [0.0, 0.0, 0.0], TOL);
+        let r = w.move_character_with_filter(
+            &mut ctrl,
+            v3(1.0, 0.0, 0.0),
+            &RayFilter::default().excluding_body(own),
+        );
+        // oracle: with its body excluded nothing is in the way: x = 1.
+        assert_pos(r.position, [1.0, 0.0, 0.0], TOL);
+    }
+
+    #[test]
+    fn short_of_and_project_closed_forms() {
+        let w = world();
+        let filter = RayFilter::default();
+        let sweep = Sweep {
+            world: &w,
+            filter: &filter,
+            half: fx(0.6),
+            radius: fx(0.3),
+            skin: fx(0.01),
+            walkable: fx(0.5),
+            max_slides: 4,
+        };
+        let d = Vec3Fix::UNIT_X;
+        // oracle: head-on (−d·n = 1): t − s = 0.99.
+        assert_pos(
+            Vec3Fix::new(
+                sweep.short_of(Fix128::ONE, d, -d),
+                Fix128::ZERO,
+                Fix128::ZERO,
+            ),
+            [0.99, 0.0, 0.0],
+            TOL,
+        );
+        // oracle: at 60° (−d·n = 1/2): t − s/(1/2) = 1 − 0.02.
+        let n = v3(-0.5, 0.75f64.sqrt(), 0.0);
+        assert_pos(
+            Vec3Fix::new(
+                sweep.short_of(Fix128::ONE, d, n),
+                Fix128::ZERO,
+                Fix128::ZERO,
+            ),
+            [0.98, 0.0, 0.0],
+            TOL,
+        );
+        // oracle: a normal not facing d backs off s; never below 0.
+        assert_pos(
+            Vec3Fix::new(
+                sweep.short_of(Fix128::ONE, d, d),
+                Fix128::ZERO,
+                Fix128::ZERO,
+            ),
+            [0.99, 0.0, 0.0],
+            TOL,
+        );
+        assert_eq!(sweep.short_of(fx(0.005), d, -d), Fix128::ZERO);
+        // oracle: walkable when n·Y ≥ 0.5.
+        assert!(sweep.is_walkable(Vec3Fix::UNIT_Y));
+        assert!(!sweep.is_walkable(v3(0.9, 0.4359, 0.0)));
+        // oracle: v − n (v·n): (3, 4, 5) without its Y part.
+        assert_eq!(
+            project(v3(3.0, 4.0, 5.0), Vec3Fix::UNIT_Y),
+            v3(3.0, 0.0, 5.0)
+        );
+    }
+}
