@@ -1301,3 +1301,36 @@ fn closest_point_ties_go_to_the_smallest_index() {
         assert_eq!(idx, 0);
     }
 }
+
+/// A sliver (0,0,0) (1,0,0) (1,1e-8,0) seen head-on is hit whichever vertex
+/// comes first: the parallel test is relative to the area, so the sharp corner
+/// at v0 (orders ABC / ACB) no longer makes the ray count as parallel.
+#[test]
+fn a_sliver_seen_head_on_is_hit_in_every_vertex_order() {
+    let a = Vec3Fix::ZERO;
+    let b = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+    let c = Vec3Fix::new(Fix128::ONE, Fix128::from_f64(1e-8), Fix128::ZERO);
+    for (p, q, r) in [
+        (a, b, c),
+        (a, c, b),
+        (b, c, a),
+        (c, a, b),
+        (c, b, a),
+        (b, a, c),
+    ] {
+        let t = Triangle::new(p, q, r);
+        for x in [0.25, 0.5, 0.9] {
+            let origin = Vec3Fix::new(
+                Fix128::from_f64(x),
+                Fix128::from_f64(0.5e-8 * x),
+                Fix128::ONE,
+            );
+            let ray = Ray::new(
+                origin,
+                Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, -Fix128::ONE),
+            );
+            let h = ray_triangle(&ray, &t, Fix128::from_int(10)).expect("sliver hit");
+            assert!((h.t.to_f64() - 1.0).abs() < 1e-9, "t {}", h.t.to_f64());
+        }
+    }
+}
