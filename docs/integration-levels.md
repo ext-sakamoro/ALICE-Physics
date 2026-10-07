@@ -31,7 +31,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 5 / 1 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
-| `math` | step | 61 / 15 / 1 / 19 / 0 | C ABI, Python, WebAssembly |
+| `math` | step | 62 / 16 / 0 / 18 / 0 | C ABI, Python, WebAssembly |
 | `metric` | step | 5 / 3 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
@@ -45,7 +45,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `convex_mesh_builder` | world API | 0 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
-| `debug_render` | world API | 0 / 22 / 0 / 6 / 0 | — |
+| `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `heatmap` | world API | 0 / 5 / 0 / 2 / 0 | — |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
@@ -54,7 +54,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `shape_raycast` | world API | 0 / 28 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 39 of 175 items) | 39 / 107 / 7 / 22 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 39 of 178 items) | 39 / 110 / 7 / 22 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API | 0 / 7 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -72,7 +72,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `bimaterial` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `box_collider` | standalone (step 3, world API 2 of 9 items) | 3 / 2 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `bridging` | standalone | 0 / 0 / 0 / 9 / 0 | — |
-| `buckling` | standalone | 0 / 0 / 0 / 10 / 0 | — |
+| `buckling` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `buoyancy_zone` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `ccd` | standalone (world API 2 of 13 items) | 0 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `cfd_solver` | standalone (step 1 of 41 items) | 1 / 0 / 0 / 40 / 0 | C ABI, Python, WebAssembly |
