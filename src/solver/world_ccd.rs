@@ -23,13 +23,17 @@
 //!    shapes) and the static colliders. SDF colliders are not swept (they keep
 //!    their discrete push-out). The bodies are then put back at their predicted
 //!    poses. The cast sees what its filter sees: bodies on the layers of the
-//!    swept body's mask, no sensors. The cast returns only the nearest target,
-//!    so a target that cannot answer the sweep is hidden and the cast repeated
-//!    (up to 8 targets): a body the pair filter does not let it collide with,
-//!    and a target the swept body overlaps at the start of the substep and
-//!    does not move further into (a sphere rolling on a floor still sees the
-//!    wall ahead). Moving further into a target it overlaps is a hit at
-//!    `t = 0` along the separating normal of the discrete contact.
+//!    swept body's mask, no sensors. Before the cast, every target the swept
+//!    body overlaps at the start of the substep is collected
+//!    ([`PhysicsWorld::overlap_sphere`]) and every one it does not move
+//!    further into is hidden at once, however many there are (a sphere
+//!    rolling on a floor, or wedged among many bodies, still sees the wall
+//!    ahead). Moving further into a target it overlaps is a hit at `t = 0`
+//!    along the separating normal of the discrete contact. The cast returns
+//!    only the nearest target, so a target that cannot answer the sweep (a
+//!    body the pair filter does not let it collide with) is hidden and the
+//!    cast repeated until it answers or finds nothing; each repetition hides
+//!    one more target, so there is no count limit to run out of.
 //! 3. **Moving obstacles.** A hit on a body that moved in the substep is
 //!    re-timed by the relative motion of the two bounding spheres
 //!    ([`crate::ccd::sphere_sphere_toi`]), exact for two plain spheres and
@@ -299,13 +303,20 @@ impl PhysicsWorld {
     /// The first hit of body `i` (at its start pose, the world at the start of
     /// the substep), moving by `d` of length `travel`.
     ///
-    /// The cast returns only the nearest target, so a target that cannot
-    /// answer the sweep is hidden and the cast repeated (at most
-    /// [`MAX_HIDDEN`] times): a target the body overlaps at the start and does
-    /// not move further into, a body the pair filter rejects, a moving body
-    /// whose bounding sphere the relative motion misses, and, for a kinematic
-    /// body, everything but the dynamic bodies it can push. Hidden targets are
-    /// put back before returning.
+    /// First every target the body overlaps at the start is collected
+    /// ([`PhysicsWorld::overlap_sphere`] with the cast's filter) and every one
+    /// that cannot answer the sweep is hidden at once: a target it does not
+    /// move further into (`d·n ≥ 0` along the separating normal) and one the
+    /// pair filter rejects. A target it does move into is left visible, so
+    /// the cast reports it at `t = 0`. The cast then returns only the nearest
+    /// target, so a target found unable to answer is hidden and the cast
+    /// repeated: a body the pair filter rejects, a moving body whose bounding
+    /// sphere the relative motion misses, and, for a kinematic body, everything
+    /// but the dynamic bodies it can push. Every repetition hides one more
+    /// target and a hidden target is not returned again, so the loop ends after
+    /// at most as many casts as there are targets; there is no count limit
+    /// that could end it without an answer. Hidden targets are put back, in
+    /// reverse order, before returning.
     fn ccd_first_hit(
         &mut self,
         i: usize,
@@ -321,41 +332,66 @@ impl PhysicsWorld {
             .with_static(!kinematic)
             .excluding_body(i);
         let start = self.bodies[i].position;
-        let mut hidden_bodies: Vec<(usize, u32)> = Vec::new();
-        let mut hidden_statics: Vec<(usize, crate::static_collider::StaticCollider)> = Vec::new();
-        let mut found = None;
-        for _ in 0..=MAX_HIDDEN {
-            let Some(hit) = self.cast_sphere(start, radius, d, travel, &filter) else {
-                break;
+        let mut hidden = Hidden::default();
+        for target in self.overlap_sphere(start, radius, &filter) {
+            let other = match target {
+                crate::shape_raycast::RayTarget::Body(j) => Some(j),
+                _ => None,
             };
+            // A target without a separating normal is left to the cast (it
+            // either sweeps it or reports a start overlap, judged below).
+            let Some(n) = self.ccd_start_normal(i, radius, target) else {
+                continue;
+            };
+            if d.dot(n) >= Fix128::ZERO || !self.ccd_accepts(i, other, kinematic) {
+                self.ccd_hide(target, &mut hidden);
+            }
+        }
+        let mut found = None;
+        while let Some(hit) = self.cast_sphere(start, radius, d, travel, &filter) {
             match self.ccd_judge(i, radius, d, travel, kinematic, &hit) {
                 Judged::Hit(h) => {
                     found = Some(h);
                     break;
                 }
-                Judged::Hide => match hit.target {
-                    crate::shape_raycast::RayTarget::Body(j) => {
-                        hidden_bodies.push((j, self.body_filters[j].layer));
-                        self.body_filters[j].layer = 0;
+                Judged::Hide => {
+                    if !self.ccd_hide(hit.target, &mut hidden) {
+                        break;
                     }
-                    crate::shape_raycast::RayTarget::StaticCollider(k) => {
-                        let empty = crate::static_collider::StaticCollider::TriMesh(
-                            crate::trimesh::TriMesh::from_indexed(&[], &[]),
-                        );
-                        hidden_statics
-                            .push((k, core::mem::replace(&mut self.static_colliders[k], empty)));
-                    }
-                    crate::shape_raycast::RayTarget::Sdf(_) => break,
-                },
+                }
             }
         }
-        for (j, layer) in hidden_bodies.into_iter().rev() {
+        for (j, layer) in hidden.bodies.into_iter().rev() {
             self.body_filters[j].layer = layer;
         }
-        for (k, c) in hidden_statics.into_iter().rev() {
+        for (k, c) in hidden.statics.into_iter().rev() {
             self.static_colliders[k] = c;
         }
         found
+    }
+
+    /// Hide `target` from the casts of [`Self::ccd_first_hit`] (a body by
+    /// clearing its layer, a static collider by an empty mesh), recording what
+    /// to put back. `false` for a target that cannot be hidden (an SDF
+    /// collider, which the cast's filter excludes anyway).
+    fn ccd_hide(&mut self, target: crate::shape_raycast::RayTarget, hidden: &mut Hidden) -> bool {
+        match target {
+            crate::shape_raycast::RayTarget::Body(j) => {
+                hidden.bodies.push((j, self.body_filters[j].layer));
+                self.body_filters[j].layer = 0;
+                true
+            }
+            crate::shape_raycast::RayTarget::StaticCollider(k) => {
+                let empty = crate::static_collider::StaticCollider::TriMesh(
+                    crate::trimesh::TriMesh::from_indexed(&[], &[]),
+                );
+                hidden
+                    .statics
+                    .push((k, core::mem::replace(&mut self.static_colliders[k], empty)));
+                true
+            }
+            crate::shape_raycast::RayTarget::Sdf(_) => false,
+        }
     }
 
     /// What one cast hit means for the sweep of body `i` (see
@@ -622,9 +658,14 @@ impl PhysicsWorld {
     }
 }
 
-/// How many targets one sweep may hide before it gives up (each hidden
-/// target costs one more cast).
-const MAX_HIDDEN: usize = 8;
+/// The targets one sweep has hidden, in the order they were hidden.
+#[derive(Default)]
+struct Hidden {
+    /// Body index and its collision layer before it was hidden.
+    bodies: Vec<(usize, u32)>,
+    /// Static collider index and the collider itself.
+    statics: Vec<(usize, crate::static_collider::StaticCollider)>,
+}
 
 /// The verdict on one cast hit.
 enum Judged {
