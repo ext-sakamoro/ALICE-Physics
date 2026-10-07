@@ -677,3 +677,32 @@ fn weld_correction_conserves_angular_momentum_for_tilted_anisotropic_bodies() {
         );
     }
 }
+
+/// A rigid weld (compliance 0) closes its angular error in one solve also for
+/// anisotropic, tilted inertias: with the full 3x3 effective mass the two turns
+/// add up to the error rotation. Same bodies as the momentum test above.
+#[test]
+fn rigid_weld_closes_a_tilted_anisotropic_error_in_one_solve() {
+    fn axis_angle(x: f64, y: f64, z: f64, theta: f64) -> QuatFix {
+        let n = (x * x + y * y + z * z).sqrt();
+        let (s, c) = ((theta / 2.0).sin(), (theta / 2.0).cos());
+        QuatFix::new(fx(x / n * s), fx(y / n * s), fx(z / n * s), fx(c))
+    }
+    let qa = axis_angle(1.0, 1.0, 0.0, 0.7);
+    let qb = qa.mul(axis_angle(0.0, 0.3, 1.0, 0.012));
+    let mut a = body(Vec3Fix::ZERO, 1.0);
+    a.inv_inertia = v3(0.25, 1.0, 4.0);
+    a.rotation = qa;
+    let mut b = body(Vec3Fix::ZERO, 1.0);
+    b.inv_inertia = v3(3.0, 0.5, 1.5);
+    b.rotation = qb;
+    let mut bodies = vec![a, b];
+    let j = WeldJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO, QuatFix::IDENTITY);
+    solve(&mut bodies, ExtraJoint::Weld(j), 1.0 / 16.0);
+    // remaining relative rotation q_b q_a^-1 (identity when closed)
+    let rel = bodies[1].rotation.mul(bodies[0].rotation.conjugate());
+    let v = (rel.x.to_f64().powi(2) + rel.y.to_f64().powi(2) + rel.z.to_f64().powi(2)).sqrt();
+    let angle = 2.0 * v;
+    // closed to the small-angle step's second order: (0.012)^2 scale
+    assert!(angle < 2e-4, "remaining angle {angle} of 0.012");
+}

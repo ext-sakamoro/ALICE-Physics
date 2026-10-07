@@ -621,25 +621,28 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
     let (correction_axis, error_mag) = error_vec.normalize_with_length();
 
     if !error_mag.is_zero() {
-        // inverse inertia of each body about the error axis, so the correction
-        // is split like the position projection's (w_a : w_b)
+        // XPBD with the full 3x3 effective mass: K = W_a + W_b + compliance/dt^2
+        // (W the world inverse inertia, zero for a static body), lambda = K^-1
+        // theta, and the bodies turn by +W_a lambda and -W_b lambda. The
+        // correction's angular momentum is lambda - lambda = 0 for any inertia,
+        // and a rigid weld closes the error in one solve (W_a + W_b) lambda = theta
         let compliance_term = joint.compliance / (dt * dt);
-        let w_a = inv_inertia_about(&body_a, correction_axis);
-        let w_b = inv_inertia_about(&body_b, correction_axis);
-        let w_ang = w_a + w_b + compliance_term;
-
-        if !w_ang.is_zero() {
-            let inv_w_ang = Fix128::ONE / w_ang;
-            let two = Fix128::from_int(2);
-            let angular_lambda = (error_mag * two) * inv_w_ang;
-
-            // XPBD: each body turns by I⁻¹ (λ n) in world space, which keeps the
-            // angular momentum of the correction (Σ I Δθ = 0) also for an
-            // anisotropic inertia whose principal axes are not along n
-            let turn_a = world_inv_inertia_times(&body_a, correction_axis * angular_lambda);
-            let turn_b = world_inv_inertia_times(&body_b, correction_axis * angular_lambda);
-            rotate_by(bodies, joint.body_a, turn_a);
-            rotate_by(bodies, joint.body_b, -turn_b);
+        let world = |body: &RigidBody| crate::math::Mat3Fix {
+            col0: world_inv_inertia_times(body, Vec3Fix::UNIT_X),
+            col1: world_inv_inertia_times(body, Vec3Fix::UNIT_Y),
+            col2: world_inv_inertia_times(body, Vec3Fix::UNIT_Z),
+        };
+        let (wa, wb) = (world(&body_a), world(&body_b));
+        let k = crate::math::Mat3Fix {
+            col0: wa.col0 + wb.col0 + Vec3Fix::new(compliance_term, Fix128::ZERO, Fix128::ZERO),
+            col1: wa.col1 + wb.col1 + Vec3Fix::new(Fix128::ZERO, compliance_term, Fix128::ZERO),
+            col2: wa.col2 + wb.col2 + Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, compliance_term),
+        };
+        if let Some(k_inv) = k.inverse() {
+            let theta = correction_axis * (error_mag * Fix128::from_int(2));
+            let lambda = k_inv.mul_vec(theta);
+            rotate_by(bodies, joint.body_a, wa.mul_vec(lambda));
+            rotate_by(bodies, joint.body_b, -wb.mul_vec(lambda));
         }
     }
 }
