@@ -906,7 +906,7 @@ fn crowd_hash(parallel: bool) -> String {
 
 /// The `serialize_state` of [`crowd`] after 60 steps, recorded once: the same
 /// with and without `--features parallel`, with `step` and `step_parallel`.
-const GOLDEN_CROWD: &str = "0d56880d7cfd1c4b0b086952b084fd98f2c9e243d3cbeedaf28f21f2845e5a1e";
+const GOLDEN_CROWD: &str = "89174ad11a5f97b3903204c827be2f7f17f8966dae90436af74b47742ed0e943";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
@@ -923,6 +923,14 @@ fn on_is_deterministic_and_independent_of_the_parallel_feature() {
 
 /// The world `tests/fixtures/world_snapshot_v{1,2}_stacked.bin` were taken
 /// from, after its first step.
+///
+/// The step is the one of the engine that wrote the blobs: the scene is
+/// stepped once by today's engine, then the three falling spheres get the
+/// `y` of their position, previous position and velocity that step gave at
+/// the time (raw `Fix128` bits, read from the blobs when they were written).
+/// Today's XPBD derives the velocity as `v_pred + Δx / h`, which differs from
+/// those values in the last bits; every other byte of the world is the same,
+/// so the world below is the recorded one whatever later changes the step.
 fn stacked() -> PhysicsWorld {
     let config = PhysicsConfig {
         substeps: 4,
@@ -938,6 +946,12 @@ fn stacked() -> PhysicsWorld {
         );
     }
     w.step(Fix128::from_ratio(1, 60));
+    for (i, body) in w.bodies.iter_mut().enumerate().skip(1) {
+        let hi = 2 * (i as i64 - 1);
+        body.position.y = Fix128::from_raw(hi, 0xff8e_38e3_8e38_e388);
+        body.prev_position.y = Fix128::from_raw(hi, 0xffbb_bbbb_bbbb_bbb8);
+        body.velocity.y = Fix128::from_raw(-1, 0xd5c2_8f5c_28f5_c03d);
+    }
     w
 }
 
