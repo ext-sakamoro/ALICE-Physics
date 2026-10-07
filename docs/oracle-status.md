@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5577 |
+| 🟢 Not ignored (run by CI) | 5610 |
 | 🔴 Red by design | 80 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5683** |
+| **Total** | **5716** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5577)
+## 🟢 Not ignored (5610)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -185,6 +185,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_cfd_solver.rs` | 28 |
 | `audit_heightfield.rs` | 28 |
 | `analytic_static_collider.rs` | 27 |
+| `analytic_world_step_ccd.rs` | 27 |
 | `audit_motor.rs` | 27 |
 | `engineering_oracles_misc.rs` | 27 |
 | `analytic_euler_fv.rs` | 26 |
@@ -548,6 +549,7 @@ Per-file counts (the test names are in `tests/`):
 | `refinement_conformity.rs` | 4 |
 | `spatial_hash_range.rs` | 4 |
 | `tgs_stable_cache_keys.rs` | 4 |
+| `world_ccd_off_bit_identity.rs` | 4 |
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
@@ -572,6 +574,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
+| `analytic_cast_large_direction.rs` | 2 |
 | `analytic_gjk_separation_distance.rs` | 2 |
 | `analytic_impulsive_burn_vis_viva.rs` | 2 |
 | `analytic_mesh_grazing_cast.rs` | 2 |
