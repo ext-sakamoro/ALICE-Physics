@@ -351,8 +351,10 @@ impl RigidBody {
     ///
     /// The body will be moved to this target during the next simulation step.
     /// Velocity is automatically computed from the position change.
+    ///
+    /// `rotation` is stored as a unit quaternion (see [`Self::set_rotation`]).
     pub fn set_kinematic_target(&mut self, position: Vec3Fix, rotation: QuatFix) {
-        self.kinematic_target = Some((position, rotation));
+        self.kinematic_target = Some((position, rotation.unit_rotation()));
     }
 
     /// Apply impulse at center of mass
@@ -467,10 +469,29 @@ impl RigidBody {
     }
 
     /// Set rotation directly
+    ///
+    /// The stored rotation is `rotation` as a unit quaternion: one whose
+    /// squared length is within `2^-32` of one is kept bit for bit, any other
+    /// is normalized (the zero quaternion becomes the identity). Applying a
+    /// quaternion `q` scales what it rotates by `|q|^2`.
     #[inline]
     pub fn set_rotation(&mut self, rotation: QuatFix) {
+        let rotation = rotation.unit_rotation();
         self.rotation = rotation;
         self.prev_rotation = rotation;
+    }
+
+    /// The stored rotations (`rotation`, `prev_rotation` and the rotation of
+    /// `kinematic_target`) as unit quaternions, see
+    /// [`QuatFix::unit_rotation`]: a rotation already of unit length (within
+    /// `2^-32` in squared length) is left bit for bit.
+    #[inline]
+    pub(crate) fn make_rotations_unit(&mut self) {
+        self.rotation = self.rotation.unit_rotation();
+        self.prev_rotation = self.prev_rotation.unit_rotation();
+        if let Some((position, rotation)) = self.kinematic_target {
+            self.kinematic_target = Some((position, rotation.unit_rotation()));
+        }
     }
 
     /// Get mass (inverse of `inv_mass`, returns infinity for static bodies)
@@ -1854,7 +1875,11 @@ impl PhysicsWorld {
     }
 
     /// Add rigid body, returns index
-    pub fn add_body(&mut self, body: RigidBody) -> usize {
+    ///
+    /// The body's rotations are stored as unit quaternions (see
+    /// [`RigidBody::set_rotation`]).
+    pub fn add_body(&mut self, mut body: RigidBody) -> usize {
+        body.make_rotations_unit();
         let idx = self.bodies.len();
         self.bodies.push(body);
         self.body_materials.push(crate::material::DEFAULT_MATERIAL);
@@ -1871,7 +1896,11 @@ impl PhysicsWorld {
     ///
     /// Bodies with a collision radius participate in BVH broad-phase and
     /// sphere-sphere narrow-phase collision detection during `step()`.
-    pub fn add_body_with_radius(&mut self, body: RigidBody, radius: Fix128) -> usize {
+    ///
+    /// The body's rotations are stored as unit quaternions, as in
+    /// [`Self::add_body`].
+    pub fn add_body_with_radius(&mut self, mut body: RigidBody, radius: Fix128) -> usize {
+        body.make_rotations_unit();
         let idx = self.bodies.len();
         self.bodies.push(body);
         self.body_materials.push(crate::material::DEFAULT_MATERIAL);
@@ -3155,8 +3184,19 @@ impl PhysicsWorld {
         let _ = self.try_step(dt);
     }
 
+    /// Bring every body's rotations to unit length before a step reads them
+    /// ([`RigidBody::make_rotations_unit`]). `rotation` is a public field, so
+    /// a value assigned to it directly between steps reaches the step as it
+    /// was written; a rotation already of unit length is left bit for bit.
+    fn make_body_rotations_unit(&mut self) {
+        for body in &mut self.bodies {
+            body.make_rotations_unit();
+        }
+    }
+
     /// The step body behind [`Self::try_step`] (checks already done, `dt > 0`).
     fn run_step(&mut self, dt: Fix128) {
+        self.make_body_rotations_unit();
         self.stage_work = StageWork::default();
         let mut frozen = self.participant_flags();
 
@@ -4031,6 +4071,7 @@ impl PhysicsWorld {
     /// `dt > 0`).
     #[cfg(feature = "parallel")]
     fn run_step_parallel(&mut self, dt: Fix128) {
+        self.make_body_rotations_unit();
         let mut frozen = self.participant_flags();
 
         // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
@@ -5239,6 +5280,7 @@ impl PhysicsWorld {
         if !matches!(self.check_step(dt, h), Ok(true)) {
             return;
         }
+        self.make_body_rotations_unit();
         let mut frozen = self.participant_flags();
 
         // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
@@ -5313,6 +5355,9 @@ impl PhysicsWorld {
         bridge: &mut B,
         dt: Fix128,
     ) {
+        // Callable on its own (outside `step_with_bridge`), so it is an entry
+        // of its own for the rotations too.
+        self.make_body_rotations_unit();
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
         self.reset_lambdas();
