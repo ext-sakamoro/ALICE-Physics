@@ -1545,6 +1545,28 @@ impl Ring {
             |arc| arc.thickness(self.major) <= TRACE_TOLERANCE,
             |arc| arc.split().to_vec(),
         )
+        .map(|c| self.refine(a + d * c.t, b + d * c.t, c))
+    }
+
+    /// A contact found on an arc's hull moved onto the torus: the ring point
+    /// nearest the core point nearest the contact, grown by the tube radius
+    /// (the hull contact is within the arc's sagitta of it).
+    fn refine(&self, a: Vec3Fix, b: Vec3Fix, found: Contact) -> Contact {
+        let core = closest_on_segment(a, b, found.point);
+        let inv = self.rotation.conjugate();
+        let local = inv.rotate_vec(core - self.center);
+        let Some(dir) = Vec3Fix::new(local.x, Fix128::ZERO, local.z).try_normalize() else {
+            return found;
+        };
+        let ring = self.center + self.rotation.rotate_vec(dir * self.major);
+        match (core - ring).try_normalize() {
+            Some(n) if n.dot(found.normal) > Fix128::ZERO => Contact {
+                t: found.t,
+                point: ring + n * self.minor,
+                normal: n,
+            },
+            _ => found,
+        }
     }
 }
 
