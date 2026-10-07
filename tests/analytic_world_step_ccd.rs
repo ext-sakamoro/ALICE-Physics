@@ -25,6 +25,7 @@
 
 use alice_physics::event::ContactEvent;
 use alice_physics::material::PhysicsMaterial;
+use alice_physics::plane_collider::PlaneCollider;
 use alice_physics::shape::Shape;
 use alice_physics::static_collider::StaticCollider;
 use alice_physics::trimesh::TriMesh;
@@ -569,6 +570,199 @@ fn a_huge_speed_is_still_stopped() {
     assert!(w.bodies[s].velocity.x.to_f64() < 0.0);
 }
 
+// ── Starting in contact with something else ─────────────────────────────────
+
+/// A static box plate `1/32 × 6 × 6` at `x = 5` (near face `5 − 1/64`).
+fn tall_plate(w: &mut PhysicsWorld) -> usize {
+    let p = w.add_body(RigidBody::new_static(v3(5.0, 0.0, 0.0)));
+    w.set_body_shape(
+        p,
+        &Shape::Box {
+            half_extents: v3(1.0 / 64.0, 3.0, 3.0),
+        },
+    );
+    p
+}
+
+/// A sphere rolling on a floor (overlapping the plane `y = −3` by `2⁻¹²`)
+/// thrown at the plate: the overlap with the floor must not hide the plate.
+/// It stops on the plate's near face and bounces with `e`.
+// covers: COV-RIGID-074
+#[test]
+fn an_overlap_with_the_floor_does_not_hide_the_wall() {
+    let mut w = bare(true);
+    tall_plate(&mut w);
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        v3(0.0, 1.0, 0.0),
+        f(-3.0),
+    )));
+    let y = -3.0 + 0.25 - 1.0 / 4096.0;
+    let s = sphere(&mut w, v3(0.0, y, 0.0), 1, 0.25, v3(640.0, 0.0, 0.0));
+    half_bouncy(&mut w);
+    w.step(h());
+    let p = w.bodies[s].position;
+    assert!(
+        (p.x.to_f64() - (5.0 - 1.0 / 64.0 - 0.25)).abs() <= POS_TOL,
+        "x = {}",
+        p.x.to_f64()
+    );
+    assert!((w.bodies[s].velocity.x.to_f64() + 320.0).abs() <= VEL_TOL);
+}
+
+/// The same with a still sphere the moving sphere starts inside of.
+#[test]
+fn an_overlap_with_a_still_body_does_not_hide_the_wall() {
+    let mut w = bare(true);
+    tall_plate(&mut w);
+    w.add_body_with_radius(RigidBody::new_static(v3(0.0, -1.2, 0.0)), Fix128::ONE);
+    let s = sphere(&mut w, Vec3Fix::ZERO, 1, 0.25, v3(640.0, 0.0, 0.0));
+    half_bouncy(&mut w);
+    w.step(h());
+    let x = w.bodies[s].position.x.to_f64();
+    assert!((x - (5.0 - 1.0 / 64.0 - 0.25)).abs() <= POS_TOL, "x = {x}");
+    assert!((w.bodies[s].velocity.x.to_f64() + 320.0).abs() <= VEL_TOL);
+}
+
+/// A sphere `2⁻¹⁰` into a thin floor (half thickness `1/64`) thrown down
+/// through it at 640 m/s: on, it does not pass the floor (it is held at its
+/// start and leaves upward with `e` times its approach speed); off, it passes.
+#[test]
+fn a_sphere_already_in_a_thin_floor_and_moving_in_does_not_pass() {
+    for ccd in [false, true] {
+        let mut w = bare(ccd);
+        let floor = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        w.set_body_shape(
+            floor,
+            &Shape::Box {
+                half_extents: v3(3.0, 1.0 / 64.0, 3.0),
+            },
+        );
+        let y0 = 1.0 / 64.0 + 0.25 - 1.0 / 1024.0;
+        let s = sphere(&mut w, v3(0.0, y0, 0.0), 1, 0.25, v3(0.0, -640.0, 0.0));
+        half_bouncy(&mut w);
+        w.step(h());
+        let y = w.bodies[s].position.y.to_f64();
+        if ccd {
+            assert!(y >= y0 - POS_TOL, "on: y = {y}");
+            assert!(w.bodies[s].velocity.y.to_f64() > 0.0, "on: did not bounce");
+        } else {
+            assert!(y < -1.0 / 64.0 - 0.25, "off: did not pass, y = {y}");
+        }
+    }
+}
+
+/// A sphere touching a floor exactly and sliding along it is free flight
+/// (a cast that starts touching hits only when it moves in).
+#[test]
+fn a_sphere_sliding_on_a_floor_is_not_stopped() {
+    let mut w = bare(true);
+    let floor = w.add_body(RigidBody::new_static(v3(0.0, -1.0, 0.0)));
+    w.set_body_shape(
+        floor,
+        &Shape::Box {
+            half_extents: v3(50.0, 1.0, 50.0),
+        },
+    );
+    let s = sphere(&mut w, v3(0.0, 0.25, 0.0), 1, 0.25, v3(640.0, 0.0, 0.0));
+    half_bouncy(&mut w);
+    w.step(h());
+    close(
+        w.bodies[s].position,
+        v3(10.0, 0.25, 0.0),
+        POS_TOL,
+        "position",
+    );
+    close(
+        w.bodies[s].velocity,
+        v3(640.0, 0.0, 0.0),
+        VEL_TOL,
+        "velocity",
+    );
+}
+
+// ── Kinematic bodies ────────────────────────────────────────────────────────
+
+/// A kinematic sphere (radius 1/2) driven from `x = −6` to `x = 4` in one
+/// step hits a still dynamic sphere (radius 1/2, at the origin): the
+/// kinematic body reaches its target, the dynamic one is carried to touch it
+/// (`x = 5`) and leaves at `(1 + e) · 640 = 960` m/s (an immovable body
+/// hitting a free one). Off, the kinematic body passes through it.
+// covers: COV-RIGID-074
+#[test]
+fn a_fast_kinematic_body_pushes_a_still_dynamic_body() {
+    for ccd in [false, true] {
+        let mut w = bare(ccd);
+        let mut k = RigidBody::new_kinematic(v3(-6.0, 0.0, 0.0));
+        k.kinematic_target = Some((v3(4.0, 0.0, 0.0), k.rotation));
+        let k = w.add_body_with_radius(k, f(0.5));
+        let d = sphere(&mut w, Vec3Fix::ZERO, 1, 0.5, Vec3Fix::ZERO);
+        half_bouncy(&mut w);
+        w.step(h());
+        close(
+            w.bodies[k].position,
+            v3(4.0, 0.0, 0.0),
+            0.0,
+            "kinematic target",
+        );
+        if ccd {
+            close(
+                w.bodies[d].position,
+                v3(5.0, 0.0, 0.0),
+                POS_TOL,
+                "dynamic position",
+            );
+            close(
+                w.bodies[d].velocity,
+                v3(960.0, 0.0, 0.0),
+                VEL_TOL,
+                "dynamic velocity",
+            );
+        } else {
+            close(
+                w.bodies[d].position,
+                Vec3Fix::ZERO,
+                POS_TOL,
+                "off: untouched",
+            );
+        }
+    }
+}
+
+/// An off-centre hit: the kinematic body still lands on its target bit for
+/// bit (it is never placed by the sweep), and the dynamic body is pushed away
+/// from it with a positive speed along the line of centres.
+#[test]
+fn a_kinematic_body_reaches_its_target_exactly_after_an_oblique_hit() {
+    let mut w = bare(true);
+    let target = v3(4.3, 0.7, -0.2);
+    let mut k = RigidBody::new_kinematic(v3(-6.1, -0.4, 0.3));
+    k.kinematic_target = Some((target, k.rotation));
+    let k = w.add_body_with_radius(k, f(0.5));
+    let d = sphere(&mut w, v3(0.1, 0.3, 0.1), 3, 0.5, Vec3Fix::ZERO);
+    half_bouncy(&mut w);
+    w.step(h());
+    assert_eq!(w.bodies[k].position, target);
+    let gap = w.bodies[d].position - w.bodies[k].position;
+    assert!(gap.length().to_f64() >= 1.0 - 1e-9, "still overlapping");
+    assert!(w.bodies[d].velocity.dot(gap).to_f64() > 0.0);
+}
+
+// ── Large displacements ─────────────────────────────────────────────────────
+
+/// `2⁴⁰` m/s (`2³⁴` m in the step) is still stopped on the plate.
+#[test]
+fn a_speed_of_two_to_the_forty_is_stopped() {
+    let (mut w, s) = plate_scene(true, Fix128::from_int(1 << 40));
+    w.step(h());
+    close(
+        w.bodies[s].position,
+        v3(5.0 - 1.0 / 64.0 - 0.25, 0.0, 0.0),
+        POS_TOL,
+        "position",
+    );
+    assert!(w.bodies[s].velocity.x.to_f64() < 0.0);
+}
+
 // ── Determinism ─────────────────────────────────────────────────────────────
 
 /// Fast spheres in every direction among a plate, a still sphere, a triangle
@@ -625,7 +819,7 @@ fn crowd_hash(parallel: bool) -> String {
 
 /// The `serialize_state` of [`crowd`] after 60 steps, recorded once: the same
 /// with and without `--features parallel`, with `step` and `step_parallel`.
-const GOLDEN_CROWD: &str = "5fe144fefdc878d08414db088b82e37e1c7a6f508095d9e004b8d269f568ae5d";
+const GOLDEN_CROWD: &str = "0d56880d7cfd1c4b0b086952b084fd98f2c9e243d3cbeedaf28f21f2845e5a1e";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
