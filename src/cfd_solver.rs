@@ -3236,11 +3236,11 @@ impl CfdSolver {
                     TurbulenceModel::KEpsilon => {
                         let mut st = cell;
                         // Would the explicit update go negative? Counted
-                        // before the clamp inside `advance_*` hides it.
+                        // before the clamp inside `advance` hides it; both
+                        // checks read the start-of-step state, as the update does
                         if st.k + (production - st.epsilon) * dt_s < Fix128::ZERO {
                             hit = true;
                         }
-                        st.advance_k(production, dt_s);
                         if !st.k.is_zero() {
                             let factor = st.epsilon / st.k;
                             let d_eps = factor
@@ -3250,7 +3250,7 @@ impl CfdSolver {
                                 hit = true;
                             }
                         }
-                        st.advance_epsilon(production, dt_s);
+                        st.advance(production, dt_s);
                         st
                     }
                     _ => {

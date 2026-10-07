@@ -174,6 +174,19 @@ impl KEpsilonState {
         }
     }
 
+    /// One explicit Euler step of both equations from the state at the start of
+    /// the step: `k` and `ε` are each advanced with the other's old value, so
+    /// the pair is the explicit Euler update of the coupled system (advancing
+    /// `k` first and letting `ε` read the new `k` is a different, semi-implicit
+    /// scheme).
+    pub(crate) fn advance(&mut self, production_k: Fix128, dt_s: Fix128) {
+        let start = *self;
+        self.advance_k(production_k, dt_s);
+        let mut eps = start;
+        eps.advance_epsilon(production_k, dt_s);
+        self.epsilon = eps.epsilon;
+    }
+
     /// One explicit Euler step of the ε transport equation (point model):
     ///
     /// `dε/dt = (ε/k) · (C_{ε1}·P_k − C_{ε2}·ε)`

@@ -191,7 +191,7 @@ fn k_epsilon_at_rest_reports_the_closed_form_one_step_envelope() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S1W4-009: the k-eps point source is documented as `explicit` (advance_epsilon: `one explicit Euler step`) but `advance_rans` advances k first and the eps equation then reads the updated k: eps1 = 0.980606 instead of the explicit-Euler 0.9808 for k0 = eps0 = 1, dt = 0.01 (first order either way; doc / ordering inconsistency)"]
+// AUD-A-S1W4-009
 fn k_epsilon_point_source_is_one_explicit_euler_step_from_the_start_of_the_step_state() {
     let n = 4;
     let mut s = quiet(n, int(1));
