@@ -287,4 +287,77 @@ mod tests {
         let r = RayleighCoefficients::default();
         assert_eq!(r.damping_ratio(Fix128::from_int(50)), Fix128::ZERO);
     }
+
+    /// `∂/∂c Σ (ζ_i − α/(2ω_i) − β ω_i/2)²` at `(α, β)` for the basis `c`
+    /// (`g = 1/(2ω)` for α, `h = ω/2` for β): KKT needs it `≥ 0` where the
+    /// coefficient is 0 and `= 0` where it is positive.
+    fn residual_gradient(
+        r: &RayleighCoefficients,
+        modes: &[(Fix128, Fix128)],
+        basis: impl Fn(Fix128) -> Fix128,
+    ) -> Fix128 {
+        modes.iter().fold(Fix128::ZERO, |acc, &(w, z)| {
+            let e = z - r.damping_ratio(w);
+            acc - Fix128::from_int(2) * e * basis(w)
+        })
+    }
+
+    #[test]
+    fn non_negative_fit_keeps_alpha_when_the_exact_beta_is_negative() {
+        // ω = 1, 2 with ζ = 1, 0: the exact fit is β = −2/3 < 0. Mass-only:
+        // α = Σζg/Σg² = 0.5/0.3125 = 1.6, residual 0.2² + 0.4² = 0.2;
+        // stiffness-only: β = 0.5/1.25 = 0.4, residual 0.8² + 0.4² = 0.8
+        let (w1, w2) = (Fix128::ONE, Fix128::from_int(2));
+        let (z1, z2) = (Fix128::ONE, Fix128::ZERO);
+        let r = RayleighCoefficients::fit_two_modes(w1, z1, w2, z2);
+        let tol = Fix128::from_ratio(1, 1_000_000_000);
+        assert!(approx_eq(r.alpha, Fix128::from_ratio(8, 5), tol), "{r:?}");
+        assert_eq!(r.beta, Fix128::ZERO);
+        // KKT: the α gradient vanishes, the β gradient is 0.6 ≥ 0
+        let modes = [(w1, z1), (w2, z2)];
+        let two = Fix128::from_int(2);
+        let g_alpha = residual_gradient(&r, &modes, |w| Fix128::ONE / (two * w));
+        let g_beta = residual_gradient(&r, &modes, |w| w / two);
+        assert!(approx_eq(g_alpha, Fix128::ZERO, tol), "{g_alpha:?}");
+        assert!(
+            approx_eq(g_beta, Fix128::from_ratio(3, 5), tol),
+            "{g_beta:?}"
+        );
+    }
+
+    #[test]
+    fn non_negative_fit_keeps_beta_when_the_exact_alpha_is_negative() {
+        // ω = 1, 2 with ζ = 0, 1: exact β = 4/3, α = −4/3 < 0. Mass-only:
+        // α = 0.25/0.3125 = 0.8, residual 0.4² + 0.8² = 0.8; stiffness-only:
+        // β = 1/1.25 = 0.8, residual 0.4² + 0.2² = 0.2
+        let (w1, w2) = (Fix128::ONE, Fix128::from_int(2));
+        let (z1, z2) = (Fix128::ZERO, Fix128::ONE);
+        let r = RayleighCoefficients::fit_two_modes(w1, z1, w2, z2);
+        let tol = Fix128::from_ratio(1, 1_000_000_000);
+        assert_eq!(r.alpha, Fix128::ZERO);
+        assert!(approx_eq(r.beta, Fix128::from_ratio(4, 5), tol), "{r:?}");
+        // KKT: the β gradient vanishes, the α gradient is 0.3 ≥ 0
+        let modes = [(w1, z1), (w2, z2)];
+        let two = Fix128::from_int(2);
+        let g_alpha = residual_gradient(&r, &modes, |w| Fix128::ONE / (two * w));
+        let g_beta = residual_gradient(&r, &modes, |w| w / two);
+        assert!(approx_eq(g_beta, Fix128::ZERO, tol), "{g_beta:?}");
+        assert!(
+            approx_eq(g_alpha, Fix128::from_ratio(3, 10), tol),
+            "{g_alpha:?}"
+        );
+    }
+
+    #[test]
+    fn non_negative_fit_of_negative_ratios_is_zero() {
+        // ζ = −1 at both modes: both one-coefficient fits clamp at 0, the
+        // residuals tie at 2 and the tie goes to mass-proportional (0, 0)
+        let r = RayleighCoefficients::fit_two_modes(
+            Fix128::ONE,
+            Fix128::NEG_ONE,
+            Fix128::from_int(2),
+            Fix128::NEG_ONE,
+        );
+        assert_eq!(r, RayleighCoefficients::default());
+    }
 }
