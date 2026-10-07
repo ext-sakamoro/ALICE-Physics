@@ -184,6 +184,46 @@ fn checked_quat_mul(a: QuatFix, b: QuatFix) -> Option<QuatFix> {
     Some(QuatFix::new(x, y, z, w))
 }
 
+/// Whether a body-frame diagonal inverse inertia is isotropic (`x = y = z`).
+///
+/// For such a body `R · diag(c, c, c) · Rᵀ = c · E` for every rotation `R`,
+/// so a world-frame inverse inertia applies as the plain product with `c`.
+#[inline]
+#[must_use]
+pub(crate) fn inv_inertia_is_isotropic(inv_inertia: Vec3Fix) -> bool {
+    inv_inertia.x == inv_inertia.y && inv_inertia.y == inv_inertia.z
+}
+
+/// World-frame `I⁻¹ v` for the body-frame diagonal `inv_inertia` and the
+/// body orientation `rotation`: `R · diag(inv_inertia) · R⁻¹ v`.
+///
+/// # Claims
+/// - an isotropic `inv_inertia = (c, c, c)` gives the component-wise product
+///   `(v.x·c, v.y·c, v.z·c)` without rotating, so the result does not depend
+///   on `rotation` (the rotate, scale, rotate-back evaluation rounds
+///   differently for every non-identity rotation)
+/// - any other `inv_inertia` rotates `v` into the body frame by `R⁻¹`,
+///   scales it component-wise and rotates it back by `R`
+#[inline]
+#[must_use]
+pub(crate) fn inv_inertia_world_apply(
+    rotation: QuatFix,
+    inv_inertia: Vec3Fix,
+    v: Vec3Fix,
+) -> Vec3Fix {
+    if inv_inertia_is_isotropic(inv_inertia) {
+        let c = inv_inertia.x;
+        return Vec3Fix::new(v.x * c, v.y * c, v.z * c);
+    }
+    let local = rotation.conjugate().rotate_vec(v);
+    let scaled = Vec3Fix::new(
+        local.x * inv_inertia.x,
+        local.y * inv_inertia.y,
+        local.z * inv_inertia.z,
+    );
+    rotation.rotate_vec(scaled)
+}
+
 /// [`QuatFix::rotate_vec`] (`q v q*`) with every operation checked.
 fn checked_rotate_vec(q: QuatFix, v: Vec3Fix) -> Option<Vec3Fix> {
     let qv = QuatFix::new(v.x, v.y, v.z, Fix128::ZERO);
@@ -371,15 +411,11 @@ impl RigidBody {
     /// - computed as `R · diag(inv_inertia) · R⁻¹ τ` with `R = self.rotation`
     /// - for an identity rotation it equals the component-wise product with `inv_inertia`
     /// - a zero `inv_inertia` (or a zero `τ`) gives the zero vector
+    /// - an isotropic `inv_inertia = (c, c, c)` gives the component-wise
+    ///   product `c · τ` for every rotation (see [`inv_inertia_world_apply`])
     #[inline]
     pub(crate) fn world_inv_inertia_apply(&self, torque: Vec3Fix) -> Vec3Fix {
-        let local = self.rotation.conjugate().rotate_vec(torque);
-        let scaled = Vec3Fix::new(
-            local.x * self.inv_inertia.x,
-            local.y * self.inv_inertia.y,
-            local.z * self.inv_inertia.z,
-        );
-        self.rotation.rotate_vec(scaled)
+        inv_inertia_world_apply(self.rotation, self.inv_inertia, torque)
     }
 
     /// [`Self::world_inv_inertia_apply`] with every product, sum and
@@ -397,6 +433,14 @@ impl RigidBody {
     ///   of the range)
     #[must_use]
     pub(crate) fn checked_world_inv_inertia_apply(&self, torque: Vec3Fix) -> Option<Vec3Fix> {
+        if inv_inertia_is_isotropic(self.inv_inertia) {
+            let c = self.inv_inertia.x;
+            return Some(Vec3Fix::new(
+                torque.x.checked_mul(c)?,
+                torque.y.checked_mul(c)?,
+                torque.z.checked_mul(c)?,
+            ));
+        }
         let q = self.rotation;
         let local = checked_rotate_vec(q.conjugate(), torque)?;
         let scaled = Vec3Fix::new(
@@ -10832,6 +10876,48 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// oracle: for an isotropic `inv_inertia = (c, c, c)` the checked world
+    /// inverse inertia is `Some(c · τ)` (component-wise `checked_mul`) for 64
+    /// non-identity orientations, equal to the unchecked value, and `None`
+    /// when a product leaves the range.
+    #[test]
+    fn checked_world_inv_inertia_apply_of_an_isotropic_body_is_c_tau() {
+        let c = Fix128::from_ratio(5, 2);
+        let tau = Vec3Fix::new(
+            Fix128::from_ratio(3, 7),
+            Fix128::from_ratio(-11, 13),
+            Fix128::from_ratio(1, 3),
+        );
+        let expected = Vec3Fix::new(tau.x * c, tau.y * c, tau.z * c);
+        let mut differ = 0;
+        for i in 0..16_i64 {
+            let axis = Vec3Fix::new(
+                Fix128::from_ratio(1 + i, 3),
+                Fix128::from_ratio(2 - i, 5),
+                Fix128::from_ratio(3 + 2 * i, 7),
+            )
+            .normalize();
+            for k in 1..=4_i64 {
+                let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+                b.inv_inertia = Vec3Fix::new(c, c, c);
+                b.rotation =
+                    QuatFix::from_axis_angle(axis, Fix128::from_ratio(7 * k + i, 9)).normalize();
+                let got = b.checked_world_inv_inertia_apply(tau);
+                assert_eq!(got, Some(b.world_inv_inertia_apply(tau)));
+                differ += usize::from(got != Some(expected));
+            }
+        }
+        assert_eq!(differ, 0, "{differ}/64 orientations differ from c·τ");
+        let mut big = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+        big.inv_inertia = Vec3Fix::new(
+            Fix128::from_int(4),
+            Fix128::from_int(4),
+            Fix128::from_int(4),
+        );
+        let huge = Vec3Fix::new(Fix128::from_int(1_i64 << 62), Fix128::ZERO, Fix128::ZERO);
+        assert_eq!(big.checked_world_inv_inertia_apply(huge), None);
     }
 }
 

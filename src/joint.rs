@@ -1377,12 +1377,19 @@ fn solve_cone_twist_joint(
 
 /// Generalised inverse mass of a body for a rotation about the world axis
 /// `axis`: `n · I⁻¹ n` with the diagonal inverse inertia expressed in the
-/// body frame (Macklin et al. 2020 eq. 3). Zero for static bodies.
+/// body frame (Macklin et al. 2020 eq. 3). Zero for static bodies. An
+/// isotropic inverse inertia uses `axis` itself (no rotation into the body
+/// frame), so the value does not depend on the orientation, as in
+/// [`crate::solver::inv_inertia_world_apply`].
 fn angular_inverse_mass(body: &crate::solver::RigidBody, axis: Vec3Fix) -> Fix128 {
     if body.inv_mass.is_zero() {
         return Fix128::ZERO;
     }
-    let local = body.rotation.conjugate().rotate_vec(axis);
+    let local = if crate::solver::inv_inertia_is_isotropic(body.inv_inertia) {
+        axis
+    } else {
+        body.rotation.conjugate().rotate_vec(axis)
+    };
     local.x * local.x * body.inv_inertia.x
         + local.y * local.y * body.inv_inertia.y
         + local.z * local.z * body.inv_inertia.z
@@ -3536,5 +3543,40 @@ mod tests {
         let mut s = pair(Vec3Fix::ZERO, 0, Vec3Fix::ZERO, 1);
         s[0].inv_inertia = v3i(5, 2, 7);
         assert_eq!(angular_inverse_mass(&s[0], Vec3Fix::UNIT_Z), Fix128::ZERO);
+    }
+
+    /// oracle: for an isotropic `inv_inertia = (c, c, c)` the generalised
+    /// inverse mass `n · R diag(c, c, c) Rᵀ n` is `c (n·n)` for every
+    /// rotation; the value must be the orientation-free sum
+    /// `n.x²·c + n.y²·c + n.z²·c`, bit for bit, for 64 non-identity
+    /// orientations (the body-frame rotation of `n` rounds differently for
+    /// each of them).
+    #[test]
+    fn angular_inverse_mass_of_an_isotropic_body_does_not_depend_on_orientation() {
+        let c = Fix128::from_ratio(5, 2);
+        let n = Vec3Fix::new(
+            Fix128::from_ratio(3, 7),
+            Fix128::from_ratio(-11, 13),
+            Fix128::from_ratio(1, 3),
+        );
+        let expected = n.x * n.x * c + n.y * n.y * c + n.z * n.z * c;
+        let mut differ = 0;
+        for i in 0..16_i64 {
+            let axis = Vec3Fix::new(
+                Fix128::from_ratio(1 + i, 3),
+                Fix128::from_ratio(2 - i, 5),
+                Fix128::from_ratio(3 + 2 * i, 7),
+            )
+            .normalize();
+            for k in 1..=4_i64 {
+                let q =
+                    QuatFix::from_axis_angle(axis, Fix128::from_ratio(7 * k + i, 9)).normalize();
+                let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
+                b.inv_inertia = Vec3Fix::new(c, c, c);
+                b.rotation = q;
+                differ += usize::from(angular_inverse_mass(&b, n) != expected);
+            }
+        }
+        assert_eq!(differ, 0, "{differ}/64 orientations differ from c·(n·n)");
     }
 }
