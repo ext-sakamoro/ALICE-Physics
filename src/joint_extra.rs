@@ -625,7 +625,9 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
         // (W the world inverse inertia, zero for a static body), lambda = K^-1
         // theta, and the bodies turn by +W_a lambda and -W_b lambda. The
         // correction's angular momentum is lambda - lambda = 0 for any inertia,
-        // and a rigid weld closes the error in one solve (W_a + W_b) lambda = theta
+        // and a rigid weld closes the error to first order in one solve
+        // ((W_a + W_b) lambda = theta); two moving anisotropic bodies leave a
+        // second-order rest, as their two turns do not commute, gone in 2-3
         let compliance_term = joint.compliance / (dt * dt);
         let world = |body: &RigidBody| crate::math::Mat3Fix {
             col0: world_inv_inertia_times(body, Vec3Fix::UNIT_X),
@@ -651,10 +653,13 @@ fn solve_weld(joint: &WeldJoint, bodies: &mut [RigidBody], dt: Fix128) {
 /// `K` ([`crate::mass_properties::principal_axes`], which scales `K` to unit
 /// size, so the answer does not depend on how heavy or light the bodies are).
 ///
-/// - Directions whose eigenvalue is zero are locked for both bodies (inverse
-///   inertia zero there, as for bodies held to planar rotation about any axis;
-///   the Jacobi rotations give such a `K` exact zeros): no correction is asked
-///   for along them and the rest of the error is closed.
+/// - Directions whose eigenvalue is at most `max(2^-50 largest, 2^-56)` are
+///   locked for both bodies (inverse inertia zero there, as for bodies held to
+///   planar rotation about any axis). The eigenvalue of such a direction comes
+///   back as rounding, positive or negative, a few steps of `2^-64` in `K`'s own
+///   units; read as free, it turned bodies by up to 0.06 rad for an error that
+///   lay wholly in the locked direction. No correction is asked for along a
+///   locked direction and the rest of the error is closed.
 /// - The undamped solution is used unless a body would turn by more than
 ///   `max(4 |theta|, 1/8 rad)`, which every well-conditioned weld stays within
 ///   (rods whose cheap long axes take several times the error included).
@@ -683,6 +688,15 @@ fn weld_turns(
     if largest <= Fix128::ZERO {
         return None;
     }
+    let locked = {
+        let relative = largest / Fix128::from_int(1i64 << 50);
+        let floor = Fix128::ONE / Fix128::from_int(1i64 << 56);
+        if relative > floor {
+            relative
+        } else {
+            floor
+        }
+    };
     let theta_len = theta.length();
     let limit = {
         let four = theta_len * Fix128::from_int(4);
@@ -697,7 +711,7 @@ fn weld_turns(
     let turns = |mu: Fix128| {
         let mut lambda = Vec3Fix::ZERO;
         for &(e, q) in &pairs {
-            if e > Fix128::ZERO {
+            if e > locked {
                 lambda = lambda + q * (q.dot(theta) / (e + mu));
             }
         }
@@ -1172,6 +1186,41 @@ mod tests {
         )
     }
 
+    /// An error that lies wholly in a direction neither body can turn about
+    /// asks for no correction: the bodies stay where they are (the eigenvalue
+    /// of a locked direction is rounding and must not read as free).
+    #[test]
+    fn weld_does_not_turn_bodies_for_an_error_they_cannot_correct() {
+        let planar = |w: Fix128| Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, w);
+        let flat = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ZERO);
+        let cases = [
+            (planar(Fix128::ONE), false, Vec3Fix::UNIT_X),
+            (planar(Fix128::from_f64(1e-9)), false, Vec3Fix::UNIT_X),
+            (flat, true, Vec3Fix::UNIT_Z),
+            (flat, false, Vec3Fix::UNIT_Z),
+        ];
+        for (inv, a_dynamic, axis) in cases {
+            for i in 0..60i64 {
+                let frame = tilted((1 + i % 7, -3 + i % 5, 2 + i % 3), (i * 37 % 314 + 1, 100));
+                let err = QuatFix::from_axis_angle(axis, Fix128::from_ratio(1, 100));
+                let mut bodies = [
+                    weld_body(inv, frame, a_dynamic),
+                    weld_body(inv, frame.mul(err), true),
+                ];
+                let before = [bodies[0].rotation, bodies[1].rotation];
+                solve_one_weld(&mut bodies);
+                for (k, b) in bodies.iter().enumerate() {
+                    let turned = turn_angle(before[k], b.rotation);
+                    assert!(
+                        turned < 1e-9,
+                        "inverse inertia {inv:?} (a dynamic: {a_dynamic}), frame {i}: body {k} \
+                         turned {turned:e} rad for an error about the locked {axis:?}"
+                    );
+                }
+            }
+        }
+    }
+
     /// Planar bodies whose free axis is tilted away from every world axis: the
     /// error about that axis closes in one solve, for two dynamic bodies and
     /// with a static partner (the rounding of a singular `K` must not read as
@@ -1226,6 +1275,17 @@ mod tests {
         assert!(
             two < 1e-6,
             "rods left {one:e} after one solve and {two:e} after two"
+        );
+
+        // A 0.1 rad error: the undamped turns (about 3 times the error) stay
+        // inside 4 |theta|, so three solves close it (measured 8.7e-7); a limit
+        // of 2 |theta| would damp them and leave 1.9e-2.
+        let big = tilted((0, 1, 1), (1, 10));
+        let closer = tilted((1, 0, 0), (1, 10));
+        let left = weld_residual(rod, QuatFix::IDENTITY, rod, closer, true, big, 3);
+        assert!(
+            left < 1e-5,
+            "rods with a 0.1 rad error left {left:e} after three solves"
         );
     }
 
