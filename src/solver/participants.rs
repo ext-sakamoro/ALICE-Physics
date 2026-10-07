@@ -368,7 +368,7 @@ impl PhysicsWorld {
     /// checked against the substep width `h` the participants are handed
     /// (`dt / substeps`, or the TGS width under
     /// [`super::SolverBackend::Tgs`], see the module documentation and
-    /// [`Self::try_step_parallel`]; [`StepError::Rule`]) and every
+    /// `try_step_parallel` (feature `parallel`); [`StepError::Rule`]) and every
     /// [`FieldLayout::PerBody`] field against the body count
     /// ([`StepError::BodyCount`]), refused unchanged. Then the step runs (see
     /// the module documentation of [`crate::world_participant`] and
