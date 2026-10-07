@@ -305,4 +305,54 @@ mod tests {
         let h2 = grid.hash(pos);
         assert_eq!(h1, h2, "Hash must be deterministic");
     }
+
+    fn on_x(x: Fix128) -> Vec3Fix {
+        Vec3Fix::new(x, Fix128::ZERO, Fix128::ZERO)
+    }
+
+    /// oracle: a zero cell size is treated as 1, so on a grid of 4
+    /// (`grid_dim / 2 = 2`) `x = 3/2` falls in cell `floor(3/2) + 2 = 3` and
+    /// `x = −3/2` in `−2 + 2 = 0` (`y = z = 0` give cell 2 on those axes).
+    #[test]
+    fn zero_cell_size_hashes_as_unit_cells() {
+        let g = SpatialGrid::new(Fix128::ZERO, 4);
+        let base = 2 * 4 + 2 * 16;
+        assert_eq!(g.hash(on_x(Fix128::from_ratio(3, 2))), 3 + base);
+        assert_eq!(g.hash(on_x(Fix128::from_ratio(-3, 2))), base);
+    }
+
+    /// oracle: for a cell of 2 raw units (`2⁻⁶³`, its reciprocal is not
+    /// representable) the cell is the floor quotient of the raw values plus
+    /// 2: raw 3 → `1 + 2 = 3`, raw −1 → `−1 + 2 = 1`, raw −3 → `−2 + 2 = 0`.
+    /// A cell of −1 raw unit and the most negative position (whose quotient
+    /// `+2¹²⁷` does not fit) gives the last cell.
+    #[test]
+    fn tiny_cells_use_the_exact_raw_floor_quotient() {
+        let g = SpatialGrid::new(Fix128::from_raw(0, 2), 4);
+        let base = 2 * 4 + 2 * 16;
+        assert_eq!(g.hash(on_x(Fix128::from_raw(0, 3))), 3 + base);
+        assert_eq!(g.hash(on_x(Fix128::from_raw(-1, u64::MAX))), 1 + base);
+        assert_eq!(g.hash(on_x(Fix128::from_raw(-1, u64::MAX - 2))), base);
+        let neg = SpatialGrid::new(Fix128::from_raw(-1, u64::MAX), 4);
+        assert_eq!(neg.hash(on_x(Fix128::from_raw(i64::MIN, 0))), 3 + base);
+    }
+
+    /// oracle: with cell 1 a coordinate of `±2⁶²` (beyond `2⁶²` scaled) lands
+    /// in the border cell of its sign; with cell −1 the sign flips. A grid
+    /// of 0 cells hashes everything to 0 and finds no neighbours.
+    #[test]
+    fn far_coordinates_and_an_empty_grid() {
+        let big = Fix128::from_int(1 << 62);
+        let g = SpatialGrid::new(Fix128::ONE, 4);
+        let base = 2 * 4 + 2 * 16;
+        assert_eq!(g.hash(on_x(big)), 3 + base);
+        assert_eq!(g.hash(on_x(-big)), base);
+        let flipped = SpatialGrid::new(-Fix128::ONE, 4);
+        assert_eq!(flipped.hash(on_x(big)), base);
+        let empty = SpatialGrid::new(Fix128::ONE, 0);
+        assert_eq!(empty.hash(on_x(big)), 0);
+        let mut out = vec![7];
+        empty.query_neighbors_into(Vec3Fix::ZERO, Fix128::ONE, &mut out);
+        assert!(out.is_empty());
+    }
 }
