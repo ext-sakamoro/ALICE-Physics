@@ -1215,4 +1215,165 @@ mod tests {
         // 1024 registers → ~3.2 % typical error; allow 25 % on n = 200
         assert!(est > 150.0 && est < 250.0, "estimate={est}");
     }
+
+    /// The worst relative error of the bucket lower edge, `2α/(1+α)`.
+    fn edge_bound(alpha: f64) -> f64 {
+        2.0 * alpha / (1.0 + alpha)
+    }
+
+    #[test]
+    fn ddsketch_window_follows_data_past_its_initial_range() {
+        // α = 0.1 on 128 bins: the initial window holds keys −32..96, i.e.
+        // magnitudes up to γ^96 ≈ 2.3e8. 1e3..1e12 needs keys 35..=138, a
+        // span of 103 < 128 buckets, so the window shifts and every quantile
+        // keeps the edge bound
+        let alpha = 0.1;
+        let mut s = DDSketch128::new(alpha);
+        let values: Vec<f64> = (3..=12)
+            .map(|e| crate::det_math::powf64(10.0, f64::from(e)))
+            .collect();
+        for &v in &values {
+            s.insert(v);
+        }
+        assert_eq!(s.count(), 10);
+        for (i, &v) in values.iter().enumerate() {
+            // rank i + 1 exactly: q = (i + 1/2) / 10
+            let q = (i as f64 + 0.5) / 10.0;
+            let est = s.quantile(q);
+            assert!(
+                est <= v && (v - est) / v <= edge_bound(alpha),
+                "q={q} est={est} v={v}"
+            );
+        }
+        assert_eq!((s.min(), s.max()), (values[0], values[9]));
+    }
+
+    #[test]
+    fn ddsketch_collapses_below_a_full_window_into_its_lowest_bucket() {
+        // 1 and 1e15 span 172 buckets > 128: the window keeps the top key
+        // k = ⌈ln 1e15 / ln γ⌉ at its top and collapses 1 into bucket 0, whose
+        // lower edge is γ^(k − 128); 2 then takes the fast collapse path
+        let alpha = 0.1;
+        let gamma = (1.0 + alpha) / (1.0 - alpha);
+        let mut s = DDSketch128::new(alpha);
+        s.insert(1.0);
+        s.insert(1e15);
+        s.insert(2.0);
+        let ln_gamma = crate::det_math::ln64(gamma);
+        let k_top = (crate::det_math::ln64(1e15) / ln_gamma).ceil();
+        let lowest_edge = crate::det_math::powf64(gamma, k_top - 128.0);
+        assert_eq!(s.quantile(0.1), lowest_edge);
+        assert_eq!(s.quantile(0.5), lowest_edge);
+        let top = s.quantile(1.0);
+        assert!(
+            top <= 1e15 && (1e15 - top) / 1e15 <= edge_bound(alpha),
+            "{top}"
+        );
+        assert_eq!(s.count(), 3);
+        assert_eq!(s.sum(), 1e15 + 3.0);
+    }
+
+    #[test]
+    fn ddsketch_signed_values_zero_and_rejected_inputs() {
+        let alpha = 0.01;
+        let mut s = DDSketch::new(alpha);
+        assert_eq!(s.quantile(0.5), 0.0);
+        assert_eq!(s.mean(), 0.0);
+        s.insert(f64::NAN);
+        s.insert(f64::INFINITY);
+        assert_eq!(s.count(), 0);
+        for v in [-100.0, 0.0, 100.0] {
+            s.insert(v);
+        }
+        // rank 1 is the negative value, its magnitude's edge within the bound
+        let lo = s.quantile(0.1);
+        assert!(
+            lo >= -100.0 && (lo + 100.0) / 100.0 <= edge_bound(alpha),
+            "{lo}"
+        );
+        assert_eq!(s.quantile(0.5), 0.0);
+        let hi = s.quantile(1.0);
+        assert!(
+            hi <= 100.0 && (100.0 - hi) / 100.0 <= edge_bound(alpha),
+            "{hi}"
+        );
+        assert_eq!(s.mean(), 0.0);
+        assert_eq!(s.alpha(), alpha);
+        s.clear();
+        assert_eq!((s.count(), s.quantile(0.5)), (0, 0.0));
+    }
+
+    #[test]
+    fn ddsketch_merge_of_windows_that_moved_apart_adds_by_key() {
+        let alpha = 0.1;
+        let (mut a, mut b) = (DDSketch128::new(alpha), DDSketch128::new(alpha));
+        a.insert(10.0);
+        // b's window moves up to hold 1e12
+        b.insert(1e12);
+        b.insert(-1e12);
+        a.merge(&b);
+        assert_eq!(a.count(), 3);
+        assert_eq!((a.min(), a.max()), (-1e12, 1e12));
+        let mid = a.quantile(0.5);
+        assert!(
+            mid <= 10.0 && (10.0 - mid) / 10.0 <= edge_bound(alpha),
+            "{mid}"
+        );
+        let top = a.quantile(1.0);
+        assert!(
+            top <= 1e12 && (1e12 - top) / 1e12 <= edge_bound(alpha),
+            "{top}"
+        );
+    }
+
+    #[test]
+    fn countmin_total_and_counters_saturate_at_u64_max() {
+        let mut c = CountMinSketch::new();
+        c.insert_hash(7, u64::MAX - 1);
+        c.insert_hash(7, 5);
+        assert_eq!(c.total(), u64::MAX);
+        assert_eq!(c.estimate_hash(7), u64::MAX);
+        let mut d = CountMinSketch::default();
+        d.insert(&"x");
+        assert_eq!(d.estimate(&"x"), 1);
+        d.merge(&c);
+        assert_eq!(d.total(), u64::MAX);
+        assert_eq!(d.estimate_hash(7), u64::MAX);
+        // confidence 1 − e^{−5}
+        let expected = 1.0 - crate::det_math::exp64(-5.0);
+        assert_eq!(d.confidence(), expected);
+        d.clear();
+        assert_eq!((d.total(), d.estimate(&"x")), (0, 0));
+    }
+
+    #[test]
+    fn heavy_hitters_replace_the_smallest_entry_once_full() {
+        let mut h = HeavyHittersN::<2, 1024, 5>::default();
+        for _ in 0..3 {
+            h.insert_hash(1);
+        }
+        h.insert_hash(2);
+        // full: 3 seen twice exceeds the smallest tracked count (1 for 2)
+        h.insert_hash(3);
+        h.insert_hash(3);
+        let top: Vec<(u64, u64)> = h.top().map(|e| (e.hash, e.count)).collect();
+        assert_eq!(top, vec![(1, 3), (3, 2)]);
+        assert_eq!(h.cms().total(), 6);
+        h.clear();
+        assert_eq!(h.top().count(), 0);
+    }
+
+    #[test]
+    fn hasher_trait_and_hyperloglog_generic_insert_agree() {
+        let mut a = FnvHasher::default();
+        a.write(b"abc");
+        assert_eq!(a.finish(), FnvHasher::hash_bytes(b"abc"));
+        let mut h = HyperLogLog10::default();
+        h.insert(&42_u64);
+        h.insert(&42_u64);
+        // one distinct value: linear counting m ln(m/(m−1)) ≈ 1
+        assert!((h.cardinality() - 1.0).abs() < 0.01, "{}", h.cardinality());
+        h.clear();
+        assert!(h.registers().iter().all(|&r| r == 0));
+    }
 }
