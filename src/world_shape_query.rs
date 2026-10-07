@@ -2966,3 +2966,1301 @@ impl PhysicsWorld {
         best
     }
 }
+
+#[cfg(test)]
+mod tests {
+    //! Closed-form unit tests of the swept and overlap queries: every expected
+    //! distance, normal and point is written from the geometry by hand (the
+    //! closed form is in a comment next to each assertion); none calls the code
+    //! under test. A sphere of radius `r` swept along a unit direction first
+    //! touches a solid `S` where its centre reaches the boundary of
+    //! `S ⊕ ball(r)`.
+    //!
+    //! `EXACT = 1e-12` for closed-form paths (spheres, boxes against a point
+    //! core, planes, triangles, cylinders); `ITER = 1e-8` for iterative ones (GJK,
+    //! convex time of impact, height-field parts, torus arcs).
+
+    use super::*;
+    use crate::box_collider::OrientedBox;
+    use crate::collider::{ConvexHull, Sphere};
+    use crate::compound::CompoundShape;
+    use crate::solver::{PhysicsConfig, RigidBody};
+
+    const EXACT: f64 = 1e-12;
+    const ITER: f64 = 1e-8;
+
+    fn fx(v: f64) -> Fix128 {
+        Fix128::from_f64(v)
+    }
+
+    fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
+        Vec3Fix::new(fx(x), fx(y), fx(z))
+    }
+
+    fn p3(p: [f64; 3]) -> Vec3Fix {
+        v3(p[0], p[1], p[2])
+    }
+
+    fn world() -> PhysicsWorld {
+        PhysicsWorld::new(PhysicsConfig::default())
+    }
+
+    fn all() -> RayFilter {
+        RayFilter::default()
+    }
+
+    fn sphere_cast(
+        w: &PhysicsWorld,
+        c: [f64; 3],
+        r: f64,
+        d: [f64; 3],
+        max: f64,
+    ) -> Option<WorldShapeHit> {
+        w.cast_sphere(p3(c), fx(r), p3(d), fx(max), &all())
+    }
+
+    fn capsule_cast(
+        w: &PhysicsWorld,
+        a: [f64; 3],
+        b: [f64; 3],
+        r: f64,
+        d: [f64; 3],
+        max: f64,
+    ) -> Option<WorldShapeHit> {
+        w.cast_capsule(p3(a), p3(b), fx(r), p3(d), fx(max), &all())
+    }
+
+    fn overlap_s(w: &PhysicsWorld, c: [f64; 3], r: f64) -> Vec<RayTarget> {
+        w.overlap_sphere(p3(c), fx(r), &all())
+    }
+
+    fn overlap_b(w: &PhysicsWorld, lo: [f64; 3], hi: [f64; 3]) -> Vec<RayTarget> {
+        w.overlap_aabb(&AABB::new(p3(lo), p3(hi)), &all())
+    }
+
+    fn unit(v: [f64; 3]) -> [f64; 3] {
+        let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
+        [v[0] / l, v[1] / l, v[2] / l]
+    }
+
+    #[track_caller]
+    fn assert_vec(got: Vec3Fix, want: [f64; 3], tol: f64, what: &str) {
+        let g = [got.x.to_f64(), got.y.to_f64(), got.z.to_f64()];
+        for k in 0..3 {
+            assert!(
+                (g[k] - want[k]).abs() < tol,
+                "{what} {g:?} but the closed form is {want:?}"
+            );
+        }
+    }
+
+    /// A hit on `target` at `t` with `normal` (normalized here) and `point`.
+    #[track_caller]
+    fn assert_hit(
+        hit: Option<WorldShapeHit>,
+        target: RayTarget,
+        t: f64,
+        normal: [f64; 3],
+        point: [f64; 3],
+        tol: f64,
+    ) {
+        let h = hit.unwrap_or_else(|| panic!("expected a hit at t = {t}, got none"));
+        assert_eq!(h.target, target, "target");
+        assert!(
+            (h.t.to_f64() - t).abs() < tol,
+            "t = {} but the closed form is {t}",
+            h.t.to_f64()
+        );
+        assert_vec(h.normal, unit(normal), tol, "normal");
+        assert_vec(h.point, point, tol, "point");
+    }
+
+    /// A capsule cast onto a flat face parallel to its segment: every point under
+    /// the segment is a contact, so only `t`, the normal and the contact's height
+    /// `y` are unique; its `x` lies between the ends' `x0..x1`.
+    #[track_caller]
+    fn assert_face_hit(
+        hit: Option<WorldShapeHit>,
+        target: RayTarget,
+        t: f64,
+        y: f64,
+        x0: f64,
+        x1: f64,
+    ) {
+        let h = hit.unwrap_or_else(|| panic!("expected a hit at t = {t}, got none"));
+        assert_eq!(h.target, target, "target");
+        assert!((h.t.to_f64() - t).abs() < ITER, "t = {}", h.t.to_f64());
+        assert_vec(h.normal, [0.0, 1.0, 0.0], ITER, "normal");
+        assert!(
+            (h.point.y.to_f64() - y).abs() < ITER,
+            "y = {}",
+            h.point.y.to_f64()
+        );
+        let x = h.point.x.to_f64();
+        assert!(x > x0 - ITER && x < x1 + ITER, "x = {x}");
+    }
+
+    fn shaped(w: &mut PhysicsWorld, shape: Shape, pos: Vec3Fix) -> usize {
+        w.add_shaped_body(&shape, Fix128::ONE, pos)
+            .expect("valid shape")
+    }
+
+    fn unit_box(w: &mut PhysicsWorld) -> usize {
+        shaped(
+            w,
+            Shape::Box {
+                half_extents: v3(1.0, 1.0, 1.0),
+            },
+            Vec3Fix::ZERO,
+        )
+    }
+
+    fn sphere_body(w: &mut PhysicsWorld, pos: Vec3Fix, r: f64) -> usize {
+        w.add_body_with_radius(RigidBody::new_static(pos), fx(r))
+    }
+
+    fn plane(w: &mut PhysicsWorld, normal: Vec3Fix, offset: f64) -> usize {
+        w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+            normal,
+            fx(offset),
+        )))
+    }
+
+    /// The two triangles of the floor square `[0, 4]²` at `y = 0`.
+    fn floor_mesh(w: &mut PhysicsWorld) -> usize {
+        let verts = [
+            v3(0.0, 0.0, 0.0),
+            v3(4.0, 0.0, 0.0),
+            v3(4.0, 0.0, 4.0),
+            v3(0.0, 0.0, 4.0),
+        ];
+        w.add_static_collider(StaticCollider::TriMesh(TriMesh::from_indexed(
+            &verts,
+            &[0, 1, 2, 0, 2, 3],
+        )))
+    }
+
+    /// One bilinear cell over `[0, 1]²` with corner heights `0, 0, 0, 1`: the
+    /// twisted surface `y = x·z`.
+    fn saddle_field(w: &mut PhysicsWorld) -> usize {
+        let heights = vec![Fix128::ZERO, Fix128::ZERO, Fix128::ZERO, Fix128::ONE];
+        w.add_static_collider(StaticCollider::HeightField(HeightField::new(
+            heights,
+            2,
+            2,
+            Fix128::ONE,
+            Vec3Fix::ZERO,
+        )))
+    }
+
+    // ------------------------------------------------------------ sphere cast
+
+    #[test]
+    fn sphere_cast_against_a_sphere_body() {
+        let mut w = world();
+        let b = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        // oracle: head-on, the centre reaches |c| = R + r = 1.5: t = 10 − 1.5;
+        // the direction (2, 0, 0) is normalized first.
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.0, 0.0], 0.5, [2.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            8.5,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: on the line y = 0.6, x = −√(1.5² − 0.36) = −√1.89 at contact,
+        // t = 10 − √1.89, normal c/1.5, contact R·normal.
+        let s = 1.89f64.sqrt();
+        let n = [-s / 1.5, 0.6 / 1.5, 0.0];
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.6, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            10.0 - s,
+            n,
+            n,
+            EXACT,
+        );
+        // oracle: the line y = 1.6 passes 1.6 > 1.5 from the centre: no contact.
+        assert_eq!(
+            sphere_cast(&w, [-10.0, 1.6, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            None
+        );
+        // oracle: the contact at t = 8.5 is beyond max_t = 5.
+        assert_eq!(
+            sphere_cast(&w, [-10.0, 0.0, 0.0], 0.5, [1.0, 0.0, 0.0], 5.0),
+            None
+        );
+        let h = sphere_cast(&w, [-10.0, 0.0, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0).expect("hit");
+        assert_eq!(h.body, Some(b));
+    }
+
+    #[test]
+    fn degenerate_casts_give_no_hit() {
+        let mut w = world();
+        sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        let c = [-10.0, 0.0, 0.0];
+        // A negative radius, a zero direction and max_t ≤ 0 give no hit.
+        assert_eq!(sphere_cast(&w, c, -0.5, [1.0, 0.0, 0.0], 100.0), None);
+        assert_eq!(sphere_cast(&w, c, 0.5, [0.0, 0.0, 0.0], 100.0), None);
+        assert_eq!(sphere_cast(&w, c, 0.5, [1.0, 0.0, 0.0], 0.0), None);
+        assert_eq!(sphere_cast(&w, c, 0.5, [1.0, 0.0, 0.0], -1.0), None);
+        assert_eq!(
+            capsule_cast(&w, c, [-10.0, 1.0, 0.0], -0.5, [1.0, 0.0, 0.0], 100.0),
+            None
+        );
+        assert_eq!(
+            capsule_cast(&w, c, [-10.0, 1.0, 0.0], 0.5, [1.0, 0.0, 0.0], 0.0),
+            None
+        );
+    }
+
+    #[test]
+    fn radius_zero_is_a_ray_and_a_huge_direction_is_normalized() {
+        let mut w = world();
+        let b = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        // oracle: a ray from x = −10 meets the unit sphere at x = −1: t = 9.
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.0, 0.0], 0.0, [1.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            9.0,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: the direction (1e7, 0, 0) is the unit +X: t = 8.5.
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.0, 0.0], 0.5, [1e7, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            8.5,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            EXACT,
+        );
+    }
+
+    #[test]
+    fn a_cast_that_starts_overlapping_hits_at_zero() {
+        let mut w = world();
+        let b = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        // oracle: the centre 0.5 from a body of radius 1: overlapping, t = 0,
+        // normal −direction, point the cast centre.
+        assert_hit(
+            sphere_cast(&w, [0.5, 0.0, 0.0], 0.5, [0.0, 1.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            0.0,
+            [0.0, -1.0, 0.0],
+            [0.5, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: a capsule with an end inside: t = 0, point the segment midpoint.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [0.0, 0.0, 0.0],
+                [0.0, 4.0, 0.0],
+                0.5,
+                [1.0, 0.0, 0.0],
+                100.0,
+            ),
+            RayTarget::Body(b),
+            0.0,
+            [-1.0, 0.0, 0.0],
+            [0.0, 2.0, 0.0],
+            EXACT,
+        );
+    }
+
+    #[test]
+    fn a_cast_that_starts_touching_hits_only_when_it_moves_in() {
+        let mut w = world();
+        let b = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        // The cast sphere of radius 0.5 at (−1.5, 0, 0) touches the body.
+        let c = [-1.5, 0.0, 0.0];
+        // oracle: moving in (+X): t = 0, normal −X, contact (−1, 0, 0).
+        assert_hit(
+            sphere_cast(&w, c, 0.5, [1.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            0.0,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: moving away (−X) or along the tangent plane (+Y): no hit.
+        assert_eq!(sphere_cast(&w, c, 0.5, [-1.0, 0.0, 0.0], 100.0), None);
+        assert_eq!(sphere_cast(&w, c, 0.5, [0.0, 1.0, 0.0], 100.0), None);
+
+        // A sphere resting on a plane: down is a hit at 0, sideways and up not.
+        let mut w = world();
+        let p = plane(&mut w, Vec3Fix::UNIT_Y, 0.0);
+        let c = [1.0, 0.5, 2.0];
+        assert_hit(
+            sphere_cast(&w, c, 0.5, [0.0, -1.0, 0.0], 100.0),
+            RayTarget::StaticCollider(p),
+            0.0,
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 2.0],
+            EXACT,
+        );
+        assert_eq!(sphere_cast(&w, c, 0.5, [1.0, 0.0, 0.0], 100.0), None);
+        assert_eq!(sphere_cast(&w, c, 0.5, [0.0, 1.0, 0.0], 100.0), None);
+
+        // A sphere resting on the unit box top: down hits at 0, sideways not.
+        let mut w = world();
+        let bx = unit_box(&mut w);
+        let c = [0.2, 1.5, 0.3];
+        assert_hit(
+            sphere_cast(&w, c, 0.5, [0.0, -1.0, 0.0], 100.0),
+            RayTarget::Body(bx),
+            0.0,
+            [0.0, 1.0, 0.0],
+            [0.2, 1.0, 0.3],
+            EXACT,
+        );
+        assert_eq!(sphere_cast(&w, c, 0.5, [1.0, 0.0, 0.0], 100.0), None);
+    }
+
+    #[test]
+    fn sphere_cast_against_box_face_edge_and_turned_box() {
+        let mut w = world();
+        let b = unit_box(&mut w);
+        // oracle: face x = −1 pushed out to x = −1.5: t = 8.5, contact on the face.
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.2, 0.3], 0.5, [1.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            8.5,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.2, 0.3],
+            EXACT,
+        );
+        // oracle: edge (x, y) = (−1, 1): the centre (x, 1.3) is 0.5 from it at
+        // x = −1 − √(0.25 − 0.09) = −1.4, t = 8.6, normal (−0.4, 0.3)/0.5.
+        assert_hit(
+            sphere_cast(&w, [-10.0, 1.3, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            8.6,
+            [-0.8, 0.6, 0.0],
+            [-1.0, 1.0, 0.0],
+            EXACT,
+        );
+        // The same box turned 45° about Y: its vertical edge points at −X, at
+        // x = −√2. oracle: t = 10 − √2 − 0.5, normal −X, contact (−√2, 0, 0).
+        let mut w = world();
+        let b = unit_box(&mut w);
+        w.bodies[b].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Y, Fix128::HALF_PI.half());
+        let s2 = 2f64.sqrt();
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.0, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            9.5 - s2,
+            [-1.0, 0.0, 0.0],
+            [-s2, 0.0, 0.0],
+            ITER,
+        );
+    }
+
+    #[test]
+    fn sphere_cast_against_cylinder_side_cap_and_rim() {
+        let mut w = world();
+        let b = shaped(
+            &mut w,
+            Shape::Cylinder {
+                radius: Fix128::ONE,
+                half_height: Fix128::ONE,
+            },
+            Vec3Fix::ZERO,
+        );
+        // oracle: side x = −1 pushed out to −1.5: t = 8.5.
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.0, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            8.5,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: top cap y = 1 pushed up to 1.5: t = 8.5.
+        assert_hit(
+            sphere_cast(&w, [0.2, 10.0, 0.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            8.5,
+            [0.0, 1.0, 0.0],
+            [0.2, 1.0, 0.0],
+            EXACT,
+        );
+        // oracle: rim (1, 1, 0): the centre (1.3, y, 0) is 0.5 from it at
+        // y = 1 + √(0.25 − 0.09) = 1.4, t = 8.6, normal (0.3, 0.4)/0.5.
+        assert_hit(
+            sphere_cast(&w, [1.3, 10.0, 0.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            8.6,
+            [0.6, 0.8, 0.0],
+            [1.0, 1.0, 0.0],
+            EXACT,
+        );
+        // oracle: a horizontal capsule over the cap: t = 5 − 1 − 0.5.
+        assert_face_hit(
+            capsule_cast(
+                &w,
+                [-0.5, 5.0, 0.0],
+                [0.5, 5.0, 0.0],
+                0.5,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            RayTarget::Body(b),
+            3.5,
+            1.0,
+            -0.5,
+            0.5,
+        );
+        // Overlaps: 0.2 above the cap is within 0.3, not within 0.1.
+        assert_eq!(
+            overlap_s(&w, [0.0, 1.2, 0.0], 0.3),
+            vec![RayTarget::Body(b)]
+        );
+        assert!(overlap_s(&w, [0.0, 1.2, 0.0], 0.1).is_empty());
+        // Radius 0: a point strictly inside overlaps, one on the surface does not.
+        assert_eq!(
+            overlap_s(&w, [0.0, 0.0, 0.0], 0.0),
+            vec![RayTarget::Body(b)]
+        );
+        assert!(overlap_s(&w, [0.0, 1.0, 0.0], 0.0).is_empty());
+    }
+
+    #[test]
+    fn sphere_and_capsule_casts_against_an_ellipsoid() {
+        let mut w = world();
+        let b = shaped(
+            &mut w,
+            Shape::Ellipsoid {
+                radii: v3(1.0, 2.0, 1.0),
+            },
+            Vec3Fix::ZERO,
+        );
+        // oracle: the top (0, 2, 0) reached at y = 2.5: t = 10 − 2.5.
+        assert_hit(
+            sphere_cast(&w, [0.0, 10.0, 0.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            7.5,
+            [0.0, 1.0, 0.0],
+            [0.0, 2.0, 0.0],
+            ITER,
+        );
+        // oracle: the side (1, 0, 0) reached by a vertical capsule at x = 1.5.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [-10.0, -0.5, 0.0],
+                [-10.0, 0.5, 0.0],
+                0.5,
+                [1.0, 0.0, 0.0],
+                100.0,
+            ),
+            RayTarget::Body(b),
+            8.5,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            ITER,
+        );
+        // oracle: the line x = 1.6 is 0.6 > 0.5 from the widest point: no contact.
+        assert_eq!(
+            sphere_cast(&w, [1.6, 10.0, 0.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            None
+        );
+        // Overlaps: the side point (1, 0, 0) is 0.2 from (1.2, 0, 0).
+        assert_eq!(
+            overlap_s(&w, [1.2, 0.0, 0.0], 0.3),
+            vec![RayTarget::Body(b)]
+        );
+        assert!(overlap_s(&w, [1.2, 0.0, 0.0], 0.1).is_empty());
+        assert_eq!(
+            overlap_b(&w, [0.9, -0.1, -0.1], [1.5, 0.1, 0.1]),
+            vec![RayTarget::Body(b)]
+        );
+        assert!(overlap_b(&w, [1.1, -0.1, -0.1], [1.5, 0.1, 0.1]).is_empty());
+    }
+
+    #[test]
+    fn casts_and_overlaps_against_a_torus() {
+        let mut w = world();
+        // Ring of radius 2 in XZ, tube 0.5.
+        let b = shaped(
+            &mut w,
+            Shape::Torus {
+                major_radius: fx(2.0),
+                minor_radius: fx(0.5),
+            },
+            Vec3Fix::ZERO,
+        );
+        // oracle: the top of the tube (2, 0.5, 0) reached at y = 0.75: t = 9.25.
+        assert_hit(
+            sphere_cast(&w, [2.0, 10.0, 0.0], 0.25, [0.0, -1.0, 0.0], 100.0),
+            RayTarget::Body(b),
+            9.25,
+            [0.0, 1.0, 0.0],
+            [2.0, 0.5, 0.0],
+            EXACT,
+        );
+        // oracle: down the hole, 1.5 > 0.25 from the tube: no contact.
+        assert_eq!(
+            sphere_cast(&w, [0.0, 10.0, 0.0], 0.25, [0.0, -1.0, 0.0], 100.0),
+            None
+        );
+        // oracle: a capsule across the tube, its point (2, y, 0) nearest the ring:
+        // y = 0.5 + 0.25, t = 4.25.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [1.5, 5.0, 0.0],
+                [2.5, 5.0, 0.0],
+                0.25,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            RayTarget::Body(b),
+            4.25,
+            [0.0, 1.0, 0.0],
+            [2.0, 0.5, 0.0],
+            ITER,
+        );
+        // Overlaps: the axis is 1.5 from the tube.
+        assert!(overlap_s(&w, [0.0, 0.0, 0.0], 1.4).is_empty());
+        assert_eq!(
+            overlap_s(&w, [0.0, 0.0, 0.0], 1.6),
+            vec![RayTarget::Body(b)]
+        );
+        assert_eq!(
+            overlap_s(&w, [2.0, 0.0, 0.0], 0.1),
+            vec![RayTarget::Body(b)]
+        );
+        // oracle: the ring at 45° (√2, 0, √2) is (√2 − c)·√2 from the box corner
+        // (c, ·, c): c = 1 gives 2 − √2 = 0.59 > 0.5 (no overlap), c = 1.2 gives
+        // 0.30 < 0.5 (overlap).
+        assert!(overlap_b(&w, [-1.0, -1.0, -1.0], [1.0, 1.0, 1.0]).is_empty());
+        assert_eq!(
+            overlap_b(&w, [-1.2, -1.0, -1.2], [1.2, 1.0, 1.2]),
+            vec![RayTarget::Body(b)]
+        );
+        // oracle: a box far outside the bounding sphere (radius 2.5).
+        assert!(overlap_b(&w, [5.0, 5.0, 5.0], [6.0, 6.0, 6.0]).is_empty());
+    }
+
+    #[test]
+    fn casts_and_overlaps_against_compound_children() {
+        let mut w = world();
+        // Box children at x = ±3, sphere children at z = ±3, a capsule child
+        // along X and cube hull children at y = ±4: symmetric, centre of mass at
+        // the origin.
+        let mut c = CompoundShape::new();
+        for s in [3.0, -3.0] {
+            c.add_box(
+                OrientedBox::new(Vec3Fix::ZERO, v3(0.5, 0.5, 0.5), QuatFix::IDENTITY),
+                v3(s, 0.0, 0.0),
+                QuatFix::IDENTITY,
+            );
+            c.add_sphere(
+                Sphere::new(Vec3Fix::ZERO, fx(0.5)),
+                v3(0.0, 0.0, s),
+                QuatFix::IDENTITY,
+            );
+            let mut cube = Vec::new();
+            for x in [-0.5, 0.5] {
+                for y in [-0.5, 0.5] {
+                    for z in [-0.5, 0.5] {
+                        cube.push(v3(x, y, z));
+                    }
+                }
+            }
+            c.add_convex_hull(
+                ConvexHull::new(cube),
+                v3(0.0, s + s / 3.0, 0.0),
+                QuatFix::IDENTITY,
+            );
+        }
+        c.add_capsule(
+            Capsule::new(v3(-1.5, 0.0, 0.0), v3(1.5, 0.0, 0.0), fx(0.5)),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        );
+        let b = w
+            .add_compound_body(&c, Fix128::ONE, Vec3Fix::ZERO)
+            .expect("valid compound");
+        let body = RayTarget::Body(b);
+        // oracle: box child top y = 0.5 reached at 0.75: t = 9.25.
+        assert_hit(
+            sphere_cast(&w, [3.0, 10.0, 0.0], 0.25, [0.0, -1.0, 0.0], 100.0),
+            body,
+            9.25,
+            [0.0, 1.0, 0.0],
+            [3.0, 0.5, 0.0],
+            EXACT,
+        );
+        // oracle: sphere child at (0, 0, 3): radius 0.75 above it, t = 9.25.
+        assert_hit(
+            sphere_cast(&w, [0.0, 10.0, 3.0], 0.25, [0.0, -1.0, 0.0], 100.0),
+            body,
+            9.25,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.5, 3.0],
+            EXACT,
+        );
+        // oracle: capsule child side at x = 1, from +Z: 0.75 from the segment,
+        // t = 10 − 0.75.
+        assert_hit(
+            sphere_cast(&w, [1.0, 0.0, 10.0], 0.25, [0.0, 0.0, -1.0], 100.0),
+            body,
+            9.25,
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.5],
+            EXACT,
+        );
+        // oracle: hull cube at y = 4 (top 4.5) from the side: its face x = 0.5
+        // reached at x = 0.75, t = 10 − 0.75.
+        assert_hit(
+            sphere_cast(&w, [10.0, 4.0, 0.0], 0.25, [-1.0, 0.0, 0.0], 100.0),
+            body,
+            9.25,
+            [1.0, 0.0, 0.0],
+            [0.5, 4.0, 0.0],
+            ITER,
+        );
+        // oracle: a capsule over the box child at x = 3: t = 5 − 0.5 − 0.25.
+        assert_face_hit(
+            capsule_cast(
+                &w,
+                [2.8, 5.0, 0.0],
+                [3.2, 5.0, 0.0],
+                0.25,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            body,
+            4.25,
+            0.5,
+            2.8,
+            3.2,
+        );
+        // oracle: a capsule crossing over the capsule child (below the hull cube
+        // at y = 4): t = 2 − 0.75.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [0.0, 2.0, -1.0],
+                [0.0, 2.0, 1.0],
+                0.25,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            body,
+            1.25,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.5, 0.0],
+            ITER,
+        );
+        // oracle: a capsule over the sphere child at (0, 0, −3): t = 5 − 0.75.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [-1.0, 5.0, -3.0],
+                [1.0, 5.0, -3.0],
+                0.25,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            body,
+            4.25,
+            [0.0, 1.0, 0.0],
+            [0.0, 0.5, -3.0],
+            EXACT,
+        );
+        // oracle: (2.1, 0, 0) is 0.1 from the capsule child (its end cap reaches
+        // x = 2) and 0.4 from the box child (face x = 2.5): not within 0.05,
+        // within 0.45.
+        assert!(overlap_s(&w, [2.1, 0.0, 0.0], 0.05).is_empty());
+        assert_eq!(overlap_s(&w, [2.1, 0.0, 0.0], 0.45), vec![body]);
+        // Box overlaps: each child alone, and the empty space between them.
+        assert_eq!(overlap_b(&w, [3.4, 0.4, -0.1], [3.6, 0.6, 0.1]), vec![body]);
+        assert_eq!(overlap_b(&w, [-0.1, 0.4, 2.9], [0.1, 0.6, 3.1]), vec![body]);
+        assert_eq!(overlap_b(&w, [1.0, 0.4, -0.1], [1.2, 0.6, 0.1]), vec![body]);
+        assert_eq!(overlap_b(&w, [0.4, 4.4, -0.1], [0.6, 4.6, 0.1]), vec![body]);
+        assert!(overlap_b(&w, [1.0, 2.0, 1.0], [2.0, 3.0, 2.0]).is_empty());
+    }
+
+    #[test]
+    fn casts_and_overlaps_against_a_plane() {
+        let mut w = world();
+        let p = plane(&mut w, Vec3Fix::UNIT_Y, 0.0);
+        let sp = RayTarget::StaticCollider(p);
+        // oracle: oblique (1, −1, 0)/√2: the height drops 4.5 after 4.5·√2.
+        assert_hit(
+            sphere_cast(&w, [0.0, 5.0, 0.0], 0.5, [1.0, -1.0, 0.0], 100.0),
+            sp,
+            4.5 * 2f64.sqrt(),
+            [0.0, 1.0, 0.0],
+            [4.5, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: two-sided: from below the centre reaches y = −0.5.
+        assert_hit(
+            sphere_cast(&w, [0.0, -5.0, 0.0], 0.5, [0.0, 1.0, 0.0], 100.0),
+            sp,
+            4.5,
+            [0.0, -1.0, 0.0],
+            [0.0, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: parallel 1 above: never closer than 1 > 0.5.
+        assert_eq!(
+            sphere_cast(&w, [0.0, 1.0, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            None
+        );
+        // oracle: capsule, the lower end (−1, 5, 0) reaches y = 0.5: t = 4.5.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [-1.0, 5.0, 0.0],
+                [1.0, 6.0, 0.0],
+                0.5,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            sp,
+            4.5,
+            [0.0, 1.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            EXACT,
+        );
+        // oracle: a capsule whose segment crosses the plane starts overlapping.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [0.0, -1.0, 0.0],
+                [0.0, 1.0, 0.0],
+                0.5,
+                [1.0, 0.0, 0.0],
+                100.0,
+            ),
+            sp,
+            0.0,
+            [-1.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0],
+            EXACT,
+        );
+        // Overlaps: 0.4 above is within 0.5; 0.6 is not.
+        assert_eq!(overlap_s(&w, [0.0, 0.4, 0.0], 0.5), vec![sp]);
+        assert!(overlap_s(&w, [0.0, 0.6, 0.0], 0.5).is_empty());
+        // oracle: a box straddling y = 0 overlaps, one resting on it does not.
+        assert_eq!(overlap_b(&w, [0.0, -0.1, 0.0], [1.0, 0.1, 1.0]), vec![sp]);
+        assert!(overlap_b(&w, [0.0, 0.0, 0.0], [1.0, 1.0, 1.0]).is_empty());
+    }
+
+    #[test]
+    fn casts_along_a_mesh_floor_cross_its_edges() {
+        let mut w = world();
+        let m = floor_mesh(&mut w);
+        let sm = RayTarget::StaticCollider(m);
+        // oracle: face region: the plane y = 0 reached at y = 0.5: t = 2.5.
+        assert_hit(
+            sphere_cast(&w, [1.0, 3.0, 3.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            sm,
+            2.5,
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 3.0],
+            EXACT,
+        );
+        // oracle: edge x = 0: the centre (x, 0.3, 1) is 0.5 from (0, 0, 1) at
+        // x = −0.4, t = 9.6, normal (−0.8, 0.6, 0).
+        assert_hit(
+            sphere_cast(&w, [-10.0, 0.3, 1.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            sm,
+            9.6,
+            [-0.8, 0.6, 0.0],
+            [0.0, 0.0, 1.0],
+            EXACT,
+        );
+        // oracle: a sphere resting on the floor sliding across the diagonal
+        // edge, and a capsule doing the same: tangent, no hit.
+        assert_eq!(
+            sphere_cast(&w, [1.0, 0.5, 3.0], 0.5, [1.0, 0.0, -1.0], 2.0),
+            None
+        );
+        assert_eq!(
+            capsule_cast(
+                &w,
+                [1.0, 0.5, 2.0],
+                [1.0, 1.5, 2.0],
+                0.5,
+                [1.0, 0.0, 0.0],
+                2.0
+            ),
+            None
+        );
+        // oracle: resting and moving down: t = 0 on the floor.
+        assert_hit(
+            sphere_cast(&w, [1.0, 0.5, 3.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            sm,
+            0.0,
+            [0.0, 1.0, 0.0],
+            [1.0, 0.0, 3.0],
+            EXACT,
+        );
+        // oracle: tilted capsule, lower end (2, 3, 1) reaches y = 0.5: t = 2.5.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [2.0, 3.0, 1.0],
+                [3.0, 4.0, 1.0],
+                0.5,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            sm,
+            2.5,
+            [0.0, 1.0, 0.0],
+            [2.0, 0.0, 1.0],
+            ITER,
+        );
+        // Overlaps: 0.3 above the floor is within 0.5, outside it 0.6 is not.
+        assert_eq!(overlap_s(&w, [2.0, 0.3, 2.0], 0.5), vec![sm]);
+        assert!(overlap_s(&w, [-0.6, 0.0, 2.0], 0.5).is_empty());
+        assert_eq!(overlap_b(&w, [1.0, -0.1, 1.0], [2.0, 0.1, 2.0]), vec![sm]);
+        assert!(overlap_b(&w, [1.0, 0.1, 1.0], [2.0, 1.0, 2.0]).is_empty());
+    }
+
+    #[test]
+    fn casts_and_overlaps_against_height_fields() {
+        // oracle: flat field at 0.25 over [0, 4]²: t = 5 − 0.25 − 0.5.
+        let mut w = world();
+        let h = w.add_static_collider(StaticCollider::HeightField(HeightField::flat(
+            5,
+            5,
+            Fix128::ONE,
+            Vec3Fix::ZERO,
+            fx(0.25),
+        )));
+        let sh = RayTarget::StaticCollider(h);
+        assert_hit(
+            sphere_cast(&w, [2.0, 5.0, 2.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            sh,
+            4.25,
+            [0.0, 1.0, 0.0],
+            [2.0, 0.25, 2.0],
+            ITER,
+        );
+        // oracle: a horizontal capsule over it: the same t.
+        assert_face_hit(
+            capsule_cast(
+                &w,
+                [1.5, 5.0, 2.0],
+                [2.5, 5.0, 2.0],
+                0.5,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            sh,
+            4.25,
+            0.25,
+            1.5,
+            2.5,
+        );
+        // oracle: resting on it and sliding across cells: no hit.
+        assert_eq!(
+            sphere_cast(&w, [0.5, 0.75, 0.5], 0.5, [1.0, 0.0, 0.0], 3.0),
+            None
+        );
+        // oracle: outside the field's footprint: no hit.
+        assert_eq!(
+            sphere_cast(&w, [10.0, 5.0, 10.0], 0.5, [0.0, -1.0, 0.0], 100.0),
+            None
+        );
+        assert_eq!(overlap_s(&w, [2.0, 0.5, 2.0], 0.3), vec![sh]);
+        assert!(overlap_s(&w, [2.0, 0.6, 2.0], 0.3).is_empty());
+        assert_eq!(overlap_b(&w, [1.0, 0.2, 1.0], [3.0, 0.3, 3.0]), vec![sh]);
+        assert!(overlap_b(&w, [1.0, 0.3, 1.0], [3.0, 1.0, 3.0]).is_empty());
+        assert!(overlap_b(&w, [5.0, 0.0, 5.0], [6.0, 1.0, 6.0]).is_empty());
+    }
+
+    #[test]
+    fn casts_and_overlaps_against_a_twisted_height_field_cell() {
+        let mut w = world();
+        let h = saddle_field(&mut w);
+        let sh = RayTarget::StaticCollider(h);
+        // The surface y = x·z at (0.5, 0.25, 0.5) has the unit normal
+        // n = (−0.5, 1, −0.5)/√1.5. A sphere of radius 0.1 (its curvature 10
+        // beats the surface's ±1, so the contact is unique) whose centre moves
+        // down the line through (0.5, 0.25, 0.5) + 0.1·n touches there.
+        let k = 1.5f64.sqrt();
+        let n = [-0.5 / k, 1.0 / k, -0.5 / k];
+        let r = 0.1;
+        let cx = 0.5 + r * n[0];
+        // oracle: t = 5 − (0.25 + r·n.y).
+        assert_hit(
+            sphere_cast(&w, [cx, 5.0, cx], r, [0.0, -1.0, 0.0], 100.0),
+            sh,
+            5.0 - (0.25 + r * n[1]),
+            n,
+            [0.5, 0.25, 0.5],
+            ITER,
+        );
+        // oracle: a point 0.09 along n from the surface point is within 0.1 of
+        // the surface, one 0.11 along n is not.
+        let at = |s: f64| [0.5 + s * n[0], 0.25 + s * n[1], 0.5 + s * n[2]];
+        assert_eq!(overlap_s(&w, at(0.09), 0.1), vec![sh]);
+        assert!(overlap_s(&w, at(0.11), 0.1).is_empty());
+        // oracle: the surface spans y ∈ [0, 1]: a box at y ∈ [0.9, 2] over the
+        // corner (1, 1) meets it (height 1 there), one over (0, 0) does not.
+        assert_eq!(overlap_b(&w, [0.9, 0.9, 0.9], [1.0, 2.0, 1.0]), vec![sh]);
+        assert!(overlap_b(&w, [0.0, 0.9, 0.0], [0.1, 2.0, 0.1]).is_empty());
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn casts_and_overlaps_against_an_sdf() {
+        use crate::sdf_collider::{ClosureSdf, SdfCollider};
+        let mut w = world();
+        // The unit-sphere field about the origin.
+        w.sdf_colliders.push(SdfCollider::new_static(
+            Box::new(ClosureSdf::new(
+                |x, y, z| (x * x + y * y + z * z).sqrt() - 1.0,
+                |x, y, z| {
+                    let l = (x * x + y * y + z * z).sqrt();
+                    (x / l, y / l, z / l)
+                },
+            )),
+            Vec3Fix::ZERO,
+            QuatFix::IDENTITY,
+        ));
+        let tol = f64::from(all().sdf.tolerance);
+        // oracle: the centre reaches |c| = 1.5: t ∈ [3.5 − tol, 3.5].
+        let h = sphere_cast(&w, [-5.0, 0.0, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0).expect("hit");
+        assert_eq!(h.target, RayTarget::Sdf(0));
+        assert!(h.t.to_f64() > 3.5 - tol - 1e-5 && h.t.to_f64() < 3.5 + 1e-5);
+        assert_vec(h.normal, [-1.0, 0.0, 0.0], 1e-3, "normal");
+        // oracle: a vertical capsule at the same height: the same t.
+        let h = capsule_cast(
+            &w,
+            [-5.0, -0.5, 0.0],
+            [-5.0, 0.5, 0.0],
+            0.5,
+            [1.0, 0.0, 0.0],
+            100.0,
+        )
+        .expect("hit");
+        assert!(h.t.to_f64() > 3.5 - tol - 1e-4 && h.t.to_f64() < 3.5 + 1e-4);
+        // oracle: the line y = 2 stays 2 − 1 = 1 > 0.5 from the surface.
+        assert_eq!(
+            sphere_cast(&w, [-5.0, 2.0, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0),
+            None
+        );
+        // Overlaps: (1.2, 0, 0) is 0.2 from the surface.
+        assert_eq!(overlap_s(&w, [1.2, 0.0, 0.0], 0.3), vec![RayTarget::Sdf(0)]);
+        assert!(overlap_s(&w, [1.2, 0.0, 0.0], 0.1).is_empty());
+        assert_eq!(
+            overlap_b(&w, [0.8, -0.1, -0.1], [1.2, 0.1, 0.1]),
+            vec![RayTarget::Sdf(0)]
+        );
+        assert!(overlap_b(&w, [2.0, 2.0, 2.0], [3.0, 3.0, 3.0]).is_empty());
+        // The filter can hide it.
+        assert!(w
+            .overlap_sphere(v3(1.2, 0.0, 0.0), fx(0.3), &all().with_sdf(false))
+            .is_empty());
+    }
+
+    #[test]
+    fn capsule_cast_against_a_sphere_body_and_a_box() {
+        let mut w = world();
+        let b = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        // oracle: the segment (1..3, y, 0): its end (1, y, 0) reaches 1.5 from
+        // the centre at y = √1.25: t = 5 − √1.25, normal (1, √1.25, 0)/1.5.
+        let s = 1.25f64.sqrt();
+        let n = [1.0 / 1.5, s / 1.5, 0.0];
+        assert_hit(
+            capsule_cast(
+                &w,
+                [1.0, 5.0, 0.0],
+                [3.0, 5.0, 0.0],
+                0.5,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            RayTarget::Body(b),
+            5.0 - s,
+            n,
+            n,
+            EXACT,
+        );
+        // oracle: coinciding ends are the sphere cast: t = 8.5.
+        assert_hit(
+            capsule_cast(
+                &w,
+                [-10.0, 0.0, 0.0],
+                [-10.0, 0.0, 0.0],
+                0.5,
+                [1.0, 0.0, 0.0],
+                100.0,
+            ),
+            RayTarget::Body(b),
+            8.5,
+            [-1.0, 0.0, 0.0],
+            [-1.0, 0.0, 0.0],
+            EXACT,
+        );
+        let mut w = world();
+        let b = unit_box(&mut w);
+        // oracle: horizontal capsule over the top face y = 1: t = 5 − 1 − 0.5.
+        assert_face_hit(
+            capsule_cast(
+                &w,
+                [-0.5, 5.0, 0.0],
+                [0.5, 5.0, 0.0],
+                0.5,
+                [0.0, -1.0, 0.0],
+                100.0,
+            ),
+            RayTarget::Body(b),
+            3.5,
+            1.0,
+            -0.5,
+            0.5,
+        );
+        // oracle: moving away from the box: no hit.
+        assert_eq!(
+            capsule_cast(
+                &w,
+                [-0.5, 5.0, 0.0],
+                [0.5, 5.0, 0.0],
+                0.5,
+                [0.0, 1.0, 0.0],
+                100.0
+            ),
+            None
+        );
+    }
+
+    #[test]
+    fn overlaps_of_bodies_and_the_box_edge_gap() {
+        let mut w = world();
+        let s = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        // oracle: (1.4, 0, 0) is 0.4 from the sphere: within 0.5, not 0.3.
+        assert_eq!(
+            overlap_s(&w, [1.4, 0.0, 0.0], 0.5),
+            vec![RayTarget::Body(s)]
+        );
+        assert!(overlap_s(&w, [1.4, 0.0, 0.0], 0.3).is_empty());
+        // A negative radius overlaps nothing.
+        assert!(overlap_s(&w, [0.0, 0.0, 0.0], -1.0).is_empty());
+        // oracle: the box [0.5, 2]³'s nearest point (0.5, 0.5, 0.5) is √0.75 =
+        // 0.866 from the centre: inside radius 1.
+        assert_eq!(
+            overlap_b(&w, [0.5, 0.5, 0.5], [2.0, 2.0, 2.0]),
+            vec![RayTarget::Body(s)]
+        );
+        // oracle: the box [0.6, 2]³: √1.08 = 1.04 > 1, no overlap.
+        assert!(overlap_b(&w, [0.6, 0.6, 0.6], [2.0, 2.0, 2.0]).is_empty());
+        // A box with min > max contains nothing.
+        assert!(overlap_b(&w, [1.0, -1.0, -1.0], [-1.0, 1.0, 1.0]).is_empty());
+
+        let mut w = world();
+        let b = unit_box(&mut w);
+        // oracle: (1.3, 1.3, 0) is 0.3·√2 = 0.424 from the edge (1, 1, z): within
+        // 0.5, not 0.4.
+        assert_eq!(
+            overlap_s(&w, [1.3, 1.3, 0.0], 0.5),
+            vec![RayTarget::Body(b)]
+        );
+        assert!(overlap_s(&w, [1.3, 1.3, 0.0], 0.4).is_empty());
+        // The box turned 45° about Y reaches x = √2 at z = 0: an AABB from
+        // x = 1.3 meets it, one from x = 1.5 does not.
+        w.bodies[b].rotation = QuatFix::from_axis_angle(Vec3Fix::UNIT_Y, Fix128::HALF_PI.half());
+        assert_eq!(
+            overlap_b(&w, [1.3, -0.5, -0.1], [2.0, 0.5, 0.1]),
+            vec![RayTarget::Body(b)]
+        );
+        assert!(overlap_b(&w, [1.5, -0.5, -0.1], [2.0, 0.5, 0.1]).is_empty());
+    }
+
+    #[test]
+    fn filters_and_ties() {
+        let mut w = world();
+        let b = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        let p = plane(&mut w, Vec3Fix::UNIT_Y, -5.0);
+        // oracle: down from (0, 10, 0): the sphere first (t = 10 − 1.5), the
+        // plane y = −5 at t = 14.5 when the body is excluded, nothing when the
+        // static colliders are hidden too.
+        let c = v3(0.0, 10.0, 0.0);
+        let down = -Vec3Fix::UNIT_Y;
+        let h = w
+            .cast_sphere(c, fx(0.5), down, fx(100.0), &all())
+            .expect("hit");
+        assert_eq!(h.target, RayTarget::Body(b));
+        let h = w
+            .cast_sphere(c, fx(0.5), down, fx(100.0), &all().excluding_body(b))
+            .expect("hit");
+        assert_eq!(h.target, RayTarget::StaticCollider(p));
+        assert!((h.t.to_f64() - 14.5).abs() < EXACT);
+        assert_eq!(
+            w.cast_sphere(
+                c,
+                fx(0.5),
+                down,
+                fx(100.0),
+                &all().excluding_body(b).with_static(false)
+            ),
+            None
+        );
+        // Two identical bodies: the tie goes to the lower index; overlaps are
+        // sorted by target.
+        let mut w = world();
+        let b0 = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        let b1 = sphere_body(&mut w, Vec3Fix::ZERO, 1.0);
+        let h = sphere_cast(&w, [-10.0, 0.0, 0.0], 0.5, [1.0, 0.0, 0.0], 100.0).expect("hit");
+        assert_eq!(h.target, RayTarget::Body(b0));
+        assert_eq!(
+            overlap_s(&w, [0.0, 0.0, 0.0], 0.1),
+            vec![RayTarget::Body(b0), RayTarget::Body(b1)]
+        );
+    }
+
+    #[test]
+    fn capsule_penetrations_closed_forms() {
+        let mut w = world();
+        let p = plane(&mut w, Vec3Fix::UNIT_Y, 0.0);
+        // oracle: the segment's lower end is 0.2 above the plane: depth
+        // 0.3 − 0.2 = 0.1 along +Y.
+        let pens = w
+            .capsule_penetrations(v3(0.0, 0.2, 0.0), v3(0.0, 1.4, 0.0), fx(0.3), &all())
+            .expect("the segment is outside");
+        assert_eq!(pens.len(), 1);
+        assert_eq!(pens[0].target, RayTarget::StaticCollider(p));
+        assert!((pens[0].depth.to_f64() - 0.1).abs() < EXACT);
+        assert_vec(pens[0].normal, [0.0, 1.0, 0.0], EXACT, "normal");
+        // oracle: 0.4 above: no overlap.
+        assert!(w
+            .capsule_penetrations(v3(0.0, 0.4, 0.0), v3(0.0, 1.4, 0.0), fx(0.3), &all())
+            .expect("outside")
+            .is_empty());
+        // oracle: a segment crossing the plane has no push-out direction.
+        assert!(w
+            .capsule_penetrations(v3(0.0, -0.2, 0.0), v3(0.0, 1.4, 0.0), fx(0.3), &all())
+            .is_none());
+    }
+
+    #[test]
+    fn helper_closed_forms() {
+        // aabb_gap: x gap 1, z gap 2, y overlapping: √5.
+        let a = AABB::new(v3(0.0, 0.0, 0.0), v3(1.0, 1.0, 1.0));
+        let b = AABB::new(v3(2.0, 0.5, 3.0), v3(3.0, 2.0, 4.0));
+        assert!((aabb_gap(&a, &b).to_f64() - 5f64.sqrt()).abs() < EXACT);
+        assert_eq!(aabb_gap(&a, &a), Fix128::ZERO);
+        // box_entry: [0, 1]³ moving +X meets [3, 4] × [0, 1]² at t = 2; not
+        // within max_t = 1; never when the Y ranges are apart.
+        let target = AABB::new(v3(3.0, 0.0, 0.0), v3(4.0, 1.0, 1.0));
+        let entry = box_entry(&a, Vec3Fix::UNIT_X, fx(10.0), &target).expect("meets");
+        assert!((entry.to_f64() - 2.0).abs() < EXACT);
+        assert_eq!(box_entry(&a, Vec3Fix::UNIT_X, Fix128::ONE, &target), None);
+        let above = AABB::new(v3(3.0, 5.0, 0.0), v3(4.0, 6.0, 1.0));
+        assert_eq!(box_entry(&a, Vec3Fix::UNIT_X, fx(10.0), &above), None);
+        // oracle: moving −X toward [−4, −3]: t = 3.
+        let behind = AABB::new(v3(-4.0, 0.0, 0.0), v3(-3.0, 1.0, 1.0));
+        let entry = box_entry(&a, -Vec3Fix::UNIT_X, fx(10.0), &behind).expect("meets");
+        assert!((entry.to_f64() - 3.0).abs() < EXACT);
+        // ratio_within: 1/4 = 0.25; a tiny denominator is clamped to ±big.
+        let tiny = Fix128 { hi: 0, lo: 1 };
+        assert!((ratio_within(Fix128::ONE, fx(4.0), fx(5.0)).to_f64() - 0.25).abs() < EXACT);
+        assert_eq!(ratio_within(Fix128::ONE, tiny, fx(5.0)), fx(5.0));
+        assert_eq!(ratio_within(Fix128::NEG_ONE, tiny, fx(5.0)), fx(-5.0));
+        // tame_direction: (2²¹, 0, 0) is scaled to (1, 0, 0); (3, 4, 0) is kept.
+        assert_eq!(
+            tame_direction(Vec3Fix::new(
+                Fix128::from_int(1 << 21),
+                Fix128::ZERO,
+                Fix128::ZERO
+            )),
+            Vec3Fix::UNIT_X
+        );
+        assert_eq!(tame_direction(v3(3.0, 4.0, 0.0)), v3(3.0, 4.0, 0.0));
+        assert!(box_is_valid(&a));
+        assert!(!box_is_valid(&AABB::new(
+            v3(0.0, 1.0, 0.0),
+            v3(1.0, 0.0, 1.0)
+        )));
+        // closest_on_segment: clamped to the ends, degenerate segment.
+        let (s0, s1) = (v3(0.0, 0.0, 0.0), v3(2.0, 0.0, 0.0));
+        assert_eq!(
+            closest_on_segment(s0, s1, v3(1.0, 5.0, 0.0)),
+            v3(1.0, 0.0, 0.0)
+        );
+        assert_eq!(closest_on_segment(s0, s1, v3(-3.0, 1.0, 0.0)), s0);
+        assert_eq!(closest_on_segment(s0, s0, v3(5.0, 5.0, 5.0)), s0);
+        // segment_segment: crossing → None; skew at distance 1; point cases.
+        assert!(segment_segment(
+            v3(-1.0, 0.0, 0.0),
+            v3(1.0, 0.0, 0.0),
+            v3(0.0, -1.0, 0.0),
+            v3(0.0, 1.0, 0.0)
+        )
+        .is_none());
+        let (d, _, _) = segment_segment(
+            v3(-1.0, 0.0, 0.0),
+            v3(1.0, 0.0, 0.0),
+            v3(0.0, -1.0, 1.0),
+            v3(0.0, 1.0, 1.0),
+        )
+        .expect("apart");
+        assert!((d.to_f64() - 1.0).abs() < ITER);
+        let (d, _, _) =
+            segment_segment(s0, s0, v3(3.0, 4.0, 0.0), v3(3.0, 4.0, 0.0)).expect("apart");
+        assert!((d.to_f64() - 5.0).abs() < EXACT);
+        let (d, _, _) =
+            segment_segment(v3(1.0, 3.0, 0.0), v3(1.0, 3.0, 0.0), s0, s1).expect("apart");
+        assert!((d.to_f64() - 3.0).abs() < EXACT);
+        let (d, _, _) =
+            segment_segment(s0, s1, v3(1.0, 0.0, 2.0), v3(1.0, 0.0, 2.0)).expect("apart");
+        assert!((d.to_f64() - 2.0).abs() < EXACT);
+        // point_box_local: on the face x = 1 it touches with normal +X; outside
+        // it is the distance to the clamped point; inside it is Inside.
+        let h = v3(1.0, 1.0, 1.0);
+        match point_box_local(v3(1.0, 0.5, 0.5), h) {
+            Dist::Outside { dist, normal, .. } => {
+                assert_eq!(dist, Fix128::ZERO);
+                assert_eq!(normal, Vec3Fix::UNIT_X);
+            }
+            other => panic!("expected touching, got {other:?}"),
+        }
+        assert!((point_box_local(v3(4.0, 5.0, 0.0), h).value().to_f64() - 5.0).abs() < EXACT);
+        assert!(matches!(point_box_local(Vec3Fix::ZERO, h), Dist::Inside));
+        // point_cylinder_local: on the cap; 2 beside the side.
+        match point_cylinder_local(v3(0.0, -1.0, 0.0), Fix128::ONE, Fix128::ONE) {
+            Dist::Outside { dist, normal, .. } => {
+                assert_eq!(dist, Fix128::ZERO);
+                assert_eq!(normal, -Vec3Fix::UNIT_Y);
+            }
+            other => panic!("expected touching, got {other:?}"),
+        }
+        assert!(
+            (point_cylinder_local(v3(3.0, 0.0, 0.0), Fix128::ONE, Fix128::ONE)
+                .value()
+                .to_f64()
+                - 2.0)
+                .abs()
+                < EXACT
+        );
+        // Dist: a distance shrunk past zero is Inside; a bound shrinks by it.
+        assert!(matches!(
+            Dist::toward(v3(2.0, 0.0, 0.0), Vec3Fix::ZERO).shrunk(fx(3.0)),
+            Dist::Inside
+        ));
+        assert_eq!(
+            Dist::AtLeast(fx(2.0)).shrunk(Fix128::ONE).value(),
+            Fix128::ONE
+        );
+        assert!(!Dist::AtLeast(Fix128::ZERO).within(fx(10.0)));
+        assert!(Dist::Inside.within(Fix128::ZERO));
+        assert_eq!(Dist::Inside.value(), Fix128::NEG_ONE);
+        assert!(matches!(
+            Dist::toward(Vec3Fix::ZERO, Vec3Fix::ZERO),
+            Dist::Inside
+        ));
+    }
+}
