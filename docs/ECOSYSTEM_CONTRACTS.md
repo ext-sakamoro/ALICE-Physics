@@ -12,83 +12,121 @@ the listed items requires a semver-major bump on `alice-physics`.
 | Partner | Contract type | Primary integration point | Frozen at |
 |---------|---------------|---------------------------|-----------|
 | **[ALICE-TRT](https://github.com/ext-sakamoro/ALICE-TRT)** | Trait impl | `GpuSolverBridge` | `v0.12.0` (extended, current) |
-| **[ALICE-SDF](https://github.com/Project-ALICE/ALICE-SDF)** | Trait impl | `SdfField` | `v0.14` (current) |
-| **[ALICE-Bamboo](https://github.com/ext-sakamoro/ALICE-Bamboo)** | Concrete-type consumption | `beam_stress`, `filament_db`, `warp_risk`, `thermal_stress`, `layer_adhesion` modules | `v0.14` (current) |
-| **[ALICE-Kinematics](https://github.com/Project-ALICE/ALICE-Kinematics)** | Reserved (future) | 8-byte Intent-packet bridge (L1 Physical Intent) | Post-1.0 (deferred) |
+| **[ALICE-SDF](https://github.com/ext-sakamoro/ALICE-SDF)** | Trait impl | `SdfField` | `v0.14` (current) |
+| **ALICE-Bamboo** | Concrete-type consumption | `beam_stress`, `filament_db`, `warp_risk`, `thermal_stress`, `layer_adhesion` modules | `v0.14` (current) |
+| **[ALICE-Kinematics](https://github.com/ext-sakamoro/ALICE-Kinematics)** | Reserved (future) | 8-byte Intent-packet bridge (L1 Physical Intent) | Post-1.0 (deferred) |
 
 ## 1. ALICE-TRT contract — `GpuSolverBridge`
 
-**File**: `src/gpu_bridge.rs`
+**File**: `src/gpu_bridge.rs` (module `gpu_bridge`, not in the prelude)
 **Cargo feature required**: `gpu-solver-bridge` (opt-in, no runtime cost when off).
 
 ### Frozen trait signature
 
+The block below is the complete method list, compared with `src/` by
+`scripts/docs_lint.py` (a default body is written `{ ... }`).
+
 ```rust
 pub trait GpuSolverBridge {
-    fn send_bodies(&mut self, bodies: &[RigidBody]);
-    fn send_contacts(&mut self, contacts: &[ContactConstraint]);
-    fn send_distance_constraints(&mut self, joints: &[DistanceConstraint]);
-    fn dispatch_pgs_contact_solve(&mut self, ...);
-    fn dispatch_contact_solve_iteration(&mut self, ...);
-    fn recv_bodies(&mut self, bodies: &mut [RigidBody]);
+    fn send_island(&mut self, positions: &[[Fix128; 3]], velocities: &[[Fix128; 3]]);
+    fn dispatch_iterations(&mut self, iters: u32, dt: Fix128);
+    fn recv_island(&self, positions: &mut [[Fix128; 3]], velocities: &mut [[Fix128; 3]]);
+    fn assert_bit_exact_vs_cpu(&self, fixture: &DiffFixture) -> Result<(), GpuDivergence>;
 
-    // v0.12.0 extension methods (5 new methods added at physics v0.12.0):
-    fn send_joints(&mut self, joints: &[Joint]);
-    fn send_body_rotations(&mut self, rotations: &[QuatFix]);
-    fn dispatch_joint_solve_iteration(&mut self, ...);
-    // ...
+    // contact-solve pipeline (added at v0.9.0; the defaults panic)
+    fn send_contact_constraints(&mut self, _constraints: &[ContactConstraint]) { ... }
+    fn send_body_state(&mut self, _positions: &[[Fix128; 3]], _inv_masses: &[Fix128]) { ... }
+    fn dispatch_contact_solve_iteration(&mut self, _warm_start_factor: Fix128) { ... }
+    fn recv_contact_constraints(&self, _constraints: &mut [ContactConstraint]) { ... }
+    fn recv_body_positions(&self, _positions: &mut [[Fix128; 3]]) { ... }
+
+    // joint-solve pipeline (added at v0.12.0; the defaults panic)
+    fn send_joints(&mut self, _joints: &[Joint]) { ... }
+    fn send_body_rotations(&mut self, _rotations: &[[Fix128; 4]]) { ... }
+    fn dispatch_joint_solve_iteration(&mut self, _dt: Fix128) { ... }
 }
 ```
 
+The four methods without a default are required. Every other method has a
+default implementation that panics with "not implemented by this
+GpuSolverBridge backend", so a backend that implements only the integrate +
+distance stage still compiles and fails fast when a caller routes contact or
+joint solve through it.
+
 ### Frozen types
-- `RigidBody` (module `solver`, prelude)
+- `Fix128` (module `math`, prelude)
 - `ContactConstraint` (module `solver`, prelude)
-- `DistanceConstraint` (module `solver`, prelude)
-- `QuatFix` (module `math`, prelude)
 - `Joint` (module `joint`, prelude)
+- `DiffFixture`, `GpuDivergence` (module `gpu_bridge`)
+
+Body state crosses the boundary as plain arrays (`[Fix128; 3]` per position or
+velocity, `[Fix128; 4]` per rotation in `[x, y, z, w]` order), not as
+`RigidBody` or `QuatFix`.
 
 ### Migration notes
-- ALICE-TRT already implements this trait at `TrtSolverAdapter` in `physics_bridge.rs`.
-- The `v0.12.0` extension methods are additions that do not break `v0.11.x` callers when they omit the new impl methods (default impls or `!()` sentinels — check the actual signatures).
+- ALICE-TRT implements this trait for `TrtSolverAdapter` in `src/physics_bridge.rs`.
 
 ### Version pinning
 ```toml
-# ALICE-TRT Cargo.toml
+# ALICE-TRT Cargo.toml: a path dependency, enabled by its `physics-solver` feature
 [dependencies]
-alice-physics = { version = "2", features = ["gpu-solver-bridge"] }
+alice-physics = { path = "../ALICE-Physics", optional = true, default-features = false, features = ["std"] }
+
+[features]
+physics-solver = ["physics", "fix128-arithmetic", "alice-physics/gpu-solver-bridge"]
 ```
 
 ## 2. ALICE-SDF contract — `SdfField`
 
-**File**: `src/sdf_collider.rs`
+**File**: `src/sdf_collider.rs` (re-exported at the crate root and in the prelude)
 
 ### Frozen trait signature
 
+Compared with `src/` by `scripts/docs_lint.py`.
+
 ```rust
 pub trait SdfField: Send + Sync {
-    fn sample(&self, point: Vec3Fix) -> Fix128;
-    fn sample_batch(&self, points: &[Vec3Fix], out: &mut [Fix128]) {
-        // default impl provided
-    }
-    // ...
+    fn distance(&self, x: f32, y: f32, z: f32) -> f32;
+    fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32);
+    fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) { ... }
 }
 ```
 
+- `distance` is signed: positive outside, zero on the surface, negative inside.
+- `normal` is the outward unit gradient.
+- `distance_and_normal` defaults to `(self.distance(x, y, z), self.normal(x, y, z))`.
+  An override must return the same distance as `distance`: callers such as
+  `sdf_adaptive::AdaptiveSdfEvaluator` cache the distance it returns while
+  `collide_point_sdf` takes contact depth from `distance`.
+
 ### Frozen types
-- `Vec3Fix` (module `math`, prelude)
-- `Fix128` (module `math`, prelude)
+- `f32` coordinates and distances. SDF evaluation is floating point; the
+  `Fix128` ↔ `f32` conversion happens inside `SdfCollider`, not in the trait.
+
+Every `SdfField` also implements `SdfQuery` (blanket impl), the borrowed,
+non-`Send` query trait taken by `sdf_ccd::sphere_trace_sdf_field`.
 
 ### Migration notes
-- ALICE-SDF implements `SdfField for CompiledSdfField` in `physics_bridge.rs`.
-- The `Send + Sync` bound is preserved.
-- Batch sampling default impl is stable.
+- ALICE-SDF implements `SdfField for CompiledSdfField` in `src/physics_bridge.rs`
+  (feature `physics`) and does not override `distance_and_normal`.
+- The `Send + Sync` bound is preserved (a collider owns its field as `Box<dyn SdfField>`).
 
 ### Version pinning
 ```toml
-# ALICE-SDF Cargo.toml
+# ALICE-SDF Cargo.toml: from crates.io, behind its `physics` feature
 [dependencies]
-alice-physics = "2"
+alice-physics = { version = "1.1", optional = true }
+
+[features]
+physics = ["dep:alice-physics"]
 ```
+
+### Downstream test
+
+`.github/workflows/downstream.yml` runs `scripts/downstream_check.sh` on every
+change to `src/` or `Cargo.toml`: ALICE-SDF (with this checkout patched in for
+the crates.io dependency) and ALICE-LOL (path dependency) are built and their
+`physics`-feature tests run against the changed crate.
 
 ## 3. ALICE-Bamboo contract — concrete types (7 modules)
 
@@ -125,7 +163,7 @@ alice-physics = "2"
 
 ## 4. ALICE-Kinematics contract — reserved (post-1.0)
 
-**Status**: no current alice-physics dependency (`rg 'alice_physics::' ~/ALICE-Kinematics` returns 0 hits).
+**Status**: ALICE-Kinematics has no alice-physics dependency.
 
 **Planned integration** (per the L1 Physical Intent roadmap):
 - 8-byte Intent packet bridge: `IntentNode::Physical` → `PhysicsWorld` action.
@@ -140,7 +178,7 @@ The alice-physics 1.0 stable contract with ALICE-Kinematics is:
 
 ### What "frozen" means for alice-physics 1.x
 
-- **Trait signatures** (`GpuSolverBridge`, `SdfField`) — no method removal, no return-type changes, no argument-type changes, no bound tightening. Adding new methods with default impls is allowed (semver-minor).
+- **Trait signatures** (`GpuSolverBridge` and `SdfField`, exactly as listed in sections 1 and 2) — no method removal, no return-type changes, no argument-type changes, no bound tightening. Adding new methods with default impls is allowed (semver-minor).
 - **Struct fields** listed in the contract — no removal, no visibility reduction, no type changes. Adding new fields to non-`#[non_exhaustive]` structs is NOT allowed until 2.0. Adding new fields to `#[non_exhaustive]` structs is allowed (semver-minor).
 - **Enum variants** (`CrossSection`, `LoadCase`, `WarpRiskCategory`, etc.) — no removal, no reordering that changes discriminants. Adding new variants requires `#[non_exhaustive]` upgrade (currently NOT `#[non_exhaustive]` per Bamboo compatibility) — held for 2.0.
 - **Free functions** (`analyze_thermal_stress`, `compute_warp_risk`) — no signature changes.
@@ -163,6 +201,8 @@ The alice-physics 1.0 stable contract with ALICE-Kinematics is:
 
 ## CI enforcement
 
+- `scripts/docs_lint.py` compares each `pub trait` written in a `rust` block of this document with the trait in `src/` (bounds, method set, each signature, and which methods have a default body); a mismatch fails CI.
+- `.github/workflows/downstream.yml` builds ALICE-SDF and ALICE-LOL against each change and runs their `physics`-feature tests (see section 2).
 - `cargo semver-checks` — currently `continue-on-error: true`; will be promoted to hard-gate at the 1.0 release event (see `docs/ROADMAP.md` Item C).
 - `docs/PUBLIC_API_SNAPSHOT.txt` — enforced by `public-api-diff` CI job. Contract-listed items are within this snapshot; any accidental change surfaces as a snapshot diff.
 - `cargo public-api` output is regenerated on Mac aarch64 to match `macos-latest` CI runner (SIMD-item drift avoidance).
