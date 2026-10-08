@@ -762,8 +762,8 @@ axis = "dynamics"
 item = "general Newmark (beta, gamma configurable)"
 source = "Bathe, Finite Element Procedures ch.9"
 status = "partial"
-evidence = "src/dynamic_fem.rs beta = 1/4, gamma = 1/2 固定"
-oracle_candidate = "SDOF の周期伸びの閉形式 (beta, gamma 依存)"
+evidence = "src/dynamic_fem.rs beta = 1/4, gamma = 1/2 固定 / tests/analytic_dynamic_fem.rs::a_single_free_degree_of_freedom_tracks_the_closed_form_step_response は固定された trapezoidal rule (β=1/4,γ=1/2) の周期伸び閉形式 (振幅行列の固有値 (1−Ω²/4±iΩ)/(1+Ω²/4) から導く θ=2·atan(Ω/2)、cos(nθ) を Chebyshev 再帰で評価) を 6 周期・両 mass lumping で相対誤差 1e-6 まで突合済み (既存、台帳が未反映だった) configurable な beta/gamma 自体は未実装 (feature gap)、固定された 1 点については closed form oracle あり"
+oracle_candidate = ""
 limitation = "src/dynamic_fem.rs '# Why `β = 1/4, γ = 1/2` is fixed rather than configurable'"
 
 [[item]]

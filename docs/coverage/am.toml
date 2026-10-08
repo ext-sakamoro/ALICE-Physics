@@ -417,8 +417,8 @@ axis = "warp and residual stress"
 item = "in-plane residual force per width from cooling shrinkage (E α ΔT h)"
 source = "Wang et al. 2007; Timoshenko-Goodier (thermal stress)"
 status = "partial"
-evidence = "src/warp_risk.rs::analyze_warp_risk tests/analytic_warp_risk_wiring.rs::score_matches_the_closed_form_on_a_grid"
-oracle_candidate = "層高 h を入力にした閉形式"
+evidence = "src/warp_risk.rs::analyze_warp_risk tests/analytic_warp_risk_wiring.rs::score_matches_the_closed_form_on_a_grid (E*α*ΔT 部分を複数 material / env / footprint で絶対誤差 1e-6 まで突合済み) h は関数の引数ではなく 1mm 固定 (tests のみでは h 依存性を確認できない、feature gap)"
+oracle_candidate = ""
 limitation = "src/warp_risk.rs::analyze_warp_risk 'Engineering figure: F/mm ≈ E · α · ΔT · h (h taken as 1mm reference)'"
 
 [[item]]
