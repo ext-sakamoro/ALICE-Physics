@@ -24,6 +24,10 @@ were introduced during that release window.
 - `RigidBody::rotation` / `PhysicsWorld::get_body_mut` / `deserialize_state` / `restore_world` / `from_world_snapshot` / `DeterministicSimulation::load_snapshot` と `SdfCollider::rotation` の doc に、向きは単位四元数を前提とし、setter・`add_body`・step の冒頭で単位化されること、公開 field への直接代入や状態の復元で入った長さ 1 でない四元数は次の step までは長さの 2 乗倍で効くことを書いた
 - **Behavior change:** step の冒頭で全 SDF collider の `SdfCollider::update_cache` を呼び、逆回転 (単位化した `rotation` の共役) と `scale` の `f32` を field から作り直す `PhysicsWorld::sdf_colliders` の `rotation` / `scale` を直接書いて `update_cache` を呼ばなかった場合も次の step から反映され、接触法線と field の評価の向きが揃う (従来は `update_cache` を呼ぶまで古い向き・大きさのままだった) `restore_world` で入った逆回転も次の step で作り直す キャッシュが field と一致している collider は bit 単位で変わらない 体に付いた collider はこの後これまでどおり体の姿勢で置き直される
 
+### Changed
+
+- `step_parallel` / `try_step_parallel` / `step_with_bridge` / `substep_with_bridge` の rustdoc に、`config.solver_backend` を見ずに XPBD で進むこと (`Tgs` でも `Xpbd` と同じ bit) を明記した 挙動は変えていない TGS の並列版・bridge 版は未実装
+
 ### Fixed
 
 - `alice-det-math` 0.3 → 0.4: `det_math::atan64` / `det_math::atan2_64` (公開 re-export) が文書化した精度 (1 ulp) に戻る 0.3 は fdlibm の係数 1 つの写し誤りで `0.4375` の分岐の直下が最大 1898 ulp 外れていた ⇒ これらの値を固定している利用者は一部の入力で別の bit を受け取る 他の関数の bit は変わらない (`f32` の `atan` / `atan2` は別の係数で影響なし) engine 内で `atan64` / `atan2_64` を呼ぶのは試験だけで、決定論の golden は値を変えずに通る どの feature の組でも `alice-det-math` は 0.4 の 1 版に解決される

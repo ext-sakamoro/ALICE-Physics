@@ -410,7 +410,9 @@ impl PhysicsWorld {
     /// [`Self::try_step`] on the batched (parallel) path of
     /// [`Self::step_parallel`]. Participants are called one after the other,
     /// as in [`Self::try_step`]. This path runs the XPBD substep loop whatever
-    /// [`super::SolverBackend`] is configured, so the participants are handed
+    /// [`super::SolverBackend`] is configured (with [`super::SolverBackend::Tgs`]
+    /// it gives the same bits as with `Xpbd`; a batched TGS path does not exist
+    /// yet), so the participants are handed
     /// `h = dt / substeps` and step rules are checked against that width, also
     /// under [`super::SolverBackend::Tgs`].
     ///

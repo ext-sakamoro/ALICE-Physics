@@ -4183,6 +4183,13 @@ impl PhysicsWorld {
     /// dependent. Lockstep / rollback peers must therefore all use the same
     /// path (`fuzz/fuzz_targets/fuzz_step_parity.rs` checks both properties).
     ///
+    /// # Solver backend
+    ///
+    /// `config.solver_backend` is not consulted: this path always runs the
+    /// XPBD substep loop, so with [`SolverBackend::Tgs`] it gives the same
+    /// bits as with [`SolverBackend::Xpbd`]. A batched TGS path does not exist
+    /// yet; use [`Self::step`] for TGS.
+    ///
     /// # Participants
     ///
     /// `step_parallel` is [`Self::try_step_parallel`] with the result dropped.
@@ -5427,6 +5434,13 @@ impl PhysicsWorld {
     /// produces `self.bodies` and `self.contact_constraints` state
     /// byte-identical to what a CPU-only `step(dt)` call produces
     /// from the same initial state and configuration.
+    ///
+    /// # Solver backend
+    ///
+    /// `config.solver_backend` is not consulted: the bridge replaces the
+    /// contact solve of the XPBD substep, so with [`SolverBackend::Tgs`] this
+    /// gives the same bits as with [`SolverBackend::Xpbd`]. A bridge path for
+    /// TGS does not exist yet; use [`Self::step`] for TGS.
     #[cfg(feature = "gpu-solver-bridge")]
     pub fn step_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
@@ -5511,6 +5525,13 @@ impl PhysicsWorld {
     /// Called on its own, this runs no participant: the participants of
     /// [`crate::world_participant`] are called by the step loops
     /// ([`Self::step_with_bridge`], [`Self::try_step`]) around each substep.
+    ///
+    /// # Solver backend
+    ///
+    /// `config.solver_backend` is not consulted: the bridge replaces the
+    /// contact solve of the XPBD substep, so with [`SolverBackend::Tgs`] this
+    /// gives the same bits as with [`SolverBackend::Xpbd`]. A bridge path for
+    /// TGS does not exist yet; use [`Self::step`] for TGS.
     #[cfg(feature = "gpu-solver-bridge")]
     pub fn substep_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
