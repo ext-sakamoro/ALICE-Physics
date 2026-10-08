@@ -435,3 +435,42 @@ fn header_law_id_versus_the_restored_world() {
     );
     assert_ne!(other.law_id(&PHYSICS_SEMANTICS_ID), header);
 }
+
+/// The intended use: the target passes its own `law_id`, taken before the
+/// restore. A target whose participant has the same kind as the blob's but
+/// another step rule refuses the blob with `LawIdMismatch` and keeps its
+/// bytes, although the plain restore would accept it; a target with the same
+/// participant passes its own id and gets `Verified`.
+#[test]
+fn the_target_own_law_id_refuses_another_step_rule() {
+    let blob = rich_world(StepRule::FollowSubstep).snapshot_world();
+    let header = id(&blob, LAW_AT);
+
+    let mut other = PhysicsWorld::new(PhysicsConfig::default());
+    other
+        .add_participant(Box::new(Tag(StepRule::Subcycle)))
+        .expect("register");
+    let expected = other.law_id(&PHYSICS_SEMANTICS_ID);
+    assert_ne!(expected, header);
+    let before = other.snapshot_world();
+    assert_eq!(
+        other.restore_world_checked(&blob, Some(&expected)),
+        Err(WorldSnapshotError::LawIdMismatch {
+            stored: header,
+            expected
+        })
+    );
+    assert_eq!(other.snapshot_world(), before);
+    assert_eq!(other.law_id(&PHYSICS_SEMANTICS_ID), expected);
+
+    // control: the same participant, and the rest of the rule as the blob's
+    let mut same = rich_world(StepRule::FollowSubstep);
+    same.step(dt());
+    let expected = same.law_id(&PHYSICS_SEMANTICS_ID);
+    assert_eq!(expected, header);
+    assert_eq!(
+        same.restore_world_checked(&blob, Some(&expected)),
+        Ok(LawCheck::Verified)
+    );
+    assert_eq!(same.snapshot_world(), blob);
+}
