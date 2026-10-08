@@ -666,7 +666,10 @@ impl CoupledField {
 
     /// Reject an `f32` field that does not describe the same grid as `self`.
     #[cfg(feature = "std")]
-    fn require_same_grid_f32(&self, other: &ScalarField3D) -> Result<(), CoupledFieldError> {
+    pub(crate) fn require_same_grid_f32(
+        &self,
+        other: &ScalarField3D,
+    ) -> Result<(), CoupledFieldError> {
         if self.nx != other.nx || self.ny != other.ny || self.nz != other.nz {
             return Err(CoupledFieldError::ResolutionMismatch {
                 channel: (self.nx, self.ny, self.nz),
@@ -869,10 +872,58 @@ pub trait CoupledScalar {
 
     /// Replace this subsystem's field with the channel's contents.
     ///
+    /// Must not fail for a `src` that [`Self::check_adopt`] has just
+    /// accepted. [`reconcile_mean`] and [`reconcile_weighted`] ask every
+    /// participant first and adopt only when all of them accepted, so a
+    /// refusal belongs in `check_adopt`. Their "no participant has adopted
+    /// anything on `Err`" guarantee rests on this contract: an `adopt` that
+    /// fails after its check passed is returned as the error, and the
+    /// participants before it have already adopted.
+    ///
     /// # Errors
     ///
     /// A grid mismatch between the subsystem and `src`.
     fn adopt(&mut self, src: &CoupledField) -> Result<(), CoupledFieldError>;
+
+    /// Report, without changing anything, whether [`Self::adopt`] would
+    /// accept `src`.
+    ///
+    /// The first phase of the two-phase adopt in [`reconcile_mean`] and
+    /// [`reconcile_weighted`]: every participant is checked before any of
+    /// them adopts, which is what makes a refusal leave all of them
+    /// untouched.
+    ///
+    /// The provided implementation compares `src` with the grid of
+    /// [`Self::coupled_channel`], the failure [`Self::adopt`] documents. It
+    /// allocates that channel, so an implementor that can compare its grid
+    /// directly should override it, and one whose `adopt` can refuse for any
+    /// other reason must override it to report that reason here.
+    ///
+    /// # Errors
+    ///
+    /// [`CoupledFieldError::ResolutionMismatch`] or
+    /// [`CoupledFieldError::BoundsMismatch`] if `src` is not on this
+    /// subsystem's grid, or whatever [`Self::coupled_channel`] returns.
+    fn check_adopt(&self, src: &CoupledField) -> Result<(), CoupledFieldError> {
+        src.require_same_grid(&self.coupled_channel()?)
+    }
+}
+
+/// Two-phase adopt: every participant is checked before any of them adopts.
+///
+/// An `adopt` that fails after every check passed breaks the
+/// [`CoupledScalar::adopt`] contract; its error is returned as is.
+fn adopt_all(
+    participants: &mut [&mut dyn CoupledScalar],
+    channel: &CoupledField,
+) -> Result<(), CoupledFieldError> {
+    for p in participants.iter() {
+        p.check_adopt(channel)?;
+    }
+    for p in participants.iter_mut() {
+        p.adopt(channel)?;
+    }
+    Ok(())
 }
 
 /// Make every participant agree on the arithmetic mean of their fields.
@@ -895,8 +946,11 @@ pub trait CoupledScalar {
 ///
 /// # Errors
 ///
-/// [`CoupledFieldError::NoParticipants`] for an empty slice, or a grid
-/// mismatch between any participant and `channel`.
+/// [`CoupledFieldError::NoParticipants`] for an empty slice, a grid
+/// mismatch between any participant and `channel`, or a refusal from any
+/// participant's [`CoupledScalar::check_adopt`]. On `Err` no participant has
+/// adopted anything, provided every participant keeps the
+/// [`CoupledScalar::adopt`] contract.
 pub fn reconcile_mean(
     participants: &mut [&mut dyn CoupledScalar],
     channel: &mut CoupledField,
@@ -914,10 +968,7 @@ pub fn reconcile_mean(
     }
     channel.scale_div(Fix128::from_int(participants.len() as i64));
 
-    for p in participants.iter_mut() {
-        p.adopt(channel)?;
-    }
-    Ok(())
+    adopt_all(participants, channel)
 }
 
 /// Make every participant agree on the **weighted** mean of their fields.
@@ -943,7 +994,10 @@ pub fn reconcile_mean(
 /// [`CoupledFieldError::NoParticipants`] for an empty slice, for a `weights`
 /// slice of a different length, and when every weight is zero (then nobody
 /// takes part); otherwise a grid mismatch between any participant and
-/// `channel`. On `Err` no participant has adopted anything.
+/// `channel`, or a refusal from any participant's
+/// [`CoupledScalar::check_adopt`]. On `Err` no participant has adopted
+/// anything, provided every participant keeps the [`CoupledScalar::adopt`]
+/// contract (every participant is checked before any of them adopts).
 pub fn reconcile_weighted(
     participants: &mut [&mut dyn CoupledScalar],
     weights: &[u32],
@@ -976,10 +1030,7 @@ pub fn reconcile_weighted(
     }
     channel.scale_div(Fix128::from_int(total));
 
-    for p in participants.iter_mut() {
-        p.adopt(channel)?;
-    }
-    Ok(())
+    adopt_all(participants, channel)
 }
 
 // ============================================================================

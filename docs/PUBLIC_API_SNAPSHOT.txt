@@ -2632,6 +2632,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::coupled_field::T
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::coupled_field::TemperatureRise
 pub trait alice_physics::coupled_field::CoupledScalar
 pub fn alice_physics::coupled_field::CoupledScalar::adopt(&mut self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
+pub fn alice_physics::coupled_field::CoupledScalar::check_adopt(&self, &alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>
 pub fn alice_physics::coupled_field::CoupledScalar::coupled_channel(&self) -> core::result::Result<alice_physics::coupled_field::CoupledField, alice_physics::coupled_field::CoupledFieldError>
 pub fn alice_physics::coupled_field::CoupledScalar::coupled_name(&self) -> &'static str
 pub fn alice_physics::coupled_field::CoupledScalar::publish(&self, &mut alice_physics::coupled_field::CoupledField) -> core::result::Result<(), alice_physics::coupled_field::CoupledFieldError>

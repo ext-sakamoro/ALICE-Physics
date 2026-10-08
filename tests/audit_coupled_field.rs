@@ -538,6 +538,12 @@ impl CoupledScalar for Part {
         out.as_mut_slice().copy_from_slice(self.field.as_slice());
         Ok(())
     }
+    fn check_adopt(&self, _src: &CoupledField) -> Result<(), CoupledFieldError> {
+        if self.fail_adopt {
+            return Err(CoupledFieldError::BoundsMismatch);
+        }
+        Ok(())
+    }
     fn adopt(&mut self, src: &CoupledField) -> Result<(), CoupledFieldError> {
         if self.fail_adopt {
             return Err(CoupledFieldError::BoundsMismatch);
@@ -648,7 +654,6 @@ fn reconcile_weighted_closed_form_equal_weights_and_abstention() {
 
 /// reconcile_weighted doc: "On `Err` no participant has adopted anything."
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-017: reconcile_weighted (and reconcile_mean) adopt participant by participant; if participant k's adopt() fails, participants 0..k have already adopted, contradicting 'On Err no participant has adopted anything'"]
 fn reconcile_weighted_is_atomic_on_error() {
     let mut a = Part::new(&[1.0, 2.0]);
     let mut b = Part::new(&[3.0, 4.0]);
@@ -660,6 +665,108 @@ fn reconcile_weighted_is_atomic_on_error() {
         vals(&a),
         vec![1.0, 2.0],
         "participant 0 adopted before participant 1 failed"
+    );
+}
+
+/// A participant that keeps the provided `check_adopt`: its grid has the channel's
+/// resolution but other bounds, so `publish` (which copies values) succeeds and only
+/// `adopt` (which compares the grid) refuses. The default check must catch that refusal
+/// before participant 0 adopts.
+struct OtherBounds {
+    field: CoupledField,
+}
+impl CoupledScalar for OtherBounds {
+    fn coupled_name(&self) -> &'static str {
+        "temperature"
+    }
+    fn coupled_channel(&self) -> Result<CoupledField, CoupledFieldError> {
+        CoupledField::try_new(self.field.nx(), 1, 1, t3(0.0, 0.0, 0.0), t3(2.0, 1.0, 1.0))
+    }
+    fn publish(&self, out: &mut CoupledField) -> Result<(), CoupledFieldError> {
+        out.as_mut_slice().copy_from_slice(self.field.as_slice());
+        Ok(())
+    }
+    fn adopt(&mut self, src: &CoupledField) -> Result<(), CoupledFieldError> {
+        if !self.field.same_grid_as(src) {
+            return Err(CoupledFieldError::BoundsMismatch);
+        }
+        self.field.as_mut_slice().copy_from_slice(src.as_slice());
+        Ok(())
+    }
+}
+
+#[test]
+fn default_check_adopt_refuses_a_grid_mismatch_before_any_participant_adopts() {
+    let other = || {
+        let mut field =
+            CoupledField::try_new(2, 1, 1, t3(0.0, 0.0, 0.0), t3(2.0, 1.0, 1.0)).unwrap();
+        field.set(0, 0, 0, f(5.0));
+        field.set(1, 0, 0, f(6.0));
+        OtherBounds { field }
+    };
+    let mut a = Part::new(&[1.0, 2.0]);
+    let mut b = other();
+    let mut ch = chan(2);
+    assert_eq!(
+        reconcile_mean(&mut [&mut a, &mut b], &mut ch).unwrap_err(),
+        CoupledFieldError::BoundsMismatch
+    );
+    assert_eq!(
+        vals(&a),
+        vec![1.0, 2.0],
+        "reconcile_mean: participant 0 adopted"
+    );
+
+    let mut a = Part::new(&[1.0, 2.0]);
+    let mut b = other();
+    assert_eq!(
+        reconcile_weighted(&mut [&mut a, &mut b], &[1, 3], &mut ch).unwrap_err(),
+        CoupledFieldError::BoundsMismatch
+    );
+    assert_eq!(
+        vals(&a),
+        vec![1.0, 2.0],
+        "reconcile_weighted: participant 0 adopted"
+    );
+    let b_vals: Vec<f64> = b.field.as_slice().iter().map(|v| v.to_f64()).collect();
+    assert_eq!(b_vals, vec![5.0, 6.0]);
+}
+
+/// A participant that breaks the `adopt` contract (its check accepts, its adopt refuses)
+/// gets its error returned, not a panic. The guarantee does not cover it: participants
+/// before it have adopted.
+struct BrokenContract(Part);
+impl CoupledScalar for BrokenContract {
+    fn coupled_name(&self) -> &'static str {
+        "temperature"
+    }
+    fn coupled_channel(&self) -> Result<CoupledField, CoupledFieldError> {
+        self.0.coupled_channel()
+    }
+    fn publish(&self, out: &mut CoupledField) -> Result<(), CoupledFieldError> {
+        self.0.publish(out)
+    }
+    fn check_adopt(&self, _src: &CoupledField) -> Result<(), CoupledFieldError> {
+        Ok(())
+    }
+    fn adopt(&mut self, _src: &CoupledField) -> Result<(), CoupledFieldError> {
+        Err(CoupledFieldError::BoundsMismatch)
+    }
+}
+
+#[test]
+fn an_adopt_that_breaks_its_contract_is_returned_as_the_error() {
+    let mut a = Part::new(&[1.0, 2.0]);
+    let mut b = BrokenContract(Part::new(&[3.0, 4.0]));
+    let mut ch = chan(2);
+    assert_eq!(
+        reconcile_mean(&mut [&mut a, &mut b], &mut ch).unwrap_err(),
+        CoupledFieldError::BoundsMismatch
+    );
+    assert_eq!(
+        vals(&a),
+        vec![2.0, 3.0],
+        "the contract is what atomicity rests on"
     );
 }
 

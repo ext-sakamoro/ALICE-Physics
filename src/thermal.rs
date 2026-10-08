@@ -344,6 +344,10 @@ impl CoupledScalar for ThermalModifier {
     fn adopt(&mut self, src: &CoupledField) -> Result<(), CoupledFieldError> {
         src.write_to_f32(&mut self.temperature)
     }
+
+    fn check_adopt(&self, src: &CoupledField) -> Result<(), CoupledFieldError> {
+        src.require_same_grid_f32(&self.temperature)
+    }
 }
 
 // ============================================================================
