@@ -3301,17 +3301,20 @@ impl PhysicsWorld {
     }
 
     /// Bring every body's rotations to unit length before a step reads them
-    /// ([`RigidBody::make_rotations_unit`]), and the rotations of the SDF
-    /// colliders with them ([`SdfCollider::make_rotations_unit`]). `rotation`
-    /// is a public field, so a value assigned to it directly between steps
-    /// reaches the step as it was written; a rotation already of unit length
-    /// is left bit for bit.
+    /// ([`RigidBody::make_rotations_unit`]), and rebuild the cached values of
+    /// the SDF colliders from their fields ([`SdfCollider::update_cache`]:
+    /// unit rotation, its conjugate as the inverse, the scale as `f32`).
+    /// `rotation` is a public field, so a value assigned to it directly
+    /// between steps reaches the step as it was written; a rotation already of
+    /// unit length is left bit for bit, and a collider whose cache was already
+    /// current is left bit for bit. A collider attached to a body is placed
+    /// again from the body afterwards ([`Self::sync_sdf_colliders`]).
     fn make_body_rotations_unit(&mut self) {
         for body in &mut self.bodies {
             body.make_rotations_unit();
         }
         for collider in &mut self.sdf_colliders {
-            collider.make_rotations_unit();
+            collider.update_cache();
         }
     }
 

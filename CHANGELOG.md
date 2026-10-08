@@ -18,6 +18,7 @@ were introduced during that release window.
 ### Changed
 
 - `RigidBody::rotation` / `PhysicsWorld::get_body_mut` / `deserialize_state` / `restore_world` / `from_world_snapshot` / `DeterministicSimulation::load_snapshot` と `SdfCollider::rotation` の doc に、向きは単位四元数を前提とし、setter・`add_body`・step の冒頭で単位化されること、公開 field への直接代入や状態の復元で入った長さ 1 でない四元数は次の step までは長さの 2 乗倍で効くことを書いた
+- **Behavior change:** step の冒頭で全 SDF collider の `SdfCollider::update_cache` を呼び、逆回転 (単位化した `rotation` の共役) と `scale` の `f32` を field から作り直す `PhysicsWorld::sdf_colliders` の `rotation` / `scale` を直接書いて `update_cache` を呼ばなかった場合も次の step から反映され、接触法線と field の評価の向きが揃う (従来は `update_cache` を呼ぶまで古い向き・大きさのままだった) `restore_world` で入った逆回転も次の step で作り直す キャッシュが field と一致している collider は bit 単位で変わらない 体に付いた collider はこの後これまでどおり体の姿勢で置き直される
 
 ### Fixed
 
