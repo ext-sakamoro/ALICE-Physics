@@ -373,7 +373,17 @@ pub struct SdfCollider {
     pub field: Box<dyn SdfField>,
     /// World-space position of the SDF origin
     pub position: Vec3Fix,
-    /// World-space orientation of the SDF
+    /// World-space orientation of the SDF, a unit quaternion
+    ///
+    /// [`Self::new_static`], [`Self::set_pose`], [`Self::sync_to_body`],
+    /// [`Self::update_cache`], [`crate::solver::PhysicsWorld::add_sdf_collider`]
+    /// and the start of every world step store it at unit length (a quaternion
+    /// whose squared length is within `2^-32` of one is kept bit for bit). A
+    /// non-unit value written to this field directly is normalized by
+    /// [`Self::update_cache`] or by the next world step; until then the
+    /// contact normal is rotated by the value as written (the field itself is
+    /// evaluated through the cached inverse rotation, which only
+    /// [`Self::update_cache`] recomputes).
     pub rotation: QuatFix,
     /// Uniform scale factor
     pub scale: Fix128,
@@ -465,8 +475,13 @@ pub const SDF_STATIC: usize = usize::MAX;
 
 impl SdfCollider {
     /// Create a new SDF collider attached to the world (static).
+    ///
+    /// `rotation` is stored as a unit quaternion (normalized unless its
+    /// squared length is within `2^-32` of one): applying a quaternion `q`
+    /// scales what it rotates by `|q|^2`.
     #[must_use]
     pub fn new_static(field: Box<dyn SdfField>, position: Vec3Fix, rotation: QuatFix) -> Self {
+        let rotation = rotation.unit_rotation();
         Self {
             field,
             position,
@@ -517,17 +532,20 @@ impl SdfCollider {
     /// whose `rotation` or `scale` field was written directly keeps answering
     /// for the old orientation and scale until this is called.
     /// [`Self::set_pose`] and [`Self::sync_to_body`] call it themselves.
+    /// `rotation` is brought to unit length first (kept bit for bit when its
+    /// squared length is within `2^-32` of one).
     pub fn update_cache(&mut self) {
+        self.rotation = self.rotation.unit_rotation();
         self.inv_rotation = self.rotation.conjugate();
         let s = self.scale.to_f32();
         self.scale_f32 = s;
         self.inv_scale_f32 = if s.abs() < 1e-10 { 1.0 } else { 1.0 / s };
     }
 
-    /// Place the collider at `position` with orientation `rotation` (a unit
-    /// quaternion) and refresh the cached inverse rotation, so every query
-    /// that follows evaluates the field in the new placement. The scale is
-    /// kept.
+    /// Place the collider at `position` with orientation `rotation` and
+    /// refresh the cached inverse rotation, so every query that follows
+    /// evaluates the field in the new placement. The scale is kept. The
+    /// rotation is stored as a unit quaternion (see [`Self::update_cache`]).
     pub fn set_pose(&mut self, position: Vec3Fix, rotation: QuatFix) {
         self.position = position;
         self.rotation = rotation;
@@ -551,6 +569,16 @@ impl SdfCollider {
             }
             None => false,
         }
+    }
+
+    /// The stored `rotation` and the cached inverse rotation as unit
+    /// quaternions, each on its own (a value already of unit length within
+    /// `2^-32` in squared length is left bit for bit). The cached inverse is
+    /// not recomputed from `rotation`, so a direct write that has not gone
+    /// through [`Self::update_cache`] keeps its documented effect.
+    pub(crate) fn make_rotations_unit(&mut self) {
+        self.rotation = self.rotation.unit_rotation();
+        self.inv_rotation = self.inv_rotation.unit_rotation();
     }
 
     /// Transform world-space point to SDF local space (f32).

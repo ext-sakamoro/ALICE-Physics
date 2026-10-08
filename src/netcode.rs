@@ -482,7 +482,9 @@ impl DeterministicSimulation {
 
     /// Restore state from a snapshot (for rollback).
     ///
-    /// Returns `true` if the snapshot was found and loaded.
+    /// Returns `true` if the snapshot was found and loaded. Rotations are
+    /// restored as stored ([`PhysicsWorld::deserialize_state`]) and brought to
+    /// unit length by the next step.
     pub fn load_snapshot(&mut self, frame: u64) -> bool {
         if let Some(snap) = self.snapshots.iter().find(|s| s.frame == frame) {
             let state = snap.state.clone();
