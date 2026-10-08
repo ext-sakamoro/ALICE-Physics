@@ -39,9 +39,13 @@
 //! A row of [`RELATION_PINS`] pins a combination by its relation to a `PINS`
 //! row: its test passes the checks above for its own combination and asserts
 //! a digest constant (of the same file) that the test of the named `PINS` row
-//! also asserts, builds exactly one world, and nothing it reaches names the
-//! backend of the named row (so it cannot assert the hash of a second world
-//! built with that backend, by name or by default).
+//! also asserts, and it hands the stepped world to `assert_stepped_with(..)`
+//! with its own backend and that digest. The helper asserts the backend and
+//! the digest on the one world it is given, so the evidence that the
+//! combination ran is checked when the test runs, not read from names: a
+//! second world, or a world whose backend was changed before stepping, fails
+//! the test. As cheap static guards the test must also build exactly one
+//! world and must not name the backend of the named row.
 //! The four TGS rows on the paths that do not consult the
 //! backend are pinned this way; they are not `PINS` rows, so the entries
 //! folded into `PHYSICS_SEMANTICS_ID` do not change.
@@ -68,8 +72,11 @@
 //! * A `step_parallel` row on a scene where no two constraints share a body
 //!   pins the parity with `step`, not the batched ordering; the ordering has
 //!   its own row, `step_parallel shared-body order`.
-//! * The one-world rule of a [`RELATION_PINS`] row counts call sites, not
-//!   calls: a helper that builds a world and is called twice counts once.
+//! * For a [`RELATION_PINS`] row, the static guards (one world built, the
+//!   other backend not named) count call sites and names only; a loop or a
+//!   later change of `config.solver_backend` passes them. The runtime check
+//!   of `assert_stepped_with` is what catches those. Its body is checked only
+//!   for asserting `.config.solver_backend`.
 //! * Feature evidence is code presence: `contacts` needs two bodies added
 //!   with a collision radius, not a measured contact.
 
@@ -1046,6 +1053,47 @@ fn world_constructions(raw: &str, test: &str) -> usize {
         .sum()
 }
 
+/// Whether `test` calls `assert_stepped_with(..)` with the backend of `combo`
+/// and one of `digests`, and the file defines that helper so that it asserts
+/// the backend of the world it is given.
+fn stepped_with(
+    raw: &str,
+    test: &str,
+    combo: &str,
+    digests: &BTreeSet<String>,
+) -> Result<(), String> {
+    const HELPER: &str = "assert_stepped_with";
+    let code = blank_literals(raw);
+    let items = fn_items(&code);
+    let helper_ok = items
+        .get(HELPER)
+        .is_some_and(|f| f.body.contains(".config.solver_backend") && f.body.contains("assert"));
+    if !helper_ok {
+        return Err(format!(
+            "the file has no {HELPER} that asserts `.config.solver_backend`"
+        ));
+    }
+    let backend = combo.split_once(' ').map_or(combo, |(b, _)| b);
+    let body = items.get(test).map(|f| f.body.as_str()).unwrap_or("");
+    let called = body.match_indices(&format!("{HELPER}(")).any(|(i, m)| {
+        let b = body.as_bytes();
+        if i > 0 && is_ident(b[i - 1]) {
+            return false;
+        }
+        let open = i + m.len() - 1;
+        let args = &body[open..matching(body, open)];
+        mentions_ident(args, &format!("SolverBackend::{backend}"))
+            && digests.iter().any(|d| mentions_ident(args, d))
+    });
+    if called {
+        Ok(())
+    } else {
+        Err(format!(
+            "does not call {HELPER}(.., SolverBackend::{backend}, <digest of the named row>)"
+        ))
+    }
+}
+
 /// Checks one `RELATION_PINS` row against the `PINS` combinations already
 /// pinned (`pinned`).
 fn check_relation(
@@ -1109,6 +1157,11 @@ fn check_relation(
             t.asserted, same.asserted
         ));
     }
+    // Runtime evidence: the test hands the stepped world to
+    // `assert_stepped_with`, which asserts its backend and its digest on the
+    // same value, naming its own backend and the digest of the named row.
+    stepped_with(&read_test(file), test, combo, &same.asserted)
+        .map_err(|why| format!("{row} {why}"))?;
     Ok(())
 }
 
@@ -1237,8 +1290,10 @@ fn a_relation_row_must_assert_the_digest_of_the_row_it_names() {
     let file = "const GOLDEN_XPBD_STEP_PARALLEL: &str = \"7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39\";\n\
                 const GOLDEN_OTHER: &str = \"cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe\";\n\
                 fn scene(b: SolverBackend) -> PhysicsWorld { PhysicsWorld::new(b) }\n\
+                fn assert_stepped_with(s: &str, w: &PhysicsWorld, b: SolverBackend, e: &str) { assert_eq!(w.config.solver_backend, b); assert_eq!(hash(w), e); }\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn golden_path_xpbd_step_parallel() {\n    let mut w = scene(SolverBackend::Xpbd);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
-                #[cfg(feature = \"parallel\")]\n#[test]\nfn same_bits() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn same_bits() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_stepped_with(\"t\", &w, SolverBackend::Tgs, GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn unbound() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn other_digest() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_OTHER);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn two_worlds() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    let mut x = scene(SolverBackend::Xpbd);\n    x.step_parallel(dt);\n    assert_eq!(hash(&x), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn default_world() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    let mut x = scene(SolverBackend::default());\n    x.step_parallel(dt);\n    assert_eq!(hash(&x), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
@@ -1286,6 +1341,13 @@ fn a_relation_row_must_assert_the_digest_of_the_row_it_names() {
             "{second}: {got:?}"
         );
     }
+    let unbound = check_relation(&req, row("unbound"), &read_test, &pinned);
+    assert!(
+        unbound
+            .as_ref()
+            .is_err_and(|e| e.contains("does not call assert_stepped_with")),
+        "{unbound:?}"
+    );
     let unpinned = check_relation(&req, row("same_bits"), &read_test, &BTreeSet::new());
     assert!(
         unpinned

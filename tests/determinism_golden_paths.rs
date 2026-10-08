@@ -368,14 +368,28 @@ fn golden_path_xpbd_substep_with_bridge() {
 // that relation: a TGS world stepped through one of them gives the XPBD
 // digest of the same path.
 
+/// Asserts that the stepped world `w` is configured with `backend` and has
+/// the digest `expected`. Both are read from the one world passed in, so a
+/// second world (or one whose backend was changed before stepping) cannot
+/// stand in for it.
+#[cfg(any(feature = "parallel", feature = "gpu-solver-bridge"))]
+fn assert_stepped_with(scenario: &str, w: &PhysicsWorld, backend: SolverBackend, expected: &str) {
+    assert_eq!(
+        w.config.solver_backend, backend,
+        "{scenario}: the world was not stepped with {backend:?}"
+    );
+    assert_golden(scenario, &hash_world(w), expected);
+}
+
 #[cfg(feature = "parallel")]
 #[test]
 fn golden_path_tgs_step_parallel_gives_the_xpbd_bits() {
     let w = run_step_parallel(path_scene(SolverBackend::Tgs));
     check_path_scene(&w, "tgs step_parallel");
-    assert_golden(
+    assert_stepped_with(
         "tgs step_parallel",
-        &hash_world(&w),
+        &w,
+        SolverBackend::Tgs,
         GOLDEN_XPBD_STEP_PARALLEL,
     );
 }
@@ -385,9 +399,10 @@ fn golden_path_tgs_step_parallel_gives_the_xpbd_bits() {
 fn golden_path_tgs_try_step_parallel_gives_the_xpbd_bits() {
     let w = run_try_step_parallel(path_scene(SolverBackend::Tgs));
     check_path_scene(&w, "tgs try_step_parallel");
-    assert_golden(
+    assert_stepped_with(
         "tgs try_step_parallel",
-        &hash_world(&w),
+        &w,
+        SolverBackend::Tgs,
         GOLDEN_XPBD_STEP_PARALLEL,
     );
 }
@@ -397,9 +412,10 @@ fn golden_path_tgs_try_step_parallel_gives_the_xpbd_bits() {
 fn golden_path_tgs_step_with_bridge_gives_the_xpbd_bits() {
     let w = run_step_with_bridge(path_scene(SolverBackend::Tgs));
     assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
-    assert_golden(
+    assert_stepped_with(
         "tgs step_with_bridge",
-        &hash_world(&w),
+        &w,
+        SolverBackend::Tgs,
         GOLDEN_XPBD_STEP_WITH_BRIDGE,
     );
 }
@@ -409,9 +425,10 @@ fn golden_path_tgs_step_with_bridge_gives_the_xpbd_bits() {
 fn golden_path_tgs_substep_with_bridge_gives_the_xpbd_bits() {
     let w = run_substep_with_bridge(path_scene(SolverBackend::Tgs));
     assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
-    assert_golden(
+    assert_stepped_with(
         "tgs substep_with_bridge",
-        &hash_world(&w),
+        &w,
+        SolverBackend::Tgs,
         GOLDEN_XPBD_STEP_WITH_BRIDGE,
     );
 }
