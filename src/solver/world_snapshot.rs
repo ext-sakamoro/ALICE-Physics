@@ -11,6 +11,17 @@
 //! is bit-identical to the original's (branching search, rollback without a
 //! replay log, persistence).
 //!
+//! Since version 4 the header also carries two content hashes: the
+//! stepping-semantics identifier of the binary that wrote the blob
+//! ([`crate::PHYSICS_SEMANTICS_ID`]) and the world's rule identifier
+//! ([`PhysicsWorld::law_id`] of that semantics). A reader refuses a version 4
+//! blob written under other stepping semantics
+//! ([`WorldSnapshotError::SemanticsMismatch`]), and
+//! [`PhysicsWorld::restore_world_checked`] also compares the rule identifier
+//! with one the caller expects and reports what it could verify
+//! ([`LawCheck`]). Version 1 to 3 blobs carry neither hash; they are still
+//! read, and reported as [`LawCheck::Unpinned`].
+//!
 //! The field-by-field coverage, the format and the errors are documented on
 //! [`PhysicsWorld::snapshot_world`] and [`WorldSnapshotError`].
 
@@ -31,6 +42,7 @@ use crate::material::{
     CombineRule, MaterialTable, PairOverride, PhysicsMaterial, MATERIAL_ID_CAPACITY,
 };
 use crate::math::{Fix128, QuatFix, Vec3Fix};
+use crate::semantics::PHYSICS_SEMANTICS_ID;
 use crate::shape::Shape;
 use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
 use crate::static_collider::StaticCollider;
@@ -50,12 +62,14 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// | input | error |
 /// |---|---|
-/// | fewer than 24 bytes, or shorter than the declared payload | [`Self::Truncated`] |
+/// | fewer than 24 bytes, a version 4 blob of fewer than 88 bytes, or shorter than the declared payload | [`Self::Truncated`] |
 /// | wrong magic | [`Self::BadMagic`] |
-/// | other version | [`Self::UnsupportedVersion`] |
+/// | version 0 or above [`PhysicsWorld::WORLD_SNAPSHOT_VERSION`] | [`Self::UnsupportedVersion`] |
 /// | reserved bytes not 0 | [`Self::ReservedNotZero`] |
 /// | longer than the declared payload | [`Self::TrailingBytes`] |
 /// | checksum differs | [`Self::ChecksumMismatch`] |
+/// | version 4 header `semantics_id` differs from this binary's [`crate::PHYSICS_SEMANTICS_ID`] | [`Self::SemanticsMismatch`] |
+/// | version 4 header `law_id` differs from the one passed to [`PhysicsWorld::restore_world_checked`] | [`Self::LawIdMismatch`] |
 /// | unknown enum tag / non-boolean byte / unrepresentable value inside the payload | [`Self::InvalidValue`] |
 /// | material table with 0 or more than 65,536 materials, or a material whose id is not its index | [`Self::InvalidValue`] (`section: "material_table"`) |
 /// | a joint / constraint / contact / SDF collider / batch / proxy index past its target | [`Self::DanglingIndex`] |
@@ -74,7 +88,8 @@ pub enum WorldSnapshotError {
     Truncated,
     /// The first 4 bytes are not [`PhysicsWorld::WORLD_SNAPSHOT_MAGIC`].
     BadMagic,
-    /// The version is not [`PhysicsWorld::WORLD_SNAPSHOT_VERSION`].
+    /// The version is not one this build reads (1 to
+    /// [`PhysicsWorld::WORLD_SNAPSHOT_VERSION`]).
     UnsupportedVersion {
         /// Version stored in the blob.
         found: u16,
@@ -148,6 +163,55 @@ pub enum WorldSnapshotError {
     /// declared fields (ids, modes, layouts;
     /// [`crate::world_participant::FieldBoard::check_values`]).
     FieldState(crate::world_participant::StateError),
+    /// A version 4 blob was written under other stepping semantics: its
+    /// header `semantics_id` is not this binary's
+    /// [`crate::PHYSICS_SEMANTICS_ID`], so a restored world would not step
+    /// the way the writer's did. Checked after the checksum.
+    SemanticsMismatch {
+        /// `semantics_id` stored in the blob's header.
+        stored: [u8; 32],
+        /// [`crate::PHYSICS_SEMANTICS_ID`] of this binary.
+        expected: [u8; 32],
+    },
+    /// The version 4 blob's header `law_id` differs from the identifier
+    /// passed to [`PhysicsWorld::restore_world_checked`].
+    LawIdMismatch {
+        /// `law_id` stored in the blob's header.
+        stored: [u8; 32],
+        /// The identifier the caller expected.
+        expected: [u8; 32],
+    },
+}
+
+/// What [`PhysicsWorld::restore_world_checked`] could verify about the rule
+/// identifiers of a blob it accepted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum LawCheck {
+    /// Version 4: the header `semantics_id` equals this binary's
+    /// [`crate::PHYSICS_SEMANTICS_ID`], and the header `law_id` equals the
+    /// identifier the caller passed.
+    Verified,
+    /// Version 4: the header `semantics_id` equals this binary's
+    /// [`crate::PHYSICS_SEMANTICS_ID`]; the caller passed no identifier, so
+    /// the header `law_id` was not compared with anything.
+    SemanticsVerified,
+    /// Version 1 to 3: the blob carries no identifiers, so neither could be
+    /// verified. The blob is accepted; a caller that requires verification
+    /// can refuse it on this value.
+    Unpinned,
+}
+
+/// Lower-case hex of a 32-byte identifier, for error messages.
+struct Hex<'a>(&'a [u8; 32]);
+
+impl core::fmt::Display for Hex<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        for b in self.0 {
+            write!(f, "{b:02x}")?;
+        }
+        Ok(())
+    }
 }
 
 impl core::fmt::Display for WorldSnapshotError {
@@ -198,6 +262,18 @@ impl core::fmt::Display for WorldSnapshotError {
                 f,
                 "world snapshot fields differ from the target world's: {error:?}"
             ),
+            Self::SemanticsMismatch { stored, expected } => write!(
+                f,
+                "world snapshot was written under semantics {}, this binary steps under {}",
+                Hex(stored),
+                Hex(expected)
+            ),
+            Self::LawIdMismatch { stored, expected } => write!(
+                f,
+                "world snapshot law id {} differs from the expected {}",
+                Hex(stored),
+                Hex(expected)
+            ),
         }
     }
 }
@@ -207,7 +283,24 @@ impl std::error::Error for WorldSnapshotError {}
 
 type Res<T> = Result<T, WorldSnapshotError>;
 
+/// Header length of version 1 to 3 blobs, and the part every version shares.
 const HEADER_LEN: usize = 16;
+/// Header length of version 4 blobs: the shared 16 bytes, then
+/// `semantics_id` and `law_id` (32 bytes each).
+const HEADER_LEN_V4: usize = HEADER_LEN + 64;
+/// Offset of `semantics_id` in a version 4 header.
+const SEMANTICS_ID_AT: usize = HEADER_LEN;
+/// Offset of `law_id` in a version 4 header.
+const LAW_ID_AT: usize = HEADER_LEN + 32;
+
+/// Header length of a blob of `version` (already checked to be supported).
+fn header_len(version: u16) -> usize {
+    if version >= 4 {
+        HEADER_LEN_V4
+    } else {
+        HEADER_LEN
+    }
+}
 const CHECKSUM_LEN: usize = 8;
 
 // ── Writer ────────────────────────────────────────────────────────────────
@@ -1460,6 +1553,8 @@ struct Decoded {
     fields: Vec<u8>,
     /// The continuous collision setting (version 3; off for versions 1 and 2)
     ccd: super::WorldCcdConfig,
+    /// The header's `(semantics_id, law_id)` (version 4; `None` before)
+    ids: Option<([u8; 32], [u8; 32])>,
 }
 
 /// Encoded tag of a static SDF collider's body index ([`crate::sdf_collider::SDF_STATIC`]),
@@ -1473,11 +1568,14 @@ impl PhysicsWorld {
 
     /// Format version of a [`Self::snapshot_world`] blob. Version 1 blobs
     /// (no `participants`, `fault` or `fields` section) are still read, as a
-    /// world without participants, fault or fields, and version 1 and 2 blobs
+    /// world without participants, fault or fields, version 1 and 2 blobs
     /// (no `continuous_collision` section) as a world with continuous
-    /// collision off; a blob of any other version is rejected with
+    /// collision off, and version 1 to 3 blobs (no `semantics_id` / `law_id`
+    /// in the header) without the semantics check, reported as
+    /// [`LawCheck::Unpinned`] by [`Self::restore_world_checked`]; a blob of
+    /// any other version is rejected with
     /// [`WorldSnapshotError::UnsupportedVersion`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 3;
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 4;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1560,7 +1658,7 @@ impl PhysicsWorld {
     /// step. The structure is private to [`crate::sleeping`] and has no
     /// non-mutating accessor, so it cannot be copied from `&self`.
     ///
-    /// # Format (version 3)
+    /// # Format (version 4)
     ///
     /// | range | content |
     /// |---|---|
@@ -1568,8 +1666,23 @@ impl PhysicsWorld {
     /// | `[4..6)` | version u16 = [`PhysicsWorld::WORLD_SNAPSHOT_VERSION`] |
     /// | `[6..8)` | reserved u16 = 0 |
     /// | `[8..16)` | payload length u64 |
-    /// | `[16..16+len)` | payload (the sections in the table above, little endian) |
-    /// | last 8 | FNV-1a 64 of every preceding byte |
+    /// | `[16..48)` | `semantics_id`: [`crate::PHYSICS_SEMANTICS_ID`] of the writing binary |
+    /// | `[48..80)` | `law_id`: [`PhysicsWorld::law_id`] of this world under that `semantics_id` |
+    /// | `[80..80+len)` | payload (the sections in the table above, little endian) |
+    /// | last 8 | FNV-1a 64 of every preceding byte (header included) |
+    ///
+    /// Version 1 to 3 blobs have the 16-byte header only (no `semantics_id`
+    /// or `law_id`) and their payload starts at byte 16; the payload itself
+    /// is the same in version 3 and 4. Version 4 grows the header rather than
+    /// using the reserved bytes, which stay 0.
+    ///
+    /// The header `law_id` is the rule of the world when it was written. It
+    /// is not guaranteed to equal [`PhysicsWorld::law_id`] of a world after
+    /// restore: the restored world keeps what the blob does not hold (for
+    /// example its own participants), so whatever [`PhysicsWorld::law_id`]
+    /// reads from those comes from the target world. The reader does not
+    /// recompute it; [`Self::restore_world_checked`] compares the header
+    /// value with the one the caller expects.
     ///
     /// Version 2 appends three sections to the version 1 payload, after the
     /// TGS cache, in this order:
@@ -1596,6 +1709,8 @@ impl PhysicsWorld {
         w.u16(Self::WORLD_SNAPSHOT_VERSION);
         w.u16(0);
         w.u64(0); // payload length, patched below
+        w.0.extend_from_slice(&PHYSICS_SEMANTICS_ID);
+        w.0.extend_from_slice(&self.law_id(&PHYSICS_SEMANTICS_ID));
 
         w_config(&mut w, &self.config);
 
@@ -1789,7 +1904,7 @@ impl PhysicsWorld {
         w.fix(self.ccd.motion_threshold());
 
         let mut data = w.0;
-        let payload_len = (data.len() - HEADER_LEN) as u64;
+        let payload_len = (data.len() - HEADER_LEN_V4) as u64;
         data[8..16].copy_from_slice(&payload_len.to_le_bytes());
         let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
         fnv1a_fold(&mut hash, &data);
@@ -1835,14 +1950,61 @@ impl PhysicsWorld {
     ///
     /// See [`WorldSnapshotError`] for which input gives which error. On error `self` is unchanged.
     pub fn restore_world(&mut self, data: &[u8]) -> Result<(), WorldSnapshotError> {
+        self.restore_world_checked(data, None).map(|_| ())
+    }
+
+    /// [`Self::restore_world`], also comparing the blob's rule identifier
+    /// with `expected_law_id` and reporting what could be verified.
+    ///
+    /// | blob | `expected_law_id` | result |
+    /// |---|---|---|
+    /// | version 4, header `semantics_id` is not [`crate::PHYSICS_SEMANTICS_ID`] | any | [`WorldSnapshotError::SemanticsMismatch`] |
+    /// | version 4 | `Some(id)`, header `law_id == id` | [`LawCheck::Verified`] |
+    /// | version 4 | `Some(id)`, header `law_id != id` | [`WorldSnapshotError::LawIdMismatch`] |
+    /// | version 4 | `None` | [`LawCheck::SemanticsVerified`] |
+    /// | version 1 to 3 | any (not compared) | [`LawCheck::Unpinned`] |
+    ///
+    /// `expected_law_id` is compared with the header as written, not with
+    /// [`Self::law_id`] of the restored world (see the format notes on
+    /// [`Self::snapshot_world`]). To accept only verified blobs, refuse
+    /// anything but [`LawCheck::Verified`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use alice_physics::{
+    ///     Fix128, LawCheck, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix,
+    ///     PHYSICS_SEMANTICS_ID,
+    /// };
+    ///
+    /// let mut world = PhysicsWorld::new(PhysicsConfig::default());
+    /// world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE));
+    /// let law = world.law_id(&PHYSICS_SEMANTICS_ID);
+    /// let blob = world.snapshot_world();
+    ///
+    /// let mut other = PhysicsWorld::new(PhysicsConfig::default());
+    /// assert_eq!(other.restore_world_checked(&blob, Some(&law)), Ok(LawCheck::Verified));
+    /// assert_eq!(other.restore_world_checked(&blob, None), Ok(LawCheck::SemanticsVerified));
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// Every error of [`Self::restore_world`], and
+    /// [`WorldSnapshotError::LawIdMismatch`]. On error `self` is unchanged.
+    pub fn restore_world_checked(
+        &mut self,
+        data: &[u8],
+        expected_law_id: Option<&[u8; 32]>,
+    ) -> Result<LawCheck, WorldSnapshotError> {
         let d = decode(data)?;
+        let check = law_check(d.ids, expected_law_id)?;
         self.check_attachable(&d)?;
         self.check_participants(&d.participants)?;
         self.fields()
             .check_values(&d.fields)
             .map_err(WorldSnapshotError::FieldState)?;
         self.install(d);
-        Ok(())
+        Ok(check)
     }
 
     fn check_attachable(&self, d: &Decoded) -> Res<()> {
@@ -1953,6 +2115,21 @@ impl PhysicsWorld {
     }
 }
 
+/// What a decoded blob's header identifiers verify against `expected`.
+fn law_check(ids: Option<([u8; 32], [u8; 32])>, expected: Option<&[u8; 32]>) -> Res<LawCheck> {
+    let Some((_, stored)) = ids else {
+        return Ok(LawCheck::Unpinned);
+    };
+    match expected {
+        None => Ok(LawCheck::SemanticsVerified),
+        Some(e) if *e == stored => Ok(LawCheck::Verified),
+        Some(e) => Err(WorldSnapshotError::LawIdMismatch {
+            stored,
+            expected: *e,
+        }),
+    }
+}
+
 fn decode(data: &[u8]) -> Res<Decoded> {
     if data.len() < HEADER_LEN + CHECKSUM_LEN {
         return Err(WorldSnapshotError::Truncated);
@@ -1970,10 +2147,14 @@ fn decode(data: &[u8]) -> Res<Decoded> {
     if data[6] != 0 || data[7] != 0 {
         return Err(WorldSnapshotError::ReservedNotZero);
     }
+    let header = header_len(version);
+    if data.len() < header + CHECKSUM_LEN {
+        return Err(WorldSnapshotError::Truncated);
+    }
     let mut len_bytes = [0u8; 8];
     len_bytes.copy_from_slice(&data[8..16]);
     let payload_len = u64::from_le_bytes(len_bytes);
-    let available = (data.len() - HEADER_LEN - CHECKSUM_LEN) as u64;
+    let available = (data.len() - header - CHECKSUM_LEN) as u64;
     if payload_len > available {
         return Err(WorldSnapshotError::Truncated);
     }
@@ -1991,12 +2172,28 @@ fn decode(data: &[u8]) -> Res<Decoded> {
     if stored != computed {
         return Err(WorldSnapshotError::ChecksumMismatch { stored, computed });
     }
+    let ids = if version >= 4 {
+        let mut semantics_id = [0u8; 32];
+        semantics_id.copy_from_slice(&data[SEMANTICS_ID_AT..SEMANTICS_ID_AT + 32]);
+        let mut law_id = [0u8; 32];
+        law_id.copy_from_slice(&data[LAW_ID_AT..LAW_ID_AT + 32]);
+        if semantics_id != PHYSICS_SEMANTICS_ID {
+            return Err(WorldSnapshotError::SemanticsMismatch {
+                stored: semantics_id,
+                expected: PHYSICS_SEMANTICS_ID,
+            });
+        }
+        Some((semantics_id, law_id))
+    } else {
+        None
+    };
 
     let mut r = R {
         data: &data[..body_end],
-        pos: HEADER_LEN,
+        pos: header,
     };
-    let d = decode_payload(&mut r, version)?;
+    let mut d = decode_payload(&mut r, version)?;
+    d.ids = ids;
     if r.pos != body_end {
         return Err(WorldSnapshotError::TrailingBytes {
             extra: body_end - r.pos,
@@ -2252,6 +2449,7 @@ fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
         fault,
         fields,
         ccd,
+        ids: None,
     })
 }
 
@@ -3123,7 +3321,7 @@ mod tests {
     #[test]
     fn error_display_names_the_values() {
         use crate::world_participant::{ParticipantMismatch, StateError};
-        let cases: [(WorldSnapshotError, &[&str]); 13] = [
+        let cases: [(WorldSnapshotError, &[&str]); 15] = [
             (WorldSnapshotError::Truncated, &["truncated"]),
             (WorldSnapshotError::BadMagic, &["magic"]),
             (
@@ -3189,6 +3387,20 @@ mod tests {
                     found: 15,
                 }),
                 &["14", "15"],
+            ),
+            (
+                WorldSnapshotError::SemanticsMismatch {
+                    stored: [0xAB; 32],
+                    expected: [0x01; 32],
+                },
+                &["semantics", &"ab".repeat(32), &"01".repeat(32)],
+            ),
+            (
+                WorldSnapshotError::LawIdMismatch {
+                    stored: [0x0F; 32],
+                    expected: [0xF0; 32],
+                },
+                &["law id", &"0f".repeat(32), &"f0".repeat(32)],
             ),
         ];
         for (e, parts) in cases {
@@ -3332,5 +3544,141 @@ mod tests {
             super::r_fault(&mut reader(&w.0)),
             Err(WorldSnapshotError::InvalidValue { section: "fault" })
         );
+    }
+
+    // Version 4 header identifiers. oracle: the identifiers computed apart
+    // from the blob (`PHYSICS_SEMANTICS_ID`, `law_id` of the written world)
+    // and the documented offsets.
+
+    /// Recompute the trailing checksum so only the targeted check can fire.
+    fn reseal(mut b: Vec<u8>) -> Vec<u8> {
+        let n = b.len() - super::CHECKSUM_LEN;
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        super::super::fnv1a_fold(&mut h, &b[..n]);
+        b[n..].copy_from_slice(&h.to_le_bytes());
+        b
+    }
+
+    fn header_id(b: &[u8], at: usize) -> [u8; 32] {
+        b[at..at + 32].try_into().expect("32 bytes")
+    }
+
+    #[test]
+    fn version_4_header_layout() {
+        use crate::semantics::PHYSICS_SEMANTICS_ID;
+        assert_eq!(super::HEADER_LEN_V4, 80);
+        assert_eq!((super::SEMANTICS_ID_AT, super::LAW_ID_AT), (16, 48));
+        assert_eq!(super::header_len(1), 16);
+        assert_eq!(super::header_len(3), 16);
+        assert_eq!(super::header_len(4), 80);
+        let w = variant_world();
+        let b = w.snapshot_world();
+        assert_eq!(&b[4..6], &4u16.to_le_bytes());
+        assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
+        assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
+        let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
+        assert_eq!(len, b.len() - 80 - 8);
+    }
+
+    #[test]
+    fn law_check_covers_every_case() {
+        use super::{law_check, LawCheck};
+        let (s, l) = ([1u8; 32], [2u8; 32]);
+        let other = [3u8; 32];
+        assert_eq!(law_check(None, None), Ok(LawCheck::Unpinned));
+        assert_eq!(law_check(None, Some(&other)), Ok(LawCheck::Unpinned));
+        assert_eq!(
+            law_check(Some((s, l)), None),
+            Ok(LawCheck::SemanticsVerified)
+        );
+        assert_eq!(law_check(Some((s, l)), Some(&l)), Ok(LawCheck::Verified));
+        assert_eq!(
+            law_check(Some((s, l)), Some(&other)),
+            Err(WorldSnapshotError::LawIdMismatch {
+                stored: l,
+                expected: other
+            })
+        );
+    }
+
+    /// A foreign `semantics_id` (checksum recomputed) is refused after the
+    /// checksum, before anything is read; a changed `law_id` is refused only
+    /// against an expected one; the next version is unsupported; the target
+    /// is untouched in every case.
+    #[test]
+    fn version_4_identifier_checks() {
+        use super::LawCheck;
+        use crate::semantics::PHYSICS_SEMANTICS_ID;
+        let src = variant_world();
+        let blob = src.snapshot_world();
+        let law = src.law_id(&PHYSICS_SEMANTICS_ID);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        let before = digest(&mut t);
+
+        let mut x = blob.clone();
+        x[16 + 7] ^= 0x40;
+        let x = reseal(x);
+        let foreign = WorldSnapshotError::SemanticsMismatch {
+            stored: header_id(&x, 16),
+            expected: PHYSICS_SEMANTICS_ID,
+        };
+        assert_eq!(t.restore_world(&x), Err(foreign));
+        assert_eq!(t.restore_world_checked(&x, Some(&law)), Err(foreign));
+
+        let mut x = blob.clone();
+        x[48 + 3] ^= 0x02;
+        let x = reseal(x);
+        assert_eq!(
+            t.restore_world_checked(&x, Some(&law)),
+            Err(WorldSnapshotError::LawIdMismatch {
+                stored: header_id(&x, 48),
+                expected: law
+            })
+        );
+
+        let mut x = blob.clone();
+        x[4..6].copy_from_slice(&5u16.to_le_bytes());
+        assert_eq!(
+            t.restore_world(&reseal(x)),
+            Err(WorldSnapshotError::UnsupportedVersion {
+                found: 5,
+                supported: 4
+            })
+        );
+        // a version 4 header cut inside its identifiers
+        assert_eq!(
+            t.restore_world(&blob[..60]),
+            Err(WorldSnapshotError::Truncated)
+        );
+        assert_eq!(digest(&mut t), before);
+
+        assert_eq!(
+            t.restore_world_checked(&blob, None),
+            Ok(LawCheck::SemanticsVerified)
+        );
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(
+            t.restore_world_checked(&blob, Some(&law)),
+            Ok(LawCheck::Verified)
+        );
+    }
+
+    /// The version 3 form of a version 4 blob (same payload, 16-byte header)
+    /// restores to the same world and reports `Unpinned`.
+    #[test]
+    fn version_3_form_is_unpinned() {
+        use super::LawCheck;
+        let src = variant_world();
+        let blob = src.snapshot_world();
+        let mut v3 = blob[..16].to_vec();
+        v3[4..6].copy_from_slice(&3u16.to_le_bytes());
+        v3.extend_from_slice(&blob[80..]);
+        let v3 = reseal(v3);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(
+            t.restore_world_checked(&v3, Some(&[9; 32])),
+            Ok(LawCheck::Unpinned)
+        );
+        assert_eq!(t.snapshot_world(), blob);
     }
 }

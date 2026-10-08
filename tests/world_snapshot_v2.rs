@@ -238,12 +238,23 @@ fn header_errors() {
         WorldSnapshotError::BadMagic
     );
 
+    let next = PhysicsWorld::WORLD_SNAPSHOT_VERSION + 1;
     let mut x = b.clone();
-    x[4..6].copy_from_slice(&4u16.to_le_bytes());
+    x[4..6].copy_from_slice(&next.to_le_bytes());
     assert_eq!(
         restore_err(&reseal(x)),
         WorldSnapshotError::UnsupportedVersion {
-            found: 4,
+            found: next,
+            supported: PhysicsWorld::WORLD_SNAPSHOT_VERSION
+        }
+    );
+
+    let mut x = b.clone();
+    x[4..6].copy_from_slice(&0u16.to_le_bytes());
+    assert_eq!(
+        restore_err(&reseal(x)),
+        WorldSnapshotError::UnsupportedVersion {
+            found: 0,
             supported: PhysicsWorld::WORLD_SNAPSHOT_VERSION
         }
     );
@@ -295,8 +306,8 @@ fn joint_referring_past_the_bodies_is_rejected() {
 #[test]
 fn unknown_tag_is_an_invalid_value() {
     let b = blob();
-    // header 16 + substeps 8 + iterations 8 + gravity 48 + damping 16 + warm start 16
-    let backend = 16 + 8 + 8 + 48 + 16 + 16;
+    // header 80 (version 4) + substeps 8 + iterations 8 + gravity 48 + damping 16 + warm start 16
+    let backend = 80 + 8 + 8 + 48 + 16 + 16;
     assert_eq!(b[backend], 0, "Xpbd");
     let mut x = b.clone();
     x[backend] = 9;
@@ -311,7 +322,7 @@ fn unknown_tag_is_an_invalid_value() {
 #[test]
 fn huge_count_is_truncated_not_an_allocation() {
     let b = blob();
-    let bodies = 16 + 8 + 8 + 48 + 16 + 16 + 1;
+    let bodies = 80 + 8 + 8 + 48 + 16 + 16 + 1;
     let mut x = b.clone();
     x[bodies..bodies + 8].copy_from_slice(&u64::MAX.to_le_bytes());
     assert_eq!(restore_err(&reseal(x)), WorldSnapshotError::Truncated);

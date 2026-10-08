@@ -137,7 +137,7 @@ cargo run --release --example rollback_netcode
 | `PhysicsWorld::reset_world()` | 全フィールドを `PhysicsWorld::new` 直後の状態に戻す 同じ初期状態と同じ入力なら 2 回目もビット一致する |
 | `observe_body` / `observe_bodies` | 型付きの `BodyObservation` (位置、速度、回転、角速度、`sleeping`、`in_contact`) を返す ゴール判定が状態 blob を解析せずに読める |
 | `serialize_state` / `deserialize_state` | 分岐点の保存と復元 物体の数が同じでも中身 (質量、形状、フィルタ、マテリアル) が保存時と違えば復元を拒否する |
-| `snapshot_world` / `from_world_snapshot` / `restore_world` | 世界全体 (物体、ジョイント、拘束、コライダー、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、warm-start のキャッシュ、オーバーフローフラグ) を版番号とチェックサム付きの 1 つの blob に保存し、新しい世界または既存の世界に復元する 復元後のステップは元の世界とビット一致する 不正な blob は理由を示す `WorldSnapshotError` で拒否する |
+| `snapshot_world` / `from_world_snapshot` / `restore_world` | 世界全体 (物体、ジョイント、拘束、コライダー、力場、マテリアル、フィルタ、イベント、スリープ状態、broad-phase の木、warm-start のキャッシュ、オーバーフローフラグ) を版番号とチェックサム付きの 1 つの blob に保存し、新しい世界または既存の世界に復元する 復元後のステップは元の世界とビット一致する header に書き手のステップ意味論の識別子と世界の `law_id` を持ち、別の意味論で書かれた blob は拒否する `restore_world_checked` は `law_id` を期待値とも比べる 不正な blob は理由を示す `WorldSnapshotError` で拒否する |
 | `step_n(n, dt)` | `step(dt)` を `n` 回実行する Python の `step_n` と WASM の `stepN` も同じ関数を呼ぶ |
 | `overflow_detected()` | `Fix128` の演算が範囲を外れたことを報告し、発散した実行を正しい結果と取り違えないようにする フラグはロールバック後も残る |
 | `Vec3Fix::checked_*` / `checked_length_scaled` / `try_normalize_scaled` | 2 乗が `Fix128` の範囲を外れる長さ・内積 (`\|v\| ≥ 2^31.5 ≈ 3.04e9`) で wrap せず `None` を返す scaled 版はその範囲でも正しい長さと向きを返し、範囲内では `length` / `try_normalize` とビット一致する |
@@ -185,9 +185,9 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | 使われ方 | モジュール数 |
 |----------|-------------:|
 | step: `PhysicsWorld` の step で実行される | 24 |
-| world API: `PhysicsWorld` の他のメソッドから使われる | 14 |
+| world API: `PhysicsWorld` の他のメソッドから使われる | 15 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 127 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 126 |
 | unused: テスト以外に呼び出し元がない | 0 |
 
 ## 車両運動

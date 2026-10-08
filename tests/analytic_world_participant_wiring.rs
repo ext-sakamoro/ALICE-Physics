@@ -438,18 +438,19 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
     }
 }
 
-/// The version 3 blob of a world without participants is the version 1
+/// The version 4 blob of a world without participants is the version 1
 /// payload followed by an empty `participants` section, no fault, an empty
 /// `fields` section and the continuous collision section of the default
-/// setting (off, threshold 1); only the version, the length and the checksum
-/// differ.
+/// setting (off, threshold 1); besides the version, the length and the
+/// checksum, only the 64 identifier bytes of the version 4 header
+/// (`[16..80)`) are new, and the payload starts after them.
 #[test]
-fn a_version_3_blob_extends_the_version_1_payload() {
+fn a_version_4_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
     let v3 = w.snapshot_world();
     assert_eq!(&v3[0..4], &v1[0..4]);
-    assert_eq!(&v3[4..6], &3u16.to_le_bytes());
+    assert_eq!(&v3[4..6], &4u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let (l1, l3) = (len(v1), len(&v3));
     let mut tail = vec![0u8; 17];
@@ -457,8 +458,8 @@ fn a_version_3_blob_extends_the_version_1_payload() {
     tail.extend_from_slice(&1i64.to_le_bytes()); // threshold 1: hi
     tail.extend_from_slice(&0u64.to_le_bytes()); // lo
     assert_eq!(l3, l1 + tail.len());
-    assert_eq!(&v3[16..16 + l1], &v1[16..16 + l1]);
-    assert_eq!(&v3[16 + l1..16 + l3], &tail[..]);
+    assert_eq!(&v3[80..80 + l1], &v1[16..16 + l1]);
+    assert_eq!(&v3[80 + l1..80 + l3], &tail[..]);
 }
 
 /// The version 1 fixture still reads as the world it was taken from (a static
@@ -510,9 +511,10 @@ fn a_version_1_blob_restores_the_world_it_was_taken_from() {
     let v2 = restored.snapshot_world();
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let l1 = len(v1);
-    assert_eq!(&v2[16..16 + l1], &v1[16..16 + l1]);
+    // (the version 4 payload starts after the 80-byte header)
+    assert_eq!(&v2[80..80 + l1], &v1[16..16 + l1]);
 
-    // It steps on like the same state restored from the version 2 blob
+    // It steps on like the same state restored from the blob written today
     let mut again = PhysicsWorld::from_world_snapshot(&v2).expect("v2 blob");
     for _ in 0..60 {
         restored.step(Fix128::from_ratio(1, 60));

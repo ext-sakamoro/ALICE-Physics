@@ -24,8 +24,9 @@ use alice_physics::{
 
 /// Bytes of one encoded material: id u16 + 3 `Fix128` + 2 combine tags.
 const ENTRY: usize = 2 + 3 * 16 + 2;
-/// Header: magic 4 + version 2 + reserved 2 + payload length 8.
-const HEADER: usize = 16;
+/// Header (version 4): magic 4 + version 2 + reserved 2 + payload length 8
+/// + semantics id 32 + law id 32.
+const HEADER: usize = 80;
 const CHECKSUM: usize = 8;
 /// Every `MaterialId` (`u16`) in use.
 const CAPACITY: usize = 65_536;
@@ -140,6 +141,22 @@ fn splice(c: &Cut, entries: &[Vec<u8>]) -> Vec<u8> {
     out
 }
 
+/// `w` writes `blob` again byte for byte, except the header `law_id`
+/// (`[48..80)`) and the checksum: a spliced table changes the world's rule,
+/// so the rewritten header carries the restored world's own `law_id` while
+/// the splice kept the original one.
+fn assert_rewrites_payload(w: &PhysicsWorld, blob: &[u8]) {
+    let again = w.snapshot_world();
+    assert_eq!(again.len(), blob.len());
+    assert_eq!(&again[..48], &blob[..48]);
+    assert_eq!(
+        &again[48..80],
+        &w.law_id(&alice_physics::PHYSICS_SEMANTICS_ID)[..]
+    );
+    let end = blob.len() - CHECKSUM;
+    assert_eq!(&again[HEADER..end], &blob[HEADER..end]);
+}
+
 fn with_id(entry: &[u8], id: u16) -> Vec<u8> {
     let mut e = entry.to_vec();
     e[..2].copy_from_slice(&id.to_le_bytes());
@@ -179,7 +196,7 @@ fn a_valid_table_round_trips_exactly() {
     let (blob, _) = cut();
     let mut w = target();
     assert_eq!(w.restore_world(&blob), Ok(()));
-    assert_eq!(w.snapshot_world(), blob);
+    assert_rewrites_payload(&w, &blob);
     assert_eq!(w.material_table.len(), 2);
     assert_eq!(*w.material_table.get(1), {
         let mut m = marker();
@@ -195,7 +212,7 @@ fn a_table_holding_only_the_default_material_is_accepted() {
     let blob = splice(&c, &defaults(&c, 1));
     let w = PhysicsWorld::from_world_snapshot(&blob).expect("1 material is valid");
     assert_eq!(w.material_table.len(), 1);
-    assert_eq!(w.snapshot_world(), blob);
+    assert_rewrites_payload(&w, &blob);
 }
 
 #[test]
@@ -205,7 +222,7 @@ fn exactly_65536_materials_are_accepted_and_the_table_is_full() {
     let mut w = PhysicsWorld::from_world_snapshot(&blob).expect("65,536 materials are valid");
     assert_eq!(w.material_table.len(), CAPACITY);
     assert_eq!(w.material_table.get(u16::MAX).id, u16::MAX);
-    assert_eq!(w.snapshot_world(), blob);
+    assert_rewrites_payload(&w, &blob);
     assert_eq!(
         w.material_table.try_register(marker()),
         Err(PhysicsError::CapacityExceeded {

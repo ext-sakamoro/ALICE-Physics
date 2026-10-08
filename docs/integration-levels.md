@@ -13,9 +13,9 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | Level | Meaning | Modules |
 |-------|---------|--------:|
 | step | runs when `PhysicsWorld` steps | 24 |
-| world API | used through another `PhysicsWorld` method | 14 |
+| world API | used through another `PhysicsWorld` method | 15 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 127 |
+| standalone | a Rust API that only examples call | 126 |
 | unused | no caller outside tests | 0 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -53,9 +53,10 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `rng` | world API | 0 / 6 / 0 / 6 / 0 | — |
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
+| `semantics` | world API | 0 / 1 / 0 / 1 / 0 | — |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 51 of 194 items) | 51 / 113 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 51 of 196 items) | 51 / 115 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -165,7 +166,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_manifold` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `sdf_sph` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
-| `semantics` | standalone | 0 / 0 / 0 / 2 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 35 / 0 | — |
 | `sketch` | standalone (step 1 of 70 items) | 1 / 0 / 0 / 69 / 0 | C ABI, Python, WebAssembly |

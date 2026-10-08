@@ -143,6 +143,7 @@ const NOT_STEP: &[&str] = &[
     "reset_tgs_cache_stats",
     "reset_world",
     "restore_world",
+    "restore_world_checked",
     "set_body_collision_radius",
     "set_body_filter",
     "set_body_material",
