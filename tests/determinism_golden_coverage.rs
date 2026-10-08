@@ -39,7 +39,9 @@
 //! A row of [`RELATION_PINS`] pins a combination by its relation to a `PINS`
 //! row: its test passes the checks above for its own combination and asserts
 //! a digest constant (of the same file) that the test of the named `PINS` row
-//! also asserts. The four TGS rows on the paths that do not consult the
+//! also asserts, and nothing it reaches names the backend of the named row
+//! (so it cannot assert the hash of a second world built with that backend).
+//! The four TGS rows on the paths that do not consult the
 //! backend are pinned this way; they are not `PINS` rows, so the entries
 //! folded into `PHYSICS_SEMANTICS_ID` do not change.
 //!
@@ -1041,6 +1043,17 @@ fn check_relation(
         ));
     }
     exercises(req, &t, combo).map_err(|why| format!("{row} {why}"))?;
+    // The relation is "this backend gives the other backend's bits": a test
+    // that also builds a world with the other backend could assert that
+    // world's hash instead, so naming the other backend refuses the row.
+    let backend = |c: &str| c.split_once(' ').map(|(b, _)| b.to_string());
+    if let (Some(own), Some(other)) = (backend(combo), backend(same_as)) {
+        if own != other && mentions_ident(&t.text, &format!("SolverBackend::{other}")) {
+            return Err(format!(
+                "{row} names SolverBackend::{other}, the backend whose bits it claims to give"
+            ));
+        }
+    }
     let same = test_facts(&read_test(same_file), same_test, &req.entries);
     if file != same_file || t.asserted.is_disjoint(&same.asserted) {
         return Err(format!(
@@ -1179,6 +1192,7 @@ fn a_relation_row_must_assert_the_digest_of_the_row_it_names() {
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn golden_path_xpbd_step_parallel() {\n    let mut w = scene(SolverBackend::Xpbd);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn same_bits() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn other_digest() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_OTHER);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn two_worlds() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    let mut x = scene(SolverBackend::Xpbd);\n    x.step_parallel(dt);\n    assert_eq!(hash(&x), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn wrong_backend() {\n    let mut w = scene(SolverBackend::Xpbd);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n";
     let read_test = |_: &str| file.to_string();
     let row = |test| {
@@ -1207,6 +1221,13 @@ fn a_relation_row_must_assert_the_digest_of_the_row_it_names() {
             .as_ref()
             .is_err_and(|e| e.contains("SolverBackend::Tgs")),
         "{backend:?}"
+    );
+    let two_worlds = check_relation(&req, row("two_worlds"), &read_test, &pinned);
+    assert!(
+        two_worlds
+            .as_ref()
+            .is_err_and(|e| e.contains("names SolverBackend::Xpbd")),
+        "{two_worlds:?}"
     );
     let unpinned = check_relation(&req, row("same_bits"), &read_test, &BTreeSet::new());
     assert!(
