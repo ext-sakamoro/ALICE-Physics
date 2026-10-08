@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5649 |
+| 🟢 Not ignored (run by CI) | 5663 |
 | 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5749** |
+| **Total** | **5763** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -113,7 +113,7 @@ when the lock is not committed), re-check whether the defect remains.
 
 | Defect | Test | Crate | Reason says | Resolved | Status |
 |--------|------|-------|-------------|----------|--------|
-| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.2 | ⚠️ re-check |
+| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.1 | ⚠️ re-check |
 
 ## ⚠️ Known defects without an id (2)
 
@@ -155,7 +155,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5649)
+## 🟢 Not ignored (5663)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -329,6 +329,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_box_collider.rs` | 14 |
 | `audit_cylinder.rs` | 14 |
 | `audit_material.rs` | 14 |
+| `audit_nonunit_quaternion_sdf_collider.rs` | 14 |
 | `audit_pressure.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
 | `sleep_skip.rs` | 14 |
