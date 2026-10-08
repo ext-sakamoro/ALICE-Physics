@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 import tempfile
 import unittest
@@ -323,6 +324,133 @@ class Changelog(unittest.TestCase):
         cl = CHANGELOG.split("### Added")[0] + "## [1.4.0] - 2026-09-17\n"
         e = errors({"CHANGELOG.md": cl})
         self.assertTrue(any("compared nothing" in x and "categories" in x for x in e), e)
+
+
+SDF_SRC = """//! module doc: `pub trait SdfField` is mentioned here and must not count
+use crate::math::Fix128;
+
+/// Trait for evaluating a signed distance field.
+pub trait SdfField: Send + Sync {
+    /// signed distance
+    fn distance(&self, x: f32, y: f32, z: f32) -> f32;
+
+    fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32);
+
+    /// default: two calls
+    fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) {
+        (self.distance(x, y, z), self.normal(x, y, z))
+    }
+}
+
+pub trait Bridge {
+    fn send(&mut self, p: &[[Fix128; 3]]);
+    fn rot(&mut self, _r: &[[Fix128; 4]]) {
+        panic!("not implemented");
+    }
+    fn joints(&mut self, _j: &[crate::joint::Joint]) {}
+}
+"""
+
+CONTRACT_DOC = """# Contracts
+
+```rust
+pub trait SdfField: Send + Sync {
+    fn distance(&self, x: f32, y: f32, z: f32) -> f32;
+    fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32);
+    // a comment in the document is not a method
+    fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) { ... }
+}
+```
+
+```rust
+pub trait Bridge {
+    fn send(&mut self, p: &[[Fix128; 3]]);
+    fn rot(&mut self, _r: &[[Fix128; 4]]) { ... }
+    fn joints(&mut self, _j: &[Joint]) { ... }
+}
+```
+"""
+
+# the SdfField block as the document described it before it was aligned with src/
+OLD_SDF_DOC = """```rust
+pub trait SdfField: Send + Sync {
+    fn sample(&self, point: Vec3Fix) -> Fix128;
+    fn sample_batch(&self, points: &[Vec3Fix], out: &mut [Fix128]) {
+        // default impl provided
+    }
+    // ...
+}
+```
+"""
+
+
+def contract_errors(doc=CONTRACT_DOC, src=SDF_SRC):
+    d = tree({"src/sdf.rs": src, "docs/ECOSYSTEM_CONTRACTS.md": doc})
+    return dl.check_contracts(d)
+
+
+class Contracts(unittest.TestCase):
+    def test_this_repository_passes(self):
+        errs, counts = dl.check_contracts(ROOT)
+        self.assertEqual(errs, [])
+        self.assertGreaterEqual(counts["contract traits"], 2)
+        self.assertGreaterEqual(counts["contract methods"], 15)
+
+    def test_matching_document_passes(self):
+        errs, counts = contract_errors()
+        self.assertEqual(errs, [])
+        self.assertEqual(counts, {"contract traits": 2, "contract methods": 6})
+
+    def test_old_sample_signature_fails(self):
+        doc = CONTRACT_DOC.split("```rust\npub trait Bridge")[0].split("```rust")[0] + OLD_SDF_DOC
+        errs, _ = contract_errors(doc)
+        self.assertTrue(any("`SdfField::sample` is in the document but not in src/sdf.rs" in x for x in errs), errs)
+        self.assertTrue(any("`SdfField::sample_batch` is in the document" in x for x in errs), errs)
+        self.assertTrue(any("`SdfField::distance` is in src/sdf.rs but not in the document" in x for x in errs), errs)
+
+    def test_old_document_of_this_repository_fails(self):
+        # the old SdfField block against this repository's src/
+        d = tree({"docs/ECOSYSTEM_CONTRACTS.md": OLD_SDF_DOC})
+        shutil.copytree(os.path.join(ROOT, "src"), os.path.join(d, "src"))
+        errs, _ = dl.check_contracts(d)
+        self.assertTrue(any("`SdfField::sample`" in x for x in errs), errs)
+
+    def test_argument_type_change_fails(self):
+        errs, _ = contract_errors(CONTRACT_DOC.replace("fn distance(&self, x: f32, y: f32, z: f32) -> f32;",
+                                                       "fn distance(&self, x: f64, y: f64, z: f64) -> f64;"))
+        self.assertTrue(any("`SdfField::distance` is `fn distance(&self,x:f64" in x for x in errs), errs)
+
+    def test_type_inside_brackets_is_compared(self):
+        # `;` inside `[[Fix128; 4]]` must not end the signature early
+        errs, _ = contract_errors(CONTRACT_DOC.replace("[[Fix128; 4]]", "[[Fix128; 3]]"))
+        self.assertTrue(any("`Bridge::rot`" in x for x in errs), errs)
+
+    def test_default_body_mismatch_fails(self):
+        errs, _ = contract_errors(CONTRACT_DOC.replace(
+            "-> (f32, (f32, f32, f32)) { ... }", "-> (f32, (f32, f32, f32));"))
+        self.assertTrue(any("`SdfField::distance_and_normal` has no default body in the document but has a default body" in x
+                            for x in errs), errs)
+
+    def test_bound_change_fails(self):
+        errs, _ = contract_errors(src=SDF_SRC.replace("pub trait SdfField: Send + Sync", "pub trait SdfField: Send"))
+        self.assertTrue(any("trait header" in x for x in errs), errs)
+
+    def test_new_src_method_must_be_documented(self):
+        src = SDF_SRC.replace("    fn normal(", "    fn gradient(&self) -> f32;\n    fn normal(")
+        errs, _ = contract_errors(src=src)
+        self.assertTrue(any("`SdfField::gradient` is in src/sdf.rs but not in the document" in x for x in errs), errs)
+
+    def test_trait_missing_from_src_fails(self):
+        errs, _ = contract_errors(src=SDF_SRC.replace("pub trait Bridge", "pub trait Other"))
+        self.assertTrue(any("`pub trait Bridge` is defined 0 times" in x for x in errs), errs)
+
+    def test_document_without_traits_compares_nothing(self):
+        errs, _ = contract_errors("# Contracts\n\nno code\n")
+        self.assertTrue(any("check `contract traits` compared nothing" in x for x in errs), errs)
+
+    def test_missing_document_fails(self):
+        errs, _ = dl.check_contracts(tree({"src/sdf.rs": SDF_SRC}))
+        self.assertTrue(any("ECOSYSTEM_CONTRACTS.md: missing" in x for x in errs), errs)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,73 @@
+name: Downstream
+
+# Build and test the crates that depend on alice-physics (ALICE-SDF and
+# ALICE-LOL, their main branches) against this commit, so a change here that
+# breaks them fails here. scripts/downstream_check.sh does the work and runs the
+# same way locally; it lists which downstream tests run and why.
+#
+# One Linux job: the downstream suites are tested on every OS in their own
+# repositories, and this job only has to see the two crates compile and pass
+# against the changed alice-physics.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/downstream_check.sh'
+      - 'scripts/downstream_select_tag.py'
+      - '.github/workflows/downstream.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'scripts/downstream_check.sh'
+      - 'scripts/downstream_select_tag.py'
+      - '.github/workflows/downstream.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  downstream:
+    name: ALICE-SDF and ALICE-LOL against this commit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # fetched first so the cache below can key on the downstream manifests
+      # ALICE-SDF and ALICE-LOL at main; ALICE-LLM and ALICE-Zip at the newest
+      # release tag that fits ALICE-LOL both ways. ALICE-Kinematics at main: its
+      # only release tag requires alice-lol 0.3 and ALICE-LOL main is 0.4; drop
+      # this once a release tag accepts the current alice-lol
+      - name: Fetch downstream repositories
+        env:
+          DOWNSTREAM_ROOT: ${{ runner.temp }}/downstream
+          KINEMATICS_REF: main
+        run: bash scripts/downstream_check.sh --fetch-only
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: downstream
+          workspaces: |
+            ${{ runner.temp }}/downstream/ALICE-SDF -> ${{ runner.temp }}/downstream/target/sdf
+            ${{ runner.temp }}/downstream/ALICE-LOL -> ${{ runner.temp }}/downstream/target/lol
+
+      - name: Build and test downstream (fails on 0 tests or an unpatched alice-physics)
+        env:
+          DOWNSTREAM_ROOT: ${{ runner.temp }}/downstream
+          DOWNSTREAM_TARGET_DIR: ${{ runner.temp }}/downstream/target
+        run: bash scripts/downstream_check.sh --no-fetch
