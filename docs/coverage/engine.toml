@@ -182,7 +182,7 @@ axis = "state"
 item = "whole-world snapshot and restore (every field the step reads; later steps bit-identical; branching)"
 source = "Jolt StateRecorder (full state); Bullet btDefaultSerializer; PhysX binary serialization (PxCollection)"
 status = "partial"
-evidence = "src/solver/world_snapshot.rs::snapshot_world / src/solver/world_snapshot.rs::restore_world / tests/world_snapshot_v2.rs::restored_world_matches_the_original_after_every_later_step / tests/world_snapshot_v2.rs::branches_are_independent / tests/sleep_skip_snapshot.rs::restoring_into_a_world_with_parked_bodies_matches_a_fresh_world SDF field・hook・GPU bridge は code なので数だけ照合 連成の巻き戻しとしての使い方は連成の表 (COV-COUPLE-085)"
+evidence = "src/solver/world_snapshot.rs::snapshot_world / src/solver/world_snapshot.rs::restore_world / tests/world_snapshot_v2.rs::restored_world_matches_the_original_after_every_later_step / tests/world_snapshot_v2.rs::branches_are_independent / tests/sleep_skip_snapshot.rs::restoring_into_a_world_with_parked_bodies_matches_a_fresh_world SDF field・hook・GPU bridge は code なので数だけ照合 連成の巻き戻しとしての使い方は連成の表 (COV-COUPLE-085) 構築順に対する canonical 性は tests/world_snapshot_order_sensitivity.rs で測定 (同じ内容の world を body 追加順だけ変えた 2 経路で作り bytes を突合、snapshot_world / serialize_state とも今は不一致、以下 limitation 参照)"
 oracle_candidate = ""
 limitation = "src/solver/world_snapshot.rs::snapshot_world 'Known difference: the union-find of `islands` is rebuilt from the joints.'"
 
