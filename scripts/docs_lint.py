@@ -16,6 +16,12 @@ checked mechanically:
                 `[Unreleased]`, each Keep a Changelog category at most once
                 and no emoji status markers
 
+  * contracts   every `pub trait` written in a ```rust block of
+                docs/ECOSYSTEM_CONTRACTS.md matches the trait in src/: the
+                header (bounds), the set of methods, each method signature
+                (whitespace and `crate::` paths normalised) and which methods
+                have a default body (written `{ ... }` in the document)
+
 The development-process, tracker, instruction-source and device vocabulary is
 also checked in the text of every other tracked file (docs/ROADMAP.md, comments,
 workflows, generated ledgers); private names are checked in every file path and
@@ -263,6 +269,127 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
     return errors, counts
 
 
+CONTRACT_DOCS = ("docs/ECOSYSTEM_CONTRACTS.md",)
+RUST_BLOCK_RE = re.compile(r"^```rust[^\n]*\n(.*?)^```", re.M | re.S)
+TRAIT_NAME_RE = re.compile(r"\bpub\s+trait\s+(\w+)")
+
+
+def strip_rust_comments(text: str) -> str:
+    """Drop `/* */` and `//` comments (doc comments included), outside string literals."""
+    out, i, n = [], 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append(text[i:j + 1])
+            i = j + 1
+        elif text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+        elif text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            i = n if j < 0 else j + 2
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def normalise_sig(sig: str) -> str:
+    s = re.sub(r"\bcrate::(?:\w+::)*", "", sig)
+    s = re.sub(r"\s+", " ", s).strip()
+    s = re.sub(r"\s*([(),:;<>&\[\]=+!{}])\s*", r"\1", s)
+    s = s.replace(",)", ")").replace(",>", ">")
+    return s
+
+
+def trait_items(text: str, name: str) -> tuple[str, list[tuple[str, str, bool]]] | None:
+    """(header, [(fn name, signature, has default body)]) of `pub trait name` in
+    comment-free `text`, or None when the trait is not there."""
+    m = re.search(rf"\bpub\s+trait\s+{re.escape(name)}\b", text)
+    if not m:
+        return None
+    brace = text.find("{", m.end())
+    if brace < 0:
+        return None
+    header = normalise_sig(text[m.start():brace])
+    items, depth, i = [], 1, brace + 1
+    while i < len(text) and depth > 0:
+        c = text[i]
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+        elif depth == 1 and re.match(r"\bfn\s", text[i:]) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+            # the signature ends at `;` or `{` outside brackets (`[[Fix128; 3]]` holds a `;`)
+            j, nest = i, 0
+            while j < len(text) and (nest > 0 or text[j] not in ";{"):
+                nest += text[j] in "(["
+                nest -= text[j] in ")]"
+                j += 1
+            sig = normalise_sig(text[i:j])
+            fname = re.match(r"fn\s*(\w+)", sig)
+            items.append((fname.group(1) if fname else sig, sig, j < len(text) and text[j] == "{"))
+            i = j
+            continue
+        i += 1
+    return header, items
+
+
+def rust_sources(root: str) -> list[str]:
+    out = []
+    for d, dirs, files in os.walk(os.path.join(root, "src")):
+        dirs.sort()
+        out += [os.path.join(d, f) for f in sorted(files) if f.endswith(".rs")]
+    return out
+
+
+def check_contracts(root: str) -> tuple[list[str], dict[str, int]]:
+    """Compare the traits written in the contract documents with src/."""
+    errors: list[str] = []
+    counts = {"contract traits": 0, "contract methods": 0}
+    sources = {p: strip_rust_comments(read_text_file(p) or "") for p in rust_sources(root)}
+    for rel in CONTRACT_DOCS:
+        if not os.path.exists(os.path.join(root, rel)):
+            errors.append(f"{rel}: missing")
+            continue
+        for block in RUST_BLOCK_RE.findall(read(root, rel)):
+            block = strip_rust_comments(block)
+            for name in TRAIT_NAME_RE.findall(block):
+                doc = trait_items(block, name)
+                found = [(p, t) for p, t in ((p, trait_items(t, name)) for p, t in sources.items()) if t]
+                if len(found) != 1:
+                    where = ", ".join(os.path.relpath(p, root) for p, _ in found) or "nowhere"
+                    errors.append(f"{rel}: `pub trait {name}` is defined {len(found)} times in src/ ({where})")
+                    continue
+                counts["contract traits"] += 1
+                src_path, (src_header, src_items) = found[0]
+                src_rel = os.path.relpath(src_path, root).replace(os.sep, "/")
+                doc_header, doc_items = doc
+                if doc_header != src_header:
+                    errors.append(f"{rel}: trait header `{doc_header}` differs from {src_rel} `{src_header}`")
+                src_by = {n: (s, d) for n, s, d in src_items}
+                doc_by = {n: (s, d) for n, s, d in doc_items}
+                for n in sorted(set(src_by) - set(doc_by)):
+                    errors.append(f"{rel}: `{name}::{n}` is in {src_rel} but not in the document")
+                for n in sorted(set(doc_by) - set(src_by)):
+                    errors.append(f"{rel}: `{name}::{n}` is in the document but not in {src_rel}")
+                for n in sorted(set(src_by) & set(doc_by)):
+                    counts["contract methods"] += 1
+                    (ss, sd), (ds, dd) = src_by[n], doc_by[n]
+                    if ss != ds:
+                        errors.append(f"{rel}: `{name}::{n}` is `{ds}` in the document but `{ss}` in {src_rel}")
+                    if sd != dd:
+                        has = lambda d: "has a default body" if d else "has no default body"  # noqa: E731
+                        errors.append(f"{rel}: `{name}::{n}` {has(dd)} in the document but {has(sd)} in {src_rel}")
+    for name, c in counts.items():
+        if c == 0:
+            errors.append(f"check `{name}` compared nothing")
+    return errors, counts
+
+
 SKIP_TREE = {".git", "target", "node_modules"}
 
 
@@ -307,6 +434,9 @@ def main() -> int:
     if "--root" in sys.argv:
         root = sys.argv[sys.argv.index("--root") + 1]
     errors, counts = check(root)
+    c_errors, c_counts = check_contracts(root)
+    errors += c_errors
+    counts.update(c_counts)
     print("compared: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
