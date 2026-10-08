@@ -37,6 +37,8 @@
 use alice_physics::coupling_medium::{DragMedium, MEDIUM_OBS_MOMENTUM};
 use alice_physics::joint::{BallJoint, Joint};
 use alice_physics::math::{Fix128, Vec3Fix};
+#[cfg(feature = "parallel")]
+use alice_physics::solver::DistanceConstraint;
 use alice_physics::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
 use alice_physics::{SleepConfig, SolverBackend, WorldCcdConfig};
 use sha2::{Digest, Sha256};
@@ -633,4 +635,70 @@ fn golden_participant() {
     let total = momentum(&w) + medium_momentum;
     assert_eq!(total, before, "body + medium momentum is not conserved");
     assert_golden("participant", &hash_world(&w), GOLDEN_PARTICIPANT);
+}
+
+// ── Paths the backend × entry rows do not reach ─────────────────────────────
+
+/// The path scene with a chain of three distance constraints hanging from
+/// the pivot: each inner link is shared by two constraints, so the batched
+/// solve of `step_parallel` (graph colour order) and the solve of `step`
+/// (index order) visit them in a different order.
+#[cfg(feature = "parallel")]
+fn shared_body_scene() -> PhysicsWorld {
+    let mut w = path_scene(SolverBackend::Xpbd);
+    let link = |w: &mut PhysicsWorld, x: i64| {
+        w.add_body(RigidBody::new_dynamic(
+            Vec3Fix::from_int(x, 6, 0),
+            Fix128::ONE,
+        ))
+    };
+    let (l1, l2, l3) = (link(&mut w, 6), link(&mut w, 7), link(&mut w, 8));
+    let rod = |a: usize, b: usize| {
+        DistanceConstraint::new(a, b, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::ONE)
+    };
+    w.add_distance_constraint(rod(PIVOT, l1));
+    w.add_distance_constraint(rod(l1, l2));
+    w.add_distance_constraint(rod(l2, l3));
+    w
+}
+
+#[cfg(feature = "parallel")]
+const GOLDEN_STEP_PARALLEL_SHARED_BODY: &str =
+    "412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca";
+
+/// `step_parallel` where constraints share a body: pins the batched order,
+/// which is not the order of `step` (checked: `step` gives other bits here).
+#[cfg(feature = "parallel")]
+#[test]
+fn golden_step_parallel_shared_body_order() {
+    let w = run_step_parallel(shared_body_scene());
+    assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
+    assert_golden(
+        "step_parallel shared-body order",
+        &hash_world(&w),
+        GOLDEN_STEP_PARALLEL_SHARED_BODY,
+    );
+    let sequential = run_step(shared_body_scene());
+    assert_ne!(
+        hash_world(&sequential),
+        GOLDEN_STEP_PARALLEL_SHARED_BODY,
+        "step and step_parallel agree here, so the scene does not pin the batched order"
+    );
+}
+
+/// `step` with a bridge installed by `set_gpu_solver_bridge`: the contact
+/// solve goes through the bridge, the same route as `step_with_bridge`, and
+/// gives its digest.
+#[cfg(feature = "gpu-solver-bridge")]
+#[test]
+fn golden_installed_bridge() {
+    let mut w = path_scene(SolverBackend::Xpbd);
+    w.set_gpu_solver_bridge(Some(Box::new(IdentityBridge::default())));
+    let w = run_step(w);
+    assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
+    assert_golden(
+        "installed bridge",
+        &hash_world(&w),
+        GOLDEN_XPBD_STEP_WITH_BRIDGE,
+    );
 }

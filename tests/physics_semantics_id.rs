@@ -45,7 +45,7 @@ use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "574e7586cbdf75bb3ed2fb0f304ceea091ebf190a47617f8ec51012b4604fbdd";
+const PINNED_ID_HEX: &str = "3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -440,7 +440,9 @@ fn known_gaps() -> BTreeSet<String> {
     let start = src
         .find("const KNOWN_GAPS: &[(&str, &str)] = &[")
         .expect("KNOWN_GAPS table not found");
-    let end = start + src[start..].find("\n];").expect("KNOWN_GAPS not closed");
+    // `];` closes the table whether it is written empty on one line or over
+    // several lines
+    let end = start + src[start..].find("];").expect("KNOWN_GAPS not closed");
     let lits: Vec<String> = src[start..end]
         .split('"')
         .skip(1)
@@ -512,8 +514,10 @@ fn entry_names_are_the_pinned_combinations_and_det_math() {
     let names: BTreeSet<String> = table().keys().map(|s| (*s).to_string()).collect();
     assert_eq!(names, expected);
     assert_eq!(PHYSICS_SEMANTICS_PINS.len(), rows.len() + 1);
+    // KNOWN_GAPS is empty once every combination is pinned
+    // (`golden_coverage_has_no_gaps` keeps it so); a row added later must not
+    // be an entry
     let gaps = known_gaps();
-    assert!(!gaps.is_empty(), "no KNOWN_GAPS row read");
     let both: Vec<_> = gaps.intersection(&names).collect();
     assert!(both.is_empty(), "known gaps must not be entries: {both:?}");
 }

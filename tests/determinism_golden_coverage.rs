@@ -53,8 +53,9 @@
 //! Every required combination is either pinned (by [`PINS`] or
 //! [`RELATION_PINS`]) or listed in [`KNOWN_GAPS`]
 //! (with the reason), never both, and both tables name only required
-//! combinations. `golden_coverage_has_no_gaps` is ignored while
-//! [`KNOWN_GAPS`] is not empty and fails until every combination has a golden.
+//! combinations. `golden_coverage_has_no_gaps` fails as soon as
+//! [`KNOWN_GAPS`] holds a row, so a new combination needs a golden before it
+//! lands.
 //!
 //! # Limits
 //!
@@ -290,6 +291,18 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "step_digest_is_unchanged",
         "",
     ),
+    (
+        "step_parallel shared-body order",
+        "determinism_golden_paths.rs",
+        "golden_step_parallel_shared_body_order",
+        "parallel",
+    ),
+    (
+        "installed bridge",
+        "determinism_golden_paths.rs",
+        "golden_installed_bridge",
+        "gpu-solver-bridge",
+    ),
 ];
 
 /// Required combinations pinned by a relation to another pinned combination:
@@ -335,16 +348,7 @@ const RELATION_PINS: &[(&str, &str, &str, &str, &str)] = &[
 ];
 
 /// Required combinations that no golden pins yet: (combination, reason).
-const KNOWN_GAPS: &[(&str, &str)] = &[
-    (
-        "step_parallel shared-body order",
-        "no golden runs step_parallel on a scene where two constraints share a body",
-    ),
-    (
-        "installed bridge",
-        "no golden steps a world with a bridge installed by set_gpu_solver_bridge, which reroutes its contact solve",
-    ),
-];
+const KNOWN_GAPS: &[(&str, &str)] = &[];
 
 /// Scene features every stepping law must have a golden for, with the code
 /// that shows a test exercises them (checked on comment- and string-free
@@ -360,10 +364,12 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("physics2d", &["PhysicsWorld2D"], 1),
     // an installed bridge reroutes the contact solve of `step` / `substep`
     ("installed bridge", &["set_gpu_solver_bridge("], 1),
-    // two joints on one chain share their middle body
+    // two distance constraints share a body (joints are solved the same way
+    // on both paths; the batched order applies to distance constraints and
+    // contacts)
     (
         "step_parallel shared-body order",
-        &["add_joint(", ".step_parallel("],
+        &["add_distance_constraint(", ".step_parallel("],
         2,
     ),
 ];
@@ -1271,7 +1277,6 @@ fn every_stepping_combination_has_a_golden_pin_or_is_a_listed_gap() {
 }
 
 #[test]
-#[ignore = "src gap: stepping combinations without a determinism golden are listed in KNOWN_GAPS of this file"]
 fn golden_coverage_has_no_gaps() {
     assert!(
         KNOWN_GAPS.is_empty(),
