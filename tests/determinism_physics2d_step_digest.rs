@@ -6,11 +6,17 @@
 //! `ee4c5a70`). `step` now runs the same substep with an empty tether set, so the digest
 //! must not move. `step_with_tethers` with an empty `Tethers2D` must also match `step`
 //! state for state, every frame.
+//!
+//! `EXPECTED_SHA256` is the same final state as `EXPECTED`, hashed with SHA-256
+//! (`step_state_sha256_is_unchanged`). It is the 32-byte digest the content hash of
+//! the stepping semantics (`alice_physics::PHYSICS_SEMANTICS_ID`) folds for `physics2d`;
+//! `EXPECTED` stays the pin the golden coverage table names.
 
 use alice_physics::math::Fix128;
 use alice_physics::physics2d::{
     Joint2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
 };
+use sha2::{Digest, Sha256};
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -181,6 +187,55 @@ fn step_digest_is_unchanged() {
     let d = digest(&w);
     println!("digest {d:#018x}");
     assert_eq!(d, EXPECTED, "PhysicsWorld2D::step moved: {d:#018x}");
+}
+
+/// SHA-256 of the state `digest` reads, for the content hash of the stepping
+/// semantics (`alice_physics::PHYSICS_SEMANTICS_ID` takes 32-byte digests).
+///
+/// Byte layout: for every body in `w.bodies` order, the nine fields `digest`
+/// mixes, in the same order (position x, y, angle, velocity x, y, angular
+/// velocity, previous position x, y, previous angle), each `Fix128` written as
+/// `hi` then `lo`, both little-endian (16 bytes per field, the layout of
+/// `tests/determinism_golden_paths.rs`).
+fn state_sha256(w: &PhysicsWorld2D) -> String {
+    let mut bytes = Vec::with_capacity(w.bodies.len() * 9 * 16);
+    for b in &w.bodies {
+        for f in [
+            b.position.x,
+            b.position.y,
+            b.angle,
+            b.velocity.x,
+            b.velocity.y,
+            b.angular_velocity,
+            b.prev_position.x,
+            b.prev_position.y,
+            b.prev_angle,
+        ] {
+            bytes.extend_from_slice(&f.hi.to_le_bytes());
+            bytes.extend_from_slice(&f.lo.to_le_bytes());
+        }
+    }
+    let d: [u8; 32] = Sha256::digest(&bytes).into();
+    d.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// The state pinned by `EXPECTED`, hashed with SHA-256 (`state_sha256`).
+const EXPECTED_SHA256: &str = "9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536";
+
+/// The same scene and frames as `step_digest_is_unchanged`, pinned as a
+/// SHA-256 digest. The `u64` digest is checked first, so this constant is a
+/// second encoding of the state `EXPECTED` already pins, not a new recording.
+#[test]
+fn step_state_sha256_is_unchanged() {
+    let mut w = scene();
+    let dt = r(1, 60);
+    for _ in 0..FRAMES {
+        w.step(dt);
+    }
+    assert_eq!(digest(&w), EXPECTED, "PhysicsWorld2D::step moved");
+    let h = state_sha256(&w);
+    println!("state sha256 {h}");
+    assert_eq!(h, EXPECTED_SHA256, "PhysicsWorld2D::step moved: {h}");
 }
 
 #[test]
