@@ -77,7 +77,7 @@ alice-analytics = { version = "0.1", optional = true, default-features = false, 
 # evaluates the same transcendental law; re-exported as `alice_physics::det_math`.
 # no_std-capable (software sqrt without `std`), so the module is no longer
 # gated on `std`.
-alice-det-math = { version = "0.3", default-features = false }
+alice-det-math = { version = "0.4", default-features = false }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 alice-db = { version = "0.3.0-beta.1", optional = true, default-features = false, features = ["fs"] }
