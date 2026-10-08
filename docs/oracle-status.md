@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5703 |
+| 🟢 Not ignored (run by CI) | 5704 |
 | 🔴 Red by design | 73 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5802** |
+| **Total** | **5803** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -154,7 +154,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5703)
+## 🟢 Not ignored (5704)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -376,6 +376,7 @@ Per-file counts (the test names are in `tests/`):
 | `indep_molecular_pair_potential.rs` | 12 |
 | `indep_orbit_kepler.rs` | 12 |
 | `physics_semantics_id.rs` | 12 |
+| `world_snapshot_v4.rs` | 12 |
 | `analytic_animation_blend_wiring.rs` | 11 |
 | `analytic_contact_viz_wiring.rs` | 11 |
 | `analytic_coupled_field.rs` | 11 |
@@ -401,7 +402,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_vibration_wall.rs` | 11 |
 | `indep_linear_solver_krylov.rs` | 11 |
 | `indep_participant_order.rs` | 11 |
-| `world_snapshot_v4.rs` | 11 |
 | `analytic_atmosphere_isa1976.rs` | 10 |
 | `analytic_bridging_wiring.rs` | 10 |
 | `analytic_cfd_flow_bc.rs` | 10 |

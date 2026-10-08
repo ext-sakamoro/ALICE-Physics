@@ -1981,6 +1981,14 @@ impl PhysicsWorld {
     /// step rule is refused this way, while a plain [`Self::restore_world`]
     /// accepts it.
     ///
+    /// [`LawCheck::Verified`] then means that the target was already built
+    /// with the same rules as the blob before the restore. The restore
+    /// overwrites the configuration, but the target's own `law_id` is taken
+    /// before that and covers the whole configuration, so a target that
+    /// differs only in configuration (gravity, materials, force fields, and
+    /// so on) gets [`WorldSnapshotError::LawIdMismatch`]: the check is
+    /// strict and never accepts a blob written under other rules.
+    ///
     /// # Examples
     ///
     /// ```

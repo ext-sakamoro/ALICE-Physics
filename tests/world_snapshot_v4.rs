@@ -474,3 +474,45 @@ fn the_target_own_law_id_refuses_another_step_rule() {
     );
     assert_eq!(same.snapshot_world(), blob);
 }
+
+/// `Verified` with the target's own `law_id` means the target already ran the
+/// blob's rule before the restore. The restore overwrites the configuration,
+/// but the identifier is taken before that: a default target refuses a blob
+/// written with other gravity and another material table, and keeps its
+/// bytes and its `law_id`. The plain restore, which compares no identifier,
+/// accepts the same blob into a fresh default world.
+#[test]
+fn a_target_differing_only_in_configuration_is_refused() {
+    let mut src = PhysicsWorld::new(PhysicsConfig {
+        gravity: Vec3Fix::from_int(0, -3, 1),
+        ..PhysicsConfig::default()
+    });
+    let metal = src.material_table.register_metal();
+    let a = src.add_body(RigidBody::new_dynamic(
+        Vec3Fix::from_int(0, 2, 0),
+        Fix128::ONE,
+    ));
+    src.set_body_material(a, metal);
+    src.step_n(2, dt());
+    let blob = src.snapshot_world();
+    let header = id(&blob, LAW_AT);
+
+    let mut target = PhysicsWorld::new(PhysicsConfig::default());
+    let expected = target.law_id(&PHYSICS_SEMANTICS_ID);
+    assert_ne!(expected, header);
+    let before = target.snapshot_world();
+    assert_eq!(
+        target.restore_world_checked(&blob, Some(&expected)),
+        Err(WorldSnapshotError::LawIdMismatch {
+            stored: header,
+            expected
+        })
+    );
+    assert_eq!(target.snapshot_world(), before);
+    assert_eq!(target.law_id(&PHYSICS_SEMANTICS_ID), expected);
+
+    let mut fresh = PhysicsWorld::new(PhysicsConfig::default());
+    assert_eq!(fresh.restore_world(&blob), Ok(()));
+    assert_eq!(fresh.snapshot_world(), blob);
+    assert_eq!(fresh.law_id(&PHYSICS_SEMANTICS_ID), header);
+}
