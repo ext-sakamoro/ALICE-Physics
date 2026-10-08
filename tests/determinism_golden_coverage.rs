@@ -39,8 +39,9 @@
 //! A row of [`RELATION_PINS`] pins a combination by its relation to a `PINS`
 //! row: its test passes the checks above for its own combination and asserts
 //! a digest constant (of the same file) that the test of the named `PINS` row
-//! also asserts, and nothing it reaches names the backend of the named row
-//! (so it cannot assert the hash of a second world built with that backend).
+//! also asserts, builds exactly one world, and nothing it reaches names the
+//! backend of the named row (so it cannot assert the hash of a second world
+//! built with that backend, by name or by default).
 //! The four TGS rows on the paths that do not consult the
 //! backend are pinned this way; they are not `PINS` rows, so the entries
 //! folded into `PHYSICS_SEMANTICS_ID` do not change.
@@ -67,6 +68,8 @@
 //! * A `step_parallel` row on a scene where no two constraints share a body
 //!   pins the parity with `step`, not the batched ordering; the ordering has
 //!   its own row, `step_parallel shared-body order`.
+//! * The one-world rule of a [`RELATION_PINS`] row counts call sites, not
+//!   calls: a helper that builds a world and is called twice counts once.
 //! * Feature evidence is code presence: `contacts` needs two bodies added
 //!   with a collision radius, not a measured contact.
 
@@ -1006,6 +1009,43 @@ fn exercises(req: &Required, t: &TestFacts, combo: &str) -> Result<(), String> {
     }
 }
 
+/// How many worlds `test` builds: calls of a same-file function that returns
+/// a `PhysicsWorld` without taking one (a constructor such as `path_scene`),
+/// plus `PhysicsWorld::new(` outside such constructors, counted over every
+/// function the test reaches. A constructor's own body is one construction.
+fn world_constructions(raw: &str, test: &str) -> usize {
+    let code = blank_literals(raw);
+    let items = fn_items(&code);
+    let takes_world = |f: &FnItem| {
+        let sig = &f.signature;
+        sig.find('(')
+            .map(|open| &sig[open..matching(sig, open)])
+            .is_some_and(|params| params.contains("PhysicsWorld"))
+    };
+    let constructors: BTreeSet<&String> = items
+        .iter()
+        .filter(|(_, f)| return_type(&f.signature) == "PhysicsWorld" && !takes_world(f))
+        .map(|(name, _)| name)
+        .collect();
+    let calls = |body: &str, callee: &str| {
+        let b = body.as_bytes();
+        body.match_indices(callee)
+            .filter(|&(i, _)| {
+                (i == 0 || !is_ident(b[i - 1])) && body[i + callee.len()..].starts_with('(')
+            })
+            .count()
+    };
+    reachable_fns(&items, test)
+        .iter()
+        .filter(|name| !constructors.contains(name))
+        .map(|name| {
+            let body = &items[name].body;
+            body.matches("PhysicsWorld::new(").count()
+                + constructors.iter().map(|c| calls(body, c)).sum::<usize>()
+        })
+        .sum()
+}
+
 /// Checks one `RELATION_PINS` row against the `PINS` combinations already
 /// pinned (`pinned`).
 fn check_relation(
@@ -1053,6 +1093,14 @@ fn check_relation(
                 "{row} names SolverBackend::{other}, the backend whose bits it claims to give"
             ));
         }
+    }
+    // A second world (built with the other backend, by name or by default)
+    // could supply the asserted hash instead of the stepped one.
+    let worlds = world_constructions(&read_test(file), test);
+    if worlds != 1 {
+        return Err(format!(
+            "{row} builds {worlds} worlds; a relation test steps exactly one"
+        ));
     }
     let same = test_facts(&read_test(same_file), same_test, &req.entries);
     if file != same_file || t.asserted.is_disjoint(&same.asserted) {
@@ -1193,6 +1241,8 @@ fn a_relation_row_must_assert_the_digest_of_the_row_it_names() {
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn same_bits() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn other_digest() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_OTHER);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn two_worlds() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    let mut x = scene(SolverBackend::Xpbd);\n    x.step_parallel(dt);\n    assert_eq!(hash(&x), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn default_world() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    let mut x = scene(SolverBackend::default());\n    x.step_parallel(dt);\n    assert_eq!(hash(&x), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn new_world() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    let mut x = PhysicsWorld::new(Default::default());\n    x.step_parallel(dt);\n    assert_eq!(hash(&x), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
                 #[cfg(feature = \"parallel\")]\n#[test]\nfn wrong_backend() {\n    let mut w = scene(SolverBackend::Xpbd);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n";
     let read_test = |_: &str| file.to_string();
     let row = |test| {
@@ -1229,6 +1279,13 @@ fn a_relation_row_must_assert_the_digest_of_the_row_it_names() {
             .is_err_and(|e| e.contains("names SolverBackend::Xpbd")),
         "{two_worlds:?}"
     );
+    for second in ["default_world", "new_world"] {
+        let got = check_relation(&req, row(second), &read_test, &pinned);
+        assert!(
+            got.as_ref().is_err_and(|e| e.contains("builds 2 worlds")),
+            "{second}: {got:?}"
+        );
+    }
     let unpinned = check_relation(&req, row("same_bits"), &read_test, &BTreeSet::new());
     assert!(
         unpinned
