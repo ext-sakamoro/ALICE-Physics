@@ -734,17 +734,24 @@ fn the_decomposed_multigrid_refuses_what_multigrid_refuses_and_zero_ranks() {
 // information is unavailable to a caller willing to measure it.
 // ---------------------------------------------------------------------------
 
-/// A single red-black sweep on an `8³` grid leaves the seeded unit
-/// divergence reduced by at most half (measured: it is not even
-/// monotonically smaller — a Gauss-Seidel sweep corrects each cell from its
-/// neighbours' *not-yet-updated* pressure, so the very first sweep can
-/// overshoot and leave the divergence larger than the seed before later
-/// sweeps bring it down). One sweep propagates information one cell per
-/// colour pass, so on a grid 8 cells wide it cannot have reached a global
-/// balance yet. This is the same solver `solvers()` runs to convergence at
-/// `sweeps: 400`; here it is deliberately starved.
+/// A single red-black sweep on an `8³` grid does not converge the seeded
+/// unit divergence — measured, it actually *grows* to about `1.98`
+/// (a Gauss-Seidel sweep corrects each cell from its neighbours'
+/// *not-yet-updated* pressure, so the very first sweep overshoots before
+/// later sweeps bring it down; one sweep propagates information one cell
+/// per colour pass, so on a grid 8 cells wide it cannot have reached a
+/// global balance yet). This is the same solver `solvers()` runs to
+/// convergence at `sweeps: 400`; here it is deliberately starved.
+///
+/// The bound below is pinned to the measured value (not a loose
+/// `after > 0.5 * before`, which an implementation that did nothing at all
+/// would also satisfy): `sweeps: 1, 2, 5, 10, 50, 400` measure
+/// `1.980, 1.978, 1.776, 1.093, 7.8e-3, 2.8e-15`, a clean monotonic
+/// approach to zero from above `1` at `sweeps = 1`, so a loose band around
+/// `1.98` actually distinguishes "one sweep ran" from "nothing ran" and
+/// from "many sweeps ran".
 #[test]
-fn a_single_sweep_leaves_the_seed_barely_reduced_and_this_is_externally_measurable() {
+fn a_single_sweep_does_not_converge_and_this_overshoot_is_externally_measurable() {
     let mut s = quiet_solver(N, N, N);
     seed_divergent(&mut s.grid);
     let before = max_abs_divergence(&s.grid);
@@ -763,10 +770,10 @@ fn a_single_sweep_leaves_the_seed_barely_reduced_and_this_is_externally_measurab
 
     let after = max_abs_divergence(&s.grid);
     assert!(
-        after > 0.5 * before,
-        "one sweep on an 8-wide grid should not already be within half of \
-         converged (before={before:.3}, after={after:.3e}); either the sweep \
-         count is wired to a different solver or the test grid is too small \
-         to tell one sweep apart from many"
+        (1.9..=2.1).contains(&after),
+        "one sweep on an 8-wide grid measures max|div u| = {after:.3e}, \
+         expected close to the measured 1.98 (before={before:.3}); either \
+         the sweep count is wired to a different solver, or nothing ran \
+         (after == before == 1.0), or many more sweeps ran than requested"
     );
 }
