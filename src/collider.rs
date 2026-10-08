@@ -1804,3 +1804,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "collider_mutants_tests.rs"]
+mod collider_mutants_tests;
