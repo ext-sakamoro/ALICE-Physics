@@ -3,103 +3,313 @@
 //! The goldens in `tests/determinism_*.rs` pin the bits of a world after it
 //! has been stepped. A path that no golden runs can change its results
 //! without any golden noticing, so the set of pinned paths has to cover every
-//! way the crate steps a world. This file lists that set and checks it:
+//! way the crate steps a world. This file lists that set and checks it.
 //!
-//! * the solver backends are read from `pub enum SolverBackend` in
-//!   `src/solver.rs`, and the stepping entry points (`step`, `step_n`,
-//!   `try_step`, `step_parallel`, `try_step_parallel`, `step_with_bridge`, ...) from the
-//!   `pub fn` items of `src/solver.rs` and `src/solver/*.rs`, so a new
-//!   backend or entry point becomes a new required combination without
-//!   editing this file;
-//! * the scene features below (contacts, joints, continuous collision,
-//!   sleeping, each broadphase kind, participants, cloth, the 2D world) are
-//!   listed here by hand;
-//! * every row of [`PINS`] names a golden test and is checked mechanically:
-//!   the test exists, is not ignored, compares against a constant digest
-//!   (a SHA-256 hex string or a `u64` hex constant) and, in its own body or
-//!   in the helpers of the same file it calls, uses the backend, entry point
-//!   or feature the row claims;
-//! * every required combination is either pinned or listed in
-//!   [`KNOWN_GAPS`], never both, and both tables name only required
-//!   combinations.
+//! # What is required
 //!
-//! `golden_coverage_has_no_gaps` is ignored while [`KNOWN_GAPS`] is not empty:
-//! it fails until every combination has a golden. Adding a golden for a gap
-//! means moving its row from [`KNOWN_GAPS`] to [`PINS`]; the main test fails
-//! if a listed gap turns out to be pinned or a pin stops matching its row.
+//! * Every solver backend (read from `pub enum SolverBackend` in
+//!   `src/solver.rs`) on every stepping entry point of `PhysicsWorld`.
+//!   The entry points are the `pub fn` items taking `&mut self` inside
+//!   `impl PhysicsWorld` blocks of `src/solver.rs` and `src/solver/*.rs`;
+//!   each one must be classified, by hand, in [`STEP_ENTRIES`] or in
+//!   [`NOT_STEP`]. A new method that is in neither list fails the check, so a
+//!   new way to step a world cannot appear unclassified whatever its name.
+//! * Every broadphase kind (read from `pub enum Broadphase`).
+//! * The scene features in [`FEATURES`] (listed by hand).
 //!
-//! The check reads source text. It decides "uses `SolverBackend::Tgs`" or
-//! "calls `.try_step(`" from the code of the test and its same-file helpers,
-//! with string literals and comments blanked first; it does not run the
-//! tests, and a helper in another file is not followed.
+//! # What counts as a pin
+//!
+//! Every row of [`PINS`] names a golden test and is checked mechanically on
+//! the test and the same-file helpers it calls, with string literals and
+//! comments blanked first:
+//!
+//! * the test exists and is not ignored, and its `#[cfg(feature = ..)]`
+//!   attributes are exactly the features the row declares;
+//! * a constant digest (a 64-digit hex string or a `u64` hex constant) of the
+//!   file is used inside an `assert` statement it reaches;
+//! * for a backend × entry row: the entry point is called on a value of type
+//!   `PhysicsWorld` (a parameter of that type, `PhysicsWorld::new(..)`, or the
+//!   result of a same-file function returning `PhysicsWorld`), and the
+//!   backend is named as `SolverBackend::<name>`, or, for the default backend
+//!   only, no backend is named anywhere the test reaches and the test calls
+//!   no helper of another module (whose backend would be invisible here);
+//! * for a feature row: the code listed in [`FEATURES`] for it.
+//!
+//! Every required combination is either pinned or listed in [`KNOWN_GAPS`]
+//! (with the reason), never both, and both tables name only required
+//! combinations. `golden_coverage_has_no_gaps` is ignored while
+//! [`KNOWN_GAPS`] is not empty and fails until every combination has a golden.
+//!
+//! # Limits
+//!
+//! The check reads source text; it does not run the tests.
+//!
+//! * A helper in another file is not followed (a test that calls one cannot
+//!   pin the default backend by omission).
+//! * The other operand of the digest assertion is not proven to be a hash of
+//!   the stepped world; only that the digest constant is asserted.
+//! * A test that names two backends (one loop over both) pins both rows; the
+//!   check does not see which of them the digest belongs to.
+//! * A row whose test is behind a feature (`parallel`, `gpu-solver-bridge`) is
+//!   only executed by CI lanes that enable that feature; the row records the
+//!   feature so the gate is visible.
+//! * A `step_parallel` row on a scene where no two constraints share a body
+//!   pins the parity with `step`, not the batched ordering; the ordering has
+//!   its own row, `step_parallel shared-body order`.
+//! * Feature evidence is code presence: `contacts` needs two bodies added
+//!   with a collision radius, not a measured contact.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-/// A golden that pins a combination: (combination, file under `tests/`, test fn).
-const PINS: &[(&str, &str, &str)] = &[
-    ("Xpbd step", "determinism_golden.rs", "determinism_freefall"),
+/// `PhysicsWorld` methods that advance the simulation.
+const STEP_ENTRIES: &[&str] = &[
+    "step",
+    "step_n",
+    "try_step",
+    "step_parallel",
+    "try_step_parallel",
+    "step_with_bridge",
+    "substep_with_bridge",
+];
+
+/// `PhysicsWorld` methods taking `&mut self` that do not advance the
+/// simulation (setup, state transfer, queries with side effects). The two
+/// `solve_*_with_bridge` methods are one solve pass inside
+/// `step_with_bridge` and are pinned through it.
+const NOT_STEP: &[&str] = &[
+    "add_body",
+    "add_body_with_radius",
+    "add_compound_body",
+    "add_contact",
+    "add_contact_modifier",
+    "add_contact_with_material",
+    "add_distance_constraint",
+    "add_force_field",
+    "add_joint",
+    "add_joint_motor",
+    "add_joint_motor_3d",
+    "add_participant",
+    "add_pre_solve_hook",
+    "add_sdf_collider",
+    "add_shaped_body",
+    "add_static_collider",
+    "begin_frame",
+    "clear_body_collision_radius",
+    "clear_contact_modifiers",
+    "clear_contacts",
+    "clear_fault",
+    "clear_pre_solve_hooks",
+    "declare_field",
+    "deserialize_state",
+    "disable_joint_motor",
+    "drain_contact_events",
+    "drain_trigger_events",
+    "end_frame",
+    "get_body_mut",
+    "joint_motor_3d_mut",
+    "joint_motor_mut",
+    "rebuild_batches",
+    "remove_body",
+    "remove_force_field",
+    "remove_joint",
+    "remove_sdf_collider",
+    "remove_static_collider",
+    "reset_tgs_cache_stats",
+    "reset_world",
+    "restore_world",
+    "set_body_collision_radius",
+    "set_body_filter",
+    "set_body_material",
+    "set_body_shape",
+    "set_broadphase",
+    "set_continuous_collision",
+    "set_field",
+    "set_gpu_solver_bridge",
+    "set_joint_motor_3d_rotation_target",
+    "set_joint_motor_velocity_target",
+    "set_sdf_collision_radius",
+    "set_sleep_config",
+    "set_sleep_skip",
+    "solve_contact_constraints_with_bridge",
+    "solve_joints_with_bridge",
+    "take_gpu_solver_bridge",
+    "wake_body",
+];
+
+/// A golden that pins a combination:
+/// (combination, file under `tests/`, test fn, `#[cfg(feature)]` of the test or "").
+const PINS: &[(&str, &str, &str, &str)] = &[
+    (
+        "Xpbd step",
+        "determinism_golden.rs",
+        "determinism_freefall",
+        "",
+    ),
+    (
+        "Xpbd step_n",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_step_n",
+        "",
+    ),
+    (
+        "Xpbd try_step",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_try_step",
+        "",
+    ),
     (
         "Xpbd step_parallel",
-        "determinism_golden_contacts.rs",
-        "determinism_contact_bounce",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_step_parallel",
+        "parallel",
+    ),
+    (
+        "Xpbd try_step_parallel",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_try_step_parallel",
+        "parallel",
+    ),
+    (
+        "Xpbd step_with_bridge",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_step_with_bridge",
+        "gpu-solver-bridge",
+    ),
+    (
+        "Xpbd substep_with_bridge",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_substep_with_bridge",
+        "gpu-solver-bridge",
+    ),
+    (
+        "Tgs step",
+        "determinism_golden_paths.rs",
+        "golden_path_tgs_step",
+        "",
+    ),
+    (
+        "Tgs step_n",
+        "determinism_golden_paths.rs",
+        "golden_path_tgs_step_n",
+        "",
+    ),
+    (
+        "Tgs try_step",
+        "determinism_golden_paths.rs",
+        "golden_path_tgs_try_step",
+        "",
     ),
     (
         "contacts",
         "determinism_golden_contacts.rs",
         "determinism_contact_stack",
+        "",
     ),
     (
         "distance constraint",
         "determinism_golden.rs",
         "determinism_joint_pendulum",
+        "",
+    ),
+    (
+        "joint",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_step",
+        "",
+    ),
+    (
+        "continuous collision",
+        "determinism_golden_paths.rs",
+        "golden_continuous_collision",
+        "",
+    ),
+    (
+        "sleeping",
+        "determinism_golden_paths.rs",
+        "golden_sleeping",
+        "",
     ),
     (
         "broadphase Bvh",
-        "determinism_golden.rs",
-        "determinism_cascade",
+        "determinism_golden_paths.rs",
+        "golden_path_xpbd_step",
+        "",
     ),
-    ("cloth", "determinism_golden.rs", "determinism_cloth_drape"),
+    (
+        "broadphase DynamicTree",
+        "determinism_golden_paths.rs",
+        "golden_broadphase_dynamic_tree",
+        "",
+    ),
+    (
+        "broadphase Hybrid",
+        "determinism_golden_paths.rs",
+        "golden_broadphase_hybrid",
+        "",
+    ),
+    (
+        "participant",
+        "determinism_golden_paths.rs",
+        "golden_participant",
+        "",
+    ),
+    (
+        "cloth",
+        "determinism_golden.rs",
+        "determinism_cloth_drape",
+        "",
+    ),
     (
         "physics2d",
         "determinism_physics2d_step_digest.rs",
         "step_digest_is_unchanged",
+        "",
     ),
 ];
 
-/// Required combinations that no golden pins yet.
-const KNOWN_GAPS: &[&str] = &[
-    "Xpbd step_n",
-    "Xpbd try_step",
-    "Xpbd try_step_parallel",
-    "Xpbd step_with_bridge",
-    "Tgs step",
-    "Tgs step_n",
-    "Tgs try_step",
-    "Tgs step_parallel",
-    "Tgs try_step_parallel",
-    "Tgs step_with_bridge",
-    "joint",
-    "continuous collision",
-    "sleeping",
-    "broadphase DynamicTree",
-    "broadphase Hybrid",
-    "participant",
+/// Required combinations that no golden pins yet: (combination, reason).
+const KNOWN_GAPS: &[(&str, &str)] = &[
+    (
+        "Tgs step_parallel",
+        "gives the Xpbd step_parallel bits; whether the backend should apply on this path is undecided",
+    ),
+    (
+        "Tgs try_step_parallel",
+        "gives the Xpbd try_step_parallel bits; whether the backend should apply on this path is undecided",
+    ),
+    (
+        "Tgs step_with_bridge",
+        "gives the Xpbd step_with_bridge bits; whether the backend should apply on this path is undecided",
+    ),
+    (
+        "Tgs substep_with_bridge",
+        "gives the Xpbd substep_with_bridge bits; whether the backend should apply on this path is undecided",
+    ),
+    (
+        "step_parallel shared-body order",
+        "no golden runs step_parallel on a scene where two constraints share a body",
+    ),
 ];
 
 /// Scene features every stepping law must have a golden for, with the code
-/// that shows a test exercises them (checked on comment- and string-free text).
-const FEATURES: &[(&str, &[&str])] = &[
-    ("contacts", &["add_body_with_radius("]),
-    ("distance constraint", &["add_distance_constraint("]),
-    ("joint", &["add_joint("]),
-    ("continuous collision", &["set_continuous_collision("]),
-    // sleeping must be reachable: a scene that sets `frames_to_sleep` to
-    // `u32::MAX` or turns the skip off is rejected in `feature_holds`
-    ("sleeping", &["is_sleeping(", ".sleeping"]),
-    ("participant", &["add_participant("]),
-    ("cloth", &["Cloth::"]),
-    ("physics2d", &["PhysicsWorld2D"]),
+/// that shows a test exercises them (checked on comment- and string-free
+/// text): (feature, needles, minimum count of the first needle).
+const FEATURES: &[(&str, &[&str], usize)] = &[
+    ("contacts", &["add_body_with_radius("], 2),
+    ("distance constraint", &["add_distance_constraint("], 1),
+    ("joint", &["add_joint("], 1),
+    ("continuous collision", &["set_continuous_collision("], 1),
+    ("sleeping", &["is_sleeping("], 1),
+    ("participant", &["add_participant("], 1),
+    ("cloth", &["Cloth::"], 1),
+    ("physics2d", &["PhysicsWorld2D"], 1),
+    // two joints on one chain share their middle body
+    (
+        "step_parallel shared-body order",
+        &["add_joint(", ".step_parallel("],
+        2,
+    ),
 ];
 
 fn root() -> &'static Path {
@@ -111,6 +321,8 @@ fn read(rel: &str) -> String {
         .unwrap_or_else(|e| panic!("{rel}: {e}"))
         .replace("\r\n", "\n")
 }
+
+// ── Source scanning ─────────────────────────────────────────────────────────
 
 /// The source with the contents of comments, string literals and char
 /// literals replaced by spaces (newlines kept), so braces and words inside
@@ -139,7 +351,7 @@ fn blank_literals(src: &str) -> String {
                 i = end;
             }
             b'r' if (b.get(i + 1) == Some(&b'"') || b.get(i + 1) == Some(&b'#'))
-                && (i == 0 || !(b[i - 1].is_ascii_alphanumeric() || b[i - 1] == b'_')) =>
+                && (i == 0 || !is_ident(b[i - 1])) =>
             {
                 let hashes = b[i + 1..].iter().take_while(|&&c| c == b'#').count();
                 let open = i + 1 + hashes;
@@ -193,8 +405,42 @@ fn is_ident(c: u8) -> bool {
     c.is_ascii_alphanumeric() || c == b'_'
 }
 
-/// Every `fn` item of a blanked source: name -> body (between the braces).
-fn fn_bodies(code: &str) -> BTreeMap<String, String> {
+fn ident_at(s: &str) -> String {
+    s.chars()
+        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .collect()
+}
+
+/// The end (exclusive) of the bracketed group opening at `open`.
+fn matching(code: &str, open: usize) -> usize {
+    let b = code.as_bytes();
+    let (o, c) = (b[open], if b[open] == b'(' { b')' } else { b'}' });
+    let mut depth = 0usize;
+    for (k, &ch) in b[open..].iter().enumerate() {
+        if ch == o {
+            depth += 1;
+        } else if ch == c {
+            depth -= 1;
+            if depth == 0 {
+                return open + k + 1;
+            }
+        }
+    }
+    code.len()
+}
+
+/// A `fn` item of a blanked source.
+struct FnItem {
+    /// From the name to the opening brace (parameters and return type).
+    signature: String,
+    /// Between the braces.
+    body: String,
+    /// The attribute lines right above it.
+    attrs: String,
+}
+
+/// Every `fn` item with a body: name -> item. Nested fns are items too.
+fn fn_items(code: &str) -> BTreeMap<String, FnItem> {
     let b = code.as_bytes();
     let mut out = BTreeMap::new();
     let mut from = 0;
@@ -204,10 +450,7 @@ fn fn_bodies(code: &str) -> BTreeMap<String, String> {
         if at > 0 && is_ident(b[at - 1]) {
             continue;
         }
-        let name: String = code[at + 3..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
+        let name = ident_at(&code[at + 3..]);
         if name.is_empty() {
             continue;
         }
@@ -216,87 +459,63 @@ fn fn_bodies(code: &str) -> BTreeMap<String, String> {
         };
         let open = at + open_rel;
         if b[open] == b';' {
-            continue; // a declaration without a body
+            continue; // a declaration without a body (trait item)
         }
-        let mut depth = 0usize;
-        let mut end = open;
-        for (k, &c) in b[open..].iter().enumerate() {
-            match c {
-                b'{' => depth += 1,
-                b'}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        end = open + k;
-                        break;
-                    }
-                }
-                _ => {}
+        let end = matching(code, open);
+        // attributes: the lines right above `fn` that start with `#[`
+        let line_start = code[..at].rfind('\n').map_or(0, |p| p + 1);
+        let mut attrs = String::new();
+        let mut cursor = line_start;
+        while cursor > 0 {
+            let prev_start = code[..cursor - 1].rfind('\n').map_or(0, |p| p + 1);
+            let line = code[prev_start..cursor - 1].trim();
+            if line.starts_with("#[") {
+                attrs.insert_str(0, &format!("{line}\n"));
+                cursor = prev_start;
+            } else {
+                break;
             }
         }
-        out.entry(name)
-            .or_insert_with(|| code[open + 1..end].to_string());
+        out.entry(name).or_insert_with(|| FnItem {
+            signature: code[at + 3..open].to_string(),
+            body: code[open + 1..end.saturating_sub(1)].to_string(),
+            attrs,
+        });
     }
     out
 }
 
-/// Names of the `#[test]` fns that carry no `#[ignore]`.
-fn active_tests(code: &str) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    let mut from = 0;
-    while let Some(n) = code[from..].find("#[test]") {
-        let at = from + n + "#[test]".len();
-        from = at;
-        let Some(f) = code[at..].find("fn ") else {
-            break;
-        };
-        let attrs = &code[at..at + f];
-        if attrs.contains("#[ignore") {
-            continue;
-        }
-        let name: String = code[at + f + 3..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
-        out.insert(name);
-    }
-    out
-}
-
-/// The body of `test` and of every same-file fn it calls, transitively.
-fn reachable(bodies: &BTreeMap<String, String>, test: &str) -> String {
+/// The same-file fns `test` reaches (itself included), transitively.
+fn reachable_fns(items: &BTreeMap<String, FnItem>, test: &str) -> Vec<String> {
     let mut seen = BTreeSet::from([test.to_string()]);
     let mut stack = vec![test.to_string()];
-    let mut text = String::new();
+    let mut order = Vec::new();
     while let Some(name) = stack.pop() {
-        let Some(body) = bodies.get(&name) else {
+        let Some(item) = items.get(&name) else {
             continue;
         };
-        text.push_str(body);
-        text.push('\n');
-        let bb = body.as_bytes();
-        for (i, _) in body.match_indices('(') {
-            let start = bb[..i]
+        order.push(name.clone());
+        let body = item.body.as_bytes();
+        for (i, _) in item.body.match_indices('(') {
+            let start = body[..i]
                 .iter()
                 .rposition(|&c| !is_ident(c))
                 .map_or(0, |p| p + 1);
-            let callee = &body[start..i];
-            if bodies.contains_key(callee) && seen.insert(callee.to_string()) {
+            let callee = &item.body[start..i];
+            if items.contains_key(callee) && seen.insert(callee.to_string()) {
                 stack.push(callee.to_string());
             }
         }
     }
-    text
+    order
 }
 
-/// Constant digests of a raw source: names of `const X: &str = "<64 hex>"`
-/// and `const X: u64 = 0x...` items.
+/// Names of constant digests in a raw source: `const X: &str = "<64 hex>"`
+/// and `const X: u64 = 0x<16 hex digits>`.
 fn digest_consts(raw: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for item in raw.split("const ").skip(1) {
-        let name: String = item
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
+        let name = ident_at(item);
         let decl = item.split(';').next().unwrap_or("");
         let value: String = decl
             .split('=')
@@ -329,6 +548,180 @@ fn mentions_ident(text: &str, ident: &str) -> bool {
     })
 }
 
+/// Whether a digest constant is used inside an `assert` statement of `body`.
+fn asserts_digest(body: &str, consts: &BTreeSet<String>) -> bool {
+    body.split(';')
+        .any(|stmt| stmt.contains("assert") && consts.iter().any(|c| mentions_ident(stmt, c)))
+}
+
+/// The return type of a fn signature (after `->`), trimmed.
+fn return_type(signature: &str) -> String {
+    signature
+        .rsplit_once("->")
+        .map(|(_, r)| r.trim().to_string())
+        .unwrap_or_default()
+}
+
+/// Names bound to a `PhysicsWorld` inside one fn: parameters of that type,
+/// `let` bindings of `PhysicsWorld::new(..)` or of a same-file fn returning
+/// `PhysicsWorld` (or a tuple whose first element is one).
+fn world_names(item: &FnItem, items: &BTreeMap<String, FnItem>) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let sig = &item.signature;
+    if let Some(open) = sig.find('(') {
+        let close = matching(sig, open);
+        for param in sig[open + 1..close.saturating_sub(1)].split(',') {
+            let Some((pat, ty)) = param.split_once(':') else {
+                continue;
+            };
+            let ty = ty
+                .trim()
+                .trim_start_matches('&')
+                .trim_start_matches("mut ")
+                .trim();
+            if ty.starts_with("PhysicsWorld") && !ty.starts_with("PhysicsWorld2D") {
+                out.insert(pat.trim().trim_start_matches("mut ").trim().to_string());
+            }
+        }
+    }
+    let returns_world = |callee: &str, tuple: bool| {
+        items.get(callee).is_some_and(|f| {
+            let r = return_type(&f.signature);
+            if tuple {
+                r.starts_with("(PhysicsWorld,")
+            } else {
+                r == "PhysicsWorld"
+            }
+        })
+    };
+    for (i, _) in item.body.match_indices("let ") {
+        let rest = &item.body[i + 4..];
+        let Some(eq) = rest.find('=') else { continue };
+        let pat = rest[..eq].trim();
+        let rhs = rest[eq + 1..].trim_start();
+        let callee = ident_at(rhs);
+        if let Some(tuple) = pat.strip_prefix('(') {
+            let first = tuple
+                .split(',')
+                .next()
+                .unwrap_or("")
+                .trim()
+                .trim_start_matches("mut ")
+                .trim();
+            if returns_world(&callee, true) {
+                out.insert(first.to_string());
+            }
+            continue;
+        }
+        let (name, annotated) = match pat.split_once(':') {
+            Some((n, t)) => (n, t.trim() == "PhysicsWorld"),
+            None => (pat, false),
+        };
+        let name = name.trim().trim_start_matches("mut ").trim();
+        if annotated || rhs.starts_with("PhysicsWorld::new(") || returns_world(&callee, false) {
+            out.insert(name.to_string());
+        }
+    }
+    out
+}
+
+// ── What a test exercises ───────────────────────────────────────────────────
+
+/// What the code a golden test reaches shows.
+struct TestFacts {
+    active: bool,
+    features: BTreeSet<String>,
+    asserts_digest: bool,
+    /// Entry points called on a `PhysicsWorld` value.
+    world_calls: BTreeSet<String>,
+    /// All reached code, blanked.
+    text: String,
+    /// The test calls a helper of another module.
+    foreign_helper: bool,
+}
+
+fn test_facts(raw: &str, test: &str, entries: &BTreeSet<String>) -> TestFacts {
+    let code = blank_literals(raw);
+    let items = fn_items(&code);
+    let Some(item) = items.get(test) else {
+        return TestFacts {
+            active: false,
+            features: BTreeSet::new(),
+            asserts_digest: false,
+            world_calls: BTreeSet::new(),
+            text: String::new(),
+            foreign_helper: false,
+        };
+    };
+    let active = item.attrs.contains("#[test]") && !item.attrs.contains("#[ignore");
+    let features = item
+        .attrs
+        .lines()
+        .filter_map(|l| l.strip_prefix("#[cfg(feature ="))
+        .map(|l| l.trim_end_matches(")]").trim().to_string())
+        .collect();
+    // feature names are inside a string literal, blanked in `code`: read them raw
+    let raw_items = fn_items_attrs_raw(raw, test);
+    let modules: Vec<String> = code
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("mod "))
+        .map(ident_at)
+        .collect();
+    let consts = digest_consts(raw);
+    let mut text = String::new();
+    let mut asserted = false;
+    let mut calls = BTreeSet::new();
+    for name in reachable_fns(&items, test) {
+        let f = &items[&name];
+        text.push_str(&f.body);
+        text.push('\n');
+        asserted |= asserts_digest(&f.body, &consts);
+        for w in world_names(f, &items) {
+            for e in entries {
+                if f.body.contains(&format!("{w}.{e}(")) {
+                    calls.insert(e.clone());
+                }
+            }
+        }
+    }
+    let foreign_helper = modules.iter().any(|m| text.contains(&format!("{m}::")));
+    TestFacts {
+        active,
+        features: if raw_items.is_empty() {
+            features
+        } else {
+            raw_items
+        },
+        asserts_digest: asserted,
+        world_calls: calls,
+        text,
+        foreign_helper,
+    }
+}
+
+/// The `#[cfg(feature = "x")]` features on the attribute lines above `fn <test>`, read raw.
+fn fn_items_attrs_raw(raw: &str, test: &str) -> BTreeSet<String> {
+    let mut out = BTreeSet::new();
+    let Some(at) = raw.find(&format!("fn {test}(")) else {
+        return out;
+    };
+    let mut cursor = raw[..at].rfind('\n').map_or(0, |p| p + 1);
+    while cursor > 0 {
+        let prev = raw[..cursor - 1].rfind('\n').map_or(0, |p| p + 1);
+        let line = raw[prev..cursor - 1].trim();
+        if !line.starts_with("#[") && !line.starts_with("///") {
+            break;
+        }
+        if let Some(rest) = line.strip_prefix("#[cfg(feature = \"") {
+            out.insert(rest.split('"').next().unwrap_or("").to_string());
+        }
+        cursor = prev;
+    }
+    out
+}
+
+// ── Requirements ────────────────────────────────────────────────────────────
+
 /// Variants of `pub enum <name>` in `src`, and the one marked `#[default]`.
 fn enum_variants(src: &str, name: &str) -> (Vec<String>, String) {
     let code = blank_literals(src);
@@ -349,10 +742,7 @@ fn enum_variants(src: &str, name: &str) -> (Vec<String>, String) {
             && !line.starts_with("     ")
             && t.chars().next().is_some_and(|c| c.is_ascii_uppercase())
         {
-            let v: String = t
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric())
-                .collect();
+            let v = ident_at(t);
             if next_is_default {
                 default = v.clone();
                 next_is_default = false;
@@ -364,27 +754,72 @@ fn enum_variants(src: &str, name: &str) -> (Vec<String>, String) {
     (variants, default)
 }
 
-/// `pub fn` names in `src` that step a world: `step`, `step_*`, `try_step`, `try_step_*`
-/// taking `&mut self` (the stepping entry points of `PhysicsWorld`).
-fn step_entries(src: &str) -> BTreeSet<String> {
+/// `pub fn` names taking `&mut self` inside `impl PhysicsWorld` blocks of `src`.
+fn world_mut_methods(src: &str) -> BTreeSet<String> {
     let code = blank_literals(src);
     let mut out = BTreeSet::new();
-    for (i, _) in code.match_indices("pub fn ") {
-        let rest = &code[i + "pub fn ".len()..];
-        let name: String = rest
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
-        let sig = &rest[..rest.find('{').unwrap_or(rest.len())];
-        let stepping = name == "step"
-            || name == "try_step"
-            || name.starts_with("step_")
-            || name.starts_with("try_step_");
-        if stepping && sig.contains("&mut self") {
-            out.insert(name);
+    let mut from = 0;
+    while let Some(n) = code[from..].find("impl") {
+        let at = from + n;
+        from = at + 4;
+        if at > 0 && is_ident(code.as_bytes()[at - 1]) {
+            continue;
         }
+        let Some(open_rel) = code[at..].find('{') else {
+            break;
+        };
+        let header: String = code[at + 4..at + open_rel]
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        // `impl PhysicsWorld` or `impl<..> PhysicsWorld`, not `impl Trait for PhysicsWorld`
+        let is_world = header == "PhysicsWorld"
+            || (header.starts_with('<') && header.ends_with("> PhysicsWorld"));
+        let open = at + open_rel;
+        let end = matching(&code, open);
+        if is_world {
+            let body = &code[open..end];
+            for (i, _) in body.match_indices("pub fn ") {
+                let rest = &body[i + 7..];
+                let name = ident_at(rest);
+                let params = &rest[name.len()..];
+                let params = params.trim_start();
+                let params = if params.starts_with('<') {
+                    &params[matching_angle(params)..]
+                } else {
+                    params
+                };
+                if params
+                    .trim_start()
+                    .trim_start_matches('(')
+                    .trim_start()
+                    .starts_with("&mut self")
+                {
+                    out.insert(name);
+                }
+            }
+        }
+        from = end.max(from);
     }
     out
+}
+
+/// The end (exclusive) of the `<...>` group at the start of `s`.
+fn matching_angle(s: &str) -> usize {
+    let mut depth = 0usize;
+    for (k, c) in s.char_indices() {
+        match c {
+            '<' => depth += 1,
+            '>' => {
+                depth -= 1;
+                if depth == 0 {
+                    return k + 1;
+                }
+            }
+            _ => {}
+        }
+    }
+    s.len()
 }
 
 struct Required {
@@ -394,13 +829,11 @@ struct Required {
     broadphases: Vec<String>,
     default_broadphase: String,
     entries: BTreeSet<String>,
+    unclassified: Vec<String>,
+    stale_classification: Vec<String>,
 }
 
-fn required() -> Required {
-    let solver = read("src/solver.rs");
-    let (backends, default_backend) = enum_variants(&solver, "SolverBackend");
-    let (broadphases, default_broadphase) = enum_variants(&solver, "Broadphase");
-    let mut entries = step_entries(&solver);
+fn solver_sources() -> Vec<String> {
     let mut dir: Vec<_> = std::fs::read_dir(root().join("src/solver"))
         .expect("src/solver")
         .flatten()
@@ -408,14 +841,34 @@ fn required() -> Required {
         .filter(|p| p.extension().is_some_and(|x| x == "rs"))
         .collect();
     dir.sort();
+    let mut out = vec![read("src/solver.rs")];
     for p in dir {
         let rel = p
             .strip_prefix(root())
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        entries.extend(step_entries(&read(&rel)));
+        out.push(read(&rel));
     }
+    out
+}
+
+fn required_from(sources: &[String]) -> Required {
+    let (backends, default_backend) = enum_variants(&sources[0], "SolverBackend");
+    let (broadphases, default_broadphase) = enum_variants(&sources[0], "Broadphase");
+    let methods: BTreeSet<String> = sources.iter().flat_map(|s| world_mut_methods(s)).collect();
+    let classified: BTreeSet<String> = STEP_ENTRIES
+        .iter()
+        .chain(NOT_STEP)
+        .map(|s| (*s).to_string())
+        .collect();
+    let unclassified = methods.difference(&classified).cloned().collect();
+    let stale_classification = classified.difference(&methods).cloned().collect();
+    let entries: BTreeSet<String> = STEP_ENTRIES
+        .iter()
+        .map(|s| (*s).to_string())
+        .filter(|e| methods.contains(e))
+        .collect();
     let mut combos = BTreeSet::new();
     for b in &backends {
         for e in &entries {
@@ -425,7 +878,7 @@ fn required() -> Required {
     for k in &broadphases {
         combos.insert(format!("broadphase {k}"));
     }
-    for (f, _) in FEATURES {
+    for (f, _, _) in FEATURES {
         combos.insert((*f).to_string());
     }
     Required {
@@ -435,37 +888,34 @@ fn required() -> Required {
         broadphases,
         default_broadphase,
         entries,
+        unclassified,
+        stale_classification,
     }
 }
 
-/// Whether the code a test reaches exercises `combo`; the reason when it does not.
-fn exercises(req: &Required, text: &str, combo: &str) -> Result<(), String> {
-    let uses_backend = |b: &str| mentions_ident(text, &format!("SolverBackend::{b}"));
-    let uses_broadphase = |k: &str| mentions_ident(text, &format!("Broadphase::{k}"));
+/// Whether a golden test with these facts exercises `combo`; the reason when it does not.
+fn exercises(req: &Required, t: &TestFacts, combo: &str) -> Result<(), String> {
+    let names = |kind: &str, v: &str| mentions_ident(&t.text, &format!("{kind}::{v}"));
     if let Some(kind) = combo.strip_prefix("broadphase ") {
-        let others = req
-            .broadphases
-            .iter()
-            .any(|k| k != kind && uses_broadphase(k));
-        return if kind == req.default_broadphase {
-            if others {
-                Err(format!("selects another broadphase than {kind}"))
-            } else {
-                Ok(())
-            }
-        } else if uses_broadphase(kind) {
+        let any = req.broadphases.iter().any(|k| names("Broadphase", k));
+        return if names("Broadphase", kind)
+            || (kind == req.default_broadphase && !any && !t.foreign_helper)
+        {
             Ok(())
         } else {
             Err(format!("does not select Broadphase::{kind}"))
         };
     }
-    if let Some((_, needles)) = FEATURES.iter().find(|(f, _)| *f == combo) {
-        if !needles.iter().any(|n| text.contains(n)) {
-            return Err(format!("does not use any of {needles:?}"));
+    if let Some((_, needles, min)) = FEATURES.iter().find(|(f, _, _)| *f == combo) {
+        if t.text.matches(needles[0]).count() < *min {
+            return Err(format!("uses `{}` fewer than {min} times", needles[0]));
+        }
+        if let Some(missing) = needles[1..].iter().find(|n| !t.text.contains(*n)) {
+            return Err(format!("does not use `{missing}`"));
         }
         if combo == "sleeping"
-            && (text.contains("frames_to_sleep: u32::MAX")
-                || text.contains("set_sleep_skip(false)"))
+            && (t.text.contains("frames_to_sleep: u32::MAX")
+                || t.text.contains("set_sleep_skip(false)"))
         {
             return Err("disables sleeping".into());
         }
@@ -474,87 +924,67 @@ fn exercises(req: &Required, text: &str, combo: &str) -> Result<(), String> {
     let (backend, entry) = combo
         .split_once(' ')
         .ok_or_else(|| format!("unknown combination {combo:?}"))?;
-    if !text.contains(&format!(".{entry}(")) {
-        return Err(format!("does not call .{entry}("));
+    if !t.world_calls.contains(entry) {
+        return Err(format!("does not call .{entry}( on a PhysicsWorld"));
     }
-    let others = req.backends.iter().any(|b| b != backend && uses_backend(b));
-    if backend == req.default_backend {
-        if others {
-            Err(format!("selects another backend than {backend}"))
-        } else {
-            Ok(())
-        }
-    } else if uses_backend(backend) {
+    let named = names("SolverBackend", backend);
+    let any = req.backends.iter().any(|b| names("SolverBackend", b));
+    if named || (backend == req.default_backend && !any && !t.foreign_helper) {
         Ok(())
     } else {
         Err(format!("does not select SolverBackend::{backend}"))
     }
 }
 
-#[test]
-fn every_stepping_combination_has_a_golden_pin_or_is_a_listed_gap() {
-    let req = required();
-    assert!(
-        req.backends.len() >= 2,
-        "backends read from src: {:?}",
-        req.backends
-    );
-    assert!(
-        req.entries.len() >= 3,
-        "entry points read from src: {:?}",
-        req.entries
-    );
-    assert!(
-        req.entries.contains("step"),
-        "`step` not found among {:?}",
-        req.entries
-    );
-
+fn check(req: &Required, read_test: &dyn Fn(&str) -> String) -> (Vec<String>, BTreeSet<String>) {
     let mut errors = Vec::new();
+    for m in &req.unclassified {
+        errors.push(format!(
+            "PhysicsWorld::{m} takes &mut self and is in neither STEP_ENTRIES nor NOT_STEP: classify it"
+        ));
+    }
+    for m in &req.stale_classification {
+        errors.push(format!(
+            "{m} is classified but is no PhysicsWorld method taking &mut self"
+        ));
+    }
     let mut pinned = BTreeSet::new();
-    let mut files: BTreeMap<&str, (String, String)> = BTreeMap::new();
-    for &(combo, file, test) in PINS {
+    for &(combo, file, test, feature) in PINS {
         if !req.combos.contains(combo) {
             errors.push(format!("PINS row {combo:?}: not a required combination"));
             continue;
         }
-        let (raw, code) = files.entry(file).or_insert_with(|| {
-            let raw = read(&format!("tests/{file}"));
-            let code = blank_literals(&raw);
-            (raw, code)
-        });
-        let bodies = fn_bodies(code);
-        if !active_tests(code).contains(test) {
-            errors.push(format!(
-                "PINS row {combo:?}: {file}::{test} is not an active #[test]"
-            ));
+        let t = test_facts(&read_test(file), test, &req.entries);
+        let row = format!("PINS row {combo:?}: {file}::{test}");
+        if !t.active {
+            errors.push(format!("{row} is not an active #[test]"));
             continue;
         }
-        let text = reachable(&bodies, test);
-        let consts = digest_consts(raw);
-        if !consts.iter().any(|c| mentions_ident(&text, c)) {
+        let want: BTreeSet<String> = if feature.is_empty() {
+            BTreeSet::new()
+        } else {
+            BTreeSet::from([feature.to_string()])
+        };
+        if t.features != want {
             errors.push(format!(
-                "PINS row {combo:?}: {file}::{test} compares against no digest constant"
+                "{row} is behind features {:?}, the row says {want:?}",
+                t.features
             ));
         }
-        if !text.contains("assert") {
-            errors.push(format!(
-                "PINS row {combo:?}: {file}::{test} asserts nothing"
-            ));
+        if !t.asserts_digest {
+            errors.push(format!("{row} asserts no digest constant"));
         }
-        match exercises(&req, &text, combo) {
+        match exercises(req, &t, combo) {
             Ok(()) => {
                 pinned.insert(combo.to_string());
             }
-            Err(why) => errors.push(format!("PINS row {combo:?}: {file}::{test} {why}")),
+            Err(why) => errors.push(format!("{row} {why}")),
         }
     }
-    let gaps: BTreeSet<String> = KNOWN_GAPS.iter().map(|s| (*s).to_string()).collect();
-    assert_eq!(
-        gaps.len(),
-        KNOWN_GAPS.len(),
-        "a KNOWN_GAPS row is listed twice"
-    );
+    let gaps: BTreeSet<String> = KNOWN_GAPS.iter().map(|(g, _)| (*g).to_string()).collect();
+    if gaps.len() != KNOWN_GAPS.len() {
+        errors.push("a KNOWN_GAPS row is listed twice".into());
+    }
     for g in &gaps {
         if !req.combos.contains(g) {
             errors.push(format!("KNOWN_GAPS row {g:?}: not a required combination"));
@@ -572,6 +1002,23 @@ fn every_stepping_combination_has_a_golden_pin_or_is_a_listed_gap() {
             ));
         }
     }
+    (errors, pinned)
+}
+
+#[test]
+fn every_stepping_combination_has_a_golden_pin_or_is_a_listed_gap() {
+    let req = required_from(&solver_sources());
+    assert!(
+        req.backends.len() >= 2,
+        "backends read from src: {:?}",
+        req.backends
+    );
+    assert!(
+        req.entries.contains("step"),
+        "`step` not found among {:?}",
+        req.entries
+    );
+    let (errors, pinned) = check(&req, &|file| read(&format!("tests/{file}")));
     assert!(
         !pinned.is_empty(),
         "no PINS row matched: the check compared nothing"
@@ -581,7 +1028,7 @@ fn every_stepping_combination_has_a_golden_pin_or_is_a_listed_gap() {
         "golden coverage ({} required, {} pinned, {} listed gaps):\n  {}",
         req.combos.len(),
         pinned.len(),
-        gaps.len(),
+        KNOWN_GAPS.len(),
         errors.join("\n  ")
     );
 }
@@ -595,74 +1042,140 @@ fn golden_coverage_has_no_gaps() {
     );
 }
 
+// ── Tests of the checker itself ─────────────────────────────────────────────
+
+/// A synthetic solver source with the real enums and the given methods in an
+/// `impl PhysicsWorld` block.
+fn synthetic_solver(methods: &[&str]) -> Vec<String> {
+    let real = read("src/solver.rs");
+    let code = blank_literals(&real);
+    let enum_src = |name: &str| {
+        let s = code.find(&format!("pub enum {name} {{")).expect("enum");
+        let e = s + code[s..].find("\n}").expect("end") + 2;
+        real[s..e].to_string()
+    };
+    let mut src = format!(
+        "{}\n{}\nimpl PhysicsWorld {{\n",
+        enum_src("SolverBackend"),
+        enum_src("Broadphase")
+    );
+    for m in methods {
+        src.push_str(&format!("    pub fn {m}(&mut self, dt: Fix128) {{}}\n"));
+    }
+    src.push_str("    pub fn body_count(&self) -> usize { 0 }\n}\n");
+    vec![src]
+}
+
+#[test]
+fn a_new_mut_method_must_be_classified_whatever_its_name() {
+    let mut methods: Vec<&str> = STEP_ENTRIES.iter().chain(NOT_STEP).copied().collect();
+    methods.push("substep_twice");
+    methods.push("advance");
+    let req = required_from(&synthetic_solver(&methods));
+    assert_eq!(req.unclassified, ["advance", "substep_twice"]);
+    // `&self` methods are not stepping entry points and need no classification
+    assert!(!req.unclassified.iter().any(|m| m == "body_count"));
+    // generic methods are seen through their parameter list
+    let src = "impl PhysicsWorld {\n    pub fn step_with_bridge<B: Bridge + ?Sized>(\n        &mut self,\n        b: &mut B,\n    ) {}\n}\n";
+    assert!(world_mut_methods(src).contains("step_with_bridge"));
+    // a method of another type is not a PhysicsWorld method
+    assert!(
+        world_mut_methods("impl Cloth {\n    pub fn step(&mut self, dt: F) {}\n}\n").is_empty()
+    );
+}
+
+#[test]
+fn a_call_on_another_type_does_not_pin_a_world_entry() {
+    let req = required_from(&solver_sources());
+    let entries = req.entries.clone();
+    let file = "const GOLDEN_X: &str = \"95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381\";\n\
+                #[test]\nfn cloth_case() {\n    let mut cloth = Cloth::new(cfg);\n    cloth.step(dt);\n    assert_golden(\"c\", hash(&cloth), GOLDEN_X);\n}\n\
+                #[test]\nfn world_case() {\n    let mut w = PhysicsWorld::new(cfg);\n    w.step(dt);\n    assert_golden(\"w\", hash(&w), GOLDEN_X);\n}\n\
+                fn make() -> PhysicsWorld { PhysicsWorld::new(c) }\n\
+                fn run(mut w: PhysicsWorld) -> PhysicsWorld { w.step_n(3, dt); w }\n\
+                #[test]\nfn helper_case() {\n    let w = run(make());\n    assert_eq!(hash(&w), GOLDEN_X);\n}\n";
+    let cloth = test_facts(file, "cloth_case", &entries);
+    assert!(
+        exercises(&req, &cloth, "Xpbd step").is_err(),
+        "cloth.step( is not a world step"
+    );
+    let world = test_facts(file, "world_case", &entries);
+    assert!(exercises(&req, &world, "Xpbd step").is_ok());
+    let helper = test_facts(file, "helper_case", &entries);
+    assert!(
+        exercises(&req, &helper, "Xpbd step_n").is_ok(),
+        "parameter of type PhysicsWorld"
+    );
+    assert!(helper.asserts_digest);
+}
+
+#[test]
+fn backends_are_told_apart_and_a_loop_over_both_pins_both() {
+    let req = required_from(&solver_sources());
+    let entries = req.entries.clone();
+    let both = "const G: &str = \"95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381\";\n\
+                #[test]\nfn both() {\n    for b in [SolverBackend::Xpbd, SolverBackend::Tgs] {\n        let mut w = PhysicsWorld::new(cfg(b));\n        w.step(dt);\n        assert_eq!(hash(&w), G);\n    }\n}\n\
+                #[test]\nfn tgs_only() {\n    let mut w = PhysicsWorld::new(PhysicsConfig { solver_backend: SolverBackend::Tgs, ..d });\n    w.step(dt);\n    assert_eq!(hash(&w), G);\n}\n\
+                mod common;\n#[test]\nfn foreign() {\n    let mut w = common::world();\n    let mut v = PhysicsWorld::new(d);\n    v.step(dt);\n    assert_eq!(hash(&v), G);\n}\n";
+    let t = test_facts(both, "both", &entries);
+    assert!(exercises(&req, &t, "Xpbd step").is_ok() && exercises(&req, &t, "Tgs step").is_ok());
+    let t = test_facts(both, "tgs_only", &entries);
+    assert!(exercises(&req, &t, "Tgs step").is_ok());
+    assert!(
+        exercises(&req, &t, "Xpbd step").is_err(),
+        "naming Tgs is not the default"
+    );
+    let t = test_facts(both, "foreign", &entries);
+    assert!(
+        exercises(&req, &t, "Xpbd step").is_err(),
+        "a helper of another module hides the backend"
+    );
+}
+
 #[test]
 fn the_source_scanner_sees_code_and_skips_literals() {
-    // braces and calls inside strings, chars and comments are not code
     let src = "fn a() { let s = \"} .step( {\"; let c = '{'; // .try_step(\n b(); }\n\
                fn b() { w.step(dt); /* } */ }\nfn c() { r#\"}\"#; }\n\
                #[test]\nfn t() { a(); }\n#[test]\n#[ignore = \"x\"]\nfn u() {}\n";
     let code = blank_literals(src);
     assert_eq!(code.len(), src.len());
-    let bodies = fn_bodies(&code);
+    let items = fn_items(&code);
     assert_eq!(
-        bodies.keys().cloned().collect::<Vec<_>>(),
+        items.keys().cloned().collect::<Vec<_>>(),
         ["a", "b", "c", "t", "u"]
     );
-    let text = reachable(&bodies, "t");
-    assert!(text.contains(".step("), "helper b is followed: {text}");
-    assert!(!text.contains(".try_step("), "a comment is not code");
-    assert_eq!(active_tests(&code), BTreeSet::from(["t".to_string()]));
-    // digest constants of both forms
+    assert_eq!(reachable_fns(&items, "t"), ["t", "a", "b"]);
+    assert!(items["u"].attrs.contains("#[ignore"));
     let raw = "const A: &str =\n    \"95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381\";\n\
                const B: u64 = 0x545b_6a9d_803d_31ef;\nconst C: usize = 180;\nconst D: &str = \"abc\";\n";
-    assert_eq!(
-        digest_consts(raw),
-        BTreeSet::from(["A".to_string(), "B".to_string()])
-    );
+    let consts = digest_consts(raw);
+    assert_eq!(consts, BTreeSet::from(["A".to_string(), "B".to_string()]));
+    // the digest has to be asserted, not only named
+    assert!(asserts_digest(
+        "let h = hash(&w); assert_eq!(h, B)",
+        &consts
+    ));
+    assert!(!asserts_digest("println!(\"{}\", A); let x = B", &consts));
     assert!(mentions_ident("x(GOLDEN_A)", "GOLDEN_A") && !mentions_ident("GOLDEN_AB", "GOLDEN_A"));
-}
-
-#[test]
-fn a_new_backend_variant_or_entry_point_is_read_as_a_new_requirement() {
-    // adding a variant to the real enum stops the crate from compiling (its
-    // matches are exhaustive), so the reader is checked on a synthetic source
-    let src = "pub enum SolverBackend {\n    /// doc\n    #[default]\n    Xpbd,\n    Tgs,\n    /// new\n    Probe { x: u8 },\n}\n";
-    let (v, d) = enum_variants(src, "SolverBackend");
-    assert_eq!(v, ["Xpbd", "Tgs", "Probe"]);
-    assert_eq!(d, "Xpbd");
-    let entries = step_entries("impl W {\n    pub fn step(&mut self, dt: F) {}\n    pub fn try_step_rollback(&mut self) -> R {}\n    pub fn step_count(&self) -> u64 { 0 }\n    pub fn stepper() {}\n}\n");
+    let (v, d) = enum_variants(
+        "pub enum SolverBackend {\n    #[default]\n    Xpbd,\n    Tgs,\n    /// new\n    Probe { x: u8 },\n}\n",
+        "SolverBackend",
+    );
     assert_eq!(
-        entries,
-        BTreeSet::from(["step".to_string(), "try_step_rollback".to_string()])
+        (v, d.as_str()),
+        (
+            vec!["Xpbd".to_string(), "Tgs".to_string(), "Probe".to_string()],
+            "Xpbd"
+        )
     );
 }
 
 #[test]
-fn backends_entries_and_broadphases_are_read_from_the_source() {
-    let req = required();
-    assert!(req.backends.iter().any(|b| b == "Xpbd") && req.backends.iter().any(|b| b == "Tgs"));
-    assert_eq!(req.default_backend, "Xpbd");
-    assert_eq!(req.default_broadphase, "Bvh");
-    for e in [
-        "step",
-        "step_n",
-        "try_step",
-        "step_parallel",
-        "try_step_parallel",
-    ] {
-        assert!(
-            req.entries.contains(e),
-            "{e} not read from src: {:?}",
-            req.entries
-        );
-    }
-    // a selected non-default backend is told apart from the default
-    let tgs = "let c = SolverConfig { solver_backend: SolverBackend::Tgs, ..d }; w.step(dt);";
-    assert!(exercises(&req, tgs, "Tgs step").is_ok());
-    assert!(exercises(&req, tgs, "Xpbd step").is_err());
-    assert!(exercises(&req, "w.step(dt);", "Xpbd step").is_ok());
-    assert!(exercises(&req, "w.step(dt);", "Xpbd step_n").is_err());
-    let no_sleep =
-        "w.set_sleep_config(SleepConfig { frames_to_sleep: u32::MAX, ..d }); w.is_sleeping(0);";
-    assert!(exercises(&req, no_sleep, "sleeping").is_err());
+fn the_feature_of_a_gated_golden_is_read() {
+    let raw = "#[cfg(feature = \"parallel\")]\n#[test]\nfn g() {}\n#[test]\nfn h() {}\n";
+    assert_eq!(
+        fn_items_attrs_raw(raw, "g"),
+        BTreeSet::from(["parallel".to_string()])
+    );
+    assert!(fn_items_attrs_raw(raw, "h").is_empty());
 }
