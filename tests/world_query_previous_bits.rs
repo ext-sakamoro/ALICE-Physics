@@ -5,13 +5,13 @@
 //!   short-distance precision changes: those apply below `|v| = 2⁻¹⁶`, to GJK
 //!   simplices with edges below `2⁻⁸` and to the support directions of rounded
 //!   solids, none of which these casts reach.
-//! - Against curved solids the results changed at every radius: the direction
-//!   given to the support mappings of ellipsoids, cylinders and cones is scaled
-//!   up, and small GJK simplices (which a curved surface produces) are scaled up
-//!   for their barycentric weights. So a cone, a cylinder and a height field are
-//!   pinned to this implementation instead, which also keeps the time a
-//!   bracketed gap ends on at the clear end for these radii. They are not bit
-//!   for bit the same as before.
+//! - Against curved solids the results changed at every radius: small GJK
+//!   simplices (which a curved surface produces) are scaled up for their
+//!   barycentric weights, and an ellipsoid's support is given a direction
+//!   scaled up. None of a cone, a cylinder, a height field and an ellipsoid keeps
+//!   the previous
+//!   bits, so they are pinned to this implementation instead, which also keeps
+//!   the time a bracketed gap ends on at the clear end for these radii.
 //!
 //! # Expected values
 //!
@@ -165,7 +165,7 @@ fn scenes(rng: &mut Rng) -> Vec<(&'static str, PhysicsWorld)> {
     out
 }
 
-/// Rounded solids (a cone, a cylinder, a height field), whose casts the
+/// Rounded solids (a cone, a cylinder, a height field, an ellipsoid), whose casts the
 /// short-distance changes do move.
 fn round_scenes(rng: &mut Rng) -> Vec<(&'static str, PhysicsWorld)> {
     let mut out = Vec::new();
@@ -204,6 +204,18 @@ fn round_scenes(rng: &mut Rng) -> Vec<(&'static str, PhysicsWorld)> {
         p3([-2.0, 0.0, -2.0]),
     )));
     out.push(("field", w));
+    // last, turned by a fixed rotation, so the scenes above draw as before
+    let mut w = PhysicsWorld::new(PhysicsConfig::default());
+    let i = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+    assert!(w.set_body_shape(
+        i,
+        &Shape::Ellipsoid {
+            radii: p3([1.2, 0.5, 0.8]),
+        }
+    ));
+    let k = (0.36f64 + 0.49 + 0.04).sqrt();
+    w.bodies[i].rotation = QuatFix::from_axis_angle(p3([0.6 / k, 0.7 / k, -0.2 / k]), fx(0.9));
+    out.push(("ellipsoid", w));
     out
 }
 
@@ -314,14 +326,15 @@ fn polytope_casts_with_radius_from_2_pow_minus_16_keep_their_bits() {
 }
 
 /// `(scene, casts, hits, digest)` of the rounded solids, recorded on this
-/// implementation (the short-distance changes moved them from the previous
-/// one, by up to a few `2⁻³²`): a change detector for the time of impact that
+/// implementation (the scaled small simplices moved them from the previous
+/// one): a change detector for the time of impact that
 /// a cast ends on when its gap is bracketed (it is the clear end for a core of
 /// reach `2⁻¹⁶` or more, and the tangent's root from it only below).
-const CURRENT_ROUND: [(&str, usize, usize, u64); 3] = [
-    ("cone", 1102, 518, 1_520_154_499_050_360_470),
-    ("cylinder", 1144, 624, 508_076_111_917_283_313),
+const CURRENT_ROUND: [(&str, usize, usize, u64); 4] = [
+    ("cone", 1102, 518, 6_640_707_711_863_356_405),
+    ("cylinder", 1144, 624, 9_071_145_424_669_698_798),
     ("field", 1145, 870, 11_317_914_934_422_542_243),
+    ("ellipsoid", 1122, 525, 4_572_165_122_096_708_494),
 ];
 
 #[test]
