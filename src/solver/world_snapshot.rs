@@ -1827,7 +1827,9 @@ impl PhysicsWorld {
     /// Body and SDF collider rotations are restored as stored and brought to
     /// unit length by the next step, so a non-unit rotation in `data` scales
     /// what it rotates by `|q|^2` in the queries made before that step (see
-    /// [`RigidBody::rotation`]).
+    /// [`RigidBody::rotation`]). The next step also rebuilds each collider's
+    /// cached inverse rotation and scale from its restored fields
+    /// ([`crate::sdf_collider::SdfCollider::update_cache`]).
     ///
     /// # Errors
     ///

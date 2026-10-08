@@ -11,8 +11,9 @@
 //!   inverse rotation (for a unit rotation too: the cache made by
 //!   `new_static` was for another orientation);
 //! - a direct write to `PhysicsWorld::sdf_colliders[i].rotation` (without
-//!   `update_cache`) between steps, which the next step brings to unit length
-//!   (before that step the contact normal is rotated by the value as written);
+//!   `update_cache`) between steps, from which the next step rebuilds the
+//!   collider's cache (before that step the field is evaluated in the old
+//!   orientation and the contact normal is rotated by the value as written);
 //! - a `PhysicsWorld::restore_world` blob holding a non-unit rotation and
 //!   inverse rotation for the collider, which the next step brings to unit
 //!   length (before that step the queries use the rotation as restored);
@@ -484,5 +485,148 @@ fn sdf_frame_new_uses_a_unit_rotation() {
             let d = (*a - *b).abs().to_f64();
             assert!(d <= NEAR_F32, "|q| = {s}, value {i}: |d| = {d:e}");
         }
+    }
+}
+
+/// The contact of a probe of radius 0.5 at `R (4.4, 0.4, 0.2)` with the ball
+/// at scale 2 (radius 2, centre `R (3, 0, 0)`): depth `2.5 - sqrt(2.16)`
+/// along the direction from the centre to the probe.
+fn check_scaled_contact(w: &PhysicsWorld) {
+    let r = turn();
+    let at = origin() + r.rotate_vec(v3(4.4, 0.4, 0.2));
+    let centre = origin() + r.rotate_vec(v3(3.0, 0.0, 0.0));
+    let contacts = w.sdf_contacts();
+    assert_eq!(contacts.len(), 1, "the probe touches the scaled ball");
+    let c = contacts[0].1;
+    let depth = 2.5 - 2.16_f64.sqrt();
+    assert!(
+        (c.depth.to_f64() - depth).abs() <= NEAR_F32,
+        "depth {} vs {depth}",
+        c.depth.to_f64()
+    );
+    let u = (at - centre).normalize();
+    let dot = c.normal.dot(u).to_f64().abs();
+    assert!(
+        (dot - 1.0).abs() <= NEAR_F32,
+        "normal along the radius: |n·u| = {dot}"
+    );
+}
+
+fn scaled_probe() -> Vec3Fix {
+    origin() + turn().rotate_vec(v3(4.4, 0.4, 0.2))
+}
+
+/// A `scale` written to the collider before `add_sdf_collider` takes effect.
+#[test]
+fn a_scale_written_before_add_takes_effect() {
+    let mut w = world();
+    w.add_body(RigidBody::new_dynamic(scaled_probe(), Fix128::ONE));
+    let mut c = SdfCollider::new_static(field(), origin(), turn());
+    c.scale = fx(2.0);
+    w.add_sdf_collider(c);
+    check_scaled_contact(&w);
+}
+
+/// A `scale` written to `PhysicsWorld::sdf_colliders` after the collider was
+/// added takes effect from the next step (as `update_cache` would).
+#[test]
+fn a_scale_written_after_add_takes_effect_from_the_next_step() {
+    let mut w = world();
+    let b = w.add_body(RigidBody::new_dynamic(scaled_probe(), Fix128::ONE));
+    let i = w.add_sdf_collider(SdfCollider::new_static(field(), origin(), turn()));
+    w.sdf_colliders[i].scale = fx(2.0);
+    w.step(dt());
+    w.bodies[b].set_position(scaled_probe());
+    check_scaled_contact(&w);
+}
+
+/// Contact count and depths only (the normal is rotated by the written value
+/// before the step, so it is not compared there).
+fn depths(w: &PhysicsWorld) -> Vec<Fix128> {
+    let contacts = w.sdf_contacts();
+    let mut out = vec![Fix128::from_int(contacts.len() as i64)];
+    out.extend(contacts.iter().map(|(_, c)| c.depth));
+    out
+}
+
+/// A rotation written to `PhysicsWorld::sdf_colliders` after the collider was
+/// added, unit or not and without `update_cache`: before the next step the
+/// field is evaluated in the old orientation (the documented behaviour),
+/// from the step on the collider is the one `new_static(q)` builds, bit for
+/// bit (its frame and every contact and position after the step).
+#[test]
+fn a_rotation_written_after_add_takes_effect_from_the_next_step() {
+    // In contact with the ball in the old (identity) orientation.
+    let at_old = origin() + v3(2.2, 0.2, 0.1);
+    let run = |collider: SdfCollider, write: Option<QuatFix>| {
+        let mut w = world();
+        let b = w.add_body(RigidBody::new_dynamic(at_old, Fix128::ONE));
+        let i = w.add_sdf_collider(collider);
+        if let Some(q) = write {
+            w.sdf_colliders[i].rotation = q;
+        }
+        let before = depths(&w);
+        w.step(dt());
+        let frame = w.sdf_colliders[i].frame();
+        let mut o = Obs { values: Vec::new() };
+        o.v(w.bodies[b].position);
+        w.bodies[b].set_position(probe_at());
+        read_world(&w, &mut o);
+        (before, frame, o.values)
+    };
+    let (old_before, _, _) = run(
+        SdfCollider::new_static(field(), origin(), QuatFix::IDENTITY),
+        None,
+    );
+    assert_eq!(
+        old_before.len(),
+        2,
+        "the probe touches the ball in the old orientation"
+    );
+    for s in [1.0, 2.0, 0.5, 1.3] {
+        let q = scaled(turn(), fx(s));
+        let (before, frame, after) = run(
+            SdfCollider::new_static(field(), origin(), QuatFix::IDENTITY),
+            Some(q),
+        );
+        let (_, ref_frame, ref_after) = run(SdfCollider::new_static(field(), origin(), q), None);
+        assert_eq!(
+            before, old_before,
+            "|q| = {s}: old orientation until the step"
+        );
+        assert_eq!(
+            frame,
+            SdfFrame::new(origin(), unit_of(q), Fix128::ONE),
+            "|q| = {s}: inverse = conjugate of the unit rotation after the step"
+        );
+        assert_eq!(frame, ref_frame, "|q| = {s}: frame as new_static(q)");
+        assert_eq!(after, ref_after, "|q| = {s}: contacts as new_static(q)");
+    }
+}
+
+/// A restored `(s·q, conj(s·q))` pair: after one step the collider's frame is
+/// that of the unit rotation, with the inverse its exact conjugate.
+#[test]
+fn a_restored_pair_is_rebuilt_by_the_next_step() {
+    for s in SCALES {
+        let q = scaled(turn(), fx(s));
+        let mut w = world();
+        w.add_body(RigidBody::new_dynamic(probe_at(), Fix128::ONE));
+        w.add_sdf_collider(SdfCollider::new_static(field(), origin(), turn()));
+        let mut blob = w.snapshot_world();
+        patch_once(&mut blob, &quat_bytes(turn()), &quat_bytes(q));
+        patch_once(
+            &mut blob,
+            &quat_bytes(turn().conjugate()),
+            &quat_bytes(q.conjugate()),
+        );
+        reseal(&mut blob);
+        w.restore_world(&blob).expect("the patched blob restores");
+        w.step(dt());
+        assert_eq!(
+            w.sdf_colliders[0].frame(),
+            SdfFrame::new(origin(), unit_of(q), Fix128::ONE),
+            "|q| = {s}"
+        );
     }
 }
