@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5672 |
+| 🟢 Not ignored (run by CI) | 5686 |
 | 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5772** |
+| **Total** | **5786** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -155,7 +155,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5672)
+## 🟢 Not ignored (5686)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -329,6 +329,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_box_collider.rs` | 14 |
 | `audit_cylinder.rs` | 14 |
 | `audit_material.rs` | 14 |
+| `audit_nonunit_quaternion_sdf_collider.rs` | 14 |
 | `audit_pressure.rs` | 14 |
 | `audit_soft_body_cut.rs` | 14 |
 | `sleep_skip.rs` | 14 |
