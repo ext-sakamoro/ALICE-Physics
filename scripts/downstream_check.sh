@@ -44,9 +44,17 @@
 #              `stdlib::hardsurface::reinforcement` (the modules that call it)
 #   ALICE-TRT  lib tests of `physics_bridge::` (the GpuSolverBridge
 #              implementation) and `fix128::` (the GPU Fix128 kernels checked
-#              against alice-physics) with `physics-solver`. Without a GPU the
-#              tests that need one return early; the build still checks the
-#              trait implementation against this checkout
+#              against alice-physics) with `physics-solver`, one test at a time
+#              as in ALICE-TRT's own GPU lanes. Of the 102 tests, 56 create a
+#              `GpuDevice` and return early, still counted as passed, when
+#              `GpuDevice::new` finds no adapter (wgpu, every backend: on Linux
+#              Vulkan or GL). So before the tests a probe built against the
+#              placed ALICE-TRT calls the same `GpuDevice::new` and prints the
+#              adapter; with no adapter the step fails, because the GPU tests
+#              would pass without running. CI provides the adapter with Mesa's
+#              software Vulkan driver (lavapipe); locally it is the machine's
+#              GPU. TRT_GPU_PROBE=0 skips the probe (the tests then prove only
+#              that the trait implementation builds and the CPU tests pass)
 #
 # Before building, every requirement on alice-physics in the placed ALICE-SDF,
 # ALICE-LOL and ALICE-TRT manifests must accept this checkout's version
@@ -71,6 +79,8 @@
 #   LLM_REF ZIP_REF   ref of ALICE-LLM / ALICE-Zip, instead of the selected tag
 #   KINEMATICS_REF    ref of ALICE-Kinematics (default main; set it to the empty
 #                     string to select a release tag as for the other two)
+#   TRT_GPU_PROBE     1 (default): fail when ALICE-TRT finds no GPU adapter; 0:
+#                     run its tests without one (the GPU tests return early)
 #   DOWNSTREAM_TARGET_DIR
 #                     build output, one subdirectory per downstream (default
 #                     $DOWNSTREAM_ROOT/target); they are kept apart because
@@ -262,10 +272,61 @@ if requirements_ok lol "$LOL"; then
     run lol-lib "$LOL" cargo test -p alice-lol --features physics --lib -- law:: stdlib::hardsurface::reinforcement
 fi
 
+# ask the placed ALICE-TRT for a GPU adapter the way its tests do
+# (`GpuDevice::new`); its GPU tests return early, and pass, without one
+trt_gpu_probe() {
+    local probe="$ROOT/trt-gpu-probe" log="$ROOT/logs/trt-gpu-probe.log" out
+    if [ "${TRT_GPU_PROBE:-1}" = 0 ]; then
+        echo "trt: GPU probe skipped (TRT_GPU_PROBE=0); its GPU tests return early without an adapter"
+        summary+=("trt GPU adapter: not probed (TRT_GPU_PROBE=0)")
+        return
+    fi
+    mkdir -p "$probe/src"
+    cat > "$probe/Cargo.toml" <<'TOML'
+[package]
+name = "trt-gpu-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+alice-trt = { path = "../ALICE-TRT", features = ["physics-solver"] }
+
+[workspace]
+TOML
+    cat > "$probe/src/main.rs" <<'RUST'
+fn main() {
+    match alice_trt::GpuDevice::new() {
+        Ok(device) => println!("{}", device.info()),
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    }
+}
+RUST
+    # the versions cargo tree just resolved for ALICE-TRT, so the probe reuses its build
+    if [ -f "$TRT/Cargo.lock" ]; then
+        cp "$TRT/Cargo.lock" "$probe/Cargo.lock"
+    fi
+    echo "==> trt-gpu-probe: alice_trt::GpuDevice::new()"
+    # run from ALICE-TRT so its rust-toolchain.toml picks the toolchain of the tests
+    if out=$(cd "$TRT" && cargo run -q --manifest-path "$probe/Cargo.toml" 2>"$log") && [ -n "$out" ]; then
+        echo "trt: GPU adapter: $out"
+        summary+=("trt GPU adapter: $out")
+    else
+        cat "$log" >&2
+        echo "error: trt: ALICE-TRT finds no GPU adapter (${out:-no output}); its GPU tests would return early and pass without running" >&2
+        failed+=("trt (no GPU adapter)")
+        summary+=("trt GPU adapter: none")
+    fi
+}
+
 export CARGO_TARGET_DIR="$TARGET/trt"
 if requirements_ok trt "$TRT"; then
     check_resolved trt "$TRT" --features physics-solver
-    run trt-lib "$TRT" cargo test --features physics-solver --lib -- physics_bridge:: fix128::
+    trt_gpu_probe
+    run trt-lib "$TRT" cargo test --features physics-solver --lib -- physics_bridge:: fix128:: --test-threads=1
 fi
 
 echo
