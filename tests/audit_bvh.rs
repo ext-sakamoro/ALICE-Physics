@@ -661,7 +661,6 @@ fn refit_updates_every_leaf_and_internal_box_to_the_quantised_union_of_the_new_b
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W2-009: LinearBvh::refit_leaves refreshes every node box but leaves the public `bounds` field (documented 'World bounds') at the pre-refit value, so it no longer contains the primitives after they move"]
 fn refit_keeps_the_world_bounds_field_in_sync_with_the_primitives() {
     let boxes = random_boxes(61, 40, 10, 8);
     let mut bvh = build(&boxes);

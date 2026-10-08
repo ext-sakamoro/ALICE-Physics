@@ -363,9 +363,9 @@ impl LinearBvh {
     /// every substep ([`crate::solver::Broadphase::Bvh`]), keep a
     /// persistent tree ([`crate::solver::Broadphase::DynamicTree`]) or
     /// rebuild only the static layer when it changes
-    /// ([`crate::solver::Broadphase::Hybrid`]). The public `bounds` field
-    /// keeps its pre-refit value (`tests/audit_bvh.rs`, ignored test
-    /// `AUD-A-S3W2-009`).
+    /// ([`crate::solver::Broadphase::Hybrid`]). The public `bounds` field is
+    /// recomputed as the union of the new primitive boxes; the Morton codes
+    /// keep their build-time values, as the tree structure does.
     pub fn refit_leaves(&mut self, new_aabbs_by_prim_index: &[AABB]) {
         // Step 1 — Leaf refit: aggregate each leaf's primitive AABBs
         // from `new_aabbs_by_prim_index`, requantise, and write back.
@@ -388,6 +388,15 @@ impl LinearBvh {
             }
             node.aabb_min = aabb_to_i32_min(&leaf_aabb);
             node.aabb_max = aabb_to_i32_max(&leaf_aabb);
+        }
+
+        // The public world bounds follow the primitives, as `build` sets them
+        if let Some((&first, rest)) = self.primitives.split_first() {
+            let mut world = new_aabbs_by_prim_index[first as usize];
+            for &p in rest {
+                world = world.union(&new_aabbs_by_prim_index[p as usize]);
+            }
+            self.bounds = world;
         }
 
         // Step 2 — Bottom-up internal-node union: walk the flat node

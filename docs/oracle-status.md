@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5610 |
-| 🔴 Red by design | 80 |
+| 🟢 Not ignored (run by CI) | 5612 |
+| 🔴 Red by design | 78 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **5716** |
@@ -15,7 +15,7 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (80)
+## 🔴 Red by design (78)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -55,7 +55,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `magnetic_force_on_the_axis_pulls_toward_the_dipole_as_the_code_comment_says` (audit_force.rs) — known defect: AUD-A-S4W3-017: the Magnetic code comment says a body on the dipole axis 'is attracted', but wit…
 - `mat3_inverse_of_small_scale_matrix` (audit_math.rs) — known defect: AUD-A-S1W5-024: Mat3Fix::inverse of a small non-singular matrix (diag 1e-5 I: det 1e-15 quantise…
 - `max_queries_bounds_what_one_dispatch_covers` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-009: GpuDispatchConfig::max_queries is documented as \"Maximum queries per dispatch\"…
-- `nan_courant_is_rejected` (audit_acoustic_wave.rs) — known defect: AUD-A-S5W1-002: leapfrog_step accepts NaN / unstable Courant numbers (C > 1) with no check and n…
 - `negative_max_force_must_not_produce_force_at_zero_error` (audit_motor.rs) — known defect: AUD-A-S5W2-001: negative max_force makes clamp(v, -max, +max) an empty interval and compute retu…
 - `negative_max_torque_must_not_reverse_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (ma…
 - `non_unit_target_quaternion_must_not_scale_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-005: a non-unit target or current quaternion is not normalised; scaling the target qu…
@@ -71,7 +70,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `recommended_fillet_unreachable_target_not_silently_returned` (audit_fillet_stress.rs) — known defect: AUD-A-S1W5-005: recommended_fillet_radius_mm returns d/2 (K_t=1.2297 > target 1.2 at D/d = 2) fo…
 - `reconcile_weighted_is_atomic_on_error` (audit_coupled_field.rs) — known defect: AUD-A-S1W5-017: reconcile_weighted (and reconcile_mean) adopt participant by participant; if par…
 - `recorded_position_equals_the_engine_state_for_integers_above_2_pow_24` (audit_replay.rs) — known defect: AUD-A-S4W2-015: 記録値は Fix128 状態ではなく to_f32 の丸め (24 bit 仮数)。x = 16777217 を記録すると 16777216 で戻る (エンジン…
-- `refit_keeps_the_world_bounds_field_in_sync_with_the_primitives` (audit_bvh.rs) — known defect: AUD-A-S3W2-009: LinearBvh::refit_leaves refreshes every node box but leaves the public `bounds` …
 - `remove_body_keeps_the_contact_history_of_the_survivors` (audit_solver.rs) — known defect: AUD-A-S1W2-004: remove_body does not remap the event pair history; the surviving pair re-reports…
 - `restore_rejects_a_snapshot_whose_buffer_no_longer_matches_its_checksum` (audit_fluid_netcode.rs) — known defect: AUD-A-S5W2-014: restore() does not check the snapshot checksum, so a snapshot whose buffer was a…
 - `result_velocity_has_no_component_into_the_wall_after_a_head_on_slide` (audit_character.rs) — known defect: AUD-A-S3W3-005: MoveResult.velocity doc says velocity after sliding but move_and_slide always re…
@@ -153,7 +151,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5610)
+## 🟢 Not ignored (5612)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -242,6 +240,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_tgs_wiring.rs` | 19 |
 | `audit_anisotropic.rs` | 19 |
 | `audit_anomaly.rs` | 19 |
+| `audit_bvh.rs` | 19 |
 | `audit_cloth_fluid.rs` | 19 |
 | `audit_cone.rs` | 19 |
 | `audit_sim_modifier.rs` | 19 |
@@ -255,7 +254,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_thin_wall_wiring.rs` | 18 |
 | `analytic_wind_zone_wiring.rs` | 18 |
 | `audit_bimaterial.rs` | 18 |
-| `audit_bvh.rs` | 18 |
 | `audit_compressible.rs` | 18 |
 | `audit_cubic_elastic_fem.rs` | 18 |
 | `audit_debug_render.rs` | 18 |
@@ -431,6 +429,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_rans_wall_function.rs` | 9 |
 | `analytic_structural_creep_per_material.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
+| `audit_acoustic_wave.rs` | 9 |
 | `audit_c_trimesh.rs` | 9 |
 | `audit_heatmap.rs` | 9 |
 | `audit_non_newtonian.rs` | 9 |
@@ -456,7 +455,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_tgs_joints_in_substep.rs` | 8 |
 | `analytic_thermal_stress_wiring.rs` | 8 |
 | `analytic_wall_model.rs` | 8 |
-| `audit_acoustic_wave.rs` | 8 |
 | `audit_c_cfd_solver.rs` | 8 |
 | `audit_damping_rayleigh.rs` | 8 |
 | `audit_error.rs` | 8 |

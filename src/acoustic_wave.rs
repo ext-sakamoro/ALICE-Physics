@@ -37,8 +37,15 @@
 ///
 /// # Panics
 ///
-/// Panics if the three arrays have mismatched lengths.
+/// Panics if the three arrays have mismatched lengths, or if `courant` is not
+/// finite (a NaN or infinite Courant number used to fill `next` with NaN
+/// without any signal). Only `C²` enters the update, so the sign does not
+/// matter; a finite `|C|` above 1 is accepted and is unstable, as above.
 pub fn leapfrog_step(current: &[f32], previous: &[f32], next: &mut [f32], courant: f32) {
+    assert!(
+        courant.is_finite(),
+        "Courant number must be finite, got {courant}"
+    );
     assert_eq!(current.len(), previous.len(), "length mismatch");
     assert_eq!(current.len(), next.len(), "length mismatch");
     let n = current.len();

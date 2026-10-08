@@ -339,6 +339,8 @@ were introduced during that release window.
 - crate 内部 (`pub(crate)`) の TGS 参照実装 3 module を削除 `solver_tgs_hooks` (質点の `PgsHooks` / `PgsConfig` / `SimpleBodyState` / `SimpleContact`)、`solver_tgs_hooks_6dof` (姿勢を持たない `Pgs6DofHooks` / `Pgs6DofConfig` / `Body6DofState` / `Contact6Dof`)、`solver_tgs_hooks_6dof_scoped` (`solve_island_isolated` / `solve_islands_serial` / `solve_islands_parallel`) と、それらの test だけが呼んでいた `ImpulseCache::len` / `Body6DofOrientedState::local_to_world` `SolverBackend::Tgs` は姿勢を持つ `Pgs6DofOrientedHooks` / `solve_oriented_islands_serial` だけを使っており、削除した module は world から呼ばれていなかった 公開 API の変更なし (`docs/PUBLIC_API_SNAPSHOT.txt` は差分 0) 閉形式で確かめられる test (2 質点の Newton の反発則、Coulomb の摩擦錐の上限、warm start の `Δv = J / m`、Baumgarte の位置補正量、既定値での自由落下と静止接触) は姿勢を持つ hooks に対する test として `solver_tgs_hooks_6dof_oriented_scoped` に移し、`AdaptiveSubStepConfig` の既定値の test は `solver_tgs` に移した
 
 ### Fixed
+- `bvh::LinearBvh::refit_leaves`: 各節点の箱は新しい primitive の箱に合わせて直すが、公開の `bounds` (doc は「World bounds」) は build 時の値のままで、primitive が動くと含まなくなっていた 新しい primitive の箱の和に直す (AUD-A-S3W2-009)
+- `acoustic_wave::leapfrog_step`: NaN や無限大の Courant 数を受け取ると、何の合図もなく `next` を NaN で埋めていた 有限でない Courant 数は panic する (doc の `# Panics` に追記、符号と `|C| > 1` の扱いは従来どおり) (AUD-A-S5W1-002)
 - `raycast::ray_capsule`: capsule の軸に平行な ray を、円柱の判別式の分母 0 で `None` にしていた (半径の内側なら端の半球に当たる) 平行な時は両端の球と判定する (AUD-A-S5W1-003)
 - `raycast::raycast_spheres` / `raycast_aabbs`: 同じ `t` の候補が複数あると最後のものを返し、`raycast_all_*` の先頭 (入力順で最初) と食い違っていた 同じ `t` では先の候補を残す (AUD-A-S5W1-004)
 - `heightfield::HeightField::sample_normal`: 格子の境界点で中央差分が格子の外 (高さを端で打ち切った平らな値) を読み、傾きが半分になっていた (傾き 0.5 の平面で nx −0.2425、正しくは −0.4472) 差分の 2 点を格子内に収め、実際の間隔で割る (AUD-A-S4W3-003)

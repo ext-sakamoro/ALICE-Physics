@@ -166,7 +166,6 @@ fn three_cell_grid_single_interior_cell() {
 
 /// A NaN Courant number must not be silently accepted as a valid step.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-002: leapfrog_step accepts NaN / unstable Courant numbers (C > 1) with no check and no documented return; output is silently NaN"]
 fn nan_courant_is_rejected() {
     let cur = vec![1.0f32; 8];
     let prev = vec![1.0f32; 8];
