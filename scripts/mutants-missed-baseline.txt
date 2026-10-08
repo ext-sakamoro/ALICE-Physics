@@ -35,6 +35,7 @@
 [default] src/math.rs: replace * with / in Vec3Fix::cross_simd
 [default] src/math.rs: replace * with / in Vec3Fix::cross_simd
 [default] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[default] src/math.rs: replace + with - in cordic_sin_cos
 [default] src/math.rs: replace - with + in Vec3Fix::cross_simd
 [default] src/math.rs: replace - with + in Vec3Fix::cross_simd
 [default] src/math.rs: replace - with + in Vec3Fix::cross_simd
@@ -283,6 +284,7 @@
 [parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
 [parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
 [parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
+[parallel] src/math.rs: replace + with - in cordic_sin_cos
 [parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
 [parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
 [parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
