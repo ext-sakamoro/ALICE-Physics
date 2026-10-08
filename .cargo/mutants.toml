@@ -115,9 +115,10 @@
 #   modulo `TWO_PI`, and `TWO_PI == PI + PI` bit for bit. The quadrant step
 #   maps -π and π to the same value (0, cosine negated), and `PI - (x + TWO_PI)
 #   == -PI - x` exactly, so every one of these mutants (entering the reduction
-#   at exactly ±π, a count of turns one lower that the clamp corrects, the
-#   clamp's `> π` side that a reduced angle below π never reaches, its `< -π`
-#   side at exactly -π) yields the same quadrant input.
+#   at exactly ±π, the clamp's `> π` side that a reduced angle below π never
+#   reaches, its `< -π` side at exactly -π) yields the same quadrant input.
+#   (src/math.rs:969, `theta + PI` → `theta - PI`, is not listed: Fix128
+#   addition wraps, and near `hi = i64::MAX` only one of the two wraps.)
 #
 # src/math.rs:1008 (`cordic_sin_cos`) and :1043 (`cordic_atan`): `d > 0` where
 #   `d` is only ever 1 or -1, so `d >= 0` takes the same branch.
@@ -135,9 +136,6 @@
 #   that already has the other bit, so the binary search ends at the same
 #   index; and the search result already lies in [start + 1, end - 1], so the
 #   final clamp with `start * 1` or `end + 1` / `end / 1` changes nothing.
-#
-# src/bvh.rs:674 (`find_pairs`): with no nodes or no primitives every leaf
-#   loop yields nothing, so `&&` returns the same empty list as `||`.
 #
 # src/bvh.rs:951 (`query_pairs`): `end = start * 1` starts the scan of a cell
 #   at `start` instead of `start + 1`, and the first comparison
@@ -170,7 +168,6 @@ exclude_re = [
     "bvh\\.rs:530:.*replace \\| with \\^ in LinearBvh::build_recursive",
     "replace < with <= in Fix128::(from_f64|from_ratio)$",
     "math\\.rs:967:.*replace (> with >=|< with <=) in cordic_sin_cos",
-    "math\\.rs:969:.*replace \\+ with - in cordic_sin_cos",
     "math\\.rs:974:.*replace > with (==|>=) in cordic_sin_cos",
     "math\\.rs:975:.*replace - with (\\+|/) in cordic_sin_cos",
     "math\\.rs:976:.*replace < with (==|<=) in cordic_sin_cos",
@@ -181,6 +178,5 @@ exclude_re = [
     "bvh\\.rs:552:.*replace - with / in LinearBvh::find_split",
     "bvh\\.rs:558:.*replace >> with << in LinearBvh::find_split",
     "bvh\\.rs:567:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
-    "bvh\\.rs:674:.*replace \\|\\| with && in LinearBvh::find_pairs",
     "bvh\\.rs:951:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
 ]

@@ -105,3 +105,17 @@ fn query_pairs_tests_each_pair_of_one_cell_once() {
         assert_eq!(out.len() as u32, k * (k - 1) / 2, "k = {k}");
     }
 }
+
+/// `LinearBvh`'s fields are public, so a caller can hand `find_pairs` a tree
+/// it did not build. With no primitives there is nothing to pair, and it
+/// returns at once, even when a node's escape pointer leads back to itself
+/// (a traversal of that tree would not end).
+#[test]
+fn find_pairs_without_primitives_returns_at_once() {
+    let looping = LinearBvh {
+        nodes: vec![BvhNode::leaf(&cube(0, 0, 0, 1), 0, 1, 0)],
+        primitives: Vec::new(),
+        bounds: cube(0, 0, 0, 1),
+    };
+    assert!(looping.find_pairs().is_empty());
+}
