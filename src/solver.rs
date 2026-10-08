@@ -108,7 +108,14 @@ pub struct RigidBody {
     pub prev_position: Vec3Fix,
 
     // --- COLD fields (accessed occasionally) ---
-    /// Orientation
+    /// Orientation, a unit quaternion
+    ///
+    /// [`Self::set_rotation`], [`PhysicsWorld::add_body`] and the start of
+    /// every [`PhysicsWorld::step`] store it at unit length. A non-unit value
+    /// written to this field directly (or through
+    /// [`PhysicsWorld::get_body_mut`], or restored from a snapshot) is used as
+    /// written until the next step, so what it rotates is scaled by `|q|^2`
+    /// in the queries made before that step.
     pub rotation: QuatFix,
     /// Angular velocity
     pub angular_velocity: Vec3Fix,
@@ -3294,12 +3301,17 @@ impl PhysicsWorld {
     }
 
     /// Bring every body's rotations to unit length before a step reads them
-    /// ([`RigidBody::make_rotations_unit`]). `rotation` is a public field, so
-    /// a value assigned to it directly between steps reaches the step as it
-    /// was written; a rotation already of unit length is left bit for bit.
+    /// ([`RigidBody::make_rotations_unit`]), and the rotations of the SDF
+    /// colliders with them ([`SdfCollider::make_rotations_unit`]). `rotation`
+    /// is a public field, so a value assigned to it directly between steps
+    /// reaches the step as it was written; a rotation already of unit length
+    /// is left bit for bit.
     fn make_body_rotations_unit(&mut self) {
         for body in &mut self.bodies {
             body.make_rotations_unit();
+        }
+        for collider in &mut self.sdf_colliders {
+            collider.make_rotations_unit();
         }
     }
 
@@ -5650,7 +5662,12 @@ impl PhysicsWorld {
     /// at that body's current pose when the body exists, and follows the body
     /// from then on: every step copies the body's pose into it before SDF
     /// overlap is resolved and again at the end of the step.
+    ///
+    /// The collider's rotation (and its cached inverse) is stored as a unit
+    /// quaternion, also when a non-unit value was written to
+    /// [`SdfCollider::rotation`] before the call.
     pub fn add_sdf_collider(&mut self, mut collider: SdfCollider) -> usize {
+        collider.make_rotations_unit();
         collider.sync_to_body(&self.bodies);
         let idx = self.sdf_colliders.len();
         self.sdf_colliders.push(collider);
@@ -6399,6 +6416,10 @@ impl PhysicsWorld {
     }
 
     /// Get mutable body by index
+    ///
+    /// A rotation written through the returned reference is not normalized
+    /// until the next step: a non-unit quaternion `q` scales what it rotates
+    /// by `|q|^2` in the queries made before then (see [`RigidBody::rotation`]).
     #[inline]
     pub fn get_body_mut(&mut self, idx: usize) -> Option<&mut RigidBody> {
         self.bodies.get_mut(idx)
@@ -6634,7 +6655,10 @@ impl PhysicsWorld {
 
     /// Deserialize world state (for rollback netcode).
     ///
-    /// Restores per-body transforms. Parallel arrays (collision radii,
+    /// Restores per-body transforms. The rotations are restored as stored
+    /// and brought to unit length by the next step, so a non-unit rotation in
+    /// `data` scales what it rotates by `|q|^2` in the queries made before
+    /// that step (see [`RigidBody::rotation`]). Parallel arrays (collision radii,
     /// filters, materials, island manager) are resized to match the body
     /// count, preserving existing entries and zero-filling new ones.
     ///

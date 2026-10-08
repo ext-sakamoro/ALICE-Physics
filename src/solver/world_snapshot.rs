@@ -1805,6 +1805,8 @@ impl PhysicsWorld {
     /// [`WorldSnapshotError::CallbackCountMismatch`]); use
     /// [`Self::restore_world`] on a world that holds them instead.
     ///
+    /// Rotations are restored as stored, as in [`Self::restore_world`].
+    ///
     /// # Errors
     ///
     /// See [`WorldSnapshotError`] for which input gives which error.
@@ -1821,6 +1823,11 @@ impl PhysicsWorld {
     /// the SDF fields of `self.sdf_colliders` (paired with the blob's poses in
     /// order), the pre-solve hooks, contact modifiers and the installed GPU
     /// bridge; their counts must equal the snapshot's.
+    ///
+    /// Body and SDF collider rotations are restored as stored and brought to
+    /// unit length by the next step, so a non-unit rotation in `data` scales
+    /// what it rotates by `|q|^2` in the queries made before that step (see
+    /// [`RigidBody::rotation`]).
     ///
     /// # Errors
     ///
