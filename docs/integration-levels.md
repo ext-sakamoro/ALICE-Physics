@@ -13,7 +13,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | Level | Meaning | Modules |
 |-------|---------|--------:|
 | step | runs when `PhysicsWorld` steps | 24 |
-| world API | used through another `PhysicsWorld` method | 13 |
+| world API | used through another `PhysicsWorld` method | 14 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
 | standalone | a Rust API that only examples call | 127 |
 | unused | no caller outside tests | 0 |
@@ -43,18 +43,19 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 11 / 0 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `world_participant` | step | 37 / 23 / 0 / 28 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 37 / 25 / 0 / 26 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `heatmap` | world API | 0 / 5 / 0 / 2 / 0 | — |
+| `law_id` | world API | 0 / 3 / 0 / 0 / 0 | — |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `rng` | world API | 0 / 6 / 0 / 6 / 0 | — |
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 51 of 193 items) | 51 / 112 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 51 of 194 items) | 51 / 113 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |

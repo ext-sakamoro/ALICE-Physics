@@ -56,7 +56,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 51 of 193 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 51 of 194 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 10 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
@@ -197,6 +197,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `anisotropic` | orthotropic materials with Hill and Tsai-Wu failure |  | [`anisotropic_failure_analysis`](../examples/anisotropic_failure_analysis.rs) | standalone |
 | `laminate` | classical laminate theory (ABD matrix) | std | [`laminate_abd_matrix`](../examples/laminate_abd_matrix.rs) | standalone |
 | `laminate_failure` | Tsai-Wu, Tsai-Hill, Hashin and Puck ply failure |  | [`laminate_failure_criteria`](../examples/laminate_failure_criteria.rs) | standalone |
+| `law_id` | `PhysicsWorld::law_id`: SHA-256 content identifier of the rules a world is configured with (config, contact cache, continuous collision, sleep thresholds, materials, force fields, participants), hashed with a semantics identifier such as `PHYSICS_SEMANTICS_ID` |  | [`law_id_world`](../examples/law_id_world.rs) | world API |
 | `bimaterial` | bimetal residual stress and Voigt / Reuss bounds |  |  | standalone |
 | `prestressed` | bolt preload and cable pretension |  | [`prestressed_joints_and_cables`](../examples/prestressed_joints_and_cables.rs) | standalone |
 | `fillet_stress` | stress concentration factors (Kirsch, Inglis, Peterson) |  | [`fillet_stress_concentration`](../examples/fillet_stress_concentration.rs) | standalone |

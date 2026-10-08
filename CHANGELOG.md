@@ -18,6 +18,7 @@ were introduced during that release window.
 ### Added
 
 - `semantics::PHYSICS_SEMANTICS_ID` / `PHYSICS_SEMANTICS_PINS` (crate 直下にも re-export): step の意味論の content hash (32 byte) 決定論 golden が pin する step の経路 21 組の SHA-256 と `alice_det_math::SEMANTICS_ID` を、`alice-det-math` の `SEMANTICS_ID` と同じ手順 (名前で整列、`u32` big-endian の名前長 ‖ 名前 ‖ digest を SHA-256) で畳み込んだ値 `574e7586…04fbdd` cargo features に依らず同じ値 (`parallel` / `gpu-solver-bridge` の経路の entry も常に含む) golden が動く・未 pin の経路に golden が入ると値が変わり、golden の無い経路の変化は反映されない `physics2d` は既存の `u64` digest と同じ最終状態の SHA-256 を新たに pin した
+- `law_id` module と `PhysicsWorld::law_id(&semantics_id) -> [u8; 32]`: ワールドに設定した規則の content hash 対象は solver の config (`substeps` / `iterations` / `gravity` / `damping` / backend / `warm_start_factor`)、接触キャッシュの warm start と保持 frame 数、`sdf_collision_radius`、連続衝突、スリープ閾値、材質表と pair override、力場 (種類・係数・対象 body・有効)、participant (kind・step rule・port) で、`alice-zip` の law 識別子と同じ長さ前置の big-endian 符号化に `semantics_id` (通常は `PHYSICS_SEMANTICS_ID`) を入れて SHA-256 を取る 符号化は doc の表に全 field を順に書いた pair override は `(mat_a, mat_b)` で、力場の対象 body は昇順・重複なしに揃えてから符号化するので登録順では値が変わらない `config.warm_start_factor` は CPU の step では読まれないが GPU bridge に渡るので含めた 状態 (body・拘束・joint とその motor)、broadphase の種類と sleep skip (どちらを選んでも同じ bit)、利用者が渡す hook・接触 modifier・SDF collider・GPU bridge は対象外 participant は係数を公開しないので、同じ kind で係数だけ違う 2 つは同じ値になる
 
 ### Fixed
 

@@ -123,6 +123,17 @@ Windows and `wasm32-wasip1`.
 deterministic, but inside the closure you need to call
 `alice_physics::det_math::{sin, exp, …}` instead of `f32::sin` and friends.
 
+**Naming the law.** `alice_physics::PHYSICS_SEMANTICS_ID` identifies the
+arithmetic and step implementation of a build: it is folded from the pinned
+golden outputs and the `alice-det-math` identifier, and changes exactly when one
+of them changes. `PhysicsWorld::law_id(&PHYSICS_SEMANTICS_ID)` hashes it with the
+rules a world is configured with (config, contact cache, continuous collision,
+sleep thresholds, materials, force fields and participants), not its bodies.
+Two worlds with the same law identifier, state and inputs step to the same bits,
+provided the hooks, contact modifiers, SDF colliders and GPU bridge they hold
+also behave the same; those are outside the identifier. Run
+`cargo run --example law_id_world` to print both.
+
 **Not covered.** Targets that do not follow IEEE 754 for the basic operations,
 such as 32-bit x86 built for x87 (`i586`, no SSE2), and builds that use
 fast-math style flags.
@@ -210,7 +221,7 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | How a module is used | Modules |
 |----------------------|--------:|
 | step: runs when `PhysicsWorld` steps | 24 |
-| world API: used through another `PhysicsWorld` method | 13 |
+| world API: used through another `PhysicsWorld` method | 14 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
 | standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 127 |
 | unused: no caller outside tests | 0 |

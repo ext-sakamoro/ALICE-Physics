@@ -116,6 +116,11 @@ cargo run --release --example rollback_netcode
 **利用者が渡すコード** `ClosureSdf` は利用者のクロージャを受け取る
 ソルバー自体は決定論的だが、クロージャの中では `f32::sin` などの代わりに `alice_physics::det_math::{sin, exp, …}` を呼ぶ必要がある
 
+**法則の識別子** `alice_physics::PHYSICS_SEMANTICS_ID` はビルドの算術とステップ実装を表す 固定した golden の出力と `alice-det-math` の識別子から畳み込んだ値で、そのどれかが変わった時に限って変わる
+`PhysicsWorld::law_id(&PHYSICS_SEMANTICS_ID)` はこれと、ワールドに設定した規則 (config、接触キャッシュ、連続衝突、スリープ閾値、材質、力場、participant) をまとめてハッシュする 剛体などの状態は含めない
+法則の識別子・状態・入力が同じ 2 つのワールドは同じビットに進む ただし識別子の外にあるフック、接触モディファイア、SDF コライダー、GPU ブリッジも同じ振る舞いをすることが前提
+`cargo run --example law_id_world` で両方を表示できる
+
 **対象外** 基本演算で IEEE 754 に従わないターゲット (SSE2 を使わない 32 bit x86 `i586` など) と、fast-math 系のフラグを付けたビルド
 
 **決定論は正しさを意味しない** ビットが一致するのは全員が同じ数値を計算しているということで、その数値が正しいかどうかは別に検証している
@@ -180,7 +185,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | 使われ方 | モジュール数 |
 |----------|-------------:|
 | step: `PhysicsWorld` の step で実行される | 24 |
-| world API: `PhysicsWorld` の他のメソッドから使われる | 13 |
+| world API: `PhysicsWorld` の他のメソッドから使われる | 14 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
 | standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 127 |
 | unused: テスト以外に呼び出し元がない | 0 |
