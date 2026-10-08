@@ -128,22 +128,41 @@ fn tail_add_then_remove_before_any_body_sleeps_matches_never_added() {
 /// had the extra body (not a small, single-lingering-leaf difference), and
 /// it stays 242 bytes longer through at least 30 further steps — it does
 /// not shrink back down on its own, even though the *bodies'* own positions
-/// do agree (this is purely a serialized-tree-content difference). Likely
-/// mechanism (not confirmed by reading `src/dynamic_bvh.rs`, which is out
-/// of scope for this file): removal returns the tree node to a free list
-/// without shrinking the backing array, so the array's length (and
-/// whatever stale bytes the freed slot holds) stays permanently larger
-/// than a tree that never allocated that node at all. `#[ignore]`d as a
-/// second, separate `DynamicTree` history-dependence defect, distinct from
-/// the sleep-state one above (confirmed distinct: with a radius-less extra
-/// body that never enters the tree at all, the equivalent scenario differs
-/// by only 1 byte and converges after one step).
+/// do agree (this is purely a serialized-tree-content difference).
+///
+/// Confirmed mechanism (read directly, not inferred):
+/// `w_tree` (`src/solver/world_snapshot.rs`) writes `nodes.len()` and every
+/// node in the backing array — including freed ones, which `free_node`
+/// (`src/dynamic_bvh.rs`) never removes, only resets and pushes onto
+/// `free_list` — plus `free_list` itself, unconditionally. Nothing shrinks
+/// the array on removal. This is behaviorally inert, not a correctness bug
+/// in query results: `find_pairs` (`src/dynamic_bvh.rs`) sorts and dedups
+/// its output before returning it, so the tree's internal layout never
+/// reaches a caller either way; the only place it shows up is these bytes.
+///
+/// ⚠️ This test does not yet guard against a future tree-node-order
+/// mutation: the current implementation already writes every node
+/// (including freed ones) and the free list as-is, so a mutation that
+/// merely reordered that existing content would not be "newly caught" by
+/// anything here — there is no canonical order yet to diverge from. It
+/// would become a meaningful guard once a future fix canonicalizes the
+/// tree section and this test is un-ignored.
+///
+/// `#[ignore]`d as a second, separate `DynamicTree` history-dependence
+/// defect, distinct from the sleep-state one above (confirmed distinct:
+/// with a radius-less extra body that never enters the tree at all, the
+/// equivalent scenario differs by only 1 byte and converges after one
+/// step).
 #[test]
-#[ignore = "known defect (likely): DynamicTree's remove_body frees the \
-            persistent tree node without shrinking its backing array, so \
-            the snapshot stays permanently longer than a world that never \
-            had the removed body, even though body positions agree; \
-            mechanism inferred, not confirmed against src/dynamic_bvh.rs"]
+#[ignore = "known defect: DynamicTree's remove_body frees the persistent \
+            tree node without shrinking its backing array (confirmed: \
+            src/solver/world_snapshot.rs's w_tree writes every node \
+            including freed ones, plus the free list, unconditionally; \
+            src/dynamic_bvh.rs's free_node never removes a node, only \
+            resets and frees it), so the snapshot stays permanently \
+            longer than a world that never had the removed body, even \
+            though body positions agree; not yet a guard against a tree- \
+            node-order mutation until a fix canonicalizes this section"]
 fn tail_add_then_remove_does_not_converge_with_dynamic_tree() {
     let mut with_extra = base_scene(Broadphase::DynamicTree);
     let extra = with_extra.add_body_with_radius(
@@ -271,6 +290,31 @@ fn all_bodies_sleeping(w: &PhysicsWorld) -> bool {
         .all(|sd| sd.state == SleepState::Sleeping)
 }
 
+/// The premise `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges`
+/// depends on, checked by a test that actually runs under a plain
+/// `cargo test` — not only inside that `#[ignore]`d test, which does not
+/// run by default and so would not catch a regression here on its own
+/// (measured directly: setting `frames_to_sleep` to an unreachably large
+/// value in `resting_scene` still leaves a default `cargo test` run green,
+/// 3 passed / 2 ignored, with no indication the scene stopped sleeping at
+/// all). An earlier version of `resting_scene` placed the four spheres
+/// asymmetrically near the top of the big sphere, which never stops
+/// sliding down its curve and so never reaches the sleep threshold either
+/// — this is the test that would have caught that.
+#[test]
+fn resting_scene_reaches_sleep_by_step_120() {
+    let mut w = resting_scene(Broadphase::default());
+    for _ in 0..120 {
+        w.step(dt());
+    }
+    assert!(
+        all_bodies_sleeping(&w),
+        "every body (the static floor trivially, and all four resting \
+         spheres) should be asleep by step 120; sleep_data = {:?}",
+        w.islands.sleep_data
+    );
+}
+
 /// Pinned known defect (see the module doc comment): a distant, never-
 /// touching static body is added once the four resting spheres above have
 /// already fallen asleep, then removed again once it has been present for
@@ -310,14 +354,6 @@ fn distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges
     for _ in 0..resident_steps {
         with_transient.step(dt());
     }
-
-    assert!(
-        all_bodies_sleeping(&with_transient),
-        "premise: by step {}, every body (the static floor trivially, and \
-         all four resting spheres) should be asleep; sleep_data = {:?}",
-        settle_and_sleep_steps + resident_steps,
-        with_transient.islands.sleep_data
-    );
 
     with_transient.remove_body(transient); // tail: nothing else added since
 
