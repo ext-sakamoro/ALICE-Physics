@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5662 |
+| 🟢 Not ignored (run by CI) | 5672 |
 | 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5762** |
+| **Total** | **5772** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -155,7 +155,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5662)
+## 🟢 Not ignored (5672)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -421,6 +421,7 @@ Per-file counts (the test names are in `tests/`):
 | `coupling_channel_inventory.rs` | 10 |
 | `fix128_vs_f64_coupling_hypotheses.rs` | 10 |
 | `indep_aero_atmosphere.rs` | 10 |
+| `law_id_world.rs` | 10 |
 | `analytic_adaptive_dt.rs` | 9 |
 | `analytic_anisotropic_friction_wiring.rs` | 9 |
 | `analytic_character_state_wiring.rs` | 9 |
