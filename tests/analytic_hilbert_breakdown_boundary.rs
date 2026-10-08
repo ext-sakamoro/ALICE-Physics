@@ -103,19 +103,21 @@ fn hilbert_nine_is_below_the_breakdown_threshold_and_solves_accurately() {
     );
 }
 
-/// `n = 10`: `cond(H_10) ≈ 1.60e13`, past `2⁴⁰ ≈ 1.0995e12` — the measured
-/// boundary is real (error jumps from `~2e-8` at `n=9` with this same
-/// adversarial right-hand side to `O(1)` here, three orders of magnitude
-/// past where `cond(A) * tol` would bound it), but `src/linear_solver.rs`'s
-/// own doc promises this is "reported as breakdown", and it is not: `gmres`
-/// returns `Ok` with a solution that is wrong by about `1.3`, not
+/// `n = 10`: `cond(H_10) ≈ 1.60e13`, past `2⁴⁰ ≈ 1.0995e12`. The error of
+/// about `1.3` is itself unremarkable: `cond(H_10) * tol ≈ 1.6e13 * 9.1e-13
+/// ≈ 14.6`, so GMRES is converging within the error this condition number
+/// allows, not failing to converge. The defect is narrower than "silently
+/// wrong": `src/linear_solver.rs`'s own doc promises a system past this
+/// threshold is "reported as breakdown", and it is not — `gmres` returns
+/// `Ok` with that in-tolerance-but-large error instead of
 /// `Err(Breakdown { .. })`. Pinned as a known defect rather than relaxed to
 /// match the observed `Ok`, per COV-NUM-080's own text.
 #[test]
-#[ignore = "known defect: COV-NUM-080: gmres returns Ok(..) with an O(1)-wrong \
-            solution for a Hilbert system past the ~2^40 condition-number \
-            threshold instead of Err(Breakdown { .. }) as src/linear_solver.rs's \
-            own doc comment promises (n=10, cond(H_10)~1.6e13, adversarial \
+#[ignore = "known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert \
+            system past the ~2^40 condition-number threshold instead of \
+            Err(Breakdown { .. }) as src/linear_solver.rs's own doc comment \
+            promises, even though the error is within the cond(A)*tol bound \
+            for that condition number (n=10, cond(H_10)~1.6e13, adversarial \
             alternating-sign right-hand side)"]
 fn hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown() {
     let (result, _x_true) = solve(10);

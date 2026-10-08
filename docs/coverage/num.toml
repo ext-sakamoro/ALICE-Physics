@@ -879,7 +879,7 @@ axis = "representation"
 item = "ill-conditioned systems (condition number above 2^40)"
 source = "Higham ch.7; iterative refinement (Wilkinson)"
 status = "partial"
-evidence = "src/linear_solver.rs 条件数が 2^40 を超える系は解かずに breakdown として返す / tests/analytic_linear_solver.rs::rounded_rank_deficient_matrices_break_down_at_the_second_step / tests/analytic_hilbert_breakdown_boundary.rs (Hilbert 行列 n=9 vs n=10 境界、published cond(H_n) 突合、n=9 は closed form 誤差域で解き n=10 は known defect として ignore で pin) known defect: 既存 test は rank-deficient な系の breakdown のみ確認、単に ill-conditioned (非特異) な Hilbert 系では n=10 (cond~1.6e13 > 2^40) でも gmres は Err(Breakdown) でなく Ok の誤答 (O(1) 誤差) を返す (hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown、#[ignore] で pin)"
+evidence = "src/linear_solver.rs 条件数が 2^40 を超える系は解かずに breakdown として返す / tests/analytic_linear_solver.rs::rounded_rank_deficient_matrices_break_down_at_the_second_step / tests/analytic_hilbert_breakdown_boundary.rs (Hilbert 行列 n=9 vs n=10 境界、published cond(H_n) 突合、n=9 は closed form 誤差域で解き n=10 は known defect として ignore で pin) known defect: 既存 test は rank-deficient な系の breakdown のみ確認、単に ill-conditioned (非特異) な Hilbert 系では n=10 (cond~1.6e13 > 2^40) で gmres が Err(Breakdown) でなく Ok を返す (誤差 1.31 自体は cond(H_10)*tol≈14.6 の範囲内で収束としては正当、欠陥は breakdown 分類が付かない点のみ) (hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown、#[ignore] で pin)"
 oracle_candidate = ""
 limitation = "src/linear_solver.rs 'a system whose condition number exceeds about `2⁴⁰` is reported as breakdown rather than solved to digits the representation does not hold.'"
 
