@@ -79,7 +79,7 @@ alice-analytics = { version = "0.1", optional = true, default-features = false, 
 # gated on `std`.
 alice-det-math = { version = "0.4", default-features = false }
 # `PhysicsWorld::law_id` hashes the world's rules with SHA-256.
-sha2 = { version = "0.10", default-features = false }
+sha2 = { version = "0.11", default-features = false }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 alice-db = { version = "0.3.0-beta.1", optional = true, default-features = false, features = ["fs"] }
@@ -92,7 +92,7 @@ tempfile = "3.10"
 criterion = { version = "0.5", default-features = false }
 # v1.0 Item E: determinism golden tests hash by SHA-256 (platform-independent
 # canonical hash) — dev-only, does not affect production surface
-sha2 = "0.10"
+sha2 = "0.11"
 
 # loom model test of the graph-colouring invariant the batched solver's raw
 # pointer wrappers rely on (`--cfg loom`, quality-deep `loom` job, 1.2.0).
