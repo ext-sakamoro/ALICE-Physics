@@ -466,14 +466,17 @@ struct ChildSupport<'a> {
     rotation: QuatFix,
 }
 
-/// A posed shape whose support mapping normalizes its direction (an ellipsoid,
-/// a cylinder, a cone), given that direction scaled up to a largest component
+/// An ellipsoid, whose support mapping normalizes its direction, given that
+/// direction scaled up to a largest component
 /// in `[1, 2)`: GJK's direction near a contact is about as long as the gap, and
 /// such a mapping (which leaves directions down to `2⁻²⁴` unscaled) loses that
 /// many bits of the support point, enough to put it about `2⁻³²` off the
 /// surface. The scaling is exact and the direction unchanged. Polytopes are not
 /// wrapped: their support compares dot products, and a different rounding would
-/// only pick another of two tied vertices.
+/// only pick another of two tied vertices. Cylinders and cones are not wrapped
+/// either: their support jumps between the rims (and the apex), and with the
+/// scaled direction casts onto their sides went further in, and some stopped
+/// early, so they keep the previous support direction.
 struct RoundSupport<'a>(&'a PosedShape);
 
 impl Support for RoundSupport<'_> {
@@ -482,12 +485,9 @@ impl Support for RoundSupport<'_> {
     }
 }
 
-/// Whether a posed shape's support mapping normalizes its direction.
+/// Whether a posed shape is wrapped in [`RoundSupport`] (an ellipsoid).
 fn is_round(posed: &PosedShape) -> bool {
-    matches!(
-        posed.shape,
-        Shape::Ellipsoid { .. } | Shape::Cylinder { .. } | Shape::Cone { .. }
-    )
+    matches!(posed.shape, Shape::Ellipsoid { .. })
 }
 
 impl Support for ChildSupport<'_> {
