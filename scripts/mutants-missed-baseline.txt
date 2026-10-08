@@ -1,25 +1,14 @@
 # missed mutants of the weekly run, without line numbers: [axis] file: mutation
 # written by scripts/mutants_ratchet.py --write; a new missed mutant fails
 [default] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
-[default] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
-[default] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
 [default] src/bvh.rs: replace + with * in LinearBvh::build_recursive
 [default] src/bvh.rs: replace + with * in LinearBvh::find_split
-[default] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
-[default] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
-[default] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
-[default] src/bvh.rs: replace - with + in LinearBvh::find_split
 [default] src/bvh.rs: replace - with + in LinearBvh::find_split
 [default] src/bvh.rs: replace - with / in LinearBvh::find_split
 [default] src/bvh.rs: replace - with / in LinearBvh::find_split
-[default] src/bvh.rs: replace < with <= in LinearBvh::query_callback
-[default] src/bvh.rs: replace < with <= in LinearBvh::query_callback
-[default] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
-[default] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
 [default] src/bvh.rs: replace > with >= in point_to_morton
 [default] src/bvh.rs: replace > with >= in point_to_morton
 [default] src/bvh.rs: replace >> with << in LinearBvh::find_split
-[default] src/bvh.rs: replace BroadphaseHybrid::clear_dynamic with ()
 [default] src/bvh.rs: replace LinearBvh::debug_verify_escape_forward -> bool with false
 [default] src/bvh.rs: replace | with ^ in BvhNode::leaf
 [default] src/bvh.rs: replace | with ^ in LinearBvh::build_recursive
@@ -330,25 +319,14 @@
 [default] src/solver_tgs.rs: replace > with >= in adaptive_substeps_for
 [default] src/solver_tgs.rs: replace par_dispatch_islands with ()
 [parallel] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
-[parallel] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
-[parallel] src/bvh.rs: replace + with * in BroadphaseHybrid::query_pairs
 [parallel] src/bvh.rs: replace + with * in LinearBvh::build_recursive
 [parallel] src/bvh.rs: replace + with * in LinearBvh::find_split
-[parallel] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
-[parallel] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
-[parallel] src/bvh.rs: replace + with - in BroadphaseHybrid::query_pairs
-[parallel] src/bvh.rs: replace - with + in LinearBvh::find_split
 [parallel] src/bvh.rs: replace - with + in LinearBvh::find_split
 [parallel] src/bvh.rs: replace - with / in LinearBvh::find_split
 [parallel] src/bvh.rs: replace - with / in LinearBvh::find_split
-[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_callback
-[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_callback
-[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
-[parallel] src/bvh.rs: replace < with <= in LinearBvh::query_stackless
 [parallel] src/bvh.rs: replace > with >= in point_to_morton
 [parallel] src/bvh.rs: replace > with >= in point_to_morton
 [parallel] src/bvh.rs: replace >> with << in LinearBvh::find_split
-[parallel] src/bvh.rs: replace BroadphaseHybrid::clear_dynamic with ()
 [parallel] src/bvh.rs: replace LinearBvh::debug_verify_escape_forward -> bool with false
 [parallel] src/bvh.rs: replace | with ^ in BvhNode::leaf
 [parallel] src/bvh.rs: replace | with ^ in LinearBvh::build_recursive
