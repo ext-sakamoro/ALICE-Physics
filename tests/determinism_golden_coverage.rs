@@ -10,7 +10,8 @@
 //! * Every solver backend (read from `pub enum SolverBackend` in
 //!   `src/solver.rs`) on every stepping entry point of `PhysicsWorld`.
 //!   The entry points are the `pub fn` items taking `&mut self` inside
-//!   `impl PhysicsWorld` blocks of `src/solver.rs` and `src/solver/*.rs`;
+//!   `impl PhysicsWorld` blocks (also written `impl crate::solver::PhysicsWorld`)
+//!   anywhere under `src/`;
 //!   each one must be classified, by hand, in [`STEP_ENTRIES`] or in
 //!   [`NOT_STEP`]. A new method that is in neither list fails the check, so a
 //!   new way to step a world cannot appear unclassified whatever its name.
@@ -74,9 +75,12 @@ const STEP_ENTRIES: &[&str] = &[
 ];
 
 /// `PhysicsWorld` methods taking `&mut self` that do not advance the
-/// simulation (setup, state transfer, queries with side effects). The two
-/// `solve_*_with_bridge` methods are one solve pass inside
-/// `step_with_bridge` and are pinned through it.
+/// simulation (setup, state transfer, queries with side effects).
+/// `solve_contact_constraints_with_bridge` and `solve_joints_with_bridge` do
+/// move bodies: each runs one solve pass through the bridge, and a host can
+/// call them directly. They are classified here because they integrate no
+/// time and run no participant, so they are a stage of a step rather than a
+/// step law; their result is pinned through `step_with_bridge`, which runs them.
 const NOT_STEP: &[&str] = &[
     "add_body",
     "add_body_with_radius",
@@ -290,6 +294,10 @@ const KNOWN_GAPS: &[(&str, &str)] = &[
         "step_parallel shared-body order",
         "no golden runs step_parallel on a scene where two constraints share a body",
     ),
+    (
+        "installed bridge",
+        "no golden steps a world with a bridge installed by set_gpu_solver_bridge, which reroutes its contact solve",
+    ),
 ];
 
 /// Scene features every stepping law must have a golden for, with the code
@@ -304,6 +312,8 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("participant", &["add_participant("], 1),
     ("cloth", &["Cloth::"], 1),
     ("physics2d", &["PhysicsWorld2D"], 1),
+    // an installed bridge reroutes the contact solve of `step` / `substep`
+    ("installed bridge", &["set_gpu_solver_bridge("], 1),
     // two joints on one chain share their middle body
     (
         "step_parallel shared-body order",
@@ -772,9 +782,15 @@ fn world_mut_methods(src: &str) -> BTreeSet<String> {
             .split_whitespace()
             .collect::<Vec<_>>()
             .join(" ");
-        // `impl PhysicsWorld` or `impl<..> PhysicsWorld`, not `impl Trait for PhysicsWorld`
-        let is_world = header == "PhysicsWorld"
-            || (header.starts_with('<') && header.ends_with("> PhysicsWorld"));
+        // `impl PhysicsWorld`, `impl crate::solver::PhysicsWorld`, `impl<..> PhysicsWorld`;
+        // not `impl Trait for PhysicsWorld` and not other types (`PyPhysicsWorld`)
+        let path = if header.starts_with('<') {
+            header[matching_angle(&header)..].trim()
+        } else {
+            header.as_str()
+        };
+        let is_world =
+            !path.contains(" for ") && (path == "PhysicsWorld" || path.ends_with("::PhysicsWorld"));
         let open = at + open_rel;
         let end = matching(&code, open);
         if is_world {
@@ -833,22 +849,32 @@ struct Required {
     stale_classification: Vec<String>,
 }
 
+/// `src/solver.rs` first (it defines the enums), then every other `.rs` file
+/// under `src/`: an `impl PhysicsWorld` block can live in any module.
 fn solver_sources() -> Vec<String> {
-    let mut dir: Vec<_> = std::fs::read_dir(root().join("src/solver"))
-        .expect("src/solver")
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "rs"))
-        .collect();
-    dir.sort();
+    fn walk(dir: &Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).expect("read src").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let mut files = Vec::new();
+    walk(&root().join("src"), &mut files);
+    files.sort();
     let mut out = vec![read("src/solver.rs")];
-    for p in dir {
+    for p in files {
         let rel = p
             .strip_prefix(root())
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
-        out.push(read(&rel));
+        if rel != "src/solver.rs" {
+            out.push(read(&rel));
+        }
     }
     out
 }
@@ -1078,6 +1104,18 @@ fn a_new_mut_method_must_be_classified_whatever_its_name() {
     // generic methods are seen through their parameter list
     let src = "impl PhysicsWorld {\n    pub fn step_with_bridge<B: Bridge + ?Sized>(\n        &mut self,\n        b: &mut B,\n    ) {}\n}\n";
     assert!(world_mut_methods(src).contains("step_with_bridge"));
+    // a path-qualified impl in another module counts; another type does not
+    assert!(world_mut_methods(
+        "impl crate::solver::PhysicsWorld {\n    pub fn advance_elsewhere(&mut self) {}\n}\n"
+    )
+    .contains("advance_elsewhere"));
+    assert!(
+        world_mut_methods("impl PyPhysicsWorld {\n    pub fn step(&mut self) {}\n}\n").is_empty()
+    );
+    assert!(
+        world_mut_methods("impl Default for PhysicsWorld {\n    pub fn x(&mut self) {}\n}\n")
+            .is_empty()
+    );
     // a method of another type is not a PhysicsWorld method
     assert!(
         world_mut_methods("impl Cloth {\n    pub fn step(&mut self, dt: F) {}\n}\n").is_empty()
