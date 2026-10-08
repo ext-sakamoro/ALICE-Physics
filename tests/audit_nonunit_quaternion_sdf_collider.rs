@@ -7,13 +7,18 @@
 //! - a direct write to the public `rotation` field followed by
 //!   `SdfCollider::update_cache`;
 //! - a direct write to the public `rotation` field (without `update_cache`)
-//!   before `PhysicsWorld::add_sdf_collider`;
+//!   before `PhysicsWorld::add_sdf_collider`, which recomputes the cached
+//!   inverse rotation (for a unit rotation too: the cache made by
+//!   `new_static` was for another orientation);
 //! - a direct write to `PhysicsWorld::sdf_colliders[i].rotation` (without
 //!   `update_cache`) between steps, which the next step brings to unit length
 //!   (before that step the contact normal is rotated by the value as written);
 //! - a `PhysicsWorld::restore_world` blob holding a non-unit rotation and
 //!   inverse rotation for the collider, which the next step brings to unit
-//!   length (before that step the queries use the rotation as restored).
+//!   length (before that step the queries use the rotation as restored);
+//! - `SdfFrame::new`, the frame the free functions `collide_sphere_sdf_field`,
+//!   `collide_point_sdf_field` and `sdf_ccd::sphere_trace_sdf_field` take
+//!   without a world.
 //!
 //! The field is evaluated at `R⁻¹ (p - position)`, so a stored non-unit
 //! inverse rotation scaled the local point by `|q|^2`: with the scene below a
@@ -37,8 +42,14 @@
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{collide_sphere_sdf, ClosureSdf, SdfCollider};
+use alice_physics::sdf_ccd::sphere_trace_sdf_field;
+use alice_physics::sdf_collider::{
+    collide_point_sdf_field, collide_sphere_sdf, collide_sphere_sdf_field, ClosureSdf, SdfCollider,
+    SdfFrame,
+};
+use alice_physics::shape::Shape;
 use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics::SdfCcdConfig;
 
 const NEAR_F32: f64 = 1e-4;
 
@@ -130,9 +141,9 @@ fn collider(q: QuatFix, entry: Entry) -> SdfCollider {
             c
         }
         Entry::FieldBeforeAdd => {
-            // `rotation` only: the cached inverse keeps the orientation given
-            // to `new_static`, which is the unit `q` itself (see `scene`).
-            let mut c = SdfCollider::new_static(field(), origin(), unit_of(q));
+            // `rotation` only: the cached inverse is still the identity's
+            // until `add_sdf_collider` recomputes it.
+            let mut c = SdfCollider::new_static(field(), origin(), QuatFix::IDENTITY);
             c.rotation = q;
             c
         }
@@ -353,5 +364,125 @@ fn every_entry_is_covered() {
     assert_eq!(ENTRIES.len(), 6);
     for e in ENTRIES {
         let _ = collider(turn(), e);
+    }
+}
+
+/// The probe of the world-level tests: the default collision sphere, or a
+/// box carried by the body (decided by the box's own contact path).
+#[derive(Clone, Copy, Debug)]
+enum Probe {
+    Sphere,
+    Box,
+}
+
+/// Contacts of a probe with the collider `c` after `add_sdf_collider`, before
+/// and after one step (the probe put back between the reads).
+fn added(c: SdfCollider, probe: Probe) -> Vec<Fix128> {
+    let mut o = Obs { values: Vec::new() };
+    let mut w = world();
+    let b = w.add_body(RigidBody::new_dynamic(probe_at(), Fix128::ONE));
+    if let Probe::Box = probe {
+        assert!(w.set_body_shape(
+            b,
+            &Shape::Box {
+                half_extents: v3(0.3, 0.3, 0.3),
+            }
+        ));
+    }
+    w.add_sdf_collider(c);
+    read_world(&w, &mut o);
+    w.step(dt());
+    w.bodies[b].set_position(probe_at());
+    read_world(&w, &mut o);
+    o.values
+}
+
+/// A rotation written to the collider before `add_sdf_collider`, unit or not,
+/// gives the contacts of the collider built with that rotation. For the
+/// sphere the depth is also the closed form: ball radius 1 plus probe radius
+/// 0.5 minus the distance `sqrt(0.7² + 0.2² + 0.1²)` of the probe centre from
+/// the ball centre.
+#[test]
+fn a_rotation_written_before_add_takes_effect() {
+    let sphere_depth = 1.5 - 0.54_f64.sqrt();
+    for probe in [Probe::Sphere, Probe::Box] {
+        let reference = added(SdfCollider::new_static(field(), origin(), turn()), probe);
+        for s in [1.0, 2.0, 0.5, 1.3] {
+            let q = scaled(turn(), fx(s));
+            let mut c = SdfCollider::new_static(field(), origin(), QuatFix::IDENTITY);
+            c.rotation = q;
+            let got = added(c, probe);
+            let same_q = added(SdfCollider::new_static(field(), origin(), q), probe);
+            assert_eq!(got, same_q, "{probe:?}, |q| = {s}: as if built with q");
+            for (i, (a, b)) in got.iter().zip(&reference).enumerate() {
+                let d = (*a - *b).abs().to_f64();
+                assert!(
+                    d <= NEAR_F32,
+                    "{probe:?}, |q| = {s}, value {i}: |d| = {d:e}"
+                );
+            }
+            if let Probe::Sphere = probe {
+                for depth in [got[1], got[6]] {
+                    let d = (depth.to_f64() - sphere_depth).abs();
+                    assert!(
+                        d <= NEAR_F32,
+                        "|q| = {s}: depth {} vs {sphere_depth}",
+                        depth.to_f64()
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Values of the three free functions in the frame `SdfFrame::new(origin, q, 1)`.
+fn free_functions(q: QuatFix) -> Vec<Fix128> {
+    let frame = SdfFrame::new(origin(), q, Fix128::ONE);
+    let f = field();
+    let mut o = Obs { values: Vec::new() };
+    let hit = collide_sphere_sdf_field(probe_at(), radius(), &*f, &frame).expect("overlaps");
+    o.contact(hit.depth, hit.normal);
+    let hit = collide_point_sdf_field(probe_at(), &*f, &frame).expect("inside");
+    o.contact(hit.depth, hit.normal);
+    // From local (-1.5, 0.2, 0) towards +x through the ball.
+    let start = origin() + turn().rotate_vec(v3(-1.5, 0.2, 0.0));
+    let toi = sphere_trace_sdf_field(
+        start,
+        turn().rotate_vec(v3(4.0, 0.0, 0.0)),
+        radius(),
+        &*f,
+        &frame,
+        &SdfCcdConfig::default(),
+    )
+    .expect("the sweep reaches the ball");
+    o.s(toi.t);
+    o.v(toi.point);
+    o.v(toi.normal);
+    o.values
+}
+
+#[test]
+fn sdf_frame_new_uses_a_unit_rotation() {
+    let unit = free_functions(turn());
+    // The sweep meets the ball where the centre is 1.5 from (1.5, 0, 0) on the
+    // line y = 0.2: local x = 1.5 - sqrt(1.5² - 0.2²), from -1.5 over a length 4.
+    let t = (3.0 - (2.25_f64 - 0.04).sqrt()) / 4.0;
+    assert!(
+        (unit[8].to_f64() - t).abs() <= 1e-3,
+        "toi {} vs {t}",
+        unit[8].to_f64()
+    );
+    for s in SCALES {
+        let sq = scaled(turn(), fx(s));
+        let got = free_functions(sq);
+        assert_eq!(
+            got,
+            free_functions(unit_of(sq)),
+            "|q| = {s}: same bits as normalize(s·q)"
+        );
+        for (i, (a, b)) in got.iter().zip(&unit).enumerate() {
+            let d = (*a - *b).abs().to_f64();
+            assert!(d <= NEAR_F32, "|q| = {s}, value {i}: |d| = {d:e}");
+        }
     }
 }

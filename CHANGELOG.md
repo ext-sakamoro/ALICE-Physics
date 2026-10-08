@@ -27,6 +27,7 @@ were introduced during that release window.
 
 - `alice-det-math` 0.3 → 0.4: `det_math::atan64` / `det_math::atan2_64` (公開 re-export) が文書化した精度 (1 ulp) に戻る 0.3 は fdlibm の係数 1 つの写し誤りで `0.4375` の分岐の直下が最大 1898 ulp 外れていた ⇒ これらの値を固定している利用者は一部の入力で別の bit を受け取る 他の関数の bit は変わらない (`f32` の `atan` / `atan2` は別の係数で影響なし) engine 内で `atan64` / `atan2_64` を呼ぶのは試験だけで、決定論の golden は値を変えずに通る どの feature の組でも `alice-det-math` は 0.4 の 1 版に解決される
 - `sdf_collider::SdfCollider`: static な SDF collider 自身の向きを正規化していなかったため、長さ 1 でない四元数を与えると場の評価点が `|q|²` 倍に拡大縮小されていた (`|q| = 2` で球との接触が消え、`|q| = 1/2` で深さ 0.8675 → 1.2695) `SdfCollider::new_static` / `set_pose` / `update_cache` (と `sync_to_body`)、`PhysicsWorld::add_sdf_collider`、step の冒頭 (body と同じ箇所、`sdf_colliders` への直接代入と `restore_world` で入った値) で向きとその逆回転を単位四元数にする 長さ 1 から 2⁻³² 以内の四元数は bit 単位でそのまま保つ (`tests/audit_nonunit_quaternion_sdf_collider.rs`)
+- `PhysicsWorld::add_sdf_collider`: 公開 field の `rotation` (や `scale`) を直接書いてから追加した collider は逆回転のキャッシュが作り直されず、元の向きのまま評価されていた (単位四元数でも、球との接触の深さ 0.765 が 0.0329、箱は接触なし static なので step でも直らない) 追加時に `SdfCollider::update_cache` を呼ぶ `sdf_collider::SdfFrame::new` も向きを単位四元数にする (world を通らない `collide_sphere_sdf_field` / `collide_point_sdf_field` / `sdf_ccd::sphere_trace_sdf_field` で `|q| = 2` / `1.3` は接触なし、`1/2` は深さ 0.548 だった) 試験は `tests/audit_nonunit_quaternion_sdf_collider.rs`
 
 ## [2.0.0] - 2026-10-08
 
