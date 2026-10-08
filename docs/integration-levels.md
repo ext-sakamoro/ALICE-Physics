@@ -29,7 +29,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 9 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
-| `force` | step | 5 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `force` | step | 6 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 6 / 0 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 66 / 13 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
@@ -84,7 +84,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `compound` | standalone (step 8, world API 2 of 21 items) | 8 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `compressible` | standalone | 0 / 0 / 0 / 14 / 0 | — |
 | `convex_decompose` | standalone | 0 / 0 / 0 / 3 / 0 | — |
-| `coupled_field` | standalone | 0 / 0 / 0 / 42 / 0 | — |
+| `coupled_field` | standalone | 0 / 0 / 0 / 43 / 0 | — |
 | `coupled_iteration` | standalone | 0 / 0 / 0 / 24 / 2 | — |
 | `coupling_medium` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `creep_longterm` | standalone | 0 / 0 / 0 / 9 / 1 | — |
