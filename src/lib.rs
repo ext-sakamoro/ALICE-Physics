@@ -381,6 +381,8 @@ pub mod kinematic_loop;
 #[cfg(feature = "std")]
 pub mod laminate;
 pub mod laminate_failure;
+// Content identifier of the rules a world is configured with.
+pub mod law_id;
 pub mod layer_adhesion;
 pub mod lift_drag;
 /// Small-strain linear elastic FEM on tetrahedra (P1), producing a Cauchy

@@ -160,6 +160,22 @@ impl PhysicsWorld {
         self.lock_participants().len()
     }
 
+    /// Kind, step rule and ports of each registered participant, in
+    /// registration order: what `law_id` can observe of them.
+    #[cfg(feature = "std")]
+    pub(crate) fn participant_law_parts(
+        &self,
+    ) -> Vec<(
+        crate::world_participant::ParticipantKind,
+        crate::world_participant::StepRule,
+        Vec<crate::world_participant::Port>,
+    )> {
+        self.lock_participants()
+            .iter()
+            .map(|p| (p.kind(), p.step_rule(), p.ports().to_vec()))
+            .collect()
+    }
+
     /// The kinds of the registered participants, in registration order.
     #[cfg(feature = "std")]
     #[must_use]

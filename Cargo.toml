@@ -78,6 +78,8 @@ alice-analytics = { version = "0.1", optional = true, default-features = false, 
 # no_std-capable (software sqrt without `std`), so the module is no longer
 # gated on `std`.
 alice-det-math = { version = "0.4", default-features = false }
+# `PhysicsWorld::law_id` hashes the world's rules with SHA-256.
+sha2 = { version = "0.10", default-features = false }
 
 [target.'cfg(not(all(target_arch = "wasm32", target_os = "unknown")))'.dependencies]
 alice-db = { version = "0.3.0-beta.1", optional = true, default-features = false, features = ["fs"] }
