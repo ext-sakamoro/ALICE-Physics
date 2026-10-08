@@ -16903,6 +16903,9 @@ impl<'a, F> core::marker::Unpin for alice_physics::sdf_wind_field::SdfWindField<
 impl<'a, F> core::marker::UnsafeUnpin for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::marker::UnsafeUnpin, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::RefUnwindSafe, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::UnwindSafe, F: ?core::marker::Sized
+pub mod alice_physics::semantics
+pub const alice_physics::semantics::PHYSICS_SEMANTICS_ID: [u8; 32]
+pub const alice_physics::semantics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
 pub mod alice_physics::sensors
 #[non_exhaustive] pub struct alice_physics::sensors::ContactReading
 pub alice_physics::sensors::ContactReading::contact_count: usize
@@ -26197,6 +26200,8 @@ impl core::marker::Unpin for alice_physics::anomaly::ZScoreDetector
 impl core::marker::UnsafeUnpin for alice_physics::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::anomaly::ZScoreDetector
+pub const alice_physics::PHYSICS_SEMANTICS_ID: [u8; 32]
+pub const alice_physics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
 pub const alice_physics::SIMD_WIDTH: usize
 pub trait alice_physics::AnomalyCallback
 pub fn alice_physics::AnomalyCallback::on_anomaly(&mut self, alice_physics::anomaly::AnomalyEvent)

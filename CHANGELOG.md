@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `semantics::PHYSICS_SEMANTICS_ID` / `PHYSICS_SEMANTICS_PINS` (crate 直下にも re-export): step の意味論の content hash (32 byte) 決定論 golden が pin する step の経路 21 組の SHA-256 と `alice_det_math::SEMANTICS_ID` を、`alice-det-math` の `SEMANTICS_ID` と同じ手順 (名前で整列、`u32` big-endian の名前長 ‖ 名前 ‖ digest を SHA-256) で畳み込んだ値 `574e7586…04fbdd` cargo features に依らず同じ値 (`parallel` / `gpu-solver-bridge` の経路の entry も常に含む) golden が動く・未 pin の経路に golden が入ると値が変わり、golden の無い経路の変化は反映されない `physics2d` は既存の `u64` digest と同じ最終状態の SHA-256 を新たに pin した
+
 ### Fixed
 
 - `alice-det-math` 0.3 → 0.4: `det_math::atan64` / `det_math::atan2_64` (公開 re-export) が文書化した精度 (1 ulp) に戻る 0.3 は fdlibm の係数 1 つの写し誤りで `0.4375` の分岐の直下が最大 1898 ulp 外れていた ⇒ これらの値を固定している利用者は一部の入力で別の bit を受け取る 他の関数の bit は変わらない (`f32` の `atan` / `atan2` は別の係数で影響なし) engine 内で `atan64` / `atan2_64` を呼ぶのは試験だけで、決定論の golden は値を変えずに通る どの feature の組でも `alice-det-math` は 0.4 の 1 版に解決される

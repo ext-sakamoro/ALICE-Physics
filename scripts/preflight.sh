@@ -166,6 +166,11 @@ cargo test --no-fail-fast
 step "cargo test --lib (native feature set)"
 cargo test --lib --features "$NATIVE"
 
+# same command as ci.yml: the semantics identifier with the gated stepping
+# paths' features (`cargo test` above runs the file with default features)
+step "semantics identifier (parallel + gpu-solver-bridge)"
+cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
+
 step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
 
