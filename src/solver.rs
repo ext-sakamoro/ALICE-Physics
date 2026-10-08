@@ -5663,11 +5663,12 @@ impl PhysicsWorld {
     /// from then on: every step copies the body's pose into it before SDF
     /// overlap is resolved and again at the end of the step.
     ///
-    /// The collider's rotation (and its cached inverse) is stored as a unit
-    /// quaternion, also when a non-unit value was written to
-    /// [`SdfCollider::rotation`] before the call.
+    /// The collider's cached values are recomputed from its fields
+    /// ([`SdfCollider::update_cache`]): a `rotation` or `scale` written to the
+    /// collider directly before the call takes effect, and the rotation is
+    /// stored as a unit quaternion.
     pub fn add_sdf_collider(&mut self, mut collider: SdfCollider) -> usize {
-        collider.make_rotations_unit();
+        collider.update_cache();
         collider.sync_to_body(&self.bodies);
         let idx = self.sdf_colliders.len();
         self.sdf_colliders.push(collider);
