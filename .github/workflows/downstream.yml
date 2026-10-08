@@ -53,6 +53,17 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # ALICE-TRT's GPU tests return early, and pass, when wgpu finds no
+      # adapter, and the runner has no GPU: Mesa's software Vulkan driver
+      # (lavapipe) gives wgpu a CPU adapter, as in ALICE-TRT's own Linux GPU
+      # lanes. downstream_check.sh fails the TRT step when the adapter is
+      # missing. Not cached: apt-get update is most of the ~20 s and must run
+      - name: Install Mesa software Vulkan (lavapipe) for the ALICE-TRT GPU tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1 vulkan-tools
+          vulkaninfo --summary || echo "vulkaninfo --summary failed (exit $?); the ALICE-TRT GPU probe decides"
+
       # fetched first so the cache below can key on the downstream manifests
       # ALICE-SDF, ALICE-LOL and ALICE-TRT (with ALICE-ML, ALICE-DB and
       # ALICE-Crypto, path dependencies of ALICE-TRT) at main; ALICE-LLM and
@@ -74,7 +85,7 @@ jobs:
             ${{ runner.temp }}/downstream/ALICE-LOL -> ${{ runner.temp }}/downstream/target/lol
             ${{ runner.temp }}/downstream/ALICE-TRT -> ${{ runner.temp }}/downstream/target/trt
 
-      - name: Build and test downstream (fails on a requirement that rejects this version, a test binary with 0 tests or an unpatched alice-physics)
+      - name: Build and test downstream (fails on a requirement that rejects this version, a test binary with 0 tests, an unpatched alice-physics or no GPU adapter for ALICE-TRT)
         env:
           DOWNSTREAM_ROOT: ${{ runner.temp }}/downstream
           DOWNSTREAM_TARGET_DIR: ${{ runner.temp }}/downstream/target
