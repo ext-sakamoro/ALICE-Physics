@@ -80,8 +80,8 @@ class Select(unittest.TestCase):
         tag, lines = select("alice-zip", ZIP_TAGS, workspace=ws)
         self.assertIsNone(tag)
         text = "\n".join(lines)
-        self.assertIn("alice-lol/Cargo.toml:6: 0.6", text)
-        self.assertIn("b/Cargo.toml:2: >=0.6.1", text)
+        self.assertIn("alice-lol/Cargo.toml [dependencies] alice-zip: 0.6", text)
+        self.assertIn("b/Cargo.toml [dependencies] alice-zip: >=0.6.1", text)
         self.assertIn("release tags: v0.5.2, v0.6.0, v0.7.0", text)
 
     def test_reverse_requirement_rejects_the_tag(self):
@@ -92,13 +92,13 @@ class Select(unittest.TestCase):
         tag, lines = select("alice-kinematics", KIN_TAGS, manifests)
         self.assertIsNone(tag)
         text = "\n".join(lines)
-        self.assertIn("alice-kinematics-v0.1.0: Cargo.toml:6 requires alice-lol 0.3, placed 0.4.2", text)
+        self.assertIn("alice-kinematics-v0.1.0: Cargo.toml [dependencies] alice-lol requires alice-lol 0.3, placed 0.4.2", text)
         self.assertIn("no release tag of `alice-kinematics` fits", text)
 
     def test_reverse_check_falls_back_to_an_older_tag(self):
         def manifests(tag):
             req = "4" if tag == "v0.6.1" else "5"
-            return [("sub/Cargo.toml", f'[dependencies]\nalice-sdf = "{req}"\n')]
+            return [("sub/Cargo.toml", f'[dependencies]\nalice-sdf = {{ path = "../../ALICE-SDF", version = "{req}" }}\n')]
         tag, lines = select("alice-zip", ["refs/tags/v0.6.0", "refs/tags/v0.6.1"], manifests)
         self.assertEqual(tag, "v0.6.0", lines)
 
@@ -107,6 +107,11 @@ class Select(unittest.TestCase):
             return [("Cargo.toml", '[dependencies]\nalice-lol = { path = "x", version = "0.4" }\n')]
         tag, _ = select("alice-kinematics", KIN_TAGS, manifests)
         self.assertEqual(tag, "alice-kinematics-v0.1.0")
+
+    def test_registry_dependency_of_a_tag_is_not_checked_against_the_placed_version(self):
+        def manifests(_tag):
+            return [("Cargo.toml", '[dependencies]\nalice-lol = "0.3"\n')]
+        self.assertEqual(select("alice-kinematics", KIN_TAGS, manifests)[0], "alice-kinematics-v0.1.0")
 
     def test_unrelated_dependencies_are_ignored(self):
         def manifests(_tag):
@@ -128,6 +133,157 @@ class Select(unittest.TestCase):
         tag, lines = select("alice-zip", [])
         self.assertIsNone(tag)
         self.assertIn("release tags: (none)", "\n".join(lines))
+
+
+class ManifestForms(unittest.TestCase):
+    """Dependencies written in every form Cargo accepts are read; `[features]`
+    entries are not requirements."""
+
+    def reqs(self, text, crate="alice-zip"):
+        return [r for _, r in st.dependency_requirements(text, crate)]
+
+    def test_table_form_with_version_on_a_later_line(self):
+        text = '[dependencies.alice-zip]\npath = "../../ALICE-Zip"\nversion = "0.5"\ndefault-features = false\n'
+        self.assertEqual(self.reqs(text), ["0.5"])
+
+    def test_dev_build_and_target_tables(self):
+        text = ('[dev-dependencies.alice-zip]\nversion = "0.6"\n\n'
+                '[build-dependencies]\nalice-zip = "0.6.1"\n\n'
+                "[target.'cfg(unix)'.dependencies.alice-zip]\nversion = \"0.6.2\"\n\n"
+                '[target.wasm32-unknown-unknown.dev-dependencies]\nalice-zip = { version = "0.6.3" }\n')
+        self.assertEqual(sorted(self.reqs(text)), ["0.6", "0.6.1", "0.6.2", "0.6.3"])
+
+    def test_renamed_dependency_is_read_under_its_package(self):
+        text = '[dependencies]\nzip = { package = "alice-zip", path = "x", version = "0.5" }\nalice-zip-cli = "9"\n'
+        self.assertEqual(self.reqs(text), ["0.5"])
+        self.assertEqual(self.reqs(text, "zip"), [])
+
+    def test_feature_entries_are_not_requirements(self):
+        text = ('[dependencies]\nalice-zip = { path = "x", version = "0.6", optional = true }\n\n'
+                '[features]\nalice-zip = ["dep:alice-zip"]\nzip = ["alice-zip/std"]\n')
+        self.assertEqual(self.reqs(text), ["0.6"])
+
+    def test_workspace_inherited_dependency_takes_the_root_requirement(self):
+        ws = [("Cargo.toml", '[workspace]\nmembers = ["a"]\n\n[workspace.dependencies]\n'
+                             'alice-zip = { path = "../ALICE-Zip", version = "0.5" }\n'),
+              ("a/Cargo.toml", '[package]\nname = "a"\nversion = "0.1.0"\n\n[dependencies]\nalice-zip.workspace = true\n')]
+        tag, lines = select("alice-zip", ZIP_TAGS, workspace=ws)
+        self.assertEqual(tag, "v0.5.2", lines)
+
+    def test_table_form_in_the_workspace_selects_by_it(self):
+        ws = LOL + [("fuzz/Cargo.toml", '[dependencies.alice-zip]\npath = "../../ALICE-Zip"\nversion = "=0.6.0"\n')]
+        tag, lines = select("alice-zip", ZIP_TAGS + ["refs/tags/v0.6.4"], workspace=ws)
+        self.assertEqual(tag, "v0.6.0", lines)  # not v0.6.4, which the fuzz manifest excludes
+
+    def test_table_form_in_a_tag_rejects_it(self):
+        def manifests(_tag):
+            return [("fuzz/Cargo.toml", '[dependencies.alice-lol]\npath = "../../ALICE-LOL/alice-lol"\nversion = "0.3"\n')]
+        tag, lines = select("alice-kinematics", KIN_TAGS, manifests)
+        self.assertIsNone(tag, lines)
+        self.assertIn("fuzz/Cargo.toml [dependencies] alice-lol requires alice-lol 0.3, placed 0.4.2", "\n".join(lines))
+
+    def test_feature_entry_in_a_tag_is_not_a_missing_version(self):
+        def manifests(_tag):
+            return [("Cargo.toml", '[dependencies]\nalice-lol = { path = "x", version = "0.4", optional = true }\n\n'
+                                   '[features]\nalice-lol = ["dep:alice-lol"]\n')]
+        self.assertEqual(select("alice-kinematics", KIN_TAGS, manifests)[0], "alice-kinematics-v0.1.0")
+
+    def test_feature_entry_in_the_workspace_is_not_a_missing_version(self):
+        ws = LOL + [("x/Cargo.toml", '[features]\nalice-zip = ["dep:alice-zip"]\n')]
+        self.assertEqual(select("alice-zip", ZIP_TAGS, workspace=ws)[0], "v0.6.0")
+
+    def test_invalid_manifest_is_an_error(self):
+        with self.assertRaises(ValueError):
+            st.dependency_requirements("[dependencies\nalice-zip = 1", "alice-zip", "bad/Cargo.toml")
+
+
+class PreRelease(unittest.TestCase):
+    def test_pre_release_needs_a_pre_release_comparator_on_the_same_version(self):
+        cases = [
+            ("0.3.0-beta.2", "0.3", False), ("0.3.0-beta.2", ">=0.2", False), ("0.3.0-beta.2", "*", False),
+            ("0.3.0-beta.2", "0.3.0-beta.1", True), ("0.3.0-beta.2", ">=0.3.0-beta.1", True),
+            ("0.3.0-beta.2", "=0.3.0-beta.2", True), ("0.3.0-beta.2", "=0.3.0-beta.3", False),
+            ("0.3.0-beta.2", "0.3.0-beta.10", False),  # numeric identifiers compare as numbers
+            ("0.3.0-beta.2", ">=0.2.0-beta.1", False),  # a pre-release comparator on another version
+            ("1.0.0-rc.1", ">=1.0.0-alpha, <1.0.0", True), ("1.0.0", "1.0.0-rc.1", True),
+            ("1.0.0-rc.1", "1.0.0", False),
+        ]
+        for v, req, want in cases:
+            self.assertEqual(st.satisfies(v, req), want, (v, req))
+
+    def test_placed_pre_release_rejects_a_tag_requiring_the_release(self):
+        provided = dict(PROVIDED, **{"alice-db": "0.3.0-beta.2"})
+
+        def manifests(tag):
+            req = "0.3" if tag == "v0.6.1" else "0.3.0-beta.1"
+            return [("Cargo.toml", f'[dependencies]\nalice-db = {{ path = "x", version = "{req}" }}\n')]
+        tag, lines = st.select("alice-zip", LOL, st.release_tags(["refs/tags/v0.6.0", "refs/tags/v0.6.1"], "alice-zip"),
+                               provided, manifests)
+        self.assertEqual(tag, "v0.6.0", lines)
+
+
+class Providers(unittest.TestCase):
+    """The reverse check covers alice-physics of this checkout and the sibling
+    repositories placed before the one being selected."""
+
+    def test_tag_requiring_an_older_alice_physics_is_rejected(self):
+        physics = [("Cargo.toml", '[package]\nname = "alice-physics"\nversion = "2.0.0"\n')]
+        provided = st.provided_packages([LOL, SDF, physics])
+
+        def manifests(tag):
+            req = "1.0" if tag == "v0.6.1" else "2"
+            return [("Cargo.toml", f'[dependencies]\nalice-physics = {{ path = "../ALICE-Physics", version = "{req}" }}\n')]
+        tags = st.release_tags(["refs/tags/v0.6.0", "refs/tags/v0.6.1"], "alice-zip")
+        tag, lines = st.select("alice-zip", LOL, tags, provided, manifests)
+        self.assertEqual(tag, "v0.6.0", lines)
+        tag, lines = st.select("alice-zip", LOL, {k: v for k, v in tags.items() if v == "v0.6.1"}, provided, manifests)
+        self.assertIsNone(tag)
+        self.assertIn("requires alice-physics 1.0, placed 2.0.0", "\n".join(lines))
+
+    def test_tag_requiring_a_sibling_is_checked_against_the_placed_sibling(self):
+        llm = [("Cargo.toml", '[package]\nname = "alice-llm"\nversion = "1.5.0"\n')]
+        provided = st.provided_packages([LOL, SDF, llm])
+
+        def manifests(tag):
+            req = "1.6" if tag == "v0.6.1" else "1.3"
+            return [("Cargo.toml", f'[dependencies]\nalice-llm = {{ path = "../ALICE-LLM", version = "{req}" }}\n')]
+        tags = st.release_tags(["refs/tags/v0.6.0", "refs/tags/v0.6.1"], "alice-zip")
+        tag, lines = st.select("alice-zip", LOL, tags, provided, manifests)
+        self.assertEqual(tag, "v0.6.0", lines)
+
+
+class Check(unittest.TestCase):
+    """--check: the placed downstreams must accept the version of this checkout."""
+
+    PHYSICS = {"alice-physics": "2.0.0"}
+
+    def run_check(self, *trees):
+        return st.check([(f"T{i}", m) for i, m in enumerate(trees)], self.PHYSICS)
+
+    def test_old_requirement_fails_with_the_reason(self):
+        sdf = [("Cargo.toml", '[package]\nname = "alice-sdf"\nversion = "5.0.0"\n\n'
+                              '[dependencies]\nalice-physics = { version = "1.1", optional = true }\n')]
+        ok, lines = self.run_check(sdf)
+        self.assertFalse(ok)
+        self.assertIn("error: T0/Cargo.toml [dependencies] alice-physics requires alice-physics 1.1, placed 2.0.0",
+                      lines)
+
+    def test_requirement_of_a_member_in_table_form_fails(self):
+        lol = [("Cargo.toml", '[workspace]\nmembers = ["a"]\n'),
+               ("a/Cargo.toml", '[dependencies.alice-physics]\npath = "../../ALICE-Physics"\nversion = "1.0"\n')]
+        ok, lines = self.run_check(lol)
+        self.assertFalse(ok, lines)
+
+    def test_matching_requirements_pass(self):
+        sdf = [("Cargo.toml", '[dependencies]\nalice-physics = { version = "2", optional = true }\n')]
+        trt = [("Cargo.toml", '[dependencies]\nalice-physics = { path = "../ALICE-Physics", optional = true }\n')]
+        ok, lines = self.run_check(sdf, trt)
+        self.assertTrue(ok, lines)
+
+    def test_tree_without_a_requirement_fails(self):
+        ok, lines = self.run_check([("Cargo.toml", '[dependencies]\nserde = "1"\n\n[features]\nalice-physics = []\n')])
+        self.assertFalse(ok)
+        self.assertIn("no Cargo.toml requires any of alice-physics 2.0.0", lines[0])
 
 
 if __name__ == "__main__":
