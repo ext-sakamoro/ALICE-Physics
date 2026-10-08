@@ -73,6 +73,7 @@ python3 scripts/test_bench_counts_check.py
 python3 scripts/test_ci_load_check.py
 python3 scripts/ci_load_check.py
 python3 scripts/test_downstream_select_tag.py
+python3 scripts/test_downstream_test_counts.py
 python3 scripts/test_coverage_refs_to_symbols.py
 python3 scripts/coverage_check.py
 

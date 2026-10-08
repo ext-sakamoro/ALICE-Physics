@@ -68,6 +68,8 @@ jobs:
         run: python scripts/ci_load_check.py
       - name: Downstream release-tag selection (tests)
         run: python scripts/test_downstream_select_tag.py
+      - name: Downstream per-binary test counts (tests)
+        run: python scripts/test_downstream_test_counts.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)
         run: python scripts/coverage_check.py
       # SCIP integration ledger (docs/integration-status.md): the analysis is

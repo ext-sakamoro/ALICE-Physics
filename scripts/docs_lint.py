@@ -271,26 +271,49 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
 
 CONTRACT_DOCS = ("docs/ECOSYSTEM_CONTRACTS.md",)
 RUST_BLOCK_RE = re.compile(r"^```rust[^\n]*\n(.*?)^```", re.M | re.S)
-TRAIT_NAME_RE = re.compile(r"\bpub\s+trait\s+(\w+)")
+TRAIT_NAME_RE = re.compile(r"\bpub\s+(?:unsafe\s+)?trait\s+(\w+)")
+# a char literal (`'"'`, `'\''`, `'\u{1F600}'`); a lifetime (`'a`) does not match
+CHAR_LIT_RE = re.compile(r"'(?:\\(?:x[0-9A-Fa-f]{2}|u\{[0-9A-Fa-f]{1,6}\}|.)|[^\\'\n])'")
+RAW_STR_RE = re.compile(r'b?r(#*)"')
 
 
 def strip_rust_comments(text: str) -> str:
-    """Drop `/* */` and `//` comments (doc comments included), outside string literals."""
+    """Drop `/* */` (nested) and `//` comments (doc comments included), outside
+    string, raw string and char literals."""
     out, i, n = [], 0, len(text)
     while i < n:
         c = text[i]
-        if c == '"':
+        raw = RAW_STR_RE.match(text, i) if c in "br" and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")) else None
+        if raw:
+            close = '"' + raw.group(1)
+            j = text.find(close, raw.end())
+            j = n if j < 0 else j + len(close)
+            out.append(text[i:j])
+            i = j
+        elif c == '"':
             j = i + 1
             while j < n and text[j] != '"':
                 j += 2 if text[j] == "\\" else 1
             out.append(text[i:j + 1])
             i = j + 1
+        elif c == "'":
+            m = CHAR_LIT_RE.match(text, i)
+            j = m.end() if m else i + 1
+            out.append(text[i:j])
+            i = j
         elif text.startswith("//", i):
             j = text.find("\n", i)
             i = n if j < 0 else j
         elif text.startswith("/*", i):
-            j = text.find("*/", i + 2)
-            i = n if j < 0 else j + 2
+            depth, j = 1, i + 2
+            while j < n and depth:
+                if text.startswith("/*", j):
+                    depth, j = depth + 1, j + 2
+                elif text.startswith("*/", j):
+                    depth, j = depth - 1, j + 2
+                else:
+                    j += 1
+            i = j
         else:
             out.append(c)
             i += 1
@@ -305,36 +328,82 @@ def normalise_sig(sig: str) -> str:
     return s
 
 
+FN_ITEM_RE = re.compile(r'(?:(?:const|async|unsafe|extern(?:\s*"[^"]*")?)\s+)*fn\s+(\w+)')
+TYPE_ITEM_RE = re.compile(r"type\s+(\w+)")
+CONST_ITEM_RE = re.compile(r"const\s+(\w+)\s*:")
+
+
+def _matching(text: str, i: int, open_: str, close: str) -> int:
+    """Index just past the bracket that closes the one at `i`."""
+    depth = 0
+    while i < len(text):
+        depth += text[i] == open_
+        depth -= text[i] == close
+        i += 1
+        if depth == 0:
+            break
+    return i
+
+
 def trait_items(text: str, name: str) -> tuple[str, list[tuple[str, str, bool]]] | None:
-    """(header, [(fn name, signature, has default body)]) of `pub trait name` in
-    comment-free `text`, or None when the trait is not there."""
-    m = re.search(rf"\bpub\s+trait\s+{re.escape(name)}\b", text)
+    """(header, [(item key, signature, has default)]) of `pub trait name` in
+    comment-free `text`, or None when the trait is not there. The items are the
+    associated fns (key `fn name`, signature with `const` / `async` / `unsafe` /
+    `extern "ABI"`, default = a body), types (`type name`, signature with the
+    bounds, default = `= T`) and consts (`const name`, signature with the type,
+    default = `= value`); anything else in the body is kept under its own text so
+    a document that adds or drops it differs."""
+    m = re.search(rf"\bpub\s+(?:unsafe\s+)?trait\s+{re.escape(name)}\b", text)
     if not m:
         return None
     brace = text.find("{", m.end())
     if brace < 0:
         return None
     header = normalise_sig(text[m.start():brace])
-    items, depth, i = [], 1, brace + 1
-    while i < len(text) and depth > 0:
-        c = text[i]
-        if c == "{":
-            depth += 1
-        elif c == "}":
-            depth -= 1
-        elif depth == 1 and re.match(r"\bfn\s", text[i:]) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
-            # the signature ends at `;` or `{` outside brackets (`[[Fix128; 3]]` holds a `;`)
-            j, nest = i, 0
-            while j < len(text) and (nest > 0 or text[j] not in ";{"):
-                nest += text[j] in "(["
-                nest -= text[j] in ")]"
-                j += 1
-            sig = normalise_sig(text[i:j])
-            fname = re.match(r"fn\s*(\w+)", sig)
-            items.append((fname.group(1) if fname else sig, sig, j < len(text) and text[j] == "{"))
-            i = j
+    end = _matching(text, brace, "{", "}") - 1
+    items, i = [], brace + 1
+    while i < end:
+        if text[i].isspace() or text[i] == ";":
+            i += 1
             continue
-        i += 1
+        if text.startswith("#", i):  # attribute
+            j = text.find("[", i)
+            i = _matching(text, j, "[", "]") if 0 <= j < end else i + 1
+            continue
+        # the item ends at `;`, or at the end of a `{ }` body, outside () [];
+        # after `=` (a default type or value) braces are part of the value
+        # (`<` `>` count as brackets in a type or const item, so `Item = u8` in a
+        # bound is not taken for a default)
+        assoc = bool(TYPE_ITEM_RE.match(text, i) or CONST_ITEM_RE.match(text, i))
+        j, nest, eq = i, 0, -1
+        while j < end:
+            ch = text[j]
+            if ch in "([" or (assoc and ch == "<"):
+                nest += 1
+            elif ch in ")]" or (assoc and ch == ">" and text[j - 1] != "-"):
+                nest -= 1
+            elif assoc and nest == 0 and ch == "=" and eq < 0:
+                eq = j
+            elif nest == 0 and ch == "{" and eq < 0:
+                break
+            elif ch == "{":
+                j = _matching(text, j, "{", "}")
+                continue
+            elif nest == 0 and ch == ";":
+                break
+            j += 1
+        head = text[i:j]
+        body = j < end and text[j] == "{"
+        fm, tm, cm = FN_ITEM_RE.match(head), TYPE_ITEM_RE.match(head), CONST_ITEM_RE.match(head)
+        if fm:
+            items.append((f"fn {fm.group(1)}", normalise_sig(head), body))
+        elif tm or cm:
+            sig = head if eq < 0 else text[i:eq]
+            key = f"type {tm.group(1)}" if tm else f"const {cm.group(1)}"
+            items.append((key, normalise_sig(sig), eq >= 0))
+        else:
+            items.append((normalise_sig(head), normalise_sig(head), body))
+        i = _matching(text, j, "{", "}") if body else j + 1
     return header, items
 
 
@@ -349,7 +418,7 @@ def rust_sources(root: str) -> list[str]:
 def check_contracts(root: str) -> tuple[list[str], dict[str, int]]:
     """Compare the traits written in the contract documents with src/."""
     errors: list[str] = []
-    counts = {"contract traits": 0, "contract methods": 0}
+    counts = {"contract traits": 0, "contract items": 0}
     sources = {p: strip_rust_comments(read_text_file(p) or "") for p in rust_sources(root)}
     for rel in CONTRACT_DOCS:
         if not os.path.exists(os.path.join(root, rel)):
@@ -370,20 +439,25 @@ def check_contracts(root: str) -> tuple[list[str], dict[str, int]]:
                 doc_header, doc_items = doc
                 if doc_header != src_header:
                     errors.append(f"{rel}: trait header `{doc_header}` differs from {src_rel} `{src_header}`")
+                def item(key: str, trait: str = name) -> str:
+                    kind, _, ident = key.partition(" ")
+                    return f"`{trait}::{ident}`" + ("" if kind == "fn" else f" ({kind})") if ident else f"`{key}`"
+
                 src_by = {n: (s, d) for n, s, d in src_items}
                 doc_by = {n: (s, d) for n, s, d in doc_items}
                 for n in sorted(set(src_by) - set(doc_by)):
-                    errors.append(f"{rel}: `{name}::{n}` is in {src_rel} but not in the document")
+                    errors.append(f"{rel}: {item(n)} is in {src_rel} but not in the document")
                 for n in sorted(set(doc_by) - set(src_by)):
-                    errors.append(f"{rel}: `{name}::{n}` is in the document but not in {src_rel}")
+                    errors.append(f"{rel}: {item(n)} is in the document but not in {src_rel}")
                 for n in sorted(set(src_by) & set(doc_by)):
-                    counts["contract methods"] += 1
+                    counts["contract items"] += 1
                     (ss, sd), (ds, dd) = src_by[n], doc_by[n]
                     if ss != ds:
-                        errors.append(f"{rel}: `{name}::{n}` is `{ds}` in the document but `{ss}` in {src_rel}")
+                        errors.append(f"{rel}: {item(n)} is `{ds}` in the document but `{ss}` in {src_rel}")
                     if sd != dd:
-                        has = lambda d: "has a default body" if d else "has no default body"  # noqa: E731
-                        errors.append(f"{rel}: `{name}::{n}` {has(dd)} in the document but {has(sd)} in {src_rel}")
+                        has = lambda d: "has a default" + (" body" if n.startswith("fn ") else "") if d \
+                            else "has no default" + (" body" if n.startswith("fn ") else "")  # noqa: E731
+                        errors.append(f"{rel}: {item(n)} {has(dd)} in the document but {has(sd)} in {src_rel}")
     for name, c in counts.items():
         if c == 0:
             errors.append(f"check `{name}` compared nothing")

@@ -124,9 +124,14 @@ physics = ["dep:alice-physics"]
 ### Downstream test
 
 `.github/workflows/downstream.yml` runs `scripts/downstream_check.sh` on every
-change to `src/` or `Cargo.toml`: ALICE-SDF (with this checkout patched in for
-the crates.io dependency) and ALICE-LOL (path dependency) are built and their
-`physics`-feature tests run against the changed crate.
+change to `src/`, `Cargo.toml` or `rust-toolchain.toml`: ALICE-SDF (with this
+checkout patched in for the crates.io dependency) and ALICE-LOL (path
+dependency) are built and their `physics`-feature tests run against the changed
+crate, and so is ALICE-TRT (path dependency, `physics-solver` feature), the
+implementer of `GpuSolverBridge`. The version requirement of each on
+alice-physics must accept this crate's version: a downstream that still
+requires an older major fails with that requirement rather than testing the
+published release.
 
 ## 3. ALICE-Bamboo contract — concrete types (7 modules)
 
@@ -201,8 +206,8 @@ The alice-physics 1.0 stable contract with ALICE-Kinematics is:
 
 ## CI enforcement
 
-- `scripts/docs_lint.py` compares each `pub trait` written in a `rust` block of this document with the trait in `src/` (bounds, method set, each signature, and which methods have a default body); a mismatch fails CI.
-- `.github/workflows/downstream.yml` builds ALICE-SDF and ALICE-LOL against each change and runs their `physics`-feature tests (see section 2).
+- `scripts/docs_lint.py` compares each `pub trait` / `pub unsafe trait` written in a `rust` block of this document with the trait in `src/` (bounds and `unsafe`, the set of associated fns, types and consts, each signature including `const` / `async` / `unsafe` / `extern "ABI"`, associated type bounds and const types, and which items have a default); a mismatch fails CI.
+- `.github/workflows/downstream.yml` builds ALICE-SDF, ALICE-LOL and ALICE-TRT against each change and runs their tests that reach alice-physics (see section 2); a downstream whose version requirement does not accept this crate's version fails with that requirement.
 - `cargo semver-checks` — currently `continue-on-error: true`; will be promoted to hard-gate at the 1.0 release event (see `docs/ROADMAP.md` Item C).
 - `docs/PUBLIC_API_SNAPSHOT.txt` — enforced by `public-api-diff` CI job. Contract-listed items are within this snapshot; any accidental change surfaces as a snapshot diff.
 - `cargo public-api` output is regenerated on Mac aarch64 to match `macos-latest` CI runner (SIMD-item drift avoidance).

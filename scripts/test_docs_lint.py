@@ -399,12 +399,12 @@ class Contracts(unittest.TestCase):
         errs, counts = dl.check_contracts(ROOT)
         self.assertEqual(errs, [])
         self.assertGreaterEqual(counts["contract traits"], 2)
-        self.assertGreaterEqual(counts["contract methods"], 15)
+        self.assertGreaterEqual(counts["contract items"], 15)
 
     def test_matching_document_passes(self):
         errs, counts = contract_errors()
         self.assertEqual(errs, [])
-        self.assertEqual(counts, {"contract traits": 2, "contract methods": 6})
+        self.assertEqual(counts, {"contract traits": 2, "contract items": 6})
 
     def test_old_sample_signature_fails(self):
         doc = CONTRACT_DOC.split("```rust\npub trait Bridge")[0].split("```rust")[0] + OLD_SDF_DOC
@@ -456,6 +456,121 @@ class Contracts(unittest.TestCase):
     def test_missing_document_fails(self):
         errs, _ = dl.check_contracts(tree({"src/sdf.rs": SDF_SRC}))
         self.assertTrue(any("ECOSYSTEM_CONTRACTS.md: missing" in x for x in errs), errs)
+
+
+ASSOC_SRC = """use crate::math::Fix128;
+
+pub unsafe trait Backend: Send {
+    type Buffer: AsRef<[u8]> + Iterator<Item = u8>;
+    type Id;
+    const LANES: usize;
+    const NAME: &'static str = "cpu";
+    unsafe fn map(&mut self, p: *mut u8) -> usize;
+    async fn wait(&self);
+    const fn width() -> usize { 4 }
+    extern "C" fn hook(x: i32) -> i32;
+    fn plain(&self) -> Fix128;
+}
+"""
+
+ASSOC_DOC = """```rust
+pub unsafe trait Backend: Send {
+    type Buffer: AsRef<[u8]> + Iterator<Item = u8>;
+    type Id;
+    const LANES: usize;
+    const NAME: &'static str = ...;
+    unsafe fn map(&mut self, p: *mut u8) -> usize;
+    async fn wait(&self);
+    const fn width() -> usize { ... }
+    extern "C" fn hook(x: i32) -> i32;
+    fn plain(&self) -> Fix128;
+}
+```
+"""
+
+
+def assoc_errors(doc=ASSOC_DOC, src=ASSOC_SRC):
+    return dl.check_contracts(tree({"src/backend.rs": src, "docs/ECOSYSTEM_CONTRACTS.md": doc}))
+
+
+class ContractItems(unittest.TestCase):
+    """Associated types and consts, fn qualifiers and `unsafe trait` are compared."""
+
+    def test_matching_document_passes(self):
+        errs, counts = assoc_errors()
+        self.assertEqual(errs, [])
+        self.assertEqual(counts, {"contract traits": 1, "contract items": 9})
+
+    def test_associated_type_missing_from_the_document_fails(self):
+        errs, _ = assoc_errors(ASSOC_DOC.replace("    type Id;\n", ""))
+        self.assertIn("docs/ECOSYSTEM_CONTRACTS.md: `Backend::Id` (type) is in src/backend.rs but not in the document",
+                      errs)
+
+    def test_associated_type_bound_change_fails(self):
+        errs, _ = assoc_errors(src=ASSOC_SRC.replace("type Id;", "type Id: Copy;"))
+        self.assertTrue(any("`Backend::Id` (type) is `type Id` in the document but `type Id:Copy`" in x for x in errs), errs)
+        errs, _ = assoc_errors(src=ASSOC_SRC.replace("Item = u8", "Item = u16"))
+        self.assertTrue(any("`Backend::Buffer` (type)" in x for x in errs), errs)
+
+    def test_associated_const_type_and_default_are_compared(self):
+        errs, _ = assoc_errors(src=ASSOC_SRC.replace("const LANES: usize;", "const LANES: u32;"))
+        self.assertTrue(any("`Backend::LANES` (const) is `const LANES:usize`" in x for x in errs), errs)
+        errs, _ = assoc_errors(src=ASSOC_SRC.replace(' = "cpu";', ";"))
+        self.assertTrue(any("`Backend::NAME` (const) has a default in the document but has no default" in x
+                            for x in errs), errs)
+        errs, _ = assoc_errors(ASSOC_DOC.replace("    const LANES: usize;\n", ""))
+        self.assertTrue(any("`Backend::LANES` (const) is in src/backend.rs but not in the document" in x
+                            for x in errs), errs)
+
+    def test_fn_qualifiers_are_part_of_the_signature(self):
+        for qual, sig in (("unsafe fn map", "fn map"), ("async fn wait", "fn wait"),
+                          ("const fn width", "fn width"), ('extern "C" fn hook', "fn hook")):
+            errs, _ = assoc_errors(ASSOC_DOC.replace(qual, sig))
+            name = sig.split()[-1]
+            self.assertTrue(any(f"`Backend::{name}` is `{sig}" in x for x in errs), (qual, errs))
+        errs, _ = assoc_errors(ASSOC_DOC.replace('extern "C" fn hook', 'extern "system" fn hook'))
+        self.assertTrue(any("`Backend::hook`" in x for x in errs), errs)
+
+    def test_unsafe_trait_in_the_document_is_compared(self):
+        errs, _ = assoc_errors(ASSOC_DOC.replace("    fn plain(&self) -> Fix128;\n", ""))
+        self.assertTrue(any("`Backend::plain` is in src/backend.rs but not in the document" in x for x in errs), errs)
+
+    def test_unsafe_dropped_from_the_trait_header_fails(self):
+        errs, _ = assoc_errors(ASSOC_DOC.replace("pub unsafe trait Backend", "pub trait Backend"))
+        self.assertTrue(any("trait header `pub trait Backend:Send` differs" in x for x in errs), errs)
+        errs, _ = assoc_errors(src=ASSOC_SRC.replace("pub unsafe trait Backend", "pub trait Backend"))
+        self.assertTrue(any("trait header" in x for x in errs), errs)
+
+
+CHAR_SRC = """pub fn quote() -> char { '"' }
+pub fn escaped() -> char { '\\'' }
+pub fn longest<'a>(x: &'a str) -> &'a str { x }
+pub const URL: &str = r"http://example.invalid/x";
+/// the "default" body
+pub trait Quoted {
+    // fn ghost(&self);
+    /* fn ghost2(&self); /* nested */ fn ghost3(&self); */
+    fn real<'a>(&'a self) -> &'a str;
+}
+"""
+
+CHAR_DOC = """```rust
+pub trait Quoted {
+    fn real<'a>(&'a self) -> &'a str;
+}
+```
+"""
+
+
+class CommentStripping(unittest.TestCase):
+    def test_char_literals_lifetimes_raw_strings_and_nested_comments(self):
+        errs, counts = dl.check_contracts(tree({"src/q.rs": CHAR_SRC, "docs/ECOSYSTEM_CONTRACTS.md": CHAR_DOC}))
+        self.assertEqual(errs, [])
+        self.assertEqual(counts["contract items"], 1)
+
+    def test_strip_keeps_literals_and_drops_comments(self):
+        out = dl.strip_rust_comments("let a = '\"'; // gone\nlet b = \"// kept\"; /* gone */ let c = 'x';")
+        self.assertEqual(out, "let a = '\"'; \nlet b = \"// kept\";  let c = 'x';")
 
 
 if __name__ == "__main__":
