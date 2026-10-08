@@ -110,7 +110,7 @@ when the lock is not committed), re-check whether the defect remains.
 
 | Defect | Test | Crate | Reason says | Resolved | Status |
 |--------|------|-------|-------------|----------|--------|
-| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.1 | ⚠️ re-check |
+| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.2 | ⚠️ re-check |
 
 ## ⏱ Gated (26)
 
