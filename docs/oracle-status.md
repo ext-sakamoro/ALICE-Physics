@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5689 |
-| 🔴 Red by design | 74 |
+| 🟢 Not ignored (run by CI) | 5692 |
+| 🔴 Red by design | 73 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5789** |
+| **Total** | **5791** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (74)
+## 🔴 Red by design (73)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -46,7 +46,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `feet_position_is_the_capsule_bottom` (audit_character.rs) — known defect: AUD-A-S3W3-003: feet_position doc says capsule bottom but returns the lower hemisphere centre (c…
 - `from_f64_non_finite_and_out_of_range_are_not_silently_plausible` (audit_math.rs) — known defect: AUD-A-S1W5-018: Fix128::from_f64(NaN) returns ZERO silently, from_f64(+/-inf) and from_f64(-1e30…
 - `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) — known defect: AUD-A-S5W1-001: non-contiguous steps are re-spaced uniformly by the storage layer; a query for a…
-- `golden_coverage_has_no_gaps` (determinism_golden_coverage.rs) — src gap: stepping combinations without a determinism golden are listed in KNOWN_GAPS of this file
 - `hover_with_add_force_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: add_force is a frame-head impulse while gravity is per substep, so a hovering body climbs n g dt^2 (s…
 - `hover_with_force_field_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: force fields are applied once at the head of the frame while gravity is per substep, so a field-held …
 - `in_contact_is_false_on_the_frame_the_contact_ends` (audit_solver.rs) — known defect: AUD-A-S1W2-003: observe_body.in_contact is true on the frame of an End event (any contact event …
@@ -155,7 +154,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5689)
+## 🟢 Not ignored (5692)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -226,6 +225,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_neural.rs` | 21 |
 | `audit_privacy.rs` | 21 |
 | `audit_sketch.rs` | 21 |
+| `determinism_golden_paths.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
 | `analytic_coupling_medium.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
@@ -249,7 +249,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_cloth_fluid.rs` | 19 |
 | `audit_cone.rs` | 19 |
 | `audit_sim_modifier.rs` | 19 |
-| `determinism_golden_paths.rs` | 19 |
 | `participant_crowd_md.rs` | 19 |
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
@@ -548,6 +547,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_joint.rs` | 4 |
 | `audit_c_linear_elastic_fem.rs` | 4 |
 | `audit_c_plane_collider.rs` | 4 |
+| `determinism_golden_coverage.rs` | 4 |
 | `determinism_physics2d_step_digest.rs` | 4 |
 | `indep_contact_restitution_friction.rs` | 4 |
 | `indep_shaped_sphere_rest_heights.rs` | 4 |
@@ -575,7 +575,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_turbulence.rs` | 3 |
 | `audit_gpu_bridge.rs` | 3 |
 | `audit_nonunit_quaternion_compound.rs` | 3 |
-| `determinism_golden_coverage.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `indep_world_try_step_snapshot.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |

@@ -10,13 +10,13 @@
 //! # Hex form
 //!
 //! ```text
-//! 574e7586cbdf75bb3ed2fb0f304ceea091ebf190a47617f8ec51012b4604fbdd
+//! 3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72
 //! ```
 //!
 //! # Entries
 //!
 //! [`PHYSICS_SEMANTICS_PINS`] has one entry per row of the `PINS` table of
-//! `tests/determinism_golden_coverage.rs` (21 rows), named by the
+//! `tests/determinism_golden_coverage.rs` (23 rows), named by the
 //! combination that row pins, with the SHA-256 golden of the test it names,
 //! plus one entry `"alice-det-math"` holding `alice_det_math::SEMANTICS_ID`.
 //! Several combinations share one digest (for example `step`, `step_n` and
@@ -170,6 +170,14 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
     ),
     (
+        "step_parallel shared-body order",
+        hex32("412bed1309a8709f63637bbe6b1a796a249594c880f024f2b814834089ef16ca"),
+    ),
+    (
+        "installed bridge",
+        hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
+    ),
+    (
         "alice-det-math",
         hex32("d2209b30f6f1f45baa1b638bcdfee34ac64773b2e63b9c083b2e77afc691398e"),
     ),
@@ -178,7 +186,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 /// Content hash of the stepping semantics: the fold of
 /// [`PHYSICS_SEMANTICS_PINS`] described in the [module documentation](self).
 ///
-/// Hex: `574e7586cbdf75bb3ed2fb0f304ceea091ebf190a47617f8ec51012b4604fbdd`.
+/// Hex: `3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("574e7586cbdf75bb3ed2fb0f304ceea091ebf190a47617f8ec51012b4604fbdd");
+    hex32("3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72");
