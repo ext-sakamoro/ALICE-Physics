@@ -218,7 +218,7 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
         if cv and released and cv not in released and semver_key(cv) < semver_key(released[0]):
             errors.append(f"CHANGELOG.md: Cargo.toml version {cv} is older than the newest section [{released[0]}]")
         body = unreleased_body(cl)
-        if body is not None:
+        if body is not None and body.strip():
             cats = re.findall(r"^### (\w+)", body, re.M)
             counts["categories"] = len(cats)
             for c in sorted(set(cats)):

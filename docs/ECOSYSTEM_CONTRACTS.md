@@ -55,7 +55,7 @@ pub trait GpuSolverBridge {
 ```toml
 # ALICE-TRT Cargo.toml
 [dependencies]
-alice-physics = { version = "1", features = ["gpu-solver-bridge"] }
+alice-physics = { version = "2", features = ["gpu-solver-bridge"] }
 ```
 
 ## 2. ALICE-SDF contract — `SdfField`
@@ -87,7 +87,7 @@ pub trait SdfField: Send + Sync {
 ```toml
 # ALICE-SDF Cargo.toml
 [dependencies]
-alice-physics = "1"
+alice-physics = "2"
 ```
 
 ## 3. ALICE-Bamboo contract — concrete types (7 modules)
@@ -120,7 +120,7 @@ alice-physics = "1"
 ```toml
 # ALICE-Bamboo Cargo.toml
 [dependencies]
-alice-physics = "1"
+alice-physics = "2"
 ```
 
 ## 4. ALICE-Kinematics contract — reserved (post-1.0)
@@ -171,7 +171,7 @@ The alice-physics 1.0 stable contract with ALICE-Kinematics is:
 
 Each partner crate is expected to:
 
-1. **Pin `alice-physics = "1"`** in their `Cargo.toml` (patch and minor updates auto-adopted).
+1. **Pin `alice-physics = "2"`** in their `Cargo.toml` (patch and minor updates auto-adopted).
 2. **Run `cargo test`** on each `alice-physics` semver-minor update; report regressions.
 3. **Coordinate breaking changes** — if a partner needs a currently-frozen item modified, open an issue to schedule the change for 2.0.
 
