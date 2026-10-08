@@ -1969,21 +1969,49 @@ impl PhysicsWorld {
     /// [`Self::snapshot_world`]). To accept only verified blobs, refuse
     /// anything but [`LawCheck::Verified`].
     ///
+    /// # Intended use
+    ///
+    /// Pass the target world's own `self.law_id(&PHYSICS_SEMANTICS_ID)`,
+    /// computed **before** the restore, as `expected_law_id`: the blob is then
+    /// accepted only if it was written under the rule this world already
+    /// runs. Passing the blob header's own `law_id` compares the blob with
+    /// itself and always gives [`LawCheck::Verified`], which checks nothing.
+    /// The target's participants are kept by the restore (they are code, not
+    /// data), so a target whose participant has the same kind but another
+    /// step rule is refused this way, while a plain [`Self::restore_world`]
+    /// accepts it.
+    ///
     /// # Examples
     ///
     /// ```
     /// use alice_physics::{
     ///     Fix128, LawCheck, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix,
-    ///     PHYSICS_SEMANTICS_ID,
+    ///     WorldSnapshotError, PHYSICS_SEMANTICS_ID,
     /// };
     ///
     /// let mut world = PhysicsWorld::new(PhysicsConfig::default());
     /// world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE));
-    /// let law = world.law_id(&PHYSICS_SEMANTICS_ID);
     /// let blob = world.snapshot_world();
     ///
-    /// let mut other = PhysicsWorld::new(PhysicsConfig::default());
-    /// assert_eq!(other.restore_world_checked(&blob, Some(&law)), Ok(LawCheck::Verified));
+    /// // A target running the same rule: its own law id, taken before the restore
+    /// let mut same = PhysicsWorld::new(PhysicsConfig::default());
+    /// let expected = same.law_id(&PHYSICS_SEMANTICS_ID);
+    /// assert_eq!(same.restore_world_checked(&blob, Some(&expected)), Ok(LawCheck::Verified));
+    ///
+    /// // A target running another rule refuses the blob and keeps its state
+    /// let mut other = PhysicsWorld::new(PhysicsConfig {
+    ///     gravity: Vec3Fix::from_int(0, -3, 0),
+    ///     ..PhysicsConfig::default()
+    /// });
+    /// let expected = other.law_id(&PHYSICS_SEMANTICS_ID);
+    /// let before = other.snapshot_world();
+    /// assert!(matches!(
+    ///     other.restore_world_checked(&blob, Some(&expected)),
+    ///     Err(WorldSnapshotError::LawIdMismatch { .. })
+    /// ));
+    /// assert_eq!(other.snapshot_world(), before);
+    ///
+    /// // Without an expected id only the stepping semantics is checked
     /// assert_eq!(other.restore_world_checked(&blob, None), Ok(LawCheck::SemanticsVerified));
     /// ```
     ///
