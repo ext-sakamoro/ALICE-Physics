@@ -36,7 +36,15 @@
 //!   no helper of another module (whose backend would be invisible here);
 //! * for a feature row: the code listed in [`FEATURES`] for it.
 //!
-//! Every required combination is either pinned or listed in [`KNOWN_GAPS`]
+//! A row of [`RELATION_PINS`] pins a combination by its relation to a `PINS`
+//! row: its test passes the checks above for its own combination and asserts
+//! a digest constant (of the same file) that the test of the named `PINS` row
+//! also asserts. The four TGS rows on the paths that do not consult the
+//! backend are pinned this way; they are not `PINS` rows, so the entries
+//! folded into `PHYSICS_SEMANTICS_ID` do not change.
+//!
+//! Every required combination is either pinned (by [`PINS`] or
+//! [`RELATION_PINS`]) or listed in [`KNOWN_GAPS`]
 //! (with the reason), never both, and both tables name only required
 //! combinations. `golden_coverage_has_no_gaps` is ignored while
 //! [`KNOWN_GAPS`] is not empty and fails until every combination has a golden.
@@ -272,24 +280,50 @@ const PINS: &[(&str, &str, &str, &str)] = &[
     ),
 ];
 
-/// Required combinations that no golden pins yet: (combination, reason).
-const KNOWN_GAPS: &[(&str, &str)] = &[
+/// Required combinations pinned by a relation to another pinned combination:
+/// (combination, the `PINS` combination it gives the bits of, file, test,
+/// feature). The paths below do not consult `config.solver_backend` and run
+/// the XPBD substep loop (documented on each entry point), so a TGS world
+/// stepped through them is pinned to the XPBD digest of the same path.
+///
+/// A row counts as a pin when its test exercises the combination (as a `PINS`
+/// row would) and asserts a digest constant that the test of the named `PINS`
+/// row also asserts. The rows are not part of `PINS`, so they add no entry to
+/// `PHYSICS_SEMANTICS_PINS`: their bits are those of the named row, which is
+/// already folded into `PHYSICS_SEMANTICS_ID`.
+const RELATION_PINS: &[(&str, &str, &str, &str, &str)] = &[
     (
         "Tgs step_parallel",
-        "gives the Xpbd step_parallel bits; whether the backend should apply on this path is undecided",
+        "Xpbd step_parallel",
+        "determinism_golden_paths.rs",
+        "golden_path_tgs_step_parallel_gives_the_xpbd_bits",
+        "parallel",
     ),
     (
         "Tgs try_step_parallel",
-        "gives the Xpbd try_step_parallel bits; whether the backend should apply on this path is undecided",
+        "Xpbd try_step_parallel",
+        "determinism_golden_paths.rs",
+        "golden_path_tgs_try_step_parallel_gives_the_xpbd_bits",
+        "parallel",
     ),
     (
         "Tgs step_with_bridge",
-        "gives the Xpbd step_with_bridge bits; whether the backend should apply on this path is undecided",
+        "Xpbd step_with_bridge",
+        "determinism_golden_paths.rs",
+        "golden_path_tgs_step_with_bridge_gives_the_xpbd_bits",
+        "gpu-solver-bridge",
     ),
     (
         "Tgs substep_with_bridge",
-        "gives the Xpbd substep_with_bridge bits; whether the backend should apply on this path is undecided",
+        "Xpbd substep_with_bridge",
+        "determinism_golden_paths.rs",
+        "golden_path_tgs_substep_with_bridge_gives_the_xpbd_bits",
+        "gpu-solver-bridge",
     ),
+];
+
+/// Required combinations that no golden pins yet: (combination, reason).
+const KNOWN_GAPS: &[(&str, &str)] = &[
     (
         "step_parallel shared-body order",
         "no golden runs step_parallel on a scene where two constraints share a body",
@@ -642,6 +676,8 @@ struct TestFacts {
     active: bool,
     features: BTreeSet<String>,
     asserts_digest: bool,
+    /// The digest constants used inside an `assert` statement it reaches.
+    asserted: BTreeSet<String>,
     /// Entry points called on a `PhysicsWorld` value.
     world_calls: BTreeSet<String>,
     /// All reached code, blanked.
@@ -658,6 +694,7 @@ fn test_facts(raw: &str, test: &str, entries: &BTreeSet<String>) -> TestFacts {
             active: false,
             features: BTreeSet::new(),
             asserts_digest: false,
+            asserted: BTreeSet::new(),
             world_calls: BTreeSet::new(),
             text: String::new(),
             foreign_helper: false,
@@ -679,13 +716,17 @@ fn test_facts(raw: &str, test: &str, entries: &BTreeSet<String>) -> TestFacts {
         .collect();
     let consts = digest_consts(raw);
     let mut text = String::new();
-    let mut asserted = false;
+    let mut asserted = BTreeSet::new();
     let mut calls = BTreeSet::new();
     for name in reachable_fns(&items, test) {
         let f = &items[&name];
         text.push_str(&f.body);
         text.push('\n');
-        asserted |= asserts_digest(&f.body, &consts);
+        for c in &consts {
+            if asserts_digest(&f.body, &BTreeSet::from([c.clone()])) {
+                asserted.insert(c.clone());
+            }
+        }
         for w in world_names(f, &items) {
             for e in entries {
                 if f.body.contains(&format!("{w}.{e}(")) {
@@ -702,7 +743,8 @@ fn test_facts(raw: &str, test: &str, entries: &BTreeSet<String>) -> TestFacts {
         } else {
             raw_items
         },
-        asserts_digest: asserted,
+        asserts_digest: !asserted.is_empty(),
+        asserted,
         world_calls: calls,
         text,
         foreign_helper,
@@ -962,6 +1004,53 @@ fn exercises(req: &Required, t: &TestFacts, combo: &str) -> Result<(), String> {
     }
 }
 
+/// Checks one `RELATION_PINS` row against the `PINS` combinations already
+/// pinned (`pinned`).
+fn check_relation(
+    req: &Required,
+    (combo, same_as, file, test, feature): (&str, &str, &str, &str, &str),
+    read_test: &dyn Fn(&str) -> String,
+    pinned: &BTreeSet<String>,
+) -> Result<(), String> {
+    let row = format!("RELATION_PINS row {combo:?}: {file}::{test}");
+    if !req.combos.contains(combo) {
+        return Err(format!("{row}: not a required combination"));
+    }
+    if pinned.contains(combo) {
+        return Err(format!("{row}: it is also a PINS row"));
+    }
+    let Some(&(_, same_file, same_test, _)) = PINS.iter().find(|r| r.0 == same_as) else {
+        return Err(format!("{row}: {same_as:?} is not a PINS row"));
+    };
+    if !pinned.contains(same_as) {
+        return Err(format!("{row}: {same_as:?} is not pinned"));
+    }
+    let t = test_facts(&read_test(file), test, &req.entries);
+    if !t.active {
+        return Err(format!("{row} is not an active #[test]"));
+    }
+    let want: BTreeSet<String> = if feature.is_empty() {
+        BTreeSet::new()
+    } else {
+        BTreeSet::from([feature.to_string()])
+    };
+    if t.features != want {
+        return Err(format!(
+            "{row} is behind features {:?}, the row says {want:?}",
+            t.features
+        ));
+    }
+    exercises(req, &t, combo).map_err(|why| format!("{row} {why}"))?;
+    let same = test_facts(&read_test(same_file), same_test, &req.entries);
+    if file != same_file || t.asserted.is_disjoint(&same.asserted) {
+        return Err(format!(
+            "{row} asserts {:?}, not a digest constant of {same_file}::{same_test} ({:?})",
+            t.asserted, same.asserted
+        ));
+    }
+    Ok(())
+}
+
 fn check(req: &Required, read_test: &dyn Fn(&str) -> String) -> (Vec<String>, BTreeSet<String>) {
     let mut errors = Vec::new();
     for m in &req.unclassified {
@@ -1005,6 +1094,14 @@ fn check(req: &Required, read_test: &dyn Fn(&str) -> String) -> (Vec<String>, BT
                 pinned.insert(combo.to_string());
             }
             Err(why) => errors.push(format!("{row} {why}")),
+        }
+    }
+    for &row in RELATION_PINS {
+        match check_relation(req, row, read_test, &pinned) {
+            Ok(()) => {
+                pinned.insert(row.0.to_string());
+            }
+            Err(why) => errors.push(why),
         }
     }
     let gaps: BTreeSet<String> = KNOWN_GAPS.iter().map(|(g, _)| (*g).to_string()).collect();
@@ -1072,6 +1169,54 @@ fn golden_coverage_has_no_gaps() {
 
 /// A synthetic solver source with the real enums and the given methods in an
 /// `impl PhysicsWorld` block.
+#[test]
+fn a_relation_row_must_assert_the_digest_of_the_row_it_names() {
+    let req = required_from(&solver_sources());
+    let pinned = BTreeSet::from(["Xpbd step_parallel".to_string()]);
+    let file = "const GOLDEN_XPBD_STEP_PARALLEL: &str = \"7b962ba6d3dcd404946bcc8c6c423e75d0bdd4dfc8597026eb443c6974016d39\";\n\
+                const GOLDEN_OTHER: &str = \"cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe\";\n\
+                fn scene(b: SolverBackend) -> PhysicsWorld { PhysicsWorld::new(b) }\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn golden_path_xpbd_step_parallel() {\n    let mut w = scene(SolverBackend::Xpbd);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn same_bits() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn other_digest() {\n    let mut w = scene(SolverBackend::Tgs);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_OTHER);\n}\n\
+                #[cfg(feature = \"parallel\")]\n#[test]\nfn wrong_backend() {\n    let mut w = scene(SolverBackend::Xpbd);\n    w.step_parallel(dt);\n    assert_eq!(hash(&w), GOLDEN_XPBD_STEP_PARALLEL);\n}\n";
+    let read_test = |_: &str| file.to_string();
+    let row = |test| {
+        (
+            "Tgs step_parallel",
+            "Xpbd step_parallel",
+            "determinism_golden_paths.rs",
+            test,
+            "parallel",
+        )
+    };
+    assert_eq!(
+        check_relation(&req, row("same_bits"), &read_test, &pinned),
+        Ok(())
+    );
+    let other = check_relation(&req, row("other_digest"), &read_test, &pinned);
+    assert!(
+        other
+            .as_ref()
+            .is_err_and(|e| e.contains("not a digest constant")),
+        "{other:?}"
+    );
+    let backend = check_relation(&req, row("wrong_backend"), &read_test, &pinned);
+    assert!(
+        backend
+            .as_ref()
+            .is_err_and(|e| e.contains("SolverBackend::Tgs")),
+        "{backend:?}"
+    );
+    let unpinned = check_relation(&req, row("same_bits"), &read_test, &BTreeSet::new());
+    assert!(
+        unpinned
+            .as_ref()
+            .is_err_and(|e| e.contains("is not pinned")),
+        "{unpinned:?}"
+    );
+}
+
 fn synthetic_solver(methods: &[&str]) -> Vec<String> {
     let real = read("src/solver.rs");
     let code = blank_literals(&real);

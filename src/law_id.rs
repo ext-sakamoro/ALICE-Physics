@@ -179,6 +179,11 @@ impl PhysicsWorld {
     /// coefficients. The converse does not hold either: worlds whose laws step
     /// identically may still differ here (for example two force fields
     /// declared in the other order), so this is not a deduplication key.
+    /// One case of this: `config.solver_backend` is covered, but
+    /// `step_parallel`, `try_step_parallel` and the GPU bridge
+    /// paths run XPBD whatever it says, so on those paths two worlds that
+    /// differ only in the backend have different identifiers and step to the
+    /// same bits.
     ///
     /// # Encoding
     ///

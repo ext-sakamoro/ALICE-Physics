@@ -360,6 +360,62 @@ fn golden_path_xpbd_substep_with_bridge() {
     );
 }
 
+// ── TGS on the paths that do not consult the backend ────────────────────────
+//
+// `step_parallel`, `try_step_parallel`, `step_with_bridge` and
+// `substep_with_bridge` run the XPBD substep loop whatever
+// `config.solver_backend` says (see their documentation). These goldens pin
+// that relation: a TGS world stepped through one of them gives the XPBD
+// digest of the same path.
+
+#[cfg(feature = "parallel")]
+#[test]
+fn golden_path_tgs_step_parallel_gives_the_xpbd_bits() {
+    let w = run_step_parallel(path_scene(SolverBackend::Tgs));
+    check_path_scene(&w, "tgs step_parallel");
+    assert_golden(
+        "tgs step_parallel",
+        &hash_world(&w),
+        GOLDEN_XPBD_STEP_PARALLEL,
+    );
+}
+
+#[cfg(feature = "parallel")]
+#[test]
+fn golden_path_tgs_try_step_parallel_gives_the_xpbd_bits() {
+    let w = run_try_step_parallel(path_scene(SolverBackend::Tgs));
+    check_path_scene(&w, "tgs try_step_parallel");
+    assert_golden(
+        "tgs try_step_parallel",
+        &hash_world(&w),
+        GOLDEN_XPBD_STEP_PARALLEL,
+    );
+}
+
+#[cfg(feature = "gpu-solver-bridge")]
+#[test]
+fn golden_path_tgs_step_with_bridge_gives_the_xpbd_bits() {
+    let w = run_step_with_bridge(path_scene(SolverBackend::Tgs));
+    assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
+    assert_golden(
+        "tgs step_with_bridge",
+        &hash_world(&w),
+        GOLDEN_XPBD_STEP_WITH_BRIDGE,
+    );
+}
+
+#[cfg(feature = "gpu-solver-bridge")]
+#[test]
+fn golden_path_tgs_substep_with_bridge_gives_the_xpbd_bits() {
+    let w = run_substep_with_bridge(path_scene(SolverBackend::Tgs));
+    assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
+    assert_golden(
+        "tgs substep_with_bridge",
+        &hash_world(&w),
+        GOLDEN_XPBD_STEP_WITH_BRIDGE,
+    );
+}
+
 // ── TGS ─────────────────────────────────────────────────────────────────────
 
 const GOLDEN_TGS_STEP: &str = "cfb9f3e814a4b0a55c96019f1df345eb4aaba233fa5321e021dbcb916ff730fe";
