@@ -158,6 +158,13 @@ jobs:
       - name: Test (full native feature set, lib)
         run: cargo test --lib --features "std,simd,parallel,ffi,gpu-solver-bridge"
 
+      # PHYSICS_SEMANTICS_ID and its table are constants no cfg gates: the same
+      # file runs in `cargo test` above (default features) and here with the
+      # features of the gated stepping paths, and both assert the same hex.
+      # scripts/preflight.sh runs the same command
+      - name: Test (semantics identifier, parallel + gpu-solver-bridge)
+        run: cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
+
       # Integration tests gated on neural / replay / analytics / gpu-solver-bridge:
       # the steps above enable those features only with --lib, so a file under
       # #![cfg(feature = "replay")] compiled to zero tests and stayed green. The

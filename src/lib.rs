@@ -460,6 +460,8 @@ pub mod sdf_manifold;
 #[cfg(feature = "std")]
 pub mod sdf_sph;
 pub mod sdf_wind_field;
+// Content hash of the stepping semantics; no `cfg`: the same value in every build.
+pub mod semantics;
 pub mod sensors;
 pub mod shape;
 pub mod shape_raycast;
@@ -657,6 +659,7 @@ pub use sdf_force::{SdfForceField, SdfForceType};
 pub use sdf_manifold::ManifoldConfig;
 #[cfg(feature = "std")]
 pub use sdf_manifold::SdfManifold;
+pub use semantics::{PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS};
 pub use shape::{Shape, ShapeError};
 #[cfg(feature = "std")]
 pub use sim_field::{ScalarField3D, VectorField3D};
