@@ -107,8 +107,8 @@ is the intended one.
 ## 🌐 Root cause outside this repository (1)
 
 Known defects whose reason says `root: external <crate> <version>`: the fix belongs in that
-dependency. When Cargo resolves a different version (Cargo.lock, or `cargo metadata --all-features`
-when the lock is not committed), re-check whether the defect remains.
+dependency. When Cargo.lock resolves a different version, re-check whether the defect
+remains.
 
 | Defect | Test | Crate | Reason says | Resolved | Status |
 |--------|------|-------|-------------|----------|--------|

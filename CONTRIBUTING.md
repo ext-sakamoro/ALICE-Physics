@@ -56,6 +56,24 @@ This engine guarantees bit-exact results across all platforms. When contributing
 - Doc tests with ```` ```rust ```` blocks are encouraged for public APIs
 - Aim for at least one test per public function
 
+## Dependencies
+
+`Cargo.lock` is committed. CI builds every job from it, and the oracle ledger
+(`docs/oracle-status.md`) records the versions it holds, so a dependency that
+publishes a new release changes nothing until the lock is updated.
+
+- Update a dependency with `cargo update -p <crate>` (or edit `Cargo.toml` and
+  run `cargo update`) and commit `Cargo.toml` and `Cargo.lock` together. CI
+  rejects a `Cargo.toml` whose lock is out of date (`cargo metadata --locked`).
+- Dependabot opens weekly pull requests that update the lock. Their changes
+  are re-committed locally with the project author rather than merged on
+  GitHub, and land with `scripts/land.py`, which regenerates the ledger.
+- The lock only fixes this repository's builds. A project that depends on
+  `alice-physics` resolves its own versions: Cargo ignores the lock file of a
+  dependency, including the copy inside the published package.
+- The lock is generated with `resolver = "3"`, which picks versions that support
+  `rust-version`, so the MSRV job builds from the same lock.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under AGPL-3.0.

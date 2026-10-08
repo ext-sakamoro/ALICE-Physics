@@ -30,14 +30,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      # The ledger's "Root cause outside this repository" table needs the resolved
-      # dependency versions. Cargo.lock is not committed, so the generator runs
-      # `cargo metadata --all-features`; resolve once here so a failure stops the
-      # job instead of writing "not resolved" into the ledger.
+      # The ledger's "Root cause outside this repository" table reads the
+      # dependency versions from the committed Cargo.lock; `--locked` stops the
+      # job when the lock is out of date with Cargo.toml instead of writing
+      # versions the lock does not hold.
       - name: Rust toolchain and dependency resolution
         run: |
           rustup show active-toolchain
-          cargo metadata --format-version 1 --all-features > /dev/null
+          cargo metadata --locked --format-version 1 --all-features > /dev/null
 
       # The ledger is regenerated and committed when a change lands
       # (scripts/land.py); this workflow only checks that the committed copy

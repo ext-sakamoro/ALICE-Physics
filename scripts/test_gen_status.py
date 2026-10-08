@@ -11,6 +11,7 @@ run: python3 scripts/test_gen_status.py
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 import tempfile
 import textwrap
 import unittest
@@ -312,6 +313,16 @@ class OracleAuditLinks(unittest.TestCase):
         root = Path(tempfile.mkdtemp())
         (root / "Cargo.lock").write_text('[[package]]\nname = "alice-db"\nversion = "0.2.0-beta.9"\n', encoding="utf-8")
         self.assertEqual(oracle.resolved_versions(root)["alice-db"], {"0.2.0-beta.9"})
+
+    def test_the_repository_commits_its_lockfile_and_the_ledger_reads_it(self):
+        # the external-root-cause table must not move when a dependency publishes
+        # a new version: the versions come from the committed lock
+        tracked = subprocess.run(["git", "ls-files", "--error-unmatch", "Cargo.lock"],
+                                 cwd=oracle.PROJECT_ROOT, capture_output=True, text=True)
+        self.assertEqual(tracked.returncode, 0, "Cargo.lock is not tracked by git")
+        from_lock = oracle.cargo_lock_versions(oracle.PROJECT_ROOT)
+        self.assertIn("alice-db", from_lock)
+        self.assertEqual(oracle.resolved_versions(oracle.PROJECT_ROOT), from_lock)
 
     def test_cargo_metadata_includes_optional_dependencies(self):
         # the real crate: alice-db is optional (feature `replay`); without --all-features it is missing

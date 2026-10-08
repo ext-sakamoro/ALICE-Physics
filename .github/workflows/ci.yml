@@ -92,10 +92,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Cargo.lock is committed: every job builds the same dependency versions
+      # the oracle ledger records, and a Cargo.toml change without its lock
+      # update fails here instead of resolving afresh.
+      - name: Cargo.lock matches Cargo.toml
+        shell: bash
+        run: cargo metadata --locked --format-version 1 > /dev/null
+
       # PIN markers must name an open known defect; external root causes must
-      # name a crate Cargo resolves (docs/oracle-status.md lists both). After the
-      # toolchain: Cargo.lock is not committed, so the versions come from
-      # `cargo metadata --all-features`.
+      # name a crate Cargo resolves (docs/oracle-status.md lists both), read from
+      # the committed Cargo.lock.
       - name: Oracle ledger links (PIN / root external)
         run: python scripts/gen-oracle-status.py --check
 
@@ -364,9 +370,9 @@ jobs:
           --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics"
           --all-targets -- -D warnings
 
-  # The declared `rust-version` is compiled with exactly that toolchain
-  # (resolver = "3" makes the fresh resolution MSRV-aware, Cargo.lock is not
-  # committed for this library) for the default, no_std and full native feature
+  # The declared `rust-version` is compiled with exactly that toolchain from the
+  # committed Cargo.lock (generated with resolver = "3", which picks versions
+  # that support `rust-version`) for the default, no_std and full native feature
   # sets. Bump `rust-version` and the
   # `@<version>` below in the same commit.
   # The pre-1.2.0 job regenerated the lockfile with stable and checked only the

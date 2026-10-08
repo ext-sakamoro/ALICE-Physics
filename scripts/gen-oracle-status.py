@@ -159,9 +159,9 @@ def _cargo_metadata_versions(root):
 def resolved_versions(root=PROJECT_ROOT):
     """Dependency versions as Cargo resolves them, or None when they cannot be determined.
 
-    Cargo.lock is read when it exists. This repository ignores it (a library), so a CI
-    checkout has none: then `cargo metadata` resolves the graph, which is the version CI
-    tests against.
+    Cargo.lock is read when it exists. This repository commits it, so the ledger and CI
+    see the same versions; without a lock (an older checkout) `cargo metadata`
+    resolves the graph.
     """
     if (Path(root) / 'Cargo.lock').exists():
         return cargo_lock_versions(root)
@@ -317,8 +317,8 @@ is the intended one.
     report += f"""## 🌐 Root cause outside this repository ({len(externals)})
 
 Known defects whose reason says `root: external <crate> <version>`: the fix belongs in that
-dependency. When Cargo resolves a different version (Cargo.lock, or `cargo metadata --all-features`
-when the lock is not committed), re-check whether the defect remains.
+dependency. When Cargo.lock resolves a different version, re-check whether the defect
+remains.
 
 """
     if externals:
