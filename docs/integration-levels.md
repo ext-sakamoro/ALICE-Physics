@@ -165,7 +165,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_manifold` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `sdf_sph` | standalone | 0 / 0 / 0 / 16 / 0 | — |
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
-| `semantics` | standalone | 0 / 0 / 0 / 2 / 0 | — |
+| `semantics` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 35 / 0 | — |
 | `sketch` | standalone (step 1 of 70 items) | 1 / 0 / 0 / 69 / 0 | C ABI, Python, WebAssembly |
