@@ -122,7 +122,6 @@ fn spec_inverse(m: Mat3Fix) -> Option<Mat3Fix> {
     ))
 }
 
-/// 修正前の `Mat3Fix::inverse` と `Mat3Fix::determinant` の写し (wrap する演算のまま)
 /// The exact determinant `spec_inverse` uses (`None` when it does not fit).
 fn spec_det(m: Mat3Fix) -> Option<Fix128> {
     let (a, b, c) = (m.col0, m.col1, m.col2);
@@ -189,6 +188,7 @@ fn spec_scaled(m: Mat3Fix) -> Option<Mat3Fix> {
     Some(Mat3Fix::from_cols(b(inv.col0)?, b(inv.col1)?, b(inv.col2)?))
 }
 
+/// 修正前の `Mat3Fix::inverse` と `Mat3Fix::determinant` の写し (wrap する演算のまま)
 fn old_inverse(m: Mat3Fix) -> Option<Mat3Fix> {
     let det = m.col0.x * (m.col1.y * m.col2.z - m.col1.z * m.col2.y)
         - m.col1.x * (m.col0.y * m.col2.z - m.col0.z * m.col2.y)

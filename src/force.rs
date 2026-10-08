@@ -470,8 +470,10 @@ pub fn field_force_at(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) 
             // Simplified: force = -strength / r^3 * dot(r_hat, m_hat) * m_hat
             // with r_hat pointing from the dipole to the body, so for a positive
             // strength the force on either side of the dipole points back toward
-            // it (a soft magnetic body is drawn into the stronger field), and it
-            // is zero in the equatorial plane.
+            // it, which matches a soft magnetic body drawn into the stronger field
+            // on the axis. Off the axis it is a model, not the dipole field: it is
+            // zero in the equatorial plane (a real dipole pushes a parallel one
+            // outward there) and at 45° its axial part has the opposite sign.
             let signed_mag = -(force_mag * cos_theta);
 
             moment_dir * signed_mag

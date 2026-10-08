@@ -2005,7 +2005,11 @@ impl Mat3Fix {
     /// determinant is not quantised away (`diag(1e-5, 1e-5, 1e-5)` had a relative
     /// error of 5e-5, and below `2⁻⁶³` the result was `None` although the inverse
     /// fits): `A⁻¹ = 2ᵏ (2ᵏ A)⁻¹`, both scalings exact. Every other matrix gets the
-    /// unscaled result, bit for bit.
+    /// unscaled result, bit for bit. `k` follows the largest entry, so the gain
+    /// is for matrices whose entries are of similar size: one with entries many
+    /// orders apart (`diag(3·2⁻⁶⁴, 2⁻³³, 3·2⁻⁶⁴)`) still has its determinant
+    /// quantised and can be off by a large relative error (12.5 % there), where
+    /// it used to be `None`.
     #[must_use]
     pub fn inverse(self) -> Option<Self> {
         let direct = self.inverse_and_det();
