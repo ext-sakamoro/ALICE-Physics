@@ -500,29 +500,15 @@ fn laplace_privatize_matches_inverse_transform_from_seed() {
     }
 }
 
-/// `ε = 0` (`b = +∞`), `Δf = 0` (identity), negative `ε` (mirrored noise),
-/// `i64` saturation of `privatize_int`.
+/// `ε = 0` and negative `ε` are refused, `Δf = 0` is the identity, `i64`
+/// saturation of `privatize_int`.
 #[test]
 fn laplace_degenerate_inputs() {
-    // ε = 0 → b = +∞ → every sample is ±∞ with the sign of u; privatize_int saturates.
-    let r = catch_unwind(AssertUnwindSafe(|| {
-        let mut lap = LaplaceNoise::with_seed(1.0, 0.0, 21);
-        let mut rf = RefRng::new(21);
-        for _ in 0..64 {
-            let u = rf.uniform() - 0.5;
-            let got = lap.privatize(5.0);
-            assert!(got.is_infinite(), "got={got}");
-            assert_eq!(got > 0.0, u >= 0.0, "sign follows u (u={u})");
-        }
-        let mut lap = LaplaceNoise::with_seed(1.0, 0.0, 21);
-        let mut rf = RefRng::new(21);
-        for _ in 0..64 {
-            let u = rf.uniform() - 0.5;
-            let expected = if u >= 0.0 { i64::MAX } else { i64::MIN };
-            assert_eq!(lap.privatize_int(5), expected, "u={u}");
-        }
-    }));
-    assert!(r.is_ok(), "ε = 0 must not panic (b = +∞ propagates)");
+    // ε = 0 (b = +∞, every sample ±∞) is refused at construction
+    assert!(
+        catch_unwind(|| LaplaceNoise::with_seed(1.0, 0.0, 21)).is_err(),
+        "ε = 0 must be refused"
+    );
 
     // Δf = 0 → b = 0 → noise is ±0 → privatize is the identity bit for bit.
     let mut lap = LaplaceNoise::with_seed(0.0, 1.0, 21);
@@ -533,12 +519,11 @@ fn laplace_degenerate_inputs() {
         assert_eq!(lap.privatize_int(w), w);
     }
 
-    // Negative ε → b < 0 → every sample is the exact negation of the +ε sample.
-    let mut pos = LaplaceNoise::with_seed(1.0, 1.0, 8);
-    let mut neg = LaplaceNoise::with_seed(1.0, -1.0, 8);
-    for _ in 0..64 {
-        assert_eq!(bits(neg.privatize(0.0)), bits(-pos.privatize(0.0)));
-    }
+    // Negative ε (it used to mirror the noise) is refused at construction
+    assert!(
+        catch_unwind(|| LaplaceNoise::with_seed(1.0, -1.0, 8)).is_err(),
+        "negative ε must be refused"
+    );
 
     // Extreme value: privatize_int near i64::MAX saturates instead of wrapping.
     let r = catch_unwind(AssertUnwindSafe(|| {
@@ -861,23 +846,10 @@ fn randomized_response_degenerate_inputs() {
         bits(1.0),
         "k > n clamps to 1"
     );
-    // p = 0: (k/n − ½)/0 → NaN at k/n = ½ (clamp keeps NaN), +∞ → 1 above, −∞ → 0 below.
-    let r = catch_unwind(AssertUnwindSafe(|| {
-        (
-            RandomizedResponse::estimate_proportion(0.0, 8, 4),
-            RandomizedResponse::estimate_proportion(0.0, 8, 8),
-            RandomizedResponse::estimate_proportion(0.0, 8, 0),
-        )
-    }));
-    let (nan, one, zero) = r.expect("p = 0 must not panic");
-    assert!(
-        nan.is_nan(),
-        "p = 0, obs = ½ → 0/0 = NaN (pinned, undocumented)"
-    );
-    assert_eq!(bits(one), bits(1.0));
-    assert_eq!(bits(zero), bits(0.0));
-    // p = NaN → NaN; n = u64::MAX, k = u64::MAX → observed 1 → 1.
-    assert!(RandomizedResponse::estimate_proportion(f64::NAN, 8, 4).is_nan());
+    // p = 0 (every report a coin flip, the estimate was NaN) and p = NaN are
+    // refused
+    assert!(catch_unwind(|| RandomizedResponse::estimate_proportion(0.0, 8, 4)).is_err());
+    assert!(catch_unwind(|| RandomizedResponse::estimate_proportion(f64::NAN, 8, 4)).is_err());
     assert_eq!(
         bits(RandomizedResponse::estimate_proportion(
             0.75,

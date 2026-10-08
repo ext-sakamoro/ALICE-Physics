@@ -1999,8 +1999,60 @@ impl Mat3Fix {
     /// not make the result `None`: in that case the wrapping arithmetic was
     /// already exact modulo `2¹²⁸`, and the result is bit-identical to the
     /// unchecked formula, as it is for every input whose intermediates fit.
+    ///
+    /// A matrix whose entries are all small (largest below `1/2`) and whose
+    /// determinant is below `2⁻³²` is scaled up by a power of two first, so its
+    /// determinant is not quantised away (`diag(1e-5, 1e-5, 1e-5)` had a relative
+    /// error of 5e-5, and below `2⁻⁶³` the result was `None` although the inverse
+    /// fits): `A⁻¹ = 2ᵏ (2ᵏ A)⁻¹`, both scalings exact. Every other matrix gets the
+    /// unscaled result, bit for bit.
     #[must_use]
     pub fn inverse(self) -> Option<Self> {
+        let direct = self.inverse_and_det();
+        if let Some((inv, det)) = direct {
+            if det.abs() >= Fix128::from_raw(0, 1u64 << 32) {
+                return Some(inv);
+            }
+        }
+        let largest = [self.col0, self.col1, self.col2]
+            .iter()
+            .flat_map(|v| [v.x.abs(), v.y.abs(), v.z.abs()])
+            .fold(Fix128::ZERO, |m, x| if x > m { x } else { m });
+        let half = Fix128::from_raw(0, 1u64 << 63);
+        if largest.is_zero() || largest >= half {
+            return direct.map(|(inv, _)| inv);
+        }
+        // the shift that brings `largest` into [1/2, 1), at most 62
+        let mut k = 0u32;
+        let mut scaled = largest;
+        while scaled < half && k < 62 {
+            scaled = scaled + scaled;
+            k += 1;
+        }
+        let up = Fix128::from_int(1i64 << k);
+        let scale = |v: Vec3Fix| Vec3Fix::new(v.x * up, v.y * up, v.z * up);
+        let (inv, _) = Self {
+            col0: scale(self.col0),
+            col1: scale(self.col1),
+            col2: scale(self.col2),
+        }
+        .inverse_and_det()?;
+        let back = |v: Vec3Fix| -> Option<Vec3Fix> {
+            Some(Vec3Fix::new(
+                v.x.checked_mul(up)?,
+                v.y.checked_mul(up)?,
+                v.z.checked_mul(up)?,
+            ))
+        };
+        Some(Self {
+            col0: back(inv.col0)?,
+            col1: back(inv.col1)?,
+            col2: back(inv.col2)?,
+        })
+    }
+
+    /// [`Self::inverse`] without the rescaling, with the determinant it used.
+    fn inverse_and_det(self) -> Option<(Self, Fix128)> {
         let (a, b, c) = (self.col0, self.col1, self.col2);
 
         // Cofactor matrix transposed (adjugate)
@@ -2037,11 +2089,14 @@ impl Mat3Fix {
         let inv_det = Fix128::ONE / det;
         let e = |x: Fix128| wide_fit(wide_mul_floor(x, inv_det));
 
-        Some(Self {
-            col0: Vec3Fix::new(e(c00)?, e(c01)?, e(c02)?),
-            col1: Vec3Fix::new(e(c10)?, e(c11)?, e(c12)?),
-            col2: Vec3Fix::new(e(c20)?, e(c21)?, e(c22)?),
-        })
+        Some((
+            Self {
+                col0: Vec3Fix::new(e(c00)?, e(c01)?, e(c02)?),
+                col1: Vec3Fix::new(e(c10)?, e(c11)?, e(c12)?),
+                col2: Vec3Fix::new(e(c20)?, e(c21)?, e(c22)?),
+            },
+            det,
+        ))
     }
 
     /// Sum of two matrices, component by component.

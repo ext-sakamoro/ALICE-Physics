@@ -237,17 +237,38 @@ fn laplace_sample_is_always_finite_even_when_the_uniform_draw_is_zero() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-024: parameters that make a mechanism meaningless are accepted silently: Laplace with epsilon = 0 samples +-inf (privatize_int saturates), estimate_proportion with p = 0 returns NaN"]
-fn invalid_parameters_do_not_produce_non_finite_output() {
-    let mut zero_eps = LaplaceNoise::with_seed(1.0, 0.0, 9);
+fn invalid_parameters_are_refused_instead_of_producing_non_finite_output() {
+    // epsilon = 0 would need infinite noise (every sample was +-inf), and
+    // p = 0 makes every report a coin flip (the estimate was NaN): both are
+    // refused at the call, not passed on as a number
+    let refused = |f: fn()| std::panic::catch_unwind(f).is_err();
     assert!(
-        zero_eps.sample().is_finite(),
-        "epsilon = 0 gives a non-finite sample"
+        refused(|| {
+            let _ = LaplaceNoise::with_seed(1.0, 0.0, 9);
+        }),
+        "epsilon = 0"
     );
     assert!(
-        !RandomizedResponse::estimate_proportion(0.0, 10, 5).is_nan(),
-        "p = 0 gives NaN"
+        refused(|| {
+            let _ = LaplaceNoise::with_seed(1.0, -1.0, 9);
+        }),
+        "epsilon < 0"
     );
+    assert!(
+        refused(|| {
+            let _ = LaplaceNoise::with_seed(1.0, f64::NAN, 9);
+        }),
+        "epsilon NaN"
+    );
+    assert!(
+        refused(|| {
+            let _ = RandomizedResponse::estimate_proportion(0.0, 10, 5);
+        }),
+        "p = 0"
+    );
+    // the valid edges still work
+    assert!(LaplaceNoise::with_seed(1.0, 1e-9, 9).sample().is_finite());
+    assert!(RandomizedResponse::estimate_proportion(1.0, 10, 5).is_finite());
 }
 
 // ------------------------------------------------------------------ randomized response

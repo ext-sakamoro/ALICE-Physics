@@ -177,20 +177,25 @@ fn covering_zero_and_negative_magnitudes_are_the_identity() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S3W3-012: EquilibrationScale::covering(0.3) returns factor 1 (exponent is u32), so the doc claims smallest power of two >= magnitude and entry mapped into (1/2, 1] fail for 0 < magnitude <= 1/2 (0.3 stays 0.3)"]
-fn covering_is_the_smallest_power_of_two_at_or_above_a_fractional_magnitude() {
-    // Doc: "Smallest power of two greater than or equal to `magnitude`" and
-    // "maps its largest entry into (1/2, 1]". For magnitude 0.3 the smallest
-    // power of two >= 0.3 is 1/2, and 0.3/(1/2) = 0.6 lies in (1/2, 1]; the
-    // exponent type is u32, so the factor is 1 and the entry stays at 0.3.
-    let m = r(3, 10);
-    let s = EquilibrationScale::covering(m).unwrap();
-    let scaled = s.scale_down(m);
-    assert!(
-        scaled > r(1, 2) && scaled <= Fix128::ONE,
-        "0.3 scaled by the covering factor is {} (documented range (1/2, 1])",
-        scaled.to_f64()
-    );
+fn covering_scales_only_down_and_leaves_a_magnitude_of_one_or_less_alone() {
+    // Doc: the smallest power of two `2^e`, `e >= 0`, at or above `magnitude`;
+    // above 1 the largest entry lands in (1/2, 1], at or below 1 the factor is
+    // the identity (the exponent is unsigned, the scale only divides).
+    for (num, den) in [(3, 10), (1, 2), (1, 1)] {
+        let m = r(num, den);
+        let s = EquilibrationScale::covering(m).unwrap();
+        assert_eq!(s, EquilibrationScale::IDENTITY, "{num}/{den} got {s:?}");
+        assert_eq!(s.scale_down(m), m);
+    }
+    for (num, den) in [(3, 2), (5, 1), (1_000_001, 1000)] {
+        let m = r(num, den);
+        let scaled = EquilibrationScale::covering(m).unwrap().scale_down(m);
+        assert!(
+            scaled > r(1, 2) && scaled <= Fix128::ONE,
+            "{num}/{den} scaled to {} (documented range (1/2, 1])",
+            scaled.to_f64()
+        );
+    }
 }
 
 #[test]

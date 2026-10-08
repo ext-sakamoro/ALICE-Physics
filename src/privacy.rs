@@ -149,15 +149,30 @@ pub struct LaplaceNoise {
     rng: XorShift64,
 }
 
+/// `sensitivity / epsilon`, refusing an `epsilon` that makes the mechanism
+/// meaningless.
+fn laplace_scale(sensitivity: f64, epsilon: f64) -> f64 {
+    assert!(
+        epsilon.is_finite() && epsilon > 0.0,
+        "Laplace epsilon must be finite and positive, got {epsilon}"
+    );
+    sensitivity / epsilon
+}
+
 impl LaplaceNoise {
     /// Create a new Laplace noise generator
     ///
     /// # Arguments
     /// * `sensitivity` - Maximum change in output for one input change (Δf)
     /// * `epsilon` - Privacy parameter ε (smaller = more privacy)
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `epsilon` is finite and positive (`ε = 0` would need
+    /// infinite noise: every sample was ±inf).
     #[must_use]
     pub fn new(sensitivity: f64, epsilon: f64) -> Self {
-        let scale = sensitivity / epsilon;
+        let scale = laplace_scale(sensitivity, epsilon);
         Self {
             scale,
             rng: XorShift64::from_entropy(),
@@ -165,9 +180,13 @@ impl LaplaceNoise {
     }
 
     /// Create with explicit seed
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::new`]: unless `epsilon` is finite and positive.
     #[must_use]
     pub fn with_seed(sensitivity: f64, epsilon: f64, seed: u64) -> Self {
-        let scale = sensitivity / epsilon;
+        let scale = laplace_scale(sensitivity, epsilon);
         Self {
             scale,
             rng: XorShift64::new(seed),
@@ -288,8 +307,17 @@ impl RandomizedResponse {
     ///
     /// Given N total responses with K positive responses,
     /// estimate the true proportion of positive values.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `0 < p_true ≤ 1`: with `p_true = 0` every report is a coin
+    /// flip and carries no information (the estimate was NaN).
     #[must_use]
     pub fn estimate_proportion(p_true: f64, n: u64, k: u64) -> f64 {
+        assert!(
+            p_true > 0.0 && p_true <= 1.0,
+            "randomized response p must be in (0, 1], got {p_true}"
+        );
         if n == 0 {
             return 0.0;
         }

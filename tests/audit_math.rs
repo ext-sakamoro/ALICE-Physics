@@ -1142,7 +1142,6 @@ fn mat3_inverse_closed_form_and_singular() {
 
 /// inverse() has no scale handling: 1/det overflows for 0 < det < 2^-63 and relative precision is lost as det -> 2^-64.
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-024: Mat3Fix::inverse of a small non-singular matrix (diag 1e-5 I: det 1e-15 quantised to ~5e-5 relative) has relative error ~5e-5; for det in (0, 2^-63) 1/det wraps and the Some(..) result is garbage instead of None"]
 fn mat3_inverse_of_small_scale_matrix() {
     let eps = 1e-5;
     let a = Mat3Fix::diagonal(f(eps), f(eps), f(eps));

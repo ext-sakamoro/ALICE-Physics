@@ -66,7 +66,6 @@ fn construction_errors_getters_and_layout() {
 /// Doc (try_new_filled): "the stored spacing is never zero". With n > 1 and max == min the
 /// spacing is zero, and every later `/ cell` returns ZERO silently (sample reads node 0 everywhere).
 #[test]
-#[ignore = "known defect: AUD-A-S1W5-016: try_new accepts n>1 with max==min (and max<min): cell size 0 (negative), so world_to_grid/gradient divide by zero (Fix128 returns ZERO) and diffuse drops that axis silently; no error variant"]
 fn degenerate_bounds_with_more_than_one_node_are_rejected_or_have_nonzero_cell() {
     let r = CoupledField::try_new(4, 4, 4, t3(0.0, 0.0, 0.0), t3(0.0, 1.0, 1.0));
     match r {

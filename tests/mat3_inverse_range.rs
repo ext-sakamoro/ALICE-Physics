@@ -123,6 +123,72 @@ fn spec_inverse(m: Mat3Fix) -> Option<Mat3Fix> {
 }
 
 /// 修正前の `Mat3Fix::inverse` と `Mat3Fix::determinant` の写し (wrap する演算のまま)
+/// The exact determinant `spec_inverse` uses (`None` when it does not fit).
+fn spec_det(m: Mat3Fix) -> Option<Fix128> {
+    let (a, b, c) = (m.col0, m.col1, m.col2);
+    let c00 = cof(b.y, c.z, b.z, c.y)?;
+    let c02 = cof(a.y, b.z, a.z, b.y)?;
+    let n = cof(a.y, c.z, a.z, c.y)?;
+    w_fit(w_add(
+        w_add(w_prod(a.x, c00), w_neg(w_prod(b.x, n))),
+        w_prod(c.x, c02),
+    ))
+}
+
+/// Whether `Mat3Fix::inverse` rescales `m`: every entry below 1/2 and the
+/// exact determinant below 2⁻³² (or not representable / zero).
+fn is_rescaled(m: Mat3Fix) -> (bool, i32) {
+    let largest = [m.col0, m.col1, m.col2]
+        .iter()
+        .flat_map(|v| {
+            [
+                raw(v.x).unsigned_abs(),
+                raw(v.y).unsigned_abs(),
+                raw(v.z).unsigned_abs(),
+            ]
+        })
+        .max()
+        .unwrap_or(0);
+    let half = 1u128 << 63;
+    if largest == 0 || largest >= half {
+        return (false, 0);
+    }
+    let small_det = match (spec_det(m), spec_inverse(m)) {
+        (Some(d), Some(_)) => raw(d).unsigned_abs() < (1u128 << 32),
+        _ => true,
+    };
+    if !small_det {
+        return (false, 0);
+    }
+    let mut k = 0;
+    let mut l = largest;
+    while l < half && k < 62 {
+        l <<= 1;
+        k += 1;
+    }
+    (true, k)
+}
+
+/// The specification of `Mat3Fix::inverse` with the rescaling:
+/// `A⁻¹ = 2ᵏ (2ᵏ A)⁻¹` when [`is_rescaled`], [`spec_inverse`] otherwise.
+fn spec_scaled(m: Mat3Fix) -> Option<Mat3Fix> {
+    let (rescaled, k) = is_rescaled(m);
+    if !rescaled {
+        return spec_inverse(m);
+    }
+    let up = |x: Fix128| from_raw(raw(x) << k);
+    let s = |v: Vec3Fix| Vec3Fix::new(up(v.x), up(v.y), up(v.z));
+    let inv = spec_inverse(Mat3Fix::from_cols(s(m.col0), s(m.col1), s(m.col2)))?;
+    let back = |x: Fix128| -> Option<Fix128> {
+        let r = raw(x).checked_mul(1i128 << k)?;
+        (i128::from(i64::MIN) << 64 <= r && r <= (i128::from(i64::MAX) << 64 | u64::MAX as i128))
+            .then(|| from_raw(r))
+    };
+    let b =
+        |v: Vec3Fix| -> Option<Vec3Fix> { Some(Vec3Fix::new(back(v.x)?, back(v.y)?, back(v.z)?)) };
+    Some(Mat3Fix::from_cols(b(inv.col0)?, b(inv.col1)?, b(inv.col2)?))
+}
+
 fn old_inverse(m: Mat3Fix) -> Option<Mat3Fix> {
     let det = m.col0.x * (m.col1.y * m.col2.z - m.col1.z * m.col2.y)
         - m.col1.x * (m.col0.y * m.col2.z - m.col0.z * m.col2.y)
@@ -317,14 +383,18 @@ fn old_formula_returned_sign_flipped_inverse_at_the_boundary() {
 }
 
 // ---------------------------------------------------------------------------
-// (2) det が小さすぎて 1/det が収まらない ⇒ None
+// (2) det が小さすぎて 1/det が収まらない ⇒ None (成分に 1/2 以上があるもの)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn tiny_det_whose_reciprocal_overflows_is_none() {
-    // diag(2⁻²¹): det = 2⁻⁶³ = raw 2、1/det = 2⁶³ は収まらない
+    // diag(2⁻²¹): det = 2⁻⁶³ = raw 2、1/det = 2⁶³ は収まらないが、成分がすべて
+    // 1/2 未満なので 2²⁰ 倍に拡大して解き、厳密な逆行列 diag(2²¹) を返す
     let t = pow2(-21);
-    assert_eq!(diag(t, t, t).inverse(), None);
+    assert_eq!(
+        diag(t, t, t).inverse(),
+        Some(diag(pow2(21), pow2(21), pow2(21)))
+    );
     // det = raw 1 (= 2⁻⁶⁴)
     assert_eq!(diag(pow2(-32), pow2(-32), Fix128::ONE).inverse(), None);
     // det = −2⁻⁶³
@@ -349,12 +419,15 @@ fn inverse_matches_the_exact_spec_and_old_formula_in_range() {
         (0usize, 0usize, 0usize, 0usize);
     for m in &corpus {
         let new = m.inverse();
-        let spec = spec_inverse(*m);
+        let spec = spec_scaled(*m);
         assert_eq!(new, spec, "spec mismatch for {m:?}");
         let old = old_inverse(*m);
         match spec {
             Some(_) => {
-                assert_eq!(new, old, "in-range result changed for {m:?}");
+                // 拡大しない行列は旧式と bit 一致
+                if !is_rescaled(*m).0 {
+                    assert_eq!(new, old, "in-range result changed for {m:?}");
+                }
                 some += 1;
             }
             None => {

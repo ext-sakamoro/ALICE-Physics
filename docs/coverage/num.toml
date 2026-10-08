@@ -869,7 +869,7 @@ axis = "representation"
 item = "block equilibration of multi-field systems (power-of-two factors)"
 source = "Bunch 1971 (equilibration); Higham ch.7; PETSc MatDiagonalScale"
 status = "implemented+oracle"
-evidence = "src/linear_solver/equilibrate.rs::BlockEquilibration / src/linear_solver/equilibrate.rs::solve_equilibrated / tests/analytic_linear_solver.rs::pla_block_ratio_needs_equilibration / tests/analytic_linear_solver.rs::unscaled_floor_check_matches_the_material_table / known defect: tests/audit_coupled_iteration.rs::covering_is_the_smallest_power_of_two_at_or_above_a_fractional_magnitude"
+evidence = "src/linear_solver/equilibrate.rs::BlockEquilibration / src/linear_solver/equilibrate.rs::solve_equilibrated / tests/analytic_linear_solver.rs::pla_block_ratio_needs_equilibration / tests/analytic_linear_solver.rs::unscaled_floor_check_matches_the_material_table / known defect: tests/audit_coupled_iteration.rs::covering_scales_only_down_and_leaves_a_magnitude_of_one_or_less_alone"
 oracle_candidate = ""
 limitation = ""
 

@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5612 |
-| 🔴 Red by design | 78 |
+| 🟢 Not ignored (run by CI) | 5616 |
+| 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **5716** |
@@ -15,7 +15,7 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (78)
+## 🔴 Red by design (74)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -34,8 +34,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `constant_torque_spins_up_as_tau_t_over_i` (analytic_rotation_integration.rs) — src gap: add_torque is applied once at the frame head, so θ carries the splitting term ½ (τ/I) dt t (s − 1)/s …
 - `contact_upload_keeps_slot_alignment_with_a_sensor_in_slot_zero` (audit_gpu_bridge.rs) — known defect: AUD-A-S2W3-003: send_contact_constraints doc says indices line up with contact_constraints slots…
 - `contain_is_force_free_inside_as_documented` (audit_sdf_force.rs) — known defect: AUD-A-S4W1-009: SdfForceType::Contain doc says zero force inside; code returns -damping*velocity…
-- `covering_is_the_smallest_power_of_two_at_or_above_a_fractional_magnitude` (audit_coupled_iteration.rs) — known defect: AUD-A-S3W3-012: EquilibrationScale::covering(0.3) returns factor 1 (exponent is u32), so the doc…
-- `degenerate_bounds_with_more_than_one_node_are_rejected_or_have_nonzero_cell` (audit_coupled_field.rs) — known defect: AUD-A-S1W5-016: try_new accepts n>1 with max==min (and max<min): cell size 0 (negative), so worl…
 - `density_si_of_decimal_datasheet_values_is_exact` (audit_filament_db.rs) — known defect: AUD-A-S1W5-011: from_ratio floors, so density_si() of PLA is 1239.99999999999995 (raw lo=u64::MA…
 - `dispatch_covers_every_query_with_the_shader_workgroup_size` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-021: num_workgroups() divides by config.workgroup_size (documented as typically 64 or…
 - `displacement_shorter_than_skin_width_is_not_discarded` (audit_character.rs) — known defect: AUD-A-S3W3-004: move_and_slide breaks out when |displacement| < skin_width before moving, so a 5…
@@ -50,10 +48,8 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `hover_with_add_force_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: add_force is a frame-head impulse while gravity is per substep, so a hovering body climbs n g dt^2 (s…
 - `hover_with_force_field_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: force fields are applied once at the head of the frame while gravity is per substep, so a field-held …
 - `in_contact_is_false_on_the_frame_the_contact_ends` (audit_solver.rs) — known defect: AUD-A-S1W2-003: observe_body.in_contact is true on the frame of an End event (any contact event …
-- `invalid_parameters_do_not_produce_non_finite_output` (audit_privacy.rs) — known defect: AUD-A-S4W3-024: parameters that make a mechanism meaningless are accepted silently: Laplace with…
 - `joint_solve_through_a_reference_bridge_matches_the_cpu_solve` (audit_solver.rs) — known defect: AUD-A-S1W2-006: solve_joints_with_bridge writes back positions only; the rotation corrections of…
 - `magnetic_force_on_the_axis_pulls_toward_the_dipole_as_the_code_comment_says` (audit_force.rs) — known defect: AUD-A-S4W3-017: the Magnetic code comment says a body on the dipole axis 'is attracted', but wit…
-- `mat3_inverse_of_small_scale_matrix` (audit_math.rs) — known defect: AUD-A-S1W5-024: Mat3Fix::inverse of a small non-singular matrix (diag 1e-5 I: det 1e-15 quantise…
 - `max_queries_bounds_what_one_dispatch_covers` (audit_gpu_sdf.rs) — known defect: AUD-A-S5W2-009: GpuDispatchConfig::max_queries is documented as \"Maximum queries per dispatch\"…
 - `negative_max_force_must_not_produce_force_at_zero_error` (audit_motor.rs) — known defect: AUD-A-S5W2-001: negative max_force makes clamp(v, -max, +max) an empty interval and compute retu…
 - `negative_max_torque_must_not_reverse_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (ma…
@@ -151,7 +147,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5612)
+## 🟢 Not ignored (5616)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -170,12 +166,12 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_shape_raycast.rs` | 36 |
 | `analytic_sdf_character_up_axis.rs` | 35 |
 | `analytic_world_api.rs` | 35 |
-| `audit_coupled_iteration.rs` | 34 |
+| `audit_coupled_iteration.rs` | 35 |
 | `engineering_oracles_solid.rs` | 34 |
 | `audit_query.rs` | 33 |
+| `audit_math.rs` | 32 |
 | `audit_raycast.rs` | 32 |
 | `analytic_world_character.rs` | 31 |
-| `audit_math.rs` | 31 |
 | `audit_joint_extra.rs` | 30 |
 | `analytic_world_shape_query.rs` | 29 |
 | `audit_cfd_solver_rans.rs` | 29 |
@@ -219,6 +215,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_vehicle_dynamics.rs` | 21 |
 | `audit_multiphase.rs` | 21 |
 | `audit_neural.rs` | 21 |
+| `audit_privacy.rs` | 21 |
 | `audit_sketch.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
 | `analytic_coupling_medium.rs` | 20 |
@@ -227,7 +224,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_linear_solver.rs` | 20 |
 | `analytic_wave_ship_wiring.rs` | 20 |
 | `audit_print_pipeline_solver.rs` | 20 |
-| `audit_privacy.rs` | 20 |
 | `audit_sdf_destruction.rs` | 20 |
 | `audit_wave_ship.rs` | 20 |
 | `analytic_compressible_wiring.rs` | 19 |
@@ -255,6 +251,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_wind_zone_wiring.rs` | 18 |
 | `audit_bimaterial.rs` | 18 |
 | `audit_compressible.rs` | 18 |
+| `audit_coupled_field.rs` | 18 |
 | `audit_cubic_elastic_fem.rs` | 18 |
 | `audit_debug_render.rs` | 18 |
 | `audit_eulerian_grid.rs` | 18 |
@@ -270,7 +267,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_phase_change_wiring.rs` | 17 |
 | `audit_articulation.rs` | 17 |
 | `audit_audio_physics.rs` | 17 |
-| `audit_coupled_field.rs` | 17 |
 | `audit_fatigue.rs` | 17 |
 | `audit_interpolation.rs` | 17 |
 | `audit_laminate_failure.rs` | 17 |

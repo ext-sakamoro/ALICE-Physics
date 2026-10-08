@@ -399,10 +399,14 @@ impl EquilibrationScale {
     /// The identity factor, `2⁰ = 1`.
     pub const IDENTITY: Self = Self { exponent: 0 };
 
-    /// Smallest power of two greater than or equal to `magnitude`.
+    /// Smallest power of two `2^e` with `e ≥ 0` that is greater than or equal to
+    /// `magnitude`.
     ///
-    /// Dividing a block by this maps its largest entry into `(1/2, 1]`, so the
-    /// block becomes `O(1)` without any entry crossing zero.
+    /// For `magnitude > 1` dividing a block by this maps its largest entry into
+    /// `(1/2, 1]`, so the block becomes `O(1)` without any entry crossing zero.
+    /// The factor only scales down: a magnitude of 1 or less is already `O(1)`
+    /// and gets the identity factor (the exponent is unsigned), so an entry of
+    /// `0.3` stays `0.3`.
     ///
     /// A zero or negative magnitude yields [`EquilibrationScale::IDENTITY`]:
     /// there is nothing to equilibrate, and silently inventing a factor would

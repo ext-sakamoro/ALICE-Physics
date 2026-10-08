@@ -456,10 +456,13 @@ fn characterization_rotate_vec_absolute_error_scales_with_magnitude() {
     assert!(big > 1e-7 && big < 1e-3, "|v|=2³¹: {big}");
 }
 
-/// `Mat3Fix::inverse` は `|det|` が `2⁶³` 以上でも `2⁻⁶³` 以下でも `None`
-/// (以前は境界の直後で符号の反転した逆行列を `Some` で返していた)
+/// `Mat3Fix::inverse` は `|det|` が `2⁶³` 以上なら `None` (以前は境界の直後で
+/// 符号の反転した逆行列を `Some` で返していた) 成分がすべて 1/2 未満の小さい
+/// 行列は 2 の冪で拡大してから解くので、`det` が `2⁻⁶³` 以下でも逆行列が
+/// 収まる限り `Some`
 ///
-/// 対角 `s` の 3×3 なら `det = s³` ⇒ 正しい範囲は `2⁻²¹ < s < 2²¹`
+/// 対角 `s` の 3×3 なら `det = s³`、逆行列は `diag(1/s)` で、`s < 2²¹` の間は
+/// `1/s` が収まる
 #[test]
 fn mat3_inverse_is_none_outside_the_det_range() {
     let d = |f: Fix128| Mat3Fix::diagonal(f, f, f);
@@ -469,11 +472,11 @@ fn mat3_inverse_is_none_outside_the_det_range() {
     assert_eq!(d(small(20)).inverse().unwrap().col0.x, pow2(20));
     // det = 2⁶³ は収まらない
     assert_eq!(d(pow2(21)).inverse(), None);
-    // 1/det = 2⁶³ は収まらない
-    assert_eq!(d(small(21)).inverse(), None);
-    // det が 0 に落ちる
+    // 1/det = 2⁶³ は収まらないが、逆行列の成分 2²¹ は収まる (拡大して解く)
+    assert_eq!(d(small(21)).inverse().unwrap().col0.x, pow2(21));
+    // det が 0 に落ちる大きい行列は None、小さい行列は拡大して解く
     assert_eq!(d(pow2(22)).inverse(), None);
-    assert_eq!(d(small(22)).inverse(), None);
+    assert_eq!(d(small(22)).inverse().unwrap().col0.x, pow2(22));
 }
 
 // ---------------------------------------------------------------------------

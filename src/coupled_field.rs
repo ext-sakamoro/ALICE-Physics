@@ -184,9 +184,11 @@ impl CoupledField {
 
     /// Create a field with every cell set to `value`.
     ///
-    /// A degenerate axis (`n == 1`) is given a cell size of one so that the
-    /// stored spacing is never zero; that axis contributes nothing to
-    /// [`Self::diffuse`] and interpolates as a constant.
+    /// A degenerate axis (`n == 1`, or an axis with no extent, `max ≤ min`) is
+    /// given a cell size of one so that the stored spacing is never zero (an
+    /// axis with `n > 1` and `max == min` used to get a cell of 0 and divide by
+    /// it silently, `max < min` a negative one); an `n == 1` axis contributes
+    /// nothing to [`Self::diffuse`] and interpolates as a constant.
     ///
     /// # Errors
     ///
@@ -205,7 +207,7 @@ impl CoupledField {
             });
         }
         let span = |lo: Fix128, hi: Fix128, n: usize| -> Fix128 {
-            if n > 1 {
+            if n > 1 && hi > lo {
                 (hi - lo) / Fix128::from_int((n - 1) as i64)
             } else {
                 Fix128::ONE
