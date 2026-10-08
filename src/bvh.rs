@@ -2289,3 +2289,7 @@ mod tests {
         assert_eq!(bvh.nodes[0].aabb_max, [4, 5, 6]);
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/lib/bvh_oracles.rs"]
+mod lib_oracles;
