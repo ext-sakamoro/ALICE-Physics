@@ -349,3 +349,55 @@ impl PhysicsWorld {
         e.len(0);
     }
 }
+
+// The encoding oracle of `tests/law_id_world.rs`, compiled into the lib tests
+// as well, so that the `--lib` line coverage measures it (the file is
+// unchanged and still runs as an integration test).
+#[cfg(all(test, feature = "std"))]
+#[allow(unreachable_patterns)] // a catch-all for `#[non_exhaustive]` enums, unreachable inside the crate
+#[path = "../tests/law_id_world.rs"]
+mod world_law_oracle;
+
+// `crate::semantics` must stay free of `cfg` (its table is the same in every
+// build, `tests/physics_semantics_id.rs`), so its decoder is tested here.
+#[cfg(all(test, feature = "std"))]
+mod semantics_decoder {
+    use crate::semantics::{hex32, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS};
+
+    fn hex(b: &[u8; 32]) -> String {
+        b.iter().map(|x| format!("{x:02x}")).collect()
+    }
+
+    /// `hex32` decodes at run time exactly as it does in the constants: every
+    /// digit, both ranges, and the byte order (first two digits = byte 0).
+    #[test]
+    fn hex32_decodes_every_digit_in_order() {
+        let s = "0123456789abcdef0123456789abcdef0123456789abcdeffedcba9876543210";
+        let b = hex32(s);
+        assert_eq!((b[0], b[7], b[24], b[31]), (0x01, 0xef, 0xfe, 0x10));
+        assert_eq!(hex(&b), s);
+    }
+
+    /// The published identifier decodes to the hex its documentation shows.
+    #[test]
+    fn the_identifier_matches_its_documented_hex() {
+        let doc = "3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72";
+        assert_eq!(hex(&PHYSICS_SEMANTICS_ID), doc);
+        assert_eq!(hex32(doc), PHYSICS_SEMANTICS_ID);
+        assert!(PHYSICS_SEMANTICS_PINS
+            .iter()
+            .any(|(n, _)| *n == "alice-det-math"));
+    }
+
+    #[test]
+    #[should_panic(expected = "a digest is 64 hex digits")]
+    fn hex32_refuses_a_short_digest() {
+        let _ = hex32("00");
+    }
+
+    #[test]
+    #[should_panic(expected = "not a lower-case hex digit")]
+    fn hex32_refuses_an_upper_case_digit() {
+        let _ = hex32("ABababababababababababababababababababababababababababababababab");
+    }
+}

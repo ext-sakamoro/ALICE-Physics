@@ -235,6 +235,12 @@ compile_error!("Feature `wasm` requires `std`.");
 #[cfg(not(feature = "std"))]
 extern crate alloc;
 
+// Test builds only: lets a module compile an integration test file (which
+// names the crate `alice_physics`) as part of the lib tests, so its lines count
+// in the `--lib` coverage.
+#[cfg(test)]
+extern crate self as alice_physics;
+
 pub mod acoustic_wave;
 pub mod aeroelasticity;
 #[cfg(feature = "analytics")]

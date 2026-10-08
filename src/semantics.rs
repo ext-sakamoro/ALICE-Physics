@@ -62,7 +62,7 @@
 
 /// Decodes 64 hex digits into 32 bytes at compile time; anything else is a
 /// compile error.
-const fn hex32(s: &str) -> [u8; 32] {
+pub(crate) const fn hex32(s: &str) -> [u8; 32] {
     const fn nibble(c: u8) -> u8 {
         match c {
             b'0'..=b'9' => c - b'0',
