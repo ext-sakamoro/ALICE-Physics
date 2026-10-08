@@ -312,23 +312,23 @@ fn explosion_with_a_huge_power_returns_promptly() {
 // ------------------------------------------------------------------ Magnetic
 
 #[test]
-fn magnetic_force_is_strength_over_r_cubed_times_the_axial_cosine_along_the_moment() {
+fn magnetic_force_is_minus_strength_over_r_cubed_times_the_axial_cosine_along_the_moment() {
     let f = ForceField::Magnetic {
         position: v3(0.0, 0.0, 0.0),
         moment: v3(3.0, 0.0, 0.0),
         strength: fx(1000.0),
     };
-    // on axis at r = 2: |F| = 1000 / 8 = 125, along +x (cos = 1)
+    // on axis at r = 2: |F| = 1000 / 8 = 125, toward the dipole (-x, cos = 1)
     let on = arr(compute_force(&f, &body_at([2.0, 0.0, 0.0])));
-    assert!(close(on, [125.0, 0.0, 0.0], 1e-9), "{on:?}");
+    assert!(close(on, [-125.0, 0.0, 0.0], 1e-9), "{on:?}");
     // off axis at (2, 1, 0): r = sqrt 5, cos = 2/sqrt 5
     let r = 5.0f64.sqrt();
     let off = arr(compute_force(&f, &body_at([2.0, 1.0, 0.0])));
-    let want = 1000.0 / (r * r * r) * (2.0 / r);
+    let want = -1000.0 / (r * r * r) * (2.0 / r);
     assert!(close(off, [want, 0.0, 0.0], 1e-9), "{off:?} vs {want}");
-    // the opposite side of the dipole: reversed along the axis
+    // the opposite side of the dipole: reversed along the axis, again toward the dipole
     let back = arr(compute_force(&f, &body_at([-2.0, 0.0, 0.0])));
-    assert!(close(back, [-125.0, 0.0, 0.0], 1e-9), "{back:?}");
+    assert!(close(back, [125.0, 0.0, 0.0], 1e-9), "{back:?}");
     // equatorial plane: zero
     assert!(norm(arr(compute_force(&f, &body_at([0.0, 4.0, 3.0])))) < 1e-9);
 }
@@ -346,7 +346,6 @@ fn magnetic_force_falls_off_exactly_as_the_inverse_cube() {
 }
 
 #[test]
-#[ignore = "known defect: AUD-A-S4W3-017: the Magnetic code comment says a body on the dipole axis 'is attracted', but with delta = body - dipole the force along the axis points away from the dipole (repulsive for positive strength): body at +2 on a +x moment gets +125, not a pull toward the origin"]
 fn magnetic_force_on_the_axis_pulls_toward_the_dipole_as_the_code_comment_says() {
     let f = ForceField::Magnetic {
         position: Vec3Fix::ZERO,
@@ -366,7 +365,8 @@ fn magnetic_force_close_to_the_dipole_keeps_its_sign_and_grows_down_to_1e_minus_
     };
     let mut prev = 0.0;
     for &d in &[1.0, 0.1, 0.01, 1e-3, 1e-4, 1e-5] {
-        let got = arr(compute_force(&f, &body_at([d, 0.0, 0.0])))[0];
+        // the force points toward the dipole (-x); compare its magnitude
+        let got = -arr(compute_force(&f, &body_at([d, 0.0, 0.0])))[0];
         let want = 1.0 / (d * d * d);
         assert!(got > 0.0, "distance {d}: sign flipped, got {got}");
         assert!(
@@ -387,7 +387,8 @@ fn magnetic_force_does_not_collapse_to_zero_very_close_to_the_dipole() {
     };
     let mut prev = 0.0;
     for &d in &[1e-6, 5.6e-7, 3.2e-7, 1e-7, 1e-8] {
-        let got = arr(compute_force(&f, &body_at([d, 0.0, 0.0])))[0];
+        // toward the dipole (-x); compare the magnitude
+        let got = -arr(compute_force(&f, &body_at([d, 0.0, 0.0])))[0];
         assert!(
             got >= prev && got > 0.0,
             "distance {d}: force {got} after {prev}"
@@ -569,7 +570,6 @@ fn particle_system_agrees_with_compute_force_for_directional_point_drag_and_buoy
 }
 
 #[test]
-#[ignore = "known defect: AUD-B-S4W3-001: particle.rs keeps a private second implementation of the ForceField laws that disagrees with force::compute_force: Magnetic (no axial cosine: equatorial force 15.6 vs 0, off-axis 89.4 vs 80), Explosion with power 0 (treated as 1: 60 vs 100), Vortex off the axis plane (falloff uses the full distance: 2.48 vs 10)"]
 fn particle_system_agrees_with_compute_force_for_magnetic_explosion_and_vortex() {
     let cases: Vec<(&str, ForceField, [f64; 3])> = vec![
         (

@@ -4901,6 +4901,7 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::force::ForceFiel
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::force::ForceFieldInstance
 pub fn alice_physics::force::apply_force_fields(&[alice_physics::force::ForceFieldInstance], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128)
 pub fn alice_physics::force::compute_force(&alice_physics::force::ForceField, &alice_physics::solver::RigidBody) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::force::field_force_at(&alice_physics::force::ForceField, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
 pub mod alice_physics::fracture
 pub struct alice_physics::fracture::Crack
 pub alice_physics::fracture::Crack::active: bool

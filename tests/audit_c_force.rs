@@ -4,8 +4,8 @@
 //!
 //! Expected values: vortex `F = strength * falloff * (a_hat x r_hat)` (right-handed
 //! about the axis, `falloff = 1` inside the radius and `R / dist` beyond); magnetic
-//! `F = strength / r^3 * (r_hat . m_hat) * m_hat` (the formula stated in the
-//! `ForceField::Magnetic` code comment); explosion `F = strength (1 - d/R)^n` away
+//! `F = -strength / r^3 * (r_hat . m_hat) * m_hat` (the formula stated in the
+//! `ForceField::Magnetic` code comment, toward the dipole on the axis); explosion `F = strength (1 - d/R)^n` away
 //! from the centre; `dv = F / m * dt`.
 
 use alice_physics::force::{apply_force_fields, compute_force, ForceField, ForceFieldInstance};
@@ -114,18 +114,19 @@ fn magnet() -> ForceField {
     }
 }
 
-/// On the dipole axis the force is `+strength / r^3` along the moment on the
-/// `+moment` side and `-strength / r^3` on the other side; off axis it scales with
-/// the axial cosine and vanishes in the equatorial plane.
+/// On the dipole axis the force is `-strength / r^3` along the moment on the
+/// `+moment` side and `+strength / r^3` on the other side (toward the dipole on
+/// both); off axis it scales with the axial cosine and vanishes in the
+/// equatorial plane.
 #[test]
 fn magnetic_force_is_signed_by_the_axial_cosine() {
     for (p, want) in [
-        ([2.0, 0.0, 0.0], [125.0, 0.0, 0.0]),
-        ([-2.0, 0.0, 0.0], [-125.0, 0.0, 0.0]),
-        ([4.0, 0.0, 0.0], [15.625, 0.0, 0.0]),
-        ([-4.0, 0.0, 0.0], [-15.625, 0.0, 0.0]),
-        ([3.0, 4.0, 0.0], [1000.0 / 125.0 * 0.6, 0.0, 0.0]),
-        ([-3.0, 0.0, 4.0], [-1000.0 / 125.0 * 0.6, 0.0, 0.0]),
+        ([2.0, 0.0, 0.0], [-125.0, 0.0, 0.0]),
+        ([-2.0, 0.0, 0.0], [125.0, 0.0, 0.0]),
+        ([4.0, 0.0, 0.0], [-15.625, 0.0, 0.0]),
+        ([-4.0, 0.0, 0.0], [15.625, 0.0, 0.0]),
+        ([3.0, 4.0, 0.0], [-1000.0 / 125.0 * 0.6, 0.0, 0.0]),
+        ([-3.0, 0.0, 4.0], [1000.0 / 125.0 * 0.6, 0.0, 0.0]),
         ([0.0, 2.0, 0.0], [0.0, 0.0, 0.0]),
     ] {
         let got = arr(compute_force(&magnet(), &at(p)));
@@ -133,8 +134,8 @@ fn magnetic_force_is_signed_by_the_axial_cosine() {
     }
 }
 
-/// Inverse cube with sign: on the `-moment` side, halving the distance multiplies
-/// the (negative) force by exactly 8.
+/// Inverse cube with sign: on either side, halving the distance multiplies the
+/// force (toward the dipole) by exactly 8.
 #[test]
 fn magnetic_inverse_cube_keeps_the_sign_on_both_sides() {
     for side in [1.0, -1.0] {
@@ -142,8 +143,8 @@ fn magnetic_inverse_cube_keeps_the_sign_on_both_sides() {
         let far = compute_force(&magnet(), &at([2.0 * side, 0.0, 0.0]))
             .x
             .to_f64();
-        assert!((near - side * 1000.0).abs() < 1e-9, "near {near}");
-        assert!((far - side * 125.0).abs() < 1e-9, "far {far}");
+        assert!((near + side * 1000.0).abs() < 1e-9, "near {near}");
+        assert!((far + side * 125.0).abs() < 1e-9, "far {far}");
         assert!((near / far - 8.0).abs() < 1e-12, "ratio {}", near / far);
     }
 }
@@ -160,13 +161,13 @@ fn apply_force_fields_changes_velocity_by_signed_force_over_mass_times_dt() {
     apply_force_fields(&fields, &mut bodies, Fix128::from_ratio(1, 8));
     close(
         arr(bodies[0].velocity),
-        [7.8125, 0.0, 0.0],
+        [-7.8125, 0.0, 0.0],
         1e-12,
         "+x side",
     );
     close(
         arr(bodies[1].velocity),
-        [-7.8125, 0.0, 0.0],
+        [7.8125, 0.0, 0.0],
         1e-12,
         "-x side",
     );

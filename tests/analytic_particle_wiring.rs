@@ -661,17 +661,23 @@ fn explosion_force_follows_strength_times_one_minus_d_over_r_to_the_power() {
 }
 
 #[test]
-fn magnetic_field_points_along_the_moment_with_inverse_cube_strength() {
+fn magnetic_field_pulls_toward_the_dipole_on_the_axis_with_inverse_cube_strength() {
     let f = ForceField::Magnetic {
         position: Vec3Fix::ZERO,
         moment: Vec3Fix::from_int(0, 0, 5),
         strength: Fix128::from_int(16),
     };
-    // r = 2: 16 / 8 = 2 along +z (moment is normalised)
+    // on the axis at r = 2: 16 / 8 = 2 toward the dipole (-z; moment is normalised)
+    close(
+        dv(&f, Vec3Fix::from_int(0, 0, 2), Vec3Fix::ZERO, Fix128::ONE),
+        [0.0, 0.0, -2.0 * IMPULSE_DT],
+        "magnetic on the axis",
+    );
+    // the equatorial plane (r_hat . m_hat = 0): no force
     close(
         dv(&f, Vec3Fix::from_int(2, 0, 0), Vec3Fix::ZERO, Fix128::ONE),
-        [0.0, 0.0, 2.0 * IMPULSE_DT],
-        "magnetic",
+        [0.0; 3],
+        "magnetic equatorial",
     );
     close(
         dv(&f, Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::ONE),

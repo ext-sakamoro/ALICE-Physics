@@ -77,9 +77,11 @@ pub enum ForceField {
 
     /// Magnetic dipole field approximation
     ///
-    /// Simplified dipole model: force magnitude proportional to `strength / r^3`
-    /// directed along the dipole axis (`moment`). The `moment` vector encodes
-    /// both the dipole direction and relative magnitude.
+    /// Simplified dipole model: `F = -strength / r^3 * (r_hat . m_hat) * m_hat`,
+    /// with `r_hat` pointing from `position` to the body. The force lies along
+    /// the dipole axis (`moment`); for a positive `strength` a body on the axis
+    /// is pulled toward the dipole from either side, and the force vanishes in
+    /// the equatorial plane. Only the direction of `moment` is used.
     Magnetic {
         /// Dipole position in world space
         position: Vec3Fix,
@@ -175,8 +177,22 @@ fn point_force_beyond_square_range(
 }
 
 /// Compute force from a force field on a body at a given position
+///
+/// The force depends only on the body's position and velocity; this is
+/// [`field_force_at`] at `body.position` / `body.velocity`.
 #[must_use]
 pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
+    field_force_at(field, body.position, body.velocity)
+}
+
+/// Force a field exerts on a point at `position` moving with `velocity`.
+///
+/// The single implementation of the [`ForceField`] laws: [`compute_force`]
+/// (rigid bodies) and [`crate::particle::ParticleSystem::apply_force_field`]
+/// (particles) both evaluate it. No law depends on the mass; the caller turns
+/// the force into an acceleration.
+#[must_use]
+pub fn field_force_at(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) -> Vec3Fix {
     match field {
         ForceField::Directional {
             direction,
@@ -197,7 +213,7 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             repulsive,
             max_force,
         } => {
-            let delta = *center - body.position;
+            let delta = *center - position;
 
             if delta == Vec3Fix::ZERO {
                 return Vec3Fix::ZERO;
@@ -269,12 +285,12 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
         }
 
         ForceField::Drag { coefficient } => {
-            let speed_sq = body.velocity.length_squared();
+            let speed_sq = velocity.length_squared();
             if speed_sq.is_zero() {
                 return Vec3Fix::ZERO;
             }
             let speed = speed_sq.sqrt();
-            let drag_dir = body.velocity / speed;
+            let drag_dir = velocity / speed;
             -drag_dir * (*coefficient * speed)
         }
 
@@ -283,7 +299,7 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             density,
             drag,
         } => {
-            let depth = *surface_y - body.position.y;
+            let depth = *surface_y - position.y;
             if depth <= Fix128::ZERO {
                 return Vec3Fix::ZERO;
             }
@@ -292,10 +308,10 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             let buoyancy = Vec3Fix::new(Fix128::ZERO, *density * depth, Fix128::ZERO);
 
             // Water drag
-            let water_drag = if body.velocity.length_squared().is_zero() {
+            let water_drag = if velocity.length_squared().is_zero() {
                 Vec3Fix::ZERO
             } else {
-                body.velocity * (-*drag)
+                velocity * (-*drag)
             };
 
             buoyancy + water_drag
@@ -307,7 +323,7 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             strength,
             falloff_radius,
         } => {
-            let delta = body.position - *center;
+            let delta = position - *center;
 
             // Project delta onto plane perpendicular to axis
             let axis_norm = axis.normalize();
@@ -338,7 +354,7 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             radius,
             falloff_power,
         } => {
-            let delta = body.position - *center;
+            let delta = position - *center;
             let dist_sq = delta.length_squared();
 
             if dist_sq.is_zero() {
@@ -374,11 +390,11 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
         }
 
         ForceField::Magnetic {
-            position,
+            position: dipole,
             moment,
             strength,
         } => {
-            let delta = body.position - *position;
+            let delta = position - *dipole;
             let dist_sq = delta.length_squared();
 
             if delta == Vec3Fix::ZERO {
@@ -451,9 +467,12 @@ pub fn compute_force(field: &ForceField, body: &RigidBody) -> Vec3Fix {
             // In a full dipole model the force depends on angle; here we project
             // the displacement onto the dipole axis for a directional bias.
             // If body is along the dipole axis, it is attracted; perpendicular = weaker.
-            // Simplified: force = strength / r^3 * dot(r_hat, m_hat) * m_hat
-            // This gives attraction along the axis and zero force in the equatorial plane.
-            let signed_mag = force_mag * cos_theta;
+            // Simplified: force = -strength / r^3 * dot(r_hat, m_hat) * m_hat
+            // with r_hat pointing from the dipole to the body, so for a positive
+            // strength the force on either side of the dipole points back toward
+            // it (a soft magnetic body is drawn into the stronger field), and it
+            // is zero in the equatorial plane.
+            let signed_mag = -(force_mag * cos_theta);
 
             moment_dir * signed_mag
         }
@@ -927,7 +946,8 @@ mod tests {
     }
 
     /// oracle: on the dipole axis at `r = 2⁻¹⁰` (`r² < 1`) the magnetic force
-    /// is `s/r³·cos θ` along the moment with `cos θ = 1`: `2³⁰` for `s = 1`.
+    /// is `-s/r³·cos θ` along the moment with `cos θ = 1`: `-2³⁰` for `s = 1`
+    /// (toward the dipole).
     #[test]
     fn magnetic_force_near_the_dipole() {
         let magnet = ForceField::Magnetic {
@@ -937,7 +957,7 @@ mod tests {
         };
         let f = compute_force(&magnet, &body_at(pow2(-10)));
         assert!(
-            (f.x.to_f64() / 1_073_741_824.0 - 1.0).abs() < 1e-12,
+            (f.x.to_f64() / -1_073_741_824.0 - 1.0).abs() < 1e-12,
             "{f:?}"
         );
         assert!(f.y.is_zero() && f.z.is_zero());

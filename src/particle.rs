@@ -12,7 +12,7 @@
 //! - Integration with the force field system
 //! - Deterministic via `DeterministicRng`
 
-use crate::force::ForceField;
+use crate::force::{field_force_at, ForceField};
 use crate::math::{Fix128, Vec3Fix};
 use crate::rng::DeterministicRng;
 use crate::sdf_collider::SdfField;
@@ -461,7 +461,9 @@ impl ParticleSystem {
 
     /// Apply a force field to all alive particles.
     ///
-    /// The force is applied as a velocity impulse: `v += F/m * dt`.
+    /// The force is [`crate::force::field_force_at`] (the same laws as
+    /// [`crate::force::compute_force`] for rigid bodies), applied as a velocity
+    /// impulse: `v += F/m * dt`.
     /// Uses a fixed dt of 1/60 for the impulse (since force fields are
     /// typically applied once per frame).
     pub fn apply_force_field(&mut self, field: &ForceField) {
@@ -472,7 +474,7 @@ impl ParticleSystem {
                 continue;
             }
 
-            let force = compute_force(field, particle.position, particle.velocity);
+            let force = field_force_at(field, particle.position, particle.velocity);
             let inv_mass = Fix128::ONE / particle.mass;
             particle.velocity = particle.velocity + force * inv_mass * dt;
         }
@@ -560,116 +562,6 @@ fn compute_emission_velocity(
     .normalize();
 
     blended * speed
-}
-
-/// Compute force on a particle from a force field.
-fn compute_force(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) -> Vec3Fix {
-    match *field {
-        ForceField::Directional {
-            direction,
-            strength,
-        } => direction * strength,
-
-        ForceField::Point {
-            center,
-            strength,
-            repulsive,
-            max_force,
-        } => {
-            let diff = center - position;
-            let dist_sq = diff.dot(diff);
-            if dist_sq.is_zero() {
-                return Vec3Fix::ZERO;
-            }
-            let dist = dist_sq.sqrt();
-            let dir = diff / dist;
-            let mut force_mag = strength / dist_sq;
-            if force_mag > max_force {
-                force_mag = max_force;
-            }
-            if repulsive {
-                dir * (Fix128::ZERO - force_mag)
-            } else {
-                dir * force_mag
-            }
-        }
-
-        ForceField::Drag { coefficient } => velocity * (Fix128::ZERO - coefficient),
-
-        ForceField::Buoyancy {
-            surface_y,
-            density,
-            drag,
-        } => {
-            if position.y < surface_y {
-                let depth = surface_y - position.y;
-                let buoyancy = Vec3Fix::new(Fix128::ZERO, density * depth, Fix128::ZERO);
-                let drag_force = velocity * (Fix128::ZERO - drag);
-                buoyancy + drag_force
-            } else {
-                Vec3Fix::ZERO
-            }
-        }
-
-        ForceField::Vortex {
-            center,
-            axis,
-            strength,
-            falloff_radius,
-        } => {
-            let diff = position - center;
-            let dist = diff.length();
-            if dist.is_zero() || falloff_radius.is_zero() {
-                return Vec3Fix::ZERO;
-            }
-            let tangent = axis.cross(diff).normalize();
-            let falloff = if dist < falloff_radius {
-                Fix128::ONE
-            } else {
-                falloff_radius / dist
-            };
-            tangent * (strength * falloff)
-        }
-
-        ForceField::Explosion {
-            center,
-            strength,
-            radius,
-            falloff_power,
-        } => {
-            let diff = position - center;
-            let dist = diff.length();
-            if dist.is_zero() || dist > radius || radius.is_zero() {
-                return Vec3Fix::ZERO;
-            }
-            let dir = diff / dist;
-            // (1 - dist/radius)^falloff_power
-            let ratio = Fix128::ONE - dist / radius;
-            let mut atten = ratio;
-            // Integer power approximation for falloff
-            let power_int = falloff_power.hi.max(1);
-            for _ in 1..power_int {
-                atten = atten * ratio;
-            }
-            dir * (strength * atten)
-        }
-
-        ForceField::Magnetic {
-            position: dipole_pos,
-            moment,
-            strength,
-        } => {
-            let diff = position - dipole_pos;
-            let dist_sq = diff.dot(diff);
-            if dist_sq.is_zero() {
-                return Vec3Fix::ZERO;
-            }
-            let dist = dist_sq.sqrt();
-            let r3 = dist * dist * dist;
-            // Simplified dipole: force along moment direction, magnitude ~ strength / r^3
-            moment.normalize() * (strength / r3)
-        }
-    }
 }
 
 impl core::fmt::Debug for ParticleSystem {

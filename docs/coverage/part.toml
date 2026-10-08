@@ -936,7 +936,7 @@ axis = "effect particle system"
 item = "force fields acting on particles"
 source = "Unity particle force fields"
 status = "implemented+oracle"
-evidence = "src/particle.rs::apply_force_field tests/analytic_particle_wiring.rs::directional_field_is_force_over_mass_times_one_sixtieth tests/analytic_particle_wiring.rs::point_field_is_inverse_square_clamped_and_signed_by_repulsion tests/analytic_particle_wiring.rs::drag_opposes_velocity_and_scales_with_inverse_mass tests/audit_force.rs::particle_system_agrees_with_compute_force_for_magnetic_explosion_and_vortex (known defect: magnetic / explosion / vortex は剛体側と別実装で食い違う)"
+evidence = "src/particle.rs::apply_force_field tests/analytic_particle_wiring.rs::directional_field_is_force_over_mass_times_one_sixtieth tests/analytic_particle_wiring.rs::point_field_is_inverse_square_clamped_and_signed_by_repulsion tests/analytic_particle_wiring.rs::drag_opposes_velocity_and_scales_with_inverse_mass tests/audit_force.rs::particle_system_agrees_with_compute_force_for_magnetic_explosion_and_vortex (力の法則は剛体と同じ src/force.rs::field_force_at)"
 oracle_candidate = ""
 limitation = ""
 
