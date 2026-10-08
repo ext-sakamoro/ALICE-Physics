@@ -153,7 +153,7 @@ result, rewind, try another. These APIs support that use:
 | `PhysicsWorld::reset_world()` | every field back to the state `PhysicsWorld::new` produces, so the same start and the same inputs give the same bits on a second run |
 | `observe_body` / `observe_bodies` | a typed `BodyObservation` (position, velocity, rotation, angular velocity, `sleeping`, `in_contact`) for a goal check to read, instead of parsing the state blob |
 | `serialize_state` / `deserialize_state` | save and restore a branch point; restoring is refused when the bodies in the world (mass, shape, filter, material) differ from the ones that were saved, even if the count matches |
-| `snapshot_world` / `from_world_snapshot` / `restore_world` | save the whole world (bodies, joints, constraints, colliders, force fields, materials, filters, events, sleep state, broad-phase tree, warm-start caches, overflow flag) in one versioned blob with a checksum, and restore it into a new or existing world; every later step is bit-identical to the original's. A bad blob is rejected with a `WorldSnapshotError` that says why |
+| `snapshot_world` / `from_world_snapshot` / `restore_world` | save the whole world (bodies, joints, constraints, colliders, force fields, materials, filters, events, sleep state, broad-phase tree, warm-start caches, overflow flag) in one versioned blob with a checksum, and restore it into a new or existing world; every later step is bit-identical to the original's. The header carries the writer's stepping-semantics identifier and the world's `law_id`; a blob written under other semantics is refused, and `restore_world_checked` also compares the `law_id` with an expected one. A bad blob is rejected with a `WorldSnapshotError` that says why |
 | `step_n(n, dt)` | `step(dt)` run `n` times, the same call the Python `step_n` and WASM `stepN` bindings make |
 | `overflow_detected()` | reports when `Fix128` arithmetic left its range, so a diverged run is not mistaken for a valid one; the flag survives a rollback |
 | `Vec3Fix::checked_*` / `checked_length_scaled` / `try_normalize_scaled` | a length or dot product whose square would leave the `Fix128` range (`\|v\| ≥ 2^31.5 ≈ 3.04e9`) returns `None` instead of wrapping; the scaled versions return the correct length and direction there and are bit-identical to `length` / `try_normalize` inside the range |
@@ -221,9 +221,9 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | How a module is used | Modules |
 |----------------------|--------:|
 | step: runs when `PhysicsWorld` steps | 24 |
-| world API: used through another `PhysicsWorld` method | 14 |
+| world API: used through another `PhysicsWorld` method | 15 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 127 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 126 |
 | unused: no caller outside tests | 0 |
 
 ## Vehicle dynamics

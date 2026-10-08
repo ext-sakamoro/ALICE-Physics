@@ -1000,7 +1000,8 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
     }
 }
 
-/// A version 3 blob carries the setting: a branch restored mid-flight keeps
+/// A version 4 blob carries the setting (its section was added in version
+/// 3): a branch restored mid-flight keeps
 /// sweeping and stays bit-identical to the original.
 #[test]
 fn snapshot_carries_the_setting() {
@@ -1009,8 +1010,8 @@ fn snapshot_carries_the_setting() {
     w.set_continuous_collision(config);
     w.step(Fix128::from_ratio(1, 60));
     let blob = w.snapshot_world();
-    assert_eq!(&blob[4..6], &3u16.to_le_bytes());
-    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v3 blob");
+    assert_eq!(&blob[4..6], &4u16.to_le_bytes());
+    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v4 blob");
     assert_eq!(branch.continuous_collision(), config);
     for _ in 0..20 {
         w.step(Fix128::from_ratio(1, 60));

@@ -10123,6 +10123,26 @@ impl<'a> core::marker::Unpin for alice_physics::particle::LandingTarget<'a>
 impl<'a> core::marker::UnsafeUnpin for alice_physics::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingTarget<'a>
+#[non_exhaustive] pub enum alice_physics::prelude::LawCheck
+pub alice_physics::prelude::LawCheck::SemanticsVerified
+pub alice_physics::prelude::LawCheck::Unpinned
+pub alice_physics::prelude::LawCheck::Verified
+impl core::clone::Clone for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::LawCheck
+impl core::cmp::PartialEq for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::LawCheck
+impl core::marker::StructuralPartialEq for alice_physics::LawCheck
+impl core::marker::Freeze for alice_physics::LawCheck
+impl core::marker::Send for alice_physics::LawCheck
+impl core::marker::Sync for alice_physics::LawCheck
+impl core::marker::Unpin for alice_physics::LawCheck
+impl core::marker::UnsafeUnpin for alice_physics::LawCheck
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LawCheck
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::LawCheck
 pub enum alice_physics::prelude::MetricType
 pub alice_physics::prelude::MetricType::Counter
 pub alice_physics::prelude::MetricType::Gauge
@@ -10348,6 +10368,9 @@ pub alice_physics::prelude::WorldSnapshotError::DanglingIndex::section: &'static
 pub alice_physics::prelude::WorldSnapshotError::FieldState(alice_physics::world_participant::StateError)
 pub alice_physics::prelude::WorldSnapshotError::InvalidValue
 pub alice_physics::prelude::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::prelude::WorldSnapshotError::LawIdMismatch
+pub alice_physics::prelude::WorldSnapshotError::LawIdMismatch::expected: [u8; 32]
+pub alice_physics::prelude::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
 pub alice_physics::prelude::WorldSnapshotError::ParticipantMismatch(alice_physics::world_participant::ParticipantMismatch)
 pub alice_physics::prelude::WorldSnapshotError::ParticipantState
 pub alice_physics::prelude::WorldSnapshotError::ParticipantState::error: alice_physics::world_participant::StateError
@@ -10356,6 +10379,9 @@ pub alice_physics::prelude::WorldSnapshotError::ReservedNotZero
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::prelude::WorldSnapshotError::SemanticsMismatch
+pub alice_physics::prelude::WorldSnapshotError::SemanticsMismatch::expected: [u8; 32]
+pub alice_physics::prelude::WorldSnapshotError::SemanticsMismatch::stored: [u8; 32]
 pub alice_physics::prelude::WorldSnapshotError::TrailingBytes
 pub alice_physics::prelude::WorldSnapshotError::TrailingBytes::extra: usize
 pub alice_physics::prelude::WorldSnapshotError::Truncated
@@ -13430,6 +13456,7 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics::world_participant::Participant>) -> core::result::Result<usize, alice_physics::world_participant::RegisterError>
@@ -17770,6 +17797,26 @@ impl core::marker::Unpin for alice_physics::solver::DeclareFieldError
 impl core::marker::UnsafeUnpin for alice_physics::solver::DeclareFieldError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::DeclareFieldError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::DeclareFieldError
+#[non_exhaustive] pub enum alice_physics::solver::LawCheck
+pub alice_physics::solver::LawCheck::SemanticsVerified
+pub alice_physics::solver::LawCheck::Unpinned
+pub alice_physics::solver::LawCheck::Verified
+impl core::clone::Clone for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::LawCheck
+impl core::cmp::PartialEq for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::LawCheck
+impl core::marker::StructuralPartialEq for alice_physics::LawCheck
+impl core::marker::Freeze for alice_physics::LawCheck
+impl core::marker::Send for alice_physics::LawCheck
+impl core::marker::Sync for alice_physics::LawCheck
+impl core::marker::Unpin for alice_physics::LawCheck
+impl core::marker::UnsafeUnpin for alice_physics::LawCheck
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LawCheck
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::LawCheck
 #[non_exhaustive] pub enum alice_physics::solver::SolverBackend
 pub alice_physics::solver::SolverBackend::Tgs
 pub alice_physics::solver::SolverBackend::Xpbd
@@ -17807,6 +17854,9 @@ pub alice_physics::solver::WorldSnapshotError::DanglingIndex::section: &'static 
 pub alice_physics::solver::WorldSnapshotError::FieldState(alice_physics::world_participant::StateError)
 pub alice_physics::solver::WorldSnapshotError::InvalidValue
 pub alice_physics::solver::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::solver::WorldSnapshotError::LawIdMismatch
+pub alice_physics::solver::WorldSnapshotError::LawIdMismatch::expected: [u8; 32]
+pub alice_physics::solver::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
 pub alice_physics::solver::WorldSnapshotError::ParticipantMismatch(alice_physics::world_participant::ParticipantMismatch)
 pub alice_physics::solver::WorldSnapshotError::ParticipantState
 pub alice_physics::solver::WorldSnapshotError::ParticipantState::error: alice_physics::world_participant::StateError
@@ -17815,6 +17865,9 @@ pub alice_physics::solver::WorldSnapshotError::ReservedNotZero
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::solver::WorldSnapshotError::SemanticsMismatch
+pub alice_physics::solver::WorldSnapshotError::SemanticsMismatch::expected: [u8; 32]
+pub alice_physics::solver::WorldSnapshotError::SemanticsMismatch::stored: [u8; 32]
 pub alice_physics::solver::WorldSnapshotError::TrailingBytes
 pub alice_physics::solver::WorldSnapshotError::TrailingBytes::extra: usize
 pub alice_physics::solver::WorldSnapshotError::Truncated
@@ -18059,6 +18112,7 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics::world_participant::Participant>) -> core::result::Result<usize, alice_physics::world_participant::RegisterError>
@@ -21095,6 +21149,26 @@ impl<'a> core::marker::Unpin for alice_physics::particle::LandingTarget<'a>
 impl<'a> core::marker::UnsafeUnpin for alice_physics::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingTarget<'a>
+#[non_exhaustive] pub enum alice_physics::LawCheck
+pub alice_physics::LawCheck::SemanticsVerified
+pub alice_physics::LawCheck::Unpinned
+pub alice_physics::LawCheck::Verified
+impl core::clone::Clone for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::LawCheck
+impl core::cmp::PartialEq for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::LawCheck
+pub fn alice_physics::LawCheck::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::LawCheck
+impl core::marker::StructuralPartialEq for alice_physics::LawCheck
+impl core::marker::Freeze for alice_physics::LawCheck
+impl core::marker::Send for alice_physics::LawCheck
+impl core::marker::Sync for alice_physics::LawCheck
+impl core::marker::Unpin for alice_physics::LawCheck
+impl core::marker::UnsafeUnpin for alice_physics::LawCheck
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LawCheck
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::LawCheck
 pub enum alice_physics::MetricType
 pub alice_physics::MetricType::Counter
 pub alice_physics::MetricType::Gauge
@@ -21403,6 +21477,9 @@ pub alice_physics::WorldSnapshotError::DanglingIndex::section: &'static str
 pub alice_physics::WorldSnapshotError::FieldState(alice_physics::world_participant::StateError)
 pub alice_physics::WorldSnapshotError::InvalidValue
 pub alice_physics::WorldSnapshotError::InvalidValue::section: &'static str
+pub alice_physics::WorldSnapshotError::LawIdMismatch
+pub alice_physics::WorldSnapshotError::LawIdMismatch::expected: [u8; 32]
+pub alice_physics::WorldSnapshotError::LawIdMismatch::stored: [u8; 32]
 pub alice_physics::WorldSnapshotError::ParticipantMismatch(alice_physics::world_participant::ParticipantMismatch)
 pub alice_physics::WorldSnapshotError::ParticipantState
 pub alice_physics::WorldSnapshotError::ParticipantState::error: alice_physics::world_participant::StateError
@@ -21411,6 +21488,9 @@ pub alice_physics::WorldSnapshotError::ReservedNotZero
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::WorldSnapshotError::SemanticsMismatch
+pub alice_physics::WorldSnapshotError::SemanticsMismatch::expected: [u8; 32]
+pub alice_physics::WorldSnapshotError::SemanticsMismatch::stored: [u8; 32]
 pub alice_physics::WorldSnapshotError::TrailingBytes
 pub alice_physics::WorldSnapshotError::TrailingBytes::extra: usize
 pub alice_physics::WorldSnapshotError::Truncated
@@ -24525,6 +24605,7 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 impl alice_physics::solver::PhysicsWorld
 pub fn alice_physics::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics::world_participant::Participant>) -> core::result::Result<usize, alice_physics::world_participant::RegisterError>
