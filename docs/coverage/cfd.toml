@@ -303,8 +303,8 @@ axis = "time integration"
 item = "first-order fractional-step time stepping"
 source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.6-7"
 status = "partial"
-evidence = "src/cfd_solver.rs / tests/engineering_oracles_fluid.rs::cfd_solver_shear_mode_decays_at_the_viscous_rate"
-oracle_candidate = "時間刻みを半分にした時の誤差比 2"
+evidence = "src/cfd_solver.rs / tests/engineering_oracles_fluid.rs::cfd_solver_shear_mode_decays_at_the_viscous_rate / tests/analytic_cfd_fractional_step_time_order.rs::halving_dt_halves_the_successive_time_stepping_difference (dt を 4 段階 (0.02→0.00125) 幾何等分し、隣り合う実行どうしの差を比較、固定 dx の空間誤差を打ち消して時間刻み誤差だけを分離、実測比 2.00-2.01 を 3 window とも 1.7-2.3 の許容で確認、連続解 exp(-νπ²t/L²) への単発突合は空間誤差が同程度で非単調になるため不採用)"
+oracle_candidate = ""
 limitation = "src/cfd_solver.rs 'This is a first-order operator-splitting scheme; adequate for engineering demos and validation tests. Higher-order RK3 time stepping is a future upgrade.'"
 
 [[item]]
@@ -793,8 +793,8 @@ axis = "pressure solver"
 item = "residual-based convergence verdict of the pressure solve"
 source = "Ferziger-Peric, Computational Methods for Fluid Dynamics ch.5.7"
 status = "partial"
-evidence = "src/cfd_solver.rs::PressureSolver / tests/audit_cfd_solver_rans.rs::the_pressure_report_names_the_solver_that_ran_and_only_bicgstab_reports_a_verdict"
-oracle_candidate = "固定回数の解法でも残差を返し、粗い回数で未収束を報告"
+evidence = "src/cfd_solver.rs::PressureSolver / tests/audit_cfd_solver_rans.rs::the_pressure_report_names_the_solver_that_ran_and_only_bicgstab_reports_a_verdict / tests/analytic_pressure_solvers.rs::a_single_sweep_leaves_the_seed_barely_reduced_and_this_is_externally_measurable (fixed-count solver carries no verdict field, but oracle 1's residual identity still lets a caller measure non-convergence via max|div u| after a deliberately short sweep count; measured non-monotonic — one red-black sweep can transiently exceed the seeded divergence before later sweeps reduce it, since it corrects each cell from not-yet-updated neighbours)"
+oracle_candidate = ""
 limitation = "src/cfd_solver.rs::PressureSolver 'The fixed-count solvers never say whether they converged; on a large grid a short count leaves a smooth divergence of order one.'"
 
 [[item]]
