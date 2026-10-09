@@ -6,6 +6,8 @@
 //! `cargo test --lib`, the test set the mutation run uses.
 
 use super::*;
+#[cfg(not(feature = "std"))]
+use alloc::vec;
 
 /// A cube with integer centre and half size.
 fn cube(x: i64, y: i64, z: i64, half: i64) -> AABB {
