@@ -5614,10 +5614,10 @@ pub alice_physics::joint::D6Joint::local_frame_a: alice_physics::math::QuatFix
 pub alice_physics::joint::D6Joint::local_frame_b: alice_physics::math::QuatFix
 impl alice_physics::joint::D6Joint
 pub fn alice_physics::joint::D6Joint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
-pub const fn alice_physics::joint::D6Joint::with_angular_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::joint::D6Joint::with_angular_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::D6Joint::with_angular_motion(self, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion) -> Self
 pub const fn alice_physics::joint::D6Joint::with_break_force(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::D6Joint::with_linear_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::joint::D6Joint::with_linear_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::D6Joint::with_linear_motion(self, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion) -> Self
 impl core::clone::Clone for alice_physics::joint::D6Joint
 pub fn alice_physics::joint::D6Joint::clone(&self) -> Self
@@ -5679,7 +5679,7 @@ impl alice_physics::joint::HingeJoint
 pub const fn alice_physics::joint::HingeJoint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::HingeJoint::with_break_force(self, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::joint::HingeJoint::with_compliance(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::HingeJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::joint::HingeJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics::joint::HingeJoint
 pub fn alice_physics::joint::HingeJoint::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::joint::HingeJoint
@@ -5709,7 +5709,7 @@ pub alice_physics::joint::SliderJoint::local_axis: alice_physics::math::Vec3Fix
 impl alice_physics::joint::SliderJoint
 pub const fn alice_physics::joint::SliderJoint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::SliderJoint::with_break_force(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::SliderJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::joint::SliderJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics::joint::SliderJoint
 pub fn alice_physics::joint::SliderJoint::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::joint::SliderJoint
@@ -11470,10 +11470,10 @@ pub alice_physics::prelude::D6Joint::local_frame_a: alice_physics::math::QuatFix
 pub alice_physics::prelude::D6Joint::local_frame_b: alice_physics::math::QuatFix
 impl alice_physics::joint::D6Joint
 pub fn alice_physics::joint::D6Joint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
-pub const fn alice_physics::joint::D6Joint::with_angular_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::joint::D6Joint::with_angular_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::D6Joint::with_angular_motion(self, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion) -> Self
 pub const fn alice_physics::joint::D6Joint::with_break_force(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::D6Joint::with_linear_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::joint::D6Joint::with_linear_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::D6Joint::with_linear_motion(self, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion) -> Self
 impl core::clone::Clone for alice_physics::joint::D6Joint
 pub fn alice_physics::joint::D6Joint::clone(&self) -> Self
@@ -12578,7 +12578,7 @@ impl alice_physics::joint::HingeJoint
 pub const fn alice_physics::joint::HingeJoint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::HingeJoint::with_break_force(self, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::joint::HingeJoint::with_compliance(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::HingeJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::joint::HingeJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics::joint::HingeJoint
 pub fn alice_physics::joint::HingeJoint::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::joint::HingeJoint
@@ -14376,7 +14376,7 @@ pub alice_physics::prelude::SliderJoint::local_axis: alice_physics::math::Vec3Fi
 impl alice_physics::joint::SliderJoint
 pub const fn alice_physics::joint::SliderJoint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::SliderJoint::with_break_force(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::SliderJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::joint::SliderJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics::joint::SliderJoint
 pub fn alice_physics::joint::SliderJoint::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::joint::SliderJoint
@@ -22601,10 +22601,10 @@ pub alice_physics::D6Joint::local_frame_a: alice_physics::math::QuatFix
 pub alice_physics::D6Joint::local_frame_b: alice_physics::math::QuatFix
 impl alice_physics::joint::D6Joint
 pub fn alice_physics::joint::D6Joint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
-pub const fn alice_physics::joint::D6Joint::with_angular_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::joint::D6Joint::with_angular_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::D6Joint::with_angular_motion(self, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion) -> Self
 pub const fn alice_physics::joint::D6Joint::with_break_force(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::D6Joint::with_linear_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
+pub fn alice_physics::joint::D6Joint::with_linear_limits(self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::D6Joint::with_linear_motion(self, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion, alice_physics::joint::D6Motion) -> Self
 impl core::clone::Clone for alice_physics::joint::D6Joint
 pub fn alice_physics::joint::D6Joint::clone(&self) -> Self
@@ -23709,7 +23709,7 @@ impl alice_physics::joint::HingeJoint
 pub const fn alice_physics::joint::HingeJoint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::HingeJoint::with_break_force(self, alice_physics::math::Fix128) -> Self
 pub const fn alice_physics::joint::HingeJoint::with_compliance(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::HingeJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::joint::HingeJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics::joint::HingeJoint
 pub fn alice_physics::joint::HingeJoint::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::joint::HingeJoint
@@ -25580,7 +25580,7 @@ pub alice_physics::SliderJoint::local_axis: alice_physics::math::Vec3Fix
 impl alice_physics::joint::SliderJoint
 pub const fn alice_physics::joint::SliderJoint::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix) -> Self
 pub const fn alice_physics::joint::SliderJoint::with_break_force(self, alice_physics::math::Fix128) -> Self
-pub const fn alice_physics::joint::SliderJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
+pub fn alice_physics::joint::SliderJoint::with_limits(self, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 impl core::clone::Clone for alice_physics::joint::SliderJoint
 pub fn alice_physics::joint::SliderJoint::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::joint::SliderJoint
