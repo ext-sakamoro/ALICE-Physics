@@ -1245,24 +1245,51 @@ impl Vec3Fix {
 
     /// `self` with its `x` and `z` scaled up by the same power of two `2ᵏ`
     /// (exactly), so that the larger lies in `[1, 2)`, when it is below `2⁻⁸`;
-    /// `y` is kept, and an `x`, `z` of zero or not below `2⁻⁸` is returned as
-    /// is. For a support mapping that normalizes the `xz` part of its direction
-    /// (a cylinder's rim, a cone's base): `x² + z²` keeps multiples of `2⁻⁶⁴`
+    /// `y` is kept, and an `x`, `z` not below `2⁻⁸` is returned as is. For a
+    /// support mapping that normalizes the `xz` part of its direction (a
+    /// cylinder's rim, a cone's base): `x² + z²` keeps multiples of `2⁻⁶⁴`
     /// only, so an `xz` part of size `m` loses `2⁻⁶⁴ / m²` of its length, and
     /// the rim point as much of the radius. A direction near the axis (a
     /// contact near a rim, its normal mostly along the axis) has a short `xz`
     /// part: at `m ≈ 2⁻²⁰` the rim point was `2⁻²⁴` of the radius off, outside
     /// the solid. Below `2⁻⁸` that loss would exceed `2⁻⁴⁸`.
+    ///
+    /// An `xz` part no larger than the rounding of the turn into the body frame
+    /// is returned as zero (the mapping then takes its point on the axis, as it
+    /// did when `x² + z²` came out zero). `self` is `q* d q` (two quaternion
+    /// products); with `u = 2⁻⁶⁴`, a direction `d` along the axis comes out with
+    /// `|x|, |z|` below:
+    ///
+    /// - `12u`: each product is truncated by less than `u`; a component of
+    ///   `q* d` sums at most 4 of them (`< 4u`), and one of `(q* d) q` sums 4
+    ///   products of those with components of `q` (`Σ|qᵢ| ≤ 2`) and truncates 4
+    ///   more, whatever the length of `d`;
+    /// - `2⁻⁴⁴·|d|`: the quaternion is not the turn meant. `from_axis_angle`
+    ///   takes the half angle's sine and cosine by CORDIC, off by up to
+    ///   `2⁻⁴⁷` (the largest error over 200001 angles in `[−π, π]` against
+    ///   `f64`), so each component is within `2⁻⁴⁷` and the turn within
+    ///   `2·2·2⁻⁴⁷ = 2⁻⁴⁵` rad; an angle and an axis given in `f64` add half an
+    ///   ulp each (below `2⁻⁵⁰` rad together). The direction `(1, 0, 0)` onto a
+    ///   cylinder turned by `π/2` about `Z` came out with `x ≈ 2⁻⁴⁶·⁴·|d|`,
+    ///   which scaled up gave a rim point.
+    ///
+    /// The bound is `2⁻⁴²·max(1, |d|∞)` (`|d|∞` the largest component of
+    /// `self`), 4 times the sum. Taking the axis point below it costs little:
+    /// the rim point's support value along `d` exceeds the axis point's by at
+    /// most `radius·√2·2⁻⁴²`, below the `2⁻³²` tolerance of the queries for a
+    /// radius up to `2⁹`.
     #[must_use]
     pub(crate) fn rescaled_xz(self) -> Self {
         let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
         let back = |r: i128| Fix128::from_raw((r >> 64) as i64, r as u64);
-        let (x, z) = (raw(self.x), raw(self.z));
+        let (x, y, z) = (raw(self.x), raw(self.y), raw(self.z));
         let m = x.unsigned_abs().max(z.unsigned_abs());
-        if m == 0 {
-            return self;
+        // bit 64 is 1.0: the bound 2⁻⁴²·max(1, |d|∞)
+        let big = m.max(y.unsigned_abs()).max(1u128 << 64);
+        if m <= big >> 42 {
+            return Vec3Fix::new(Fix128::ZERO, self.y, Fix128::ZERO);
         }
-        // bit 64 is 1.0; 2⁻⁸ is bit 56
+        // 2⁻⁸ is bit 56
         let msb = 127 - m.leading_zeros() as i32;
         if msb >= 56 {
             return self;
