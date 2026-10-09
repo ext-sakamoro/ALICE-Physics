@@ -7,6 +7,9 @@
 # - miri    : UB 検出 (unsafe / parallel 持ち crate)  SIMD / FFI / wasm は miri 非対応のため除外
 # - bench   : criterion 回帰 (main baseline vs HEAD、critcmp)  GH runner のノイズがあるため informational
 # - ignored : `#[ignore]` test を実際に走らせて理由文の主張と突き合わせる (2026-09-30 追加)
+# - coverage-full : lib + 統合試験 (tests/) の行 coverage を週次で測り、専用の baseline
+#                   (scripts/line-coverage-baseline-full.txt) を下回ったら失敗 push ごとの
+#                   ratchet (security-audit.yml) は lib だけを測る (統合込みは 8 core で約 68 分)
 #
 # continue-on-error は compile error も green に潰すので使わない
 # informational job は結果を Job Summary に書いて exit 0 (失敗は summary で読む)
@@ -360,3 +363,41 @@ jobs:
             critcmp main head --threshold 15 || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+  coverage-full:
+    name: Coverage (lib + integration tests, weekly ratchet)
+    if: github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: coverage-full
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Run coverage (lib + tests/)
+        run: |
+          set -o pipefail
+          cargo llvm-cov --lib --tests --summary-only 2>&1 | tee coverage-full-summary.txt
+
+      # the same ratchet as the per-push lib job, against its own baseline: code
+      # tested only from tests/ is held here; a rise is recorded with --write
+      - name: Line-coverage ratchet (lib + tests/)
+        run: >-
+          python3 scripts/line_coverage_ratchet.py
+          --summary coverage-full-summary.txt
+          --baseline scripts/line-coverage-baseline-full.txt
+
+      - name: Upload coverage summary as artifact
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-full-summary
+          path: coverage-full-summary.txt
+          retention-days: 30

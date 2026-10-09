@@ -1,4 +1,4 @@
-# line coverage of `cargo llvm-cov --lib` per file: <file> <lines> <missed lines>
+# line coverage of `cargo llvm-cov --summary-only` per file: <file> <lines> <missed lines>
 # written by scripts/line_coverage_ratchet.py --write; coverage may not fall below it
 TOTAL 95350 16400
 acoustic_wave.rs 105 0

@@ -15,6 +15,7 @@ coverage has risen, `--write` records the new numbers (the ratchet only moves up
 when someone commits the baseline).
 
   cargo llvm-cov --lib --summary-only > coverage-summary.txt
+  (the weekly job measures `--lib --tests` against line-coverage-baseline-full.txt)
   python3 scripts/line_coverage_ratchet.py --summary coverage-summary.txt
   python3 scripts/line_coverage_ratchet.py --summary coverage-summary.txt --write
 """
@@ -90,7 +91,7 @@ def compare(now: dict[str, tuple[int, int]], base: dict[str, tuple[int, int]]) -
 
 
 def baseline_text(now: dict[str, tuple[int, int]]) -> str:
-    out = ["# line coverage of `cargo llvm-cov --lib` per file: <file> <lines> <missed lines>",
+    out = ["# line coverage of `cargo llvm-cov --summary-only` per file: <file> <lines> <missed lines>",
            "# written by scripts/line_coverage_ratchet.py --write; coverage may not fall below it"]
     out += [f"{name} {lines} {missed}" for name, (lines, missed) in sorted(now.items())]
     return "\n".join(out) + "\n"

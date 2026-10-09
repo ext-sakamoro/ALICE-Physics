@@ -217,7 +217,10 @@ jobs:
           cargo llvm-cov --lib --summary-only 2>&1 | tee coverage-summary.txt
 
       # coverage may not fall below scripts/line-coverage-baseline.txt (total, and
-      # per file for files of 50 lines or more); a rise is recorded with --write
+      # per file for files of 50 lines or more); a rise is recorded with --write.
+      # This measures the lib unit tests only; lib + tests/ is ratcheted weekly
+      # by the coverage-full job of quality-deep.yml (about an hour, too long for
+      # every push).
       - name: Line-coverage ratchet
         run: python3 scripts/line_coverage_ratchet.py --summary coverage-summary.txt
 
