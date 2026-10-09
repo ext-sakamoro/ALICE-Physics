@@ -112,10 +112,15 @@ impl DynamicAabbTree {
     /// Insert a new AABB, returns the proxy (node) ID
     pub fn insert(&mut self, aabb: AABB, user_data: u32) -> u32 {
         let fat_aabb = self.fatten(aabb);
+        self.insert_fat(fat_aabb, user_data)
+    }
+
+    /// Insert a leaf whose box is already fattened, as stored by an earlier
+    /// tree, and return its proxy (node) ID. Used to rebuild a tree from its
+    /// leaf set: the box is kept as is, not fattened a second time.
+    pub(crate) fn insert_fat(&mut self, fat_aabb: AABB, user_data: u32) -> u32 {
         let node_id = self.alloc_node();
-
         self.nodes[node_id as usize] = DynamicNode::new_leaf(fat_aabb, user_data);
-
         self.insert_leaf(node_id);
         node_id
     }

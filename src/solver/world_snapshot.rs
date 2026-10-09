@@ -1460,6 +1460,112 @@ fn r_events(r: &mut R<'_>) -> Res<EventCollector> {
     Ok(e)
 }
 
+/// The persistent [`Broadphase::DynamicTree`] tree and its body → proxy map
+/// (version 4): the margin, the metric, then per body index whether the body
+/// has a proxy and, if so, the leaf's stored (fattened) box.
+///
+/// Only the leaf set is written, in body index order. Node ids, internal
+/// nodes, freed nodes and the free list depend on the order of past inserts
+/// and removals, not on the state: [`DynamicAabbTree::find_pairs`] returns
+/// the sorted, deduplicated body index pairs of overlapping leaf boxes,
+/// which the leaf set alone decides. [`r_tree_leaves`] rebuilds the tree by
+/// inserting the leaves in that order.
+///
+/// [`DynamicAabbTree::find_pairs`]: crate::dynamic_bvh::DynamicAabbTree::find_pairs
+fn w_tree_leaves(w: &mut W, t: &crate::dynamic_bvh::DynamicAabbTree, proxies: &[Option<u32>]) {
+    debug_assert_eq!(
+        t.proxy_count(),
+        proxies.iter().flatten().count(),
+        "every leaf of the broad-phase tree belongs to one body"
+    );
+    w.fix(t.margin);
+    let (l1, l2, linf) = t.metric.weights();
+    w.fix(l1);
+    w.fix(l2);
+    w.fix(linf);
+    w.usize(proxies.len());
+    for (i, &p) in proxies.iter().enumerate() {
+        match p {
+            Some(id) => {
+                debug_assert_eq!(t.user_data(id) as usize, i, "proxy of body {i}");
+                w.u8(1);
+                w.aabb(t.get_aabb(id));
+            }
+            None => w.u8(0),
+        }
+    }
+}
+
+/// Read what [`w_tree_leaves`] wrote and rebuild the tree from it, inserting
+/// the leaves in body index order with their stored boxes (not fattened
+/// again), so the same leaf set always gives the same tree.
+fn r_tree_leaves(r: &mut R<'_>) -> Res<(crate::dynamic_bvh::DynamicAabbTree, Vec<Option<u32>>)> {
+    const S: &str = "broadphase_tree";
+    let mut t = crate::dynamic_bvh::DynamicAabbTree::new();
+    t.margin = r.fix()?;
+    let (l1, l2, linf) = (r.fix()?, r.fix()?, r.fix()?);
+    t.metric = crate::metric::MetricWeights::new(l1, l2, linf).map_err(|_| invalid(S))?;
+    let n = r.len("broadphase_proxies", 1)?;
+    let mut proxies = Vec::with_capacity(n);
+    for i in 0..n {
+        proxies.push(if r.bool("broadphase_proxies")? {
+            let fat = r.aabb()?;
+            let body = u32::try_from(i).map_err(|_| invalid("broadphase_proxies"))?;
+            Some(t.insert_fat(fat, body))
+        } else {
+            None
+        });
+    }
+    Ok((t, proxies))
+}
+
+/// Read the version 1 to 3 form (every node as stored, the free list, the
+/// root, then the body → proxy map) and rebuild the tree from its leaf set
+/// the way [`r_tree_leaves`] does, so a restored world holds the same tree
+/// whichever version it came from.
+fn r_tree_legacy(r: &mut R<'_>) -> Res<(crate::dynamic_bvh::DynamicAabbTree, Vec<Option<u32>>)> {
+    let stored = r_tree(r)?;
+    let n = r.len("broadphase_proxies", 1)?;
+    let mut t = crate::dynamic_bvh::DynamicAabbTree::new();
+    t.margin = stored.margin;
+    t.metric = stored.metric;
+    let mut proxies = Vec::with_capacity(n);
+    for i in 0..n {
+        proxies.push(if r.bool("broadphase_proxies")? {
+            let id = r.u32()? as usize;
+            if id >= stored.nodes.len() {
+                return Err(WorldSnapshotError::DanglingIndex {
+                    section: "broadphase_proxies",
+                    index: id,
+                    len: stored.nodes.len(),
+                });
+            }
+            let body = u32::try_from(i).map_err(|_| invalid("broadphase_proxies"))?;
+            Some(t.insert_fat(stored.nodes[id].aabb, body))
+        } else {
+            None
+        });
+    }
+    Ok((t, proxies))
+}
+
+/// The version 1 to 3 tree section, kept for tests that build older blobs.
+#[cfg(test)]
+fn w_tree_legacy(w: &mut W, t: &crate::dynamic_bvh::DynamicAabbTree, proxies: &[Option<u32>]) {
+    w_tree(w, t);
+    w.usize(proxies.len());
+    for &p in proxies {
+        match p {
+            Some(id) => {
+                w.u8(1);
+                w.u32(id);
+            }
+            None => w.u8(0),
+        }
+    }
+}
+
+#[cfg(test)]
 fn w_tree(w: &mut W, t: &crate::dynamic_bvh::DynamicAabbTree) {
     w.usize(t.nodes.len());
     for n in &t.nodes {
@@ -1632,7 +1738,7 @@ impl PhysicsWorld {
     /// | `islands` (`sleep_data`, `config`) | saved | |
     /// | `islands` (union-find `parent` / `rank`) | rebuilt | `IslandManager::new` plus a union of every joint's bodies, the same as the start of every `step` |
     /// | `body_collision_radii` / `body_filters` | saved | as stored, including their own lengths |
-    /// | `broadphase` / `broadphase_tree` / `broadphase_proxies` | saved | the persistent tree node by node (pair order follows the tree layout) |
+    /// | `broadphase` / `broadphase_tree` / `broadphase_proxies` | saved / rebuilt | the kind, the tree's margin and metric, and its leaf set: per body index whether it has a proxy and the leaf's stored (fattened) box; the tree is rebuilt on restore by inserting those leaves in body index order. Node ids, internal and freed nodes and the free list are not written: they depend on the order of past inserts and removals, and the pairs the tree gives are the sorted, deduplicated body index pairs of overlapping leaf boxes. The rebuilt layout can differ from the original's, which shows only in [`PhysicsWorld::broadphase_stats`]`.height` |
     /// | `broadphase_hybrid` | rebuilt | empty; its pairs are a pure function of the bodies staged each substep, so a fresh one gives the same pairs |
     /// | `body_colliders` | saved | shape or compound, including the compound's cached AABB and dirty flag |
     /// | `overflow_detected` | saved | sticky flag |
@@ -1672,9 +1778,20 @@ impl PhysicsWorld {
     /// | last 8 | FNV-1a 64 of every preceding byte (header included) |
     ///
     /// Version 1 to 3 blobs have the 16-byte header only (no `semantics_id`
-    /// or `law_id`) and their payload starts at byte 16; the payload itself
-    /// is the same in version 3 and 4. Version 4 grows the header rather than
-    /// using the reserved bytes, which stay 0.
+    /// or `law_id`) and their payload starts at byte 16. Version 4 grows the
+    /// header rather than using the reserved bytes, which stay 0.
+    ///
+    /// The payload of version 3 and 4 differs in one section, the
+    /// broad-phase tree after the `broadphase` tag:
+    ///
+    /// | version | content |
+    /// |---|---|
+    /// | 1 to 3 | `node_count: u64`, per node box, `parent` / `left` / `right: u32`, `height: i32`, `user_data: u32`, `is_leaf: u8`; `free_count: u64`, free node ids `u32`; `root: u32`; margin; three metric weights; `proxy_count: u64`, per body `0` or `1` and the proxy (node) id `u32` |
+    /// | 4 | margin; three metric weights; `proxy_count: u64`, per body `0` or `1` and the leaf's stored box (min, max) |
+    ///
+    /// A version 1 to 3 tree is read and then rebuilt from its leaves (each
+    /// proxy's stored box) the same way, so the restored world is the same
+    /// whichever version it came from.
     ///
     /// The header `law_id` is the rule of the world when it was written. It
     /// is not guaranteed to equal [`PhysicsWorld::law_id`] of a world after
@@ -1836,17 +1953,7 @@ impl PhysicsWorld {
             Broadphase::DynamicTree => 1,
             Broadphase::Hybrid => 2,
         });
-        w_tree(&mut w, &self.broadphase_tree);
-        w.usize(self.broadphase_proxies.len());
-        for &p in &self.broadphase_proxies {
-            match p {
-                Some(id) => {
-                    w.u8(1);
-                    w.u32(id);
-                }
-                None => w.u8(0),
-            }
-        }
+        w_tree_leaves(&mut w, &self.broadphase_tree, &self.broadphase_proxies);
 
         w.usize(self.body_colliders.len());
         for c in &self.body_colliders {
@@ -2393,16 +2500,11 @@ fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
         2 => Broadphase::Hybrid,
         _ => return Err(invalid("broadphase")),
     };
-    let broadphase_tree = r_tree(r)?;
-    let n = r.len("broadphase_proxies", 1)?;
-    let mut broadphase_proxies = Vec::with_capacity(n);
-    for _ in 0..n {
-        broadphase_proxies.push(if r.bool("broadphase_proxies")? {
-            Some(r.u32()?)
-        } else {
-            None
-        });
-    }
+    let (broadphase_tree, broadphase_proxies) = if version >= 4 {
+        r_tree_leaves(r)?
+    } else {
+        r_tree_legacy(r)?
+    };
 
     let n = r.len("body_colliders", 1)?;
     let mut body_colliders = Vec::with_capacity(n);
@@ -2606,13 +2708,6 @@ fn validate(d: &Decoded) -> Res<()> {
             check("constraint_batches", i, d.contact_constraints.len())?;
         }
     }
-    for &p in d.broadphase_proxies.iter().flatten() {
-        check(
-            "broadphase_proxies",
-            p as usize,
-            d.broadphase_tree.nodes.len(),
-        )?;
-    }
     Ok(())
 }
 
@@ -2770,15 +2865,33 @@ mod tests {
             format!("{:?}", w.body_collision_radii),
         ));
         d.push(("broadphase", format!("{:?}", w.broadphase)));
+        // The tree as its state, not its layout: node ids, internal nodes and
+        // freed nodes depend on the order of past inserts and removals, and
+        // `find_pairs` reads only the leaves. Every leaf (not only the ones
+        // the proxies reach), each proxy's leaf, and the pairs the tree gives.
         let t = &w.broadphase_tree;
+        let mut leaves: Vec<_> = t
+            .nodes
+            .iter()
+            .filter(|n| n.is_leaf && n.user_data != crate::dynamic_bvh::NULL_NODE)
+            .map(|n| (n.user_data, format!("{:?}", n.aabb)))
+            .collect();
+        leaves.sort();
         d.push((
             "broadphase_tree",
             format!(
-                "{:?} {:?} {} {:?} {:?}",
-                t.nodes, t.free_list, t.root, t.margin, t.metric
+                "{leaves:?} {:?} {:?} {:?}",
+                t.margin,
+                t.metric,
+                t.find_pairs()
             ),
         ));
-        d.push(("broadphase_proxies", format!("{:?}", w.broadphase_proxies)));
+        let proxies: Vec<_> = w
+            .broadphase_proxies
+            .iter()
+            .map(|p| p.map(|id| (t.user_data(id), format!("{:?}", t.get_aabb(id)))))
+            .collect();
+        d.push(("broadphase_proxies", format!("{proxies:?}")));
         d.push(("body_colliders", format!("{:?}", w.body_colliders)));
         d.push(("body_filters", format!("{:?}", w.body_filters)));
         d.push(("overflow_detected", format!("{}", w.overflow_detected)));
@@ -3699,22 +3812,289 @@ mod tests {
         );
     }
 
-    /// The version 3 form of a version 4 blob (same payload, 16-byte header)
-    /// restores to the same world and reports `Unpinned`.
+    /// The version 3 form of `w`'s version 4 blob: the 16-byte header, and the
+    /// tree section written node by node (with the free list and proxy ids)
+    /// in place of the leaf set. Every other section is the same in both.
+    fn as_version_3(w: &PhysicsWorld) -> Vec<u8> {
+        let blob = w.snapshot_world();
+        let mut leaves = super::W(Vec::new());
+        super::w_tree_leaves(&mut leaves, &w.broadphase_tree, &w.broadphase_proxies);
+        let mut legacy = super::W(Vec::new());
+        super::w_tree_legacy(&mut legacy, &w.broadphase_tree, &w.broadphase_proxies);
+        let payload = &blob[80..blob.len() - super::CHECKSUM_LEN];
+        let at: Vec<usize> = (0..=payload.len() - leaves.0.len())
+            .filter(|&i| payload[i..i + leaves.0.len()] == leaves.0[..])
+            .collect();
+        assert_eq!(at.len(), 1, "the tree section occurs once in the payload");
+        let mut p = payload[..at[0]].to_vec();
+        p.extend_from_slice(&legacy.0);
+        p.extend_from_slice(&payload[at[0] + leaves.0.len()..]);
+        let mut v3 = blob[..16].to_vec();
+        v3[4..6].copy_from_slice(&3u16.to_le_bytes());
+        v3[8..16].copy_from_slice(&(p.len() as u64).to_le_bytes());
+        v3.extend_from_slice(&p);
+        v3.extend_from_slice(&[0; super::CHECKSUM_LEN]);
+        reseal(v3)
+    }
+
+    /// The version 3 form of a version 4 blob (16-byte header, the tree
+    /// section in its version 3 form) restores to the same world and reports
+    /// `Unpinned`.
     #[test]
     fn version_3_form_is_unpinned() {
         use super::LawCheck;
         let src = variant_world();
         let blob = src.snapshot_world();
-        let mut v3 = blob[..16].to_vec();
-        v3[4..6].copy_from_slice(&3u16.to_le_bytes());
-        v3.extend_from_slice(&blob[80..]);
-        let v3 = reseal(v3);
+        let v3 = as_version_3(&src);
         let mut t = PhysicsWorld::new(SolverConfig::default());
         assert_eq!(
             t.restore_world_checked(&v3, Some(&[9; 32])),
             Ok(LawCheck::Unpinned)
         );
         assert_eq!(t.snapshot_world(), blob);
+    }
+
+    // ── The DynamicTree section as a leaf set ────────────────────────────
+
+    fn bx(x: i64, y: i64, z: i64) -> crate::collider::AABB {
+        crate::collider::AABB::new(v(x, y, z), v(x + 1, y + 1, z + 1))
+    }
+
+    /// A tree and its body → proxy map built the way `broadphase_pairs` keeps
+    /// them, with a history: bodies 0..6 inserted in the order of `order`,
+    /// then body 2 and 4 removed (their proxies freed, the node array kept),
+    /// then body 4 inserted again.
+    fn tree_with_history(
+        order: &[usize],
+    ) -> (crate::dynamic_bvh::DynamicAabbTree, Vec<Option<u32>>) {
+        let mut t = crate::dynamic_bvh::DynamicAabbTree::new();
+        t.margin = fx(1, 4);
+        let mut proxies = vec![None; 6];
+        for &i in order {
+            let x = i as i64;
+            proxies[i] = Some(t.insert(bx(2 * x, 0, x % 2), i as u32));
+        }
+        for i in [2, 4] {
+            t.remove(proxies[i].take().expect("inserted"));
+        }
+        proxies[4] = Some(t.insert(bx(8, 0, 0), 4));
+        (t, proxies)
+    }
+
+    fn write_leaves(t: &crate::dynamic_bvh::DynamicAabbTree, p: &[Option<u32>]) -> Vec<u8> {
+        let mut w = super::W(Vec::new());
+        super::w_tree_leaves(&mut w, t, p);
+        w.0
+    }
+
+    fn read_leaves(b: &[u8]) -> (crate::dynamic_bvh::DynamicAabbTree, Vec<Option<u32>>) {
+        let mut r = super::R { data: b, pos: 0 };
+        let out = super::r_tree_leaves(&mut r).expect("leaf set");
+        assert_eq!(r.pos, b.len(), "every byte read");
+        out
+    }
+
+    /// The leaf set of `t`, each proxy's (body, box), and the pairs.
+    fn tree_state(t: &crate::dynamic_bvh::DynamicAabbTree, p: &[Option<u32>]) -> String {
+        let mut leaves: Vec<_> = t
+            .nodes
+            .iter()
+            .filter(|n| n.is_leaf && n.user_data != crate::dynamic_bvh::NULL_NODE)
+            .map(|n| (n.user_data, format!("{:?}", n.aabb)))
+            .collect();
+        leaves.sort();
+        let proxies: Vec<_> = p
+            .iter()
+            .map(|p| p.map(|id| (t.user_data(id), format!("{:?}", t.get_aabb(id)))))
+            .collect();
+        format!(
+            "{leaves:?} {proxies:?} {:?} {:?} {:?}",
+            t.find_pairs(),
+            t.margin,
+            t.metric
+        )
+    }
+
+    /// Two histories that end with the same leaves write the same bytes, and
+    /// a freed node leaves nothing behind: the bytes are those of a tree that
+    /// only ever held the live leaves.
+    #[test]
+    fn tree_leaf_set_bytes_depend_only_on_the_leaves() {
+        let (a, pa) = tree_with_history(&[0, 1, 2, 3, 4, 5]);
+        let (b, pb) = tree_with_history(&[5, 3, 1, 4, 2, 0]);
+        assert!(!a.free_list.is_empty(), "control: a has freed nodes");
+        assert_ne!(
+            format!("{:?}", a.nodes),
+            format!("{:?}", b.nodes),
+            "control: the two layouts differ"
+        );
+        assert_eq!(tree_state(&a, &pa), tree_state(&b, &pb));
+        assert_eq!(write_leaves(&a, &pa), write_leaves(&b, &pb));
+
+        // a tree that never held body 2 (and holds body 4 at its new box)
+        let mut c = crate::dynamic_bvh::DynamicAabbTree::new();
+        c.margin = fx(1, 4);
+        let mut pc = vec![None; 6];
+        for i in [0usize, 1, 3, 5] {
+            let x = i as i64;
+            pc[i] = Some(c.insert(bx(2 * x, 0, x % 2), i as u32));
+        }
+        pc[4] = Some(c.insert(bx(8, 0, 0), 4));
+        assert_eq!(write_leaves(&a, &pa), write_leaves(&c, &pc));
+    }
+
+    /// The bytes: margin, the three metric weights, the proxy count, then per
+    /// body `0` or `1` and the stored (already fattened) box.
+    #[test]
+    fn tree_leaf_set_layout() {
+        let (t, p) = tree_with_history(&[0, 1, 2, 3, 4, 5]);
+        let b = write_leaves(&t, &p);
+        let fix = 16;
+        let aabb = 6 * fix;
+        let live = p.iter().flatten().count();
+        assert_eq!(live, 5);
+        assert_eq!(b.len(), 4 * fix + 8 + p.len() + live * aabb);
+        assert_eq!(&b[..8], &t.margin.hi.to_le_bytes()[..], "margin first");
+        assert_eq!(&b[8..fix], &t.margin.lo.to_le_bytes()[..]);
+        let at = 4 * fix;
+        assert_eq!(&b[at..at + 8], &6u64.to_le_bytes());
+        // body 0: present, its stored box (fattened by the margin once)
+        assert_eq!(b[at + 8], 1);
+        let mut w = super::W(Vec::new());
+        w.aabb(t.get_aabb(p[0].expect("body 0")));
+        assert_eq!(&b[at + 9..at + 9 + aabb], &w.0[..]);
+        // body 2: absent
+        let body2 = at + 8 + 2 * (1 + aabb);
+        assert_eq!(b[body2], 0);
+    }
+
+    /// Reading rebuilds the tree: the same state, a proxy per written body
+    /// keyed by that body, no freed node and no free list, the stored boxes
+    /// kept as is (not fattened again), and the layout of inserting the
+    /// leaves in body index order.
+    #[test]
+    fn tree_leaf_set_round_trip_rebuilds_the_tree() {
+        let (t, p) = tree_with_history(&[3, 0, 5, 1, 4, 2]);
+        let b = write_leaves(&t, &p);
+        let (r, rp) = read_leaves(&b);
+        assert_eq!(tree_state(&r, &rp), tree_state(&t, &p));
+        assert_eq!(rp.len(), p.len());
+        for (i, q) in rp.iter().enumerate() {
+            assert_eq!(q.is_some(), p[i].is_some(), "body {i}");
+            if let Some(id) = *q {
+                assert_eq!(r.user_data(id) as usize, i, "proxy of body {i}");
+                assert_eq!(r.get_aabb(id), t.get_aabb(p[i].expect("live")));
+            }
+        }
+        assert!(r.free_list.is_empty());
+        assert_eq!(r.nodes.len(), 2 * 5 - 1, "5 leaves and 4 internal nodes");
+        assert_eq!(write_leaves(&r, &rp), b, "fixed point");
+
+        // the documented order: the leaves inserted by body index
+        let mut want = crate::dynamic_bvh::DynamicAabbTree::new();
+        want.margin = t.margin;
+        for (i, q) in p.iter().enumerate() {
+            if let Some(id) = *q {
+                want.insert_fat(t.get_aabb(id), i as u32);
+            }
+        }
+        assert_eq!(format!("{:?}", r.nodes), format!("{:?}", want.nodes));
+        assert_eq!(r.root, want.root);
+    }
+
+    /// An empty map and a map of bodies without proxies read back as an
+    /// empty tree; a truncated leaf, a bad flag and a bad metric are refused.
+    #[test]
+    fn tree_leaf_set_edge_cases() {
+        let t = crate::dynamic_bvh::DynamicAabbTree::new();
+        for p in [vec![], vec![None, None]] {
+            let b = write_leaves(&t, &p);
+            let (r, rp) = read_leaves(&b);
+            assert_eq!(rp, p);
+            assert!(r.nodes.is_empty());
+            assert_eq!(r.root, crate::dynamic_bvh::NULL_NODE);
+        }
+        let (t, p) = tree_with_history(&[0, 1, 2, 3, 4, 5]);
+        let b = write_leaves(&t, &p);
+        let mut r = super::R {
+            data: &b[..b.len() - 1],
+            pos: 0,
+        };
+        assert_eq!(
+            super::r_tree_leaves(&mut r).err(),
+            Some(WorldSnapshotError::Truncated)
+        );
+        let mut x = b.clone();
+        x[4 * 16 + 8] = 2; // body 0's flag
+        let mut r = super::R { data: &x, pos: 0 };
+        assert!(super::r_tree_leaves(&mut r).is_err());
+        let mut x = b;
+        x[16..64].fill(0); // all three metric weights zero
+        let mut r = super::R { data: &x, pos: 0 };
+        assert!(super::r_tree_leaves(&mut r).is_err());
+    }
+
+    /// The version 1 to 3 form (every node, the free list, proxy ids) reads
+    /// back as the same rebuilt tree as the leaf set does, and a proxy id
+    /// past the stored nodes is refused as dangling.
+    #[test]
+    fn tree_legacy_form_is_rebuilt_like_the_leaf_set() {
+        let (t, p) = tree_with_history(&[2, 5, 0, 4, 1, 3]);
+        let mut w = super::W(Vec::new());
+        super::w_tree_legacy(&mut w, &t, &p);
+        let mut r = super::R { data: &w.0, pos: 0 };
+        let (l, lp) = super::r_tree_legacy(&mut r).expect("legacy");
+        assert_eq!(r.pos, w.0.len());
+        let (n, np) = read_leaves(&write_leaves(&t, &p));
+        assert_eq!(
+            format!("{:?} {:?}", l.nodes, lp),
+            format!("{:?} {:?}", n.nodes, np)
+        );
+        assert_eq!(tree_state(&l, &lp), tree_state(&t, &p));
+
+        let mut bad = p.clone();
+        bad[0] = Some(t.nodes.len() as u32);
+        let mut w = super::W(Vec::new());
+        super::w_tree_legacy(&mut w, &t, &bad);
+        let mut r = super::R { data: &w.0, pos: 0 };
+        assert_eq!(
+            super::r_tree_legacy(&mut r).err(),
+            Some(WorldSnapshotError::DanglingIndex {
+                section: "broadphase_proxies",
+                index: t.nodes.len(),
+                len: t.nodes.len(),
+            })
+        );
+    }
+
+    /// A `DynamicTree` world with removals written in the version 3 form
+    /// restores to a world whose version 4 snapshot is the live world's, and
+    /// both step on identically.
+    #[test]
+    fn version_3_dynamic_tree_form_restores_to_the_leaf_set() {
+        let mut a = scene(SolverBackend::Xpbd, Broadphase::DynamicTree);
+        let mut drv = Driver::new();
+        for _ in 0..10 {
+            drv.frame(&mut a, dt());
+        }
+        let last = a.bodies.len() - 1;
+        a.remove_body(last);
+        drv.frame(&mut a, dt());
+        assert!(
+            !a.broadphase_tree.free_list.is_empty(),
+            "control: freed nodes"
+        );
+        let v3 = as_version_3(&a);
+        let mut b = target_world();
+        b.restore_world(&v3).expect("v3");
+        assert_eq!(b.snapshot_world(), a.snapshot_world());
+        assert!(b.broadphase_tree.free_list.is_empty());
+        assert!(differing(&mut a, &mut b).is_empty());
+        let mut drv_b = drv.clone();
+        for _ in 0..20 {
+            drv.frame(&mut a, dt());
+            drv_b.frame(&mut b, dt());
+            assert!(differing(&mut a, &mut b).is_empty());
+        }
     }
 }

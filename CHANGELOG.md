@@ -21,6 +21,8 @@ were introduced during that release window.
 
 - **Behavior change:** `PhysicsWorld::remove_body` が外す body に付いた SDF collider (`SdfCollider::new_dynamic` でその index を指すもの) を一緒に取り除く 他の collider の順序は保ち、joint と同じく後ろの collider の位置 (`sdf_colliders` の index) が詰まる 末尾から移った body に付いた collider の `body_index` は移動先の index に付け替える (従来は付け替えず、外した body の collider は移ってきた別の body に付いていた) `MultiWorld::transfer_body` では付いていた collider が body と一緒に移動先の world へ移る (従来は元の world に残った)
 
+- **Behavior change:** version 4 の `snapshot_world` は `Broadphase::DynamicTree` の永続 tree を leaf の集合として書く (margin・metric の後に、body index ごとに proxy の有無と leaf が保持する fat AABB) node の id・内部 node・解放済み node・free list は書かない 復元は leaf を body index 順に挿入して tree を作り直す 従来は解放済み node と free list まで書いたため、半径を持つ body を足して 1 step 後に外すと、body の位置・速度は一致したまま snapshot が恒久的に長くなっていた (例: 4258 byte 対 4016 byte) step が tree から読むのは leaf の箱が重なる body index の対 (整列・重複除去済み) だけなので、復元後の step と snapshot は元の world と bit 一致する 作り直した tree の形は元と違いうるので、`broadphase_stats().height` は復元前後で異なることがある version 1〜3 の blob の tree も読み込んだ後に同じ手順で作り直す 復元の時間は 1e4 leaf の world 全体で約 32 ms から約 50 ms に増え、blob は約 19 % 短くなる (arm64、release) `Bvh` / `Hybrid` の world は tree が空のまま (節の書式だけが変わる)
+
 ### Fixed
 
 - `PhysicsWorld::remove_body`: island を作り直す際に全 body の sleep 状態を Awake / `idle_frames` 0 に戻していたため、無関係な body を 1 体外すだけで眠っていた body が全員起きて 1 step 積分され、その後の軌道が恒久的に変わっていた (外した body と接しない world との比較で +200 step 後も位置が不一致) sleep data を `bodies` と同じく swap-remove して、残る body はそれぞれの sleep 状態を保つ (外した body に触れていた body と joint で繋がった body は起こす、Changed 参照) 試験は `tests/analytic_remove_body_keeps_sleep.rs` と `tests/world_snapshot_history_independence.rs` (ignore を外した)

@@ -75,16 +75,6 @@ fn payload_len(b: &[u8]) -> usize {
     u64::from_le_bytes(b[LEN_AT..LEN_AT + 8].try_into().expect("8 bytes")) as usize
 }
 
-/// The version 3 form of a version 4 blob: the same payload behind the
-/// 16-byte header (no identifiers).
-fn as_version_3(v4: &[u8]) -> Vec<u8> {
-    let mut out = v4[..SEMANTICS_AT].to_vec();
-    out[VERSION_AT..VERSION_AT + 2].copy_from_slice(&3u16.to_le_bytes());
-    out.extend_from_slice(&v4[PAYLOAD_AT..v4.len() - CHECKSUM]);
-    out.extend_from_slice(&[0; CHECKSUM]);
-    reseal(out)
-}
-
 fn id(b: &[u8], at: usize) -> [u8; 32] {
     b[at..at + 32].try_into().expect("32 bytes")
 }
@@ -273,9 +263,11 @@ fn older_versions_are_accepted_as_unpinned() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let v2: &[u8] = include_bytes!("fixtures/world_snapshot_v2_stacked.bin");
     let a = scene();
-    let v3 = as_version_3(&a.snapshot_world());
+    // the version 3 form of `scene()`, written by the version 3 writer (16-byte
+    // header, the broad-phase tree node by node)
+    let v3: &[u8] = include_bytes!("fixtures/world_snapshot_v3_joint_pair.bin");
     let some = a.law_id(&PHYSICS_SEMANTICS_ID);
-    for (version, blob) in [(1u16, v1), (2, v2), (3, &v3[..])] {
+    for (version, blob) in [(1u16, v1), (2, v2), (3, v3)] {
         assert_eq!(&blob[VERSION_AT..VERSION_AT + 2], &version.to_le_bytes());
         for expected in [None, Some(&some), Some(&[0xAB; 32])] {
             let mut t = PhysicsWorld::new(PhysicsConfig::default());
@@ -289,7 +281,7 @@ fn older_versions_are_accepted_as_unpinned() {
         assert_eq!(t.restore_world(blob), Ok(()), "version {version}");
     }
     // the version 3 form holds the same world as the version 4 blob
-    let b = PhysicsWorld::from_world_snapshot(&v3).expect("v3 blob");
+    let b = PhysicsWorld::from_world_snapshot(v3).expect("v3 blob");
     assert_eq!(b.snapshot_world(), a.snapshot_world());
 }
 

@@ -5,16 +5,16 @@
 //! the only varying input instead of insertion order.
 //!
 //! `snapshot_world` always writes the broadphase kind as a one-byte tag,
-//! followed by the persistent tree
-//! (`src/solver/world_snapshot.rs::snapshot_world`, "the persistent tree
-//! node by node") unconditionally, regardless of which kind is selected.
+//! followed by the persistent tree as its leaf set
+//! (`src/solver/world_snapshot.rs::snapshot_world`) unconditionally,
+//! regardless of which kind is selected.
 //! Reading the step code shows the tree is only ever populated along the
 //! `Broadphase::DynamicTree` path; with `Bvh` or `Hybrid` selected it stays
 //! empty. The prediction this file checks: `Bvh` and `Hybrid` snapshots
 //! should differ from each other by only the one-byte kind tag (both leave
 //! the tree section empty), while `DynamicTree` should differ by much more
-//! (the tree section actually holds content) — i.e. the tree's shape, not
-//! just the choice of kind, is what shows up in the bytes.
+//! (the tree section actually holds content) — i.e. the tree's leaves, not
+//! just the choice of kind, are what show up in the bytes.
 
 use alice_physics::joint::{BallJoint, Joint};
 use alice_physics::math::{Fix128, Vec3Fix};
