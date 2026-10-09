@@ -1993,6 +1993,20 @@ fn toi_convex<S: Support>(
     max_t: Fix128,
     solid: &S,
 ) -> Option<Contact> {
+    toi_by(a, b, r, inflate, d, max_t, |a, b| convex_dist(a, b, solid))
+}
+
+/// [`toi_convex`] for a convex piece given by its distance from a core:
+/// `core_dist` is GJK for [`toi_convex`], or a closed form.
+fn toi_by(
+    a: Vec3Fix,
+    b: Vec3Fix,
+    r: Fix128,
+    inflate: Fix128,
+    d: Vec3Fix,
+    max_t: Fix128,
+    core_dist: impl Fn(Vec3Fix, Vec3Fix) -> Dist,
+) -> Option<Contact> {
     let reach = r + inflate;
     let mut t = Fix128::ZERO;
     // The last time known clear (gap above the tolerance), its near contact, and
@@ -2003,7 +2017,7 @@ fn toi_convex<S: Support>(
     let mut deep: Option<Fix128> = None;
     for _ in 0..TRACE_MAX_STEPS {
         let off = d * t;
-        let state = match convex_dist(a + off, b + off, solid) {
+        let state = match core_dist(a + off, b + off) {
             Dist::Outside {
                 dist,
                 point,
@@ -2019,7 +2033,7 @@ fn toi_convex<S: Support>(
                 if gap <= TRACE_TOLERANCE {
                     let gap_at = |t: Fix128| {
                         let off = d * t;
-                        match convex_dist(a + off, b + off, solid) {
+                        match core_dist(a + off, b + off) {
                             Dist::Outside { dist, .. } => Some(dist - reach),
                             _ => None,
                         }
@@ -2031,7 +2045,7 @@ fn toi_convex<S: Support>(
                         // Not a proof of separation: see `GRAZE_GAP`.
                         let probe = |t: Fix128| {
                             let off = d * t;
-                            convex_dist(a + off, b + off, solid)
+                            core_dist(a + off, b + off)
                         };
                         return graze_contact(probe, reach, inflate, t, max_t);
                     }
@@ -2696,11 +2710,40 @@ impl Piece<'_> {
                         half_height,
                     } if point_core => {
                         let (o, dl) = to_local(a, d, center, rotation);
-                        let h = to_world(
-                            Some(sweep_local_cylinder(o, dl, radius, half_height, r, max_t)?),
+                        let found = to_world(
+                            sweep_local_cylinder(o, dl, radius, half_height, r, max_t),
                             rotation,
-                        )?;
-                        self.entering(Contact::from_ray(a, d, r, h), a, b, r, d, max_t)
+                        );
+                        let cap = r + r + Fix128::ONE;
+                        // The closed form is the first ray hit on the cylinder
+                        // grown by `r` (two cylinders and two tori); taken only
+                        // where the exact distance agrees (see
+                        // `sweep_local_cylinder`), with the contact's point and
+                        // normal from the nearest point of the cylinder.
+                        let checked = found.and_then(|h| {
+                            if h.t.is_zero() {
+                                return Some(Contact::from_ray(a, d, r, h));
+                            }
+                            let c = a + d * h.t;
+                            match self.dist(c, c, cap) {
+                                Dist::Outside {
+                                    dist,
+                                    point,
+                                    normal,
+                                } if dist - r >= -TRACE_TOLERANCE => Some(Contact {
+                                    t: h.t,
+                                    point,
+                                    normal,
+                                }),
+                                _ => None,
+                            }
+                        });
+                        match checked {
+                            Some(c) => self.entering(c, a, b, r, d, max_t),
+                            None => {
+                                toi_by(a, b, r, Fix128::ZERO, d, max_t, |p, q| self.dist(p, q, cap))
+                            }
+                        }
                     }
                     Shape::Torus {
                         major_radius,
@@ -2985,6 +3028,16 @@ fn sweep_local_box(
 
 /// A cylinder along `Y` grown by `r` (rounded), in its frame: the cylinder of
 /// radius `radius + r`, the one of half height `hh + r`, and the two rim tori.
+///
+/// The faces of the two cylinders beyond the rims (the side of the tall one
+/// above a cap, the caps of the wide one outside the radius) are inside the
+/// tori; they are the first hit only when a torus is not found. The torus ray
+/// is sphere traced, and a path at a small angle to a cap (`10⁻⁶` rad) or
+/// along its plane through the rounded rim takes more than its step budget:
+/// it was then reported on the tall cylinder's side, `r` off the surface with a
+/// horizontal normal, or deep in the cap, or not at all. The caller checks a
+/// hit against the exact distance and falls back to the time of impact on that
+/// distance.
 fn sweep_local_cylinder(
     o: Vec3Fix,
     d: Vec3Fix,
