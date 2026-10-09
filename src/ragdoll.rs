@@ -422,6 +422,10 @@ impl RagdollBuilder {
 mod tests {
     use super::*;
     use crate::solver::SolverConfig;
+    #[cfg(not(feature = "std"))]
+    use alloc::collections::BTreeSet;
+    #[cfg(feature = "std")]
+    use std::collections::BTreeSet;
 
     fn world() -> PhysicsWorld {
         PhysicsWorld::new(SolverConfig::default())
@@ -453,7 +457,7 @@ mod tests {
             Vec3Fix::new(Fix128::ZERO, Fix128::from_int(1), Fix128::ZERO),
         );
         // Every bone index is unique.
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = BTreeSet::new();
         for &b in &handle.bones {
             assert!(seen.insert(b), "duplicate bone index {b}");
         }
@@ -463,7 +467,7 @@ mod tests {
     fn build_registers_14_joints() {
         let mut w = world();
         let handle = RagdollBuilder::build(&mut w, RagdollProportions::human_male(), Vec3Fix::ZERO);
-        let mut seen = std::collections::HashSet::new();
+        let mut seen = BTreeSet::new();
         for &j in &handle.joints {
             assert!(seen.insert(j), "duplicate joint index {j}");
         }
