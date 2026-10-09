@@ -24,6 +24,9 @@ were introduced during that release window.
 - CI: `cargo semver-checks` は既定の feature の推測で全 feature を有効にし、`wasm` と `ffi` の同時指定が compile_error になって rustdoc が毎回失敗していたが、`|| true` で何も比較しないまま成功していた feature を明示し (`std,simd,parallel,ffi,gpu-solver-bridge`、223 項目を比較)、道具の失敗と比較 0 件を失敗にする semver の指摘そのものは従来どおり参考扱いで job summary に出す 件数は `scripts/semver_checked.py` が読む (CARGO_TERM_COLOR=always で `Checked` の直後に入る色の escape を除いてから読み、件数が無いか 0 なら `::error::` を出して失敗する、`set -e` と pipefail の下でも理由を出す前に止まらない、試験は `scripts/test_semver_checked.py`)、step 自体も色を切る
 - CI: tool の出力から端末の escape sequence を除く処理を `scripts/ansi.py` に一本化した (`affected_tests` / `run_feature_gated_tests` / `semver_checked` / `bench_counts_check` / `downstream_test_counts` / `run_ignored` が使う、`run_ignored` は以前は何も除いていなかった) SGR の色だけでなく、libtest が `--color always` で色付きの語の後に出す文字集合の指定 (`ESC ( B`) と OSC も除く (SGR だけを除くと `test result: ok.` が `ok\x1b(B.` のまま残り件数が 0 に読める) 試験は `scripts/test_ansi.py` (ci.yml と preflight、private parameter・intermediate byte・`ESC ) * +` の文字集合の指定を含む) と各 script の試験の libtest の色付き sample `bench-gate.yml` の paths に `scripts/bench_counts_check.py` と `scripts/ansi.py` を足した
 
+### Fixed
+- 試験: `tests/analytic_math_wiring.rs` の `dot_batch_4_degenerate_zero_and_extreme_magnitude_lanes` (x86_64 + `simd` でだけ build される) は 3 番目の lane を `dot((1,0,0), (1,0,0)) = 1` で組んでいたので、`dot(x, q) = −7` の主張と食い違って失敗していた (x86_64 で `simd` の試験が走るまで誰も実行していなかった) lane 2 の相手を `q` に直した
+
 ## [2.1.0] - 2026-10-10
 
 ### Added
