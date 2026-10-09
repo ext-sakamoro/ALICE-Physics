@@ -81,7 +81,7 @@ jobs:
           # a red baseline measured nothing and used to be hidden by `|| true`.
           ulimit -v 6291456
           set +e
-          cargo mutants ${{ inputs.scope }} --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+          cargo mutants ${{ inputs.scope }} --timeout 300 --build-timeout 240 -j 2 --output . \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib
           rc=$?
           set -e
@@ -183,10 +183,12 @@ jobs:
           # cancelled with its missed mutants unreported.
           # shellcheck disable=SC2086
           timeout --signal=INT --kill-after=10m 270m \
-            cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output . \
             ${features:+--features "$features"} --cargo-arg=--lib $tests $moved
           rc=$?
           set -e
+          # (`--output .` writes ./mutants.out; `--output mutants.out` wrote
+          # mutants.out/mutants.out and the reads below found nothing)
           # cargo-mutants exits 0 without an output directory when the diff holds nothing
           # to mutate (doc comments only, Cargo.toml only): nothing to check, not a failure
           if [ "$rc" -eq 0 ] && [ ! -d mutants.out ]; then
@@ -224,17 +226,27 @@ jobs:
           moved=$(python3 scripts/mutants_axis_exclude.py --axis "${{ matrix.features }}" --other "$other" $files)
           set +e
           # shellcheck disable=SC2086
-          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output mutants.out \
+          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output . \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             $files $moved --cargo-arg=--lib
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
           # the full list of mutants left to the other axis (not per shard), for the ratchet
-          # to check that the other axis plans every one of them
+          # to check that the other axis plans every one of them (`--colors never`: with
+          # CARGO_TERM_COLOR=always the list carries ANSI codes the names in mutants.json lack).
+          # Plain commands, not process substitutions, so a failed listing stops the step.
           # shellcheck disable=SC2086
-          comm -23 <(cargo mutants --list $files | sort) <(cargo mutants --list $files $moved | sort) \
-            > mutants.out/axis-moved.txt
+          cargo mutants --list --colors never $files > /tmp/mutants-all.txt
+          # shellcheck disable=SC2086
+          cargo mutants --list --colors never $files $moved > /tmp/mutants-kept.txt
+          sort /tmp/mutants-all.txt > /tmp/mutants-all.sorted
+          sort /tmp/mutants-kept.txt > /tmp/mutants-kept.sorted
+          comm -23 /tmp/mutants-all.sorted /tmp/mutants-kept.sorted > mutants.out/axis-moved.txt
+          if [ -n "$moved" ] && [ ! -s mutants.out/axis-moved.txt ]; then
+            echo "::error::lines were left to the other axis but no mutant was listed for them"
+            exit 1
+          fi
       - name: Summary
         if: always()
         run: |
