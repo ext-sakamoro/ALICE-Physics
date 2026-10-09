@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -154,6 +155,27 @@ def load_gates(gates_toml: Path) -> list[Gate]:
     return gates
 
 
+def build_argv(run_template: str, source: Path, tmp_dir: Path) -> list[str]:
+    """Tokenize `run` and substitute {script}/{dir}, without a shell: the
+    template is tokenized with shlex (its own text is plain ASCII with no
+    platform-specific path separators, so this is safe on every OS),
+    `{script}`/`{dir}` are substituted per already-split token (never
+    re-parsed, so a backslash-separated Windows path substituted in
+    cannot be misread as a shell escape), and a literal "python3" or
+    "python" token resolves to `sys.executable` -- the interpreter that
+    is actually running this script, not a name that may not exist on
+    PATH (Windows ships `python`, not necessarily `python3`)."""
+    script = str(source)
+    dir_ = str(tmp_dir)
+    argv = []
+    for tok in shlex.split(run_template):
+        if tok in ("python3", "python"):
+            argv.append(sys.executable)
+        else:
+            argv.append(tok.replace("{script}", script).replace("{dir}", dir_))
+    return argv
+
+
 def run_control(gate: Gate, control: Control) -> list[str]:
     """Run one control; return a list of error strings (empty if it passed)."""
     errors: list[str] = []
@@ -165,12 +187,12 @@ def run_control(gate: Gate, control: Control) -> list[str]:
                 shutil.copytree(item, dest)
             else:
                 shutil.copy2(item, dest)
-        command = gate.run.format(script=str(REPO_ROOT / gate.source), dir=str(tmp_dir))
+        argv = build_argv(gate.run, REPO_ROOT / gate.source, tmp_dir)
         timeout = TIME_LIMIT_S[gate.cost]
         try:
             proc = subprocess.run(
-                command,
-                shell=True,
+                argv,
+                shell=False,
                 cwd=REPO_ROOT,
                 capture_output=True,
                 text=True,
