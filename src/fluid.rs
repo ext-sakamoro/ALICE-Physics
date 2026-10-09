@@ -636,7 +636,7 @@ mod tests {
             let r = h * Fix128::from_ratio(k, 10);
             let d = hf - r.to_f64();
             let h6 = hf * hf * hf * hf * hf * hf;
-            let want = -45.0 / (std::f64::consts::PI * h6) * d * d;
+            let want = -45.0 / (core::f64::consts::PI * h6) * d * d;
             let got = spiky_grad(r, h).to_f64();
             assert!(got < 0.0, "gradient points inward");
             assert!(
