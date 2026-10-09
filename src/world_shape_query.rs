@@ -806,11 +806,10 @@ fn closest_on_triangle_barycentric(a: Vertex, b: Vertex, c: Vertex) -> (Vec<Vert
 /// one generator of a curved solid are coplanar but for rounding, and the
 /// sign of such a volume (and of the origin's side of a face) is that
 /// rounding, which counted the origin inside and reported an intersection far
-/// from the surface. Its four faces are then all candidates, and the origin is
-/// inside (`None`) exactly when it is within `h` of the nearest of them: `h` is
-/// GJK's own intersection tolerance (`|v| ≤ 2⁻³²`), every point of the flat
-/// tetrahedron is within `h` of a face, and a point within `h` of a face is
-/// within `h` of the Minkowski difference.
+/// from the surface. Its nearest face is returned instead: every point of the
+/// flat tetrahedron is within `h` of a face, so an origin inside it is within
+/// `h` of that face, and GJK then stops at its own intersection tolerance
+/// (`|v| ≤ 2⁻³²`).
 fn closest_on_tetrahedron(a: Vertex, b: Vertex, c: Vertex, d: Vertex, k: u32) -> Option<Nearest> {
     let faces = [(a, b, c, d), (a, c, d, b), (a, d, b, c), (b, d, c, a)];
     let flat_height = if k >= 32 {
@@ -845,13 +844,7 @@ fn closest_on_tetrahedron(a: Vertex, b: Vertex, c: Vertex, d: Vertex, k: u32) ->
             }
         }
     }
-    if flat {
-        let within = best
-            .as_ref()
-            .is_none_or(|b| nearest_point(b).length() <= flat_height);
-        return if within { None } else { best };
-    }
-    if inside {
+    if inside && !flat {
         None
     } else {
         best
