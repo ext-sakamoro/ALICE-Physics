@@ -141,6 +141,19 @@ class Ratchet(unittest.TestCase):
         self.assertEqual(mr.main(["--out", str(done), "--complete-only"]), 0)
         self.assertEqual(mr.main(["--out", str(cut), "--complete-only"]), 1)
 
+    def test_the_same_directory_twice_counts_once(self):
+        d = run_dir(self.root, "mutants-out-0-default", caught=[A])
+        code, errors = self.complete([d, d], 2)
+        self.assertEqual(code, 1)
+        self.assertTrue(any("1 of 2" in e for e in errors), errors)
+
+    def test_an_unreadable_outcomes_file_is_reported(self):
+        d = run_dir(self.root, "mutants-out-0-default", caught=[A])
+        (d / "mutants.out" / "outcomes.json").write_text("", encoding="utf-8")
+        code, errors = self.complete([d], 1)
+        self.assertEqual(code, 1)
+        self.assertTrue(any("not readable" in e for e in errors), errors)
+
     def complete(self, dirs: list[Path], expect: int) -> tuple[int, list[str]]:
         errors = mr.completeness(dirs, expect)
         return (1 if errors else 0), errors
