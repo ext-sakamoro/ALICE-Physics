@@ -15,33 +15,24 @@
 //!   reference sum is computed here as `v_i · m_i` (an integer `m_i`, so the
 //!   product is exact), not with the participant's own helper.
 //!
-//! # Rounding bound on XPBD
+//! # Exact on both backends
 //!
-//! XPBD derives every body velocity from the position change of the substep,
-//! `v' = ((x + v·h) − x) · (1/h)`. With `v·h` truncated by at most `ε < 2⁻⁶⁴`,
-//! `1/h` rounded by `δ < 2⁻⁶⁴` and the product rounded by `ε' ≤ 2⁻⁶⁴`,
-//! `|v' − v| ≤ ε/h + |v·h|·δ + ε' ≤ 2⁻⁶⁴ (1/h + |v| h + 2)` per component.
-//! The medium's bookkeeping is exact, so this is the only momentum that goes
-//! missing, and over `n` substeps
+//! XPBD ends every substep with `v = v_pred + (x − x_pred) / h`: the
+//! predicted velocity plus the correction the solve applied. Nothing in the
+//! momentum scenes moves a body in the solve (no gravity, contact or
+//! constraint), so
+//! `x = x_pred` and every body keeps `v_pred` bit for bit, as TGS keeps the
+//! integrated velocity. Both backends then apply the participant's staged
+//! velocity updates to the same velocities, the medium's bookkeeping is
+//! exact, and `Σ m_i v_i + P` is the same bit pattern in every frame on both.
+//! The two runs agree bit for bit wherever their substep widths are the same
+//! value (XPBD hands the participants `h = dt / substeps`, TGS
+//! `dt · (1 / substeps as f32)`).
 //!
-//! ```text
-//! |ΔP_total| ≤ n · Σ_i m_i · 2⁻⁶⁴ (1/h + V h + 2)        (|v| ≤ V)
-//! ```
-//!
-//! per component. The scenes stay in the no-overshoot regime
-//! (`c_i h / m_i ≤ 1`, `Σ c_i h / M ≤ 1`), where every velocity is a convex
-//! combination of the previous ones, so `V` is the largest initial speed
-//! component (plus one for slack). On TGS the velocity is kept as integrated
-//! and the sum is the same bit pattern in every frame.
-//!
-//! XPBD and TGS differ by the XPBD loss above, propagated by the exchange.
-//! The exchange map `I − h L` is self-adjoint in the mass-weighted inner
-//! product `⟨a, b⟩ = Σ m_i a_i b_i + M a_u b_u` with eigenvalues in
-//! `[−1, 1]` in this regime, so it does not grow a difference in that norm;
-//! the difference after `n` substeps is then at most `n q` in that norm, with
-//! `q = √(Σ m) · 2⁻⁶⁴ (1/h + V h + 10)` (the `+ 10` raw units cover the
-//! medium's own roundings of `u`, `F`, `dv` in the two runs), i.e. at most
-//! `n q / √m_min` on any one velocity component.
+//! Re-deriving the velocity from the position change, `(x − x_prev) / h`,
+//! loses the low bits the truncating product `v·h` dropped (up to
+//! `2⁻⁶⁴ / h` per component and substep), which breaks the exact sum; the
+//! momentum tests below catch that.
 
 use alice_physics::coupling_medium::{
     DragMedium, DragMediumError, DRAG_MEDIUM_KIND, MEDIUM_OBS_MOMENTUM, MEDIUM_OBS_VELOCITY,
@@ -218,8 +209,6 @@ const VEL: [[f64; 3]; 4] = [
     [-1.5, 0.25, 0.0],
 ];
 const COEFF: [(usize, f64); 4] = [(0, 0.3), (1, 0.7), (2, 2.0), (3, 1.3)];
-/// Largest initial speed component (bodies and medium) plus one.
-const V_BOUND: f64 = 4.0;
 
 fn momentum_scene(backend: SolverBackend, substeps: usize) -> PhysicsWorld {
     let mut w = world(backend, substeps);
@@ -236,42 +225,27 @@ const CASES: [(i64, i64, usize); 3] = [(1, 64, 4), (1, 60, 8), (1, 64, 3)];
 /// Exact momentum conservation holds when (all four are true here): every
 /// coupled body has a power-of-two mass `≥ 1` (so `dv / inv_mass` and
 /// `v · m` are exact), no other participant pushes those bodies, nothing else
-/// changes their momentum (no gravity, damping or contact), and the
-/// world keeps the integrated velocity (TGS). On TGS the sum is the same bit
-/// pattern in every frame; on XPBD it stays within the bound of the module
-/// documentation.
-///
-/// XPBD: this tightens to `assert_eq!` once XPBD keeps the predicted velocity
-/// of bodies its constraints did not move.
+/// changes their momentum (no gravity, damping or contact), and the world
+/// keeps the velocity of a body its solve did not move (TGS keeps the
+/// integrated velocity, XPBD `v_pred`, see the module documentation). The
+/// sum is then the same bit pattern in every frame on both backends, for
+/// dyadic and non-dyadic frame widths and for power-of-two and other substep
+/// counts.
 #[test]
-fn total_momentum_is_conserved_exactly_on_tgs_and_within_the_bound_on_xpbd() {
-    let sum_m: f64 = MASSES.iter().map(|&m| m as f64).sum();
+fn total_momentum_is_conserved_exactly_on_both_backends() {
     for (num, den, substeps) in CASES {
         let dt = Fix128::from_ratio(num, den);
-        let h = num as f64 / den as f64 / substeps as f64;
         for backend in BACKENDS {
             let mut w = momentum_scene(backend, substeps);
             let start = total_momentum(&w, &MASSES);
             let (_, p0) = observed(&w, 0);
-            let mut worst = 0.0f64;
             for frame in 1..=240 {
                 w.try_step(dt).expect("step");
-                let now = total_momentum(&w, &MASSES);
-                match backend {
-                    SolverBackend::Tgs => {
-                        assert_eq!(now, start, "TGS {num}/{den} s{substeps} frame {frame}");
-                    }
-                    _ => {
-                        let n = (frame * substeps) as f64;
-                        let bound = n * sum_m * ULP * (1.0 / h + V_BOUND * h + 2.0);
-                        let d = max_abs(now - start);
-                        worst = worst.max(d / bound);
-                        assert!(
-                            d <= bound,
-                            "XPBD {num}/{den} s{substeps} frame {frame}: |ΔP| {d:e} > {bound:e}"
-                        );
-                    }
-                }
+                assert_eq!(
+                    total_momentum(&w, &MASSES),
+                    start,
+                    "{backend:?} {num}/{den} s{substeps} frame {frame}"
+                );
             }
             // The exchange moved momentum between bodies and medium (not a
             // conservation by doing nothing).
@@ -280,9 +254,6 @@ fn total_momentum_is_conserved_exactly_on_tgs_and_within_the_bound_on_xpbd() {
                 max_abs(p1 - p0) > 1.0,
                 "{backend:?}: medium momentum barely moved"
             );
-            if backend == SolverBackend::Xpbd {
-                println!("XPBD {num}/{den} s{substeps}: worst |ΔP| / bound = {worst:.3}");
-            }
         }
     }
 }
@@ -934,9 +905,8 @@ fn a_tiny_medium_mass_quantises_the_velocity() {
 /// medium (`M = 3`, `u = (0.004, 0, 0)`), `dt = 1/60`, 4 substeps, 600
 /// frames, the default sleep settings. The drag would let the bodies fall
 /// asleep after 60 frames under the sleep thresholds; the world wakes a body
-/// whenever a participant force changes it, so the sum stays as without sleep
-/// (TGS: the same bit pattern in every frame; XPBD: within the rounding bound
-/// of the module documentation).
+/// whenever a participant force changes it, so the sum stays as without sleep:
+/// the same bit pattern in every frame on both backends.
 #[test]
 fn momentum_is_conserved_while_coupled_bodies_sleep() {
     let vel = [
@@ -945,8 +915,6 @@ fn momentum_is_conserved_while_coupled_bodies_sleep() {
         [0.0, 0.0, 0.0],
         [0.0, 0.0, 0.0],
     ];
-    let sum_m: f64 = MASSES.iter().map(|&m| m as f64).sum();
-    let h = 1.0 / 240.0;
     for backend in BACKENDS {
         let mut w = PhysicsWorld::new(PhysicsConfig {
             gravity: Vec3Fix::ZERO,
@@ -961,14 +929,11 @@ fn momentum_is_conserved_while_coupled_bodies_sleep() {
         let start = total_momentum(&w, &MASSES);
         for frame in 1..=600 {
             w.try_step(Fix128::from_ratio(1, 60)).expect("step");
-            let now = total_momentum(&w, &MASSES);
-            if backend == SolverBackend::Tgs {
-                assert_eq!(now, start, "TGS frame {frame}");
-            } else {
-                let bound = (frame * 4) as f64 * sum_m * ULP * (1.0 / h + V_BOUND * h + 2.0);
-                let d = max_abs(now - start);
-                assert!(d <= bound, "XPBD frame {frame}: |ΔP| {d:e} > {bound:e}");
-            }
+            assert_eq!(
+                total_momentum(&w, &MASSES),
+                start,
+                "{backend:?} frame {frame}"
+            );
         }
         // The bodies did reach the common velocity (well below the sleep
         // threshold of 0.01) and are still exchanging momentum.
