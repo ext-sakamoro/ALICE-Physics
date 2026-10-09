@@ -15,9 +15,13 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed
+
+- **Behavior change:** `PhysicsWorld::remove_body` が起こす body を絞った 従来は全 body を起こしていたが、外した body の island (joint で繋がった body) と、外した body に触れていた非 static body (collision radius を持ち broad-phase の箱が重なるもの、その body の island ごと) だけを起こし、それ以外の眠っている body は眠ったまま残す ⇒ 外した body に載って眠っていた body は従来どおり起きて落ち、離れた場所で眠っている body は remove の前後で状態も軌道も変わらない (`StageWork` では残る body の `parked` / `integrated` が変わる) 試験は `tests/analytic_remove_body_wakes_dependents.rs` (支えを外した球と箱が床まで落ちて止まる / joint の相手が起きる)
+
 ### Fixed
 
-- `PhysicsWorld::remove_body`: island を作り直す際に全 body の sleep 状態を Awake / `idle_frames` 0 に戻していたため、無関係な body を 1 体外すだけで眠っていた body が全員起きて 1 step 積分され、その後の軌道が恒久的に変わっていた (外した body と接しない world との比較で +200 step 後も位置が不一致) sleep data を `bodies` と同じく swap-remove して、残る body はそれぞれの sleep 状態を保つ 試験は `tests/analytic_remove_body_keeps_sleep.rs` と `tests/world_snapshot_history_independence.rs` (ignore を外した)
+- `PhysicsWorld::remove_body`: island を作り直す際に全 body の sleep 状態を Awake / `idle_frames` 0 に戻していたため、無関係な body を 1 体外すだけで眠っていた body が全員起きて 1 step 積分され、その後の軌道が恒久的に変わっていた (外した body と接しない world との比較で +200 step 後も位置が不一致) sleep data を `bodies` と同じく swap-remove して、残る body はそれぞれの sleep 状態を保つ (外した body に触れていた body と joint で繋がった body は起こす、Changed 参照) 試験は `tests/analytic_remove_body_keeps_sleep.rs` と `tests/world_snapshot_history_independence.rs` (ignore を外した)
 
 ## [2.1.0] - 2026-10-10
 
