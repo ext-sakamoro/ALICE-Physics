@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Fixed
+
+- `PhysicsWorld::remove_body`: island を作り直す際に全 body の sleep 状態を Awake / `idle_frames` 0 に戻していたため、無関係な body を 1 体外すだけで眠っていた body が全員起きて 1 step 積分され、その後の軌道が恒久的に変わっていた (外した body と接しない world との比較で +200 step 後も位置が不一致) sleep data を `bodies` と同じく swap-remove して、残る body はそれぞれの sleep 状態を保つ 試験は `tests/analytic_remove_body_keeps_sleep.rs` と `tests/world_snapshot_history_independence.rs` (ignore を外した)
+
 ## [2.1.0] - 2026-10-10
 
 ### Added
