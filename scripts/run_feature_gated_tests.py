@@ -27,7 +27,9 @@ import sys
 from pathlib import Path
 
 # Features that neither `cargo test` nor `cargo test --features parallel` enable.
-FEATURES = ("neural", "replay", "analytics", "gpu-solver-bridge")
+# `simd` is here for its integration tests: the SIMD step of ci.yml runs --lib only,
+# so the x86_64 + simd module of analytic_math_wiring ran in no lane.
+FEATURES = ("neural", "replay", "analytics", "gpu-solver-bridge", "simd")
 
 ROOT = Path(__file__).resolve().parent.parent
 FEATURE_RE = re.compile(r'feature\s*=\s*"([A-Za-z0-9_-]+)"')

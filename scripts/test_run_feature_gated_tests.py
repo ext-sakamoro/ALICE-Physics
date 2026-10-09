@@ -146,5 +146,16 @@ class Check(unittest.TestCase):
         self.assertTrue(any("a: 1 failed" in p for p in problems), problems)
 
 
+
+class RepositoryList(unittest.TestCase):
+    def test_the_simd_gated_integration_tests_are_selected(self):
+        # the x86_64 + simd module of analytic_math_wiring (add_simd / cross_simd
+        # / dot_batch_4) and the simd items of audit_math ran in no lane: the
+        # SIMD step of ci.yml runs --lib only
+        picked = g.select(g.ROOT / "tests")
+        for target in ("analytic_math_wiring", "audit_math"):
+            self.assertIn("simd", picked.get(target, set()), (target, picked.get(target)))
+
+
 if __name__ == "__main__":
     unittest.main()
