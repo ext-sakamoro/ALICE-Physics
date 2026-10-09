@@ -120,50 +120,19 @@ fn tail_add_then_remove_before_any_body_sleeps_matches_never_added() {
 /// `Bvh`, the persistent tree section of `snapshot_world` never holds any
 /// content at all (`Bvh` is rebuilt from scratch every step and never reads
 /// it), so that test's bytes can never carry evidence either way about
-/// whether tree node order or content is handled correctly on removal — a
-/// mutation that scrambled tree node order would pass it undetected.
+/// whether the tree is handled correctly on removal.
 ///
-/// ⚠️ Measured, not assumed to converge quickly: immediately after removal
-/// the snapshot here is already 239 bytes longer than a world that never
-/// had the extra body (not a small, single-lingering-leaf difference), and
-/// it stays 242 bytes longer through at least 30 further steps — it does
-/// not shrink back down on its own, even though the *bodies'* own positions
-/// do agree (this is purely a serialized-tree-content difference).
-///
-/// Confirmed mechanism (read directly, not inferred):
-/// `w_tree` (`src/solver/world_snapshot.rs`) writes `nodes.len()` and every
-/// node in the backing array — including freed ones, which `free_node`
-/// (`src/dynamic_bvh.rs`) never removes, only resets and pushes onto
-/// `free_list` — plus `free_list` itself, unconditionally. Nothing shrinks
-/// the array on removal. This is behaviorally inert, not a correctness bug
-/// in query results: `find_pairs` (`src/dynamic_bvh.rs`) sorts and dedups
-/// its output before returning it, so the tree's internal layout never
-/// reaches a caller either way; the only place it shows up is these bytes.
-///
-/// ⚠️ This test does not yet guard against a future tree-node-order
-/// mutation: the current implementation already writes every node
-/// (including freed ones) and the free list as-is, so a mutation that
-/// merely reordered that existing content would not be "newly caught" by
-/// anything here — there is no canonical order yet to diverge from. It
-/// would become a meaningful guard once a future fix canonicalizes the
-/// tree section and this test is un-ignored.
-///
-/// `#[ignore]`d as a second, separate `DynamicTree` history-dependence
-/// defect, distinct from the sleep-state one above (confirmed distinct:
-/// with a radius-less extra body that never enters the tree at all, the
-/// equivalent scenario differs by only 1 byte and converges after one
-/// step).
+/// The removed body's proxy leaves a freed node in the live tree
+/// (`free_node` in `src/dynamic_bvh.rs` resets the node and pushes it onto
+/// the free list; the node array never shrinks). Before the tree section was
+/// written as its leaf set, that freed node and the free list were written
+/// too, and the snapshot stayed 242 bytes longer than a world that never had
+/// the body, through at least 30 further steps, while the bodies agreed. The
+/// leaf set (per body index: proxy or not, and the stored fattened box) is
+/// the tree's state; `find_pairs` sorts and dedups body index pairs, so the
+/// layout never reaches a step.
 #[test]
-#[ignore = "known defect: DynamicTree's remove_body frees the persistent \
-            tree node without shrinking its backing array (confirmed: \
-            src/solver/world_snapshot.rs's w_tree writes every node \
-            including freed ones, plus the free list, unconditionally; \
-            src/dynamic_bvh.rs's free_node never removes a node, only \
-            resets and frees it), so the snapshot stays permanently \
-            longer than a world that never had the removed body, even \
-            though body positions agree; not yet a guard against a tree- \
-            node-order mutation until a fix canonicalizes this section"]
-fn tail_add_then_remove_does_not_converge_with_dynamic_tree() {
+fn tail_add_then_remove_converges_with_dynamic_tree() {
     let mut with_extra = base_scene(Broadphase::DynamicTree);
     let extra = with_extra.add_body_with_radius(
         RigidBody::new_dynamic(Vec3Fix::from_int(50, 50, 50), Fix128::ONE),
@@ -183,9 +152,8 @@ fn tail_add_then_remove_does_not_converge_with_dynamic_tree() {
     assert_eq!(
         with_extra.snapshot_world(),
         never_added.snapshot_world(),
-        "expected these to converge given enough steps; measured instead \
-         that the byte length stabilizes 242 bytes longer and does not \
-         shrink further"
+        "adding a body with a radius at the tail and removing it again \
+         should leave no trace of its tree node in snapshot_world"
     );
 }
 
@@ -346,8 +314,8 @@ fn distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges
         with_transient.step(dt());
     }
     // No collision radius: this is a probe for the sleep-reset defect only,
-    // not for the separate DynamicTree persistent-tree-leaf measurement in
-    // `tail_add_then_remove_does_not_converge_with_dynamic_tree` — giving it
+    // not for the DynamicTree tree-node case in
+    // `tail_add_then_remove_converges_with_dynamic_tree` — giving it
     // a radius here would additionally perturb the broadphase tree and
     // conflate the two.
     let transient = with_transient.add_body(RigidBody::new_static(v3(1000.0, 1000.0, 1000.0)));

@@ -26,7 +26,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `convex_mesh_builder` | step | 3 / 0 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `cylinder` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
-| `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `dynamic_bvh` | step | 10 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 9 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 6 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
