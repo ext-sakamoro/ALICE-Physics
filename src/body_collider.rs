@@ -453,6 +453,7 @@ mod tests {
 
     /// A box with a non-unit orientation (norm 2) meets a plane SDF exactly as
     /// the unit one does: its sample points are not scaled by |q|^2.
+    #[cfg(feature = "std")]
     #[test]
     fn box_sdf_contact_ignores_the_orientation_norm() {
         let plane = || {
