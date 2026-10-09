@@ -369,8 +369,44 @@ impl ContactCache {
     pub fn end_frame(&mut self) {
         let max_stale = self.max_stale_frames;
         self.manifolds.retain(|m| m.stale_frames <= max_stale);
+        self.rebuild_pair_index();
+    }
 
-        // Rebuild the HashMap index after retain (std feature only)
+    /// Follow `PhysicsWorld::remove_body`'s swap-remove of body `idx`, after
+    /// which the body that was at `last` sits at `idx`.
+    ///
+    /// - A manifold whose pair involves `idx` belongs to the removed body: no
+    ///   surviving body has those contacts, so it is dropped (keeping it
+    ///   would hand its impulses to the moved body's next contact).
+    /// - A manifold whose pair involves `last` belongs to the moved body: its
+    ///   points, normal and impulses are unchanged by the move, so it is kept
+    ///   and re-keyed with `last` replaced by `idx`, re-sorted through
+    ///   [`BodyPairKey::new`] (the stored data never follows the key order,
+    ///   so a world that had the moved body at `idx` from the start caches
+    ///   the same data under the same key). The new key involves `idx`, which
+    ///   no kept manifold does, so it cannot collide with another pair.
+    ///
+    /// Other manifolds and the order of the list are kept. Aging is not
+    /// touched.
+    pub(crate) fn swap_remove_body(&mut self, idx: usize, last: usize) {
+        self.manifolds
+            .retain(|m| m.pair.body_a as usize != idx && m.pair.body_b as usize != idx);
+        if idx != last {
+            for m in &mut self.manifolds {
+                let a = m.pair.body_a as usize;
+                let b = m.pair.body_b as usize;
+                if a == last || b == last {
+                    let a = if a == last { idx } else { a };
+                    let b = if b == last { idx } else { b };
+                    m.pair = BodyPairKey::new(a, b);
+                }
+            }
+        }
+        self.rebuild_pair_index();
+    }
+
+    /// Rebuild the `HashMap` index from `manifolds` (std feature only).
+    fn rebuild_pair_index(&mut self) {
         #[cfg(feature = "std")]
         {
             self.pair_index.clear();
@@ -1103,5 +1139,55 @@ mod tests {
         assert_eq!(cache.get_or_create(b, Fix128::ONE, Fix128::ZERO).pair, b);
         assert_eq!(cache.pair_index.get(&b), Some(&0));
         assert_eq!(cache.manifolds.len(), 1, "no duplicate manifold for b");
+    }
+
+    /// Cache holding `pairs` in order, each with friction `k + 1` (k = its
+    /// position), so a manifold's origin stays visible after re-keying.
+    fn cache_of(pairs: &[(usize, usize)]) -> ContactCache {
+        let mut cache = ContactCache::new();
+        for (k, &(a, b)) in pairs.iter().enumerate() {
+            cache.get_or_create(
+                BodyPairKey::new(a, b),
+                Fix128::from_int(k as i64 + 1),
+                Fix128::ZERO,
+            );
+        }
+        cache
+    }
+
+    #[test]
+    fn swap_remove_body_drops_the_removed_and_re_keys_the_moved_body() {
+        // remove 1 of 5 (last = 4): (0,1) (1,3) (1,4) dropped; (0,4) -> (0,1)
+        // keeps order; (2,4) -> (1,2) and (3,4) -> (1,3) re-sorted; (2,3) kept
+        let pairs = [(0, 1), (0, 4), (2, 4), (1, 3), (2, 3), (1, 4), (4, 3)];
+        let mut cache = cache_of(&pairs);
+        cache.swap_remove_body(1, 4);
+        let got: Vec<(u32, u32, Fix128)> = cache
+            .manifolds
+            .iter()
+            .map(|m| (m.pair.body_a, m.pair.body_b, m.friction))
+            .collect();
+        let f = |k: i64| Fix128::from_int(k + 1);
+        assert_eq!(
+            got,
+            vec![(0, 1, f(1)), (1, 2, f(2)), (2, 3, f(4)), (1, 3, f(6))]
+        );
+        assert_eq!(cache.pair_index.len(), 4);
+        for (slot, m) in cache.manifolds.iter().enumerate() {
+            assert_eq!(cache.pair_index.get(&m.pair), Some(&slot));
+        }
+        // the removed body's (1,4) and the moved body's old (0,4) are gone
+        assert!(cache.find(&BodyPairKey::new(1, 4)).is_none());
+        assert!(cache.find(&BodyPairKey::new(0, 4)).is_none());
+    }
+
+    #[test]
+    fn swap_remove_body_of_the_last_index_only_drops_its_pairs() {
+        let mut cache = cache_of(&[(0, 4), (1, 2), (4, 2), (3, 1)]);
+        cache.swap_remove_body(4, 4);
+        let got: Vec<BodyPairKey> = cache.manifolds.iter().map(|m| m.pair).collect();
+        assert_eq!(got, vec![BodyPairKey::new(1, 2), BodyPairKey::new(1, 3)]);
+        assert_eq!(cache.pair_index.len(), 2);
+        assert_eq!(cache.pair_index.get(&BodyPairKey::new(1, 3)), Some(&1));
     }
 }

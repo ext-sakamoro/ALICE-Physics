@@ -24,6 +24,7 @@ were introduced during that release window.
 ### Fixed
 
 - `PhysicsWorld::remove_body`: island を作り直す際に全 body の sleep 状態を Awake / `idle_frames` 0 に戻していたため、無関係な body を 1 体外すだけで眠っていた body が全員起きて 1 step 積分され、その後の軌道が恒久的に変わっていた (外した body と接しない world との比較で +200 step 後も位置が不一致) sleep data を `bodies` と同じく swap-remove して、残る body はそれぞれの sleep 状態を保つ (外した body に触れていた body と joint で繋がった body は起こす、Changed 参照) 試験は `tests/analytic_remove_body_keeps_sleep.rs` と `tests/world_snapshot_history_independence.rs` (ignore を外した)
+- `PhysicsWorld::remove_body`: `contact_cache` (body index の組を key にした manifold) を更新していなかったため、外した body の manifold が残り、末尾から `idx` へ移った body の manifold は古い index のまま別の組として残っていた その結果、移った body と他の body の接触を `add_contact` で足すと外した body の manifold に入って蓄積 impulse を引き継ぎ (`warm_start_impulse` が 0 でなく外した body の値を返す)、`apply_warm_start` は別の body に impulse を加えていた 外した body の組を削除し、移った body の組を `idx` に付け替えて `BodyPairKey::new` で並べ直す (cache は最初からその body が無い world と bit 一致、aging の規則は変更なし) 試験は `tests/analytic_remove_body_contact_cache.rs`
 
 ## [2.1.0] - 2026-10-10
 
