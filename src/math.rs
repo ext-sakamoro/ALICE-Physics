@@ -2474,6 +2474,8 @@ impl core::ops::Mul<Self> for Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::{format, vec::Vec};
 
     /// `rescaled_direction`: untouched inside `[2^-24, 2^24]`, an exact
     /// power-of-two scaling to a largest component in `[1, 2)` outside it.
