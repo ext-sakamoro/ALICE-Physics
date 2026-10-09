@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -155,7 +156,10 @@ def load_gates(gates_toml: Path) -> list[Gate]:
     return gates
 
 
-def build_argv(run_template: str, source: Path, tmp_dir: Path) -> list[str]:
+_ENV_ASSIGN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=.*")
+
+
+def build_argv(run_template: str, source: Path, tmp_dir: Path) -> tuple[list[str], dict[str, str]]:
     """Tokenize `run` and substitute {script}/{dir}, without a shell: the
     template is tokenized with shlex (its own text is plain ASCII with no
     platform-specific path separators, so this is safe on every OS),
@@ -164,16 +168,29 @@ def build_argv(run_template: str, source: Path, tmp_dir: Path) -> list[str]:
     cannot be misread as a shell escape), and a literal "python3" or
     "python" token resolves to `sys.executable` -- the interpreter that
     is actually running this script, not a name that may not exist on
-    PATH (Windows ships `python`, not necessarily `python3`)."""
+    PATH (Windows ships `python`, not necessarily `python3`).
+
+    Leading "VAR=value" tokens (the shell-assignment-prefix form a
+    COLOR_PIN_MARKERS entry like "CARGO_TERM_COLOR=never" names, e.g.
+    "CARGO_TERM_COLOR=never python3 {script}") are peeled off into the
+    second return value instead of becoming argv[0]: there is no shell
+    here to interpret that prefix, so left in argv it would be looked up
+    as an executable named literally "CARGO_TERM_COLOR=never" and fail
+    with FileNotFoundError rather than setting anything."""
     script = str(source)
     dir_ = str(tmp_dir)
+    tokens = shlex.split(run_template)
+    env: dict[str, str] = {}
+    while tokens and _ENV_ASSIGN_RE.fullmatch(tokens[0]):
+        key, _, value = tokens.pop(0).partition("=")
+        env[key] = value
     argv = []
-    for tok in shlex.split(run_template):
+    for tok in tokens:
         if tok in ("python3", "python"):
             argv.append(sys.executable)
         else:
             argv.append(tok.replace("{script}", script).replace("{dir}", dir_))
-    return argv
+    return argv, env
 
 
 def run_control(gate: Gate, control: Control) -> list[str]:
@@ -187,7 +204,8 @@ def run_control(gate: Gate, control: Control) -> list[str]:
                 shutil.copytree(item, dest)
             else:
                 shutil.copy2(item, dest)
-        argv = build_argv(gate.run, REPO_ROOT / gate.source, tmp_dir)
+        argv, env_overrides = build_argv(gate.run, REPO_ROOT / gate.source, tmp_dir)
+        env = {**forced_env(), **env_overrides}
         timeout = TIME_LIMIT_S[gate.cost]
         try:
             proc = subprocess.run(
@@ -197,11 +215,17 @@ def run_control(gate: Gate, control: Control) -> list[str]:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=forced_env(),
+                env=env,
             )
             exit_code, output = proc.returncode, proc.stdout + proc.stderr
         except subprocess.TimeoutExpired as e:
             exit_code, output = None, (e.stdout or "") + (e.stderr or "")
+        except FileNotFoundError as e:
+            # argv[0] does not exist: a malformed `run` (an unresolved
+            # "{script}"/"{dir}", a tool not on PATH on this OS) should
+            # read as one clear error line, not an unhandled traceback.
+            errors.append(f"{gate.id}/{control.case}: could not run {argv!r}: {e}")
+            return errors
 
         if exit_code is None:
             errors.append(f"{gate.id}/{control.case}: timed out after {timeout}s")
