@@ -23,6 +23,9 @@ and reports them differently:
 * `manual:`                   → listed and skipped (`--skip`): run it by hand, it must pass
 * anything else               → listed with its outcome, no verdict
 * table/run mismatch          → `::warning` (the expectation table has drifted)
+* a run that checked nothing  → `::error`: an empty table, an axis that built no
+  test binary, a binary that crashed before its `test result:` line, or a
+  `runtime:` test that did not run
 
 The expectation table is derived from the source at run time rather than stored
 in a file, so it cannot drift on its own; what can drift is this parser's view of
@@ -263,8 +266,27 @@ def build_binaries(extra: list[str]) -> list[tuple[str, str]]:
     return out
 
 
-def run_binary(label: str, exe: str, skip: list[str]) -> tuple[dict[str, str], str]:
-    """Run only the ignored tests in one binary; return outcomes and the output.
+def parse_outcomes(output: str) -> dict[str, str]:
+    """`{test name: "ok" | "FAILED"}` from a libtest run's output."""
+    outcomes: dict[str, str] = {}
+    for raw in output.splitlines():
+        m = RESULT_RE.match(raw.strip())
+        if m and m.group(2) != "ignored":
+            outcomes[m.group(1).split("::")[-1]] = m.group(2)
+    return outcomes
+
+
+def crashed(returncode: int, output: str) -> bool:
+    """Whether a test binary stopped before reporting: libtest exits 0 (all
+    passed) or 101 (some failed) after its `test result:` line; anything else,
+    or no such line, is a crash (signal, abort, killed) and the tests after the
+    crashing one never ran."""
+    reported = any(SUMMARY_RE.match(line.strip()) for line in output.splitlines())
+    return returncode not in (0, 101) or not reported
+
+
+def run_binary(label: str, exe: str, skip: list[str]) -> tuple[dict[str, str], str, int]:
+    """Run only the ignored tests in one binary; return outcomes, output and exit code.
 
     `skip` names the `manual:` tests of this binary, passed as libtest `--skip`
     so they are neither run nor counted as missing.
@@ -273,13 +295,9 @@ def run_binary(label: str, exe: str, skip: list[str]) -> tuple[dict[str, str], s
     for name in skip:
         cmd += ["--skip", name]
     proc = _run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    outcomes: dict[str, str] = {}
-    for raw in proc.stdout.splitlines():
-        m = RESULT_RE.match(raw.strip())
-        if m and m.group(2) != "ignored":
-            outcomes[m.group(1).split("::")[-1]] = m.group(2)
+    outcomes = parse_outcomes(proc.stdout)
     print(f"  [{label}] {len(outcomes)} ignored test(s) ran", flush=True)
-    return outcomes, proc.stdout
+    return outcomes, proc.stdout, proc.returncode
 
 
 # ---------------------------------------------------------------------- report
@@ -346,13 +364,26 @@ def main() -> int:
 
     axes = [("default features", []), (f"--lib --features {native_features()}", ["--lib", "--features", native_features()])]
 
+    # a run that checked nothing is a failure, not a quiet pass
+    broken: list[str] = []
+    if not entries:
+        broken.append("no `#[ignore]` test was found in the source (the table is empty)")
+
     outcomes: dict[tuple[str, str], str] = {}
     logs: dict[str, str] = {}
     for axis_label, extra in axes:
         print(f"\n===== axis: {axis_label}", flush=True)
-        for label, exe in build_binaries(extra):
+        binaries = build_binaries(extra)
+        if not binaries:
+            broken.append(f"axis `{axis_label}`: the build produced no test binary")
+        for label, exe in binaries:
             skip = [e["name"] for e in entries if e["category"] == CAT_MANUAL and e["binary"] == label]
-            got, log = run_binary(label, exe, skip)
+            got, log, rc = run_binary(label, exe, skip)
+            if crashed(rc, log):
+                broken.append(
+                    f"axis `{axis_label}`: `{label}` stopped before reporting (exit {rc}); "
+                    "the ignored tests after the crash did not run"
+                )
             for name, verdict in got.items():
                 outcomes[(label, name)] = verdict
                 logs[f"{label}::{name}"] = log
@@ -372,6 +403,9 @@ def main() -> int:
             (manual if verdict is None else errors).append(row)
         elif verdict is None:
             missing.append(row)
+            if e["category"] == CAT_RUNTIME:
+                # its reason claims it passes; a claim that was not run is not checked
+                broken.append(f"`runtime:` test did not run: `{e['name']}` ({e['file']}:{e['line']})")
         elif e["category"] == CAT_RUNTIME:
             (as_documented if verdict == "ok" else errors).append(row)
         elif e["category"] == CAT_EXPECTED_RED:
@@ -451,8 +485,14 @@ def main() -> int:
             report.append(f"- {d}")
             print(f"::warning::{d}")
 
+    if broken:
+        report += ["", "## ❌ the run did not check what it should", ""]
+        for b in broken:
+            report.append(f"- {b}")
+            print(f"::error::{b}")
+
     emit(report)
-    return 1 if errors else 0
+    return 1 if errors or broken else 0
 
 
 if __name__ == "__main__":
