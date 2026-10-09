@@ -390,6 +390,8 @@ fn clamp(v: Fix128, min: Fix128, max: Fix128) -> Fix128 {
 mod tests {
     use super::*;
     use crate::joint::BallJoint;
+    #[cfg(not(feature = "std"))]
+    use alloc::{vec, vec::Vec};
 
     #[test]
     fn test_pd_position_control() {
