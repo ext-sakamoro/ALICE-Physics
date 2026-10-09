@@ -66,6 +66,13 @@ jobs:
         run: python scripts/test_mutants_ratchet.py
       - name: Mutants exclude_re entries still match a real mutant (tests)
         run: python scripts/test_mutants_exclude_check.py
+      - name: Gate oracle runner (tests)
+        run: python scripts/test_gate_oracle_check.py
+      # cost = "fast" gates only (no cargo build): the cost = "cargo" gates
+      # (which shell out to a real cargo build) run in quality-deep.yml's
+      # weekly job instead, alongside the real tools they need installed.
+      - name: Gate oracle (fast gates)
+        run: python scripts/gate_oracle_check.py
       - name: Mutation in-diff plan (tests)
         run: python scripts/test_mutants_in_diff_plan.py
       - name: Bench count check (tests)
