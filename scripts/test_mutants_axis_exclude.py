@@ -110,6 +110,118 @@ fn after() {}
         self.assertEqual(ax.moved_lines(self.SRC, DEFAULT, [PARALLEL]), list(range(2, 9)))
 
 
+def marked(src: str, tag: str) -> int:
+    """The 1-based line carrying the marker comment `// <tag>`."""
+    for n, line in enumerate(src.split("\n"), 1):
+        if line.rstrip().endswith(f"// {tag}"):
+            return n
+    raise AssertionError(tag)
+
+
+def span(src: str, a: str, b: str) -> list[int]:
+    return list(range(marked(src, a), marked(src, b) + 1))
+
+
+class Lexing(unittest.TestCase):
+    """Braces in strings, chars, raw strings and comments do not delimit; `else`
+    keeps an `if` going; attributes may share a line or span several."""
+
+    SRC = """\
+#[cfg(feature = "parallel")]
+fn tricky() -> &'static str { // t0
+    let a = "}"; let b = '}'; let c = r#"}"#; /* } */ // {
+    let _ = '\\u{7D}';
+    if a.len() > 0 { a } else { b } // t1
+} // t2
+
+#[cfg(feature = "parallel")]
+if ready { go() } // e0
+else { wait() } // e1
+
+impl Holder {
+    #[cfg(feature = "parallel")]
+    fn braces(&self) -> &str { "{" } // h0
+    fn sibling(&self) {} // h1
+}
+
+#[cfg(feature = "parallel")] fn same_line() {} // s0
+
+#[cfg(all(
+    feature = "simd",
+    target_arch = "x86_64"
+))]
+#[inline] // m-attr
+fn multi() {} // m0
+
+#[cfg_attr(feature = "parallel", inline)]
+fn attr_only() {} // a0
+
+#[cfg(feature = "std")]
+fn everywhere() {} // b0
+
+#[cfg(feature = "parallel")]
+mod outer { // n0
+    #[cfg(feature = "std")]
+    fn inner() {} // n1
+} // n2
+
+#[cfg(any(feature = "parallel", feature = "nope"))]
+fn either() {} // y0
+
+fn lifetimes<'a>(x: &'a str) -> &'a str { x } // l0
+"""
+
+    def moved(self, axis=DEFAULT, other=PARALLEL):
+        return ax.moved_lines(self.SRC, axis, [other])
+
+    def test_braces_in_literals_and_comments_do_not_delimit(self):
+        self.assertEqual([n for n in self.moved() if marked(self.SRC, "t0") <= n <= marked(self.SRC, "t2")],
+                         span(self.SRC, "t0", "t2"))
+
+    def test_an_else_branch_stays_in_the_region(self):
+        self.assertIn(marked(self.SRC, "e1"), self.moved())
+
+    def test_a_brace_in_a_string_does_not_swallow_the_sibling(self):
+        self.assertIn(marked(self.SRC, "h0"), self.moved())
+        self.assertNotIn(marked(self.SRC, "h1"), self.moved())
+
+    def test_an_attribute_on_the_item_line(self):
+        self.assertIn(marked(self.SRC, "s0"), self.moved())
+
+    def test_a_multi_line_attribute_and_attributes_in_between(self):
+        moved = self.moved()
+        self.assertIn(marked(self.SRC, "m0"), moved)
+        self.assertNotIn(marked(self.SRC, "m-attr"), moved)
+
+    def test_cfg_attr_removes_no_code(self):
+        self.assertNotIn(marked(self.SRC, "a0"), self.moved())
+
+    def test_a_region_every_axis_compiles_is_not_moved(self):
+        self.assertNotIn(marked(self.SRC, "b0"), self.moved())
+        self.assertNotIn(marked(self.SRC, "b0"), self.moved(PARALLEL, DEFAULT))
+
+    def test_an_inner_region_needs_the_outer_one_too(self):
+        # `inner` is std (default compiles) inside parallel (default does not)
+        self.assertIn(marked(self.SRC, "n1"), self.moved())
+
+    def test_any_needs_one_feature(self):
+        self.assertIn(marked(self.SRC, "y0"), self.moved())
+
+    def test_a_feature_name_matches_whole(self):
+        self.assertFalse(ax.evaluate('feature = "parallel"', {"parallel_extra", "std"}))
+
+    def test_lifetimes_are_not_char_literals(self):
+        self.assertNotIn(marked(self.SRC, "l0"), self.moved())
+
+    def test_an_inner_attribute_covers_the_rest_of_the_file(self):
+        src = '#![cfg(feature = "parallel")]\nfn a() {}\nfn b() {}\n'
+        self.assertEqual(ax.moved_lines(src, DEFAULT, [PARALLEL]), [2, 3])
+
+    def test_an_unclosed_attribute_is_an_error(self):
+        with self.assertRaises(ax.Unknown):
+            ax.regions('#[cfg(all(feature = "parallel")]\nfn a() {}\n')
+
+
 class Evaluate(unittest.TestCase):
     def test_predicates(self):
         f = {"std", "simd"}
