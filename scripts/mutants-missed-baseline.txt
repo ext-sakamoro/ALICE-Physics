@@ -7,8 +7,6 @@
 [default] src/collider.rs: replace - with + in do_simplex_tetrahedron
 [default] src/collider.rs: replace - with + in do_simplex_tetrahedron
 [default] src/collider.rs: replace > with >= in epa
-[default] src/contact_cache.rs: replace == with != in ContactCache::find
-[default] src/contact_cache.rs: replace == with != in ContactCache::get_or_create
 [default] src/joint.rs: delete - in solve_cone_twist_joint
 [default] src/joint.rs: delete - in solve_fixed_joint
 [default] src/joint.rs: delete - in solve_fixed_joint
@@ -256,8 +254,6 @@
 [parallel] src/collider.rs: replace - with + in do_simplex_tetrahedron
 [parallel] src/collider.rs: replace - with + in do_simplex_tetrahedron
 [parallel] src/collider.rs: replace > with >= in epa
-[parallel] src/contact_cache.rs: replace == with != in ContactCache::find
-[parallel] src/contact_cache.rs: replace == with != in ContactCache::get_or_create
 [parallel] src/joint.rs: delete - in solve_cone_twist_joint
 [parallel] src/joint.rs: delete - in solve_fixed_joint
 [parallel] src/joint.rs: delete - in solve_fixed_joint
