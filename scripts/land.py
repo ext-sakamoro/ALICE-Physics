@@ -222,6 +222,18 @@ class Lander:
         if r.returncode != 0:
             raise LandError(f"`{' '.join(cmd)}` failed (exit {r.returncode})")
 
+    def lib_test_gate(self) -> None:
+        """New source files must bring lib tests (scripts/lib_test_gate.py): the
+        per-push coverage ratchet runs `--lib` only and would turn red after the land."""
+        gate = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib_test_gate.py")
+        r = subprocess.run([sys.executable, gate, self.upstream(), "--root", self.root],
+                           cwd=self.root, capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            self.log(line)
+        if r.returncode != 0:
+            errors = [l[len("error: "):] for l in r.stdout.splitlines() if l.startswith("error: ")]
+            raise LandError("lib-test gate failed:\n  " + "\n  ".join(errors or [r.stderr.strip()]))
+
     def run_preflight(self) -> None:
         self.preflight_runs += 1
         self.sh("bash", "scripts/preflight.sh", "--fast")
@@ -440,6 +452,7 @@ class Lander:
         problems = self.check_commits()
         if problems:
             raise LandError("commit checks failed:\n  " + "\n  ".join(problems))
+        self.lib_test_gate()
         added = "\n".join(l[1:] for l in self.git("diff", "-U0", f"{self.upstream()}...HEAD").splitlines()
                           if l.startswith("+") and not l.startswith("+++"))
         lane = lane_of(self.paths(f"{self.upstream()}...HEAD"), added)
@@ -548,6 +561,10 @@ def main(argv: list[str] | None = None) -> int:
                   f"python3 scripts/land.py --id {args.id} --wait-only {sha}")
     except LandError as e:
         print(f"error: {e}", file=sys.stderr)
+        if "CI on" in str(e):
+            print("note: a red workflow after a land is not \"an unrelated existing red\" until the same "
+                  "workflow's run on the commit before it (by headSha) is shown green; if it was green, "
+                  "the red is this land's", file=sys.stderr)
         return 1
     return 0
 

@@ -45,6 +45,8 @@ jobs:
         run: python scripts/test_version_sync.py
       - name: Version sync (metadata and install lines follow Cargo.toml)
         run: python scripts/version_sync.py --check
+      - name: Lib-test gate (tests)
+        run: python scripts/test_lib_test_gate.py
       # public documents: no development-process vocabulary or private names;
       # CHANGELOG version headings and [Unreleased] categories well formed
       - name: Docs lint (tests)

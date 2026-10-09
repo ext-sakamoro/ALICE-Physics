@@ -92,7 +92,8 @@ class Repo:
         subprocess.run(["git", "clone", "-q", str(self.origin), str(self.upstream)], check=True,
                        capture_output=True)
         git(self.upstream, "checkout", "-q", "-b", "main")
-        commit(self.upstream, {"src/a.rs": "fn a() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n",
+        commit(self.upstream, {"src/a.rs": "fn a() {}\n",
+                                "scripts/lib-test-exempt.txt": "src/b.rs fixture for the landing steps\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n",
                                "docs/integration-status.md": "ledger: a.rs\n",
                                **({".gitattributes": "CHANGELOG.md merge=union\n"} if gitattributes else {})},
                "init")
@@ -161,6 +162,15 @@ class Landing(unittest.TestCase):
 
     def tearDown(self):
         self.r.close()
+
+    def test_a_new_source_file_without_lib_tests_stops_the_land(self):
+        commit(self.r.work, {"src/c.rs": "pub fn c() {}\n",
+                             "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- c\n"}, "feat: c")
+        lander = self.r.lander()
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        self.assertIn("lib-test gate", str(cm.exception))
+        self.assertIn("src/c.rs: new source file without lib tests", str(cm.exception))
 
     def test_direct_lane_lands_and_regenerates(self):
         commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
