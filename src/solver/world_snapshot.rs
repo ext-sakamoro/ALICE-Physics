@@ -1738,7 +1738,7 @@ impl PhysicsWorld {
     /// | `islands` (`sleep_data`, `config`) | saved | |
     /// | `islands` (union-find `parent` / `rank`) | rebuilt | `IslandManager::new` plus a union of every joint's bodies, the same as the start of every `step` |
     /// | `body_collision_radii` / `body_filters` | saved | as stored, including their own lengths |
-    /// | `broadphase` / `broadphase_tree` / `broadphase_proxies` | saved / rebuilt | the kind, the tree's margin and metric, and its leaf set: per body index whether it has a proxy and the leaf's stored (fattened) box; the tree is rebuilt on restore by inserting those leaves in body index order. Node ids, internal and freed nodes and the free list are not written: they depend on the order of past inserts and removals, and the pairs the tree gives are the sorted, deduplicated body index pairs of overlapping leaf boxes. The rebuilt layout can differ from the original's, which shows only in [`PhysicsWorld::broadphase_stats`]`.height` |
+    /// | `broadphase` / `broadphase_tree` / `broadphase_proxies` | saved / rebuilt | the kind, the tree's margin and metric, and its leaf set: per body index whether it has a proxy and the leaf's stored (fattened) box; the tree is rebuilt on restore by inserting those leaves in body index order. Node ids, internal and freed nodes and the free list are not written: they depend on the order of past inserts and removals, and the pairs the tree gives are the sorted, deduplicated body index pairs of overlapping leaf boxes. The rebuilt layout can differ from the original's; nothing public reads it ([`PhysicsWorld::broadphase_stats`] reports the height of the tree the leaf set rebuilds) |
     /// | `broadphase_hybrid` | rebuilt | empty; its pairs are a pure function of the bodies staged each substep, so a fresh one gives the same pairs |
     /// | `body_colliders` | saved | shape or compound, including the compound's cached AABB and dirty flag |
     /// | `overflow_detected` | saved | sticky flag |
@@ -4095,6 +4095,52 @@ mod tests {
             drv.frame(&mut a, dt());
             drv_b.frame(&mut b, dt());
             assert!(differing(&mut a, &mut b).is_empty());
+        }
+    }
+
+    /// `rebuilt_height` is the height of the tree a restore rebuilds from the
+    /// same leaves (the internal tree of the restored world), whatever history
+    /// built the live tree.
+    #[test]
+    fn rebuilt_height_is_the_restored_tree_height() {
+        let (a, pa) = tree_with_history(&[0, 1, 2, 3, 4, 5]);
+        let (b, pb) = tree_with_history(&[5, 3, 1, 4, 2, 0]);
+        let (r, _) = read_leaves(&write_leaves(&a, &pa));
+        assert_eq!(a.rebuilt_height(&pa), r.height());
+        assert_eq!(b.rebuilt_height(&pb), r.height());
+        assert_eq!(a.rebuilt_height(&[]), 0);
+
+        // leaves on a line in a shuffled spatial order, every count up to 200:
+        // the height a restore rebuilds, which depends on the insert order
+        let mut t = crate::dynamic_bvh::DynamicAabbTree::new();
+        let mut p = Vec::new();
+        for i in 0..200i64 {
+            p.push(Some(t.insert(bx(3 * ((i * 37) % 200), 0, 0), i as u32)));
+            let (r, rp) = read_leaves(&write_leaves(&t, &p));
+            assert_eq!(rp.len(), p.len());
+            assert_eq!(t.rebuilt_height(&p), r.height(), "{} leaves", i + 1);
+        }
+
+        let mut w = scene(SolverBackend::Xpbd, Broadphase::DynamicTree);
+        let mut drv = Driver::new();
+        for i in 0..12 {
+            drv.frame(&mut w, dt());
+            if i == 5 {
+                let last = w.bodies.len() - 1;
+                w.remove_body(last);
+            }
+            let mut t = target_world();
+            t.restore_world(&w.snapshot_world()).expect("restore");
+            assert_eq!(
+                w.broadphase_stats().height,
+                t.broadphase_tree.height(),
+                "{i}"
+            );
+            assert_eq!(
+                t.broadphase_stats().height,
+                t.broadphase_tree.height(),
+                "{i}"
+            );
         }
     }
 }

@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5714 |
+| 🟢 Not ignored (run by CI) | 5717 |
 | 🔴 Red by design | 73 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5813** |
+| **Total** | **5816** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -154,7 +154,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5714)
+## 🟢 Not ignored (5717)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -475,6 +475,7 @@ Per-file counts (the test names are in `tests/`):
 | `indep_orbit_nbody.rs` | 8 |
 | `mat3_inverse_range.rs` | 8 |
 | `mesh_conformity.rs` | 8 |
+| `world_snapshot_dynamic_tree_canonical.rs` | 8 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
 | `analytic_electromagnetic_wiring.rs` | 7 |
@@ -537,7 +538,6 @@ Per-file counts (the test names are in `tests/`):
 | `mms_linear_elastic.rs` | 5 |
 | `reduction_order_independence.rs` | 5 |
 | `world_snapshot_broadphase_kind_sensitivity.rs` | 5 |
-| `world_snapshot_dynamic_tree_canonical.rs` | 5 |
 | `world_snapshot_history_independence.rs` | 5 |
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
 | `analytic_contact_friction_cap.rs` | 4 |
