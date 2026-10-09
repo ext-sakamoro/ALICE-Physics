@@ -486,6 +486,8 @@ fn mat_add_diagonal(m: Mat3Fix, s: Fix128) -> Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec::Vec;
 
     fn approx_eq(a: Fix128, b: Fix128, tol: Fix128) -> bool {
         let d = if a > b { a - b } else { b - a };
