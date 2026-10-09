@@ -960,22 +960,50 @@ const fn compute_cordic_angles() -> [Fix128; 64] {
     angles
 }
 
+/// The 64 bits of 2π below the last bit of [`Fix128::TWO_PI`]:
+/// 2π ≈ `TWO_PI` + `TWO_PI_TAIL` · 2⁻¹²⁸ (`TWO_PI` is 2π rounded down; the
+/// tail is about 0.149 of its last bit).
+const TWO_PI_TAIL: u64 = 0x2633_145c_06e0_e689;
+
+/// `angle` reduced modulo 2π into [-π, π], for every `Fix128`.
+///
+/// The turns are taken in exact 128-bit integer arithmetic on the raw value
+/// (nothing wraps, even at the ends of the range), and the rounding of
+/// `TWO_PI` is corrected with [`TWO_PI_TAIL`]: `k` turns of `TWO_PI` fall
+/// short of `k` turns of 2π by `k · TWO_PI_TAIL` · 2⁻¹²⁸, which reaches a
+/// whole last bit from 7 turns on and about 0.08 at the end of the range.
+/// The correction is truncated toward zero, so up to 6 turns either way the
+/// result is `angle` minus a whole number of `TWO_PI`.
+fn reduce_two_pi(angle: Fix128) -> Fix128 {
+    let raw = |v: Fix128| (i128::from(v.hi) << 64) | i128::from(v.lo);
+    let (two_pi, pi) = (raw(Fix128::TWO_PI), raw(Fix128::PI));
+    let x = raw(angle);
+    let mut turns = x.div_euclid(two_pi);
+    let mut r = x.rem_euclid(two_pi);
+    if r > pi {
+        r -= two_pi;
+        turns += 1;
+    }
+    // |turns| < 2^61 and the tail < 2^64, so the product fits in a u128
+    let short = (turns.unsigned_abs() * u128::from(TWO_PI_TAIL)) >> 64;
+    r -= turns.signum() * short as i128;
+    if r > pi {
+        r -= two_pi;
+    } else if r < -pi {
+        r += two_pi;
+    }
+    Fix128 {
+        hi: (r >> 64) as i64,
+        lo: r as u64,
+    }
+}
+
 /// CORDIC sine and cosine (deterministic, 48 iterations)
 fn cordic_sin_cos(angle: Fix128) -> (Fix128, Fix128) {
-    // Step 1: O(1) modular reduction to [-π, π]
+    // Step 1: reduction to [-π, π] (angles already inside are left as they are)
     let mut theta = angle;
     if theta > Fix128::PI || theta < Fix128::PI.neg() {
-        // k = floor((theta + π) / 2π)
-        let shifted = theta + Fix128::PI;
-        let k = shifted / Fix128::TWO_PI;
-        let k_int = Fix128::from_int(k.hi);
-        theta = theta - Fix128::TWO_PI * k_int;
-        // Clamp to handle edge cases
-        if theta > Fix128::PI {
-            theta = theta - Fix128::TWO_PI;
-        } else if theta < Fix128::PI.neg() {
-            theta = theta + Fix128::TWO_PI;
-        }
+        theta = reduce_two_pi(theta);
     }
 
     // Step 2: Quadrant reduction to [-π/2, π/2] (CORDIC convergence range)
@@ -4277,3 +4305,7 @@ mod tests {
         assert_eq!(Vec3Fix::ZERO.split_pow2(), (Vec3Fix::ZERO, 0));
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/lib/math_oracles.rs"]
+mod lib_oracles;
