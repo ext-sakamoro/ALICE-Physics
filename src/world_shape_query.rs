@@ -516,6 +516,10 @@ fn vertex<A: Support, B: Support>(a: &A, b: &B, direction: Vec3Fix) -> Vertex {
     }
 }
 
+/// A sub-simplex, its weights, and whether it is a face whose point GJK takes
+/// by [`within_face`] (see [`closest_on_triangle`]).
+type Nearest = (Vec<Vertex>, Vec<Fix128>, bool);
+
 /// The point of the simplex nearest the origin, the sub-simplex it lies on and
 /// its barycentric weights; `None` when the origin is inside a tetrahedron.
 ///
@@ -524,10 +528,10 @@ fn vertex<A: Support, B: Support>(a: &A, b: &B, direction: Vec3Fix) -> Vertex {
 /// [`SMALL_SIMPLEX`]: their dot products, of the size of an edge to the fourth
 /// power, would otherwise keep few significant bits (on a curved surface the
 /// simplex shrinks around the nearest point as GJK converges).
-fn closest_on_simplex(s: &[Vertex]) -> Option<(Vec<Vertex>, Vec<Fix128>)> {
+fn closest_on_simplex(s: &[Vertex]) -> Option<Nearest> {
     let k = simplex_scale(s);
     if k == 0 {
-        return closest_on_scaled_simplex(s);
+        return closest_on_scaled_simplex(s, 0);
     }
     let up: Vec<Vertex> = s
         .iter()
@@ -536,7 +540,7 @@ fn closest_on_simplex(s: &[Vertex]) -> Option<(Vec<Vertex>, Vec<Fix128>)> {
             ..*v
         })
         .collect();
-    let (sub, lambda) = closest_on_scaled_simplex(&up)?;
+    let (sub, lambda, face) = closest_on_scaled_simplex(&up, k)?;
     let sub = sub
         .into_iter()
         .map(|v| Vertex {
@@ -544,15 +548,19 @@ fn closest_on_simplex(s: &[Vertex]) -> Option<(Vec<Vertex>, Vec<Fix128>)> {
             ..v
         })
         .collect();
-    Some((sub, lambda))
+    Some((sub, lambda, face))
 }
 
-fn closest_on_scaled_simplex(s: &[Vertex]) -> Option<(Vec<Vertex>, Vec<Fix128>)> {
+/// [`closest_on_simplex`] for `s` scaled up by `2ᵏ`.
+fn closest_on_scaled_simplex(s: &[Vertex], k: u32) -> Option<Nearest> {
     match s.len() {
-        1 => Some((s.to_vec(), vec![Fix128::ONE])),
-        2 => Some(closest_on_edge(s[0], s[1])),
+        1 => Some((s.to_vec(), vec![Fix128::ONE], false)),
+        2 => {
+            let (sub, lambda) = closest_on_edge(s[0], s[1]);
+            Some((sub, lambda, false))
+        }
         3 => Some(closest_on_triangle(s[0], s[1], s[2])),
-        _ => closest_on_tetrahedron(s[0], s[1], s[2], s[3]),
+        _ => closest_on_tetrahedron(s[0], s[1], s[2], s[3], k),
     }
 }
 
@@ -617,8 +625,127 @@ fn closest_on_edge(a: Vertex, b: Vertex) -> (Vec<Vertex>, Vec<Fix128>) {
     }
 }
 
+/// [`log2_size`] of zero.
+const NO_SIZE: i32 = i32::MIN / 4;
+
+/// `⌊log₂⌋` of the largest component of `v` ([`NO_SIZE`] for zero).
+fn log2_size(v: Vec3Fix) -> i32 {
+    let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
+    let m = raw(v.x)
+        .unsigned_abs()
+        .max(raw(v.y).unsigned_abs())
+        .max(raw(v.z).unsigned_abs());
+    if m == 0 {
+        return NO_SIZE;
+    }
+    // bit 64 is 1.0
+    63 - m.leading_zeros() as i32
+}
+
+/// Whether the barycentric form gives `point`, the nearest point of triangle
+/// `a b c`, to within `2⁻³²` of its length, so that its direction (GJK's next
+/// search direction) is within `2⁻³²` rad. The ratio does not depend on a
+/// scaling of the simplex.
+///
+/// Its region tests and weights are differences of products of two dot
+/// products: each dot product of vectors of sizes `L` (an edge) and `P` (a
+/// vertex) is rounded to about `2⁻⁶²·(L + P)`, so a weight, such a difference
+/// over `|n|²` (`n = (b − a) × (c − a)`), is off by about `2⁻⁶²·L·P / |n|²`,
+/// and the point by `L` times that. On a curved solid the simplex near the
+/// surface is a long thin triangle of support points far from the origin
+/// (`|n|` a small fraction of `L²`): the point was off by up to `2⁻²⁶` there,
+/// its direction turned the next support back to a vertex already in the
+/// simplex, and GJK stopped up to `2⁻²⁶` away from the surface. The faces of
+/// the polytopes cast at (boxes, wedges, meshes) stay well below the bound and
+/// keep the barycentric form. The sizes are taken from the leading bits of
+/// the components, so the estimate is within a factor of 8.
+fn barycentric_is_precise(a: Vertex, b: Vertex, c: Vertex, point: Vec3Fix) -> bool {
+    let ab = b.w - a.w;
+    let ac = c.w - a.w;
+    let n = log2_size(ab.cross(ac));
+    let near = log2_size(point);
+    if n == NO_SIZE || near == NO_SIZE {
+        return false;
+    }
+    let l = log2_size(ab).max(log2_size(ac)).max(log2_size(c.w - b.w));
+    let p = log2_size(a.w).max(log2_size(b.w)).max(log2_size(c.w));
+    // log₂ of the point's error over its length
+    -62 + 2 * l + p - 2 * n - near <= -32
+}
+
+/// The point of triangle `a b c` nearest the origin: by
+/// [`closest_on_triangle_barycentric`] when that is precise (see
+/// [`barycentric_is_precise`]), otherwise by [`closest_on_triangle_by_area`],
+/// whose face point GJK then takes by [`within_face`] (the third element).
+fn closest_on_triangle(a: Vertex, b: Vertex, c: Vertex) -> Nearest {
+    let (sub, lambda) = closest_on_triangle_barycentric(a, b, c);
+    if barycentric_is_precise(a, b, c, weighted(&(sub.clone(), lambda.clone()))) {
+        return (sub, lambda, false);
+    }
+    let (sub, lambda) = closest_on_triangle_by_area(a, b, c);
+    let face = sub.len() == 3;
+    (sub, lambda, face)
+}
+
+/// The point of triangle `a b c` nearest the origin, its sub-simplex and
+/// weights, for a triangle whose barycentric form is not precise (see
+/// [`barycentric_is_precise`]). The regions are decided by the signed areas
+/// `n·((q − p) × (o − p))` of the origin `o` projected on the plane, one per
+/// edge `p q` (`n = (b − a) × (c − a)`, scaled up to a largest component in
+/// `[1, 2)`): each is one cross product of edge vectors and a dot product, so
+/// its rounding is about `2⁻⁶²` of the size of the triangle, and a weight,
+/// such an area over their sum `n·n`, is off by that over `|n|`. The
+/// barycentric form ([`closest_on_triangle_barycentric`]) takes the same
+/// quantities as differences of products of dot products, whose weights are
+/// off by that size squared over `|n|²`.
+///
+/// When the origin is outside an edge (a negative area), the nearest point is
+/// on such an edge (the nearest point of a convex polygon to a point outside it
+/// is on an edge whose line separates them), and the nearest of those edges is
+/// taken.
+fn closest_on_triangle_by_area(a: Vertex, b: Vertex, c: Vertex) -> (Vec<Vertex>, Vec<Fix128>) {
+    let ab = b.w - a.w;
+    let ac = c.w - a.w;
+    let bc = c.w - b.w;
+    let n = scaled_up(ab.cross(ac)).0;
+    // the area for the edge opposite each vertex (positive inside)
+    let area_a = n.dot(bc.cross(-b.w));
+    let area_b = n.dot((-ac).cross(-c.w));
+    let area_c = n.dot(ab.cross(-a.w));
+    let sum = area_a + area_b + area_c;
+    if n.length_squared().is_zero() || sum <= Fix128::ZERO {
+        // A degenerate (flat) triangle: the nearest of its edges.
+        let mut best = closest_on_edge(a, b);
+        for cand in [closest_on_edge(b, c), closest_on_edge(a, c)] {
+            if weighted(&cand).length_squared() < weighted(&best).length_squared() {
+                best = cand;
+            }
+        }
+        return best;
+    }
+    if !area_a.is_negative() && !area_b.is_negative() && !area_c.is_negative() {
+        let (wb, wc) = (area_b / sum, area_c / sum);
+        return (vec![a, b, c], vec![Fix128::ONE - wb - wc, wb, wc]);
+    }
+    let mut best: Option<(Vec<Vertex>, Vec<Fix128>)> = None;
+    for (area, p, q) in [(area_c, a, b), (area_a, b, c), (area_b, a, c)] {
+        if !area.is_negative() {
+            continue;
+        }
+        let cand = closest_on_edge(p, q);
+        if best
+            .as_ref()
+            .is_none_or(|b| weighted(&cand).length_squared() < weighted(b).length_squared())
+        {
+            best = Some(cand);
+        }
+    }
+    // not reached: one of the areas is negative here
+    best.unwrap_or_else(|| (vec![a], vec![Fix128::ONE]))
+}
+
 /// Ericson, *Real-Time Collision Detection* §5.1.5, for the origin.
-fn closest_on_triangle(a: Vertex, b: Vertex, c: Vertex) -> (Vec<Vertex>, Vec<Fix128>) {
+fn closest_on_triangle_barycentric(a: Vertex, b: Vertex, c: Vertex) -> (Vec<Vertex>, Vec<Fix128>) {
     let ab = b.w - a.w;
     let ac = c.w - a.w;
     let ap = -a.w;
@@ -670,14 +797,30 @@ fn closest_on_triangle(a: Vertex, b: Vertex, c: Vertex) -> (Vec<Vertex>, Vec<Fix
     (vec![a, b, c], vec![Fix128::ONE - v - w, v, w])
 }
 
-fn closest_on_tetrahedron(
-    a: Vertex,
-    b: Vertex,
-    c: Vertex,
-    d: Vertex,
-) -> Option<(Vec<Vertex>, Vec<Fix128>)> {
+/// The nearest point of tetrahedron `a b c d` (scaled up by `2ᵏ`), `None` when
+/// the origin is inside it.
+///
+/// A tetrahedron whose least height (the volume `n·(d − a)` over its largest
+/// face's `|n|`, both from differences of its vertices) is at most `2⁻³²` (in
+/// unscaled units) is taken as flat, and the nearest of its four faces
+/// returned: four support points on one circle or one generator of a curved
+/// solid are coplanar but for rounding, and the sign of such a volume (and of
+/// the origin's side of a face) is that rounding, which counted the origin
+/// inside and reported an intersection far from the surface. Taking it as flat
+/// moves the result by at most that height: an origin within it is within
+/// `2⁻³²` of a face, the distance GJK counts as intersecting.
+fn closest_on_tetrahedron(a: Vertex, b: Vertex, c: Vertex, d: Vertex, k: u32) -> Option<Nearest> {
     let faces = [(a, b, c, d), (a, c, d, b), (a, d, b, c), (b, d, c, a)];
-    let mut best: Option<(Vec<Vertex>, Vec<Fix128>)> = None;
+    let flat_height = if k >= 32 {
+        Fix128::from_raw(1i64 << (k - 32), 0)
+    } else {
+        Fix128::from_raw(0, 1u64 << (32 + k))
+    };
+    let flat = faces.iter().any(|&(p, q, r, opposite)| {
+        let n = (q.w - p.w).cross(r.w - p.w);
+        n.dot(opposite.w - p.w).abs() <= n.length() * flat_height
+    });
+    let mut best: Option<Nearest> = None;
     let mut inside = true;
     for (p, q, r, opposite) in faces {
         let n = (q.w - p.w).cross(r.w - p.w);
@@ -685,15 +828,15 @@ fn closest_on_tetrahedron(
         let other_side = n.dot(opposite.w - p.w);
         // The origin is outside this face when it is strictly on the other side
         // from the fourth vertex; every face of a flat tetrahedron counts.
-        let outside = other_side.is_zero()
+        let outside = flat
+            || other_side.is_zero()
             || (!origin_side.is_zero() && origin_side.is_negative() != other_side.is_negative());
         if outside {
             inside = false;
             let cand = closest_on_triangle(p, q, r);
-            if best
-                .as_ref()
-                .is_none_or(|b| weighted(&cand).length_squared() < weighted(b).length_squared())
-            {
+            if best.as_ref().is_none_or(|b| {
+                nearest_point(&cand).length_squared() < nearest_point(b).length_squared()
+            }) {
                 best = Some(cand);
             }
         }
@@ -703,6 +846,31 @@ fn closest_on_tetrahedron(
     } else {
         best
     }
+}
+
+/// The point of face `s` with weights `lambda`, from its first vertex along its
+/// edges: `s₀ + λ₁(s₁ − s₀) + λ₂(s₂ − s₀)`.
+///
+/// For a face whose barycentric form is not precise (see
+/// [`closest_on_triangle`]): such a face is long and thin, its plane (the cross
+/// product of a long edge and a short one) is not known to more than the
+/// rounding of the short edge, and a projection on it misses the distance by
+/// that tilt, in either direction (a cast stopped short of the surface). A
+/// point of the face is in the Minkowski difference, so its length is never
+/// below the distance, and the error of its weights moves it within the face,
+/// across the thin side (along the surface): its length changes only by the
+/// square of that over the distance. Taken from `s₀`, the edges are
+/// differences of the support points, exact, and the point is not rounded to
+/// the size of the vertices.
+fn within_face(s: &[Vertex], lambda: &[Fix128]) -> Vec3Fix {
+    s[0].w + (s[1].w - s[0].w) * lambda[1] + (s[2].w - s[0].w) * lambda[2]
+}
+
+/// The point of a [`Nearest`] by its weights.
+fn nearest_point(n: &Nearest) -> Vec3Fix {
+    n.0.iter()
+        .zip(&n.1)
+        .fold(Vec3Fix::ZERO, |acc, (v, &l)| acc + v.w * l)
 }
 
 /// The point of the line or plane through the sub-simplex `s` (1 to 3 vertices,
@@ -745,6 +913,8 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
     let mut simplex = vec![vertex(a, b, Vec3Fix::UNIT_X)];
     let mut weights = vec![Fix128::ONE];
     let mut v = simplex[0].w;
+    // `v` was taken within a face (see `within_face`).
+    let mut in_face = false;
     for _ in 0..GJK_MAX_ITERATIONS {
         let vv = v.length_squared();
         if vv <= GJK_INTERSECT {
@@ -769,8 +939,10 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         }
         let mut grown = simplex.clone();
         grown.push(w);
-        let (sub, lambda) = closest_on_simplex(&grown)?;
-        let next = if fine {
+        let (sub, lambda, face) = closest_on_simplex(&grown)?;
+        let next = if face {
+            within_face(&sub, &lambda)
+        } else if fine {
             nearest_on_affine_hull(&sub)
         } else {
             weighted(&(sub.clone(), lambda.clone()))
@@ -788,6 +960,7 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         }
         simplex = sub;
         weights = lambda;
+        in_face = face;
         v = next;
     }
     let pa = simplex
@@ -799,8 +972,9 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         .zip(&weights)
         .fold(Vec3Fix::ZERO, |acc, (s, &l)| acc + s.b * l);
     let dist = fine_length(v)?;
-    if v.length_squared() < FINE_LENGTH_SQUARED {
-        // `v` is projected (see `nearest_on_affine_hull`), the weights are not
+    if v.length_squared() < FINE_LENGTH_SQUARED || in_face {
+        // `v` is projected (see `nearest_on_affine_hull`) or taken within a
+        // face from its first vertex (see `within_face`), the weights are not
         // as precise: the witness on `a` is taken as `pb + v`, so that `pa − pb`
         // is `v` exactly.
         return Some((dist, pb + v, pb));
@@ -1853,6 +2027,14 @@ fn toi_convex<S: Support>(
                     return touch_is_hit(contact, d, max_t, gap_at).then_some(contact);
                 }
                 if !slope.is_negative() {
+                    if slope < NEAR_TANGENT && gap <= GRAZE_GAP {
+                        // Not a proof of separation: see `GRAZE_GAP`.
+                        let probe = |t: Fix128| {
+                            let off = d * t;
+                            convex_dist(a + off, b + off, solid)
+                        };
+                        return graze_contact(probe, reach, inflate, t, max_t);
+                    }
                     return None;
                 }
                 Some((gap, -slope, contact, dist < FINE_LENGTH))
@@ -1914,6 +2096,81 @@ fn toi_convex<S: Support>(
     clear
 }
 
+/// A clear gap up to this (`2⁻²⁴`) with the motion within [`NEAR_TANGENT`] of
+/// the tangent plane but not into it: the slope `d·n` then is not a proof that
+/// the gap only grows. The normal is known to about the error of the distance
+/// over the distance, and a path at `9·10⁻¹⁰` rad to a cone's base showed a
+/// slope of `+3·10⁻⁹` where it was `−1.5·10⁻⁹`, at a gap of
+/// `3·2⁻³²`, and went `1.7·2⁻³²` in further on: `2⁻²⁸` of slope error over a
+/// path of 16 is `2⁻²⁴` of gap.
+const GRAZE_GAP: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0000_0100_0000_0000,
+};
+
+/// The contact of a path that is near tangent at `t0` (see [`GRAZE_GAP`]): the
+/// gap (`dist` less `reach`, convex) is minimised on `[t0, max_t]` by
+/// golden-section search, and if it goes below `−2⁻³²` the time it first comes
+/// within `2⁻³²` is found by bisection between `t0` and that point (a clear
+/// end, never after the contact, if the bisection does not land on it); `None`
+/// if it does not go in.
+fn graze_contact(
+    dist: impl Fn(Fix128) -> Dist,
+    reach: Fix128,
+    inflate: Fix128,
+    t0: Fix128,
+    max_t: Fix128,
+) -> Option<Contact> {
+    let gap_at = |t: Fix128| match dist(t) {
+        Dist::Outside { dist, .. } => Some(dist - reach),
+        _ => None,
+    };
+    let deep = |g: Option<Fix128>| g.is_none_or(|g| g < -TRACE_TOLERANCE);
+    let mut inside = deep(gap_at(max_t)).then_some(max_t);
+    if inside.is_none() {
+        let ratio = Fix128::from_ratio(618_033_988_749_895, 1_000_000_000_000_000);
+        let (mut lo, mut hi) = (t0, max_t);
+        for _ in 0..GOLDEN_STEPS {
+            let x1 = hi - (hi - lo) * ratio;
+            let x2 = lo + (hi - lo) * ratio;
+            let (g1, g2) = (gap_at(x1), gap_at(x2));
+            if deep(g1) {
+                inside = Some(x1);
+                break;
+            }
+            if deep(g2) {
+                inside = Some(x2);
+                break;
+            }
+            if g1 <= g2 {
+                hi = x2;
+            } else {
+                lo = x1;
+            }
+        }
+    }
+    let (mut lo, mut hi) = (t0, inside?);
+    for _ in 0..GOLDEN_STEPS {
+        let mid = (lo + hi).half();
+        match gap_at(mid) {
+            Some(g) if g > TRACE_TOLERANCE => lo = mid,
+            Some(g) if g >= -TRACE_TOLERANCE => {
+                lo = mid;
+                break;
+            }
+            _ => hi = mid,
+        }
+    }
+    match dist(lo) {
+        Dist::Outside { point, normal, .. } => Some(Contact {
+            t: lo,
+            point: point + normal * inflate,
+            normal,
+        }),
+        _ => None,
+    }
+}
+
 /// Whether a contact found touching a convex piece (gap at most `2⁻³²`, normal
 /// `n` toward the core) is a hit for the motion along the unit `d`: moving away
 /// or along the surface (`d·n ≥ 0`) is not; moving into it is, except that when
@@ -1942,6 +2199,19 @@ fn touch_is_hit(
     }
 }
 
+/// The least drop of the gap along the tangent over the first step of
+/// [`dips_below`]: `2⁻²⁸`, 25 times the largest error measured for the distance
+/// from a point to a cone or a cylinder near its surface (`0.62·2⁻³²` over
+/// 40000 points `2⁻¹⁶` to `2⁻⁷` from the side or a cap, against the distance
+/// to its meridian section in `f64`). With a first step of `2⁻³²`, a path
+/// sinking at a slope of `0.009` dropped by `0.01·2⁻³²` a step, the rounding of
+/// the distance (`0.2·2⁻³²`) made the gap grow, and a cast that went
+/// `38152·2⁻³²` in was not a hit.
+const DIPS_FIRST_DROP: Fix128 = Fix128 {
+    hi: 0,
+    lo: 0x0000_0010_0000_0000,
+};
+
 /// Whether a convex gap function (`None` inside) that is `f0` at `t0` and
 /// decreasing at `speed` drops below `−2⁻³²` in `[t0, max_t]`: steps doubling
 /// from the tangent's root until the gap goes below that (yes), grows again
@@ -1962,8 +2232,15 @@ fn dips_below(
         return true;
     }
     let big = max_t + Fix128::ONE;
+    // The first step goes at least as far as the gap drops by `DIPS_FIRST_DROP`
+    // along the tangent: a step whose drop is below the error of the distance
+    // can see the gap grow from rounding alone, and then brackets a minimum
+    // that is not there.
     let mut step = max_fix(
-        ratio_within(max_fix(f0, Fix128::ZERO), speed, big),
+        max_fix(
+            ratio_within(max_fix(f0, Fix128::ZERO), speed, big),
+            ratio_within(DIPS_FIRST_DROP, speed, big),
+        ),
         TRACE_TOLERANCE,
     );
     let (mut before, mut last, mut last_gap) = (t0, t0, f0);
@@ -4523,5 +4800,167 @@ mod tests {
             Dist::toward(Vec3Fix::ZERO, Vec3Fix::ZERO),
             Dist::Inside
         ));
+    }
+}
+
+#[cfg(test)]
+mod zz_s34_gjk_error {
+    use super::*;
+    struct Rng(u64);
+    impl Rng {
+        fn u(&mut self) -> f64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            ((self.0 >> 11) as f64) / ((1u64 << 53) as f64)
+        }
+        fn r(&mut self, a: f64, b: f64) -> f64 {
+            a + (b - a) * self.u()
+        }
+    }
+    fn seg(px: f64, py: f64, a: (f64, f64), b: (f64, f64)) -> f64 {
+        let (ex, ey) = (b.0 - a.0, b.1 - a.1);
+        let u = (((px - a.0) * ex + (py - a.1) * ey) / (ex * ex + ey * ey)).clamp(0.0, 1.0);
+        ((px - a.0 - u * ex).powi(2) + (py - a.1 - u * ey).powi(2)).sqrt()
+    }
+    fn sd(cone: bool, l: [f64; 3]) -> f64 {
+        let rho = (l[0] * l[0] + l[2] * l[2]).sqrt();
+        if cone {
+            let y = l[1] - 0.4;
+            let (a, b, c) = ((0.0, -0.8), (0.0, 0.8), (1.0, -0.8));
+            seg(rho, y, a, b)
+                .min(seg(rho, y, b, c))
+                .min(seg(rho, y, c, a))
+        } else {
+            let qx = rho - 0.9;
+            let qy = l[1].abs() - 0.7;
+            (qx.max(0.0).powi(2) + qy.max(0.0).powi(2)).sqrt() + qx.max(qy).min(0.0)
+        }
+    }
+    #[test]
+    fn measure_gjk_point_error() {
+        if std::env::var("S34E").is_err() {
+            return;
+        }
+        let mut rng = Rng(77);
+        for cone in [true, false] {
+            let posed = PosedShape {
+                shape: if cone {
+                    Shape::Cone {
+                        radius: Fix128::ONE,
+                        half_height: Fix128::from_f64(0.8),
+                    }
+                } else {
+                    Shape::Cylinder {
+                        radius: Fix128::from_f64(0.9),
+                        half_height: Fix128::from_f64(0.7),
+                    }
+                },
+                position: Vec3Fix::ZERO,
+                rotation: QuatFix::IDENTITY,
+            };
+            let mut worst = 0.0f64;
+            let mut hist = [0usize; 40];
+            for _ in 0..20000 {
+                let ph = rng.r(0.0, std::f64::consts::TAU);
+                let (rho, y, nr, ny) = if cone {
+                    let s = rng.r(0.02, 0.98);
+                    let (nr, ny) = (
+                        1.6 / (1.6f64 * 1.6 + 1.0).sqrt(),
+                        1.0 / (1.6f64 * 1.6 + 1.0).sqrt(),
+                    );
+                    (s, 1.2 - 1.6 * s, nr, ny)
+                } else if rng.u() < 0.5 {
+                    (0.9, rng.r(-0.68, 0.68), 1.0, 0.0)
+                } else {
+                    (rng.r(0.0, 0.88), 0.7, 0.0, 1.0)
+                };
+                let h = 2f64.powi(-(8 + (rng.u() * 9.0) as i32)) * rng.r(1.0, 2.0);
+                let p = [
+                    (rho + h * nr) * ph.cos(),
+                    y + h * ny,
+                    (rho + h * nr) * ph.sin(),
+                ];
+                let pf = Vec3Fix::new(
+                    Fix128::from_f64(p[0]),
+                    Fix128::from_f64(p[1]),
+                    Fix128::from_f64(p[2]),
+                );
+                let pp = [pf.x.to_f64(), pf.y.to_f64(), pf.z.to_f64()];
+                let tru = sd(cone, pp);
+                let seg = std::env::var("S34SEG").is_ok();
+                let (d, tru) = if seg {
+                    // a short segment through p along the surface's tangent (phi direction)
+                    let tdir = [-ph.sin(), 0.0, ph.cos()];
+                    let hl = rng.r(0.05, 0.3);
+                    let a = [p[0] - hl * tdir[0], p[1], p[2] - hl * tdir[2]];
+                    let b = [p[0] + hl * tdir[0], p[1], p[2] + hl * tdir[2]];
+                    let af = Vec3Fix::new(
+                        Fix128::from_f64(a[0]),
+                        Fix128::from_f64(a[1]),
+                        Fix128::from_f64(a[2]),
+                    );
+                    let bf = Vec3Fix::new(
+                        Fix128::from_f64(b[0]),
+                        Fix128::from_f64(b[1]),
+                        Fix128::from_f64(b[2]),
+                    );
+                    let (a, b) = (
+                        [af.x.to_f64(), af.y.to_f64(), af.z.to_f64()],
+                        [bf.x.to_f64(), bf.y.to_f64(), bf.z.to_f64()],
+                    );
+                    let at = |s: f64| {
+                        [
+                            a[0] + s * (b[0] - a[0]),
+                            a[1] + s * (b[1] - a[1]),
+                            a[2] + s * (b[2] - a[2]),
+                        ]
+                    };
+                    let (mut lo, mut hi) = (0.0f64, 1.0f64);
+                    for _ in 0..200 {
+                        let m1 = lo + (hi - lo) / 3.0;
+                        let m2 = hi - (hi - lo) / 3.0;
+                        if sd(cone, at(m1)) <= sd(cone, at(m2)) {
+                            hi = m2
+                        } else {
+                            lo = m1
+                        }
+                    }
+                    let tr = sd(cone, at(0.5 * (lo + hi)))
+                        .min(sd(cone, at(0.0)))
+                        .min(sd(cone, at(1.0)));
+                    if tr <= 0.0 {
+                        continue;
+                    }
+                    let Some((d, _, _)) = gjk_distance(&SegmentSupport(af, bf), &posed) else {
+                        continue;
+                    };
+                    (d, tr)
+                } else {
+                    let Some((d, _, _)) = gjk_distance(&PointSupport(pf), &posed) else {
+                        continue;
+                    };
+                    (d, tru)
+                };
+                let e = (d.to_f64() - tru).abs() / 2f64.powi(-64);
+                if e > 2f64.powi(31) && std::env::var("S34V").is_ok() {
+                    eprintln!("BIG cone={cone} rho={rho:.4} y={y:.4} h={h:.3e} gjk={:.17e} tru={tru:.17e}", d.to_f64());
+                }
+                worst = worst.max(e);
+                let b = if e < 1.0 {
+                    0
+                } else {
+                    (e.log2() as usize + 1).min(39)
+                };
+                hist[b] += 1;
+            }
+            eprintln!(
+                "ERR cone={cone} worst={:.3e} x2^-64 (log2 {:.1}) hist={:?}",
+                worst,
+                worst.log2(),
+                hist
+            );
+        }
     }
 }

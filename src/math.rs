@@ -1243,6 +1243,34 @@ impl Vec3Fix {
         Vec3Fix::new(back(scale(x)), back(scale(y)), back(scale(z)))
     }
 
+    /// `self` with its `x` and `z` scaled up by the same power of two `2ᵏ`
+    /// (exactly), so that the larger lies in `[1, 2)`, when it is below `2⁻⁸`;
+    /// `y` is kept, and an `x`, `z` of zero or not below `2⁻⁸` is returned as
+    /// is. For a support mapping that normalizes the `xz` part of its direction
+    /// (a cylinder's rim, a cone's base): `x² + z²` keeps multiples of `2⁻⁶⁴`
+    /// only, so an `xz` part of size `m` loses `2⁻⁶⁴ / m²` of its length, and
+    /// the rim point as much of the radius. A direction near the axis (a
+    /// contact near a rim, its normal mostly along the axis) has a short `xz`
+    /// part: at `m ≈ 2⁻²⁰` the rim point was `2⁻²⁴` of the radius off, outside
+    /// the solid. Below `2⁻⁸` that loss would exceed `2⁻⁴⁸`.
+    #[must_use]
+    pub(crate) fn rescaled_xz(self) -> Self {
+        let raw = |f: Fix128| ((f.hi as i128) << 64) | (f.lo as i128);
+        let back = |r: i128| Fix128::from_raw((r >> 64) as i64, r as u64);
+        let (x, z) = (raw(self.x), raw(self.z));
+        let m = x.unsigned_abs().max(z.unsigned_abs());
+        if m == 0 {
+            return self;
+        }
+        // bit 64 is 1.0; 2⁻⁸ is bit 56
+        let msb = 127 - m.leading_zeros() as i32;
+        if msb >= 56 {
+            return self;
+        }
+        let shift = 64 - msb;
+        Vec3Fix::new(back(x << shift), self.y, back(z << shift))
+    }
+
     /// Normalize to unit length.
     ///
     /// Returns `Self::ZERO` for zero-length vectors. Use [`Self::try_normalize`]

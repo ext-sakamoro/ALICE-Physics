@@ -188,16 +188,18 @@ impl Support for Cone {
 
         // Furthest point on base circle: project direction onto XZ plane,
         // normalize, scale by radius, set Y = -half_height
-        let xz_len_sq = local_dir.x * local_dir.x + local_dir.z * local_dir.z;
+        // a short xz part is scaled up first (see `Vec3Fix::rescaled_xz`)
+        let xz_dir = local_dir.rescaled_xz();
+        let xz_len_sq = xz_dir.x * xz_dir.x + xz_dir.z * xz_dir.z;
         let base_support = if xz_len_sq.is_zero() {
             // Direction is purely along Y — any point on circle edge works
             Vec3Fix::new(self.radius, -self.half_height, Fix128::ZERO)
         } else {
             let xz_len = xz_len_sq.sqrt();
             Vec3Fix::new(
-                self.radius * local_dir.x / xz_len,
+                self.radius * xz_dir.x / xz_len,
                 -self.half_height,
-                self.radius * local_dir.z / xz_len,
+                self.radius * xz_dir.z / xz_len,
             )
         };
 
