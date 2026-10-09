@@ -230,11 +230,46 @@ jobs:
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
+          # `--output <dir>` creates `<dir>/mutants.out` (cargo-mutants' own doc: "Create
+          # mutants.out within this directory"), so with `--output mutants.out` above, the
+          # real results are one level deeper than the name suggests: mutants.out/mutants.out
+          # (confirmed empirically). axis-moved.txt is written there so it sits next to
+          # outcomes.json, missed.txt and the rest of this shard's real output.
+          #
           # the full list of mutants left to the other axis (not per shard), for the ratchet
-          # to check that the other axis plans every one of them
+          # to check that the other axis plans every one of them. `--colors never` (not relying
+          # on the ambient CARGO_TERM_COLOR: always this workflow sets for the Actions log
+          # viewer): mutants_ratchet.py --check-moved parses this as plain text, and an
+          # ANSI-wrapped identifier breaks the comparison the same way it broke
+          # scripts/mutants_exclude_check.py's exclude_re matching. Each axis's own
+          # `--features` is passed to both `--list` calls, matching the run above -- omitting
+          # it (as before) compared the default axis's view of the source twice, regardless
+          # of which axis this shard is actually running.
+          #
+          # Each `--list` is written to a real file and checked for `-s` (non-empty) before
+          # the comparison: `comm` itself does not propagate a failed process substitution's
+          # exit status (`comm -23 <(false; echo) <(echo)` still exits 0 under `set -e -o
+          # pipefail`), so an upstream failure that produced nothing would otherwise read as
+          # "0 mutants moved" instead of as an error.
+          features_flag="${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }}"
+          mine_list=$(mktemp)
+          excluded_list=$(mktemp)
           # shellcheck disable=SC2086
-          comm -23 <(cargo mutants --list $files | sort) <(cargo mutants --list $files $moved | sort) \
-            > mutants.out/axis-moved.txt
+          cargo mutants --colors never --list $files $features_flag | sort > "$mine_list"
+          # shellcheck disable=SC2086
+          cargo mutants --colors never --list $files $moved $features_flag | sort > "$excluded_list"
+          [ -s "$mine_list" ] || { echo "::error::cargo mutants --list produced no output (axis-moved compared nothing)"; exit 1; }
+          mkdir -p mutants.out/mutants.out
+          comm -23 "$mine_list" "$excluded_list" > mutants.out/mutants.out/axis-moved.txt
+          # mutants_axis_exclude.py's own static analysis (the $moved exclude-re args) found
+          # lines to move to the other axis; the empirical list diff above should then be
+          # non-empty too. If it is not, the comparison silently found nothing where the
+          # static analysis expected something -- the same failure shape --check-moved and
+          # this script both exist to catch, now caught here instead.
+          if [ -n "$moved" ] && [ ! -s mutants.out/mutants.out/axis-moved.txt ]; then
+            echo "::error::mutants_axis_exclude.py found lines to move to the other axis, but axis-moved.txt came out empty"
+            exit 1
+          fi
       - name: Summary
         if: always()
         run: |
