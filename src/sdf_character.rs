@@ -980,6 +980,7 @@ mod tests {
     /// normal `+y`; without colliders it is `+∞` with normal `+y`. Moving a
     /// character of radius 1/2 by `(0, −1, 0)` from `y = 1` through the
     /// world pushes it back out to `y ≥ 1/2`.
+    #[cfg(feature = "std")]
     #[test]
     fn world_sdf_field_and_character_move() {
         let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig::default());
