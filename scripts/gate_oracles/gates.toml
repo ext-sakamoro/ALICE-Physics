@@ -30,15 +30,19 @@ reason = "matches 0 mutants"
 
 [[gate.control]]
 # A pattern naming an identifier directly adjacent to another word (not
-# a bare module-path prefix like "tests::"). cargo-mutants colors more
-# than just the identifier -- operators, replacement values and return
-# types are each wrapped too -- but "tests::" sits immediately before
-# wherever the next colored span starts, never inside one, so it stays
-# contiguous with whatever came before it and keeps matching regardless.
-# A pattern spanning a word and the identifier right after it does not
-# have that property: a false negative discovered while building this
-# control, which never actually caught the regression it was meant to
-# prove resilience against until replaced with this one.
+# a bare module-path prefix like "tests::"). Under CARGO_TERM_COLOR=always
+# the whole dotted path and function name are wrapped as a single
+# unbroken colored run -- for example
+# `replace \x1b[38;5;13mtests::Lcg::next\x1b[0m \x1b[35m-> u64\x1b[0m with ...`
+# -- so "tests::" sits at the very start of that run with no escape code
+# inside it and keeps matching as a contiguous substring regardless of
+# color. A pattern spanning the word before the colored run and the
+# identifier inside it (e.g. "in solve_slider_joint") does not have that
+# property: the color-start escape falls exactly between the two,
+# breaking it apart -- a false negative discovered while building this
+# control with "tests::" alone, which never actually caught the
+# regression it was meant to prove resilience against until replaced
+# with this one.
 case = "green-identifier-adjacent-pattern"
 expect = "pass"
 

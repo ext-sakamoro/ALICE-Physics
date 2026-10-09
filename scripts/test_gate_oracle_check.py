@@ -227,10 +227,11 @@ class Check(unittest.TestCase):
         self.assertTrue(any("no must-red control" in e for e in errors))
 
     def test_a_well_behaved_gate_with_both_controls_passes(self):
-        # grep itself as the toy gate under test: the run command greps
-        # each control's own copied marker.txt for a fixed pattern, so
-        # the must-red control's marker lacks it (grep exits 1) and the
-        # must-green control's marker has it (grep exits 0).
+        # grep_like.py (not grep itself: not guaranteed on PATH on every
+        # OS) as the toy gate under test, checking each control's own
+        # copied marker.txt for a fixed pattern: the must-red control's
+        # marker lacks it (exit 1) and the must-green control's has it
+        # (exit 0).
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             red_dir = tmp_path / "x" / "red"
@@ -242,8 +243,8 @@ class Check(unittest.TestCase):
             gate = goc.Gate(
                 id="grep-toy",
                 kind="script",
-                source=f"{RUNNER_DIR}/always_exit_0.py",
-                run="grep -q PATTERN {dir}/marker.txt",
+                source=f"{RUNNER_DIR}/grep_like.py",
+                run="python3 {script} PATTERN {dir}/marker.txt",
                 cost="fast",
                 controls=[
                     goc.Control("grep-toy", "red", "fail", None, red_dir),
@@ -269,8 +270,8 @@ class Check(unittest.TestCase):
             gate = goc.Gate(
                 id="x",
                 kind="script",
-                source=f"{RUNNER_DIR}/always_exit_0.py",
-                run='test "$CARGO_TERM_COLOR" = always',
+                source=f"{RUNNER_DIR}/check_env_var.py",
+                run="python3 {script} CARGO_TERM_COLOR always",
                 cost="fast",
                 controls=[goc.Control("x", "c", "pass", None, control_dir)],
             )
@@ -281,6 +282,16 @@ class Check(unittest.TestCase):
     def test_forced_env_overrides_an_unset_ambient_value(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CARGO_TERM_COLOR", None)
+            self.assertEqual(goc.forced_env()["CARGO_TERM_COLOR"], "always")
+
+    def test_forced_env_overrides_a_set_ambient_value(self):
+        # Distinct from the unset case above: {"CARGO_TERM_COLOR": "always",
+        # **os.environ} (the merge order reversed) would still pass that
+        # one when the ambient value is absent, since nothing in
+        # os.environ would override it -- it only fails to override when
+        # the ambient value is present. This is the one that actually
+        # proves the merge order, not just that the key ends up set.
+        with patch.dict(os.environ, {"CARGO_TERM_COLOR": "never"}):
             self.assertEqual(goc.forced_env()["CARGO_TERM_COLOR"], "always")
 
     def test_cargo_gates_are_skipped_unless_asked_for(self):
