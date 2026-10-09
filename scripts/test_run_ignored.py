@@ -70,5 +70,21 @@ class Main(unittest.TestCase):
         self.assertEqual(run_main([RUNTIME, GAP], [("a", "exe-a")], {"exe-a": (101, out)}), 1)
 
 
+
+class BinaryTimeout(unittest.TestCase):
+    def test_a_binary_that_runs_too_long_is_killed_and_reported(self):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False) as f:
+            f.write("import time\nprint('test a ... ok', flush=True)\ntime.sleep(30)\n")
+        orig = ri._run
+        # run_binary builds a libtest command line; run a sleeping script instead
+        with mock.patch.object(ri, "_run", lambda cmd, **kw: orig([sys.executable, f.name], **kw)):
+            got, log, rc = ri.run_binary("slow", "unused", [], timeout=1)
+        Path(f.name).unlink()
+        self.assertEqual(rc, ri.TIMED_OUT)
+        self.assertIn("test a ... ok", log)
+        self.assertEqual(got, {"a": "ok"})
+
 if __name__ == "__main__":
     unittest.main()

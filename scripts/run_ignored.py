@@ -285,19 +285,37 @@ def crashed(returncode: int, output: str) -> bool:
     return returncode not in (0, 101) or not reported
 
 
-def run_binary(label: str, exe: str, skip: list[str]) -> tuple[dict[str, str], str, int]:
+# A binary is killed after this many seconds and reported by name: one slow
+# binary used to run the whole job into its 180-minute limit, which says nothing
+# about which test hung. Override with RUN_IGNORED_BINARY_TIMEOUT (seconds).
+BINARY_TIMEOUT = int(os.environ.get("RUN_IGNORED_BINARY_TIMEOUT", "1800"))
+TIMED_OUT = -1000  # exit code run_binary returns for a binary it killed
+
+
+def run_binary(
+    label: str, exe: str, skip: list[str], timeout: int | None = None
+) -> tuple[dict[str, str], str, int]:
     """Run only the ignored tests in one binary; return outcomes, output and exit code.
 
     `skip` names the `manual:` tests of this binary, passed as libtest `--skip`
-    so they are neither run nor counted as missing.
+    so they are neither run nor counted as missing. A binary that runs past
+    `timeout` seconds (BINARY_TIMEOUT by default) is killed; the exit code is
+    then TIMED_OUT and the outcomes are those reported before the kill.
     """
     cmd = [exe, "--ignored", "--test-threads=1"]
     for name in skip:
         cmd += ["--skip", name]
-    proc = _run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    outcomes = parse_outcomes(proc.stdout)
+    try:
+        proc = _run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    timeout=BINARY_TIMEOUT if timeout is None else timeout)
+        out, rc = proc.stdout, proc.returncode
+    except subprocess.TimeoutExpired as e:
+        partial = e.stdout or ""
+        out = partial if isinstance(partial, str) else partial.decode("utf-8", "replace")
+        rc = TIMED_OUT
+    outcomes = parse_outcomes(out)
     print(f"  [{label}] {len(outcomes)} ignored test(s) ran", flush=True)
-    return outcomes, proc.stdout, proc.returncode
+    return outcomes, out, rc
 
 
 # ---------------------------------------------------------------------- report
@@ -379,7 +397,12 @@ def main() -> int:
         for label, exe in binaries:
             skip = [e["name"] for e in entries if e["category"] == CAT_MANUAL and e["binary"] == label]
             got, log, rc = run_binary(label, exe, skip)
-            if crashed(rc, log):
+            if rc == TIMED_OUT:
+                broken.append(
+                    f"axis `{axis_label}`: `{label}` ran past {BINARY_TIMEOUT} s and was killed; "
+                    "the ignored tests after the slow one did not run"
+                )
+            elif crashed(rc, log):
                 broken.append(
                     f"axis `{axis_label}`: `{label}` stopped before reporting (exit {rc}); "
                     "the ignored tests after the crash did not run"
