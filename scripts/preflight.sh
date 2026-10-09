@@ -61,6 +61,8 @@ python3 scripts/readme_sync.py --check
 python3 scripts/test_version_sync.py
 python3 scripts/version_sync.py --check
 python3 scripts/test_lib_test_gate.py
+python3 scripts/test_fuzz_targets.py
+python3 scripts/fuzz_targets.py --check
 
 step "docs lint (public vocabulary / CHANGELOG structure)"
 python3 scripts/test_docs_lint.py

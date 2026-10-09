@@ -47,6 +47,10 @@ jobs:
         run: python scripts/version_sync.py --check
       - name: Lib-test gate (tests)
         run: python scripts/test_lib_test_gate.py
+      - name: Fuzz target list (tests and check)
+        run: |
+          python scripts/test_fuzz_targets.py
+          python scripts/fuzz_targets.py --check
       # public documents: no development-process vocabulary or private names;
       # CHANGELOG version headings and [Unreleased] categories well formed
       - name: Docs lint (tests)
