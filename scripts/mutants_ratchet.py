@@ -115,6 +115,10 @@ def moved_check(dirs: list[Path]) -> list[str]:
         root = d / "mutants.out" if (d / "mutants.out").is_dir() else d
         axis = axis_of(d)
         f = root / "axis-moved.txt"
+        if root != d and (d / "axis-moved.txt").is_file():
+            errors.append(f"{d.name}: axis-moved.txt is not next to the outcomes it describes "
+                          f"(it is in {d.name}/, they are in {root.name}/)")
+            continue
         if not f.is_file():
             errors.append(f"{d.name}: no axis-moved.txt (the mutants left to the other axis are unknown)")
             continue
@@ -125,6 +129,9 @@ def moved_check(dirs: list[Path]) -> list[str]:
                 planned[axis].update(m.get("name", "") for m in json.loads(plan.read_text(encoding="utf-8")))
             except ValueError:
                 pass  # reported by completeness()
+    if not errors and not (moved["default"] or moved["parallel"]):
+        errors.append("no mutant was left to another axis in any directory (compared nothing: "
+                      "the listing failed, or the exclusion was not applied)")
     for axis, other in (("default", "parallel"), ("parallel", "default")):
         for name in sorted(moved[axis] - planned[other]):
             errors.append(f"left by the {axis} axis but not planned on the {other} axis: {name}")

@@ -188,6 +188,32 @@ class Ratchet(unittest.TestCase):
         p1 = self.moved_dir("mutants-out-1-parallel", [], [C])
         self.assertEqual(mr.moved_check([d0, p0, p1]), [])
 
+    def test_all_moved_lists_empty_fails(self):
+        # nothing left to another axis anywhere: the listing failed or was not run
+        d = self.moved_dir("mutants-out-0-default", [], [B])
+        p = self.moved_dir("mutants-out-0-parallel", [], [A])
+        self.assertTrue(any("compared nothing" in e for e in mr.moved_check([d, p])))
+
+    def test_a_moved_list_beside_nested_outcomes_fails(self):
+        # the workflow wrote axis-moved.txt one level above the outcomes it describes
+        d = self.moved_dir("mutants-out-0-default", [A], [B])
+        (d / "mutants.out" / "axis-moved.txt").rename(d / "axis-moved.txt")
+        p = self.moved_dir("mutants-out-0-parallel", [], [A])
+        errors = mr.moved_check([d, p])
+        self.assertTrue(any("not next to" in e for e in errors), errors)
+
+    def test_a_flat_output_directory_is_read(self):
+        # `cargo mutants --output .` in the workflow: the files sit in the directory itself
+        d = self.moved_dir("mutants-out-0-default", [A], [B])
+        p = self.moved_dir("mutants-out-0-parallel", [], [A])
+        for x in (d, p):
+            inner = x / "mutants.out"
+            for f in inner.iterdir():
+                f.rename(x / f.name)
+            inner.rmdir()
+        self.assertEqual(mr.moved_check([d, p]), [])
+        self.assertEqual(mr.completeness([d, p], 2), [])
+
     def complete(self, dirs: list[Path], expect: int) -> tuple[int, list[str]]:
         errors = mr.completeness(dirs, expect)
         return (1 if errors else 0), errors
