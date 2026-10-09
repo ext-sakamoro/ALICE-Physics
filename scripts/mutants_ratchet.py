@@ -15,7 +15,10 @@ with scripts/mutants-missed-baseline.txt. It fails when
     directory without `mutants.json` / `outcomes.json`, a run without an end
     time (cancelled, or killed by its timeout), or fewer outcomes than mutants
     it planned. A shard that did not finish is a failure, not a skipped shard:
-    its mutants were not checked.
+    its mutants were not checked, or
+  * with `--check-moved`, a mutant one feature axis left to the other (lines
+    it does not compile, see scripts/mutants_axis_exclude.py) is not planned on
+    that other axis.
 
 A baseline entry that was not tested in a complete run (the code is gone) is
 left alone. Mutants are compared without their line and column
@@ -100,6 +103,34 @@ def completeness(dirs: list[Path], expect_dirs: int) -> list[str]:
     return errors
 
 
+def moved_check(dirs: list[Path]) -> list[str]:
+    """Every mutant one axis left to another (`axis-moved.txt`, written by the
+    workflow from scripts/mutants_axis_exclude.py) is planned on that other axis
+    (the union of its directories' `mutants.json`). A moved mutant no axis plans
+    is a mutant no axis measures."""
+    errors = []
+    moved: dict[str, set[str]] = {"default": set(), "parallel": set()}
+    planned: dict[str, set[str]] = {"default": set(), "parallel": set()}
+    for d in dirs:
+        root = d / "mutants.out" if (d / "mutants.out").is_dir() else d
+        axis = axis_of(d)
+        f = root / "axis-moved.txt"
+        if not f.is_file():
+            errors.append(f"{d.name}: no axis-moved.txt (the mutants left to the other axis are unknown)")
+            continue
+        moved[axis].update(l.strip() for l in f.read_text(encoding="utf-8").splitlines() if l.strip())
+        plan = root / "mutants.json"
+        if plan.is_file():
+            try:
+                planned[axis].update(m.get("name", "") for m in json.loads(plan.read_text(encoding="utf-8")))
+            except ValueError:
+                pass  # reported by completeness()
+    for axis, other in (("default", "parallel"), ("parallel", "default")):
+        for name in sorted(moved[axis] - planned[other]):
+            errors.append(f"left by the {axis} axis but not planned on the {other} axis: {name}")
+    return errors
+
+
 def compare(run: dict[str, Counter], base: Counter) -> tuple[list[str], int]:
     # unviable mutants did not build: nothing was tested for them
     tested = sum(sum(run[k].values()) for k in ("caught", "missed", "timeout"))
@@ -123,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--write", action="store_true", help="record the missed mutants as the baseline")
     ap.add_argument("--expect-dirs", type=int, default=1,
                     help="number of output directories a complete run has (shards x feature axes)")
+    ap.add_argument("--check-moved", action="store_true",
+                    help="every mutant an axis left to the other axis is planned there")
     ap.add_argument("--complete-only", action="store_true",
                     help="check only that every run finished and tested what it planned "
                          "(no baseline; the in-diff run, where any missed mutant already fails)")
@@ -133,6 +166,12 @@ def main(argv: list[str] | None = None) -> int:
         for e in incomplete:
             print(f"error: incomplete run: {e}", file=sys.stderr)
         return 1
+    if args.check_moved:
+        unmoved = moved_check(dirs)
+        if unmoved:
+            for e in unmoved:
+                print(f"error: {e}", file=sys.stderr)
+            return 1
     if args.complete_only:
         print(f"complete: {len(dirs)} output director{'y' if len(dirs) == 1 else 'ies'}")
         return 0
