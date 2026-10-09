@@ -77,16 +77,21 @@ def read_baseline(path: Path) -> Counter:
 def completeness(dirs: list[Path], expect_dirs: int) -> list[str]:
     """Errors for a run that is not complete (see the module documentation)."""
     errors = []
-    if len(dirs) < expect_dirs:
-        errors.append(f"{len(dirs)} of {expect_dirs} expected output directories")
+    distinct = {d.resolve() for d in dirs}
+    if len(distinct) < expect_dirs:
+        errors.append(f"{len(distinct)} of {expect_dirs} expected output directories")
     for d in dirs:
         root = d / "mutants.out" if (d / "mutants.out").is_dir() else d
         plan, outcomes = root / "mutants.json", root / "outcomes.json"
         if not plan.is_file() or not outcomes.is_file():
             errors.append(f"{d.name}: no mutants.json / outcomes.json (the run did not start or was cut off)")
             continue
-        planned = len(json.loads(plan.read_text(encoding="utf-8")))
-        result = json.loads(outcomes.read_text(encoding="utf-8"))
+        try:
+            planned = len(json.loads(plan.read_text(encoding="utf-8")))
+            result = json.loads(outcomes.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as e:
+            errors.append(f"{d.name}: mutants.json / outcomes.json is not readable ({e})")
+            continue
         if result.get("end_time") is None:
             errors.append(f"{d.name}: the run did not finish (no end time: cancelled or timed out)")
         done = sum(1 for o in result.get("outcomes", []) if o.get("scenario") != "Baseline")
