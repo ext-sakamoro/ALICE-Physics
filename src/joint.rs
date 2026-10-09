@@ -591,8 +591,19 @@ impl ConeTwistJoint {
     }
 
     /// Set cone and twist limits
+    ///
+    /// # Panics
+    ///
+    /// When `cone` or `twist` is negative. `0` is allowed (no rotation on
+    /// that axis).
     #[must_use]
     pub const fn with_limits(mut self, cone: Fix128, twist: Fix128) -> Self {
+        if cone.is_negative() {
+            panic!("ConeTwistJoint::with_limits: cone must not be negative");
+        }
+        if twist.is_negative() {
+            panic!("ConeTwistJoint::with_limits: twist must not be negative");
+        }
         self.cone_limit = cone;
         self.twist_limit = twist;
         self

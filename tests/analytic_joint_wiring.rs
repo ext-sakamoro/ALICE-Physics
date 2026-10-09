@@ -399,9 +399,10 @@ fn d6_linear_limited_axis_with_lo_equal_to_hi() {
 // ===========================================================================
 // C.2b inverted limit intervals are refused at construction
 //
-// `ConeTwistJoint::with_limits` is not covered here: `cone_limit` and
-// `twist_limit` are each a single symmetric magnitude, not a min/max pair,
-// so there is no interval to invert.
+// `ConeTwistJoint::with_limits` is not covered by the first four tests:
+// `cone_limit` and `twist_limit` are each a single symmetric magnitude, not
+// a min/max pair, so there is no interval to invert — it has its own pair
+// of tests further down (negative values, not an inverted interval).
 // ===========================================================================
 
 #[test]
@@ -443,6 +444,34 @@ fn d6_with_angular_limits_rejects_an_inverted_interval_on_any_axis() {
         Vec3Fix::new(Fix128::ZERO, q(1, 2), Fix128::ZERO),
         Vec3Fix::new(Fix128::ZERO, -q(1, 2), Fix128::ZERO),
     );
+}
+
+#[test]
+#[should_panic(expected = "cone must not be negative")]
+fn cone_twist_with_limits_rejects_a_negative_cone() {
+    let _ = ConeTwistJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Vec3Fix::UNIT_Z,
+        Vec3Fix::UNIT_Z,
+    )
+    .with_limits(-q(1, 2), q(1, 4));
+}
+
+#[test]
+#[should_panic(expected = "twist must not be negative")]
+fn cone_twist_with_limits_rejects_a_negative_twist() {
+    let _ = ConeTwistJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Vec3Fix::UNIT_Z,
+        Vec3Fix::UNIT_Z,
+    )
+    .with_limits(q(1, 4), -q(1, 2));
 }
 
 #[test]
