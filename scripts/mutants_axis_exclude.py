@@ -36,7 +36,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 TARGET = {"target_arch": "x86_64", "target_os": "linux", "target_feature": set()}
 FLAGS = {"test": True, "debug_assertions": True, "loom": False}
-CFG_RE = re.compile(r"^\s*#\[cfg\((.*)\)\]\s*$")
 ITEM_RE = re.compile(
     r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:(?:const|async|unsafe|extern(?:\s+\"[^\"]*\")?|default)\s+)*"
     r"(?:fn|impl|struct|enum|union|trait|mod|type|use|static|const|macro_rules!)\b"
@@ -108,53 +107,145 @@ def evaluate(pred: str, features: set[str]) -> bool:
     raise Unknown(pred)
 
 
+def blank_non_code(text: str) -> str:
+    r"""`text` with string, raw string, char literal and comment contents replaced
+    by spaces (newlines kept), so braces and parentheses inside them are not
+    counted. A `'` starts a char literal only when it closes within a few
+    characters (`'a'`, `'\n'`, `'\u{1F600}'`), otherwise it is a lifetime."""
+    out = list(text)
+    n, i = len(text), 0
+
+    def blank(a: int, b: int) -> None:
+        for k in range(a, min(b, n)):
+            if out[k] != "\n":
+                out[k] = " "
+
+    while i < n:
+        c = text[i]
+        if text.startswith("//", i):
+            e = text.find("\n", i)
+            e = n if e < 0 else e
+            blank(i, e)
+            i = e
+        elif text.startswith("/*", i):
+            depth, k = 1, i + 2
+            while k < n and depth:
+                if text.startswith("/*", k):
+                    depth, k = depth + 1, k + 2
+                elif text.startswith("*/", k):
+                    depth, k = depth - 1, k + 2
+                else:
+                    k += 1
+            blank(i, k)
+            i = k
+        elif c == "r" and re.match(r'r#*"', text[i:]) and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")):
+            hashes = re.match(r'r(#*)"', text[i:]).group(1)
+            start = i + 2 + len(hashes)
+            e = text.find('"' + hashes, start)
+            e = n if e < 0 else e + 1 + len(hashes)
+            blank(start, e - 1 - len(hashes))
+            i = e
+        elif c == '"':
+            k = i + 1
+            while k < n and text[k] != '"':
+                k += 2 if text[k] == "\\" else 1
+            blank(i + 1, k)
+            i = k + 1
+        elif c == "'":
+            m = re.match(r"'(\\u\{[0-9a-fA-F]+\}|\\.|[^\\'\n])'", text[i:])
+            if m:
+                blank(i + 1, i + m.end() - 1)
+                i += m.end()
+            else:
+                i += 1  # a lifetime
+        else:
+            i += 1
+    return "".join(out)
+
+
+def _matching(code: str, open_at: int, pair: str = "()") -> int:
+    """Index just past the bracket matching `code[open_at]`, or -1."""
+    depth = 0
+    for k in range(open_at, len(code)):
+        if code[k] == pair[0]:
+            depth += 1
+        elif code[k] == pair[1]:
+            depth -= 1
+            if depth == 0:
+                return k + 1
+    return -1
+
+
 def regions(text: str) -> list[tuple[int, int, str]]:
-    """`(first line, last line, predicate)` of every item or statement under an
-    outer `#[cfg(...)]`, 1-based and inclusive. The item starts at the first
-    line after the attributes and comments; it ends where its first `{` block
-    closes, or, if no block opens first, at a line ending in `;` (or, for a
-    statement or match arm, `,`) outside parentheses."""
-    lines = text.split("\n")
+    """`(first line, last line, predicate)` of every item or statement under a
+    `#[cfg(...)]`, 1-based and inclusive, read with strings, chars and comments
+    blanked. The attribute may share its line with the item or span several
+    lines; other attributes between it and the item are skipped. The item ends
+    where its first `{` block closes (an `if` keeps its `else` branches), or,
+    if no block opens first, at a `;` (or, for a statement or match arm, `,`)
+    outside parentheses. `#![cfg(...)]` covers the rest of the file.
+    `#[cfg_attr(...)]` removes no code and is not a region."""
+    code = blank_non_code(text)
+    line_of = lambda off: text.count("\n", 0, off) + 1  # noqa: E731
     out = []
-    for i, line in enumerate(lines):
-        m = CFG_RE.match(line)
-        if not m:
+    for m in re.finditer(r"#(!?)\[\s*cfg\s*\(", code):
+        open_paren = m.end() - 1
+        close = _matching(code, open_paren)
+        if close < 0 or not re.match(r"\s*\]", code[close:]):
+            raise Unknown(f"line {line_of(m.start())}: #[cfg( ... without a closing )]")
+        pred = " ".join(text[open_paren + 1 : close - 1].split())
+        after = close + re.match(r"\s*\]", code[close:]).end()
+        if m.group(1):  # inner attribute: the rest of the file
+            first = after + re.match(r"\s*", code[after:]).end()
+            if first < len(text):
+                out.append((line_of(first), line_of(len(text.rstrip()) - 1), pred))
             continue
-        j = i + 1
-        while j < len(lines) and (
-            not lines[j].strip() or lines[j].strip().startswith(("#[", "//"))
-        ):
-            j += 1
-        if j == len(lines):
-            raise Unknown(f"line {i + 1}: #[cfg] with no item after it")
-        # an item (fn / impl / struct / mod / ...) ends with its block or a `;`;
-        # only a statement or a match arm ends with `,` (a where clause or a
-        # multi-line signature has commas before the body opens)
-        is_item = bool(ITEM_RE.match(lines[j]))
-        depth, parens, opened, k = 0, 0, False, j
-        while k < len(lines):
-            code = lines[k].split("//")[0]
-            for ch in code:
-                if ch == "{":
-                    depth += 1
-                    opened = True
-                elif ch == "}":
-                    depth -= 1
-                elif ch in "([":
-                    parens += 1
-                elif ch in ")]":
-                    parens -= 1
-            if opened and depth <= 0:
-                break
-            # a `;` / `,` ends the item only outside parentheses (a multi-line
-            # signature or argument list has commas before its body opens)
-            ends = (";",) if is_item else (";", ",")
-            if not opened and parens == 0 and code.rstrip().endswith(ends):
+        # skip whitespace and further attributes to the item itself
+        k = after
+        while True:
+            ws = re.match(r"\s*", code[k:]).end()
+            k += ws
+            if code.startswith("#[", k):
+                e = _matching(code, k + 1, "[]")
+                if e < 0:
+                    raise Unknown(f"line {line_of(k)}: an attribute does not close")
+                k = e
+                continue
+            break
+        if k >= len(code):
+            raise Unknown(f"line {line_of(m.start())}: #[cfg] with no item after it")
+        start = k
+        line_text = code[start : code.find("\n", start) if "\n" in code[start:] else len(code)]
+        is_item = bool(ITEM_RE.match(line_text))
+        depth = parens = 0
+        opened = False
+        end = None
+        while k < len(code):
+            ch = code[k]
+            if ch == "{":
+                depth += 1
+                opened = True
+            elif ch == "}":
+                depth -= 1
+                if opened and depth == 0:
+                    rest = re.match(r"\s*else\b", code[k + 1 :])
+                    if rest:  # if ... else: the region goes on
+                        k += 1 + rest.end()
+                        opened = False
+                        continue
+                    end = k
+                    break
+            elif ch in "([":
+                parens += 1
+            elif ch in ")]":
+                parens -= 1
+            elif not opened and parens == 0 and depth == 0 and (ch == ";" or (ch == "," and not is_item)):
+                end = k
                 break
             k += 1
-        if k == len(lines):
-            raise Unknown(f"line {i + 1}: the item under #[cfg] does not end")
-        out.append((j + 1, k + 1, m.group(1)))
+        if end is None:
+            raise Unknown(f"line {line_of(m.start())}: the item under #[cfg] does not end")
+        out.append((line_of(start), line_of(end), pred))
     return out
 
 
