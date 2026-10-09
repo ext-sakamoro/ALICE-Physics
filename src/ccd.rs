@@ -1865,6 +1865,12 @@ mod tests {
     /// at rest, dt = 1/8: v_max = 8 (the z component), travel = 1,
     /// step = (1/8) / 2 = 1/16, n = 16. Swapping the roles (B moving, the
     /// small radius second) gives the same 16.
+    ///
+    /// `solver_tgs::adaptive_substeps_for_ccd` (the formula this oracle
+    /// pins) is itself `std`-gated; see [`adaptive_toi_substeps`]'s
+    /// `# no_std` doc for the documented `max_substeps` fallback this test
+    /// does not apply to.
+    #[cfg(feature = "std")]
     #[test]
     fn adaptive_toi_substeps_uses_the_z_dominated_speed_and_the_smaller_radius() {
         let n = adaptive_toi_substeps(
