@@ -2253,16 +2253,57 @@ impl PhysicsWorld {
         idx
     }
 
+    /// Wake the bodies [`Self::remove_body`] may take the support from: the
+    /// removed body's island and every non-static body whose broad-phase box
+    /// overlaps its own, with that body's island. Indices are the ones before
+    /// the removal.
+    fn wake_dependents_of_removed(&mut self, idx: usize) {
+        self.islands.resize(self.bodies.len());
+        self.islands.wake_island(idx);
+        let Some(radius) = self.body_collision_radii.get(idx).copied().flatten() else {
+            return;
+        };
+        let removed_box = self.broadphase_box(idx, radius);
+        for j in 0..self.bodies.len() {
+            if j == idx || self.bodies[j].is_static() {
+                continue;
+            }
+            let Some(rj) = self.body_collision_radii.get(j).copied().flatten() else {
+                continue;
+            };
+            if self.broadphase_box(j, rj).intersects(&removed_box) {
+                self.islands.wake_island(j);
+            }
+        }
+    }
+
     /// Remove a body by index (swap-remove).
     ///
     /// The last body is moved to fill the gap. All constraints and joints
     /// referencing the old last index are remapped. Returns the removed body,
     /// or `None` if the index is out of bounds.
+    ///
+    /// Sleep: every surviving body keeps its own sleep state (the moved last
+    /// body included), except the bodies whose support may have changed,
+    /// which are woken before the removal:
+    /// - every body in the removed body's island (joint-connected), and
+    /// - every non-static body touching it: a body with a collision radius
+    ///   whose broad-phase box overlaps the removed body's, together with
+    ///   that body's own island. Sleeping pairs are not re-detected and the
+    ///   contact cache is not kept for them, so the overlap of the boxes the
+    ///   narrow phase starts from is what identifies them.
+    ///
+    /// Sleeping bodies that are neither joint-connected to nor touching the
+    /// removed body are not woken.
     pub fn remove_body(&mut self, idx: usize) -> Option<RigidBody> {
         if idx >= self.bodies.len() {
             return None;
         }
         let last = self.bodies.len() - 1;
+
+        // 0. Wake what may lose its support, by the indices before the removal
+        //    (the swap below moves `last` into `idx`).
+        self.wake_dependents_of_removed(idx);
 
         // 1. Drop every constraint / joint that references the body being removed.
         //    This must happen BEFORE the `last -> idx` remap: after `swap_remove`
@@ -8501,6 +8542,38 @@ mod tests {
             assert_eq!(world.islands.sleep_data, expected, "victim {victim}");
             assert_eq!(world.islands.sleep_data.len(), world.bodies.len());
         }
+    }
+
+    #[test]
+    fn remove_body_wakes_touching_and_joint_connected_bodies_only() {
+        // 0: removed (r 1) / 1: touches 0 / 2: joint to 0, far / 3: far, unrelated
+        // 4: static touching 0 (last, moves into slot 0)
+        let mut world = quiet_world();
+        let r = Fix128::ONE;
+        world.add_body_with_radius(RigidBody::new_dynamic(v3(0, 0, 0), Fix128::ONE), r);
+        world.add_body_with_radius(RigidBody::new_dynamic(v3(1, 0, 0), Fix128::ONE), r);
+        world.add_body_with_radius(RigidBody::new_dynamic(v3(50, 0, 0), Fix128::ONE), r);
+        world.add_body_with_radius(RigidBody::new_dynamic(v3(-50, 0, 0), Fix128::ONE), r);
+        world.add_body_with_radius(RigidBody::new_static(v3(0, -1, 0)), r);
+        let j = crate::joint::BallJoint::new(0, 2, Vec3Fix::ZERO, Vec3Fix::ZERO);
+        world.add_joint(Joint::Ball(j));
+        for sd in &mut world.islands.sleep_data {
+            sd.state = SleepState::Sleeping;
+            sd.idle_frames = 7;
+        }
+        world.remove_body(0).expect("in range");
+        let states: Vec<SleepState> = world.islands.sleep_data.iter().map(|d| d.state).collect();
+        assert_eq!(
+            states,
+            vec![
+                SleepState::Sleeping, // the static body moved into slot 0
+                SleepState::Awake,    // touched the removed body
+                SleepState::Awake,    // was joint-connected to it
+                SleepState::Sleeping, // unrelated
+            ]
+        );
+        assert_eq!(world.islands.sleep_data[1].idle_frames, 0);
+        assert_eq!(world.islands.sleep_data[3].idle_frames, 7);
     }
 
     #[test]

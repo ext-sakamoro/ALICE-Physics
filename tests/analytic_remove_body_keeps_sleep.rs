@@ -1,5 +1,7 @@
 //! `PhysicsWorld::remove_body` must not disturb the sleep state of the
-//! bodies it keeps.
+//! bodies it keeps when they neither touch the removed body nor are
+//! joint-connected to it (those are woken, see
+//! `tests/analytic_remove_body_wakes_dependents.rs`).
 //!
 //! Oracle: a control world that never contained the removed body. Removing
 //! a body that touches nothing is, by definition, the same world as never
