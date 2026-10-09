@@ -28,7 +28,14 @@ class Strip(unittest.TestCase):
         self.assertEqual(ansi.strip(MUTANTS), "replace solve_slider_joint with ()")
 
     def test_cursor_and_erase_sequences_are_removed(self):
-        self.assertEqual(ansi.strip("a\x1b[2K\x1b[1Gb"), "ab")
+        self.assertEqual(ansi.strip("a\x1b[2K\x1b[1Gb\x1b[Kc"), "abc")
+
+    def test_private_csi_and_intermediate_bytes_are_removed(self):
+        # ESC [ ? 25 l hides the cursor; ESC [ 1 SP q sets its shape (intermediate byte)
+        self.assertEqual(ansi.strip("a\x1b[?25lb\x1b[1 qc"), "abc")
+
+    def test_every_charset_selector_is_removed(self):
+        self.assertEqual(ansi.strip("a\x1b(0b\x1b)Bc\x1b*Ad\x1b+0e"), "abcde")
 
     def test_osc_hyperlinks_are_removed_with_both_terminators(self):
         self.assertEqual(ansi.strip("\x1b]8;;https://x\x07link\x1b]8;;\x07"), "link")

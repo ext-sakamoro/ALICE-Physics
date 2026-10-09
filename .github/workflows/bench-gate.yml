@@ -14,6 +14,8 @@ on:
       - 'benches/instruction_counts.rs'
       - 'Cargo.toml'
       - '.github/workflows/bench-gate.yml'
+      - 'scripts/bench_counts_check.py'
+      - 'scripts/ansi.py'
 
 permissions:
   contents: read

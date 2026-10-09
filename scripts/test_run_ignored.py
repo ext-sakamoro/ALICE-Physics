@@ -39,6 +39,17 @@ def run_main(entries, binaries, runs):
         return ri.main()
 
 
+class ColouredOutput(unittest.TestCase):
+    def test_libtest_coloured_lines_parse_like_plain_ones(self):
+        plain = "test a ... ok\ntest b ... FAILED\ntest result: FAILED. 1 passed; 1 failed; 0 ignored\n"
+        sgr0 = "\x1b(B\x1b[m"
+        coloured = (f"test a ... \x1b[32mok{sgr0}\ntest b ... \x1b[31mFAILED{sgr0}\n"
+                    f"test result: \x1b[31mFAILED{sgr0}. 1 passed; 1 failed; 0 ignored\n")
+        self.assertEqual(ri.parse_outcomes(coloured), ri.parse_outcomes(plain))
+        self.assertEqual(ri.parse_outcomes(coloured), {"a": "ok", "b": "FAILED"})
+        self.assertFalse(ri.crashed(101, coloured), "a coloured summary line is a report, not a crash")
+
+
 class Crash(unittest.TestCase):
     def test_a_normal_run_with_failures_is_not_a_crash(self):
         self.assertFalse(ri.crashed(101, OK_RUN))
