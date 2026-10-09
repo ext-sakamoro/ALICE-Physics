@@ -133,6 +133,48 @@ class LoadGates(unittest.TestCase):
                 goc.load_gates(path)
             self.assertIn("no such directory", str(ctx.exception))
 
+    def test_an_unpinned_run_with_no_must_green_control_is_an_error(self):
+        # Every control now runs under FORCED_ENV (CARGO_TERM_COLOR=always,
+        # 2026-10-09 CI incident). A gate whose own `run` does not override
+        # that back to "never" needs a passing control to prove it
+        # tolerates it; this gate has only a failing one.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "x" / "c").mkdir(parents=True)
+            path = self.write(
+                tmp_path,
+                f'[[gate]]\nid = "x"\nsource = "{RUNNER_DIR}/always_exit_0.py"\n'
+                'run = "python3 {script}"\n\n[[gate.control]]\ncase = "c"\nexpect = "fail"\n',
+            )
+            with self.assertRaises(goc.GateOracleError) as ctx:
+                goc.load_gates(path)
+            self.assertIn("does not pin color", str(ctx.exception))
+
+    def test_an_unpinned_run_with_a_must_green_control_loads(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "x" / "c").mkdir(parents=True)
+            path = self.write(
+                tmp_path,
+                f'[[gate]]\nid = "x"\nsource = "{RUNNER_DIR}/always_exit_1.py"\n'
+                'run = "python3 {script}"\n\n[[gate.control]]\ncase = "c"\nexpect = "pass"\n',
+            )
+            gates = goc.load_gates(path)
+            self.assertEqual(len(gates), 1)
+
+    def test_a_run_that_pins_color_itself_needs_no_must_green_control(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "x" / "c").mkdir(parents=True)
+            path = self.write(
+                tmp_path,
+                f'[[gate]]\nid = "x"\nsource = "{RUNNER_DIR}/always_exit_0.py"\n'
+                'run = "CARGO_TERM_COLOR=never python3 {script}"\n\n'
+                '[[gate.control]]\ncase = "c"\nexpect = "fail"\n',
+            )
+            gates = goc.load_gates(path)
+            self.assertEqual(len(gates), 1)
+
 
 class Check(unittest.TestCase):
     def test_zero_gates_is_ran_no_control_at_all(self):
@@ -188,6 +230,23 @@ class Check(unittest.TestCase):
                 ],
             )
             self.assertEqual(goc.check([gate], {"fast"}), [])
+
+    def test_every_control_runs_under_forced_color(self):
+        # Proves FORCED_ENV actually reaches the subprocess, not just that
+        # the constant exists: a gate whose own `run` asserts
+        # CARGO_TERM_COLOR=always via the shell itself.
+        with tempfile.TemporaryDirectory() as tmp:
+            control_dir = Path(tmp) / "x" / "c"
+            control_dir.mkdir(parents=True)
+            gate = goc.Gate(
+                id="x",
+                kind="script",
+                source=f"{RUNNER_DIR}/always_exit_0.py",
+                run='test "$CARGO_TERM_COLOR" = always',
+                cost="fast",
+                controls=[goc.Control("x", "c", "pass", None, control_dir)],
+            )
+            self.assertEqual(goc.run_control(gate, gate.controls[0]), [])
 
     def test_cargo_gates_are_skipped_unless_asked_for(self):
         gate = goc.Gate(

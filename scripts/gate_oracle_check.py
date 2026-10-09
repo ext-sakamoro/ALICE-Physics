@@ -32,6 +32,7 @@ control at all (its own empty-input case).
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -43,6 +44,23 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_GATES_TOML = REPO_ROOT / "scripts" / "gate_oracles" / "gates.toml"
 TIME_LIMIT_S = {"fast": 60, "cargo": 900}
+
+# Forced for every control of every gate, unconditionally (2026-10-09:
+# ci.yml's CARGO_TERM_COLOR: always broke three gates that read an
+# external tool's output with a plain-text regex -- each had been tested
+# only without color, so the break was invisible here and only showed up
+# as a red main). A gate whose own `run` already pins color back to
+# "never" (see COLOR_PIN_MARKERS below) overrides this via its own shell
+# assignment, which always wins for that command's own execution; this
+# is the baseline a gate that does not override it is actually run under.
+FORCED_ENV = {**os.environ, "CARGO_TERM_COLOR": "always"}
+
+# Literal substrings that prove a gate's own `run` pins color itself,
+# making it safe regardless of FORCED_ENV. Checked at load time (see
+# load_gates): a gate whose `run` contains none of these must have a
+# must-green (expect = "pass") control, which -- now that every control
+# always runs under FORCED_ENV -- is the proof that gate tolerates it.
+COLOR_PIN_MARKERS = ("CARGO_TERM_COLOR=never", "--color never", "--colors never")
 
 
 @dataclass(frozen=True)
@@ -100,12 +118,22 @@ def load_gates(gates_toml: Path) -> list[Gate]:
                     control_dir=control_dir,
                 )
             )
+        run = raw["run"]
+        if not any(marker in run for marker in COLOR_PIN_MARKERS) and not any(
+            c.expect == "pass" for c in controls
+        ):
+            raise GateOracleError(
+                f"{gate_id}: run does not pin color ({COLOR_PIN_MARKERS}) and has no "
+                "must-green control -- every control now runs under FORCED_ENV "
+                "(CARGO_TERM_COLOR=always), so an unpinned gate needs a passing "
+                "control to prove it tolerates that"
+            )
         gates.append(
             Gate(
                 id=gate_id,
                 kind=raw.get("kind", "script"),
                 source=source,
-                run=raw["run"],
+                run=run,
                 cost=raw.get("cost", "fast"),
                 controls=controls,
             )
@@ -134,6 +162,7 @@ def run_control(gate: Gate, control: Control) -> list[str]:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
+                env=FORCED_ENV,
             )
             exit_code, output = proc.returncode, proc.stdout + proc.stderr
         except subprocess.TimeoutExpired as e:
