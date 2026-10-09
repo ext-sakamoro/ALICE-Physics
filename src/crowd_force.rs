@@ -1262,6 +1262,8 @@ fn get_fix(b: &[u8], at: usize) -> Fix128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::{string::ToString, vec};
 
     #[test]
     fn cell_list_pairs_cover_all_pairs_within_cutoff() {
@@ -1815,6 +1817,7 @@ mod tests {
     /// `v = (1/2, 0)`, so the mean speed reads 1/2; a walker whose step
     /// leaves the fixed-point range records an out-of-range participant
     /// fault.
+    #[cfg(feature = "std")]
     #[test]
     fn crowd_participant_in_a_world() {
         let world_of = |c: CrowdParticipant| {
