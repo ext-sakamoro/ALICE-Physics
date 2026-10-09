@@ -233,6 +233,8 @@ pub struct DestructibleSdf {
     destructions: Vec<DestructionShape>,
     /// Total destruction count (for statistics)
     total_destructions: usize,
+    /// Bumped whenever the shape changes ([`SdfField::generation`]).
+    generation: u64,
 }
 
 impl DestructibleSdf {
@@ -243,13 +245,18 @@ impl DestructibleSdf {
             original,
             destructions: Vec::new(),
             total_destructions: 0,
+            generation: 0,
         }
     }
 
     /// Apply a destruction event
+    ///
+    /// Changes [`SdfField::generation`], so a world holding this field wakes
+    /// its sleeping bodies at the next step.
     pub fn apply_destruction(&mut self, shape: DestructionShape) {
         self.destructions.push(shape);
         self.total_destructions += 1;
+        self.generation = self.generation.wrapping_add(1);
     }
 
     /// Number of active destruction volumes
@@ -265,8 +272,13 @@ impl DestructibleSdf {
     }
 
     /// Clear all destruction (restore original shape)
+    ///
+    /// Changes [`SdfField::generation`] when there was destruction to clear.
     pub fn reset(&mut self) {
-        self.destructions.clear();
+        if !self.destructions.is_empty() {
+            self.destructions.clear();
+            self.generation = self.generation.wrapping_add(1);
+        }
     }
 
     /// Remove destruction shapes that are fully contained by newer ones
@@ -282,6 +294,8 @@ impl DestructibleSdf {
         // A more sophisticated implementation would merge overlapping volumes
         let drain_count = self.destructions.len() - 32;
         self.destructions.drain(..drain_count);
+        // Dropping the oldest volumes refills their craters: a shape change.
+        self.generation = self.generation.wrapping_add(1);
     }
 }
 
@@ -316,6 +330,14 @@ impl SdfField for DestructibleSdf {
             y,
             z,
         )
+    }
+
+    /// Changes on every [`DestructibleSdf::apply_destruction`], on a
+    /// [`DestructibleSdf::reset`] that cleared something and on an
+    /// [`DestructibleSdf::optimize`] that dropped volumes, and with the
+    /// original field's generation (their wrapping sum).
+    fn generation(&self) -> u64 {
+        self.original.generation().wrapping_add(self.generation)
     }
 }
 

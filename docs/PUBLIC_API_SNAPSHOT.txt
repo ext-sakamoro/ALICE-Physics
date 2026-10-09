@@ -10904,6 +10904,7 @@ pub fn alice_physics::sdf_collider::ClosureSdf::new(impl core::ops::function::Fn
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::ClosureSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::ClosureSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sdf_collider::ClosureSdf
 impl core::marker::Send for alice_physics::sdf_collider::ClosureSdf
@@ -11676,6 +11677,7 @@ pub const fn alice_physics::sdf_destruction::DestructibleSdf::total_destruction_
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_destruction::DestructibleSdf
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_destruction::DestructibleSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_destruction::DestructibleSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sdf_destruction::DestructibleSdf
 impl core::marker::Send for alice_physics::sdf_destruction::DestructibleSdf
@@ -12966,6 +12968,7 @@ pub fn alice_physics::sim_modifier::ModifiedSdf::with_modifier(self, alloc::boxe
 impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::ModifiedSdf
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::ModifiedSdf::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sim_modifier::ModifiedSdf
 impl core::marker::Send for alice_physics::sim_modifier::ModifiedSdf
@@ -14316,6 +14319,7 @@ pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::update(&mut self, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M> core::marker::Freeze for alice_physics::sim_modifier::SingleModifiedSdf<M> where M: core::marker::Freeze
 impl<M> core::marker::Send for alice_physics::sim_modifier::SingleModifiedSdf<M>
@@ -15110,34 +15114,42 @@ pub fn alice_physics::thermal::ThermalModifier::update(&mut self, f32)
 pub trait alice_physics::prelude::SdfField: core::marker::Send + core::marker::Sync
 pub fn alice_physics::prelude::SdfField::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::prelude::SdfField::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::prelude::SdfField::generation(&self) -> u64
 pub fn alice_physics::prelude::SdfField::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::generation(&self) -> u64
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::ClosureSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::ClosureSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_destruction::DestructibleSdf
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_destruction::DestructibleSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_destruction::DestructibleSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::ModifiedSdf
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::ModifiedSdf::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::generation(&self) -> u64
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 pub trait alice_physics::prelude::Support
 pub fn alice_physics::prelude::Support::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
@@ -16427,6 +16439,7 @@ pub struct alice_physics::sdf_character::WorldSdfField<'a>
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::generation(&self) -> u64
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<'a> core::clone::Clone for alice_physics::sdf_character::WorldSdfField<'a>
 pub fn alice_physics::sdf_character::WorldSdfField<'a>::clone(&self) -> Self
@@ -16445,6 +16458,7 @@ pub fn alice_physics::sdf_collider::ClosureSdf::new(impl core::ops::function::Fn
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::ClosureSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::ClosureSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sdf_collider::ClosureSdf
 impl core::marker::Send for alice_physics::sdf_collider::ClosureSdf
@@ -16560,6 +16574,7 @@ pub fn alice_physics::sdf_collider::SdfUnion<A, B>::new(A, B) -> Self
 impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<A: core::clone::Clone, B: core::clone::Clone> core::clone::Clone for alice_physics::sdf_collider::SdfUnion<A, B>
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::clone(&self) -> Self
@@ -16577,34 +16592,42 @@ pub const alice_physics::sdf_collider::SDF_STATIC: usize
 pub trait alice_physics::sdf_collider::SdfField: core::marker::Send + core::marker::Sync
 pub fn alice_physics::sdf_collider::SdfField::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::SdfField::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfField::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::SdfField::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::generation(&self) -> u64
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::ClosureSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::ClosureSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_destruction::DestructibleSdf
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_destruction::DestructibleSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_destruction::DestructibleSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::ModifiedSdf
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::ModifiedSdf::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::generation(&self) -> u64
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 pub trait alice_physics::sdf_collider::SdfQuery
 pub fn alice_physics::sdf_collider::SdfQuery::query_distance(&self, f32, f32, f32) -> f32
@@ -16659,6 +16682,7 @@ pub const fn alice_physics::sdf_destruction::DestructibleSdf::total_destruction_
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_destruction::DestructibleSdf
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_destruction::DestructibleSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_destruction::DestructibleSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sdf_destruction::DestructibleSdf
 impl core::marker::Send for alice_physics::sdf_destruction::DestructibleSdf
@@ -17377,6 +17401,7 @@ pub fn alice_physics::sim_modifier::ModifiedSdf::with_modifier(self, alloc::boxe
 impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::ModifiedSdf
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::ModifiedSdf::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sim_modifier::ModifiedSdf
 impl core::marker::Send for alice_physics::sim_modifier::ModifiedSdf
@@ -17394,6 +17419,7 @@ pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::update(&mut self, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M> core::marker::Freeze for alice_physics::sim_modifier::SingleModifiedSdf<M> where M: core::marker::Freeze
 impl<M> core::marker::Send for alice_physics::sim_modifier::SingleModifiedSdf<M>
@@ -18428,6 +18454,7 @@ pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::with_normal_st
 impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::generation(&self) -> u64
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<H: alice_physics::spherical_terrain::SurfaceHeight> core::fmt::Debug for alice_physics::spherical_terrain::SphericalHeightField<H>
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
@@ -22066,6 +22093,7 @@ pub fn alice_physics::sdf_collider::ClosureSdf::new(impl core::ops::function::Fn
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::ClosureSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::ClosureSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sdf_collider::ClosureSdf
 impl core::marker::Send for alice_physics::sdf_collider::ClosureSdf
@@ -22860,6 +22888,7 @@ pub const fn alice_physics::sdf_destruction::DestructibleSdf::total_destruction_
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_destruction::DestructibleSdf
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_destruction::DestructibleSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_destruction::DestructibleSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sdf_destruction::DestructibleSdf
 impl core::marker::Send for alice_physics::sdf_destruction::DestructibleSdf
@@ -24150,6 +24179,7 @@ pub fn alice_physics::sim_modifier::ModifiedSdf::with_modifier(self, alloc::boxe
 impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::ModifiedSdf
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::ModifiedSdf::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl core::marker::Freeze for alice_physics::sim_modifier::ModifiedSdf
 impl core::marker::Send for alice_physics::sim_modifier::ModifiedSdf
@@ -25573,6 +25603,7 @@ pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::update(&mut self, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M> core::marker::Freeze for alice_physics::sim_modifier::SingleModifiedSdf<M> where M: core::marker::Freeze
 impl<M> core::marker::Send for alice_physics::sim_modifier::SingleModifiedSdf<M>
@@ -26422,34 +26453,42 @@ pub fn alice_physics::thermal::ThermalModifier::update(&mut self, f32)
 pub trait alice_physics::SdfField: core::marker::Send + core::marker::Sync
 pub fn alice_physics::SdfField::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::SdfField::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::SdfField::generation(&self) -> u64
 pub fn alice_physics::SdfField::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_character::WorldSdfField<'_>
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_character::WorldSdfField<'_>::generation(&self) -> u64
 pub fn alice_physics::sdf_character::WorldSdfField<'_>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::ClosureSdf
 pub fn alice_physics::sdf_collider::ClosureSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::ClosureSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::ClosureSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::ClosureSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sdf_destruction::DestructibleSdf
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_destruction::DestructibleSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_destruction::DestructibleSdf::generation(&self) -> u64
 pub fn alice_physics::sdf_destruction::DestructibleSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::ModifiedSdf
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::ModifiedSdf::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::ModifiedSdf::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::ModifiedSdf::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<A: alice_physics::sdf_collider::SdfField, B: alice_physics::sdf_collider::SdfField> alice_physics::sdf_collider::SdfField for alice_physics::sdf_collider::SdfUnion<A, B>
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sdf_collider::SdfUnion<A, B>::generation(&self) -> u64
 pub fn alice_physics::sdf_collider::SdfUnion<A, B>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<H: alice_physics::spherical_terrain::SurfaceHeight> alice_physics::sdf_collider::SdfField for alice_physics::spherical_terrain::SphericalHeightField<H>
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::generation(&self) -> u64
 pub fn alice_physics::spherical_terrain::SphericalHeightField<H>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 impl<M: alice_physics::sim_modifier::PhysicsModifier> alice_physics::sdf_collider::SdfField for alice_physics::sim_modifier::SingleModifiedSdf<M>
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance(&self, f32, f32, f32) -> f32
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::distance_and_normal(&self, f32, f32, f32) -> (f32, (f32, f32, f32))
+pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::generation(&self) -> u64
 pub fn alice_physics::sim_modifier::SingleModifiedSdf<M>::normal(&self, f32, f32, f32) -> (f32, f32, f32)
 pub trait alice_physics::Support
 pub fn alice_physics::Support::support(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix

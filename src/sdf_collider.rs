@@ -98,6 +98,23 @@ pub trait SdfField: Send + Sync {
     fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) {
         (self.distance(x, y, z), self.normal(x, y, z))
     }
+
+    /// A number that changes whenever the field changes shape (default: `0`,
+    /// a field that never changes).
+    ///
+    /// A field whose shape can change while it is held by a world (carved,
+    /// grown, edited) returns a different value after each change, for
+    /// instance a counter it bumps. At the head of every step the world
+    /// compares each collider's value with the one it saw at the previous step
+    /// (or when the collider was added) and, when it differs, wakes every
+    /// sleeping body of the world, not only those near the change (a field
+    /// does not report where it changed): a body asleep on a surface that has moved away is
+    /// otherwise never integrated again and stays where it was. Only a change
+    /// matters, not the value; a field that keeps returning the same number
+    /// never wakes anything.
+    fn generation(&self) -> u64 {
+        0
+    }
 }
 
 /// Type alias for a normal-returning closure used in [`ClosureSdf`]
@@ -340,6 +357,12 @@ impl<A: SdfField, B: SdfField> SdfField for SdfUnion<A, B> {
         } else {
             self.b.normal(x, y, z)
         }
+    }
+
+    /// Changes when either part changes: the wrapping sum of the parts'
+    /// generations (`0` while neither changes).
+    fn generation(&self) -> u64 {
+        self.a.generation().wrapping_add(self.b.generation())
     }
 }
 

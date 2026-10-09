@@ -89,6 +89,7 @@ pub trait SdfField: Send + Sync {
     fn distance(&self, x: f32, y: f32, z: f32) -> f32;
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32);
     fn distance_and_normal(&self, x: f32, y: f32, z: f32) -> (f32, (f32, f32, f32)) { ... }
+    fn generation(&self) -> u64 { ... }
 }
 ```
 
@@ -98,6 +99,10 @@ pub trait SdfField: Send + Sync {
   An override must return the same distance as `distance`: callers such as
   `sdf_adaptive::AdaptiveSdfEvaluator` cache the distance it returns while
   `collide_point_sdf` takes contact depth from `distance`.
+- `generation` defaults to `0`. A field whose shape can change while a world
+  holds it returns a different value after each change (2.1.0); the world
+  compares it at the head of every step and wakes the sleeping bodies when it
+  changed. A field that never changes keeps the default.
 
 ### Frozen types
 - `f32` coordinates and distances. SDF evaluation is floating point; the

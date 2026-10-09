@@ -1752,6 +1752,10 @@ pub struct PhysicsWorld {
     sdf_contact_log: Vec<crate::sdf_collider::SdfContact>,
     /// Substep index the SDF contacts resolved now are recorded under.
     sdf_contact_substep: usize,
+    /// The [`SdfField::generation`](crate::sdf_collider::SdfField::generation)
+    /// of each SDF collider as last seen (at the previous step head, or when
+    /// the collider was added); a change wakes the sleeping bodies.
+    sdf_generations: Vec<u64>,
     /// Per-body buffers the parallel SDF resolution writes into before they
     /// are appended to `sdf_contact_log` in body order (kept from step to
     /// step).
@@ -1900,6 +1904,7 @@ impl PhysicsWorld {
             stage_work: StageWork::default(),
             sdf_contact_log: Vec::new(),
             sdf_contact_substep: 0,
+            sdf_generations: Vec::new(),
             #[cfg(feature = "parallel")]
             sdf_contact_scratch: Vec::new(),
             #[cfg(feature = "std")]
@@ -3336,6 +3341,7 @@ impl PhysicsWorld {
     /// The step body behind [`Self::try_step`] (checks already done, `dt > 0`).
     fn run_step(&mut self, dt: Fix128) {
         self.make_body_rotations_unit();
+        self.wake_on_sdf_shape_change();
         self.stage_work = StageWork::default();
         self.begin_sdf_contact_log();
         let mut frozen = self.participant_flags();
@@ -4221,6 +4227,7 @@ impl PhysicsWorld {
     #[cfg(feature = "parallel")]
     fn run_step_parallel(&mut self, dt: Fix128) {
         self.make_body_rotations_unit();
+        self.wake_on_sdf_shape_change();
         self.begin_sdf_contact_log();
         let mut frozen = self.participant_flags();
 
@@ -5478,6 +5485,7 @@ impl PhysicsWorld {
             return;
         }
         self.make_body_rotations_unit();
+        self.wake_on_sdf_shape_change();
         self.begin_sdf_contact_log();
         let mut frozen = self.participant_flags();
 
@@ -5720,7 +5728,50 @@ impl PhysicsWorld {
         collider.sync_to_body(&self.bodies);
         let idx = self.sdf_colliders.len();
         self.sdf_colliders.push(collider);
+        self.sync_sdf_generations();
         idx
+    }
+
+    /// Bring `sdf_generations` to one entry per collider: a collider without
+    /// an entry (just added, or pushed onto the public field directly) is
+    /// recorded at its current generation, so adding a collider wakes
+    /// nothing; entries past the last collider are dropped.
+    fn sync_sdf_generations(&mut self) {
+        let n = self.sdf_colliders.len();
+        self.sdf_generations.truncate(n);
+        for c in &self.sdf_colliders[self.sdf_generations.len()..] {
+            self.sdf_generations.push(c.field.generation());
+        }
+    }
+
+    /// Wake every sleeping body when an SDF collider changed shape since the
+    /// previous step ([`SdfField::generation`](crate::sdf_collider::SdfField::generation)
+    /// differs from the value last seen). A sleeping body is not integrated,
+    /// so one resting on a surface that was carved away would otherwise stay
+    /// where it was. The whole world is woken: a field does not report where
+    /// it changed. Fields that never change (generation constant) wake
+    /// nothing and leave the step bit for bit as before.
+    fn wake_on_sdf_shape_change(&mut self) {
+        self.sync_sdf_generations();
+        let mut changed = false;
+        for (seen, c) in self.sdf_generations.iter_mut().zip(&self.sdf_colliders) {
+            let now = c.field.generation();
+            if *seen != now {
+                *seen = now;
+                changed = true;
+            }
+        }
+        if changed {
+            // Through the public wake (`wake_body`, the body's island), as
+            // every other caller that wakes a sleeping body by hand. The step
+            // has not parked anything yet: `park_begin` runs later and parks
+            // only bodies that are asleep.
+            for i in 0..self.bodies.len() {
+                if self.islands.is_sleeping(i) {
+                    self.wake_body(i);
+                }
+            }
+        }
     }
 
     /// Empty the SDF contact record at the head of a step (the allocation is
@@ -5766,6 +5817,9 @@ impl PhysicsWorld {
     /// Remove an SDF collider by index
     pub fn remove_sdf_collider(&mut self, idx: usize) -> Option<SdfCollider> {
         if idx < self.sdf_colliders.len() {
+            if idx < self.sdf_generations.len() {
+                self.sdf_generations.remove(idx);
+            }
             Some(self.sdf_colliders.remove(idx))
         } else {
             None
