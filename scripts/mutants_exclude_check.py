@@ -27,6 +27,22 @@ Fails when:
 
   python3 scripts/mutants_exclude_check.py          # check
   python3 scripts/mutants_exclude_check.py --write  # record the current counts
+
+Needs Python 3.11+ (stdlib `tomllib`); CI pins 3.11, and a local run on an
+older interpreter fails fast with an ImportError rather than silently
+skipping.
+
+The `"tests::"` entry alone matches several hundred mutants (test-helper
+code, not production), so adding or removing a `#[cfg(test)]` helper
+changes its count and turns this red until `--write` records the new
+one -- a known source of churn, not a bug in this checker.
+
+A limitation this checker cannot close: an entry that matches by
+description text only (no line number in its regex) will keep matching
+even if the described code moves to an unrelated site with the same
+description (e.g. two sites named "replace > with >= in g" in the same
+function). Only a line-anchored regex ties the proof to one physical
+site.
 """
 
 from __future__ import annotations
