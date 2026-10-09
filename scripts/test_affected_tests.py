@@ -185,5 +185,43 @@ class CargoToml(unittest.TestCase):
         self.assertEqual(at.required_features(toml), {"a": {"replay", "std"}, "b": set()})
 
 
+
+
+SAMPLE = """\
+     Running tests/analytic_hyperelastic_mms_order.rs (target/debug/deps/analytic_hyperelastic_mms_order-1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/determinism_golden.rs (target/debug/deps/determinism_golden-2)
+
+running 13 tests
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.31s
+
+     Running tests/audit_force.rs (target/debug/deps/audit_force-3)
+
+running 4 tests
+test result: ok. 2 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.01s
+"""
+
+
+class PerTarget(unittest.TestCase):
+    def test_passes_are_counted_per_target(self):
+        self.assertEqual(
+            at.per_target_passed(SAMPLE),
+            {"analytic_hyperelastic_mms_order": 0, "determinism_golden": 13, "audit_force": 2},
+        )
+
+    def test_a_selected_target_that_ran_nothing_is_reported_although_the_total_is_not_zero(self):
+        counts = at.per_target_passed(SAMPLE)
+        self.assertEqual(sum(counts.values()), 15)
+        empty = at.empty_targets(counts, ["analytic_hyperelastic_mms_order", "audit_force"])
+        self.assertEqual(empty, ["analytic_hyperelastic_mms_order"])
+
+    def test_a_selected_target_missing_from_the_output_is_empty(self):
+        self.assertEqual(at.empty_targets({"a": 3}, ["a", "b"]), ["b"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

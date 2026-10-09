@@ -156,8 +156,31 @@ def passed_count(output: str) -> int:
     return sum(int(m.group(1)) for m in re.finditer(r"test result: \w+\. (\d+) passed", output))
 
 
-def run(cmd: list[str]) -> tuple[int, int]:
-    """cmd を実行し (rc, passed 数) を返す (出力はそのまま流す)."""
+RUNNING = re.compile(r"^\s*Running tests/([A-Za-z0-9_]+)\.rs\b", re.M)
+RESULT = re.compile(r"test result: \w+\. (\d+) passed")
+
+
+def per_target_passed(output: str) -> dict[str, int]:
+    """Passed tests per integration target, from the `Running tests/<t>.rs`
+    section headers of cargo's output (a section's result line follows it)."""
+    counts: dict[str, int] = {}
+    heads = list(RUNNING.finditer(output))
+    for i, h in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(output)
+        m = RESULT.search(output, h.end(), end)
+        counts[h.group(1)] = int(m.group(1)) if m else 0
+    return counts
+
+
+def empty_targets(counts: dict[str, int], selected: list[str]) -> list[str]:
+    """Selected targets that passed no test: compiled to nothing for these
+    features (a `#![cfg(...)]` file) or missing from the run. The goldens that
+    always run must not hide them in the total."""
+    return [t for t in selected if counts.get(t, 0) == 0]
+
+
+def run(cmd: list[str], out: list[str] | None = None) -> tuple[int, int]:
+    """cmd を実行し (rc, passed 数) を返す (出力はそのまま流す、`out` に出力を残す)."""
     proc = subprocess.Popen(
         cmd, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace"
     )
@@ -167,6 +190,8 @@ def run(cmd: list[str]) -> tuple[int, int]:
         sys.stdout.write(line)
         buf.append(line)
     proc.wait()
+    if out is not None:
+        out.extend(buf)
     return proc.returncode, passed_count("".join(buf))
 
 
@@ -237,10 +262,20 @@ def main() -> int:
         cmd = ["cargo", "test", "--no-fail-fast", *feat_args]
         for t in targets:
             cmd += ["--test", t]
-        rc, n = run(cmd)
+        out: list[str] = []
+        rc, n = run(cmd, out)
         if rc != 0:
             return 1
         total += n
+        empty = empty_targets(per_target_passed("".join(out)), sorted(sel["targets"]))
+        if empty:
+            print(
+                f"affected_tests: selected target(s) ran 0 tests with features [{a.features}]: "
+                f"{', '.join(empty)} (cfg-gated off for these features, or not run); "
+                "run them with the features they need, or scripts/preflight.sh without --fast",
+                file=sys.stderr,
+            )
+            return 1
     if total == 0:
         print("affected_tests: executed 0 tests (the selection ran nothing)", file=sys.stderr)
         return 1
