@@ -279,6 +279,42 @@ class Check(unittest.TestCase):
                 os.environ.pop("CARGO_TERM_COLOR", None)
                 self.assertEqual(goc.run_control(gate, gate.controls[0]), [])
 
+    def test_a_leading_env_assignment_in_run_overrides_forced_env(self):
+        # The exact form a COLOR_PIN_MARKERS entry like "CARGO_TERM_COLOR=
+        # never" names: under shell=False there is no shell to interpret
+        # a leading "VAR=value" token, so build_argv must route it into
+        # the subprocess's own environment instead of leaving it as
+        # argv[0] (which would otherwise be looked up as a literal
+        # executable name "CARGO_TERM_COLOR=never" and fail).
+        with tempfile.TemporaryDirectory() as tmp:
+            control_dir = Path(tmp) / "x" / "c"
+            control_dir.mkdir(parents=True)
+            gate = goc.Gate(
+                id="x",
+                kind="script",
+                source=f"{RUNNER_DIR}/check_env_var.py",
+                run="CARGO_TERM_COLOR=never python3 {script} CARGO_TERM_COLOR never",
+                cost="fast",
+                controls=[goc.Control("x", "c", "pass", None, control_dir)],
+            )
+            self.assertEqual(goc.run_control(gate, gate.controls[0]), [])
+
+    def test_an_unresolvable_argv0_is_a_clean_error_not_a_traceback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            control_dir = Path(tmp) / "x" / "c"
+            control_dir.mkdir(parents=True)
+            gate = goc.Gate(
+                id="x",
+                kind="script",
+                source=f"{RUNNER_DIR}/always_exit_0.py",
+                run="this-executable-does-not-exist-anywhere {script}",
+                cost="fast",
+                controls=[goc.Control("x", "c", "pass", None, control_dir)],
+            )
+            errors = goc.run_control(gate, gate.controls[0])
+            self.assertEqual(len(errors), 1)
+            self.assertIn("could not run", errors[0])
+
     def test_forced_env_overrides_an_unset_ambient_value(self):
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("CARGO_TERM_COLOR", None)

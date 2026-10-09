@@ -225,8 +225,16 @@ jobs:
       # Mutants steps, silently leaving no mutants.out for this shard
       # (the upload-artifact step above ignores a missing directory) and
       # nothing for mutants-ratchet's `needs: mutants` to see as missing.
+      #
+      # `matrix.shard == 0 && matrix.features == ''`: the gate oracle
+      # controls do not depend on the shard or feature axis at all, so
+      # running them on every matrix cell (up to 16 shards x 2 feature
+      # sets = 32 times a week) would spend shared runner time with
+      # nothing to show for the other 31 -- once, on one fixed cell, is
+      # enough (this cell always exists: shard 0 runs on every trigger,
+      # the PR/nightly in-diff matrix included).
       - name: Gate oracle (cargo-cost gates)
-        if: always()
+        if: always() && matrix.shard == 0 && matrix.features == ''
         run: python3 scripts/gate_oracle_check.py --cost cargo
       - name: Summary
         if: always()
