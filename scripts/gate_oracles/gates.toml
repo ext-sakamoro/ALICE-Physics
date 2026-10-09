@@ -14,12 +14,12 @@ source = "scripts/mutants_exclude_check.py"
 # (no fixture can stand in for that), so this is a cost = "cargo" gate.
 #
 # `run` does not itself pin color: every control already runs under the
-# runner's FORCED_ENV (CARGO_TERM_COLOR=always), the exact condition
-# ci.yml sets for the whole workflow that broke this gate (2026-10-09 CI
-# incident -- cargo-mutants wrapped each line's identifier in ANSI
-# escapes, breaking every exclude_re pattern's match). That is why this
-# gate needs the must-green control below to load at all (see
-# COLOR_PIN_MARKERS in scripts/gate_oracle_check.py).
+# runner's forced_env() (CARGO_TERM_COLOR=always), the same condition
+# ci.yml forces for its own log viewer, which once made cargo-mutants
+# wrap each line's identifier in ANSI escapes and broke every exclude_re
+# pattern's match. That is why this gate needs the must-green control
+# below to load at all (see COLOR_PIN_MARKERS in
+# scripts/gate_oracle_check.py).
 run = "python3 {script} --mutants-toml {dir}/mutants.toml --baseline {dir}/baseline.txt"
 cost = "cargo"
 
@@ -30,11 +30,15 @@ reason = "matches 0 mutants"
 
 [[gate.control]]
 # A pattern naming an identifier directly adjacent to another word (not
-# a bare module-path prefix like "tests::", which survives unbroken --
-# cargo-mutants colors only the identifier itself, so "tests::" sits
-# right before the color escape and never gets split from it, a false
-# negative discovered while building this control: it never actually
-# caught the regression it was meant to prove resilience against).
+# a bare module-path prefix like "tests::"). cargo-mutants colors more
+# than just the identifier -- operators, replacement values and return
+# types are each wrapped too -- but "tests::" sits immediately before
+# wherever the next colored span starts, never inside one, so it stays
+# contiguous with whatever came before it and keeps matching regardless.
+# A pattern spanning a word and the identifier right after it does not
+# have that property: a false negative discovered while building this
+# control, which never actually caught the regression it was meant to
+# prove resilience against until replaced with this one.
 case = "green-identifier-adjacent-pattern"
 expect = "pass"
 

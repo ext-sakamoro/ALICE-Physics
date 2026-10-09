@@ -10,10 +10,12 @@ checks that pointing the runner at them produces the expected report."""
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
@@ -134,10 +136,11 @@ class LoadGates(unittest.TestCase):
             self.assertIn("no such directory", str(ctx.exception))
 
     def test_an_unpinned_run_with_no_must_green_control_is_an_error(self):
-        # Every control now runs under FORCED_ENV (CARGO_TERM_COLOR=always,
-        # 2026-10-09 CI incident). A gate whose own `run` does not override
-        # that back to "never" needs a passing control to prove it
-        # tolerates it; this gate has only a failing one.
+        # Every control now runs under forced_env() (CARGO_TERM_COLOR=
+        # always, the condition a CI workflow forcing color for its own
+        # log viewer runs every job under). A gate whose own `run` does
+        # not override that back to "never" needs a passing control to
+        # prove it tolerates it; this gate has only a failing one.
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             (tmp_path / "x" / "c").mkdir(parents=True)
@@ -175,11 +178,29 @@ class LoadGates(unittest.TestCase):
             gates = goc.load_gates(path)
             self.assertEqual(len(gates), 1)
 
+    def test_an_unknown_cost_is_an_error(self):
+        # A typo'd cost (anything but "fast" or "cargo") used to match no
+        # cost_filter and silently drop the whole gate from every run,
+        # with nothing in the output showing it.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            (tmp_path / "x" / "c").mkdir(parents=True)
+            path = self.write(
+                tmp_path,
+                f'[[gate]]\nid = "x"\nsource = "{RUNNER_DIR}/always_exit_0.py"\n'
+                'run = "CARGO_TERM_COLOR=never python3 {script}"\ncost = "slow"\n\n'
+                '[[gate.control]]\ncase = "c"\nexpect = "fail"\n',
+            )
+            with self.assertRaises(goc.GateOracleError) as ctx:
+                goc.load_gates(path)
+            self.assertIn("cost must be one of", str(ctx.exception))
+
 
 class Check(unittest.TestCase):
     def test_zero_gates_is_ran_no_control_at_all(self):
-        errors = goc.check([], {"fast"})
+        errors, tested = goc.check([], {"fast"})
         self.assertEqual(errors, ["ran no control at all (compared nothing)"])
+        self.assertEqual(tested, 0)
 
     def test_a_gate_with_only_a_must_red_control_is_an_error(self):
         gate = goc.Gate(
@@ -190,7 +211,7 @@ class Check(unittest.TestCase):
             cost="fast",
             controls=[control("x", "always-exit-0", "fail")],
         )
-        errors = goc.check([gate], {"fast"})
+        errors, _tested = goc.check([gate], {"fast"})
         self.assertTrue(any("no must-green control" in e for e in errors))
 
     def test_a_gate_with_only_a_must_green_control_is_an_error(self):
@@ -202,7 +223,7 @@ class Check(unittest.TestCase):
             cost="fast",
             controls=[control("x", "always-exit-1", "pass")],
         )
-        errors = goc.check([gate], {"fast"})
+        errors, _tested = goc.check([gate], {"fast"})
         self.assertTrue(any("no must-red control" in e for e in errors))
 
     def test_a_well_behaved_gate_with_both_controls_passes(self):
@@ -229,12 +250,19 @@ class Check(unittest.TestCase):
                     goc.Control("grep-toy", "green", "pass", None, green_dir),
                 ],
             )
-            self.assertEqual(goc.check([gate], {"fast"}), [])
+            errors, tested = goc.check([gate], {"fast"})
+            self.assertEqual(errors, [])
+            self.assertEqual(tested, 2)
 
     def test_every_control_runs_under_forced_color(self):
-        # Proves FORCED_ENV actually reaches the subprocess, not just that
-        # the constant exists: a gate whose own `run` asserts
-        # CARGO_TERM_COLOR=always via the shell itself.
+        # Proves the injection itself, not that a control merely passes
+        # because the ambient environment (e.g. a CI workflow that
+        # already forces color) happened to agree: clear
+        # CARGO_TERM_COLOR from this process's own environment first, so
+        # a control that still sees "always" can only have gotten it
+        # from forced_env(). Without this, removing the env= argument
+        # from run_control's subprocess.run call entirely would still
+        # pass whenever the test itself ran under a forced-color CI.
         with tempfile.TemporaryDirectory() as tmp:
             control_dir = Path(tmp) / "x" / "c"
             control_dir.mkdir(parents=True)
@@ -246,7 +274,14 @@ class Check(unittest.TestCase):
                 cost="fast",
                 controls=[goc.Control("x", "c", "pass", None, control_dir)],
             )
-            self.assertEqual(goc.run_control(gate, gate.controls[0]), [])
+            with patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("CARGO_TERM_COLOR", None)
+                self.assertEqual(goc.run_control(gate, gate.controls[0]), [])
+
+    def test_forced_env_overrides_an_unset_ambient_value(self):
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("CARGO_TERM_COLOR", None)
+            self.assertEqual(goc.forced_env()["CARGO_TERM_COLOR"], "always")
 
     def test_cargo_gates_are_skipped_unless_asked_for(self):
         gate = goc.Gate(
@@ -257,8 +292,9 @@ class Check(unittest.TestCase):
             cost="cargo",
             controls=[control("x", "always-exit-0", "fail")],
         )
-        errors = goc.check([gate], {"fast"})
+        errors, tested = goc.check([gate], {"fast"})
         self.assertEqual(errors, ["ran no control at all (compared nothing)"])
+        self.assertEqual(tested, 0)
 
 
 if __name__ == "__main__":
