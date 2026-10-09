@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5722 |
+| 🟢 Not ignored (run by CI) | 5726 |
 | 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5822** |
+| **Total** | **5826** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -156,7 +156,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5722)
+## 🟢 Not ignored (5726)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -551,6 +551,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_joint.rs` | 4 |
 | `audit_c_linear_elastic_fem.rs` | 4 |
 | `audit_c_plane_collider.rs` | 4 |
+| `audit_privacy_noise_secrecy.rs` | 4 |
 | `determinism_golden_coverage.rs` | 4 |
 | `determinism_physics2d_step_digest.rs` | 4 |
 | `indep_contact_restitution_friction.rs` | 4 |

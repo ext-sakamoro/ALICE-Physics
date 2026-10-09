@@ -82,6 +82,19 @@ python3 scripts/integration_levels.py --no-index --check
 step "oracle ledger links (PIN / root external)"
 python3 scripts/gen-oracle-status.py --check
 
+# ⚠️ 上の `--check` は PIN / 外部原因の link だけを見る 生成物が古いことは見ない
+#    (stale でも exit 0) stale 判定は oracle-status.yml / wiring-status.yml の
+#    「再生成して git diff --exit-code」だけが持っており、preflight に無かった
+#    ⇒ 新しい test file を足した push が **preflight exit 0 のまま CI で red** になった
+#    (2026-10-09 実測、tests/ に 1 file 足しただけで Oracle Status が failure)
+step "generated ledgers are not stale (oracle-status / wiring-status)"
+python3 scripts/gen-oracle-status.py
+python3 scripts/gen-wiring-status.py
+if ! git diff --exit-code docs/oracle-status.md docs/wiring-status.md; then
+  echo "生成物が古い: 上の差分を commit に含める (scripts/land.py が再生成する)" >&2
+  exit 1
+fi
+
 step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が無い)"
 python3 scripts/test_wiring_guard.py
 python3 scripts/wiring_guard.py
@@ -148,6 +161,12 @@ if command -v rust-analyzer >/dev/null && rust-analyzer --version >/dev/null 2>&
   python3 scripts/audit_refs.py --check
   python3 scripts/scip_reach.py --check-baseline
   python3 scripts/integration_levels.py --check
+  # 生成物の stale 検査 (integration-status.yml と同じ形) index がある時だけ測れる
+  python3 scripts/scip_reach.py --write docs/integration-status.md
+  if ! git diff --exit-code docs/integration-status.md; then
+    echo "docs/integration-status.md が古い: 上の差分を commit に含める" >&2
+    exit 1
+  fi
 elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
   echo "skip: rust-analyzer not installed (rustup component add rust-analyzer); CI runs this check" >&2
 else
