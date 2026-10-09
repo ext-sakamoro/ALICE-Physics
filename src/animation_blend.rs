@@ -408,6 +408,8 @@ fn quat_slerp(a: QuatFix, b: QuatFix, t: Fix128) -> QuatFix {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::format;
 
     #[test]
     fn test_blend_modes() {
