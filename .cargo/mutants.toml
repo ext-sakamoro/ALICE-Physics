@@ -56,35 +56,38 @@
 #   only `<`/`>` sites in this function, so no line-number restriction is
 #   needed here).
 #
-# `replace > with >= in solve_hinge_joint` (src/joint.rs:891) and
-# `replace > with >= in solve_slider_joint` (src/joint.rs:1032) and
-# `replace > with >= in solve_d6_joint` (src/joint.rs:1186,1256): each is a
+# `replace > with >= in solve_hinge_joint` (src/joint.rs:946) and
+# `replace > with >= in solve_slider_joint` (src/joint.rs:1087) and
+# `replace > with >= in solve_d6_joint` (src/joint.rs:1241,1311): each is a
 #   joint's upper limit check (`angle > *m` / `along_axis > *m` / `proj >
 #   limit_max` / `angle > limit_max`). At the exact limit the resulting
 #   `error` (`angle - max` etc.) is exactly zero regardless of which branch
 #   computed it, and every one of these is gated behind `if !error.is_zero()`
 #   (or the angular equivalent) before any correction is applied — confirmed
-#   by reading src/joint.rs:1015-1048 (slider) and 1179-1213 (d6) directly: a
+#   by reading src/joint.rs:1070-1103 (slider) and 1234-1268 (d6) directly: a
 #   zero-error correction is skipped entirely, not just zero-scaled. (d6 has
 #   two sites, linear and angular; both equivalent for the same reason, so no
 #   line-number restriction is needed for it. hinge and slider have exactly
-#   one upper-bound `>` site each.)
+#   one upper-bound `>` site each.) ⚠️ line numbers below shift whenever a
+#   function is added or grown above these in the file — verified current
+#   by scripts/mutants_exclude_check.py, which fails if any of these regexes
+#   stop matching a real mutant.
 #
-# `replace < with <= in solve_cone_twist_joint` (src/joint.rs:1321) and
-# `replace > with >= in solve_cone_twist_joint` (src/joint.rs:1327,1354):
-#   1321 is `cone_angle < Fix128::ZERO`, a sign-fix for a value derived from
+# `replace < with <= in solve_cone_twist_joint` (src/joint.rs:1376) and
+# `replace > with >= in solve_cone_twist_joint` (src/joint.rs:1382,1409):
+#   1376 is `cone_angle < Fix128::ZERO`, a sign-fix for a value derived from
 #   `Fix128::atan2(cross_len, dot)` where `cross_len` is itself a vector
 #   length (`normalize_with_length`), hence never negative; atan2 with a
 #   non-negative first argument is mathematically always in [0, π], so this
 #   branch cannot be reached with any real input, making `<` and `<=`
-#   indistinguishable (same branch — or lack of one — either way). 1327/1354
+#   indistinguishable (same branch — or lack of one — either way). 1382/1409
 #   are the cone and twist upper-limit checks, equivalent for the same
 #   `if !error.is_zero()`-gated reason as the other joints' upper bounds
-#   above (src/joint.rs:1330-1345, 1361-1374), with the zero-lambda no-op
+#   above (src/joint.rs:1385-1400, 1416-1429), with the zero-lambda no-op
 #   confirmed one level deeper too: `apply_angular_correction` →
 #   `rotate_by_angle` has an explicit `if theta.is_zero() { return q; }`
-#   (src/joint.rs:1439) before it does anything else. (Excluded by line
-#   number: src/joint.rs:1355, a different `>` in the same function
+#   (src/joint.rs:1494) before it does anything else. (Excluded by line
+#   number: src/joint.rs:1410, a different `>` in the same function
 #   — `twist_angle > Fix128::ZERO`, a sign-handling branch where the operand
 #   is NOT restricted to be non-negative like cone_angle is — is NOT
 #   included here; no unreachability proof for it yet.)
@@ -141,26 +144,29 @@
 #   at `start` instead of `start + 1`, and the first comparison
 #   (`entries[start].0 == cell`) is true, so `end` reaches the same value.
 #
-# `replace < with <= in solve_hinge_joint` (src/joint.rs:922) and
-# `replace < with <= in solve_slider_joint` (src/joint.rs:1061) and
-# `replace < with <= in solve_d6_joint` (src/joint.rs:1228,1298): each is a
-#   joint's lower limit check (`angle < *m` / `along_axis < *m` / `proj <
-#   limit_min` / `angle < limit_min`), paired with an `else if` upper check
-#   (`> max`). This was NOT equivalent before `HingeJoint::with_limits`,
-#   `SliderJoint::with_limits`, `D6Joint::with_linear_limits` and
-#   `with_angular_limits` rejected `min > max` at construction: with an
-#   inverted interval, the tie point `value == min` could also satisfy
-#   `value > max` (e.g. `min = 1, max = 0`, value `= 1`), so the original
-#   `<` skips the min branch and falls into the max branch with a genuinely
-#   nonzero error (`value - max = 1`), while the mutated `<=` takes the min
-#   branch instead, with a *zero* error (`min - value = 0`) — a real,
-#   observable difference. Now that construction guarantees `min <= max`,
-#   `value == min` implies `value <= max`, so `value > max` can never also
-#   hold at that point: the max branch is unreachable from the tie, and the
-#   min branch's own error is `min - value = 0` either way `<` or `<=`
-#   decides it, so the two are equivalent for the same reason as the upper
-#   bounds above (d6 has two sites, linear and angular; both equivalent for
-#   the same reason).
+# NOT excluded despite looking like the upper-bound case below: `replace <
+# with <= in solve_hinge_joint` (src/joint.rs:933), `...in solve_slider_joint`
+# (src/joint.rs:1072), `...in solve_d6_joint` (src/joint.rs:1239,1309), the
+# four lower limit checks (`angle < *m` / `along_axis < *m` / `proj <
+# limit_min` / `angle < limit_min`), each paired with an `else if value >
+# max`. These were investigated and found NOT equivalent, and deliberately
+# left in scripts/mutants-missed-baseline.txt: with an inverted interval
+# (`min > max`), the tie point `value == min` can also satisfy `value >
+# max` (e.g. `min = 1, max = 0`, value `= 1`), so the original `<` skips
+# the min branch and falls into the max branch with a genuinely nonzero
+# error (`value - max = 1`), while the mutated `<=` takes the min branch
+# instead with a *zero* error (`min - value = 0`) — a real, observable
+# difference. `HingeJoint::with_limits`, `SliderJoint::with_limits`,
+# `D6Joint::with_linear_limits` and `with_angular_limits` reject `min >
+# max` at construction, but that is not the only way to reach the solver:
+# `PhysicsWorld::joints` is `pub Vec<Joint>` (src/solver.rs:1679), and
+# every joint's limit fields are themselves `pub`, so a struct literal, a
+# direct field assignment, or `restore_world`'s snapshot deserialisation
+# (src/solver/world_snapshot.rs, each joint variant read field by field
+# with no ordering or sign check) can all construct an inverted interval
+# without ever calling the builder. Making the limit fields private, or
+# validating every one of these paths, would both be public-API breaking
+# changes and are not pursued here.
 exclude_re = [
     "tests::",
     "replace > with >= in scaled_exp_neg",
@@ -179,9 +185,9 @@ exclude_re = [
     "replace > with >= in solve_hinge_joint",
     "replace > with >= in solve_slider_joint",
     "replace > with >= in solve_d6_joint",
-    "joint\\.rs:1321:.*replace < with <= in solve_cone_twist_joint",
-    "joint\\.rs:1327:.*replace > with >= in solve_cone_twist_joint",
-    "joint\\.rs:1354:.*replace > with >= in solve_cone_twist_joint",
+    "joint\\.rs:1376:.*replace < with <= in solve_cone_twist_joint",
+    "joint\\.rs:1382:.*replace > with >= in solve_cone_twist_joint",
+    "joint\\.rs:1409:.*replace > with >= in solve_cone_twist_joint",
     "replace \\| with \\^ in Fix128::(sqrt|half|shr_bits|double)$",
     "replace \\| with \\^ in <impl Div for Fix128>::div$",
     "replace \\| with \\^ in select_fix128$",
@@ -200,8 +206,4 @@ exclude_re = [
     "bvh\\.rs:558:.*replace >> with << in LinearBvh::find_split",
     "bvh\\.rs:567:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
     "bvh\\.rs:951:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
-    "joint\\.rs:922:.*replace < with <= in solve_hinge_joint",
-    "joint\\.rs:1061:.*replace < with <= in solve_slider_joint",
-    "joint\\.rs:1228:.*replace < with <= in solve_d6_joint",
-    "joint\\.rs:1298:.*replace < with <= in solve_d6_joint",
 ]
