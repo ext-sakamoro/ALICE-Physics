@@ -437,8 +437,8 @@ fn edits_between_steps_are_seen() {
         });
     });
     t.step(5, "radius + config");
-    // Remove a sleeping body: every body wakes (`remove_body` rebuilds the
-    // island manager), with or without the skip.
+    // Remove a sleeping body: the others keep their sleep state (and their
+    // parked verdicts are re-derived, indices moved), with or without the skip.
     t.both(|w| {
         w.remove_body(4);
     });
@@ -566,20 +566,22 @@ fn all_sleeping_world_does_no_stage_work() {
     }
 }
 
-/// A sleeping body removed: the remaining ones are woken by `remove_body` and
-/// leave the tree on the next step.
+/// A sleeping body removed: the remaining ones stay asleep (`remove_body`
+/// carries every surviving body's sleep data), so nothing is integrated on
+/// the next step. Their parked verdicts are still invalidated (indices
+/// moved): all 50 proxies, the removed body's included, leave the tree and
+/// the 49 survivors are parked again.
 #[test]
-fn removing_a_sleeping_body_unparks_the_rest() {
+fn removing_a_sleeping_body_keeps_the_rest_asleep() {
     let mut w = grid_world(50, 0);
     steady_stats(&mut w);
     assert!(w.remove_body(10).is_some());
     w.step(dt());
     let s = w.stage_work();
-    assert_eq!(s.parked, 0, "remove_body woke every body");
-    // remove_body invalidates every parked verdict (indices moved): all 50
-    // proxies, the removed body's included, leave the tree.
+    assert_eq!(s.parked, 49, "remove_body kept the others asleep");
+    assert_eq!(w.islands.sleeping_count(), 49);
     assert_eq!(s.tree_removes, 50, "their proxies left the tree");
-    assert_eq!(s.integrated, 49 * substeps());
+    assert_eq!(s.integrated, 0, "no sleeping body was integrated");
 }
 
 /// The bench world (`benches/world_scale.rs`): weightless, undamped, the awake

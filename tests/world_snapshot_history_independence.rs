@@ -13,27 +13,21 @@
 //! expected, not a finding about canonical form. The scenarios below
 //! instead vary *how* the same final index/content assignment was reached.
 //!
-//! # Known defect: `remove_body` permanently disturbs unrelated sleeping bodies
+//! # Fixed: `remove_body` keeps unrelated bodies' sleep state
 //!
-//! `remove_body` rebuilds the whole island manager from scratch
-//! (`self.islands = IslandManager::new(new_len, self.islands.config)`,
-//! `src/solver.rs::remove_body`) rather than only touching the removed
-//! body's entry, so *every* body's sleep state resets to awake at that
-//! point, not just bodies connected to the one removed. This is not merely
-//! a metadata difference: a body that was asleep resumes being integrated,
-//! and (confirmed directly in
-//! `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges`
-//! below, on a scene where the other bodies are actually at rest — unlike
-//! an earlier version of this file, which used a scene whose two dynamic
-//! bodies free-fell forever and so never genuinely exercised this path at
-//! all) its simulated trajectory from that point on is a different,
-//! independently-computed trajectory from the one a body that stayed
-//! asleep would have followed, so the two never converge again on their
-//! own, through at least 200 further steps, and the test below is
-//! `#[ignore]`d as a pinned defect rather than something this file's other
-//! scenarios can route around.
-//! `tail_add_then_remove_before_any_body_sleeps_matches_never_added` avoids
-//! the whole question by removing before anything has had time to sleep.
+//! `remove_body` used to rebuild the whole island manager from scratch
+//! (`IslandManager::new`), resetting *every* body's sleep state to awake,
+//! not just bodies connected to the one removed. A body that was asleep
+//! then resumed being integrated, and its trajectory from that point on
+//! was a different, independently-computed trajectory that never
+//! converged again with one that stayed asleep. `remove_body` now
+//! swap-removes the per-body sleep data together with `bodies`, so every
+//! surviving body keeps its own sleep state;
+//! `distant_static_body_removed_after_unrelated_bodies_slept_leaves_no_trace`
+//! below pins that on a scene where the other bodies are actually at rest
+//! (see also `tests/analytic_remove_body_keeps_sleep.rs`).
+//! `tail_add_then_remove_before_any_body_sleeps_matches_never_added`
+//! covers the case where nothing has had time to sleep yet.
 
 use alice_physics::joint::{BallJoint, Joint};
 use alice_physics::math::{Fix128, Vec3Fix};
@@ -149,7 +143,7 @@ fn tail_add_then_remove_before_any_body_sleeps_matches_never_added() {
 /// tree section and this test is un-ignored.
 ///
 /// `#[ignore]`d as a second, separate `DynamicTree` history-dependence
-/// defect, distinct from the sleep-state one above (confirmed distinct:
+/// defect, distinct from the (fixed) sleep-state one in the module doc (confirmed distinct:
 /// with a radius-less extra body that never enters the tree at all, the
 /// equivalent scenario differs by only 1 byte and converges after one
 /// step).
@@ -277,7 +271,7 @@ fn resting_scene(kind: Broadphase) -> PhysicsWorld {
 
 /// Whether every body in `w` (including static ones, which start already
 /// below the sleep threshold) is currently `SleepState::Sleeping` — the
-/// premise `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges`
+/// premise `distant_static_body_removed_after_unrelated_bodies_slept_leaves_no_trace`
 /// depends on, checked explicitly rather than assumed (an earlier version
 /// of `resting_scene` placed the four spheres asymmetrically near the top
 /// of the big sphere, which never stops sliding down its curve and so
@@ -290,14 +284,11 @@ fn all_bodies_sleeping(w: &PhysicsWorld) -> bool {
         .all(|sd| sd.state == SleepState::Sleeping)
 }
 
-/// The premise `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges`
+/// The premise `distant_static_body_removed_after_unrelated_bodies_slept_leaves_no_trace`
 /// depends on, checked by a test that actually runs under a plain
-/// `cargo test` — not only inside that `#[ignore]`d test, which does not
-/// run by default and so would not catch a regression here on its own
-/// (measured directly: setting `frames_to_sleep` to an unreachably large
-/// value in `resting_scene` still leaves a default `cargo test` run green,
-/// 3 passed / 2 ignored, with no indication the scene stopped sleeping at
-/// all). An earlier version of `resting_scene` placed the four spheres
+/// `cargo test` on its own, so a regression in the scene (bodies that
+/// never fall asleep) is reported here directly rather than only as a
+/// vacuous pass of the removal test. An earlier version of `resting_scene` placed the four spheres
 /// asymmetrically near the top of the big sphere, which never stops
 /// sliding down its curve and so never reaches the sleep threshold either
 /// — this is the test that would have caught that.
@@ -315,22 +306,15 @@ fn resting_scene_reaches_sleep_by_step_120() {
     );
 }
 
-/// Pinned known defect (see the module doc comment): a distant, never-
-/// touching static body is added once the four resting spheres above have
-/// already fallen asleep, then removed again once it has been present for
-/// a while. `remove_body` rebuilding the whole island manager wakes the
-/// four sleeping spheres, and from that point on they are a different,
-/// independently-integrated trajectory from a world that never had the
-/// extra body and so never had its sleep disturbed — not a transient gap
-/// that the next few steps undo, but a lasting divergence, measured here
-/// through +200 further steps. `#[ignore]`d: this asserts the behavior
-/// `remove_body` should have, which the current implementation does not.
+/// A distant, never-touching static body is added once the four resting
+/// spheres above have already fallen asleep, then removed again once it
+/// has been present for a while. `remove_body` must leave the four
+/// sleeping spheres asleep: a world that never had the extra body is the
+/// oracle, both immediately after the removal and +200 further steps
+/// later (the earlier implementation woke them and the trajectories
+/// diverged permanently; see the module doc comment).
 #[test]
-#[ignore = "known defect: remove_body resets every body's sleep state via \
-            a full IslandManager rebuild, permanently waking unrelated \
-            sleeping bodies instead of only updating the removed one's \
-            entry; see the module doc comment"]
-fn distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges() {
+fn distant_static_body_removed_after_unrelated_bodies_slept_leaves_no_trace() {
     let settle_and_sleep_steps = 60;
     let resident_steps = 60;
     let after_remove_steps = 200;
@@ -345,7 +329,7 @@ fn distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges
     for _ in 0..settle_and_sleep_steps {
         with_transient.step(dt());
     }
-    // No collision radius: this is a probe for the sleep-reset defect only,
+    // No collision radius: this probes the sleep-state path only,
     // not for the separate DynamicTree persistent-tree-leaf measurement in
     // `tail_add_then_remove_does_not_converge_with_dynamic_tree` — giving it
     // a radius here would additionally perturb the broadphase tree and

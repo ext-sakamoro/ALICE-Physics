@@ -2334,9 +2334,18 @@ impl PhysicsWorld {
             self.remap_joint_indices(last, idx);
         }
 
-        // Rebuild IslandManager to match new body count and connectivity
+        // Rebuild IslandManager to match new body count and connectivity,
+        // keeping every surviving body's sleep data. The sleep table is
+        // swap-removed exactly like `bodies`, so the body moved from `last`
+        // into `idx` keeps its own state; resetting it would wake every
+        // sleeping body and change their trajectories from here on.
         let new_len = self.bodies.len();
+        let mut sleep_data = core::mem::take(&mut self.islands.sleep_data);
+        // a body pushed onto the public `bodies` field may have no entry yet
+        sleep_data.resize(last + 1, SleepData::new());
+        sleep_data.swap_remove(idx);
         self.islands = IslandManager::new(new_len, self.islands.config);
+        self.islands.sleep_data = sleep_data;
         for j in &self.joints {
             let (a, b) = j.bodies();
             if a < new_len && b < new_len {
@@ -8459,6 +8468,54 @@ mod tests {
         assert_eq!(world.joints[0].bodies(), (0, 1));
         // island は新 body 数で再構築され、joint で 0 と 1 が同一 island
         assert_eq!(world.islands.find(0), world.islands.find(1));
+    }
+
+    /// body ごとに異なる sleep data を置いた 4 体 world (idle_frames = 10 + i、
+    /// 偶数 index だけ Sleeping)
+    fn four_bodies_with_distinct_sleep_data() -> PhysicsWorld {
+        let mut world = quiet_world();
+        for i in 0..4 {
+            world.add_body(RigidBody::new_dynamic(v3(i, 0, 0), Fix128::ONE));
+        }
+        world.islands.resize(4);
+        for (i, sd) in world.islands.sleep_data.iter_mut().enumerate() {
+            sd.state = if i % 2 == 0 {
+                SleepState::Sleeping
+            } else {
+                SleepState::Awake
+            };
+            sd.idle_frames = 10 + i as u32;
+        }
+        world
+    }
+
+    #[test]
+    fn remove_body_keeps_each_surviving_body_sleep_data() {
+        // 期待値は swap-remove の定義から: 末尾 (3) が idx に移り、それ以外は不動
+        for victim in 0..4 {
+            let mut world = four_bodies_with_distinct_sleep_data();
+            let before = world.islands.sleep_data.clone();
+            world.remove_body(victim).expect("in range");
+            let mut expected = before;
+            expected.swap_remove(victim);
+            assert_eq!(world.islands.sleep_data, expected, "victim {victim}");
+            assert_eq!(world.islands.sleep_data.len(), world.bodies.len());
+        }
+    }
+
+    #[test]
+    fn remove_body_gives_unregistered_pushed_body_default_sleep_data() {
+        // public field へ直接 push した body は sleep data を持たない
+        // ⇒ 既定 (Awake / 0) を与えてから swap-remove する
+        let mut world = four_bodies_with_distinct_sleep_data();
+        world
+            .bodies
+            .push(RigidBody::new_dynamic(v3(9, 0, 0), Fix128::ONE));
+        world.remove_body(0).expect("in range");
+        assert_eq!(world.bodies[0].position, v3(9, 0, 0));
+        assert_eq!(world.islands.sleep_data.len(), 4);
+        assert_eq!(world.islands.sleep_data[0], SleepData::new());
+        assert_eq!(world.islands.sleep_data[1].idle_frames, 11);
     }
 
     // ---- detect_collisions --------------------------------------------
