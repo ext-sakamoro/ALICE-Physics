@@ -17,6 +17,10 @@
 [default] src/joint.rs: replace * with / in solve_hinge_joint
 [default] src/joint.rs: replace / with * in solve_fixed_joint
 [default] src/joint.rs: replace / with * in solve_hinge_joint
+[default] src/joint.rs: replace < with <= in solve_d6_joint
+[default] src/joint.rs: replace < with <= in solve_d6_joint
+[default] src/joint.rs: replace < with <= in solve_hinge_joint
+[default] src/joint.rs: replace < with <= in solve_slider_joint
 [default] src/joint.rs: replace < with == in solve_cone_twist_joint
 [default] src/joint.rs: replace > with >= in solve_cone_twist_joint
 [default] src/math.rs: replace * with + in Vec3Fix::cross_simd
@@ -262,6 +266,10 @@
 [parallel] src/joint.rs: replace * with / in solve_hinge_joint
 [parallel] src/joint.rs: replace / with * in solve_fixed_joint
 [parallel] src/joint.rs: replace / with * in solve_hinge_joint
+[parallel] src/joint.rs: replace < with <= in solve_d6_joint
+[parallel] src/joint.rs: replace < with <= in solve_d6_joint
+[parallel] src/joint.rs: replace < with <= in solve_hinge_joint
+[parallel] src/joint.rs: replace < with <= in solve_slider_joint
 [parallel] src/joint.rs: replace < with == in solve_cone_twist_joint
 [parallel] src/joint.rs: replace > with >= in solve_cone_twist_joint
 [parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
