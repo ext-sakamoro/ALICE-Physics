@@ -48,6 +48,7 @@ site.
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -67,6 +68,17 @@ BASELINE = HERE / "mutants-exclude-baseline.txt"
 # one mutant" is checked for these, never an exact count.
 LOOSE_PATTERNS = frozenset({"tests::"})
 
+# Defense in depth, independent of the --colors never / CARGO_TERM_COLOR=never
+# in full_mutant_list(): strips any ANSI SGR escape sequence a future
+# cargo-mutants version, a different invocation path, or an environment this
+# checker has not seen yet could still inject into the list text, so a
+# pattern never silently stops matching because of formatting alone.
+_ANSI_SGR_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def strip_ansi(line: str) -> str:
+    return _ANSI_SGR_RE.sub("", line)
+
 
 def load_exclude_re(mutants_toml: Path) -> list[str]:
     with mutants_toml.open("rb") as f:
@@ -77,15 +89,31 @@ def load_exclude_re(mutants_toml: Path) -> list[str]:
 def full_mutant_list() -> list[str]:
     """`cargo mutants --list --no-config`: the full list, bypassing
     `.cargo/mutants.toml`'s own `exclude_re` entirely, so a regex's count
-    here is exactly how many mutants it would remove."""
+    here is exactly how many mutants it would remove.
+
+    `--colors never` is required, not cosmetic: cargo-mutants' `--colors`
+    defaults to the `CARGO_TERM_COLOR` env var (`auto` otherwise), and
+    ci.yml sets `CARGO_TERM_COLOR: always` for the whole workflow so the
+    Actions log viewer renders cargo's own colored output. Under that
+    setting cargo-mutants wraps the function/identifier name inside each
+    line in ANSI escapes (e.g. `replace \x1b[38;5;13msolve_slider_joint
+    \x1b[0m with ...`), splitting it out of every exclude_re pattern's
+    contiguous text -- every pattern that names a function or site
+    stopped matching anything in CI (2026-10-09), while the line count
+    stayed the same, so only `compared: N mutants` looked unchanged.
+    Locally this never reproduced because stdout here is never a TTY, and
+    cargo-mutants' own `auto` otherwise suppresses color on a pipe --
+    `--colors never` makes that explicit instead of depending on the
+    calling environment never forcing color."""
     proc = subprocess.run(
-        ["cargo", "mutants", "--list", "--no-config"],
+        ["cargo", "mutants", "--list", "--no-config", "--colors", "never"],
         cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         check=True,
+        env={**os.environ, "CARGO_TERM_COLOR": "never"},
     )
-    return [line for line in proc.stdout.splitlines() if line.strip()]
+    return [strip_ansi(line) for line in proc.stdout.splitlines() if line.strip()]
 
 
 def match_counts(patterns: list[str], lines: list[str]) -> Counter[str]:

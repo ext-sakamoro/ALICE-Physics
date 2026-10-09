@@ -44,6 +44,44 @@ class MatchCounts(unittest.TestCase):
         self.assertEqual(counts["a\\.rs:99:.*replace < with <= in f"], 0)
 
 
+class StripAnsi(unittest.TestCase):
+    def test_a_line_with_no_escapes_is_unchanged(self):
+        line = "src/a.rs:10:5: replace < with <= in f"
+        self.assertEqual(mec.strip_ansi(line), line)
+
+    def test_an_escape_sequence_wrapping_an_identifier_is_removed(self):
+        # The exact shape CARGO_TERM_COLOR=always produces (2026-10-09 CI
+        # incident): the identifier itself is wrapped, splitting it out of
+        # any pattern that names it as a contiguous substring.
+        colored = "src/joint.rs:1032:5: replace \x1b[38;5;13msolve_slider_joint\x1b[0m with ()"
+        self.assertEqual(
+            mec.strip_ansi(colored),
+            "src/joint.rs:1032:5: replace solve_slider_joint with ()",
+        )
+
+    def test_multiple_escapes_on_one_line_are_all_removed(self):
+        colored = "replace \x1b[33m+\x1b[0m with \x1b[38;5;11m-\x1b[0m in \x1b[38;5;13mf\x1b[0m"
+        self.assertEqual(mec.strip_ansi(colored), "replace + with - in f")
+
+    def test_a_pattern_naming_a_function_only_matches_once_stripped(self):
+        # The exact line `cargo mutants --list --no-config` produced for
+        # src/joint.rs:1032 under CARGO_TERM_COLOR=always (captured
+        # 2026-10-09 while diagnosing the CI incident): without
+        # strip_ansi, a pattern naming the function matches 0 lines even
+        # though the line is present -- which is how 37 of 38 exclude_re
+        # entries went to 0 matches in CI while the total line count
+        # (`compared: N mutants`) stayed unchanged.
+        colored_lines = [
+            "src/joint.rs:1032:5: replace \x1b[38;5;13msolve_slider_joint\x1b[0m with ()"
+        ]
+        pattern = "replace solve_slider_joint with \\(\\)"
+        raw_counts = mec.match_counts([pattern], colored_lines)
+        self.assertEqual(raw_counts[pattern], 0)
+        stripped_lines = [mec.strip_ansi(line) for line in colored_lines]
+        stripped_counts = mec.match_counts([pattern], stripped_lines)
+        self.assertEqual(stripped_counts[pattern], 1)
+
+
 class Main(unittest.TestCase):
     def run_main(self, mutants_toml_text: str, baseline_text: str | None, lines=FIXTURE_LINES):
         with tempfile.TemporaryDirectory() as tmp:

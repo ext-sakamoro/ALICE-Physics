@@ -43,6 +43,7 @@ were introduced during that release window.
 - **Behavior change:** `ConeTwistJoint::with_limits` は `cone` または `twist` が負だと panic する (`0` は許容、`const fn` のまま) `joint.rs` の `cone_angle < Fix128::ZERO` 分岐 (atan2 の小さい入力で負を返す経路) はこの変更の対象外
 
 ### Fixed
+- `scripts/mutants_exclude_check.py`: `cargo mutants --list` の呼び出しに `--colors never` を付け、呼び出し環境の `CARGO_TERM_COLOR` に `never` を上書きした (加えて念のため ANSI エスケープを除去する `strip_ansi` を一覧の各行に通す) ci.yml は workflow 全体に `CARGO_TERM_COLOR: always` を設定しており、これが `cargo mutants --list` の出力に ANSI 色付けを入れ、関数名を挟む形でテキストを分断していた (`replace ... in <色開始>solve_slider_joint<色終了>`) ため、`exclude_re` の 38 entry 中 37 が「一致 0 件」(比較した全体の mutant 数は変わらない) になり、main の CI が red になった local は非 TTY で色が出ないため再現しなかった
 - `web/package.json` と Unreal plugin (`AlicePhysics.uplugin` の `VersionName`) の version が 0.3.0 のまま、`docs/ECOSYSTEM_CONTRACTS.md` の ALICE-SDF の依存例が `alice-physics = "1.1"` のままだった 2.0.0 / `"2"` に直した
 
 - `alice-det-math` 0.3 → 0.4: `det_math::atan64` / `det_math::atan2_64` (公開 re-export) が文書化した精度 (1 ulp) に戻る 0.3 は fdlibm の係数 1 つの写し誤りで `0.4375` の分岐の直下が最大 1898 ulp 外れていた ⇒ これらの値を固定している利用者は一部の入力で別の bit を受け取る 他の関数の bit は変わらない (`f32` の `atan` / `atan2` は別の係数で影響なし) engine 内で `atan64` / `atan2_64` を呼ぶのは試験だけで、決定論の golden は値を変えずに通る どの feature の組でも `alice-det-math` は 0.4 の 1 版に解決される
