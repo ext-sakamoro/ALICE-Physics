@@ -19,6 +19,7 @@ on:
       # snapshot 再生成 commit でも public-api job を再実行する (paths 漏れだと red が残り続ける)
       - 'docs/PUBLIC_API_SNAPSHOT.txt'
       - '.github/workflows/security-audit.yml'
+      - 'scripts/semver_checked.py'
       - 'scripts/line_coverage_ratchet.py'
       - 'scripts/line-coverage-baseline.txt'
       - '.github/actions/**'
@@ -35,6 +36,7 @@ on:
       # snapshot 再生成 commit でも public-api job を再実行する (paths 漏れだと red が残り続ける)
       - 'docs/PUBLIC_API_SNAPSHOT.txt'
       - '.github/workflows/security-audit.yml'
+      - 'scripts/semver_checked.py'
       - '.github/actions/**'
       - 'examples/*/Cargo.toml'
       - 'bindings/*/Cargo.toml'
@@ -333,8 +335,13 @@ jobs:
       # the tool fails or prints no `Checked ... N checks` line; semver findings
       # themselves stay informational (breaking changes accumulate between
       # releases without a version bump) and go to the job summary.
+      # The count is read by scripts/semver_checked.py (ANSI codes stripped, a
+      # missing or zero count prints `::error::` and fails); colour is also off
+      # for this step so the log reads plainly.
       - name: Run cargo semver-checks
         shell: bash
+        env:
+          CARGO_TERM_COLOR: never
         run: |
           set +e
           cargo semver-checks check-release \
@@ -343,10 +350,11 @@ jobs:
             --only-explicit-features \
             --features "std,simd,parallel,ffi,gpu-solver-bridge" 2>&1 | tee semver.txt
           rc=${PIPESTATUS[0]}
+          checked=$(python3 scripts/semver_checked.py semver.txt --exit-code "$rc")
+          ok=$?
           set -e
-          checked=$(grep -oE 'Checked \[[^]]*\] +[0-9]+ checks' semver.txt | grep -oE '[0-9]+ checks' | grep -oE '[0-9]+' | tail -1)
-          if [ -z "$checked" ] || [ "$checked" -eq 0 ]; then
-            echo "::error::cargo semver-checks compared nothing (exit $rc); see the log above"
+          if [ "$ok" -ne 0 ]; then
+            echo "$checked"
             exit 1
           fi
           {

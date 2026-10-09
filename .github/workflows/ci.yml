@@ -55,6 +55,8 @@ jobs:
         run: |
           python scripts/test_fuzz_targets.py
           python scripts/fuzz_targets.py --check
+      - name: Semver-checks log reader (tests)
+        run: python scripts/test_semver_checked.py
       # public documents: no development-process vocabulary or private names;
       # CHANGELOG version headings and [Unreleased] categories well formed
       - name: Docs lint (tests)

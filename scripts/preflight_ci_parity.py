@@ -27,12 +27,25 @@ ROOT = os.path.dirname(HERE)
 EXEMPT: dict[str, str] = {}
 
 
+# `VAR=value ... cargo test ...`: leading environment assignments change what the
+# command builds (RUSTFLAGS, features through env), so they are part of it
+CARGO_TEST = re.compile(r"""^((?:[A-Z_][A-Z0-9_]*=(?:"[^"]*"|'[^']*'|\S+)\s+)*)cargo test\b""")
+ASSIGN = re.compile(r"""([A-Z_][A-Z0-9_]*)=("[^"]*"|'[^']*'|\S+)""")
+
+
 def normalise(cmd: str, env: dict[str, str]) -> str:
     for k, v in env.items():
         cmd = cmd.replace(f'"${k}"', v).replace(f"${{{k}}}", v).replace(f"${k}", v)
+    m = CARGO_TEST.match(cmd)
+    prefix = ""
+    if m and m.group(1):
+        # the same assignments in any order are the same command
+        pairs = sorted((k, v.strip("\"'")) for k, v in ASSIGN.findall(m.group(1)))
+        prefix = " ".join(f"{k}={v}" for k, v in pairs) + " "
+        cmd = cmd[len(m.group(1)):]
     cmd = cmd.replace('"', "").replace("'", "")
     cmd = re.sub(r"\s--no-fail-fast\b", "", cmd)
-    return re.sub(r"\s+", " ", cmd).strip()
+    return prefix + re.sub(r"\s+", " ", cmd).strip()
 
 
 def ci_commands(text: str) -> list[str]:
@@ -44,7 +57,7 @@ def ci_commands(text: str) -> list[str]:
         s = re.sub(r"^(?:-\s*)?run:\s*", "", s)
         if s.startswith(("'", '"')) and s.endswith(s[0]):
             s = s[1:-1]
-        if s.startswith("cargo test"):
+        if CARGO_TEST.match(s):
             out.append(s)
     return out
 
@@ -52,13 +65,15 @@ def ci_commands(text: str) -> list[str]:
 def preflight(text: str) -> tuple[set[str], dict[str, str]]:
     env = dict(re.findall(r"^([A-Z_][A-Z0-9_]*)='([^']*)'", text, re.M))
     env.update(re.findall(r'^([A-Z_][A-Z0-9_]*)="([^"]*)"', text, re.M))
-    cmds = {normalise(l.strip(), env) for l in text.splitlines() if l.strip().startswith("cargo test")}
+    cmds = {normalise(l.strip(), env) for l in text.splitlines() if CARGO_TEST.match(l.strip())}
     return cmds, env
 
 
 def check(root: str = ROOT) -> tuple[list[str], int]:
-    ci = open(os.path.join(root, ".github", "workflows", "ci.yml"), encoding="utf-8").read()
-    pf = open(os.path.join(root, "scripts", "preflight.sh"), encoding="utf-8").read()
+    with open(os.path.join(root, ".github", "workflows", "ci.yml"), encoding="utf-8") as f:
+        ci = f.read()
+    with open(os.path.join(root, "scripts", "preflight.sh"), encoding="utf-8") as f:
+        pf = f.read()
     local, env = preflight(pf)
     commands = ci_commands(ci)
     errors = []

@@ -52,6 +52,12 @@ class FuzzTargets(unittest.TestCase):
         names = [n for n in ft.CORE if n != "fuzz_step"] + ["fuzz_step2"]
         self.assertTrue(any("core fuzz target fuzz_step " in e for e in ft.check(tree(names))))
 
+    def test_a_source_file_without_a_bin_is_an_error(self):
+        root = tree(ft.CORE)
+        open(os.path.join(root, "fuzz", "fuzz_targets", "fuzz_orphan.rs"), "w").close()
+        errors = ft.check(root)
+        self.assertTrue(any("fuzz_orphan.rs has no [[bin]]" in e for e in errors), errors)
+
     def test_this_repository(self):
         root = os.path.dirname(HERE)
         self.assertEqual(ft.check(root), [])
