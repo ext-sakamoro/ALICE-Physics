@@ -272,28 +272,7 @@
 [parallel] src/joint.rs: replace < with <= in solve_slider_joint
 [parallel] src/joint.rs: replace < with == in solve_cone_twist_joint
 [parallel] src/joint.rs: replace > with >= in solve_cone_twist_joint
-[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace * with / in Vec3Fix::cross_simd
 [parallel] src/math.rs: replace + with - in cordic_sin_cos
-[parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace - with + in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace - with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace - with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace - with / in Vec3Fix::cross_simd
-[parallel] src/math.rs: replace Vec3Fix::cross_simd -> Self with Default::default()
-[parallel] src/math.rs: replace Vec3Fix::dot_batch_4 -> [Fix128; 4] with [Default::default(); 4]
-[parallel] src/math.rs: replace simd_width -> usize with 1
 [parallel] src/solver.rs: delete ! in PhysicsWorld::integrate_positions
 [parallel] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
 [parallel] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
