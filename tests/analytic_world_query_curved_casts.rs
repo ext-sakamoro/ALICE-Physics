@@ -575,3 +575,33 @@ fn a_sphere_nearly_parallel_to_a_cone_base_that_goes_in_hits_it() {
     assert!(least / TOL < DEEP, "the path goes only {} in", least / TOL);
     assert_at_surface(outcome(&scene, &cast));
 }
+
+/// A capsule sliding onto a turned cylinder's cap at `9·10⁻¹⁰` rad, whose path
+/// goes `7.5·2⁻³²` in: GJK's face near the contact is a thin triangle of rim
+/// points, and taking its point by projection on the face's plane (whose tilt
+/// is the rounding of its short edge) put the gap below the distance, so the
+/// path seemed not to go in.
+#[test]
+fn a_capsule_sliding_onto_a_cylinder_cap_hits_it() {
+    let cylinder = Solid {
+        kind: Kind::Cylinder,
+        r: 0.9012093363780878,
+        hh: 0.5179403340707722,
+    };
+    let scene = Scene::posed(
+        cylinder,
+        [-0.4023466290173019, -0.46594330930383876, -1.2957395342946256],
+        [-0.6714485362126652, -0.09612558018852724, -0.7347902667097514],
+        0.5010374581070209,
+    );
+    let cast = Cast::new(
+        [1.8608221708009296, -2.0500185708660865, -1.4757067685941365],
+        [1.3062351220451092, -1.5734718199873896, -0.7798910803267063],
+        [-0.9249401521738037, 0.2939600468880599, -0.24098382877309632],
+        1.0 / 65536.0,
+    );
+    // not vacuous: the path goes more than 2⁻³² in
+    let (least, _) = scene.reference(&cast);
+    assert!(least / TOL < DEEP, "the path goes only {} in", least / TOL);
+    assert_at_surface(outcome(&scene, &cast));
+}
