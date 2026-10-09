@@ -93,6 +93,8 @@ pub mod speeds {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec;
 
     #[test]
     fn uniform_field_stays_uniform() {
