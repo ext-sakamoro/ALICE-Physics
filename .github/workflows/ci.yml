@@ -47,6 +47,10 @@ jobs:
         run: python scripts/version_sync.py --check
       - name: Lib-test gate (tests)
         run: python scripts/test_lib_test_gate.py
+      - name: Preflight runs every cargo test of ci.yml (tests and check)
+        run: |
+          python scripts/test_preflight_ci_parity.py
+          python scripts/preflight_ci_parity.py
       - name: Fuzz target list (tests and check)
         run: |
           python scripts/test_fuzz_targets.py
