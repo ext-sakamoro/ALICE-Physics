@@ -326,11 +326,33 @@ jobs:
         with:
           tool: cargo-semver-checks@0.50.0
 
-      # publish=false のため --baseline-rev で git 経由の比較
-      # main の直前 commit と比較 (informational、break あっても block しない)
+      # Compared with the previous commit (--baseline-rev). The features are named
+      # explicitly: the default heuristic enables every feature, and `wasm` with
+      # `ffi` is a compile_error!, so rustdoc failed on every run and `|| true`
+      # turned a run that compared nothing into a pass. Now the step fails when
+      # the tool fails or prints no `Checked ... N checks` line; semver findings
+      # themselves stay informational (breaking changes accumulate between
+      # releases without a version bump) and go to the job summary.
       - name: Run cargo semver-checks
+        shell: bash
         run: |
+          set +e
           cargo semver-checks check-release \
             --package alice-physics \
             --baseline-rev "HEAD~1" \
-            || true
+            --only-explicit-features \
+            --features "std,simd,parallel,ffi,gpu-solver-bridge" 2>&1 | tee semver.txt
+          rc=${PIPESTATUS[0]}
+          set -e
+          checked=$(grep -oE 'Checked \[[^]]*\] +[0-9]+ checks' semver.txt | grep -oE '[0-9]+ checks' | grep -oE '[0-9]+' | tail -1)
+          if [ -z "$checked" ] || [ "$checked" -eq 0 ]; then
+            echo "::error::cargo semver-checks compared nothing (exit $rc); see the log above"
+            exit 1
+          fi
+          {
+            echo "### cargo semver-checks: $checked checks against HEAD~1 (exit $rc)"
+            grep -E 'Summary|FAIL|requires new' semver.txt || true
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ]; then
+            echo "::warning::cargo semver-checks reports semver findings (informational); see the job summary"
+          fi
