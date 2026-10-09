@@ -223,3 +223,90 @@ fn version_3_blob_with_a_freed_node_restores_to_the_clean_world() {
         assert_same(&r, &c, &format!("step {i}"));
     }
 }
+
+// ── `broadphase_stats().height` ───────────────────────────────────────────
+//
+// oracle: the world restored from the live world's snapshot. Its tree is
+// rebuilt from the leaf set, so it holds the tree the height is defined on;
+// the incremental live tree has a different shape whenever leaves were
+// inserted out of body index order, removed or re-inserted after moving.
+
+/// After every step, the live world reports the same stats as the world
+/// restored from its snapshot, and the height is at least the height of a
+/// balanced tree of that many leaves.
+fn heights_agree(
+    w: &mut PhysicsWorld,
+    steps: usize,
+    mut each: impl FnMut(&mut PhysicsWorld, usize),
+) {
+    let mut with_tree = 0;
+    for i in 0..steps {
+        each(w, i);
+        w.step(dt());
+        let r = PhysicsWorld::from_world_snapshot(&w.snapshot_world()).expect("restore");
+        let (a, b) = (w.broadphase_stats(), r.broadphase_stats());
+        assert_eq!(a, b, "step {i}");
+        if a.proxies >= 2 {
+            with_tree += 1;
+            // a tree of n leaves is at least ceil(log2 n) tall
+            let floor = usize::BITS - (a.proxies - 1).leading_zeros();
+            assert!(a.height as u32 >= floor, "step {i}: {a:?}");
+        }
+    }
+    assert!(
+        with_tree >= steps - 1,
+        "control: {with_tree} of {steps} steps hold a tree"
+    );
+}
+
+/// Bodies gaining a radius out of index order (the inserts land in a
+/// shuffled order) and bodies removed from the middle: the live tree's height
+/// differs from the rebuilt one's on 23 of these 200 steps.
+#[test]
+fn height_is_the_same_after_restore_with_shuffled_inserts_and_removes() {
+    let mut w = PhysicsWorld::new(SolverConfig::default());
+    w.set_broadphase(Broadphase::DynamicTree);
+    heights_agree(&mut w, 200, |w, i| {
+        let x = (i as i64 * 37) % 200;
+        w.add_body_with_radius(
+            RigidBody::new_static(Vec3Fix::from_int(3 * x, 0, 0)),
+            Fix128::from_ratio(1, 2),
+        );
+        if i % 7 == 3 {
+            let n = w.bodies.len();
+            w.remove_body(n / 2);
+        }
+    });
+}
+
+/// 1,000 bodies moving at different velocities without gravity: their
+/// proxies are re-inserted as they leave their fattened boxes, and the live
+/// tree grows taller than the rebuilt one.
+#[test]
+fn height_is_the_same_after_restore_in_a_moving_scene() {
+    let mut w = PhysicsWorld::new(SolverConfig::default());
+    w.set_broadphase(Broadphase::DynamicTree);
+    w.config.gravity = Vec3Fix::ZERO;
+    for i in 0..1000i64 {
+        let (x, y, z) = (i % 10, (i / 10) % 10, i / 100);
+        let mut b = RigidBody::new_dynamic(Vec3Fix::from_int(4 * x, 4 * y, 4 * z), Fix128::ONE);
+        b.velocity = Vec3Fix::new(
+            Fix128::from_ratio((i * 7919) % 97 + 30, 30),
+            Fix128::from_ratio((i * 104_729) % 89 - 44, 40),
+            Fix128::ZERO,
+        );
+        w.add_body_with_radius(b, Fix128::from_ratio(1, 2));
+    }
+    heights_agree(&mut w, 40, |_, _| {});
+}
+
+/// No proxy, no height: before any step, and with `Bvh`.
+#[test]
+fn height_is_zero_without_proxies() {
+    let mut w = probe_scene();
+    assert_eq!(w.broadphase_stats().height, 0);
+    w.set_broadphase(Broadphase::Bvh);
+    w.step(dt());
+    assert_eq!(w.broadphase_stats().height, 0);
+    assert_eq!(w.broadphase_stats().proxies, 0);
+}

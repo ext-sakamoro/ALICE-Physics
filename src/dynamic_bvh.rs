@@ -280,6 +280,25 @@ impl DynamicAabbTree {
         self.nodes.len() - self.free_list.len()
     }
 
+    /// The height of the tree that inserting the leaves `proxies` reaches, in
+    /// index order and with their stored boxes, into an empty tree builds.
+    ///
+    /// `proxies[i]` is the proxy of the leaf whose user data is `i` (or
+    /// `None`). The result depends only on those leaves, not on the order of
+    /// the inserts, removals and updates that produced this tree: it is the
+    /// height of the tree a restored world rebuilds from the same leaves. One
+    /// rebuild per call (`O(n log n)` for `n` leaves).
+    #[must_use]
+    pub(crate) fn rebuilt_height(&self, proxies: &[Option<u32>]) -> i32 {
+        let mut t = Self::new();
+        for (i, &p) in proxies.iter().enumerate() {
+            if let Some(id) = p {
+                t.insert_fat(self.get_aabb(id), i as u32);
+            }
+        }
+        t.height()
+    }
+
     /// Tree height
     #[must_use]
     pub fn height(&self) -> i32 {
