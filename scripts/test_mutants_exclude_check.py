@@ -91,6 +91,29 @@ class Main(unittest.TestCase):
         )
         self.assertEqual(rc, 0)
 
+    def test_a_loose_pattern_like_tests_tolerates_a_changed_count(self):
+        # baseline's tracked count (99) deliberately does not match how many
+        # of FIXTURE_LINES actually say "tests::" below -- a real PR that
+        # only adds or removes a #[cfg(test)] helper must not go red here.
+        rc, _ = self.run_main(
+            'exclude_re = ["tests::"]\n',
+            baseline_text="99\ttests::\n",
+            lines=[
+                "src/a.rs:1:1: replace x in tests::helper_one",
+                "src/a.rs:2:1: replace y in tests::helper_two",
+                "src/a.rs:3:1: replace z in tests::helper_three",
+            ],
+        )
+        self.assertEqual(rc, 0)
+
+    def test_a_loose_pattern_like_tests_still_errors_on_zero_matches(self):
+        rc, _ = self.run_main(
+            'exclude_re = ["tests::"]\n',
+            baseline_text="3\ttests::\n",
+            lines=["src/a.rs:1:1: replace x in production_fn"],
+        )
+        self.assertEqual(rc, 1)
+
     def test_a_stale_baseline_entry_no_longer_in_exclude_re_is_an_error(self):
         rc, _ = self.run_main(
             'exclude_re = ["replace > with >= in g"]\n',

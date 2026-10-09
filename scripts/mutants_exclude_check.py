@@ -32,10 +32,10 @@ Needs Python 3.11+ (stdlib `tomllib`); CI pins 3.11, and a local run on an
 older interpreter fails fast with an ImportError rather than silently
 skipping.
 
-The `"tests::"` entry alone matches several hundred mutants (test-helper
-code, not production), so adding or removing a `#[cfg(test)]` helper
-changes its count and turns this red until `--write` records the new
-one -- a known source of churn, not a bug in this checker.
+`"tests::"` (LOOSE_PATTERNS) is a blanket filter, not a per-mutant proof,
+so it is checked only for "still excludes at least one mutant" -- an
+unrelated change that adds or removes a `#[cfg(test)]` helper does not
+turn this red.
 
 A limitation this checker cannot close: an entry that matches by
 description text only (no line number in its regex) will keep matching
@@ -59,6 +59,13 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 MUTANTS_TOML = REPO_ROOT / ".cargo" / "mutants.toml"
 BASELINE = HERE / "mutants-exclude-baseline.txt"
+
+# Patterns that are a blanket filter ("this whole category is not production
+# code"), not a proof about one specific mutant: their match count naturally
+# drifts as unrelated code changes (adding or removing a #[cfg(test)] helper
+# changes how many `tests::` sites exist), so only "still excludes at least
+# one mutant" is checked for these, never an exact count.
+LOOSE_PATTERNS = frozenset({"tests::"})
 
 
 def load_exclude_re(mutants_toml: Path) -> list[str]:
@@ -133,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
         got = counts[pattern]
         if got == 0:
             errors.append(f"matches 0 mutants (no proof left to exclude anything): {pattern!r}")
+            continue
+        if pattern in LOOSE_PATTERNS:
             continue
         want = baseline.get(pattern)
         if want is None:

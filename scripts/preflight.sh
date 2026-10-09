@@ -30,6 +30,22 @@ NATIVE='std,simd,parallel,ffi,gpu-solver-bridge'
 
 step() { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
 
+# A gate skipped for a missing local tool must stay visible: printing once to
+# stderr and moving on is easy to miss in a long run, so every skip is also
+# collected here and repeated in a summary right before the final "OK" line.
+declare -a skipped_gates=()
+skip() {
+  echo "SKIPPED: $*" >&2
+  skipped_gates+=("$*")
+}
+print_skip_summary() {
+  if [[ ${#skipped_gates[@]} -gt 0 ]]; then
+    echo
+    echo "Skipped (not verified locally -- CI runs these):"
+    printf '  - %s\n' "${skipped_gates[@]}"
+  fi
+}
+
 step "actionlint (workflow YAML)"
 actionlint .github/workflows/*.yml
 
@@ -82,7 +98,7 @@ step "mutants.toml exclude_re entries still match a real mutant (needs cargo-mut
 if command -v cargo-mutants >/dev/null 2>&1; then
   python3 scripts/mutants_exclude_check.py
 elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
-  echo "skip: cargo-mutants not installed (cargo install cargo-mutants --locked); CI runs this check" >&2
+  skip "mutants_exclude_check (cargo-mutants not installed) -- CI runs this check"
 else
   echo "cargo-mutants not installed: cargo install cargo-mutants --locked" >&2
   exit 1
@@ -164,12 +180,14 @@ RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps --features "$NATIVE"
 
 if [[ $quick -eq 1 ]]; then
+  print_skip_summary
   echo; echo "preflight --quick OK (test suites skipped)"; exit 0
 fi
 
 if [[ $fast -eq 1 ]]; then
   step "affected tests (modules changed since origin/main + determinism goldens)"
   python3 scripts/affected_tests.py --features "$NATIVE" --run
+  print_skip_summary
   echo; echo "preflight --fast OK (static gates + affected tests; the full suites run in CI)"; exit 0
 fi
 
@@ -205,4 +223,5 @@ python3 scripts/run_feature_gated_tests.py
 step "run every example in release (same script and arguments as ci.yml job examples)"
 python3 scripts/run_examples.py
 
+print_skip_summary
 echo; echo "preflight OK"

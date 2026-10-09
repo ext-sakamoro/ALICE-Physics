@@ -111,11 +111,19 @@ jobs:
       # mutants (scripts/mutants_exclude_check.py). `--list` only enumerates
       # candidate sites (no build-and-test per mutant), so this runs on every
       # push, not just the weekly cargo-mutants job in quality-deep.yml.
+      # One OS only (ubuntu-latest): the match counts are a property of the
+      # source text, not the platform, and installing cargo-mutants on all 5
+      # OS every push would spend shared runner time with nothing to show
+      # for the other 4 (their `cargo mutants --list` output is unverified
+      # against this baseline, so a platform-specific difference there would
+      # not be any more caught by running it 5 times than by running it once).
       - name: Install cargo-mutants
+        if: matrix.os == 'ubuntu-latest'
         uses: taiki-e/install-action@v2
         with:
           tool: cargo-mutants@27.1.0
       - name: Mutants exclude_re entries still match a real mutant
+        if: matrix.os == 'ubuntu-latest'
         run: python scripts/mutants_exclude_check.py
 
       # PIN markers must name an open known defect; external root causes must
