@@ -1907,6 +1907,7 @@ mod tests {
         reports
     }
 
+    #[cfg(feature = "std")]
     fn merged(reports: &[RankReport]) -> Fold {
         let mut total = Fold::default();
         for r in reports {
