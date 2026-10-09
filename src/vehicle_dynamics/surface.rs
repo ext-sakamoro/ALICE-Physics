@@ -533,6 +533,8 @@ mod tests {
     use super::*;
     use crate::sdf_collider::ClosureSdf;
     use crate::trimesh::Triangle;
+    #[cfg(not(feature = "std"))]
+    use alloc::{vec, vec::Vec};
 
     fn fx(n: i64) -> Fix128 {
         Fix128::from_int(n)
