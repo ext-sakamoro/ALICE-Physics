@@ -178,6 +178,12 @@ jobs:
             ${features:+--features "$features"} --cargo-arg=--lib $tests
           rc=$?
           set -e
+          # cargo-mutants exits 0 without an output directory when the diff holds nothing
+          # to mutate (doc comments only, Cargo.toml only): nothing to check, not a failure
+          if [ "$rc" -eq 0 ] && [ ! -d mutants.out ]; then
+            echo "no mutant in the changed lines"
+            exit 0
+          fi
           missed=$(grep -c . mutants.out/missed.txt 2>/dev/null || true)
           if [ "${missed:-0}" -gt 0 ]; then
             echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
