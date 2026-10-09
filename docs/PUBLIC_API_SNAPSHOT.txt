@@ -4175,9 +4175,11 @@ impl alice_physics::event::EventCollector
 pub fn alice_physics::event::EventCollector::begin_frame(&mut self)
 pub fn alice_physics::event::EventCollector::contact_events(&self) -> &[alice_physics::event::ContactEvent]
 pub fn alice_physics::event::EventCollector::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
+pub fn alice_physics::event::EventCollector::drain_joint_break_events(&mut self) -> alloc::vec::Vec<alice_physics::event::JointBreakEvent>
 pub fn alice_physics::event::EventCollector::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
 pub fn alice_physics::event::EventCollector::end_frame(&mut self)
 pub fn alice_physics::event::EventCollector::has_events(&self) -> bool
+pub fn alice_physics::event::EventCollector::joint_break_events(&self) -> &[alice_physics::event::JointBreakEvent]
 pub const fn alice_physics::event::EventCollector::new() -> Self
 pub fn alice_physics::event::EventCollector::report_contact(&mut self, usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::event::EventCollector::report_trigger(&mut self, usize, usize)
@@ -4191,6 +4193,26 @@ impl core::marker::Unpin for alice_physics::event::EventCollector
 impl core::marker::UnsafeUnpin for alice_physics::event::EventCollector
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::EventCollector
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::EventCollector
+pub struct alice_physics::event::JointBreakEvent
+pub alice_physics::event::JointBreakEvent::force: alice_physics::math::Fix128
+pub alice_physics::event::JointBreakEvent::index: usize
+pub alice_physics::event::JointBreakEvent::joint: alice_physics::joint::Joint
+impl core::clone::Clone for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::event::JointBreakEvent
+impl core::cmp::PartialEq for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::event::JointBreakEvent
+impl core::marker::StructuralPartialEq for alice_physics::event::JointBreakEvent
+impl core::marker::Freeze for alice_physics::event::JointBreakEvent
+impl core::marker::Send for alice_physics::event::JointBreakEvent
+impl core::marker::Sync for alice_physics::event::JointBreakEvent
+impl core::marker::Unpin for alice_physics::event::JointBreakEvent
+impl core::marker::UnsafeUnpin for alice_physics::event::JointBreakEvent
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::JointBreakEvent
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::JointBreakEvent
 pub struct alice_physics::event::TriggerEvent
 pub alice_physics::event::TriggerEvent::entered: bool
 pub alice_physics::event::TriggerEvent::other_body: usize
@@ -5756,6 +5778,8 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::joint::SpringJoi
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint::SpringJoint
 pub fn alice_physics::joint::solve_joints(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128)
 pub fn alice_physics::joint::solve_joints_breakable(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics::joint::solve_joints_breaking_on_force(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics::joint::solve_joints_with_reaction_forces(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::math::Fix128>
 pub mod alice_physics::joint_extra
 pub enum alice_physics::joint_extra::ExtraJoint
 pub alice_physics::joint_extra::ExtraJoint::Gear(alice_physics::joint_extra::GearJoint)
@@ -11898,9 +11922,11 @@ impl alice_physics::event::EventCollector
 pub fn alice_physics::event::EventCollector::begin_frame(&mut self)
 pub fn alice_physics::event::EventCollector::contact_events(&self) -> &[alice_physics::event::ContactEvent]
 pub fn alice_physics::event::EventCollector::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
+pub fn alice_physics::event::EventCollector::drain_joint_break_events(&mut self) -> alloc::vec::Vec<alice_physics::event::JointBreakEvent>
 pub fn alice_physics::event::EventCollector::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
 pub fn alice_physics::event::EventCollector::end_frame(&mut self)
 pub fn alice_physics::event::EventCollector::has_events(&self) -> bool
+pub fn alice_physics::event::EventCollector::joint_break_events(&self) -> &[alice_physics::event::JointBreakEvent]
 pub const fn alice_physics::event::EventCollector::new() -> Self
 pub fn alice_physics::event::EventCollector::report_contact(&mut self, usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::event::EventCollector::report_trigger(&mut self, usize, usize)
@@ -12651,6 +12677,26 @@ impl core::marker::Unpin for alice_physics::sleeping::IslandManager
 impl core::marker::UnsafeUnpin for alice_physics::sleeping::IslandManager
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sleeping::IslandManager
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::sleeping::IslandManager
+pub struct alice_physics::prelude::JointBreakEvent
+pub alice_physics::prelude::JointBreakEvent::force: alice_physics::math::Fix128
+pub alice_physics::prelude::JointBreakEvent::index: usize
+pub alice_physics::prelude::JointBreakEvent::joint: alice_physics::joint::Joint
+impl core::clone::Clone for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::event::JointBreakEvent
+impl core::cmp::PartialEq for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::event::JointBreakEvent
+impl core::marker::StructuralPartialEq for alice_physics::event::JointBreakEvent
+impl core::marker::Freeze for alice_physics::event::JointBreakEvent
+impl core::marker::Send for alice_physics::event::JointBreakEvent
+impl core::marker::Sync for alice_physics::event::JointBreakEvent
+impl core::marker::Unpin for alice_physics::event::JointBreakEvent
+impl core::marker::UnsafeUnpin for alice_physics::event::JointBreakEvent
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::JointBreakEvent
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::JointBreakEvent
 pub struct alice_physics::prelude::JointMotor
 pub alice_physics::prelude::JointMotor::controller: alice_physics::motor::PdController
 pub alice_physics::prelude::JointMotor::joint_index: usize
@@ -15184,6 +15230,8 @@ pub fn alice_physics::prelude::simplify_collision_mesh(&alice_physics::collision
 pub fn alice_physics::prelude::solve_extra_joints(&mut [alice_physics::solver::RigidBody], &[alice_physics::joint_extra::ExtraJoint], alice_physics::math::Fix128)
 pub fn alice_physics::prelude::solve_joints(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128)
 pub fn alice_physics::prelude::solve_joints_breakable(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics::prelude::solve_joints_breaking_on_force(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics::prelude::solve_joints_with_reaction_forces(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::math::Fix128>
 pub fn alice_physics::prelude::solve_rope_attachments(&[alice_physics::rope_attach::RopeAttachment], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
 pub fn alice_physics::prelude::speculative_contact(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::prelude::sphere_cast(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> core::option::Option<alice_physics::query::ShapeCastHit>
@@ -23029,9 +23077,11 @@ impl alice_physics::event::EventCollector
 pub fn alice_physics::event::EventCollector::begin_frame(&mut self)
 pub fn alice_physics::event::EventCollector::contact_events(&self) -> &[alice_physics::event::ContactEvent]
 pub fn alice_physics::event::EventCollector::drain_contact_events(&mut self) -> alloc::vec::Vec<alice_physics::event::ContactEvent>
+pub fn alice_physics::event::EventCollector::drain_joint_break_events(&mut self) -> alloc::vec::Vec<alice_physics::event::JointBreakEvent>
 pub fn alice_physics::event::EventCollector::drain_trigger_events(&mut self) -> alloc::vec::Vec<alice_physics::event::TriggerEvent>
 pub fn alice_physics::event::EventCollector::end_frame(&mut self)
 pub fn alice_physics::event::EventCollector::has_events(&self) -> bool
+pub fn alice_physics::event::EventCollector::joint_break_events(&self) -> &[alice_physics::event::JointBreakEvent]
 pub const fn alice_physics::event::EventCollector::new() -> Self
 pub fn alice_physics::event::EventCollector::report_contact(&mut self, usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128)
 pub fn alice_physics::event::EventCollector::report_trigger(&mut self, usize, usize)
@@ -23782,6 +23832,26 @@ impl core::marker::Unpin for alice_physics::sleeping::IslandManager
 impl core::marker::UnsafeUnpin for alice_physics::sleeping::IslandManager
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sleeping::IslandManager
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::sleeping::IslandManager
+pub struct alice_physics::JointBreakEvent
+pub alice_physics::JointBreakEvent::force: alice_physics::math::Fix128
+pub alice_physics::JointBreakEvent::index: usize
+pub alice_physics::JointBreakEvent::joint: alice_physics::joint::Joint
+impl core::clone::Clone for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::event::JointBreakEvent
+impl core::cmp::PartialEq for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::event::JointBreakEvent
+pub fn alice_physics::event::JointBreakEvent::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::event::JointBreakEvent
+impl core::marker::StructuralPartialEq for alice_physics::event::JointBreakEvent
+impl core::marker::Freeze for alice_physics::event::JointBreakEvent
+impl core::marker::Send for alice_physics::event::JointBreakEvent
+impl core::marker::Sync for alice_physics::event::JointBreakEvent
+impl core::marker::Unpin for alice_physics::event::JointBreakEvent
+impl core::marker::UnsafeUnpin for alice_physics::event::JointBreakEvent
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::JointBreakEvent
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::JointBreakEvent
 pub struct alice_physics::JointMotor
 pub alice_physics::JointMotor::controller: alice_physics::motor::PdController
 pub alice_physics::JointMotor::joint_index: usize
@@ -26445,6 +26515,8 @@ pub fn alice_physics::simplify_collision_mesh(&alice_physics::collision_mesh_gen
 pub fn alice_physics::solve_extra_joints(&mut [alice_physics::solver::RigidBody], &[alice_physics::joint_extra::ExtraJoint], alice_physics::math::Fix128)
 pub fn alice_physics::solve_joints(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128)
 pub fn alice_physics::solve_joints_breakable(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics::solve_joints_breaking_on_force(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<usize>
+pub fn alice_physics::solve_joints_with_reaction_forces(&[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::math::Fix128>
 pub fn alice_physics::solve_rope_attachments(&[alice_physics::rope_attach::RopeAttachment], &mut [alice_physics::math::Vec3Fix], &mut [alice_physics::math::Vec3Fix], &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<core::option::Option<usize>>
 pub fn alice_physics::speculative_contact(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::option::Option<alice_physics::collider::Contact>
 pub fn alice_physics::sphere_capsule_toi(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::ccd::TOI>

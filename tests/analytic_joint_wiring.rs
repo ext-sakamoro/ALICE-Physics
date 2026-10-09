@@ -74,12 +74,27 @@
 
 #![cfg(feature = "std")]
 
+#[allow(deprecated)] // the separation-based variant is pinned below
+use alice_physics::joint::solve_joints_breakable;
 use alice_physics::joint::{
-    solve_joints, solve_joints_breakable, BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint,
-    HingeJoint, Joint, JointType, SliderJoint, SpringJoint,
+    solve_joints, BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint,
+    JointType, SliderJoint, SpringJoint,
 };
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::RigidBody;
+
+/// The reaction force of one joint in one solve from this pose (measured through
+/// `solve_joints_with_reaction_forces` on a copy of the bodies).
+trait ReactionOfOneSolve {
+    fn reaction_force(&self, bodies: &[RigidBody], dt: Fix128) -> Fix128;
+}
+
+impl ReactionOfOneSolve for Joint {
+    fn reaction_force(&self, bodies: &[RigidBody], dt: Fix128) -> Fix128 {
+        alice_physics::joint::solve_joints_with_reaction_forces(&[*self], &mut bodies.to_vec(), dt)
+            [0]
+    }
+}
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -228,6 +243,7 @@ fn joints_without_with_break_force_report_none() {
 // B. Breakable ramp: exact bit closed form
 // ===========================================================================
 
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn solve_joints_breakable_ramp_breaks_exactly_at_k_star() {
     let m = Fix128::from_int(2);
@@ -306,6 +322,7 @@ fn solve_joints_non_breakable_variant_never_removes_joints() {
 // C.1 break_force degenerate values: zero and negative
 // ===========================================================================
 
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn break_force_zero_is_a_strict_boundary() {
     let joint_zero = [Joint::Ball(
@@ -337,6 +354,7 @@ fn break_force_zero_is_a_strict_boundary() {
     );
 }
 
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn negative_break_force_breaks_unconditionally_even_at_zero_separation() {
     let joint_neg = [Joint::Ball(
@@ -517,6 +535,7 @@ fn wraps_to_zero_when_squared(shift: u32) -> bool {
     (hh % (1u128 << 64)) == 0
 }
 
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn extreme_separation_squares_wrap_per_the_documented_formula_not_panic() {
     for shift in [32u32, 40, 50, 62] {
@@ -555,6 +574,7 @@ fn extreme_separation_squares_wrap_per_the_documented_formula_not_panic() {
     }
 }
 
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn moderate_separation_below_the_wrap_threshold_computes_the_true_length() {
     // shift=30: 2*shift=60 < 64, no wrap — compute_force must equal 2^30 exactly.
@@ -576,5 +596,55 @@ fn moderate_separation_below_the_wrap_threshold_computes_the_true_length() {
         broken,
         vec![0],
         "a true, un-wrapped separation of 2^30 must break (threshold 1)"
+    );
+}
+
+/// Same ramp through `solve_joints_breaking_on_force`: there `break_force` is
+/// the reaction force `λ/dt² = F_k` itself (5 N), not the separation `5/32`.
+#[test]
+fn solve_joints_breaking_on_force_ramp_breaks_exactly_at_k_star() {
+    let m = Fix128::from_int(2);
+    let ramp = [Joint::Ball(
+        BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_break_force(Fix128::from_int(5)),
+    )];
+    let mut broke_at: Option<i64> = None;
+    for k in 1..=8i64 {
+        let d_k = Fix128::from_int(k) * DT * DT / m;
+        let mut bodies = pair(Fix128::ONE / m);
+        bodies[1].position = Vec3Fix::new(Fix128::ZERO, -d_k, Fix128::ZERO);
+        assert_eq!(
+            ramp[0].reaction_force(&bodies, DT),
+            Fix128::from_int(k),
+            "F_k = k N exactly"
+        );
+        let broken = alice_physics::joint::solve_joints_breaking_on_force(&ramp, &mut bodies, DT);
+        if k <= 5 {
+            assert!(
+                broken.is_empty(),
+                "k={k} <= 5 N holds (equality does not break)"
+            );
+            assert_eq!(
+                bodies[1].position,
+                Vec3Fix::ZERO,
+                "held joint solves back exactly, k={k}"
+            );
+        } else {
+            assert_eq!(broken, vec![0], "k={k} > 5 N breaks");
+            // judged after the solve: the breaking joint's correction is applied
+            assert_eq!(bodies[1].position, Vec3Fix::ZERO);
+            broke_at.get_or_insert(k);
+        }
+    }
+    assert_eq!(broke_at, Some(6));
+    // the force scales with 1/dt²: the k = 5 separation at half the step is 4 × 5 = 20 N
+    let mut bodies = pair(Fix128::ONE / m);
+    bodies[1].position = Vec3Fix::new(
+        Fix128::ZERO,
+        -(Fix128::from_int(5) * DT * DT / m),
+        Fix128::ZERO,
+    );
+    assert_eq!(
+        ramp[0].reaction_force(&bodies, DT / Fix128::from_int(2)),
+        Fix128::from_int(20)
     );
 }

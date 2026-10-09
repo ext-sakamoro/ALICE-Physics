@@ -130,11 +130,14 @@ fn solve_joints_with_a_self_ball_joint_does_not_move_the_body() {
 /// Every joint kind between a body and itself leaves the body as it was (none
 /// of the seven constrains anything a motion could satisfy), and a breakable
 /// one does not break (it carries no force).
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn self_joints_of_every_kind_are_skipped_and_never_break() {
+    #[allow(deprecated)] // the separation-based variant is pinned below
+    use alice_physics::joint::solve_joints_breakable;
     use alice_physics::joint::{
-        solve_joints, solve_joints_breakable, BallJoint, ConeTwistJoint, D6Joint, FixedJoint,
-        HingeJoint, Joint, SliderJoint, SpringJoint,
+        solve_joints, BallJoint, ConeTwistJoint, D6Joint, FixedJoint, HingeJoint, Joint,
+        SliderJoint, SpringJoint,
     };
     use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
     use alice_physics::solver::RigidBody;

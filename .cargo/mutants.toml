@@ -56,9 +56,9 @@
 #   only `<`/`>` sites in this function, so no line-number restriction is
 #   needed here).
 #
-# `replace > with >= in solve_hinge_joint` (src/joint.rs:946) and
-# `replace > with >= in solve_slider_joint` (src/joint.rs:1087) and
-# `replace > with >= in solve_d6_joint` (src/joint.rs:1241,1311): each is a
+# `replace > with >= in solve_hinge_joint` (src/joint.rs:1508) and
+# `replace > with >= in solve_slider_joint` (src/joint.rs:1508) and
+# `replace > with >= in solve_d6_joint` (src/joint.rs:1514,1541): each is a
 #   joint's upper limit check (`angle > *m` / `along_axis > *m` / `proj >
 #   limit_max` / `angle > limit_max`). At the exact limit the resulting
 #   `error` (`angle - max` etc.) is exactly zero regardless of which branch
@@ -73,8 +73,8 @@
 #   by scripts/mutants_exclude_check.py, which fails if any of these regexes
 #   stop matching a real mutant.
 #
-# `replace < with <= in solve_cone_twist_joint` (src/joint.rs:1376) and
-# `replace > with >= in solve_cone_twist_joint` (src/joint.rs:1382,1409):
+# `replace < with <= in solve_cone_twist_joint` (src/joint.rs:1508) and
+# `replace > with >= in solve_cone_twist_joint` (src/joint.rs:1514,1541):
 #   1376 is `cone_angle < Fix128::ZERO`, a sign-fix for a value derived from
 #   `Fix128::atan2(cross_len, dot)` where `cross_len` is itself a vector
 #   length (`normalize_with_length`), hence never negative; atan2 with a
@@ -185,9 +185,9 @@ exclude_re = [
     "replace > with >= in solve_hinge_joint",
     "replace > with >= in solve_slider_joint",
     "replace > with >= in solve_d6_joint",
-    "joint\\.rs:1376:.*replace < with <= in solve_cone_twist_joint",
-    "joint\\.rs:1382:.*replace > with >= in solve_cone_twist_joint",
-    "joint\\.rs:1409:.*replace > with >= in solve_cone_twist_joint",
+    "joint\\.rs:1508:.*replace < with <= in solve_cone_twist_joint",
+    "joint\\.rs:1514:.*replace > with >= in solve_cone_twist_joint",
+    "joint\\.rs:1541:.*replace > with >= in solve_cone_twist_joint",
     "replace \\| with \\^ in Fix128::(sqrt|half|shr_bits|double)$",
     "replace \\| with \\^ in <impl Div for Fix128>::div$",
     "replace \\| with \\^ in select_fix128$",
