@@ -51,11 +51,9 @@
 //!   negative threshold breaks the joint unconditionally, even when the
 //!   anchors already coincide.
 //! * `with_limits(lo, hi)` / `with_linear_limits` / `with_angular_limits`
-//!   with `lo > hi`: the solver does not validate or swap the pair, it
-//!   checks `value < lo` first and `value > hi` second (`else if`), so a
-//!   value below both bounds lands on `lo` and a value above both lands on
-//!   `hi` — the "inverted interval" is never itself enforced, only whichever
-//!   single bound the `if`/`else if` chain reaches first.
+//!   with `lo > hi`: these builders now panic at construction (see their
+//!   `# Panics`), so this interval cannot reach the solver at all — there
+//!   is no "inverted interval" case left to pin here.
 //! * `lo == hi`: both branches converge on the same point, so every input
 //!   outside that single value lands exactly on it, from either side.
 //! * Extreme separations whose square overflows a single `Fix128` lane: the
@@ -104,17 +102,6 @@ fn pair(inv_mass_b: Fix128) -> Vec<RigidBody> {
     b.inv_mass = inv_mass_b;
     b.inv_inertia = Vec3Fix::new(Fix128::ONE, Fix128::ONE, Fix128::ONE);
     vec![RigidBody::new_static(Vec3Fix::ZERO), b]
-}
-
-/// Signed twist about +z, read independently of `joint::compute_twist_angle`:
-/// `2·atan2(q_z, q_w)` on the `w ≥ 0` cover.
-fn twist_about_z(rot: QuatFix) -> Fix128 {
-    let (z, w) = if rot.w.is_negative() {
-        (-rot.z, -rot.w)
-    } else {
-        (rot.z, rot.w)
-    };
-    Fix128::atan2(z, w).double()
 }
 
 /// Angle between the rotated +z axis and +z, independent of the solver's
@@ -366,25 +353,15 @@ fn negative_break_force_breaks_unconditionally_even_at_zero_separation() {
 }
 
 // ===========================================================================
-// C.2 inverted / degenerate limit intervals
+// C.2 degenerate limit intervals
+//
+// An inverted interval (min > max) can no longer reach these solver tests:
+// `SliderJoint::with_limits` / `HingeJoint::with_limits` now panic at
+// construction when `min > max` (see their rustdoc `# Panics`), so the
+// prior pair of tests here documenting that the solver's `min` branch wins
+// an inverted interval ("not swapped") has no construction left to reach —
+// removed, not relaxed, along with the interval they pinned.
 // ===========================================================================
-
-#[test]
-fn slider_inverted_limits_are_not_swapped_each_branch_wins_independently() {
-    // lo=1, hi=-1 (inverted). The solver checks `< lo` first, `> hi` second.
-    let joint = [Joint::Slider(
-        SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO)
-            .with_limits(Fix128::ONE, -Fix128::ONE),
-    )];
-    // travel 0: 0 < lo(1) is true -> corrected toward lo=1, `> hi` branch never reached
-    let mut b = pair(q(1, 2));
-    solve_joints(&joint, &mut b, DT);
-    assert_eq!(
-        b[1].position.x,
-        Fix128::ONE,
-        "value below the (inverted) lo must land on lo, not on hi"
-    );
-}
 
 #[test]
 fn slider_limit_hi_equals_lo_is_a_single_point_from_either_side() {
@@ -405,29 +382,6 @@ fn slider_limit_hi_equals_lo_is_a_single_point_from_either_side() {
 }
 
 #[test]
-fn hinge_inverted_angular_limits_are_not_swapped() {
-    let joint = [Joint::Hinge(
-        HingeJoint::new(
-            0,
-            1,
-            Vec3Fix::ZERO,
-            Vec3Fix::ZERO,
-            Vec3Fix::UNIT_Z,
-            Vec3Fix::UNIT_Z,
-        )
-        .with_limits(q(1, 2), -q(1, 2)), // inverted: min=1/2, max=-1/2
-    )];
-    let mut b = pair(Fix128::ONE);
-    // theta = 0 initially: 0 < min(1/2) is true -> corrected toward min = 1/2
-    solve_joints(&joint, &mut b, DT);
-    let landed = twist_about_z(b[1].rotation);
-    assert!(
-        near(landed, q(1, 2), cordic_tol()),
-        "below the inverted min must land on min, got {landed:?}"
-    );
-}
-
-#[test]
 fn d6_linear_limited_axis_with_lo_equal_to_hi() {
     let point = Vec3Fix::new(q(1, 4), Fix128::ZERO, Fix128::ZERO);
     let mut j = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO);
@@ -440,6 +394,55 @@ fn d6_linear_limited_axis_with_lo_equal_to_hi() {
         solve_joints(&[Joint::D6(j)], &mut b, DT);
         assert_eq!(b[1].position.x, point.x, "travel={travel:?}");
     }
+}
+
+// ===========================================================================
+// C.2b inverted limit intervals are refused at construction
+//
+// `ConeTwistJoint::with_limits` is not covered here: `cone_limit` and
+// `twist_limit` are each a single symmetric magnitude, not a min/max pair,
+// so there is no interval to invert.
+// ===========================================================================
+
+#[test]
+#[should_panic(expected = "> max")]
+fn hinge_with_limits_rejects_an_inverted_interval() {
+    let _ = HingeJoint::new(
+        0,
+        1,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+        Vec3Fix::UNIT_Z,
+        Vec3Fix::UNIT_Z,
+    )
+    .with_limits(q(1, 2), -q(1, 2));
+}
+
+#[test]
+#[should_panic(expected = "> max")]
+fn slider_with_limits_rejects_an_inverted_interval() {
+    let _ = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO)
+        .with_limits(Fix128::ONE, -Fix128::ONE);
+}
+
+#[test]
+#[should_panic(expected = "> max")]
+fn d6_with_linear_limits_rejects_an_inverted_interval_on_any_axis() {
+    // Only the z axis is inverted (x and y are a valid, equal interval);
+    // one bad axis among three must still be refused.
+    let _ = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_linear_limits(
+        Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+        Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, -Fix128::ONE),
+    );
+}
+
+#[test]
+#[should_panic(expected = "> max")]
+fn d6_with_angular_limits_rejects_an_inverted_interval_on_any_axis() {
+    let _ = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_angular_limits(
+        Vec3Fix::new(Fix128::ZERO, q(1, 2), Fix128::ZERO),
+        Vec3Fix::new(Fix128::ZERO, -q(1, 2), Fix128::ZERO),
+    );
 }
 
 #[test]
