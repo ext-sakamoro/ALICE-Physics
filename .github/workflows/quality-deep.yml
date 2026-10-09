@@ -160,21 +160,35 @@ jobs:
             --features "${{ matrix.features }}" --out /tmp/planned.diff)
           echo "plan: $plan"
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
-          tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--test " + t for t in json.load(sys.stdin)["tests"]))')
+          tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
           if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; exit 0; fi
           ulimit -v 6291456
           set +e
+          # `--cargo-arg` limits the build of every mutant to the lib tests and the planned
+          # integration tests (`-- --lib` built every test target, about 4 min per mutant).
+          # The run is stopped with SIGINT before the job's own timeout, so cargo-mutants
+          # writes what it tested; an unfinished run then fails below instead of being
+          # cancelled with its missed mutants unreported.
           # shellcheck disable=SC2086
-          cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
-            ${features:+--features "$features"} -- --lib $tests
+          timeout --signal=INT --kill-after=10m 270m \
+            cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            ${features:+--features "$features"} --cargo-arg=--lib $tests
           rc=$?
           set -e
+          missed=$(grep -c . mutants.out/missed.txt 2>/dev/null || true)
+          if [ "${missed:-0}" -gt 0 ]; then
+            echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
+          fi
+          if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
+            echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
+            exit 1
+          fi
           # 0 = all caught, 2 = a mutant survived (fails: the change came without a test that sees it),
           # 3 = timeouts only (reported, not failed), anything else = baseline red / usage error
           case $rc in
-            0|3) ;;
-            2) echo "::error::a mutant of the changed lines was missed (see the summary)"; exit 1 ;;
-            *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc ;;
+            0|3) [ "${missed:-0}" -eq 0 ] || exit 1 ;;
+            2) exit 1 ;;
+            *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit "$rc" ;;
           esac
       # `--cargo-arg=--lib` restricts both the build and the test run of every mutant to the
       # lib tests. `-- --lib` (until 2026-10) ran the same tests but built every integration
