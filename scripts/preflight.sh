@@ -65,6 +65,10 @@ python3 scripts/test_preflight_ci_parity.py
 python3 scripts/preflight_ci_parity.py
 python3 scripts/test_fuzz_targets.py
 python3 scripts/fuzz_targets.py --check
+python3 scripts/test_semver_checked.py
+# CI only (not reproduced here): the cargo semver-checks run of security-audit.yml
+# (needs the previous commit built as a baseline) and the `cargo +nightly build --bins`
+# of every fuzz target in fuzz.yml; their log readers and target list are tested above
 
 step "docs lint (public vocabulary / CHANGELOG structure)"
 # 予測されて困る値が予測可能な源から来ていないか (検査器の test を先に走らせる)

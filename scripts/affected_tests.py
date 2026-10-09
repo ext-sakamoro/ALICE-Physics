@@ -158,11 +158,16 @@ def passed_count(output: str) -> int:
 
 RUNNING = re.compile(r"^\s*Running tests/([A-Za-z0-9_]+)\.rs\b", re.M)
 RESULT = re.compile(r"test result: \w+\. (\d+) passed")
+# ANSI SGR sequences: with CARGO_TERM_COLOR=always cargo colours "Running", and
+# the header no longer matches, so every target would read as 0 tests
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
 def per_target_passed(output: str) -> dict[str, int]:
     """Passed tests per integration target, from the `Running tests/<t>.rs`
-    section headers of cargo's output (a section's result line follows it)."""
+    section headers of cargo's output (a section's result line follows it).
+    ANSI colour codes are stripped first."""
+    output = ANSI_RE.sub("", output)
     counts: dict[str, int] = {}
     heads = list(RUNNING.finditer(output))
     for i, h in enumerate(heads):

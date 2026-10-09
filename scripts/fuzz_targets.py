@@ -51,6 +51,14 @@ def check(root: str) -> list[str]:
     for name in CORE:
         if name not in names:
             errors.append(f"core fuzz target {name} is not a [[bin]] of fuzz/Cargo.toml")
+    # a source file with no [[bin]] is neither built nor run: cargo fuzz only
+    # knows the bins of fuzz/Cargo.toml
+    listed = {os.path.normpath(path) for _, path in found}
+    src = os.path.join(root, "fuzz", "fuzz_targets")
+    for f in sorted(os.listdir(src)) if os.path.isdir(src) else []:
+        rel = os.path.normpath(os.path.join("fuzz_targets", f))
+        if f.endswith(".rs") and rel not in listed:
+            errors.append(f"fuzz/{rel} has no [[bin]] in fuzz/Cargo.toml (never built or run)")
     return errors
 
 

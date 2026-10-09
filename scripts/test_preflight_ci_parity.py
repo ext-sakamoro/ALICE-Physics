@@ -60,6 +60,19 @@ class Parity(unittest.TestCase):
         errors, _ = parity.check(tree(CI, pf))
         self.assertTrue(any("std,simd" in e for e in errors), errors)
 
+    def test_an_env_prefixed_ci_command_is_compared_with_its_env(self):
+        ci = CI + '      - name: e\n        run: RUSTFLAGS="-C target-cpu=native" cargo test --lib\n'
+        errors, n = parity.check(tree(ci, PF))
+        self.assertEqual(n, 5, "the env-prefixed command is found")
+        self.assertTrue(any("RUSTFLAGS" in e for e in errors), errors)
+        # preflight without the env is not the same command
+        errors, _ = parity.check(tree(ci, PF + "cargo test --lib\n"))
+        self.assertTrue(any("RUSTFLAGS" in e for e in errors), errors)
+        # the same assignments, quoted differently and in another order, match
+        ci2 = CI + "      - name: e\n        run: A=1 RUSTFLAGS='-Cx' cargo test --lib\n"
+        pf2 = PF + 'RUSTFLAGS="-Cx" A=1 cargo test --lib\n'
+        self.assertEqual(parity.check(tree(ci2, pf2))[0], [])
+
     def test_comments_are_not_commands(self):
         ci = CI + "      # run: cargo test --features nothing\n"
         self.assertEqual(parity.check(tree(ci, PF))[0], [])
