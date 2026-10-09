@@ -285,12 +285,24 @@ fn static_floor_under_removed_body_is_not_woken() {
     );
 }
 
-/// Separation thresholds, without gravity so the bodies stay where placed:
-/// a sleeping ball 1e-9 clear of the removed ball's box stays asleep, one
-/// touching it is woken.
+/// Separation thresholds, without gravity so the bodies stay where placed.
+/// The gap is the exact distance between the two broad-phase boxes, in
+/// `Fix128` ulps (`2^-64`): the removed ball's box is grown by `2^-56`, so a
+/// ball up to that far away is woken (a resting body is left one ulp clear
+/// of an immovable support, plus rounding) and one farther away is not.
 #[test]
-fn ball_1e9_clear_of_removed_body_stays_asleep() {
-    for (gap, woken) in [(1e-9, false), (0.0, true)] {
+fn box_gap_thresholds_of_removed_body() {
+    let ulps = |lo: u64| Fix128::from_raw(0, lo);
+    let cases = [
+        (Fix128::ZERO, true, "touching"),
+        (ulps(1), true, "1 ulp (rest on an immovable support)"),
+        (ulps(2), true, "2 ulps"),
+        (ulps(1 << 7), true, "2^-57"),
+        (ulps(1 << 8), true, "2^-56, the bound itself"),
+        (ulps(1 << 24), false, "2^-40"),
+        (Fix128::from_f64(1e-9), false, "1e-9"),
+    ];
+    for (gap, woken, what) in cases {
         let mut w = PhysicsWorld::new(SolverConfig {
             gravity: Vec3Fix::ZERO,
             ..SolverConfig::default()
@@ -298,13 +310,9 @@ fn ball_1e9_clear_of_removed_body_stays_asleep() {
         let r = Fix128::from_ratio(1, 2);
         let removed =
             w.add_body_with_radius(RigidBody::new_dynamic(v3(0.0, 0.0, 0.0), Fix128::ONE), r);
-        let near = w.add_body_with_radius(
+        w.add_body_with_radius(
             RigidBody::new_dynamic(
-                Vec3Fix::new(
-                    Fix128::ONE + Fix128::from_f64(gap),
-                    Fix128::ZERO,
-                    Fix128::ZERO,
-                ),
+                Vec3Fix::new(Fix128::ONE + gap, Fix128::ZERO, Fix128::ZERO),
                 Fix128::ONE,
             ),
             r,
@@ -317,9 +325,8 @@ fn ball_1e9_clear_of_removed_body_stays_asleep() {
         assert_eq!(
             !asleep(&w, 0),
             woken,
-            "gap {gap}: near ball (moved into slot 0)"
+            "gap {what}: near ball (moved into slot 0)"
         );
-        let _ = near;
     }
 }
 
@@ -389,6 +396,56 @@ mod sdf {
             "the attached field went with its body"
         );
         assert_free_falls(&mut w, 0, "body on SDF support");
+    }
+
+    /// A zero-gravity world: a static support at y = 1 carrying an attached
+    /// plane field (surface at y = 1), a sleeping radius-less body at
+    /// `gap` above touching it (sphere of `sdf_collision_radius` 0.5), and a
+    /// sleeping static body touching the field. Returns the world after the
+    /// support is removed.
+    fn sdf_gap_scene(gap: f64) -> PhysicsWorld {
+        let mut w = PhysicsWorld::new(SolverConfig {
+            gravity: Vec3Fix::ZERO,
+            ..SolverConfig::default()
+        });
+        let support = w.add_body(RigidBody::new_static(v3(0.0, 1.0, 0.0)));
+        w.add_sdf_collider(SdfCollider::new_dynamic(Box::new(plane()), support));
+        w.add_body(RigidBody::new_dynamic(v3(0.0, 1.5 + gap, 0.0), Fix128::ONE)); // 1
+        w.add_body(RigidBody::new_static(v3(3.0, 1.5, 0.0))); // 2, moves into 0
+        w.islands.resize(3);
+        for sd in &mut w.islands.sleep_data {
+            sd.state = SleepState::Sleeping;
+        }
+        w.remove_body(support).expect("in range");
+        w
+    }
+
+    /// The SDF wake reaches `2^-12` (about 2.4e-4) beyond touching, measured
+    /// in `f32` the way the SDF contact path measures it.
+    #[test]
+    fn sdf_gap_thresholds_of_removed_field() {
+        for (gap, woken) in [
+            (0.0, true),
+            (1e-5, true),
+            (1e-3, false),
+            (0.1, false),
+            (2.0, false),
+        ] {
+            let w = sdf_gap_scene(gap);
+            assert_eq!(!asleep(&w, 1), woken, "body {gap} above the field");
+        }
+    }
+
+    /// A static body touching the removed body's field is not woken.
+    #[test]
+    fn static_body_at_removed_field_is_not_woken() {
+        let w = sdf_gap_scene(0.0);
+        assert!(
+            w.bodies[0].is_static(),
+            "premise: the static body moved into slot 0"
+        );
+        assert!(asleep(&w, 0), "the static body stays asleep");
+        assert!(!asleep(&w, 1), "premise: the dynamic body there is woken");
     }
 
     /// Removing a body drops its attached colliders in order and points the
