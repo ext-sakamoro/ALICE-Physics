@@ -3,7 +3,30 @@
 # (expect = "pass"). See docs/GATE_ORACLES.md for the format and
 # scripts/gate_oracle_check.py for the runner.
 #
-# Empty for now: this file is populated gate by gate (docs/GATE_ORACLES.md
-# section 9), each addition its own change. Until the first entry lands,
-# `python3 scripts/gate_oracle_check.py` correctly reports "ran no control
-# at all" — that is the runner's own empty-input case, not a bug.
+# Populated gate by gate (docs/GATE_ORACLES.md section 9), each addition
+# its own change.
+
+[[gate]]
+id = "mutants-exclude-check"
+kind = "script"
+source = "scripts/mutants_exclude_check.py"
+# calls the real `cargo mutants --list --no-config` against this checkout
+# (no fixture can stand in for that), so this is a cost = "cargo" gate.
+#
+# CARGO_TERM_COLOR=always is forced here, not incidental: ci.yml sets it
+# for the whole workflow (2026-10-09 CI incident), which made
+# cargo-mutants wrap each line's identifier in ANSI escapes and broke
+# every exclude_re pattern's match. Running both controls under the same
+# env var the real CI uses catches a future regression of that fix here
+# instead of by the next red main.
+run = "CARGO_TERM_COLOR=always python3 {script} --mutants-toml {dir}/mutants.toml --baseline {dir}/baseline.txt"
+cost = "cargo"
+
+[[gate.control]]
+case = "red-pattern-matches-nothing"
+expect = "fail"
+reason = "matches 0 mutants"
+
+[[gate.control]]
+case = "green-loose-pattern-under-forced-color"
+expect = "pass"
