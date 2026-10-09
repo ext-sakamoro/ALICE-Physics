@@ -50,6 +50,7 @@ were introduced during that release window.
 - **Behavior change:** `ConeTwistJoint::with_limits` は `cone` または `twist` が負だと panic する (`0` は許容、`const fn` のまま) `joint.rs` の `cone_angle < Fix128::ZERO` 分岐 (atan2 の小さい入力で負を返す経路) はこの変更の対象外
 
 ### Fixed
+- 試験: `tests/analytic_math_wiring.rs` の `dot_batch_4_degenerate_zero_and_extreme_magnitude_lanes` (x86_64 + `simd` でだけ build される) は 3 番目の lane を `dot((1,0,0), (1,0,0)) = 1` で組んでいたので、`dot(x, q) = −7` の主張と食い違って失敗していた (x86_64 で `simd` の試験が走るまで誰も実行していなかった) lane 2 の相手を `q` に直した
 - `web/package.json` と Unreal plugin (`AlicePhysics.uplugin` の `VersionName`) の version が 0.3.0 のまま、`docs/ECOSYSTEM_CONTRACTS.md` の ALICE-SDF の依存例が `alice-physics = "1.1"` のままだった 2.0.0 / `"2"` に直した
 
 - `alice-det-math` 0.3 → 0.4: `det_math::atan64` / `det_math::atan2_64` (公開 re-export) が文書化した精度 (1 ulp) に戻る 0.3 は fdlibm の係数 1 つの写し誤りで `0.4375` の分岐の直下が最大 1898 ulp 外れていた ⇒ これらの値を固定している利用者は一部の入力で別の bit を受け取る 他の関数の bit は変わらない (`f32` の `atan` / `atan2` は別の係数で影響なし) engine 内で `atan64` / `atan2_64` を呼ぶのは試験だけで、決定論の golden は値を変えずに通る どの feature の組でも `alice-det-math` は 0.4 の 1 版に解決される

@@ -507,8 +507,9 @@ mod x86_64_simd_gated {
             Fix128::from_int(4),
         );
 
+        // lane 0: zero · q = 0, lane 2: x · q = −7 (the closed forms asserted below)
         let a = [Vec3Fix::ZERO, extreme_a, x, extreme_a];
-        let b = [q, extreme_b, x, extreme_b];
+        let b = [q, extreme_b, q, extreme_b];
         let got = Vec3Fix::dot_batch_4(a, b);
         let want = [
             a[0].dot(b[0]),
