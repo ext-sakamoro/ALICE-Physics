@@ -1605,6 +1605,11 @@ pub struct PhysicsWorld {
     /// Distance constraints between bodies
     pub distance_constraints: Vec<DistanceConstraint>,
     /// Contact constraints from collision detection
+    ///
+    /// A step clears this list and fills it from collision detection (each
+    /// substep on the XPBD path, once per step on the TGS path), so a
+    /// constraint added between steps, including one naming the same body
+    /// twice, does not reach the next step's solve.
     pub contact_constraints: Vec<ContactConstraint>,
     /// SDF colliders for implicit collision detection
     pub sdf_colliders: Vec<SdfCollider>,
@@ -1676,6 +1681,10 @@ pub struct PhysicsWorld {
 
     // ── Integrated Subsystems ──────────────────────────────────────────
     /// Joint constraints (solved each substep alongside distance/contact)
+    ///
+    /// Every joint must name bodies the world has: a step panics, before
+    /// solving anything, on a joint whose body index is out of range (one
+    /// pushed here directly; [`Self::add_joint`] refuses it).
     pub joints: Vec<Joint>,
     /// Joint motors (one-axis PD controllers), applied every substep by
     /// [`Self::step`]; see [`Self::add_joint_motor`]
@@ -3047,6 +3056,10 @@ impl PhysicsWorld {
     }
 
     /// Add contact constraint
+    ///
+    /// For driving the solver stages directly: a step clears the contact
+    /// constraints and detects them again, so a contact added between steps
+    /// is not solved by the next step (see [`Self::contact_constraints`]).
     pub fn add_contact(&mut self, contact: ContactConstraint) {
         // Update contact cache for warm starting
         let key = crate::contact_cache::BodyPairKey::new(contact.body_a, contact.body_b);
@@ -3358,11 +3371,10 @@ impl PhysicsWorld {
         // Phase 0.5: Rebuild island connectivity from current joints
         self.islands.resize(self.bodies.len());
         self.islands.reset_unions();
+        // every joint names bodies in range (checked at the start of the step)
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            self.islands.union(a, b);
         }
 
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
@@ -3869,11 +3881,10 @@ impl PhysicsWorld {
         // same joint list via `build_islands`).
         self.islands.resize(self.bodies.len());
         self.islands.reset_unions();
+        // every joint names bodies in range (checked at the start of the step)
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            self.islands.union(a, b);
         }
 
         // Phase 1: Apply force fields (identical call to `step`), then
@@ -4231,11 +4242,10 @@ impl PhysicsWorld {
         // Phase 0.5: Rebuild island connectivity from current joints
         self.islands.resize(self.bodies.len());
         self.islands.reset_unions();
+        // every joint names bodies in range (checked at the start of the step)
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            self.islands.union(a, b);
         }
 
         // Phase 1: Apply force fields
@@ -5488,11 +5498,10 @@ impl PhysicsWorld {
         // Phase 0.5: Rebuild island connectivity from current joints
         self.islands.resize(self.bodies.len());
         self.islands.reset_unions();
+        // every joint names bodies in range (checked at the start of the step)
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            self.islands.union(a, b);
         }
 
         // Phase 1: Apply force fields
@@ -7494,6 +7503,7 @@ mod tests {
     /// has to come from `detect_collisions` (a manually added contact would
     /// be cleared at the start of the substep).
     #[cfg(feature = "gpu-solver-bridge")]
+    #[mutants::skip]
     fn build_one_contact_world() -> PhysicsWorld {
         let mut world = PhysicsWorld::new(SolverConfig {
             gravity: Vec3Fix::ZERO,
@@ -7771,10 +7781,7 @@ mod tests {
 
     /// Hub body + `spokes` distance constraints, each spoke its own body.
     fn hub_world(hub: RigidBody, spokes: usize) -> PhysicsWorld {
-        let mut world = PhysicsWorld::new(SolverConfig {
-            gravity: Vec3Fix::ZERO,
-            ..Default::default()
-        });
+        let mut world = PhysicsWorld::new(SolverConfig::default());
         let hub_idx = world.add_body(hub);
         for i in 0..spokes {
             let spoke = world.add_body(RigidBody::new_dynamic(

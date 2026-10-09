@@ -89,6 +89,9 @@ gungraun = "0.20"
 
 [dev-dependencies]
 tempfile = "3.10"
+# `#[mutants::skip]` on test-only helpers (scripts/mutants-skip-ledger.txt);
+# the attribute only, no code
+mutants = "0.0.4"
 criterion = { version = "0.5", default-features = false }
 # v1.0 Item E: determinism golden tests hash by SHA-256 (platform-independent
 # canonical hash) — dev-only, does not affect production surface

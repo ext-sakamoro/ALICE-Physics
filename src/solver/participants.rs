@@ -443,6 +443,7 @@ impl PhysicsWorld {
         if dt <= Fix128::ZERO {
             return Ok(false);
         }
+        self.assert_joint_bodies_exist();
         #[cfg(feature = "std")]
         {
             let list = self.lock_participants();
@@ -467,6 +468,24 @@ impl PhysicsWorld {
             }
         }
         Ok(true)
+    }
+
+    /// Panics when a joint names a body index the world does not have.
+    ///
+    /// [`PhysicsWorld::add_joint`] refuses such a joint, but `joints` is a
+    /// public `Vec`, so one can be pushed directly (or left behind by editing
+    /// `bodies`). It is a caller error: every step path checks here, before
+    /// anything is solved, and stops with the joint and the body count rather
+    /// than failing on an index deep in a joint solve.
+    fn assert_joint_bodies_exist(&self) {
+        let n = self.bodies.len();
+        for (k, joint) in self.joints.iter().enumerate() {
+            let (a, b) = joint.bodies();
+            assert!(
+                a < n && b < n,
+                "joint {k} names bodies ({a}, {b}), but the world has {n} bodies"
+            );
+        }
     }
 
     /// The substep width `h` [`Self::try_step`] hands its participants for a
