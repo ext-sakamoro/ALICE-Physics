@@ -154,6 +154,40 @@ class Ratchet(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertTrue(any("not readable" in e for e in errors), errors)
 
+    def moved_dir(self, name: str, moved: list[str], planned: list[str]) -> Path:
+        d = run_dir(self.root, name, caught=planned)
+        (d / "mutants.out" / "mutants.json").write_text(
+            json.dumps([{"name": n} for n in planned]), encoding="utf-8")
+        (d / "mutants.out" / "axis-moved.txt").write_text(
+            "".join(f"{m}\n" for m in moved), encoding="utf-8")
+        return d
+
+    def test_mutants_moved_to_the_other_axis_are_planned_there(self):
+        d = self.moved_dir("mutants-out-0-default", [A], [B])
+        p = self.moved_dir("mutants-out-0-parallel", [], [A, C])
+        self.assertEqual(mr.moved_check([d, p]), [])
+
+    def test_a_moved_mutant_the_other_axis_does_not_plan_fails(self):
+        # excluded on the default axis but missing from the parallel plan:
+        # no axis measures it
+        d = self.moved_dir("mutants-out-0-default", [A], [B])
+        p = self.moved_dir("mutants-out-0-parallel", [], [C])
+        errors = mr.moved_check([d, p])
+        self.assertTrue(any("not planned on the parallel axis" in e and "math.rs" in e
+                            for e in errors), errors)
+
+    def test_a_missing_moved_list_fails(self):
+        d = run_dir(self.root, "mutants-out-0-default", caught=[B])
+        p = self.moved_dir("mutants-out-0-parallel", [], [A])
+        self.assertTrue(any("axis-moved.txt" in e for e in mr.moved_check([d, p])))
+
+    def test_moved_lists_are_compared_across_shards(self):
+        # the other axis plans the moved mutant in a different shard
+        d0 = self.moved_dir("mutants-out-0-default", [A, C], [B])
+        p0 = self.moved_dir("mutants-out-0-parallel", [], [A])
+        p1 = self.moved_dir("mutants-out-1-parallel", [], [C])
+        self.assertEqual(mr.moved_check([d0, p0, p1]), [])
+
     def complete(self, dirs: list[Path], expect: int) -> tuple[int, list[str]]:
         errors = mr.completeness(dirs, expect)
         return (1 if errors else 0), errors
