@@ -176,6 +176,9 @@ jobs:
             2) echo "::error::a mutant of the changed lines was missed (see the summary)"; exit 1 ;;
             *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc ;;
           esac
+      # `--cargo-arg=--lib` restricts both the build and the test run of every mutant to the
+      # lib tests. `-- --lib` (until 2026-10) ran the same tests but built every integration
+      # test and example per mutant: 3.5 min per mutant against 10 s, same missed set.
       - name: Mutants (weekly = core 8 module, shard ${{ matrix.shard }}/16, lib test のみ)
         if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
         run: |
@@ -185,7 +188,7 @@ jobs:
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
             --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
-            -- --lib
+            --cargo-arg=--lib
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
