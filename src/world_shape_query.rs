@@ -960,6 +960,25 @@ fn weighted(s: &(Vec<Vertex>, Vec<Fix128>)) -> Vec3Fix {
 /// [`Piece::meets_aabb`] (a capsule's against its radius, the others only
 /// `None`, an intersection).
 fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix, Vec3Fix)> {
+    gjk_bounds(a, b).map(|g| (g.dist, g.pa, g.pb))
+}
+
+/// The result of [`gjk_bounds`].
+struct GjkBounds {
+    /// The distance, as [`gjk_distance`] reports it.
+    dist: Fix128,
+    /// The witness points on `a` and `b`.
+    pa: Vec3Fix,
+    pb: Vec3Fix,
+    /// A lower bound on the distance (see [`gjk_distance`] § A lower bound).
+    lower: Fix128,
+    /// Whether the distance was taken within a face whose weights are not
+    /// precise.
+    face: bool,
+}
+
+/// [`gjk_distance`] with a lower bound on the distance.
+fn gjk_bounds<A: Support, B: Support>(a: &A, b: &B) -> Option<GjkBounds> {
     let mut simplex = vec![vertex(a, b, Vec3Fix::UNIT_X)];
     let mut weights = vec![Fix128::ONE];
     let mut v = simplex[0].w;
@@ -967,6 +986,8 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
     // face's plane and this the length of its point within the face (see the
     // doc above).
     let mut face_bound: Option<Fix128> = None;
+    // The largest `v̂·w` seen (see § A lower bound).
+    let mut lower = Fix128::ZERO;
     for _ in 0..GJK_MAX_ITERATIONS {
         let vv = v.length_squared();
         if vv <= GJK_INTERSECT {
@@ -978,6 +999,12 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         let fine = vv < FINE_LENGTH_SQUARED;
         let u = if fine { scaled_up(v).0 } else { v };
         let w = vertex(a, b, -u);
+        if let Some(len) = fine_length(u) {
+            let support = u.dot(w.w) / len;
+            if support > lower {
+                lower = support;
+            }
+        }
         let converged = if fine {
             u.dot(v - w.w) <= u.dot(v) * GJK_RELATIVE
         } else {
@@ -1032,31 +1059,90 @@ fn gjk_distance<A: Support, B: Support>(a: &A, b: &B) -> Option<(Fix128, Vec3Fix
         } else {
             v * (bound / len)
         };
-        return Some((bound, pb + diff, pb));
+        return Some(GjkBounds {
+            dist: bound,
+            pa: pb + diff,
+            pb,
+            lower: min_fix(lower, bound),
+            face: true,
+        });
     }
     if v.length_squared() < FINE_LENGTH_SQUARED {
         // `v` is projected (see `nearest_on_affine_hull`), the weights are not
         // as precise: the witness on `a` is taken as `pb + v`, so that `pa − pb`
         // is `v` exactly.
-        return Some((len, pb + v, pb));
+        return Some(GjkBounds {
+            dist: len,
+            pa: pb + v,
+            pb,
+            lower: min_fix(lower, len),
+            face: false,
+        });
     }
-    Some((len, pa, pb))
+    Some(GjkBounds {
+        dist: len,
+        pa,
+        pb,
+        lower: min_fix(lower, len),
+        face: false,
+    })
 }
 
 /// The distance from the core `a`–`b` to a convex set, by GJK.
 fn convex_dist<S: Support>(a: Vec3Fix, b: Vec3Fix, solid: &S) -> Dist {
+    convex_bounds(a, b, solid).0
+}
+
+/// [`convex_dist`] and its [`Bound`].
+fn convex_bounds<S: Support>(a: Vec3Fix, b: Vec3Fix, solid: &S) -> (Dist, Bound) {
     let found = if a == b {
-        gjk_distance(&PointSupport(a), solid)
+        gjk_bounds(&PointSupport(a), solid)
     } else {
-        gjk_distance(&SegmentSupport(a, b), solid)
+        gjk_bounds(&SegmentSupport(a, b), solid)
     };
     match found {
-        None => Dist::Inside,
-        Some((dist, pa, pb)) => Dist::Outside {
-            dist,
-            point: pb,
-            normal: gjk_normal(pa - pb, dist),
-        },
+        None => (
+            Dist::Inside,
+            Bound {
+                lower: Fix128::ZERO,
+                step_lower: false,
+            },
+        ),
+        Some(g) => (
+            Dist::Outside {
+                dist: g.dist,
+                point: g.pb,
+                normal: gjk_normal(g.pa - g.pb, g.dist),
+            },
+            Bound {
+                lower: g.lower,
+                step_lower: g.face,
+            },
+        ),
+    }
+}
+
+/// A lower bound on a piece's distance from the core, for [`toi_by`].
+#[derive(Clone, Copy)]
+struct Bound {
+    /// Not above the distance (see [`gjk_distance`] § A lower bound).
+    lower: Fix128,
+    /// Whether the time of impact steps by `lower` rather than by the distance:
+    /// for a distance taken within a face whose weights are not precise.
+    step_lower: bool,
+}
+
+impl Bound {
+    /// For a distance known exactly (a closed form): the distance itself.
+    fn exact(d: &Dist) -> Self {
+        let lower = match *d {
+            Dist::Outside { dist, .. } => dist,
+            _ => Fix128::ZERO,
+        };
+        Self {
+            lower,
+            step_lower: false,
+        }
     }
 }
 
@@ -2054,7 +2140,9 @@ fn toi_convex<S: Support>(
     max_t: Fix128,
     solid: &S,
 ) -> Option<Contact> {
-    toi_by(a, b, r, inflate, d, max_t, |a, b| convex_dist(a, b, solid))
+    toi_by(a, b, r, inflate, d, max_t, |a, b| {
+        convex_bounds(a, b, solid)
+    })
 }
 
 /// [`toi_convex`] for a convex piece given by its distance from a core:
@@ -2066,7 +2154,7 @@ fn toi_by(
     inflate: Fix128,
     d: Vec3Fix,
     max_t: Fix128,
-    core_dist: impl Fn(Vec3Fix, Vec3Fix) -> Dist,
+    core_dist: impl Fn(Vec3Fix, Vec3Fix) -> (Dist, Bound),
 ) -> Option<Contact> {
     let reach = r + inflate;
     let mut t = Fix128::ZERO;
@@ -2078,24 +2166,39 @@ fn toi_by(
     let mut deep: Option<Fix128> = None;
     for _ in 0..TRACE_MAX_STEPS {
         let off = d * t;
-        let state = match core_dist(a + off, b + off) {
+        let (found, bound) = core_dist(a + off, b + off);
+        let state = match found {
             Dist::Outside {
                 dist,
                 point,
                 normal,
             } if dist - reach >= -TRACE_TOLERANCE => {
-                let gap = dist - reach;
+                // The distance decides touching, as before; the step goes by
+                // the lower bound (see `gjk_distance`), and at least by the
+                // tolerance: the lower bound can be below it while the distance
+                // is not, and a step of the tolerance goes at most that far in.
+                let (gap, root_gap) = if bound.step_lower {
+                    let lower = max_fix(bound.lower - reach, Fix128::ZERO);
+                    (max_fix(lower, TRACE_TOLERANCE), lower)
+                } else {
+                    (dist - reach, dist - reach)
+                };
+                let touching = dist - reach <= TRACE_TOLERANCE;
                 let slope = d.dot(normal);
                 let contact = Contact {
                     t,
                     point: point + normal * inflate,
                     normal,
                 };
-                if gap <= TRACE_TOLERANCE {
+                if touching {
+                    // Whether the path goes in is judged on the lower bound: a
+                    // dip that the distance's error could hide is taken.
                     let gap_at = |t: Fix128| {
                         let off = d * t;
                         match core_dist(a + off, b + off) {
-                            Dist::Outside { dist, .. } => Some(dist - reach),
+                            (Dist::Outside { dist, .. }, bound) => {
+                                Some((bound.lower - reach, dist - reach))
+                            }
                             _ => None,
                         }
                     };
@@ -2106,20 +2209,22 @@ fn toi_by(
                         // Not a proof of separation: see `GRAZE_GAP`.
                         let probe = |t: Fix128| {
                             let off = d * t;
-                            core_dist(a + off, b + off)
+                            core_dist(a + off, b + off).0
                         };
                         return graze_contact(probe, reach, inflate, t, max_t);
                     }
                     return None;
                 }
-                Some((gap, -slope, contact, dist < FINE_LENGTH))
+                Some((gap, root_gap, -slope, contact, dist < FINE_LENGTH))
             }
             _ => None,
         };
         match state {
-            Some((gap, speed, contact, fine)) => {
+            Some((gap, root_gap, speed, contact, fine)) => {
                 clear = Some(contact);
-                clear_gap = (gap, speed, fine);
+                // the tangent's root from the clear end goes by the lower bound
+                // itself (it is not past the contact)
+                clear_gap = (root_gap, speed, fine);
                 let limit = deep.unwrap_or(max_t);
                 // The tangent's root, unless it is at or past the limit.
                 if gap >= (limit - t) * speed {
@@ -2259,7 +2364,7 @@ fn touch_is_hit(
     contact: Contact,
     d: Vec3Fix,
     max_t: Fix128,
-    gap_at: impl Fn(Fix128) -> Option<Fix128>,
+    gap_at: impl Fn(Fix128) -> Option<(Fix128, Fix128)>,
 ) -> bool {
     let slope = d.dot(contact.normal);
     if slope < -NEAR_TANGENT {
@@ -2293,13 +2398,16 @@ const DIPS_FIRST_DROP: Fix128 = Fix128 {
 /// (its minimum is then bracketed and found by golden-section search) or
 /// `max_t` is reached.
 fn dips_below(
-    gap_at: impl Fn(Fix128) -> Option<Fix128>,
+    gap_at: impl Fn(Fix128) -> Option<(Fix128, Fix128)>,
     t0: Fix128,
-    f0: Fix128,
+    f0: (Fix128, Fix128),
     speed: Fix128,
     max_t: Fix128,
 ) -> bool {
-    let deep = |g: Option<Fix128>| g.is_none_or(|g| g < -TRACE_TOLERANCE);
+    // A gap is known within `[lower, upper]`: it may go in when `lower` does
+    // (a dip that the distance's error could hide is taken), and it has grown
+    // only when `lower` is past the previous `upper`.
+    let deep = |g: Option<(Fix128, Fix128)>| g.is_none_or(|(lo, _)| lo < -TRACE_TOLERANCE);
     // The far end first: a path that sinks so slowly that a doubling step
     // changes the gap by less than its rounding would see no decrease and stop
     // the search before it reaches the depth it has by `max_t`.
@@ -2313,7 +2421,7 @@ fn dips_below(
     // that is not there.
     let mut step = max_fix(
         max_fix(
-            ratio_within(max_fix(f0, Fix128::ZERO), speed, big),
+            ratio_within(max_fix(f0.1, Fix128::ZERO), speed, big),
             ratio_within(DIPS_FIRST_DROP, speed, big),
         ),
         TRACE_TOLERANCE,
@@ -2325,8 +2433,8 @@ fn dips_below(
         if deep(g1) {
             return true;
         }
-        let g1 = g1.unwrap_or(Fix128::ZERO);
-        if g1 > last_gap || t1 >= max_t {
+        let g1 = g1.unwrap_or((Fix128::ZERO, Fix128::ZERO));
+        if g1.0 > last_gap.1 || t1 >= max_t {
             // Convex: the minimum is in [before, t1].
             let (mut lo, mut hi) = (before, t1);
             let ratio = Fix128::from_ratio(618_033_988_749_895, 1_000_000_000_000_000);
@@ -2337,6 +2445,10 @@ fn dips_below(
                 if deep(g1) || deep(g2) {
                     return true;
                 }
+                let (g1, g2) = (
+                    g1.map_or(Fix128::ZERO, |g| g.0),
+                    g2.map_or(Fix128::ZERO, |g| g.0),
+                );
                 if g1 <= g2 {
                     hi = x2;
                 } else {
@@ -2801,9 +2913,11 @@ impl Piece<'_> {
                         });
                         match checked {
                             Some(c) => self.entering(c, a, b, r, d, max_t),
-                            None => {
-                                toi_by(a, b, r, Fix128::ZERO, d, max_t, |p, q| self.dist(p, q, cap))
-                            }
+                            None => toi_by(a, b, r, Fix128::ZERO, d, max_t, |p, q| {
+                                let found = self.dist(p, q, cap);
+                                let bound = Bound::exact(&found);
+                                (found, bound)
+                            }),
                         }
                     }
                     Shape::Torus {
@@ -2867,7 +2981,7 @@ impl Piece<'_> {
                                 };
                             }
                         }
-                        if !touch_is_hit(c, d, max_t, gap_at) {
+                        if !touch_is_hit(c, d, max_t, |t| gap_at(t).map(|g| (g, g))) {
                             continue;
                         }
                         if best.is_none_or(|bc| c.t < bc.t) {
@@ -2924,7 +3038,7 @@ impl Piece<'_> {
                 _ => return Some(c),
             }
         };
-        touch_is_hit(c, d, max_t, gap_at).then_some(c)
+        touch_is_hit(c, d, max_t, |t| gap_at(t).map(|g| (g, g))).then_some(c)
     }
 
     /// Sphere tracing (for SDFs): step by the gap (the distance less `r`) until
