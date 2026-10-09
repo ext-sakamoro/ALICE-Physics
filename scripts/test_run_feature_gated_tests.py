@@ -77,6 +77,12 @@ class CiOutput(unittest.TestCase):
                 f"{eol}running 3 tests{eol}"
                 f"test result: {e}[32mok{e}[0m. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out{eol}")
 
+    def test_libtest_sgr0_after_the_result_word_parses(self):
+        # libtest with `--color always` ends the coloured word with ESC ( B ESC [ m
+        out = self.coloured("tests/a.rs").replace(f"{self.ESC}[0m. 3 passed", f"{self.ESC}(B{self.ESC}[m. 3 passed")
+        self.assertIn(f"{self.ESC}(B", out)
+        self.assertEqual(g.parse(out), {"a": (3, 0, 0)})
+
     def test_coloured_running_lines_parse(self):
         out = self.coloured("tests/a.rs") + self.coloured("tests\\b.rs", "\r\n")
         self.assertEqual(g.parse(out), {"a": (3, 0, 0), "b": (3, 0, 0)})

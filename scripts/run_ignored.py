@@ -57,6 +57,8 @@ RUNTIME_PREFIXES = ("runtime:", "runtime only:")
 EXPECTED_RED_PREFIXES = ("src gap:", "src bug:", "the red is correct")
 MANUAL_PREFIXES = ("manual:",)
 
+from ansi import strip as strip_escapes  # noqa: E402  (libtest colours its words with --color always)
+
 CAT_RUNTIME = "runtime"
 CAT_EXPECTED_RED = "expected-red"
 CAT_UNTRIAGED = "untriaged"
@@ -269,7 +271,7 @@ def build_binaries(extra: list[str]) -> list[tuple[str, str]]:
 def parse_outcomes(output: str) -> dict[str, str]:
     """`{test name: "ok" | "FAILED"}` from a libtest run's output."""
     outcomes: dict[str, str] = {}
-    for raw in output.splitlines():
+    for raw in strip_escapes(output).splitlines():
         m = RESULT_RE.match(raw.strip())
         if m and m.group(2) != "ignored":
             outcomes[m.group(1).split("::")[-1]] = m.group(2)
@@ -281,7 +283,7 @@ def crashed(returncode: int, output: str) -> bool:
     passed) or 101 (some failed) after its `test result:` line; anything else,
     or no such line, is a crash (signal, abort, killed) and the tests after the
     crashing one never ran."""
-    reported = any(SUMMARY_RE.match(line.strip()) for line in output.splitlines())
+    reported = any(SUMMARY_RE.match(line.strip()) for line in strip_escapes(output).splitlines())
     return returncode not in (0, 101) or not reported
 
 

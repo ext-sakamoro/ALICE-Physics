@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 import sys
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+from ansi import ANSI_RE  # noqa: E402  (CSI, charset selectors, OSC)
 HEADER_RE = re.compile(r"^\s*(?:Running\s+(.+?)(?:\s+\([^()]*\))?|Doc-tests\s+(\S+))\s*$")
 RESULT_RE = re.compile(r"^test result: \w+\. (\d+) passed;")
 

@@ -31,6 +31,8 @@ ONE_EMPTY = TWO_BINARIES.replace("running 4 tests\ntest result: ok. 4 passed; 0 
                                  "running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored")
 
 COLOURED = TWO_BINARIES.replace("     Running tests/test_sim", "\x1b[1m\x1b[92m     Running\x1b[0m tests/test_sim")
+# libtest with `--color always`: the result word ends with sgr0 = ESC ( B ESC [ m
+LIBTEST_COLOURED = TWO_BINARIES.replace("test result: ok.", "test result: \x1b[32mok\x1b(B\x1b[m.")
 
 WITH_DOCTESTS = TWO_BINARIES + """\
    Doc-tests alice_sdf
@@ -41,6 +43,10 @@ test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; fin
 
 
 class Count(unittest.TestCase):
+    def test_libtest_coloured_result_lines_count_like_plain_ones(self):
+        self.assertNotEqual(LIBTEST_COLOURED, TWO_BINARIES)
+        self.assertEqual(tc.count(LIBTEST_COLOURED), tc.count(TWO_BINARIES))
+
     def test_each_binary_is_counted(self):
         self.assertEqual(tc.count(TWO_BINARIES), [
             ("tests/test_physics_bridge_determinism.rs", 9), ("tests/test_sim_bridge_oracle.rs", 4)])
