@@ -167,6 +167,11 @@
 # without ever calling the builder. Making the limit fields private, or
 # validating every one of these paths, would both be public-API breaking
 # changes and are not pursued here.
+#
+# src/solver_tgs.rs `adaptive_substeps_for` (`v > v_max` -> `>=`) and
+# `adaptive_substeps_for_ccd` (`ccd_step < cfg.max_translation_per_step` ->
+# `<=`): at a tie both branches leave the same value (the running maximum, the
+# smaller of two equal steps), so the result is the same bits for every input.
 exclude_re = [
     "tests::",
     "replace > with >= in scaled_exp_neg",
@@ -206,4 +211,6 @@ exclude_re = [
     "bvh\\.rs:558:.*replace >> with << in LinearBvh::find_split",
     "bvh\\.rs:567:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
     "bvh\\.rs:951:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
+    "replace > with >= in adaptive_substeps_for$",
+    "replace < with <= in adaptive_substeps_for_ccd$",
 ]
