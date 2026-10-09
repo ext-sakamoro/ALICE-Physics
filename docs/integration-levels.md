@@ -157,7 +157,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `rope` | standalone | 0 / 0 / 0 / 13 / 0 | — |
 | `rope_attach` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `rotor` | standalone | 0 / 0 / 0 / 15 / 0 | — |
-| `scene_io` | standalone (binding 1 of 11 items) | 0 / 0 / 1 / 10 / 0 | Python, WebAssembly |
+| `scene_io` | standalone (binding 1 of 15 items) | 0 / 0 / 1 / 14 / 0 | Python, WebAssembly |
 | `sdf_adaptive` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `sdf_character` | standalone (world API 7 of 16 items) | 0 / 7 / 0 / 9 / 0 | — |
 | `sdf_destruction` | standalone | 0 / 0 / 0 / 17 / 0 | — |

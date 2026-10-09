@@ -14772,6 +14772,27 @@ impl core::marker::Unpin for alice_physics::event::TriggerEvent
 impl core::marker::UnsafeUnpin for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::TriggerEvent
+#[non_exhaustive] pub struct alice_physics::prelude::UnsupportedSceneVersion
+pub alice_physics::prelude::UnsupportedSceneVersion::found: u32
+impl core::clone::Clone for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::cmp::PartialEq for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::fmt::Debug for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::StructuralPartialEq for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Freeze for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Send for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Sync for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Unpin for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::UnsafeUnpin for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
 #[repr(C)] pub struct alice_physics::prelude::Vec3Fix
 pub alice_physics::prelude::Vec3Fix::x: alice_physics::math::Fix128
 pub alice_physics::prelude::Vec3Fix::y: alice_physics::math::Fix128
@@ -15205,7 +15226,9 @@ pub fn alice_physics::prelude::generate_stress_heatmap(&[alice_physics::math::Ve
 pub fn alice_physics::prelude::generate_temperature_heatmap<F>(F, &alice_physics::heatmap::HeatmapConfig) -> alice_physics::heatmap::Heatmap where F: core::ops::function::Fn(alice_physics::math::Vec3Fix) -> alice_physics::math::Fix128
 pub fn alice_physics::prelude::heatmap_to_rgba(&alice_physics::heatmap::Heatmap) -> alloc::vec::Vec<[u8; 4]>
 pub fn alice_physics::prelude::load_scene(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
+pub fn alice_physics::prelude::load_scene_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::prelude::load_scene_json(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
+pub fn alice_physics::prelude::load_scene_json_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::prelude::overlap_aabb(&alice_physics::collider::AABB, &[alice_physics::solver::RigidBody]) -> alloc::vec::Vec<alice_physics::query::OverlapResult>
 pub fn alice_physics::prelude::overlap_aabb_bvh(&alice_physics::collider::AABB, &[alice_physics::solver::RigidBody], &alice_physics::bvh::LinearBvh) -> alloc::vec::Vec<alice_physics::query::OverlapResult>
 pub fn alice_physics::prelude::overlap_sphere(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::query::OverlapResult>
@@ -16258,9 +16281,33 @@ impl core::marker::Unpin for alice_physics::scene_io::SerializedJoint
 impl core::marker::UnsafeUnpin for alice_physics::scene_io::SerializedJoint
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::SerializedJoint
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::SerializedJoint
+#[non_exhaustive] pub struct alice_physics::scene_io::UnsupportedSceneVersion
+pub alice_physics::scene_io::UnsupportedSceneVersion::found: u32
+impl core::clone::Clone for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::cmp::PartialEq for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::fmt::Debug for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::StructuralPartialEq for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Freeze for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Send for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Sync for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Unpin for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::UnsafeUnpin for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
 pub const alice_physics::scene_io::CURRENT_SCENE_VERSION: u32
+pub const alice_physics::scene_io::SUPPORTED_SCENE_VERSIONS: &[u32]
 pub fn alice_physics::scene_io::load_scene(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
+pub fn alice_physics::scene_io::load_scene_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::scene_io::load_scene_json(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
+pub fn alice_physics::scene_io::load_scene_json_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::scene_io::save_scene(&alice_physics::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
 pub fn alice_physics::scene_io::save_scene_json(&alice_physics::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
 pub mod alice_physics::sdf_adaptive
@@ -26056,6 +26103,27 @@ impl core::marker::Unpin for alice_physics::event::TriggerEvent
 impl core::marker::UnsafeUnpin for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::event::TriggerEvent
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::event::TriggerEvent
+#[non_exhaustive] pub struct alice_physics::UnsupportedSceneVersion
+pub alice_physics::UnsupportedSceneVersion::found: u32
+impl core::clone::Clone for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::cmp::PartialEq for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::fmt::Debug for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::scene_io::UnsupportedSceneVersion
+pub fn alice_physics::scene_io::UnsupportedSceneVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::StructuralPartialEq for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Freeze for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Send for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Sync for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::Unpin for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::marker::UnsafeUnpin for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
 #[repr(C)] pub struct alice_physics::Vec2Fix
 pub alice_physics::Vec2Fix::x: alice_physics::math::Fix128
 pub alice_physics::Vec2Fix::y: alice_physics::math::Fix128
@@ -26546,7 +26614,9 @@ pub fn alice_physics::generate_stress_heatmap(&[alice_physics::math::Vec3Fix], &
 pub fn alice_physics::generate_temperature_heatmap<F>(F, &alice_physics::heatmap::HeatmapConfig) -> alice_physics::heatmap::Heatmap where F: core::ops::function::Fn(alice_physics::math::Vec3Fix) -> alice_physics::math::Fix128
 pub fn alice_physics::heatmap_to_rgba(&alice_physics::heatmap::Heatmap) -> alloc::vec::Vec<[u8; 4]>
 pub fn alice_physics::load_scene(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
+pub fn alice_physics::load_scene_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::load_scene_json(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
+pub fn alice_physics::load_scene_json_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::overlap_aabb(&alice_physics::collider::AABB, &[alice_physics::solver::RigidBody]) -> alloc::vec::Vec<alice_physics::query::OverlapResult>
 pub fn alice_physics::overlap_aabb_bvh(&alice_physics::collider::AABB, &[alice_physics::solver::RigidBody], &alice_physics::bvh::LinearBvh) -> alloc::vec::Vec<alice_physics::query::OverlapResult>
 pub fn alice_physics::overlap_sphere(alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> alloc::vec::Vec<alice_physics::query::OverlapResult>

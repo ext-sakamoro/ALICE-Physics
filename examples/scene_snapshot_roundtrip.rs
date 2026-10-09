@@ -1,5 +1,6 @@
 //! Scene snapshot through JSON: `CURRENT_SCENE_VERSION`, `save_scene_json`, `load_scene_json`,
-//! `PhysicsConfig::new`.
+//! `PhysicsConfig::new`, and the version-checked loaders `load_scene_checked` /
+//! `load_scene_json_checked`.
 //!
 //! A `PhysicsWorld` is captured into a `PhysicsScene` (raw `hi` / `lo` limbs, so the file is
 //! bit exact), written as JSON, read back, and the bodies are rebuilt: every position, velocity and
@@ -8,13 +9,19 @@
 //! iterations, gravity `(0, -9.81, 0)`, damping 0.95); the documented contract is that the raw
 //! values are stored as given, so each field must decode back to the value that went in.
 //!
+//! The same scene is then read with the checked loaders (the ones to use for files you did not
+//! write): the JSON file and a binary `.aphys` copy load unchanged, and a copy whose header claims
+//! version 2 is rejected with `UnsupportedSceneVersion` while the lenient `load_scene` still
+//! returns it as stored.
+//!
 //! ```bash
 //! cargo run --release --example scene_snapshot_roundtrip --features std
 //! ```
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::scene_io::{
-    load_scene_json, save_scene_json, PhysicsConfig, PhysicsScene, SerializedBody,
+    load_scene, load_scene_checked, load_scene_json, load_scene_json_checked, save_scene,
+    save_scene_json, PhysicsConfig, PhysicsScene, SerializedBody, UnsupportedSceneVersion,
     CURRENT_SCENE_VERSION,
 };
 use alice_physics::solver::{PhysicsConfig as WorldConfig, PhysicsWorld, RigidBody};
@@ -98,7 +105,28 @@ fn main() -> std::io::Result<()> {
     let path = std::env::temp_dir().join("alice_physics_scene_snapshot.json");
     save_scene_json(&scene, &path)?;
     let loaded = load_scene_json(&path)?;
+    assert_eq!(load_scene_json_checked(&path)?, loaded);
     std::fs::remove_file(&path)?;
+
+    let bin = std::env::temp_dir().join("alice_physics_scene_snapshot.aphys");
+    save_scene(&scene, &bin)?;
+    assert_eq!(
+        load_scene_checked(&bin)?,
+        scene,
+        "binary round trip must be exact"
+    );
+    let mut future = scene.clone();
+    future.version = CURRENT_SCENE_VERSION + 1;
+    save_scene(&future, &bin)?;
+    let err = load_scene_checked(&bin).expect_err("an unknown version must be rejected");
+    let found = err
+        .get_ref()
+        .and_then(|e| e.downcast_ref::<UnsupportedSceneVersion>())
+        .map(|e| e.found);
+    assert_eq!(found, Some(CURRENT_SCENE_VERSION + 1));
+    assert_eq!(load_scene(&bin)?.version, CURRENT_SCENE_VERSION + 1);
+    std::fs::remove_file(&bin)?;
+    println!("checked loader: {err}");
 
     assert_eq!(loaded, scene, "JSON round trip must be exact");
     assert_eq!(loaded.version, CURRENT_SCENE_VERSION);

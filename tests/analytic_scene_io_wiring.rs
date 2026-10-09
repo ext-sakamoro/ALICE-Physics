@@ -378,3 +378,39 @@ fn compact_and_truncated_documents() {
         ErrorKind::InvalidData
     );
 }
+
+#[test]
+fn checked_loaders_reject_versions_the_lenient_loaders_keep() {
+    use alice_physics::scene_io::{
+        load_scene_checked, load_scene_json_checked, UnsupportedSceneVersion,
+        SUPPORTED_SCENE_VERSIONS,
+    };
+    assert_eq!(SUPPORTED_SCENE_VERSIONS, &[CURRENT_SCENE_VERSION]);
+    let p = tmp("checked.aphys");
+    let pj = tmp("checked.json");
+    save_scene(&scene(), &p).unwrap();
+    save_scene_json(&scene(), &pj).unwrap();
+    assert_eq!(load_scene_checked(&p).unwrap(), scene());
+    assert_eq!(load_scene_json_checked(&pj).unwrap(), scene());
+    for v in [0u32, 2, 0xDEAD_BEEF] {
+        let s = PhysicsScene::new(vec![body(1, 0)], vec![], config(), v);
+        save_scene(&s, &p).unwrap();
+        save_scene_json(&s, &pj).unwrap();
+        for e in [
+            load_scene_checked(&p).unwrap_err(),
+            load_scene_json_checked(&pj).unwrap_err(),
+        ] {
+            assert_eq!(e.kind(), ErrorKind::InvalidData);
+            let inner = e
+                .get_ref()
+                .and_then(|i| i.downcast_ref::<UnsupportedSceneVersion>())
+                .copied()
+                .expect("UnsupportedSceneVersion payload");
+            assert_eq!(inner.found, v);
+        }
+        assert_eq!(load_scene(&p).unwrap(), s);
+        assert_eq!(load_scene_json(&pj).unwrap(), s);
+    }
+    std::fs::remove_file(&p).ok();
+    std::fs::remove_file(&pj).ok();
+}

@@ -6656,6 +6656,9 @@ impl PhysicsWorld {
     /// | 続き | world ごと overflow flag 1 byte (v2) |
     /// | 続き | world ごと population fingerprint u64 (v3、[`Self::population_fingerprint`]) |
     ///
+    /// blob の長さは body 数から一意に決まり、`deserialize_state` は
+    /// **長さの完全一致**を要求する (末尾の余りも拒否する)
+    ///
     /// ⚠️ **`SleepState` + `idle_frames` を v1 で被覆に入れた** (WM-08)
     /// 旧 format は body の運動状態だけを持ち、`deserialize_state` 末尾の
     /// `IslandManager::new` が sleep 状態を 0 に戻していたため、
@@ -6863,8 +6866,13 @@ impl PhysicsWorld {
         }
 
         // 長さ検査は body 数から一意に決まる (header + 運動状態 + sleep + overflow + fingerprint)
+        //
+        // ⚠️ **完全一致で検査する** (`<` でなく `!=`) — 末尾の余りを受け入れると
+        // blob の中に silent に無視される byte が残り、reserved の検査と同じ
+        // 「1 byte でも壊れたらどれかの field に反映される」不変条件に穴が空く
+        // (別の blob の連結や切り出し誤りも検出できない)
         let expected = 12 + count * 208 + count * 5 + 1 + 8;
-        if data.len() < expected {
+        if data.len() != expected {
             return false;
         }
 
@@ -9499,6 +9507,50 @@ mod tests {
         one.extend_from_slice(&exact.population_fingerprint().to_le_bytes()); // v3: fingerprint
         assert!(exact.deserialize_state(&one));
         assert_eq!(exact.bodies[0].position, v3(1, 2, 3));
+    }
+
+    /// 末尾に余りのある blob は拒否する (長さは header の body 数から一意に
+    /// 決まるので、完全一致だけを受け入れる) 境界: ぴったりは受理 / +1 と
+    /// −1 は拒否 / 拒否時は self を変更しない
+    #[test]
+    fn deserialize_state_requires_exact_length() {
+        let src = snapshot_world();
+        let bytes = src.serialize_state();
+        let n = src.body_count();
+        assert_eq!(bytes.len(), 12 + n * 208 + n * 5 + 1 + 8);
+
+        let mut exact = snapshot_world();
+        assert!(exact.deserialize_state(&bytes), "ぴったりの長さは受理");
+
+        let before = snapshot_world();
+        for extra in [&[0u8][..], &[0xFF], &[0, 0, 0, 0], &bytes[..]] {
+            let mut long = bytes.clone();
+            long.extend_from_slice(extra);
+            let mut dst = snapshot_world();
+            assert!(
+                !dst.deserialize_state(&long),
+                "末尾に {} byte の余りがある blob は拒否する",
+                extra.len()
+            );
+            assert_eq!(dst.serialize_state(), before.serialize_state());
+        }
+
+        let mut dst = snapshot_world();
+        assert!(!dst.deserialize_state(&bytes[..bytes.len() - 1]));
+    }
+
+    /// body 0 体の world でも末尾の余りは拒否する (header 12 + flag 1 +
+    /// fingerprint 8 = 21 byte ちょうどだけを受理)
+    #[test]
+    fn deserialize_state_empty_world_rejects_trailing_byte() {
+        let bytes = quiet_world().serialize_state();
+        assert_eq!(bytes.len(), 21);
+        let mut dst = quiet_world();
+        assert!(dst.deserialize_state(&bytes));
+        let mut long = bytes.clone();
+        long.push(0);
+        assert!(!dst.deserialize_state(&long));
+        assert!(!dst.deserialize_state(&bytes[..20]));
     }
 
     // ---- integrate_positions -----------------------------------------

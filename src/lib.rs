@@ -654,8 +654,8 @@ pub use rope::{Rope, RopeConfig};
 pub use rope_attach::{solve_rope_attachments, RopeAttachment};
 #[cfg(feature = "std")]
 pub use scene_io::{
-    load_scene, load_scene_json, save_scene, save_scene_json, PhysicsScene, SerializedBody,
-    SerializedJoint,
+    load_scene, load_scene_checked, load_scene_json, load_scene_json_checked, save_scene,
+    save_scene_json, PhysicsScene, SerializedBody, SerializedJoint, UnsupportedSceneVersion,
 };
 #[cfg(feature = "std")]
 pub use sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
@@ -813,8 +813,8 @@ pub mod prelude {
     pub use crate::rope_attach::{solve_rope_attachments, RopeAttachment};
     #[cfg(feature = "std")]
     pub use crate::scene_io::{
-        load_scene, load_scene_json, save_scene, save_scene_json, PhysicsScene, SerializedBody,
-        SerializedJoint,
+        load_scene, load_scene_checked, load_scene_json, load_scene_json_checked, save_scene,
+        save_scene_json, PhysicsScene, SerializedBody, SerializedJoint, UnsupportedSceneVersion,
     };
     #[cfg(feature = "std")]
     pub use crate::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
