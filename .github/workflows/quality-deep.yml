@@ -91,16 +91,19 @@ jobs:
         run: |
           {
             echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
-            if [ -f mutants.out/outcomes.json ]; then
+            # `--output mutants.out` above writes the real files one level deeper
+            # (mutants.out/mutants.out): cargo-mutants' own `--output <dir>`
+            # creates `<dir>/mutants.out`.
+            if [ -f mutants.out/mutants.out/outcomes.json ]; then
               python3 - <<'PY'
           import json
-          d = json.load(open("mutants.out/outcomes.json"))
+          d = json.load(open("mutants.out/mutants.out/outcomes.json"))
           caught = d.get("caught", 0); missed = d.get("missed", 0); un = d.get("unviable", 0); to = d.get("timeout", 0)
           tot = caught + missed
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -100
+              echo; echo "### missed"; cat mutants.out/mutants.out/missed.txt 2>/dev/null | head -100
             else
               echo "no output (build failed?)"
             fi
@@ -193,7 +196,12 @@ jobs:
             echo "no mutant in the changed lines"
             exit 0
           fi
-          missed=$(grep -c . mutants.out/missed.txt 2>/dev/null || true)
+          # `--output mutants.out` above writes the real files one level deeper
+          # (mutants.out/mutants.out, cargo-mutants' own `--output <dir>` creates
+          # `<dir>/mutants.out`); mutants_ratchet.py's own `--out` already
+          # auto-detects this (so the pass/fail below was never affected), but
+          # this count was read from the wrong path and always read 0.
+          missed=$(grep -c . mutants.out/mutants.out/missed.txt 2>/dev/null || true)
           if [ "${missed:-0}" -gt 0 ]; then
             echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
           fi
@@ -275,17 +283,20 @@ jobs:
         run: |
           {
             echo "## cargo-mutants (shard ${{ matrix.shard }}, features: ${{ matrix.features == '' && 'default' || matrix.features }})"
-            if [ -f mutants.out/outcomes.json ]; then
+            # `--output mutants.out` above writes the real files one level deeper
+            # (mutants.out/mutants.out): cargo-mutants' own `--output <dir>`
+            # creates `<dir>/mutants.out`.
+            if [ -f mutants.out/mutants.out/outcomes.json ]; then
               python3 - <<'PY'
           import json
-          d = json.load(open("mutants.out/outcomes.json"))
+          d = json.load(open("mutants.out/mutants.out/outcomes.json"))
           s = d.get("summary", d)
           caught = s.get("caught", 0); missed = s.get("missed", 0); un = s.get("unviable", 0); to = s.get("timeout", 0)
           tot = caught + missed
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -50
+              echo; echo "### missed"; cat mutants.out/mutants.out/missed.txt 2>/dev/null | head -50
             else
               echo "no output (build failed?)"
             fi
