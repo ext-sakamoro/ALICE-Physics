@@ -208,7 +208,7 @@ The alice-physics 1.0 stable contract with ALICE-Kinematics is:
 
 - `scripts/docs_lint.py` compares each `pub trait` / `pub unsafe trait` written in a `rust` block of this document with the trait in `src/` (bounds and `unsafe`, the set of associated fns, types and consts, each signature including `const` / `async` / `unsafe` / `extern "ABI"`, associated type bounds and const types, and which items have a default); a mismatch fails CI.
 - `.github/workflows/downstream.yml` builds ALICE-SDF, ALICE-LOL and ALICE-TRT against each change and runs their tests that reach alice-physics (see section 2); a downstream whose version requirement does not accept this crate's version fails with that requirement.
-- `cargo semver-checks` — currently `continue-on-error: true`; will be promoted to hard-gate at the 1.0 release event (see `docs/ROADMAP.md` Item C).
+- `cargo semver-checks` — the `semver-checks` job of `.github/workflows/security-audit.yml` compares each commit on main with the one before it under the native feature set; the job fails when the tool compares nothing, and semver findings are reported in the job summary (breaking changes accumulate between releases without a version bump).
 - `docs/PUBLIC_API_SNAPSHOT.txt` — enforced by `public-api-diff` CI job. Contract-listed items are within this snapshot; any accidental change surfaces as a snapshot diff.
 - `cargo public-api` output is regenerated on Mac aarch64 to match `macos-latest` CI runner (SIMD-item drift avoidance).
 

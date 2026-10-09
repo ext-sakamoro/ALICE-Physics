@@ -12,12 +12,15 @@ support the v1.0 roadmap Items **B** (public API surface freeze) and **C**
   exposed by the crate under the recommended native feature set
   (`std,simd,parallel,ffi,gpu-solver-bridge`).
 
-## Baseline
+## How it is kept current
 
-The current snapshot was generated at **v0.14.0-preview.5** (commit `7d5d214`,
-2026-09-13) and totals **20,201 items**. This is the pre-freeze baseline; the
-v1.0 roadmap Item B (public API surface freeze) will progressively move items
-from `pub` to `pub(crate)` and mark others `#[deprecated]` before v1.0 stable.
+The snapshot is the public API of version **2.0.0** plus the unreleased changes
+on main. `scripts/land.py` regenerates it when it lands a commit, and both the
+`public-api-diff` job of `.github/workflows/security-audit.yml` and
+`scripts/preflight.sh` fail when the file differs from what the crate exports.
+The version in the first sentence of this section is checked against
+`Cargo.toml` by `scripts/version_sync.py` (`claim` in `scripts/version-sync.toml`),
+so a release that bumps the crate version also has to update it here.
 
 ## Regenerating
 
@@ -37,25 +40,16 @@ producing a shorter and more human-readable diff.
 ```bash
 cargo +nightly public-api diff \
   --features "std,simd,parallel,ffi,gpu-solver-bridge" \
-  0.14.0-preview.4 0.14.0-preview.5
+  <older-version> <newer-version>
 ```
 
-Once v0.14.0 stable ships, the snapshot at that commit becomes the reference for
-Item **C** (cargo-semver-checks CI gate). PRs that change the public API surface
-will diff against this file so intentional additions vs accidental leaks stay
-visible in code review.
-
-## Roadmap wiring
-
-See [`ROADMAP.md`](ROADMAP.md) — Item B (Public API surface freeze) and Item C
-(cargo-semver-checks / cargo-public-api CI). The snapshot is the input side of
-both items; the CI integration (Item C) will consume this file to detect
-breakage.
+A change to the public API surface shows up as a diff of
+`PUBLIC_API_SNAPSHOT.txt` in the commit that makes it, so intentional additions
+and accidental leaks stay visible in review. `cargo semver-checks` (the
+`semver-checks` job of the same workflow) compares each commit with the one
+before it.
 
 ## Warnings (documentation)
 
-`cargo public-api` currently reports 8 pre-existing rustdoc warnings during
-compilation (broken intra-doc links to `Joint::Ball`, `GpuSolverBridge`, and
-private items linked from public documentation). These are documentation-only
-issues that do not affect the public API surface listing. Fixing them is
-tracked as a v0.14.0 stable follow-up.
+rustdoc warnings printed while `cargo public-api` builds the documentation do
+not change the listing.

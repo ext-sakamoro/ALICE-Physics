@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that every version this repository states follows the crate version.
 
-`Cargo.toml` `[package] version` is the one source. Two kinds of statement are
+`Cargo.toml` `[package] version` is the one source. Three kinds of statement are
 checked against it, so a release that bumps the crate and forgets one of them
 fails CI instead of leaving an old number behind:
 
@@ -17,6 +17,11 @@ fails CI instead of leaving an old number behind:
               line naming the crate (`<name> = "X"`, `<name> = { version = "X" }`,
               `pip install <name>==X`, `npm install <name>@X`) must accept the
               crate version (caret rule for Cargo, equality for pip / npm).
+  * claim     a sentence in a document that states the current version (the
+              header of a generated snapshot) is listed under `claim` with the
+              file and a regex whose first group is the version; every match
+              must equal the crate version, and a pattern that matches nothing
+              fails (the sentence was reworded).
 
 Historical statements ("added in v1.7.3", a changelog entry) are not checked:
 they record a past version on purpose. A document that is a record of past
@@ -198,6 +203,32 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
                 counts["install"] += 1
                 if m.group(1) != version:
                     errors.append(f"{rel}: {kind} pins {name} {m.group(1)}, the crate is {version}")
+    # `claim`: a sentence in a document that states the current version (a
+    # generated file's header, "the snapshot matches vX"). Each entry names the
+    # file and a pattern whose first group is the version; every match must equal
+    # the crate version, and a pattern that matches nothing fails (the sentence
+    # was reworded and the check would otherwise pass silently).
+    counts["claim"] = 0
+    for e in cfg.get("claim", []):
+        rel, pattern = e.get("file", ""), e.get("pattern", "")
+        if rel not in present:
+            errors.append(f"{CONFIG}: claim file {rel} is not tracked (remove the entry)")
+            continue
+        try:
+            pat = re.compile(pattern)
+        except re.error as err:
+            errors.append(f"{CONFIG}: claim pattern for {rel} does not compile: {err}")
+            continue
+        if pat.groups < 1:
+            errors.append(f"{CONFIG}: claim pattern for {rel} has no group for the version")
+            continue
+        found = [m.group(1) for m in pat.finditer(read(root, rel))]
+        if not found:
+            errors.append(f"{rel}: claim pattern {pattern!r} matches nothing (reworded? update {CONFIG})")
+        for v in found:
+            counts["claim"] += 1
+            if v.lstrip("v") != version:
+                errors.append(f"{rel}: states version {v}, the crate is {version}")
     if counts["metadata"] == 0:
         errors.append(f"compared no metadata file: {CONFIG} lists none under `follow`")
     return errors, counts
@@ -212,7 +243,8 @@ def main(argv: list[str] | None = None) -> int:
     for e in errors:
         print(f"error: {e}")
     print(
-        f"compared: metadata {counts['metadata']}, install lines {counts['install']} "
+        f"compared: metadata {counts['metadata']}, install lines {counts['install']}, "
+        f"claims {counts.get('claim', 0)} "
         f"(skipped in historical documents: {counts['historical']})"
     )
     return 1 if errors else 0

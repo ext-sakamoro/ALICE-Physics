@@ -19,3 +19,7 @@ reason = "a dated log of past releases (0.14 previews, 1.0.0); the current versi
 [[historical]]
 file = "docs/MIGRATION_0.x_TO_1.0.md"
 reason = "the 0.x to 1.0 migration guide shows the old and the new requirement on purpose"
+
+[[claim]]
+file = "docs/PUBLIC_API_SNAPSHOT.md"
+pattern = 'The snapshot is the public API of version \*\*([0-9][^*]*)\*\*'

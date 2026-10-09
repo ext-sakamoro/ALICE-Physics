@@ -107,6 +107,33 @@ class VersionSync(unittest.TestCase):
         errors, _ = self.run_check(files)
         self.assertTrue(any("listed but not tracked" in e for e in errors), errors)
 
+    def claim_files(self, doc: str, pattern: str = r"generated at \*\*v?([0-9][^*]*)\*\*"):
+        cfg = CONFIG + f"\n[[claim]]\nfile = \"docs/S.md\"\npattern = '{pattern}'\n"
+        return base(**{"scripts/version-sync.toml": cfg, "docs/S.md": doc})
+
+    def test_a_claim_that_states_the_crate_version_passes(self):
+        errors, counts = self.run_check(self.claim_files("The snapshot was generated at **v2.1.0** today.\n"))
+        self.assertEqual(errors, [])
+        self.assertEqual(counts["claim"], 1)
+
+    def test_a_claim_that_states_an_old_version_fails(self):
+        errors, _ = self.run_check(self.claim_files("The snapshot was generated at **v0.14.0-preview.5**.\n"))
+        self.assertTrue(any("states version 0.14.0-preview.5" in e for e in errors), errors)
+
+    def test_a_claim_pattern_that_matches_nothing_fails(self):
+        errors, _ = self.run_check(self.claim_files("The sentence was reworded.\n"))
+        self.assertTrue(any("matches nothing" in e for e in errors), errors)
+
+    def test_a_claim_pattern_without_a_group_fails(self):
+        errors, _ = self.run_check(self.claim_files("generated at **v2.1.0**\n", pattern="generated at"))
+        self.assertTrue(any("no group" in e for e in errors), errors)
+
+    def test_a_claim_on_a_file_that_is_not_tracked_fails(self):
+        files = self.claim_files("x\n")
+        del files["docs/S.md"]
+        errors, _ = self.run_check(files)
+        self.assertTrue(any("claim file docs/S.md is not tracked" in e for e in errors), errors)
+
     def test_caret(self):
         self.assertTrue(vs.caret_ok("2", "2.1.0"))
         self.assertTrue(vs.caret_ok("2.0", "2.1.0"))
