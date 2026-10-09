@@ -2371,6 +2371,10 @@ impl PhysicsWorld {
     /// [`Self::sdf_colliders`] shift down. A collider attached to the moved
     /// last body follows it to `idx`.
     ///
+    /// [`Self::contact_cache`] follows the swap: manifolds of the removed
+    /// body are dropped and those of the moved last body are re-keyed to
+    /// `idx`, so the cache equals that of a world that never had the body.
+    ///
     /// Sleep: every surviving body keeps its own sleep state (the moved last
     /// body included), except the bodies whose support may have changed,
     /// which are woken before the removal, each together with its island:
@@ -2412,6 +2416,9 @@ impl PhysicsWorld {
             .retain(|c| c.body_a != idx && c.body_b != idx);
         self.contact_constraints
             .retain(|c| c.body_a != idx && c.body_b != idx);
+        // The contact cache is keyed by index pairs: drop the removed body's
+        // manifolds and re-key the moved body's (`last` -> `idx`).
+        self.contact_cache.swap_remove_body(idx, last);
         if !self.joint_motors.is_empty() || !self.joint_motors_3d.is_empty() {
             // Motors follow their joint: new index of each kept joint, `None`
             // for a joint dropped with the body.
