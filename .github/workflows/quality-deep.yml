@@ -165,6 +165,15 @@ jobs:
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
           tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
           if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; exit 0; fi
+          # changed lines this axis does not compile but the other axis does are left to
+          # the other axis (scripts/mutants_axis_exclude.py), as in the weekly run
+          if [ -z "${{ matrix.features }}" ]; then other="parallel,gpu-solver-bridge,simd"; else other=""; fi
+          diff_files=$(grep -oE '^\+\+\+ b/src/\S+\.rs' /tmp/planned.diff | sed 's|^+++ b/|--file |' | sort -u | tr '\n' ' ')
+          moved=""
+          if [ -n "$diff_files" ]; then
+            # shellcheck disable=SC2086
+            moved=$(python3 scripts/mutants_axis_exclude.py --axis "$features" --other "$other" --allow-no-cfg $diff_files)
+          fi
           ulimit -v 6291456
           set +e
           # `--cargo-arg` limits the build of every mutant to the lib tests and the planned
@@ -175,7 +184,7 @@ jobs:
           # shellcheck disable=SC2086
           timeout --signal=INT --kill-after=10m 270m \
             cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
-            ${features:+--features "$features"} --cargo-arg=--lib $tests
+            ${features:+--features "$features"} --cargo-arg=--lib $tests $moved
           rc=$?
           set -e
           # cargo-mutants exits 0 without an output directory when the diff holds nothing
@@ -206,15 +215,26 @@ jobs:
         if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
         run: |
           ulimit -v 6291456
+          files="--file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs"
+          # lines this axis does not compile but the other axis does (inside
+          # `#[cfg(feature = ...)]`) are mutated on the other axis only, instead of
+          # being counted missed here (scripts/mutants_axis_exclude.py)
+          if [ -z "${{ matrix.features }}" ]; then other="parallel,gpu-solver-bridge,simd"; else other=""; fi
+          # shellcheck disable=SC2086
+          moved=$(python3 scripts/mutants_axis_exclude.py --axis "${{ matrix.features }}" --other "$other" $files)
           set +e
+          # shellcheck disable=SC2086
           cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output mutants.out \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
-            --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
-            --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \
-            --cargo-arg=--lib
+            $files $moved --cargo-arg=--lib
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
+          # the full list of mutants left to the other axis (not per shard), for the ratchet
+          # to check that the other axis plans every one of them
+          # shellcheck disable=SC2086
+          comm -23 <(cargo mutants --list $files | sort) <(cargo mutants --list $files $moved | sort) \
+            > mutants.out/axis-moved.txt
       - name: Summary
         if: always()
         run: |
@@ -260,7 +280,7 @@ jobs:
       - name: Compare the missed mutants with the baseline
         # 16 shards x 2 feature axes: a shard that was cancelled, timed out or never
         # uploaded fails the ratchet instead of leaving its mutants unchecked
-        run: python3 scripts/mutants_ratchet.py --out mutants-runs/* --expect-dirs 32
+        run: python3 scripts/mutants_ratchet.py --out mutants-runs/* --expect-dirs 32 --check-moved
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)
