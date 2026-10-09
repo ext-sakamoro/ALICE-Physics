@@ -15,6 +15,9 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed
+- CI: `cargo semver-checks` は既定の feature の推測で全 feature を有効にし、`wasm` と `ffi` の同時指定が compile_error になって rustdoc が毎回失敗していたが、`|| true` で何も比較しないまま成功していた feature を明示し (`std,simd,parallel,ffi,gpu-solver-bridge`、223 項目を比較)、道具の失敗と比較 0 件を失敗にする semver の指摘そのものは従来どおり参考扱いで job summary に出す
+
 ## [2.1.0] - 2026-10-10
 
 ### Added
