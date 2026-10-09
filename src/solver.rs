@@ -1746,6 +1746,17 @@ pub struct PhysicsWorld {
     park_generation: u64,
     /// Work counters of the last `step`.
     stage_work: StageWork,
+    /// SDF contacts resolved by the current (or last) step, in the order they
+    /// were applied ([`Self::last_step_sdf_contacts`]). Cleared at the head of
+    /// each step; the allocation is kept from step to step.
+    sdf_contact_log: Vec<crate::sdf_collider::SdfContact>,
+    /// Substep index the SDF contacts resolved now are recorded under.
+    sdf_contact_substep: usize,
+    /// Per-body buffers the parallel SDF resolution writes into before they
+    /// are appended to `sdf_contact_log` in body order (kept from step to
+    /// step).
+    #[cfg(feature = "parallel")]
+    sdf_contact_scratch: Vec<Vec<crate::sdf_collider::SdfContact>>,
     /// Participants in registration order (see [`crate::world_participant`]).
     /// Held behind a mutex so that the world stays `Sync` while a participant
     /// is only `Send`; every access during a step goes through `&mut self`
@@ -1887,6 +1898,10 @@ impl PhysicsWorld {
             park: ParkState::default(),
             park_generation: 0,
             stage_work: StageWork::default(),
+            sdf_contact_log: Vec::new(),
+            sdf_contact_substep: 0,
+            #[cfg(feature = "parallel")]
+            sdf_contact_scratch: Vec::new(),
             #[cfg(feature = "std")]
             participants: std::sync::Mutex::new(Vec::new()),
             #[cfg(feature = "std")]
@@ -3322,6 +3337,7 @@ impl PhysicsWorld {
     fn run_step(&mut self, dt: Fix128) {
         self.make_body_rotations_unit();
         self.stage_work = StageWork::default();
+        self.begin_sdf_contact_log();
         let mut frozen = self.participant_flags();
 
         // `SolverBackend::Tgs` dispatch (std-only, see `SolverBackend` doc for
@@ -3384,6 +3400,7 @@ impl PhysicsWorld {
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
             self.park.first_substep = i == 0;
+            self.sdf_contact_substep = i;
             // Participants run before the substep body (not inside `substep`,
             // which the unit tests call on its own).
             let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
@@ -3391,6 +3408,7 @@ impl PhysicsWorld {
             self.participants_end_substep(overflow_at_start, &frozen);
         }
         self.kinematic_substeps_left = 0;
+        self.sdf_contact_substep = 0;
         self.park.first_substep = false;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
@@ -4203,6 +4221,7 @@ impl PhysicsWorld {
     #[cfg(feature = "parallel")]
     fn run_step_parallel(&mut self, dt: Fix128) {
         self.make_body_rotations_unit();
+        self.begin_sdf_contact_log();
         let mut frozen = self.participant_flags();
 
         // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
@@ -4232,11 +4251,13 @@ impl PhysicsWorld {
         let n = self.config.substeps;
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
+            self.sdf_contact_substep = i;
             let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
             self.substep_batched(substep_dt);
             self.participants_end_substep(overflow_at_start, &frozen);
         }
         self.kinematic_substeps_left = 0;
+        self.sdf_contact_substep = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping();
@@ -5457,6 +5478,7 @@ impl PhysicsWorld {
             return;
         }
         self.make_body_rotations_unit();
+        self.begin_sdf_contact_log();
         let mut frozen = self.participant_flags();
 
         // Phase 0: Event frame lifecycle (contacts are cleared and re-detected
@@ -5485,11 +5507,13 @@ impl PhysicsWorld {
         let n = self.config.substeps;
         for i in 0..n {
             self.kinematic_substeps_left = n - i;
+            self.sdf_contact_substep = i;
             let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
             self.substep_with_bridge(bridge, substep_dt);
             self.participants_end_substep(overflow_at_start, &frozen);
         }
         self.kinematic_substeps_left = 0;
+        self.sdf_contact_substep = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
         self.apply_frame_damping();
@@ -5699,6 +5723,39 @@ impl PhysicsWorld {
         idx
     }
 
+    /// Empty the SDF contact record at the head of a step (the allocation is
+    /// kept) and record from substep 0.
+    fn begin_sdf_contact_log(&mut self) {
+        self.sdf_contact_log.clear();
+        self.sdf_contact_substep = 0;
+    }
+
+    /// The SDF contacts resolved by the last step, every substep of it, in
+    /// the order they were applied: by substep, then by body index, then by
+    /// collider index.
+    ///
+    /// Each entry is one push-out of a body out of an SDF collider
+    /// ([`SdfContact`](crate::sdf_collider::SdfContact)): where, along which
+    /// normal, how deep, and how fast the body was approaching. The record is
+    /// emptied at the head of each step ([`Self::step`], [`Self::try_step`],
+    /// `step_parallel`, `step_with_bridge`); a step that does not run (a
+    /// recorded fault, a non-positive `dt`) leaves it as it was.
+    /// `substep_with_bridge` called on its own appends to it. Recording
+    /// changes nothing in the step: a world whose record is never read steps
+    /// to the same bits. The buffer is reused from step to step, so it holds
+    /// its largest size so far (one entry per body per collider at most).
+    ///
+    /// [`Self::sdf_contacts`] is a different query: what the bodies overlap
+    /// now, between steps, without moving anything.
+    ///
+    /// The participants of [`crate::world_participant`] read the contacts
+    /// recorded so far in the current step through
+    /// [`SubstepCtx::sdf_contacts`](crate::world_participant::SubstepCtx::sdf_contacts).
+    #[must_use]
+    pub fn last_step_sdf_contacts(&self) -> &[crate::sdf_collider::SdfContact] {
+        &self.sdf_contact_log
+    }
+
     /// Copy each body's pose into the SDF colliders attached to it
     /// ([`crate::sdf_collider::sync_dynamic_sdf_colliders`]); static colliders
     /// are not touched.
@@ -5734,22 +5791,35 @@ impl PhysicsWorld {
         let sdf_colliders = &self.sdf_colliders;
         let colliders = &self.body_colliders;
         let collision_radius = self.sdf_collision_radius;
+        let substep = self.sdf_contact_substep;
 
-        let push_out = |idx: usize, body: &mut RigidBody| {
-            if body.is_static() || body.is_sensor {
-                return;
-            }
-            let collider = colliders.get(idx).and_then(Option::as_ref);
-            for sdf in sdf_colliders {
-                // A body is never pushed out of its own field.
-                if sdf.body_index == idx {
-                    continue;
+        // Each push-out is recorded into `log` (observation only: the record
+        // is built from values the push-out computes and never read back).
+        let push_out =
+            |idx: usize, body: &mut RigidBody, log: &mut Vec<crate::sdf_collider::SdfContact>| {
+                if body.is_static() || body.is_sensor {
+                    return;
                 }
-                if let Some(contact) = sdf_contact_of(collider, body, collision_radius, sdf) {
-                    body.position = body.position + contact.normal * contact.depth;
+                let collider = colliders.get(idx).and_then(Option::as_ref);
+                for (collider_index, sdf) in sdf_colliders.iter().enumerate() {
+                    // A body is never pushed out of its own field.
+                    if sdf.body_index == idx {
+                        continue;
+                    }
+                    if let Some(contact) = sdf_contact_of(collider, body, collision_radius, sdf) {
+                        log.push(crate::sdf_collider::SdfContact {
+                            body_index: idx,
+                            collider_index,
+                            point: contact.point_b,
+                            normal: contact.normal,
+                            depth: contact.depth,
+                            approach_speed: -body.velocity.dot(contact.normal),
+                            substep,
+                        });
+                        body.position = body.position + contact.normal * contact.depth;
+                    }
                 }
-            }
-        };
+            };
 
         #[cfg(feature = "parallel")]
         {
@@ -5759,14 +5829,24 @@ impl PhysicsWorld {
                 &[]
             };
             self.stage_work.resolution_bodies += self.unparked_count();
+            let scratch = &mut self.sdf_contact_scratch;
+            if scratch.len() < self.bodies.len() {
+                scratch.resize_with(self.bodies.len(), Vec::new);
+            }
             self.bodies
                 .par_iter_mut()
+                .zip(scratch.par_iter_mut())
                 .enumerate()
-                .for_each(|(idx, body)| {
+                .for_each(|(idx, (body, out))| {
+                    out.clear();
                     if !parked.get(idx).copied().unwrap_or(false) {
-                        push_out(idx, body);
+                        push_out(idx, body, out);
                     }
                 });
+            let log = &mut self.sdf_contact_log;
+            for out in &scratch[..self.bodies.len()] {
+                log.extend_from_slice(out);
+            }
         }
 
         #[cfg(not(feature = "parallel"))]
@@ -5783,7 +5863,7 @@ impl PhysicsWorld {
                     k
                 };
                 self.stage_work.resolution_bodies += 1;
-                push_out(idx, &mut self.bodies[idx]);
+                push_out(idx, &mut self.bodies[idx], &mut self.sdf_contact_log);
             }
         }
     }

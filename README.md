@@ -92,6 +92,7 @@ Runnable programs live in [`examples/`](examples/). Good places to start:
 | [`world_api_tour`](examples/world_api_tour.rs) | every `PhysicsWorld` setter, query and event drain |
 | [`rollback_netcode`](examples/rollback_netcode.rs) | snapshot, rollback and checksum verification |
 | [`world_snapshot_branching`](examples/world_snapshot_branching.rs) | whole-world snapshot, branching from it, restoring a world that holds an SDF collider |
+| [`sdf_contacts`](examples/sdf_contacts.rs) | the contacts a step resolved against SDF colliders (point, normal, depth, approach speed), read after the step and by a participant inside it |
 | [`joint_limits_and_breaking`](examples/joint_limits_and_breaking.rs) | joint types, limits, motors, breakable joints |
 | [`cloth_simulation`](examples/cloth_simulation.rs) | XPBD cloth |
 | [`cfd_smoke_plume`](examples/cfd_smoke_plume.rs) | the integrated CFD solver |

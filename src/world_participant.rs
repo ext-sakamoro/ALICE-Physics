@@ -739,6 +739,7 @@ pub struct SubstepCtx<'a> {
     board: Option<&'a FieldBoard>,
     stage: Option<&'a mut FieldStage>,
     ports: &'a [Port],
+    sdf_contacts: &'a [crate::sdf_collider::SdfContact],
 }
 
 impl<'a> SubstepCtx<'a> {
@@ -771,6 +772,7 @@ impl<'a> SubstepCtx<'a> {
             board: None,
             stage: None,
             ports: &[],
+            sdf_contacts: &[],
         })
     }
 
@@ -787,6 +789,14 @@ impl<'a> SubstepCtx<'a> {
         self.board = Some(board);
         self.stage = Some(stage);
         self.ports = ports;
+        self
+    }
+
+    /// The same context with the SDF contacts the world resolved so far in
+    /// the current step ([`Self::sdf_contacts`]).
+    #[must_use]
+    pub fn with_sdf_contacts(mut self, contacts: &'a [crate::sdf_collider::SdfContact]) -> Self {
+        self.sdf_contacts = contacts;
         self
     }
 
@@ -842,6 +852,21 @@ impl<'a> SubstepCtx<'a> {
     #[must_use]
     pub fn bodies(&self) -> &[RigidBody] {
         self.bodies
+    }
+
+    /// The SDF contacts the world resolved in the current step before this
+    /// participant runs, in the order they were applied (see
+    /// [`crate::PhysicsWorld::last_step_sdf_contacts`]).
+    ///
+    /// Participants run at the head of each substep, before its SDF
+    /// resolution, so with the XPBD paths (`step`, `step_parallel`,
+    /// `step_with_bridge`) substep `i` sees the contacts of substeps
+    /// `0..i` of this step (none in substep 0). The TGS backend resolves SDF
+    /// overlap once, before its substeps, so every substep sees all of the
+    /// step's contacts. Empty for a context built by [`Self::new`] alone.
+    #[must_use]
+    pub fn sdf_contacts(&self) -> &'a [crate::sdf_collider::SdfContact] {
+        self.sdf_contacts
     }
 
     /// Index of this substep within the frame (`0..substeps`).
@@ -1554,6 +1579,26 @@ pub fn run_substep(
     forces: &mut ForceAccumulator,
     time: SubstepTime,
 ) -> Result<Vec<WorldFault>, ExchangeError> {
+    run_substep_with_sdf_contacts(participants, plan, frozen, bodies, board, forces, time, &[])
+}
+
+/// [`run_substep`] with the SDF contacts each participant reads through
+/// [`SubstepCtx::sdf_contacts`]; `run_substep` passes none.
+///
+/// # Errors
+///
+/// As [`run_substep`].
+#[allow(clippy::too_many_arguments)]
+pub fn run_substep_with_sdf_contacts(
+    participants: &mut [Box<dyn Participant>],
+    plan: &ParticipantPlan,
+    frozen: &mut [bool],
+    bodies: &[RigidBody],
+    board: &mut FieldBoard,
+    forces: &mut ForceAccumulator,
+    time: SubstepTime,
+    sdf_contacts: &[crate::sdf_collider::SdfContact],
+) -> Result<Vec<WorldFault>, ExchangeError> {
     let n = participants.len();
     if plan.order.len() != n {
         return Err(ExchangeError::Plan {
@@ -1595,7 +1640,9 @@ pub fn run_substep(
         let result = {
             let ctx = SubstepCtx::new(bodies, &mut staged_forces, time.index, time.count, time.h)
                 .map_err(ExchangeError::Accumulate)?;
-            let mut ctx = ctx.with_fields(board, &mut stage, &plan.ports[i]);
+            let mut ctx = ctx
+                .with_fields(board, &mut stage, &plan.ports[i])
+                .with_sdf_contacts(sdf_contacts);
             participants[i].substep(&mut ctx, time.h)
         };
         match result {

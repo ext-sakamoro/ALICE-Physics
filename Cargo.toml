@@ -632,6 +632,10 @@ required-features = ["std"]
 name = "damping_rayleigh_fit"
 required-features = ["std"]
 
+[[example]]
+name = "sdf_contacts"
+required-features = ["std"]
+
 [[bench]]
 name = "physics_bench"
 harness = false

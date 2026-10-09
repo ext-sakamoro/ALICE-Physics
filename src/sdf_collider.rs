@@ -34,6 +34,43 @@ use crate::math::{Fix128, QuatFix, Vec3Fix};
 use alloc::boxed::Box;
 
 // ============================================================================
+// Recorded SDF Contact
+// ============================================================================
+
+/// One contact the step resolved between a body and an SDF collider: the body
+/// was pushed out of the field by `normal * depth`.
+///
+/// The step records one entry for every push-out it applies
+/// ([`crate::PhysicsWorld::last_step_sdf_contacts`]), in the order the step
+/// applies them: by substep, then by body index, then by collider index.
+/// Recording only reads what the push-out computes; a world whose record is
+/// never read steps to the same bits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct SdfContact {
+    /// Index of the body in [`crate::PhysicsWorld::bodies`].
+    pub body_index: usize,
+    /// Index of the collider in [`crate::PhysicsWorld::sdf_colliders`].
+    pub collider_index: usize,
+    /// Contact point on the SDF surface, in world space, before the push-out.
+    pub point: Vec3Fix,
+    /// Surface normal in world space, pointing out of the collider (the
+    /// direction the body was pushed).
+    pub normal: Vec3Fix,
+    /// How far the body reached into the field (the push-out distance).
+    pub depth: Fix128,
+    /// Speed of the body towards the surface before the push-out:
+    /// `-(velocity · normal)`, positive while approaching. The velocity is
+    /// the body's velocity at that point of the substep (after this
+    /// substep's gravity and forces), which the push-out does not change.
+    pub approach_speed: Fix128,
+    /// Substep of the step in which the contact was resolved (`0..substeps`).
+    /// The TGS backend resolves SDF overlap once per step, so its contacts
+    /// all carry substep 0.
+    pub substep: usize,
+}
+
+// ============================================================================
 // SDF Field Trait
 // ============================================================================
 

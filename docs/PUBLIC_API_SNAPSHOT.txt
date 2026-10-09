@@ -13409,6 +13409,7 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::PdController3D>
 pub fn alice_physics::solver::PhysicsWorld::joint_motor_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::JointMotor>
+pub fn alice_physics::solver::PhysicsWorld::last_step_sdf_contacts(&self) -> &[alice_physics::sdf_collider::SdfContact]
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
@@ -14141,6 +14142,30 @@ impl core::marker::Unpin for alice_physics::sdf_collider::SdfCollider
 impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfCollider
+#[non_exhaustive] pub struct alice_physics::prelude::SdfContact
+pub alice_physics::prelude::SdfContact::approach_speed: alice_physics::math::Fix128
+pub alice_physics::prelude::SdfContact::body_index: usize
+pub alice_physics::prelude::SdfContact::collider_index: usize
+pub alice_physics::prelude::SdfContact::depth: alice_physics::math::Fix128
+pub alice_physics::prelude::SdfContact::normal: alice_physics::math::Vec3Fix
+pub alice_physics::prelude::SdfContact::point: alice_physics::math::Vec3Fix
+pub alice_physics::prelude::SdfContact::substep: usize
+impl core::clone::Clone for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sdf_collider::SdfContact
+impl core::cmp::PartialEq for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sdf_collider::SdfContact
+impl core::marker::StructuralPartialEq for alice_physics::sdf_collider::SdfContact
+impl core::marker::Freeze for alice_physics::sdf_collider::SdfContact
+impl core::marker::Send for alice_physics::sdf_collider::SdfContact
+impl core::marker::Sync for alice_physics::sdf_collider::SdfContact
+impl core::marker::Unpin for alice_physics::sdf_collider::SdfContact
+impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfContact
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfContact
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfContact
 pub struct alice_physics::prelude::SdfForceField
 pub alice_physics::prelude::SdfForceField::affected_bodies: core::option::Option<alloc::vec::Vec<usize>>
 pub alice_physics::prelude::SdfForceField::enabled: bool
@@ -16485,6 +16510,30 @@ impl core::marker::Unpin for alice_physics::sdf_collider::SdfCollider
 impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfCollider
+#[non_exhaustive] pub struct alice_physics::sdf_collider::SdfContact
+pub alice_physics::sdf_collider::SdfContact::approach_speed: alice_physics::math::Fix128
+pub alice_physics::sdf_collider::SdfContact::body_index: usize
+pub alice_physics::sdf_collider::SdfContact::collider_index: usize
+pub alice_physics::sdf_collider::SdfContact::depth: alice_physics::math::Fix128
+pub alice_physics::sdf_collider::SdfContact::normal: alice_physics::math::Vec3Fix
+pub alice_physics::sdf_collider::SdfContact::point: alice_physics::math::Vec3Fix
+pub alice_physics::sdf_collider::SdfContact::substep: usize
+impl core::clone::Clone for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sdf_collider::SdfContact
+impl core::cmp::PartialEq for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sdf_collider::SdfContact
+impl core::marker::StructuralPartialEq for alice_physics::sdf_collider::SdfContact
+impl core::marker::Freeze for alice_physics::sdf_collider::SdfContact
+impl core::marker::Send for alice_physics::sdf_collider::SdfContact
+impl core::marker::Sync for alice_physics::sdf_collider::SdfContact
+impl core::marker::Unpin for alice_physics::sdf_collider::SdfContact
+impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfContact
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfContact
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfContact
 pub struct alice_physics::sdf_collider::SdfFrame
 impl alice_physics::sdf_collider::SdfFrame
 pub const alice_physics::sdf_collider::SdfFrame::IDENTITY: Self
@@ -18065,6 +18114,7 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::PdController3D>
 pub fn alice_physics::solver::PhysicsWorld::joint_motor_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::JointMotor>
+pub fn alice_physics::solver::PhysicsWorld::last_step_sdf_contacts(&self) -> &[alice_physics::sdf_collider::SdfContact]
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
@@ -20660,10 +20710,12 @@ pub fn alice_physics::world_participant::SubstepCtx<'a>::bodies(&self) -> &[alic
 pub fn alice_physics::world_participant::SubstepCtx<'a>::field(&self, alice_physics::world_participant::PortId) -> core::result::Result<&'a [alice_physics::math::Fix128], alice_physics::world_participant::FieldAccessError>
 pub fn alice_physics::world_participant::SubstepCtx<'a>::h(&self) -> alice_physics::math::Fix128
 pub fn alice_physics::world_participant::SubstepCtx<'a>::new(&'a [alice_physics::solver::RigidBody], &'a mut alice_physics::world_participant::ForceAccumulator, usize, usize, alice_physics::math::Fix128) -> core::result::Result<Self, alice_physics::world_participant::AccumulateError>
+pub fn alice_physics::world_participant::SubstepCtx<'a>::sdf_contacts(&self) -> &'a [alice_physics::sdf_collider::SdfContact]
 pub fn alice_physics::world_participant::SubstepCtx<'a>::stage_field(&mut self, alice_physics::world_participant::PortId) -> core::result::Result<&mut [alice_physics::math::Fix128], alice_physics::world_participant::FieldAccessError>
 pub fn alice_physics::world_participant::SubstepCtx<'a>::substep_index(&self) -> usize
 pub fn alice_physics::world_participant::SubstepCtx<'a>::substeps(&self) -> usize
 pub fn alice_physics::world_participant::SubstepCtx<'a>::with_fields(self, &'a alice_physics::world_participant::FieldBoard, &'a mut alice_physics::world_participant::FieldStage, &'a [alice_physics::world_participant::Port]) -> Self
+pub fn alice_physics::world_participant::SubstepCtx<'a>::with_sdf_contacts(self, &'a [alice_physics::sdf_collider::SdfContact]) -> Self
 impl<'a> core::fmt::Debug for alice_physics::world_participant::SubstepCtx<'a>
 pub fn alice_physics::world_participant::SubstepCtx<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl<'a> core::marker::Freeze for alice_physics::world_participant::SubstepCtx<'a>
@@ -20779,6 +20831,7 @@ pub fn alice_physics::world_participant::deposit_bodies(&[alice_physics::solver:
 pub fn alice_physics::world_participant::execution_order(&[&[alice_physics::world_participant::Port]]) -> core::result::Result<alloc::vec::Vec<usize>, alice_physics::world_participant::OrderError>
 pub fn alice_physics::world_participant::remap_conserving(&alice_physics::world_participant::FieldLayout, &[alice_physics::math::Fix128], &alice_physics::world_participant::FieldLayout) -> core::result::Result<alloc::vec::Vec<alice_physics::math::Fix128>, alice_physics::world_participant::RemapError>
 pub fn alice_physics::world_participant::run_substep(&mut [alloc::boxed::Box<dyn alice_physics::world_participant::Participant>], &alice_physics::world_participant::ParticipantPlan, &mut [bool], &[alice_physics::solver::RigidBody], &mut alice_physics::world_participant::FieldBoard, &mut alice_physics::world_participant::ForceAccumulator, alice_physics::world_participant::SubstepTime) -> core::result::Result<alloc::vec::Vec<alice_physics::world_participant::WorldFault>, alice_physics::world_participant::ExchangeError>
+pub fn alice_physics::world_participant::run_substep_with_sdf_contacts(&mut [alloc::boxed::Box<dyn alice_physics::world_participant::Participant>], &alice_physics::world_participant::ParticipantPlan, &mut [bool], &[alice_physics::solver::RigidBody], &mut alice_physics::world_participant::FieldBoard, &mut alice_physics::world_participant::ForceAccumulator, alice_physics::world_participant::SubstepTime, &[alice_physics::sdf_collider::SdfContact]) -> core::result::Result<alloc::vec::Vec<alice_physics::world_participant::WorldFault>, alice_physics::world_participant::ExchangeError>
 pub fn alice_physics::world_participant::wakes_parked_body(&alice_physics::solver::RigidBody, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &alice_physics::sleeping::SleepConfig) -> bool
 pub mod alice_physics::world_shape_query
 #[non_exhaustive] pub struct alice_physics::world_shape_query::WorldShapeHit
@@ -24558,6 +24611,7 @@ pub fn alice_physics::solver::PhysicsWorld::is_sleeping(&self, usize) -> bool
 pub fn alice_physics::solver::PhysicsWorld::joint_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::joint_motor_3d_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::PdController3D>
 pub fn alice_physics::solver::PhysicsWorld::joint_motor_mut(&mut self, usize) -> core::option::Option<&mut alice_physics::motor::JointMotor>
+pub fn alice_physics::solver::PhysicsWorld::last_step_sdf_contacts(&self) -> &[alice_physics::sdf_collider::SdfContact]
 pub fn alice_physics::solver::PhysicsWorld::new(alice_physics::solver::SolverConfig) -> Self
 pub fn alice_physics::solver::PhysicsWorld::num_batches(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::observe_bodies(&self) -> alloc::vec::Vec<alice_physics::solver::BodyObservation>
@@ -25345,6 +25399,30 @@ impl core::marker::Unpin for alice_physics::sdf_collider::SdfCollider
 impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfCollider
 impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfCollider
+#[non_exhaustive] pub struct alice_physics::SdfContact
+pub alice_physics::SdfContact::approach_speed: alice_physics::math::Fix128
+pub alice_physics::SdfContact::body_index: usize
+pub alice_physics::SdfContact::collider_index: usize
+pub alice_physics::SdfContact::depth: alice_physics::math::Fix128
+pub alice_physics::SdfContact::normal: alice_physics::math::Vec3Fix
+pub alice_physics::SdfContact::point: alice_physics::math::Vec3Fix
+pub alice_physics::SdfContact::substep: usize
+impl core::clone::Clone for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::sdf_collider::SdfContact
+impl core::cmp::PartialEq for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::sdf_collider::SdfContact
+pub fn alice_physics::sdf_collider::SdfContact::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::sdf_collider::SdfContact
+impl core::marker::StructuralPartialEq for alice_physics::sdf_collider::SdfContact
+impl core::marker::Freeze for alice_physics::sdf_collider::SdfContact
+impl core::marker::Send for alice_physics::sdf_collider::SdfContact
+impl core::marker::Sync for alice_physics::sdf_collider::SdfContact
+impl core::marker::Unpin for alice_physics::sdf_collider::SdfContact
+impl core::marker::UnsafeUnpin for alice_physics::sdf_collider::SdfContact
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_collider::SdfContact
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfContact
 pub struct alice_physics::SdfForceField
 pub alice_physics::SdfForceField::affected_bodies: core::option::Option<alloc::vec::Vec<usize>>
 pub alice_physics::SdfForceField::enabled: bool

@@ -17,15 +17,16 @@
 //! in the last bits). Step rules are checked against that same width. Per
 //! substep:
 //!
-//! 1. [`run_substep`] calls the participants in their run order with the
-//!    bodies as they are at the start of the substep and commits the staged
-//!    field writes;
+//! 1. [`run_substep_with_sdf_contacts`] calls the participants in their run
+//!    order with the bodies as they are at the start of the substep and the
+//!    SDF contacts resolved so far in the step, and commits the staged field
+//!    writes;
 //! 2. the summed forces reach the dynamic bodies, `v += F·inv_mass·h` and
 //!    `ω += I⁻¹·τ·h` (checked: a result out of range leaves the body as it was
 //!    and records [`WorldFault::ForceOutOfRange`]; the check covers the
 //!    intermediate `F·inv_mass` and `I⁻¹·τ` too, not only the final `·h`);
 //!    the sums themselves are not checked: [`ForceAccumulator`] adds with the
-//!    wrapping addition of [`Fix128`] (in [`run_substep`] and in
+//!    wrapping addition of [`Fix128`] (in [`run_substep_with_sdf_contacts`] and in
 //!    [`ForceAccumulator::merge`]), so staged forces whose sum leaves the
 //!    range wrap before this step sees them; a sleeping or parked body is
 //!    woken (and unparked) when the change applied to it, `Δv` or `Δω`, is
@@ -54,8 +55,8 @@ use crate::math::Fix128;
 use crate::math::Vec3Fix;
 #[cfg(feature = "std")]
 use crate::world_participant::{
-    run_substep, wakes_parked_body, ForceAccumulator, ObservationSink, Observed, Participant,
-    ParticipantKind, ParticipantPlan, StepRule, SubstepTime,
+    run_substep_with_sdf_contacts, wakes_parked_body, ForceAccumulator, ObservationSink, Observed,
+    Participant, ParticipantKind, ParticipantPlan, StepRule, SubstepTime,
 };
 use crate::world_participant::{
     FieldBoard, FieldError, FieldLayout, FieldMode, PortId, RegisterError, StepError, WorldFault,
@@ -526,7 +527,7 @@ impl PhysicsWorld {
                 return at_start;
             };
             let mut forces = ForceAccumulator::new(self.bodies.len());
-            let faults = run_substep(
+            let faults = run_substep_with_sdf_contacts(
                 list_mut(&mut self.participants),
                 plan,
                 frozen,
@@ -534,6 +535,7 @@ impl PhysicsWorld {
                 &mut self.fields,
                 &mut forces,
                 SubstepTime { index, count, h },
+                &self.sdf_contact_log,
             );
             match faults {
                 Ok(faults) => {

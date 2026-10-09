@@ -88,6 +88,7 @@ assert!(pos.y < Fix128::from_int(10), "Body fell under gravity");
 | [`world_api_tour`](examples/world_api_tour.rs) | `PhysicsWorld` の setter・クエリ・イベント取得をひと通り |
 | [`rollback_netcode`](examples/rollback_netcode.rs) | スナップショット、ロールバック、チェックサム照合 |
 | [`world_snapshot_branching`](examples/world_snapshot_branching.rs) | 世界全体のスナップショット、そこからの分岐、SDF コライダーを持つ世界の復元 |
+| [`sdf_contacts`](examples/sdf_contacts.rs) | step が SDF コライダーに対して解いた接触 (点・法線・深さ・接近速度) を step の後と substep 内の participant から読む |
 | [`joint_limits_and_breaking`](examples/joint_limits_and_breaking.rs) | ジョイントの種類、リミット、モーター、破断 |
 | [`cloth_simulation`](examples/cloth_simulation.rs) | XPBD の布 |
 | [`cfd_smoke_plume`](examples/cfd_smoke_plume.rs) | 統合 CFD ソルバー |

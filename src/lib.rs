@@ -660,7 +660,7 @@ pub use scene_io::{
 #[cfg(feature = "std")]
 pub use sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
 pub use sdf_ccd::SdfCcdConfig;
-pub use sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+pub use sdf_collider::{ClosureSdf, SdfCollider, SdfContact, SdfField};
 #[cfg(feature = "std")]
 pub use sdf_destruction::{DestructibleSdf, DestructionShape};
 pub use sdf_force::{SdfForceField, SdfForceType};
@@ -819,7 +819,7 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
     pub use crate::sdf_ccd::SdfCcdConfig;
-    pub use crate::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+    pub use crate::sdf_collider::{ClosureSdf, SdfCollider, SdfContact, SdfField};
     #[cfg(feature = "std")]
     pub use crate::sdf_destruction::{DestructibleSdf, DestructionShape};
     pub use crate::sdf_force::{SdfForceField, SdfForceType};
