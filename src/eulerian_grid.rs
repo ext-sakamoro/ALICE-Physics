@@ -5000,6 +5000,8 @@ pub fn p2g_normalized_with(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::format;
 
     #[test]
     fn mac_grid_dimensions() {
@@ -8366,6 +8368,7 @@ mod tests {
             "the ranks held no outflow Z-face between them, so running without a halo \
              proves nothing",
         );
+        #[cfg(feature = "std")]
         println!(
             "boundary-only Z-outflow: {ran} ranks over {} cases imposed {outflow_faces} \
              outflow Z-faces with nothing handed over",
@@ -8477,6 +8480,7 @@ mod tests {
     #[test]
     fn low_end_outflow_next_to_inflow_or_wall_matches_the_monolithic_enforcement() {
         let mut exercised = 0usize;
+        #[cfg(feature = "std")]
         let mut rows = Vec::new();
         let mut differing = 0usize;
         for &(n, ranks) in &SLAB_CASES {
@@ -8505,8 +8509,10 @@ mod tests {
                 count(&assembled.w, &monolithic.w),
             );
             differing += du + dv + dw;
+            #[cfg(feature = "std")]
             rows.push(format!("| {n}³ | {ranks} | {du} | {dv} | {dw} |"));
         }
+        #[cfg(feature = "std")]
         println!(
             "faces differing from the monolithic enforcement:\n| grid | ranks | X | Y | Z |\n|---|---|---|---|---|\n{}",
             rows.join("\n"),
