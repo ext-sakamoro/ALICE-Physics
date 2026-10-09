@@ -21,6 +21,7 @@ were introduced during that release window.
 - `scripts/affected_tests.py` (`preflight --fast`): 選んだ integration target が 0 本しか実行しなくても、常に走る golden 3 本の合計で 0 にならず成功していた (`#![cfg(not(feature = "parallel"))]` の hyperelastic の 2 target は native の feature で 0 本) target ごとに passed を数え、選んだ target のどれかが 0 本なら失敗する
 - `scripts/preflight.sh` (full): ci.yml の `cargo test --features "parallel"` (29 の test file にある parallel で gate された試験) と `cargo test --lib --features "simd"` を走らせていなかったので足した `scripts/preflight_ci_parity.py` が ci.yml の `cargo test` をすべて preflight.sh と突き合わせ (変数の展開、`--no-fail-fast` と引用符を除いて比較)、足りない command があれば失敗する (CI と preflight の両方で実行)
 - CI: `simd` で gate された integration test (`analytic_math_wiring` の x86_64 + simd の module、`audit_math`、`analytic_gpu_sdf_wiring`) はどの lane でも実行されていなかった (ci.yml の SIMD の step は `--lib` だけ) `scripts/run_feature_gated_tests.py` の feature に `simd` を足し、全 OS の matrix で実行する (x86_64 の lane で x86_64 限定の module も走る)
+- `scripts/run_ignored.py`: 試験 binary 1 本ごとに上限時間 (既定 1800 秒、`RUN_IGNORED_BINARY_TIMEOUT` で変更) を設け、超えた binary は止めて名前を出し run を失敗にする (止まった試験 1 本が週次 job の 180 分を使い切り、どこで止まったか分からなかった) runner 自身の試験 `scripts/test_run_ignored.py` と表の導出 (`--list`) を ci.yml と preflight で毎 push 回す (ignored 試験の実行そのものは重いので週次のまま)
 
 ## [2.1.0] - 2026-10-10
 

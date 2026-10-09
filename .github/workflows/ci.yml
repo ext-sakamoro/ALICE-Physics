@@ -76,6 +76,13 @@ jobs:
         run: python scripts/test_mutants_exclude_check.py
       - name: Mutation in-diff plan (tests)
         run: python scripts/test_mutants_in_diff_plan.py
+      # the weekly ignored-test run fails on a crash, a binary that runs too
+      # long, or a run that checked nothing; these keep that runner honest on
+      # every push (the run itself is too heavy for the landing path)
+      - name: Ignored-test runner (tests)
+        run: python scripts/test_run_ignored.py
+      - name: Ignored-test table derives
+        run: python scripts/run_ignored.py --list
       - name: Bench count check (tests)
         run: python scripts/test_bench_counts_check.py
       - name: Heavy workflows stay off the landing path (tests)
