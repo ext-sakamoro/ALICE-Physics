@@ -68,6 +68,7 @@ step "coverage tables (docs/coverage/*.toml = src/ LIMITATION comments + tests)"
 python3 scripts/test_coverage_check.py
 python3 scripts/test_line_coverage_ratchet.py
 python3 scripts/test_mutants_ratchet.py
+python3 scripts/test_mutants_exclude_check.py
 python3 scripts/test_mutants_in_diff_plan.py
 python3 scripts/test_bench_counts_check.py
 python3 scripts/test_ci_load_check.py
@@ -76,6 +77,16 @@ python3 scripts/test_downstream_select_tag.py
 python3 scripts/test_downstream_test_counts.py
 python3 scripts/test_coverage_refs_to_symbols.py
 python3 scripts/coverage_check.py
+
+step "mutants.toml exclude_re entries still match a real mutant (needs cargo-mutants)"
+if command -v cargo-mutants >/dev/null 2>&1; then
+  python3 scripts/mutants_exclude_check.py
+elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
+  echo "skip: cargo-mutants not installed (cargo install cargo-mutants --locked); CI runs this check" >&2
+else
+  echo "cargo-mutants not installed: cargo install cargo-mutants --locked" >&2
+  exit 1
+fi
 
 step "status generators oracle (docs/wiring-status.md / docs/oracle-status.md の生成器)"
 python3 scripts/test_gen_status.py
