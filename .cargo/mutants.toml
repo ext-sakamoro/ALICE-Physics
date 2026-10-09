@@ -140,6 +140,27 @@
 # src/bvh.rs:951 (`query_pairs`): `end = start * 1` starts the scan of a cell
 #   at `start` instead of `start + 1`, and the first comparison
 #   (`entries[start].0 == cell`) is true, so `end` reaches the same value.
+#
+# `replace < with <= in solve_hinge_joint` (src/joint.rs:912) and
+# `replace < with <= in solve_slider_joint` (src/joint.rs:1051) and
+# `replace < with <= in solve_d6_joint` (src/joint.rs:1218,1288): each is a
+#   joint's lower limit check (`angle < *m` / `along_axis < *m` / `proj <
+#   limit_min` / `angle < limit_min`), paired with an `else if` upper check
+#   (`> max`). This was NOT equivalent before `HingeJoint::with_limits`,
+#   `SliderJoint::with_limits`, `D6Joint::with_linear_limits` and
+#   `with_angular_limits` rejected `min > max` at construction: with an
+#   inverted interval, the tie point `value == min` could also satisfy
+#   `value > max` (e.g. `min = 1, max = 0`, value `= 1`), so the original
+#   `<` skips the min branch and falls into the max branch with a genuinely
+#   nonzero error (`value - max = 1`), while the mutated `<=` takes the min
+#   branch instead, with a *zero* error (`min - value = 0`) — a real,
+#   observable difference. Now that construction guarantees `min <= max`,
+#   `value == min` implies `value <= max`, so `value > max` can never also
+#   hold at that point: the max branch is unreachable from the tie, and the
+#   min branch's own error is `min - value = 0` either way `<` or `<=`
+#   decides it, so the two are equivalent for the same reason as the upper
+#   bounds above (d6 has two sites, linear and angular; both equivalent for
+#   the same reason).
 exclude_re = [
     "tests::",
     "replace > with >= in scaled_exp_neg",
@@ -179,4 +200,8 @@ exclude_re = [
     "bvh\\.rs:558:.*replace >> with << in LinearBvh::find_split",
     "bvh\\.rs:567:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
     "bvh\\.rs:951:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
+    "joint\\.rs:912:.*replace < with <= in solve_hinge_joint",
+    "joint\\.rs:1051:.*replace < with <= in solve_slider_joint",
+    "joint\\.rs:1218:.*replace < with <= in solve_d6_joint",
+    "joint\\.rs:1288:.*replace < with <= in solve_d6_joint",
 ]
