@@ -172,6 +172,56 @@
 # `adaptive_substeps_for_ccd` (`ccd_step < cfg.max_translation_per_step` ->
 # `<=`): at a tie both branches leave the same value (the running maximum, the
 # smaller of two equal steps), so the result is the same bits for every input.
+#
+# src/solver.rs, PhysicsWorld (line:column anchored, the other mutants of the
+# same lines are caught):
+#
+# `raycast` 2929/2934/2939 `<` -> `<=` and 2946/2951/2956 `>` -> `>=`: the ray
+#   box takes `if o < e { o } else { e }` (and the `>` max) per axis; at a tie
+#   both branches return the same `Fix128`, whose equality is the derived
+#   field equality, so the box is the same bits.
+# `batches_are_body_disjoint` 3265:27 `k == 1` -> `k != 1`: the term is
+#   `(k == 1 && a == b)`; for `a != b` both forms are false, for `a == b` the
+#   two loop passes visit the same index and either form skips exactly one of
+#   them, so the body is counted once either way.
+# `update_velocities` 4762 `vn < target` -> `<=`: at a tie `delta_vn = 0`, the
+#   impulse is the zero vector, and adding `0 * k` to a velocity leaves its
+#   bits (`inv_w` is `1 / w_sum` with `w_sum >= W_SUM_EPSILON`).
+# `update_velocities` 4778 `tangent_speed_sq > 0` -> `>=`: at 0 the branch
+#   computes `friction_dir = tangent_vel / 0`, and `Fix128` division by zero
+#   returns 0, so `friction_impulse` is the zero vector and both velocity
+#   updates add or subtract 0.
+# `update_velocities` 4792 `tangent_speed < max` -> `<=`: at a tie both
+#   branches give the same value.
+# `detect_collisions` 6292 `a >= n || b >= n` -> `&&`: every pair index comes
+#   from a primitive built this call for an index below `n` (`stage_body`
+#   reads `park.awake`, filled from `0..n` by `park_begin` this step) or from
+#   a park-tree proxy inserted by `park_begin` for an index below `n`; the
+#   tree is cleared whenever the body count drops below `park.parked.len()`,
+#   so no proxy outlives its index. The guard never fires in either form.
+# `detect_collisions` 6360:52 `dist >= r || dist == 0` -> `&&`: this branch is
+#   reached only when the squared distance does not fit `Fix128`, so `dist`
+#   is never 0 and the mutant never skips. A pair with `dist >= r` then goes
+#   through the filter, static and sleeping checks (no side effects), takes
+#   no collider branch (both colliders are `None` here) and is dropped at
+#   6444 by `dist < r`, as the original drops it at 6360.
+# `detect_collisions` 6444:21 `dist < r` -> `<=` and 6444:39 `&&` -> `||`:
+#   on the sphere path that reaches 6444, `d2 < r2` and `d2 != 0` held at
+#   6350. `Fix128` multiplication keeps the middle 128 bits of the exact
+#   product (the floor), so `r2 <= r²`, and `sqrt` is the integer square root
+#   (the floor), so `dist <= √d2 < √r2 <= r`; and `d2 >= 2⁻⁶⁴` gives
+#   `dist >= 2⁻³² > 0`. The scaled path reuses the `dist` checked at 6360.
+#   The condition is always true, so neither mutant changes the branch.
+# `deserialize_state` 6786 `len < 12` -> `<=`: a 12-byte input is rejected by
+#   the length check against `expected >= 21` (or an earlier header check),
+#   all before `self` is written, so it returns `false` with `self` unchanged
+#   either way.
+# `deserialize_state` 6839 `offset + 208 > len` -> `>=` / `==`: the length
+#   check above guarantees `len >= 12 + 213 count + 9`, and in the loop
+#   `offset + 208 <= 12 + 208 count`, so all three forms are false.
+# `deserialize_state` 6890/6895/6899 `while len < n` -> `<=`: the extra
+#   default element the mutant pushes is removed by the `truncate(n)` right
+#   after each loop; the first `n` elements are the same.
 exclude_re = [
     "tests::",
     "replace > with >= in scaled_exp_neg",
@@ -213,4 +263,16 @@ exclude_re = [
     "bvh\\.rs:951:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
     "replace > with >= in adaptive_substeps_for$",
     "replace < with <= in adaptive_substeps_for_ccd$",
+    "solver\\.rs:(2929|2934|2939):.*replace < with <= in PhysicsWorld::raycast",
+    "solver\\.rs:(2946|2951|2956):.*replace > with >= in PhysicsWorld::raycast",
+    "solver\\.rs:3265:27: replace == with != in PhysicsWorld::batches_are_body_disjoint",
+    "solver\\.rs:(4762|4792):.*replace < with <= in PhysicsWorld::update_velocities",
+    "solver\\.rs:4778:.*replace > with >= in PhysicsWorld::update_velocities",
+    "solver\\.rs:6292:.*replace \\|\\| with && in PhysicsWorld::detect_collisions",
+    "solver\\.rs:6360:52: replace \\|\\| with && in PhysicsWorld::detect_collisions",
+    "solver\\.rs:6444:21: replace < with <= in PhysicsWorld::detect_collisions",
+    "solver\\.rs:6444:39: replace && with \\|\\| in PhysicsWorld::detect_collisions",
+    "solver\\.rs:6786:.*replace < with <= in PhysicsWorld::deserialize_state",
+    "solver\\.rs:6839:.*replace > with (>=|==) in PhysicsWorld::deserialize_state",
+    "solver\\.rs:(6890|6895|6899):.*replace < with <= in PhysicsWorld::deserialize_state",
 ]
