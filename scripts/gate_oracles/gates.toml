@@ -1,0 +1,9 @@
+# One [[gate]] entry per gate this repository relies on, each with at
+# least one must-red control (expect = "fail") and one must-green control
+# (expect = "pass"). See docs/GATE_ORACLES.md for the format and
+# scripts/gate_oracle_check.py for the runner.
+#
+# Empty for now: this file is populated gate by gate (docs/GATE_ORACLES.md
+# section 9), each addition its own change. Until the first entry lands,
+# `python3 scripts/gate_oracle_check.py` correctly reports "ran no control
+# at all" — that is the runner's own empty-input case, not a bug.

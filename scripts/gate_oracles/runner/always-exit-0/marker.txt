@@ -1,0 +1,2 @@
+always_exit_0.py ignores its input; this file exists only so the control
+directory is non-empty and trackable by git.
