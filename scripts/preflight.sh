@@ -61,6 +61,8 @@ python3 scripts/readme_sync.py --check
 python3 scripts/test_version_sync.py
 python3 scripts/version_sync.py --check
 python3 scripts/test_lib_test_gate.py
+python3 scripts/test_preflight_ci_parity.py
+python3 scripts/preflight_ci_parity.py
 python3 scripts/test_fuzz_targets.py
 python3 scripts/fuzz_targets.py --check
 
@@ -223,6 +225,14 @@ cargo test --no-fail-fast
 
 step "cargo test --lib (native feature set)"
 cargo test --lib --features "$NATIVE"
+
+# same commands as ci.yml: the integration tests gated on `parallel` (in 29 test
+# files) and the SIMD paths with simd alone
+step "cargo test (parallel, all targets)"
+cargo test --no-fail-fast --features "parallel"
+
+step "cargo test --lib (simd)"
+cargo test --lib --features "simd"
 
 # same command as ci.yml: the semantics identifier with the gated stepping
 # paths' features (`cargo test` above runs the file with default features)
