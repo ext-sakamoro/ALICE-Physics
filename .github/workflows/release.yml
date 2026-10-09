@@ -55,51 +55,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Create ALICE-ML stub
-        shell: bash
-        run: |
-          mkdir -p ../ALICE-ML/src
-          cat > ../ALICE-ML/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-ml"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-ML/src/lib.rs
-
-      - name: Create ALICE-DB stub
-        shell: bash
-        run: |
-          mkdir -p ../ALICE-DB/src
-          cat > ../ALICE-DB/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-db"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-DB/src/lib.rs
-
-      - name: Create ALICE-Analytics stub
-        shell: bash
-        run: |
-          mkdir -p ../ALICE-Analytics/src
-          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-analytics"
-          version = "0.1.0"
-          edition = "2021"
-          [features]
-          default = ["std"]
-          std = []
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-Analytics/src/lib.rs
-
       - name: Build release (dynamic library)
         shell: bash
         run: |
@@ -202,56 +157,19 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Create ALICE-ML stub
-        shell: bash
-        run: |
-          mkdir -p ../ALICE-ML/src
-          cat > ../ALICE-ML/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-ml"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-ML/src/lib.rs
-
-      - name: Create ALICE-DB stub
-        shell: bash
-        run: |
-          mkdir -p ../ALICE-DB/src
-          cat > ../ALICE-DB/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-db"
-          version = "0.1.0"
-          edition = "2021"
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-DB/src/lib.rs
-
-      - name: Create ALICE-Analytics stub
-        shell: bash
-        run: |
-          mkdir -p ../ALICE-Analytics/src
-          cat > ../ALICE-Analytics/Cargo.toml << 'TOML'
-          [package]
-          name = "alice-analytics"
-          version = "0.1.0"
-          edition = "2021"
-          [features]
-          default = ["std"]
-          std = []
-          [lib]
-          path = "src/lib.rs"
-          TOML
-          echo "" > ../ALICE-Analytics/src/lib.rs
-
       - name: Install maturin
         run: pip install maturin
 
       - name: Build wheel
         run: maturin build --release --features python --out dist/
+
+      # the wheel itself is installed and exercised, not only built: a wheel that
+      # builds but fails to import or returns wrong values must not be released
+      - name: Install the wheel and run the binding tests
+        shell: bash
+        run: |
+          python -m pip install numpy dist/*.whl
+          python python/tests/test_binding.py
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6

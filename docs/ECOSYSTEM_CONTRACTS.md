@@ -115,7 +115,7 @@ non-`Send` query trait taken by `sdf_ccd::sphere_trace_sdf_field`.
 ```toml
 # ALICE-SDF Cargo.toml: from crates.io, behind its `physics` feature
 [dependencies]
-alice-physics = { version = "1.1", optional = true }
+alice-physics = { version = "2", optional = true }
 
 [features]
 physics = ["dep:alice-physics"]

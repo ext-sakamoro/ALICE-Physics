@@ -1,0 +1,53 @@
+# Python binding: build the wheel, install it and run python/tests/test_binding.py
+# against the installed module (a built wheel is not a tested one). One ubuntu job
+# with a debug build, only when the engine, the binding or this workflow change;
+# release.yml runs the same tests on the release wheels of every OS.
+name: Python binding
+
+on:
+  push:
+    branches: [main, 'ci/**']
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'python/**'
+      - '.github/workflows/python-binding.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'python/**'
+      - '.github/workflows/python-binding.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  wheel:
+    name: Build, install and test the wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: python-binding
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Build the wheel
+        run: |
+          python -m pip install maturin
+          maturin build --features python --out dist/
+      - name: Install the wheel and run the binding tests
+        run: |
+          python -m pip install numpy dist/*.whl
+          python python/tests/test_binding.py

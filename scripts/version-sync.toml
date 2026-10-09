@@ -1,0 +1,21 @@
+# Version statements checked by scripts/version_sync.py against Cargo.toml.
+# `follow`: must equal the crate version. `independent`: versioned on its own
+# (give the reason). A version-bearing file in neither list fails the check.
+
+[[follow]]
+file = "web/package.json"
+
+[[follow]]
+file = "unreal-plugin/AlicePhysics.uplugin"
+
+[[independent]]
+file = "fuzz/Cargo.toml"
+reason = "cargo-fuzz harness, not published (version 0.0.0)"
+
+[[historical]]
+file = "docs/ROADMAP.md"
+reason = "a dated log of past releases (0.14 previews, 1.0.0); the current version is in Cargo.toml and README"
+
+[[historical]]
+file = "docs/MIGRATION_0.x_TO_1.0.md"
+reason = "the 0.x to 1.0 migration guide shows the old and the new requirement on purpose"
