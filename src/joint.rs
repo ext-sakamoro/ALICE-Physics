@@ -85,6 +85,14 @@ impl BallJoint {
     }
 }
 
+/// `a > b` for `Fix128`, usable in a `const fn` (the `PartialOrd` impl is
+/// not `const`). `Fix128` is `(hi << 64) | lo` as a signed two's-complement
+/// 128-bit integer (src/math.rs), so comparing the high word first and
+/// breaking ties on the low word is exact.
+const fn fix128_min_max_violated(min: Fix128, max: Fix128) -> bool {
+    min.hi > max.hi || (min.hi == max.hi && min.lo > max.lo)
+}
+
 /// Hinge joint (1 rotational DOF around an axis, with optional angle limits)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HingeJoint {
@@ -145,11 +153,10 @@ impl HingeJoint {
     ///
     /// When `min > max`. `min == max` is allowed (a locked joint).
     #[must_use]
-    pub fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
-        assert!(
-            min <= max,
-            "HingeJoint::with_limits: min ({min:?}) > max ({max:?})"
-        );
+    pub const fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
+        if fix128_min_max_violated(min, max) {
+            panic!("HingeJoint::with_limits: min must not exceed max");
+        }
         self.angle_min = Some(min);
         self.angle_max = Some(max);
         self
@@ -275,11 +282,10 @@ impl SliderJoint {
     ///
     /// When `min > max`. `min == max` is allowed (a locked joint).
     #[must_use]
-    pub fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
-        assert!(
-            min <= max,
-            "SliderJoint::with_limits: min ({min:?}) > max ({max:?})"
-        );
+    pub const fn with_limits(mut self, min: Fix128, max: Fix128) -> Self {
+        if fix128_min_max_violated(min, max) {
+            panic!("SliderJoint::with_limits: min must not exceed max");
+        }
         self.limit_min = Some(min);
         self.limit_max = Some(max);
         self
@@ -489,11 +495,13 @@ impl D6Joint {
     /// When any axis has `min > max`. `min == max` is allowed (a locked
     /// axis).
     #[must_use]
-    pub fn with_linear_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
-        assert!(
-            min.x <= max.x && min.y <= max.y && min.z <= max.z,
-            "D6Joint::with_linear_limits: min ({min:?}) > max ({max:?}) on at least one axis"
-        );
+    pub const fn with_linear_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
+        if fix128_min_max_violated(min.x, max.x)
+            || fix128_min_max_violated(min.y, max.y)
+            || fix128_min_max_violated(min.z, max.z)
+        {
+            panic!("D6Joint::with_linear_limits: min must not exceed max on any axis");
+        }
         self.linear_limit_min = min;
         self.linear_limit_max = max;
         self
@@ -506,11 +514,13 @@ impl D6Joint {
     /// When any axis has `min > max`. `min == max` is allowed (a locked
     /// axis).
     #[must_use]
-    pub fn with_angular_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
-        assert!(
-            min.x <= max.x && min.y <= max.y && min.z <= max.z,
-            "D6Joint::with_angular_limits: min ({min:?}) > max ({max:?}) on at least one axis"
-        );
+    pub const fn with_angular_limits(mut self, min: Vec3Fix, max: Vec3Fix) -> Self {
+        if fix128_min_max_violated(min.x, max.x)
+            || fix128_min_max_violated(min.y, max.y)
+            || fix128_min_max_violated(min.z, max.z)
+        {
+            panic!("D6Joint::with_angular_limits: min must not exceed max on any axis");
+        }
         self.angular_limit_min = min;
         self.angular_limit_max = max;
         self

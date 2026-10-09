@@ -141,9 +141,9 @@
 #   at `start` instead of `start + 1`, and the first comparison
 #   (`entries[start].0 == cell`) is true, so `end` reaches the same value.
 #
-# `replace < with <= in solve_hinge_joint` (src/joint.rs:912) and
-# `replace < with <= in solve_slider_joint` (src/joint.rs:1051) and
-# `replace < with <= in solve_d6_joint` (src/joint.rs:1218,1288): each is a
+# `replace < with <= in solve_hinge_joint` (src/joint.rs:922) and
+# `replace < with <= in solve_slider_joint` (src/joint.rs:1061) and
+# `replace < with <= in solve_d6_joint` (src/joint.rs:1228,1298): each is a
 #   joint's lower limit check (`angle < *m` / `along_axis < *m` / `proj <
 #   limit_min` / `angle < limit_min`), paired with an `else if` upper check
 #   (`> max`). This was NOT equivalent before `HingeJoint::with_limits`,
@@ -200,8 +200,8 @@ exclude_re = [
     "bvh\\.rs:558:.*replace >> with << in LinearBvh::find_split",
     "bvh\\.rs:567:.*replace (\\+ with \\*|- with \\+|- with /) in LinearBvh::find_split",
     "bvh\\.rs:951:.*replace \\+ with \\* in BroadphaseHybrid::query_pairs",
-    "joint\\.rs:912:.*replace < with <= in solve_hinge_joint",
-    "joint\\.rs:1051:.*replace < with <= in solve_slider_joint",
-    "joint\\.rs:1218:.*replace < with <= in solve_d6_joint",
-    "joint\\.rs:1288:.*replace < with <= in solve_d6_joint",
+    "joint\\.rs:922:.*replace < with <= in solve_hinge_joint",
+    "joint\\.rs:1061:.*replace < with <= in solve_slider_joint",
+    "joint\\.rs:1228:.*replace < with <= in solve_d6_joint",
+    "joint\\.rs:1298:.*replace < with <= in solve_d6_joint",
 ]

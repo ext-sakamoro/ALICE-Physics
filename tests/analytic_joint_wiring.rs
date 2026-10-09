@@ -405,7 +405,7 @@ fn d6_linear_limited_axis_with_lo_equal_to_hi() {
 // ===========================================================================
 
 #[test]
-#[should_panic(expected = "> max")]
+#[should_panic(expected = "must not exceed max")]
 fn hinge_with_limits_rejects_an_inverted_interval() {
     let _ = HingeJoint::new(
         0,
@@ -419,14 +419,14 @@ fn hinge_with_limits_rejects_an_inverted_interval() {
 }
 
 #[test]
-#[should_panic(expected = "> max")]
+#[should_panic(expected = "must not exceed max")]
 fn slider_with_limits_rejects_an_inverted_interval() {
     let _ = SliderJoint::new(0, 1, Vec3Fix::UNIT_X, Vec3Fix::ZERO, Vec3Fix::ZERO)
         .with_limits(Fix128::ONE, -Fix128::ONE);
 }
 
 #[test]
-#[should_panic(expected = "> max")]
+#[should_panic(expected = "must not exceed max")]
 fn d6_with_linear_limits_rejects_an_inverted_interval_on_any_axis() {
     // Only the z axis is inverted (x and y are a valid, equal interval);
     // one bad axis among three must still be refused.
@@ -437,7 +437,7 @@ fn d6_with_linear_limits_rejects_an_inverted_interval_on_any_axis() {
 }
 
 #[test]
-#[should_panic(expected = "> max")]
+#[should_panic(expected = "must not exceed max")]
 fn d6_with_angular_limits_rejects_an_inverted_interval_on_any_axis() {
     let _ = D6Joint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_angular_limits(
         Vec3Fix::new(Fix128::ZERO, q(1, 2), Fix128::ZERO),
