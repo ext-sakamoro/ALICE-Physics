@@ -13,13 +13,14 @@ source = "scripts/mutants_exclude_check.py"
 # calls the real `cargo mutants --list --no-config` against this checkout
 # (no fixture can stand in for that), so this is a cost = "cargo" gate.
 #
-# CARGO_TERM_COLOR=always is forced here, not incidental: ci.yml sets it
-# for the whole workflow (2026-10-09 CI incident), which made
-# cargo-mutants wrap each line's identifier in ANSI escapes and broke
-# every exclude_re pattern's match. Running both controls under the same
-# env var the real CI uses catches a future regression of that fix here
-# instead of by the next red main.
-run = "CARGO_TERM_COLOR=always python3 {script} --mutants-toml {dir}/mutants.toml --baseline {dir}/baseline.txt"
+# `run` does not itself pin color: every control already runs under the
+# runner's FORCED_ENV (CARGO_TERM_COLOR=always), the exact condition
+# ci.yml sets for the whole workflow that broke this gate (2026-10-09 CI
+# incident -- cargo-mutants wrapped each line's identifier in ANSI
+# escapes, breaking every exclude_re pattern's match). That is why this
+# gate needs the must-green control below to load at all (see
+# COLOR_PIN_MARKERS in scripts/gate_oracle_check.py).
+run = "python3 {script} --mutants-toml {dir}/mutants.toml --baseline {dir}/baseline.txt"
 cost = "cargo"
 
 [[gate.control]]
@@ -28,7 +29,13 @@ expect = "fail"
 reason = "matches 0 mutants"
 
 [[gate.control]]
-case = "green-loose-pattern-under-forced-color"
+# A pattern naming an identifier directly adjacent to another word (not
+# a bare module-path prefix like "tests::", which survives unbroken --
+# cargo-mutants colors only the identifier itself, so "tests::" sits
+# right before the color escape and never gets split from it, a false
+# negative discovered while building this control: it never actually
+# caught the regression it was meant to prove resilience against).
+case = "green-identifier-adjacent-pattern"
 expect = "pass"
 
 [[gate]]
