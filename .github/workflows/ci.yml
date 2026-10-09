@@ -57,6 +57,8 @@ jobs:
           python scripts/fuzz_targets.py --check
       - name: Semver-checks log reader (tests)
         run: python scripts/test_semver_checked.py
+      - name: Escape-sequence stripping for tool output (tests)
+        run: python scripts/test_ansi.py
       # public documents: no development-process vocabulary or private names;
       # CHANGELOG version headings and [Unreleased] categories well formed
       - name: Docs lint (tests)

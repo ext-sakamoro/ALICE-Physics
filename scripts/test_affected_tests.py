@@ -222,6 +222,12 @@ class PerTarget(unittest.TestCase):
     def test_a_selected_target_missing_from_the_output_is_empty(self):
         self.assertEqual(at.empty_targets({"a": 3}, ["a", "b"]), ["b"])
 
+    def test_libtest_coloured_result_lines_are_counted(self):
+        # libtest with `--color always` ends the coloured word with sgr0 = ESC ( B ESC [ m
+        coloured = SAMPLE.replace("test result: ok.", "test result: \x1b[32mok\x1b(B\x1b[m.")
+        self.assertNotEqual(coloured, SAMPLE)
+        self.assertEqual(at.per_target_passed(coloured), at.per_target_passed(SAMPLE))
+
     def test_coloured_running_headers_are_counted_like_plain_ones(self):
         # what cargo prints with CARGO_TERM_COLOR=always: the status word is wrapped in SGR codes
         coloured = SAMPLE.replace("Running tests/", "\x1b[1m\x1b[32mRunning\x1b[0m tests/")

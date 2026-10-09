@@ -160,7 +160,7 @@ RUNNING = re.compile(r"^\s*Running tests/([A-Za-z0-9_]+)\.rs\b", re.M)
 RESULT = re.compile(r"test result: \w+\. (\d+) passed")
 # ANSI SGR sequences: with CARGO_TERM_COLOR=always cargo colours "Running", and
 # the header no longer matches, so every target would read as 0 tests
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+from ansi import ANSI_RE  # noqa: E402  (CSI, charset selectors, OSC)
 
 
 def per_target_passed(output: str) -> dict[str, int]:
