@@ -1,0 +1,3 @@
+# "tests::" is a LOOSE_PATTERNS entry (mutants_exclude_check.py): checked
+# only for "matches at least one mutant", never against a tracked count,
+# so no entry here is required for this control to pass.

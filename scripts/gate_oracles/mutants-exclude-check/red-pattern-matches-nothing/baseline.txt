@@ -1,0 +1,2 @@
+# deliberately empty: the control's pattern should never reach a baseline
+# comparison (it must fail earlier, on "matches 0 mutants")
