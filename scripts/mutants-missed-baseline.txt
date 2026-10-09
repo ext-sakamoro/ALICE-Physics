@@ -244,8 +244,6 @@
 [default] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
 [default] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_constraints_with_bridge
 [default] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_pair
-[default] src/solver_tgs.rs: replace < with <= in adaptive_substeps_for_ccd
-[default] src/solver_tgs.rs: replace > with >= in adaptive_substeps_for
 [default] src/solver_tgs.rs: replace par_dispatch_islands with ()
 [parallel] src/bvh.rs: replace LinearBvh::debug_verify_escape_forward -> bool with false
 [parallel] src/ccd.rs: replace < with <= in sphere_capsule_toi
@@ -448,5 +446,3 @@
 [parallel] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
 [parallel] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_constraints_with_bridge
 [parallel] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_pair
-[parallel] src/solver_tgs.rs: replace < with <= in adaptive_substeps_for_ccd
-[parallel] src/solver_tgs.rs: replace > with >= in adaptive_substeps_for
