@@ -134,6 +134,18 @@ else
   exit 1
 fi
 
+step "gate oracle (scripts/gate_oracles/gates.toml; cost = cargo needs cargo-mutants)"
+python3 scripts/test_gate_oracle_check.py
+python3 scripts/gate_oracle_check.py
+if command -v cargo-mutants >/dev/null 2>&1; then
+  python3 scripts/gate_oracle_check.py --cost cargo
+elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
+  skip "gate_oracle_check --cost cargo (cargo-mutants not installed) -- CI runs this check"
+else
+  echo "cargo-mutants not installed: cargo install cargo-mutants --locked" >&2
+  exit 1
+fi
+
 step "status generators oracle (docs/wiring-status.md / docs/oracle-status.md の生成器)"
 python3 scripts/test_gen_status.py
 

@@ -145,6 +145,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
+      # cost = "cargo" gate oracle controls (shell out to a real cargo-mutants
+      # build, which only this job already pays for): the cost = "fast" ones
+      # run in ci.yml on every push instead.
+      - name: Gate oracle (cargo-cost gates)
+        run: python3 scripts/gate_oracle_check.py --cost cargo
       - name: Mutants (nightly / PR = in-diff, a missed mutant fails)
         if: (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6')
         run: |
