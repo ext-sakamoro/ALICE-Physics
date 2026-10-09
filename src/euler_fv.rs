@@ -1198,6 +1198,8 @@ impl EulerFv1d {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::string::ToString;
 
     #[test]
     #[allow(clippy::disallowed_methods)] // f64 ln / exp are the reference here
