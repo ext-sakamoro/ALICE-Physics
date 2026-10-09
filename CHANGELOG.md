@@ -15,6 +15,8 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-10-10
+
 ### Added
 
 - `scripts/mutants_exclude_check.py`: `.cargo/mutants.toml` の `exclude_re` の各 entry が、今も実際の変異 (`cargo mutants --list --no-config`) に一致しているかを検査する entry は「この変異は等価」という証明で、同 file の上に行を足す変更があると行番号がずれて静かに 0 件に落ちる (その変異は週次の ratchet に「新規の見逃し」として戻ってくる) 一致数を `scripts/mutants-exclude-baseline.txt` で追跡し、0 件・tracked 数との不一致・baseline の孤立 entry を失敗にする (`--write` で記録、`scripts/test_mutants_exclude_check.py`)

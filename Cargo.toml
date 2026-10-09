@@ -1,6 +1,6 @@
 [package]
 name = "alice-physics"
-version = "2.0.0"
+version = "2.1.0"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+); paired with the CI `msrv` job
 # that compiles with exactly `rust-version` (std + no_std) so the claim is verified.
