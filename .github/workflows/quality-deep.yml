@@ -222,8 +222,8 @@ jobs:
   mutants-ratchet:
     # the weekly shards' missed mutants against scripts/mutants-missed-baseline.txt:
     # a mutant missed that was not missed before fails, and so does a baseline
-    # entry this run caught (remove it); shards that did not finish leave their
-    # entries alone. Record a new baseline with `--write` after reviewing it.
+    # entry this run caught (remove it); a shard that did not finish, or is
+    # missing, fails the ratchet. Record a new baseline with `--write` after reviewing it.
     name: Mutation ratchet (weekly shards vs the missed baseline)
     needs: mutants
     if: always() && (github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
@@ -235,7 +235,9 @@ jobs:
           pattern: mutants-out-*
           path: mutants-runs
       - name: Compare the missed mutants with the baseline
-        run: python3 scripts/mutants_ratchet.py --out mutants-runs/*
+        # 16 shards x 2 feature axes: a shard that was cancelled, timed out or never
+        # uploaded fails the ratchet instead of leaving its mutants unchecked
+        run: python3 scripts/mutants_ratchet.py --out mutants-runs/* --expect-dirs 32
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)
