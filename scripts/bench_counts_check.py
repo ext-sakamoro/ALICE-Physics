@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import sys
 
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+from ansi import ANSI_RE  # noqa: E402  (CSI, charset selectors, OSC)
 COUNT_RE = re.compile(r"^\s*Instructions:\s*([0-9][0-9,]*)\|")
 
 

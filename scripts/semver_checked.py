@@ -18,7 +18,7 @@ import re
 import sys
 from pathlib import Path
 
-ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+from ansi import ANSI_RE as ANSI  # noqa: E402  (CSI, charset selectors, OSC)
 CHECKED = re.compile(r"\bChecked\s+\[[^\]]*\]\s+(\d+)\s+checks?\b")
 
 

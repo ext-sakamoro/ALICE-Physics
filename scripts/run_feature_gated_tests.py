@@ -35,7 +35,7 @@ ROOT = Path(__file__).resolve().parent.parent
 FEATURE_RE = re.compile(r'feature\s*=\s*"([A-Za-z0-9_-]+)"')
 # ANSI SGR sequences: CI sets CARGO_TERM_COLOR=always, which wraps "Running" in
 # colour codes (`ESC[1mESC[92m     RunningESC[0m tests/...`); stripped before parsing
-ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+from ansi import ANSI_RE  # noqa: E402  (CSI, charset selectors, OSC)
 RUNNING_RE = re.compile(r"^\s*Running (?:tests[/\\])?(\S+?)\.rs\b")
 RESULT_RE = re.compile(
     r"^test result: \w+\. (\d+) passed; (\d+) failed; (\d+) ignored"
