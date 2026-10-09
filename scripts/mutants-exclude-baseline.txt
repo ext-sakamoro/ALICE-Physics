@@ -1,6 +1,6 @@
 # pattern's current match count against `cargo mutants --list --no-config`
 # written by scripts/mutants_exclude_check.py --write
-613	tests::
+610	tests::
 1	replace > with >= in scaled_exp_neg
 1	ccd\.rs:151:.*replace \* with / in sphere_plane_toi
 1	ccd\.rs:167:.*replace \* with / in sphere_plane_toi
@@ -40,15 +40,16 @@
 1	bvh\.rs:951:.*replace \+ with \* in BroadphaseHybrid::query_pairs
 1	replace > with >= in adaptive_substeps_for$
 1	replace < with <= in adaptive_substeps_for_ccd$
-3	solver\.rs:(2929|2934|2939):.*replace < with <= in PhysicsWorld::raycast
-3	solver\.rs:(2946|2951|2956):.*replace > with >= in PhysicsWorld::raycast
-1	solver\.rs:3265:27: replace == with != in PhysicsWorld::batches_are_body_disjoint
-2	solver\.rs:(4762|4792):.*replace < with <= in PhysicsWorld::update_velocities
-1	solver\.rs:4778:.*replace > with >= in PhysicsWorld::update_velocities
-1	solver\.rs:6292:.*replace \|\| with && in PhysicsWorld::detect_collisions
-1	solver\.rs:6360:52: replace \|\| with && in PhysicsWorld::detect_collisions
-1	solver\.rs:6444:21: replace < with <= in PhysicsWorld::detect_collisions
-1	solver\.rs:6444:39: replace && with \|\| in PhysicsWorld::detect_collisions
-1	solver\.rs:6786:.*replace < with <= in PhysicsWorld::deserialize_state
-2	solver\.rs:6839:.*replace > with (>=|==) in PhysicsWorld::deserialize_state
-3	solver\.rs:(6890|6895|6899):.*replace < with <= in PhysicsWorld::deserialize_state
+3	solver\.rs:(2938|2943|2948):.*replace < with <= in PhysicsWorld::raycast
+3	solver\.rs:(2955|2960|2965):.*replace > with >= in PhysicsWorld::raycast
+1	solver\.rs:3278:27: replace == with != in PhysicsWorld::batches_are_body_disjoint
+2	solver\.rs:(4772|4802):.*replace < with <= in PhysicsWorld::update_velocities
+1	solver\.rs:4788:.*replace > with >= in PhysicsWorld::update_velocities
+1	solver\.rs:6301:.*replace \|\| with && in PhysicsWorld::detect_collisions
+1	solver\.rs:6369:52: replace \|\| with && in PhysicsWorld::detect_collisions
+1	solver\.rs:6453:21: replace < with <= in PhysicsWorld::detect_collisions
+1	solver\.rs:6453:39: replace && with \|\| in PhysicsWorld::detect_collisions
+1	solver\.rs:6795:.*replace < with <= in PhysicsWorld::deserialize_state
+2	solver\.rs:6848:.*replace > with (>=|==) in PhysicsWorld::deserialize_state
+3	solver\.rs:(6899|6904|6908):.*replace < with <= in PhysicsWorld::deserialize_state
+1	solver\.rs:3965:.*replace > with >= in PhysicsWorld::step_tgs

@@ -66,6 +66,10 @@ jobs:
         run: python scripts/test_mutants_ratchet.py
       - name: Mutants exclude_re entries still match a real mutant (tests)
         run: python scripts/test_mutants_exclude_check.py
+      - name: Mutants skip ledger (tests)
+        run: python scripts/test_mutants_skip_check.py
+      - name: Mutants skip ledger
+        run: python scripts/mutants_skip_check.py
       - name: Mutation in-diff plan (tests)
         run: python scripts/test_mutants_in_diff_plan.py
       - name: Bench count check (tests)

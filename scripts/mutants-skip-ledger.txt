@@ -1,0 +1,4 @@
+# #[mutants::skip] on test-only code, one line each: file::fn<TAB>reason
+# checked by scripts/mutants_skip_check.py (a skip on code a non-test build
+# compiles fails, as does a skip without a line or a line without a skip)
+src/solver.rs::build_one_contact_world	compiled only with gpu-solver-bridge; cargo-mutants 27.1.0 does not filter its field-deletion mutant by --exclude-re, so the default axis reports it missed although it cannot compile it

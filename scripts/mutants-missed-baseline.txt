@@ -59,14 +59,11 @@
 [default] src/solver.rs: delete ! in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: delete ! in PhysicsWorld::substep_batched
 [default] src/solver.rs: delete ! in PhysicsWorld::substep_with_bridge
-[default] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::build_one_contact_world
-[default] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::hub_world
 [default] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
 [default] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
 [default] src/solver.rs: replace && with || in PhysicsWorld::remove_body
 [default] src/solver.rs: replace && with || in PhysicsWorld::step
 [default] src/solver.rs: replace && with || in PhysicsWorld::step_parallel
-[default] src/solver.rs: replace && with || in PhysicsWorld::step_tgs
 [default] src/solver.rs: replace && with || in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
@@ -138,8 +135,6 @@
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
-[default] src/solver.rs: replace < with <= in PhysicsWorld::step_tgs
-[default] src/solver.rs: replace < with <= in PhysicsWorld::step_tgs
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: replace < with == in PhysicsWorld::solve_contact_pair
@@ -158,7 +153,6 @@
 [default] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace <= with > in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace <= with > in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace > with >= in PhysicsWorld::step_tgs
 [default] src/solver.rs: replace BodyRef<'_>::get -> &RigidBody with Box::leak(Box::new(Default::default()))
 [default] src/solver.rs: replace BodyRef<'_>::set_position with ()
 [default] src/solver.rs: replace PhysicsWorld::gpu_solver_bridge_installed -> bool with false
@@ -223,8 +217,6 @@
 [parallel] src/solver.rs: delete - in PhysicsWorld::update_velocities
 [parallel] src/solver.rs: delete - in PhysicsWorld::update_velocities
 [parallel] src/solver.rs: delete - in PhysicsWorld::update_velocities
-[parallel] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::build_one_contact_world
-[parallel] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::hub_world
 [parallel] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
 [parallel] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
 [parallel] src/solver.rs: replace && with || in PhysicsWorld::remove_body

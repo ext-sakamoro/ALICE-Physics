@@ -586,3 +586,96 @@ fn tgs_warm_start_survives_an_index_swap() {
         assert_eq!(swapped.bodies[0].velocity, kept.bodies[2].velocity);
     }
 }
+
+fn world_with_a_dangling_joint(tgs: bool) -> PhysicsWorld {
+    let mut world = if tgs {
+        tgs_world(v3(0, -10, 0), 2)
+    } else {
+        world_with(v3(0, -10, 0), 2)
+    };
+    world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+    world.add_body(RigidBody::new_dynamic(v3(5, 0, 0), Fix128::ONE));
+    // `add_joint` refuses this; the public `Vec` does not
+    world.joints.push(Joint::Ball(BallJoint::new(
+        0,
+        2,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+    )));
+    world
+}
+
+/// A joint naming a body the world does not have stops the step with the
+/// joint and the body count (a caller error, checked before anything is
+/// solved), on the XPBD path.
+#[test]
+#[should_panic(expected = "joint 0 names bodies (0, 2), but the world has 2 bodies")]
+fn a_joint_naming_a_missing_body_panics_on_step() {
+    world_with_a_dangling_joint(false).step(r(1, 60));
+}
+
+/// The same with the missing body on the other side of the joint.
+#[test]
+#[should_panic(expected = "joint 0 names bodies (2, 0), but the world has 2 bodies")]
+fn a_joint_naming_a_missing_first_body_panics_on_step() {
+    let mut world = world_with_a_dangling_joint(false);
+    world.joints[0] = Joint::Ball(BallJoint::new(2, 0, Vec3Fix::ZERO, Vec3Fix::ZERO));
+    world.step(r(1, 60));
+}
+
+/// The same on the TGS path.
+#[test]
+#[should_panic(expected = "joint 0 names bodies (0, 2), but the world has 2 bodies")]
+fn a_joint_naming_a_missing_body_panics_on_step_tgs() {
+    world_with_a_dangling_joint(true).step(r(1, 60));
+}
+
+/// A step rebuilds the contact constraints from collision detection, so a
+/// constraint added before it (here one naming the same body twice, and one
+/// between two bodies far apart) has no effect: both backends end the step
+/// with the same bits as the world that never had them.
+#[test]
+fn contacts_added_before_a_step_do_not_reach_it() {
+    for tgs in [false, true] {
+        let build = || {
+            let mut world = if tgs {
+                tgs_world(v3(0, -10, 0), 4)
+            } else {
+                world_with(v3(0, -10, 0), 4)
+            };
+            world.add_body_with_radius(RigidBody::new_static(Vec3Fix::ZERO), Fix128::ONE);
+            world.add_body_with_radius(
+                RigidBody::new_dynamic(
+                    Vec3Fix::new(Fix128::ZERO, r(19, 10), Fix128::ZERO),
+                    Fix128::ONE,
+                ),
+                Fix128::ONE,
+            );
+            world.add_body_with_radius(
+                RigidBody::new_dynamic(v3(50, 0, 0), Fix128::ONE),
+                Fix128::ONE,
+            );
+            world
+        };
+        let contact = Contact {
+            depth: r(1, 2),
+            normal: v3(0, 1, 0),
+            point_a: v3(1, 0, 0),
+            point_b: v3(-1, 0, 0),
+        };
+        let mut plain = build();
+        let mut added = build();
+        added.add_contact(ContactConstraint::new(1, 1, contact));
+        added
+            .contact_constraints
+            .push(ContactConstraint::new(1, 2, contact));
+        for _ in 0..3 {
+            plain.step(r(1, 60));
+            added.step(r(1, 60));
+        }
+        for (p, a) in plain.bodies.iter().zip(&added.bodies) {
+            assert_eq!(p.position, a.position, "tgs {tgs}");
+            assert_eq!(p.velocity, a.velocity, "tgs {tgs}");
+        }
+    }
+}
