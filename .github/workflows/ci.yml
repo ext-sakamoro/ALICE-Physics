@@ -457,6 +457,10 @@ jobs:
         run: python3 scripts/test_wiring_guard.py
       - name: wiring-guard (新規の未配線 / 理由の無い dead_code が無い)
         run: python3 scripts/wiring_guard.py
+      - name: Predictable randomness guard (test first)
+        run: python3 scripts/test_csprng_guard.py
+      - name: Predictable randomness guard
+        run: python3 scripts/csprng_guard.py
       # 台帳 (docs/wiring-status.md / docs/oracle-status.md) の生成器の試験: 実際の
       # wiring_guard の出力の形を食わせる (違反を 1 件も拾えない空振りを止める)
       - name: status generators oracle (台帳の生成器自身の試験)

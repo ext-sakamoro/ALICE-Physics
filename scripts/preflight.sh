@@ -63,6 +63,9 @@ python3 scripts/version_sync.py --check
 python3 scripts/test_lib_test_gate.py
 
 step "docs lint (public vocabulary / CHANGELOG structure)"
+# 予測されて困る値が予測可能な源から来ていないか (検査器の test を先に走らせる)
+python3 scripts/test_csprng_guard.py
+python3 scripts/csprng_guard.py
 python3 scripts/test_docs_lint.py
 python3 scripts/docs_lint.py --check
 

@@ -1,0 +1,26 @@
+# csprng_guard.py の baseline — 既存の違反を記録するラチェット
+# 新規の違反だけが fail する 解消したら行を消す (残っていても fail = stale)
+#
+# ⚠️ ここに載っている行は「予測可能な乱数が残っている」という負債の一覧
+#    2 群に分かれるので、直し方が違う
+#
+# === 群 1: 秘匿が要る経路の負債 (CSPRNG に置き換える、marker では解消できない) ===
+#   差分プライバシーの noise が観測者から予測できる状態
+#   - 出力 1 語で以降の列が確定する (`next_u64` が `self.state = x; x` で返り値 = 内部状態)
+#   - 時刻を seed にしている (呼び出し時刻の前後を試すだけで seed が復元できる)
+#   - 浮動小数点の逆変換で noise を作っている (Mironov CCS 2012、snapping も離散 noise も無い)
+#   置き換え先は `alice_crypto::dp::{SecureRng, DpNoise}`
+#   ⚠️ license の向きが未決 (permissive → AGPL は引けない) なので置き場の判断が要る
+src/privacy.rs:105: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
+src/privacy.rs:198: `sample` が浮動小数点の逆変換で noise を作っている (Mironov CCS 2012) snapping / 離散 noise にするか `// FLOAT-DP-ACCEPTED: <理由>` を置く
+src/privacy.rs:37: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
+src/privacy.rs:79: `from_entropy` が時刻を seed にしている (hash を挟んでも seed 空間が時刻幅に縮む — CSPRNG を使う)
+#
+# === 群 2: 決定論が目的の PRNG (理由 marker を置けば解消する、置き換え不要) ===
+#   simulation の再現性のための PRNG は正しい設計 marker で意図を明示するだけ
+#   - src/rng.rs:63      ... 本 crate の決定論 PRNG (lockstep の再現性が目的)
+#   - src/bvh.rs:1278    ... 試験用の LCG が production の `src/` に居る
+#                            ⚠️ `#[cfg(test)]` が付いていないので本番 build にも入る
+#                            marker を置くか、test module へ移すかの判断が要る
+src/bvh.rs:1278: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い
+src/rng.rs:63: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い
