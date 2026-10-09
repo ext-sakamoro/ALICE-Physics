@@ -1,0 +1,4 @@
+[32mhot::world_step[0m
+[90m  [0mInstructions:     [1m1234567[0m|1234000   (+0.04%)
+[32mhot::bvh[0m
+  Instructions:     88|N/A   (*********)

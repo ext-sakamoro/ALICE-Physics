@@ -1,0 +1,3 @@
+hot::world_step
+  Instructions:     0|0    (No change)
+  Instructions:  42|40 (+5%)

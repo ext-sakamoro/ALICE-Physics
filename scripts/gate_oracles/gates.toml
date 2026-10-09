@@ -30,3 +30,19 @@ reason = "matches 0 mutants"
 [[gate.control]]
 case = "green-loose-pattern-under-forced-color"
 expect = "pass"
+
+[[gate]]
+id = "bench-counts-check"
+kind = "script"
+source = "scripts/bench_counts_check.py"
+run = "python3 {script} {dir}/bench.txt"
+cost = "fast"
+
+[[gate.control]]
+case = "red-zero-count"
+expect = "fail"
+reason = "measured 0 instructions"
+
+[[gate.control]]
+case = "green-non-zero-count"
+expect = "pass"
