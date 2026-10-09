@@ -43,6 +43,9 @@ on:
       - 'src/**'
       - 'Cargo.toml'
       - '.github/workflows/quality-deep.yml'
+      - 'scripts/gate_oracles/**'
+      - 'scripts/gate_oracle_check.py'
+      - 'scripts/test_gate_oracle_check.py'
 
 # one run at a time (the weekly run waits for the nightly one instead of doubling the load)
 concurrency:
@@ -145,11 +148,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
-      # cost = "cargo" gate oracle controls (shell out to a real cargo-mutants
-      # build, which only this job already pays for): the cost = "fast" ones
-      # run in ci.yml on every push instead.
-      - name: Gate oracle (cargo-cost gates)
-        run: python3 scripts/gate_oracle_check.py --cost cargo
       - name: Mutants (nightly / PR = in-diff, a missed mutant fails)
         if: (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6')
         run: |
@@ -220,6 +218,16 @@ jobs:
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
+      # if: always(): this must run (and not block) regardless of whether
+      # either Mutants step above ran, was skipped by its own if:, or
+      # failed -- a gate step earlier in this job that failed would
+      # otherwise skip every following step by default, including both
+      # Mutants steps, silently leaving no mutants.out for this shard
+      # (the upload-artifact step above ignores a missing directory) and
+      # nothing for mutants-ratchet's `needs: mutants` to see as missing.
+      - name: Gate oracle (cargo-cost gates)
+        if: always()
+        run: python3 scripts/gate_oracle_check.py --cost cargo
       - name: Summary
         if: always()
         run: |
