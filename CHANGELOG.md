@@ -17,7 +17,9 @@ were introduced during that release window.
 
 ### Changed
 
-- **Behavior change:** `PhysicsWorld::remove_body` が起こす body を絞った 従来は全 body を起こしていたが、外した body の island (joint で繋がった body) と、外した body に触れていた非 static body (collision radius を持ち broad-phase の箱が重なるもの、その body の island ごと) だけを起こし、それ以外の眠っている body は眠ったまま残す ⇒ 外した body に載って眠っていた body は従来どおり起きて落ち、離れた場所で眠っている body は remove の前後で状態も軌道も変わらない (`StageWork` では残る body の `parked` / `integrated` が変わる) 試験は `tests/analytic_remove_body_wakes_dependents.rs` (支えを外した球と箱が床まで落ちて止まる / joint の相手が起きる)
+- **Behavior change:** `PhysicsWorld::remove_body` が起こす body を絞った 従来は全 body を起こしていたが、次の body だけをその island ごと起こし、それ以外の眠っている body は眠ったまま残す: 外した body の island (joint で繋がった body) / collision radius を持ち broad-phase の箱が外した body の箱 (`2^-56` だけ広げる) と重なる非 static body / 外した body に付いた SDF collider から `2^-12` 以内に届く非 static body (collision radius か `sdf_collision_radius` の球として判定、場の近くでは保守的に起こす) static body は起こさない 箱を広げるのは、動かない body に載って止まった body が位置補正で 1 ulp (`2^-64`) 離れて静止し、閉区間の重なり判定から外れるため (`1e-9` 離れた body は起こさない) ⇒ 外した body に載って眠っていた body は従来どおり起きて落ち、離れた場所で眠っている body は remove の前後で状態も軌道も変わらない (`StageWork` では残る body の `parked` / `integrated` が変わる) 試験は `tests/analytic_remove_body_wakes_dependents.rs`
+
+- **Behavior change:** `PhysicsWorld::remove_body` が外す body に付いた SDF collider (`SdfCollider::new_dynamic` でその index を指すもの) を一緒に取り除く 他の collider の順序は保ち、joint と同じく後ろの collider の位置 (`sdf_colliders` の index) が詰まる 末尾から移った body に付いた collider の `body_index` は移動先の index に付け替える (従来は付け替えず、外した body の collider は移ってきた別の body に付いていた) `MultiWorld::transfer_body` では付いていた collider が body と一緒に移動先の world へ移る (従来は元の world に残った)
 
 ### Fixed
 

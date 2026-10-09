@@ -1579,13 +1579,45 @@ pub struct BodyObservation {
 
 /// The per-body settings of a [`PhysicsWorld`] kept outside [`RigidBody`],
 /// moved together with a body between worlds (see `MultiWorld::transfer_body`).
-#[derive(Clone, Debug)]
 pub(crate) struct BodyAttachments {
     material: crate::material::MaterialId,
     collision_radius: Option<Fix128>,
     collider: Option<crate::body_collider::BodyCollider>,
     filter: CollisionFilter,
+    /// The SDF colliders attached to the body, in their order in the source
+    /// world (moved, not copied: a field cannot be cloned).
+    sdf_colliders: Vec<SdfCollider>,
 }
+
+impl core::fmt::Debug for BodyAttachments {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("BodyAttachments")
+            .field("material", &self.material)
+            .field("collision_radius", &self.collision_radius)
+            .field("collider", &self.collider)
+            .field("filter", &self.filter)
+            .field("sdf_colliders", &self.sdf_colliders.len())
+            .finish()
+    }
+}
+
+/// How far [`PhysicsWorld::remove_body`] grows the removed body's broad-phase
+/// box when it looks for the bodies resting on it: `2^-56` (256 ulps of
+/// [`Fix128`]). Position correction against an immovable body converges to a
+/// separation of one ulp (`2^-64`, measured for spheres of radius 0.25 to 1.3
+/// on static spheres of radius 3 to 50), which a plain closed overlap test
+/// misses; 256 ulps leaves room for a few ulps of rounding while staying far
+/// below any physical gap (`1e-9` is about `2^-30`).
+const REMOVE_WAKE_BOX_TOLERANCE: Fix128 = Fix128::from_raw(0, 1 << 8);
+
+/// How far beyond its collision sphere a body may be from the surface of an
+/// SDF collider dropped by [`PhysicsWorld::remove_body`] and still be woken:
+/// `2^-12` (about `2.4e-4`). The SDF contact path compares distances in `f32`,
+/// where a body pushed out of a field ends within a few `f32` ulps of touching
+/// at the coordinates it is evaluated at; this is conservative near the field
+/// (a body within `2^-12` of the surface is woken even if not touching).
+#[cfg(feature = "std")]
+const REMOVE_WAKE_SDF_TOLERANCE: Fix128 = Fix128::from_raw(0, 1 << 52);
 
 /// XPBD physics world with batched constraint solving
 ///
@@ -2253,9 +2285,16 @@ impl PhysicsWorld {
             collision_radius: self.body_collision_radii.get(idx).copied().flatten(),
             collider: self.body_colliders.get(idx).cloned().flatten(),
             filter: self.body_filters.get(idx).copied().unwrap_or_default(),
+            sdf_colliders: Vec::new(),
         };
-        let body = self.remove_body(idx)?;
-        Some((body, attachments))
+        let (body, sdf_colliders) = self.remove_body_taking_sdf(idx)?;
+        Some((
+            body,
+            BodyAttachments {
+                sdf_colliders,
+                ..attachments
+            },
+        ))
     }
 
     /// [`Self::add_body`] with the per-body settings taken by
@@ -2270,29 +2309,72 @@ impl PhysicsWorld {
         self.body_collision_radii[idx] = attachments.collision_radius;
         self.body_colliders[idx] = attachments.collider;
         self.body_filters[idx] = attachments.filter;
+        for mut sdf in attachments.sdf_colliders {
+            sdf.body_index = idx;
+            self.add_sdf_collider(sdf);
+        }
         idx
     }
 
     /// Wake the bodies [`Self::remove_body`] may take the support from: the
-    /// removed body's island and every non-static body whose broad-phase box
-    /// overlaps its own, with that body's island. Indices are the ones before
-    /// the removal.
+    /// removed body's island; every non-static body whose broad-phase box
+    /// overlaps the removed body's box grown by [`REMOVE_WAKE_BOX_TOLERANCE`];
+    /// and every non-static body near an SDF collider attached to the removed
+    /// body (within [`REMOVE_WAKE_SDF_TOLERANCE`] of touching, as a sphere of
+    /// its collision radius, or `sdf_collision_radius` without one); each with
+    /// its own island. Indices are the ones before the removal.
     fn wake_dependents_of_removed(&mut self, idx: usize) {
+        // also gives a body pushed onto the public `bodies` field an entry,
+        // which `wake_island` indexes
         self.islands.resize(self.bodies.len());
         self.islands.wake_island(idx);
-        let Some(radius) = self.body_collision_radii.get(idx).copied().flatten() else {
-            return;
-        };
-        let removed_box = self.broadphase_box(idx, radius);
-        for j in 0..self.bodies.len() {
-            if j == idx || self.bodies[j].is_static() {
+        if let Some(radius) = self.body_collision_radii.get(idx).copied().flatten() {
+            let b = self.broadphase_box(idx, radius);
+            let t = Vec3Fix::new(
+                REMOVE_WAKE_BOX_TOLERANCE,
+                REMOVE_WAKE_BOX_TOLERANCE,
+                REMOVE_WAKE_BOX_TOLERANCE,
+            );
+            let removed_box = AABB {
+                min: b.min - t,
+                max: b.max + t,
+            };
+            for j in 0..self.bodies.len() {
+                if j == idx || self.bodies[j].is_static() {
+                    continue;
+                }
+                let Some(rj) = self.body_collision_radii.get(j).copied().flatten() else {
+                    continue;
+                };
+                if self.broadphase_box(j, rj).intersects(&removed_box) {
+                    self.islands.wake_island(j);
+                }
+            }
+        }
+        #[cfg(feature = "std")]
+        for k in 0..self.sdf_colliders.len() {
+            if self.sdf_colliders[k].body_index != idx {
                 continue;
             }
-            let Some(rj) = self.body_collision_radii.get(j).copied().flatten() else {
-                continue;
-            };
-            if self.broadphase_box(j, rj).intersects(&removed_box) {
-                self.islands.wake_island(j);
+            for j in 0..self.bodies.len() {
+                if j == idx || self.bodies[j].is_static() {
+                    continue;
+                }
+                let rj = self
+                    .body_collision_radii
+                    .get(j)
+                    .copied()
+                    .flatten()
+                    .unwrap_or(self.sdf_collision_radius);
+                let near = crate::sdf_collider::collide_sphere_sdf(
+                    self.bodies[j].position,
+                    rj + REMOVE_WAKE_SDF_TOLERANCE,
+                    &self.sdf_colliders[k],
+                )
+                .is_some();
+                if near {
+                    self.islands.wake_island(j);
+                }
             }
         }
     }
@@ -2303,19 +2385,34 @@ impl PhysicsWorld {
     /// referencing the old last index are remapped. Returns the removed body,
     /// or `None` if the index is out of bounds.
     ///
+    /// SDF colliders attached to the body ([`SdfCollider::new_dynamic`] with
+    /// its index) are removed with it, keeping the order of the others: like
+    /// the joints, the positions of later colliders in
+    /// [`Self::sdf_colliders`] shift down. A collider attached to the moved
+    /// last body follows it to `idx`.
+    ///
     /// Sleep: every surviving body keeps its own sleep state (the moved last
     /// body included), except the bodies whose support may have changed,
-    /// which are woken before the removal:
-    /// - every body in the removed body's island (joint-connected), and
-    /// - every non-static body touching it: a body with a collision radius
-    ///   whose broad-phase box overlaps the removed body's, together with
-    ///   that body's own island. Sleeping pairs are not re-detected and the
-    ///   contact cache is not kept for them, so the overlap of the boxes the
-    ///   narrow phase starts from is what identifies them.
+    /// which are woken before the removal, each together with its island:
+    /// - every body in the removed body's island (joint-connected);
+    /// - every non-static body with a collision radius whose broad-phase box
+    ///   overlaps the removed body's box grown by `2^-56` (a body resting on
+    ///   an immovable one is left one ulp clear of it);
+    /// - every non-static body within `2^-12` of touching an SDF collider
+    ///   removed with the body, tested as a sphere of its collision radius
+    ///   (or [`Self::sdf_collision_radius`]); conservative near the field.
     ///
-    /// Sleeping bodies that are neither joint-connected to nor touching the
-    /// removed body are not woken.
+    /// Sleeping pairs are not re-detected and the contact cache is not kept
+    /// for them, so these geometric tests are what identifies them. Static
+    /// bodies and sleeping bodies that are neither joint-connected to nor
+    /// near the removed body are not woken.
     pub fn remove_body(&mut self, idx: usize) -> Option<RigidBody> {
+        self.remove_body_taking_sdf(idx).map(|(body, _)| body)
+    }
+
+    /// [`Self::remove_body`] that also returns the SDF colliders it removed
+    /// with the body, in their previous order.
+    fn remove_body_taking_sdf(&mut self, idx: usize) -> Option<(RigidBody, Vec<SdfCollider>)> {
         if idx >= self.bodies.len() {
             return None;
         }
@@ -2358,6 +2455,27 @@ impl PhysicsWorld {
             let (a, b) = j.bodies();
             a != idx && b != idx
         });
+        // SDF colliders attached to the body go with it (order kept, like
+        // the joints; later colliders move down). The generation last seen
+        // of each goes with it too, so the kept entries stay aligned with
+        // the kept colliders (a misaligned entry would read as a shape
+        // change at the next step head and wake every sleeping body). An
+        // entry past the last collider (one popped from the public field)
+        // is kept here and dropped by the next sync.
+        {
+            let colliders = &self.sdf_colliders;
+            let mut k = 0;
+            self.sdf_generations.retain(|_| {
+                let removed = matches!(colliders.get(k), Some(c) if c.body_index == idx);
+                k += 1;
+                !removed
+            });
+        }
+        let (taken_sdf, kept_sdf): (Vec<SdfCollider>, Vec<SdfCollider>) =
+            core::mem::take(&mut self.sdf_colliders)
+                .into_iter()
+                .partition(|c| c.body_index == idx);
+        self.sdf_colliders = kept_sdf;
 
         // Bring the ids level with `bodies` before both lose `idx` together
         // (a body pushed onto the public field has no id yet).
@@ -2393,6 +2511,11 @@ impl PhysicsWorld {
                 }
             }
             self.remap_joint_indices(last, idx);
+            for c in &mut self.sdf_colliders {
+                if c.body_index == last {
+                    c.body_index = idx;
+                }
+            }
         }
 
         // Rebuild IslandManager to match new body count and connectivity,
@@ -2416,7 +2539,7 @@ impl PhysicsWorld {
 
         self.park_generation = self.park_generation.wrapping_add(1);
         self.batches_dirty = true;
-        Some(removed)
+        Some((removed, taken_sdf))
     }
 
     /// Remap joint body indices after swap-remove
@@ -8708,6 +8831,17 @@ mod tests {
         );
         assert_eq!(world.islands.sleep_data[1].idle_frames, 0);
         assert_eq!(world.islands.sleep_data[3].idle_frames, 7);
+    }
+
+    #[test]
+    fn remove_body_ignores_sleep_data_of_bodies_popped_from_the_public_field() {
+        // `bodies.pop()` leaves the sleep table one longer than `bodies`: the
+        // stale tail entry must not be what moves into the removed slot
+        let mut world = four_bodies_with_distinct_sleep_data();
+        let before = world.islands.sleep_data.clone();
+        world.bodies.pop();
+        world.remove_body(0).expect("in range");
+        assert_eq!(world.islands.sleep_data, vec![before[2], before[1]]);
     }
 
     #[test]
