@@ -506,6 +506,8 @@ impl Participant for DragMedium {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::{string::ToString, vec};
 
     #[test]
     fn quotient_refuses_zero_and_wrapped_results() {
@@ -635,6 +637,7 @@ mod tests {
     /// stays 2. The state payload is version 1, the digest and the momentum
     /// (60 bytes), read back into the medium; a wrong length, version or
     /// digest is refused.
+    #[cfg(feature = "std")]
     #[test]
     fn participant_in_a_world_and_state() {
         let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
