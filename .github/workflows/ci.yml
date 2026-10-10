@@ -16,6 +16,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: ${{ matrix.os == 'macos-15-intel' && 205 || 125 }}
     strategy:
       fail-fast: false
       matrix:
@@ -256,6 +257,7 @@ jobs:
   examples:
     name: Run examples (release)
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -282,6 +284,7 @@ jobs:
   scip:
     name: SCIP checks (defect references, L0 ratchet)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -304,6 +307,7 @@ jobs:
   sibling-features:
     name: Test (neural / replay / analytics via crates.io siblings)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
@@ -322,6 +326,7 @@ jobs:
     # the wasm-bindgen package called from JavaScript (Node), as an application would
     name: Test (WebAssembly binding from JavaScript)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain (with wasm32-unknown-unknown)
@@ -359,6 +364,7 @@ jobs:
   wasm-test:
     name: Test (wasm32-wasip1 via wasmtime)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -416,6 +422,7 @@ jobs:
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -449,6 +456,7 @@ jobs:
   msrv:
     name: MSRV (rust-version = 1.85)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install MSRV toolchain
@@ -471,6 +479,7 @@ jobs:
   fmt:
     name: Format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -510,6 +519,7 @@ jobs:
   doc:
     name: Doc (RUSTDOCFLAGS=-Dwarnings)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -530,6 +540,7 @@ jobs:
   actionlint:
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Run actionlint
@@ -545,6 +556,7 @@ jobs:
     # - python (pyo3 build) / neural / replay / analytics (sibling crate 実体必要) は除外
     name: Feature powerset (cargo-hack)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
