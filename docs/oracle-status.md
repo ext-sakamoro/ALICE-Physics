@@ -7,15 +7,15 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 | Category | Count |
 |----------|-------|
 | 🟢 Not ignored (run by CI) | 5753 |
-| 🔴 Red by design | 73 |
+| 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5852** |
+| **Total** | **5853** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (73)
+## 🔴 Red by design (74)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -73,6 +73,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `separation_distance_matches_closed_form_off_axis_unequal_radius` (analytic_gjk_separation_distance.rs) — src gap: fixed-iteration GJK converges inexactly for unequal-radius separated spheres along a non-x axis (dist…
 - `slot_merge_keeps_the_gauge_when_the_other_slot_never_wrote_one` (audit_pipeline.rs) — known defect: AUD-A-S5W3-015: MetricSlot::merge overwrites the gauge with the other slot's value whenever that…
 - `snapshot_restore_is_bit_identical_with_participants_in_parallel` (world_participant_conformance.rs) — src gap: step_parallel stores batch bookkeeping in the snapshot that step does not (single pipeline, separate …
+- `sparse_steps_read_back_their_own_values_bit_exact` (analytic_db_bridge_wiring.rs) — known defect: DB-SPARSE-LOSSLESS: with FitConfig { lossless: true }, alice-db returns the first segment's valu…
 - `speculative_contact_reports_coincident_overlapping_spheres` (audit_ccd.rs) — known defect: AUD-A-S2W2-009: speculative_contact returns None for coincident centres (dist == 0 guard) althou…
 - `sphere_capsule_toi_sliding_approach_hits_at_the_right_time` (audit_ccd.rs) — known defect: AUD-A-S2W2-011: sphere_capsule_toi freezes the closest axis point at the start position (treats …
 - `spring_by_add_force_holds_its_static_extension` (analytic_external_force_substep.rs) — src gap: a spring force applied by add_force is a frame-head impulse, so the static extension m g / k is not h…
@@ -114,11 +115,12 @@ remains.
 |--------|------|-------|-------------|----------|--------|
 | AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.2 | ⚠️ re-check |
 
-## ⚠️ Known defects without an id (3)
+## ⚠️ Known defects without an id (4)
 
 A known-defect reason should start with `AUD-…` so pins, external causes and
 `scripts/audit_refs.py` can refer to it.
 
+- `sparse_steps_read_back_their_own_values_bit_exact` (analytic_db_bridge_wiring.rs) — known defect: DB-SPARSE-LOSSLESS: with FitConfig { lossless: true }, alice-db returns the first segment's valu…
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…

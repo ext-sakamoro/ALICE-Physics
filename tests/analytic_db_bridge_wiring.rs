@@ -319,3 +319,49 @@ fn extreme_and_fractional_f32_values_round_trip_bit_exact() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Sparse steps: every key reads back its own value (point and range)
+// ---------------------------------------------------------------------------
+
+/// Steps far apart (a long run, a sparse sampling schedule) must each read
+/// back the value written at that step, bit for bit, from a point query and
+/// from one range query over all of them. The tests above only write
+/// contiguous steps `0..n`, where this holds.
+#[test]
+#[ignore = "known defect: DB-SPARSE-LOSSLESS: with FitConfig { lossless: true }, alice-db returns the first segment's value for every sparse step (steps 0..2^40 all read 0.1) and a range over five sparse steps returns one row"]
+fn sparse_steps_read_back_their_own_values_bit_exact() {
+    let dir = tempfile::tempdir().unwrap();
+    let sink = open_sink(&dir, "sparse");
+
+    let steps: [i64; 6] = [0, 1, 1_000, 1_000_003, 1 << 40, (1 << 53) - 1];
+    let value = |i: usize| 0.1_f32 + 1.7 * i as f32;
+    for (i, &step) in steps.iter().enumerate() {
+        sink.record_energy(step, value(i)).unwrap();
+    }
+    sink.flush().unwrap();
+
+    for (i, &step) in steps.iter().enumerate() {
+        let got = sink.query_energy(step, step).unwrap();
+        assert_eq!(got.len(), 1, "step {step}: one row, got {got:?}");
+        assert_eq!(got[0].0, step);
+        assert_eq!(
+            got[0].1.to_bits(),
+            value(i).to_bits(),
+            "step {step}: wrote {}, read {}",
+            value(i),
+            got[0].1
+        );
+    }
+    let all = sink.query_energy(0, steps[steps.len() - 1]).unwrap();
+    let want: Vec<(i64, u32)> = steps
+        .iter()
+        .enumerate()
+        .map(|(i, &s)| (s, value(i).to_bits()))
+        .collect();
+    let got: Vec<(i64, u32)> = all.iter().map(|&(s, v)| (s, v.to_bits())).collect();
+    assert_eq!(
+        got, want,
+        "one range over every sparse step returns exactly those rows"
+    );
+}
