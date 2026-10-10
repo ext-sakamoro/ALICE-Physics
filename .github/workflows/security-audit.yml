@@ -61,6 +61,7 @@ jobs:
   audit:
     name: cargo audit (RustSec CVE scan)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -91,6 +92,7 @@ jobs:
   deny:
     name: cargo-deny (license + advisories + bans + sources)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -108,6 +110,7 @@ jobs:
   unused-deps:
     name: cargo-machete (unused dependencies)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -118,6 +121,7 @@ jobs:
   stub-guard:
     name: Stub / mock / dbg guard (grep)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -166,6 +170,7 @@ jobs:
   package-integrity:
     name: Package integrity (publish される .crate が build できるか)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -205,6 +210,7 @@ jobs:
   coverage:
     name: Coverage (cargo-llvm-cov, line-coverage ratchet)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -248,6 +254,7 @@ jobs:
     # snapshot 対象外にする (regression detection の目的には aarch64
     # baseline で十分、x86_64 SIMD path の変更は独立の #[cfg] gate で管理)
     runs-on: macos-latest
+    timeout-minutes: 15
     # v1.0 roadmap Item C: docs/PUBLIC_API_SNAPSHOT.txt に対する
     # cargo public-api の出力を diff、乖離があれば fail
     # 意図的な public API 追加/変更時は開発者側で snapshot を再生成 + commit
@@ -309,6 +316,7 @@ jobs:
   semver-checks:
     name: cargo-semver-checks (API compat、hard-gate)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     # v0.14.0-preview.4 で `publish = false` を解除、crates.io publish 済
     # (2026-09-13 initial publish、以降 preview.5 / preview.6 / ...)
     # 2026-09-14 v1.0 Item C 有効化: continue-on-error 解除、hard-gate
