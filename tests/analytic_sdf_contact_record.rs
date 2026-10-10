@@ -697,7 +697,7 @@ const FRAME_BOUND: f64 = 1.0 / 65536.0;
 
 /// A plane on a carrier turned +90° about `z` (local `y`-up becomes world
 /// `−x`: the solid is `x > wall`), carrier moving along `x` at `carrier_v`,
-/// a sphere of radius 1/2 at `x = 4.5` moving at `+24`; no gravity,
+/// collider scale 2, a sphere of radius 1/2 at `x = 4.5` moving at `+24`; no gravity,
 /// 8 substeps of `h = 1/64`. In substep `k` the world moves the carrier
 /// (and so the collider) to `x = 5 + carrier_v·h·(k + 1)` before it pushes
 /// the sphere out.
@@ -717,10 +717,11 @@ fn moving_carrier(carrier_v: f64) -> PhysicsWorld {
     let mut b = RigidBody::new_dynamic(v3(4.5, 0.0, 10.0), Fix128::ONE);
     b.velocity = v3(24.0, 0.0, 0.0);
     w.add_body(b);
-    w.add_sdf_collider(SdfCollider::new_dynamic(
-        Box::new(plane([0.0, 1.0, 0.0])),
-        carrier,
-    ));
+    // Scale 2 leaves the plane where it is (a half-space scaled about a point
+    // on its boundary is itself) and makes the ÷ scale of the frame count.
+    w.add_sdf_collider(
+        SdfCollider::new_dynamic(Box::new(plane([0.0, 1.0, 0.0])), carrier).with_scale(r(2, 1)),
+    );
     w
 }
 
@@ -733,7 +734,7 @@ fn into_frame(point: Vec3Fix, position: Vec3Fix, rotation: QuatFix, scale: Fix12
 
 /// oracle: each record carries the collider's frame of its substep: the
 /// position `5 + v·h·(k + 1)` (dyadic, compared bit for bit), the carrier's
-/// rotation and scale 1; the recorded point is on the plane in that frame
+/// rotation and the collider's scale 2; the recorded point is on the plane in that frame
 /// (`|local y| ≤ FRAME_BOUND`). The frame the collider holds after the step
 /// (substep 7) puts the points of the earlier substeps off the plane by
 /// `v·h·(7 − k)`, which is what a conversion after the step got.
@@ -765,7 +766,7 @@ fn a_moving_collider_is_recorded_with_its_frame_of_the_substep() {
                 ] {
                     assert!(close(got, want), "{label}: rotation {q:?}");
                 }
-                assert_eq!(c.collider_scale, Fix128::ONE, "{label}: scale");
+                assert_eq!(c.collider_scale, r(2, 1), "{label}: scale");
                 let local = into_frame(c.point, c.collider_position, q, c.collider_scale);
                 assert!(
                     local[1].abs() <= FRAME_BOUND,
@@ -774,7 +775,8 @@ fn a_moving_collider_is_recorded_with_its_frame_of_the_substep() {
                 );
                 // The pose after the step is the pose of the last substep.
                 let late = into_frame(c.point, after, q, c.collider_scale);
-                let off = carrier_v * h * (7.0 - c.substep as f64);
+                // In the field's units (÷ scale 2).
+                let off = carrier_v * h * (7.0 - c.substep as f64) / 2.0;
                 assert!(
                     (late[1].abs() - off.abs()).abs() <= FRAME_BOUND,
                     "{label}: the frame after the step is off by {}, closed form {off}",
