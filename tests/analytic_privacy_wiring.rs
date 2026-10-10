@@ -60,6 +60,9 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
+// The deprecated privacy types (not differentially private) stay pinned here
+// until the breaking release that removes them
+#![allow(deprecated)]
 
 use alice_physics::det_math::{exp64, ln64};
 use alice_physics::privacy::{

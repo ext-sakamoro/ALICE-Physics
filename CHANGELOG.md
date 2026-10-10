@@ -15,6 +15,12 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+- `privacy`: `alice-crypto` 0.4 の差分プライバシーを再 export する (`SecureRng` (32 byte の秘密鍵の ChaCha20) / `DpNoise` / `dp_count` / `dp_int` / `dp_sum` / `randomized_response` / `bernoulli_ratio` / `DpError`) noise は整数演算だけで定数時間に標本化され、浮動小数点の逆関数法を使わない `KeyedRappor`: 鍵つきの noise 源と分数の確率 (`f` / `p` / `q`) の RAPPOR、1 bit ごとに同じ 4 回の Bernoulli を引いて算術で選ぶので、仕事と keystream の使用量が報告する値に依らない 試験は報告確率の閉形式 (`f = 1/2, p = 3/4, q = 1/4` で 5/8 と 3/8)、`f = 0, p = 1, q = 0` が Bloom filter そのもの、鍵の再現、不正な分数の拒否 (p と q を入れ替える変異で red) 例 `privacy_budget_and_rappor` / `laplace_noise_aggregate` を新しい API に書き換えた 依存に `alice-crypto` を足す (`std` feature の時だけ、`privacy` は `std` 専用なので no_std の build には入らない 0.4.0 は crate-type に `cdylib` を持ち、std なしで build すると allocator と panic handler を要求して失敗するため / 本 crate と同じライセンス、`deny.toml` に例外を足した)
+
+### Deprecated
+- `privacy::{XorShift64, LaplaceNoise, RandomizedResponse, Rappor}`: **差分プライバシーになっていない**ため (`XorShift64` は出力がそのまま内部状態、`from_entropy` は時刻から seed、`LaplaceNoise::sample` は浮動小数点の逆関数法で下位 bit から一様乱数が漏れる、Mironov 2012) 代わりは上の再 export と `KeyedRappor` 削除は後の破壊的な版で `PrivacyBudget` / `PrivateAggregator` は乱数を使わないので変えない ALICE-* の他 repo に利用者は無い (全 clone の grep と GitHub の code search)
+
 ## [2.2.0] - 2026-10-10
 
 ### Added

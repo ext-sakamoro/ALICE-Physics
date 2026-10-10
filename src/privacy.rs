@@ -3,19 +3,37 @@
 //! Privacy-preserving data collection where noise is added at the source.
 //! Individual data points are deniable, but aggregate statistics emerge.
 //!
+//! # Which types to use
+//!
+//! The private mechanisms are those of `alice-crypto` (re-exported here):
+//! keyed ChaCha20 ([`SecureRng`]), discrete Laplace noise sampled with integer
+//! arithmetic in constant time ([`dp_count`], [`dp_int`], [`dp_sum`],
+//! [`DpNoise`]), [`randomized_response`] and [`bernoulli_ratio`], plus
+//! [`KeyedRappor`] built on them. [`PrivacyBudget`] and [`PrivateAggregator`]
+//! draw no randomness and stay as they are.
+//!
+//! # Security
+//!
+//! [`XorShift64`], [`LaplaceNoise`], [`RandomizedResponse`] and [`Rappor`] are
+//! **not private** and are deprecated for that reason (removal is a later,
+//! breaking release): `XorShift64` hands out its internal state, so one
+//! observed draw determines every later one, and its `from_entropy` seed is
+//! derived from the clock; `LaplaceNoise::sample` uses the floating-point
+//! inverse transform, whose low bits leak the uniform draw (Mironov 2012), so
+//! ε does not hold even with a perfect random source.
+//!
 //! # Examples
 //!
 //! ```
-//! use alice_physics::privacy::{LaplaceNoise, Rappor, RandomizedResponse, PrivacyBudget};
+//! use alice_physics::privacy::{dp_int, KeyedRappor, PrivacyBudget, SecureRng};
 //!
-//! // Laplace noise for numeric values
-//! let mut noise = LaplaceNoise::with_seed(1.0, 1.0, 42);
-//! let noisy_value = noise.privatize(100.0);
-//! // Value is perturbed but within a reasonable range
-//! assert!((noisy_value - 100.0).abs() < 100.0);
+//! // integer value with sensitivity 1, ε = 1, from a 32-byte secret key
+//! let mut rng = SecureRng::from_key([7u8; 32]);
+//! let noisy: i64 = dp_int(100, 1, 1.0, &mut rng).unwrap();
+//! assert!((noisy - 100).abs() < 100);
 //!
-//! // RAPPOR for categorical data
-//! let mut rappor = Rappor::new(0.5, 0.75, 0.25);
+//! // RAPPOR for categorical data, probabilities as exact fractions
+//! let mut rappor = KeyedRappor::with_key((1, 2), (3, 4), (1, 4), [9u8; 32]).unwrap();
 //! let report = rappor.privatize(12345);
 //! assert_eq!(report.len(), 64);
 //!
@@ -25,10 +43,22 @@
 //! assert_eq!(budget.remaining(), 9.0);
 //! ```
 
+// the deprecated types refer to each other; the deprecation is for callers
+#![allow(deprecated)]
+
+pub use alice_crypto::dp::{
+    bernoulli_ratio, dp_count, dp_int, dp_sum, randomized_response, DpError, DpNoise, EntropyError,
+    SecureRng, RR_MAX_EPSILON_WHOLE,
+};
+
 // ============================================================================
 // Random Number Generation (ChaCha20-based for determinism)
 // ============================================================================
 
+#[deprecated(
+    since = "2.3.0",
+    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+)]
 /// Simple xorshift64 PRNG for fast random numbers
 ///
 // LIMITATION(COV-ENGINE-101): Not cryptographically secure, but fast and sufficient for noise injection.
@@ -113,6 +143,7 @@ impl XorShift64 {
     }
 
     /// Generate uniform f64 in [low, high)
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[inline]
     pub fn next_f64_range(&mut self, low: f64, high: f64) -> f64 {
         (high - low).mul_add(self.next_f64(), low)
@@ -141,6 +172,11 @@ impl Default for XorShift64 {
 ///
 /// Used for ε-differential privacy with sensitivity Δf:
 /// noise scale b = Δf / ε
+#[deprecated(
+    since = "2.3.0",
+    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+)]
+// ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
 #[derive(Clone, Debug)]
 pub struct LaplaceNoise {
     /// Scale parameter b
@@ -184,6 +220,7 @@ impl LaplaceNoise {
     /// # Panics
     ///
     /// As [`Self::new`]: unless `epsilon` is finite and positive.
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[must_use]
     pub fn with_seed(sensitivity: f64, epsilon: f64, seed: u64) -> Self {
         let scale = laplace_scale(sensitivity, epsilon);
@@ -217,6 +254,7 @@ impl LaplaceNoise {
     }
 
     /// Add noise to an integer value (rounds result)
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[inline]
     pub fn privatize_int(&mut self, value: i64) -> i64 {
         (value as f64 + self.sample()).round() as i64
@@ -241,6 +279,11 @@ impl LaplaceNoise {
 /// - With probability 1-p, report a random bit
 ///
 /// This provides ε-differential privacy where ε = ln((p + 0.5(1-p)) / (0.5(1-p)))
+#[deprecated(
+    since = "2.3.0",
+    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+)]
+// ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
 #[derive(Clone, Debug)]
 pub struct RandomizedResponse {
     /// Probability of truthful response
@@ -268,6 +311,7 @@ impl RandomizedResponse {
     }
 
     /// Create with explicit probability and seed
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[must_use]
     pub fn with_probability(p_true: f64, seed: u64) -> Self {
         Self {
@@ -291,12 +335,14 @@ impl RandomizedResponse {
     }
 
     /// Privatize a bit (0 or 1)
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[inline]
     pub fn privatize_bit(&mut self, bit: u8) -> u8 {
         u8::from(self.privatize(bit != 0))
     }
 
     /// Get the probability of truthful response
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[inline]
     #[must_use]
     pub const fn p_true(&self) -> f64 {
@@ -312,6 +358,7 @@ impl RandomizedResponse {
     ///
     /// Panics unless `0 < p_true ≤ 1`: with `p_true = 0` every report is a coin
     /// flip and carries no information (the estimate was NaN).
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[must_use]
     pub fn estimate_proportion(p_true: f64, n: u64, k: u64) -> f64 {
         assert!(
@@ -346,6 +393,11 @@ pub const RAPPOR_BITS: usize = 64;
 ///
 /// Encodes categorical values into a Bloom filter, then applies
 /// randomized response to each bit.
+#[deprecated(
+    since = "2.3.0",
+    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+)]
+// ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
 #[derive(Clone, Debug)]
 pub struct Rappor {
     /// Permanent randomized response (for longitudinal studies)
@@ -359,6 +411,7 @@ pub struct Rappor {
 
 impl Rappor {
     /// Number of bits in the Bloom filter
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     pub const BITS: usize = RAPPOR_BITS;
 
     /// Create a new RAPPOR encoder
@@ -380,6 +433,7 @@ impl Rappor {
     /// Create with typical parameters for ε-differential privacy
     ///
     /// Uses f=0.5, p=0.75, q=0.25 for approximately ε=2 privacy
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[must_use]
     pub fn default_params() -> Self {
         Self::new(0.5, 0.75, 0.25)
@@ -388,16 +442,7 @@ impl Rappor {
     /// Encode a value into a Bloom filter (simple hash-based)
     #[allow(clippy::unused_self)]
     fn encode_bloom(&self, value: u64) -> [u8; RAPPOR_BITS] {
-        use crate::sketch::FnvHasher;
-
-        let mut bloom = [0u8; RAPPOR_BITS];
-        // Use multiple hash functions
-        for i in 0..3 {
-            let h = FnvHasher::hash_u128((value as u128) | ((i as u128) << 64));
-            let idx = (h as usize) % RAPPOR_BITS;
-            bloom[idx] = 1;
-        }
-        bloom
+        bloom_bits(value)
     }
 
     /// Apply permanent randomized response
@@ -442,6 +487,105 @@ impl Rappor {
     pub const fn params(&self) -> (f64, f64, f64) {
         (self.f, self.p, self.q)
     }
+}
+
+// ============================================================================
+// Keyed RAPPOR
+// ============================================================================
+
+/// RAPPOR with a keyed, unpredictable noise source and exact probabilities
+///
+/// Each probability is a fraction `(num, den)`: `f` for the permanent
+/// response (at most 1/2), `p` and `q` for reporting a 1 when the permanent
+/// bit is 1 or 0. Every bit draws the same four Bernoulli trials from the
+/// keyed ChaCha20 stream ([`bernoulli_ratio`]) and the result is chosen by
+/// arithmetic, so the work and the keystream use do not depend on the value
+/// being reported. The Bloom encoding is the one [`Rappor`] uses.
+pub struct KeyedRappor {
+    f: (u64, u64),
+    p: (u64, u64),
+    q: (u64, u64),
+    rng: SecureRng,
+}
+
+impl core::fmt::Debug for KeyedRappor {
+    fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        fmt.debug_struct("KeyedRappor")
+            .field("f", &self.f)
+            .field("p", &self.p)
+            .field("q", &self.q)
+            .finish_non_exhaustive()
+    }
+}
+
+impl KeyedRappor {
+    /// A RAPPOR encoder whose noise comes from the 32-byte secret `key`
+    ///
+    /// # Errors
+    ///
+    /// [`DpError::InvalidProbability`] when a fraction has `den == 0` or
+    /// `num > den`, or when `f` exceeds 1/2.
+    pub fn with_key(
+        f: (u64, u64),
+        p: (u64, u64),
+        q: (u64, u64),
+        key: [u8; 32],
+    ) -> Result<Self, DpError> {
+        for (num, den) in [f, p, q] {
+            if den == 0 || num > den {
+                return Err(DpError::InvalidProbability);
+            }
+        }
+        if u128::from(f.0) * 2 > u128::from(f.1) {
+            return Err(DpError::InvalidProbability);
+        }
+        Ok(Self {
+            f,
+            p,
+            q,
+            rng: SecureRng::from_key(key),
+        })
+    }
+
+    /// The probabilities `(f, p, q)` as given
+    #[must_use]
+    pub const fn params(&self) -> ((u64, u64), (u64, u64), (u64, u64)) {
+        (self.f, self.p, self.q)
+    }
+
+    /// Encode and privatize a value: Bloom encoding, permanent response
+    /// (each bit replaced by a fair coin with probability `f`), instantaneous
+    /// response (a 1 reported with probability `p` for a 1 and `q` for a 0)
+    pub fn privatize(&mut self, value: u64) -> [u8; RAPPOR_BITS] {
+        let bloom = bloom_bits(value);
+        let mut out = [0u8; RAPPOR_BITS];
+        for (o, &b) in out.iter_mut().zip(bloom.iter()) {
+            let flip = self.coin(self.f);
+            let fair = self.coin((1, 2));
+            let one = self.coin(self.p);
+            let zero = self.coin(self.q);
+            let permanent = (flip & fair) | ((1 - flip) & b);
+            *o = (permanent & one) | ((1 - permanent) & zero);
+        }
+        out
+    }
+
+    fn coin(&mut self, (num, den): (u64, u64)) -> u8 {
+        // the fractions were validated in `with_key`
+        u8::from(bernoulli_ratio(num, den, &mut self.rng).unwrap_or(false))
+    }
+}
+
+/// The Bloom encoding of `value` used by [`Rappor`] and [`KeyedRappor`]:
+/// three FNV hashes, one bit each
+fn bloom_bits(value: u64) -> [u8; RAPPOR_BITS] {
+    use crate::sketch::FnvHasher;
+    let mut bloom = [0u8; RAPPOR_BITS];
+    for i in 0..3u128 {
+        let h = FnvHasher::hash_u128(u128::from(value) | (i << 64));
+        bloom[(h as usize) % RAPPOR_BITS] = 1;
+    }
+    bloom
 }
 
 // ============================================================================
@@ -605,6 +749,90 @@ impl PrivateAggregator {
 // ============================================================================
 // Tests
 // ============================================================================
+
+#[cfg(test)]
+mod keyed_rappor_tests {
+    use super::{bloom_bits, DpError, KeyedRappor, RAPPOR_BITS};
+
+    /// With `f = 1/2, p = 3/4, q = 1/4` a Bloom bit of 1 is reported as 1 with
+    /// probability `(1 − f)·p + f·(p + q)/2 = 5/8` and a 0 with `3/8` (closed
+    /// form from the RAPPOR definition); 4000 reports of one value, each
+    /// frequency within 6 standard errors
+    #[test]
+    fn report_frequencies_match_the_closed_form() {
+        let mut r = KeyedRappor::with_key((1, 2), (3, 4), (1, 4), [3u8; 32]).unwrap();
+        let bloom = bloom_bits(777);
+        let n = 4000u32;
+        let mut ones = [0u32; RAPPOR_BITS];
+        for _ in 0..n {
+            for (c, &bit) in ones.iter_mut().zip(r.privatize(777).iter()) {
+                *c += u32::from(bit);
+            }
+        }
+        let (mut set_ones, mut set_n, mut clear_ones, mut clear_n) = (0u32, 0u32, 0u32, 0u32);
+        for i in 0..RAPPOR_BITS {
+            if bloom[i] == 1 {
+                set_ones += ones[i];
+                set_n += n;
+            } else {
+                clear_ones += ones[i];
+                clear_n += n;
+            }
+        }
+        for (k, m, p) in [
+            (set_ones, set_n, 5.0 / 8.0),
+            (clear_ones, clear_n, 3.0 / 8.0),
+        ] {
+            let mean = p * f64::from(m);
+            let sd = (f64::from(m) * p * (1.0 - p)).sqrt();
+            assert!(
+                (f64::from(k) - mean).abs() <= 6.0 * sd,
+                "{k} of {m}, expected {mean}"
+            );
+        }
+    }
+
+    #[test]
+    fn f_zero_p_one_q_zero_reports_the_bloom_filter() {
+        let mut r = KeyedRappor::with_key((0, 1), (1, 1), (0, 1), [5u8; 32]).unwrap();
+        for v in [0u64, 1, 12345, u64::MAX] {
+            assert_eq!(r.privatize(v), bloom_bits(v));
+        }
+    }
+
+    #[test]
+    fn the_same_key_replays_and_another_key_differs() {
+        let run = |key| {
+            let mut r = KeyedRappor::with_key((1, 2), (3, 4), (1, 4), key).unwrap();
+            (0..16).map(|v| r.privatize(v)).collect::<Vec<_>>()
+        };
+        assert_eq!(run([1u8; 32]), run([1u8; 32]));
+        assert_ne!(run([1u8; 32]), run([2u8; 32]));
+    }
+
+    #[test]
+    fn impossible_fractions_and_f_over_one_half_are_refused() {
+        let k = [0u8; 32];
+        for (f, p, q) in [
+            ((1, 0), (1, 2), (1, 2)),
+            ((1, 2), (3, 2), (1, 2)),
+            ((1, 2), (1, 2), (1, 0)),
+            ((3, 5), (1, 2), (1, 2)),
+        ] {
+            assert_eq!(
+                KeyedRappor::with_key(f, p, q, k).map(|r| r.params()),
+                Err(DpError::InvalidProbability),
+                "{f:?} {p:?} {q:?}"
+            );
+        }
+        assert!(KeyedRappor::with_key((1, 2), (0, 1), (1, 1), k).is_ok());
+        assert!(format!(
+            "{:?}",
+            KeyedRappor::with_key((1, 2), (1, 2), (1, 2), k).unwrap()
+        )
+        .starts_with("KeyedRappor"));
+    }
+}
 
 #[cfg(test)]
 mod tests {

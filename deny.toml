@@ -81,6 +81,12 @@ allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 # ALICE ecosystem sibling crates (J-4 bridge restoration in v0.14.0-preview.8)
 # 全て同 AGPL-3.0-or-later ライセンス、alice-ml / alice-db / alice-analytics
 # は neural / replay / analytics feature 有効時にのみ pull される optional deps
+# alice-crypto (privacy: keyed ChaCha20 and integer DP sampling) is
+# AGPL-3.0-or-later OR LicenseRef-Commercial; one allowed arm of the OR suffices
+[[licenses.exceptions]]
+name = "alice-crypto"
+allow = ["AGPL-3.0-or-later"]
+
 [[licenses.exceptions]]
 name = "alice-ml"
 allow = ["AGPL-3.0-or-later"]

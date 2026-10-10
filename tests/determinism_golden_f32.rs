@@ -15,6 +15,9 @@
 //! Updating a golden (only after an intentional algorithm change): run the
 //! failing test, copy the "actual" hex into the constant, and note the change
 //! in CHANGELOG.
+// The deprecated privacy types (not differentially private) stay pinned here
+// until the breaking release that removes them
+#![allow(deprecated)]
 
 use alice_physics::collider::Contact;
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

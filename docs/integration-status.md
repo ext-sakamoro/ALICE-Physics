@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 7 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2622 |
+| L0 | not reached by any non-test code, examples included | 31 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2602 |
 | live | reached without examples (crate-internal roots or a binding) | 602 |
-| | **total** | **3231** |
+| | **total** | **3235** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (5)
+### L0 here but not in the baseline (29)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -28,6 +28,30 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
+- `src/privacy.rs::LaplaceNoise`
+- `src/privacy.rs::LaplaceNoise::new`
+- `src/privacy.rs::LaplaceNoise::privatize`
+- `src/privacy.rs::LaplaceNoise::privatize_int`
+- `src/privacy.rs::LaplaceNoise::sample`
+- `src/privacy.rs::LaplaceNoise::scale`
+- `src/privacy.rs::LaplaceNoise::with_seed`
+- `src/privacy.rs::RandomizedResponse`
+- `src/privacy.rs::RandomizedResponse::estimate_proportion`
+- `src/privacy.rs::RandomizedResponse::new`
+- `src/privacy.rs::RandomizedResponse::p_true`
+- `src/privacy.rs::RandomizedResponse::privatize`
+- `src/privacy.rs::RandomizedResponse::privatize_bit`
+- `src/privacy.rs::RandomizedResponse::with_probability`
+- `src/privacy.rs::Rappor`
+- `src/privacy.rs::Rappor::BITS`
+- `src/privacy.rs::Rappor::default_params`
+- `src/privacy.rs::Rappor::new`
+- `src/privacy.rs::Rappor::params`
+- `src/privacy.rs::Rappor::privatize`
+- `src/privacy.rs::XorShift64::next_bool`
+- `src/privacy.rs::XorShift64::next_f64`
+- `src/privacy.rs::XorShift64::next_f64_range`
+- `src/privacy.rs::XorShift64::next_u64`
 
 ### In the baseline but reached here (0)
 
@@ -35,13 +59,37 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (7)
+## L0 — unreached (31)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
+- `src/privacy.rs::LaplaceNoise`
+- `src/privacy.rs::LaplaceNoise::new`
+- `src/privacy.rs::LaplaceNoise::privatize`
+- `src/privacy.rs::LaplaceNoise::privatize_int`
+- `src/privacy.rs::LaplaceNoise::sample`
+- `src/privacy.rs::LaplaceNoise::scale`
+- `src/privacy.rs::LaplaceNoise::with_seed`
+- `src/privacy.rs::RandomizedResponse`
+- `src/privacy.rs::RandomizedResponse::estimate_proportion`
+- `src/privacy.rs::RandomizedResponse::new`
+- `src/privacy.rs::RandomizedResponse::p_true`
+- `src/privacy.rs::RandomizedResponse::privatize`
+- `src/privacy.rs::RandomizedResponse::privatize_bit`
+- `src/privacy.rs::RandomizedResponse::with_probability`
+- `src/privacy.rs::Rappor`
+- `src/privacy.rs::Rappor::BITS`
+- `src/privacy.rs::Rappor::default_params`
+- `src/privacy.rs::Rappor::new`
+- `src/privacy.rs::Rappor::params`
+- `src/privacy.rs::Rappor::privatize`
+- `src/privacy.rs::XorShift64::next_bool`
+- `src/privacy.rs::XorShift64::next_f64`
+- `src/privacy.rs::XorShift64::next_f64_range`
+- `src/privacy.rs::XorShift64::next_u64`
 - `src/solver_tgs.rs::par_dispatch_islands`
 - `src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel`
 
@@ -60,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2622)
+## L1 — example-only (2602)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -177,7 +225,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/prestressed.rs`: `bolt_load_fraction`, `bolt_peak_tension`, `cable_pretension_n`, `preload_from_torque`, `recommended_preload_n`, `separation_load_n`, `tensioned_cable_stiffness_n_per_mm`
 - `src/print_orientation.rs`: `LoadDirection`, `LoadDirection::axis_x`, `LoadDirection::axis_y`, `LoadDirection::axis_z`, `LoadDirection::length`, `LoadDirection::length_squared`, `OrientationCandidate`, `OrientationCandidate::IDENTITY`, `OrientationReport`, `angle_to_z_axis`, `effective_yield_at_angle`, `optimize_analytical`, `optimize_grid`
 - `src/print_pipeline_solver.rs`: `PrintPipelineInputs`, `PrintSafetyReport`, `PrintSafetyReport::print`, `analyze_print_pipeline`
-- `src/privacy.rs`: `LaplaceNoise`, `LaplaceNoise::new`, `LaplaceNoise::privatize`, `LaplaceNoise::privatize_int`, `LaplaceNoise::sample`, `LaplaceNoise::scale`, `LaplaceNoise::with_seed`, `PrivacyBudget`, `PrivacyBudget::is_exhausted`, `PrivacyBudget::new`, `PrivacyBudget::query_count`, `PrivacyBudget::remaining`, `PrivacyBudget::reset`, `PrivacyBudget::spent`, `PrivacyBudget::try_spend`, `PrivateAggregator`, `PrivateAggregator::add`, `PrivateAggregator::count`, `PrivateAggregator::estimate_mean`, `PrivateAggregator::estimate_sum`, `PrivateAggregator::new`, `PrivateAggregator::reset`, `PrivateAggregator::standard_error`, `RAPPOR_BITS`, `RandomizedResponse`, `RandomizedResponse::estimate_proportion`, `RandomizedResponse::new`, `RandomizedResponse::p_true`, `RandomizedResponse::privatize`, `RandomizedResponse::privatize_bit`, `RandomizedResponse::with_probability`, `Rappor`, `Rappor::BITS`, `Rappor::default_params`, `Rappor::new`, `Rappor::params`, `Rappor::privatize`, `XorShift64::next_bool`, `XorShift64::next_f64`, `XorShift64::next_f64_range`, `XorShift64::next_u64`
+- `src/privacy.rs`: `KeyedRappor`, `KeyedRappor::params`, `KeyedRappor::privatize`, `KeyedRappor::with_key`, `PrivacyBudget`, `PrivacyBudget::is_exhausted`, `PrivacyBudget::new`, `PrivacyBudget::query_count`, `PrivacyBudget::remaining`, `PrivacyBudget::reset`, `PrivacyBudget::spent`, `PrivacyBudget::try_spend`, `PrivateAggregator`, `PrivateAggregator::add`, `PrivateAggregator::count`, `PrivateAggregator::estimate_mean`, `PrivateAggregator::estimate_sum`, `PrivateAggregator::new`, `PrivateAggregator::reset`, `PrivateAggregator::standard_error`, `RAPPOR_BITS`
 - `src/profiling.rs`: `PhysicsProfiler`, `PhysicsProfiler::average_ticks`, `PhysicsProfiler::begin_frame`, `PhysicsProfiler::get`, `PhysicsProfiler::last_ticks`, `PhysicsProfiler::new`, `PhysicsProfiler::record`, `PhysicsProfiler::reset`, `PhysicsProfiler::summary`, `ProfileEntry`, `ProfileEntry::average_ticks`, `ProfileEntry::new`, `ProfileEntry::record`, `ProfileEntry::reset`, `STAGE_BROADPHASE`, `STAGE_CCD`, `STAGE_CONTACT_CACHE`, `STAGE_INTEGRATION`, `STAGE_NARROWPHASE`, `STAGE_SOLVER`, `STAGE_TOTAL_STEP`, `StepStats`, `TickCounter`, `TickCounter::advance`, `TickCounter::elapsed`, `TickCounter::new`, `TickCounter::now`, `TickCounter::start`
 - `src/quadratic_elastic_fem.rs`: `AdaptiveQuadraticSolution`, `QuadraticMesh`, `QuadraticMesh::corner_count`, `QuadraticMesh::edge_count`, `QuadraticMesh::edge_node`, `QuadraticMesh::element_count`, `QuadraticMesh::element_nodes`, `QuadraticMesh::from_tet_mesh`, `QuadraticMesh::node_count`, `QuadraticMesh::node_position`, `reactions`, `solve_adaptive_quadratic`, `solve_quadratic`, `solve_quadratic_hyperelastic`
 - `src/query.rs`: `BatchRayQuery`, `OverlapResult`, `ShapeCastHit`, `batch_raycast`, `batch_sphere_cast`, `capsule_cast`, `overlap_aabb`, `overlap_aabb_bvh`, `overlap_aabb_expanded`, `overlap_sphere`, `overlap_sphere_bvh`, `sphere_cast`

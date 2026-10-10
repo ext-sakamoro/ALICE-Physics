@@ -642,8 +642,10 @@ pub use plane_collider::PlaneCollider;
 #[cfg(feature = "std")]
 pub use pressure::{PressureConfig, PressureModifier};
 #[cfg(feature = "std")]
+#[allow(deprecated)] // kept for existing callers, who see the deprecation at their use
 pub use privacy::{
-    LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
+    KeyedRappor, LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor,
+    XorShift64,
 };
 pub use profiling::{PhysicsProfiler, ProfileEntry, StepStats};
 pub use query::{
@@ -806,8 +808,10 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::pressure::{PressureConfig, PressureModifier};
     #[cfg(feature = "std")]
+    #[allow(deprecated)] // kept for existing callers, who see the deprecation at their use
     pub use crate::privacy::{
-        LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
+        KeyedRappor, LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor,
+        XorShift64,
     };
     pub use crate::profiling::{PhysicsProfiler, ProfileEntry, StepStats};
     pub use crate::query::{

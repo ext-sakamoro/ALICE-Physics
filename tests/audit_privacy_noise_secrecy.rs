@@ -16,6 +16,9 @@
 //! Marsaglia (2003) の xorshift の定義から従う ⇒ 観測者は 1 語を見た時点で状態を
 //! 完全に知るので、以降の列は同じ step を回すだけで再現できる (全数探索も線形代数も
 //! 要らない)
+// The deprecated privacy types (not differentially private) stay pinned here
+// until the breaking release that removes them
+#![allow(deprecated)]
 
 use alice_physics::privacy::{LaplaceNoise, XorShift64};
 

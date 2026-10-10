@@ -11,10 +11,10 @@
 #   - 浮動小数点の逆変換で noise を作っている (Mironov CCS 2012、snapping も離散 noise も無い)
 #   置き換え先は `alice_crypto::dp::{SecureRng, DpNoise}`
 #   ⚠️ license の向きが未決 (permissive → AGPL は引けない) なので置き場の判断が要る
-src/privacy.rs:105: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
-src/privacy.rs:198: `sample` が浮動小数点の逆変換で noise を作っている (Mironov CCS 2012) snapping / 離散 noise にするか `// FLOAT-DP-ACCEPTED: <理由>` を置く
-src/privacy.rs:37: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
-src/privacy.rs:79: `from_entropy` が時刻を seed にしている (hash を挟んでも seed 空間が時刻幅に縮む — CSPRNG を使う)
+src/privacy.rs:135: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
+src/privacy.rs:235: `sample` が浮動小数点の逆変換で noise を作っている (Mironov CCS 2012) snapping / 離散 noise にするか `// FLOAT-DP-ACCEPTED: <理由>` を置く
+src/privacy.rs:67: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
+src/privacy.rs:109: `from_entropy` が時刻を seed にしている (hash を挟んでも seed 空間が時刻幅に縮む — CSPRNG を使う)
 #
 # === 群 2: 決定論が目的の PRNG (理由 marker を置けば解消する、置き換え不要) ===
 #   simulation の再現性のための PRNG は正しい設計 marker で意図を明示するだけ
