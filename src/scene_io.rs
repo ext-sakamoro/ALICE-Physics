@@ -291,11 +291,13 @@ impl core::fmt::Display for InvalidSceneJsonVersion {
             }
             Self::NotAnUnsignedInteger { value } => write!(
                 f,
-                "scene JSON top-level \"version\" is not a non-negative integer: {value}"
+                "scene JSON top-level \"version\" is not a non-negative integer: {}",
+                shown_value(value)
             ),
             Self::OutOfRange { value } => write!(
                 f,
-                "scene JSON top-level \"version\" does not fit in u32: {value}"
+                "scene JSON top-level \"version\" does not fit in u32: {}",
+                shown_value(value)
             ),
         }
     }
@@ -307,9 +309,35 @@ impl std::error::Error for InvalidSceneJsonVersion {}
 /// nests at most 3 levels (`bodies` → body → field array).
 pub const MAX_SCENE_JSON_DEPTH: usize = 64;
 
-/// Strict RFC 8259 scanner over a whole document. It checks the grammar and,
-/// for the top-level object only, records each member's decoded key and the
-/// byte range of its value.
+/// A JSON value parsed by [`JsonScanner`].
+///
+/// A number keeps its text (already checked against the RFC 8259 grammar) and
+/// is evaluated only when a field reads it, so a token of any length is held
+/// without overflow. Object members keep their document order, duplicates
+/// included, so the reader can refuse them by name.
+#[derive(Debug, PartialEq, Eq)]
+enum JsonValue<'a> {
+    Null,
+    Bool(bool),
+    Number(&'a str),
+    String(String),
+    Array(Vec<JsonValue<'a>>),
+    Object(Vec<JsonMember<'a>>),
+}
+
+/// One member of a JSON object: the decoded key, the parsed value and the
+/// value as written in the document.
+#[derive(Debug, PartialEq, Eq)]
+struct JsonMember<'a> {
+    key: String,
+    value: JsonValue<'a>,
+    text: &'a str,
+}
+
+/// Strict RFC 8259 parser over a whole document, building a [`JsonValue`]
+/// tree. Recursion goes one call deeper per nested array / object and stops
+/// with [`InvalidSceneJsonVersion::TooDeep`] before it passes
+/// [`MAX_SCENE_JSON_DEPTH`], so the stack use is bounded by that limit.
 struct JsonScanner<'a> {
     text: &'a str,
     pos: usize,
@@ -339,18 +367,14 @@ impl<'a> JsonScanner<'a> {
         }
     }
 
-    /// `members`: `Some` only for the top-level object, collecting
-    /// `(decoded key, value text)`.
-    fn object(
-        &mut self,
-        depth: usize,
-        mut members: Option<&mut Vec<(String, &'a str)>>,
-    ) -> Result<(), InvalidSceneJsonVersion> {
+    /// An object whose members sit at nesting `depth`.
+    fn object(&mut self, depth: usize) -> Result<Vec<JsonMember<'a>>, InvalidSceneJsonVersion> {
         self.expect(b'{')?;
+        let mut members = Vec::new();
         self.skip_ws();
         if self.peek() == Some(b'}') {
             self.pos += 1;
-            return Ok(());
+            return Ok(members);
         }
         loop {
             self.skip_ws();
@@ -359,39 +383,43 @@ impl<'a> JsonScanner<'a> {
             self.expect(b':')?;
             self.skip_ws();
             let start = self.pos;
-            self.value(depth)?;
-            if let Some(m) = members.as_deref_mut() {
-                let text: &'a str = self.text;
-                m.push((key, &text[start..self.pos]));
-            }
+            let value = self.value(depth)?;
+            let text: &'a str = self.text;
+            members.push(JsonMember {
+                key,
+                value,
+                text: &text[start..self.pos],
+            });
             self.skip_ws();
             match self.peek() {
                 Some(b',') => self.pos += 1,
                 Some(b'}') => {
                     self.pos += 1;
-                    return Ok(());
+                    return Ok(members);
                 }
                 _ => return Err(self.malformed()),
             }
         }
     }
 
-    fn array(&mut self, depth: usize) -> Result<(), InvalidSceneJsonVersion> {
+    /// An array whose items sit at nesting `depth`.
+    fn array(&mut self, depth: usize) -> Result<Vec<JsonValue<'a>>, InvalidSceneJsonVersion> {
         self.expect(b'[')?;
+        let mut items = Vec::new();
         self.skip_ws();
         if self.peek() == Some(b']') {
             self.pos += 1;
-            return Ok(());
+            return Ok(items);
         }
         loop {
             self.skip_ws();
-            self.value(depth)?;
+            items.push(self.value(depth)?);
             self.skip_ws();
             match self.peek() {
                 Some(b',') => self.pos += 1,
                 Some(b']') => {
                     self.pos += 1;
-                    return Ok(());
+                    return Ok(items);
                 }
                 _ => return Err(self.malformed()),
             }
@@ -399,18 +427,18 @@ impl<'a> JsonScanner<'a> {
     }
 
     /// A value at nesting `depth` (the enclosing container's depth).
-    fn value(&mut self, depth: usize) -> Result<(), InvalidSceneJsonVersion> {
+    fn value(&mut self, depth: usize) -> Result<JsonValue<'a>, InvalidSceneJsonVersion> {
         match self.peek() {
             Some(b'{' | b'[') if depth >= MAX_SCENE_JSON_DEPTH => {
                 Err(InvalidSceneJsonVersion::TooDeep { offset: self.pos })
             }
-            Some(b'{') => self.object(depth + 1, None),
-            Some(b'[') => self.array(depth + 1),
-            Some(b'"') => self.string().map(drop),
-            Some(b'-' | b'0'..=b'9') => self.number(),
-            Some(b't') => self.literal("true"),
-            Some(b'f') => self.literal("false"),
-            Some(b'n') => self.literal("null"),
+            Some(b'{') => self.object(depth + 1).map(JsonValue::Object),
+            Some(b'[') => self.array(depth + 1).map(JsonValue::Array),
+            Some(b'"') => self.string().map(JsonValue::String),
+            Some(b'-' | b'0'..=b'9') => self.number().map(JsonValue::Number),
+            Some(b't') => self.literal("true").map(|()| JsonValue::Bool(true)),
+            Some(b'f') => self.literal("false").map(|()| JsonValue::Bool(false)),
+            Some(b'n') => self.literal("null").map(|()| JsonValue::Null),
             _ => Err(self.malformed()),
         }
     }
@@ -434,8 +462,9 @@ impl<'a> JsonScanner<'a> {
         Ok(())
     }
 
-    /// `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`
-    fn number(&mut self) -> Result<(), InvalidSceneJsonVersion> {
+    /// `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`, returned as written.
+    fn number(&mut self) -> Result<&'a str, InvalidSceneJsonVersion> {
+        let start = self.pos;
         if self.peek() == Some(b'-') {
             self.pos += 1;
         }
@@ -460,7 +489,8 @@ impl<'a> JsonScanner<'a> {
             }
             self.digits()?;
         }
-        Ok(())
+        let text: &'a str = self.text;
+        Ok(&text[start..self.pos])
     }
 
     fn hex4(&mut self) -> Result<u32, InvalidSceneJsonVersion> {
@@ -537,30 +567,35 @@ impl<'a> JsonScanner<'a> {
     }
 }
 
-/// The scene version recorded in a JSON document: the value of the top-level
-/// object's `version` member, 1 when the top-level object has none.
-///
-/// The whole document must be JSON whose top level is an object; anything
-/// else is an [`InvalidSceneJsonVersion`] (see its variants).
-fn scene_json_version(json: &str) -> Result<u32, InvalidSceneJsonVersion> {
+/// The members of the top-level object of `json`, which must be one JSON
+/// (RFC 8259) object with nothing but whitespace around it.
+fn parse_json_document(json: &str) -> Result<Vec<JsonMember<'_>>, InvalidSceneJsonVersion> {
     let mut scan = JsonScanner { text: json, pos: 0 };
-    let mut members = Vec::new();
     scan.skip_ws();
-    scan.object(1, Some(&mut members))?;
+    if scan.peek() != Some(b'{') {
+        return Err(scan.malformed());
+    }
+    let members = scan.object(1)?;
     scan.skip_ws();
     if scan.pos != json.len() {
         return Err(scan.malformed());
     }
-    let mut versions = members.iter().filter(|(k, _)| k == "version");
-    let Some(&(_, value)) = versions.next() else {
+    Ok(members)
+}
+
+/// The scene version recorded in a parsed JSON document: the value of the
+/// top-level object's `version` member, 1 when the top-level object has none.
+fn scene_json_version_of(top: &[JsonMember<'_>]) -> Result<u32, InvalidSceneJsonVersion> {
+    let mut versions = top.iter().filter(|m| m.key == "version");
+    let Some(member) = versions.next() else {
         return Ok(CURRENT_VERSION);
     };
     if versions.next().is_some() {
         return Err(InvalidSceneJsonVersion::DuplicateVersion);
     }
-    // the scanner accepted `value` as one JSON value; a non-negative integer
-    // without fraction or exponent is exactly a run of ASCII digits (the
-    // grammar already ruled out a leading `+` and leading zeros)
+    // a non-negative integer without fraction or exponent is exactly a run of
+    // ASCII digits (the grammar already ruled out a leading `+` and leading zeros)
+    let value = member.text;
     if value.is_empty() || !value.bytes().all(|b| b.is_ascii_digit()) {
         return Err(InvalidSceneJsonVersion::NotAnUnsignedInteger {
             value: value.to_string(),
@@ -571,6 +606,14 @@ fn scene_json_version(json: &str) -> Result<u32, InvalidSceneJsonVersion> {
         .map_err(|_| InvalidSceneJsonVersion::OutOfRange {
             value: value.to_string(),
         })
+}
+
+/// The scene version recorded in a JSON document (see
+/// [`scene_json_version_of`]); the whole document must be JSON whose top level
+/// is an object.
+#[cfg(test)]
+fn scene_json_version(json: &str) -> Result<u32, InvalidSceneJsonVersion> {
+    scene_json_version_of(&parse_json_document(json)?)
 }
 
 // ============================================================================
@@ -844,21 +887,27 @@ pub fn save_scene_json(scene: &PhysicsScene, path: &std::path::Path) -> std::io:
 /// means 1; a `version` key inside a nested object is not the scene version).
 /// A version outside [`SUPPORTED_SCENE_VERSIONS`] is rejected, as for
 /// [`load_scene`], before the rest of the scene is read. The document must be
-/// JSON (RFC 8259) with an object at the top level.
+/// JSON (RFC 8259) with an object at the top level, and no object in it may
+/// repeat a key. Every field is read from its own object's members (see
+/// [`InvalidSceneJson`]).
 ///
 /// # Errors
 ///
 /// Returns an error if the file cannot be read or contains invalid JSON
 /// data, including an [`std::io::ErrorKind::InvalidData`] error carrying
-/// [`UnsupportedSceneVersion`] for an unknown version, or
+/// [`UnsupportedSceneVersion`] for an unknown version,
 /// [`InvalidSceneJsonVersion`] when the document is not JSON or its top-level
-/// `version` member is duplicated or not a `u32`.
+/// `version` member is duplicated or not a `u32`, or [`InvalidSceneJson`] when
+/// any object repeats a key or a scene member is missing, of the wrong type or
+/// out of range.
 pub fn load_scene_json(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
     let json = std::fs::read_to_string(path)?;
-    let version = scene_json_version(&json)
+    let top = parse_json_document(&json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let version = scene_json_version_of(&top)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     check_scene_version(version)?;
-    parse_scene_json(&json, version)
+    scene_from_json(&top, version)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
 
@@ -966,86 +1015,357 @@ fn scene_to_json(scene: &PhysicsScene) -> String {
 }
 
 // ============================================================================
-// JSON Parser (minimal, no external dependencies)
+// JSON scene reader (over the parsed tree)
 // ============================================================================
 
-/// The scene in `json` with the given `version` (read beforehand by
-/// [`scene_json_version`], which also checked that `json` is JSON).
-fn parse_scene_json(json: &str, version: u32) -> Result<PhysicsScene, String> {
-    let json = json.trim();
-    if !json.starts_with('{') || !json.ends_with('}') {
-        return Err("Expected JSON object".into());
+/// Error payload for a JSON scene whose members (other than the top-level
+/// `version`, see [`InvalidSceneJsonVersion`]) do not describe a scene,
+/// returned by [`load_scene_json`].
+///
+/// Every field is read from the members of its own object (the top-level
+/// object, `config`, one entry of `bodies` / `joints`); a key that appears only
+/// inside a nested value never stands in for the member being read. `path`
+/// names the member, for example `config.gravity` or `bodies[2].mass[1]`.
+///
+/// It travels inside a [`std::io::Error`] of kind
+/// [`std::io::ErrorKind::InvalidData`]; recover it with
+/// `err.get_ref().and_then(|e| e.downcast_ref::<InvalidSceneJson>())`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum InvalidSceneJson {
+    /// An object, at any nesting level, has the same key more than once (JSON
+    /// leaves the meaning of duplicate keys open, so neither one is chosen).
+    /// `path` names the repeated member.
+    DuplicateKey {
+        /// The repeated member.
+        path: String,
+    },
+    /// A required member is absent from its object.
+    MissingMember {
+        /// The absent member.
+        path: String,
+    },
+    /// A member or array item has the wrong JSON type, or is a number that is
+    /// not an integer written without fraction or exponent (for an unsigned
+    /// field: a non-negative one).
+    WrongType {
+        /// The offending member or item.
+        path: String,
+        /// What the scene format needs there.
+        expected: &'static str,
+        /// What the document holds there.
+        found: &'static str,
+    },
+    /// A fixed-length array has another number of items.
+    WrongLength {
+        /// The array.
+        path: String,
+        /// The number of items the field holds.
+        expected: usize,
+        /// The number of items in the document.
+        found: usize,
+    },
+    /// An integer that does not fit the field's integer type.
+    OutOfRange {
+        /// The offending member or item.
+        path: String,
+        /// The integer as written in the document.
+        value: String,
+    },
+}
+
+/// Longest prefix of a value written into an error message; longer values are
+/// shown as that prefix plus their length.
+const SHOWN_VALUE_BYTES: usize = 32;
+
+/// `value` for an error message: itself when short, else a bounded prefix and
+/// its length in bytes.
+fn shown_value(value: &str) -> String {
+    if value.len() <= SHOWN_VALUE_BYTES {
+        return value.to_string();
+    }
+    let mut end = SHOWN_VALUE_BYTES;
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}... ({} bytes)", &value[..end], value.len())
+}
+
+impl core::fmt::Display for InvalidSceneJson {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::DuplicateKey { path } => {
+                write!(f, "scene JSON has more than one \"{path}\" member")
+            }
+            Self::MissingMember { path } => {
+                write!(f, "scene JSON has no \"{path}\" member")
+            }
+            Self::WrongType {
+                path,
+                expected,
+                found,
+            } => write!(f, "scene JSON \"{path}\" is {found}, expected {expected}"),
+            Self::WrongLength {
+                path,
+                expected,
+                found,
+            } => write!(
+                f,
+                "scene JSON \"{path}\" has {found} items, expected {expected}"
+            ),
+            Self::OutOfRange { path, value } => write!(
+                f,
+                "scene JSON \"{path}\" is out of range: {}",
+                shown_value(value)
+            ),
+        }
+    }
+}
+
+impl std::error::Error for InvalidSceneJson {}
+
+/// `parent.key`, or `key` at the top level.
+fn member_path(parent: &str, key: &str) -> String {
+    if parent.is_empty() {
+        key.to_string()
+    } else {
+        format!("{parent}.{key}")
+    }
+}
+
+/// The path of the first repeated key found in any object of the document
+/// (each object is checked before its children; the walk keeps its own stack,
+/// so it does not recurse).
+fn duplicate_key_path(top: &[JsonMember<'_>]) -> Option<String> {
+    enum Node<'t, 'a> {
+        Members(&'t [JsonMember<'a>]),
+        Items(&'t [JsonValue<'a>]),
+    }
+    fn container<'t, 'a>(v: &'t JsonValue<'a>) -> Option<Node<'t, 'a>> {
+        match v {
+            JsonValue::Object(m) => Some(Node::Members(m)),
+            JsonValue::Array(i) => Some(Node::Items(i)),
+            _ => None,
+        }
+    }
+    let mut stack = vec![(Node::Members(top), String::new())];
+    while let Some((node, path)) = stack.pop() {
+        match node {
+            Node::Members(members) => {
+                let mut seen = std::collections::BTreeSet::new();
+                for m in members {
+                    if !seen.insert(m.key.as_str()) {
+                        return Some(member_path(&path, &m.key));
+                    }
+                }
+                for m in members.iter().rev() {
+                    if let Some(child) = container(&m.value) {
+                        stack.push((child, member_path(&path, &m.key)));
+                    }
+                }
+            }
+            Node::Items(items) => {
+                for (i, v) in items.iter().enumerate().rev() {
+                    if let Some(child) = container(v) {
+                        stack.push((child, format!("{path}[{i}]")));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// The JSON type of `v`, for [`InvalidSceneJson::WrongType`].
+const fn json_type(v: &JsonValue<'_>) -> &'static str {
+    match v {
+        JsonValue::Null => "null",
+        JsonValue::Bool(_) => "a boolean",
+        JsonValue::Number(_) => "a number",
+        JsonValue::String(_) => "a string",
+        JsonValue::Array(_) => "an array",
+        JsonValue::Object(_) => "an object",
+    }
+}
+
+/// The members of one JSON object of the scene, with its path for errors.
+/// Keys are unique (checked by [`duplicate_key_path`] beforehand).
+struct SceneObject<'t, 'a> {
+    members: &'t [JsonMember<'a>],
+    path: String,
+}
+
+impl<'t, 'a> SceneObject<'t, 'a> {
+    /// `v` as an object at `path`.
+    fn new(v: &'t JsonValue<'a>, path: String) -> Result<Self, InvalidSceneJson> {
+        match v {
+            JsonValue::Object(members) => Ok(Self { members, path }),
+            other => Err(InvalidSceneJson::WrongType {
+                path,
+                expected: "an object",
+                found: json_type(other),
+            }),
+        }
     }
 
-    // Config
-    let config_str = extract_object(json, "config").unwrap_or_default();
-    let substeps = extract_u32(&config_str, "substeps")?.unwrap_or(8);
-    let iterations = extract_u32(&config_str, "iterations")?.unwrap_or(4);
-    let gravity = extract_i64_array(&config_str, "gravity", 6)?;
-    let damping = extract_i64_array(&config_str, "damping", 2)?;
+    fn path(&self, key: &str) -> String {
+        member_path(&self.path, key)
+    }
 
-    let config = PhysicsConfig {
-        substeps,
-        iterations,
-        gravity: [
-            gravity[0], gravity[1], gravity[2], gravity[3], gravity[4], gravity[5],
-        ],
-        damping: [damping[0], damping[1]],
+    /// This object's own `key` member (never one inside a nested value).
+    fn get(&self, key: &str) -> Option<&'t JsonValue<'a>> {
+        self.members.iter().find(|m| m.key == key).map(|m| &m.value)
+    }
+
+    fn require(&self, key: &str) -> Result<&'t JsonValue<'a>, InvalidSceneJson> {
+        self.get(key)
+            .ok_or_else(|| InvalidSceneJson::MissingMember {
+                path: self.path(key),
+            })
+    }
+
+    /// An optional integer member, `default` when absent.
+    fn int_or<T: TryFrom<i128>>(&self, key: &str, default: T) -> Result<T, InvalidSceneJson> {
+        self.get(key)
+            .map_or(Ok(default), |v| json_integer(v, &self.path(key)))
+    }
+
+    /// A required array member of exactly `N` integers.
+    fn i64_array<const N: usize>(&self, key: &str) -> Result<[i64; N], InvalidSceneJson> {
+        json_i64_array(self.require(key)?, &self.path(key))
+    }
+
+    /// An optional array-of-objects member, empty when absent.
+    fn objects(&self, key: &str) -> Result<Vec<SceneObject<'t, 'a>>, InvalidSceneJson> {
+        let path = self.path(key);
+        match self.get(key) {
+            None => Ok(Vec::new()),
+            Some(JsonValue::Array(items)) => items
+                .iter()
+                .enumerate()
+                .map(|(i, v)| SceneObject::new(v, format!("{path}[{i}]")))
+                .collect(),
+            Some(other) => Err(InvalidSceneJson::WrongType {
+                path,
+                expected: "an array",
+                found: json_type(other),
+            }),
+        }
+    }
+}
+
+/// `v` as an integer of type `T`. The token must be a JSON number without
+/// fraction or exponent (and without a minus sign when `T` is unsigned); its
+/// value must fit `T`. A token of any length is an error, never a wrap.
+fn json_integer<T: TryFrom<i128>>(v: &JsonValue<'_>, path: &str) -> Result<T, InvalidSceneJson> {
+    let unsigned = T::try_from(-1i128).is_err();
+    let expected = if unsigned {
+        "a non-negative integer"
+    } else {
+        "an integer"
+    };
+    let wrong = |found| InvalidSceneJson::WrongType {
+        path: path.to_string(),
+        expected,
+        found,
+    };
+    let JsonValue::Number(text) = v else {
+        return Err(wrong(json_type(v)));
+    };
+    if text.bytes().any(|b| matches!(b, b'.' | b'e' | b'E')) {
+        return Err(wrong("a number with a fraction or exponent"));
+    }
+    if unsigned && text.starts_with('-') {
+        return Err(wrong("a negative number"));
+    }
+    text.parse::<i128>()
+        .ok()
+        .and_then(|n| T::try_from(n).ok())
+        .ok_or_else(|| InvalidSceneJson::OutOfRange {
+            path: path.to_string(),
+            value: (*text).to_string(),
+        })
+}
+
+/// `v` as an array of exactly `N` `i64` values.
+fn json_i64_array<const N: usize>(
+    v: &JsonValue<'_>,
+    path: &str,
+) -> Result<[i64; N], InvalidSceneJson> {
+    let JsonValue::Array(items) = v else {
+        return Err(InvalidSceneJson::WrongType {
+            path: path.to_string(),
+            expected: "an array",
+            found: json_type(v),
+        });
+    };
+    if items.len() != N {
+        return Err(InvalidSceneJson::WrongLength {
+            path: path.to_string(),
+            expected: N,
+            found: items.len(),
+        });
+    }
+    let mut out = [0i64; N];
+    for (i, (slot, item)) in out.iter_mut().zip(items).enumerate() {
+        *slot = json_integer(item, &format!("{path}[{i}]"))?;
+    }
+    Ok(out)
+}
+
+/// The scene held by the top-level members `top` (parsed by
+/// [`parse_json_document`]) with the given `version` (read beforehand by
+/// [`scene_json_version_of`]).
+///
+/// Absent members take the documented defaults: `substeps` 8, `iterations` 4,
+/// `bodies` / `joints` empty, `body_type` / `body_a` / `body_b` / `joint_type`
+/// 0. `config`, its `gravity` / `damping`, each body's `position` /
+/// `velocity` / `rotation` / `mass` and each joint's `anchor_a` / `anchor_b`
+/// are required. Unknown members are ignored.
+fn scene_from_json(top: &[JsonMember<'_>], version: u32) -> Result<PhysicsScene, InvalidSceneJson> {
+    if let Some(path) = duplicate_key_path(top) {
+        return Err(InvalidSceneJson::DuplicateKey { path });
+    }
+    let root = SceneObject {
+        members: top,
+        path: String::new(),
     };
 
-    // Bodies
-    let bodies_str = extract_array(json, "bodies").unwrap_or_default();
-    let body_objects = split_array_objects(&bodies_str);
-    let mut bodies = Vec::new();
-    for obj in &body_objects {
-        let position_v = extract_i64_array(obj, "position", 6)?;
-        let velocity_v = extract_i64_array(obj, "velocity", 6)?;
-        let rotation_v = extract_i64_array(obj, "rotation", 8)?;
-        let mass_v = extract_i64_array(obj, "mass", 2)?;
-        let body_type = extract_u8(obj, "body_type")?.unwrap_or(0);
+    let cfg = SceneObject::new(root.require("config")?, "config".into())?;
+    let config = PhysicsConfig {
+        substeps: cfg.int_or("substeps", 8)?,
+        iterations: cfg.int_or("iterations", 4)?,
+        gravity: cfg.i64_array("gravity")?,
+        damping: cfg.i64_array("damping")?,
+    };
 
-        let mut position = [0i64; 6];
-        let mut velocity = [0i64; 6];
-        let mut rotation = [0i64; 8];
-        let mut mass = [0i64; 2];
-        position.copy_from_slice(&position_v);
-        velocity.copy_from_slice(&velocity_v);
-        rotation.copy_from_slice(&rotation_v);
-        mass.copy_from_slice(&mass_v);
+    let bodies = root
+        .objects("bodies")?
+        .iter()
+        .map(|b| {
+            Ok(SerializedBody {
+                position: b.i64_array("position")?,
+                velocity: b.i64_array("velocity")?,
+                rotation: b.i64_array("rotation")?,
+                mass: b.i64_array("mass")?,
+                body_type: b.int_or("body_type", 0)?,
+            })
+        })
+        .collect::<Result<Vec<_>, InvalidSceneJson>>()?;
 
-        bodies.push(SerializedBody {
-            position,
-            velocity,
-            rotation,
-            mass,
-            body_type,
-        });
-    }
-
-    // Joints
-    let joints_str = extract_array(json, "joints").unwrap_or_default();
-    let joint_objects = split_array_objects(&joints_str);
-    let mut joints = Vec::new();
-    for obj in &joint_objects {
-        let body_a = extract_u32(obj, "body_a")?.unwrap_or(0);
-        let body_b = extract_u32(obj, "body_b")?.unwrap_or(0);
-        let joint_type = extract_u8(obj, "joint_type")?.unwrap_or(0);
-        let anchor_a_v = extract_i64_array(obj, "anchor_a", 6)?;
-        let anchor_b_v = extract_i64_array(obj, "anchor_b", 6)?;
-
-        let mut anchor_a = [0i64; 6];
-        let mut anchor_b = [0i64; 6];
-        anchor_a.copy_from_slice(&anchor_a_v);
-        anchor_b.copy_from_slice(&anchor_b_v);
-
-        joints.push(SerializedJoint {
-            body_a,
-            body_b,
-            joint_type,
-            anchor_a,
-            anchor_b,
-        });
-    }
+    let joints = root
+        .objects("joints")?
+        .iter()
+        .map(|j| {
+            Ok(SerializedJoint {
+                body_a: j.int_or("body_a", 0)?,
+                body_b: j.int_or("body_b", 0)?,
+                joint_type: j.int_or("joint_type", 0)?,
+                anchor_a: j.i64_array("anchor_a")?,
+                anchor_b: j.i64_array("anchor_b")?,
+            })
+        })
+        .collect::<Result<Vec<_>, InvalidSceneJson>>()?;
 
     Ok(PhysicsScene {
         bodies,
@@ -1053,140 +1373,6 @@ fn parse_scene_json(json: &str, version: u32) -> Result<PhysicsScene, String> {
         config,
         version,
     })
-}
-
-// ============================================================================
-// Minimal JSON extraction helpers
-// ============================================================================
-
-/// Read an unsigned integer value for `key`.
-///
-/// `Ok(None)` when the key (or its colon) is absent, so callers can apply their documented
-/// default. A value that is present but is not a `u32` (negative, too large, not a number)
-/// is an error: silently replacing it with the default would load a different scene than
-/// the file describes.
-fn extract_u32(json: &str, key: &str) -> Result<Option<u32>, String> {
-    let pattern = format!("\"{key}\"");
-    let Some(idx) = json.find(&pattern) else {
-        return Ok(None);
-    };
-    let rest = &json[idx + pattern.len()..];
-    let Some(colon) = rest.find(':') else {
-        return Ok(None);
-    };
-    let after_colon = rest[colon + 1..].trim_start();
-    // Token: everything up to the next JSON delimiter
-    let end = after_colon
-        .find([',', '}', ']', '\n', '\r'])
-        .unwrap_or(after_colon.len());
-    let token = after_colon[..end].trim();
-    token
-        .parse::<u32>()
-        .map(Some)
-        .map_err(|e| format!("Invalid value for {key}: {token:?} ({e})"))
-}
-
-/// Like [`extract_u32`] for fields stored as `u8`; a value above 255 is an error, not a truncation.
-fn extract_u8(json: &str, key: &str) -> Result<Option<u8>, String> {
-    match extract_u32(json, key)? {
-        None => Ok(None),
-        Some(v) => u8::try_from(v)
-            .map(Some)
-            .map_err(|_| format!("Value for {key} does not fit in u8: {v}")),
-    }
-}
-
-fn extract_object(json: &str, key: &str) -> Option<String> {
-    let pattern = format!("\"{key}\"");
-    let idx = json.find(&pattern)?;
-    let rest = &json[idx + pattern.len()..];
-    let brace = rest.find('{')?;
-    let start = brace;
-    let mut depth = 0i32;
-    let bytes = rest.as_bytes();
-    for (i, &b) in bytes[start..].iter().enumerate() {
-        if b == b'{' {
-            depth += 1;
-        }
-        if b == b'}' {
-            depth -= 1;
-        }
-        if depth == 0 {
-            return Some(rest[start..=(start + i)].to_string());
-        }
-    }
-    None
-}
-
-fn extract_array(json: &str, key: &str) -> Option<String> {
-    let pattern = format!("\"{key}\"");
-    let idx = json.find(&pattern)?;
-    let rest = &json[idx + pattern.len()..];
-    // Find the opening [ that follows the colon
-    let colon = rest.find(':')?;
-    let after_colon = &rest[colon + 1..];
-    let bracket = after_colon.find('[')?;
-    let start = bracket;
-    let mut depth = 0i32;
-    let bytes = after_colon.as_bytes();
-    for (i, &b) in bytes[start..].iter().enumerate() {
-        if b == b'[' {
-            depth += 1;
-        }
-        if b == b']' {
-            depth -= 1;
-        }
-        if depth == 0 {
-            return Some(after_colon[start..=(start + i)].to_string());
-        }
-    }
-    None
-}
-
-fn extract_i64_array(json: &str, key: &str, expected_len: usize) -> Result<Vec<i64>, String> {
-    let arr_str = extract_array(json, key).ok_or_else(|| format!("Missing key: {key}"))?;
-    // Parse [n1, n2, ...]
-    let inner = arr_str.trim_start_matches('[').trim_end_matches(']');
-    let values: Result<Vec<i64>, _> = inner.split(',').map(|s| s.trim().parse::<i64>()).collect();
-    let values = values.map_err(|e| format!("Parse error for {key}: {e}"))?;
-    if values.len() != expected_len {
-        return Err(format!(
-            "Expected {} values for {}, got {}",
-            expected_len,
-            key,
-            values.len()
-        ));
-    }
-    Ok(values)
-}
-
-fn split_array_objects(arr_str: &str) -> Vec<String> {
-    let inner = arr_str.trim_start_matches('[').trim_end_matches(']').trim();
-    if inner.is_empty() {
-        return Vec::new();
-    }
-
-    let mut objects = Vec::new();
-    let mut depth = 0i32;
-    let mut start = 0;
-    let bytes = inner.as_bytes();
-
-    for (i, &b) in bytes.iter().enumerate() {
-        if b == b'{' {
-            if depth == 0 {
-                start = i;
-            }
-            depth += 1;
-        }
-        if b == b'}' {
-            depth -= 1;
-            if depth == 0 {
-                objects.push(inner[start..=i].to_string());
-            }
-        }
-    }
-
-    objects
 }
 
 // ============================================================================
@@ -1729,5 +1915,1192 @@ mod tests {
         ] {
             assert_eq!(unsupported(&e), Some(UnsupportedSceneVersion { found: 2 }));
         }
+    }
+}
+
+/// The reader that `load_scene_json` used before the parse tree (substring
+/// extractors that resolve a key to its first occurrence anywhere in the
+/// text), kept verbatim only as the reference of the differential test
+/// `json_tree_tests::tree_reader_matches_the_old_reader_on_every_valid_scene`.
+#[cfg(test)]
+#[allow(clippy::all, clippy::pedantic, clippy::nursery)]
+mod legacy_json {
+    use super::*;
+
+    /// The scene in `json` with the given `version` (read beforehand by
+    /// [`scene_json_version`], which also checked that `json` is JSON).
+    pub(super) fn parse_scene_json(json: &str, version: u32) -> Result<PhysicsScene, String> {
+        let json = json.trim();
+        if !json.starts_with('{') || !json.ends_with('}') {
+            return Err("Expected JSON object".into());
+        }
+
+        // Config
+        let config_str = extract_object(json, "config").unwrap_or_default();
+        let substeps = extract_u32(&config_str, "substeps")?.unwrap_or(8);
+        let iterations = extract_u32(&config_str, "iterations")?.unwrap_or(4);
+        let gravity = extract_i64_array(&config_str, "gravity", 6)?;
+        let damping = extract_i64_array(&config_str, "damping", 2)?;
+
+        let config = PhysicsConfig {
+            substeps,
+            iterations,
+            gravity: [
+                gravity[0], gravity[1], gravity[2], gravity[3], gravity[4], gravity[5],
+            ],
+            damping: [damping[0], damping[1]],
+        };
+
+        // Bodies
+        let bodies_str = extract_array(json, "bodies").unwrap_or_default();
+        let body_objects = split_array_objects(&bodies_str);
+        let mut bodies = Vec::new();
+        for obj in &body_objects {
+            let position_v = extract_i64_array(obj, "position", 6)?;
+            let velocity_v = extract_i64_array(obj, "velocity", 6)?;
+            let rotation_v = extract_i64_array(obj, "rotation", 8)?;
+            let mass_v = extract_i64_array(obj, "mass", 2)?;
+            let body_type = extract_u8(obj, "body_type")?.unwrap_or(0);
+
+            let mut position = [0i64; 6];
+            let mut velocity = [0i64; 6];
+            let mut rotation = [0i64; 8];
+            let mut mass = [0i64; 2];
+            position.copy_from_slice(&position_v);
+            velocity.copy_from_slice(&velocity_v);
+            rotation.copy_from_slice(&rotation_v);
+            mass.copy_from_slice(&mass_v);
+
+            bodies.push(SerializedBody {
+                position,
+                velocity,
+                rotation,
+                mass,
+                body_type,
+            });
+        }
+
+        // Joints
+        let joints_str = extract_array(json, "joints").unwrap_or_default();
+        let joint_objects = split_array_objects(&joints_str);
+        let mut joints = Vec::new();
+        for obj in &joint_objects {
+            let body_a = extract_u32(obj, "body_a")?.unwrap_or(0);
+            let body_b = extract_u32(obj, "body_b")?.unwrap_or(0);
+            let joint_type = extract_u8(obj, "joint_type")?.unwrap_or(0);
+            let anchor_a_v = extract_i64_array(obj, "anchor_a", 6)?;
+            let anchor_b_v = extract_i64_array(obj, "anchor_b", 6)?;
+
+            let mut anchor_a = [0i64; 6];
+            let mut anchor_b = [0i64; 6];
+            anchor_a.copy_from_slice(&anchor_a_v);
+            anchor_b.copy_from_slice(&anchor_b_v);
+
+            joints.push(SerializedJoint {
+                body_a,
+                body_b,
+                joint_type,
+                anchor_a,
+                anchor_b,
+            });
+        }
+
+        Ok(PhysicsScene {
+            bodies,
+            joints,
+            config,
+            version,
+        })
+    }
+
+    /// Read an unsigned integer value for `key`.
+    ///
+    /// `Ok(None)` when the key (or its colon) is absent, so callers can apply their documented
+    /// default. A value that is present but is not a `u32` (negative, too large, not a number)
+    /// is an error: silently replacing it with the default would load a different scene than
+    /// the file describes.
+    fn extract_u32(json: &str, key: &str) -> Result<Option<u32>, String> {
+        let pattern = format!("\"{key}\"");
+        let Some(idx) = json.find(&pattern) else {
+            return Ok(None);
+        };
+        let rest = &json[idx + pattern.len()..];
+        let Some(colon) = rest.find(':') else {
+            return Ok(None);
+        };
+        let after_colon = rest[colon + 1..].trim_start();
+        // Token: everything up to the next JSON delimiter
+        let end = after_colon
+            .find([',', '}', ']', '\n', '\r'])
+            .unwrap_or(after_colon.len());
+        let token = after_colon[..end].trim();
+        token
+            .parse::<u32>()
+            .map(Some)
+            .map_err(|e| format!("Invalid value for {key}: {token:?} ({e})"))
+    }
+
+    /// Like [`extract_u32`] for fields stored as `u8`; a value above 255 is an error, not a truncation.
+    fn extract_u8(json: &str, key: &str) -> Result<Option<u8>, String> {
+        match extract_u32(json, key)? {
+            None => Ok(None),
+            Some(v) => u8::try_from(v)
+                .map(Some)
+                .map_err(|_| format!("Value for {key} does not fit in u8: {v}")),
+        }
+    }
+
+    fn extract_object(json: &str, key: &str) -> Option<String> {
+        let pattern = format!("\"{key}\"");
+        let idx = json.find(&pattern)?;
+        let rest = &json[idx + pattern.len()..];
+        let brace = rest.find('{')?;
+        let start = brace;
+        let mut depth = 0i32;
+        let bytes = rest.as_bytes();
+        for (i, &b) in bytes[start..].iter().enumerate() {
+            if b == b'{' {
+                depth += 1;
+            }
+            if b == b'}' {
+                depth -= 1;
+            }
+            if depth == 0 {
+                return Some(rest[start..=(start + i)].to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_array(json: &str, key: &str) -> Option<String> {
+        let pattern = format!("\"{key}\"");
+        let idx = json.find(&pattern)?;
+        let rest = &json[idx + pattern.len()..];
+        // Find the opening [ that follows the colon
+        let colon = rest.find(':')?;
+        let after_colon = &rest[colon + 1..];
+        let bracket = after_colon.find('[')?;
+        let start = bracket;
+        let mut depth = 0i32;
+        let bytes = after_colon.as_bytes();
+        for (i, &b) in bytes[start..].iter().enumerate() {
+            if b == b'[' {
+                depth += 1;
+            }
+            if b == b']' {
+                depth -= 1;
+            }
+            if depth == 0 {
+                return Some(after_colon[start..=(start + i)].to_string());
+            }
+        }
+        None
+    }
+
+    fn extract_i64_array(json: &str, key: &str, expected_len: usize) -> Result<Vec<i64>, String> {
+        let arr_str = extract_array(json, key).ok_or_else(|| format!("Missing key: {key}"))?;
+        // Parse [n1, n2, ...]
+        let inner = arr_str.trim_start_matches('[').trim_end_matches(']');
+        let values: Result<Vec<i64>, _> =
+            inner.split(',').map(|s| s.trim().parse::<i64>()).collect();
+        let values = values.map_err(|e| format!("Parse error for {key}: {e}"))?;
+        if values.len() != expected_len {
+            return Err(format!(
+                "Expected {} values for {}, got {}",
+                expected_len,
+                key,
+                values.len()
+            ));
+        }
+        Ok(values)
+    }
+
+    fn split_array_objects(arr_str: &str) -> Vec<String> {
+        let inner = arr_str.trim_start_matches('[').trim_end_matches(']').trim();
+        if inner.is_empty() {
+            return Vec::new();
+        }
+
+        let mut objects = Vec::new();
+        let mut depth = 0i32;
+        let mut start = 0;
+        let bytes = inner.as_bytes();
+
+        for (i, &b) in bytes.iter().enumerate() {
+            if b == b'{' {
+                if depth == 0 {
+                    start = i;
+                }
+                depth += 1;
+            }
+            if b == b'}' {
+                depth -= 1;
+                if depth == 0 {
+                    objects.push(inner[start..=i].to_string());
+                }
+            }
+        }
+
+        objects
+    }
+}
+
+/// 解析木による読み取りの試験 (旧 reader との差分、重複 key、入れ子の同名 key、
+/// 文字列中の括弧、深さの上限、巨大な数、型の誤り)
+#[cfg(test)]
+mod json_tree_tests {
+    use super::*;
+
+    fn named(json: &str) -> Result<PhysicsScene, InvalidSceneJson> {
+        let top = parse_json_document(json).expect("probe is JSON");
+        let version = scene_json_version_of(&top).expect("probe version");
+        scene_from_json(&top, version)
+    }
+
+    fn sb(
+        position: [i64; 6],
+        velocity: [i64; 6],
+        rotation: [i64; 8],
+        mass: [i64; 2],
+        body_type: u8,
+    ) -> SerializedBody {
+        SerializedBody {
+            position,
+            velocity,
+            rotation,
+            mass,
+            body_type,
+        }
+    }
+
+    fn sj(
+        body_a: u32,
+        body_b: u32,
+        joint_type: u8,
+        anchor_a: [i64; 6],
+        anchor_b: [i64; 6],
+    ) -> SerializedJoint {
+        SerializedJoint {
+            body_a,
+            body_b,
+            joint_type,
+            anchor_a,
+            anchor_b,
+        }
+    }
+
+    fn scene(
+        bodies: Vec<SerializedBody>,
+        joints: Vec<SerializedJoint>,
+        config: PhysicsConfig,
+        version: u32,
+    ) -> PhysicsScene {
+        PhysicsScene {
+            bodies,
+            joints,
+            config,
+            version,
+        }
+    }
+
+    /// examples/scene_snapshot_roundtrip.rs が書く scene (同じ手順で world を進める)
+    fn example_scene() -> PhysicsScene {
+        use crate::math::QuatFix;
+        use crate::solver::{PhysicsConfig as WorldConfig, PhysicsWorld, RigidBody};
+        let limbs3 = |v: Vec3Fix| {
+            [
+                v.x.hi,
+                v.x.lo as i64,
+                v.y.hi,
+                v.y.lo as i64,
+                v.z.hi,
+                v.z.lo as i64,
+            ]
+        };
+        let limb = |v: Fix128| [v.hi, v.lo as i64];
+        let mut world = PhysicsWorld::new(WorldConfig::default());
+        world.add_body(RigidBody::new_static(Vec3Fix::from_int(0, -1, 0)));
+        world.add_body(RigidBody::new_dynamic(
+            Vec3Fix::new(
+                Fix128::from_ratio(1, 3),
+                Fix128::from_int(5),
+                Fix128::from_ratio(-2, 7),
+            ),
+            Fix128::from_ratio(5, 2),
+        ));
+        for _ in 0..30 {
+            world.step(Fix128::from_ratio(1, 60));
+        }
+        let q = QuatFix::IDENTITY;
+        let bodies = world
+            .bodies
+            .iter()
+            .map(|b| {
+                sb(
+                    limbs3(b.position),
+                    limbs3(b.velocity),
+                    [
+                        q.x.hi,
+                        q.x.lo as i64,
+                        q.y.hi,
+                        q.y.lo as i64,
+                        q.z.hi,
+                        q.z.lo as i64,
+                        q.w.hi,
+                        q.w.lo as i64,
+                    ],
+                    if b.inv_mass.is_zero() {
+                        [0, 0]
+                    } else {
+                        limb(Fix128::ONE / b.inv_mass)
+                    },
+                    u8::from(b.inv_mass.is_zero()),
+                )
+            })
+            .collect();
+        let gravity = Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-981, 100), Fix128::ZERO);
+        let config = PhysicsConfig::new(
+            world.config.substeps as u32,
+            world.config.iterations as u32 + 1,
+            limbs3(gravity),
+            limb(Fix128::from_ratio(95, 100)),
+        );
+        scene(bodies, Vec::new(), config, CURRENT_VERSION)
+    }
+
+    /// 既存の試験と例が writer に書かせる scene をすべて列挙する
+    /// (src/scene_io.rs の tests、tests/analytic_scene_io_wiring.rs、examples/scene_snapshot_roundtrip.rs)
+    fn writer_scenes() -> Vec<(String, PhysicsScene)> {
+        let mut out: Vec<(String, PhysicsScene)> = Vec::new();
+        // src/scene_io.rs::tests
+        let unit = tests_scene();
+        for v in [1u32, 0, 2, 0xDEAD_BEEF, u32::MAX] {
+            let mut s = unit.clone();
+            s.version = v;
+            out.push((format!("unit with_version({v})"), s));
+        }
+        out.push((
+            "unit empty".into(),
+            scene(vec![], vec![], PhysicsConfig::default(), 1),
+        ));
+        out.push((
+            "unit negative".into(),
+            scene(
+                vec![sb(
+                    [-10, 0, -20, 0, -30, 0],
+                    [0; 6],
+                    [0, 0, 0, 0, 0, 0, 1, 0],
+                    [1, 0],
+                    0,
+                )],
+                vec![],
+                PhysicsConfig::default(),
+                1,
+            ),
+        ));
+        out.push((
+            "unit multiple joints".into(),
+            scene(
+                vec![sb([0; 6], [0; 6], [0, 0, 0, 0, 0, 0, 1, 0], [1, 0], 0)],
+                vec![
+                    sj(0, 0, 1, [1, 0, 2, 0, 3, 0], [4, 0, 5, 0, 6, 0]),
+                    sj(0, 0, 4, [7, 0, 8, 0, 9, 0], [10, 0, 11, 0, 12, 0]),
+                ],
+                PhysicsConfig::default(),
+                1,
+            ),
+        ));
+        // tests/analytic_scene_io_wiring.rs
+        let body = |seed: i64, ty: u8| {
+            sb(
+                [seed, -seed, i64::MAX, i64::MIN, 0, seed * 3],
+                [1, 2, 3, 4, 5, 6],
+                [0, 0, 0, 0, 0, 0, 1, seed],
+                [seed + 1, -1],
+                ty,
+            )
+        };
+        let joint =
+            |a: u32, b: u32, ty: u8| sj(a, b, ty, [1, 2, 3, 4, 5, 6], [-1, -2, -3, -4, -5, -6]);
+        let config = || PhysicsConfig::new(2, 3, [10, 20, 30, 40, 50, 60], [7, 8]);
+        out.push((
+            "wiring scene()".into(),
+            scene(
+                vec![body(1, 0), body(2, 1)],
+                vec![joint(0, 1, 4)],
+                config(),
+                1,
+            ),
+        ));
+        for v in [1u32, 0, 7, u32::MAX] {
+            out.push((
+                format!("wiring empty v{v}"),
+                scene(vec![], vec![], config(), v),
+            ));
+        }
+        out.push((
+            "wiring layout one".into(),
+            scene(vec![body(1, 2)], vec![joint(3, 4, 1)], config(), 1),
+        ));
+        out.push((
+            "wiring round trip 40".into(),
+            scene(
+                (0..40i64).map(|i| body(i - 20, (i % 3) as u8)).collect(),
+                vec![joint(0, 39, 0), joint(u32::MAX, 0, 255), joint(5, 6, 2)],
+                config(),
+                1,
+            ),
+        ));
+        out.push((
+            "wiring default empty".into(),
+            scene(vec![], vec![], PhysicsConfig::default(), 1),
+        ));
+        out.push((
+            "wiring big".into(),
+            scene(
+                (0..10_000i64).map(|i| body(i, (i % 3) as u8)).collect(),
+                (0..5_000u32)
+                    .map(|i| joint(i, i + 1, (i % 5) as u8))
+                    .collect(),
+                config(),
+                1,
+            ),
+        ));
+        out.push((
+            "wiring fixture_scene".into(),
+            scene(
+                vec![sb(
+                    [1, 2, 3, 4, 5, 6],
+                    [-1, 0, 0, 0, 0, 7],
+                    [0, 0, 0, 0, 0, 0, 1, 0],
+                    [2, 0],
+                    1,
+                )],
+                vec![sj(0, 0, 3, [1, 0, 0, 0, 0, 0], [0, 0, -1, 0, 0, 0])],
+                PhysicsConfig::new(4, 6, [0, 0, -10, 0, 0, 0], [0, -2]),
+                1,
+            ),
+        ));
+        for v in [0u32, 2, 0xDEAD_BEEF] {
+            out.push((
+                format!("wiring deprecated v{v}"),
+                scene(vec![body(1, 0)], vec![], config(), v),
+            ));
+        }
+        // examples/scene_snapshot_roundtrip.rs (書いた版と、版 2 を書いた版)
+        let ex = example_scene();
+        let mut ex2 = ex.clone();
+        ex2.version = CURRENT_VERSION + 1;
+        out.push(("example snapshot".into(), ex));
+        out.push(("example snapshot v2".into(), ex2));
+        out
+    }
+
+    /// src/scene_io.rs::tests::make_test_scene と同じ scene
+    fn tests_scene() -> PhysicsScene {
+        scene(
+            vec![
+                sb(
+                    [0, 0, 10, 0, 0, 0],
+                    [0; 6],
+                    [0, 0, 0, 0, 0, 0, 1, 0],
+                    [1, 0],
+                    0,
+                ),
+                sb(
+                    [5, 0, 0, 0, -3, 0],
+                    [1, 0, -1, 0, 0, 0],
+                    [0, 0, 0, 0, 0, 0, 1, 0],
+                    [2, 0],
+                    1,
+                ),
+            ],
+            vec![sj(0, 1, 0, [0; 6], [1, 0, 0, 0, 0, 0])],
+            PhysicsConfig::default(),
+            CURRENT_VERSION,
+        )
+    }
+
+    /// 既存の試験が手で書いた有効な文書 (tests/analytic_scene_io_wiring.rs と本 file の tests)
+    fn hand_written_documents() -> Vec<(String, String)> {
+        let json_of = |a: &str, t: &str| {
+            format!(
+            "{{\"version\": 1, \"config\": {{\"substeps\": 2, \"iterations\": 3, \"gravity\": [0,0,0,0,0,0], \"damping\": [1, 0]}}, \"bodies\": [], \"joints\": [{{\"body_a\": {a}, \"body_b\": 1, \"joint_type\": {t}, \"anchor_a\": [0,0,0,0,0,0], \"anchor_b\": [0,0,0,0,0,0]}}]}}"
+        )
+        };
+        let with_head = |head: &str| {
+            let body = json_of("0", "0");
+            format!("{{{head}{}", &body[body.find("\"config\"").unwrap()..])
+        };
+        let mut out: Vec<(String, String)> = Vec::new();
+        for a in ["0", "1", "4294967295", "  7  "] {
+            out.push((format!("json_of({a:?}, 0)"), json_of(a, "0")));
+        }
+        for t in ["0", "1", "255"] {
+            out.push((format!("json_of(0, {t})"), json_of("0", t)));
+        }
+        out.push(("defaults".into(), "{\"config\": {\"gravity\": [1,2,3,4,5,6], \"damping\": [9, 9]}, \"bodies\": [{\"position\":[0,0,0,0,0,0],\"velocity\":[0,0,0,0,0,0],\"rotation\":[0,0,0,0,0,0,0,0],\"mass\":[1,0]}], \"joints\": [{\"anchor_a\": [0,0,0,0,0,0], \"anchor_b\": [0,0,0,0,0,1]}]}".into()));
+        out.push((
+            "minimal".into(),
+            "{\"config\": {\"gravity\": [1,2,3,4,5,6], \"damping\": [9, 9]}}".into(),
+        ));
+        out.push(("compact".into(), "{\"config\":{\"gravity\":[1,2,3,4,5,6],\"damping\":[1,2]},\"bodies\":[{\"position\":[0,0,0,0,0,0],\"velocity\":[0,0,0,0,0,0],\"rotation\":[0,0,0,0,0,0,0,0],\"mass\":[1,0],\"body_type\":2}],\"joints\":[{\"anchor_a\":[0,0,0,0,0,0],\"anchor_b\":[0,0,0,0,0,0],\"body_b\":9}]}".into()));
+        out.push((
+            "stray".into(),
+            "{\"config\":{\"gravity\":[1,2,3,4,5,6],\"damping\":[1,2]},\"note\":\"version\"}"
+                .into(),
+        ));
+        out.push((
+            "head ws".into(),
+            with_head(" \n\t\"version\"\r\n :\n 1 \n,"),
+        ));
+        out.push((
+            "nested version in config".into(),
+            with_head("").replace("\"config\": {", "\"config\": {\"version\": 2, "),
+        ));
+        out.push((
+            "nested version in meta".into(),
+            with_head("").replace(
+                "\"bodies\": []",
+                "\"bodies\": [], \"meta\": {\"version\": 2}",
+            ),
+        ));
+        out.push(("head version 1".into(), with_head("\"version\": 1, ")));
+        out.push((
+            "unit config only".into(),
+            "{\"config\":{\"gravity\":[0,0,0,0,0,0],\"damping\":[1,0]}}".into(),
+        ));
+        out.push((
+            "unit nested version".into(),
+            "{\"config\":{\"version\":2,\"gravity\":[0,0,0,0,0,0],\"damping\":[1,0]}}".into(),
+        ));
+        out
+    }
+
+    /// 既存の有効な scene すべてで、旧 reader と解析木の reader が同じ値を返す
+    #[test]
+    fn tree_reader_matches_the_old_reader_on_every_valid_scene() {
+        let mut docs: Vec<(String, String, Option<PhysicsScene>)> = Vec::new();
+        for (name, s) in writer_scenes() {
+            docs.push((name, scene_to_json(&s), Some(s)));
+        }
+        for name in ["scene_v1.json", "scene_v2.json"] {
+            let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("tests/fixtures")
+                .join(name);
+            docs.push((name.into(), std::fs::read_to_string(p).unwrap(), None));
+        }
+        for (name, text) in hand_written_documents() {
+            docs.push((name, text, None));
+        }
+        let mut diffs = Vec::new();
+        for (name, text, written) in &docs {
+            let top = parse_json_document(text).unwrap();
+            let version = scene_json_version_of(&top).unwrap();
+            let new = scene_from_json(&top, version);
+            let old = legacy_json::parse_scene_json(text, version);
+            match (&new, &old) {
+                (Ok(n), Ok(o)) if n == o => {}
+                _ => diffs.push(format!("{name}: new {new:?} old {old:?}")),
+            }
+            if let (Some(w), Ok(n)) = (written, &new) {
+                if w != n {
+                    diffs.push(format!("{name}: round trip differs"));
+                }
+            }
+        }
+        println!(
+            "scene JSON differential: {} documents, {} diffs",
+            docs.len(),
+            diffs.len()
+        );
+        assert!(docs.len() > 40, "{}", docs.len());
+        assert!(diffs.is_empty(), "{diffs:#?}");
+    }
+
+    const CFG: &str = "\"config\": {\"substeps\": 2, \"iterations\": 3, \"gravity\": [1,2,3,4,5,6], \"damping\": [7,8]}";
+    const BODY: &str = "{\"position\": [1,2,3,4,5,6], \"velocity\": [1,1,1,1,1,1], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [2,0], \"body_type\": 1}";
+    const JOINT: &str = "{\"body_a\": 3, \"body_b\": 4, \"joint_type\": 2, \"anchor_a\": [1,0,0,0,0,0], \"anchor_b\": [0,0,1,0,0,0]}";
+
+    fn doc(cfg: &str, body: &str, joint: &str) -> String {
+        format!("{{\"version\": 1, {cfg}, \"bodies\": [{body}], \"joints\": [{joint}]}}")
+    }
+
+    fn base() -> PhysicsScene {
+        named(&doc(CFG, BODY, JOINT)).unwrap()
+    }
+
+    fn dup(path: &str) -> Result<PhysicsScene, InvalidSceneJson> {
+        Err(InvalidSceneJson::DuplicateKey { path: path.into() })
+    }
+
+    /// 重複 key はどの階層でも名前つきで拒否 (先勝ちにしない)
+    #[test]
+    fn duplicate_keys_at_every_level_are_refused() {
+        let d = doc(CFG, BODY, JOINT);
+        assert_eq!(base().config.substeps, 2);
+        // top-level
+        assert_eq!(
+            named(&d.replace("\"bodies\"", &format!("{CFG}, \"bodies\""))),
+            dup("config")
+        );
+        assert_eq!(
+            named(&d.replace("\"joints\"", "\"bodies\": [], \"joints\"")),
+            dup("bodies")
+        );
+        assert_eq!(
+            named(&d.replace("\"bodies\"", "\"joints\": [], \"bodies\"")),
+            dup("joints")
+        );
+        let e = parse_json_document(&d.replace("\"bodies\"", "\"version\": 1, \"bodies\""))
+            .and_then(|t| scene_json_version_of(&t));
+        assert_eq!(e, Err(InvalidSceneJsonVersion::DuplicateVersion));
+        // 両方とも完全な config の重複
+        let both = format!("{{{CFG}, {CFG}}}");
+        assert_eq!(named(&both), dup("config"));
+        // config / body / joint の中 (両順序)
+        for (k, v) in [
+            ("substeps", "9"),
+            ("iterations", "9"),
+            ("gravity", "[0,0,0,0,0,0]"),
+            ("damping", "[0,0]"),
+        ] {
+            let c = CFG.replace(&format!("\"{k}\""), &format!("\"{k}\": {v}, \"{k}\""));
+            assert_eq!(
+                named(&doc(&c, BODY, JOINT)),
+                dup(&format!("config.{k}")),
+                "{k}"
+            );
+        }
+        for k in ["position", "velocity", "rotation", "mass", "body_type"] {
+            let b = BODY.replace(&format!("\"{k}\""), &format!("\"{k}\": 0, \"{k}\""));
+            assert_eq!(
+                named(&doc(CFG, &b, JOINT)),
+                dup(&format!("bodies[0].{k}")),
+                "{k}"
+            );
+        }
+        for k in ["body_a", "body_b", "joint_type", "anchor_a", "anchor_b"] {
+            let j = JOINT.replace(&format!("\"{k}\""), &format!("\"{k}\": 0, \"{k}\""));
+            assert_eq!(
+                named(&doc(CFG, BODY, &j)),
+                dup(&format!("joints[0].{k}")),
+                "{k}"
+            );
+        }
+        // 2 番目の body、読まない member の中、配列の中の object
+        let two = d.replace(
+            &format!("[{BODY}]"),
+            &format!(
+                "[{BODY}, {}]",
+                BODY.replace("\"mass\"", "\"mass\": [1,0], \"mass\"")
+            ),
+        );
+        assert_eq!(named(&two), dup("bodies[1].mass"));
+        assert_eq!(
+            named(&d.replace("\"bodies\"", "\"meta\": {\"a\": 1, \"a\": 2}, \"bodies\"")),
+            dup("meta.a")
+        );
+        assert_eq!(
+            named(&d.replace(
+                "\"bodies\"",
+                "\"meta\": [[{\"x\": {\"y\": 1, \"y\": 1}}]], \"bodies\""
+            )),
+            dup("meta[0][0].x.y")
+        );
+        // escape で綴った同じ key (BMP と surrogate pair)
+        let esc = CFG.replace(
+            "\"damping\"",
+            "\"gr\\u0061vity\": [0,0,0,0,0,0], \"damping\"",
+        );
+        assert_eq!(named(&doc(&esc, BODY, JOINT)), dup("config.gravity"));
+        let pair = d.replace(
+            "\"bodies\"",
+            "\"\\ud83d\\ude00\": 1, \"\u{1F600}\": 2, \"bodies\"",
+        );
+        assert_eq!(named(&pair), dup("\u{1F600}"));
+    }
+
+    /// 入れ子の中にだけある同名 key は、読んでいる member の代わりにならない
+    #[test]
+    fn nested_keys_never_stand_in_for_the_member() {
+        let want = base();
+        let extra = |obj: &str, k: &str, v: &str| {
+            obj.replacen('{', &format!("{{\"extra\": {{\"{k}\": {v}}}, "), 1)
+        };
+        // config の各 field: 入れ子の値が先にあっても自分の member を読む
+        for (k, v) in [
+            ("substeps", "99"),
+            ("iterations", "99"),
+            ("gravity", "[9,9,9,9,9,9]"),
+            ("damping", "[9,9]"),
+        ] {
+            let c = CFG.replacen("{", &format!("{{\"extra\": {{\"{k}\": {v}}}, "), 1);
+            assert_eq!(named(&doc(&c, BODY, JOINT)), Ok(want.clone()), "config.{k}");
+        }
+        for (k, v) in [
+            ("position", "[9,9,9,9,9,9]"),
+            ("velocity", "[9,9,9,9,9,9]"),
+            ("rotation", "[9,9,9,9,9,9,9,9]"),
+            ("mass", "[9,9]"),
+            ("body_type", "2"),
+        ] {
+            assert_eq!(
+                named(&doc(CFG, &extra(BODY, k, v), JOINT)),
+                Ok(want.clone()),
+                "body.{k}"
+            );
+        }
+        for (k, v) in [
+            ("body_a", "9"),
+            ("body_b", "9"),
+            ("joint_type", "4"),
+            ("anchor_a", "[9,9,9,9,9,9]"),
+            ("anchor_b", "[9,9,9,9,9,9]"),
+        ] {
+            assert_eq!(
+                named(&doc(CFG, BODY, &extra(JOINT, k, v))),
+                Ok(want.clone()),
+                "joint.{k}"
+            );
+        }
+        // 自分の member が無く入れ子にだけある: 必須なら欠落、任意なら既定値
+        let gone = |obj: &str, k: &str, v: &str| {
+            let start = obj.find(&format!("\"{k}\"")).unwrap();
+            let end = obj[start..].find([',', '}']).map(|i| start + i).unwrap();
+            let end = if obj[start..].starts_with(&format!("\"{k}\": [")) {
+                start + obj[start..].find(']').unwrap() + 1
+            } else {
+                end
+            };
+            let rest = obj[end..].trim_start_matches(',');
+            let cut = format!("{}{}", &obj[..start], rest.trim_start());
+            let cut = cut.replace(", }", "}").replace(",}", "}");
+            extra(&cut, k, v)
+        };
+        let missing = |p: &str| Err(InvalidSceneJson::MissingMember { path: p.into() });
+        let c = gone(&CFG["\"config\": ".len()..], "gravity", "[9,9,9,9,9,9]");
+        assert_eq!(
+            named(&doc(&format!("\"config\": {c}"), BODY, JOINT)),
+            missing("config.gravity")
+        );
+        let c = gone(&CFG["\"config\": ".len()..], "substeps", "99");
+        assert_eq!(
+            named(&doc(&format!("\"config\": {c}"), BODY, JOINT))
+                .unwrap()
+                .config
+                .substeps,
+            8
+        );
+        assert_eq!(
+            named(&doc(CFG, &gone(BODY, "mass", "[9,9]"), JOINT)),
+            missing("bodies[0].mass")
+        );
+        assert_eq!(
+            named(&doc(CFG, &gone(BODY, "body_type", "2"), JOINT))
+                .unwrap()
+                .bodies[0]
+                .body_type,
+            0
+        );
+        assert_eq!(
+            named(&doc(CFG, BODY, &gone(JOINT, "anchor_b", "[9,9,9,9,9,9]"))),
+            missing("joints[0].anchor_b")
+        );
+        assert_eq!(
+            named(&doc(CFG, BODY, &gone(JOINT, "body_a", "9")))
+                .unwrap()
+                .joints[0]
+                .body_a,
+            0
+        );
+        // body の中の "gravity" が top-level の config より前にある
+        let early = format!(
+            "{{\"bodies\": [{}], {CFG}}}",
+            BODY.replace("{", "{\"gravity\": [5,5,5,5,5,5], ")
+        );
+        assert_eq!(named(&early).unwrap().config.gravity, [1, 2, 3, 4, 5, 6]);
+        let early_missing = format!(
+            "{{\"bodies\": [{}], \"config\": {{\"damping\": [1,0]}}}}",
+            BODY.replace("{", "{\"gravity\": [5,5,5,5,5,5], ")
+        );
+        assert_eq!(named(&early_missing), missing("config.gravity"));
+        // config の中の "bodies" / "joints" は scene の bodies / joints でない
+        let inner = format!(
+            "{{{}}}",
+            CFG.replace(
+                "\"substeps\"",
+                &format!("\"bodies\": [{BODY}], \"joints\": [{JOINT}], \"substeps\"")
+            )
+        );
+        let s = named(&inner).unwrap();
+        assert!(s.bodies.is_empty() && s.joints.is_empty());
+        // body の中にだけある "config" は scene の config でない
+        let only_nested = format!(
+            "{{\"bodies\": [{}]}}",
+            BODY.replace("{", &format!("{{{CFG}, "))
+        );
+        assert_eq!(named(&only_nested), missing("config"));
+        // escape で綴った key は同じ key として読む
+        let esc = doc(
+            &CFG.replace("\"config\"", "\"\\u0063onfig\"")
+                .replace("\"gravity\"", "\"gr\\u0061vity\""),
+            BODY,
+            JOINT,
+        );
+        assert_eq!(named(&esc), Ok(want));
+    }
+
+    /// 文字列の中の括弧と escape した引用符は構造に数えない
+    #[test]
+    fn brackets_and_quotes_inside_strings_are_not_structure() {
+        let want = base();
+        let noisy = "\"}{][,\\\"}\\\"{ \\\\\"";
+        let b = BODY.replace("{", &format!("{{\"note\": {noisy}, "));
+        let j = JOINT.replace('{', "{\"n\\\"}\": \"{[\", ");
+        let d = doc(CFG, &b, &j).replace(
+            "\"bodies\"",
+            &format!("\"meta\": [{noisy}, \"]\"], \"bodies\""),
+        );
+        assert_eq!(named(&d), Ok(want.clone()));
+        // body 配列の中の文字列 (旧 reader の split は "}" を object の終わりと数えた)
+        let two = doc(
+            CFG,
+            &format!(
+                "{b}, {}",
+                BODY.replace("\"body_type\": 1", "\"body_type\": 2, \"s\": \"{\"")
+            ),
+            JOINT,
+        );
+        let s = named(&two).unwrap();
+        assert_eq!(s.bodies.len(), 2);
+        assert_eq!((s.bodies[0].body_type, s.bodies[1].body_type), (1, 2));
+        assert_ne!(
+            legacy_json::parse_scene_json(&two, 1).map(|s| s.bodies.len()),
+            Ok(2)
+        );
+    }
+
+    /// 深さの上限ちょうどは読め、1 つ超えると名前つき error (stack を溢れさせない)
+    #[test]
+    fn nesting_depth_limit_is_exact_and_does_not_overflow() {
+        let d = doc(CFG, BODY, JOINT);
+        // top-level object が深さ 1、"meta" の値の n 段の入れ子で深さ 1 + n
+        let arrays = |n: usize| {
+            d.replace(
+                "\"bodies\"",
+                &format!("\"meta\": {}{}, \"bodies\"", "[".repeat(n), "]".repeat(n)),
+            )
+        };
+        let objects = |n: usize| {
+            d.replace(
+                "\"bodies\"",
+                &format!(
+                    "\"meta\": {}1{}, \"bodies\"",
+                    "{\"a\": ".repeat(n),
+                    "}".repeat(n)
+                ),
+            )
+        };
+        let at = |t: &str| t.find("\"meta\"").unwrap() + "\"meta\": ".len();
+        for make in [&arrays as &dyn Fn(usize) -> String, &objects] {
+            let ok = make(MAX_SCENE_JSON_DEPTH - 1);
+            assert_eq!(named(&ok), Ok(base()));
+            let over = make(MAX_SCENE_JSON_DEPTH);
+            let step = if over.contains("{\"a\": {") {
+                "{\"a\": ".len()
+            } else {
+                1
+            };
+            assert_eq!(
+                parse_json_document(&over),
+                Err(InvalidSceneJsonVersion::TooDeep {
+                    offset: at(&over) + step * (MAX_SCENE_JSON_DEPTH - 1)
+                })
+            );
+        }
+        // 上限ちょうどの深さの重複 key も見つける
+        let deep_dup = d.replace(
+            "\"bodies\"",
+            &format!(
+                "\"meta\": {}{{\"k\": 1, \"k\": 2}}{}, \"bodies\"",
+                "[".repeat(MAX_SCENE_JSON_DEPTH - 2),
+                "]".repeat(MAX_SCENE_JSON_DEPTH - 2)
+            ),
+        );
+        assert_eq!(
+            named(&deep_dup),
+            dup(&format!("meta{}.k", "[0]".repeat(MAX_SCENE_JSON_DEPTH - 2)))
+        );
+        // 非常に深い入力 (100 万段) も上限で止まる
+        for open in ["[", "{\"a\":"] {
+            let huge = format!("{{\"x\": {}", open.repeat(1_000_000));
+            assert!(matches!(
+                parse_json_document(&huge),
+                Err(InvalidSceneJsonVersion::TooDeep { .. })
+            ));
+        }
+    }
+
+    /// 巨大な数は wrap も panic もせず名前つき error、message は先頭だけ
+    #[test]
+    fn huge_numbers_are_named_errors_with_bounded_messages() {
+        let big = format!("1{}", "0".repeat(1000));
+        let oor = |p: &str, v: &str| {
+            Err(InvalidSceneJson::OutOfRange {
+                path: p.into(),
+                value: v.into(),
+            })
+        };
+        let c = CFG.replace("\"substeps\": 2", &format!("\"substeps\": {big}"));
+        let e = named(&doc(&c, BODY, JOINT));
+        assert_eq!(e, oor("config.substeps", &big));
+        let shown = e.unwrap_err().to_string();
+        assert!(
+            shown.len() < 120 && shown.contains("1001 bytes") && shown.contains("config.substeps"),
+            "{shown}"
+        );
+        let neg = format!("-{big}");
+        let c = CFG.replace("[1,2,3,4,5,6]", &format!("[1,2,{neg},4,5,6]"));
+        assert_eq!(named(&doc(&c, BODY, JOINT)), oor("config.gravity[2]", &neg));
+        let b = BODY.replace("\"mass\": [2,0]", "\"mass\": [9223372036854775808,0]");
+        assert_eq!(
+            named(&doc(CFG, &b, JOINT)),
+            oor("bodies[0].mass[0]", "9223372036854775808")
+        );
+        let b = BODY.replace(
+            "\"mass\": [2,0]",
+            "\"mass\": [-9223372036854775808,9223372036854775807]",
+        );
+        assert_eq!(
+            named(&doc(CFG, &b, JOINT)).unwrap().bodies[0].mass,
+            [i64::MIN, i64::MAX]
+        );
+        let b = BODY.replace("\"mass\": [2,0]", "\"mass\": [1e999999999,0]");
+        assert!(matches!(
+            named(&doc(CFG, &b, JOINT)),
+            Err(InvalidSceneJson::WrongType { .. })
+        ));
+        // 読まない member の巨大な数は無関係
+        let d = doc(CFG, BODY, JOINT)
+            .replace("\"bodies\"", &format!("\"meta\": {big}e{big}, \"bodies\""));
+        assert_eq!(named(&d), Ok(base()));
+        // 版の error の message も先頭だけ
+        let v = InvalidSceneJsonVersion::OutOfRange { value: big.clone() }.to_string();
+        assert!(v.len() < 120 && v.contains("1001 bytes"), "{v}");
+        let v = InvalidSceneJsonVersion::NotAnUnsignedInteger {
+            value: format!("{big}.5"),
+        }
+        .to_string();
+        assert!(v.len() < 140 && v.contains("1003 bytes"), "{v}");
+        assert_eq!(shown_value("12345"), "12345");
+        assert_eq!(
+            shown_value(&"é".repeat(20)),
+            format!("{}... (40 bytes)", "é".repeat(16))
+        );
+        assert_eq!(shown_value(&"x".repeat(32)), "x".repeat(32));
+        assert_eq!(
+            shown_value(&format!("a{}", "é".repeat(16))),
+            format!("a{}... (33 bytes)", "é".repeat(15))
+        );
+    }
+
+    /// 型と範囲の誤りは名前つき error (path、期待、実際)
+    #[test]
+    fn wrong_types_and_ranges_are_named_errors() {
+        use InvalidSceneJson as E;
+        let ty = |p: &str, expected: &'static str, found: &'static str| {
+            Err(E::WrongType {
+                path: p.into(),
+                expected,
+                found,
+            })
+        };
+        let oor = |p: &str, v: &str| {
+            Err(E::OutOfRange {
+                path: p.into(),
+                value: v.into(),
+            })
+        };
+        let d = doc(CFG, BODY, JOINT);
+        let cases: Vec<(String, Result<PhysicsScene, E>)> = vec![
+            (
+                format!("{{\"config\": [1], \"bodies\": [{BODY}]}}"),
+                ty("config", "an object", "an array"),
+            ),
+            (
+                d.replace(&format!("[{BODY}]"), "{}"),
+                ty("bodies", "an array", "an object"),
+            ),
+            (
+                d.replace(&format!("[{JOINT}]"), "\"x\""),
+                ty("joints", "an array", "a string"),
+            ),
+            (
+                d.replace(&format!("[{BODY}]"), "[1]"),
+                ty("bodies[0]", "an object", "a number"),
+            ),
+            (
+                d.replace(&format!("[{JOINT}]"), &format!("[{JOINT}, null]")),
+                ty("joints[1]", "an object", "null"),
+            ),
+            (
+                d.replace("[1,2,3,4,5,6]", "\"g\""),
+                ty("config.gravity", "an array", "a string"),
+            ),
+            (
+                d.replace("[1,2,3,4,5,6]", "[1,2,true,4,5,6]"),
+                ty("config.gravity[2]", "an integer", "a boolean"),
+            ),
+            (
+                d.replace("[1,2,3,4,5,6]", "[1,2,3,4,5]"),
+                Err(E::WrongLength {
+                    path: "config.gravity".into(),
+                    expected: 6,
+                    found: 5,
+                }),
+            ),
+            (
+                d.replace("\"mass\": [2,0]", "\"mass\": [1.5,0]"),
+                ty(
+                    "bodies[0].mass[0]",
+                    "an integer",
+                    "a number with a fraction or exponent",
+                ),
+            ),
+            (
+                d.replace("\"mass\": [2,0]", "\"mass\": [[2],0]"),
+                ty("bodies[0].mass[0]", "an integer", "an array"),
+            ),
+            (
+                d.replace("\"body_type\": 1", "\"body_type\": \"1\""),
+                ty("bodies[0].body_type", "a non-negative integer", "a string"),
+            ),
+            (
+                d.replace("\"body_type\": 1", "\"body_type\": 300"),
+                oor("bodies[0].body_type", "300"),
+            ),
+            (
+                d.replace("\"body_type\": 1", "\"body_type\": -1"),
+                ty(
+                    "bodies[0].body_type",
+                    "a non-negative integer",
+                    "a negative number",
+                ),
+            ),
+            (
+                d.replace("\"body_a\": 3", "\"body_a\": 4294967296"),
+                oor("joints[0].body_a", "4294967296"),
+            ),
+            (
+                d.replace("\"body_a\": 3", "\"body_a\": -0"),
+                ty(
+                    "joints[0].body_a",
+                    "a non-negative integer",
+                    "a negative number",
+                ),
+            ),
+            (
+                d.replace("\"substeps\": 2", "\"substeps\": null"),
+                ty("config.substeps", "a non-negative integer", "null"),
+            ),
+            (
+                d.replace("\"iterations\": 3", "\"iterations\": 3e0"),
+                ty(
+                    "config.iterations",
+                    "a non-negative integer",
+                    "a number with a fraction or exponent",
+                ),
+            ),
+            (
+                d.replace("\"joint_type\": 2", "\"joint_type\": {}"),
+                ty(
+                    "joints[0].joint_type",
+                    "a non-negative integer",
+                    "an object",
+                ),
+            ),
+            (
+                "{\"bodies\": []}".into(),
+                Err(E::MissingMember {
+                    path: "config".into(),
+                }),
+            ),
+        ];
+        for (text, want) in cases {
+            assert_eq!(named(&text), want, "{text}");
+        }
+        // -0 は i64 の 0
+        assert_eq!(
+            named(&d.replace("[1,2,3,4,5,6]", "[-0,2,3,4,5,6]"))
+                .unwrap()
+                .config
+                .gravity[0],
+            0
+        );
+        // 表示
+        for (e, has) in [
+            (
+                E::DuplicateKey {
+                    path: "config".into(),
+                },
+                "more than one \"config\"",
+            ),
+            (
+                E::MissingMember {
+                    path: "bodies[0].mass".into(),
+                },
+                "no \"bodies[0].mass\"",
+            ),
+            (
+                E::WrongType {
+                    path: "p".into(),
+                    expected: "an array",
+                    found: "null",
+                },
+                "\"p\" is null, expected an array",
+            ),
+            (
+                E::WrongLength {
+                    path: "p".into(),
+                    expected: 6,
+                    found: 5,
+                },
+                "has 5 items, expected 6",
+            ),
+            (
+                E::OutOfRange {
+                    path: "p".into(),
+                    value: "300".into(),
+                },
+                "out of range: 300",
+            ),
+        ] {
+            assert!(e.to_string().contains(has), "{e}");
+        }
+    }
+
+    /// loader は field の error を `InvalidData` の中の `InvalidSceneJson` として返す
+    #[test]
+    fn loader_reports_field_errors_inside_invalid_data() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("f.json");
+        std::fs::write(
+            &path,
+            doc(CFG, BODY, JOINT).replace("\"joints\"", "\"bodies\": [], \"joints\""),
+        )
+        .unwrap();
+        let e = load_scene_json(&path).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
+        assert_eq!(
+            e.get_ref()
+                .and_then(|i| i.downcast_ref::<InvalidSceneJson>())
+                .cloned(),
+            Some(InvalidSceneJson::DuplicateKey {
+                path: "bodies".into()
+            })
+        );
+        std::fs::write(&path, doc(CFG, BODY, JOINT)).unwrap();
+        assert_eq!(load_scene_json(&path).unwrap(), base());
     }
 }

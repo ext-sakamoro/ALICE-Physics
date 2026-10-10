@@ -14,12 +14,15 @@
 //!   document is checked against the JSON grammar: a nested `version` is not the scene version,
 //!   a duplicated top-level member, a non-JSON number (`+1`, `01`) and a value that is not a
 //!   `u32` written as a plain integer are `InvalidData` carrying `InvalidSceneJsonVersion`
+//! * every other field is read from its own object's members: a key that appears only inside a
+//!   nested value is not the member, a key spelled with escapes is the same key, and a repeated
+//!   key in any object is `InvalidData` carrying `InvalidSceneJson::DuplicateKey`
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::scene_io::{
-    load_scene, load_scene_json, save_scene, save_scene_json, InvalidSceneJsonVersion,
-    PhysicsConfig, PhysicsScene, SerializedBody, SerializedJoint, UnsupportedSceneVersion,
-    CURRENT_SCENE_VERSION, SUPPORTED_SCENE_VERSIONS,
+    load_scene, load_scene_json, save_scene, save_scene_json, InvalidSceneJson,
+    InvalidSceneJsonVersion, PhysicsConfig, PhysicsScene, SerializedBody, SerializedJoint,
+    UnsupportedSceneVersion, CURRENT_SCENE_VERSION, SUPPORTED_SCENE_VERSIONS,
 };
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -621,5 +624,157 @@ fn duplicate_top_level_version_members_are_refused_in_either_order() {
     assert_eq!(
         json_version_error(&load_text("dup2.json", &split).unwrap_err()),
         Some(InvalidSceneJsonVersion::DuplicateVersion)
+    );
+}
+
+/// The `InvalidSceneJson` carried by a refusal, `None` for any other error.
+fn field_error(e: &std::io::Error) -> Option<InvalidSceneJson> {
+    e.get_ref()
+        .and_then(|i| i.downcast_ref::<InvalidSceneJson>())
+        .cloned()
+}
+
+const CFG4: &str =
+    "\"substeps\": 4, \"iterations\": 6, \"gravity\": [0,0,-10,0,0,0], \"damping\": [0,-2]";
+
+#[test]
+fn a_nested_key_is_not_the_member_being_read() {
+    // `extra.substeps` comes first and is valid JSON; the config's own member is 4
+    let text = format!(
+        "{{\"config\": {{\"extra\": {{\"substeps\": 99, \"gravity\": [9,9,9,9,9,9]}}, {CFG4}}}}}"
+    );
+    let s = load_text("nested_member.json", &text).unwrap();
+    assert_eq!(s.config.substeps, 4);
+    assert_eq!(s.config.gravity, [0, 0, -10, 0, 0, 0]);
+    // a body's own `mass` is read even when a nested object repeats the name before it
+    let text = format!("{{\"config\": {{{CFG4}}}, \"bodies\": [{{\"meta\": {{\"mass\": [9,9], \"body_type\": 2}}, \"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [3,0]}}]}}");
+    let s = load_text("nested_body.json", &text).unwrap();
+    assert_eq!((s.bodies[0].mass, s.bodies[0].body_type), ([3, 0], 0));
+    // a config that exists only inside a body is not the scene config
+    let text = format!("{{\"bodies\": [{{\"config\": {{{CFG4}}}}}]}}");
+    let e = load_text("nested_config.json", &text).unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::InvalidData);
+    assert_eq!(
+        field_error(&e),
+        Some(InvalidSceneJson::MissingMember {
+            path: "config".into()
+        })
+    );
+}
+
+#[test]
+fn keys_spelled_with_escapes_are_the_same_key() {
+    let text = format!("{{\"\\u0063onfig\": {{{CFG4}}}}}");
+    assert_eq!(
+        load_text("escaped_key.json", &text)
+            .unwrap()
+            .config
+            .substeps,
+        4
+    );
+    let text = format!("{{\"config\": {{{CFG4}, \"subst\\u0065ps\": 5}}}}");
+    assert_eq!(
+        field_error(&load_text("escaped_dup.json", &text).unwrap_err()),
+        Some(InvalidSceneJson::DuplicateKey {
+            path: "config.substeps".into()
+        })
+    );
+}
+
+#[test]
+fn duplicate_keys_are_refused_at_every_level() {
+    let cfg = format!("\"config\": {{{CFG4}}}");
+    for (text, path) in [
+        // two complete copies of the config
+        (format!("{{{cfg}, {cfg}}}"), "config"),
+        (format!("{{{cfg}, \"bodies\": [], \"bodies\": []}}"), "bodies"),
+        (format!("{{{cfg}, \"joints\": [], \"joints\": []}}"), "joints"),
+        (format!("{{\"config\": {{{CFG4}, \"substeps\": 4}}}}"), "config.substeps"),
+        (
+            format!("{{{cfg}, \"joints\": [{{\"body_a\": 1, \"body_a\": 2, \"anchor_a\": [0,0,0,0,0,0], \"anchor_b\": [0,0,0,0,0,0]}}]}}"),
+            "joints[0].body_a",
+        ),
+        (format!("{{{cfg}, \"meta\": [{{\"k\": 1, \"k\": 1}}]}}"), "meta[0].k"),
+    ] {
+        let e = load_text("dup_any.json", &text).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::InvalidData, "{text}");
+        assert_eq!(
+            field_error(&e),
+            Some(InvalidSceneJson::DuplicateKey { path: path.into() }),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn braces_inside_strings_do_not_split_the_body_list() {
+    let body = |ty: u8, note: &str| {
+        format!("{{\"note\": \"{note}\", \"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [1,0], \"body_type\": {ty}}}")
+    };
+    let text = format!(
+        "{{\"config\": {{{CFG4}}}, \"bodies\": [{}, {}]}}",
+        body(1, "}{"),
+        body(2, "]\\\"[{")
+    );
+    let s = load_text("strings.json", &text).unwrap();
+    assert_eq!(s.bodies.len(), 2);
+    assert_eq!((s.bodies[0].body_type, s.bodies[1].body_type), (1, 2));
+}
+
+#[test]
+fn huge_numbers_are_refused_with_a_bounded_message() {
+    let big = format!("9{}", "9".repeat(999));
+    let text = format!(
+        "{{\"config\": {{{}}}}}",
+        CFG4.replace("\"substeps\": 4", &format!("\"substeps\": {big}"))
+    );
+    let e = load_text("huge.json", &text).unwrap_err();
+    assert_eq!(
+        field_error(&e),
+        Some(InvalidSceneJson::OutOfRange {
+            path: "config.substeps".into(),
+            value: big.clone()
+        })
+    );
+    let shown = e.to_string();
+    assert!(
+        shown.len() < 120 && shown.contains("(1000 bytes)"),
+        "{shown}"
+    );
+    let e = load_text("huge_version.json", &format!("{{\"version\": {big}}}")).unwrap_err();
+    assert!(
+        e.to_string().len() < 120 && e.to_string().contains("(1000 bytes)"),
+        "{e}"
+    );
+}
+
+#[test]
+fn nesting_at_the_depth_limit_loads_and_one_more_level_is_refused() {
+    use alice_physics::scene_io::MAX_SCENE_JSON_DEPTH;
+    let cfg = format!("\"config\": {{{CFG4}}}");
+    // the top-level object is level 1, so `meta` may hold MAX - 1 nested arrays
+    let meta = |n: usize| format!("{{{cfg}, \"meta\": {}{}}}", "[".repeat(n), "]".repeat(n));
+    assert_eq!(
+        load_text("depth_ok.json", &meta(MAX_SCENE_JSON_DEPTH - 1))
+            .unwrap()
+            .config
+            .substeps,
+        4
+    );
+    let e = load_text("depth_over.json", &meta(MAX_SCENE_JSON_DEPTH)).unwrap_err();
+    assert!(
+        matches!(
+            json_version_error(&e),
+            Some(InvalidSceneJsonVersion::TooDeep { .. })
+        ),
+        "{e}"
+    );
+    let e = load_text("depth_huge.json", &meta(500_000)).unwrap_err();
+    assert!(
+        matches!(
+            json_version_error(&e),
+            Some(InvalidSceneJsonVersion::TooDeep { .. })
+        ),
+        "{e}"
     );
 }

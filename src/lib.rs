@@ -654,8 +654,9 @@ pub use rope::{Rope, RopeConfig};
 pub use rope_attach::{solve_rope_attachments, RopeAttachment};
 #[cfg(feature = "std")]
 pub use scene_io::{
-    load_scene, load_scene_json, save_scene, save_scene_json, InvalidSceneJsonVersion,
-    PhysicsScene, SerializedBody, SerializedJoint, UnsupportedSceneVersion,
+    load_scene, load_scene_json, save_scene, save_scene_json, InvalidSceneJson,
+    InvalidSceneJsonVersion, PhysicsScene, SerializedBody, SerializedJoint,
+    UnsupportedSceneVersion,
 };
 // deprecated aliases of `load_scene` / `load_scene_json`
 #[cfg(feature = "std")]
@@ -817,8 +818,9 @@ pub mod prelude {
     pub use crate::rope_attach::{solve_rope_attachments, RopeAttachment};
     #[cfg(feature = "std")]
     pub use crate::scene_io::{
-        load_scene, load_scene_json, save_scene, save_scene_json, InvalidSceneJsonVersion,
-        PhysicsScene, SerializedBody, SerializedJoint, UnsupportedSceneVersion,
+        load_scene, load_scene_json, save_scene, save_scene_json, InvalidSceneJson,
+        InvalidSceneJsonVersion, PhysicsScene, SerializedBody, SerializedJoint,
+        UnsupportedSceneVersion,
     };
     // deprecated aliases of `load_scene` / `load_scene_json`
     #[cfg(feature = "std")]
