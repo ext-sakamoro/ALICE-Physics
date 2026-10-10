@@ -210,12 +210,12 @@ class PerTarget(unittest.TestCase):
     def test_passes_are_counted_per_target(self):
         self.assertEqual(
             at.per_target_passed(SAMPLE),
-            {"analytic_hyperelastic_mms_order": 0, "determinism_golden": 13, "audit_force": 2},
+            {"analytic_hyperelastic_mms_order": 0, "determinism_golden": 13, "audit_force": 4},
         )
 
     def test_a_selected_target_that_ran_nothing_is_reported_although_the_total_is_not_zero(self):
         counts = at.per_target_passed(SAMPLE)
-        self.assertEqual(sum(counts.values()), 15)
+        self.assertEqual(sum(counts.values()), 17)
         empty = at.empty_targets(counts, ["analytic_hyperelastic_mms_order", "audit_force"])
         self.assertEqual(empty, ["analytic_hyperelastic_mms_order"])
 
@@ -233,6 +233,107 @@ class PerTarget(unittest.TestCase):
         coloured = SAMPLE.replace("Running tests/", "\x1b[1m\x1b[32mRunning\x1b[0m tests/")
         self.assertNotEqual(coloured, SAMPLE)
         self.assertEqual(at.per_target_passed(coloured), at.per_target_passed(SAMPLE))
+
+
+ALL_IGNORED = """
+     Running tests/analytic_external_force_substep.rs (target/debug/deps/x-1)
+
+running 6 tests
+test a ... ignored, src gap: x
+test result: ok. 0 passed; 0 failed; 6 ignored; 0 measured; 0 filtered out; finished in 0.00s
+"""
+
+
+class AllIgnored(unittest.TestCase):
+    def test_a_target_whose_tests_are_all_ignored_ran_and_is_not_empty(self):
+        counts = at.per_target_passed(ALL_IGNORED)
+        self.assertEqual(counts, {"analytic_external_force_substep": 6})
+        self.assertEqual(at.empty_targets(counts, ["analytic_external_force_substep"]), [])
+
+
+HOST = {("id", "unix"), ("kv", "target_os", "macos"), ("kv", "target_arch", "aarch64")}
+NATIVE = {"std", "simd", "parallel", "ffi"}
+KNOWN = NATIVE | {"neural", "replay", "gpu-solver-bridge"}
+
+
+class Cfg(unittest.TestCase):
+    def ev(self, text, features=NATIVE):
+        return at.eval_cfg(at.parse_cfg(at.crate_cfg(text)), set(features), HOST)
+
+    def test_no_crate_cfg(self):
+        self.assertIsNone(at.crate_cfg("use alice_physics::x;\n#[cfg(test)] fn f() {}"))
+
+    def test_not_feature(self):
+        t = '//! doc\n#![cfg(not(feature = "parallel"))]\nuse alice_physics::x;'
+        self.assertFalse(self.ev(t))
+        self.assertTrue(self.ev(t, NATIVE - {"parallel"}))
+
+    def test_all_and_any(self):
+        self.assertTrue(self.ev('#![cfg(all(feature = "std", any(feature = "simd", feature = "neural")))]'))
+        self.assertFalse(self.ev('#![cfg(all(feature = "std", feature = "neural"))]'))
+
+    def test_target_os_and_bare_names(self):
+        self.assertTrue(self.ev('#![cfg(target_os = "macos")]'))
+        self.assertFalse(self.ev('#![cfg(target_os = "windows")]'))
+        self.assertTrue(self.ev("#![cfg(unix)]"))
+        self.assertFalse(self.ev("#![cfg(windows)]"))
+        self.assertTrue(self.ev("#![cfg(test)]"))
+
+    def test_several_crate_cfgs_are_all_required(self):
+        t = '#![cfg(feature = "std")]\n#![cfg(feature = "neural")]\n'
+        self.assertFalse(self.ev(t))
+        self.assertTrue(self.ev(t, NATIVE | {"neural"}))
+
+    def test_unknown_forms_fail_closed(self):
+        for t in ['#![cfg(fancy(feature = "x"))]', '#![cfg(flavour = "x")]', "#![cfg(something)]",
+                  '#![cfg(feature = )]', '#![cfg(all(feature = "a"']:
+            with self.subTest(t=t), self.assertRaises(at.UnknownCfg):
+                self.ev(t)
+
+
+class Passes(unittest.TestCase):
+    TESTS = {
+        "plain": "use alice_physics::x;",
+        "hyper": '#![cfg(not(feature = "parallel"))]\nuse alice_physics::x;',
+        "neural": '#![cfg(feature = "neural")]\nuse alice_physics::x;',
+        "neural2": '#![cfg(all(feature = "std", feature = "neural"))]\nuse alice_physics::x;',
+        "win": '#![cfg(target_os = "windows")]\nuse alice_physics::x;',
+        "replay_req": "use alice_physics::x;",
+        "weird": '#![cfg(nightly_only)]\nuse alice_physics::x;',
+        "typo": '#![cfg(feature = "nueral")]\nuse alice_physics::x;',
+    }
+
+    def plan(self, targets, req=None):
+        return at.plan_passes(targets, self.TESTS, set(NATIVE), HOST, req or {}, KNOWN)
+
+    def test_cfg_false_targets_move_to_the_nearest_feature_set(self):
+        passes, skipped = self.plan(["plain", "hyper", "neural", "neural2", "win"])
+        got = {tuple(sorted(f)): sorted(ts) for f, ts in passes}
+        self.assertEqual(got[tuple(sorted(NATIVE))], ["plain"])
+        self.assertEqual(got[tuple(sorted(NATIVE - {"parallel"}))], ["hyper"])
+        self.assertEqual(got[tuple(sorted(NATIVE | {"neural"}))], ["neural", "neural2"])
+        self.assertEqual(skipped, ["win"])
+        self.assertEqual(len(passes), 3)
+
+    def test_required_features_join_the_extra_pass(self):
+        passes, _ = self.plan(["hyper"], req={"hyper": {"replay"}})
+        self.assertIn((frozenset((NATIVE - {"parallel"}) | {"replay"}), ["hyper"]), passes)
+
+    def test_the_main_pass_is_always_first_even_when_empty(self):
+        passes, _ = self.plan(["hyper"])
+        self.assertEqual(passes[0], (frozenset(NATIVE), []))
+
+    def test_unknown_cfg_and_undefined_features_fail_closed(self):
+        with self.assertRaises(at.UnknownCfg):
+            self.plan(["weird"])
+        with self.assertRaises(at.UnknownCfg):
+            self.plan(["typo"])
+
+    def test_a_true_cfg_target_with_zero_tests_is_red(self):
+        # the mutant the gate exists for: cfg true for the pass, nothing ran
+        passes, _ = self.plan(["plain"])
+        counts = {"plain": 0}
+        self.assertEqual(at.empty_targets(counts, passes[0][1]), ["plain"])
 
 
 if __name__ == "__main__":
