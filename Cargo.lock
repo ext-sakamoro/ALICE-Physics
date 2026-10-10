@@ -74,7 +74,7 @@ checksum = "2bda5d70d84e0c64ddcdd95bd34c90010ea080b8a7772bffc61cb08f23040836"
 
 [[package]]
 name = "alice-physics"
-version = "2.1.0"
+version = "2.2.0"
 dependencies = [
  "alice-analytics",
  "alice-db",
