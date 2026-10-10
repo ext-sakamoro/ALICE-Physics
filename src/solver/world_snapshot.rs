@@ -1718,6 +1718,14 @@ impl PhysicsWorld {
     /// 2.1.0 refuses a version 5 blob with
     /// [`WorldSnapshotError::UnsupportedVersion`] (its supported range ends
     /// at 4), and 2.0.0 refuses versions 4 and 5 the same way.
+    ///
+    /// Snapshots are not guaranteed to be interchangeable across minor
+    /// versions: peers that exchange snapshots or run in lockstep have to run
+    /// the same minor version. A writer that emits version 4 with the tree
+    /// dumped node by node from the leaf set rebuilt in body index order is
+    /// feasible (2.1.0 accepts such a blob and steps from it identically), but
+    /// its bytes and hash differ from what 2.1.0 itself writes for the same
+    /// world, so it is not provided.
     pub const WORLD_SNAPSHOT_VERSION: u16 = 5;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
