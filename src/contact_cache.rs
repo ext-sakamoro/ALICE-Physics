@@ -449,7 +449,11 @@ impl ContactCache {
     ///   body's index lies between `idx` and `last`), every point is turned
     ///   ([`CachedContactPoint::turned`]) and the normal negated, so the data
     ///   keeps describing `pair.body_a` as A: a world that had the moved body
-    ///   at `idx` from the start caches the same data under the same key. The
+    ///   at `idx` from the start caches the same pair and points under the
+    ///   same key. Where A and B exchange, the data agrees with that world bit
+    ///   for bit when the normal rounds symmetrically, otherwise to within
+    ///   1 ulp in the normal and the contact points (that world detects the
+    ///   reversed contact afresh and normalises and rounds it on its own). The
     ///   new key involves `idx`, which no kept manifold does, so it cannot
     ///   collide with another pair.
     ///

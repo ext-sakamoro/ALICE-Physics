@@ -1,5 +1,9 @@
-//! `PhysicsWorld::remove_body` must leave `contact_cache` exactly as a world
-//! that never contained the removed body would have it.
+//! `PhysicsWorld::remove_body` must leave `contact_cache` as a world that
+//! never contained the removed body would have it, when that world receives
+//! the same contacts. (Against a world that detects the contacts itself, a
+//! pair whose A and B exchange agrees bit for bit only when the normal rounds
+//! symmetrically, otherwise to within 1 ulp in the normal and the contact
+//! points; see `analytic_remove_body_contact_cache_detected.rs`.)
 //!
 //! The cache is keyed by body index pairs (`BodyPairKey`, canonical
 //! `body_a < body_b`). `remove_body` swap-removes: the last body moves into

@@ -4,7 +4,12 @@
 //! is stepped once, so its contact cache is what the built-in detection
 //! (which reports pairs as `body_a < body_b`) stores for that order. The
 //! original world is stepped once with all bodies, then `remove_body(idx)`.
-//! The cache contents must agree bit for bit; `serialize_state` (which
+//! The cache contents must agree bit for bit in these scenes: every pair
+//! of centres lies on the x axis, so the detected normal rounds the same way
+//! in both directions. (For a general normal the turned data of a pair whose A and B
+//! exchange agrees with the control only to within 1 ulp in the normal and
+//! the contact points: the control normalises and rounds the reversed
+//! contact on its own.) `serialize_state` (which
 //! does not hold the cache) must agree bit for bit where the pair keeps its
 //! order. Where the re-sort exchanges A and B, the step itself solved the
 //! touching pair with the roles exchanged in the two worlds, which leaves

@@ -2394,8 +2394,13 @@ impl PhysicsWorld {
     /// [`Self::contact_cache`] follows the swap: manifolds of the removed
     /// body are dropped and those of the moved last body are re-keyed to
     /// `idx` (turned around when the re-sorted pair exchanges A and B), so
-    /// the cache holds what a world that never had the body, with the same
-    /// body order, would have cached.
+    /// the cache holds the pairs and points a world that never had the body,
+    /// with the same body order, would have cached. A pair that keeps its
+    /// order matches such a world bit for bit. A pair whose A and B exchange
+    /// matches bit for bit when the normal rounds symmetrically; otherwise
+    /// the normal and the contact points agree to within 1 ulp, because such
+    /// a world detects the reversed contact afresh and normalises and rounds
+    /// it on its own.
     ///
     /// The bodies' state is not re-solved: it equals that of a fresh world
     /// with the same body order only up to the solver's dependence on body
