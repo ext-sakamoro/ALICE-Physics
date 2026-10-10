@@ -851,14 +851,6 @@ fn closest_on_tetrahedron(a: Vertex, b: Vertex, c: Vertex, d: Vertex, k: u32) ->
     }
 }
 
-/// The point of face `s` with weights `lambda`, from its first vertex along its
-/// edges: `s₀ + λ₁(s₁ − s₀) + λ₂(s₂ − s₀)`. A point of the face is in the
-/// Minkowski difference, so its length is never below the distance (see
-/// [`gjk_distance`]).
-fn within_face(s: &[Vertex], lambda: &[Fix128]) -> Vec3Fix {
-    s[0].w + (s[1].w - s[0].w) * lambda[1] + (s[2].w - s[0].w) * lambda[2]
-}
-
 /// Whether `x` is shorter than `y`. Squared lengths keep multiples of `2⁻⁶⁴`
 /// only, so two candidate points about `2⁻³²` from the origin (GJK's last
 /// steps) differ by less than one unit there and the first was kept whichever
@@ -922,30 +914,25 @@ fn weighted(s: &(Vec<Vertex>, Vec<Fix128>)) -> Vec3Fix {
 ///
 /// Near a curved surface the simplex is a long thin triangle of support points
 /// (see [`barycentric_is_precise`]); its weights come from signed areas
-/// ([`closest_on_triangle_by_area`]). Its point then plays two parts, each
-/// taken from where it is precise (`u = 2⁻⁶⁴`, `L` its longest edge, `P` its
+/// ([`closest_on_triangle_by_area`]). `v` is then its projection on the
+/// face's plane ([`nearest_on_affine_hull`]), both as the next search
+/// direction and as the distance (`u = 2⁻⁶⁴`, `L` its longest edge, `P` its
 /// farthest vertex, `N` twice its area, `D` the distance; measured on the
 /// faces of the casts in `tests/analytic_world_query_curved_casts.rs` and
 /// `tests/analytic_world_query_precision.rs` against the nearest point in
-/// exact rational arithmetic):
+/// exact rational arithmetic): the plane's normal is off by less than
+/// `2√3·u / N` rad (each component of the cross product of two exact edges is
+/// truncated by less than `2u`), `9·10⁻¹¹` rad or less on those faces, and the
+/// projected length by up to `2√3·P·u / N` either way, within `10⁻⁶·2⁻³²` on
+/// them. The point within the face, from the area weights, is off along the
+/// face by `δ < 60·L·u / N`, so its direction by `δ / D`, which grows as `D`
+/// drops: `9·10⁻⁷` rad at `D ≈ 1.3·2⁻³²`, where support points along it
+/// repeated and GJK stopped at `1.3·2⁻³²` from a segment that reached
+/// `2.7·2⁻³²` into an ellipsoid. Where the projected length's error could
+/// matter (a time of impact near its tolerance), the lower bound below and
+/// an exact distance decide (see [`toi_convex_refined`]).
 ///
-/// - The direction of `v`, which chooses the next support point, is the
-///   projection on the face's plane ([`nearest_on_affine_hull`]): the plane's
-///   normal is off by less than `2√3·u / N` rad (each component of the cross
-///   product of two exact edges is truncated by less than `2u`), `9·10⁻¹¹` rad
-///   or less on those faces. The point within the face is off along the face
-///   by `δ < 60·L·u / N`, so its direction by `δ / D`, which grows as `D`
-///   drops: `9·10⁻⁷` rad at `D ≈ 1.3·2⁻³²`, where support points along it
-///   repeated and GJK stopped at `1.3·2⁻³²` from a segment that reached
-///   `2.7·2⁻³²` into an ellipsoid.
-/// - The distance reported is the length of the point within the face
-///   ([`within_face`]), which is in the Minkowski difference and never below
-///   the distance (rounding aside): over it by `δ² / 2D`, at most `δ`. The
-///   projection's length is off by up to `2√3·P·u / N` either way, which
-///   with the tolerance of a time of impact let a path `7.5·2⁻³²` into a
-///   cylinder's cap seem clear. On those faces both are within `10⁻⁶·2⁻³²`.
-///
-/// The witness `pa − pb` is along `v` and as long as the distance.
+/// The witness `pa − pb` is `v`.
 ///
 /// # A lower bound
 ///
@@ -995,7 +982,7 @@ struct GjkBounds {
     pb: Vec3Fix,
     /// A lower bound on the distance (see [`gjk_distance`] § A lower bound).
     lower: Fix128,
-    /// Whether the distance was taken within a face whose weights are not
+    /// Whether the distance was taken on a face whose weights are not
     /// precise.
     face: bool,
 }
@@ -1005,10 +992,9 @@ fn gjk_bounds<A: Support, B: Support>(a: &A, b: &B) -> Option<GjkBounds> {
     let mut simplex = vec![vertex(a, b, Vec3Fix::UNIT_X)];
     let mut weights = vec![Fix128::ONE];
     let mut v = simplex[0].w;
-    // For a face whose weights are not precise: `v` is its projection on the
-    // face's plane and this the length of its point within the face (see the
-    // doc above).
-    let mut face_bound: Option<Fix128> = None;
+    // `v` was projected on a face whose weights are not precise (see the doc
+    // above).
+    let mut on_face = false;
     // The largest `v̂·w` seen (see § A lower bound).
     let mut lower = Fix128::ZERO;
     for _ in 0..GJK_MAX_ITERATIONS {
@@ -1058,9 +1044,7 @@ fn gjk_bounds<A: Support, B: Support>(a: &A, b: &B) -> Option<GjkBounds> {
             // No progress (rounding): keep the previous simplex.
             break;
         }
-        face_bound = face
-            .then(|| fine_length(within_face(&sub, &lambda)))
-            .flatten();
+        on_face = face;
         simplex = sub;
         weights = lambda;
         v = next;
@@ -1074,23 +1058,7 @@ fn gjk_bounds<A: Support, B: Support>(a: &A, b: &B) -> Option<GjkBounds> {
         .zip(&weights)
         .fold(Vec3Fix::ZERO, |acc, (s, &l)| acc + s.b * l);
     let len = fine_length(v)?;
-    if let Some(bound) = face_bound {
-        // The distance is the length within the face; `pa − pb` is along `v`,
-        // that long (for a short `v` the normal is taken from `v` itself).
-        let diff = if v.length_squared() < FINE_LENGTH_SQUARED {
-            v
-        } else {
-            v * (bound / len)
-        };
-        return Some(GjkBounds {
-            dist: bound,
-            pa: pb + diff,
-            pb,
-            lower: min_fix(lower, bound),
-            face: true,
-        });
-    }
-    if v.length_squared() < FINE_LENGTH_SQUARED {
+    if on_face || v.length_squared() < FINE_LENGTH_SQUARED {
         // `v` is projected (see `nearest_on_affine_hull`), the weights are not
         // as precise: the witness on `a` is taken as `pb + v`, so that `pa − pb`
         // is `v` exactly.
@@ -1099,7 +1067,7 @@ fn gjk_bounds<A: Support, B: Support>(a: &A, b: &B) -> Option<GjkBounds> {
             pa: pb + v,
             pb,
             lower: min_fix(lower, len),
-            face: false,
+            face: on_face,
         });
     }
     Some(GjkBounds {
@@ -1153,7 +1121,7 @@ struct Bound {
     /// Not above the distance (see [`gjk_distance`] § A lower bound).
     lower: Fix128,
     /// Whether the time of impact steps by `lower` rather than by the distance:
-    /// for a distance taken within a face whose weights are not precise.
+    /// for a distance taken on a face whose weights are not precise.
     step_lower: bool,
 }
 
@@ -2365,7 +2333,7 @@ fn straddles(lower: Fix128, upper: Fix128) -> bool {
 /// there is one.
 ///
 /// The step from a clear time goes by the gap (the tangent's root), from
-/// the distance as before, or for a distance taken within an imprecise face
+/// the distance as before, or for a distance taken on an imprecise face
 /// from the lower bound, and at least by the tolerance (a step of the tolerance
 /// goes at most that far in). Touching is decided by the distance.
 fn toi_by(

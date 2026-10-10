@@ -334,10 +334,10 @@ fn polytope_casts_with_radius_from_2_pow_minus_16_keep_their_bits() {
 /// a cast ends on when its gap is bracketed (it is the clear end for a core of
 /// reach `2⁻¹⁶` or more, and the tangent's root from it only below).
 const CURRENT_ROUND: [(&str, usize, usize, u64); 4] = [
-    ("cone", 1102, 513, 5_852_212_246_854_234_555),
-    ("cylinder", 1144, 624, 14_927_364_221_203_275_811),
-    ("field", 1145, 870, 9_444_083_892_263_037_640),
-    ("ellipsoid", 1122, 525, 17_000_410_992_680_744_878),
+    ("cone", 1102, 513, 14_532_302_535_408_115_044),
+    ("cylinder", 1144, 624, 13_777_481_894_267_097_839),
+    ("field", 1145, 870, 3_373_970_361_301_922_804),
+    ("ellipsoid", 1122, 525, 12_777_141_043_576_937_521),
 ];
 
 #[test]
