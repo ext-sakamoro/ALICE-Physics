@@ -9,8 +9,9 @@
 //! - a pair that involves the old last index describes the moved body; in
 //!   the control world that body already sits at `idx`, so the same data is
 //!   cached under the pair with `last` replaced by `idx`, re-sorted by
-//!   `BodyPairKey::new` (the cache never reorders the stored points / normal
-//!   by the key, so the data is carried over unchanged);
+//!   `BodyPairKey::new`; when the re-sort exchanges A and B the data is
+//!   turned around with it (the cache holds every touch with `pair.body_a`
+//!   as A);
 //! - every other pair is untouched.
 //!
 //! Oracle: the control world receives the same contacts (indices mapped,
@@ -61,7 +62,11 @@ fn lambdas_k(k: i64) -> (Fix128, Fix128, Fix128) {
 }
 
 /// Add contact `k` between `a` and `b` (in that order) and store its
-/// impulses on the manifold's first point.
+/// impulses on the manifold's first point. The impulses `lambdas_k(k)` are
+/// for the touch as reported (`a` is A); the cache holds the pair with the
+/// smaller index as A, so for `a > b` they are stored re-expressed for the
+/// turned normal, `(λn, λt1, -λt2)` (see `CachedContactPoint`): the same
+/// physical impulse whichever world and index assignment reports it.
 fn add(w: &mut PhysicsWorld, k: i64, a: usize, b: usize) {
     let c = contact_k(k);
     w.add_contact(ContactConstraint {
@@ -73,6 +78,7 @@ fn add(w: &mut PhysicsWorld, k: i64, a: usize, b: usize) {
         cached_lambda: Fix128::ZERO,
     });
     let (n, t1, t2) = lambdas_k(k);
+    let t2 = if a > b { -t2 } else { t2 };
     w.contact_cache
         .get_or_create(BodyPairKey::new(a, b), Fix128::ZERO, Fix128::ZERO)
         .store_impulses(0, n, t1, t2);
@@ -231,12 +237,15 @@ fn the_cache_stays_consistent_for_lookups_and_frames_after_a_removal() {
     let mut w = original();
     w.remove_body(1).expect("index 1 exists");
     let before = w.contact_cache.manifold_count();
-    let key = BodyPairKey::new(1, 2); // k2, remapped from (2,4)
+    // k2, remapped from (2,4): body 2 was A, the moved body (now 1) becomes
+    // A, so the stored impulses are turned: (λn, λt1, -λt2)
+    let key = BodyPairKey::new(1, 2);
     let lambda = w
         .contact_cache
         .get_or_create(key, Fix128::ZERO, Fix128::ZERO)
         .warm_start_impulse(0);
-    assert_eq!(lambda, lambdas_k(2));
+    let (n, t1, t2) = lambdas_k(2);
+    assert_eq!(lambda, (n, t1, -t2));
     assert_eq!(w.contact_cache.manifold_count(), before, "no duplicate");
     let mut c = control();
     for world in [&mut w, &mut c] {
