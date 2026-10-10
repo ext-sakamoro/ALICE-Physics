@@ -3250,10 +3250,14 @@ impl PhysicsWorld {
     /// Also records the touch in [`Self::contact_cache`] under the sorted
     /// pair, expressed with the smaller index as A: a contact given as
     /// `(body_a > body_b)` is stored with its points swapped and its normal
-    /// turned around, so both orders cache the same data and
+    /// turned around, and
     /// [`ContactCache::apply_warm_start`](crate::contact_cache::ContactCache::apply_warm_start)
-    /// pushes each body the right way. The constraint itself is kept as
-    /// given.
+    /// pushes each body the right way. Both orders cache the same data when
+    /// the two calls are exact mirrors of each other (bodies swapped, normal
+    /// negated, `point_a` / `point_b` swapped, the rest equal); a contact
+    /// detected afresh with the bodies in the reverse order is not such a
+    /// mirror in general and may differ from it by 1 ulp. The constraint
+    /// itself is kept as given.
     pub fn add_contact(&mut self, contact: ContactConstraint) {
         // Update contact cache for warm starting
         // The cache keys the pair sorted and holds every touch with the
