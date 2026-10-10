@@ -86,16 +86,20 @@ def defines(lines: list[str], name: str) -> bool:
 
 def attribute_start(lines: list[str], last: int) -> int | None:
     """The first line of the attribute that ends on line `last` (`#[deprecated(`
-    ... `)]` spans several lines), or None when no `#[` above balances the
-    brackets before a blank line."""
+    ... `)]` spans several lines), or None when the brackets balance on a line
+    that does not open an attribute, or a blank line comes first (both read as
+    "no attribute", which can only leave text out of the item, never pull a
+    neighbour's text in)."""
     depth = 0
     for k in range(last, max(-1, last - 50), -1):
         ln = lines[k].split("//")[0]
         if not ln.strip():
             return None
         depth += ln.count("]") - ln.count("[")
-        if depth == 0 and ln.lstrip().startswith(("#[", "#![")):
-            return k
+        if depth <= 0:
+            # the brackets close here: an attribute only if this line opens one
+            # (`foo![ 1 ]` above an item is code, not the item's attribute)
+            return k if depth == 0 and ln.lstrip().startswith(("#[", "#![")) else None
     return None
 
 
