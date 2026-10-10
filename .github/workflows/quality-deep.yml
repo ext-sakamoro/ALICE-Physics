@@ -145,6 +145,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@nextest
       - name: Mutants (nightly / PR = in-diff, a missed mutant fails)
         if: (github.event_name == 'pull_request' || github.event.schedule == '30 17 * * 1-6')
         run: |
@@ -163,18 +165,35 @@ jobs:
             --features "${{ matrix.features }}" --out /tmp/planned.diff)
           echo "plan: $plan"
           features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
+          targets=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join(json.load(sys.stdin)["tests"]))')
           tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
           if [ ! -s /tmp/planned.diff ]; then echo "no change in code the host test run can build"; exit 0; fi
+          if ! python3 scripts/mutants_baseline_timings.py --check; then
+            echo "::error::scripts/mutants-baseline-timings.txt is stale (a planned target is missing); re-run scripts/mutants_baseline_timings.py --regenerate"
+            exit 1
+          fi
+          # derived, not guessed: a fixed 300s baseline timeout measured 0/68 mutants
+          # tested on a day whose planned targets' combined wall-clock legitimately
+          # exceeded it (2026-10-09 nightly run 37995588561); the budget below sums
+          # each selected target's measured time (scripts/mutants_baseline_budget.py)
+          budget=$(python3 scripts/mutants_baseline_budget.py --targets "$targets")
+          echo "derived baseline/mutant timeout: ${budget}s for targets: lib $targets"
           ulimit -v 6291456
           set +e
           # `--cargo-arg` limits the build of every mutant to the lib tests and the planned
           # integration tests (`-- --lib` built every test target, about 4 min per mutant).
-          # The run is stopped with SIGINT before the job's own timeout, so cargo-mutants
-          # writes what it tested; an unfinished run then fails below instead of being
-          # cancelled with its missed mutants unreported.
+          # `--test-tool nextest` runs the planned targets concurrently instead of serially
+          # (943s -> 271.6s measured on an 80-target plan, 2026-10-10); it alone is not a
+          # complete fix (a plan concentrated on only the slowest targets, e.g. the
+          # hyperelastic family, still serializes within each target and can still exceed a
+          # fixed small timeout -- the derived budget above is the complement, not a
+          # redundant change). The run is stopped with SIGINT before the job's own timeout,
+          # so cargo-mutants writes what it tested; an unfinished run then fails below
+          # instead of being cancelled with its missed mutants unreported.
           # shellcheck disable=SC2086
           timeout --signal=INT --kill-after=10m 270m \
-            cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            cargo mutants --in-diff /tmp/planned.diff --timeout "$budget" --build-timeout 240 -j 2 \
+            --test-tool nextest --output mutants.out \
             ${features:+--features "$features"} --cargo-arg=--lib $tests
           rc=$?
           set -e
@@ -190,6 +209,20 @@ jobs:
           fi
           if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
             echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
+            exit 1
+          fi
+          # a run that "completes" with 0 mutants tested (caught+missed+timeout == 0) must
+          # not read as green: it measured nothing (the real schema's fields are top-level,
+          # not under a "summary" key -- .get("summary", d) falls back to the whole dict)
+          tested=$(python3 -c '
+          import json
+          d = json.load(open("mutants.out/outcomes.json"))
+          s = d.get("summary", d)
+          print(s.get("caught", 0) + s.get("missed", 0) + s.get("timeout", 0))
+          ')
+          echo "mutants tested: $tested"
+          if [ "$tested" -eq 0 ]; then
+            echo "::error::0 mutants tested (caught+missed+timeout == 0, compared nothing)"
             exit 1
           fi
           # 0 = all caught, 2 = a mutant survived (fails: the change came without a test that sees it),
