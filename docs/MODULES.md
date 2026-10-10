@@ -70,7 +70,7 @@ this file or listed twice, or when a linked example or test does not exist.
 | `multi_world` | several independent worlds with body transfer |  | [`multi_world_management`](../examples/multi_world_management.rs) | standalone |
 | `netcode` | lockstep frame inputs, snapshots, checksums and rollback |  | [`rollback_netcode`](../examples/rollback_netcode.rs) | binding |
 | `netcode_prediction` | client-side prediction with server reconciliation | std | [`rollback_netcode`](../examples/rollback_netcode.rs) | standalone |
-| `scene_io` | binary and JSON scene files with exact `Fix128` round trip | std | [`scene_snapshot_roundtrip`](../examples/scene_snapshot_roundtrip.rs) | standalone (binding 1 of 18 items) |
+| `scene_io` | binary and JSON scene files with exact `Fix128` round trip | std | [`scene_snapshot_roundtrip`](../examples/scene_snapshot_roundtrip.rs) | standalone (binding 1 of 19 items) |
 | `profiling` | per-stage timers and per-frame statistics |  | [`profiling_stages`](../examples/profiling_stages.rs) | standalone |
 | `debug_render` | wireframe primitives for bodies, contacts, joints, BVH and forces |  | [`debug_render_primitives`](../examples/debug_render_primitives.rs) | world API |
 | `gpu_bridge` | `GpuSolverBridge` trait for external GPU solvers that must match the CPU result bit for bit | gpu-solver-bridge | [`world_api_tour`](../examples/world_api_tour.rs) | standalone (step 1 of 3 items) |

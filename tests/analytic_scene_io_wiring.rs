@@ -17,6 +17,10 @@
 //! * every other field is read from its own object's members: a key that appears only inside a
 //!   nested value is not the member, a key spelled with escapes is the same key, and a repeated
 //!   key in any object is `InvalidData` carrying `InvalidSceneJson::DuplicateKey`
+//! * a member the format does not define, at any object of the scene (top level, `config`,
+//!   `bodies[i]`, `joints[i]`), is `InvalidData` carrying `InvalidSceneJson::UnknownMember` with
+//!   its path and, within edit distance 2 (case-insensitive), the intended key; the checks run in
+//!   the order grammar / depth, version, repeated keys, unknown members, field values
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::scene_io::{
@@ -464,9 +468,13 @@ fn compact_and_truncated_documents() {
     let s = load_text("compact.json", compact).unwrap();
     assert_eq!(s.bodies[0].body_type, 2);
     assert_eq!(s.joints[0].body_b, 9);
-    // a key name that only appears as a string value, with no colon after it, is not a key
+    // a key name that only appears as a string value is not a key: the member is `note`, which
+    // the format does not define (the version gate passed, so it is not read as a version)
     let stray = "{\"config\":{\"gravity\":[1,2,3,4,5,6],\"damping\":[1,2]},\"note\":\"version\"}";
-    assert_eq!(load_text("stray.json", stray).unwrap().version, 1);
+    assert_eq!(
+        field_error(&load_text("stray.json", stray).unwrap_err()),
+        Some(unknown("note", None))
+    );
     // truncated document (no closing brace) and over-long arrays are errors
     let cut = "{\"config\":{\"gravity\":[1,2,3,4,5,6],\"damping\":[1,2]},\"bodies\":[";
     assert_eq!(
@@ -527,14 +535,19 @@ fn json_version_is_read_from_the_top_level_member_only() {
     let s = load_text("ws.json", &with_head(" \n\t\"version\"\r\n :\n 1 \n,")).unwrap();
     assert_eq!(s.version, 1);
     assert_eq!(s.config.substeps, 2);
-    // `version` only inside a nested object: the top level has none, so the scene is version 1
+    // `version` only inside a nested object: the top level has none, so the version gate sees
+    // version 1 and passes; the nested member is then refused as unknown, not as version 2
     let nested = with_head("").replace("\"config\": {", "\"config\": {\"version\": 2, ");
-    assert_eq!(load_text("nested.json", &nested).unwrap().version, 1);
+    let e = load_text("nested.json", &nested).unwrap_err();
+    assert_eq!(refused_version(&e), None);
+    assert_eq!(field_error(&e), Some(unknown("config.version", None)));
     let nested_body = with_head("").replace(
         "\"bodies\": []",
         "\"bodies\": [], \"meta\": {\"version\": 2}",
     );
-    assert_eq!(load_text("nested2.json", &nested_body).unwrap().version, 1);
+    let e = load_text("nested2.json", &nested_body).unwrap_err();
+    assert_eq!(refused_version(&e), None);
+    assert_eq!(field_error(&e), Some(unknown("meta", None)));
     // a top-level 2 after a nested 1 is still refused as version 2
     let late = with_head("")
         .replace("\"joints\"", "\"version\": 2, \"joints\"")
@@ -627,6 +640,14 @@ fn duplicate_top_level_version_members_are_refused_in_either_order() {
     );
 }
 
+/// `InvalidSceneJson::UnknownMember` at `path`.
+fn unknown(path: &str, suggestion: Option<&'static str>) -> InvalidSceneJson {
+    InvalidSceneJson::UnknownMember {
+        path: path.into(),
+        suggestion,
+    }
+}
+
 /// The `InvalidSceneJson` carried by a refusal, `None` for any other error.
 fn field_error(e: &std::io::Error) -> Option<InvalidSceneJson> {
     e.get_ref()
@@ -639,27 +660,30 @@ const CFG4: &str =
 
 #[test]
 fn a_nested_key_is_not_the_member_being_read() {
-    // `extra.substeps` comes first and is valid JSON; the config's own member is 4
+    // `extra.substeps` comes first and is valid JSON; it is not read as the config's member:
+    // the whole `extra` member is refused (nothing inside it is read)
     let text = format!(
         "{{\"config\": {{\"extra\": {{\"substeps\": 99, \"gravity\": [9,9,9,9,9,9]}}, {CFG4}}}}}"
     );
-    let s = load_text("nested_member.json", &text).unwrap();
-    assert_eq!(s.config.substeps, 4);
-    assert_eq!(s.config.gravity, [0, 0, -10, 0, 0, 0]);
-    // a body's own `mass` is read even when a nested object repeats the name before it
+    let e = load_text("nested_member.json", &text).unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::InvalidData);
+    assert_eq!(field_error(&e), Some(unknown("config.extra", None)));
+    // a body's nested object repeating `mass` is refused at the nested member's path
     let text = format!("{{\"config\": {{{CFG4}}}, \"bodies\": [{{\"meta\": {{\"mass\": [9,9], \"body_type\": 2}}, \"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [3,0]}}]}}");
-    let s = load_text("nested_body.json", &text).unwrap();
-    assert_eq!((s.bodies[0].mass, s.bodies[0].body_type), ([3, 0], 0));
-    // a config that exists only inside a body is not the scene config
+    assert_eq!(
+        field_error(&load_text("nested_body.json", &text).unwrap_err()),
+        Some(unknown("bodies[0].meta", None))
+    );
+    // a config that exists only inside a body is not the scene config: the unknown member is
+    // reported before the missing top-level `config`
     let text = format!("{{\"bodies\": [{{\"config\": {{{CFG4}}}}}]}}");
     let e = load_text("nested_config.json", &text).unwrap_err();
     assert_eq!(e.kind(), ErrorKind::InvalidData);
-    assert_eq!(
-        field_error(&e),
-        Some(InvalidSceneJson::MissingMember {
-            path: "config".into()
-        })
-    );
+    assert_eq!(field_error(&e), Some(unknown("bodies[0].config", None)));
+    // the same body without the stray member loads, with its own `mass`
+    let text = format!("{{\"config\": {{{CFG4}}}, \"bodies\": [{{\"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [3,0]}}]}}");
+    let s = load_text("own_body.json", &text).unwrap();
+    assert_eq!((s.bodies[0].mass, s.bodies[0].body_type), ([3, 0], 0));
 }
 
 #[test]
@@ -711,13 +735,29 @@ fn braces_inside_strings_do_not_split_the_body_list() {
     let body = |ty: u8, note: &str| {
         format!("{{\"note\": \"{note}\", \"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [1,0], \"body_type\": {ty}}}")
     };
+    let plain = |ty: u8| {
+        format!("{{\"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [1,0], \"body_type\": {ty}}}")
+    };
+    // the braces inside the note do not split the list: the note is found in body 2 (index 1)
+    for note in ["}{", "]\\\"[{"] {
+        let text = format!(
+            "{{\"config\": {{{CFG4}}}, \"bodies\": [{}, {}, {}]}}",
+            plain(1),
+            body(2, note),
+            plain(3)
+        );
+        assert_eq!(
+            field_error(&load_text("strings.json", &text).unwrap_err()),
+            Some(unknown("bodies[1].note", None)),
+            "{text}"
+        );
+    }
     let text = format!(
         "{{\"config\": {{{CFG4}}}, \"bodies\": [{}, {}]}}",
-        body(1, "}{"),
-        body(2, "]\\\"[{")
+        plain(1),
+        plain(2)
     );
-    let s = load_text("strings.json", &text).unwrap();
-    assert_eq!(s.bodies.len(), 2);
+    let s = load_text("strings_ok.json", &text).unwrap();
     assert_eq!((s.bodies[0].body_type, s.bodies[1].body_type), (1, 2));
 }
 
@@ -752,15 +792,13 @@ fn huge_numbers_are_refused_with_a_bounded_message() {
 fn nesting_at_the_depth_limit_loads_and_one_more_level_is_refused() {
     use alice_physics::scene_io::MAX_SCENE_JSON_DEPTH;
     let cfg = format!("\"config\": {{{CFG4}}}");
-    // the top-level object is level 1, so `meta` may hold MAX - 1 nested arrays
+    // the top-level object is level 1, so `meta` may hold MAX - 1 nested arrays: the grammar /
+    // depth stage passes and the document reaches the member check, which refuses `meta`
+    // (the depth limit on its own is pinned by the lib test on the parser)
     let meta = |n: usize| format!("{{{cfg}, \"meta\": {}{}}}", "[".repeat(n), "]".repeat(n));
-    assert_eq!(
-        load_text("depth_ok.json", &meta(MAX_SCENE_JSON_DEPTH - 1))
-            .unwrap()
-            .config
-            .substeps,
-        4
-    );
+    let e = load_text("depth_ok.json", &meta(MAX_SCENE_JSON_DEPTH - 1)).unwrap_err();
+    assert_eq!(json_version_error(&e), None);
+    assert_eq!(field_error(&e), Some(unknown("meta", None)));
     let e = load_text("depth_over.json", &meta(MAX_SCENE_JSON_DEPTH)).unwrap_err();
     assert!(
         matches!(
@@ -777,4 +815,348 @@ fn nesting_at_the_depth_limit_loads_and_one_more_level_is_refused() {
         ),
         "{e}"
     );
+}
+
+/// A scene with one body and one joint, every member spelled out (each probe below edits one
+/// key of it).
+fn full_scene_text() -> String {
+    format!(
+        "{{\"version\": 1, \"config\": {{{CFG4}}}, \"bodies\": [{{\"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [1,0], \"body_type\": 1}}, {{\"position\": [0,0,0,0,0,0], \"velocity\": [0,0,0,0,0,0], \"rotation\": [0,0,0,0,0,0,1,0], \"mass\": [1,0], \"body_type\": 2}}], \"joints\": [{{\"body_a\": 0, \"body_b\": 1, \"joint_type\": 3, \"anchor_a\": [0,0,0,0,0,0], \"anchor_b\": [0,0,0,0,0,0]}}]}}"
+    )
+}
+
+/// The `InvalidSceneJson` of loading `text`, which must be refused.
+fn refusal(text: &str) -> Option<InvalidSceneJson> {
+    // tests run in parallel, so each probe gets its own file
+    static PROBE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = PROBE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let e = load_text(&format!("unknown_probe_{n}.json"), text).unwrap_err();
+    assert_eq!(e.kind(), ErrorKind::InvalidData, "{text}");
+    field_error(&e)
+}
+
+#[test]
+fn misspelled_keys_are_refused_with_the_intended_key() {
+    let full = full_scene_text();
+    assert_eq!(load_text("full.json", &full).unwrap().config.substeps, 4);
+    // the typos that used to load as another scene (substeps 8, iterations 4, no bodies)
+    for (from, to, path, hint) in [
+        (
+            "\"substeps\"",
+            "\"subsetps\"",
+            "config.subsetps",
+            "substeps",
+        ),
+        (
+            "\"iterations\"",
+            "\"iteration\"",
+            "config.iteration",
+            "iterations",
+        ),
+        ("\"bodies\"", "\"bodys\"", "bodys", "bodies"),
+        ("\"joints\"", "\"joint\"", "joint", "joints"),
+        ("\"version\"", "\"verison\"", "verison", "version"),
+        (
+            "\"body_type\": 1",
+            "\"bodytype\": 1",
+            "bodies[0].bodytype",
+            "body_type",
+        ),
+        (
+            "\"joint_type\"",
+            "\"join_type\"",
+            "joints[0].join_type",
+            "joint_type",
+        ),
+        (
+            "\"anchor_b\"",
+            "\"anchorb\"",
+            "joints[0].anchorb",
+            "anchor_b",
+        ),
+    ] {
+        let text = full.replacen(from, to, 1);
+        assert_eq!(refusal(&text), Some(unknown(path, Some(hint))), "{to}");
+    }
+    // case variants match no key exactly but are suggested (compared case-insensitively)
+    for variant in ["Gravity", "GRAVITY", "gRaViTy", "Gravty"] {
+        let text = full.replacen("\"gravity\"", &format!("\"{variant}\""), 1);
+        assert_eq!(
+            refusal(&text),
+            Some(unknown(&format!("config.{variant}"), Some("gravity"))),
+            "{variant}"
+        );
+    }
+    assert_eq!(
+        refusal(&full.replacen("\"config\"", "\"CONFIG\"", 1)),
+        Some(unknown("CONFIG", Some("config")))
+    );
+    // the suggestion is the key of the same object, not of another one
+    assert_eq!(
+        refusal(&full.replacen("\"substeps\"", "\"bodies\"", 1)),
+        Some(unknown("config.bodies", None))
+    );
+}
+
+#[test]
+fn the_suggestion_stops_at_edit_distance_two() {
+    use alice_physics::scene_io::UNKNOWN_MEMBER_SUGGESTION_DISTANCE;
+    assert_eq!(UNKNOWN_MEMBER_SUGGESTION_DISTANCE, 2);
+    let full = full_scene_text();
+    // distance 1, 2 and 3 from `substeps` (substitutions, an insertion, a deletion)
+    for (key, hint) in [
+        ("substep", Some("substeps")),
+        ("substepsX", Some("substeps")),
+        ("subxteps", Some("substeps")),
+        ("sbstep", Some("substeps")),
+        ("subXtepsYZ", None),
+        ("sstep", None),
+        ("xxbstepsx", None),
+        ("note", None),
+        ("", None),
+    ] {
+        let text = full.replacen("\"substeps\"", &format!("\"{key}\""), 1);
+        assert_eq!(
+            refusal(&text),
+            Some(unknown(&format!("config.{key}"), hint)),
+            "{key:?}"
+        );
+    }
+    // the message names the path and, when there is one, the suggestion
+    let e = load_text(
+        "msg.json",
+        &full.replacen("\"substeps\"", "\"subsetps\"", 1),
+    )
+    .unwrap_err();
+    let shown = e.to_string();
+    assert!(
+        shown.contains("unknown member \"config.subsetps\"")
+            && shown.contains("did you mean `substeps`?"),
+        "{shown}"
+    );
+    let e = load_text("msg2.json", &full.replacen("\"substeps\"", "\"zzz\"", 1)).unwrap_err();
+    let shown = e.to_string();
+    assert!(
+        shown.contains("unknown member \"config.zzz\"") && !shown.contains("did you mean"),
+        "{shown}"
+    );
+    // a very long unknown key is shown as a bounded prefix
+    let long = "k".repeat(5000);
+    let e = load_text(
+        "msg3.json",
+        &full.replacen("\"substeps\"", &format!("\"{long}\""), 1),
+    )
+    .unwrap_err();
+    assert!(e.to_string().len() < 160, "{}", e.to_string().len());
+}
+
+#[test]
+fn unknown_members_are_refused_at_every_object() {
+    let full = full_scene_text();
+    let insert = |after: &str, nth: usize, member: &str| {
+        let at = full.match_indices(after).nth(nth).unwrap().0 + after.len();
+        format!("{}{member}, {}", &full[..at], &full[at..])
+    };
+    for (text, path) in [
+        // an extra top-level key
+        (insert("{", 0, "\"comment\": \"x\""), "comment"),
+        // an extra key in config
+        (
+            insert("\"config\": {", 0, "\"timestep\": 1"),
+            "config.timestep",
+        ),
+        // a nested extra key under bodies[i] (the second body) and under joints[i]
+        (
+            insert("\"bodies\": [{", 0, "\"name\": \"a\""),
+            "bodies[0].name",
+        ),
+        (insert("}, {", 0, "\"name\": \"b\""), "bodies[1].name"),
+        (
+            insert("\"joints\": [{", 0, "\"limit\": [1,2]"),
+            "joints[0].limit",
+        ),
+        // a nested object inside an unknown member: refused at the unknown member's path,
+        // whatever its value holds (here a key that would be valid in config, and a bad value)
+        (
+            insert(
+                "{",
+                0,
+                "\"meta\": {\"substeps\": 99, \"x\": {\"y\": [true]}}",
+            ),
+            "meta",
+        ),
+        (
+            insert(
+                "\"joints\": [{",
+                0,
+                "\"spring\": {\"stiffness\": {\"k\": 1}}",
+            ),
+            "joints[0].spring",
+        ),
+    ] {
+        assert_eq!(refusal(&text), Some(unknown(path, None)), "{text}");
+    }
+    // the parent object is reported before an object inside it, then document order
+    let both = insert("\"config\": {", 0, "\"c\": 1").replacen("{", "{\"z\": 1, ", 1);
+    assert_eq!(refusal(&both), Some(unknown("z", None)));
+    let two = insert("\"joints\": [{", 0, "\"j\": 1");
+    let two = two.replacen("\"bodies\": [{", "\"bodies\": [{\"b\": 1, ", 1);
+    assert_eq!(refusal(&two), Some(unknown("bodies[0].b", None)));
+}
+
+#[test]
+fn a_duplicate_key_wins_over_an_unknown_member() {
+    let full = full_scene_text();
+    // the repeated key is inside an unknown member
+    let text = full.replacen("{", "{\"meta\": {\"a\": 1, \"a\": 2}, ", 1);
+    assert_eq!(
+        refusal(&text),
+        Some(InvalidSceneJson::DuplicateKey {
+            path: "meta.a".into()
+        })
+    );
+    // an unknown member before a repeated known key elsewhere
+    let text = full.replacen("{", "{\"meta\": 1, ", 1).replacen(
+        "\"iterations\": 6",
+        "\"iterations\": 6, \"iterations\": 6",
+        1,
+    );
+    assert_eq!(
+        refusal(&text),
+        Some(InvalidSceneJson::DuplicateKey {
+            path: "config.iterations".into()
+        })
+    );
+    // a repeated unknown key
+    let text = full.replacen("{", "{\"meta\": 1, \"meta\": 1, ", 1);
+    assert_eq!(
+        refusal(&text),
+        Some(InvalidSceneJson::DuplicateKey {
+            path: "meta".into()
+        })
+    );
+}
+
+/// One document per pair of adjacent stages (grammar / depth → version → repeated keys →
+/// unknown members → field values) that fails both stages; the earlier stage is reported.
+#[test]
+fn the_checks_run_in_the_documented_order() {
+    use alice_physics::scene_io::MAX_SCENE_JSON_DEPTH;
+    let full = full_scene_text();
+    // grammar vs version: version 2 then a trailing comma
+    let e = load_text(
+        "o1.json",
+        &full
+            .replacen("\"version\": 1", "\"version\": 2", 1)
+            .replacen("}]}", "}],}", 1),
+    )
+    .unwrap_err();
+    assert!(
+        matches!(
+            json_version_error(&e),
+            Some(InvalidSceneJsonVersion::MalformedJson { .. })
+        ),
+        "{e}"
+    );
+    // depth vs version: version 2 and an over-deep unknown member
+    let deep = format!(
+        "{{\"version\": 2, \"meta\": {}{}}}",
+        "[".repeat(MAX_SCENE_JSON_DEPTH),
+        "]".repeat(MAX_SCENE_JSON_DEPTH)
+    );
+    let e = load_text("o2.json", &deep).unwrap_err();
+    assert!(
+        matches!(
+            json_version_error(&e),
+            Some(InvalidSceneJsonVersion::TooDeep { .. })
+        ),
+        "{e}"
+    );
+    // version vs repeated keys, for each version refusal
+    let dup_cfg = full.replacen(
+        "\"bodies\"",
+        &format!("\"config\": {{{CFG4}}}, \"bodies\""),
+        1,
+    );
+    assert_eq!(
+        refused_version(
+            &load_text(
+                "o3.json",
+                &dup_cfg.replacen("\"version\": 1", "\"version\": 2", 1)
+            )
+            .unwrap_err()
+        ),
+        Some(2)
+    );
+    for (version, want) in [
+        (
+            "\"version\": 1, \"version\": 1",
+            InvalidSceneJsonVersion::DuplicateVersion,
+        ),
+        (
+            "\"version\": \"1\"",
+            InvalidSceneJsonVersion::NotAnUnsignedInteger {
+                value: "\"1\"".into(),
+            },
+        ),
+        (
+            "\"version\": 4294967296",
+            InvalidSceneJsonVersion::OutOfRange {
+                value: "4294967296".into(),
+            },
+        ),
+    ] {
+        let text = dup_cfg.replacen("\"version\": 1", version, 1);
+        assert_eq!(
+            json_version_error(&load_text("o4.json", &text).unwrap_err()),
+            Some(want),
+            "{version}"
+        );
+    }
+    // version vs unknown members, and version vs field values
+    let unknown_v2 = full
+        .replacen("\"version\": 1", "\"version\": 2", 1)
+        .replacen("\"substeps\"", "\"subsetps\"", 1);
+    assert_eq!(
+        refused_version(&load_text("o5.json", &unknown_v2).unwrap_err()),
+        Some(2)
+    );
+    // repeated keys vs unknown members
+    let text = full.replacen("\"substeps\"", "\"subsetps\"", 1).replacen(
+        "\"mass\": [1,0], \"body_type\": 2",
+        "\"mass\": [1,0], \"mass\": [1,0], \"body_type\": 2",
+        1,
+    );
+    assert_eq!(
+        refusal(&text),
+        Some(InvalidSceneJson::DuplicateKey {
+            path: "bodies[1].mass".into()
+        })
+    );
+    // unknown members vs field values: wrong type, wrong length, out of range, missing
+    let late = |t: &str| t.replacen("\"anchor_b\"", "\"anchor_c\"", 1);
+    for broken in [
+        full.replacen("\"gravity\": [0,0,-10,0,0,0]", "\"gravity\": null", 1),
+        full.replacen("\"gravity\": [0,0,-10,0,0,0]", "\"gravity\": [0]", 1),
+        full.replacen("\"body_type\": 1", "\"body_type\": 256", 1),
+        full.replacen("\"mass\": [1,0], \"body_type\": 1", "\"body_type\": 1", 1),
+    ] {
+        // without the unknown member each one is a field-value error
+        let alone = refusal(&broken).unwrap();
+        assert!(
+            matches!(
+                alone,
+                InvalidSceneJson::WrongType { .. }
+                    | InvalidSceneJson::WrongLength { .. }
+                    | InvalidSceneJson::OutOfRange { .. }
+                    | InvalidSceneJson::MissingMember { .. }
+            ),
+            "{alone:?}"
+        );
+        assert_eq!(
+            refusal(&late(&broken)),
+            Some(unknown("joints[0].anchor_c", Some("anchor_a"))),
+            "{broken}"
+        );
+    }
 }

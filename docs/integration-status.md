@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 7 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2627 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2628 |
 | live | reached without examples (crate-internal roots or a binding) | 598 |
-| | **total** | **3232** |
+| | **total** | **3233** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -60,7 +60,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2627)
+## L1 — example-only (2628)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -189,7 +189,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/rope.rs`: `PinConstraint`, `Rope`, `Rope::add_pin`, `Rope::current_length`, `Rope::new`, `Rope::particle_count`, `Rope::pin_end`, `Rope::pin_start`, `Rope::segment_count`, `Rope::step`, `Rope::step_with_sdf`, `Rope::update_pin_targets`, `RopeConfig`
 - `src/rope_attach.rs`: `RopeAttachment`, `RopeAttachment::compliance`, `RopeAttachment::new`, `RopeAttachment::with_break_force`, `solve_rope_attachments`, `solve_rope_attachments_two_way`
 - `src/rotor.rs`: `Rotor`, `Rotor::apply`, `Rotor::disk_area_m2`, `Rotor::load`, `Rotor::new`, `Rotor::params`, `Rotor::shaft_torque_nm`, `Rotor::speed_for_thrust`, `Rotor::thrust_n`, `RotorError`, `RotorLoad`, `RotorParams`, `RotorSpin`, `hover_induced_velocity_m_s`, `ideal_hover_power_w`
-- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `InvalidSceneJson`, `InvalidSceneJsonVersion`, `MAX_SCENE_JSON_DEPTH`, `PhysicsConfig::new`, `PhysicsScene`, `PhysicsScene::new`, `SUPPORTED_SCENE_VERSIONS`, `SerializedBody`, `SerializedJoint`, `UnsupportedSceneVersion`, `load_scene`, `load_scene_checked`, `load_scene_json`, `load_scene_json_checked`, `save_scene`, `save_scene_json`
+- `src/scene_io.rs`: `CURRENT_SCENE_VERSION`, `InvalidSceneJson`, `InvalidSceneJsonVersion`, `MAX_SCENE_JSON_DEPTH`, `PhysicsConfig::new`, `PhysicsScene`, `PhysicsScene::new`, `SUPPORTED_SCENE_VERSIONS`, `SerializedBody`, `SerializedJoint`, `UNKNOWN_MEMBER_SUGGESTION_DISTANCE`, `UnsupportedSceneVersion`, `load_scene`, `load_scene_checked`, `load_scene_json`, `load_scene_json_checked`, `save_scene`, `save_scene_json`
 - `src/sdf_adaptive.rs`: `AdaptiveConfig`, `AdaptiveSdfEvaluator`, `AdaptiveSdfEvaluator::begin_frame`, `AdaptiveSdfEvaluator::evaluate`, `AdaptiveSdfEvaluator::invalidate`, `AdaptiveSdfEvaluator::invalidate_all`, `AdaptiveSdfEvaluator::new`, `AdaptiveSdfEvaluator::resize`, `AdaptiveSdfEvaluator::stats`, `EvalLevel`
 - `src/sdf_ccd.rs`: `PhysicsWorld::sdf_ccd_hits`, `batch_sphere_trace_sdf`, `sphere_trace_sdf`, `sphere_trace_sdf_field`
 - `src/sdf_character.rs`: `GroundContact`, `MoveOutcome`, `MoveOutcome::resolved_position`, `PhysicsWorld::move_sdf_character`, `PhysicsWorld::sdf_field`, `SdfCharacter`, `SdfCharacter::apply_central_gravity`, `SdfCharacter::apply_gravity`, `SdfCharacter::ground_contact`, `SdfCharacter::is_grounded`, `SdfCharacter::locomotion_context`, `SdfCharacter::move_and_slide`, `SdfCharacter::new`, `SdfCharacter::step`, `SdfCharacter::step_on_sphere`, `WorldSdfField`

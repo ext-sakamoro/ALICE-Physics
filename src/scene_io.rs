@@ -21,6 +21,48 @@
 //! Manual JSON formatting without serde dependency. Each Fix128 value is
 //! stored as a `[hi, lo]` array for deterministic round-tripping.
 //!
+//! ## JSON members
+//!
+//! Every object of a scene document has exactly the members below. A member
+//! listed as optional takes its default when absent; a required member that is
+//! absent is [`InvalidSceneJson::MissingMember`]. Any other member, at any of
+//! these objects, is [`InvalidSceneJson::UnknownMember`] (keys are matched
+//! exactly, so `"Gravity"` is not `gravity`; the error suggests the known key
+//! of that object within edit distance 2, compared case-insensitively). An
+//! unknown member is refused whole, so nothing inside its value is read.
+//!
+//! | Object | Member | Type | Presence |
+//! |---|---|---|---|
+//! | top level | `version` | non-negative integer (`u32`) | optional, default `1` |
+//! | top level | `config` | object | required |
+//! | top level | `bodies` | array of objects | optional, default `[]` |
+//! | top level | `joints` | array of objects | optional, default `[]` |
+//! | `config` | `substeps` | non-negative integer (`u32`) | optional, default `8` |
+//! | `config` | `iterations` | non-negative integer (`u32`) | optional, default `4` |
+//! | `config` | `gravity` | array of 6 integers (`i64`) | required |
+//! | `config` | `damping` | array of 2 integers (`i64`) | required |
+//! | `bodies[i]` | `position` | array of 6 integers (`i64`) | required |
+//! | `bodies[i]` | `velocity` | array of 6 integers (`i64`) | required |
+//! | `bodies[i]` | `rotation` | array of 8 integers (`i64`) | required |
+//! | `bodies[i]` | `mass` | array of 2 integers (`i64`) | required |
+//! | `bodies[i]` | `body_type` | non-negative integer (`u8`) | optional, default `0` |
+//! | `joints[i]` | `body_a` | non-negative integer (`u32`) | optional, default `0` |
+//! | `joints[i]` | `body_b` | non-negative integer (`u32`) | optional, default `0` |
+//! | `joints[i]` | `joint_type` | non-negative integer (`u8`) | optional, default `0` |
+//! | `joints[i]` | `anchor_a` | array of 6 integers (`i64`) | required |
+//! | `joints[i]` | `anchor_b` | array of 6 integers (`i64`) | required |
+//!
+//! [`load_scene_json`] checks a document in this order and reports the first
+//! failing stage: (1) the JSON grammar and nesting depth
+//! ([`InvalidSceneJsonVersion::MalformedJson`] / `TooDeep`); (2) the top-level
+//! `version` member ([`InvalidSceneJsonVersion`]'s other variants, then
+//! [`UnsupportedSceneVersion`]); (3) a repeated key in any object
+//! ([`InvalidSceneJson::DuplicateKey`]); (4) a member not in the table
+//! ([`InvalidSceneJson::UnknownMember`]); (5) each member's type, length,
+//! range and presence. Because the version is checked before the members, a
+//! later format version may add members: a reader of this version refuses such
+//! a document as an unsupported version, never as an unknown member.
+//!
 //! # Feature Gate
 //!
 //! This module requires the `std` feature (file I/O).
@@ -586,7 +628,7 @@ fn parse_json_document(json: &str) -> Result<Vec<JsonMember<'_>>, InvalidSceneJs
 /// The scene version recorded in a parsed JSON document: the value of the
 /// top-level object's `version` member, 1 when the top-level object has none.
 fn scene_json_version_of(top: &[JsonMember<'_>]) -> Result<u32, InvalidSceneJsonVersion> {
-    let mut versions = top.iter().filter(|m| m.key == "version");
+    let mut versions = top.iter().filter(|m| m.key == M_VERSION.key);
     let Some(member) = versions.next() else {
         return Ok(CURRENT_VERSION);
     };
@@ -887,8 +929,10 @@ pub fn save_scene_json(scene: &PhysicsScene, path: &std::path::Path) -> std::io:
 /// means 1; a `version` key inside a nested object is not the scene version).
 /// A version outside [`SUPPORTED_SCENE_VERSIONS`] is rejected, as for
 /// [`load_scene`], before the rest of the scene is read. The document must be
-/// JSON (RFC 8259) with an object at the top level, and no object in it may
-/// repeat a key. Every field is read from its own object's members (see
+/// JSON (RFC 8259) with an object at the top level, no object in it may
+/// repeat a key, and every object may hold only the members the format defines
+/// (the member table in the [module docs](self), which also gives the order of
+/// the checks). Every field is read from its own object's members (see
 /// [`InvalidSceneJson`]).
 ///
 /// # Errors
@@ -898,11 +942,16 @@ pub fn save_scene_json(scene: &PhysicsScene, path: &std::path::Path) -> std::io:
 /// [`UnsupportedSceneVersion`] for an unknown version,
 /// [`InvalidSceneJsonVersion`] when the document is not JSON or its top-level
 /// `version` member is duplicated or not a `u32`, or [`InvalidSceneJson`] when
-/// any object repeats a key or a scene member is missing, of the wrong type or
-/// out of range.
+/// any object repeats a key or has a member the format does not define, or a
+/// scene member is missing, of the wrong type or out of range.
 pub fn load_scene_json(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
-    let json = std::fs::read_to_string(path)?;
-    let top = parse_json_document(&json)
+    scene_from_json_text(&std::fs::read_to_string(path)?)
+}
+
+/// The scene in the JSON text `json`, checked in the order the module docs
+/// list (grammar and depth, version, repeated keys, unknown members, fields).
+fn scene_from_json_text(json: &str) -> std::io::Result<PhysicsScene> {
+    let top = parse_json_document(json)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     let version = scene_json_version_of(&top)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
@@ -1024,8 +1073,10 @@ fn scene_to_json(scene: &PhysicsScene) -> String {
 ///
 /// Every field is read from the members of its own object (the top-level
 /// object, `config`, one entry of `bodies` / `joints`); a key that appears only
-/// inside a nested value never stands in for the member being read. `path`
-/// names the member, for example `config.gravity` or `bodies[2].mass[1]`.
+/// inside a nested value never stands in for the member being read, and a
+/// member the format does not define is refused (see the member table in the
+/// [module docs](self)). `path` names the member, for example
+/// `config.gravity` or `bodies[2].mass[1]`.
 ///
 /// It travels inside a [`std::io::Error`] of kind
 /// [`std::io::ErrorKind::InvalidData`]; recover it with
@@ -1044,6 +1095,19 @@ pub enum InvalidSceneJson {
     MissingMember {
         /// The absent member.
         path: String,
+    },
+    /// An object of the scene (the top level, `config`, an entry of `bodies`
+    /// or `joints`) has a member that the scene format does not define (see
+    /// the member table in the [module docs](self)). The member is refused as a
+    /// whole, so nothing inside its value is read.
+    UnknownMember {
+        /// The unknown member.
+        path: String,
+        /// The defined member of the same object whose key is within edit
+        /// distance [`UNKNOWN_MEMBER_SUGGESTION_DISTANCE`] of the unknown key,
+        /// compared case-insensitively (the nearest one, the first in table
+        /// order on a tie); `None` when no key is that close.
+        suggestion: Option<&'static str>,
     },
     /// A member or array item has the wrong JSON type, or is a number that is
     /// not an integer written without fraction or exponent (for an unsigned
@@ -1099,6 +1163,17 @@ impl core::fmt::Display for InvalidSceneJson {
             }
             Self::MissingMember { path } => {
                 write!(f, "scene JSON has no \"{path}\" member")
+            }
+            Self::UnknownMember { path, suggestion } => {
+                write!(
+                    f,
+                    "scene JSON has an unknown member \"{}\"",
+                    shown_value(path)
+                )?;
+                match suggestion {
+                    Some(key) => write!(f, "; did you mean `{key}`?"),
+                    None => Ok(()),
+                }
             }
             Self::WrongType {
                 path,
@@ -1188,8 +1263,173 @@ const fn json_type(v: &JsonValue<'_>) -> &'static str {
     }
 }
 
+/// The JSON type a scene member holds (a row of the member table in the module
+/// docs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MemberKind {
+    /// A non-negative integer that fits `u32`.
+    U32,
+    /// A non-negative integer that fits `u8`.
+    U8,
+    /// An array of exactly this many `i64` integers.
+    I64Array(usize),
+    /// An object with these members.
+    Object(&'static [SceneJsonMember]),
+    /// An array of objects, each with these members.
+    Objects(&'static [SceneJsonMember]),
+}
+
+/// Whether a scene member may be absent, and what it means then.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Presence {
+    /// Absent is [`InvalidSceneJson::MissingMember`].
+    Required,
+    /// Absent means this integer.
+    Default(u32),
+    /// Absent means an empty array.
+    Empty,
+}
+
+/// One member of one object of the scene format. The tables built from these
+/// are the only list of members: the reader takes each field's presence from
+/// them, the unknown-member check takes each object's keys from them, and a
+/// test compares them with the table in the module docs.
+#[derive(Debug, PartialEq, Eq)]
+struct SceneJsonMember {
+    key: &'static str,
+    kind: MemberKind,
+    presence: Presence,
+}
+
+const fn member(key: &'static str, kind: MemberKind, presence: Presence) -> SceneJsonMember {
+    SceneJsonMember {
+        key,
+        kind,
+        presence,
+    }
+}
+
+const M_VERSION: SceneJsonMember = member(
+    "version",
+    MemberKind::U32,
+    Presence::Default(CURRENT_VERSION),
+);
+const M_CONFIG: SceneJsonMember = member(
+    "config",
+    MemberKind::Object(CONFIG_MEMBERS),
+    Presence::Required,
+);
+const M_BODIES: SceneJsonMember =
+    member("bodies", MemberKind::Objects(BODY_MEMBERS), Presence::Empty);
+const M_JOINTS: SceneJsonMember = member(
+    "joints",
+    MemberKind::Objects(JOINT_MEMBERS),
+    Presence::Empty,
+);
+const M_SUBSTEPS: SceneJsonMember = member("substeps", MemberKind::U32, Presence::Default(8));
+const M_ITERATIONS: SceneJsonMember = member("iterations", MemberKind::U32, Presence::Default(4));
+const M_GRAVITY: SceneJsonMember = member("gravity", MemberKind::I64Array(6), Presence::Required);
+const M_DAMPING: SceneJsonMember = member("damping", MemberKind::I64Array(2), Presence::Required);
+const M_POSITION: SceneJsonMember = member("position", MemberKind::I64Array(6), Presence::Required);
+const M_VELOCITY: SceneJsonMember = member("velocity", MemberKind::I64Array(6), Presence::Required);
+const M_ROTATION: SceneJsonMember = member("rotation", MemberKind::I64Array(8), Presence::Required);
+const M_MASS: SceneJsonMember = member("mass", MemberKind::I64Array(2), Presence::Required);
+const M_BODY_TYPE: SceneJsonMember = member("body_type", MemberKind::U8, Presence::Default(0));
+const M_BODY_A: SceneJsonMember = member("body_a", MemberKind::U32, Presence::Default(0));
+const M_BODY_B: SceneJsonMember = member("body_b", MemberKind::U32, Presence::Default(0));
+const M_JOINT_TYPE: SceneJsonMember = member("joint_type", MemberKind::U8, Presence::Default(0));
+const M_ANCHOR_A: SceneJsonMember = member("anchor_a", MemberKind::I64Array(6), Presence::Required);
+const M_ANCHOR_B: SceneJsonMember = member("anchor_b", MemberKind::I64Array(6), Presence::Required);
+
+/// The members of the top-level object.
+const TOP_MEMBERS: &[SceneJsonMember] = &[M_VERSION, M_CONFIG, M_BODIES, M_JOINTS];
+/// The members of `config`.
+const CONFIG_MEMBERS: &[SceneJsonMember] = &[M_SUBSTEPS, M_ITERATIONS, M_GRAVITY, M_DAMPING];
+/// The members of each entry of `bodies`.
+const BODY_MEMBERS: &[SceneJsonMember] = &[M_POSITION, M_VELOCITY, M_ROTATION, M_MASS, M_BODY_TYPE];
+/// The members of each entry of `joints`.
+const JOINT_MEMBERS: &[SceneJsonMember] =
+    &[M_BODY_A, M_BODY_B, M_JOINT_TYPE, M_ANCHOR_A, M_ANCHOR_B];
+
+/// Largest edit distance (insertions, deletions and substitutions of
+/// characters, compared case-insensitively) at which
+/// [`InvalidSceneJson::UnknownMember`] suggests a defined key.
+pub const UNKNOWN_MEMBER_SUGGESTION_DISTANCE: usize = 2;
+
+/// The Levenshtein distance between `a` and `b` (as characters), or `None`
+/// when it exceeds `limit`.
+fn edit_distance_within(a: &[char], b: &[char], limit: usize) -> Option<usize> {
+    if a.len().abs_diff(b.len()) > limit {
+        return None;
+    }
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    let mut cur = vec![0; b.len() + 1];
+    for (i, ca) in a.iter().enumerate() {
+        cur[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let substitute = prev[j] + usize::from(ca != cb);
+            cur[j + 1] = substitute.min(prev[j + 1] + 1).min(cur[j] + 1);
+        }
+        core::mem::swap(&mut prev, &mut cur);
+    }
+    Some(prev[b.len()]).filter(|&d| d <= limit)
+}
+
+/// The key of `table` nearest to `key` (case-insensitively) within
+/// [`UNKNOWN_MEMBER_SUGGESTION_DISTANCE`], the first in table order on a tie.
+fn suggest_member(key: &str, table: &[SceneJsonMember]) -> Option<&'static str> {
+    let lower: Vec<char> = key.to_lowercase().chars().collect();
+    let mut best: Option<(usize, &'static str)> = None;
+    for m in table {
+        let known: Vec<char> = m.key.chars().collect();
+        if let Some(d) = edit_distance_within(&lower, &known, UNKNOWN_MEMBER_SUGGESTION_DISTANCE) {
+            if best.is_none_or(|(b, _)| d < b) {
+                best = Some((d, m.key));
+            }
+        }
+    }
+    best.map(|(_, k)| k)
+}
+
+/// The first member not defined by the scene format, in any object of the
+/// scene (each object is checked before the objects inside it, members in
+/// document order). Values of the wrong JSON type are not entered here; the
+/// reader reports them.
+fn unknown_member(top: &[JsonMember<'_>]) -> Option<InvalidSceneJson> {
+    let mut stack: Vec<(&[JsonMember<'_>], &'static [SceneJsonMember], String)> =
+        vec![(top, TOP_MEMBERS, String::new())];
+    while let Some((members, table, path)) = stack.pop() {
+        let mut children = Vec::new();
+        for m in members {
+            let Some(spec) = table.iter().find(|s| s.key == m.key) else {
+                return Some(InvalidSceneJson::UnknownMember {
+                    path: member_path(&path, &m.key),
+                    suggestion: suggest_member(&m.key, table),
+                });
+            };
+            match (spec.kind, &m.value) {
+                (MemberKind::Object(inner), JsonValue::Object(child)) => {
+                    children.push((child.as_slice(), inner, member_path(&path, &m.key)));
+                }
+                (MemberKind::Objects(inner), JsonValue::Array(items)) => {
+                    let at = member_path(&path, &m.key);
+                    for (i, item) in items.iter().enumerate() {
+                        if let JsonValue::Object(child) = item {
+                            children.push((child.as_slice(), inner, format!("{at}[{i}]")));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        stack.extend(children.into_iter().rev());
+    }
+    None
+}
+
 /// The members of one JSON object of the scene, with its path for errors.
-/// Keys are unique (checked by [`duplicate_key_path`] beforehand).
+/// Keys are unique (checked by [`duplicate_key_path`] beforehand) and all
+/// defined (checked by [`unknown_member`] beforehand).
 struct SceneObject<'t, 'a> {
     members: &'t [JsonMember<'a>],
     path: String,
@@ -1212,33 +1452,57 @@ impl<'t, 'a> SceneObject<'t, 'a> {
         member_path(&self.path, key)
     }
 
-    /// This object's own `key` member (never one inside a nested value).
-    fn get(&self, key: &str) -> Option<&'t JsonValue<'a>> {
-        self.members.iter().find(|m| m.key == key).map(|m| &m.value)
+    /// This object's own `m` member (never one inside a nested value); when
+    /// absent, `None` if the table makes it optional, else
+    /// [`InvalidSceneJson::MissingMember`].
+    fn get(&self, m: &SceneJsonMember) -> Result<Option<&'t JsonValue<'a>>, InvalidSceneJson> {
+        match self.members.iter().find(|x| x.key == m.key) {
+            Some(x) => Ok(Some(&x.value)),
+            None if m.presence == Presence::Required => Err(InvalidSceneJson::MissingMember {
+                path: self.path(m.key),
+            }),
+            None => Ok(None),
+        }
     }
 
-    fn require(&self, key: &str) -> Result<&'t JsonValue<'a>, InvalidSceneJson> {
-        self.get(key)
-            .ok_or_else(|| InvalidSceneJson::MissingMember {
-                path: self.path(key),
-            })
+    /// An integer member; absent, the table's default.
+    fn int<T: TryFrom<i128>>(&self, m: &SceneJsonMember) -> Result<T, InvalidSceneJson> {
+        let path = self.path(m.key);
+        match (self.get(m)?, m.presence) {
+            (Some(v), _) => json_integer(v, &path),
+            (None, Presence::Default(d)) => {
+                T::try_from(i128::from(d)).map_err(|_| InvalidSceneJson::OutOfRange {
+                    path,
+                    value: d.to_string(),
+                })
+            }
+            (None, _) => Err(InvalidSceneJson::MissingMember { path }),
+        }
     }
 
-    /// An optional integer member, `default` when absent.
-    fn int_or<T: TryFrom<i128>>(&self, key: &str, default: T) -> Result<T, InvalidSceneJson> {
-        self.get(key)
-            .map_or(Ok(default), |v| json_integer(v, &self.path(key)))
+    /// An array member of exactly `N` integers (the table makes these
+    /// required).
+    fn i64_array<const N: usize>(&self, m: &SceneJsonMember) -> Result<[i64; N], InvalidSceneJson> {
+        let path = self.path(m.key);
+        match self.get(m)? {
+            Some(v) => json_i64_array(v, &path),
+            None => Err(InvalidSceneJson::MissingMember { path }),
+        }
     }
 
-    /// A required array member of exactly `N` integers.
-    fn i64_array<const N: usize>(&self, key: &str) -> Result<[i64; N], InvalidSceneJson> {
-        json_i64_array(self.require(key)?, &self.path(key))
+    /// An object member (the table makes these required).
+    fn object(&self, m: &SceneJsonMember) -> Result<SceneObject<'t, 'a>, InvalidSceneJson> {
+        let path = self.path(m.key);
+        match self.get(m)? {
+            Some(v) => SceneObject::new(v, path),
+            None => Err(InvalidSceneJson::MissingMember { path }),
+        }
     }
 
-    /// An optional array-of-objects member, empty when absent.
-    fn objects(&self, key: &str) -> Result<Vec<SceneObject<'t, 'a>>, InvalidSceneJson> {
-        let path = self.path(key);
-        match self.get(key) {
+    /// An array-of-objects member; absent, empty.
+    fn objects(&self, m: &SceneJsonMember) -> Result<Vec<SceneObject<'t, 'a>>, InvalidSceneJson> {
+        let path = self.path(m.key);
+        match self.get(m)? {
             None => Ok(Vec::new()),
             Some(JsonValue::Array(items)) => items
                 .iter()
@@ -1317,52 +1581,54 @@ fn json_i64_array<const N: usize>(
 /// [`parse_json_document`]) with the given `version` (read beforehand by
 /// [`scene_json_version_of`]).
 ///
-/// Absent members take the documented defaults: `substeps` 8, `iterations` 4,
-/// `bodies` / `joints` empty, `body_type` / `body_a` / `body_b` / `joint_type`
-/// 0. `config`, its `gravity` / `damping`, each body's `position` /
-/// `velocity` / `rotation` / `mass` and each joint's `anchor_a` / `anchor_b`
-/// are required. Unknown members are ignored.
+/// Refuses a repeated key in any object, then a member the format does not
+/// define, then reads each member as the member table of the module docs
+/// (the `*_MEMBERS` tables) says: absent optional members take their default,
+/// an absent required member is an error.
 fn scene_from_json(top: &[JsonMember<'_>], version: u32) -> Result<PhysicsScene, InvalidSceneJson> {
     if let Some(path) = duplicate_key_path(top) {
         return Err(InvalidSceneJson::DuplicateKey { path });
+    }
+    if let Some(e) = unknown_member(top) {
+        return Err(e);
     }
     let root = SceneObject {
         members: top,
         path: String::new(),
     };
 
-    let cfg = SceneObject::new(root.require("config")?, "config".into())?;
+    let cfg = root.object(&M_CONFIG)?;
     let config = PhysicsConfig {
-        substeps: cfg.int_or("substeps", 8)?,
-        iterations: cfg.int_or("iterations", 4)?,
-        gravity: cfg.i64_array("gravity")?,
-        damping: cfg.i64_array("damping")?,
+        substeps: cfg.int(&M_SUBSTEPS)?,
+        iterations: cfg.int(&M_ITERATIONS)?,
+        gravity: cfg.i64_array(&M_GRAVITY)?,
+        damping: cfg.i64_array(&M_DAMPING)?,
     };
 
     let bodies = root
-        .objects("bodies")?
+        .objects(&M_BODIES)?
         .iter()
         .map(|b| {
             Ok(SerializedBody {
-                position: b.i64_array("position")?,
-                velocity: b.i64_array("velocity")?,
-                rotation: b.i64_array("rotation")?,
-                mass: b.i64_array("mass")?,
-                body_type: b.int_or("body_type", 0)?,
+                position: b.i64_array(&M_POSITION)?,
+                velocity: b.i64_array(&M_VELOCITY)?,
+                rotation: b.i64_array(&M_ROTATION)?,
+                mass: b.i64_array(&M_MASS)?,
+                body_type: b.int(&M_BODY_TYPE)?,
             })
         })
         .collect::<Result<Vec<_>, InvalidSceneJson>>()?;
 
     let joints = root
-        .objects("joints")?
+        .objects(&M_JOINTS)?
         .iter()
         .map(|j| {
             Ok(SerializedJoint {
-                body_a: j.int_or("body_a", 0)?,
-                body_b: j.int_or("body_b", 0)?,
-                joint_type: j.int_or("joint_type", 0)?,
-                anchor_a: j.i64_array("anchor_a")?,
-                anchor_b: j.i64_array("anchor_b")?,
+                body_a: j.int(&M_BODY_A)?,
+                body_b: j.int(&M_BODY_B)?,
+                joint_type: j.int(&M_JOINT_TYPE)?,
+                anchor_a: j.i64_array(&M_ANCHOR_A)?,
+                anchor_b: j.i64_array(&M_ANCHOR_B)?,
             })
         })
         .collect::<Result<Vec<_>, InvalidSceneJson>>()?;
@@ -1887,13 +2153,24 @@ mod tests {
         assert!(shown[2].contains("more than one"));
         assert!(shown[3].contains("1.0"));
         assert!(shown[4].contains("4294967296"));
-        // 入れ子だけに版 2 を持つ scene は版 1 として読む (入れ子の key は版でない)
+        // 入れ子だけに版 2 を持つ scene は版 1 として版の検査を通り (入れ子の key は
+        // 版でない)、その入れ子の member は未知の member として拒否される
         std::fs::write(
             &path,
             "{\"config\":{\"version\":2,\"gravity\":[0,0,0,0,0,0],\"damping\":[1,0]}}",
         )
         .unwrap();
-        assert_eq!(load_scene_json(&path).unwrap().version, 1);
+        let e = load_scene_json(&path).unwrap_err();
+        assert_eq!(unsupported(&e), None);
+        assert_eq!(
+            e.get_ref()
+                .and_then(|i| i.downcast_ref::<InvalidSceneJson>())
+                .cloned(),
+            Some(InvalidSceneJson::UnknownMember {
+                path: "config.version".into(),
+                suggestion: None,
+            })
+        );
     }
 
     /// 非推奨の checked 版は既定の loader と同じ結果を返す (受理も拒否も)
@@ -2446,35 +2723,69 @@ mod json_tree_tests {
         ));
         out.push(("compact".into(), "{\"config\":{\"gravity\":[1,2,3,4,5,6],\"damping\":[1,2]},\"bodies\":[{\"position\":[0,0,0,0,0,0],\"velocity\":[0,0,0,0,0,0],\"rotation\":[0,0,0,0,0,0,0,0],\"mass\":[1,0],\"body_type\":2}],\"joints\":[{\"anchor_a\":[0,0,0,0,0,0],\"anchor_b\":[0,0,0,0,0,0],\"body_b\":9}]}".into()));
         out.push((
-            "stray".into(),
-            "{\"config\":{\"gravity\":[1,2,3,4,5,6],\"damping\":[1,2]},\"note\":\"version\"}"
-                .into(),
-        ));
-        out.push((
             "head ws".into(),
             with_head(" \n\t\"version\"\r\n :\n 1 \n,"),
-        ));
-        out.push((
-            "nested version in config".into(),
-            with_head("").replace("\"config\": {", "\"config\": {\"version\": 2, "),
-        ));
-        out.push((
-            "nested version in meta".into(),
-            with_head("").replace(
-                "\"bodies\": []",
-                "\"bodies\": [], \"meta\": {\"version\": 2}",
-            ),
         ));
         out.push(("head version 1".into(), with_head("\"version\": 1, ")));
         out.push((
             "unit config only".into(),
             "{\"config\":{\"gravity\":[0,0,0,0,0,0],\"damping\":[1,0]}}".into(),
         ));
-        out.push((
-            "unit nested version".into(),
-            "{\"config\":{\"version\":2,\"gravity\":[0,0,0,0,0,0],\"damping\":[1,0]}}".into(),
-        ));
         out
+    }
+
+    /// 旧 reader が受理していた手書きの文書のうち、format に無い member を持つもの
+    /// (名前、文書、その member の path) 未知の member は全階層で拒否するので
+    /// 差分試験から外し、ここで UnknownMember として固定する
+    fn refused_hand_written_documents() -> Vec<(&'static str, String, &'static str)> {
+        let json_of = "{\"version\": 1, \"config\": {\"substeps\": 2, \"iterations\": 3, \"gravity\": [0,0,0,0,0,0], \"damping\": [1, 0]}, \"bodies\": [], \"joints\": [{\"body_a\": 0, \"body_b\": 1, \"joint_type\": 0, \"anchor_a\": [0,0,0,0,0,0], \"anchor_b\": [0,0,0,0,0,0]}]}";
+        let with_head = format!("{{{}", &json_of[json_of.find("\"config\"").unwrap()..]);
+        vec![
+            (
+                "stray",
+                "{\"config\":{\"gravity\":[1,2,3,4,5,6],\"damping\":[1,2]},\"note\":\"version\"}"
+                    .into(),
+                "note",
+            ),
+            (
+                "nested version in config",
+                with_head.replace("\"config\": {", "\"config\": {\"version\": 2, "),
+                "config.version",
+            ),
+            (
+                "nested version in meta",
+                with_head.replace(
+                    "\"bodies\": []",
+                    "\"bodies\": [], \"meta\": {\"version\": 2}",
+                ),
+                "meta",
+            ),
+            (
+                "unit nested version",
+                "{\"config\":{\"version\":2,\"gravity\":[0,0,0,0,0,0],\"damping\":[1,0]}}".into(),
+                "config.version",
+            ),
+        ]
+    }
+
+    /// 外した 4 件は版 1 として版の検査を通り、未知の member として拒否される
+    #[test]
+    fn hand_written_documents_with_unknown_members_are_refused() {
+        let docs = refused_hand_written_documents();
+        assert_eq!(docs.len(), 4);
+        for (name, text, path) in docs {
+            assert_eq!(scene_json_version(&text), Ok(1), "{name}");
+            assert_eq!(
+                named(&text),
+                Err(InvalidSceneJson::UnknownMember {
+                    path: path.into(),
+                    suggestion: None,
+                }),
+                "{name}"
+            );
+            // 旧 reader はこれらを Ok で読んでいた
+            assert!(legacy_json::parse_scene_json(&text, 1).is_ok(), "{name}");
+        }
     }
 
     /// 既存の有効な scene すべてで、旧 reader と解析木の reader が同じ値を返す
@@ -2514,7 +2825,7 @@ mod json_tree_tests {
             docs.len(),
             diffs.len()
         );
-        assert!(docs.len() > 40, "{}", docs.len());
+        assert_eq!(docs.len(), 38);
         assert!(diffs.is_empty(), "{diffs:#?}");
     }
 
@@ -2621,14 +2932,21 @@ mod json_tree_tests {
         assert_eq!(named(&pair), dup("\u{1F600}"));
     }
 
+    fn unknown(path: &str) -> Result<PhysicsScene, InvalidSceneJson> {
+        Err(InvalidSceneJson::UnknownMember {
+            path: path.into(),
+            suggestion: None,
+        })
+    }
+
     /// 入れ子の中にだけある同名 key は、読んでいる member の代わりにならない
+    /// (入れ子を持つ member は format に無いので、その member の path で拒否する)
     #[test]
     fn nested_keys_never_stand_in_for_the_member() {
         let want = base();
         let extra = |obj: &str, k: &str, v: &str| {
             obj.replacen('{', &format!("{{\"extra\": {{\"{k}\": {v}}}, "), 1)
         };
-        // config の各 field: 入れ子の値が先にあっても自分の member を読む
         for (k, v) in [
             ("substeps", "99"),
             ("iterations", "99"),
@@ -2636,7 +2954,11 @@ mod json_tree_tests {
             ("damping", "[9,9]"),
         ] {
             let c = CFG.replacen("{", &format!("{{\"extra\": {{\"{k}\": {v}}}, "), 1);
-            assert_eq!(named(&doc(&c, BODY, JOINT)), Ok(want.clone()), "config.{k}");
+            assert_eq!(
+                named(&doc(&c, BODY, JOINT)),
+                unknown("config.extra"),
+                "config.{k}"
+            );
         }
         for (k, v) in [
             ("position", "[9,9,9,9,9,9]"),
@@ -2647,7 +2969,7 @@ mod json_tree_tests {
         ] {
             assert_eq!(
                 named(&doc(CFG, &extra(BODY, k, v), JOINT)),
-                Ok(want.clone()),
+                unknown("bodies[0].extra"),
                 "body.{k}"
             );
         }
@@ -2660,71 +2982,16 @@ mod json_tree_tests {
         ] {
             assert_eq!(
                 named(&doc(CFG, BODY, &extra(JOINT, k, v))),
-                Ok(want.clone()),
+                unknown("joints[0].extra"),
                 "joint.{k}"
             );
         }
-        // 自分の member が無く入れ子にだけある: 必須なら欠落、任意なら既定値
-        let gone = |obj: &str, k: &str, v: &str| {
-            let start = obj.find(&format!("\"{k}\"")).unwrap();
-            let end = obj[start..].find([',', '}']).map(|i| start + i).unwrap();
-            let end = if obj[start..].starts_with(&format!("\"{k}\": [")) {
-                start + obj[start..].find(']').unwrap() + 1
-            } else {
-                end
-            };
-            let rest = obj[end..].trim_start_matches(',');
-            let cut = format!("{}{}", &obj[..start], rest.trim_start());
-            let cut = cut.replace(", }", "}").replace(",}", "}");
-            extra(&cut, k, v)
-        };
-        let missing = |p: &str| Err(InvalidSceneJson::MissingMember { path: p.into() });
-        let c = gone(&CFG["\"config\": ".len()..], "gravity", "[9,9,9,9,9,9]");
-        assert_eq!(
-            named(&doc(&format!("\"config\": {c}"), BODY, JOINT)),
-            missing("config.gravity")
-        );
-        let c = gone(&CFG["\"config\": ".len()..], "substeps", "99");
-        assert_eq!(
-            named(&doc(&format!("\"config\": {c}"), BODY, JOINT))
-                .unwrap()
-                .config
-                .substeps,
-            8
-        );
-        assert_eq!(
-            named(&doc(CFG, &gone(BODY, "mass", "[9,9]"), JOINT)),
-            missing("bodies[0].mass")
-        );
-        assert_eq!(
-            named(&doc(CFG, &gone(BODY, "body_type", "2"), JOINT))
-                .unwrap()
-                .bodies[0]
-                .body_type,
-            0
-        );
-        assert_eq!(
-            named(&doc(CFG, BODY, &gone(JOINT, "anchor_b", "[9,9,9,9,9,9]"))),
-            missing("joints[0].anchor_b")
-        );
-        assert_eq!(
-            named(&doc(CFG, BODY, &gone(JOINT, "body_a", "9")))
-                .unwrap()
-                .joints[0]
-                .body_a,
-            0
-        );
         // body の中の "gravity" が top-level の config より前にある
         let early = format!(
             "{{\"bodies\": [{}], {CFG}}}",
             BODY.replace("{", "{\"gravity\": [5,5,5,5,5,5], ")
         );
-        assert_eq!(named(&early).unwrap().config.gravity, [1, 2, 3, 4, 5, 6]);
-        let early_missing = format!(
-            "{{\"bodies\": [{}], \"config\": {{\"damping\": [1,0]}}}}",
-            BODY.replace("{", "{\"gravity\": [5,5,5,5,5,5], ")
-        );
-        assert_eq!(named(&early_missing), missing("config.gravity"));
+        assert_eq!(named(&early), unknown("bodies[0].gravity"));
         // config の中の "bodies" / "joints" は scene の bodies / joints でない
         let inner = format!(
             "{{{}}}",
@@ -2733,14 +3000,19 @@ mod json_tree_tests {
                 &format!("\"bodies\": [{BODY}], \"joints\": [{JOINT}], \"substeps\"")
             )
         );
-        let s = named(&inner).unwrap();
-        assert!(s.bodies.is_empty() && s.joints.is_empty());
-        // body の中にだけある "config" は scene の config でない
+        assert_eq!(named(&inner), unknown("config.bodies"));
+        // body の中にだけある "config" は scene の config でない (欠落より先に未知を報告)
         let only_nested = format!(
             "{{\"bodies\": [{}]}}",
             BODY.replace("{", &format!("{{{CFG}, "))
         );
-        assert_eq!(named(&only_nested), missing("config"));
+        assert_eq!(named(&only_nested), unknown("bodies[0].config"));
+        // 旧 reader は入れ子の値を member として読んでいた
+        let c = CFG.replacen("{", "{\"extra\": {\"substeps\": 99}, ", 1);
+        assert_eq!(
+            legacy_json::parse_scene_json(&doc(&c, BODY, JOINT), 1).map(|s| s.config.substeps),
+            Ok(99)
+        );
         // escape で綴った key は同じ key として読む
         let esc = doc(
             &CFG.replace("\"config\"", "\"\\u0063onfig\"")
@@ -2754,17 +3026,41 @@ mod json_tree_tests {
     /// 文字列の中の括弧と escape した引用符は構造に数えない
     #[test]
     fn brackets_and_quotes_inside_strings_are_not_structure() {
-        let want = base();
         let noisy = "\"}{][,\\\"}\\\"{ \\\\\"";
         let b = BODY.replace("{", &format!("{{\"note\": {noisy}, "));
         let j = JOINT.replace('{', "{\"n\\\"}\": \"{[\", ");
-        let d = doc(CFG, &b, &j).replace(
-            "\"bodies\"",
-            &format!("\"meta\": [{noisy}, \"]\"], \"bodies\""),
-        );
-        assert_eq!(named(&d), Ok(want.clone()));
+        let m = format!("\"meta\": [{noisy}, \"]\"], \"bodies\"");
+        // 文字列が構造を壊さないので、各文書は未知の member の位置で拒否される
+        assert_eq!(named(&doc(CFG, &b, JOINT)), unknown("bodies[0].note"));
+        assert_eq!(named(&doc(CFG, BODY, &j)), unknown("joints[0].n\"}"));
+        let d = doc(CFG, BODY, JOINT).replace("\"bodies\"", &m);
+        assert_eq!(named(&d), unknown("meta"));
+        // 解析木では body が 2 つ、joint が 1 つ、各 object の member 数も元のまま
+        let all = doc(CFG, &format!("{b}, {b}"), &j).replace("\"bodies\"", &m);
+        let top = parse_json_document(&all).unwrap();
+        let count = |k: &str| match &top.iter().find(|x| x.key == k).unwrap().value {
+            JsonValue::Array(items) => items
+                .iter()
+                .map(|v| match v {
+                    JsonValue::Object(m) => m.len(),
+                    _ => 0,
+                })
+                .collect::<Vec<_>>(),
+            _ => vec![],
+        };
+        assert_eq!(count("bodies"), vec![6, 6]);
+        assert_eq!(count("joints"), vec![6]);
         // body 配列の中の文字列 (旧 reader の split は "}" を object の終わりと数えた)
         let two = doc(
+            CFG,
+            &format!(
+                "{BODY}, {}",
+                BODY.replace("\"body_type\": 1", "\"body_type\": 2, \"s\": \"{\"")
+            ),
+            JOINT,
+        );
+        assert_eq!(named(&two), unknown("bodies[1].s"));
+        let two_noisy = doc(
             CFG,
             &format!(
                 "{b}, {}",
@@ -2772,13 +3068,21 @@ mod json_tree_tests {
             ),
             JOINT,
         );
-        let s = named(&two).unwrap();
-        assert_eq!(s.bodies.len(), 2);
-        assert_eq!((s.bodies[0].body_type, s.bodies[1].body_type), (1, 2));
+        assert_eq!(named(&two_noisy), unknown("bodies[0].note"));
         assert_ne!(
-            legacy_json::parse_scene_json(&two, 1).map(|s| s.bodies.len()),
+            legacy_json::parse_scene_json(&two_noisy, 1).map(|s| s.bodies.len()),
             Ok(2)
         );
+        let clean = doc(
+            CFG,
+            &format!(
+                "{BODY}, {}",
+                BODY.replace("\"body_type\": 1", "\"body_type\": 2")
+            ),
+            JOINT,
+        );
+        let s = named(&clean).unwrap();
+        assert_eq!((s.bodies[0].body_type, s.bodies[1].body_type), (1, 2));
     }
 
     /// 深さの上限ちょうどは読め、1 つ超えると名前つき error (stack を溢れさせない)
@@ -2805,7 +3109,9 @@ mod json_tree_tests {
         let at = |t: &str| t.find("\"meta\"").unwrap() + "\"meta\": ".len();
         for make in [&arrays as &dyn Fn(usize) -> String, &objects] {
             let ok = make(MAX_SCENE_JSON_DEPTH - 1);
-            assert_eq!(named(&ok), Ok(base()));
+            // 上限ちょうどは文法と深さの段を通り、member の段で "meta" を拒否される
+            assert!(parse_json_document(&ok).is_ok());
+            assert_eq!(named(&ok), unknown("meta"));
             let over = make(MAX_SCENE_JSON_DEPTH);
             let step = if over.contains("{\"a\": {") {
                 "{\"a\": ".len()
@@ -2832,6 +3138,31 @@ mod json_tree_tests {
             named(&deep_dup),
             dup(&format!("meta{}.k", "[0]".repeat(MAX_SCENE_JSON_DEPTH - 2)))
         );
+        // member の検査と無関係に、任意の JSON で深さの上限を固定する (scene の
+        // format が持つ入れ子は top-level → bodies → body → field 配列の 4 段までで、
+        // 上限に届く正規の経路は無い)
+        for (open, close) in [("[", "]"), ("{\"a\": ", "}")] {
+            let nest = |n: usize| format!("{{\"x\": {}0{}}}", open.repeat(n), close.repeat(n));
+            let ok_text = nest(MAX_SCENE_JSON_DEPTH - 1);
+            let ok = parse_json_document(&ok_text).unwrap();
+            let mut depth = 1;
+            let mut v = &ok[0].value;
+            loop {
+                v = match v {
+                    JsonValue::Array(items) => &items[0],
+                    JsonValue::Object(m) => &m[0].value,
+                    _ => break,
+                };
+                depth += 1;
+            }
+            assert_eq!(depth, MAX_SCENE_JSON_DEPTH);
+            assert_eq!(
+                parse_json_document(&nest(MAX_SCENE_JSON_DEPTH)),
+                Err(InvalidSceneJsonVersion::TooDeep {
+                    offset: "{\"x\": ".len() + open.len() * (MAX_SCENE_JSON_DEPTH - 1)
+                })
+            );
+        }
         // 非常に深い入力 (100 万段) も上限で止まる
         for open in ["[", "{\"a\":"] {
             let huge = format!("{{\"x\": {}", open.repeat(1_000_000));
@@ -2881,10 +3212,10 @@ mod json_tree_tests {
             named(&doc(CFG, &b, JOINT)),
             Err(InvalidSceneJson::WrongType { .. })
         ));
-        // 読まない member の巨大な数は無関係
+        // 未知の member の巨大な数は評価しない (member の段で拒否、wrap も panic もない)
         let d = doc(CFG, BODY, JOINT)
             .replace("\"bodies\"", &format!("\"meta\": {big}e{big}, \"bodies\""));
-        assert_eq!(named(&d), Ok(base()));
+        assert_eq!(named(&d), unknown("meta"));
         // 版の error の message も先頭だけ
         let v = InvalidSceneJsonVersion::OutOfRange { value: big.clone() }.to_string();
         assert!(v.len() < 120 && v.contains("1001 bytes"), "{v}");
@@ -3075,6 +3406,13 @@ mod json_tree_tests {
                 },
                 "out of range: 300",
             ),
+            (
+                E::UnknownMember {
+                    path: "config.subsetps".into(),
+                    suggestion: Some("substeps"),
+                },
+                "unknown member \"config.subsetps\"; did you mean `substeps`?",
+            ),
         ] {
             assert!(e.to_string().contains(has), "{e}");
         }
@@ -3102,5 +3440,333 @@ mod json_tree_tests {
         );
         std::fs::write(&path, doc(CFG, BODY, JOINT)).unwrap();
         assert_eq!(load_scene_json(&path).unwrap(), base());
+    }
+
+    /// module docs の member 表の行 (`//! | ` で始まり、見出しと区切りを除く)
+    fn documented_rows() -> Vec<String> {
+        include_str!("scene_io.rs")
+            .lines()
+            .filter_map(|l| l.strip_prefix("//! | "))
+            .filter(|l| !l.starts_with("Object ") && !l.starts_with("---"))
+            .map(|l| format!("| {l}"))
+            .collect()
+    }
+
+    const OBJECT_TABLES: [(&str, &str, &[SceneJsonMember]); 4] = [
+        ("top level", "", TOP_MEMBERS),
+        ("`config`", "config", CONFIG_MEMBERS),
+        ("`bodies[i]`", "bodies[0]", BODY_MEMBERS),
+        ("`joints[i]`", "joints[0]", JOINT_MEMBERS),
+    ];
+
+    fn table_rows() -> Vec<String> {
+        let mut rows = Vec::new();
+        for (label, _, table) in OBJECT_TABLES {
+            for m in table {
+                let ty = match m.kind {
+                    MemberKind::U32 => "non-negative integer (`u32`)".to_string(),
+                    MemberKind::U8 => "non-negative integer (`u8`)".to_string(),
+                    MemberKind::I64Array(n) => format!("array of {n} integers (`i64`)"),
+                    MemberKind::Object(_) => "object".to_string(),
+                    MemberKind::Objects(_) => "array of objects".to_string(),
+                };
+                let presence = match m.presence {
+                    Presence::Required => "required".to_string(),
+                    Presence::Default(d) => format!("optional, default `{d}`"),
+                    Presence::Empty => "optional, default `[]`".to_string(),
+                };
+                rows.push(format!("| {label} | `{}` | {ty} | {presence} |", m.key));
+            }
+        }
+        rows
+    }
+
+    /// docs の member 表と code の表 (*_MEMBERS) は行ごとに一致し、code の表は
+    /// top level から辿れる object をちょうど覆う
+    #[test]
+    fn member_table_in_the_docs_is_the_code_table() {
+        let documented = documented_rows();
+        assert_eq!(documented.len(), 18);
+        assert_eq!(documented, table_rows());
+        let mut reached: Vec<&[SceneJsonMember]> = vec![TOP_MEMBERS];
+        let mut i = 0;
+        while i < reached.len() {
+            for m in reached[i] {
+                if let MemberKind::Object(t) | MemberKind::Objects(t) = m.kind {
+                    reached.push(t);
+                }
+            }
+            i += 1;
+        }
+        assert_eq!(reached.len(), OBJECT_TABLES.len());
+        for (r, (_, _, t)) in reached.iter().zip(OBJECT_TABLES) {
+            assert!(core::ptr::eq(*r, t));
+        }
+    }
+
+    /// 解析木の object (label の path) の member 列
+    fn object_at<'t, 'a>(
+        top: &'t mut Vec<JsonMember<'a>>,
+        at: &str,
+    ) -> &'t mut Vec<JsonMember<'a>> {
+        let (key, index) = match at {
+            "" => return top,
+            "config" => ("config", None),
+            "bodies[0]" => ("bodies", Some(0)),
+            _ => ("joints", Some(0)),
+        };
+        let v = &mut top.iter_mut().find(|m| m.key == key).unwrap().value;
+        let v = match (v, index) {
+            (JsonValue::Array(items), Some(i)) => &mut items[i],
+            (v, _) => v,
+        };
+        match v {
+            JsonValue::Object(m) => m,
+            _ => panic!("{at}"),
+        }
+    }
+
+    /// 版の段と member の段を通した読み (版の error も比較できるよう Debug 文字列)
+    fn read_tree(top: &[JsonMember<'_>]) -> Result<PhysicsScene, String> {
+        let version = scene_json_version_of(top).map_err(|e| format!("{e:?}"))?;
+        scene_from_json(top, version).map_err(|e| format!("{e:?}"))
+    }
+
+    fn number(text: String) -> JsonValue<'static> {
+        JsonValue::Number(Box::leak(text.into_boxed_str()))
+    }
+
+    /// `key` を `value` にする (版の段は member の書いた text を読むので text も揃える)
+    fn set(members: &mut Vec<JsonMember<'static>>, key: &str, value: JsonValue<'static>) {
+        let text = match value {
+            JsonValue::Number(t) => t,
+            _ => "",
+        };
+        match members.iter_mut().find(|m| m.key == key) {
+            Some(m) => {
+                m.value = value;
+                m.text = text;
+            }
+            None => members.push(JsonMember {
+                key: key.into(),
+                value,
+                text,
+            }),
+        }
+    }
+
+    /// reader は各 member の有無・既定値・長さ・範囲・型を表のとおりに扱う
+    /// (表と reader の片方だけを変えると、どれかの member で red)
+    #[test]
+    fn reader_follows_the_member_table() {
+        let text: &'static str = Box::leak(doc(CFG, BODY, JOINT).into_boxed_str());
+        let fresh = || parse_json_document(text).unwrap();
+        assert!(read_tree(&fresh()).is_ok());
+        let mut checked = 0;
+        for (_, at, table) in OBJECT_TABLES {
+            for m in table {
+                let path = member_path(at, m.key);
+                // 欠落: 必須なら MissingMember、任意なら表の既定値を書いた文書と同じ
+                let mut absent = fresh();
+                object_at(&mut absent, at).retain(|x| x.key != m.key);
+                let mut explicit = fresh();
+                match m.presence {
+                    Presence::Required => {
+                        assert_eq!(
+                            read_tree(&absent),
+                            Err(format!("MissingMember {{ path: {path:?} }}")),
+                            "{path}"
+                        );
+                    }
+                    Presence::Default(d) => {
+                        set(object_at(&mut explicit, at), m.key, number(d.to_string()));
+                        assert_eq!(read_tree(&absent), read_tree(&explicit), "{path}");
+                        assert!(read_tree(&absent).is_ok(), "{path}");
+                    }
+                    Presence::Empty => {
+                        set(
+                            object_at(&mut explicit, at),
+                            m.key,
+                            JsonValue::Array(vec![]),
+                        );
+                        assert_eq!(read_tree(&absent), read_tree(&explicit), "{path}");
+                        assert!(read_tree(&absent).is_ok(), "{path}");
+                    }
+                }
+                // 型ごとの境界
+                let with = |v: JsonValue<'static>| {
+                    let mut t = fresh();
+                    set(object_at(&mut t, at), m.key, v);
+                    read_tree(&t)
+                };
+                let ints =
+                    |n: usize| JsonValue::Array((0..n).map(|_| number("0".into())).collect());
+                match m.kind {
+                    MemberKind::I64Array(n) => {
+                        assert!(with(ints(n)).is_ok(), "{path}");
+                        assert_eq!(
+                            with(ints(n + 1)),
+                            Err(format!(
+                                "WrongLength {{ path: {path:?}, expected: {n}, found: {} }}",
+                                n + 1
+                            ))
+                        );
+                    }
+                    MemberKind::U8 | MemberKind::U32 => {
+                        let max = if m.kind == MemberKind::U8 {
+                            u64::from(u8::MAX)
+                        } else {
+                            u64::from(u32::MAX)
+                        };
+                        assert!(with(number(max.to_string())).is_ok(), "{path}");
+                        let over = with(number((max + 1).to_string())).unwrap_err();
+                        assert!(over.contains("OutOfRange"), "{path}: {over}");
+                    }
+                    MemberKind::Object(_) | MemberKind::Objects(_) => {
+                        let expected = if matches!(m.kind, MemberKind::Object(_)) {
+                            "an object"
+                        } else {
+                            "an array"
+                        };
+                        assert_eq!(
+                            with(number("1".into())),
+                            Err(format!(
+                                "WrongType {{ path: {path:?}, expected: {expected:?}, found: \"a number\" }}"
+                            ))
+                        );
+                    }
+                }
+                // 綴り違い: UnknownMember と本来の key の提案
+                let mut renamed = fresh();
+                let members = object_at(&mut renamed, at);
+                members.iter_mut().find(|x| x.key == m.key).unwrap().key = format!("{}_x", m.key);
+                let got = read_tree(&renamed).unwrap_err();
+                assert_eq!(
+                    got,
+                    format!(
+                        "UnknownMember {{ path: {:?}, suggestion: Some({:?}) }}",
+                        format!("{path}_x"),
+                        m.key
+                    )
+                );
+                checked += 1;
+            }
+        }
+        assert_eq!(checked, 18);
+    }
+
+    /// 編集距離と提案の選び方
+    #[test]
+    fn suggestion_is_the_nearest_key_within_two_edits() {
+        let d = |a: &str, b: &str| {
+            let a: Vec<char> = a.chars().collect();
+            let b: Vec<char> = b.chars().collect();
+            edit_distance_within(&a, &b, UNKNOWN_MEMBER_SUGGESTION_DISTANCE)
+        };
+        assert_eq!(d("substeps", "substeps"), Some(0));
+        assert_eq!(d("subsetps", "substeps"), Some(2));
+        assert_eq!(d("substep", "substeps"), Some(1));
+        assert_eq!(d("ubsteps", "substeps"), Some(1));
+        assert_eq!(d("sstep", "substeps"), None);
+        assert_eq!(d("abc", "xyz"), None);
+        assert_eq!(d("", "ab"), Some(2));
+        assert_eq!(d("", "abc"), None);
+        // 長い key は長さの差だけで打ち切る
+        assert_eq!(d(&"k".repeat(100_000), "substeps"), None);
+        // 同じ距離なら表の順で先の key (anchor_a と anchor_b は anchor_c から 1)
+        assert_eq!(suggest_member("anchor_c", JOINT_MEMBERS), Some("anchor_a"));
+        assert_eq!(suggest_member("ANCHOR_B", JOINT_MEMBERS), Some("anchor_b"));
+        // 近い方を選ぶ (anchorb は anchor_b から 1、anchor_a から 2)
+        assert_eq!(suggest_member("anchorb", JOINT_MEMBERS), Some("anchor_b"));
+        // 大文字小文字を無視して比べ、別の object の key は提案しない
+        assert_eq!(suggest_member("GRAVITY", CONFIG_MEMBERS), Some("gravity"));
+        assert_eq!(suggest_member("gravity", BODY_MEMBERS), None);
+        // 非 ASCII の小文字化 ("Σ" → "σ") も同じ比較
+        assert_eq!(suggest_member("maσs", BODY_MEMBERS), Some("mass"));
+        assert_eq!(suggest_member("MAΣS", BODY_MEMBERS), Some("mass"));
+    }
+
+    /// 検査の段の順序 (文法・深さ → 版 → 重複 → 未知の member → 値) を、隣り合う 2 段
+    /// の両方に当たる文書で固定する
+    #[test]
+    fn check_stages_run_in_the_documented_order() {
+        let full = doc(CFG, BODY, JOINT);
+        let load = |t: &str| scene_from_json_text(t).unwrap_err();
+        let version_error = |e: &std::io::Error| {
+            e.get_ref()
+                .and_then(|i| i.downcast_ref::<InvalidSceneJsonVersion>())
+                .cloned()
+        };
+        let field = |e: &std::io::Error| {
+            e.get_ref()
+                .and_then(|i| i.downcast_ref::<InvalidSceneJson>())
+                .cloned()
+        };
+        let v2 = full.replacen("\"version\": 1", "\"version\": 2", 1);
+        // 文法 / 深さ と 版
+        assert!(matches!(
+            version_error(&load(&format!("{v2} x"))),
+            Some(InvalidSceneJsonVersion::MalformedJson { .. })
+        ));
+        let deep = v2.replacen(
+            "\"bodies\"",
+            &format!(
+                "\"meta\": {}{}, \"bodies\"",
+                "[".repeat(MAX_SCENE_JSON_DEPTH),
+                "]".repeat(MAX_SCENE_JSON_DEPTH)
+            ),
+            1,
+        );
+        assert!(matches!(
+            version_error(&load(&deep)),
+            Some(InvalidSceneJsonVersion::TooDeep { .. })
+        ));
+        // 版 と 重複 key
+        let dup_cfg = |t: &str| t.replacen("\"bodies\"", &format!("{CFG}, \"bodies\""), 1);
+        assert_eq!(
+            load(&dup_cfg(&v2))
+                .get_ref()
+                .and_then(|i| i.downcast_ref::<UnsupportedSceneVersion>())
+                .cloned(),
+            Some(UnsupportedSceneVersion { found: 2 })
+        );
+        assert_eq!(
+            version_error(&load(&dup_cfg(&full).replacen(
+                "\"version\": 1",
+                "\"version\": 1.0",
+                1
+            ))),
+            Some(InvalidSceneJsonVersion::NotAnUnsignedInteger {
+                value: "1.0".into()
+            })
+        );
+        assert_eq!(field(&load(&dup_cfg(&full))), dup("config").err());
+        // 重複 key と 未知の member (未知の member の中の重複、別の object の重複)
+        let unk = full.replacen("\"bodies\"", "\"meta\": 1, \"bodies\"", 1);
+        assert_eq!(field(&load(&dup_cfg(&unk))), dup("config").err());
+        // 未知の member と 値 (型 / 長さ / 範囲 / 欠落)
+        for broken in [
+            full.replacen("[1,2,3,4,5,6]", "null", 1),
+            full.replacen("[1,2,3,4,5,6]", "[1]", 1),
+            full.replacen("\"body_type\": 1", "\"body_type\": 256", 1),
+            full.replacen("\"mass\": [2,0], ", "", 1),
+        ] {
+            assert!(
+                !matches!(
+                    field(&load(&broken)),
+                    Some(
+                        InvalidSceneJson::UnknownMember { .. }
+                            | InvalidSceneJson::DuplicateKey { .. }
+                    ) | None
+                ),
+                "{broken}"
+            );
+            let with_unknown = broken.replacen("\"joints\"", "\"meta\": 1, \"joints\"", 1);
+            assert_eq!(
+                field(&load(&with_unknown)),
+                unknown("meta").err(),
+                "{broken}"
+            );
+        }
     }
 }

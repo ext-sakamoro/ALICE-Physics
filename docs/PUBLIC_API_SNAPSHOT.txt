@@ -10065,6 +10065,9 @@ pub alice_physics::prelude::InvalidSceneJson::MissingMember::path: alloc::string
 pub alice_physics::prelude::InvalidSceneJson::OutOfRange
 pub alice_physics::prelude::InvalidSceneJson::OutOfRange::path: alloc::string::String
 pub alice_physics::prelude::InvalidSceneJson::OutOfRange::value: alloc::string::String
+pub alice_physics::prelude::InvalidSceneJson::UnknownMember
+pub alice_physics::prelude::InvalidSceneJson::UnknownMember::path: alloc::string::String
+pub alice_physics::prelude::InvalidSceneJson::UnknownMember::suggestion: core::option::Option<&'static str>
 pub alice_physics::prelude::InvalidSceneJson::WrongLength
 pub alice_physics::prelude::InvalidSceneJson::WrongLength::expected: usize
 pub alice_physics::prelude::InvalidSceneJson::WrongLength::found: usize
@@ -16263,6 +16266,9 @@ pub alice_physics::scene_io::InvalidSceneJson::MissingMember::path: alloc::strin
 pub alice_physics::scene_io::InvalidSceneJson::OutOfRange
 pub alice_physics::scene_io::InvalidSceneJson::OutOfRange::path: alloc::string::String
 pub alice_physics::scene_io::InvalidSceneJson::OutOfRange::value: alloc::string::String
+pub alice_physics::scene_io::InvalidSceneJson::UnknownMember
+pub alice_physics::scene_io::InvalidSceneJson::UnknownMember::path: alloc::string::String
+pub alice_physics::scene_io::InvalidSceneJson::UnknownMember::suggestion: core::option::Option<&'static str>
 pub alice_physics::scene_io::InvalidSceneJson::WrongLength
 pub alice_physics::scene_io::InvalidSceneJson::WrongLength::expected: usize
 pub alice_physics::scene_io::InvalidSceneJson::WrongLength::found: usize
@@ -16429,6 +16435,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::Unsupport
 pub const alice_physics::scene_io::CURRENT_SCENE_VERSION: u32
 pub const alice_physics::scene_io::MAX_SCENE_JSON_DEPTH: usize
 pub const alice_physics::scene_io::SUPPORTED_SCENE_VERSIONS: &[u32]
+pub const alice_physics::scene_io::UNKNOWN_MEMBER_SUGGESTION_DISTANCE: usize
 pub fn alice_physics::scene_io::load_scene(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::scene_io::load_scene_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::scene_io::load_scene_json(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
@@ -21305,6 +21312,9 @@ pub alice_physics::InvalidSceneJson::MissingMember::path: alloc::string::String
 pub alice_physics::InvalidSceneJson::OutOfRange
 pub alice_physics::InvalidSceneJson::OutOfRange::path: alloc::string::String
 pub alice_physics::InvalidSceneJson::OutOfRange::value: alloc::string::String
+pub alice_physics::InvalidSceneJson::UnknownMember
+pub alice_physics::InvalidSceneJson::UnknownMember::path: alloc::string::String
+pub alice_physics::InvalidSceneJson::UnknownMember::suggestion: core::option::Option<&'static str>
 pub alice_physics::InvalidSceneJson::WrongLength
 pub alice_physics::InvalidSceneJson::WrongLength::expected: usize
 pub alice_physics::InvalidSceneJson::WrongLength::found: usize
