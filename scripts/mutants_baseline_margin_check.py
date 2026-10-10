@@ -79,11 +79,17 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--fraction", type=float, default=0.6)
     args = ap.parse_args(argv)
 
-    log_text = Path(args.log).read_text(encoding="utf-8", errors="replace")
+    # this check must never fail the step it runs in (it is advisory, not a
+    # gate): any exception at all -- a missing or unreadable log file, a
+    # decoding failure, anything not anticipated above -- becomes a ::notice
+    # and a clean exit, the same contract as the "line present but
+    # unparsable" case, rather than a crash the caller's `set -e` would turn
+    # into a step failure
     try:
+        log_text = Path(args.log).read_text(encoding="utf-8", errors="replace")
         message = check(log_text, args.budget, args.fraction)
-    except ValueError as e:
-        print(f"::notice::{e}")
+    except Exception as e:  # noqa: BLE001 -- see the comment above
+        print(f"::notice::margin check did not run: {type(e).__name__}: {e}")
         return 0
     if message is not None:
         print(f"::warning::{message}")

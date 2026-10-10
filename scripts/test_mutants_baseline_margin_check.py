@@ -127,5 +127,49 @@ class Cli(unittest.TestCase):
         self.assertEqual(buf.getvalue(), "")
 
 
+class NeverFailsTheStepItRunsIn(unittest.TestCase):
+    """This check is advisory (fail-soft), not a gate: the caller runs it
+    under `set -e` in a step whose exit code must stay the cargo-mutants
+    run's own, so main() must return 0 and print a ::notice (not raise) for
+    every failure mode, not only "line present but unparsable" -- the
+    original fix only caught ValueError and a peer caught the gap by reading
+    the workflow code before this landed."""
+
+    def _run(self, argv):
+        import io
+        import contextlib
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = mc.main(argv)
+        return rc, buf.getvalue()
+
+    def test_a_missing_log_file_is_a_notice_not_a_crash(self):
+        rc, out = self._run(["--log", "/nonexistent/does-not-exist.txt", "--budget", "300"])
+        self.assertEqual(rc, 0)
+        self.assertIn("::notice::", out)
+
+    def test_an_unreadable_log_directory_is_a_notice_not_a_crash(self):
+        # passing a directory where a file is expected: read_text() raises
+        # IsADirectoryError, a different exception type than the missing-file case
+        rc, out = self._run(["--log", str(HERE), "--budget", "300"])
+        self.assertEqual(rc, 0)
+        self.assertIn("::notice::", out)
+
+    def test_binary_garbage_that_is_not_valid_utf8_is_a_notice_not_a_crash(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "log.bin"
+            log.write_bytes(b"\xff\xfe\x00\x01Unmutated baseline in \xffs build + \xfes test")
+            rc, out = self._run(["--log", str(log), "--budget", "300"])
+        # errors="replace" in main() means this path actually produces a
+        # parseable-but-garbled number (replacement chars), not an exception;
+        # assert the contract (rc 0, no crash) rather than assume which path:
+        # either a clean "no warning" (garbled digits fail the regex -> a
+        # proper ::notice) or, if the replacement happens to parse, silence
+        self.assertEqual(rc, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
