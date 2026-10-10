@@ -99,7 +99,17 @@ def attribute_start(lines: list[str], last: int) -> int | None:
         if depth <= 0:
             # the brackets close here: an attribute only if this line opens one
             # (`foo![ 1 ]` above an item is code, not the item's attribute)
-            return k if depth == 0 and ln.lstrip().startswith(("#[", "#![")) else None
+            if depth != 0 or not ln.lstrip().startswith(("#[", "#![")):
+                return None
+            # the attribute opened here must still be open at the end of this
+            # line (`#[rustfmt::skip] static T: [u8; 2] = [` closes its
+            # attribute at once; the `[` that balanced the walk is code)
+            d = 0
+            for ch in ln[ln.index("#"):]:
+                d += (ch == "[") - (ch == "]")
+                if d == 0 and ch == "]":
+                    return None
+            return k
     return None
 
 

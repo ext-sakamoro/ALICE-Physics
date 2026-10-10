@@ -233,6 +233,25 @@ class Limitation(Fixture):
         self.assertRed("limitation quote is not in src/m.rs::straight",
                        src=self._neighbour("#[must_use]\nfn neighbour() { let _ = [\n    1 ]\n"))
 
+    def test_an_attribute_line_that_opens_more_brackets_than_it_closes_is_not_reached(self):
+        # going up, the depth turns negative on a line that starts with `#[` and
+        # leaves the attribute open: more `[` than the walk closed, not a boundary
+        self.assertRed("limitation quote is not in src/m.rs::straight",
+                       src=self._neighbour("#[deprecated(note = [[\n    1 ]\n"))
+
+    def test_the_walk_stops_where_the_depth_turns_negative(self):
+        # once more `[` than `]` are seen going up the walk stops; a line further
+        # up that brings the depth back to 0 (`x ]]`, then `#[deprecated(`) is
+        # not the start of the attribute that ends on the starting line
+        self.assertRed("limitation quote is not in src/m.rs::straight",
+                       src=self._neighbour("#[deprecated(\nx ]]\nfn n() { let v = [[\n    1 ]\n"))
+
+    def test_an_attribute_closed_on_its_own_line_does_not_start_a_multi_line_one(self):
+        # `#[rustfmt::skip]` closes on its line; the `[` that balances the walk
+        # belongs to the code after it, so this is not where an attribute begins
+        self.assertRed("limitation quote is not in src/m.rs::straight",
+                       src=self._neighbour("#[rustfmt::skip] static T: [u8; 2] = [\n    1, 2]\n"))
+
     def test_a_blank_line_inside_an_attribute_ends_the_walk(self):
         # fail-safe: a blank line is read as "no attribute", so the text above is left out
         self.assertRed("limitation quote is not in src/m.rs::straight", src=SRC.replace(
