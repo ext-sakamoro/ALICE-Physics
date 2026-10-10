@@ -213,6 +213,40 @@ class Limitation(Fixture):
         self.assertRed("limitation quote is not in src/m.rs::straight", src=SRC.replace(
             "pub fn straight() {}", '#[deprecated(\n    since = "1.0.0"\n)]\n\npub fn straight() {}'))
 
+    # The quote below sits on a neighbour item; `straight` must not pick it up
+    # through a line ending in `]` that is not an attribute
+    def _neighbour(self, between: str) -> str:
+        return SRC.replace(
+            "// LIMITATION(COV-TST-002): Only the straight case is handled; the curved case is not supported.\n"
+            "pub fn straight() {}",
+            "// LIMITATION(COV-TST-002): Only the straight case is handled; the curved case is not supported.\n"
+            + between + "pub fn straight() {}")
+
+    def test_a_macro_line_ending_in_a_bracket_is_not_an_attribute(self):
+        # `foo![ 1 ]` balances on its own line, which does not open an attribute
+        self.assertRed("limitation quote is not in src/m.rs::straight",
+                       src=self._neighbour("#[must_use]\npub fn neighbour() -> u8 { 0 }\nfoo![ 1 ]\n"))
+
+    def test_an_attribute_above_balanced_code_is_not_reached(self):
+        # the walk stops where the brackets balance (`let _ = [`), before the
+        # neighbour's `#[must_use]`; neither "first `#[`" nor "first balance" is enough
+        self.assertRed("limitation quote is not in src/m.rs::straight",
+                       src=self._neighbour("#[must_use]\nfn neighbour() { let _ = [\n    1 ]\n"))
+
+    def test_a_blank_line_inside_an_attribute_ends_the_walk(self):
+        # fail-safe: a blank line is read as "no attribute", so the text above is left out
+        self.assertRed("limitation quote is not in src/m.rs::straight", src=SRC.replace(
+            "pub fn straight() {}", '#[deprecated(\n    since = "1.0.0",\n\n    note = "x"\n)]\npub fn straight() {}'))
+
+    def test_a_trailing_comment_after_an_attribute_is_not_followed(self):
+        # fail-safe: only a line that ends in `]` starts the walk
+        self.assertRed("limitation quote is not in src/m.rs::straight", src=SRC.replace(
+            "pub fn straight() {}", '#[deprecated(\n    since = "1.0.0"\n)] // until 2.0\npub fn straight() {}'))
+
+    def test_a_comment_with_a_bracket_inside_an_attribute_is_ignored(self):
+        self.assertGreen(src=SRC.replace(
+            "pub fn straight() {}", '#[deprecated(\n    since = "1.0.0", // see [docs\n    note = "x"\n)]\npub fn straight() {}'))
+
     def test_inserting_lines_above_keeps_a_symbol_reference_valid(self):
         # the point of symbol references: the same table stays green after the source grows
         self.assertGreen(src="\n" * 40 + SRC.replace("//! A module.\n", "//! A module.\n" + "//!\n" * 30))

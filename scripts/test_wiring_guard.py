@@ -198,6 +198,19 @@ class Markers(unittest.TestCase):
         self.assertNotIn("api", unwired(vs))
         self.assertNotIn("stale_marker", kinds(vs))
 
+    def test_brackets_inside_a_multi_line_attribute_are_counted(self):
+        # `concat![..]` on a continuation line opens and closes a bracket of its own
+        r = crate({
+            "src/lib.rs": LIB,
+            "src/a.rs": ("// ALLOW-UNWIRED: public entry point reached from downstream crates\n"
+                         "#[deprecated(\n    note = concat![\"use \", \"b::x\"]\n)]\n"
+                         "pub fn api() -> u8 { 0 }\n"),
+            "src/b.rs": "pub fn x() {}\n",
+        })
+        vs = wg.check(r)
+        self.assertNotIn("api", unwired(vs))
+        self.assertNotIn("stale_marker", kinds(vs))
+
     def test_a_multi_line_attribute_over_a_private_item_is_a_stale_marker(self):
         r = crate({
             "src/lib.rs": LIB,
