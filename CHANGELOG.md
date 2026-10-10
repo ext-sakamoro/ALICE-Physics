@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed
+
+- `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push すると次の step の joint solve で panic する (index out of bounds) ことを書いた (`add_joint` は事前に assert で拒む) joint の破断の後に island を作り直す所の範囲検査は常に真だったので外した: 残る joint はその substep に solve 済で、solve が両方の body を index するので、範囲外の joint は solve で先に panic する 試験 `tests/audit_dangling_joint.rs` (破断する joint と並べても solve で panic する)
+
 ## [2.2.0] - 2026-10-10
 
 ### Added

@@ -1676,6 +1676,10 @@ pub struct PhysicsWorld {
 
     // ── Integrated Subsystems ──────────────────────────────────────────
     /// Joint constraints (solved each substep alongside distance/contact)
+    ///
+    /// [`Self::add_joint`] checks that both body indices are in range. A joint
+    /// pushed here directly with an index past the last body makes the next
+    /// step panic in the joint solve (index out of bounds).
     pub joints: Vec<Joint>,
     /// Joint motors (one-axis PD controllers), applied every substep by
     /// [`Self::step`]; see [`Self::add_joint_motor`]
@@ -5797,11 +5801,12 @@ impl PhysicsWorld {
         if !overloaded.is_empty() {
             self.islands.resize(self.bodies.len());
             self.islands.reset_unions();
+            // every joint left here was solved in this substep, and the solve
+            // indexes both bodies, so both indices are in range (a dangling
+            // joint panics in the solve, before this point)
             for j in &self.joints {
                 let (a, b) = j.bodies();
-                if a < self.bodies.len() && b < self.bodies.len() {
-                    self.islands.union(a, b);
-                }
+                self.islands.union(a, b);
             }
         }
     }
