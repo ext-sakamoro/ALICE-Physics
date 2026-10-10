@@ -304,6 +304,76 @@ const fn normalize_pair(a: usize, b: usize) -> (usize, usize) {
 mod tests {
     use super::*;
 
+    /// A 2 kg body hung from a static anchor under g = 8 transmits exactly
+    /// m·g = 16 N on the first solve (substeps 1, damping 1), so a joint rated
+    /// 15 N breaks through `PhysicsWorld::step` and the world's collector
+    /// reports it once, with that force
+    #[test]
+    fn step_reports_a_broken_joint_with_its_reaction_force() {
+        use crate::joint::{BallJoint, Joint};
+        use crate::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+        let config = PhysicsConfig {
+            substeps: 1,
+            gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-8), Fix128::ZERO),
+            damping: Fix128::ONE,
+            ..PhysicsConfig::default()
+        };
+        let mut w = PhysicsWorld::new(config);
+        w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
+        w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::from_int(2)));
+        let joint = Joint::Ball(
+            BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+                .with_break_force(Fix128::from_int(15)),
+        );
+        w.add_joint(joint);
+        w.step(Fix128::from_ratio(1, 64));
+        assert!(w.joints.is_empty());
+        assert!(w.events.has_events());
+        assert_eq!(
+            w.events.joint_break_events(),
+            &[JointBreakEvent {
+                index: 0,
+                joint,
+                force: Fix128::from_int(16)
+            }]
+        );
+        // the next frame starts empty: nothing is left to break
+        w.step(Fix128::from_ratio(1, 64));
+        assert!(w.events.joint_break_events().is_empty());
+    }
+
+    /// The collector keeps joint breaks for one frame: reported events are
+    /// readable and drainable, `begin_frame` clears them, and they alone make
+    /// `has_events` true
+    #[test]
+    fn joint_break_events_live_for_one_frame() {
+        use crate::joint::{BallJoint, Joint};
+        let event = JointBreakEvent {
+            index: 3,
+            joint: Joint::Ball(BallJoint::new(1, 2, Vec3Fix::ZERO, Vec3Fix::UNIT_Y)),
+            force: Fix128::from_int(7),
+        };
+        let mut events = EventCollector::default();
+        events.begin_frame();
+        assert!(!events.has_events());
+        events.report_joint_break(event);
+        events.report_joint_break(JointBreakEvent { index: 1, ..event });
+        assert!(events.has_events(), "a joint break alone is an event");
+        assert_eq!(events.joint_break_events().len(), 2);
+        assert_eq!(events.joint_break_events()[1].index, 1);
+        assert_eq!(
+            events.drain_joint_break_events(),
+            vec![event, JointBreakEvent { index: 1, ..event }]
+        );
+        assert!(events.joint_break_events().is_empty() && !events.has_events());
+        events.report_joint_break(event);
+        events.begin_frame();
+        assert!(
+            events.joint_break_events().is_empty(),
+            "begin_frame clears them"
+        );
+    }
+
     #[test]
     fn test_contact_begin() {
         let mut events = EventCollector::new();
