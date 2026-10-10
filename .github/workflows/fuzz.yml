@@ -133,17 +133,23 @@ jobs:
         env:
           CARGO_TERM_COLOR: never
         run: |
-          set -o pipefail
           cd fuzz
           T="${{ matrix.target }}"
           extra=()
           if [ -d "regressions/$T" ]; then extra=("regressions/$T"); fi
           mkdir -p "corpus/$T"
+          set +e
           cargo +nightly fuzz run "$T" "corpus/$T" "${extra[@]}" -- \
             -max_total_time=${{ steps.dur.outputs.seconds }} 2>&1 | tee fuzz-run.log
+          rc=${PIPESTATUS[0]}
+          set -e
           runs=$(grep -oE "Done [0-9]+ runs" fuzz-run.log | tail -1 | grep -oE "[0-9]+" || true)
           cov=$(grep -oE "DONE +cov: [0-9]+" fuzz-run.log | tail -1 | grep -oE "[0-9]+$" || true)
-          echo "| $T | ${runs:-0} runs | cov ${cov:-?} |" >> "$GITHUB_STEP_SUMMARY"
+          status=ok
+          if [ "$rc" -ne 0 ]; then status="crashed (exit $rc)"; fi
+          # the row is written before failing, so a crash still shows up here
+          echo "| $T | ${runs:-0} runs | cov ${cov:-?} | $status |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ]; then exit "$rc"; fi
           if [ "${runs:-0}" -le 0 ]; then
             echo "::error::fuzz target $T executed 0 inputs"
             exit 1
