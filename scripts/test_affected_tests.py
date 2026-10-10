@@ -344,5 +344,78 @@ class Passes(unittest.TestCase):
         self.assertEqual(at.empty_targets(counts, passes[0][1]), ["plain"])
 
 
+TABLE = {
+    "default": ["std"],
+    "std": [],
+    "simd": ["std"],
+    "parallel": ["std", "dep:rayon"],
+    "neural": ["std", "dep:alice-ml"],
+    "ffi": ["std"],
+    "replay": ["std"],
+    "gpu-solver-bridge": ["std"],
+}
+
+
+class Defaults(unittest.TestCase):
+    TESTS = {
+        "needs_std": '#![cfg(feature = "std")]\nuse alice_physics::x;',
+        "no_std_only": '#![cfg(not(feature = "std"))]\nuse alice_physics::x;',
+        "needs_neural": '#![cfg(feature = "neural")]\nuse alice_physics::x;',
+    }
+
+    def plan(self, targets, features):
+        return at.plan_passes(targets, self.TESTS, set(features), HOST, {}, KNOWN, TABLE)
+
+    def test_the_default_feature_counts_without_naming_it(self):
+        # no --features: cargo still enables `std` through `default`
+        passes, _ = self.plan(["needs_std"], [])
+        self.assertEqual(passes, [(frozenset(), ["needs_std"])])
+
+    def test_a_feature_enables_what_it_implies(self):
+        self.assertEqual(at.feature_closure({"parallel"}, TABLE, False), {"parallel", "std"})
+        self.assertEqual(at.feature_closure(set(), TABLE, True), {"std"})
+        self.assertEqual(at.feature_closure(set(), TABLE, False), set())
+
+    def test_a_target_needing_a_default_off_gets_no_default_features(self):
+        passes, skipped = self.plan(["no_std_only"], [])
+        self.assertEqual(skipped, [])
+        pf = [f for f, ts in passes if ts == ["no_std_only"]][0]
+        self.assertEqual(at.pass_args(pf), ["--no-default-features"])
+
+    def test_a_default_off_target_is_unreachable_while_a_selected_feature_implies_it(self):
+        # simd implies std, so not(std) cannot hold with simd on; flipping simd
+        # off as well is the nearest set that works
+        passes, _ = self.plan(["no_std_only"], ["simd"])
+        pf = [f for f, ts in passes if ts == ["no_std_only"]][0]
+        self.assertIn("--no-default-features", at.pass_args(pf))
+        self.assertNotIn("simd", pf)
+
+    def test_pass_args_lists_features_sorted(self):
+        self.assertEqual(at.pass_args(frozenset({"std", "neural"})), ["--features", "neural,std"])
+        self.assertEqual(at.pass_args(frozenset()), [])
+
+
+class IgnoredOnly(unittest.TestCase):
+    def test_all_ignored_targets_are_reported_apart_from_run_ones(self):
+        out = SAMPLE + ALL_IGNORED
+        counts = at.per_target_counts(out)
+        self.assertEqual(counts["audit_force"], (2, 2))
+        self.assertEqual(counts["analytic_external_force_substep"], (0, 6))
+        self.assertEqual(
+            at.ignored_only(counts, ["audit_force", "analytic_external_force_substep"]),
+            ["analytic_external_force_substep"],
+        )
+
+
+class HeaderForms(unittest.TestCase):
+    def test_a_bom_block_comments_and_quoted_brackets_before_the_cfg(self):
+        text = '\ufeff/* licence\n spanning lines */\n#![doc = "a ] in a string ["]\n#![cfg(feature = "neural")]\nuse x;'
+        self.assertEqual(at.crate_cfg(text), 'feature = "neural"')
+
+    def test_an_unterminated_block_comment_fails_closed(self):
+        with self.assertRaises(at.UnknownCfg):
+            at.crate_cfg('/* never closed\n#![cfg(feature = "std")]')
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

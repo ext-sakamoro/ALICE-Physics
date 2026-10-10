@@ -125,24 +125,44 @@ def crate_cfg(text: str) -> str | None:
     A `#![cfg(...)]` inside a `mod` or quoted in a comment is not crate-level
     and is not read."""
     preds = []
+    if text.startswith("\ufeff"):
+        text = text[1:]
     i, n = 0, len(text)
     while i < n:
-        # skip whitespace and line comments
+        # skip whitespace, line comments and block comments
         while i < n and text[i] in " \t\r\n":
             i += 1
         if text.startswith("//", i):
             j = text.find("\n", i)
             i = n if j < 0 else j + 1
             continue
+        if text.startswith("/*", i):
+            j = text.find("*/", i + 2)
+            if j < 0:
+                raise UnknownCfg("unterminated block comment in the crate header")
+            i = j + 2
+            continue
         if not text.startswith("#![", i):
             break
-        depth, k = 0, i + 2
+        depth, k, in_str = 0, i + 2, False
         while k < n:
-            depth += {"[": 1, "]": -1}.get(text[k], 0)
+            c = text[k]
+            if in_str:
+                if c == "\\":
+                    k += 2
+                    continue
+                if c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "[":
+                depth += 1
+            elif c == "]":
+                depth -= 1
             k += 1
-            if depth == 0:
+            if depth == 0 and not in_str:
                 break
-        if depth:
+        if depth or in_str:
             raise UnknownCfg("unbalanced inner attribute in the crate header")
         attr = text[i + 3 : k - 1].strip()
         if attr.startswith("cfg(") and attr.endswith(")"):
@@ -269,6 +289,38 @@ def host_cfg() -> set[tuple]:
     return host
 
 
+# marker in a pass's feature set: run it with `--no-default-features`
+NO_DEFAULT = "--no-default-features"
+
+
+def pass_args(pf: frozenset[str]) -> list[str]:
+    """cargo arguments for a planned pass."""
+    feats = ",".join(sorted(f for f in pf if f != NO_DEFAULT))
+    args = ["--no-default-features"] if NO_DEFAULT in pf else []
+    return args + (["--features", feats] if feats else [])
+
+
+def feature_closure(selected: set[str], table: dict[str, list[str]], defaults: bool) -> set[str]:
+    """The features cargo actually enables: `selected`, plus `default` unless
+    `--no-default-features`, plus everything those features enable in the
+    `[features]` table (entries naming another feature; `dep:` and `crate/f`
+    entries are not features of this crate)."""
+    out = set(selected)
+    if defaults:
+        out |= {"default"}
+    todo = list(out)
+    while todo:
+        f = todo.pop()
+        for e in table.get(f, []):
+            if e.startswith("dep:") or "/" in e or e in out:
+                continue
+            if e in table:
+                out.add(e)
+                todo.append(e)
+    out.discard("default")
+    return out
+
+
 def plan_passes(
     targets: list[str],
     tests: dict[str, str],
@@ -276,33 +328,55 @@ def plan_passes(
     host: set[tuple],
     req: dict[str, set[str]],
     known_features: set[str],
+    table: dict[str, list[str]] | None = None,
 ) -> tuple[list[tuple[frozenset[str], list[str]]], list[str]]:
     """Group targets into cargo test passes so every target runs with a feature
     set that makes its crate-level cfg true. The first pass is `features`;
     a cfg-false target goes to the nearest feature set that makes it true
     (fewest features flipped among those its cfg names, required-features
     added). Returns (passes, host_skipped): targets no feature set can enable
-    on this host. Raises UnknownCfg on a form the evaluator cannot read."""
-    passes: dict[frozenset[str], list[str]] = {frozenset(features): []}
+    on this host. Raises UnknownCfg on a form the evaluator cannot read.
+
+    With `table` (the `[features]` of Cargo.toml) the cfg is evaluated on the
+    features cargo really enables: `default` and everything a feature turns
+    on. A pass whose features leave out a default feature is planned without
+    the defaults; `pass_args` then adds `--no-default-features`."""
+    def eff(fs: set[str], defaults: bool) -> set[str]:
+        return feature_closure(fs, table, defaults) if table is not None else set(fs)
+
+    main = frozenset(features)
+    passes: dict[frozenset[str], list[str]] = {main: []}
     host_skipped: list[str] = []
     for t in targets:
         expr = crate_cfg(tests.get(t, ""))
         tree = parse_cfg(expr) if expr else None
-        if tree is None or eval_cfg(tree, features, host):
-            passes[frozenset(features)].append(t)
+        if tree is None or eval_cfg(tree, eff(features, True), host):
+            passes[main].append(t)
             continue
-        atoms = sorted(cfg_features(tree))
-        unknown = [f for f in atoms if f not in known_features]
+        named = cfg_features(tree)
+        unknown = sorted(f for f in named if f not in known_features)
         if unknown:
             raise UnknownCfg(f"{t}: cfg names feature(s) Cargo.toml does not define: {unknown}")
+        # a selected feature that turns on one the cfg names can also be
+        # flipped: `not(feature = "std")` with `simd` on needs `simd` off too
+        implying = {
+            f for f in features
+            if table is not None and feature_closure({f}, table, False) & named
+        }
+        atoms = sorted(named | implying)
         best = None
         for mask in range(1 << len(atoms)):
             flipped = {atoms[i] for i in range(len(atoms)) if mask >> i & 1}
             cand = (features ^ flipped) | req.get(t, set())
-            if eval_cfg(tree, cand, host):
-                key = (len(flipped), sorted(flipped))
-                if best is None or key < best[0]:
-                    best = (key, frozenset(cand))
+            # with the defaults first; a cfg that needs a default feature off
+            # (not(feature = "std")) only holds without them
+            for defaults in (True, False):
+                if eval_cfg(tree, eff(cand, defaults), host):
+                    key = (len(flipped), not defaults, sorted(flipped))
+                    pf = frozenset(cand) if defaults else frozenset(cand | {NO_DEFAULT})
+                    if best is None or key < best[0]:
+                        best = (key, pf)
+                    break
         if best is None:
             host_skipped.append(t)
         else:
@@ -371,6 +445,25 @@ RESULT = re.compile(r"test result: \w+\. (\d+) passed; \d+ failed; (\d+) ignored
 # ANSI SGR sequences: with CARGO_TERM_COLOR=always cargo colours "Running", and
 # the header no longer matches, so every target would read as 0 tests
 from ansi import ANSI_RE  # noqa: E402  (CSI, charset selectors, OSC)
+
+
+def per_target_counts(output: str) -> dict[str, tuple[int, int]]:
+    """(passed, ignored) per integration target, from the `Running
+    tests/<t>.rs` section headers of cargo's output."""
+    output = ANSI_RE.sub("", output)
+    counts: dict[str, tuple[int, int]] = {}
+    heads = list(RUNNING.finditer(output))
+    for i, h in enumerate(heads):
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(output)
+        m = RESULT.search(output, h.end(), end)
+        counts[h.group(1)] = (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+    return counts
+
+
+def ignored_only(counts: dict[str, tuple[int, int]], selected: list[str]) -> list[str]:
+    """Selected targets that ran but passed nothing because every test is
+    `#[ignore]`d (known defects, src gaps): reported on their own, not as run."""
+    return [t for t in selected if counts.get(t, (0, 0))[0] == 0 and counts.get(t, (0, 0))[1] > 0]
 
 
 def per_target_passed(output: str) -> dict[str, int]:
@@ -483,7 +576,8 @@ def main() -> int:
         }
         try:
             passes, host_skipped = plan_passes(
-                targets, load_tests(), features, host_cfg(), req, known
+                targets, load_tests(), features, host_cfg(), req, known,
+                {k: list(v) for k, v in cargo_doc.get("features", {}).items()},
             )
         except UnknownCfg as e:
             print(f"affected_tests: {e} (fail closed)", file=sys.stderr)
@@ -497,17 +591,21 @@ def main() -> int:
         for i, (pf, pts) in enumerate(passes):
             if not pts:
                 continue
-            feats = ",".join(sorted(pf))
-            cmd = ["cargo", "test", "--no-fail-fast", *(["--features", feats] if feats else [])]
+            feats = " ".join(pass_args(pf)) or "(defaults)"
+            cmd = ["cargo", "test", "--no-fail-fast", *pass_args(pf)]
             for t in pts:
                 cmd += ["--test", t]
             out: list[str] = []
             rc, n = run(cmd, out)
-            counts = per_target_passed("".join(out))
+            joined = "".join(out)
+            counts = per_target_passed(joined)
             empty = empty_targets(counts, pts)
+            ign = ignored_only(per_target_counts(joined), pts)
             print(
                 f"affected_tests: pass {i + 1} [{feats}]: targets {len(pts)}, "
-                f"ran {len(pts) - len(empty)}, empty {len(empty)}, passed {n}",
+                f"ran {len(pts) - len(empty) - len(ign)}, ignored-only {len(ign)}, "
+                f"empty {len(empty)}, passed {n}"
+                + (f" (ignored-only: {', '.join(ign)})" if ign else ""),
                 file=sys.stderr,
             )
             if rc != 0:
