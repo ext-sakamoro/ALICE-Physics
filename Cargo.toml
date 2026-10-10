@@ -32,8 +32,10 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 # cargo-machete false-positive suppression
 # js-sys: wasm feature 用 optional dep、machete が feature-gated 依存を検出不能
+# getrandom: code からは使わず、wasm feature で alice-crypto の getrandom に js backend を
+# 与えるためだけに置く (feature の統合)
 [package.metadata.cargo-machete]
-ignored = ["js-sys"]
+ignored = ["js-sys", "getrandom"]
 
 [lib]
 name = "alice_physics"
@@ -51,7 +53,10 @@ simd = []            # Enable SIMD (AVX2) optimizations for x86_64
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
 python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
 ffi = ["std"]              # C FFI for Unity/UE5/game engines
-wasm = ["wasm-bindgen", "js-sys"] # WebAssembly bindings for browsers
+# WebAssembly bindings for browsers; `getrandom/js` gives alice-crypto's getrandom
+# (privacy::SecureRng / DpNoise entropy) the browser's crypto.getRandomValues,
+# without which getrandom does not build for wasm32-unknown-unknown
+wasm = ["wasm-bindgen", "js-sys", "dep:getrandom", "getrandom/js"]
 gpu-solver-bridge = ["std"]  # GpuSolverBridge trait for external GPU offload (opt-in, no runtime overhead when off)
 # J-4 restoration (v0.14.0-preview.8、2026-09-13) — sibling 3 crate が crates.io に
 # publish されたため、v0.14.0-preview.4 で削除した bridge 3 feature を復活
@@ -66,6 +71,7 @@ rayon = { version = "1.8", optional = true }
 pyo3 = { version = "0.27", features = ["extension-module"], optional = true }
 numpy = { version = "0.27", optional = true }
 wasm-bindgen = { version = "0.2", optional = true }
+getrandom = { version = "0.2", optional = true, default-features = false }
 js-sys = { version = "0.3", optional = true }
 # J-4 restoration: sibling 3 crate (今日 crates.io publish 済)
 alice-ml = { version = "0.2", optional = true, default-features = false, features = ["std"] }

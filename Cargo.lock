@@ -107,6 +107,7 @@ dependencies = [
  "alice-det-math",
  "alice-ml",
  "criterion",
+ "getrandom 0.2.17",
  "gungraun",
  "js-sys",
  "loom",
