@@ -97,5 +97,22 @@ class BinaryTimeout(unittest.TestCase):
         self.assertIn("test a ... ok", log)
         self.assertEqual(got, {"a": "ok"})
 
+class ConsoleEncoding(unittest.TestCase):
+    def test_list_prints_non_ascii_on_a_cp1252_console(self) -> None:
+        # The Windows runner's console is cp1252; the table carries names
+        # like `θ`, and printing them used to raise UnicodeEncodeError
+        import os
+        import subprocess
+
+        env = dict(os.environ, PYTHONIOENCODING="cp1252", PYTHONUTF8="0")
+        r = subprocess.run(
+            [sys.executable, str(Path(__file__).with_name("run_ignored.py")), "--list"],
+            capture_output=True,
+            env=env,
+        )
+        self.assertEqual(r.returncode, 0, r.stderr.decode("utf-8", "replace")[-2000:])
+        self.assertTrue(any(b > 0x7F for b in r.stdout), "the table printed no non-ASCII byte")
+
+
 if __name__ == "__main__":
     unittest.main()

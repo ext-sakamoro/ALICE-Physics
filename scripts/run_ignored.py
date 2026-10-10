@@ -356,6 +356,13 @@ def table_markdown(entries: list[dict]) -> list[str]:
 
 
 def main() -> int:
+    # Test names and reasons carry non-ASCII (θ, ≤); the Windows runner's
+    # console encoding is cp1252, which cannot print them
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8")
+        except (AttributeError, ValueError):
+            pass
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--list", action="store_true", help="print the derived table and stop")
     args = ap.parse_args()
