@@ -10057,6 +10057,34 @@ impl core::marker::Unpin for alice_physics::thermal::HeatSource
 impl core::marker::UnsafeUnpin for alice_physics::thermal::HeatSource
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::thermal::HeatSource
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::thermal::HeatSource
+#[non_exhaustive] pub enum alice_physics::prelude::InvalidSceneJsonVersion
+pub alice_physics::prelude::InvalidSceneJsonVersion::DuplicateVersion
+pub alice_physics::prelude::InvalidSceneJsonVersion::MalformedJson
+pub alice_physics::prelude::InvalidSceneJsonVersion::MalformedJson::offset: usize
+pub alice_physics::prelude::InvalidSceneJsonVersion::NotAnUnsignedInteger
+pub alice_physics::prelude::InvalidSceneJsonVersion::NotAnUnsignedInteger::value: alloc::string::String
+pub alice_physics::prelude::InvalidSceneJsonVersion::OutOfRange
+pub alice_physics::prelude::InvalidSceneJsonVersion::OutOfRange::value: alloc::string::String
+pub alice_physics::prelude::InvalidSceneJsonVersion::TooDeep
+pub alice_physics::prelude::InvalidSceneJsonVersion::TooDeep::offset: usize
+impl core::clone::Clone for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::cmp::PartialEq for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::fmt::Debug for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Freeze for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Send for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Sync for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Unpin for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::UnsafeUnpin for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::InvalidSceneJsonVersion
 pub enum alice_physics::prelude::Joint
 pub alice_physics::prelude::Joint::Ball(alice_physics::joint::BallJoint)
 pub alice_physics::prelude::Joint::ConeTwist(alice_physics::joint::ConeTwistJoint)
@@ -16193,6 +16221,34 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::rotor::RotorParams
 pub fn alice_physics::rotor::hover_induced_velocity_m_s(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::rotor::RotorError>
 pub fn alice_physics::rotor::ideal_hover_power_w(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> core::result::Result<alice_physics::math::Fix128, alice_physics::rotor::RotorError>
 pub mod alice_physics::scene_io
+#[non_exhaustive] pub enum alice_physics::scene_io::InvalidSceneJsonVersion
+pub alice_physics::scene_io::InvalidSceneJsonVersion::DuplicateVersion
+pub alice_physics::scene_io::InvalidSceneJsonVersion::MalformedJson
+pub alice_physics::scene_io::InvalidSceneJsonVersion::MalformedJson::offset: usize
+pub alice_physics::scene_io::InvalidSceneJsonVersion::NotAnUnsignedInteger
+pub alice_physics::scene_io::InvalidSceneJsonVersion::NotAnUnsignedInteger::value: alloc::string::String
+pub alice_physics::scene_io::InvalidSceneJsonVersion::OutOfRange
+pub alice_physics::scene_io::InvalidSceneJsonVersion::OutOfRange::value: alloc::string::String
+pub alice_physics::scene_io::InvalidSceneJsonVersion::TooDeep
+pub alice_physics::scene_io::InvalidSceneJsonVersion::TooDeep::offset: usize
+impl core::clone::Clone for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::cmp::PartialEq for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::fmt::Debug for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Freeze for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Send for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Sync for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Unpin for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::UnsafeUnpin for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::InvalidSceneJsonVersion
 #[non_exhaustive] pub struct alice_physics::scene_io::PhysicsConfig
 pub alice_physics::scene_io::PhysicsConfig::damping: [i64; 2]
 pub alice_physics::scene_io::PhysicsConfig::gravity: [i64; 6]
@@ -16303,6 +16359,7 @@ impl core::marker::UnsafeUnpin for alice_physics::scene_io::UnsupportedSceneVers
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::UnsupportedSceneVersion
 pub const alice_physics::scene_io::CURRENT_SCENE_VERSION: u32
+pub const alice_physics::scene_io::MAX_SCENE_JSON_DEPTH: usize
 pub const alice_physics::scene_io::SUPPORTED_SCENE_VERSIONS: &[u32]
 pub fn alice_physics::scene_io::load_scene(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
 pub fn alice_physics::scene_io::load_scene_checked(&std::path::Path) -> core::io::error::Result<alice_physics::scene_io::PhysicsScene>
@@ -21172,6 +21229,34 @@ impl core::marker::Unpin for alice_physics::thermal::HeatSource
 impl core::marker::UnsafeUnpin for alice_physics::thermal::HeatSource
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::thermal::HeatSource
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::thermal::HeatSource
+#[non_exhaustive] pub enum alice_physics::InvalidSceneJsonVersion
+pub alice_physics::InvalidSceneJsonVersion::DuplicateVersion
+pub alice_physics::InvalidSceneJsonVersion::MalformedJson
+pub alice_physics::InvalidSceneJsonVersion::MalformedJson::offset: usize
+pub alice_physics::InvalidSceneJsonVersion::NotAnUnsignedInteger
+pub alice_physics::InvalidSceneJsonVersion::NotAnUnsignedInteger::value: alloc::string::String
+pub alice_physics::InvalidSceneJsonVersion::OutOfRange
+pub alice_physics::InvalidSceneJsonVersion::OutOfRange::value: alloc::string::String
+pub alice_physics::InvalidSceneJsonVersion::TooDeep
+pub alice_physics::InvalidSceneJsonVersion::TooDeep::offset: usize
+impl core::clone::Clone for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::cmp::PartialEq for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::fmt::Debug for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::scene_io::InvalidSceneJsonVersion
+pub fn alice_physics::scene_io::InvalidSceneJsonVersion::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Freeze for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Send for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Sync for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::Unpin for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::marker::UnsafeUnpin for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::scene_io::InvalidSceneJsonVersion
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::scene_io::InvalidSceneJsonVersion
 pub enum alice_physics::Joint
 pub alice_physics::Joint::Ball(alice_physics::joint::BallJoint)
 pub alice_physics::Joint::ConeTwist(alice_physics::joint::ConeTwistJoint)

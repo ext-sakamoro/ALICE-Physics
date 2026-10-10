@@ -10,12 +10,16 @@
 //!   `InvalidData` carrying `UnsupportedSceneVersion { found }`; the committed fixtures
 //!   `tests/fixtures/scene_v{1,2}.{aphys,json}` (written byte by byte outside the crate) pin one
 //!   readable and one refused file per format
+//! * the JSON version is the top-level object's `version` member only, read after the whole
+//!   document is checked against the JSON grammar: a nested `version` is not the scene version,
+//!   a duplicated top-level member, a non-JSON number (`+1`, `01`) and a value that is not a
+//!   `u32` written as a plain integer are `InvalidData` carrying `InvalidSceneJsonVersion`
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::scene_io::{
-    load_scene, load_scene_json, save_scene, save_scene_json, PhysicsConfig, PhysicsScene,
-    SerializedBody, SerializedJoint, UnsupportedSceneVersion, CURRENT_SCENE_VERSION,
-    SUPPORTED_SCENE_VERSIONS,
+    load_scene, load_scene_json, save_scene, save_scene_json, InvalidSceneJsonVersion,
+    PhysicsConfig, PhysicsScene, SerializedBody, SerializedJoint, UnsupportedSceneVersion,
+    CURRENT_SCENE_VERSION, SUPPORTED_SCENE_VERSIONS,
 };
 use std::io::ErrorKind;
 use std::path::PathBuf;
@@ -499,4 +503,123 @@ fn deprecated_checked_loaders_behave_as_the_default_loaders() {
     }
     std::fs::remove_file(&p).ok();
     std::fs::remove_file(&pj).ok();
+}
+
+/// The `InvalidSceneJsonVersion` carried by a refusal, `None` for any other error.
+fn json_version_error(e: &std::io::Error) -> Option<InvalidSceneJsonVersion> {
+    e.get_ref()
+        .and_then(|i| i.downcast_ref::<InvalidSceneJsonVersion>())
+        .cloned()
+}
+
+/// A loadable scene whose top level is `head` followed by the usual members.
+fn with_head(head: &str) -> String {
+    let body = json_of("0", "0");
+    format!("{{{head}{}", &body[body.find("\"config\"").unwrap()..])
+}
+
+#[test]
+fn json_version_is_read_from_the_top_level_member_only() {
+    // valid version 1, with whitespace (including newlines) around the member
+    let s = load_text("ws.json", &with_head(" \n\t\"version\"\r\n :\n 1 \n,")).unwrap();
+    assert_eq!(s.version, 1);
+    assert_eq!(s.config.substeps, 2);
+    // `version` only inside a nested object: the top level has none, so the scene is version 1
+    let nested = with_head("").replace("\"config\": {", "\"config\": {\"version\": 2, ");
+    assert_eq!(load_text("nested.json", &nested).unwrap().version, 1);
+    let nested_body = with_head("").replace(
+        "\"bodies\": []",
+        "\"bodies\": [], \"meta\": {\"version\": 2}",
+    );
+    assert_eq!(load_text("nested2.json", &nested_body).unwrap().version, 1);
+    // a top-level 2 after a nested 1 is still refused as version 2
+    let late = with_head("")
+        .replace("\"joints\"", "\"version\": 2, \"joints\"")
+        .replace("\"config\": {", "\"config\": {\"version\": 1, ");
+    let e = load_text("late.json", &late).unwrap_err();
+    assert_eq!(refused_version(&e), Some(2));
+}
+
+#[test]
+fn json_version_values_that_are_not_a_plain_u32_are_refused() {
+    use InvalidSceneJsonVersion as E;
+    let probe =
+        |value: &str| load_text("probe.json", &with_head(&format!("\"version\": {value}, ")));
+    // (value, expected refusal)
+    let cases: [(&str, E); 10] = [
+        ("+1", E::MalformedJson { offset: 12 }),
+        ("01", E::MalformedJson { offset: 13 }),
+        (
+            "1e0",
+            E::NotAnUnsignedInteger {
+                value: "1e0".into(),
+            },
+        ),
+        (
+            "1.0",
+            E::NotAnUnsignedInteger {
+                value: "1.0".into(),
+            },
+        ),
+        (
+            "\"1\"",
+            E::NotAnUnsignedInteger {
+                value: "\"1\"".into(),
+            },
+        ),
+        ("-1", E::NotAnUnsignedInteger { value: "-1".into() }),
+        (
+            "null",
+            E::NotAnUnsignedInteger {
+                value: "null".into(),
+            },
+        ),
+        (
+            "4294967296",
+            E::OutOfRange {
+                value: "4294967296".into(),
+            },
+        ),
+        (
+            "99999999999999999999",
+            E::OutOfRange {
+                value: "99999999999999999999".into(),
+            },
+        ),
+        ("1 1", E::MalformedJson { offset: 14 }),
+    ];
+    for (value, want) in cases {
+        let e = probe(value).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::InvalidData, "{value}");
+        assert_eq!(json_version_error(&e), Some(want), "{value}");
+        assert_eq!(refused_version(&e), None, "{value}");
+    }
+    assert_eq!(probe("1").unwrap().version, 1);
+    assert_eq!(
+        refused_version(&probe("4294967295").unwrap_err()),
+        Some(u32::MAX)
+    );
+}
+
+#[test]
+fn duplicate_top_level_version_members_are_refused_in_either_order() {
+    for head in [
+        "\"version\": 1, \"version\": 2, ",
+        "\"version\": 2, \"version\": 1, ",
+        "\"version\": 1, \"version\": 1, ",
+    ] {
+        let e = load_text("dup.json", &with_head(head)).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::InvalidData, "{head}");
+        assert_eq!(
+            json_version_error(&e),
+            Some(InvalidSceneJsonVersion::DuplicateVersion),
+            "{head}"
+        );
+    }
+    // one before the other members and one after them
+    let split = with_head("\"version\": 1, ").replace("\"joints\"", "\"version\": 2, \"joints\"");
+    assert_eq!(
+        json_version_error(&load_text("dup2.json", &split).unwrap_err()),
+        Some(InvalidSceneJsonVersion::DuplicateVersion)
+    );
 }
