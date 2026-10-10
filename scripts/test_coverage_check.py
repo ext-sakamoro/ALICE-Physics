@@ -203,6 +203,16 @@ class Limitation(Fixture):
     def test_a_bare_file_matches_the_module_documentation(self):
         self.assertGreen(table=GOOD.replace(LIM, LIM.replace("src/m.rs::straight", "src/m.rs")))
 
+    def test_a_multi_line_attribute_between_the_comment_and_the_item_keeps_the_quote(self):
+        # `#[deprecated(` ... `)]` over several lines is part of the item's attributes
+        self.assertGreen(src=SRC.replace(
+            "pub fn straight() {}",
+            '#[deprecated(\n    since = "1.0.0",\n    note = "use curved"\n)]\n#[must_use]\npub fn straight() {}'))
+
+    def test_a_blank_line_ends_the_attributes(self):
+        self.assertRed("limitation quote is not in src/m.rs::straight", src=SRC.replace(
+            "pub fn straight() {}", '#[deprecated(\n    since = "1.0.0"\n)]\n\npub fn straight() {}'))
+
     def test_inserting_lines_above_keeps_a_symbol_reference_valid(self):
         # the point of symbol references: the same table stays green after the source grows
         self.assertGreen(src="\n" * 40 + SRC.replace("//! A module.\n", "//! A module.\n" + "//!\n" * 30))

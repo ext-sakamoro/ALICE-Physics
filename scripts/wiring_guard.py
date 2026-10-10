@@ -758,7 +758,12 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
                         target = j
                         break
                     if c.lstrip().startswith("#"):
+                        # skip the whole attribute: `#[deprecated(` ... `)]` spans lines
+                        depth = c.count("[") - c.count("]")
                         j += 1
+                        while depth > 0 and j < len(code_lines):
+                            depth += code_lines[j].count("[") - code_lines[j].count("]")
+                            j += 1
                         continue
                     target = j
                     break

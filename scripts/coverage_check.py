@@ -84,6 +84,21 @@ def defines(lines: list[str], name: str) -> bool:
     return any((m := DEF_RE.match(ln)) and m.group(1) == name for ln in lines)
 
 
+def attribute_start(lines: list[str], last: int) -> int | None:
+    """The first line of the attribute that ends on line `last` (`#[deprecated(`
+    ... `)]` spans several lines), or None when no `#[` above balances the
+    brackets before a blank line."""
+    depth = 0
+    for k in range(last, max(-1, last - 50), -1):
+        ln = lines[k].split("//")[0]
+        if not ln.strip():
+            return None
+        depth += ln.count("]") - ln.count("[")
+        if depth == 0 and ln.lstrip().startswith(("#[", "#![")):
+            return k
+    return None
+
+
 def item_spans(lines: list[str], name: str) -> list[tuple[int, int]]:
     """0-based inclusive line spans of every item `name` defines: its doc comments
     and attributes above, through the end of its body (brace-matched) or its `;`."""
@@ -93,8 +108,14 @@ def item_spans(lines: list[str], name: str) -> list[tuple[int, int]]:
         if not m or m.group(1) != name:
             continue
         start = d
-        while start > 0 and lines[start - 1].strip().startswith(("///", "//", "#[", "#!")):
-            start -= 1
+        while start > 0:
+            above = lines[start - 1].strip()
+            if above.startswith(("///", "//", "#[", "#!")):
+                start -= 1
+            elif above.endswith("]") and (k := attribute_start(lines, start - 1)) is not None:
+                start = k  # the last line of a multi-line attribute
+            else:
+                break
         depth, end, opened = 0, d, False
         for k in range(d, min(len(lines), d + 5000)):
             code = lines[k].split("//")[0]
