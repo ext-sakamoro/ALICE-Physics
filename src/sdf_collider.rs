@@ -68,6 +68,17 @@ pub struct SdfContact {
     /// The TGS backend resolves SDF overlap once per step, so its contacts
     /// all carry substep 0.
     pub substep: usize,
+    /// Position of the collider when the contact was resolved. A collider
+    /// attached to a body ([`SdfCollider::new_dynamic`]) is moved to the
+    /// body's pose of each substep before the push-out, so its pose after the
+    /// step is not the pose `point` and `normal` were measured in; this is.
+    pub collider_position: Vec3Fix,
+    /// Rotation of the collider when the contact was resolved (unit length,
+    /// as [`SdfCollider::update_cache`] stores it). `point` in the field's
+    /// frame is `collider_rotation⁻¹ · (point − collider_position) / collider_scale`.
+    pub collider_rotation: QuatFix,
+    /// Scale of the collider when the contact was resolved.
+    pub collider_scale: Fix128,
 }
 
 // ============================================================================

@@ -15,6 +15,9 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+- `SdfContact::collider_position` / `collider_rotation` / `collider_scale`: 接触を解いた時点の collider の frame body に付けた collider (`SdfCollider::new_dynamic`) は substep ごとに body の姿勢へ動かしてから押し出すので、step 後の collider の姿勢は `point` と `normal` を測った frame ではない (8 substep で 1 substep 分ずつずれる) 記録の frame で `point` を collider の座標に戻せる 押し出しが既に持っている値を写すだけで、step の結果は変わらない (200 step・記録 24669 件の場面で `serialize_state` が bit 一致) oracle `tests/analytic_sdf_contact_record.rs` (動く collider の frame が substep ごとの閉形式の位置と bit 一致し、点がその frame で平面上にあり、step 後の frame では閉形式の量だけ外れる / static collider は自分の姿勢を bit 一致で記録)
+
 ### Changed
 - CI: `simd` で gate された integration test (`analytic_math_wiring` の x86_64 + simd の module、`audit_math`、`analytic_gpu_sdf_wiring`) はどの lane でも実行されていなかった (ci.yml の SIMD の step は `--lib` だけ) `scripts/run_feature_gated_tests.py` の feature に `simd` を足し、全 OS の matrix で実行する (x86_64 の lane で x86_64 限定の module も走る)
 - `scripts/run_ignored.py`: 試験 binary 1 本ごとに上限時間 (既定 1800 秒、`RUN_IGNORED_BINARY_TIMEOUT` で変更) を設け、超えた binary は止めて名前を出し run を失敗にする (止まった試験 1 本が週次 job の 180 分を使い切り、どこで止まったか分からなかった) runner 自身の試験 `scripts/test_run_ignored.py` と表の導出 (`--list`) を ci.yml と preflight で毎 push 回す (ignored 試験の実行そのものは重いので週次のまま)
