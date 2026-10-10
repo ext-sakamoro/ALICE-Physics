@@ -2,7 +2,7 @@
 //! entry point for the `joint` builders (`with_limits`, `with_linear_limits`,
 //! `with_angular_limits`, `with_linear_motion`, `with_angular_motion`,
 //! `with_break_force`), the `JointType` / `joint_type` / `break_force`
-//! queries and `solve_joints_breakable`.
+//! queries and `solve_joints_breaking_on_force`.
 //!
 //! Every section prints the closed-form value next to the solver output.
 //!
@@ -17,12 +17,14 @@
 //!   (`F0 = 1`) acting over `dt = 1/4` from rest predicts a separation
 //!   `d_k = F_k·dt²/m = k/32`. The XPBD multiplier of the one-constraint
 //!   scene is `λ = d_k / w = d_k·m` and the constraint force `λ/dt² = F_k`
-//!   exactly. `solve_joints_breakable` compares the **pre-solve separation**
-//!   `d_k` (length units, not `λ/dt²`) with `break_force` and breaks on the
-//!   first step with `d_k > break_force` (strict): a force threshold `F_b`
-//!   corresponds to the configured value `F_b·dt²/m`. With `F_b = 5` that is
-//!   `5/32`, so the joint holds through `k = 5` (equality) and breaks on
-//!   `k* = ⌊F_b/F0⌋ + 1 = 6`. While held, the solve moves B back onto the
+//!   exactly. `solve_joints_breaking_on_force` solves the joint, takes the
+//!   reaction force that solve transmitted (`solve_joints_with_reaction_forces`,
+//!   N) and reports it broken on the first step with `F_k > break_force`
+//!   (strict). With
+//!   `break_force = 5` N the joint holds through `k = 5` (equality) and
+//!   breaks on `k* = ⌊F_b/F0⌋ + 1 = 6`. `PhysicsWorld::step` applies the same
+//!   check to the world's joints and reports each break as a
+//!   `JointBreakEvent`. While held, the solve moves B back onto the
 //!   anchor bit for bit (`normal·λ·inv_mass = d_k`).
 //! * **Slider / D6 linear limit `[lo, hi]`**: with A static and B at
 //!   `inv_mass = 1/2`, one solve moves B by exactly the overshoot
@@ -39,8 +41,8 @@
 //! Author: Moroya Sakamoto
 
 use alice_physics::joint::{
-    solve_joints, solve_joints_breakable, BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint,
-    HingeJoint, Joint, JointType, SliderJoint, SpringJoint,
+    solve_joints, solve_joints_breaking_on_force, BallJoint, ConeTwistJoint, D6Joint, D6Motion,
+    FixedJoint, HingeJoint, Joint, JointType, SliderJoint, SpringJoint,
 };
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::RigidBody;
@@ -94,7 +96,7 @@ fn main() {
     let o = Vec3Fix::ZERO;
 
     // ---- 1. every joint type carries a break force and reports its kind ----
-    let threshold = q(5, 32);
+    let threshold = Fix128::from_int(5); // N
     let catalogue = [
         Joint::Ball(BallJoint::new(0, 1, o, o).with_break_force(threshold)),
         Joint::Hinge(
@@ -132,7 +134,7 @@ fn main() {
                 .with_break_force(threshold),
         ),
     ];
-    println!("[joint] catalogue: kind / break_force (expect 7 distinct kinds, all Some(5/32))");
+    println!("[joint] catalogue: kind / break_force (expect 7 distinct kinds, all Some(5.0))");
     for j in &catalogue {
         let bf = j.break_force().map(|f| f.to_f64());
         println!(
@@ -145,17 +147,15 @@ fn main() {
     let m = Fix128::from_int(2);
     let f0 = Fix128::ONE;
     let fb_force = Fix128::from_int(5);
-    let configured = fb_force * dt * dt / m; // 5/32
     println!(
-        "[joint] breakable ramp: m={} dt={} F0={} F_b={} -> configured threshold F_b*dt^2/m={} (expect 0.15625), k*=6",
+        "[joint] breakable ramp: m={} dt={} F0={} break_force={} N (the reaction force lambda/dt^2), k*=6",
         m.to_f64(),
         dt.to_f64(),
         f0.to_f64(),
         fb_force.to_f64(),
-        configured.to_f64()
     );
     let ramp = [Joint::Ball(
-        BallJoint::new(0, 1, o, o).with_break_force(configured),
+        BallJoint::new(0, 1, o, o).with_break_force(fb_force),
     )];
     let mut bodies = pair(Fix128::ONE / m);
     let mut broke_at = None;
@@ -165,7 +165,7 @@ fn main() {
         bodies[1].position = Vec3Fix::new(Fix128::ZERO, -d_k, Fix128::ZERO);
         let lambda = d_k * m;
         let force = lambda / (dt * dt);
-        let broken = solve_joints_breakable(&ramp, &mut bodies, dt);
+        let broken = solve_joints_breaking_on_force(&ramp, &mut bodies, dt);
         println!(
             "[joint]   k={k} d_k={:.5} lambda/dt^2={} (expect F_k={k}) broken={broken:?} B.y after={:.5}",
             d_k.to_f64(),
@@ -177,6 +177,60 @@ fn main() {
         }
     }
     println!("[joint]   first break at k={broke_at:?} (expect Some(6))");
+
+    // ---- 2b. the world breaks an overloaded joint inside step ----
+    // a 2 kg body hung by a rigid ball joint from a static anchor: after one
+    // gravity substep (h = 1/64, g = 8) the joint's reaction force is m·g = 16 N
+    {
+        use alice_physics::{PhysicsConfig, PhysicsWorld};
+        for limit in [15, 17] {
+            let mut world = PhysicsWorld::new(PhysicsConfig {
+                substeps: 1,
+                gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-8), Fix128::ZERO),
+                damping: Fix128::ONE,
+                ..PhysicsConfig::default()
+            });
+            world.add_body(RigidBody::new_static(o));
+            world.add_body(RigidBody::new(o, Fix128::from_int(2)));
+            world.add_joint(Joint::Ball(
+                BallJoint::new(0, 1, o, o).with_break_force(Fix128::from_int(limit)),
+            ));
+            world.step(Fix128::from_ratio(1, 64));
+            let seen = world.events.joint_break_events().len();
+            let drained = world.events.drain_joint_break_events();
+            println!(
+                "[joint] world step, break_force {limit} N vs m*g = 16 N: joints left {} (expect {}), events {seen}, drained force {:?} (expect {})",
+                world.joints.len(),
+                usize::from(limit > 16),
+                drained.first().map(|e| e.force.to_f64()),
+                if limit > 16 { "None" } else { "Some(16.0)" },
+            );
+        }
+    }
+
+    // ---- 2c. migrating from the separation-based check ----
+    // `solve_joints_breakable` (deprecated) compares `Joint::compute_force`, the
+    // anchor separation in metres; `solve_joints_breaking_on_force` compares the
+    // reaction force in newtons. The same k = 6 scene measures both ways.
+    {
+        let m = Fix128::from_int(2);
+        let d6 = Fix128::from_int(6) * dt * dt / m;
+        let mut bodies = pair(Fix128::ONE / m);
+        bodies[1].position = Vec3Fix::new(Fix128::ZERO, -d6, Fix128::ZERO);
+        let probe = Joint::Ball(BallJoint::new(0, 1, o, o));
+        println!(
+            "[joint] migration: separation {} m (compute_force), reaction force {} N (solve_joints_with_reaction_forces); expect 0.1875 m and 6 N",
+            probe.compute_force(&bodies).to_f64(),
+            alice_physics::joint::solve_joints_with_reaction_forces(&[probe], &mut bodies.clone(), dt)[0].to_f64(),
+        );
+        // the old threshold for the same 5 N limit was the separation 5/32 m
+        let old = [Joint::Ball(
+            BallJoint::new(0, 1, o, o).with_break_force(q(5, 32)),
+        )];
+        #[allow(deprecated)] // shown for migration; removed in 3.0
+        let broken = alice_physics::joint::solve_joints_breakable(&old, &mut bodies, dt);
+        println!("[joint] migration: deprecated separation check with 5/32 m breaks too: {broken:?} (expect [0])");
+    }
 
     // ---- 3. slider limits: land exactly on the violated limit ----
     let slider = [Joint::Slider(

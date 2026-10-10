@@ -682,9 +682,13 @@ impl Joint {
         }
     }
 
-    /// Compute current constraint force (distance between anchor points).
+    /// Current anchor separation of the joint's positional row (metres).
     ///
-    /// Returns the force magnitude used to determine if the joint should break.
+    /// For the spring joint this is the spring force `k · |d − rest|` (N); for
+    /// every other joint it is a length, not a force: the gap between the two
+    /// anchors (the slider measures only the part off its axis). Breaking uses
+    /// the reaction force of the solve ([`solve_joints_with_reaction_forces`]),
+    /// which is a force for every joint.
     #[must_use]
     pub fn compute_force(&self, bodies: &[crate::solver::RigidBody]) -> Fix128 {
         let (a_idx, b_idx) = self.bodies();
@@ -753,7 +757,7 @@ impl Joint {
 ///   calls. The effective stiffness therefore grows with the number of calls.
 pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
     for joint in joints {
-        solve_one(joint, bodies, dt);
+        let _ = solve_one(joint, bodies, dt);
     }
 }
 
@@ -761,10 +765,14 @@ pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], d
 /// nothing a motion could satisfy (a body cannot move relative to itself), so
 /// it is skipped and the body stays a free body; solving it would apply both
 /// sides' corrections to that one body and inject motion.
-fn solve_one(joint: &Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+/// Solve one joint and return the linear impulse of its positional rows,
+/// `Σ λ · n` (Macklin, Müller, Chentanez, MIG 2016: the row multiplier `λ`
+/// along its unit direction `n`; body A moved by `+w_a λ n`, body B by
+/// `−w_b λ n`). Angular rows are not included.
+fn solve_one(joint: &Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) -> Vec3Fix {
     let (a, b) = joint.bodies();
     if a == b {
-        return;
+        return Vec3Fix::ZERO;
     }
     match joint {
         Joint::Ball(j) => solve_ball_joint(j, bodies, dt),
@@ -777,9 +785,16 @@ fn solve_one(joint: &Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128)
     }
 }
 
-/// Solve joints and return indices of joints that should be removed (broken).
+/// Solve joints and return indices of joints that should be removed (broken),
+/// comparing each joint's **anchor separation** with its `break_force`.
 ///
-/// Checks each breakable joint's constraint force BEFORE solving.
+/// Deprecated: the threshold here is the length [`Joint::compute_force`]
+/// returns (metres, `k · x` for a spring), not a force, although
+/// `break_force` is documented as a force. Use
+/// [`solve_joints_breaking_on_force`], which compares the reaction force in
+/// newtons, as [`crate::solver::PhysicsWorld::step`] does.
+///
+/// Checks each breakable joint's separation BEFORE solving.
 /// If the force exceeds the threshold, the joint is marked as broken
 /// and skipped during solving. Returns indices of broken joints in
 /// descending order (safe for sequential removal).
@@ -794,6 +809,10 @@ fn solve_one(joint: &Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128)
 ///   solve: no `λ` is carried between calls, so each call removes the fraction
 ///   `w / (w + α̃)` of the gap again and leaves `d · (α̃ / (w + α̃))^k` after `k`
 ///   calls. The effective stiffness therefore grows with the number of calls.
+#[deprecated(
+    since = "2.2.0",
+    note = "the threshold is the anchor separation (m), not a force; use solve_joints_breaking_on_force, whose break_force is the reaction force λ/dt² in N"
+)]
 pub fn solve_joints_breakable(
     joints: &[Joint],
     bodies: &mut [crate::solver::RigidBody],
@@ -823,7 +842,7 @@ pub fn solve_joints_breakable(
         if broken.binary_search(&i).is_ok() {
             continue;
         }
-        solve_one(joint, bodies, dt);
+        let _ = solve_one(joint, bodies, dt);
     }
 
     // Sort descending for safe removal
@@ -831,8 +850,83 @@ pub fn solve_joints_breakable(
     broken
 }
 
+/// Solve every joint once (as [`solve_joints`]) and return each joint's
+/// reaction force in newtons, in joint order.
+///
+/// The force of a joint is the length of the linear impulse its positional
+/// rows applied in this solve divided by `dt²`: `|Σ λ · n| / dt²`, where `λ` is
+/// the XPBD multiplier of a row along its unit direction `n` (Macklin, Müller,
+/// Chentanez, MIG 2016, eq. 10 and 18). It is the force the solve actually
+/// transmitted, so a joint further down a chain carries the load passed to it
+/// through the joints above in the same sweep. A body of mass `m` hung at rest
+/// from a static anchor by a rigid ball joint reports `m · g` per substep.
+///
+/// - Angular rows (hinge axis, fixed orientation, cone and twist limits, D6
+///   angular axes) produce torques and are not counted.
+/// - A joint on one body, or between two bodies that cannot move, applies
+///   nothing and reports 0.
+/// - `dt` is the substep length the joints are solved at.
+/// - The force is what the solve actually transmitted, transient included:
+///   joints are solved once per substep in one Gauss–Seidel sweep, so a chain
+///   starting from rest overshoots its static load before settling (2 kg +
+///   2 kg hung from a static anchor, `g = 8`: lower joint 8, 16, 20, 20, 18,
+///   16 N, upper 16, 32, 40, 40, 36, 32 N, the same on both backends and for
+///   any `substeps` / `iterations`). A `break_force` between the static load
+///   and that peak breaks during the start-up; set it above the peak.
+// LIMITATION(COV-RIGID-032): angular rows produce torques and are not reported; only the positional reaction force is.
+pub fn solve_joints_with_reaction_forces(
+    joints: &[Joint],
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec<Fix128> {
+    let h2 = dt * dt;
+    joints
+        .iter()
+        .map(|joint| {
+            let impulse = solve_one(joint, bodies, dt);
+            if h2.is_zero() {
+                Fix128::ZERO
+            } else {
+                impulse.length() / h2
+            }
+        })
+        .collect()
+}
+
+/// Solve joints once and return the indices of those whose reaction force
+/// exceeded their `break_force` (N), in descending order (safe for sequential
+/// `swap_remove`).
+///
+/// Every joint is solved first ([`solve_joints_with_reaction_forces`]); a
+/// joint is broken when its reaction force from that solve is strictly
+/// greater than its `break_force`. The broken joint's correction from this
+/// solve has been applied: the caller removes it so that it no longer acts on
+/// later solves. This is the check [`crate::solver::PhysicsWorld::step`]
+/// applies to the world's joints after each substep's joint solve.
+pub fn solve_joints_breaking_on_force(
+    joints: &[Joint],
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec<usize> {
+    let forces = solve_joints_with_reaction_forces(joints, bodies, dt);
+    let mut broken: Vec<usize> = joints
+        .iter()
+        .zip(&forces)
+        .enumerate()
+        .filter(|(_, (joint, force))| joint.break_force().is_some_and(|max| **force > max))
+        .map(|(i, _)| i)
+        .collect();
+    broken.reverse();
+    broken
+}
+
 /// Solve ball joint: constrain anchor points to coincide
-fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+fn solve_ball_joint(
+    joint: &BallJoint,
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec3Fix {
+    let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
@@ -846,18 +940,20 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
     let (normal, distance) = delta.normalize_with_length();
 
     if distance.is_zero() {
-        return;
+        return impulse;
     }
 
     let compliance_term = joint.compliance / (dt * dt);
     let w_sum = point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, normal) + compliance_term;
 
     if w_sum.is_zero() {
-        return;
+        return impulse;
     }
 
     let lambda = distance / w_sum;
     apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
+    impulse = impulse + normal * lambda;
+    impulse
 }
 
 /// Solve hinge joint: positional + angular constraint along axis
@@ -866,7 +962,12 @@ fn solve_ball_joint(joint: &BallJoint, bodies: &mut [crate::solver::RigidBody], 
 /// - `angle_min` and `angle_max` are enforced independently: `None` leaves that side unbounded
 /// - A violated side moves the relative twist angle (radians) back onto the bound, split by inverse inertia
 /// - With both `None` no angle limit is applied
-fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+fn solve_hinge_joint(
+    joint: &HingeJoint,
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec3Fix {
+    let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
@@ -887,6 +988,7 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
         if !w_sum.is_zero() {
             let lambda = distance / w_sum;
             apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
+            impulse = impulse + normal * lambda;
         }
     }
 
@@ -958,10 +1060,16 @@ fn solve_hinge_joint(joint: &HingeJoint, bodies: &mut [crate::solver::RigidBody]
             }
         }
     }
+    impulse
 }
 
 /// Solve fixed joint: positional + full rotational lock
-fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+fn solve_fixed_joint(
+    joint: &FixedJoint,
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec3Fix {
+    let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
@@ -982,6 +1090,7 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
         if !w_sum.is_zero() {
             let lambda = distance / w_sum;
             apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
+            impulse = impulse + normal * lambda;
         }
     }
 
@@ -1020,6 +1129,7 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
             );
         }
     }
+    impulse
 }
 
 /// Solve slider joint: constrain to 1-DOF translation along axis
@@ -1028,7 +1138,12 @@ fn solve_fixed_joint(joint: &FixedJoint, bodies: &mut [crate::solver::RigidBody]
 /// - `limit_min` and `limit_max` are enforced independently: `None` leaves that side unbounded
 /// - A violated side moves the axial offset (metres) back onto the bound, split by inverse mass
 /// - With both `None` no translation limit is applied
-fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+fn solve_slider_joint(
+    joint: &SliderJoint,
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec3Fix {
+    let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
@@ -1064,6 +1179,7 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
                 perp_normal,
                 lambda,
             );
+            impulse = impulse + perp_normal * lambda;
         }
     }
 
@@ -1075,6 +1191,8 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
             if !w_sum.is_zero() {
                 let inv_w_sum = Fix128::ONE / w_sum;
                 let correction = world_axis * (error * inv_w_sum);
+                // A moves by −correction, the point-row convention with λ = −error / w
+                impulse = impulse - correction;
                 if !body_a.inv_mass.is_zero() {
                     bodies[joint.body_a].position =
                         bodies[joint.body_a].position - correction * body_a.inv_mass;
@@ -1090,6 +1208,7 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
             if !w_sum.is_zero() {
                 let inv_w_sum = Fix128::ONE / w_sum;
                 let correction = world_axis * (error * inv_w_sum);
+                impulse = impulse + correction;
                 if !body_a.inv_mass.is_zero() {
                     bodies[joint.body_a].position =
                         bodies[joint.body_a].position + correction * body_a.inv_mass;
@@ -1101,6 +1220,7 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
             }
         }
     }
+    impulse
 }
 
 /// Solve spring joint: XPBD with damping (Macklin, Müller, Chentanez 2016,
@@ -1140,11 +1260,16 @@ fn solve_slider_joint(joint: &SliderJoint, bodies: &mut [crate::solver::RigidBod
 /// - Two static bodies, or a coincident anchor pair at rest with
 ///   `rest_length > 0` (no direction), leave both bodies unchanged
 /// - Unconditionally stable and free of overshoot for `ζ >= 1`
-fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+fn solve_spring_joint(
+    joint: &SpringJoint,
+    bodies: &mut [crate::solver::RigidBody],
+    dt: Fix128,
+) -> Vec3Fix {
+    let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
     if body_a.inv_mass.is_zero() && body_b.inv_mass.is_zero() {
-        return;
+        return impulse;
     }
 
     // World-space lever arms (COM → anchor) and anchors
@@ -1167,13 +1292,13 @@ fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBod
         // Vector constraint C = d: the row along the force direction
         let (normal, force) = (delta * k + rel_vel * c).normalize_with_length();
         if force.is_zero() {
-            return;
+            return impulse;
         }
         (normal, force)
     } else {
         let (normal, distance) = delta.normalize_with_length();
         if distance.is_zero() {
-            return;
+            return impulse;
         }
         let displacement = distance - joint.rest_length;
         (normal, k * displacement + c * rel_vel.dot(normal))
@@ -1182,15 +1307,18 @@ fn solve_spring_joint(joint: &SpringJoint, bodies: &mut [crate::solver::RigidBod
     let w = point_w_sum(bodies, joint.body_a, joint.body_b, r_a, r_b, normal);
     let denom = Fix128::ONE + (k * h2 + c * dt) * w;
     if denom.is_zero() {
-        return;
+        return impulse;
     }
     let lambda = force * h2 / denom;
     apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
+    impulse = impulse + normal * lambda;
+    impulse
 }
 
 /// Solve D6 joint: per-axis locking/limiting for all 6 DOF
 #[allow(clippy::too_many_lines)]
-fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) {
+fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) -> Vec3Fix {
+    let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
@@ -1263,6 +1391,7 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
             if !w_sum.is_zero() {
                 let lambda = error / w_sum;
                 apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, axis, lambda);
+                impulse = impulse + axis * lambda;
             }
         }
     }
@@ -1332,6 +1461,7 @@ fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: 
             }
         }
     }
+    impulse
 }
 
 /// Solve cone-twist joint: positional + cone + twist constraints
@@ -1339,7 +1469,8 @@ fn solve_cone_twist_joint(
     joint: &ConeTwistJoint,
     bodies: &mut [crate::solver::RigidBody],
     dt: Fix128,
-) {
+) -> Vec3Fix {
+    let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
     let body_b = bodies[joint.body_b];
 
@@ -1359,6 +1490,7 @@ fn solve_cone_twist_joint(
         if !w_sum.is_zero() {
             let lambda = distance / w_sum;
             apply_point_correction(bodies, joint.body_a, joint.body_b, r_a, r_b, normal, lambda);
+            impulse = impulse + normal * lambda;
         }
     }
 
@@ -1428,6 +1560,7 @@ fn solve_cone_twist_joint(
             );
         }
     }
+    impulse
 }
 
 /// Generalised inverse mass of a body for a rotation about the world axis
@@ -1723,6 +1856,7 @@ mod tests {
         assert_eq!(ball.joint_type(), JointType::Ball);
     }
 
+    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
     #[test]
     fn test_breakable_joint() {
         let mut bodies = vec![
@@ -1743,6 +1877,7 @@ mod tests {
         assert_eq!(broken[0], 0);
     }
 
+    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
     #[test]
     fn test_unbreakable_joint() {
         let mut bodies = vec![
@@ -1761,6 +1896,26 @@ mod tests {
         assert!(broken.is_empty(), "Joint should not break under low force");
     }
 
+    #[test]
+    fn test_unbreakable_joint_on_force() {
+        let mut bodies = vec![
+            RigidBody::new_static(Vec3Fix::ZERO),
+            RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE),
+        ];
+
+        // Ball joint with high break force (should NOT break)
+        let joint = Joint::Ball(
+            BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO)
+                .with_break_force(Fix128::from_int(4000)),
+        );
+        let dt = Fix128::from_ratio(1, 60);
+
+        // reaction force = 1 m / (1 kg⁻¹ · dt²) = 3600 N < 4000 N
+        let broken = solve_joints_breaking_on_force(&[joint], &mut bodies, dt);
+        assert!(broken.is_empty(), "Joint should not break under low force");
+    }
+
+    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
     #[test]
     fn test_no_break_force() {
         let mut bodies = vec![
@@ -2413,6 +2568,7 @@ mod tests {
         assert_eq!(anchored.compute_force(&bodies), Fix128::ZERO);
     }
 
+    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
     #[test]
     fn solve_joints_breakable_breaks_strictly_above_threshold_and_skips_broken() {
         // 距離 5 の ball joint: break 5 → 壊れない (`>` は false)、break 4 → 壊れて解かれない
@@ -2440,6 +2596,42 @@ mod tests {
         // solve_joints (非 breakable) は全部解く
         let mut all = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
         solve_joints(&[mk(1)], &mut all, DT);
+        assert!(near_v(all[1].position, Vec3Fix::ZERO));
+    }
+
+    #[test]
+    fn breaking_on_force_breaks_strictly_above_threshold_and_skips_broken() {
+        // 距離 5・質量 1・DT 1/4 の ball joint の反力は 5 / (1/16) = 80: break 80 → 壊れない (`>` は false)、break 64 → 壊れて解かれない
+        let mk = |bf: i64| {
+            Joint::Ball(BallJoint::new(0, 1, Vec3Fix::ZERO, Vec3Fix::ZERO).with_break_force(fi(bf)))
+        };
+        let mut hold = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        let broken = solve_joints_breaking_on_force(&[mk(80)], &mut hold, DT);
+        assert!(broken.is_empty());
+        assert!(
+            near_v(hold[1].position, Vec3Fix::ZERO),
+            "解かれて A に一致 {:?}",
+            hold[1].position
+        );
+        let mut snap = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        let broken2 = solve_joints_breaking_on_force(&[mk(64)], &mut snap, DT);
+        assert_eq!(broken2, vec![0]);
+        // 判定は solve の後: 壊れた joint もこの呼び出しで解かれている
+        assert!(
+            near_v(snap[1].position, Vec3Fix::ZERO),
+            "{:?}",
+            snap[1].position
+        );
+        // 同じ 2 body の joint を 3 本: 1 本目が gap を閉じる (80 N) ので後の 2 本は
+        // gap 0 で反力 0 (Gauss-Seidel の順で荷重を受ける) ⇒ 壊れるのは 1 本目だけ
+        let mut multi = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        let js = [mk(64), mk(1600), mk(16)];
+        let broken3 = solve_joints_breaking_on_force(&js, &mut multi, DT);
+        assert_eq!(broken3, vec![0]);
+        assert!(near_v(multi[1].position, Vec3Fix::ZERO));
+        // solve_joints (非 breakable) は全部解く
+        let mut all = pair(Vec3Fix::ZERO, 0, v3i(3, 4, 0), 1);
+        solve_joints(&[mk(16)], &mut all, DT);
         assert!(near_v(all[1].position, Vec3Fix::ZERO));
     }
 

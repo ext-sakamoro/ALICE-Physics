@@ -1,6 +1,7 @@
 //! Physics Event System
 //!
-//! Provides collision event reporting (begin/persist/end) and trigger events.
+//! Provides collision event reporting (begin/persist/end), trigger events and
+//! joint break events.
 //! Events are collected during `step()` and can be consumed after each frame.
 
 use crate::math::{Fix128, Vec3Fix};
@@ -57,12 +58,30 @@ pub struct TriggerEvent {
     pub entered: bool,
 }
 
+/// A joint removed by [`crate::solver::PhysicsWorld::step`] because its
+/// reaction force exceeded its `break_force`
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JointBreakEvent {
+    /// Index the joint had in `PhysicsWorld::joints` when it broke. Removal is
+    /// a swap-remove (as [`crate::solver::PhysicsWorld::remove_joint`]), so the
+    /// joint that was last now has this index.
+    pub index: usize,
+    /// The removed joint, as it was configured
+    pub joint: crate::joint::Joint,
+    /// The reaction force its last solve transmitted
+    /// ([`crate::joint::solve_joints_with_reaction_forces`], N),
+    /// strictly greater than its `break_force`
+    pub force: Fix128,
+}
+
 /// Manages physics events for one simulation step
 pub struct EventCollector {
     /// Contact events this frame
     pub(crate) contact_events: Vec<ContactEvent>,
     /// Trigger events this frame
     pub(crate) trigger_events: Vec<TriggerEvent>,
+    /// Joints broken this frame
+    pub(crate) joint_break_events: Vec<JointBreakEvent>,
     /// Active contact pairs from previous frame (for begin/persist/end tracking)
     pub(crate) prev_pairs: Vec<(usize, usize)>,
     /// Active contact pairs this frame (ordered set: membership tests are
@@ -83,6 +102,7 @@ impl EventCollector {
         Self {
             contact_events: Vec::new(),
             trigger_events: Vec::new(),
+            joint_break_events: Vec::new(),
             prev_pairs: Vec::new(),
             curr_pairs: BTreeSet::new(),
             prev_triggers: Vec::new(),
@@ -94,6 +114,7 @@ impl EventCollector {
     pub fn begin_frame(&mut self) {
         self.contact_events.clear();
         self.trigger_events.clear();
+        self.joint_break_events.clear();
         // BTreeSet iterates in sorted order, so `prev_*` are sorted for
         // `binary_search` without an explicit sort.
         self.prev_pairs.clear();
@@ -222,6 +243,25 @@ impl EventCollector {
         &self.trigger_events
     }
 
+    /// Get the joints broken this frame, in the order they were removed
+    /// (substep by substep; within one substep from the highest index down)
+    #[inline]
+    #[must_use]
+    pub fn joint_break_events(&self) -> &[JointBreakEvent] {
+        &self.joint_break_events
+    }
+
+    /// Record a joint broken this frame
+    pub(crate) fn report_joint_break(&mut self, event: JointBreakEvent) {
+        self.joint_break_events.push(event);
+    }
+
+    /// Drain joint break events (consumes them)
+    #[inline]
+    pub fn drain_joint_break_events(&mut self) -> Vec<JointBreakEvent> {
+        core::mem::take(&mut self.joint_break_events)
+    }
+
     /// Drain contact events (consumes them)
     #[inline]
     pub fn drain_contact_events(&mut self) -> Vec<ContactEvent> {
@@ -238,7 +278,9 @@ impl EventCollector {
     #[inline]
     #[must_use]
     pub fn has_events(&self) -> bool {
-        !self.contact_events.is_empty() || !self.trigger_events.is_empty()
+        !self.contact_events.is_empty()
+            || !self.trigger_events.is_empty()
+            || !self.joint_break_events.is_empty()
     }
 }
 

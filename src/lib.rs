@@ -578,7 +578,7 @@ pub use ellipsoid::Ellipsoid;
 #[cfg(feature = "std")]
 pub use erosion::{ErosionConfig, ErosionModifier, ErosionType};
 pub use error::PhysicsError;
-pub use event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
+pub use event::{ContactEvent, ContactEventType, EventCollector, JointBreakEvent, TriggerEvent};
 /// Re-export predefined collision layer constants for convenience.
 pub use filter::layers;
 pub use filter::CollisionFilter;
@@ -603,7 +603,11 @@ pub use heatmap::{
 };
 pub use heightfield::HeightField;
 pub use interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
-pub use joint::{solve_joints, solve_joints_breakable};
+#[allow(deprecated)] // re-exported for compatibility until 3.0
+pub use joint::{
+    solve_joints, solve_joints_breakable, solve_joints_breaking_on_force,
+    solve_joints_with_reaction_forces,
+};
 pub use joint::{
     BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, JointType,
     SliderJoint, SpringJoint,
@@ -736,7 +740,9 @@ pub mod prelude {
     #[cfg(feature = "std")]
     pub use crate::erosion::{ErosionConfig, ErosionModifier, ErosionType};
     pub use crate::error::PhysicsError;
-    pub use crate::event::{ContactEvent, ContactEventType, EventCollector, TriggerEvent};
+    pub use crate::event::{
+        ContactEvent, ContactEventType, EventCollector, JointBreakEvent, TriggerEvent,
+    };
     pub use crate::filter::layers;
     pub use crate::filter::CollisionFilter;
     #[cfg(feature = "std")]
@@ -760,7 +766,11 @@ pub mod prelude {
     };
     pub use crate::heightfield::HeightField;
     pub use crate::interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
-    pub use crate::joint::{solve_joints, solve_joints_breakable};
+    #[allow(deprecated)] // re-exported for compatibility until 3.0
+    pub use crate::joint::{
+        solve_joints, solve_joints_breakable, solve_joints_breaking_on_force,
+        solve_joints_with_reaction_forces,
+    };
     pub use crate::joint::{
         BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, JointType,
         SliderJoint, SpringJoint,

@@ -17,9 +17,9 @@
 1	replace > with >= in solve_hinge_joint
 1	replace > with >= in solve_slider_joint
 2	replace > with >= in solve_d6_joint
-1	joint\.rs:1376:.*replace < with <= in solve_cone_twist_joint
-1	joint\.rs:1382:.*replace > with >= in solve_cone_twist_joint
-1	joint\.rs:1409:.*replace > with >= in solve_cone_twist_joint
+1	joint\.rs:1508:.*replace < with <= in solve_cone_twist_joint
+1	joint\.rs:1514:.*replace > with >= in solve_cone_twist_joint
+1	joint\.rs:1541:.*replace > with >= in solve_cone_twist_joint
 7	replace \| with \^ in Fix128::(sqrt|half|shr_bits|double)$
 2	replace \| with \^ in <impl Div for Fix128>::div$
 2	replace \| with \^ in select_fix128$

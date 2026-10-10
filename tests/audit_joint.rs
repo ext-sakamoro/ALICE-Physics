@@ -3,12 +3,27 @@
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
 
+#[allow(deprecated)] // the separation-based variant is pinned below
+use alice_physics::joint::solve_joints_breakable;
 use alice_physics::joint::{
-    solve_joints, solve_joints_breakable, BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint,
-    HingeJoint, Joint, JointType, SliderJoint, SpringJoint,
+    solve_joints, solve_joints_breaking_on_force, BallJoint, ConeTwistJoint, D6Joint, D6Motion,
+    FixedJoint, HingeJoint, Joint, JointType, SliderJoint, SpringJoint,
 };
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::RigidBody;
+
+/// The reaction force of one joint in one solve from this pose (measured through
+/// `solve_joints_with_reaction_forces` on a copy of the bodies).
+trait ReactionOfOneSolve {
+    fn reaction_force(&self, bodies: &[RigidBody], dt: Fix128) -> Fix128;
+}
+
+impl ReactionOfOneSolve for Joint {
+    fn reaction_force(&self, bodies: &[RigidBody], dt: Fix128) -> Fix128 {
+        alice_physics::joint::solve_joints_with_reaction_forces(&[*self], &mut bodies.to_vec(), dt)
+            [0]
+    }
+}
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -810,23 +825,82 @@ fn compute_force_closed_forms_per_variant() {
     );
 }
 
-/// XPBD: the constraint force of a compliant joint with position error C is C / alpha, so a softer
-/// joint (larger alpha) carries less force at the same separation. compute_force ignores compliance.
+/// AUD-A-S1W6-009: the force a joint breaks on is its XPBD reaction force
+/// `λ / dt² = |C| / (w · dt² + α)` (Macklin, Müller, Chentanez 2016, eq. 10 and 18),
+/// in newtons for every joint kind. A rigid joint holding a mass `m` that one
+/// gravity substep moved by `g · dt²` reports `m · g`; a compliant joint on a
+/// very heavy body reports the spring value `C / α`.
 #[test]
-#[ignore = "known defect: AUD-A-S1W6-009: Joint::compute_force returns the anchor SEPARATION (metres) for ball/hinge/fixed/slider/D6/cone-twist and only the spring returns a force (N); `break_force` is compared against both, and compliance never enters: a ball joint 0.02 m apart reports 0.02 for compliance 0.01 and for 0.04"]
-fn compute_force_is_a_force_not_a_separation() {
+fn reaction_force_is_a_force_not_a_separation() {
     let o = Vec3Fix::ZERO;
-    let bodies = vec![st(o), dynb(v3(0.02, 0.0, 0.0), 1.0)];
-    let soft = Joint::Ball(BallJoint::new(0, 1, o, o).with_compliance(fx(0.04)))
-        .compute_force(&bodies)
-        .to_f64();
-    let stiff = Joint::Ball(BallJoint::new(0, 1, o, o).with_compliance(fx(0.01)))
-        .compute_force(&bodies)
-        .to_f64();
-    near(stiff, 0.02 / 0.01, 1e-9, "C / alpha");
-    near(soft, 0.02 / 0.04, 1e-9, "C / alpha");
+    let dt = Fix128::from_ratio(1, 64);
+    let g = Fix128::from_int(10);
+    // rigid, hanging mass 2 after one gravity substep: m g = 20 exactly (all dyadic)
+    let sag = g * dt * dt;
+    let hung = vec![
+        st(o),
+        RigidBody::new(
+            Vec3Fix::new(Fix128::ZERO, -sag, Fix128::ZERO),
+            Fix128::from_int(2),
+        ),
+    ];
+    let rigid = Joint::Ball(BallJoint::new(0, 1, o, o));
+    assert_eq!(rigid.reaction_force(&hung, dt), Fix128::from_int(20), "m g");
+    // Newton: the same sag on twice the mass is twice the force
+    let heavy = vec![
+        st(o),
+        RigidBody::new(
+            Vec3Fix::new(Fix128::ZERO, -sag, Fix128::ZERO),
+            Fix128::from_int(4),
+        ),
+    ];
+    assert_eq!(
+        rigid.reaction_force(&heavy, dt),
+        Fix128::from_int(40),
+        "2 m g"
+    );
+    // the separation itself is not the force
+    assert_ne!(rigid.reaction_force(&hung, dt), sag);
+    // compliant: C / (w dt² + α), the stiffer joint carries more at the same gap
+    let c = Fix128::from_ratio(1, 64);
+    let gap = vec![st(o), dynb(v3(1.0 / 64.0, 0.0, 0.0), 1.0)];
+    for alpha in [Fix128::from_ratio(1, 16), Fix128::from_ratio(1, 4)] {
+        let f =
+            Joint::Ball(BallJoint::new(0, 1, o, o).with_compliance(alpha)).reaction_force(&gap, dt);
+        // the solve rounds λ = C / (w + α / dt²), takes the impulse length with
+        // the crate's sqrt and divides by dt²: equal to a relative 1e-9
+        near(
+            f.to_f64(),
+            (c / (dt * dt + alpha)).to_f64(),
+            (c / (dt * dt + alpha)).to_f64() * 1e-9,
+            "C / (w dt² + α)",
+        );
+    }
+    let soft =
+        Joint::Ball(BallJoint::new(0, 1, o, o).with_compliance(fx(0.25))).reaction_force(&gap, dt);
+    let stiff = Joint::Ball(BallJoint::new(0, 1, o, o).with_compliance(fx(0.0625)))
+        .reaction_force(&gap, dt);
+    assert!(
+        stiff > soft,
+        "stiffer joint carries more force at the same gap"
+    );
+    // a very heavy body: w dt² ≪ α and the force approaches the spring value C / α
+    let massive = vec![
+        st(o),
+        RigidBody::new(
+            Vec3Fix::new(c, Fix128::ZERO, Fix128::ZERO),
+            Fix128::from_int(1 << 30),
+        ),
+    ];
+    let spring_like = Joint::Ball(BallJoint::new(0, 1, o, o).with_compliance(fx(0.25)))
+        .reaction_force(&massive, dt);
+    near(spring_like.to_f64(), (1.0 / 64.0) / 0.25, 1e-9, "C / alpha");
+    // two static bodies: nothing can move, nothing is applied
+    let pinned = vec![st(o), st(v3(1.0, 0.0, 0.0))];
+    assert_eq!(rigid.reaction_force(&pinned, dt), Fix128::ZERO);
 }
 
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn breakable_returns_descending_indices_skips_them_and_uses_strict_greater() {
     let o = Vec3Fix::ZERO;
@@ -867,6 +941,52 @@ fn breakable_returns_descending_indices_skips_them_and_uses_strict_greater() {
         solve_joints_breakable(&[Joint::Ball(BallJoint::new(0, 1, o, o))], &mut b2, dt())
             .is_empty()
     );
+}
+
+#[test]
+fn breaking_on_force_returns_descending_indices_skips_them_and_uses_strict_greater() {
+    let o = Vec3Fix::ZERO;
+    // joint 0: half its reaction force -> breaks; joint 1: 2.5x -> holds; joint 2: equal -> holds;
+    // joint 3: 0.975x -> breaks; joint 4: unbreakable
+    let mut bodies = vec![
+        st(o),
+        dynb(v3(1.0, 0.0, 0.0), 1.0),
+        dynb(v3(2.0, 0.0, 0.0), 1.0),
+        dynb(v3(3.0, 0.0, 0.0), 1.0),
+        dynb(v3(4.0, 0.0, 0.0), 1.0),
+        dynb(v3(5.0, 0.0, 0.0), 1.0),
+    ];
+    // thresholds are the reaction force to each body scaled as above (equal is computed, not typed)
+    let f = |i: usize| Joint::Ball(BallJoint::new(0, i, o, o)).reaction_force(&bodies, dt());
+    let joints = [
+        Joint::Ball(BallJoint::new(0, 1, o, o).with_break_force(f(1) * fx(0.5))),
+        Joint::Ball(BallJoint::new(0, 2, o, o).with_break_force(f(2) * fx(2.5))),
+        Joint::Ball(BallJoint::new(0, 3, o, o).with_break_force(f(3))),
+        Joint::Ball(BallJoint::new(0, 4, o, o).with_break_force(f(4) * fx(0.975))),
+        Joint::Ball(BallJoint::new(0, 5, o, o)),
+    ];
+    let broken = solve_joints_breaking_on_force(&joints, &mut bodies, dt());
+    assert_eq!(broken, vec![3, 0]);
+    // judged after the solve: the broken joints were solved in this call too
+    near(p(&bodies[1]).0, 0.0, 1e-12, "joint 0 solved, then reported");
+    near(p(&bodies[4]).0, 0.0, 1e-12, "joint 3 solved, then reported");
+    // surviving joints were solved
+    near(p(&bodies[2]).0, 0.0, 1e-12, "joint 1 solved");
+    near(
+        p(&bodies[3]).0,
+        0.0,
+        1e-12,
+        "joint 2 solved (equal is not broken)",
+    );
+    near(p(&bodies[5]).0, 0.0, 1e-12, "unbreakable solved");
+    // nothing to report when nothing is breakable
+    let mut b2 = vec![st(o), dynb(v3(1.0, 0.0, 0.0), 1.0)];
+    assert!(solve_joints_breaking_on_force(
+        &[Joint::Ball(BallJoint::new(0, 1, o, o))],
+        &mut b2,
+        dt()
+    )
+    .is_empty());
 }
 
 // ---------------- D6 ----------------

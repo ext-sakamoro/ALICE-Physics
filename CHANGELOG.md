@@ -27,6 +27,12 @@ were introduced during that release window.
 ### Fixed
 - 試験: `tests/analytic_math_wiring.rs` の `dot_batch_4_degenerate_zero_and_extreme_magnitude_lanes` (x86_64 + `simd` でだけ build される) は 3 番目の lane を `dot((1,0,0), (1,0,0)) = 1` で組んでいたので、`dot(x, q) = −7` の主張と食い違って失敗していた (x86_64 で `simd` の試験が走るまで誰も実行していなかった) lane 2 の相手を `q` に直した
 
+### Added
+- 関節の破断を反力で判定する: `PhysicsWorld::step` は各 substep の joint の solve の後、その solve で joint が伝えた反力が `break_force` を超えた joint (厳密な `>`) を取り除き、island の連結を残りの joint から作り直し、`EventCollector::joint_break_events` / `drain_joint_break_events` に `JointBreakEvent { index, joint, force }` として報告する (以前は world の joint は `break_force` を設定しても壊れなかった) 反力は位置の行ごとの XPBD 乗数 λ と方向 n から `|Σ λ·n| / h²` [N] (Macklin, Müller, Chentanez 2016 eq. 10 / 18) で、solve の中で伝わった荷重なので鎖の下の joint も上から渡された荷重で判定される (静的な anchor に吊った 2 kg + 2 kg の鎖は静止後に下 16 N・上 32 N、`g = 8`) 壊れた joint のその substep の補正は適用済みで、次の solve から効かない 角度の行は torque なので数えない XPBD・TGS の joint 射影・`set_gpu_solver_bridge` で装着した bridge・`step_with_bridge` / `substep_with_bridge` のどの経路でも同じ判定を通る (bridge は位置しか返さないので、bridge と bit 一致する CPU の solve を body の写しで回して反力を得る) 取り除きは `remove_joint` と同じ swap-remove で、motor は joint に付いて消える 眠っている island の joint は動かないので反力 0 で、眠っている間は壊れない 単独で使う入口として `solve_joints_with_reaction_forces(joints, bodies, dt) -> Vec<Fix128>` (反力 N) と `solve_joints_breaking_on_force(joints, bodies, dt)` (閾値は N) を追加した 静止から 1 substep 1 回の Gauss-Seidel で解く間は反力が静止荷重を一時的に超える (2 kg + 2 kg の鎖で下 8 → 16 → 20 → 20 → 18 N、上 16 → 32 → 40 → 40 → 36 N) ので、静止荷重とその山の間の `break_force` は起動時に壊れる 報告する力は solver が実際に伝えた値で過渡を含むので、閾値は山より上に置く oracle は `tests/analytic_joint_break_world.rs` (鎖を含む) と `tests/analytic_joint_break_bridge.rs`、`audit_joint.rs::reaction_force_is_a_force_not_a_separation`
+
+### Deprecated
+- `solve_joints_breakable`: `break_force` を anchor 間の距離 (m、spring は k·x) と比べるので、力として文書化された `break_force` と単位が合わない 挙動は変えずに deprecated にした 移行先は `solve_joints_breaking_on_force` (閾値は反力 N) 距離で閾値を合わせていた呼び出しは、`solve_joints_with_reaction_forces` で同じ場面の反力を測って N に直す `Joint::compute_force` は従来どおり距離 (spring は k·x) を返し、doc をその意味に合わせた
+
 ## [2.1.0] - 2026-10-10
 
 ### Added

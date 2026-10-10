@@ -37,7 +37,9 @@
 //! non-accumulated second pass) could pass the `O(a)` bound with.
 
 use alice_physics::det_math::{atan2_64, exp64, sqrt64};
-use alice_physics::joint::{solve_joints_breakable, Joint, SpringJoint};
+#[allow(deprecated)] // the separation-based variant is pinned below
+use alice_physics::joint::solve_joints_breakable;
+use alice_physics::joint::{Joint, SpringJoint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
 use alice_physics::{SleepConfig, SolverBackend};
@@ -573,6 +575,7 @@ fn positive_rest_length_damps_along_the_axis_only() {
 }
 
 /// `break_force` still breaks the joint on the spring force `|k (|d| − L)|`.
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn break_force_is_kept() {
     let o = Vec3Fix::ZERO;
@@ -607,6 +610,7 @@ fn break_force_is_kept() {
 /// `c |ω × r|`. One solve with `h = 1/60`, `k = 0`, `c = 3`, `ω = (0, 0, 2)`,
 /// `r_b = (0.5, 0, 0)`: `u = (0, 1, 0)`, `w = 1 + |r × n|² I⁻¹ = 1.25` and
 /// `λ = h² c |u| / (1 + c h w)`; B moves `−λ` along `y` and turns `−0.5 λ` about `z`.
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn damper_reads_the_anchor_velocity_including_spin() {
     let h: f64 = 1.0 / 60.0;

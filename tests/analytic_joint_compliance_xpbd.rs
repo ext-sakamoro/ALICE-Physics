@@ -20,9 +20,9 @@
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]
 
-use alice_physics::joint::{
-    solve_joints, solve_joints_breakable, BallJoint, FixedJoint, HingeJoint, Joint,
-};
+#[allow(deprecated)] // the separation-based variant is pinned below
+use alice_physics::joint::solve_joints_breakable;
+use alice_physics::joint::{solve_joints, BallJoint, FixedJoint, HingeJoint, Joint};
 use alice_physics::joint_extra::{solve_extra_joints, ExtraJoint, WeldJoint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
@@ -133,6 +133,7 @@ fn compliant_joint_stretch_is_iteration_independent_and_equals_f_alpha() {
 /// `k` free-function calls at the same `h` leave `d · (α̃ / (w + α̃))^k`: no
 /// `λ` is carried between calls. `α = 1`, `h = 1`, `w = 1` gives the ratio
 /// `1/2`, exact in fixed point; `h = 1/2` gives `α̃ = 4` and the ratio `4/5`.
+#[allow(deprecated)] // pins the separation-based solve_joints_breakable
 #[test]
 fn repeated_free_function_calls_compound_the_gap_fraction() {
     let d0 = 2.0;
