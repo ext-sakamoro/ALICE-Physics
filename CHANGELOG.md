@@ -15,6 +15,9 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+- `SdfContact::collider_position` / `collider_rotation` / `collider_scale`: 接触を解いた時点の collider の frame body に付けた collider (`SdfCollider::new_dynamic`) は substep ごとに body の姿勢へ動かしてから押し出すので、step 後の collider の姿勢は `point` と `normal` を測った frame ではない (8 substep で 1 substep 分ずつずれる) 記録の frame で `point` を collider の座標に戻せる 押し出しが既に持っている値を写すだけで、step の結果は変わらない (200 step・記録 24669 件の場面で `serialize_state` が bit 一致) oracle `tests/analytic_sdf_contact_record.rs` (動く collider の frame が substep ごとの閉形式の位置と bit 一致し、点がその frame で平面上にあり、step 後の frame では閉形式の量だけ外れる / static collider は自分の姿勢を bit 一致で記録)
+
 ### Changed
 - `scripts/affected_tests.py` (`preflight --fast`): 選んだ integration target の crate 冒頭の `#![cfg(...)]` を実行する feature で評価し、偽の target はその cfg を真にする最も近い feature 集合の追加の回で走らせる (`not(feature = "parallel")` は parallel を外した回、`feature = "neural"` は neural を足した回) それまでは偽の target が 0 本実行になり、cfg が正当に外れているだけで `--fast` が失敗していた (`src/solver.rs` の変更で 6 target) 全 test が `#[ignore]` の target は passed 0 / ignored N で実行済みとして数える 解釈できない cfg の形と Cargo.toml に無い feature 名は失敗にし (fail closed)、host で真にできない cfg (他 OS) は対象外と報告して CI に任せる 回ごとに target / 実行 / 空 / passed を表示する
 - CI: `simd` で gate された integration test (`analytic_math_wiring` の x86_64 + simd の module、`audit_math`、`analytic_gpu_sdf_wiring`) はどの lane でも実行されていなかった (ci.yml の SIMD の step は `--lib` だけ) `scripts/run_feature_gated_tests.py` の feature に `simd` を足し、全 OS の matrix で実行する (x86_64 の lane で x86_64 限定の module も走る)

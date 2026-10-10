@@ -14195,6 +14195,9 @@ impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfC
 pub alice_physics::prelude::SdfContact::approach_speed: alice_physics::math::Fix128
 pub alice_physics::prelude::SdfContact::body_index: usize
 pub alice_physics::prelude::SdfContact::collider_index: usize
+pub alice_physics::prelude::SdfContact::collider_position: alice_physics::math::Vec3Fix
+pub alice_physics::prelude::SdfContact::collider_rotation: alice_physics::math::QuatFix
+pub alice_physics::prelude::SdfContact::collider_scale: alice_physics::math::Fix128
 pub alice_physics::prelude::SdfContact::depth: alice_physics::math::Fix128
 pub alice_physics::prelude::SdfContact::normal: alice_physics::math::Vec3Fix
 pub alice_physics::prelude::SdfContact::point: alice_physics::math::Vec3Fix
@@ -16576,6 +16579,9 @@ impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfC
 pub alice_physics::sdf_collider::SdfContact::approach_speed: alice_physics::math::Fix128
 pub alice_physics::sdf_collider::SdfContact::body_index: usize
 pub alice_physics::sdf_collider::SdfContact::collider_index: usize
+pub alice_physics::sdf_collider::SdfContact::collider_position: alice_physics::math::Vec3Fix
+pub alice_physics::sdf_collider::SdfContact::collider_rotation: alice_physics::math::QuatFix
+pub alice_physics::sdf_collider::SdfContact::collider_scale: alice_physics::math::Fix128
 pub alice_physics::sdf_collider::SdfContact::depth: alice_physics::math::Fix128
 pub alice_physics::sdf_collider::SdfContact::normal: alice_physics::math::Vec3Fix
 pub alice_physics::sdf_collider::SdfContact::point: alice_physics::math::Vec3Fix
@@ -25503,6 +25509,9 @@ impl !core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_collider::SdfC
 pub alice_physics::SdfContact::approach_speed: alice_physics::math::Fix128
 pub alice_physics::SdfContact::body_index: usize
 pub alice_physics::SdfContact::collider_index: usize
+pub alice_physics::SdfContact::collider_position: alice_physics::math::Vec3Fix
+pub alice_physics::SdfContact::collider_rotation: alice_physics::math::QuatFix
+pub alice_physics::SdfContact::collider_scale: alice_physics::math::Fix128
 pub alice_physics::SdfContact::depth: alice_physics::math::Fix128
 pub alice_physics::SdfContact::normal: alice_physics::math::Vec3Fix
 pub alice_physics::SdfContact::point: alice_physics::math::Vec3Fix

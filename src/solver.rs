@@ -5881,7 +5881,10 @@ impl PhysicsWorld {
     ///
     /// Each entry is one push-out of a body out of an SDF collider
     /// ([`SdfContact`](crate::sdf_collider::SdfContact)): where, along which
-    /// normal, how deep, and how fast the body was approaching. The record is
+    /// normal, how deep, and how fast the body was approaching, and the
+    /// collider's frame at that substep (a collider attached to a body moves
+    /// with it during the step, so convert `point` with the recorded frame,
+    /// not with the collider's pose after the step). The record is
     /// emptied at the head of each step ([`Self::step`], [`Self::try_step`],
     /// `step_parallel`, `step_with_bridge`); a step that does not run (a
     /// recorded fault, a non-positive `dt`) leaves it as it was.
@@ -5963,6 +5966,9 @@ impl PhysicsWorld {
                             depth: contact.depth,
                             approach_speed: -body.velocity.dot(contact.normal),
                             substep,
+                            collider_position: sdf.position,
+                            collider_rotation: sdf.rotation,
+                            collider_scale: sdf.scale,
                         });
                         body.position = body.position + contact.normal * contact.depth;
                     }
