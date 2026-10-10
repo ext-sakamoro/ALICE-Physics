@@ -156,13 +156,15 @@ impl Support for Cylinder {
             -half_height
         };
 
-        let xz_len_sq = local_dir.x * local_dir.x + local_dir.z * local_dir.z;
+        // a short xz part is scaled up first (see `Vec3Fix::rescaled_xz`)
+        let xz_dir = local_dir.rescaled_xz();
+        let xz_len_sq = xz_dir.x * xz_dir.x + xz_dir.z * xz_dir.z;
         let local_support = if xz_len_sq.is_zero() {
             Vec3Fix::new(Fix128::ZERO, y_support, Fix128::ZERO)
         } else {
             let xz_len = xz_len_sq.sqrt();
-            let x_support = radius * local_dir.x / xz_len;
-            let z_support = radius * local_dir.z / xz_len;
+            let x_support = radius * xz_dir.x / xz_len;
+            let z_support = radius * xz_dir.z / xz_len;
             Vec3Fix::new(x_support, y_support, z_support)
         };
 

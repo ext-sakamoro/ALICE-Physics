@@ -326,15 +326,18 @@ fn polytope_casts_with_radius_from_2_pow_minus_16_keep_their_bits() {
 }
 
 /// `(scene, casts, hits, digest)` of the rounded solids, recorded on this
-/// implementation (the scaled small simplices moved them from the previous
-/// one): a change detector for the time of impact that
+/// implementation (the scaled small simplices, then the curved faces' nearest
+/// points, the flat tetrahedra, the lower bound and the exact distance of
+/// cones and cylinders moved them; against an independent distance the same
+/// casts went from 66, 16 and 6 below `−2⁻³²` on the cone, the cylinder and
+/// the ellipsoid to none): a change detector for the time of impact that
 /// a cast ends on when its gap is bracketed (it is the clear end for a core of
 /// reach `2⁻¹⁶` or more, and the tangent's root from it only below).
 const CURRENT_ROUND: [(&str, usize, usize, u64); 4] = [
-    ("cone", 1102, 518, 6_640_707_711_863_356_405),
-    ("cylinder", 1144, 624, 9_071_145_424_669_698_798),
-    ("field", 1145, 870, 11_317_914_934_422_542_243),
-    ("ellipsoid", 1122, 525, 4_572_165_122_096_708_494),
+    ("cone", 1102, 513, 5_852_212_246_854_234_555),
+    ("cylinder", 1144, 624, 598_540_554_569_869_253),
+    ("field", 1145, 870, 9_444_083_892_263_037_640),
+    ("ellipsoid", 1122, 525, 17_000_410_992_680_744_878),
 ];
 
 #[test]
