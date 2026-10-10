@@ -722,8 +722,7 @@ fn neo_hookean_uniaxial_compression_matches_the_closed_form() {
 /// ⚠️ At 36.87° the first increment's opening small-strain solve puts an
 /// element through `det F = 0` outright (`RotationFailed { tet: 0, cause:
 /// Inverted }`), which is the same limitation seen from the other side.
-#[test]
-fn uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form() {
+fn rotated_uniaxial_oracle(config_for: impl Fn(HyperelasticModel) -> CorotationalConfig) {
     // ⚠️ **16.26°, and the angle is load bearing.** It sits between 10° and 20°,
     // both of which were measured to converge (see the sweep above), and it is
     // far enough from diagonal that `F⁻¹` and `F⁻ᵀ` are different matrices —
@@ -784,9 +783,7 @@ fn uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form() {
         );
     }
 
-    let config = CorotationalConfig::try_new(linear_config(), 600, fx(1.0e-7), 16, 64)
-        .expect("valid")
-        .with_hyperelastic(model);
+    let config = config_for(model);
     let solution =
         solve_quadratic_hyperelastic(&mesh, &material(), &bc, &config).expect("converged");
 
@@ -837,6 +834,46 @@ fn uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form() {
         worst_stress < 1.0e-5,
         "the rotated Cauchy stress is off by {worst_stress:.3e} MPa"
     );
+}
+
+/// The rotated oracle on the iteration that ships by default: the
+/// co-rotational tangent over sixteen increments (about 450 Newton steps).
+///
+/// ⚠️ This is the only scene that drives the default iteration through a
+/// superposed rotation, so it is what notices when that iteration stops
+/// converging under one — a property of the *path*, which the fast twin below
+/// does not exercise.
+#[test]
+#[ignore = "runtime: about 165 s in debug (P2, n = 2, default co-rotational tangent, 16 increments, about 450 Newton steps); the per-push twin is uniaxial_tension_under_a_superposed_rotation_with_the_consistent_tangent; run by run_ignored.py"]
+fn uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form() {
+    rotated_uniaxial_oracle(|model| {
+        CorotationalConfig::try_new(linear_config(), 600, fx(1.0e-7), 16, 64)
+            .expect("valid")
+            .with_hyperelastic(model)
+    });
+}
+
+/// The same scene, the same assertions and the same bounds, reached by the
+/// consistent tangent in one increment (4 Newton steps).
+///
+/// ⚠️ **Why it checks the same thing.** What the oracle asserts is the
+/// converged state, the fixed point of `f_mat(u) = f_ext`; the residual and the
+/// bounds are shared, only the tangent and the load path differ, and the
+/// hyperelastic law has no path dependence. Measured: the worst displacement and
+/// stress errors match the sixteen-increment run to the printed digits.
+///
+/// ⚠️ **What it does not check**: that the *default* iteration converges under a
+/// rotation. That stays with the ignored test above, in the weekly release run.
+/// Dropping `.transpose()` from `P = J σ F⁻ᵀ` turns this twin red (as
+/// `NotConverged` after three steps rather than on the value assertion).
+#[test]
+fn uniaxial_tension_under_a_superposed_rotation_with_the_consistent_tangent() {
+    rotated_uniaxial_oracle(|model| {
+        CorotationalConfig::try_new(linear_config(), 600, fx(1.0e-7), 1, 64)
+            .expect("valid")
+            .with_hyperelastic(model)
+            .with_consistent_tangent()
+    });
 }
 
 /// The configuration must carry a law; the entry point does not fall back.

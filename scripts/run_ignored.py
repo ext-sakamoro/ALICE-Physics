@@ -335,6 +335,24 @@ def table_markdown(entries: list[dict]) -> list[str]:
     return lines
 
 
+def runtime_tally(entries: list[dict], outcomes: dict[tuple[str, str], str]) -> tuple[int, int, list[str]]:
+    """`(ran, expected, problems)` for the `runtime:` tests: how many of the
+    table's `runtime:` entries produced a verdict, out of how many there are.
+
+    An empty `runtime:` table is a problem in itself: the job then checked
+    nothing it is there to check. A shortfall is a problem too; the per-test
+    "did not run" lines name which ones.
+    """
+    expected = [e for e in entries if e["category"] == CAT_RUNTIME]
+    ran = sum(1 for e in expected if (e["binary"], e["name"]) in outcomes)
+    problems: list[str] = []
+    if not expected:
+        problems.append("the table has no `runtime:` test, so this run checked none")
+    elif ran < len(expected):
+        problems.append(f"only {ran} of {len(expected)} `runtime:` tests ran")
+    return ran, len(expected), problems
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--list", action="store_true", help="print the derived table and stop")
@@ -388,6 +406,10 @@ def main() -> int:
                 outcomes[(label, name)] = verdict
                 logs[f"{label}::{name}"] = log
 
+    ran_runtime, expected_runtime, tally_problems = runtime_tally(entries, outcomes)
+    print(f"runtime: {ran_runtime}/{expected_runtime} ran", flush=True)
+    broken += tally_problems
+
     errors: list[dict] = []
     inversions: list[dict] = []
     as_documented: list[dict] = []
@@ -414,6 +436,7 @@ def main() -> int:
             untriaged.append(row)
 
     report = list(header)
+    report += ["", f"`runtime:` tests that ran: **{ran_runtime} / {expected_runtime}**"]
 
     if inversions:
         report += [

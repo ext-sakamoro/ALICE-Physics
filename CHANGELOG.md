@@ -15,6 +15,15 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/run_ignored.py`: `runtime:` の ignore 試験のうち実際に走った本数を `runtime: <走った>/<表の本数> ran` と表示し、report にも書く 表に `runtime:` が 1 本も無い時と走った本数が足りない時は失敗にする (どの試験が走らなかったかは従来どおり 1 本ずつ出す) 本 script の試験 `scripts/test_run_ignored.py` は ci.yml と preflight で回していなかったので両方に足した
+
+### Changed
+
+- 超弾性の回転 oracle (`tests/analytic_cubic_hyperelastic.rs` / `tests/analytic_quadratic_hyperelastic.rs`) を 2 本に分けた 毎 push は同じ場面・同じ assert・同じ許容値を consistent tangent の 1 増分で解く試験 (debug で P3 117 s → 2 s、P2 165 s → 5 s、Newton 4 回、最大誤差は印字桁まで同じ) 既定の co-rotational tangent が 16 増分で回転下に収束することは解いた値でなく経路の性質なので、従来の試験を `runtime:` の ignore として週次の release run に残した `P = Jσ F⁻ᵀ` の転置を落とす変異は新しい試験で red、co-rotational tangent の `R` と `Rᵀ` を取り違える変異は週次の試験でしか red にならない
+- `tests/analytic_hyperelastic_mms_order.rs`: 4 本が同じ引数で別々に解いていた P2 n = 3 の解を 1 回だけ解いて読み取り専用で共有する (`OnceLock`、共有値と新しく解いた値の bit 一致は週次の試験で見る) modified iteration が大振幅で収束しないことを確かめる試験 (debug 92 s、module doc の主張を固定するもので解の値は見ない) は `runtime:` の ignore として週次へ移した 毎 push の debug でこの file は 251 s → 33 s
+
 ## [2.1.0] - 2026-10-10
 
 ### Added

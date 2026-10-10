@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5734 |
+| 🟢 Not ignored (run by CI) | 5733 |
 | 🔴 Red by design | 74 |
-| ⏱ Gated (runtime / diagnostic / manual) | 26 |
+| ⏱ Gated (runtime / diagnostic / manual) | 30 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5834** |
+| **Total** | **5837** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -124,7 +124,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (26)
+## ⏱ Gated (30)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -151,12 +151,16 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `p3_separates_from_p2_at_large_amplitude` (analytic_hyperelastic_mms_order.rs) — runtime: about 35 s in release (P3 n = 3 at A = 0.08 with the Newton-Krylov step, plus P2 n = 3); run by run_i…
 - `p3_separates_from_p2_in_order_and_in_error` (analytic_hyperelastic_mms_order.rs) — runtime: about 30 s in release (P3 n = 2 and 3 plus P2 n = 3, Fix128 Newton on 20-node elements); run by run_i…
 - `reattachment_lengthens_under_grid_refinement` (armaly_backward_step.rs) — runtime only: 256x16 cells for 8192 steps, release-only (about 190 s, measured 2026-10-03); the measured value…
+- `the_modified_iteration_still_does_not_converge_at_large_amplitude` (analytic_hyperelastic_mms_order.rs) — runtime: about 92 s in debug (P2 n = 3 at A = 0.08, the modified iteration runs its whole Newton budget before…
+- `the_shared_solve_is_the_fresh_solve_bit_for_bit` (analytic_hyperelastic_mms_order.rs) — runtime: about 55 s in debug (the shared P2 n = 3 solve and one fresh one to compare it with); run by run_igno…
 - `the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16` (armaly_backward_step.rs) — runtime: about 30 min in release (ny = 8 and 16, both advection schemes, each to t_settle at Courant 0.75); ru…
 - `tolerance_floor_rises_as_the_mesh_refines` (analytic_fem_convergence.rs) — 4 solves (finest level 12,800 tets, about 1 s in release, measured 2026-10-03); the tolerance-floor measuremen…
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
+- `uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form` (analytic_cubic_hyperelastic.rs) — runtime: about 117 s in debug (P3, n = 1, default co-rotational tangent, 16 increments, about 450 Newton steps…
+- `uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form` (analytic_quadratic_hyperelastic.rs) — runtime: about 165 s in debug (P2, n = 2, default co-rotational tangent, 16 increments, about 450 Newton steps…
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5734)
+## 🟢 Not ignored (5733)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -521,7 +525,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_cfd_wall_bc.rs` | 5 |
 | `analytic_cloth_crossings_wiring.rs` | 5 |
 | `analytic_contact_static_friction.rs` | 5 |
-| `analytic_hyperelastic_mms_order.rs` | 5 |
 | `analytic_math_ln.rs` | 5 |
 | `analytic_quadratic_mesh_edges_wiring.rs` | 5 |
 | `analytic_shaped_sphere_contacts.rs` | 5 |
@@ -544,6 +547,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_adaptive_refinement_high_order.rs` | 4 |
 | `analytic_contact_friction_cap.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
+| `analytic_hyperelastic_mms_order.rs` | 4 |
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `analytic_world_query_boundaries.rs` | 4 |

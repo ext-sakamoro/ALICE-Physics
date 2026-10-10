@@ -70,5 +70,34 @@ class Main(unittest.TestCase):
         self.assertEqual(run_main([RUNTIME, GAP], [("a", "exe-a")], {"exe-a": (101, out)}), 1)
 
 
+
+class Tally(unittest.TestCase):
+    def test_every_runtime_test_ran(self):
+        ran, expected, problems = ri.runtime_tally([RUNTIME, GAP], {("a", "slow_one"): "ok", ("a", "gap_one"): "FAILED"})
+        self.assertEqual((ran, expected, problems), (1, 1, []))
+
+    def test_a_failed_runtime_test_still_counts_as_ran(self):
+        ran, _, problems = ri.runtime_tally([RUNTIME], {("a", "slow_one"): "FAILED"})
+        self.assertEqual((ran, problems), (1, []))
+
+    def test_a_shortfall_is_a_problem(self):
+        other = dict(RUNTIME, name="slow_two")
+        ran, expected, problems = ri.runtime_tally([RUNTIME, other], {("a", "slow_one"): "ok"})
+        self.assertEqual((ran, expected), (1, 2))
+        self.assertEqual(problems, ["only 1 of 2 `runtime:` tests ran"])
+
+    def test_a_same_name_in_another_binary_does_not_count(self):
+        ran, _, problems = ri.runtime_tally([RUNTIME], {("b", "slow_one"): "ok"})
+        self.assertEqual(ran, 0)
+        self.assertTrue(problems)
+
+    def test_no_runtime_entry_is_a_problem(self):
+        ran, expected, problems = ri.runtime_tally([GAP], {("a", "gap_one"): "FAILED"})
+        self.assertEqual((ran, expected), (0, 0))
+        self.assertEqual(problems, ["the table has no `runtime:` test, so this run checked none"])
+
+    def test_a_table_without_runtime_tests_fails_the_job(self):
+        self.assertEqual(run_main([GAP], [("a", "exe-a")], {"exe-a": (101, OK_RUN)}), 1)
+
 if __name__ == "__main__":
     unittest.main()

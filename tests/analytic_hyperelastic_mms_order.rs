@@ -454,6 +454,21 @@ fn corners_of(m: &SdfTetMesh, t: &Tetrahedron) -> [[f64; 3]; 4] {
         v(t.vertices[3]),
     ]
 }
+/// P2 at `n = 3`, ordinary amplitude, modified iteration: the one solve that
+/// four tests in this file ask for with identical arguments.
+///
+/// Solved once per test binary and shared read-only: the `Level` is plain
+/// numbers, written once by `OnceLock` and never mutated, so no test can see
+/// another's state. `try_run` sets the amplitude on the thread that runs it,
+/// and every caller of `try_run` sets its own before reading it, so solving here
+/// on whichever test thread arrives first changes no other test's input.
+/// `the_shared_solve_is_the_fresh_solve_bit_for_bit` checks that the shared
+/// value is the fresh solve, bit for bit.
+fn shared_p2_n3() -> &'static Level {
+    static LEVEL: std::sync::OnceLock<Level> = std::sync::OnceLock::new();
+    LEVEL.get_or_init(|| run(2, 3, 1.0))
+}
+
 /// The solve at the ordinary amplitude with the modified iteration.
 fn run(order: usize, n: usize, scale: f64) -> Level {
     try_run(order, n, scale, AMP_SMALL, false).expect("converges at the ordinary amplitude")
@@ -554,7 +569,7 @@ fn slope(coarse: &Level, fine: &Level) -> f64 {
 #[test]
 fn p2_error_decreases_between_two_levels() {
     let coarse = run(2, 2, 1.0);
-    let fine = run(2, 3, 1.0);
+    let fine = shared_p2_n3();
     eprintln!("[hyper-mms] P2 rms {:.3e} -> {:.3e}", coarse.rms, fine.rms);
     assert!(
         fine.rms < 0.7 * coarse.rms,
@@ -593,7 +608,7 @@ fn p2_error_decreases_with_refinement_at_better_than_second_order() {
 
 #[test]
 fn a_flipped_body_force_is_far_from_the_manufactured_solution() {
-    let right = run(2, 3, 1.0);
+    let right = shared_p2_n3();
     let flipped = run(2, 3, -1.0);
     eprintln!(
         "[hyper-mms] right {:.3e}  flipped {:.3e}",
@@ -610,7 +625,7 @@ fn a_flipped_body_force_is_far_from_the_manufactured_solution() {
 #[test]
 #[ignore = "runtime: about 30 s in release (P3 n = 2 and 3 plus P2 n = 3, Fix128 Newton on 20-node elements); run by run_ignored.py"]
 fn p3_separates_from_p2_in_order_and_in_error() {
-    let p2 = run(2, 3, 1.0);
+    let p2 = shared_p2_n3();
     let p3_coarse = run(3, 2, 1.0);
     let p3_fine = run(3, 3, 1.0);
     let s3 = slope(&p3_coarse, &p3_fine);
@@ -628,6 +643,7 @@ fn p3_separates_from_p2_in_order_and_in_error() {
 }
 
 #[test]
+#[ignore = "runtime: about 92 s in debug (P2 n = 3 at A = 0.08, the modified iteration runs its whole Newton budget before it refuses); it pins a claim in the module doc, not a computed answer; run by run_ignored.py"]
 fn the_modified_iteration_still_does_not_converge_at_large_amplitude() {
     // ⚠️ Pins the *reason* the Newton–Krylov step exists. If this starts to
     // converge the claim in the module doc is stale and the test should go.
@@ -655,7 +671,7 @@ fn the_newton_krylov_step_converges_where_the_modified_one_does_not() {
 
 #[test]
 fn the_newton_krylov_step_does_not_move_the_fixed_point() {
-    let modified = try_run(2, 3, 1.0, AMP_SMALL, false).expect("converges");
+    let modified = shared_p2_n3();
     let krylov = try_run(2, 3, 1.0, AMP_SMALL, true).expect("converges");
     eprintln!(
         "[hyper-mms] modified {:.6e}  newton-krylov {:.6e}",
@@ -684,4 +700,24 @@ fn p3_separates_from_p2_at_large_amplitude() {
         p3.rms,
         p2.rms
     );
+}
+
+/// The value `shared_p2_n3` hands out is the solve a test would have run on its
+/// own: same arguments, same bits in every field the tests read.
+#[test]
+#[ignore = "runtime: about 55 s in debug (the shared P2 n = 3 solve and one fresh one to compare it with); run by run_ignored.py"]
+fn the_shared_solve_is_the_fresh_solve_bit_for_bit() {
+    let shared = shared_p2_n3();
+    let fresh = run(2, 3, 1.0);
+    for (name, a, b) in [
+        ("h", shared.h, fresh.h),
+        ("max_err", shared.max_err, fresh.max_err),
+        ("rms", shared.rms, fresh.rms),
+    ] {
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "{name}: shared {a:e} vs fresh {b:e}"
+        );
+    }
 }
