@@ -40,16 +40,16 @@
 1	bvh\.rs:951:.*replace \+ with \* in BroadphaseHybrid::query_pairs
 1	replace > with >= in adaptive_substeps_for$
 1	replace < with <= in adaptive_substeps_for_ccd$
-3	solver\.rs:(2938|2943|2948):.*replace < with <= in PhysicsWorld::raycast
-3	solver\.rs:(2955|2960|2965):.*replace > with >= in PhysicsWorld::raycast
-1	solver\.rs:3278:27: replace == with != in PhysicsWorld::batches_are_body_disjoint
-2	solver\.rs:(4772|4802):.*replace < with <= in PhysicsWorld::update_velocities
-1	solver\.rs:4788:.*replace > with >= in PhysicsWorld::update_velocities
-1	solver\.rs:6301:.*replace \|\| with && in PhysicsWorld::detect_collisions
-1	solver\.rs:6369:52: replace \|\| with && in PhysicsWorld::detect_collisions
-1	solver\.rs:6453:21: replace < with <= in PhysicsWorld::detect_collisions
-1	solver\.rs:6453:39: replace && with \|\| in PhysicsWorld::detect_collisions
-1	solver\.rs:6795:.*replace < with <= in PhysicsWorld::deserialize_state
-2	solver\.rs:6848:.*replace > with (>=|==) in PhysicsWorld::deserialize_state
-3	solver\.rs:(6899|6904|6908):.*replace < with <= in PhysicsWorld::deserialize_state
-1	solver\.rs:3965:.*replace > with >= in PhysicsWorld::step_tgs
+3	solver\.rs:(2943|2948|2953):.*replace < with <= in PhysicsWorld::raycast
+3	solver\.rs:(2960|2965|2970):.*replace > with >= in PhysicsWorld::raycast
+1	solver\.rs:3283:27: replace == with != in PhysicsWorld::batches_are_body_disjoint
+2	solver\.rs:(4779|4809):.*replace < with <= in PhysicsWorld::update_velocities
+1	solver\.rs:4795:.*replace > with >= in PhysicsWorld::update_velocities
+1	solver\.rs:6355:.*replace \|\| with && in PhysicsWorld::detect_collisions
+1	solver\.rs:6423:52: replace \|\| with && in PhysicsWorld::detect_collisions
+1	solver\.rs:6507:21: replace < with <= in PhysicsWorld::detect_collisions
+1	solver\.rs:6507:39: replace && with \|\| in PhysicsWorld::detect_collisions
+1	solver\.rs:6849:.*replace < with <= in PhysicsWorld::deserialize_state
+2	solver\.rs:6902:.*replace > with (>=|==) in PhysicsWorld::deserialize_state
+3	solver\.rs:(6953|6958|6962):.*replace < with <= in PhysicsWorld::deserialize_state
+1	solver\.rs:3971:.*replace > with >= in PhysicsWorld::step_tgs

@@ -15,11 +15,19 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/mutants_skip_check.py` と `scripts/mutants-skip-ledger.txt`: `#[mutants::skip]` を台帳と突き合わせる cargo-mutants 27.1.0 は struct literal の field 削除変異を `--re` / `--exclude-re` / `exclude_re` で絞らないので、軸で compile されない test helper の変異はその軸で見逃しに数えられる skip は test でしか compile されない code (`#[cfg(test)]` / `#[cfg(all(test, ...))]` の中) にだけ許し、台帳に 12 文字以上の理由を書く 本番の build が compile する code への skip・台帳に無い skip・skip の無い台帳行・比較 0 件を失敗にする (`scripts/test_mutants_skip_check.py`、ci.yml と preflight) dev-dependency に `mutants` (属性だけの crate) を足した
+
+### Changed
+
+- joint が world に無い body を指すと、step (`step` / `try_step` / `step_parallel` / `step_with_bridge`、XPBD と TGS) は何も解く前に joint の番号と body 数を示して panic する (`add_joint` は既に拒否していたが、公開 field `joints` に直接入れた joint は joint の解決の中で添字の範囲外として panic していた) island の union にあった範囲の検査は届かなくなったので消した
+- `contact_constraints` と `add_contact` の doc に、step が接触を消して検出し直すので、step の間に足した接触 (同じ body を 2 度指すものを含む) は次の step で解かれないことを書いた
+
 ## [2.1.0] - 2026-10-10
 
 ### Added
 
-- `scripts/mutants_skip_check.py` と `scripts/mutants-skip-ledger.txt`: `#[mutants::skip]` を台帳と突き合わせる cargo-mutants 27.1.0 は struct literal の field 削除変異を `--re` / `--exclude-re` / `exclude_re` で絞らないので、軸で compile されない test helper の変異はその軸で見逃しに数えられる skip は test でしか compile されない code (`#[cfg(test)]` / `#[cfg(all(test, ...))]` の中) にだけ許し、台帳に 12 文字以上の理由を書く 本番の build が compile する code への skip・台帳に無い skip・skip の無い台帳行・比較 0 件を失敗にする (`scripts/test_mutants_skip_check.py`、ci.yml と preflight) dev-dependency に `mutants` (属性だけの crate) を足した
 - `scripts/mutants_exclude_check.py`: `.cargo/mutants.toml` の `exclude_re` の各 entry が、今も実際の変異 (`cargo mutants --list --no-config`) に一致しているかを検査する entry は「この変異は等価」という証明で、同 file の上に行を足す変更があると行番号がずれて静かに 0 件に落ちる (その変異は週次の ratchet に「新規の見逃し」として戻ってくる) 一致数を `scripts/mutants-exclude-baseline.txt` で追跡し、0 件・tracked 数との不一致・baseline の孤立 entry を失敗にする (`--write` で記録、`scripts/test_mutants_exclude_check.py`)
 - `sdf_collider::SdfField::generation(&self) -> u64` (既定の実装は `0`): 場の形が変わるたびに変わる番号 world は各 step の頭で各 SDF collider の値を前回 (または追加時) と比べ、変わっていれば寝ている body をすべて起こす 場は変わった場所を返さないので起こすのは world 全体 値が変わらない場 (既定の `0` を含む) では step は従来と同じ bit `SdfUnion` は 2 つの部分の値の wrapping 和を返す `sdf_destruction::DestructibleSdf` は `apply_destruction` / 何かを消した `reset` / 体積を捨てた `optimize` のたびに値を変える (削らない利用者の挙動は変わらない) 閉形式の oracle は `tests/analytic_sdf_generation_wake.rs`
 - `PhysicsWorld::last_step_sdf_contacts() -> &[SdfContact]` と `sdf_collider::SdfContact` (`#[non_exhaustive]`、crate 直下と prelude に re-export): 直前の step が SDF collider から body を押し出した接触を、押し出した順 (substep → body index → collider index) に 1 件ずつ記録する 各件は `body_index` / `collider_index` / `point` (SDF 表面上、world) / `normal` (world、collider の外向き) / `depth` / `approach_speed` (押し出し前の body 速度の `-normal` 成分、正なら接近) / `substep` 記録は step の頭で空にし、buffer は step 間で再利用する (容量は過去最大の件数のまま) XPBD の `step` / `try_step` / `step_parallel` / `step_with_bridge` で同じ内容、TGS は SDF の解決を step の頭で 1 回行うので全件 substep 0 記録は観測のみで、読む world と読まない world は同じ bit に進む 既存の `PhysicsWorld::sdf_contacts()` (step 間の重なりの照会) は変えていない 閉形式の oracle は `tests/analytic_sdf_contact_record.rs`、例は `examples/sdf_contacts.rs`
@@ -33,8 +41,6 @@ were introduced during that release window.
 - `scripts/docs_lint.py`: `docs/ECOSYSTEM_CONTRACTS.md` の ```rust block に書いた `pub trait` / `pub unsafe trait` を `src/` の実物と突き合わせる (trait の bound と `unsafe`・関連 fn / 関連型 / 関連 const の集合・各 signature (fn の `const` / `async` / `unsafe` / `extern "ABI"`、関連型の bound、const の型を含む、空白と `crate::` の path を正規化)・既定の有無、文書では既定の body を `{ ... }`、const の既定値を `= ...` と書く) 比べた trait か item が 0 件なら失敗 comment の除去は文字 literal (`'"'`)・raw string・入れ子の block comment を扱う 試験は `scripts/test_docs_lint.py` の `Contracts` / `ContractItems` / `CommentStripping`
 
 ### Changed
-- joint が world に無い body を指すと、step (`step` / `try_step` / `step_parallel` / `step_with_bridge`、XPBD と TGS) は何も解く前に joint の番号と body 数を示して panic する (`add_joint` は既に拒否していたが、公開 field `joints` に直接入れた joint は joint の解決の中で添字の範囲外として panic していた) island の union にあった範囲の検査は届かなくなったので消した
-- `contact_constraints` と `add_contact` の doc に、step が接触を消して検出し直すので、step の間に足した接触 (同じ body を 2 度指すものを含む) は次の step で解かれないことを書いた
 - CI: `scripts/version_sync.py` が、crate の version を名乗る file (package.json / pyproject / uplugin / 下位の Cargo.toml / Python の `__version__` 等) と、文書の依存行 (`alice-physics = "X"` / `pip install` / `npm install`) を Cargo.toml の version と突き合わせる file ごとに「追従」か「独立 (理由つき)」を `scripts/version-sync.toml` に登録し、未登録の version 表記は失敗にする 過去の release の記録 (ROADMAP、0.x → 1.0 の移行ガイド) は理由つきで検査から外す
 - CI: Python binding の wheel を build するだけでなく、install して `python/tests/test_binding.py` (自由落下の閉形式・直列化した状態の bit 一致の再生・ray と平面の距離・不正な id の例外 等 9 本、0 本なら失敗) を走らせる push ごとは新しい `Python binding` workflow (ubuntu 1 本、src / python / Cargo の変更時のみ)、release は 3 OS の release wheel で同じ試験 release の wheel job から、使われていなかった兄弟 crate の stub 作成を外した
 - CI: `scripts/mutants_exclude_check.py` (`.cargo/mutants.toml` の `exclude_re` が実際の変異に一致しているかの検査) を ci.yml (`cargo-mutants` を 27.1.0 固定でインストールして push ごとに実行) と `scripts/preflight.sh` (未導入ならスキップし CI 任せにする) に配線 検査器自体は存在していたが呼び出されておらず、行番号のずれが機械検出されない状態だった
