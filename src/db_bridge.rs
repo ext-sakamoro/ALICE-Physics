@@ -1,64 +1,47 @@
 //! ALICE-DB bridge: Physics state snapshot persistence
 //!
-//! Records physics simulation state (body positions, velocities, energies)
-//! into ALICE-DB time-series for replay, debugging, and analysis.
+//! Records per-step physics metrics (kinetic energy, body count, contact
+//! count) as ALICE-DB exact series: every step reads back the `f32` bits it
+//! was written with, whatever the spacing of the steps.
 
 use alice_db::AliceDB;
 use std::io;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 use std::path::Path;
 
-/// lossless: metric series must read back exactly (alice-db keeps a fitted
-/// model + residuals; default mode is a lossy approximation)
-fn lossless_config() -> alice_db::StorageConfig {
-    alice_db::StorageConfig {
-        fit_config: alice_db::FitConfig {
-            lossless: true,
-            ..alice_db::FitConfig::default()
-        },
-        ..alice_db::StorageConfig::default()
-    }
-}
+/// Exact series (`alice_db::Series`) the sink writes: one record per step,
+/// keyed by the step, holding the value's `f32` bits (no model fit, so every
+/// step reads back the value written at it, however far apart the steps are)
+const ENERGY: &str = "alice-physics/energy";
+const BODIES: &str = "alice-physics/bodies";
+const CONTACTS: &str = "alice-physics/contacts";
 
 /// Physics metrics sink backed by ALICE-DB.
 ///
-/// Stores per-step simulation metrics in separate DB instances:
-/// - `energy_db`: Total kinetic energy per step
-/// - `bodies_db`: Active body count per step
-/// - `contacts_db`: Contact count per step
+/// Stores per-step simulation metrics as three exact series of one database:
+/// total kinetic energy, active body count and contact count per step. A
+/// value reads back with the bits it was written with, at any step (sparse
+/// or negative steps included).
 pub struct PhysicsMetricsSink {
-    energy_db: AliceDB,
-    bodies_db: AliceDB,
-    contacts_db: AliceDB,
+    db: AliceDB,
 }
 
 impl PhysicsMetricsSink {
-    /// Open physics metrics databases at the given directory.
+    /// Open the physics metrics database at the given directory.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
     pub fn open<P: AsRef<Path>>(dir: P) -> io::Result<Self> {
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir)?;
-        let open = |name: &str| {
-            AliceDB::with_config(alice_db::StorageConfig {
-                data_dir: dir.join(name),
-                ..lossless_config()
-            })
-        };
         Ok(Self {
-            energy_db: open("energy")?,
-            bodies_db: open("bodies")?,
-            contacts_db: open("contacts")?,
+            db: AliceDB::open(dir.join("metrics"))?,
         })
     }
 
     /// Keep the metrics in process memory (no filesystem; available on
     /// `wasm32-unknown-unknown`).
     pub fn in_memory() -> io::Result<Self> {
-        let open = || AliceDB::in_memory(lossless_config());
         Ok(Self {
-            energy_db: open()?,
-            bodies_db: open()?,
-            contacts_db: open()?,
+            db: AliceDB::in_memory(alice_db::StorageConfig::default())?,
         })
     }
 
@@ -70,37 +53,35 @@ impl PhysicsMetricsSink {
         body_count: f32,
         contact_count: f32,
     ) -> io::Result<()> {
-        self.energy_db.put(step, kinetic_energy)?;
-        self.bodies_db.put(step, body_count)?;
-        self.contacts_db.put(step, contact_count)?;
-        Ok(())
+        self.db.series(ENERGY)?.put_f32(step, kinetic_energy)?;
+        self.db.series(BODIES)?.put_f32(step, body_count)?;
+        self.db.series(CONTACTS)?.put_f32(step, contact_count)
     }
 
     /// Record only kinetic energy.
     pub fn record_energy(&self, step: i64, energy: f32) -> io::Result<()> {
-        self.energy_db.put(step, energy)
+        self.db.series(ENERGY)?.put_f32(step, energy)
     }
 
-    /// Query energy history for a step range.
+    /// Query energy history for a step range (inclusive on both ends).
     pub fn query_energy(&self, start: i64, end: i64) -> io::Result<Vec<(i64, f32)>> {
-        self.energy_db.scan(start, end)
+        self.db.series(ENERGY)?.scan_f32(start, end)
     }
 
     /// Query body count history.
     pub fn query_bodies(&self, start: i64, end: i64) -> io::Result<Vec<(i64, f32)>> {
-        self.bodies_db.scan(start, end)
+        self.db.series(BODIES)?.scan_f32(start, end)
     }
 
     /// Query contact count history.
     pub fn query_contacts(&self, start: i64, end: i64) -> io::Result<Vec<(i64, f32)>> {
-        self.contacts_db.scan(start, end)
+        self.db.series(CONTACTS)?.scan_f32(start, end)
     }
 
-    /// Flush all databases.
+    /// Flush the database.
     pub fn flush(&self) -> io::Result<()> {
-        self.energy_db.flush()?;
-        self.bodies_db.flush()?;
-        self.contacts_db.flush()
+        self.db.flush_blobs()?;
+        self.db.flush()
     }
 }
 
@@ -126,10 +107,10 @@ mod tests {
 
     /// `query_bodies` / `query_contacts` return exactly the recorded
     /// `(step, value)` pairs of the requested inclusive range, in step order,
-    /// from their own database (not the energy one); `record_energy` writes
-    /// only the energy database.
+    /// from their own series (not the energy one); `record_energy` writes
+    /// only the energy series.
     #[test]
-    fn query_bodies_contacts_and_record_energy_hit_their_own_databases() {
+    fn query_bodies_contacts_and_record_energy_hit_their_own_series() {
         let dir = tempdir().unwrap();
         let sink = PhysicsMetricsSink::open(dir.path()).unwrap();
         for step in 0..10 {
@@ -142,8 +123,7 @@ mod tests {
             .unwrap();
         }
         // energy-only record at the next step: bodies / contacts must not gain a
-        // row (alice-db segments assume uniformly spaced timestamps, so the
-        // energy series stays contiguous: 0..=10)
+        // row (each metric is its own exact series)
         sink.record_energy(10, 123.5).unwrap();
         sink.flush().unwrap();
 

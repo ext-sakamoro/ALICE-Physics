@@ -1,7 +1,7 @@
 {
     "FileVersion": 3,
     "Version": 1,
-    "VersionName": "2.2.0",
+    "VersionName": "2.3.0",
     "FriendlyName": "ALICE Physics",
     "Description": "Deterministic 128-bit fixed-point physics engine for multiplayer games with rollback netcode support.",
     "Category": "Physics",

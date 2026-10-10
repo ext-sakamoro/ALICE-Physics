@@ -139,21 +139,17 @@ fn querying_before_any_record_call_returns_empty_for_all_three_series() {
 }
 
 #[test]
-fn querying_before_flush_is_also_empty() {
-    // AliceDB::scan only sees persisted segments (StorageEngine::query_point
-    // / query_range query the segment index, not the live MemTable buffer),
-    // matching src/db_bridge.rs's own pre-existing unit test, which always
-    // calls `flush()` before querying. This pins that requirement so a
-    // future change that makes queries memtable-aware is a visible
-    // (test-breaking) semantic change, not a silent one.
+fn a_write_is_visible_before_flush() {
+    // the sink writes exact series records, which reads see from the moment
+    // they are written (the time-series store the sink used up to 2.2.0 only
+    // read persisted segments, and this test pinned that)
     let dir = tempfile::tempdir().unwrap();
     let sink = open_sink(&dir, "unflushed");
 
     sink.record_step(0, 1.0, 2.0, 3.0).unwrap();
-    assert!(
-        sink.query_energy(0, 0).unwrap().is_empty(),
-        "query before flush() must not see the unflushed write"
-    );
+    assert_eq!(sink.query_energy(0, 0).unwrap(), vec![(0, 1.0)]);
+    assert_eq!(sink.query_bodies(0, 0).unwrap(), vec![(0, 2.0)]);
+    assert_eq!(sink.query_contacts(0, 0).unwrap(), vec![(0, 3.0)]);
 
     sink.flush().unwrap();
     assert_eq!(sink.query_energy(0, 0).unwrap(), vec![(0, 1.0)]);
@@ -231,62 +227,46 @@ fn range_entirely_outside_recorded_steps_is_empty() {
     assert_eq!(sink.query_energy(10, 14).unwrap().len(), 5);
 }
 
-/// Recording a non-contiguous set of steps is **not** a supported scenario:
-/// `src/db_bridge.rs`'s own pre-existing unit test
-/// (`query_bodies_contacts_and_record_energy_hit_their_own_databases`)
-/// documents that "alice-db segments assume uniformly spaced timestamps".
-/// Measured directly against this crate's resolved `alice-db` 0.2.0-beta.3:
-/// recording steps `0..5` then `10..15` (10 points total, skipping `5..10`)
-/// makes the segment's model treat those 10 points as if they were evenly
-/// spaced across the full `[0, 14]` span, so a query for step 7 (never
-/// recorded) does **not** come back empty, and a full-range scan does
-/// **not** come back as the 10 steps that were actually recorded -- both
-/// values are silently wrong rather than erroring. This test pins that
-/// measured (mis)behavior as a known limitation, not a contract: it exists
-/// so a change to the resolved `alice-db` version that alters this is
-/// visible here rather than discovered by a caller who assumed gaps are
-/// safe. `record_step`/`record_energy` callers must keep each series
-/// contiguous (as `PhysicsWorld`'s own per-step loop naturally does).
+/// A series with a gap (steps `0..5`, then `10..15`) reads back exactly the
+/// recorded steps: a step in the gap has no value, and a scan over the whole
+/// span returns the ten recorded steps with their values bit for bit. (Up to
+/// 2.2.0 the sink used a fitted time-series store that assumed evenly spaced
+/// steps, and this test pinned the wrong answers it gave for a gap.)
 #[test]
-fn non_contiguous_steps_violate_the_uniform_spacing_assumption_and_do_not_error() {
+fn a_series_with_a_gap_reads_back_exactly_the_recorded_steps() {
     let dir = tempfile::tempdir().unwrap();
     let sink = open_sink(&dir, "gap");
 
-    // record steps 0..5 and 10..15, leaving a gap at 5..10.
-    for step in (0..5i64).chain(10..15i64) {
+    let recorded: Vec<i64> = (0..5i64).chain(10..15i64).collect();
+    for &step in &recorded {
         sink.record_step(step, energy_at(step), bodies_at(step), contacts_at(step))
             .unwrap();
     }
     sink.flush().unwrap();
 
-    // Measured fact: query_energy(7, 7) is non-empty even though step 7 was
-    // never recorded (the fitted model fabricates a value for it).
-    let got_gap = sink.query_energy(7, 7).unwrap();
     assert!(
-        !got_gap.is_empty(),
-        "known limitation: a gap query does not come back empty -- if this \
-         ever becomes empty, alice-db's handling of non-uniform timestamps \
-         changed and record_step/record_energy callers no longer need to \
-         avoid gaps (update this test's doc comment accordingly)"
+        sink.query_energy(7, 7).unwrap().is_empty(),
+        "step 7 was never recorded"
+    );
+    assert!(
+        sink.query_energy(5, 9).unwrap().is_empty(),
+        "nothing in the gap"
     );
 
-    // Measured fact: a full-range scan does not return exactly the 10
-    // steps that were actually passed to record_step -- it returns 10
-    // entries (matching point_count), but at timestamps that do not match
-    // the recorded set `{0,1,2,3,4,10,11,12,13,14}`.
-    let spanning = sink.query_bodies(0, 14).unwrap();
-    assert_eq!(
-        spanning.len(),
-        10,
-        "point_count is preserved even though the timestamps are not"
-    );
-    let got_steps: Vec<i64> = spanning.iter().map(|&(s, _)| s).collect();
-    let recorded_steps: Vec<i64> = (0..5i64).chain(10..15i64).collect();
-    assert_ne!(
-        got_steps, recorded_steps,
-        "known limitation: the returned step indices do not match what was \
-         actually recorded when the series has a gap"
-    );
+    let bits = |v: Vec<(i64, f32)>| {
+        v.into_iter()
+            .map(|(s, x)| (s, x.to_bits()))
+            .collect::<Vec<_>>()
+    };
+    let want = |f: fn(i64) -> f32| {
+        recorded
+            .iter()
+            .map(|&s| (s, f(s).to_bits()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(bits(sink.query_energy(0, 14).unwrap()), want(energy_at));
+    assert_eq!(bits(sink.query_bodies(0, 14).unwrap()), want(bodies_at));
+    assert_eq!(bits(sink.query_contacts(0, 14).unwrap()), want(contacts_at));
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +309,6 @@ fn extreme_and_fractional_f32_values_round_trip_bit_exact() {
 /// from one range query over all of them. The tests above only write
 /// contiguous steps `0..n`, where this holds.
 #[test]
-#[ignore = "known defect: DB-SPARSE-LOSSLESS: with FitConfig { lossless: true }, alice-db returns the first segment's value for every sparse step (steps 0..2^40 all read 0.1) and a range over five sparse steps returns one row"]
 fn sparse_steps_read_back_their_own_values_bit_exact() {
     let dir = tempfile::tempdir().unwrap();
     let sink = open_sink(&dir, "sparse");

@@ -15,8 +15,14 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-11
+
 ### Added
 - `privacy`: `alice-crypto` 0.4 の差分プライバシーを再 export する (`SecureRng` (32 byte の秘密鍵の ChaCha20) / `DpNoise` / `dp_count` / `dp_int` / `dp_sum` / `randomized_response` / `bernoulli_ratio` / `DpError`) noise は整数演算だけで定数時間に標本化され、浮動小数点の逆関数法を使わない `KeyedRappor`: 鍵つきの noise 源と分数の確率 (`f` / `p` / `q`) の RAPPOR、1 bit ごとに同じ 4 回の Bernoulli を引いて算術で選ぶので、仕事と keystream の使用量が報告する値に依らない 試験は報告確率の閉形式 (`f = 1/2, p = 3/4, q = 1/4` で 5/8 と 3/8)、`f = 0, p = 1, q = 0` が Bloom filter そのもの、鍵の再現、不正な分数の拒否 (p と q を入れ替える変異で red) 例 `privacy_budget_and_rappor` / `laplace_noise_aggregate` を新しい API に書き換えた 依存に `alice-crypto` を足す (`std` feature の時だけ、`privacy` は `std` 専用なので no_std の build には入らない 0.4.0 は crate-type に `cdylib` を持ち、std なしで build すると allocator と panic handler を要求して失敗するため / 本 crate と同じライセンス、`deny.toml` に例外を足した)
+
+### Changed
+- **Behavior change:** `db_bridge::PhysicsMetricsSink` は `alice-db` 0.3 の exact series (`AliceDB::series`、値を `f32` の bit のまま 1 step 1 record で保存し、model の fit はしない) に書く 疎な step・間の空いた step・負の step も書いた値を bit 単位で読み戻し、`flush()` の前の書き込みも読める 2.2.0 までの sink は fit する時系列 store に書いており、`alice-db` 0.3.0-beta.1 では lossless の設定でも疎な step の値が最初の値に置き換わり、間の空いた step には作られた値が返っていた (試験 `sparse_steps_read_back_their_own_values_bit_exact` / `a_series_with_a_gap_reads_back_exactly_the_recorded_steps` / `a_write_is_visible_before_flush` は 2.2.0 で red、2.3.0 で green) `open(dir)` は `dir/metrics` の 1 つの DB を開く (2.2.0 の `dir/energy` / `dir/bodies` / `dir/contacts` に保存した値は移行しない) 関数の signature は変わらない
+- 依存: `alice-analytics` 0.1 → 0.4、`alice-db` 0.3.0-beta.1 → 0.3 (公開 API に両 crate の型は出ない) `analytics` 0.4 は非有限の標本を数えて bin に入れないので、`PhysicsTelemetry::record_step_time(±inf)` は debug build でも panic しない (0.1 では panic した) `replay` / `analytics` feature の MSRV は引き込む crate に従い 1.87 になる (本 crate の MSRV 1.85 は既定 feature と `std,simd,parallel,ffi,gpu-solver-bridge` のまま)
 
 ### Deprecated
 - `privacy::{XorShift64, LaplaceNoise, RandomizedResponse, Rappor}`: **差分プライバシーになっていない**ため (`XorShift64` は出力がそのまま内部状態、`from_entropy` は時刻から seed、`LaplaceNoise::sample` は浮動小数点の逆関数法で下位 bit から一様乱数が漏れる、Mironov 2012) 代わりは上の再 export と `KeyedRappor` 削除は後の破壊的な版で `PrivacyBudget` / `PrivateAggregator` は乱数を使わないので変えない ALICE-* の他 repo に利用者は無い (全 clone の grep と GitHub の code search)
