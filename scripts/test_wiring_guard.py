@@ -185,6 +185,28 @@ class Markers(unittest.TestCase):
         })
         self.assertNotIn("api", unwired(wg.check(r)))
 
+    def test_allow_unwired_above_a_multi_line_attribute_silences_the_item(self):
+        # the marker goes above `#[deprecated(` ... `)]`; the item is after the whole attribute
+        r = crate({
+            "src/lib.rs": LIB,
+            "src/a.rs": ("// ALLOW-UNWIRED: public entry point reached from downstream crates\n"
+                         "#[deprecated(\n    since = \"1.0.0\",\n    note = \"use b::x\"\n)]\n"
+                         "#[must_use]\npub fn api() -> u8 { 0 }\n"),
+            "src/b.rs": "pub fn x() {}\n",
+        })
+        vs = wg.check(r)
+        self.assertNotIn("api", unwired(vs))
+        self.assertNotIn("stale_marker", kinds(vs))
+
+    def test_a_multi_line_attribute_over_a_private_item_is_a_stale_marker(self):
+        r = crate({
+            "src/lib.rs": LIB,
+            "src/a.rs": ("// ALLOW-UNWIRED: public entry point reached from downstream crates\n"
+                         "#[deprecated(\n    since = \"1.0.0\"\n)]\nfn private_one() {}\n"),
+            "src/b.rs": "pub fn x() {}\n",
+        })
+        self.assertIn("stale_marker", kinds(wg.check(r)))
+
     def test_allow_unwired_with_a_short_reason_is_rejected(self):
         r = crate({
             "src/lib.rs": LIB,
