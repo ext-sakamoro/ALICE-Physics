@@ -105,6 +105,55 @@ class Plan(unittest.TestCase):
         self.assertEqual((p["features"], p["tests"], p["skipped"]), ([], [], []))
         self.assertIn("Cargo.toml", p["diff"])
 
+    # src/geom.rs is not gated in lib.rs; one function and one impl inside it are
+    MATH = """\
+pub fn plain() -> u8 {
+    1
+}
+
+#[cfg(feature = "gpu-solver-bridge")]
+/// doc between the attribute and the item
+pub fn bridged(x: u8) -> u8 {
+    let s = "a { brace in a string";
+    x + 1 // } a brace in a comment
+}
+
+#[cfg(feature = "simd")]
+impl Thing {
+    fn inner(&self) -> u8 {
+        if true {
+            2
+        } else {
+            3
+        }
+    }
+}
+"""
+
+    def changed(self, line: int) -> str:
+        return f"diff --git a/src/geom.rs b/src/geom.rs\n--- a/src/geom.rs\n+++ b/src/geom.rs\n@@ -{line} +{line} @@\n-old\n+new\n"
+
+    def plan_math(self, line: int):
+        (self.root / "src/geom.rs").write_text(self.MATH, encoding="utf-8")
+        return mp.plan(self.changed(line), [], self.root)
+
+    def test_a_changed_line_in_an_item_gated_fn_turns_its_feature_on(self):
+        # line 9: `x + 1` inside `bridged`
+        self.assertEqual(self.plan_math(9)["features"], ["gpu-solver-bridge"])
+
+    def test_a_changed_line_outside_the_gated_items_adds_no_feature(self):
+        self.assertEqual(self.plan_math(2)["features"], [])
+        # the blank line after the gated fn closes, before the impl's attribute
+        self.assertEqual(self.plan_math(11)["features"], [])
+
+    def test_a_changed_line_deep_in_a_gated_impl_turns_its_feature_on(self):
+        # line 18: `3` inside the else of `inner`, two blocks below the impl
+        self.assertEqual(self.plan_math(18)["features"], ["simd"])
+
+    def test_changed_lines_are_counted_in_the_new_file(self):
+        d = "@@ -1,3 +5,4 @@\n ctx\n-gone\n+new1\n+new2\n ctx\n@@ -20 +30 @@\n-x\n+y\n"
+        self.assertEqual(mp.changed_lines(d), [6, 7, 30])
+
     def test_the_real_lib_rs_gates_replay_behind_its_feature(self):
         gates = mp.module_gates((HERE.parent / "src/lib.rs").read_text(encoding="utf-8"))
         self.assertEqual(mp.features_for(gates["replay"]), (["replay"], True))

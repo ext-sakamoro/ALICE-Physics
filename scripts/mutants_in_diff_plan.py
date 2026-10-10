@@ -8,8 +8,9 @@ runs only the unit tests, so the integration oracles in tests/ never see the
 mutants. This script reads the diff and prints, as JSON:
 
   * `features`: the features to add so every changed module compiles (taken
-    from the `cfg` attributes on its `mod` line in src/lib.rs, plus the
-    `required-features` of the tests below);
+    from the `cfg` attributes on its `mod` line in src/lib.rs, from the
+    `cfg` attributes of the items (fn / impl / mod) that enclose a changed
+    line inside the file, plus the `required-features` of the tests below);
   * `tests`: the integration test targets whose file name contains the name of
     a changed module (`tests/audit_replay.rs` for `src/replay.rs`), to run
     besides `--lib`;
@@ -105,6 +106,65 @@ def split_diff(diff: str) -> list[tuple[str, str]]:
     return out
 
 
+HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", re.M)
+STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
+
+
+def changed_lines(file_diff: str) -> list[int]:
+    """1-based line numbers, in the new file, of the lines a file's diff adds."""
+    out: list[int] = []
+    line = 0
+    for raw in file_diff.splitlines():
+        m = HUNK_RE.match(raw)
+        if m:
+            line = int(m.group(1))
+            continue
+        if line == 0 or raw.startswith(("+++", "---")):
+            continue
+        if raw.startswith("+"):
+            out.append(line)
+            line += 1
+        elif raw.startswith(" "):
+            line += 1
+    return out
+
+
+def item_gates(source: str, lines: list[int]) -> list[str]:
+    """The `cfg` expressions on the items enclosing each of `lines` (1-based).
+
+    A module that is not gated in lib.rs can still gate one function or impl
+    (`#[cfg(feature = "gpu-solver-bridge")] pub fn ...`); without that feature
+    the item is not compiled and its mutants all read missed. Brace depth is
+    counted with strings and `//` comments removed; the `cfg` attributes
+    directly above a line that opens a block belong to that block."""
+    wanted = set(lines)
+    found: list[str] = []
+    stack: list[tuple[int, list[str]]] = []  # (depth before the block, its cfgs)
+    pending: list[str] = []
+    depth = 0
+    for n, raw in enumerate(source.splitlines(), 1):
+        code = STRING_RE.sub('""', raw).split("//")[0]
+        stripped = code.strip()
+        if n in wanted:
+            for _, cfgs in stack:
+                found.extend(cfgs)
+            found.extend(pending)
+        m = CFG_RE.match(raw)  # the raw line: masking strings would blank the feature name
+        if m:
+            pending.append(m.group(1))
+            continue
+        if not stripped or stripped.startswith("#["):
+            continue
+        opens, closes = code.count("{"), code.count("}")
+        if opens > closes:
+            stack.append((depth, pending))
+        depth += opens - closes
+        while stack and depth <= stack[-1][0]:
+            stack.pop()
+        pending = []
+    return found
+
+
 def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     lib_rs = (root / "src/lib.rs").read_text(encoding="utf-8")
     cargo = (root / "Cargo.toml").read_text(encoding="utf-8")
@@ -125,6 +185,12 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
             skipped.append(path)
             continue
         features.update(feats)
+        source = root / path
+        if source.is_file():
+            for cfg in item_gates(source.read_text(encoding="utf-8"), changed_lines(text)):
+                item_feats, item_buildable = features_for(cfg)
+                if item_buildable:
+                    features.update(item_feats)
         kept.append(text)
         token = re.compile(rf"(^|_){re.escape(module)}(_|$)")
         for t in test_names:
