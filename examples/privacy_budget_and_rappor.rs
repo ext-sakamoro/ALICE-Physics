@@ -1,18 +1,17 @@
-//! Local differential privacy: budget tracking, Laplace noise, randomized
-//! response and RAPPOR, each printed next to its closed form.
+//! Local differential privacy: budget tracking, lattice Laplace noise,
+//! randomized response and RAPPOR, each printed next to its closed form.
 //!
-//! Everything but RAPPOR runs on an explicit seed, so every line is
-//! reproducible; the closed forms are
+//! The noise comes from a keyed ChaCha20 stream (`SecureRng`, a 32-byte secret
+//! key), so every line is reproducible with the key and unpredictable without
+//! it; the closed forms are
 //!
 //! * budget: `remaining = ε_max − Σ accepted`, exhausted exactly when
 //!   `Σ accepted ≥ ε_max`, a spend is refused exactly when it would exceed,
-//! * Laplace: `b = Δf / ε`, the sample is `−sign(u)·b·ln(1 − 2|u|)` with
-//!   `u = U − ½`, the aggregator's standard error is `b·√2/√n`,
-//! * randomized response: truthful with probability `p`, otherwise a fair
-//!   coin, so the report probabilities are `(1 ± p) / 2` and
-//!   `ε = ln((1 + p) / (1 − p))`, i.e. `p_true = (e^ε − 1) / (e^ε + 1)`
-//!   `= 1 − 2 / (e^ε + 1)`; with `k` positive
-//!   reports out of `n` the unbiased proportion is `(k/n − (1 − p)/2) / p`,
+//! * Laplace: `b = Δf / ε`; `DpNoise` rounds to the lattice
+//!   `Λ = 2^(⌊log2 Δf⌋ − 20)` and adds `Λ ·` discrete Laplace noise, so the
+//!   aggregator's standard error is `b·√2/√n` to within `2^-20`,
+//! * randomized response: the bit is kept with probability `e^ε / (1 + e^ε)`
+//!   and flipped otherwise,
 //! * RAPPOR: `f = 0`, `p = 1`, `q = 0` is the identity on the Bloom filter.
 //!
 //! ```bash
@@ -21,7 +20,7 @@
 
 use alice_physics::det_math::exp64;
 use alice_physics::privacy::{
-    LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
+    dp_int, randomized_response, DpNoise, KeyedRappor, PrivacyBudget, PrivateAggregator, SecureRng,
     RAPPOR_BITS,
 };
 
@@ -54,21 +53,24 @@ fn main() {
         budget.query_count()
     );
 
-    // ---- Laplace mechanism + aggregator ------------------------------------
-    let (sensitivity, epsilon, seed) = (1.0, 2.0, 42u64);
+    // ---- lattice Laplace mechanism + aggregator ----------------------------
+    let (sensitivity, epsilon, key) = (1.0, 2.0, [42u8; 32]);
     let scale = sensitivity / epsilon;
-    let mut laplace = LaplaceNoise::with_seed(sensitivity, epsilon, seed);
+    let mut laplace = DpNoise::with_key(sensitivity, epsilon, key);
     let mut agg = PrivateAggregator::new(scale);
     let truth = 100.0;
     let n = 8u64;
     for _ in 0..n {
-        agg.add(laplace.privatize(truth));
+        agg.add(laplace.privatize(truth).expect("valid value"));
     }
-    let rounded = laplace.privatize_int(100);
+    let mut rng = SecureRng::from_key(key);
+    let rounded = dp_int(100, 1, epsilon, &mut rng).expect("valid ε");
     println!(
-        "[privacy] laplace b={scale} (closed form Δf/ε={}) n={n}: mean={} sum={} se={} \
-         (closed form b√2/√n={}) privatize_int(100)={rounded}",
+        "[privacy] laplace b={scale} (closed form Δf/ε={}) lattice={} ε_eff={} n={n}: mean={} \
+         sum={} se={} (closed form b√2/√n={}) dp_int(100)={rounded}",
         sensitivity / epsilon,
+        laplace.lattice(),
+        laplace.effective_epsilon(),
         agg.estimate_mean(),
         agg.estimate_sum(),
         agg.standard_error(),
@@ -83,61 +85,44 @@ fn main() {
 
     // ---- randomized response ----------------------------------------------
     let eps_rr = 1.0;
-    let rr_from_eps = RandomizedResponse::new(eps_rr);
-    let e = exp64(eps_rr);
-    let p_closed = (e - 1.0) / (e + 1.0);
+    let keep = exp64(eps_rr) / (1.0 + exp64(eps_rr));
+    let n_reports = 4000u32;
+    let kept = (0..n_reports)
+        .filter(|&i| {
+            let truth = i % 2 == 0;
+            randomized_response(truth, eps_rr, &mut rng).expect("valid ε") == truth
+        })
+        .count();
+    let observed = kept as f64 / f64::from(n_reports);
+    let se = (keep * (1.0 - keep) / f64::from(n_reports)).sqrt();
     println!(
-        "[privacy] randomized response ε={eps_rr}: p_true={} (closed form (e^ε−1)/(e^ε+1)={p_closed})",
-        rr_from_eps.p_true(),
+        "[privacy] randomized response ε={eps_rr}: kept {kept}/{n_reports} = {observed:.4} \
+         (closed form e^ε/(1+e^ε)={keep:.4}, SE {se:.4})"
     );
     assert!(
-        (rr_from_eps.p_true() - p_closed).abs() < 1e-12,
-        "RandomizedResponse::new(ε).p_true() = {} vs (e^ε−1)/(e^ε+1) = {p_closed}",
-        rr_from_eps.p_true()
+        (observed - keep).abs() < 8.0 * se,
+        "kept fraction {observed} is outside 8 SE of e^ε/(1+e^ε) = {keep}"
     );
-    let p = 0.75;
-    let mut rr = RandomizedResponse::with_probability(p, 7);
-    let n_reports = 8u64;
-    let mut k = 0u64;
-    let mut bits = Vec::with_capacity(n_reports as usize);
-    for i in 0..n_reports {
-        let truth = i % 2 == 0;
-        let report = rr.privatize(truth);
-        bits.push(rr.privatize_bit(u8::from(truth)));
-        k += u64::from(report);
-    }
-    let observed = k as f64 / n_reports as f64;
-    println!(
-        "[privacy] p_true={} reports={n_reports} positives={k} bits={bits:?} \
-         estimate={} (closed form (k/n − (1−p)/2)/p={})",
-        rr.p_true(),
-        RandomizedResponse::estimate_proportion(p, n_reports, k),
-        (observed - (1.0 - p) / 2.0) / p
-    );
-
-    // ---- deterministic generator -------------------------------------------
-    let mut rng = XorShift64::new(seed);
-    let (lo, hi) = (4.0, 8.0);
-    let x = rng.next_f64_range(lo, hi);
-    let b = rng.next_bool(0.5);
-    println!("[privacy] xorshift seed={seed}: next_f64_range({lo},{hi})={x} (in [{lo},{hi})) next_bool(0.5)={b}");
 
     // ---- RAPPOR ------------------------------------------------------------
-    let mut rappor = Rappor::default_params();
+    let mut rappor = KeyedRappor::with_key((1, 2), (3, 4), (1, 4), key).expect("valid fractions");
     let report = rappor.privatize(12345);
     let ones = report.iter().filter(|&&bit| bit == 1).count();
     println!(
-        "[privacy] rappor params={:?} (default 0.5 0.75 0.25) bits={} (BITS={} RAPPOR_BITS={RAPPOR_BITS}) ones={ones}",
+        "[privacy] rappor params={:?} (f=1/2 p=3/4 q=1/4) bits={} (RAPPOR_BITS={RAPPOR_BITS}) ones={ones}",
         rappor.params(),
         report.len(),
-        Rappor::BITS
     );
-    let mut identity = Rappor::new(0.0, 1.0, 0.0);
+    let mut identity = KeyedRappor::with_key((0, 1), (1, 1), (0, 1), key).expect("valid fractions");
     let bloom = identity.privatize(12345);
     let set: Vec<usize> = (0..RAPPOR_BITS).filter(|&i| bloom[i] == 1).collect();
     println!(
         "[privacy] rappor f=0 p=1 q=0 is the identity on the Bloom filter: set bits {set:?} \
          (3 hash positions, fewer on collision) params={:?}",
         identity.params()
+    );
+    assert!(
+        (1..=3).contains(&set.len()),
+        "the identity RAPPOR report is the Bloom filter (1 to 3 bits set): {set:?}"
     );
 }

@@ -1,7 +1,11 @@
-//! Laplace mechanism with an entropy-seeded generator, averaged by an aggregator
+//! Lattice Laplace mechanism with an entropy-keyed generator, averaged by an
+//! aggregator
 //!
-//! Reaches `LaplaceNoise::new`, `LaplaceNoise::scale` and
-//! `PrivateAggregator::count`.
+//! Reaches `DpNoise::try_from_entropy`, `DpNoise::lattice`,
+//! `DpNoise::effective_epsilon` and `PrivateAggregator::count`. `DpNoise`
+//! rounds to the lattice `Λ = 2^(⌊log2 Δf⌋ − 20)` and adds `Λ ·` discrete
+//! Laplace noise sampled with integer arithmetic; to within `2^-20` that is
+//! Laplace(0, b), so the closed forms below hold.
 //!
 //! Closed forms (Laplace(0, b) with `b = Δf / ε`, independent of the code):
 //! - `scale = sensitivity / epsilon`, so `Δf = 2`, `ε = 0.5` gives `b = 4`
@@ -10,30 +14,33 @@
 //! - `E[|X|] = b`, `Var[|X|] = b^2`, so the mean absolute draw has standard
 //!   error `b / √n`
 //!
-//! `new` seeds from entropy, so the run is not reproducible; the statistical
+//! The key comes from OS entropy, so the run is not reproducible; the statistical
 //! checks use an 8-standard-error band (two-sided tail below 1e-14 under the
 //! normal approximation), which a wrong scale (any factor off by 10 %) leaves.
 //!
 //! Run with: `cargo run --example laplace_noise_aggregate`
 
-use alice_physics::{LaplaceNoise, PrivateAggregator};
+use alice_physics::privacy::DpNoise;
+use alice_physics::PrivateAggregator;
 
 fn main() {
     let sensitivity = 2.0_f64;
     let epsilon = 0.5_f64;
     let b = 4.0_f64; // Δf / ε, worked by hand
 
-    let mut noise = LaplaceNoise::new(sensitivity, epsilon);
-    assert_eq!(noise.scale(), b, "scale is Δf / ε");
-    // A tighter privacy budget spreads the noise: ε = 0.1 gives b = 20.
-    assert_eq!(LaplaceNoise::new(sensitivity, 0.1).scale(), 20.0);
+    let mut noise = DpNoise::try_from_entropy(sensitivity, epsilon).expect("entropy and valid ε");
+    assert_eq!(noise.sensitivity() / noise.epsilon(), b, "scale is Δf / ε");
+    // the lattice for Δf = 2 is 2^(1 − 20); rounding costs at most ε·2^-20
+    assert_eq!(noise.lattice(), 1.0 / 524_288.0); // 2^-19
+    assert!(noise.effective_epsilon() >= epsilon);
+    assert!(noise.effective_epsilon() <= epsilon * (1.0 + 1.0 / 1_048_576.0)); // 2^-20
 
     let n: u32 = 40_000;
     let true_value = 100.0_f64;
-    let mut agg = PrivateAggregator::new(noise.scale());
+    let mut agg = PrivateAggregator::new(b);
     let mut abs_sum = 0.0_f64;
     for _ in 0..n {
-        let released = noise.privatize(true_value);
+        let released = noise.privatize(true_value).expect("value fits the lattice");
         abs_sum += (released - true_value).abs();
         agg.add(released);
     }

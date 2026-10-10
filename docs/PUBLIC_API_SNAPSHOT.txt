@@ -12720,6 +12720,20 @@ impl core::marker::Unpin for alice_physics::motor::JointMotor
 impl core::marker::UnsafeUnpin for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::motor::JointMotor
+pub struct alice_physics::prelude::KeyedRappor
+impl alice_physics::privacy::KeyedRappor
+pub const fn alice_physics::privacy::KeyedRappor::params(&self) -> ((u64, u64), (u64, u64), (u64, u64))
+pub fn alice_physics::privacy::KeyedRappor::privatize(&mut self, u64) -> [u8; 64]
+pub fn alice_physics::privacy::KeyedRappor::with_key((u64, u64), (u64, u64), (u64, u64), [u8; 32]) -> core::result::Result<Self, alice_crypto::dp::DpError>
+impl core::fmt::Debug for alice_physics::privacy::KeyedRappor
+pub fn alice_physics::privacy::KeyedRappor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::privacy::KeyedRappor
+impl core::marker::Send for alice_physics::privacy::KeyedRappor
+impl core::marker::Sync for alice_physics::privacy::KeyedRappor
+impl core::marker::Unpin for alice_physics::privacy::KeyedRappor
+impl core::marker::UnsafeUnpin for alice_physics::privacy::KeyedRappor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::privacy::KeyedRappor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::KeyedRappor
 #[non_exhaustive] pub struct alice_physics::prelude::LandingEvent
 pub alice_physics::prelude::LandingEvent::normal: alice_physics::math::Vec3Fix
 pub alice_physics::prelude::LandingEvent::particle: usize
@@ -15476,6 +15490,30 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::print_pipeline_s
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::print_pipeline_solver::PrintSafetyReport
 pub fn alice_physics::print_pipeline_solver::analyze_print_pipeline(alice_physics::warp_risk::Footprint, &str, &alice_physics::print_pipeline_solver::PrintPipelineInputs) -> alice_physics::print_pipeline_solver::PrintSafetyReport
 pub mod alice_physics::privacy
+pub use alice_physics::privacy::DpError
+pub use alice_physics::privacy::DpNoise
+pub use alice_physics::privacy::EntropyError
+pub use alice_physics::privacy::RR_MAX_EPSILON_WHOLE
+pub use alice_physics::privacy::SecureRng
+pub use alice_physics::privacy::bernoulli_ratio
+pub use alice_physics::privacy::dp_count
+pub use alice_physics::privacy::dp_int
+pub use alice_physics::privacy::dp_sum
+pub use alice_physics::privacy::randomized_response
+pub struct alice_physics::privacy::KeyedRappor
+impl alice_physics::privacy::KeyedRappor
+pub const fn alice_physics::privacy::KeyedRappor::params(&self) -> ((u64, u64), (u64, u64), (u64, u64))
+pub fn alice_physics::privacy::KeyedRappor::privatize(&mut self, u64) -> [u8; 64]
+pub fn alice_physics::privacy::KeyedRappor::with_key((u64, u64), (u64, u64), (u64, u64), [u8; 32]) -> core::result::Result<Self, alice_crypto::dp::DpError>
+impl core::fmt::Debug for alice_physics::privacy::KeyedRappor
+pub fn alice_physics::privacy::KeyedRappor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::privacy::KeyedRappor
+impl core::marker::Send for alice_physics::privacy::KeyedRappor
+impl core::marker::Sync for alice_physics::privacy::KeyedRappor
+impl core::marker::Unpin for alice_physics::privacy::KeyedRappor
+impl core::marker::UnsafeUnpin for alice_physics::privacy::KeyedRappor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::privacy::KeyedRappor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::KeyedRappor
 pub struct alice_physics::privacy::LaplaceNoise
 impl alice_physics::privacy::LaplaceNoise
 pub fn alice_physics::privacy::LaplaceNoise::new(f64, f64) -> Self
@@ -23961,6 +23999,20 @@ impl core::marker::Unpin for alice_physics::motor::JointMotor
 impl core::marker::UnsafeUnpin for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::motor::JointMotor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::motor::JointMotor
+pub struct alice_physics::KeyedRappor
+impl alice_physics::privacy::KeyedRappor
+pub const fn alice_physics::privacy::KeyedRappor::params(&self) -> ((u64, u64), (u64, u64), (u64, u64))
+pub fn alice_physics::privacy::KeyedRappor::privatize(&mut self, u64) -> [u8; 64]
+pub fn alice_physics::privacy::KeyedRappor::with_key((u64, u64), (u64, u64), (u64, u64), [u8; 32]) -> core::result::Result<Self, alice_crypto::dp::DpError>
+impl core::fmt::Debug for alice_physics::privacy::KeyedRappor
+pub fn alice_physics::privacy::KeyedRappor::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::privacy::KeyedRappor
+impl core::marker::Send for alice_physics::privacy::KeyedRappor
+impl core::marker::Sync for alice_physics::privacy::KeyedRappor
+impl core::marker::Unpin for alice_physics::privacy::KeyedRappor
+impl core::marker::UnsafeUnpin for alice_physics::privacy::KeyedRappor
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::privacy::KeyedRappor
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::KeyedRappor
 #[non_exhaustive] pub struct alice_physics::LandingEvent
 pub alice_physics::LandingEvent::normal: alice_physics::math::Vec3Fix
 pub alice_physics::LandingEvent::particle: usize

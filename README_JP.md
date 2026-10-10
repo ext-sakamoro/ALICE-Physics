@@ -188,8 +188,8 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | step: `PhysicsWorld` の step で実行される | 24 |
 | world API: `PhysicsWorld` の他のメソッドから使われる | 15 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 126 |
-| unused: テスト以外に呼び出し元がない | 0 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 125 |
+| unused: テスト以外に呼び出し元がない | 1 |
 
 ## 車両運動
 
@@ -366,7 +366,8 @@ C ABI、Unity / Unreal バインディング、Python バインディング、We
 商用ライセンスの問い合わせ: <contact@extoria.co.jp>
 
 任意 feature の `neural` と `replay` は、追加で AGPL ライセンスの crate を取り込む
-`analytics` と必須依存の `alice-det-math` は `MIT OR Apache-2.0`
+`analytics` と必須依存の `alice-det-math` は `MIT OR Apache-2.0`、必須依存の
+`alice-crypto` (差分プライバシー) は本 crate と同じライセンス
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 

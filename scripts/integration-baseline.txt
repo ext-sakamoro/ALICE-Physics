@@ -12,3 +12,29 @@ src/linear_elastic_fem.rs::ThermalExpansion::new
 src/plastic.rs::NortonCreep::petg_room_temp
 src/solver_tgs.rs::par_dispatch_islands
 src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
+# deprecated-privacy (docs/wiring-debt.md): deprecated because they are not
+# differentially private, kept for existing callers, removed in the breaking release
+src/privacy.rs::LaplaceNoise
+src/privacy.rs::LaplaceNoise::new
+src/privacy.rs::LaplaceNoise::privatize
+src/privacy.rs::LaplaceNoise::privatize_int
+src/privacy.rs::LaplaceNoise::sample
+src/privacy.rs::LaplaceNoise::scale
+src/privacy.rs::LaplaceNoise::with_seed
+src/privacy.rs::RandomizedResponse
+src/privacy.rs::RandomizedResponse::estimate_proportion
+src/privacy.rs::RandomizedResponse::new
+src/privacy.rs::RandomizedResponse::p_true
+src/privacy.rs::RandomizedResponse::privatize
+src/privacy.rs::RandomizedResponse::privatize_bit
+src/privacy.rs::RandomizedResponse::with_probability
+src/privacy.rs::Rappor
+src/privacy.rs::Rappor::BITS
+src/privacy.rs::Rappor::default_params
+src/privacy.rs::Rappor::new
+src/privacy.rs::Rappor::params
+src/privacy.rs::Rappor::privatize
+src/privacy.rs::XorShift64::next_bool
+src/privacy.rs::XorShift64::next_f64
+src/privacy.rs::XorShift64::next_f64_range
+src/privacy.rs::XorShift64::next_u64

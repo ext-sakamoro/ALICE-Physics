@@ -46,7 +46,7 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 
 [features]
 default = ["std"]
-std = ["alice-det-math/std"]
+std = ["alice-det-math/std", "dep:alice-crypto", "alice-crypto/std"]
 simd = []            # Enable SIMD (AVX2) optimizations for x86_64
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
 python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
@@ -78,6 +78,10 @@ alice-analytics = { version = "0.1", optional = true, default-features = false, 
 # no_std-capable (software sqrt without `std`), so the module is no longer
 # gated on `std`.
 alice-det-math = { version = "0.4", default-features = false }
+# Differential privacy: keyed ChaCha20, discrete Laplace and randomized response
+# with integer sampling (privacy::*). Same licence (AGPL-3.0-or-later OR
+# commercial), so the dependency is allowed in this direction
+alice-crypto = { version = "0.4", default-features = false, optional = true }
 # `PhysicsWorld::law_id` hashes the world's rules with SHA-256.
 sha2 = { version = "0.10", default-features = false }
 

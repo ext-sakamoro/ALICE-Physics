@@ -13,6 +13,9 @@
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]
 #![allow(clippy::needless_range_loop)]
+// The deprecated privacy types (not differentially private) stay pinned here
+// until the breaking release that removes them
+#![allow(deprecated)]
 
 use alice_physics::privacy::{
     LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,

@@ -224,8 +224,8 @@ items are actually called from; calls from `examples/` do not count. CI measures
 | step: runs when `PhysicsWorld` steps | 24 |
 | world API: used through another `PhysicsWorld` method | 15 |
 | binding: reached from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 126 |
-| unused: no caller outside tests | 0 |
+| standalone: a Rust API you call yourself; `PhysicsWorld` does not call it | 125 |
+| unused: no caller outside tests | 1 |
 
 ## Vehicle dynamics
 
@@ -453,7 +453,9 @@ C ABI, the Unity / Unreal bindings, the Python bindings or the WebAssembly
 build. Commercial licence enquiries: <contact@extoria.co.jp>
 
 The optional `neural` and `replay` features pull in additional AGPL-licensed
-crates. `analytics` and the required `alice-det-math` are `MIT OR Apache-2.0`.
+crates. `analytics` and the required `alice-det-math` are `MIT OR Apache-2.0`;
+the required `alice-crypto` (differential privacy) has the same licence as this
+crate.
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 
