@@ -1,6 +1,6 @@
 {
   "name": "alice-physics-web",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "ALICE-Physics WebAssembly 3D Viewer",
   "private": true,
   "scripts": {

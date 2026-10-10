@@ -15,6 +15,8 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-10
+
 ### Added
 - `SdfContact::collider_position` / `collider_rotation` / `collider_scale`: 接触を解いた時点の collider の frame body に付けた collider (`SdfCollider::new_dynamic`) は substep ごとに body の姿勢へ動かしてから押し出すので、step 後の collider の姿勢は `point` と `normal` を測った frame ではない (8 substep で 1 substep 分ずつずれる) 記録の frame で `point` を collider の座標に戻せる 押し出しが既に持っている値を写すだけで、step の結果は変わらない (200 step・記録 24669 件の場面で `serialize_state` が bit 一致) oracle `tests/analytic_sdf_contact_record.rs` (動く collider の frame が substep ごとの閉形式の位置と bit 一致し、点がその frame で平面上にあり、step 後の frame では閉形式の量だけ外れる / static collider は自分の姿勢を bit 一致で記録)
 
