@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5734 |
-| 🔴 Red by design | 74 |
+| 🟢 Not ignored (run by CI) | 5751 |
+| 🔴 Red by design | 73 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5834** |
+| **Total** | **5850** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (74)
+## 🔴 Red by design (73)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -27,7 +27,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `capsule_bottom_does_not_sink_into_a_static_body_it_lands_on` (audit_character.rs) — known defect: AUD-A-S3W3-009: sweep_against_bodies casts a point-sphere from the capsule centre, so landing on…
 - `capsule_plane_toi_behind_the_plane_uses_the_nearer_endpoint` (audit_ccd.rs) — known defect: AUD-A-S2W2-010: capsule_plane_toi always takes the endpoint with the smaller signed distance, co…
 - `capsule_plane_toi_straddling_capsule_is_already_touching` (audit_ccd.rs) — known defect: AUD-A-S2W2-010: capsule_plane_toi judges only one endpoint sphere, so a capsule a=(0,-5,0) b=(0,…
-- `compute_force_is_a_force_not_a_separation` (audit_joint.rs) — known defect: AUD-A-S1W6-009: Joint::compute_force returns the anchor SEPARATION (metres) for ball/hinge/fixed…
 - `conservative_advancement_does_not_give_up_on_a_shallow_approach` (audit_ccd.rs) — known defect: AUD-A-S2W2-013: conservative_advancement returns None after max_iterations without converging (i…
 - `constant_force_follows_the_closed_form_trajectory` (analytic_external_force_substep.rs) — src gap: a frame-head force impulse adds ½ (F/m) dt t (s-1)/s to the position, which more substeps do not redu…
 - `constant_force_position_does_not_depend_on_the_frame_length` (analytic_external_force_substep.rs) — src gap: with a frame-head force impulse the position error is set by the frame length dt, not the substep len…
@@ -156,7 +155,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5734)
+## 🟢 Not ignored (5751)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -164,7 +163,7 @@ Per-file counts (the test names are in `tests/`):
 |------|-------|
 | `integration_physics.rs` | 75 |
 | `world_participant_conformance.rs` | 52 |
-| `audit_joint.rs` | 46 |
+| `audit_joint.rs` | 48 |
 | `audit_solver.rs` | 42 |
 | `audit_trimesh.rs` | 41 |
 | `engineering_oracles_fluid.rs` | 40 |
@@ -241,6 +240,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_debug_render_wiring.rs` | 19 |
 | `analytic_elastoplastic_fem.rs` | 19 |
 | `analytic_heatmap_wiring.rs` | 19 |
+| `analytic_joint_wiring.rs` | 19 |
 | `analytic_laminate_wiring.rs` | 19 |
 | `analytic_prestressed_wiring.rs` | 19 |
 | `analytic_rolling_contact_wiring.rs` | 19 |
@@ -255,7 +255,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
 | `analytic_hyperelastic_wiring.rs` | 18 |
-| `analytic_joint_wiring.rs` | 18 |
 | `analytic_multi_world_wiring.rs` | 18 |
 | `analytic_sdf_force_wiring.rs` | 18 |
 | `analytic_spherical_terrain.rs` | 18 |
@@ -383,6 +382,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_viz_wiring.rs` | 11 |
 | `analytic_coupled_field.rs` | 11 |
 | `analytic_flow_viz_wiring.rs` | 11 |
+| `analytic_joint_break_world.rs` | 11 |
 | `analytic_mass_properties.rs` | 11 |
 | `analytic_physics2d_tethers.rs` | 11 |
 | `analytic_polar_decomposition.rs` | 11 |
@@ -569,6 +569,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
 | `analytic_electromagnetic_world_motion.rs` | 3 |
+| `analytic_joint_break_bridge.rs` | 3 |
 | `analytic_joint_compliance_xpbd.rs` | 3 |
 | `analytic_large_rotation.rs` | 3 |
 | `analytic_restitution_phase.rs` | 3 |

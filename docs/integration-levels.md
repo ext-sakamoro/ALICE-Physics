@@ -28,7 +28,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `cylinder` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `event` | step | 9 / 4 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
+| `event` | step | 11 / 4 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 6 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 6 / 0 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
@@ -56,7 +56,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `semantics` | world API | 0 / 2 / 0 / 1 / 0 | — |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 52 of 197 items) | 52 / 115 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 53 of 197 items) | 53 / 114 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -115,7 +115,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `ik_physics_bridge` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `interface_capture` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `interpolation` | standalone (step 1 of 19 items) | 1 / 0 / 0 / 18 / 0 | C ABI, Python, WebAssembly |
-| `joint` | standalone (step 12, binding 5 of 40 items) | 12 / 0 / 5 / 23 / 0 | C ABI, Python, WebAssembly |
+| `joint` | standalone (step 14, binding 5 of 42 items) | 14 / 0 / 5 / 23 / 0 | C ABI, Python, WebAssembly |
 | `joint_extra` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `kepler` | standalone | 0 / 0 / 0 / 26 / 0 | — |
 | `kinematic_loop` | standalone | 0 / 0 / 0 / 7 / 0 | — |
