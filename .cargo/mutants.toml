@@ -200,11 +200,16 @@
 #   tree is cleared whenever the body count drops below `park.parked.len()`,
 #   so no proxy outlives its index. The guard never fires in either form.
 # `detect_collisions` 6423:52 `dist >= r || dist == 0` -> `&&`: this branch is
-#   reached only when the squared distance does not fit `Fix128`, so `dist`
-#   is never 0 and the mutant never skips. A pair with `dist >= r` then goes
-#   through the filter, static and sleeping checks (no side effects), takes
-#   no collider branch (both colliders are `None` here) and is dropped at
-#   6507 by `dist < r`, as the original drops it at 6423.
+#   reached when the squared distance or the squared radius sum does not fit
+#   `Fix128`. When only the radius square overflows, coincident centres give
+#   `dist == 0` here, and `dist >= r` is false; the mutant then does not
+#   skip, but `try_normalize_scaled` of a zero vector returns `None` and
+#   the pair is skipped on the next line, as the original skips it here (and
+#   a `Some` would still be dropped by `!dist.is_zero()` at 6507). A pair
+#   with `dist >= r` (so `dist > 0`) goes through the filter, static and
+#   sleeping checks (no side effects), takes no collider branch (both
+#   colliders are `None` here) and is dropped at 6507 by `dist < r`, as the
+#   original drops it at 6423.
 # `detect_collisions` 6507:21 `dist < r` -> `<=` and 6507:39 `&&` -> `||`:
 #   on the sphere path that reaches 6507, `d2 < r2` and `d2 != 0` held at
 #   6413. `Fix128` multiplication keeps the middle 128 bits of the exact
