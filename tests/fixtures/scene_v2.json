@@ -1,0 +1,77 @@
+{
+  "version": 2,
+  "config": {
+    "substeps": 4,
+    "iterations": 6,
+    "gravity": [
+      0,
+      0,
+      -10,
+      0,
+      0,
+      0
+    ],
+    "damping": [
+      0,
+      -2
+    ]
+  },
+  "bodies": [
+    {
+      "position": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "velocity": [
+        -1,
+        0,
+        0,
+        0,
+        0,
+        7
+      ],
+      "rotation": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "mass": [
+        2,
+        0
+      ],
+      "body_type": 1
+    }
+  ],
+  "joints": [
+    {
+      "body_a": 0,
+      "body_b": 0,
+      "joint_type": 3,
+      "anchor_a": [
+        1,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "anchor_b": [
+        0,
+        0,
+        -1,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

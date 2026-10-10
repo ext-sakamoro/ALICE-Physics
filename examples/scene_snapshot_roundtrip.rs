@@ -1,6 +1,6 @@
 //! Scene snapshot through JSON: `CURRENT_SCENE_VERSION`, `save_scene_json`, `load_scene_json`,
-//! `PhysicsConfig::new`, and the version-checked loaders `load_scene_checked` /
-//! `load_scene_json_checked`.
+//! `PhysicsConfig::new`, and the binary `save_scene` / `load_scene`, both of which reject a
+//! scene version they cannot read.
 //!
 //! A `PhysicsWorld` is captured into a `PhysicsScene` (raw `hi` / `lo` limbs, so the file is
 //! bit exact), written as JSON, read back, and the bodies are rebuilt: every position, velocity and
@@ -9,10 +9,10 @@
 //! iterations, gravity `(0, -9.81, 0)`, damping 0.95); the documented contract is that the raw
 //! values are stored as given, so each field must decode back to the value that went in.
 //!
-//! The same scene is then read with the checked loaders (the ones to use for files you did not
-//! write): the JSON file and a binary `.aphys` copy load unchanged, and a copy whose header claims
-//! version 2 is rejected with `UnsupportedSceneVersion` while the lenient `load_scene` still
-//! returns it as stored.
+//! The same scene is then written as a binary `.aphys` copy, which loads unchanged, and a copy
+//! whose header claims version 2 is rejected with `UnsupportedSceneVersion` (no layout other than
+//! version 1 exists, so reading it would be a silent misread). The deprecated aliases
+//! `load_scene_checked` / `load_scene_json_checked` are shown to behave the same.
 //!
 //! ```bash
 //! cargo run --release --example scene_snapshot_roundtrip --features std
@@ -20,9 +20,8 @@
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::scene_io::{
-    load_scene, load_scene_checked, load_scene_json, load_scene_json_checked, save_scene,
-    save_scene_json, PhysicsConfig, PhysicsScene, SerializedBody, UnsupportedSceneVersion,
-    CURRENT_SCENE_VERSION,
+    load_scene, load_scene_json, save_scene, save_scene_json, PhysicsConfig, PhysicsScene,
+    SerializedBody, UnsupportedSceneVersion, CURRENT_SCENE_VERSION,
 };
 use alice_physics::solver::{PhysicsConfig as WorldConfig, PhysicsWorld, RigidBody};
 
@@ -45,6 +44,19 @@ fn from_limbs3(r: &[i64; 6]) -> Vec3Fix {
         lo: l as u64,
     };
     Vec3Fix::new(f(r[0], r[1]), f(r[2], r[3]), f(r[4], r[5]))
+}
+
+/// `load_scene_json_checked` is a deprecated alias of `load_scene_json` (which checks the
+/// version itself); it is called here only to show that it behaves the same.
+#[allow(deprecated)]
+fn deprecated_json_alias(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
+    alice_physics::scene_io::load_scene_json_checked(path)
+}
+
+/// `load_scene_checked` is a deprecated alias of `load_scene`.
+#[allow(deprecated)]
+fn deprecated_binary_alias(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
+    alice_physics::scene_io::load_scene_checked(path)
 }
 
 fn main() -> std::io::Result<()> {
@@ -105,28 +117,26 @@ fn main() -> std::io::Result<()> {
     let path = std::env::temp_dir().join("alice_physics_scene_snapshot.json");
     save_scene_json(&scene, &path)?;
     let loaded = load_scene_json(&path)?;
-    assert_eq!(load_scene_json_checked(&path)?, loaded);
+    assert_eq!(deprecated_json_alias(&path)?, loaded);
     std::fs::remove_file(&path)?;
 
     let bin = std::env::temp_dir().join("alice_physics_scene_snapshot.aphys");
     save_scene(&scene, &bin)?;
-    assert_eq!(
-        load_scene_checked(&bin)?,
-        scene,
-        "binary round trip must be exact"
-    );
+    assert_eq!(load_scene(&bin)?, scene, "binary round trip must be exact");
     let mut future = scene.clone();
     future.version = CURRENT_SCENE_VERSION + 1;
     save_scene(&future, &bin)?;
-    let err = load_scene_checked(&bin).expect_err("an unknown version must be rejected");
+    let err = load_scene(&bin).expect_err("an unknown version must be rejected");
     let found = err
         .get_ref()
         .and_then(|e| e.downcast_ref::<UnsupportedSceneVersion>())
         .map(|e| e.found);
     assert_eq!(found, Some(CURRENT_SCENE_VERSION + 1));
-    assert_eq!(load_scene(&bin)?.version, CURRENT_SCENE_VERSION + 1);
+    // the deprecated alias refuses the same file with the same payload
+    let alias = deprecated_binary_alias(&bin).expect_err("the alias rejects it too");
+    assert_eq!(alias.to_string(), err.to_string());
     std::fs::remove_file(&bin)?;
-    println!("checked loader: {err}");
+    println!("version check: {err}");
 
     assert_eq!(loaded, scene, "JSON round trip must be exact");
     assert_eq!(loaded.version, CURRENT_SCENE_VERSION);

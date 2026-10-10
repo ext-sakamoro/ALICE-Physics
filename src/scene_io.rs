@@ -182,15 +182,15 @@ const MAX_PREALLOC: usize = 4096;
 pub const CURRENT_SCENE_VERSION: u32 = CURRENT_VERSION;
 
 /// Scene format versions this crate can actually read, as accepted by
-/// [`load_scene_checked`] / [`load_scene_json_checked`].
+/// [`load_scene`] / [`load_scene_json`].
 ///
 /// Only version 1 exists today: the writer has never produced another layout,
 /// so every other value names a format this reader does not know.
 pub const SUPPORTED_SCENE_VERSIONS: &[u32] = &[CURRENT_VERSION];
 
 /// Error payload for a scene whose `version` is not in
-/// [`SUPPORTED_SCENE_VERSIONS`], returned by [`load_scene_checked`] /
-/// [`load_scene_json_checked`].
+/// [`SUPPORTED_SCENE_VERSIONS`], returned by [`load_scene`] /
+/// [`load_scene_json`].
 ///
 /// It travels inside a [`std::io::Error`] of kind
 /// [`std::io::ErrorKind::InvalidData`]; recover it with
@@ -339,33 +339,29 @@ pub fn save_scene(scene: &PhysicsScene, path: &std::path::Path) -> std::io::Resu
 
 /// Load a physics scene from a binary file.
 ///
-/// The header `version` is returned as stored and is **not** checked: any
-/// value loads with the version 1 layout. For input you did not write
-/// yourself, use [`load_scene_checked`], which rejects versions outside
-/// [`SUPPORTED_SCENE_VERSIONS`].
+/// A header `version` outside [`SUPPORTED_SCENE_VERSIONS`] is rejected right
+/// after the header is read (nothing after it is parsed): every other value
+/// names a layout this reader does not know, and reading it with the
+/// version 1 layout would misread it silently.
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be opened, read, or contains invalid data.
+/// Returns an error if the file cannot be opened, read, or contains invalid
+/// data, including an [`std::io::ErrorKind::InvalidData`] error carrying
+/// [`UnsupportedSceneVersion`] for an unknown version.
 pub fn load_scene(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
     let mut file = std::fs::File::open(path)?;
-    read_scene_binary(&mut file, false)
+    read_scene_binary(&mut file)
 }
 
-/// Load a physics scene from a binary file, rejecting unknown format versions.
-///
-/// Same as [`load_scene`], except that a header `version` outside
-/// [`SUPPORTED_SCENE_VERSIONS`] is rejected right after the header is read
-/// (nothing after it is parsed). Use this for untrusted input.
+/// Same as [`load_scene`], which now rejects unknown format versions itself.
 ///
 /// # Errors
 ///
-/// Everything [`load_scene`] returns, plus an
-/// [`std::io::ErrorKind::InvalidData`] error carrying
-/// [`UnsupportedSceneVersion`] for an unknown version.
+/// Exactly those of [`load_scene`].
+#[deprecated(note = "load_scene rejects unsupported scene versions itself; call load_scene")]
 pub fn load_scene_checked(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
-    let mut file = std::fs::File::open(path)?;
-    read_scene_binary(&mut file, true)
+    load_scene(path)
 }
 
 fn write_scene_binary(w: &mut dyn Write, scene: &PhysicsScene) -> std::io::Result<()> {
@@ -406,7 +402,7 @@ fn write_scene_binary(w: &mut dyn Write, scene: &PhysicsScene) -> std::io::Resul
     Ok(())
 }
 
-fn read_scene_binary(r: &mut dyn Read, check_version: bool) -> std::io::Result<PhysicsScene> {
+fn read_scene_binary(r: &mut dyn Read) -> std::io::Result<PhysicsScene> {
     // Magic
     let mut magic = [0u8; 6];
     r.read_exact(&mut magic)?;
@@ -419,9 +415,7 @@ fn read_scene_binary(r: &mut dyn Read, check_version: bool) -> std::io::Result<P
 
     // Version
     let version = read_u32(r)?;
-    if check_version {
-        check_scene_version(version)?;
-    }
+    check_scene_version(version)?;
 
     // Counts
     let body_count = read_u32(r)? as usize;
@@ -500,34 +494,33 @@ pub fn save_scene_json(scene: &PhysicsScene, path: &std::path::Path) -> std::io:
 
 /// Load a physics scene from a JSON file.
 ///
-/// The `version` key is returned as stored (1 when absent) and is **not**
-/// checked. For input you did not write yourself, use
-/// [`load_scene_json_checked`], which rejects versions outside
-/// [`SUPPORTED_SCENE_VERSIONS`].
+/// A `version` outside [`SUPPORTED_SCENE_VERSIONS`] is rejected (an absent
+/// key means 1), as for [`load_scene`].
 ///
 /// # Errors
 ///
-/// Returns an error if the file cannot be read or contains invalid JSON data.
+/// Returns an error if the file cannot be read or contains invalid JSON
+/// data, including an [`std::io::ErrorKind::InvalidData`] error carrying
+/// [`UnsupportedSceneVersion`] for an unknown version.
 pub fn load_scene_json(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
     let json = std::fs::read_to_string(path)?;
-    parse_scene_json(&json).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    let scene = parse_scene_json(&json)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    check_scene_version(scene.version)?;
+    Ok(scene)
 }
 
-/// Load a physics scene from a JSON file, rejecting unknown format versions.
-///
-/// Same as [`load_scene_json`], except that a `version` outside
-/// [`SUPPORTED_SCENE_VERSIONS`] is rejected (an absent key still means 1).
-/// Use this for untrusted input.
+/// Same as [`load_scene_json`], which now rejects unknown format versions
+/// itself.
 ///
 /// # Errors
 ///
-/// Everything [`load_scene_json`] returns, plus an
-/// [`std::io::ErrorKind::InvalidData`] error carrying
-/// [`UnsupportedSceneVersion`] for an unknown version.
+/// Exactly those of [`load_scene_json`].
+#[deprecated(
+    note = "load_scene_json rejects unsupported scene versions itself; call load_scene_json"
+)]
 pub fn load_scene_json_checked(path: &std::path::Path) -> std::io::Result<PhysicsScene> {
-    let scene = load_scene_json(path)?;
-    check_scene_version(scene.version)?;
-    Ok(scene)
+    load_scene_json(path)
 }
 
 fn i64_array_to_json(arr: &[i64]) -> String {
@@ -1151,59 +1144,83 @@ mod tests {
     /// 版 1 だけを読める版として受理し、0 / 2 / 0xDEAD_BEEF / u32::MAX は
     /// header を読んだ直後に `UnsupportedSceneVersion` で拒否する
     #[test]
-    fn checked_binary_loader_accepts_only_supported_versions() {
+    fn binary_loader_accepts_only_supported_versions() {
         assert_eq!(SUPPORTED_SCENE_VERSIONS, &[1]);
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("v.aphys");
         save_scene(&with_version(1), &path).unwrap();
-        assert_eq!(load_scene_checked(&path).unwrap(), with_version(1));
+        assert_eq!(load_scene(&path).unwrap(), with_version(1));
         for v in [0u32, 2, 0xDEAD_BEEF, u32::MAX] {
             save_scene(&with_version(v), &path).unwrap();
-            let e = load_scene_checked(&path).unwrap_err();
+            let e = load_scene(&path).unwrap_err();
             assert_eq!(e.kind(), std::io::ErrorKind::InvalidData, "{v}");
             assert_eq!(unsupported(&e), Some(UnsupportedSceneVersion { found: v }));
             assert!(e.to_string().contains(&format!("version {v}")), "{e}");
-            // 寛容な loader は従来どおり版をそのまま返す
-            assert_eq!(load_scene(&path).unwrap().version, v);
         }
     }
 
-    /// 版の検査は header 直後に行う — 版 2 の header だけで本体の無い入力も
-    /// `UnexpectedEof` でなく版の拒否になる
+    /// 版の検査は header 直後に行う — 版 2 の header だけで本体の無い入力は
+    /// `UnexpectedEof` でなく版の拒否になり、版 1 の同じ入力は本体を読みに行って
+    /// `UnexpectedEof` になる
     #[test]
-    fn checked_binary_loader_rejects_version_before_reading_the_body() {
-        let mut bytes = MAGIC.to_vec();
-        bytes.extend_from_slice(&2u32.to_le_bytes());
-        let e = read_scene_binary(&mut std::io::Cursor::new(&bytes), true).unwrap_err();
+    fn binary_loader_rejects_version_before_reading_the_body() {
+        let header = |v: u32| {
+            let mut bytes = MAGIC.to_vec();
+            bytes.extend_from_slice(&v.to_le_bytes());
+            bytes
+        };
+        let e = read_scene_binary(&mut std::io::Cursor::new(&header(2))).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(unsupported(&e), Some(UnsupportedSceneVersion { found: 2 }));
-        let e = read_scene_binary(&mut std::io::Cursor::new(&bytes), false).unwrap_err();
+        let e = read_scene_binary(&mut std::io::Cursor::new(&header(1))).unwrap_err();
         assert_eq!(e.kind(), std::io::ErrorKind::UnexpectedEof);
         assert_eq!(unsupported(&e), None);
     }
 
-    /// JSON の checked loader も同じ集合で判定する (key が無ければ 1)
+    /// JSON の loader も同じ集合で判定する (key が無ければ 1)
     #[test]
-    fn checked_json_loader_accepts_only_supported_versions() {
+    fn json_loader_accepts_only_supported_versions() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("v.json");
         save_scene_json(&with_version(1), &path).unwrap();
-        assert_eq!(load_scene_json_checked(&path).unwrap(), with_version(1));
+        assert_eq!(load_scene_json(&path).unwrap(), with_version(1));
         for v in [0u32, 2, 0xDEAD_BEEF] {
             save_scene_json(&with_version(v), &path).unwrap();
-            let e = load_scene_json_checked(&path).unwrap_err();
+            let e = load_scene_json(&path).unwrap_err();
             assert_eq!(e.kind(), std::io::ErrorKind::InvalidData, "{v}");
             assert_eq!(unsupported(&e), Some(UnsupportedSceneVersion { found: v }));
-            assert_eq!(load_scene_json(&path).unwrap().version, v);
         }
         std::fs::write(
             &path,
             "{\"config\":{\"gravity\":[0,0,0,0,0,0],\"damping\":[1,0]}}",
         )
         .unwrap();
-        assert_eq!(load_scene_json_checked(&path).unwrap().version, 1);
+        assert_eq!(load_scene_json(&path).unwrap().version, 1);
         // 他の不正 (壊れた JSON) は版の error にならない
         std::fs::write(&path, "{\"version\": 1, \"bodies\": [").unwrap();
-        let e = load_scene_json_checked(&path).unwrap_err();
+        let e = load_scene_json(&path).unwrap_err();
+        assert_eq!(e.kind(), std::io::ErrorKind::InvalidData);
         assert_eq!(unsupported(&e), None);
+    }
+
+    /// 非推奨の checked 版は既定の loader と同じ結果を返す (受理も拒否も)
+    #[test]
+    #[allow(deprecated)]
+    fn deprecated_checked_loaders_are_the_default_loaders() {
+        let dir = tempfile::tempdir().unwrap();
+        let bin = dir.path().join("v.aphys");
+        let json = dir.path().join("v.json");
+        save_scene(&with_version(1), &bin).unwrap();
+        save_scene_json(&with_version(1), &json).unwrap();
+        assert_eq!(load_scene_checked(&bin).unwrap(), with_version(1));
+        assert_eq!(load_scene_json_checked(&json).unwrap(), with_version(1));
+        save_scene(&with_version(2), &bin).unwrap();
+        save_scene_json(&with_version(2), &json).unwrap();
+        for e in [
+            load_scene_checked(&bin).unwrap_err(),
+            load_scene_json_checked(&json).unwrap_err(),
+        ] {
+            assert_eq!(unsupported(&e), Some(UnsupportedSceneVersion { found: 2 }));
+        }
     }
 }

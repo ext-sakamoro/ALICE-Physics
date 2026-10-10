@@ -6,14 +6,26 @@
 //! * a JSON value that is present but not a `u32` / `u8` is `Err(InvalidData)`; an absent key takes
 //!   its documented default (`version` 1, `substeps` 8, `iterations` 4, everything else 0)
 //! * every strict prefix of a valid binary file is an `Err`, never a panic and never `Ok`
+//! * a version outside `SUPPORTED_SCENE_VERSIONS` (only 1) is refused by both loaders with
+//!   `InvalidData` carrying `UnsupportedSceneVersion { found }`; the committed fixtures
+//!   `tests/fixtures/scene_v{1,2}.{aphys,json}` (written byte by byte outside the crate) pin one
+//!   readable and one refused file per format
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::scene_io::{
     load_scene, load_scene_json, save_scene, save_scene_json, PhysicsConfig, PhysicsScene,
-    SerializedBody, SerializedJoint, CURRENT_SCENE_VERSION,
+    SerializedBody, SerializedJoint, UnsupportedSceneVersion, CURRENT_SCENE_VERSION,
+    SUPPORTED_SCENE_VERSIONS,
 };
 use std::io::ErrorKind;
 use std::path::PathBuf;
+
+/// The version carried by an `UnsupportedSceneVersion` refusal, `None` for any other error.
+fn refused_version(e: &std::io::Error) -> Option<u32> {
+    e.get_ref()
+        .and_then(|i| i.downcast_ref::<UnsupportedSceneVersion>())
+        .map(|u| u.found)
+}
 
 fn tmp(name: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("w4_scene_io_{}", std::process::id()));
@@ -74,10 +86,14 @@ fn current_version_is_one_and_is_what_the_file_records() {
     let text = std::fs::read_to_string(&p).unwrap();
     assert!(text.contains("\"version\": 1,"));
     assert_eq!(load_scene_json(&p).unwrap().version, 1);
-    // a deliberately older / newer version round-trips unchanged (the loader does not reject versions)
+    // an older / newer version is written as given but refused on reading (no other layout exists)
     for v in [0u32, 7, u32::MAX] {
         save_scene_json(&PhysicsScene::new(vec![], vec![], config(), v), &p).unwrap();
-        assert_eq!(load_scene_json(&p).unwrap().version, v);
+        let text = std::fs::read_to_string(&p).unwrap();
+        assert!(text.contains(&format!("\"version\": {v},")));
+        let e = load_scene_json(&p).unwrap_err();
+        assert_eq!(e.kind(), ErrorKind::InvalidData);
+        assert_eq!(refused_version(&e), Some(v));
     }
     std::fs::remove_file(&p).ok();
 }
@@ -347,13 +363,91 @@ fn binary_rejects_bad_magic_and_missing_files() {
 }
 
 #[test]
-fn binary_keeps_the_version_it_was_given() {
+fn binary_reads_version_one_and_refuses_every_other_version() {
+    assert_eq!(SUPPORTED_SCENE_VERSIONS, &[CURRENT_SCENE_VERSION]);
     let p = tmp("ver.aphys");
     for v in [0u32, 1, 2, 0xDEAD_BEEF] {
-        save_scene(&PhysicsScene::new(vec![], vec![], config(), v), &p).unwrap();
-        assert_eq!(load_scene(&p).unwrap().version, v);
+        let s = PhysicsScene::new(vec![], vec![], config(), v);
+        save_scene(&s, &p).unwrap();
+        // the writer stores the version as given (bytes 6..10, little-endian)
+        assert_eq!(std::fs::read(&p).unwrap()[6..10], v.to_le_bytes());
+        if v == 1 {
+            assert_eq!(load_scene(&p).unwrap(), s);
+        } else {
+            let e = load_scene(&p).unwrap_err();
+            assert_eq!(e.kind(), ErrorKind::InvalidData);
+            assert_eq!(refused_version(&e), Some(v));
+        }
     }
     std::fs::remove_file(&p).ok();
+}
+
+/// The scene the committed fixtures `tests/fixtures/scene_v{1,2}.{aphys,json}` hold (the
+/// version-2 files differ from the version-1 files only in the version).
+fn fixture_scene() -> PhysicsScene {
+    PhysicsScene::new(
+        vec![SerializedBody {
+            position: [1, 2, 3, 4, 5, 6],
+            velocity: [-1, 0, 0, 0, 0, 7],
+            rotation: [0, 0, 0, 0, 0, 0, 1, 0],
+            mass: [2, 0],
+            body_type: 1,
+        }],
+        vec![SerializedJoint {
+            body_a: 0,
+            body_b: 0,
+            joint_type: 3,
+            anchor_a: [1, 0, 0, 0, 0, 0],
+            anchor_b: [0, 0, -1, 0, 0, 0],
+        }],
+        PhysicsConfig::new(4, 6, [0, 0, -10, 0, 0, 0], [0, -2]),
+        1,
+    )
+}
+
+fn fixture(name: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+#[test]
+fn committed_version_one_fixtures_load() {
+    assert_eq!(
+        load_scene(&fixture("scene_v1.aphys")).unwrap(),
+        fixture_scene()
+    );
+    assert_eq!(
+        load_scene_json(&fixture("scene_v1.json")).unwrap(),
+        fixture_scene()
+    );
+    // the binary fixture is exactly what the writer produces for that scene
+    let p = tmp("fixture.aphys");
+    save_scene(&fixture_scene(), &p).unwrap();
+    assert_eq!(
+        std::fs::read(&p).unwrap(),
+        std::fs::read(fixture("scene_v1.aphys")).unwrap()
+    );
+    std::fs::remove_file(&p).ok();
+}
+
+#[test]
+fn committed_version_two_fixtures_are_refused() {
+    let bin = std::fs::read(fixture("scene_v2.aphys")).unwrap();
+    let one = std::fs::read(fixture("scene_v1.aphys")).unwrap();
+    // only the version field differs from the readable fixture
+    assert_eq!(bin.len(), one.len());
+    let differ: Vec<usize> = (0..bin.len()).filter(|&i| bin[i] != one[i]).collect();
+    assert_eq!(differ, vec![6]);
+    assert_eq!(bin[6..10], 2u32.to_le_bytes());
+    for e in [
+        load_scene(&fixture("scene_v2.aphys")).unwrap_err(),
+        load_scene_json(&fixture("scene_v2.json")).unwrap_err(),
+    ] {
+        assert_eq!(e.kind(), ErrorKind::InvalidData);
+        assert_eq!(refused_version(&e), Some(2));
+        assert!(e.to_string().contains("unsupported scene version 2"), "{e}");
+    }
 }
 
 #[test]
@@ -380,12 +474,9 @@ fn compact_and_truncated_documents() {
 }
 
 #[test]
-fn checked_loaders_reject_versions_the_lenient_loaders_keep() {
-    use alice_physics::scene_io::{
-        load_scene_checked, load_scene_json_checked, UnsupportedSceneVersion,
-        SUPPORTED_SCENE_VERSIONS,
-    };
-    assert_eq!(SUPPORTED_SCENE_VERSIONS, &[CURRENT_SCENE_VERSION]);
+#[allow(deprecated)]
+fn deprecated_checked_loaders_behave_as_the_default_loaders() {
+    use alice_physics::scene_io::{load_scene_checked, load_scene_json_checked};
     let p = tmp("checked.aphys");
     let pj = tmp("checked.json");
     save_scene(&scene(), &p).unwrap();
@@ -399,17 +490,12 @@ fn checked_loaders_reject_versions_the_lenient_loaders_keep() {
         for e in [
             load_scene_checked(&p).unwrap_err(),
             load_scene_json_checked(&pj).unwrap_err(),
+            load_scene(&p).unwrap_err(),
+            load_scene_json(&pj).unwrap_err(),
         ] {
             assert_eq!(e.kind(), ErrorKind::InvalidData);
-            let inner = e
-                .get_ref()
-                .and_then(|i| i.downcast_ref::<UnsupportedSceneVersion>())
-                .copied()
-                .expect("UnsupportedSceneVersion payload");
-            assert_eq!(inner.found, v);
+            assert_eq!(refused_version(&e), Some(v));
         }
-        assert_eq!(load_scene(&p).unwrap(), s);
-        assert_eq!(load_scene_json(&pj).unwrap(), s);
     }
     std::fs::remove_file(&p).ok();
     std::fs::remove_file(&pj).ok();

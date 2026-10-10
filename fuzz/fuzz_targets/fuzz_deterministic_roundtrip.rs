@@ -16,7 +16,7 @@
 // (scene 用: substeps + gravity 等の raw i64 配列版)
 use alice_physics::scene_io::{
     load_scene, save_scene, PhysicsConfig as SceneConfig, PhysicsScene, SerializedBody,
-    SerializedJoint,
+    SerializedJoint, UnsupportedSceneVersion, SUPPORTED_SCENE_VERSIONS,
 };
 use arbitrary::Arbitrary;
 use libfuzzer_sys::fuzz_target;
@@ -86,10 +86,25 @@ fuzz_target!(|op: Op| {
                 let _ = std::fs::remove_file(&path);
                 return;
             };
-            let Ok(loaded) = load_scene(&path) else {
-                let _ = std::fs::remove_file(&path);
-                return;
+            let loaded = match load_scene(&path) {
+                Ok(loaded) => loaded,
+                Err(e) => {
+                    let _ = std::fs::remove_file(&path);
+                    // 読めない版は版の拒否で返ること (黙って版 1 の layout で読まない)
+                    if !SUPPORTED_SCENE_VERSIONS.contains(&version) {
+                        let found = e
+                            .get_ref()
+                            .and_then(|i| i.downcast_ref::<UnsupportedSceneVersion>())
+                            .map(|u| u.found);
+                        assert_eq!(found, Some(version), "unsupported version must be refused");
+                    }
+                    return;
+                }
             };
+            assert!(
+                SUPPORTED_SCENE_VERSIONS.contains(&version),
+                "version {version} loaded although it is not supported"
+            );
 
             // bit-exact 検証 (決定論 lockstep の要)
             assert_eq!(
