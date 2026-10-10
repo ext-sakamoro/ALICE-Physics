@@ -1705,8 +1705,19 @@ impl PhysicsWorld {
     /// [`LawCheck::Unpinned`] by [`Self::restore_world_checked`], and version
     /// 1 to 4 blobs with the broad-phase tree stored node by node, rebuilt
     /// from its leaves on restore; a blob of any other version is rejected
-    /// with [`WorldSnapshotError::UnsupportedVersion`]. The version history
-    /// is in the [module documentation](self).
+    /// with [`WorldSnapshotError::UnsupportedVersion`].
+    ///
+    /// | version | first written by | what it adds or changes |
+    /// |---|---|---|
+    /// | 1 | (no release) | the whole-world blob |
+    /// | 2 | (no release) | `participants`, `fault` and `fields` sections |
+    /// | 3 | 2.0.0 | `continuous_collision` section |
+    /// | 4 | 2.1.0 | `semantics_id` and `law_id` in the header |
+    /// | 5 | the release after 2.1.0 | the broad-phase tree section holds the leaf set instead of every node |
+    ///
+    /// 2.1.0 refuses a version 5 blob with
+    /// [`WorldSnapshotError::UnsupportedVersion`] (its supported range ends
+    /// at 4), and 2.0.0 refuses versions 4 and 5 the same way.
     pub const WORLD_SNAPSHOT_VERSION: u16 = 5;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
