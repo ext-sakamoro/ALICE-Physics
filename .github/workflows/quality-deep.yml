@@ -89,18 +89,23 @@ jobs:
       - name: Summary
         if: always()
         run: |
+          # `cargo mutants --output mutants.out` writes its own files one level
+          # down (`mutants.out/mutants.out/outcomes.json`), not directly under
+          # the given directory; reading the given directory itself silently
+          # took the "no output" branch on every run, including fully green ones.
+          dir=mutants.out; [ -d mutants.out/mutants.out ] && dir=mutants.out/mutants.out
           {
             echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
-            if [ -f mutants.out/outcomes.json ]; then
-              python3 - <<'PY'
-          import json
-          d = json.load(open("mutants.out/outcomes.json"))
+            if [ -f "$dir/outcomes.json" ]; then
+              python3 - "$dir" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1] + "/outcomes.json"))
           caught = d.get("caught", 0); missed = d.get("missed", 0); un = d.get("unviable", 0); to = d.get("timeout", 0)
           tot = caught + missed
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -100
+              echo; echo "### missed"; cat "$dir/missed.txt" 2>/dev/null | head -100
             else
               echo "no output (build failed?)"
             fi
@@ -203,7 +208,12 @@ jobs:
             echo "no mutant in the changed lines"
             exit 0
           fi
-          missed=$(grep -c . mutants.out/missed.txt 2>/dev/null || true)
+          # `cargo mutants --output mutants.out` writes its own files one level
+          # down (`mutants.out/mutants.out/missed.txt`), not directly under the
+          # given directory; reading the given directory itself silently read
+          # 0 missed every run, never actually comparing anything.
+          mdir=mutants.out; [ -d mutants.out/mutants.out ] && mdir=mutants.out/mutants.out
+          missed=$(grep -c . "$mdir/missed.txt" 2>/dev/null || true)
           if [ "${missed:-0}" -gt 0 ]; then
             echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
           fi
@@ -215,11 +225,11 @@ jobs:
           # not read as green: it measured nothing (the real schema's fields are top-level,
           # not under a "summary" key -- .get("summary", d) falls back to the whole dict)
           tested=$(python3 -c '
-          import json
-          d = json.load(open("mutants.out/outcomes.json"))
+          import json, sys
+          d = json.load(open(sys.argv[1] + "/outcomes.json"))
           s = d.get("summary", d)
           print(s.get("caught", 0) + s.get("missed", 0) + s.get("timeout", 0))
-          ')
+          ' "$mdir")
           echo "mutants tested: $tested"
           if [ "$tested" -eq 0 ]; then
             echo "::error::0 mutants tested (caught+missed+timeout == 0, compared nothing)"
@@ -251,19 +261,21 @@ jobs:
       - name: Summary
         if: always()
         run: |
+          # see the scoped job's Summary step for why this isn't just "mutants.out"
+          dir=mutants.out; [ -d mutants.out/mutants.out ] && dir=mutants.out/mutants.out
           {
             echo "## cargo-mutants (shard ${{ matrix.shard }}, features: ${{ matrix.features == '' && 'default' || matrix.features }})"
-            if [ -f mutants.out/outcomes.json ]; then
-              python3 - <<'PY'
-          import json
-          d = json.load(open("mutants.out/outcomes.json"))
+            if [ -f "$dir/outcomes.json" ]; then
+              python3 - "$dir" <<'PY'
+          import json, sys
+          d = json.load(open(sys.argv[1] + "/outcomes.json"))
           s = d.get("summary", d)
           caught = s.get("caught", 0); missed = s.get("missed", 0); un = s.get("unviable", 0); to = s.get("timeout", 0)
           tot = caught + missed
           print(f"- caught {caught} / missed {missed} / unviable {un} / timeout {to}")
           print(f"- mutation score: {caught / tot * 100:.1f}% (目標 ≥ 80%)" if tot else "- no viable mutants")
           PY
-              echo; echo "### missed"; cat mutants.out/missed.txt 2>/dev/null | head -50
+              echo; echo "### missed"; cat "$dir/missed.txt" 2>/dev/null | head -50
             else
               echo "no output (build failed?)"
             fi
