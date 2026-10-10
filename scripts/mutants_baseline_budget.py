@@ -20,6 +20,19 @@ on just the 5 hyperelastic-family targets alone still timed out at 300s) --
 the sum-based budget here is the complement to using nextest, not a
 replacement for it.
 
+The table is a single sample taken on one CI runner, not a statistical
+estimate (no repeated measurements, no variance): the 1.5x default margin is
+headroom against normal runner-to-runner noise, not a confidence interval.
+Re-run `scripts/mutants_baseline_timings.py --regenerate` whenever the test
+suite's wall-clock shape changes materially (new slow test, GitHub's runner
+class changes, `cargo-mutants`/`nextest` version bump that changes build
+time) -- `--check`'s staleness gate only catches a target existing with no
+entry at all, not an entry that has gone stale in value. The in-diff
+workflow step emits a job-summary warning line (not a failure) when the
+baseline's actual measured test time exceeds 60% of the derived budget, as
+an early signal that the table or the margin needs attention before a
+slower run actually times out.
+
 Prints the computed integer number of seconds to stdout (nothing else), so a
 workflow step can do `--timeout $(scripts/mutants_baseline_budget.py ...)`.
 
