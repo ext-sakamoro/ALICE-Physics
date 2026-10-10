@@ -25,18 +25,26 @@ pub(crate) const MAX_MANIFOLD_POINTS: usize = 4;
 
 /// A single cached contact point within a manifold.
 ///
+/// Every field is expressed with the manifold's `pair.body_a` as body A and
+/// `pair.body_b` as body B (the sorted pair), whichever order the contact
+/// was reported in: [`crate::solver::PhysicsWorld::add_contact`] turns a
+/// contact given as `(body_a > body_b)` around before storing it. The
+/// tangent impulses are coordinates in the frame
+/// [`ContactCache::apply_warm_start`] builds from the manifold normal.
+///
 /// Marked `#[non_exhaustive]` so future warm-start / analytics fields
 /// can be added without a breaking API change; construct via the internal
 /// `CachedContactPoint::new` and inspect via public fields.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct CachedContactPoint {
-    /// Contact point on body A (local space)
+    /// Contact point on body A (`pair.body_a`, local space)
     pub local_point_a: Vec3Fix,
-    /// Contact point on body B (local space)
+    /// Contact point on body B (`pair.body_b`, local space)
     pub local_point_b: Vec3Fix,
-    /// Contact normal (world space, pointing from B to A — the
-    /// [`crate::collider::Contact::normal`] convention it is copied from)
+    /// Contact normal (world space, pointing from B to A, i.e. from
+    /// `pair.body_b` to `pair.body_a` — the
+    /// [`crate::collider::Contact::normal`] convention)
     pub normal: Vec3Fix,
     /// Penetration depth
     pub depth: Fix128,
@@ -64,6 +72,48 @@ impl CachedContactPoint {
             lambda_t2: Fix128::ZERO,
             age: 0,
         }
+    }
+}
+
+impl CachedContactPoint {
+    /// The same point seen with A and B exchanged: the points swap, the
+    /// normal turns around, the normal impulse keeps its magnitude and the
+    /// tangent impulses are re-expressed for the frame of the turned normal.
+    ///
+    /// For the frame `(t1, t2)` of a normal `n` (see [`tangent_frame`]) the
+    /// frame of `-n` is exactly `(-t1, t2)`: the reference axis depends only
+    /// on `|n|`, `(-n) × e = -(n × e)` for a unit axis `e` (the products are
+    /// by 0 and ±1), normalising is odd, and `(-n) × (-t1) = n × t1`. The
+    /// impulse on the new A must be minus the impulse on the old A, so
+    /// `(λn, λt1, λt2)` becomes `(λn, λt1, -λt2)`. Every step is a negation
+    /// or a swap, so turning a point twice gives it back bit for bit.
+    #[must_use]
+    pub(crate) fn turned(self) -> Self {
+        Self {
+            local_point_a: self.local_point_b,
+            local_point_b: self.local_point_a,
+            normal: -self.normal,
+            lambda_t2: -self.lambda_t2,
+            ..self
+        }
+    }
+}
+
+/// `contact` as reported for `(body_a, body_b)`, expressed with the smaller
+/// index as A (the order of [`BodyPairKey::new`]): unchanged when
+/// `body_a <= body_b`, otherwise with the points swapped and the normal
+/// turned around.
+#[must_use]
+pub(crate) fn oriented_to_key(body_a: usize, body_b: usize, contact: &Contact) -> Contact {
+    if body_a > body_b {
+        Contact {
+            depth: contact.depth,
+            normal: -contact.normal,
+            point_a: contact.point_b,
+            point_b: contact.point_a,
+        }
+    } else {
+        *contact
     }
 }
 
@@ -106,7 +156,8 @@ pub struct ContactManifold {
     pub pair: BodyPairKey,
     /// Active contact points (up to 4 per manifold).
     pub points: Vec<CachedContactPoint>,
-    /// Shared normal direction (average of point normals, pointing from B to A)
+    /// Shared normal direction (average of point normals, pointing from
+    /// `pair.body_b` to `pair.body_a`)
     pub normal: Vec3Fix,
     /// Friction coefficient for this pair
     pub friction: Fix128,
@@ -134,6 +185,10 @@ impl ContactManifold {
     ///
     /// If a matching point exists (within threshold), update it and preserve lambdas.
     /// Otherwise, add as new. If full (4 points), replace the shallowest.
+    ///
+    /// `contact`, `local_a` and `local_b` must have `pair.body_a` as A (see
+    /// [`CachedContactPoint`]); [`crate::solver::PhysicsWorld::add_contact`]
+    /// orients a contact reported the other way round before calling this.
     pub fn add_or_update(&mut self, contact: &Contact, local_a: Vec3Fix, local_b: Vec3Fix) {
         // Squared distance threshold for contact matching.
         // 0.0001 = (0.01m)^2, matches contacts within 1cm.
@@ -191,6 +246,16 @@ impl ContactManifold {
         // Update shared normal
         self.update_normal();
         self.stale_frames = 0;
+    }
+
+    /// Exchange A and B: turn every point ([`CachedContactPoint::turned`])
+    /// and negate the shared normal (the average of the turned point normals
+    /// is exactly the negated average). The pair key is not touched.
+    pub(crate) fn turn(&mut self) {
+        for p in &mut self.points {
+            *p = p.turned();
+        }
+        self.normal = -self.normal;
     }
 
     /// Update the shared normal (average of point normals)
@@ -378,13 +443,15 @@ impl ContactCache {
     /// - A manifold whose pair involves `idx` belongs to the removed body: no
     ///   surviving body has those contacts, so it is dropped (keeping it
     ///   would hand its impulses to the moved body's next contact).
-    /// - A manifold whose pair involves `last` belongs to the moved body: its
-    ///   points, normal and impulses are unchanged by the move, so it is kept
-    ///   and re-keyed with `last` replaced by `idx`, re-sorted through
-    ///   [`BodyPairKey::new`] (the stored data never follows the key order,
-    ///   so a world that had the moved body at `idx` from the start caches
-    ///   the same data under the same key). The new key involves `idx`, which
-    ///   no kept manifold does, so it cannot collide with another pair.
+    /// - A manifold whose pair involves `last` belongs to the moved body: it
+    ///   is kept and re-keyed with `last` replaced by `idx`, re-sorted through
+    ///   [`BodyPairKey::new`]. When the re-sort exchanges A and B (the other
+    ///   body's index lies between `idx` and `last`), every point is turned
+    ///   ([`CachedContactPoint::turned`]) and the normal negated, so the data
+    ///   keeps describing `pair.body_a` as A: a world that had the moved body
+    ///   at `idx` from the start caches the same data under the same key. The
+    ///   new key involves `idx`, which no kept manifold does, so it cannot
+    ///   collide with another pair.
     ///
     /// Other manifolds and the order of the list are kept. Aging is not
     /// touched.
@@ -399,6 +466,9 @@ impl ContactCache {
                     let a = if a == last { idx } else { a };
                     let b = if b == last { idx } else { b };
                     m.pair = BodyPairKey::new(a, b);
+                    if a > b {
+                        m.turn();
+                    }
                 }
             }
         }
@@ -1189,5 +1259,136 @@ mod tests {
         assert_eq!(got, vec![BodyPairKey::new(1, 2), BodyPairKey::new(1, 3)]);
         assert_eq!(cache.pair_index.len(), 2);
         assert_eq!(cache.pair_index.get(&BodyPairKey::new(1, 3)), Some(&1));
+    }
+
+    fn point(k: i64) -> CachedContactPoint {
+        let mut p = CachedContactPoint::new(
+            Vec3Fix::new(Fix128::from_ratio(k, 3), Fix128::ONE, Fix128::ZERO),
+            Vec3Fix::new(Fix128::ZERO, Fix128::from_ratio(-k, 5), Fix128::ONE),
+            Vec3Fix::new(
+                Fix128::from_ratio(1, 3),
+                Fix128::from_ratio(k, 7),
+                Fix128::from_ratio(-2, 3),
+            )
+            .normalize(),
+            Fix128::from_ratio(k + 1, 100),
+        );
+        p.lambda_n = Fix128::from_ratio(k + 2, 3);
+        p.lambda_t1 = Fix128::from_ratio(-k, 11);
+        p.lambda_t2 = Fix128::from_ratio(k + 5, 13);
+        p.age = k as u32;
+        p
+    }
+
+    #[test]
+    fn a_turned_point_swaps_the_points_turns_the_normal_and_negates_lambda_t2() {
+        let p = point(3);
+        let t = p.turned();
+        assert_eq!(t.local_point_a, p.local_point_b);
+        assert_eq!(t.local_point_b, p.local_point_a);
+        assert_eq!(t.normal, -p.normal);
+        assert_eq!(
+            (t.depth, t.lambda_n, t.lambda_t1, t.age),
+            (p.depth, p.lambda_n, p.lambda_t1, p.age)
+        );
+        assert_eq!(t.lambda_t2, -p.lambda_t2);
+        assert_eq!(t.turned(), p, "turning twice gives the point back");
+    }
+
+    #[test]
+    fn the_frame_of_a_turned_normal_is_minus_t1_and_t2_bit_for_bit() {
+        // the claim `turned` rests on: tangent_frame(-n) == (-t1, t2) exactly
+        for i in -6i64..=6 {
+            for j in [-5i64, -1, 2, 9] {
+                let n = Vec3Fix::new(
+                    Fix128::from_ratio(i, 7),
+                    Fix128::from_ratio(j, 5),
+                    Fix128::from_ratio(3, 11),
+                )
+                .normalize();
+                let (t1, t2) = tangent_frame(n);
+                assert_eq!(tangent_frame(-n), (-t1, t2), "n = ({i}/7, {j}/5, 3/11)");
+            }
+        }
+    }
+
+    #[test]
+    fn a_turned_manifold_pushes_each_body_the_same_way() {
+        // turning the data and exchanging the bodies' roles keeps the impulse
+        // each body receives (to the rounding of the Fix128 products)
+        let mut m = ContactManifold::new(BodyPairKey::new(0, 1), Fix128::ONE, Fix128::ZERO);
+        m.points.push(point(2));
+        m.update_normal();
+        let mut cache = ContactCache::new();
+        cache.warm_start_factor = Fix128::ONE;
+        cache.manifolds.push(m.clone());
+        let bodies = || {
+            vec![
+                RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::from_int(2)),
+                RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::from_int(4)),
+            ]
+        };
+        let mut before = bodies();
+        cache.apply_warm_start(&mut before);
+        let mut turned = m.clone();
+        turned.turn();
+        assert_eq!(turned.normal, -m.normal);
+        // the turned data describes body 1 as A: apply with the roles swapped
+        let mut swapped = vec![bodies()[1], bodies()[0]];
+        cache.manifolds[0] = turned.clone();
+        cache.apply_warm_start(&mut swapped);
+        let tol = Fix128::from_raw(0, 1 << 4);
+        for (x, y) in [(&before[0], &swapped[1]), (&before[1], &swapped[0])] {
+            let d = x.velocity - y.velocity;
+            assert!(
+                d.x.abs() <= tol && d.y.abs() <= tol && d.z.abs() <= tol,
+                "{d:?}"
+            );
+            assert!(!x.velocity.length_squared().is_zero());
+        }
+        turned.turn();
+        assert_eq!(turned.points, m.points);
+        assert_eq!(turned.normal, m.normal);
+    }
+
+    #[test]
+    fn oriented_to_key_turns_only_a_contact_reported_with_the_larger_index_first() {
+        let c = Contact {
+            depth: Fix128::from_ratio(1, 8),
+            normal: Vec3Fix::UNIT_Y,
+            point_a: Vec3Fix::UNIT_X,
+            point_b: Vec3Fix::UNIT_Z,
+        };
+        assert_eq!(oriented_to_key(1, 4, &c), c);
+        assert_eq!(oriented_to_key(3, 3, &c), c);
+        let t = oriented_to_key(4, 1, &c);
+        assert_eq!(
+            (t.normal, t.point_a, t.point_b, t.depth),
+            (-c.normal, c.point_b, c.point_a, c.depth)
+        );
+    }
+
+    #[test]
+    fn swap_remove_body_turns_a_moved_pair_whose_order_flips() {
+        // remove 1 of 5: (2,4) -> (1,2) exchanges A and B and is turned;
+        // (0,4) -> (0,1) keeps the order and the data
+        let mut cache = ContactCache::new();
+        for (k, &(a, b)) in [(0usize, 4usize), (2, 4)].iter().enumerate() {
+            cache
+                .get_or_create(BodyPairKey::new(a, b), Fix128::ONE, Fix128::ZERO)
+                .points
+                .push(point(k as i64));
+        }
+        cache.manifolds[0].update_normal();
+        cache.manifolds[1].update_normal();
+        let kept = cache.manifolds[0].clone();
+        let mut flipped = cache.manifolds[1].clone();
+        cache.swap_remove_body(1, 4);
+        assert_eq!(cache.manifolds[0].points, kept.points);
+        assert_eq!(cache.manifolds[0].normal, kept.normal);
+        flipped.turn();
+        assert_eq!(cache.manifolds[1].pair, BodyPairKey::new(1, 2));
+        assert_eq!(cache.manifolds[1].points, flipped.points);
+        assert_eq!(cache.manifolds[1].normal, flipped.normal);
     }
 }

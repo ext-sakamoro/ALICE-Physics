@@ -2393,7 +2393,16 @@ impl PhysicsWorld {
     ///
     /// [`Self::contact_cache`] follows the swap: manifolds of the removed
     /// body are dropped and those of the moved last body are re-keyed to
-    /// `idx`, so the cache equals that of a world that never had the body.
+    /// `idx` (turned around when the re-sorted pair exchanges A and B), so
+    /// the cache holds what a world that never had the body, with the same
+    /// body order, would have cached.
+    ///
+    /// The bodies' state is not re-solved: it equals that of a fresh world
+    /// with the same body order only up to the solver's dependence on body
+    /// order. The contact solve treats the two bodies of a pair
+    /// asymmetrically, so a pair whose order the swap reverses was solved
+    /// with A and B exchanged relative to such a world (measured: a few
+    /// hundred ulps of `2^-64` in the velocity after one step).
     ///
     /// Sleep: every surviving body keeps its own sleep state (the moved last
     /// body included), except the bodies whose support may have changed,
@@ -3232,17 +3241,25 @@ impl PhysicsWorld {
     }
 
     /// Add contact constraint
+    ///
+    /// Also records the touch in [`Self::contact_cache`] under the sorted
+    /// pair, expressed with the smaller index as A: a contact given as
+    /// `(body_a > body_b)` is stored with its points swapped and its normal
+    /// turned around, so both orders cache the same data and
+    /// [`ContactCache::apply_warm_start`](crate::contact_cache::ContactCache::apply_warm_start)
+    /// pushes each body the right way. The constraint itself is kept as
+    /// given.
     pub fn add_contact(&mut self, contact: ContactConstraint) {
         // Update contact cache for warm starting
+        // The cache keys the pair sorted and holds every touch with the
+        // smaller index as A, whichever order the caller gave.
         let key = crate::contact_cache::BodyPairKey::new(contact.body_a, contact.body_b);
+        let oriented =
+            crate::contact_cache::oriented_to_key(contact.body_a, contact.body_b, &contact.contact);
         let manifold = self
             .contact_cache
             .get_or_create(key, contact.friction, contact.restitution);
-        manifold.add_or_update(
-            &contact.contact,
-            contact.contact.point_a,
-            contact.contact.point_b,
-        );
+        manifold.add_or_update(&oriented, oriented.point_a, oriented.point_b);
 
         self.contact_constraints.push(contact);
         self.batches_dirty = true;

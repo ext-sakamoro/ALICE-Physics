@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 7 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2620 |
-| live | reached without examples (crate-internal roots or a binding) | 598 |
-| | **total** | **3225** |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2623 |
+| live | reached without examples (crate-internal roots or a binding) | 599 |
+| | **total** | **3229** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -60,7 +60,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2620)
+## L1 — example-only (2623)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -91,7 +91,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/compound.rs`: `CompoundShape::add_box`, `CompoundShape::add_capsule`, `CompoundShape::add_convex_hull`, `CompoundShape::add_sphere`, `CompoundShape::compute_aabb`, `CompoundShape::from_decomposition`, `CompoundShape::from_sdf`, `CompoundShape::is_empty`, `CompoundShape::len`, `CompoundShape::mass_properties`, `CompoundShape::support_world`, `ShapeRef::aabb`, `TransformedCompound`
 - `src/compressible.rs`: `IdealGas`, `IdealGas::air`, `IdealGas::density`, `IdealGas::helium`, `IdealGas::mach_number`, `IdealGas::pressure`, `IdealGas::speed_of_sound`, `IdealGas::speed_of_sound_from_pd`, `IdealGas::temperature`, `ShockJump`, `normal_shock_jump`, `riemann_invariants`, `stagnation_pressure_ratio`, `stagnation_temp_ratio`
 - `src/cone.rs`: `Cone::apex`, `Cone::base_center`, `Cone::surface_area`
-- `src/contact_cache.rs`: `ContactCache::apply_warm_start`, `ContactCache::begin_frame`, `ContactCache::clear`, `ContactCache::end_frame`, `ContactCache::find`, `ContactCache::manifold_count`, `ContactCache::total_contact_points`, `ContactManifold::clear`, `ContactManifold::is_empty`, `ContactManifold::point_count`, `ContactManifold::store_impulses`, `ContactManifold::warm_start_impulse`, `tangent_frame`
+- `src/contact_cache.rs`: `CachedContactPoint::turned`, `ContactCache::apply_warm_start`, `ContactCache::begin_frame`, `ContactCache::clear`, `ContactCache::end_frame`, `ContactCache::find`, `ContactCache::manifold_count`, `ContactCache::swap_remove_body`, `ContactCache::total_contact_points`, `ContactManifold::clear`, `ContactManifold::is_empty`, `ContactManifold::point_count`, `ContactManifold::store_impulses`, `ContactManifold::turn`, `ContactManifold::warm_start_impulse`, `tangent_frame`
 - `src/contact_viz.rs`: `ContactArrow`, `FrictionCone`, `generate_contact_arrows`, `generate_friction_arrows`, `generate_friction_cones`
 - `src/convex_decompose.rs`: `DecomposeConfig`, `DecompositionResult`, `decompose_sdf`
 - `src/convex_mesh_builder.rs`: `build_convex_hull`
