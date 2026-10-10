@@ -353,24 +353,35 @@ fn all_identical_values_collapse_every_percentile_to_that_value() {
     assert_within_contract(tel.energy_drift_p99(), 0.25, "flat energy_drift_p99");
 }
 
-/// Extreme magnitudes: `+-inf` overflows the bucket-index cast and panics in
-/// a debug build; a finite astronomical magnitude (`1e300`) does not panic
-/// and is retained (clamped) in the edge bin, not silently dropped.
+/// Extreme magnitudes: a non-finite sample (`+-inf`, `NaN`) is counted apart by
+/// the sketch (`alice-analytics` 0.3 `non_finite`) and filed in no bin, so it
+/// panics in neither build and moves no percentile, while the step itself is
+/// still counted. (With `alice-analytics` 0.1 `+-inf` overflowed the
+/// bucket-index cast and panicked in a debug build.) A finite astronomical
+/// magnitude (`1e300`) is retained (clamped) in the edge bin, not dropped.
 #[test]
 fn extreme_magnitudes_panic_or_saturate_as_measured() {
-    for v in [f64::INFINITY, f64::NEG_INFINITY] {
+    for v in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
         let r = catch_unwind(AssertUnwindSafe(|| {
-            let mut tel = PhysicsTelemetry::new();
-            tel.record_step_time(v);
-            tel.total_steps()
+            let mut with = PhysicsTelemetry::new();
+            let mut without = PhysicsTelemetry::new();
+            for t in [100.0, 2_000.0, 35.5, 7.25] {
+                with.record_step_time(t);
+                without.record_step_time(t);
+            }
+            with.record_step_time(v);
+            (with, without)
         }));
-        if cfg!(debug_assertions) {
-            assert!(r.is_err(), "record_step_time({v}) panics in debug builds");
-        } else {
+        let (with, without) = r.unwrap_or_else(|_| panic!("record_step_time({v}) does not panic"));
+        assert_eq!(with.total_steps(), 5, "the step with {v} is still counted");
+        for (a, b, what) in [
+            (with.step_time_p50(), without.step_time_p50(), "p50"),
+            (with.step_time_p99(), without.step_time_p99(), "p99"),
+        ] {
             assert_eq!(
-                r.expect("release wraps"),
-                1,
-                "release build still counts the step"
+                a.to_bits(),
+                b.to_bits(),
+                "{v} moves no percentile ({what}: {a} vs {b})"
             );
         }
     }
