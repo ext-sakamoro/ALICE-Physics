@@ -32,16 +32,23 @@ def exe(body: str) -> Path:
     return path
 
 
+# Budget for fixtures that must finish. macOS scans an executable the first
+# time it runs (syspolicyd / XProtect); a freshly written fixture measured
+# 11.2 s on its first exec and 0.09 s on its second, so a 10 s budget failed
+# on a loaded machine with no defect in the runner
+OK_BUDGET = 120
+
+
 @unittest.skipIf(os.name == "nt", "fixtures are shebang executables")
 class RunAll(unittest.TestCase):
     def test_all_ok_is_green(self):
-        rows, problems = r.run_all({"a": exe("print('a')"), "b": exe("pass")}, 10)
+        rows, problems = r.run_all({"a": exe("print('a')"), "b": exe("pass")}, OK_BUDGET)
         self.assertEqual(problems, [])
         self.assertEqual([row[1] for row in rows], ["ok", "ok"])
 
     def test_panic_exit_101_is_red(self):
         _, problems = r.run_all(
-            {"ok": exe("pass"), "bad": exe("import sys; print('assert'); sys.exit(101)")}, 10
+            {"ok": exe("pass"), "bad": exe("import sys; print('assert'); sys.exit(101)")}, OK_BUDGET
         )
         self.assertEqual(len(problems), 1)
         self.assertIn("bad: exit 101", problems[0])
