@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5734 |
+| 🟢 Not ignored (run by CI) | 5736 |
 | 🔴 Red by design | 74 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5834** |
+| **Total** | **5836** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -156,7 +156,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5734)
+## 🟢 Not ignored (5736)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -363,6 +363,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_cache_wiring.rs` | 12 |
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
+| `analytic_sdf_contact_record.rs` | 12 |
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
 | `analytic_sweep_sphere_inside.rs` | 12 |
 | `audit_analytics_bridge.rs` | 12 |
@@ -416,7 +417,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_particle_landing.rs` | 10 |
 | `analytic_physics2d_contact_normals.rs` | 10 |
 | `analytic_physics2d_wiring.rs` | 10 |
-| `analytic_sdf_contact_record.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
 | `audit_db_bridge.rs` | 10 |

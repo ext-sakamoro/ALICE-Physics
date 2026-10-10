@@ -676,3 +676,138 @@ fn degenerate_worlds_record_nothing() {
     // A fresh world has an empty record before any step.
     assert_eq!(falling_sphere().last_step_sdf_contacts(), &[]);
 }
+
+// ---------------------------------------------------------------------------
+// The collider's frame at the time of the record
+// ---------------------------------------------------------------------------
+
+/// Bound on `|local y|` of a recorded point mapped through the recorded
+/// frame, for the plane scene below (coordinates below 8 m).
+///
+/// The point is `x + n·depth` with `depth = −d·s` from one `f32` field query
+/// at the local image of the sphere centre. Below 8 m an `f32` coordinate is
+/// within `2⁻²¹` of the exact value, and the local image takes one
+/// subtraction, one quaternion rotation (each output a sum of 3 products of
+/// rounded inputs, ≤ 6 roundings) and one scale, so the queried distance
+/// carries at most 8 roundings of `2⁻²¹`: `2⁻¹⁸`. The `Fix128` side
+/// (translation, rotation of the point back into the frame) adds
+/// `≤ 2⁻⁶⁰`. The bound below, `2⁻¹⁶`, is 4× that; a frame taken one substep
+/// late is off by `|v|·h = 2⁻³` here, `2¹³` times the bound.
+const FRAME_BOUND: f64 = 1.0 / 65536.0;
+
+/// A plane on a carrier turned +90° about `z` (local `y`-up becomes world
+/// `−x`: the solid is `x > wall`), carrier moving along `x` at `carrier_v`,
+/// a sphere of radius 1/2 at `x = 4.5` moving at `+24`; no gravity,
+/// 8 substeps of `h = 1/64`. In substep `k` the world moves the carrier
+/// (and so the collider) to `x = 5 + carrier_v·h·(k + 1)` before it pushes
+/// the sphere out.
+fn moving_carrier(carrier_v: f64) -> PhysicsWorld {
+    let mut w = PhysicsWorld::new(config(8, 0));
+    w.set_sdf_collision_radius(r(1, 2));
+    let half = core::f64::consts::FRAC_1_SQRT_2;
+    let mut carrier = RigidBody::new_dynamic(v3(5.0, 0.0, 0.0), Fix128::ONE);
+    carrier.rotation = QuatFix::new(
+        Fix128::ZERO,
+        Fix128::ZERO,
+        Fix128::from_f64(half),
+        Fix128::from_f64(half),
+    );
+    carrier.velocity = v3(carrier_v, 0.0, 0.0);
+    let carrier = w.add_body(carrier);
+    let mut b = RigidBody::new_dynamic(v3(4.5, 0.0, 10.0), Fix128::ONE);
+    b.velocity = v3(24.0, 0.0, 0.0);
+    w.add_body(b);
+    w.add_sdf_collider(SdfCollider::new_dynamic(
+        Box::new(plane([0.0, 1.0, 0.0])),
+        carrier,
+    ));
+    w
+}
+
+/// `point` in the frame `(position, rotation, scale)`.
+fn into_frame(point: Vec3Fix, position: Vec3Fix, rotation: QuatFix, scale: Fix128) -> [f64; 3] {
+    let p = rotation.conjugate().rotate_vec(point - position);
+    let s = scale.to_f64();
+    [p.x.to_f64() / s, p.y.to_f64() / s, p.z.to_f64() / s]
+}
+
+/// oracle: each record carries the collider's frame of its substep: the
+/// position `5 + v·h·(k + 1)` (dyadic, compared bit for bit), the carrier's
+/// rotation and scale 1; the recorded point is on the plane in that frame
+/// (`|local y| ≤ FRAME_BOUND`). The frame the collider holds after the step
+/// (substep 7) puts the points of the earlier substeps off the plane by
+/// `v·h·(7 − k)`, which is what a conversion after the step got.
+#[test]
+fn a_moving_collider_is_recorded_with_its_frame_of_the_substep() {
+    let half = core::f64::consts::FRAC_1_SQRT_2;
+    let mut compared = 0;
+    let mut early = 0;
+    for &carrier_v in &[8.0, -8.0] {
+        for (path, step) in xpbd_paths() {
+            let mut w = moving_carrier(carrier_v);
+            step(&mut w, r(1, 8));
+            let h = 1.0 / 64.0;
+            let after = w.sdf_colliders[0].position;
+            for c in w.last_step_sdf_contacts() {
+                let label = format!("v {carrier_v} {path} substep {}", c.substep);
+                let want_x = 5.0 + carrier_v * h * (c.substep as f64 + 1.0);
+                assert_eq!(
+                    c.collider_position,
+                    v3(want_x, 0.0, 0.0),
+                    "{label}: collider position"
+                );
+                let q = c.collider_rotation;
+                for (got, want) in [
+                    (q.x.to_f64(), 0.0),
+                    (q.y.to_f64(), 0.0),
+                    (q.z.to_f64(), half),
+                    (q.w.to_f64(), half),
+                ] {
+                    assert!(close(got, want), "{label}: rotation {q:?}");
+                }
+                assert_eq!(c.collider_scale, Fix128::ONE, "{label}: scale");
+                let local = into_frame(c.point, c.collider_position, q, c.collider_scale);
+                assert!(
+                    local[1].abs() <= FRAME_BOUND,
+                    "{label}: point off the plane in the recorded frame by {}",
+                    local[1]
+                );
+                // The pose after the step is the pose of the last substep.
+                let late = into_frame(c.point, after, q, c.collider_scale);
+                let off = carrier_v * h * (7.0 - c.substep as f64);
+                assert!(
+                    (late[1].abs() - off.abs()).abs() <= FRAME_BOUND,
+                    "{label}: the frame after the step is off by {}, closed form {off}",
+                    late[1]
+                );
+                if c.substep < 7 {
+                    early += 1;
+                }
+                compared += 1;
+            }
+        }
+    }
+    assert!(compared > 0, "compared nothing");
+    assert!(
+        early > 0,
+        "no record before the last substep: the scene does not tell the frames apart"
+    );
+}
+
+/// oracle: a static collider records the pose it was created with, bit for bit.
+#[test]
+fn a_static_collider_records_its_own_frame() {
+    let mut compared = 0;
+    for (path, step) in xpbd_paths() {
+        let (mut w, _) = tilted_plane();
+        step(&mut w, r(1, 4));
+        let sdf = &w.sdf_colliders[0];
+        for c in w.last_step_sdf_contacts() {
+            assert_eq!(c.collider_position, sdf.position, "{path}");
+            assert_eq!(c.collider_rotation, sdf.rotation, "{path}");
+            assert_eq!(c.collider_scale, sdf.scale, "{path}");
+            compared += 1;
+        }
+    }
+    assert!(compared > 0, "compared nothing");
+}
