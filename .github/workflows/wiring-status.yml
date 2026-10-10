@@ -21,6 +21,7 @@ concurrency:
 jobs:
   generate-wiring-status:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
