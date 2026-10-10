@@ -284,6 +284,14 @@ class Cfg(unittest.TestCase):
         self.assertFalse(self.ev(t))
         self.assertTrue(self.ev(t, NATIVE | {"neural"}))
 
+    def test_only_the_crate_header_counts(self):
+        nested = '//! doc\n#![allow(dead_code)]\nuse alice_physics::x;\nmod m {\n    #![cfg(feature = "neural")]\n}\n'
+        self.assertIsNone(at.crate_cfg(nested))
+        quoted = '// write #![cfg(feature = "neural")] at the top to gate it\nuse alice_physics::x;\n'
+        self.assertIsNone(at.crate_cfg(quoted))
+        multi = '#![allow(\n    clippy::all\n)]\n#![cfg(feature = "std")]\nuse x;\n#![cfg(feature = "neural")]'
+        self.assertEqual(at.crate_cfg(multi), 'feature = "std"')
+
     def test_unknown_forms_fail_closed(self):
         for t in ['#![cfg(fancy(feature = "x"))]', '#![cfg(flavour = "x")]', "#![cfg(something)]",
                   '#![cfg(feature = )]', '#![cfg(all(feature = "a"']:

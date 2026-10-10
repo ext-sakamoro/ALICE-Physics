@@ -20,6 +20,8 @@ CI は全 test を 5 OS で走らせるので、ローカルの push 前検査�
     最も近い feature 集合 (cfg が名指す feature だけを反転、required-features も満たす) の追加の回で走らせる
     (例: `not(feature = "parallel")` は parallel を外した回、`feature = "neural"` は neural を足した回)
     host で真にできない cfg (他 OS の target_os など) は「host では対象外」と報告して CI に任せる
+    feature を反転した回が排他な feature の組 (例: wasm と ffi) になると compile_error で回が失敗する
+    (赤になるので fail closed は保たれる)
     解釈できない cfg の形は失敗にする (fail closed)
   * どの回でも、cfg が真の target が passed + ignored = 0 なら失敗する (全 test が `#[ignore]` の target は
     0 passed / N ignored で正当)
@@ -117,17 +119,37 @@ _CFG_TOKEN = re.compile(r'\s*(?:(?P<str>"[^"]*")|(?P<id>[A-Za-z_][A-Za-z0-9_]*)|
 def crate_cfg(text: str) -> str | None:
     """The crate-level `#![cfg(...)]` predicates of a test file, joined as
     `all(...)` when there are several; `None` when the file has none.
-    Only inner attributes before the first item count (comments and blank
-    lines may precede them)."""
+
+    Only the crate header counts: blank lines, `//` comments and inner
+    attributes (`#![...]`, possibly over several lines) before the first item.
+    A `#![cfg(...)]` inside a `mod` or quoted in a comment is not crate-level
+    and is not read."""
     preds = []
-    for m in re.finditer(r"#!\[cfg\(", text):
-        depth, i = 1, m.end()
-        while depth and i < len(text):
-            depth += {"(": 1, ")": -1}.get(text[i], 0)
+    i, n = 0, len(text)
+    while i < n:
+        # skip whitespace and line comments
+        while i < n and text[i] in " \t\r\n":
             i += 1
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            i = n if j < 0 else j + 1
+            continue
+        if not text.startswith("#![", i):
+            break
+        depth, k = 0, i + 2
+        while k < n:
+            depth += {"[": 1, "]": -1}.get(text[k], 0)
+            k += 1
+            if depth == 0:
+                break
         if depth:
-            raise UnknownCfg("unbalanced #![cfg(")
-        preds.append(text[m.end() : i - 1].strip())
+            raise UnknownCfg("unbalanced inner attribute in the crate header")
+        attr = text[i + 3 : k - 1].strip()
+        if attr.startswith("cfg(") and attr.endswith(")"):
+            preds.append(attr[4:-1].strip())
+        elif attr.startswith("cfg") and not attr.startswith("cfg_attr"):
+            raise UnknownCfg(f"unreadable crate cfg {attr!r}")
+        i = k
     if not preds:
         return None
     return preds[0] if len(preds) == 1 else "all(" + ", ".join(preds) + ")"
