@@ -5412,4 +5412,47 @@ mod tests {
             "no sample with the lower bound below the distance"
         );
     }
+
+    /// A tetrahedron just thicker than the flatness `h = 2⁻³²` of
+    /// [`closest_on_tetrahedron`] is not flat: one around the origin is
+    /// inside (`None`), whatever its least height between `2⁻³⁰` and `2⁻¹⁶`.
+    /// Taken as flat, its nearest face would be returned at a distance up to
+    /// half its height, and GJK would report the shapes apart by that much.
+    #[test]
+    fn a_tetrahedron_just_thicker_than_flat_holds_the_origin() {
+        let vertex = |w: Vec3Fix| Vertex {
+            w,
+            a: w,
+            b: Vec3Fix::ZERO,
+        };
+        for e in [17, 20, 24, 27] {
+            let h = 1.0 / ((1u64 << e) as f64);
+            // a base triangle below the origin and an apex above it
+            let pts = [
+                v3(-1.0, -1.0, -0.5 * h),
+                v3(1.0, -1.0, -0.5 * h),
+                v3(0.0, 1.0, -0.5 * h),
+                v3(0.0, 0.0, 0.5 * h),
+            ];
+            // precondition: every height is above 2⁻³² (and not by much)
+            let least = [(0, 1, 2, 3), (0, 2, 3, 1), (0, 3, 1, 2), (1, 3, 2, 0)]
+                .iter()
+                .map(|&(p, q, r, o)| {
+                    let n = (pts[q] - pts[p]).cross(pts[r] - pts[p]);
+                    (n.dot(pts[o] - pts[p]).abs() / n.length()).to_f64()
+                })
+                .fold(f64::MAX, f64::min);
+            assert!(
+                least > 2.0 / 4_294_967_296.0 && least < 1.0 / 32768.0,
+                "least height {least:e} for h = 2^-{e}"
+            );
+            let [a, b, c, d] = pts.map(vertex);
+            let got = closest_on_tetrahedron(a, b, c, d, 0);
+            assert!(
+                got.is_none(),
+                "h = 2^-{e} (least height {least:e}): the origin is inside, got the face {:?}",
+                got.map(|n| nearest_point(&n).length().to_f64())
+            );
+        }
+    }
 }
