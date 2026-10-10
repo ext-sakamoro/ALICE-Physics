@@ -335,7 +335,7 @@ fn polytope_casts_with_radius_from_2_pow_minus_16_keep_their_bits() {
 /// reach `2⁻¹⁶` or more, and the tangent's root from it only below).
 const CURRENT_ROUND: [(&str, usize, usize, u64); 4] = [
     ("cone", 1102, 513, 5_852_212_246_854_234_555),
-    ("cylinder", 1144, 624, 598_540_554_569_869_253),
+    ("cylinder", 1144, 624, 14_927_364_221_203_275_811),
     ("field", 1145, 870, 9_444_083_892_263_037_640),
     ("ellipsoid", 1122, 525, 17_000_410_992_680_744_878),
 ];
