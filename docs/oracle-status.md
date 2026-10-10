@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5624 |
+| 🟢 Not ignored (run by CI) | 5641 |
 | 🔴 Red by design | 80 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5730** |
+| **Total** | **5747** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -119,7 +119,7 @@ when the lock is not committed), re-check whether the defect remains.
 
 | Defect | Test | Crate | Reason says | Resolved | Status |
 |--------|------|-------|-------------|----------|--------|
-| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.1 | ⚠️ re-check |
+| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0-beta.2 | ⚠️ re-check |
 
 ## ⏱ Gated (26)
 
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5624)
+## 🟢 Not ignored (5641)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -411,6 +411,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
+| `analytic_world_query_curved_casts.rs` | 10 |
 | `audit_db_bridge.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
 | `audit_smoke_fire.rs` | 10 |
@@ -537,6 +538,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `analytic_world_query_boundaries.rs` | 4 |
+| `analytic_world_query_cylinder_sphere.rs` | 4 |
 | `audit_bridge_self_joint.rs` | 4 |
 | `audit_c_creep_longterm.rs` | 4 |
 | `audit_c_joint.rs` | 4 |
@@ -551,6 +553,7 @@ Per-file counts (the test names are in `tests/`):
 | `spatial_hash_range.rs` | 4 |
 | `tgs_stable_cache_keys.rs` | 4 |
 | `world_ccd_off_bit_identity.rs` | 4 |
+| `analytic_axial_support.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
