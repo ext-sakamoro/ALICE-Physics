@@ -439,11 +439,11 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
 }
 
 /// The version 1 payload `p` of a world whose broad-phase tree is empty, with
-/// that section in its version 4 form: version 1 to 3 write the tree node by
+/// that section in its version 5 form: version 1 to 4 write the tree node by
 /// node, so an empty tree starts with `node_count = 0`, `free_count = 0` and
-/// `root = u32::MAX` (20 bytes) before the margin; version 4 writes only the
+/// `root = u32::MAX` (20 bytes) before the margin; version 5 writes only the
 /// leaf set and drops those 20 bytes. The rest of the payload is the same.
-fn v1_payload_in_version_4_form(p: &[u8]) -> Vec<u8> {
+fn v1_payload_in_version_5_form(p: &[u8]) -> Vec<u8> {
     let mut legacy = vec![0u8; 16];
     legacy.extend_from_slice(&u32::MAX.to_le_bytes());
     // the default fat margin, 1/2
@@ -458,28 +458,28 @@ fn v1_payload_in_version_4_form(p: &[u8]) -> Vec<u8> {
     out
 }
 
-/// The version 4 blob of a world without participants is the version 1
-/// payload (its empty broad-phase tree section in the version 4 form, see
-/// `v1_payload_in_version_4_form`) followed by an empty `participants`
+/// The version 5 blob of a world without participants is the version 1
+/// payload (its empty broad-phase tree section in the version 5 form, see
+/// `v1_payload_in_version_5_form`) followed by an empty `participants`
 /// section, no fault, an empty
 /// `fields` section and the continuous collision section of the default
 /// setting (off, threshold 1); besides the version, the length and the
-/// checksum, only the 64 identifier bytes of the version 4 header
+/// checksum, only the 64 identifier bytes of the version 4 / 5 header
 /// (`[16..80)`) are new, and the payload starts after them.
 #[test]
-fn a_version_4_blob_extends_the_version_1_payload() {
+fn a_version_5_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
     let v3 = w.snapshot_world();
     assert_eq!(&v3[0..4], &v1[0..4]);
-    assert_eq!(&v3[4..6], &4u16.to_le_bytes());
+    assert_eq!(&v3[4..6], &5u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let (l1, l3) = (len(v1), len(&v3));
     let mut tail = vec![0u8; 17];
     tail.push(0); // continuous collision off
     tail.extend_from_slice(&1i64.to_le_bytes()); // threshold 1: hi
     tail.extend_from_slice(&0u64.to_le_bytes()); // lo
-    let p1 = v1_payload_in_version_4_form(&v1[16..16 + l1]);
+    let p1 = v1_payload_in_version_5_form(&v1[16..16 + l1]);
     assert_eq!(p1.len(), l1 - 20);
     assert_eq!(l3, p1.len() + tail.len());
     assert_eq!(&v3[80..80 + p1.len()], &p1[..]);
@@ -532,11 +532,11 @@ fn a_version_1_blob_restores_the_world_it_was_taken_from() {
     }
 
     // Writing it again keeps every byte of the version 1 payload (the empty
-    // broad-phase tree section in its version 4 form)
+    // broad-phase tree section in its version 5 form)
     let v2 = restored.snapshot_world();
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
-    let p1 = v1_payload_in_version_4_form(&v1[16..16 + len(v1)]);
-    // (the version 4 payload starts after the 80-byte header)
+    let p1 = v1_payload_in_version_5_form(&v1[16..16 + len(v1)]);
+    // (the version 5 payload starts after the 80-byte header)
     assert_eq!(&v2[80..80 + p1.len()], &p1[..]);
 
     // It steps on like the same state restored from the blob written today

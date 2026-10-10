@@ -15,12 +15,30 @@
 //! stepping-semantics identifier of the binary that wrote the blob
 //! ([`crate::PHYSICS_SEMANTICS_ID`]) and the world's rule identifier
 //! ([`PhysicsWorld::law_id`] of that semantics). A reader refuses a version 4
-//! blob written under other stepping semantics
+//! or 5 blob written under other stepping semantics
 //! ([`WorldSnapshotError::SemanticsMismatch`]), and
 //! [`PhysicsWorld::restore_world_checked`] also compares the rule identifier
 //! with one the caller expects and reports what it could verify
 //! ([`LawCheck`]). Version 1 to 3 blobs carry neither hash; they are still
 //! read, and reported as [`LawCheck::Unpinned`].
+//!
+//! # Versions
+//!
+//! | version | first written by | what it adds or changes |
+//! |---|---|---|
+//! | 1 | (no release) | the whole-world blob |
+//! | 2 | (no release) | `participants`, `fault` and `fields` sections |
+//! | 3 | 2.0.0 | `continuous_collision` section |
+//! | 4 | 2.1.0 | `semantics_id` and `law_id` in the header |
+//! | 5 | the release after 2.1.0 | the broad-phase tree section holds the leaf set instead of every node |
+//!
+//! This build writes version 5 and reads 1 to 5. Versions 1 to 4 store the
+//! broad-phase tree node by node; that form is read as written and the tree
+//! is then rebuilt from its leaves, the same way a version 5 tree is, so a
+//! restored world holds the same tree whichever version it came from. A
+//! version above 5 is refused with [`WorldSnapshotError::UnsupportedVersion`].
+//! 2.1.0 refuses a version 5 blob the same way (its supported range ends at
+//! 4), and 2.0.0 refuses versions 4 and 5.
 //!
 //! The field-by-field coverage, the format and the errors are documented on
 //! [`PhysicsWorld::snapshot_world`] and [`WorldSnapshotError`].
@@ -62,14 +80,14 @@ use std::collections::{BTreeMap, BTreeSet};
 ///
 /// | input | error |
 /// |---|---|
-/// | fewer than 24 bytes, a version 4 blob of fewer than 88 bytes, or shorter than the declared payload | [`Self::Truncated`] |
+/// | fewer than 24 bytes, a version 4 or 5 blob of fewer than 88 bytes, or shorter than the declared payload | [`Self::Truncated`] |
 /// | wrong magic | [`Self::BadMagic`] |
 /// | version 0 or above [`PhysicsWorld::WORLD_SNAPSHOT_VERSION`] | [`Self::UnsupportedVersion`] |
 /// | reserved bytes not 0 | [`Self::ReservedNotZero`] |
 /// | longer than the declared payload | [`Self::TrailingBytes`] |
 /// | checksum differs | [`Self::ChecksumMismatch`] |
-/// | version 4 header `semantics_id` differs from this binary's [`crate::PHYSICS_SEMANTICS_ID`] | [`Self::SemanticsMismatch`] |
-/// | version 4 header `law_id` differs from the one passed to [`PhysicsWorld::restore_world_checked`] | [`Self::LawIdMismatch`] |
+/// | version 4 or 5 header `semantics_id` differs from this binary's [`crate::PHYSICS_SEMANTICS_ID`] | [`Self::SemanticsMismatch`] |
+/// | version 4 or 5 header `law_id` differs from the one passed to [`PhysicsWorld::restore_world_checked`] | [`Self::LawIdMismatch`] |
 /// | unknown enum tag / non-boolean byte / unrepresentable value inside the payload | [`Self::InvalidValue`] |
 /// | material table with 0 or more than 65,536 materials, or a material whose id is not its index | [`Self::InvalidValue`] (`section: "material_table"`) |
 /// | a joint / constraint / contact / SDF collider / batch / proxy index past its target | [`Self::DanglingIndex`] |
@@ -163,7 +181,7 @@ pub enum WorldSnapshotError {
     /// declared fields (ids, modes, layouts;
     /// [`crate::world_participant::FieldBoard::check_values`]).
     FieldState(crate::world_participant::StateError),
-    /// A version 4 blob was written under other stepping semantics: its
+    /// A version 4 or 5 blob was written under other stepping semantics: its
     /// header `semantics_id` is not this binary's
     /// [`crate::PHYSICS_SEMANTICS_ID`], so a restored world would not step
     /// the way the writer's did. Checked after the checksum.
@@ -173,7 +191,7 @@ pub enum WorldSnapshotError {
         /// [`crate::PHYSICS_SEMANTICS_ID`] of this binary.
         expected: [u8; 32],
     },
-    /// The version 4 blob's header `law_id` differs from the identifier
+    /// The version 4 or 5 blob's header `law_id` differs from the identifier
     /// passed to [`PhysicsWorld::restore_world_checked`].
     LawIdMismatch {
         /// `law_id` stored in the blob's header.
@@ -188,11 +206,11 @@ pub enum WorldSnapshotError {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum LawCheck {
-    /// Version 4: the header `semantics_id` equals this binary's
+    /// Version 4 or 5: the header `semantics_id` equals this binary's
     /// [`crate::PHYSICS_SEMANTICS_ID`], and the header `law_id` equals the
     /// identifier the caller passed.
     Verified,
-    /// Version 4: the header `semantics_id` equals this binary's
+    /// Version 4 or 5: the header `semantics_id` equals this binary's
     /// [`crate::PHYSICS_SEMANTICS_ID`]; the caller passed no identifier, so
     /// the header `law_id` was not compared with anything.
     SemanticsVerified,
@@ -285,23 +303,29 @@ type Res<T> = Result<T, WorldSnapshotError>;
 
 /// Header length of version 1 to 3 blobs, and the part every version shares.
 const HEADER_LEN: usize = 16;
-/// Header length of version 4 blobs: the shared 16 bytes, then
+/// Header length of version 4 and 5 blobs: the shared 16 bytes, then
 /// `semantics_id` and `law_id` (32 bytes each).
 const HEADER_LEN_V4: usize = HEADER_LEN + 64;
-/// Offset of `semantics_id` in a version 4 header.
+/// Offset of `semantics_id` in a version 4 or 5 header.
 const SEMANTICS_ID_AT: usize = HEADER_LEN;
-/// Offset of `law_id` in a version 4 header.
+/// Offset of `law_id` in a version 4 or 5 header.
 const LAW_ID_AT: usize = HEADER_LEN + 32;
 
 /// Header length of a blob of `version` (already checked to be supported).
 fn header_len(version: u16) -> usize {
-    if version >= 4 {
+    if version >= IDS_SINCE {
         HEADER_LEN_V4
     } else {
         HEADER_LEN
     }
 }
 const CHECKSUM_LEN: usize = 8;
+/// First version whose header carries `semantics_id` and `law_id`.
+const IDS_SINCE: u16 = 4;
+/// First version whose broad-phase tree section is the leaf set
+/// ([`w_tree_leaves`]); versions before it hold every node
+/// ([`r_tree_legacy`]).
+const TREE_LEAF_SET_SINCE: u16 = 5;
 
 // ── Writer ────────────────────────────────────────────────────────────────
 
@@ -1461,7 +1485,7 @@ fn r_events(r: &mut R<'_>) -> Res<EventCollector> {
 }
 
 /// The persistent [`Broadphase::DynamicTree`] tree and its body → proxy map
-/// (version 4): the margin, the metric, then per body index whether the body
+/// (version 5): the margin, the metric, then per body index whether the body
 /// has a proxy and, if so, the leaf's stored (fattened) box.
 ///
 /// Only the leaf set is written, in body index order. Node ids, internal
@@ -1519,7 +1543,7 @@ fn r_tree_leaves(r: &mut R<'_>) -> Res<(crate::dynamic_bvh::DynamicAabbTree, Vec
     Ok((t, proxies))
 }
 
-/// Read the version 1 to 3 form (every node as stored, the free list, the
+/// Read the version 1 to 4 form (every node as stored, the free list, the
 /// root, then the body → proxy map) and rebuild the tree from its leaf set
 /// the way [`r_tree_leaves`] does, so a restored world holds the same tree
 /// whichever version it came from.
@@ -1549,7 +1573,7 @@ fn r_tree_legacy(r: &mut R<'_>) -> Res<(crate::dynamic_bvh::DynamicAabbTree, Vec
     Ok((t, proxies))
 }
 
-/// The version 1 to 3 tree section, kept for tests that build older blobs.
+/// The version 1 to 4 tree section, kept for tests that build older blobs.
 #[cfg(test)]
 fn w_tree_legacy(w: &mut W, t: &crate::dynamic_bvh::DynamicAabbTree, proxies: &[Option<u32>]) {
     w_tree(w, t);
@@ -1659,7 +1683,7 @@ struct Decoded {
     fields: Vec<u8>,
     /// The continuous collision setting (version 3; off for versions 1 and 2)
     ccd: super::WorldCcdConfig,
-    /// The header's `(semantics_id, law_id)` (version 4; `None` before)
+    /// The header's `(semantics_id, law_id)` (version 4 and 5; `None` before)
     ids: Option<([u8; 32], [u8; 32])>,
 }
 
@@ -1676,12 +1700,14 @@ impl PhysicsWorld {
     /// (no `participants`, `fault` or `fields` section) are still read, as a
     /// world without participants, fault or fields, version 1 and 2 blobs
     /// (no `continuous_collision` section) as a world with continuous
-    /// collision off, and version 1 to 3 blobs (no `semantics_id` / `law_id`
+    /// collision off, version 1 to 3 blobs (no `semantics_id` / `law_id`
     /// in the header) without the semantics check, reported as
-    /// [`LawCheck::Unpinned`] by [`Self::restore_world_checked`]; a blob of
-    /// any other version is rejected with
-    /// [`WorldSnapshotError::UnsupportedVersion`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 4;
+    /// [`LawCheck::Unpinned`] by [`Self::restore_world_checked`], and version
+    /// 1 to 4 blobs with the broad-phase tree stored node by node, rebuilt
+    /// from its leaves on restore; a blob of any other version is rejected
+    /// with [`WorldSnapshotError::UnsupportedVersion`]. The version history
+    /// is in the [module documentation](self).
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 5;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -1764,7 +1790,7 @@ impl PhysicsWorld {
     /// step. The structure is private to [`crate::sleeping`] and has no
     /// non-mutating accessor, so it cannot be copied from `&self`.
     ///
-    /// # Format (version 4)
+    /// # Format (version 5)
     ///
     /// | range | content |
     /// |---|---|
@@ -1779,19 +1805,24 @@ impl PhysicsWorld {
     ///
     /// Version 1 to 3 blobs have the 16-byte header only (no `semantics_id`
     /// or `law_id`) and their payload starts at byte 16. Version 4 grows the
-    /// header rather than using the reserved bytes, which stay 0.
+    /// header rather than using the reserved bytes, which stay 0; version 5
+    /// keeps the version 4 header.
     ///
-    /// The payload of version 3 and 4 differs in one section, the
+    /// The payload of version 4 and 5 differs in one section, the
     /// broad-phase tree after the `broadphase` tag:
     ///
     /// | version | content |
     /// |---|---|
-    /// | 1 to 3 | `node_count: u64`, per node box, `parent` / `left` / `right: u32`, `height: i32`, `user_data: u32`, `is_leaf: u8`; `free_count: u64`, free node ids `u32`; `root: u32`; margin; three metric weights; `proxy_count: u64`, per body `0` or `1` and the proxy (node) id `u32` |
-    /// | 4 | margin; three metric weights; `proxy_count: u64`, per body `0` or `1` and the leaf's stored box (min, max) |
+    /// | 1 to 4 | `node_count: u64`, per node box, `parent` / `left` / `right: u32`, `height: i32`, `user_data: u32`, `is_leaf: u8`; `free_count: u64`, free node ids `u32`; `root: u32`; margin; three metric weights; `proxy_count: u64`, per body `0` or `1` and the proxy (node) id `u32` |
+    /// | 5 | margin; three metric weights; `proxy_count: u64`, per body `0` or `1` and the leaf's stored box (min, max) |
     ///
-    /// A version 1 to 3 tree is read and then rebuilt from its leaves (each
+    /// A version 1 to 4 tree is read and then rebuilt from its leaves (each
     /// proxy's stored box) the same way, so the restored world is the same
     /// whichever version it came from.
+    ///
+    /// The tree section changed under a new version number because a version
+    /// 4 reader (2.1.0) reads that section node by node: the leaf-set form
+    /// under the same number would be misread by it rather than refused.
     ///
     /// The header `law_id` is the rule of the world when it was written. It
     /// is not guaranteed to equal [`PhysicsWorld::law_id`] of a world after
@@ -2065,10 +2096,10 @@ impl PhysicsWorld {
     ///
     /// | blob | `expected_law_id` | result |
     /// |---|---|---|
-    /// | version 4, header `semantics_id` is not [`crate::PHYSICS_SEMANTICS_ID`] | any | [`WorldSnapshotError::SemanticsMismatch`] |
-    /// | version 4 | `Some(id)`, header `law_id == id` | [`LawCheck::Verified`] |
-    /// | version 4 | `Some(id)`, header `law_id != id` | [`WorldSnapshotError::LawIdMismatch`] |
-    /// | version 4 | `None` | [`LawCheck::SemanticsVerified`] |
+    /// | version 4 or 5, header `semantics_id` is not [`crate::PHYSICS_SEMANTICS_ID`] | any | [`WorldSnapshotError::SemanticsMismatch`] |
+    /// | version 4 or 5 | `Some(id)`, header `law_id == id` | [`LawCheck::Verified`] |
+    /// | version 4 or 5 | `Some(id)`, header `law_id != id` | [`WorldSnapshotError::LawIdMismatch`] |
+    /// | version 4 or 5 | `None` | [`LawCheck::SemanticsVerified`] |
     /// | version 1 to 3 | any (not compared) | [`LawCheck::Unpinned`] |
     ///
     /// `expected_law_id` is compared with the header as written, not with
@@ -2315,7 +2346,7 @@ fn decode(data: &[u8]) -> Res<Decoded> {
     if stored != computed {
         return Err(WorldSnapshotError::ChecksumMismatch { stored, computed });
     }
-    let ids = if version >= 4 {
+    let ids = if version >= IDS_SINCE {
         let mut semantics_id = [0u8; 32];
         semantics_id.copy_from_slice(&data[SEMANTICS_ID_AT..SEMANTICS_ID_AT + 32]);
         let mut law_id = [0u8; 32];
@@ -2500,7 +2531,7 @@ fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
         2 => Broadphase::Hybrid,
         _ => return Err(invalid("broadphase")),
     };
-    let (broadphase_tree, broadphase_proxies) = if version >= 4 {
+    let (broadphase_tree, broadphase_proxies) = if version >= TREE_LEAF_SET_SINCE {
         r_tree_leaves(r)?
     } else {
         r_tree_legacy(r)?
@@ -3713,16 +3744,19 @@ mod tests {
     }
 
     #[test]
-    fn version_4_header_layout() {
+    fn version_5_header_layout() {
         use crate::semantics::PHYSICS_SEMANTICS_ID;
         assert_eq!(super::HEADER_LEN_V4, 80);
         assert_eq!((super::SEMANTICS_ID_AT, super::LAW_ID_AT), (16, 48));
+        assert_eq!((super::IDS_SINCE, super::TREE_LEAF_SET_SINCE), (4, 5));
+        assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 5);
         assert_eq!(super::header_len(1), 16);
         assert_eq!(super::header_len(3), 16);
         assert_eq!(super::header_len(4), 80);
+        assert_eq!(super::header_len(5), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &4u16.to_le_bytes());
+        assert_eq!(&b[4..6], &5u16.to_le_bytes());
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
@@ -3755,7 +3789,7 @@ mod tests {
     /// against an expected one; the next version is unsupported; the target
     /// is untouched in every case.
     #[test]
-    fn version_4_identifier_checks() {
+    fn version_5_identifier_checks() {
         use super::LawCheck;
         use crate::semantics::PHYSICS_SEMANTICS_ID;
         let src = variant_world();
@@ -3785,16 +3819,18 @@ mod tests {
             })
         );
 
-        let mut x = blob.clone();
-        x[4..6].copy_from_slice(&5u16.to_le_bytes());
-        assert_eq!(
-            t.restore_world(&reseal(x)),
-            Err(WorldSnapshotError::UnsupportedVersion {
-                found: 5,
-                supported: 4
-            })
-        );
-        // a version 4 header cut inside its identifiers
+        for next in [6u16, 7, u16::MAX, 0] {
+            let mut x = blob.clone();
+            x[4..6].copy_from_slice(&next.to_le_bytes());
+            assert_eq!(
+                t.restore_world(&reseal(x)),
+                Err(WorldSnapshotError::UnsupportedVersion {
+                    found: next,
+                    supported: 5
+                })
+            );
+        }
+        // a version 5 header cut inside its identifiers
         assert_eq!(
             t.restore_world(&blob[..60]),
             Err(WorldSnapshotError::Truncated)
@@ -3812,10 +3848,21 @@ mod tests {
         );
     }
 
-    /// The version 3 form of `w`'s version 4 blob: the 16-byte header, and the
+    /// The version 3 form of `w`'s version 5 blob: the 16-byte header, and the
     /// tree section written node by node (with the free list and proxy ids)
     /// in place of the leaf set. Every other section is the same in both.
     fn as_version_3(w: &PhysicsWorld) -> Vec<u8> {
+        as_legacy(w, 3)
+    }
+
+    /// The version 4 form of `w`'s version 5 blob: the same 80-byte header
+    /// (identifiers included) with version 4, and the tree section written
+    /// node by node, as 2.1.0 writes it.
+    fn as_version_4(w: &PhysicsWorld) -> Vec<u8> {
+        as_legacy(w, 4)
+    }
+
+    fn as_legacy(w: &PhysicsWorld, version: u16) -> Vec<u8> {
         let blob = w.snapshot_world();
         let mut leaves = super::W(Vec::new());
         super::w_tree_leaves(&mut leaves, &w.broadphase_tree, &w.broadphase_proxies);
@@ -3829,15 +3876,44 @@ mod tests {
         let mut p = payload[..at[0]].to_vec();
         p.extend_from_slice(&legacy.0);
         p.extend_from_slice(&payload[at[0] + leaves.0.len()..]);
-        let mut v3 = blob[..16].to_vec();
-        v3[4..6].copy_from_slice(&3u16.to_le_bytes());
-        v3[8..16].copy_from_slice(&(p.len() as u64).to_le_bytes());
-        v3.extend_from_slice(&p);
-        v3.extend_from_slice(&[0; super::CHECKSUM_LEN]);
-        reseal(v3)
+        let mut out = blob[..super::header_len(version)].to_vec();
+        out[4..6].copy_from_slice(&version.to_le_bytes());
+        out[8..16].copy_from_slice(&(p.len() as u64).to_le_bytes());
+        out.extend_from_slice(&p);
+        out.extend_from_slice(&[0; super::CHECKSUM_LEN]);
+        reseal(out)
     }
 
-    /// The version 3 form of a version 4 blob (16-byte header, the tree
+    /// The version 4 form (80-byte header, tree node by node) restores to
+    /// the same world, with the identifiers checked; the same bytes labelled
+    /// version 5 are refused, and the version 5 blob labelled version 4 is
+    /// refused: the version alone picks the tree reader.
+    #[test]
+    fn version_4_form_reads_the_tree_node_by_node() {
+        use super::LawCheck;
+        use crate::semantics::PHYSICS_SEMANTICS_ID;
+        let src = variant_world();
+        let blob = src.snapshot_world();
+        let law = src.law_id(&PHYSICS_SEMANTICS_ID);
+        let v4 = as_version_4(&src);
+        assert_ne!(v4, blob);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        assert_eq!(
+            t.restore_world_checked(&v4, Some(&law)),
+            Ok(LawCheck::Verified)
+        );
+        assert_eq!(t.snapshot_world(), blob);
+
+        let mut relabel = v4.clone();
+        relabel[4..6].copy_from_slice(&5u16.to_le_bytes());
+        let mut u = PhysicsWorld::new(SolverConfig::default());
+        assert!(u.restore_world(&reseal(relabel)).is_err());
+        let mut relabel = blob.clone();
+        relabel[4..6].copy_from_slice(&4u16.to_le_bytes());
+        assert!(u.restore_world(&reseal(relabel)).is_err());
+    }
+
+    /// The version 3 form of a version 5 blob (16-byte header, the tree
     /// section in its version 3 form) restores to the same world and reports
     /// `Unpinned`.
     #[test]
@@ -4034,7 +4110,7 @@ mod tests {
         assert!(super::r_tree_leaves(&mut r).is_err());
     }
 
-    /// The version 1 to 3 form (every node, the free list, proxy ids) reads
+    /// The version 1 to 4 form (every node, the free list, proxy ids) reads
     /// back as the same rebuilt tree as the leaf set does, and a proxy id
     /// past the stored nodes is refused as dangling.
     #[test]
@@ -4067,11 +4143,20 @@ mod tests {
         );
     }
 
-    /// A `DynamicTree` world with removals written in the version 3 form
-    /// restores to a world whose version 4 snapshot is the live world's, and
-    /// both step on identically.
+    /// A `DynamicTree` world with removals written in the version 3 or 4
+    /// form restores to a world whose version 5 snapshot is the live world's,
+    /// and both step on identically.
     #[test]
     fn version_3_dynamic_tree_form_restores_to_the_leaf_set() {
+        legacy_dynamic_tree_form_restores_to_the_leaf_set(3);
+    }
+
+    #[test]
+    fn version_4_dynamic_tree_form_restores_to_the_leaf_set() {
+        legacy_dynamic_tree_form_restores_to_the_leaf_set(4);
+    }
+
+    fn legacy_dynamic_tree_form_restores_to_the_leaf_set(version: u16) {
         let mut a = scene(SolverBackend::Xpbd, Broadphase::DynamicTree);
         let mut drv = Driver::new();
         for _ in 0..10 {
@@ -4084,9 +4169,9 @@ mod tests {
             !a.broadphase_tree.free_list.is_empty(),
             "control: freed nodes"
         );
-        let v3 = as_version_3(&a);
+        let legacy = as_legacy(&a, version);
         let mut b = target_world();
-        b.restore_world(&v3).expect("v3");
+        b.restore_world(&legacy).expect("legacy form");
         assert_eq!(b.snapshot_world(), a.snapshot_world());
         assert!(b.broadphase_tree.free_list.is_empty());
         assert!(differing(&mut a, &mut b).is_empty());

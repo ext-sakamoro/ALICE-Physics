@@ -1,6 +1,8 @@
-//! Version 4 world snapshot: the header carries the writer's stepping
-//! semantics identifier and the world's rule identifier, through the public
-//! API only.
+//! World snapshot header of version 4 and later (the current writer emits
+//! version 5, whose header is version 4's): the header carries the writer's
+//! stepping semantics identifier and the world's rule identifier, through
+//! the public API only. Blobs written by 2.1.0 (version 4) are tested in
+//! `world_snapshot_v5.rs`.
 //!
 //! oracle: the identifiers themselves, computed independently of the blob
 //! (`PHYSICS_SEMANTICS_ID` and `PhysicsWorld::law_id` of the written world),
@@ -98,11 +100,11 @@ fn checked(
 }
 
 #[test]
-fn the_writer_emits_version_4() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 4);
+fn the_writer_emits_version_5() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 5);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &4u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &5u16.to_le_bytes());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's
@@ -147,13 +149,13 @@ fn header_holds_the_identifiers_at_their_offsets() {
     assert_ne!(law_ids[0], law_ids[2]);
 }
 
-/// A version 4 blob restores to a world that writes the same bytes, and
+/// A version 5 blob restores to a world that writes the same bytes, and
 /// both step on bit for bit.
 #[test]
-fn version_4_round_trips_bytes_and_steps() {
+fn version_5_round_trips_bytes_and_steps() {
     let mut a = scene();
     let blob = a.snapshot_world();
-    let mut b = PhysicsWorld::from_world_snapshot(&blob).expect("v4 blob");
+    let mut b = PhysicsWorld::from_world_snapshot(&blob).expect("v5 blob");
     assert_eq!(b.snapshot_world(), blob);
     let mut c = PhysicsWorld::new(PhysicsConfig::default());
     assert_eq!(
@@ -169,7 +171,7 @@ fn version_4_round_trips_bytes_and_steps() {
     assert_eq!(a.snapshot_world(), c.snapshot_world());
 }
 
-/// The three results of `restore_world_checked` on a version 4 blob.
+/// The three results of `restore_world_checked` on a version 5 blob.
 #[test]
 fn checked_restore_reports_what_it_verified() {
     let a = scene();
@@ -263,8 +265,8 @@ fn older_versions_are_accepted_as_unpinned() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let v2: &[u8] = include_bytes!("fixtures/world_snapshot_v2_stacked.bin");
     let a = scene();
-    // the version 3 form of `scene()`, written by the version 3 writer (16-byte
-    // header, the broad-phase tree node by node)
+    // the version 3 form of `scene()`, as 2.0.0 writes it (16-byte header,
+    // the broad-phase tree node by node; see `fixtures/README.md`)
     let v3: &[u8] = include_bytes!("fixtures/world_snapshot_v3_joint_pair.bin");
     let some = a.law_id(&PHYSICS_SEMANTICS_ID);
     for (version, blob) in [(1u16, v1), (2, v2), (3, v3)] {
@@ -280,15 +282,15 @@ fn older_versions_are_accepted_as_unpinned() {
         let mut t = PhysicsWorld::new(PhysicsConfig::default());
         assert_eq!(t.restore_world(blob), Ok(()), "version {version}");
     }
-    // the version 3 form holds the same world as the version 4 blob
+    // the version 3 form holds the same world as the current blob
     let b = PhysicsWorld::from_world_snapshot(v3).expect("v3 blob");
     assert_eq!(b.snapshot_world(), a.snapshot_world());
 }
 
-/// Every prefix of a version 4 blob, including those that end inside the
+/// Every prefix of a version 5 blob, including those that end inside the
 /// 64 identifier bytes, is refused as truncated.
 #[test]
-fn every_prefix_of_a_version_4_blob_is_truncated() {
+fn every_prefix_of_a_version_5_blob_is_truncated() {
     let b = scene().snapshot_world();
     let mut t = PhysicsWorld::new(PhysicsConfig::default());
     for len in 0..b.len() {

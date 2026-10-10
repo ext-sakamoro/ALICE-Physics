@@ -306,7 +306,7 @@ fn joint_referring_past_the_bodies_is_rejected() {
 #[test]
 fn unknown_tag_is_an_invalid_value() {
     let b = blob();
-    // header 80 (version 4) + substeps 8 + iterations 8 + gravity 48 + damping 16 + warm start 16
+    // header 80 (version 4 and 5) + substeps 8 + iterations 8 + gravity 48 + damping 16 + warm start 16
     let backend = 80 + 8 + 8 + 48 + 16 + 16;
     assert_eq!(b[backend], 0, "Xpbd");
     let mut x = b.clone();
