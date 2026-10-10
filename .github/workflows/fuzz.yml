@@ -12,7 +12,8 @@ name: Fuzz
 
 on:
   push:
-    branches: [main]
+    # ci/**: land.py's pre-landing run; without it the branch never exercised fuzz
+    branches: [main, 'ci/**']
     paths:
       - 'src/**'
       - 'fuzz/**'
