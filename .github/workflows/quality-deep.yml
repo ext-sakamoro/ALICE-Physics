@@ -202,19 +202,16 @@ jobs:
             ${features:+--features "$features"} --cargo-arg=--lib $tests 2>&1 | tee /tmp/mutants-run.log
           rc=${PIPESTATUS[0]}
           set -e
-          # fail-soft early-warning (job summary line, does not affect $rc): the table
-          # is a single sample from one runner with a flat margin, not a statistical
-          # estimate (see scripts/mutants_baseline_budget.py's module doc) -- if the
-          # baseline's own measured test time is already close to the derived budget,
-          # this runner is slower than when the table was recorded and a future run
-          # could time out before the margin would normally cover it
-          baseline_line=$(grep -m1 'Unmutated baseline in' /tmp/mutants-run.log || true)
-          baseline_test_s=$(printf '%s' "$baseline_line" | sed -nE 's/.* \+ ([0-9]+)s test.*/\1/p')
-          if [ -n "$baseline_test_s" ]; then
-            threshold=$(python3 -c "print(int($budget * 0.6))")
-            if [ "$baseline_test_s" -gt "$threshold" ]; then
-              echo "::warning::baseline test phase took ${baseline_test_s}s, over 60% of the derived budget (${budget}s) -- this runner may be slower than when scripts/mutants-baseline-timings.txt was recorded; consider re-running scripts/mutants_baseline_timings.py --regenerate" >> "$GITHUB_STEP_SUMMARY"
-            fi
+          # fail-soft early-warning (does not affect $rc): scripts/mutants_baseline_margin_check.py
+          # strips ANSI escapes via the shared scripts/ansi.py before parsing -- a one-off sed
+          # over the raw log silently matched nothing when CARGO_TERM_COLOR=always coloured the
+          # "Unmutated baseline in Ns build + Ms test" line (measured on a real run, 2026-10-10:
+          # budget 1325s, baseline test 274s -- well past the threshold -- no warning, no notice).
+          # printed to stdout (a GitHub annotation) and appended to the job summary.
+          margin_output=$(python3 scripts/mutants_baseline_margin_check.py --log /tmp/mutants-run.log --budget "$budget")
+          if [ -n "$margin_output" ]; then
+            echo "$margin_output"
+            echo "$margin_output" >> "$GITHUB_STEP_SUMMARY"
           fi
           # cargo-mutants exits 0 without an output directory when the diff holds nothing
           # to mutate (doc comments only, Cargo.toml only): nothing to check, not a failure
