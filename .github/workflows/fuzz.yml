@@ -84,6 +84,9 @@ jobs:
     name: Fuzz — ${{ matrix.target }}
     needs: targets
     runs-on: ubuntu-latest
+    # build + a 60 s run normally take under 15 min; nightly runs use the
+    # duration input, so the bound leaves room for it
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -119,24 +122,37 @@ jobs:
           fi
           echo "seconds=$DURATION" >> "$GITHUB_OUTPUT"
 
-      # a crash is a reproducible defect: the job fails, and the input that
-      # crashed is kept as an artifact for triage
+      # A crash fails the job (it is a defect, not informational). Each
+      # target must also execute at least one input: a run that never executed
+      # anything is not a pass. fuzz/regressions/<target> (committed crash
+      # inputs) is replayed as an extra corpus, so a fixed crash stays fixed.
+      # The summary records runs and libFuzzer's coverage
       - name: Run fuzz target (time-boxed)
-        id: run
+        shell: bash
+        env:
+          CARGO_TERM_COLOR: never
         run: |
+          set -o pipefail
           cd fuzz
-          cargo +nightly fuzz run "${{ matrix.target }}" -- \
-            -max_total_time=${{ steps.dur.outputs.seconds }}
+          T="${{ matrix.target }}"
+          extra=()
+          if [ -d "regressions/$T" ]; then extra=("regressions/$T"); fi
+          mkdir -p "corpus/$T"
+          cargo +nightly fuzz run "$T" "corpus/$T" "${extra[@]}" -- \
+            -max_total_time=${{ steps.dur.outputs.seconds }} 2>&1 | tee fuzz-run.log
+          runs=$(grep -oE "Done [0-9]+ runs" fuzz-run.log | tail -1 | grep -oE "[0-9]+" || true)
+          cov=$(grep -oE "DONE +cov: [0-9]+" fuzz-run.log | tail -1 | grep -oE "[0-9]+$" || true)
+          echo "| $T | ${runs:-0} runs | cov ${cov:-?} |" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${runs:-0}" -le 0 ]; then
+            echo "::error::fuzz target $T executed 0 inputs"
+            exit 1
+          fi
 
-      - name: Upload crash artifacts (if any)
-        if: failure() && steps.run.outcome == 'failure'
+      - name: Upload crash artifacts
+        if: failure()
         uses: actions/upload-artifact@v6
         with:
           name: fuzz-crash-${{ matrix.target }}
           path: fuzz/artifacts/${{ matrix.target }}
           if-no-files-found: ignore
           retention-days: 14
-
-      - name: Report crash
-        if: failure() && steps.run.outcome == 'failure'
-        run: echo "::error::fuzz target ${{ matrix.target }} found a crash — see the fuzz-crash-${{ matrix.target }} artifact"
