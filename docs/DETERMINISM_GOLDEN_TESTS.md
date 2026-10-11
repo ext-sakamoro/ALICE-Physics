@@ -89,7 +89,7 @@ Extended `.github/workflows/ci.yml` to **6 platform coverage**:
 ### Native test matrix (5 platforms, single `test` job)
 
 - `macos-latest` (aarch64-apple-darwin) — primary dev platform, golden hash baseline.
-- `macos-15-intel` (x86_64-apple-darwin) — Mac Intel coverage.
+- `macos-15-intel` (x86_64-apple-darwin) — Mac Intel coverage, on pushes to `main` and the nightly schedule only (a `ci/**` staging push or a pull request runs the other legs).
 - `ubuntu-latest` (x86_64-unknown-linux-gnu) — Linux x86.
 - `ubuntu-24.04-arm` (aarch64-unknown-linux-gnu) — Linux ARM (GA runner since 2025-01).
 - `windows-latest` (x86_64-pc-windows-msvc) — Windows x86.
