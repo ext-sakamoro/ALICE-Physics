@@ -485,6 +485,10 @@ pub(crate) fn tangent_frame(normal: Vec3Fix) -> (Vec3Fix, Vec3Fix) {
 }
 
 #[cfg(all(test, feature = "std"))]
+#[path = "../tests/lib/contact_cache_oracles.rs"]
+mod lib_oracles;
+
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
     use crate::solver::RigidBody;
