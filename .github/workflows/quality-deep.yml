@@ -17,8 +17,9 @@ name: Quality Deep
 
 on:
   schedule:
-    - cron: '0 18 * * 0'     # 日曜 03:00 JST: 全項目 (core shard の変異試験 + ratchet / Miri / loom / bench / ignored)
-    - cron: '30 17 * * 1-6'   # 月〜土 02:30 JST: その日 main に入った変更の行だけを変異試験 (見逃しで失敗)
+    # cron は UTC: 日曜 18:00 UTC は月曜 03:00 JST、月〜土 17:30 UTC は火〜日 02:30 JST
+    - cron: '0 18 * * 0'     # 月曜 03:00 JST: 全項目 (core shard の変異試験 + ratchet / Miri / loom / bench / ignored)
+    - cron: '30 17 * * 1-6'   # 火〜日 02:30 JST: 直前 25 時間に main に入った変更の行だけを変異試験 (見逃しで失敗)
   workflow_dispatch:
     inputs:
       scope:
