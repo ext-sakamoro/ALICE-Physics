@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import sys
 import tempfile
@@ -104,6 +105,75 @@ class Rules(Case):
         self.assertEqual(self.errors(), [])
 
 
+LAYOUTS = {
+    "four-space indent": "jobs:\n    b:\n      runs-on: x\n      steps:\n        - run: echo\n",
+    "quoted job key": "jobs:\n  'b':\n    runs-on: x\n    steps:\n      - run: echo\n",
+    "flow-style job": "jobs:\n  b: {runs-on: x, steps: [{run: echo}]}\n",
+    "spaced job key": "jobs:\n  b :\n    runs-on: x\n    steps:\n      - run: echo\n",
+    "quoted jobs key": '"jobs":\n  b:\n    runs-on: x\n    steps:\n      - run: echo\n',
+}
+
+
+class Layouts(Case):
+    def test_a_job_without_a_limit_is_found_in_every_layout(self) -> None:
+        for label, text in LAYOUTS.items():
+            with self.subTest(layout=label):
+                for f in (self.root / ".github" / "workflows").glob("*"):
+                    f.unlink()
+                self.workflow(GOOD, "good.yml")
+                self.workflow("on: push\n" + text, "x.yml")
+                self.assertTrue(any("x.yml" in e and "job `b` has no job-level timeout-minutes" in e
+                                    for e in self.errors()), self.errors())
+
+    def test_every_layout_with_a_limit_passes(self) -> None:
+        with_limit = {
+            "four-space indent": LAYOUTS["four-space indent"].replace("      runs-on: x\n", "      runs-on: x\n      timeout-minutes: 5\n"),
+            "quoted job key": LAYOUTS["quoted job key"].replace("    runs-on: x\n", "    runs-on: x\n    timeout-minutes: 5\n"),
+            "flow-style job": "jobs:\n  b: {runs-on: x, timeout-minutes: 5, steps: [{run: echo}]}\n",
+            "spaced job key": LAYOUTS["spaced job key"].replace("    runs-on: x\n", "    runs-on: x\n    timeout-minutes: 5\n"),
+            "quoted jobs key": LAYOUTS["quoted jobs key"].replace("    runs-on: x\n", "    runs-on: x\n    timeout-minutes: 5\n"),
+        }
+        for label, text in with_limit.items():
+            with self.subTest(layout=label):
+                self.workflow("on: push\n" + text, "x.yml")
+                self.assertEqual(self.errors(), [])
+
+    def test_a_file_with_no_job_fails_even_beside_a_good_file(self) -> None:
+        self.workflow(GOOD, "good.yml")
+        self.workflow("name: x\non: push\n", "empty.yml")
+        self.assertTrue(any("empty.yml: no job found" in e for e in self.errors()))
+
+    def test_a_runs_on_outside_every_found_job_fails(self) -> None:
+        # a job hidden from the parser by an unusual layout still leaves its runs-on
+        self.workflow(GOOD + "  ? weird\n  : runs-on: x\n", "x.yml")
+        self.assertTrue(any("outside every job" in e or "a job key was expected" in e for e in self.errors()))
+
+    def test_runs_on_and_job_level_uses_outside_the_found_jobs_are_orphans(self) -> None:
+        text = "jobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v5\n"
+        self.assertEqual(wt.orphans(text, []), [3])
+        found, _ = wt.parse(text)
+        self.assertEqual(wt.orphans(text, found), [])
+
+    def test_a_runs_on_under_another_top_level_key_fails_the_check(self) -> None:
+        # e.g. a job template defined outside `jobs:` (an anchor) that the check cannot see
+        self.workflow(".template:\n  runs-on: x\n" + GOOD)
+        self.assertTrue(any("ci.yml:2: a runs-on / uses key outside every job" in e for e in self.errors()))
+
+    def test_a_flow_style_job_over_several_lines_is_read_to_its_end(self) -> None:
+        self.workflow("on: push\njobs:\n  b: {runs-on: x,\n      timeout-minutes: 5}\n")
+        self.assertEqual(self.errors(), [])
+        self.workflow("on: push\njobs:\n  b: {runs-on: x,\n      steps: [{run: a}],\n      timeout-minutes: 5}\n")
+        self.assertEqual(self.errors(), [])
+        self.workflow("on: push\njobs:\n  b: {runs-on: x,\n      steps: []}\n")
+        self.assertTrue(any("job `b` has no job-level timeout-minutes" in e for e in self.errors()))
+
+    def test_a_hash_without_a_space_before_it_is_not_a_comment(self) -> None:
+        self.assertEqual(wt.strip_comment("  runs-on: self#hosted  # note"), "  runs-on: self#hosted")
+
+    def test_a_comment_hash_inside_quotes_is_kept(self) -> None:
+        self.assertEqual(wt.strip_comment("  a: 'x # y'  # note"), "  a: 'x # y'")
+
+
 class RealRepository(unittest.TestCase):
     def test_every_job_of_this_repository_has_a_limit(self) -> None:
         errors, checked, calls = wt.check()
@@ -116,7 +186,7 @@ class RealRepository(unittest.TestCase):
             shutil.copytree(HERE.parent / ".github", root / ".github")
             ci = root / ".github" / "workflows" / "ci.yml"
             lines = ci.read_text(encoding="utf-8").splitlines(keepends=True)
-            first = next(i for i, ln in enumerate(lines) if wt.TIMEOUT_RE.match(ln.rstrip("\n")))
+            first = next(i for i, ln in enumerate(lines) if re.match(r"^    timeout-minutes:", ln))
             del lines[first]
             ci.write_text("".join(lines), encoding="utf-8")
             self.assertTrue(any("has no job-level timeout-minutes" in e for e in wt.check(root)[0]))
