@@ -114,6 +114,10 @@ cargo run --release --example rollback_netcode
 2 つの golden テストは CI 上で macOS (ARM / x86)、Linux (ARM / x86)、Windows、`wasm32-wasip1` で実行している
 <!-- claim-test: test_determinism_golden_hash -->
 
+**entropy も時計も使わない** production の経路は OS の entropy を引かず、時計も読まない
+利用者が乱数を使いたい時 (privacy の noise) は、利用者が渡す鍵か seed を使うか、`privacy` が再 export する `alice-crypto` の構築子 (`SecureRng::from_entropy` / `DpNoise::try_from_entropy`) を利用者が呼ぶ この crate 自身はそれらを呼ばない (非推奨の `privacy` の型は今も時計を seed にする)
+`scripts/entropy_guard.py` が CI で `src/` の試験以外の code を検査する `wasm` feature では、それらの entropy の構築子は browser の `crypto.getRandomValues` を使う
+
 **利用者が渡すコード** `ClosureSdf` は利用者のクロージャを受け取る
 ソルバー自体は決定論的だが、クロージャの中では `f32::sin` などの代わりに `alice_physics::det_math::{sin, exp, …}` を呼ぶ必要がある
 

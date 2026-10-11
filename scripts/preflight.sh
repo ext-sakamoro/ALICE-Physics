@@ -107,6 +107,8 @@ fi
 step "wiring-guard (oracle + 新規の未配線 / 理由の無い dead_code が無い)"
 python3 scripts/test_wiring_guard.py
 python3 scripts/wiring_guard.py
+python3 scripts/test_entropy_guard.py
+python3 scripts/entropy_guard.py
 
 step "coverage tables (docs/coverage/*.toml = src/ LIMITATION comments + tests)"
 python3 scripts/test_coverage_check.py

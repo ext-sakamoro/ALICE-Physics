@@ -120,6 +120,15 @@ Both golden suites run in CI on macOS (ARM and x86), Linux (ARM and x86),
 Windows and `wasm32-wasip1`.
 <!-- claim-test: test_determinism_golden_hash -->
 
+**No entropy, no clock.** No production path draws OS entropy or reads the
+wall clock. Randomness a caller wants (privacy noise) comes from a key or seed
+the caller passes, or from the `alice-crypto` constructors that `privacy`
+re-exports (`SecureRng::from_entropy`, `DpNoise::try_from_entropy`), which only
+the caller calls; the deprecated `privacy` types still seed from the clock.
+`scripts/entropy_guard.py` checks `src/` outside test modules in CI. With the
+`wasm` feature, those entropy constructors use the browser's
+`crypto.getRandomValues`.
+
 **Your own code.** `ClosureSdf` takes a user closure. The solver stays
 deterministic, but inside the closure you need to call
 `alice_physics::det_math::{sin, exp, …}` instead of `f32::sin` and friends.

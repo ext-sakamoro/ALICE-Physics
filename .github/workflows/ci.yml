@@ -476,6 +476,11 @@ jobs:
         run: python3 scripts/test_wiring_guard.py
       - name: wiring-guard (新規の未配線 / 理由の無い dead_code が無い)
         run: python3 scripts/wiring_guard.py
+      # 決定論: production の code は OS の entropy も時計も使わない
+      - name: Entropy guard (test first)
+        run: python3 scripts/test_entropy_guard.py
+      - name: Entropy guard (no OS entropy or wall clock in production code)
+        run: python3 scripts/entropy_guard.py
       - name: Predictable randomness guard (test first)
         run: python3 scripts/test_csprng_guard.py
       - name: Predictable randomness guard
