@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5775 |
+| 🟢 Not ignored (run by CI) | 5806 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5873** |
+| **Total** | **5904** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5775)
+## 🟢 Not ignored (5806)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -417,6 +417,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
+| `analytic_world_query_curved_casts.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
 | `audit_smoke_fire.rs` | 10 |
 | `coupling_channel_inventory.rs` | 10 |
@@ -437,6 +438,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_rans_wall_function.rs` | 9 |
 | `analytic_structural_creep_per_material.rs` | 9 |
 | `analytic_thermoplastic_softening.rs` | 9 |
+| `analytic_world_query_precision.rs` | 9 |
 | `audit_acoustic_wave.rs` | 9 |
 | `audit_c_trimesh.rs` | 9 |
 | `audit_heatmap.rs` | 9 |
@@ -547,6 +549,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_slider_reaction_limit.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `analytic_world_query_boundaries.rs` | 4 |
+| `analytic_world_query_cylinder_sphere.rs` | 4 |
 | `audit_bridge_self_joint.rs` | 4 |
 | `audit_c_creep_longterm.rs` | 4 |
 | `audit_c_joint.rs` | 4 |
@@ -565,6 +568,7 @@ Per-file counts (the test names are in `tests/`):
 | `tgs_stable_cache_keys.rs` | 4 |
 | `world_ccd_off_bit_identity.rs` | 4 |
 | `world_snapshot_history_independence.rs` | 4 |
+| `analytic_axial_support.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
@@ -574,6 +578,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_large_rotation.rs` | 3 |
 | `analytic_restitution_phase.rs` | 3 |
 | `analytic_shape_with_rotation_wiring.rs` | 3 |
+| `analytic_world_query_round_solids.rs` | 3 |
 | `audit_bvh_alloc.rs` | 3 |
 | `audit_c_coupled_field.rs` | 3 |
 | `audit_c_hyperelastic.rs` | 3 |
@@ -607,6 +612,7 @@ Per-file counts (the test names are in `tests/`):
 | `mesh_to_fem_stress.rs` | 2 |
 | `tgs_joints_static_colliders.rs` | 2 |
 | `wm07_rollback_event_parity.rs` | 2 |
+| `world_query_previous_bits.rs` | 2 |
 | `analytic_fem_convergence.rs` | 1 |
 | `analytic_four_bar_freudenstein.rs` | 1 |
 | `analytic_hilbert_breakdown_boundary.rs` | 1 |
