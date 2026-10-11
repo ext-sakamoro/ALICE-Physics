@@ -13,6 +13,24 @@
 //! variants, match arms, `let` statements, expressions, struct literal fields).
 //! A file that does not parse is an error (exit 1): the planner then fails instead
 //! of guessing.
+//!
+//! `cfg-items --mutants-skips FILE...` (scripts/mutants_skip_check.py) prints,
+//! tab separated, one line per:
+//! - `skip  file  line  name  inner  route`: an attribute that is `mutants::skip`
+//!   (`::` first allowed) or a `cfg_attr(<pred>, ...)` holding one at any depth.
+//!   `inner` is 1 for `#![...]`. `route` is the `cfg(...)` tokens of the node and of
+//!   every node around it, joined by U+001E.
+//! - `mod  file  line  name  path  inline  route`: a `mod x;` (no body). `path` is its
+//!   `#[path = "..."]` value or empty, `inline` the names of the inline `mod a { }`
+//!   it sits in, joined by `/`.
+//! - `include  file  line  literal  route`: an `include!(...)`; `literal` is empty when
+//!   the argument is not one string literal.
+//! - `pathinline  file  line  name  path`: a `#[path]` on an inline `mod x { }`, which
+//!   moves where the modules declared inside it are looked up (not followed: the
+//!   checker refuses it).
+//! - `tokens  file  count`: the `mutants :: skip` token runs anywhere in the file
+//!   (attributes, macro bodies, all token trees), for the checker to compare with the
+//!   skips it was given.
 
 use proc_macro2::Span;
 use std::fmt::Write as _;
@@ -168,10 +186,277 @@ impl<'ast> Visit<'ast> for Collector<'_> {
     }
 }
 
+/// `--mutants-skips`: see the module doc.
+mod skips {
+    use proc_macro2::{TokenStream, TokenTree};
+    use std::fmt::Write as _;
+    use syn::punctuated::Punctuated;
+    use syn::spanned::Spanned;
+    use syn::visit::{self, Visit};
+    use syn::{AttrStyle, Attribute, Expr, Item, Lit, Macro, Meta, Token};
+
+    const SEP: char = '\u{1e}';
+
+    pub fn is_skip(meta: &Meta) -> bool {
+        let path = meta.path();
+        let names: Vec<String> = path.segments.iter().map(|s| s.ident.to_string()).collect();
+        if matches!(meta, Meta::Path(_)) && names == ["mutants", "skip"] {
+            return true;
+        }
+        if let Meta::List(list) = meta {
+            if path.is_ident("cfg_attr") {
+                if let Ok(args) = list.parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated) {
+                    return args.iter().skip(1).any(is_skip);
+                }
+            }
+        }
+        false
+    }
+
+    /// `mutants :: skip` runs in a token stream, at any depth.
+    pub fn count_tokens(ts: TokenStream) -> usize {
+        let tts: Vec<TokenTree> = ts.into_iter().collect();
+        let mut n = 0;
+        for (k, tt) in tts.iter().enumerate() {
+            match tt {
+                TokenTree::Group(g) => n += count_tokens(g.stream()),
+                TokenTree::Ident(i) if i == "mutants" => {
+                    let colon = |j: usize| matches!(tts.get(j), Some(TokenTree::Punct(p)) if p.as_char() == ':');
+                    let skip = matches!(tts.get(k + 3), Some(TokenTree::Ident(s)) if s == "skip");
+                    if colon(k + 1) && colon(k + 2) && skip {
+                        n += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        n
+    }
+
+    fn cfgs(attrs: &[Attribute]) -> Vec<String> {
+        attrs
+            .iter()
+            .filter(|a| a.path().is_ident("cfg"))
+            .filter_map(|a| match &a.meta {
+                Meta::List(list) => Some(list.tokens.to_string()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub struct Collector<'a> {
+        pub file: &'a str,
+        pub out: String,
+        route: Vec<String>,
+        inline: Vec<String>,
+    }
+
+    impl<'a> Collector<'a> {
+        pub fn new(file: &'a str) -> Self {
+            Collector { file, out: String::new(), route: Vec::new(), inline: Vec::new() }
+        }
+
+        fn route_with(&self, own: &[Attribute]) -> String {
+            let mut r = self.route.clone();
+            r.extend(cfgs(own));
+            r.join(&SEP.to_string())
+        }
+
+        fn skips(&mut self, attrs: &[Attribute], name: &str) {
+            for a in attrs.iter().filter(|a| is_skip(&a.meta)) {
+                let inner = u8::from(matches!(a.style, AttrStyle::Inner(_)));
+                let line = a.span().start().line;
+                let route = self.route_with(attrs);
+                let _ = writeln!(self.out, "skip\t{}\t{line}\t{name}\t{inner}\t{route}", self.file);
+            }
+        }
+
+        fn include(&mut self, mac: &Macro, attrs: &[Attribute]) {
+            if !mac.path.is_ident("include") {
+                return;
+            }
+            let literal = match mac.parse_body::<Lit>() {
+                Ok(Lit::Str(s)) => s.value(),
+                _ => String::new(),
+            };
+            let line = mac.span().start().line;
+            let route = self.route_with(attrs);
+            let _ = writeln!(self.out, "include\t{}\t{line}\t{literal}\t{route}", self.file);
+        }
+
+        fn enter(&mut self, attrs: &[Attribute], name: &str) -> usize {
+            self.skips(attrs, name);
+            let before = self.route.len();
+            self.route.extend(cfgs(attrs));
+            before
+        }
+    }
+
+    fn path_attr(attrs: &[Attribute]) -> String {
+        attrs
+            .iter()
+            .filter(|a| a.path().is_ident("path"))
+            .find_map(|a| match &a.meta {
+                Meta::NameValue(nv) => match &nv.value {
+                    Expr::Lit(l) => match &l.lit {
+                        Lit::Str(s) => Some(s.value()),
+                        _ => None,
+                    },
+                    _ => None,
+                },
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    impl<'ast> Visit<'ast> for Collector<'_> {
+        fn visit_file(&mut self, f: &'ast syn::File) {
+            let before = self.enter(&f.attrs, "file");
+            visit::visit_file(self, f);
+            self.route.truncate(before);
+        }
+        fn visit_item(&mut self, i: &'ast Item) {
+            let (attrs, name): (&[Attribute], String) = match i {
+                Item::Fn(f) => (&f.attrs, f.sig.ident.to_string()),
+                Item::Mod(m) => (&m.attrs, m.ident.to_string()),
+                Item::Impl(x) => (&x.attrs, "impl".to_string()),
+                Item::Trait(x) => (&x.attrs, x.ident.to_string()),
+                Item::Const(x) => (&x.attrs, x.ident.to_string()),
+                Item::Static(x) => (&x.attrs, x.ident.to_string()),
+                Item::Struct(x) => (&x.attrs, x.ident.to_string()),
+                Item::Enum(x) => (&x.attrs, x.ident.to_string()),
+                Item::Macro(x) => (&x.attrs, "macro".to_string()),
+                Item::ForeignMod(x) => (&x.attrs, "extern".to_string()),
+                Item::Use(x) => (&x.attrs, "use".to_string()),
+                Item::Type(x) => (&x.attrs, x.ident.to_string()),
+                Item::Union(x) => (&x.attrs, x.ident.to_string()),
+                Item::ExternCrate(x) => (&x.attrs, x.ident.to_string()),
+                Item::TraitAlias(x) => (&x.attrs, x.ident.to_string()),
+                _ => (&[], String::new()),
+            };
+            let before = self.enter(attrs, &name);
+            match i {
+                Item::Mod(m) if m.content.is_none() => {
+                    let line = m.mod_token.span.start().line;
+                    let route = self.route.join(&SEP.to_string());
+                    let _ = writeln!(
+                        self.out,
+                        "mod\t{}\t{line}\t{}\t{}\t{}\t{route}",
+                        self.file,
+                        m.ident,
+                        path_attr(&m.attrs),
+                        self.inline.join("/")
+                    );
+                }
+                Item::Mod(m) => {
+                    let path = path_attr(&m.attrs);
+                    if !path.is_empty() {
+                        let line = m.mod_token.span.start().line;
+                        let _ = writeln!(self.out, "pathinline\t{}\t{line}\t{}\t{path}", self.file, m.ident);
+                    }
+                    self.inline.push(m.ident.to_string());
+                    visit::visit_item(self, i);
+                    self.inline.pop();
+                    self.route.truncate(before);
+                    return;
+                }
+                Item::Macro(m) => self.include(&m.mac, &m.attrs),
+                _ => {}
+            }
+            visit::visit_item(self, i);
+            self.route.truncate(before);
+        }
+        fn visit_impl_item(&mut self, i: &'ast syn::ImplItem) {
+            let (attrs, name): (&[Attribute], String) = match i {
+                syn::ImplItem::Fn(f) => (&f.attrs, f.sig.ident.to_string()),
+                syn::ImplItem::Const(c) => (&c.attrs, c.ident.to_string()),
+                syn::ImplItem::Type(t) => (&t.attrs, t.ident.to_string()),
+                syn::ImplItem::Macro(m) => (&m.attrs, "macro".to_string()),
+                _ => (&[], String::new()),
+            };
+            let before = self.enter(attrs, &name);
+            visit::visit_impl_item(self, i);
+            self.route.truncate(before);
+        }
+        fn visit_trait_item(&mut self, i: &'ast syn::TraitItem) {
+            let (attrs, name): (&[Attribute], String) = match i {
+                syn::TraitItem::Fn(f) => (&f.attrs, f.sig.ident.to_string()),
+                syn::TraitItem::Const(c) => (&c.attrs, c.ident.to_string()),
+                syn::TraitItem::Type(t) => (&t.attrs, t.ident.to_string()),
+                syn::TraitItem::Macro(m) => (&m.attrs, "macro".to_string()),
+                _ => (&[], String::new()),
+            };
+            let before = self.enter(attrs, &name);
+            visit::visit_trait_item(self, i);
+            self.route.truncate(before);
+        }
+        fn visit_foreign_item(&mut self, i: &'ast syn::ForeignItem) {
+            let attrs: &[Attribute] = match i {
+                syn::ForeignItem::Fn(f) => &f.attrs,
+                syn::ForeignItem::Static(s) => &s.attrs,
+                syn::ForeignItem::Type(t) => &t.attrs,
+                syn::ForeignItem::Macro(m) => &m.attrs,
+                _ => &[],
+            };
+            let before = self.enter(attrs, "foreign");
+            visit::visit_foreign_item(self, i);
+            self.route.truncate(before);
+        }
+        fn visit_stmt_macro(&mut self, m: &'ast syn::StmtMacro) {
+            self.skips(&m.attrs, "?");
+            self.include(&m.mac, &m.attrs);
+            visit::visit_stmt_macro(self, m);
+        }
+        fn visit_expr_macro(&mut self, m: &'ast syn::ExprMacro) {
+            self.skips(&m.attrs, "?");
+            self.include(&m.mac, &m.attrs);
+            visit::visit_expr_macro(self, m);
+        }
+        fn visit_local(&mut self, l: &'ast syn::Local) {
+            self.skips(&l.attrs, "?");
+            visit::visit_local(self, l);
+        }
+        fn visit_expr_closure(&mut self, c: &'ast syn::ExprClosure) {
+            self.skips(&c.attrs, "?");
+            visit::visit_expr_closure(self, c);
+        }
+        fn visit_field(&mut self, f: &'ast syn::Field) {
+            self.skips(&f.attrs, "?");
+            visit::visit_field(self, f);
+        }
+        fn visit_variant(&mut self, v: &'ast syn::Variant) {
+            self.skips(&v.attrs, "?");
+            visit::visit_variant(self, v);
+        }
+        fn visit_arm(&mut self, a: &'ast syn::Arm) {
+            self.skips(&a.attrs, "?");
+            visit::visit_arm(self, a);
+        }
+        fn visit_field_value(&mut self, f: &'ast syn::FieldValue) {
+            self.skips(&f.attrs, "?");
+            visit::visit_field_value(self, f);
+        }
+    }
+
+    /// The whole `--mutants-skips` output for one parsed file.
+    pub fn report(path: &str, src: &str, file: &syn::File) -> String {
+        let mut c = Collector::new(path);
+        c.visit_file(file);
+        let tokens = src.parse::<TokenStream>().map(count_tokens).unwrap_or(usize::MAX);
+        let _ = writeln!(c.out, "tokens\t{path}\t{tokens}");
+        c.out
+    }
+}
+
 fn main() -> ExitCode {
     let mut failed = false;
     let mut out = String::new();
-    for path in std::env::args().skip(1) {
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let mutants_skips = args.first().is_some_and(|a| a == "--mutants-skips");
+    if mutants_skips {
+        args.remove(0);
+    }
+    for path in args {
         let src = match std::fs::read_to_string(&path) {
             Ok(s) => s,
             Err(e) => {
@@ -181,6 +466,7 @@ fn main() -> ExitCode {
             }
         };
         match syn::parse_file(&src) {
+            Ok(file) if mutants_skips => out.push_str(&skips::report(&path, &src, &file)),
             Ok(file) => {
                 let mut c = Collector { file: &path, out: String::new() };
                 c.visit_file(&file);
