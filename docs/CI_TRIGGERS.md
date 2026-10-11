@@ -94,6 +94,46 @@ a `ci/**` push is not declared.
 | `ci.yml` | `test` | `macos-15-intel` | main-after-landing | push main, schedule |
 <!-- ci-triggers:after-landing-legs:end -->
 
+## What the landing waits on
+
+`scripts/land.py` pushes a change of the CI lane to `ci/<id>` and waits on every workflow
+whose `on.push` runs on `ci/**`, with the class of `.github/ci-evidence.toml` (the list is
+derived from the workflow files, not written in the script):
+
+- **landing**: the newest run for the SHA completes with conclusion `success`. For a
+  path-gated workflow that is the `Gate` job's verdict, so a run whose heavy jobs were
+  skipped and whose `Gate` succeeded passes. A matrix leg of class `after-landing` only has
+  to have started (`in_progress` or `completed`); every other job of the run must succeed.
+- **after-landing**: the run exists, its changes job succeeded, and its heavy jobs have
+  started, or were all skipped because the changes job said `run=false` (read from the jobs
+  GitHub reports, not decided again locally). Its result is not awaited.
+- A known red result stops the landing, also on an after-landing leg or workflow.
+- A workflow with no run for the SHA (after 10 minutes), or whose run was cancelled or
+  skipped, has no evidence: the script checks that `ci/<id>` still points at the SHA and
+  re-creates the run with `gh workflow run <workflow> --ref ci/<id>`, at most twice per
+  workflow, then stops. Absence is never read as success, and a landing that would wait on
+  0 workflows fails.
+- One `gh run list` per poll (every 30 s) plus one `gh run view` per unfinished run whose
+  decision needs its jobs; the wait is bounded at 2 hours.
+
+`scripts/ci_triggers_check.py` compares this table with what `scripts/land.py` derives:
+
+<!-- ci-triggers:landing-waits:begin -->
+| workflow | class | waits for |
+|---|---|---|
+| `bench-gate.yml` | landing | success |
+| `ci.yml` | landing | success; started only: Test (macos-latest) |
+| `downstream.yml` | landing | success |
+| `fuzz.yml` | landing | success |
+| `integration-status.yml` | landing | success |
+| `oracle-status.yml` | landing | success |
+| `python-binding.yml` | landing | success |
+| `reexport_check.yml` | landing | success |
+| `security-audit.yml` | landing | success |
+| `unsafe-and-parallel.yml` | after-landing | started: heavy jobs started, or all skipped by the changes job |
+| `wiring-status.yml` | landing | success |
+<!-- ci-triggers:landing-waits:end -->
+
 ## Dropped runs
 
 GitHub keeps one pending run per concurrency group: while a run of a group is in

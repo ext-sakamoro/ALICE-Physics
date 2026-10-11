@@ -8,6 +8,7 @@ regeneration, checks, CI wait) are recorded instead of run. One rule per case.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -71,6 +72,11 @@ class FakeLander(land.Lander):
 
     def wait_ci(self, ref, sha):
         self.calls.append(f"wait_ci {ref}")
+        if self.ci_result != "success":
+            raise land.LandError(f"CI on {ref} ended `{self.ci_result}`")
+
+    def wait_evidence(self, ref, sha):
+        self.calls.append(f"wait_evidence {ref}")
         if self.ci_result != "success":
             raise land.LandError(f"CI on {ref} ended `{self.ci_result}`")
 
@@ -177,7 +183,7 @@ class Landing(unittest.TestCase):
         lander = self.r.lander()
         sha = lander.land()
         self.assertEqual(self.r.origin_head(), sha)
-        self.assertNotIn("wait_ci ci/T-1", lander.calls)
+        self.assertNotIn("wait_evidence ci/T-1", lander.calls)
         self.assertEqual((self.r.work / "docs/integration-status.md").read_text(), "ledger: a.rs, b.rs\n")
         self.assertIn("docs: regenerate the generated ledgers", git(self.r.work, "log", "-1", "--format=%s"))
 
@@ -185,7 +191,7 @@ class Landing(unittest.TestCase):
         commit(self.r.work, {"scripts/x.py": "print(1)\n"}, "ci: add x")
         lander = self.r.lander()
         lander.land()
-        self.assertIn("wait_ci ci/T-1", lander.calls)
+        self.assertIn("wait_evidence ci/T-1", lander.calls)
 
     def test_red_branch_ci_stops_before_main(self):
         before = self.r.origin_head()
@@ -397,7 +403,7 @@ class Landing(unittest.TestCase):
         lander.git = spy
         lander.land()
         self.assertEqual(pushes, [], "the earlier ci/T-1 push is reused, not repeated")
-        self.assertIn("wait_ci ci/T-1", lander.calls)
+        self.assertIn("wait_evidence ci/T-1", lander.calls)
 
     def test_union_merged_changelog_with_a_repeated_line_fails(self):
         cl = "# Changelog\n\n## [Unreleased]\n\n### Fixed\n- start\n"
@@ -456,7 +462,7 @@ class Landing(unittest.TestCase):
         lander = self.r.lander(dry_run=True)
         lander.land()
         self.assertEqual(self.r.origin_head(), before)
-        self.assertNotIn("wait_ci ci/T-1", lander.calls)
+        self.assertNotIn("wait_evidence ci/T-1", lander.calls)
 
 
 class WaitCi(unittest.TestCase):
@@ -513,6 +519,351 @@ class WaitCi(unittest.TestCase):
                 self.lander([[other]]).wait_ci("ci/x", "abc")
         finally:
             land.NO_RUN_TIMEOUT = old
+
+
+FAKE_GH = r"""import json, os, sys
+path = os.environ["FAKE_GH_STATE"]
+st = json.load(open(path, encoding="utf-8"))
+a = sys.argv[1:]
+st["calls"].append(a)
+rc = 0
+if a[:2] == ["run", "list"]:
+    i = min(st["polls"], len(st["list"]) - 1)
+    st["polls"] += 1
+    print(json.dumps(st["list"][i] + st["added"], ensure_ascii=True))
+elif a[:2] == ["run", "view"]:
+    print(json.dumps({"jobs": st["jobs"].get(a[2], [])}, ensure_ascii=True))
+elif a[:2] == ["workflow", "run"]:
+    st["dispatched"].append(a[2])
+    st["added"] += st["on_dispatch"].get(a[2], [])
+else:
+    print("unexpected gh " + " ".join(a), file=sys.stderr)
+    rc = 2
+json.dump(st, open(path, "w", encoding="utf-8"))
+sys.exit(rc)
+"""
+
+SHA = "a" * 40
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def ok_run(name: str, rid: int, **k) -> dict:
+    return {"workflowName": name, "headSha": SHA, "databaseId": rid, "status": "completed",
+            "conclusion": "success", "event": "push", "createdAt": "2026-10-12T00:00:00Z", **k}
+
+
+class WaitEvidence(unittest.TestCase):
+    """wait_evidence against a fake `gh` on PATH (no network)."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.gh = self.dir / "gh.py"
+        self.gh.write_text(FAKE_GH, encoding="utf-8")
+        self.state = self.dir / "state.json"
+        self.env = {k: os.environ.get(k) for k in ("FAKE_GH_STATE",)}
+        os.environ["FAKE_GH_STATE"] = str(self.state)
+        self.expected = land.expected_workflows(ROOT)
+        self.names = {w["file"]: w["name"] for w in self.expected}
+
+    def tearDown(self):
+        for k, v in self.env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def green(self) -> list[dict]:
+        """every expected workflow green; ci.yml and the after-landing workflow still running
+        with their after-landing parts started"""
+        runs = []
+        for i, w in enumerate(self.expected, 1):
+            if w["file"] in ("ci.yml", "unsafe-and-parallel.yml"):
+                runs.append(ok_run(w["name"], i, status="in_progress", conclusion=""))
+            else:
+                runs.append(ok_run(w["name"], i))
+        return runs
+
+    def rid(self, f: str) -> int:
+        return 1 + [w["file"] for w in self.expected].index(f)
+
+    def ci_jobs(self, leg_status="in_progress", leg_concl="") -> list[dict]:
+        return [{"name": "gate", "status": "completed", "conclusion": "success"},
+                {"name": "Test (ubuntu-latest)", "status": "completed", "conclusion": "success"},
+                {"name": "Test (macos-latest)", "status": leg_status, "conclusion": leg_concl},
+                {"name": "Clippy", "status": "completed", "conclusion": "success"}]
+
+    def miri_jobs(self, heavy="in_progress", concl="") -> list[dict]:
+        return [{"name": "Changed paths", "status": "completed", "conclusion": "success"},
+                {"name": "loom (batch colouring protocol, --cfg loom)", "status": heavy, "conclusion": concl},
+                {"name": "Miri (UB 検出、parallel feature)", "status": heavy, "conclusion": concl},
+                {"name": "Gate", "status": "pending", "conclusion": ""}]
+
+    def wait(self, lists, jobs=None, on_dispatch=None, at=SHA, root=ROOT):
+        jobs = jobs if jobs is not None else {str(self.rid("ci.yml")): self.ci_jobs(),
+                                              str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs()}
+        self.state.write_text(json.dumps({"list": lists, "jobs": jobs, "on_dispatch": on_dispatch or {},
+                                          "added": [], "dispatched": [], "calls": [], "polls": 0}))
+
+        class L(land.Lander):
+            def git(self, *a, check=True):
+                return "git@github.com:o/r.git"
+
+            def remote_sha(self, ref):
+                return at
+        lnd = L(root, "T", log=lambda *_: None)
+        lnd.gh_cmd = [sys.executable, str(self.gh)]
+        lnd.poll_seconds = 0
+        lnd.max_polls = 12
+        lnd.wait_evidence("ci/T", SHA)
+
+    def st(self) -> dict:
+        return json.loads(self.state.read_text())
+
+    # --- the expected set ----------------------------------------------------------------
+
+    def test_the_expected_set_is_derived_from_the_workflows(self):
+        files = {w["file"]: w["cls"] for w in self.expected}
+        self.assertEqual(files["unsafe-and-parallel.yml"], "after-landing")
+        self.assertEqual(files["security-audit.yml"], "landing")
+        for absent in ("quality-deep.yml", "release.yml"):
+            self.assertNotIn(absent, files)
+        ci = next(w for w in self.expected if w["file"] == "ci.yml")
+        self.assertEqual(ci["legs"], ["Test (macos-latest)"])  # the Intel leg is not expected on ci/**
+        self.assertGreaterEqual(len(self.expected), 10)
+
+    def tree(self, wf: dict[str, str], evidence: str) -> Path:
+        d = self.dir / "tree"
+        (d / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+        for k, v in wf.items():
+            (d / ".github" / "workflows" / k).write_text(v, encoding="utf-8")
+        (d / ".github" / "ci-evidence.toml").write_text(evidence, encoding="utf-8")
+        return d
+
+    def test_zero_expected_workflows_fails(self):
+        d = self.tree({"w.yml": "name: W\non:\n  schedule:\n    - cron: '0 0 * * *'\njobs:\n  a: {}\n"},
+                      '[workflows]\n"w.yml" = "schedule-only"\n')
+        with self.assertRaisesRegex(land.LandError, "compared 0 workflows"):
+            land.expected_workflows(d)
+
+    def test_an_expected_workflow_without_dispatch_fails_loudly(self):
+        d = self.tree({"w.yml": "name: W\non:\n  push:\n    branches: [main, 'ci/**']\njobs:\n  a: {}\n"},
+                      '[workflows]\n"w.yml" = "landing"\n')
+        with self.assertRaisesRegex(land.LandError, "no workflow_dispatch"):
+            land.expected_workflows(d)
+
+    def test_a_ci_workflow_without_an_evidence_class_fails(self):
+        d = self.tree({"w.yml": "name: W\non:\n  push:\n    branches: ['ci/**']\n  workflow_dispatch:\njobs:\n  a: {}\n"},
+                      '[workflows]\n')
+        with self.assertRaisesRegex(land.LandError, "class .* is None"):
+            land.expected_workflows(d)
+
+    def test_main_only_and_tag_workflows_are_not_expected(self):
+        d = self.tree({"m.yml": "name: M\non:\n  push:\n    branches: [main]\n  workflow_dispatch:\njobs:\n  a: {}\n",
+                       "t.yml": "name: T\non:\n  push:\n    tags:\n      - 'v*'\njobs:\n  a: {}\n",
+                       "c.yml": "name: C\non:\n  push:\n    branches: [main, 'ci/**']\n  workflow_dispatch:\njobs:\n  a: {}\n"},
+                      '[workflows]\n"m.yml" = "landing"\n"t.yml" = "tag-only"\n"c.yml" = "landing"\n')
+        self.assertEqual([w["file"] for w in land.expected_workflows(d)], ["c.yml"])
+
+    # --- waiting ---------------------------------------------------------------------------
+
+    def test_all_green_passes(self):
+        self.wait([self.green()])
+        self.assertEqual(self.st()["dispatched"], [])
+
+    def test_one_red_stops(self):
+        runs = self.green()
+        runs[self.rid("security-audit.yml") - 1]["conclusion"] = "failure"
+        with self.assertRaisesRegex(land.LandError, "is red for .*\n  security-audit.yml: run .* ended failure"):
+            self.wait([runs])
+
+    def test_a_path_gated_skip_with_a_gate_success_passes(self):
+        # the run of a workflow whose heavy jobs were skipped ends success (the Gate's verdict)
+        self.wait([self.green()])
+
+    def test_a_missing_run_is_re_created_then_green(self):
+        old = land.NO_RUN_GRACE
+        land.NO_RUN_GRACE = -1
+        try:
+            runs = self.green()
+            gone = runs.pop(self.rid("fuzz.yml") - 1)
+            self.wait([runs], on_dispatch={"fuzz.yml": [dict(gone, databaseId=99, event="workflow_dispatch")]})
+        finally:
+            land.NO_RUN_GRACE = old
+        self.assertEqual(self.st()["dispatched"], ["fuzz.yml"])
+        self.assertIn(["workflow", "run", "fuzz.yml", "--repo", "o/r", "--ref", "ci/T"], self.st()["calls"])
+        self.assertFalse(any(c[:2] not in (["run", "list"], ["run", "view"], ["workflow", "run"]) for c in self.st()["calls"]))
+
+    def test_a_missing_run_waits_for_the_grace_before_re_creating(self):
+        runs = self.green()
+        runs.pop(self.rid("fuzz.yml") - 1)
+        with self.assertRaisesRegex(land.LandError, "did not give its evidence in time"):
+            self.wait([runs])
+        self.assertEqual(self.st()["dispatched"], [])
+
+    def test_a_cancelled_run_is_re_created(self):
+        runs = self.green()
+        f = self.rid("bench-gate.yml") - 1
+        runs[f]["conclusion"] = "cancelled"
+        again = dict(runs[f], databaseId=98, conclusion="success", event="workflow_dispatch")
+        self.wait([runs], on_dispatch={"bench-gate.yml": [again]})
+        self.assertEqual(self.st()["dispatched"], ["bench-gate.yml"])
+
+    def test_re_creation_is_bounded(self):
+        runs = self.green()
+        f = self.rid("bench-gate.yml") - 1
+        runs[f]["conclusion"] = "cancelled"
+        still = dict(runs[f], databaseId=97)
+        with self.assertRaisesRegex(land.LandError, "after 2 re-created runs"):
+            self.wait([runs], on_dispatch={"bench-gate.yml": [still]})
+        self.assertEqual(self.st()["dispatched"], ["bench-gate.yml", "bench-gate.yml"])
+
+    def test_a_moved_ref_is_not_re_created(self):
+        runs = self.green()
+        runs[self.rid("bench-gate.yml") - 1]["conclusion"] = "cancelled"
+        with self.assertRaisesRegex(land.LandError, "the ref moved"):
+            self.wait([runs], at="b" * 40)
+        self.assertEqual(self.st()["dispatched"], [])
+
+    def test_the_newest_run_counts(self):
+        runs = self.green()
+        f = self.rid("bench-gate.yml") - 1
+        old = dict(runs[f], databaseId=1000 + runs[f]["databaseId"], conclusion="failure")
+        runs[f]["databaseId"] = 2000
+        runs.append(old)  # an older failure (lower id than the newest) does not count
+        old["databaseId"] = 5
+        self.wait([runs])
+
+    def test_runs_of_another_sha_do_not_count(self):
+        runs = self.green()
+        runs[self.rid("bench-gate.yml") - 1]["headSha"] = "c" * 40
+        with self.assertRaisesRegex(land.LandError, "bench-gate.yml: no run"):
+            self.wait([runs])
+
+    def test_waits_for_a_running_landing_workflow(self):
+        runs = self.green()
+        pending = [dict(r) for r in runs]
+        pending[self.rid("downstream.yml") - 1].update(status="in_progress", conclusion="")
+        self.wait([pending, pending, runs])
+        self.assertGreaterEqual(self.st()["polls"], 3)
+
+    # --- after-landing ---------------------------------------------------------------------
+
+    def test_after_landing_leg_not_started_blocks(self):
+        jobs = {str(self.rid("ci.yml")): self.ci_jobs(leg_status="queued"),
+                str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs()}
+        with self.assertRaisesRegex(land.LandError, "Test \\(macos-latest\\)"):
+            self.wait([self.green()], jobs=jobs)
+
+    def test_after_landing_leg_started_is_enough(self):
+        self.wait([self.green()])  # Test (macos-latest) in_progress, the rest green
+
+    def test_after_landing_leg_known_red_stops(self):
+        jobs = {str(self.rid("ci.yml")): self.ci_jobs(leg_status="completed", leg_concl="failure"),
+                str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs()}
+        with self.assertRaisesRegex(land.LandError, "is red for .*\n  ci.yml: .*macos-latest.* ended failure"):
+            self.wait([self.green()], jobs=jobs)
+
+    def test_intel_is_not_expected_on_ci(self):
+        # the ci/** run has no Mac Intel job; the landing does not wait for one
+        jobs = {str(self.rid("ci.yml")): self.ci_jobs(),
+                str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs()}
+        self.assertFalse(any("intel" in j["name"] for j in jobs[str(self.rid("ci.yml"))]))
+        self.wait([self.green()], jobs=jobs)
+
+    def test_a_non_leg_ci_job_still_running_is_waited_for(self):
+        ci = self.ci_jobs()
+        ci[1]["status"], ci[1]["conclusion"] = "in_progress", ""
+        jobs = {str(self.rid("ci.yml")): ci, str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs()}
+        with self.assertRaisesRegex(land.LandError, "did not give its evidence in time"):
+            self.wait([self.green()], jobs=jobs)
+
+    def test_miri_run_false_passes(self):
+        jobs = {str(self.rid("ci.yml")): self.ci_jobs(),
+                str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs(heavy="completed", concl="skipped")}
+        self.wait([self.green()], jobs=jobs)
+
+    def test_miri_run_true_not_started_blocks(self):
+        jobs = {str(self.rid("ci.yml")): self.ci_jobs(),
+                str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs(heavy="queued")}
+        with self.assertRaisesRegex(land.LandError, "heavy jobs not started"):
+            self.wait([self.green()], jobs=jobs)
+
+    def test_miri_changes_not_done_blocks(self):
+        miri = self.miri_jobs()
+        miri[0].update(status="in_progress", conclusion="")
+        jobs = {str(self.rid("ci.yml")): self.ci_jobs(), str(self.rid("unsafe-and-parallel.yml")): miri}
+        with self.assertRaisesRegex(land.LandError, "the changes job is in_progress"):
+            self.wait([self.green()], jobs=jobs)
+
+    def test_a_cancelled_after_landing_run_is_re_created(self):
+        runs = self.green()
+        f = self.rid("unsafe-and-parallel.yml") - 1
+        runs[f].update(status="completed", conclusion="cancelled")
+        again = dict(runs[f], databaseId=96, status="in_progress", conclusion="")
+        jobs = {str(self.rid("ci.yml")): self.ci_jobs(), "96": self.miri_jobs()}
+        self.wait([runs], jobs=jobs, on_dispatch={"unsafe-and-parallel.yml": [again]})
+        self.assertEqual(self.st()["dispatched"], ["unsafe-and-parallel.yml"])
+
+    def test_gh_failure_is_not_an_empty_list(self):
+        self.state.write_text("{}")  # the fake gh then fails
+
+        class L(land.Lander):
+            def git(self, *a, check=True):
+                return "git@github.com:o/r.git"
+        lnd = L(ROOT, "T", log=lambda *_: None)
+        lnd.gh_cmd = [sys.executable, str(self.gh)]
+        lnd.poll_seconds = 0
+        with self.assertRaisesRegex(land.LandError, "gh run list --repo failed"):
+            lnd.wait_evidence("ci/T", SHA)
+
+
+class Verdict(unittest.TestCase):
+    """run_verdict, one state per case."""
+    W = {"file": "w.yml", "name": "W", "cls": "landing", "legs": [], "jobs": {}}
+    L = {"file": "ci.yml", "name": "CI", "cls": "landing", "legs": ["Test (m)"], "jobs": {}}
+    A = {"file": "u.yml", "name": "U", "cls": "after-landing", "legs": [],
+         "jobs": {"changes": "Changed paths", "gate": "Gate", "h": "H"}}
+
+    def v(self, w, status="completed", concl="success", jobs=None):
+        return land.run_verdict(w, {"databaseId": 1, "status": status, "conclusion": concl}, jobs)[0]
+
+    def test_plain(self):
+        self.assertEqual(land.run_verdict(self.W, None, None)[0], "missing")
+        self.assertEqual(self.v(self.W), "ok")
+        self.assertEqual(self.v(self.W, concl="failure"), "red")
+        self.assertEqual(self.v(self.W, concl="cancelled"), "dropped")
+        self.assertEqual(self.v(self.W, concl="skipped"), "dropped")
+        self.assertEqual(self.v(self.W, status="queued", concl=""), "waiting")
+
+    def test_legs(self):
+        j = lambda n, s, c="": {"name": n, "status": s, "conclusion": c}  # noqa: E731
+        self.assertEqual(self.v(self.L, status="in_progress", concl=""), "need-jobs")
+        self.assertEqual(self.v(self.L, status="in_progress", concl="", jobs=[]), "waiting")
+        ok = [j("a", "completed", "success"), j("Test (m)", "in_progress")]
+        self.assertEqual(self.v(self.L, status="in_progress", concl="", jobs=ok), "ok")
+        self.assertEqual(self.v(self.L, status="in_progress", concl="", jobs=[ok[0], j("Test (m)", "queued")]), "waiting")
+        self.assertEqual(self.v(self.L, status="in_progress", concl="", jobs=[j("a", "in_progress"), ok[1]]), "waiting")
+        self.assertEqual(self.v(self.L, status="in_progress", concl="", jobs=[j("a", "completed", "failure"), ok[1]]), "red")
+        self.assertEqual(self.v(self.L, status="in_progress", concl="", jobs=[j("a", "completed", "skipped"), ok[1]]), "red")
+        self.assertEqual(self.v(self.L, status="in_progress", concl="", jobs=[ok[0]]), "waiting")
+        self.assertEqual(self.v(self.L, concl="failure", jobs=[ok[0]]), "red")
+        self.assertEqual(self.v(self.L), "ok")
+
+    def test_after_landing(self):
+        j = lambda n, s, c="": {"name": n, "status": s, "conclusion": c}  # noqa: E731
+        ch = j("Changed paths", "completed", "success")
+        run = dict(status="in_progress", concl="")
+        self.assertEqual(self.v(self.A, **run, jobs=[ch, j("H", "in_progress"), j("Gate", "pending")]), "ok")
+        self.assertEqual(self.v(self.A, **run, jobs=[ch, j("H", "completed", "skipped")]), "ok")
+        self.assertEqual(self.v(self.A, **run, jobs=[ch, j("H", "queued")]), "waiting")
+        self.assertEqual(self.v(self.A, **run, jobs=[ch, j("H", "completed", "failure")]), "red")
+        self.assertEqual(self.v(self.A, **run, jobs=[ch, j("H", "completed", "skipped"), j("H2", "in_progress")]), "red")
+        self.assertEqual(self.v(self.A, **run, jobs=[j("Changed paths", "in_progress")]), "waiting")
+        self.assertEqual(self.v(self.A, **run, jobs=[j("Changed paths", "completed", "failure")]), "red")
+        self.assertEqual(self.v(self.A, **run, jobs=[ch]), "waiting")
+        self.assertEqual(self.v(self.A, **run, jobs=[j("H", "in_progress")]), "waiting")
+        self.assertEqual(self.v(self.A, concl="cancelled"), "dropped")
 
 
 if __name__ == "__main__":

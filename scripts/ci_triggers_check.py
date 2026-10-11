@@ -24,6 +24,7 @@ docs/CI_TRIGGERS.md; the evidence class of the row is compared with
   * a path-gated workflow has the guard's `gate` job (`changed_paths.py gate`, `if:
     always()`, needs every other job), and a workflow without a path gate has none (ci.yml's
     `gate` job is the nightly Mac Intel decision, a different job);
+  * the landing-waits table equals what scripts/land.py derives and waits on;
   * a workflow that runs on ci/** cannot cancel a main run: its concurrency group
     includes the ref, or `cancel-in-progress` is false.
 
@@ -71,6 +72,8 @@ EVENTS = (
 LEG_CLASSES = ("after-landing", "main-after-landing")
 DISPATCH_TABLE = "ci-triggers:dispatchable"
 DISPATCH_COLUMNS = ("workflow",)
+WAIT_TABLE = "ci-triggers:landing-waits"
+WAIT_COLUMNS = ("workflow", "class", "waits for")
 
 
 class ExprError(ValueError):
@@ -326,6 +329,8 @@ def check(root: Path) -> tuple[list[str], int]:
     errors += errs
     dispatch_rows, errs = table(doc, DISPATCH_TABLE, DISPATCH_COLUMNS)
     errors += errs
+    wait_rows, errs = table(doc, WAIT_TABLE, WAIT_COLUMNS)
+    errors += errs
 
     names = set(files)
     for label, got in ((EVIDENCE, set(classes)), (DOC, {r["workflow"] for r in rows})):
@@ -437,6 +442,20 @@ def check(root: Path) -> tuple[list[str], int]:
         errors.append(f"{DOC}: dispatchable list names {n}, which has no workflow_dispatch")
     if len(listed) != len(set(listed)):
         errors.append(f"{DOC}: dispatchable list names a workflow twice")
+
+    # the landing-waits table equals what scripts/land.py derives (land.expected_workflows)
+    import land
+    try:
+        want_wait = {(w["file"], w["cls"], land.waits_for(w)) for w in land.expected_workflows(root)}
+    except land.LandError as e:
+        errors.append(f"scripts/land.py cannot derive the landing waits: {e}")
+        want_wait = None
+    if want_wait is not None:
+        got_wait = {tuple(r[c] for c in WAIT_COLUMNS) for r in wait_rows}
+        for row in sorted(want_wait - got_wait):
+            errors.append(f"{DOC}: landing-waits row {row} missing (scripts/land.py waits on it)")
+        for row in sorted(got_wait - want_wait):
+            errors.append(f"{DOC}: landing-waits row {row} is not what scripts/land.py waits on")
 
     if compared == 0:
         errors.append("no workflow row compared (compared nothing)")

@@ -10,8 +10,10 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      and runs `scripts/preflight.sh --fast` once;
   3. CI lane: when the change touches .github/, scripts/, Cargo.toml / .lock or
      bindings/ (the parts whose failures were OS / runner specific), pushes
-     HEAD to `ci/<id>` and waits for that ci.yml run to succeed; other changes
-     go straight on (their post-push CI on main has been green);
+     HEAD to `ci/<id>` and waits for the evidence of every workflow that runs on
+     ci/** (wait_evidence: the classes of .github/ci-evidence.toml; a missing or
+     dropped run is re-created with `gh workflow run`); other changes go straight
+     on (their post-push CI on main has been green);
   4. rebases on the latest origin/main with a fixed committer; a conflict in a
      generated ledger is resolved by taking main's copy (it is regenerated
      next), any other conflict stops the landing;
@@ -75,6 +77,175 @@ MAX_ATTEMPTS = 5
 
 class LandError(Exception):
     pass
+
+
+# --- the evidence on the ci/<id> SHA ---------------------------------------------------
+#
+# Every workflow whose `on.push` runs on ci/** is expected on the ci/<id> SHA, with the
+# class .github/ci-evidence.toml gives it:
+#   landing        the newest run for the SHA must complete with conclusion success (for a
+#                  path-gated workflow that is the Gate's verdict: skipped heavy jobs and a
+#                  Gate success pass); a matrix leg declared `after-landing` only has to
+#                  have started (in_progress or completed), its result is read after the
+#                  landing; a completed red leg still stops the landing (a known red)
+#   after-landing  the run must exist and its heavy jobs must have started when the changes
+#                  job let them run (all heavy jobs skipped = the changes job said run=false);
+#                  read from the jobs GitHub reports, not decided again here
+#   main-after-landing (a leg), schedule-only, tag-only: not expected on ci/**
+# No run for the SHA, or a cancelled / skipped run (one pending run per concurrency group:
+# a middle run is dropped), is no evidence: the run is re-created with `gh workflow run`.
+
+EVIDENCE_FILE = ".github/ci-evidence.toml"
+EXPECTED_CLASSES = ("landing", "after-landing")
+NOT_ON_CI_CLASSES = ("schedule-only", "tag-only")
+MAX_DISPATCH = 2          # re-creations per workflow before the landing stops
+NO_RUN_GRACE = 600        # seconds without a run for a workflow before it is re-created
+STARTED = ("in_progress", "completed")
+
+
+def _yaml_scalar(block: str, key: str, indent: int) -> str | None:
+    m = re.search(rf"^{' ' * indent}{re.escape(key)}:\s*(.+?)\s*$", block, re.M)
+    if not m:
+        return None
+    v = m.group(1)
+    return v[1:-1] if len(v) >= 2 and v[0] == v[-1] and v[0] in "'\"" else v
+
+
+def expected_workflows(root: Path) -> list[dict]:
+    """The workflows expected on a ci/** push, derived from the workflow files and the
+    evidence file. Each: file, name (the run's workflowName), cls, legs (after-landing matrix
+    legs: job display names), jobs {id: display name}. Raises LandError on an inconsistency
+    and when nothing is expected."""
+    import tomllib
+    import changed_paths as cp
+    from ci_load_check import jobs as job_blocks
+    try:
+        ev = tomllib.loads((root / EVIDENCE_FILE).read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise LandError(f"{EVIDENCE_FILE}: {e}") from None
+    classes = ev.get("workflows", {})
+    legs = ev.get("legs", [])
+    out, errors = [], []
+    for p in sorted((root / ".github" / "workflows").glob("*.yml")):
+        text = p.read_text(encoding="utf-8")
+        on = cp.on_block(text)
+        push = cp.sub_block(on, "push", 2)
+        if push is None:
+            continue
+        branches = cp.push_branches(push)
+        if branches is not None and "ci/**" not in branches:
+            continue
+        if branches is None and cp.sub_block(push, "tags", 4) is not None:
+            continue
+        cls = classes.get(p.name)
+        if cls not in EXPECTED_CLASSES:
+            errors.append(f"{p.name} runs on ci/** but its class in {EVIDENCE_FILE} is {cls!r}"
+                          f" (expected one of {', '.join(EXPECTED_CLASSES)})")
+            continue
+        if not any(re.match(r"^  workflow_dispatch:", l) for l in on):
+            errors.append(f"{p.name} has no workflow_dispatch: a dropped run could not be re-created")
+            continue
+        name = _yaml_scalar(text, "name", 0)
+        if not name:
+            errors.append(f"{p.name}: no top-level name (the runs are listed by name)")
+            continue
+        blocks = job_blocks(text)
+        names = {j: (_yaml_scalar(b, "name", 4) or j) for j, b in blocks.items()}
+        wf_legs = []
+        for leg in legs:
+            if leg.get("workflow") != p.name or leg.get("class") != "after-landing":
+                continue
+            j = leg.get("job")
+            if j not in names:
+                errors.append(f"{EVIDENCE_FILE}: leg {p.name}/{j}: no such job")
+                continue
+            key = leg.get("key", "os")
+            wf_legs.append(re.sub(r"\$\{\{\s*matrix\." + re.escape(key) + r"\s*\}\}", str(leg.get("matrix")), names[j]))
+        out.append({"file": p.name, "name": name, "cls": cls, "legs": wf_legs, "jobs": names})
+    if errors:
+        raise LandError("the expected workflows cannot be derived:\n  " + "\n  ".join(errors))
+    if not out:
+        raise LandError("no workflow runs on ci/** (compared 0 workflows): nothing would be evidence")
+    seen = [w["name"] for w in out]
+    dup = sorted({n for n in seen if seen.count(n) > 1})
+    if dup:
+        raise LandError(f"two expected workflows share the run name {dup}: their runs cannot be told apart")
+    return out
+
+
+def waits_for(wf: dict) -> str:
+    """what the landing waits for on one expected workflow (the table of docs/CI_TRIGGERS.md)"""
+    if wf["cls"] == "after-landing":
+        return "started: heavy jobs started, or all skipped by the changes job"
+    if wf["legs"]:
+        return "success; started only: " + ", ".join(wf["legs"])
+    return "success"
+
+
+def newest_run(runs: list[dict], name: str, sha: str) -> dict | None:
+    mine = [r for r in runs if r.get("workflowName") == name and r.get("headSha") == sha]
+    return max(mine, key=lambda r: r.get("databaseId", 0)) if mine else None
+
+
+def run_verdict(wf: dict, run: dict | None, jobs: list[dict] | None) -> tuple[str, str]:
+    """(state, why) for one expected workflow. state: ok / red / waiting / missing /
+    dropped / need-jobs (the run is not finished and the decision needs its jobs)."""
+    if run is None:
+        return "missing", "no run for the SHA"
+    status, concl = run.get("status"), run.get("conclusion")
+    if status == "completed" and concl in ("cancelled", "skipped", "stale"):
+        return "dropped", f"run {run.get('databaseId')} ended {concl} (no evidence)"
+    if wf["cls"] == "landing" and not wf["legs"]:
+        if status != "completed":
+            return "waiting", f"run {run.get('databaseId')} {status}"
+        if concl == "success":
+            return "ok", f"run {run.get('databaseId')} success"
+        return "red", f"run {run.get('databaseId')} ended {concl}"
+    if status == "completed" and concl == "success":
+        return "ok", f"run {run.get('databaseId')} success"
+    if jobs is None:
+        return "need-jobs", f"run {run.get('databaseId')} {status}/{concl}"
+    rid = run.get("databaseId")
+    if wf["cls"] == "landing":
+        legs = set(wf["legs"])
+        found = {j.get("name") for j in jobs}
+        for leg in legs:
+            if leg not in found:
+                return "waiting" if status != "completed" else "red", f"leg {leg!r} not in run {rid}"
+        for j in jobs:
+            n, st, c = j.get("name"), j.get("status"), j.get("conclusion")
+            if st == "completed" and c not in ("success",):
+                return "red", f"job {n!r} of run {rid} ended {c}"
+        pending = [j.get("name") for j in jobs if j.get("name") not in legs and j.get("status") != "completed"]
+        unstarted = [j.get("name") for j in jobs if j.get("name") in legs and j.get("status") not in STARTED]
+        if pending or unstarted:
+            return "waiting", f"run {rid}: waiting for {pending + unstarted}"
+        return "ok", f"run {rid}: every job success, after-landing legs {sorted(legs)} started"
+    # after-landing workflow: the changes job decides, the heavy jobs must have started
+    changes_name = wf["jobs"].get("changes")
+    gate_name = wf["jobs"].get("gate")
+    ch = [j for j in jobs if j.get("name") == changes_name]
+    heavy = [j for j in jobs if j.get("name") not in (changes_name, gate_name)]
+    if not ch:
+        return "waiting", f"run {rid}: no changes job yet"
+    if ch[0].get("status") != "completed":
+        return "waiting", f"run {rid}: the changes job is {ch[0].get('status')}"
+    if ch[0].get("conclusion") != "success":
+        return "red", f"run {rid}: the changes job ended {ch[0].get('conclusion')}"
+    if not heavy:
+        return "waiting", f"run {rid}: no heavy job listed yet"
+    for j in heavy:
+        if j.get("status") == "completed" and j.get("conclusion") not in ("success", "skipped"):
+            return "red", f"job {j.get('name')!r} of run {rid} ended {j.get('conclusion')}"
+    skipped = [j for j in heavy if j.get("status") == "completed" and j.get("conclusion") == "skipped"]
+    if len(skipped) == len(heavy):
+        return "ok", f"run {rid}: the changes job said run=false (every heavy job skipped)"
+    if skipped:
+        return "red", f"run {rid}: heavy jobs partly skipped {[j.get('name') for j in skipped]}"
+    unstarted = [j.get("name") for j in heavy if j.get("status") not in STARTED]
+    if unstarted:
+        return "waiting", f"run {rid}: heavy jobs not started yet {unstarted}"
+    return "ok", f"run {rid}: heavy jobs started {[j.get('name') for j in heavy]} (result read after the landing)"
 
 
 def lane_of(paths: list[str], added: str = "") -> str:
@@ -207,6 +378,8 @@ class Lander:
         self.ident_cfg = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         self.preflight_runs = 0
         self.poll_seconds = 30
+        self.gh_cmd = ["gh"]   # tests run a fake gh script here (no network)
+        self.max_polls = 240  # 2 hours at 30 s: the 4-OS CI run and the queued heavy runs
 
     # --- plumbing (overridden in tests) ------------------------------------------
 
@@ -285,6 +458,95 @@ class Lander:
             self.last_list_error = out.stderr.strip()
             return []
         return json.loads(out.stdout or "[]")
+
+    def gh_json(self, *args: str):
+        """`gh <args>` parsed as JSON; LandError when gh fails (never read as an empty list)."""
+        out = subprocess.run([*self.gh_cmd, *args], capture_output=True, text=True, encoding="utf-8",
+                             errors="replace")
+        if out.returncode != 0:
+            raise LandError(f"gh {' '.join(args[:3])} failed: {out.stderr.strip()[:300]}")
+        try:
+            return json.loads(out.stdout or "null")
+        except ValueError as e:
+            raise LandError(f"gh {' '.join(args[:3])}: not JSON: {e}") from None
+
+    def list_branch_runs(self, slug: str, ref: str) -> list[dict]:
+        runs = self.gh_json("run", "list", "--repo", slug, "--branch", ref, "--limit", "100", "--json",
+                            "workflowName,headSha,databaseId,status,conclusion,createdAt,event")
+        if not isinstance(runs, list):
+            raise LandError("gh run list did not return a list")
+        return runs
+
+    def run_jobs(self, slug: str, run_id: int) -> list[dict]:
+        data = self.gh_json("run", "view", str(run_id), "--repo", slug, "--json", "jobs")
+        return [{"name": j.get("name"), "status": j.get("status"), "conclusion": j.get("conclusion")}
+                for j in (data or {}).get("jobs", [])]
+
+    def dispatch(self, slug: str, wf_file: str, ref: str) -> None:
+        r = subprocess.run([*self.gh_cmd, "workflow", "run", wf_file, "--repo", slug, "--ref", ref],
+                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if r.returncode != 0:
+            raise LandError(f"gh workflow run {wf_file} --ref {ref} failed: {r.stderr.strip()[:300]}")
+
+    def slug(self) -> str:
+        repo = self.git("remote", "get-url", self.remote)
+        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", repo)
+        return m.group(1) if m else repo
+
+    def wait_evidence(self, ref: str, sha: str) -> None:
+        """Wait until every workflow expected on a ci/** push has its evidence for `sha` on
+        `ref` (see run_verdict); re-create a missing or dropped run with `gh workflow run`
+        (at most MAX_DISPATCH times per workflow); raise on a red result, on a workflow that
+        cannot be re-created, and when nothing was compared."""
+        expected = expected_workflows(self.root)
+        slug = self.slug()
+        self.log(f"waiting on {len(expected)} workflows for {sha[:7]} on {ref}: "
+                 + ", ".join(f"{w['file']} ({w['cls']})" for w in expected))
+        started = time.monotonic()
+        # a missing run is re-created NO_RUN_GRACE seconds after the start or after its last re-creation
+        last_seen = {w["file"]: started for w in expected}
+        dispatched = {w["file"]: 0 for w in expected}
+        states: dict[str, tuple[str, str]] = {}
+        for _ in range(self.max_polls):
+            runs = self.list_branch_runs(slug, ref)
+            states = {}
+            for w in expected:
+                run = newest_run(runs, w["name"], sha)
+                state, why = run_verdict(w, run, None)
+                if state == "need-jobs":
+                    state, why = run_verdict(w, run, self.run_jobs(slug, run["databaseId"]))
+                states[w["file"]] = (state, why)
+            red = {f: why for f, (s, why) in states.items() if s == "red"}
+            if red:
+                raise LandError(f"CI on {ref} is red for {sha[:7]}:\n  "
+                                + "\n  ".join(f"{f}: {why}" for f, why in sorted(red.items())))
+            redo = [f for f, (s, _) in states.items()
+                    if s == "dropped" or (s == "missing" and time.monotonic() - last_seen[f] > NO_RUN_GRACE)]
+            if redo:
+                at = self.remote_sha(ref)
+                if at != sha:
+                    raise LandError(f"{ref} on {self.remote} points at {at[:7] or 'nothing'}, not {sha[:7]}: "
+                                    "the ref moved; a re-created run would test another commit")
+                for f in redo:
+                    if dispatched[f] >= MAX_DISPATCH:
+                        raise LandError(f"{f}: no evidence for {sha[:7]} on {ref} after {MAX_DISPATCH} "
+                                        f"re-created runs ({states[f][1]}): not treated as success")
+                    dispatched[f] += 1
+                    self.log(f"{f}: {states[f][1]}; re-creating it: gh workflow run {f} --ref {ref}")
+                    self.dispatch(slug, f, ref)
+                    last_seen[f] = time.monotonic()
+            ok = [f for f, (s, _) in states.items() if s == "ok"]
+            if len(ok) == len(expected) and ok:
+                for f in sorted(ok):
+                    self.log(f"  {f}: {states[f][1]}")
+                self.log(f"CI on {ref}: evidence complete for {len(ok)} workflows")
+                return
+            if not any(s != "missing" for s, _ in states.values()) and (at := self.remote_sha(ref)) != sha:
+                raise LandError(f"{ref} on {self.remote} points at {at[:7] or 'nothing'}, not {sha[:7]}: "
+                                "the push did not reach it, or the ref moved (no CI run to wait for)")
+            time.sleep(self.poll_seconds)
+        waiting = "\n  ".join(f"{f}: {why}" for f, (s, why) in sorted(states.items()) if s != "ok")
+        raise LandError(f"CI on {ref} did not give its evidence in time:\n  {waiting}")
 
     def remote_sha(self, ref: str) -> str:
         """The commit `ref` points at on the remote now ("" when it does not exist)."""
@@ -473,8 +735,8 @@ class Lander:
                 if existing and existing[0] == sha:
                     # an earlier run of this script pushed the same commit and stopped while
                     # waiting: wait for (or take the result of) that run instead of pushing again
-                    self.log(f"{ref} already holds {sha[:7]}: reusing its CI run")
-                    self.wait_ci(ref, sha)
+                    self.log(f"{ref} already holds {sha[:7]}: reusing its CI runs")
+                    self.wait_evidence(ref, sha)
                     existing = None
                 if existing:
                     self.git("fetch", "-q", self.remote, existing[0], check=False)
@@ -484,7 +746,7 @@ class Lander:
                                         "if it is your own earlier attempt (e.g. amended after a red CI)")
                 if existing is not None:
                     self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
-                    self.wait_ci(ref, sha)
+                    self.wait_evidence(ref, sha)
         verified_base = self.git("merge-base", "HEAD", self.upstream())
         for attempt in range(1, MAX_ATTEMPTS + 1):
             self.fetch()
