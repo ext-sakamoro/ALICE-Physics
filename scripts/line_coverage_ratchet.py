@@ -11,13 +11,21 @@ source file, plus a `TOTAL` row). It fails when
   * nothing was compared (no file row parsed, or no baseline row matched).
 
 New files are reported, not failed; a removed file is dropped silently. When the
-coverage has risen, `--write` records the new numbers (the ratchet only moves up
-when someone commits the baseline).
+coverage has risen, `--write` records the new numbers. A write never lowers an
+entry: for every file and the total it keeps the better of the baseline and the
+summary (the slack absorbs noise in the check, never in the write). Lowering one
+takes `--allow-worse <file> --reason "<12 characters or more>"`, and the reason
+is written into the baseline as `# allow-worse <file>: <reason>` above the entry.
+
+`--diff-against <ref>` checks a baseline edited by hand: every entry that is
+lower than in the baseline at git revision `<ref>` (CI: `origin/main`) has to
+carry such a comment.
 
   cargo llvm-cov --lib --summary-only > coverage-summary.txt
   (the weekly job measures `--lib --tests` against line-coverage-baseline-full.txt)
   python3 scripts/line_coverage_ratchet.py --summary coverage-summary.txt
   python3 scripts/line_coverage_ratchet.py --summary coverage-summary.txt --write
+  python3 scripts/line_coverage_ratchet.py --diff-against origin/main
 """
 
 from __future__ import annotations
@@ -25,6 +33,8 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
+import ratchet_merge as rm
 
 HERE = Path(__file__).resolve().parent
 BASELINE = HERE / "line-coverage-baseline.txt"
@@ -90,27 +100,91 @@ def compare(now: dict[str, tuple[int, int]], base: dict[str, tuple[int, int]]) -
     return errors, notes, compared
 
 
-def baseline_text(now: dict[str, tuple[int, int]]) -> str:
+def lower(old: tuple[int, int], new: tuple[int, int]) -> bool:
+    """`new` covers a smaller fraction of its lines than `old`."""
+    return pct(*new) < pct(*old)
+
+
+def baseline_text(now: dict[str, tuple[int, int]], reasons: dict[str, str] | None = None) -> str:
     out = ["# line coverage of `cargo llvm-cov --summary-only` per file: <file> <lines> <missed lines>",
            "# written by scripts/line_coverage_ratchet.py --write; coverage may not fall below it"]
-    out += [f"{name} {lines} {missed}" for name, (lines, missed) in sorted(now.items())]
+    for name, (lines, missed) in sorted(now.items()):
+        if reasons and name in reasons:
+            out.append(f"# allow-worse {name}: {reasons[name]}")
+        out.append(f"{name} {lines} {missed}")
     return "\n".join(out) + "\n"
+
+
+def write(now: dict[str, tuple[int, int]], path: Path, allowed: dict[str, str]) -> int:
+    """Record `now` in `path`, keeping the old value of every entry it would lower."""
+    if "TOTAL" not in now:
+        print("error: the summary has no TOTAL row", file=sys.stderr)
+        return 1
+    old_text = path.read_text(encoding="utf-8") if path.is_file() else ""
+    old = parse_baseline(old_text)
+    unknown = sorted(k for k in allowed if k not in old or k not in now)
+    if unknown:
+        print(f"error: --allow-worse names entries that are not in both the baseline and the summary: {unknown}",
+              file=sys.stderr)
+        return 1
+    merged, kept, used = rm.merge_floors(old, now, lower, allowed)
+    unused = sorted(k for k in allowed if k not in used)
+    if unused:
+        print(f"error: --allow-worse names entries that did not get lower: {unused}", file=sys.stderr)
+        return 1
+    # an earlier allowance stays beside its entry while the entry keeps that value
+    reasons = {k: r for k, r in rm.allow_comments(old_text).items() if k in merged and merged[k] == old.get(k)}
+    reasons.update(used)
+    path.write_text(baseline_text(merged, reasons), encoding="utf-8", newline="\n")
+    for k in kept:
+        print(f"note: kept the baseline of {k} ({pct(*old[k]):.2f}% > measured {pct(*now[k]):.2f}%)")
+    for k, r in sorted(used.items()):
+        print(f"note: lowered {k} to {pct(*now[k]):.2f}% ({r})")
+    print(f"wrote {len(merged) - 1} files and TOTAL {pct(*merged['TOTAL']):.2f}% to {path} "
+          f"(kept {len(kept)}, lowered {len(used)})")
+    return 0
+
+
+def diff_against(path: Path, ref: str) -> int:
+    """A hand edit may not lower an entry against `ref` without an allow-worse comment."""
+    main_text = rm.text_at(ref, path)
+    if main_text is None:
+        print(f"error: {path} does not exist at {ref} (compared nothing)", file=sys.stderr)
+        return 1
+    text = path.read_text(encoding="utf-8")
+    errors, compared = rm.diff_check(parse_baseline(main_text), parse_baseline(text), lower,
+                                     rm.allow_comments(text))
+    if compared == 0:
+        errors.append(f"no entry of {path} is in the baseline at {ref} (compared nothing)")
+    for e in errors:
+        print(f"error: {e}", file=sys.stderr)
+    print(f"compared: {compared} entries of {path.name} against {ref}")
+    return 1 if errors else 0
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--summary", required=True, help="the output of `cargo llvm-cov --summary-only`")
+    ap.add_argument("--summary", help="the output of `cargo llvm-cov --summary-only`")
     ap.add_argument("--baseline", default=str(BASELINE))
-    ap.add_argument("--write", action="store_true", help="record the summary as the new baseline")
+    ap.add_argument("--write", action="store_true", help="record the summary, never lowering an entry")
+    ap.add_argument("--allow-worse", action="append", default=[], metavar="FILE",
+                    help="with --write: lower this entry to the measured value (needs a --reason)")
+    ap.add_argument("--reason", action="append", default=[], help="why the matching --allow-worse is lower")
+    ap.add_argument("--diff-against", metavar="REF",
+                    help="check the baseline file against the one at git revision REF")
     args = ap.parse_args(argv)
+    if args.diff_against:
+        return diff_against(Path(args.baseline), args.diff_against)
+    if not args.summary:
+        ap.error("--summary is required unless --diff-against is given")
+    allowed, problems = rm.allowances(args.allow_worse, args.reason)
+    if problems or (allowed and not args.write):
+        for p in problems or ["--allow-worse only applies to --write"]:
+            print(f"error: {p}", file=sys.stderr)
+        return 1
     now = parse_summary(Path(args.summary).read_text(encoding="utf-8", errors="replace"))
     if args.write:
-        if "TOTAL" not in now:
-            print("error: the summary has no TOTAL row", file=sys.stderr)
-            return 1
-        Path(args.baseline).write_text(baseline_text(now), encoding="utf-8", newline="\n")
-        print(f"wrote {len(now) - 1} files and TOTAL {pct(*now['TOTAL']):.2f}% to {args.baseline}")
-        return 0
+        return write(now, Path(args.baseline), allowed)
     bp = Path(args.baseline)
     base = parse_baseline(bp.read_text(encoding="utf-8")) if bp.is_file() else {}
     errors, notes, compared = compare(now, base)

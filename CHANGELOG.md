@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 
+- 行の網羅率の ratchet (`scripts/line_coverage_ratchet.py`): `--write` は file ごとと全体について baseline と測定値の良い方を記録し、下げない それまでは測定値をそのまま書いていたので、検査の余裕 (file 2 pt、全体 0.10 pt) の内側で下がった file は green のまま次の `--write` で床が下がった (2026-10-12 の測定で既存 180 file 中 31 file) 下げる時は `--allow-worse <file> --reason "<12 文字以上>"` で名指しし、理由は baseline の該当行の上に `# allow-worse <file>: <理由>` として残る `--diff-against <ref>` は手で書き換えた baseline を main の baseline と比べ、理由の行の無い低下を失敗にする (CI と preflight で lib と full の 2 つの baseline を検査) 書き込みの規則は他の ratchet でも使う `scripts/ratchet_merge.py` に置いた (試験 `scripts/test_ratchet_merge.py`)
 - `world_shape_query` の曲面 (円柱・円錐) の経路を lib の unit test で確かめる試験を足した 点と線分の厳密距離 (`point_cylinder_exact` / `point_cone_exact` / `exact_round_dist`) を子午面の閉形式と、許容幅際の cast と接線方向の経路を独立な `f64` の距離と、近接線の探索 (`graze_contact` / `dips_below`) を根の分かる凸な gap と突き合わせる CI の line coverage ratchet は lib の unit test だけを数えるので、統合試験でしか通っていなかった分岐をここでも通す (`world_shape_query.rs` 91.11% → 96.51%、src の動作は変えていない)
 - `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push した時の挙動を書いた 2 つの body の間の joint は次の step の joint solve で panic し (`add_joint` は事前に assert で拒む)、同じ body 同士の joint は solve と island の作り直しが飛ばすので、無い時と同じに進む
 - 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する

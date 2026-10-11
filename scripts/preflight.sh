@@ -113,6 +113,9 @@ python3 scripts/entropy_guard.py
 step "coverage tables (docs/coverage/*.toml = src/ LIMITATION comments + tests)"
 python3 scripts/test_coverage_check.py
 python3 scripts/test_line_coverage_ratchet.py
+python3 scripts/test_ratchet_merge.py
+python3 scripts/line_coverage_ratchet.py --diff-against origin/main
+python3 scripts/line_coverage_ratchet.py --baseline scripts/line-coverage-baseline-full.txt --diff-against origin/main
 python3 scripts/test_mutants_ratchet.py
 python3 scripts/test_mutants_exclude_check.py
 python3 scripts/test_mutants_equivalent.py

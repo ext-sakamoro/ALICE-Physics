@@ -74,6 +74,15 @@ jobs:
         run: python scripts/test_coverage_refs_to_symbols.py
       - name: Line-coverage ratchet (tests)
         run: python scripts/test_line_coverage_ratchet.py
+      - name: Ratchet write rules (tests)
+        run: python scripts/test_ratchet_merge.py
+      # a baseline edited by hand may not fall below main's without an
+      # `# allow-worse <entry>: <reason>` line (the writer never lowers one)
+      - name: Line-coverage baselines are not lowered against main
+        run: |
+          git fetch --no-tags --depth=1 origin main
+          python scripts/line_coverage_ratchet.py --diff-against origin/main
+          python scripts/line_coverage_ratchet.py --baseline scripts/line-coverage-baseline-full.txt --diff-against origin/main
       - name: Mutation ratchet (tests)
         run: python scripts/test_mutants_ratchet.py
       - name: Mutants exclude_re entries still match a real mutant (tests)
