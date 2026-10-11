@@ -2,13 +2,15 @@ name: CI
 
 on:
   push:
-    # `ci/**` is a staging branch: push a batch there, let the full 5-OS suites run
-    # off the local machine, then fast-forward main to the same SHA once green
-    # (the local gate is `scripts/preflight.sh --fast`).
+    # `ci/**` is a staging branch: push a batch there, let the 4-OS suites run off
+    # the local machine (all but Mac Intel), then fast-forward main to the same SHA
+    # once the non-macOS legs are green; that push to main runs all 5 OS (the
+    # evidence a publish needs). The local gate is `scripts/preflight.sh --fast`.
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
-  # nightly full matrix (the Mac Intel leg runs only here and on main pushes)
+  # nightly Mac Intel leg only, and only when main received a commit in the last
+  # 25 hours (the `gate` job); every other job skips the schedule
   schedule:
     - cron: '15 16 * * *'
 
@@ -16,8 +18,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # On the schedule: run only if main received a commit in the last 25 hours (an
+  # idle night does not rerun the Mac Intel leg). Any other event: run.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        if: github.event_name == 'schedule'
+        with:
+          fetch-depth: 50
+      - id: decide
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != schedule ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif ! recent=$(git rev-list -1 --since='25 hours ago' HEAD); then
+            echo "::warning::could not read the history of main: running the leg"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ -n "$recent" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no commit on main in the last 25 hours: the nightly Mac Intel leg is skipped"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: Test (${{ matrix.os }})
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -29,10 +60,11 @@ jobs:
         # - ubuntu-24.04-arm   → aarch64-unknown-linux-gnu  (Linux ARM、GA runner 2025-01+)
         # - windows-latest     → x86_64-pc-windows-msvc     (Windows x86)
         # + wasm-test job below → wasm32-wasip1 (WASI) via wasmtime
-        # The Mac Intel leg (about 100 min) runs on pushes to main and on the nightly
-        # schedule only; a ci/** staging push or a pull request runs the other four.
-        # Landing reads the non-macOS legs; macOS results are read after landing.
-        os: ${{ fromJSON((github.event_name == 'schedule' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) && '["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]' || '["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]') }}
+        # The Mac Intel leg (about 100 min) runs on pushes to main (all 5 OS) and on
+        # the nightly schedule (that leg alone); a ci/** staging push or a pull request
+        # runs the other four. Landing reads the non-macOS legs; macOS results are
+        # read after landing.
+        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-15-intel"]' || (github.event_name == 'push' && github.ref == 'refs/heads/main') && '["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]' || '["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v5
 
@@ -260,6 +292,7 @@ jobs:
   # on a non-zero exit or a per-example timeout, and fails when it executed 0
   # examples; preflight.sh calls the same script with no arguments
   examples:
+    if: github.event_name != 'schedule'
     name: Run examples (release)
     runs-on: ubuntu-latest
     steps:
@@ -286,6 +319,7 @@ jobs:
   # names must exist (scripts/audit_refs.py), and no public item may become
   # unreached by non-test code without updating scripts/integration-baseline.txt
   scip:
+    if: github.event_name != 'schedule'
     name: SCIP checks (defect references, L0 ratchet)
     runs-on: ubuntu-latest
     steps:
@@ -308,6 +342,7 @@ jobs:
         run: python3 scripts/integration_levels.py --check
 
   sibling-features:
+    if: github.event_name != 'schedule'
     name: Test (neural / replay / analytics via crates.io siblings)
     runs-on: ubuntu-latest
     steps:
@@ -325,6 +360,7 @@ jobs:
         run: cargo test --lib --features "neural,replay,analytics"
 
   js-binding:
+    if: github.event_name != 'schedule'
     # the wasm-bindgen package called from JavaScript (Node), as an application would
     name: Test (WebAssembly binding from JavaScript)
     runs-on: ubuntu-latest
@@ -363,6 +399,7 @@ jobs:
         run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
 
   wasm-test:
+    if: github.event_name != 'schedule'
     name: Test (wasm32-wasip1 via wasmtime)
     runs-on: ubuntu-latest
     steps:
@@ -420,6 +457,7 @@ jobs:
           wasmtime "$WASM_BIN"
 
   clippy:
+    if: github.event_name != 'schedule'
     name: Clippy
     runs-on: ubuntu-latest
     steps:
@@ -453,6 +491,7 @@ jobs:
   # The pre-1.2.0 job regenerated the lockfile with stable and checked only the
   # std feature set, so the "1.70.0" claim was never actually compiled.
   msrv:
+    if: github.event_name != 'schedule'
     name: MSRV (rust-version = 1.85)
     runs-on: ubuntu-latest
     steps:
@@ -475,6 +514,7 @@ jobs:
           --features "std,simd,parallel,ffi,gpu-solver-bridge"
 
   fmt:
+    if: github.event_name != 'schedule'
     name: Format
     runs-on: ubuntu-latest
     steps:
@@ -514,6 +554,7 @@ jobs:
         run: python3 scripts/test_gen_status.py
 
   doc:
+    if: github.event_name != 'schedule'
     name: Doc (RUSTDOCFLAGS=-Dwarnings)
     runs-on: ubuntu-latest
     steps:
@@ -534,6 +575,7 @@ jobs:
           RUSTDOCFLAGS: "-Dwarnings"
 
   actionlint:
+    if: github.event_name != 'schedule'
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
     steps:
@@ -545,6 +587,7 @@ jobs:
           reporter: github-check
 
   feature-powerset:
+    if: github.event_name != 'schedule'
     # 2026-09-15 追加: feature 組合せの compile 網羅
     # depth 2 = 単体 + 2 個組合せ (19 通り、Mac 実測 green)
     # - wasm は `std` 必須 (`compile_error!`) なので powerset から外し、std,wasm を別 step で check
