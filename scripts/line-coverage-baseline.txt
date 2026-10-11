@@ -1,6 +1,6 @@
 # line coverage of `cargo llvm-cov --summary-only` per file: <file> <lines> <missed lines>
 # written by scripts/line_coverage_ratchet.py --write; coverage may not fall below it
-TOTAL 95350 16400
+TOTAL 98706 16438
 acoustic_wave.rs 105 0
 aeroelasticity.rs 211 0
 animation_blend.rs 746 8
@@ -43,6 +43,7 @@ cylinder.rs 132 0
 damping_rayleigh.rs 212 3
 debug_render.rs 366 0
 deformable.rs 483 65
+det_hash.rs 69 12
 dynamic_bvh.rs 514 18
 dynamic_fem.rs 709 278
 electromagnetic.rs 154 2
@@ -78,6 +79,7 @@ kepler.rs 330 330
 kinematic_loop.rs 279 4
 laminate.rs 296 2
 laminate_failure.rs 280 46
+law_id.rs 206 10
 layer_adhesion.rs 160 1
 lib.rs 119 1
 lift_drag.rs 168 168
@@ -137,6 +139,7 @@ sdf_force.rs 312 40
 sdf_manifold.rs 339 14
 sdf_sph.rs 357 10
 sdf_wind_field.rs 63 0
+semantics.rs 17 0
 sensors.rs 196 196
 shape.rs 225 62
 shape_raycast.rs 907 489
@@ -148,6 +151,7 @@ smoke_fire.rs 130 1
 soft_body_cut.rs 145 0
 solver.rs 5411 256
 solver/participants.rs 287 93
+solver/world_ccd.rs 811 18
 solver/world_snapshot.rs 2334 66
 solver_tgs.rs 1042 10
 solver_tgs_backend.rs 197 3
