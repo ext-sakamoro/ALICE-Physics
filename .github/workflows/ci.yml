@@ -87,6 +87,12 @@ jobs:
         run: python scripts/mutants_equivalent.py --check
       - name: Mutation in-diff plan (tests)
         run: python scripts/test_mutants_in_diff_plan.py
+      - name: Workflow job timeouts (tests)
+        run: python scripts/test_workflow_timeouts.py
+      # every job of every workflow carries a timeout-minutes within the cap
+      # (a hung job holds a shared runner up to the 360-minute default)
+      - name: Workflow job timeouts
+        run: python scripts/workflow_timeouts.py
       # the weekly ignored-test run fails on a crash, a binary that runs too
       # long, or a run that checked nothing; these keep that runner honest on
       # every push (the run itself is too heavy for the landing path)

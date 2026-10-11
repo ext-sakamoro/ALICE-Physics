@@ -118,6 +118,8 @@ python3 scripts/test_mutants_exclude_check.py
 python3 scripts/test_mutants_equivalent.py
 python3 scripts/mutants_equivalent.py --check
 python3 scripts/test_mutants_in_diff_plan.py
+python3 scripts/test_workflow_timeouts.py
+python3 scripts/workflow_timeouts.py
 python3 scripts/test_run_ignored.py
 python3 scripts/run_ignored.py --list > /dev/null
 python3 scripts/test_bench_counts_check.py
