@@ -16,7 +16,12 @@ Rules, per job under the top-level `jobs:` of each workflow file:
   * a job that calls a reusable workflow (`uses:` at job level) cannot carry
     `timeout-minutes` (GitHub rejects it); it is counted, and the called
     workflow's own jobs are checked when it is a file of this repository
-  * zero jobs found fails (the check compared nothing)
+  * a workflow file in which no job is found fails, file by file (the check
+    compared nothing there), and so does a `runs-on:` key, or a `uses:` key
+    that is not a step's, outside every job found: the parser missed a job
+  * keys may be quoted, spaced (`jobs :`) or flow-style
+    (`build: {runs-on: x, timeout-minutes: 10}`); the job indent is taken
+    from the first job, the job-level key indent from each job's first key
 
   python3 scripts/workflow_timeouts.py
 """
@@ -29,35 +34,113 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CAP = 360
-JOB_RE = re.compile(r"^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$")
-TIMEOUT_RE = re.compile(r"^    timeout-minutes:\s*(.+?)\s*(?:#.*)?$")
-USES_RE = re.compile(r"^    uses:\s*(\S+)")
+KEY_RE = re.compile(
+    r"""^(?P<indent>[ ]*)(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<plain>[A-Za-z0-9_.$-][^:#'"]*?))"""
+    r"""[ ]*:(?:[ ]+(?P<value>.*?))?[ ]*$""")
+FLOW_KEY_RE = re.compile(r"""(?:^|[{,])\s*["']?([A-Za-z0-9_-]+)["']?\s*:\s*([^,}]*)""")
 
 
-def jobs(text: str) -> list[tuple[str, int, list[str]]]:
-    """`(name, line number, body lines)` of each job under the top-level `jobs:`."""
-    lines = text.splitlines()
-    out: list[tuple[str, int, list[str]]] = []
-    in_jobs = False
-    current: tuple[str, int, list[str]] | None = None
-    for n, line in enumerate(lines, 1):
-        if line and not line[0].isspace() and not line.startswith("#"):
-            if current:
-                out.append(current)
-                current = None
-            in_jobs = line.split("#")[0].strip() == "jobs:"
+class Job:
+    """A job under the top-level `jobs:` key: its name, the lines it spans
+    (1-based, inclusive) and its job-level keys (block or flow style)."""
+
+    def __init__(self, name: str, start: int) -> None:
+        self.name, self.start, self.end = name, start, start
+        self.keys: dict[str, str] = {}
+        self.key_indent: int | None = None
+
+
+def strip_comment(line: str) -> str:
+    """The line without a trailing `# comment` outside quotes."""
+    out, quote = [], ""
+    for k, ch in enumerate(line):
+        if quote:
+            quote = "" if ch == quote else quote
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "#" and (k == 0 or line[k - 1] in " \t"):
+            break
+        out.append(ch)
+    return "".join(out).rstrip()
+
+
+def key_of(line: str) -> tuple[int, str, str] | None:
+    """(indent, key, value) of a mapping line, or None."""
+    m = KEY_RE.match(line)
+    if not m:
+        return None
+    key = m["dq"] if m["dq"] is not None else m["sq"] if m["sq"] is not None else m["plain"]
+    return len(m["indent"]), key.strip(), (m["value"] or "").strip()
+
+
+def parse(text: str) -> tuple[list[Job], list[str]]:
+    """The jobs of a workflow file, and the parse errors (lines the parser could
+    not place: an indent below the jobs, or a flow-style job left open)."""
+    jobs: list[Job] = []
+    errors: list[str] = []
+    in_jobs, child_indent, job = False, None, None
+    flow: list[str] | None = None
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = strip_comment(raw)
+        if not line.strip():
+            continue
+        if flow is not None and job is not None:
+            flow.append(line)
+            job.end = n
+            if "".join(flow).count("{") <= "".join(flow).count("}"):
+                job.keys.update((k, v.strip()) for k, v in FLOW_KEY_RE.findall(" ".join(flow)))
+                flow = None
+            continue
+        indent = len(line) - len(line.lstrip(" "))
+        if indent == 0:
+            kv = key_of(line)
+            in_jobs = kv is not None and kv[1] == "jobs"
+            child_indent, job = None, None
             continue
         if not in_jobs:
             continue
-        m = JOB_RE.match(line)
-        if m:
-            if current:
-                out.append(current)
-            current = (m.group(1), n, [])
-        elif current:
-            current[2].append(line)
-    if current:
-        out.append(current)
+        if child_indent is None:
+            child_indent = indent
+        if indent < child_indent:
+            errors.append(f"line {n}: indented less than the jobs above it")
+            continue
+        kv = key_of(line)
+        if indent == child_indent:
+            if kv is None:
+                errors.append(f"line {n}: a job key was expected")
+                continue
+            job = Job(kv[1], n)
+            jobs.append(job)
+            if kv[2].startswith("{"):
+                flow = [kv[2]]
+                if kv[2].count("{") <= kv[2].count("}"):
+                    job.keys.update((k, v.strip()) for k, v in FLOW_KEY_RE.findall(kv[2]))
+                    flow = None
+            continue
+        if job is None:
+            continue
+        job.end = n
+        if job.key_indent is None:
+            job.key_indent = indent
+        if indent == job.key_indent and kv is not None:
+            job.keys[kv[1]] = kv[2]
+    if flow is not None:
+        errors.append("a flow-style job is not closed")
+    return jobs, errors
+
+
+def orphans(text: str, jobs: list[Job]) -> list[int]:
+    """Lines with a `runs-on:` key, or a `uses:` key that is not a step's, outside
+    every parsed job: a job the parser did not see."""
+    spans = [(j.start, j.end) for j in jobs]
+    out = []
+    for n, raw in enumerate(text.splitlines(), 1):
+        line = strip_comment(raw)
+        kv = key_of(line)
+        flow_runs_on = re.search(r"""[{,]\s*["']?runs-on["']?\s*:""", line)
+        if (kv and kv[1] in ("runs-on", "uses")) or flow_runs_on:
+            if not any(a <= n <= b for a, b in spans):
+                out.append(n)
     return out
 
 
@@ -79,23 +162,30 @@ def check(root: Path = ROOT) -> tuple[list[str], int, int]:
     checked = calls = 0
     for wf in sorted((root / ".github" / "workflows").glob("*.y*ml")):
         rel = wf.relative_to(root).as_posix()
-        for name, line, body in jobs(wf.read_text(encoding="utf-8")):
-            uses = next((m.group(1) for b in body if (m := USES_RE.match(b))), None)
+        text = wf.read_text(encoding="utf-8")
+        found, parse_errors = parse(text)
+        errors.extend(f"{rel}: {e}" for e in parse_errors)
+        if not found:
+            errors.append(f"{rel}: no job found (checked nothing in this file)")
+        for line in orphans(text, found):
+            errors.append(f"{rel}:{line}: a runs-on / uses key outside every job the check found")
+        for job in found:
+            uses = job.keys.get("uses")
             if uses:
                 calls += 1
                 if uses.startswith("./") and not (root / uses).is_file():
-                    errors.append(f"{rel}:{line}: job `{name}` calls {uses}, which does not exist")
+                    errors.append(f"{rel}:{job.start}: job `{job.name}` calls {uses}, which does not exist")
                 continue
-            values = [m.group(1) for b in body if (m := TIMEOUT_RE.match(b))]
-            if not values:
-                errors.append(f"{rel}:{line}: job `{name}` has no job-level timeout-minutes")
+            value = job.keys.get("timeout-minutes")
+            if value is None:
+                errors.append(f"{rel}:{job.start}: job `{job.name}` has no job-level timeout-minutes")
                 continue
-            picks = limits(values[0])
+            picks = limits(value)
             if not picks:
-                errors.append(f"{rel}:{line}: job `{name}` timeout-minutes {values[0]!r} names no minutes")
+                errors.append(f"{rel}:{job.start}: job `{job.name}` timeout-minutes {value!r} names no minutes")
             for v in picks:
                 if not 1 <= v <= CAP:
-                    errors.append(f"{rel}:{line}: job `{name}` timeout-minutes {v} is outside 1..{CAP}")
+                    errors.append(f"{rel}:{job.start}: job `{job.name}` timeout-minutes {v} is outside 1..{CAP}")
             checked += 1
     if checked + calls == 0:
         errors.append("no job found under .github/workflows (checked nothing)")
