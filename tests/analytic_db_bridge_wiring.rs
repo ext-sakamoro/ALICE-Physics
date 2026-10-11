@@ -272,28 +272,61 @@ fn a_series_with_a_gap_reads_back_exactly_the_recorded_steps() {
 #[test]
 fn out_of_order_writes_are_stored_and_a_rewritten_step_keeps_the_last_value() {
     let dir = tempfile::tempdir().unwrap();
-    let sink = open_sink(&dir, "order");
-
-    sink.record_energy(5, 1.0).unwrap();
-    sink.record_energy(3, 2.0).unwrap(); // before the last written step
-    sink.record_energy(5, 7.0).unwrap(); // the same step again
     let bits = |v: Vec<(i64, f32)>| {
         v.into_iter()
             .map(|(s, x)| (s, x.to_bits()))
             .collect::<Vec<_>>()
     };
-    let want = vec![(3, 2.0_f32.to_bits()), (5, 7.0_f32.to_bits())];
+    // record_step writes all three series, so steps 1 and 9 also reach energy
+    let want_energy = vec![
+        (1, 6.0_f32.to_bits()),
+        (3, 2.0_f32.to_bits()),
+        (5, 7.0_f32.to_bits()),
+        (9, 4.0_f32.to_bits()),
+    ];
+    let want_bodies = vec![(1, 30.0_f32.to_bits()), (9, 10.0_f32.to_bits())];
+    {
+        let sink = open_sink(&dir, "order");
+        sink.record_energy(5, 1.0).unwrap();
+        sink.record_energy(3, 2.0).unwrap(); // before the last written step
+        sink.record_energy(5, 7.0).unwrap(); // the same step again
+                                             // the bodies series, through record_step, in decreasing step order
+        sink.record_step(9, 4.0, 10.0, 0.0).unwrap();
+        sink.record_step(1, 5.0, 20.0, 0.0).unwrap();
+        sink.record_step(1, 6.0, 30.0, 0.0).unwrap(); // rewritten
+        assert_eq!(
+            bits(sink.query_energy(0, 10).unwrap()),
+            want_energy,
+            "before flush"
+        );
+        assert_eq!(
+            bits(sink.query_bodies(0, 10).unwrap()),
+            want_bodies,
+            "before flush"
+        );
+        sink.flush().unwrap();
+        assert_eq!(
+            bits(sink.query_energy(0, 10).unwrap()),
+            want_energy,
+            "after flush"
+        );
+    }
+    // closed and opened again on the same directory
+    let sink = open_sink(&dir, "order");
     assert_eq!(
         bits(sink.query_energy(0, 10).unwrap()),
-        want,
-        "before flush"
+        want_energy,
+        "after reopen"
     );
-    sink.flush().unwrap();
-    assert_eq!(bits(sink.query_energy(0, 10).unwrap()), want, "after flush");
+    assert_eq!(
+        bits(sink.query_bodies(0, 10).unwrap()),
+        want_bodies,
+        "after reopen"
+    );
 }
 
 // ---------------------------------------------------------------------------
-// Lossless round trip of non-trivial f32 bit patterns
+// Exact series round trip of non-trivial f32 bit patterns (sign of zero, extremes)
 // ---------------------------------------------------------------------------
 
 #[test]
