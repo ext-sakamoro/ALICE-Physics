@@ -198,7 +198,36 @@ def main() -> int:
         if not ok:
             failures += 1
 
-    total = len(CASES) + 1
+    # baseline は行番号でなく `file: message` の件数で比べる
+    from collections import Counter
+    V = "src/a.rs:{}: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い"
+    base = Counter(csprng_guard.baseline_key(V.format(n)) for n in (10, 40))
+    compare_cases = [
+        ("E 別の所の編集で行が動いても新規・解消にならない", [V.format(12), V.format(42)], ([], [])),
+        ("E 同じ違反が 1 つ増えると、その 1 件だけ新規", [V.format(10), V.format(40), V.format(90)],
+         ([V.format(90)], [])),
+        ("E 同じ違反が 1 つ減ると 1 件が解消済で残る", [V.format(10)],
+         ([], [csprng_guard.baseline_key(V.format(10))])),
+        ("E 別の file の同じ文言は別の entry", [V.format(10), V.format(40), V.format(5).replace("a.rs", "b.rs")],
+         ([V.format(5).replace("a.rs", "b.rs")], [])),
+    ]
+    for label, violations, want in compare_cases:
+        got = csprng_guard.compare(violations, base)
+        ok = got == want
+        print(f"{'ok  ' if ok else 'FAIL'} {label}")
+        if not ok:
+            failures += 1
+            print(f"       got {got}")
+    with tempfile.TemporaryDirectory() as td:
+        f = Path(td) / "baseline.txt"
+        f.write_text("# c\n" + V.format(10) + "\n" + csprng_guard.baseline_key(V.format(40)) + "\n",
+                     encoding="utf-8")
+        ok = csprng_guard.load_baseline(f) == base
+        print(f"{'ok  ' if ok else 'FAIL'} E baseline の行番号は読む時に外す (旧形式も同じ key)")
+        if not ok:
+            failures += 1
+
+    total = len(CASES) + 1 + len(compare_cases) + 1
     print(f"\n{total - failures}/{total} pass")
     return 1 if failures else 0
 

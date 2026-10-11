@@ -36,6 +36,8 @@
 
 baseline (`scripts/csprng-baseline.txt`) は既存の違反を記録するラチェットで、新規の違反
 だけが fail する 解消された entry が残っていても fail (stale_baseline)
+entry は行番号を外した `file: message` で、件数で比べる (同じ file の別の所を編集して
+行が動いても新規・解消にならない 同じ違反が増えた分・減った分だけが新規・解消になる)
 
 ## 使い方
 
@@ -46,6 +48,7 @@ baseline (`scripts/csprng-baseline.txt`) は既存の違反を記録するラチ
 from __future__ import annotations
 
 import re
+from collections import Counter
 import sys
 from pathlib import Path
 
@@ -319,14 +322,41 @@ def audit(root: Path) -> tuple[list[str], int]:
     return violations, checked
 
 
-def load_baseline() -> set[str]:
-    if not BASELINE.is_file():
-        return set()
-    return {
-        ln.strip()
-        for ln in BASELINE.read_text(encoding="utf-8").splitlines()
+LINE_NO = re.compile(r"^([^:\s]+\.rs):\d+: ")
+
+
+def baseline_key(violation: str) -> str:
+    """行番号を外した `file: message` (同じ file の別の所を編集しても動かない)"""
+    return LINE_NO.sub(r"\1: ", violation.strip())
+
+
+def load_baseline(path: Path = BASELINE) -> Counter[str]:
+    """baseline の entry を件数つきで返す (同じ file に同じ違反が 2 つあれば 2)"""
+    if not path.is_file():
+        return Counter()
+    return Counter(
+        baseline_key(ln)
+        for ln in path.read_text(encoding="utf-8").splitlines()
         if ln.strip() and not ln.startswith("#")
-    }
+    )
+
+
+def compare(violations: list[str], base: Counter[str]) -> tuple[list[str], list[str]]:
+    """(新規の違反, 解消済で baseline に残っている entry)
+
+    行番号でなく `file: message` の件数で比べる 新規は今回の位置つきで返す
+    (同じ key が baseline より多い分だけ、file の後ろの方から新規とみなす)
+    """
+    now = Counter(baseline_key(v) for v in violations)
+    extra = now - base
+    new: list[str] = []
+    for v in reversed(violations):
+        k = baseline_key(v)
+        if extra[k] > 0:
+            extra[k] -= 1
+            new.append(v)
+    stale = sorted((base - now).elements())
+    return sorted(new), stale
 
 
 def main() -> int:
@@ -337,7 +367,7 @@ def main() -> int:
             "# csprng_guard.py の baseline — 既存の違反を記録するラチェット\n"
             "# 新規の違反だけが fail する 解消したら行を消す (残っていても fail)\n"
             "# ⚠️ ここに載っている行は「予測可能な noise が残っている」という負債の一覧\n"
-            + "".join(f"{v}\n" for v in violations),
+            + "".join(f"{baseline_key(v)}\n" for v in sorted(violations, key=baseline_key)),
             encoding="utf-8",
         )
         print(f"[csprng-guard] baseline を書いた: {len(violations)} 件 (検査 {checked} 箇所)")
@@ -352,9 +382,7 @@ def main() -> int:
         return 1
 
     base = load_baseline()
-    now = set(violations)
-    new = sorted(now - base)
-    stale = sorted(base - now)
+    new, stale = compare(violations, base)
 
     rc = 0
     if new:
@@ -374,7 +402,7 @@ def main() -> int:
     if rc == 0:
         print(
             f"[csprng-guard] OK: 検査 {checked} 箇所 / 新規違反 0 "
-            f"(baseline に既存 {len(base)} 件)"
+            f"(baseline に既存 {sum(base.values())} 件)"
         )
     return rc
 
