@@ -188,23 +188,8 @@ pub(crate) fn solve_oriented_islands_serial(
     });
 }
 
-/// Solves every island in parallel via [`par_dispatch_islands`].
-///
-/// Each island receives its own dedicated [`ImpulseCache`] so that
-/// there is no shared state between threads. Callers that want a
-/// unified warm-start pool can merge the per-island caches after the
-/// call. `caches.len()` must equal `islands.len()`.
-///
-/// Determinism: the per-island solve is a pure function of the island's
-/// inputs, so the aggregated result is byte-identical to the serial
-/// variant [`solve_oriented_islands_serial`] modulo the shared-vs-split
-/// cache split (which is a caller-visible policy choice).
-///
-/// # Panics
-/// Panics when `caches.len() != islands.len()` (enforced by
-/// [`par_dispatch_islands`] itself).
 /// Per-island result of the parallel solve phase:
-/// `(world body indices, solved local bodies, contact write-back list)`.
+/// `(world body indices, solved local bodies, contact and joint write-back lists)`.
 #[cfg(feature = "parallel")]
 type IslandUpdate = (
     Vec<usize>,
@@ -213,6 +198,28 @@ type IslandUpdate = (
     Vec<(usize, JointOriented)>,
 );
 
+/// Solves every island in parallel via [`par_dispatch_islands`].
+///
+/// Each island receives its own dedicated [`ImpulseCache`] so that
+/// there is no shared state between threads. Callers that want a
+/// unified warm-start pool can merge the per-island caches after the
+/// call. `caches.len()` must equal `islands.len()`.
+///
+/// Determinism: the per-island solve is a pure function of the island's
+/// inputs, so one call gives the same bits as [`solve_oriented_islands_serial`]
+/// given the same warm starts. Across steps that holds only while the island
+/// set does not change: `caches[k]` is matched to the island at position `k`,
+/// so when islands merge or split a contact's cached impulse is in another
+/// slot, it starts cold, and the result leaves the serial one
+/// (`parallel_matches_serial_over_steps_with_carried_caches` pins the stable
+/// case; merging two of its islands at step 4 diverges from that step on).
+/// A caller that rebuilds islands every step has to rebuild the per-island
+/// caches from one pool keyed by contact id before it can match the serial
+/// variant, which is why the world's step does not call this yet.
+///
+/// # Panics
+/// Panics when `caches.len() != islands.len()` (enforced by
+/// [`par_dispatch_islands`] itself).
 #[cfg(feature = "parallel")]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_oriented_islands_parallel(
@@ -501,6 +508,76 @@ mod tests {
             assert_eq!(bs.position[1].hi, bp.position[1].hi);
             assert_eq!(bs.position[2].hi, bp.position[2].hi);
             assert_eq!(bs.linear_velocity[1].hi, bp.linear_velocity[1].hi);
+        }
+    }
+
+    /// The same comparison over several steps, with the warm-start caches
+    /// carried from step to step the way a world would carry them: one
+    /// shared cache for the serial variant, one per island for the parallel
+    /// one. Every field of every body and contact is compared bit for bit
+    /// (`Debug` prints both 64-bit halves of each `Fix128`).
+    #[cfg(feature = "parallel")]
+    #[test]
+    fn parallel_matches_serial_over_steps_with_carried_caches() {
+        // three columns of two dynamic bodies resting on a static one, two
+        // contacts each: gravity keeps both contacts loaded on every substep,
+        // and Gauss-Seidel on the stack does not converge in the default four
+        // iterations, so the warm start carried in the cache changes the
+        // answer (a lone pair is solved exactly from any start, and an
+        // unloaded contact stores a zero impulse, so neither would show it)
+        let mut bodies_serial = Vec::new();
+        let mut contacts_serial = Vec::new();
+        for column in 0..3u64 {
+            let x = 10 * column as i64;
+            let first = bodies_serial.len();
+            for row in 0..3u64 {
+                bodies_serial.push(make_body(x, row as i64, row > 0, 10 * column + row + 1));
+            }
+            contacts_serial.push(make_contact(first, first + 1, 100 * column + 1));
+            contacts_serial.push(make_contact(first + 1, first + 2, 100 * column + 2));
+        }
+        let mut bodies_parallel = bodies_serial.clone();
+        let mut contacts_parallel = contacts_serial.clone();
+        let cfg = Pgs6DofOrientedConfig::default();
+        let tgs_cfg = TgsConfig::default();
+        let dt = Fix128::from_ratio(1, 60);
+        let mut cache_serial = ImpulseCache::default();
+        let mut caches_parallel: Vec<ImpulseCache> = Vec::new();
+        for step in 0..8 {
+            let islands = build_islands(&bodies_serial, &contacts_serial, &NO_JOINTS)
+                .expect("valid island inputs");
+            assert_eq!(islands.len(), 3, "expected three disjoint islands");
+            caches_parallel.resize_with(islands.len(), ImpulseCache::default);
+            solve_oriented_islands_serial(
+                &mut bodies_serial,
+                &mut contacts_serial,
+                &mut Vec::new(),
+                &islands,
+                &mut cache_serial,
+                cfg,
+                &tgs_cfg,
+                dt,
+            );
+            solve_oriented_islands_parallel(
+                &mut bodies_parallel,
+                &mut contacts_parallel,
+                &mut Vec::new(),
+                &islands,
+                &mut caches_parallel,
+                cfg,
+                &tgs_cfg,
+                dt,
+            );
+            assert_eq!(
+                format!("{bodies_serial:?}"),
+                format!("{bodies_parallel:?}"),
+                "bodies differ after step {step}"
+            );
+            assert_eq!(
+                format!("{contacts_serial:?}"),
+                format!("{contacts_parallel:?}"),
+                "contacts differ after step {step}"
+            );
         }
     }
 }

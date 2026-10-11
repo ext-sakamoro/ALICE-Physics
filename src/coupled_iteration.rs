@@ -802,7 +802,7 @@ impl ContractionMonitor {
     }
 
     /// Best (smallest) residual norm seen.
-    // ALLOW-UNWIRED: wiring debt sub-iteration-report-best-residual (`SubIterationReport` に field を足せる 2.0.0 まで report に載せられない), oracle tests/analytic_added_mass_coupling.rs (best_residual)
+    // ALLOW-UNWIRED: wiring debt sub-iteration-report-best-residual (`SubIterationReport` は公開かつ `#[non_exhaustive]` でないので field の追加は破壊的、次の major (3.0.0) で載せる), oracle tests/analytic_added_mass_coupling.rs (best_residual)
     #[must_use]
     pub const fn best_residual(&self) -> Fix128 {
         self.best
