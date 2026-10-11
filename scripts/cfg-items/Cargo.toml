@@ -11,4 +11,3 @@ description = "Lists the cfg-gated items of Rust source files with their line sp
 [dependencies]
 syn = { version = "2", default-features = false, features = ["full", "parsing", "visit", "printing"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
-quote = "1"
