@@ -22,9 +22,21 @@ MISSED = f"src/a.rs:3:11: {MUT}"
 REASON = "s is zero before this line and only its absolute value is used"
 
 
+PIN = "tests/pin.rs::plain"
+PIN_TESTS = """\
+#[test]
+fn plain() {}
+
+#[test]
+#[should_panic(expected = "x")]
+fn panics() {}
+"""
+
+
 def entry(pos: str = "src/a.rs:3:11", digest: str | None = None, mutation: str = MUT,
-          reason: str = REASON) -> str:
-    return f"{pos}\t{digest or me.line_digest(LINE)}\t{mutation}\t{reason}\n"
+          reason: str = REASON, tests: str | None = PIN) -> str:
+    line = f"{pos}\t{digest or me.line_digest(LINE)}\t{mutation}\t{reason}"
+    return line + (f"\t{tests}" if tests is not None else "") + "\n"
 
 
 class Case(unittest.TestCase):
@@ -32,6 +44,8 @@ class Case(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         (self.root / "src").mkdir()
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "pin.rs").write_text(PIN_TESTS, encoding="utf-8")
         self.write_src(SRC)
         self.list = self.root / "equivalent.txt"
 
@@ -69,7 +83,7 @@ class CheckTest(Case):
 
     def test_a_wrong_field_count_fails(self) -> None:
         self.write_list(f"src/a.rs:3:11\t{me.line_digest(LINE)}\t{MUT}\n")
-        self.assertTrue(any("4 or 5 tab-separated" in e for e in self.check()))
+        self.assertTrue(any("expected 5 tab-separated" in e for e in self.check()))
 
     def test_a_duplicate_entry_fails(self) -> None:
         self.write_list(entry(), entry())
@@ -90,44 +104,48 @@ class CheckTest(Case):
 
 
 class PinningTestsTest(Case):
-    TESTS = """\
-#[test]
-fn plain() {}
-
-#[test]
-#[should_panic(expected = "x")]
-fn panics() {}
-"""
-
-    def setUp(self) -> None:
-        super().setUp()
-        (self.root / "tests").mkdir()
-        (self.root / "tests" / "pin.rs").write_text(self.TESTS, encoding="utf-8")
-
     def test_named_tests_that_exist_pass(self) -> None:
-        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::plain, tests/pin.rs::panics\n")
+        self.write_list(entry(tests="tests/pin.rs::plain, tests/pin.rs::panics"))
         self.assertEqual(self.check(), [])
 
+    def test_an_entry_without_pinning_tests_fails(self) -> None:
+        self.write_list(entry(tests=None))
+        self.assertTrue(any("expected 5 tab-separated fields" in e for e in self.check()))
+
     def test_a_named_test_that_is_gone_makes_the_entry_stale(self) -> None:
-        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::plain,tests/pin.rs::renamed\n")
+        self.write_list(entry(tests="tests/pin.rs::plain,tests/pin.rs::renamed"))
         self.assertTrue(any("is gone: tests/pin.rs::renamed" in e for e in self.check()))
 
     def test_a_function_without_the_test_attribute_does_not_count(self) -> None:
         (self.root / "tests" / "pin.rs").write_text("fn plain() {}\n", encoding="utf-8")
-        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::plain\n")
+        self.write_list(entry())
         self.assertTrue(any("is gone" in e for e in self.check()))
 
     def test_a_named_test_file_that_is_gone_makes_the_entry_stale(self) -> None:
-        self.write_list(entry().rstrip("\n") + "\ttests/missing.rs::plain\n")
+        self.write_list(entry(tests="tests/missing.rs::plain"))
         self.assertTrue(any("is gone" in e for e in self.check()))
 
     def test_a_malformed_test_reference_fails(self) -> None:
-        self.write_list(entry().rstrip("\n") + "\tplain\n")
+        self.write_list(entry(tests="plain"))
         self.assertTrue(any("tests/<file>.rs::<fn>" in e for e in self.check()))
 
     def test_a_stale_pin_does_not_filter(self) -> None:
-        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::renamed\n")
+        self.write_list(entry(tests="tests/pin.rs::renamed"))
         self.assertEqual(self.filtered(MISSED), ([MISSED], []))
+
+
+class ExactnessTest(Case):
+    def test_a_reason_that_argues_up_to_rounding_fails(self) -> None:
+        for wording in ("equal up to rounding", "equal up to the rounding of p . c",
+                        "approximately the same", "nearly orthogonal", "|p + c| ≈ |p - c|",
+                        "the difference is negligible"):
+            with self.subTest(wording=wording):
+                self.write_list(entry(reason=wording))
+                self.assertTrue(any("argues approximately" in e for e in self.check()))
+
+    def test_an_exact_reason_passes(self) -> None:
+        self.write_list(entry(reason="0 - y = -y exactly and length(-y) == length(y) in every bit"))
+        self.assertEqual(self.check(), [])
 
 
 class FilterTest(Case):

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Equivalent mutants: missed by cargo-mutants, but no test can see them.
 
-A mutant is equivalent when the mutated program computes the same observable
-result as the original (for example a sign flip of a vector whose only use is
-its length). cargo-mutants reports such a mutant as missed on every run. This
+A mutant is equivalent when every bit of every observable result of the mutated
+program equals the original's (for example a sign flip of a vector whose only use
+is its length, when the negation is exact). Close is not equal: a mutant that
+changes a result only in its low bits is a survivor, and a test should pin it. cargo-mutants reports such a mutant as missed on every run. This
 file lists them in scripts/mutants-equivalent.txt so the in-diff run and the
 weekly ratchet do not report them, without letting a code move hide a real
 survivor:
@@ -15,15 +16,16 @@ survivor:
     is stale: `--check` fails and the mutant is not filtered (it reads missed
     again until someone re-reads the argument and updates the entry)
   * for `replace <op> with ...` the text at `col` must start with `<op>`
-  * every entry carries a non-empty reason; an empty list fails `--check`
-  * an entry whose equivalence rests on behaviour elsewhere (not on the line
-    itself) names the tests that pin that behaviour in a fifth field,
-    `tests/<file>.rs::<fn>` separated by commas; `--check` fails when a named
+  * every entry carries a non-empty reason, and the reason may not argue
+    approximately (`up to rounding`, `approximately`, `nearly`, `≈`, ...)
+  * every entry names, in a fifth field, the tests that pin its argument
+    (`tests/<file>.rs::<fn>` separated by commas); `--check` fails when a named
     file or `#[test] fn` is gone, so the mutant comes back when its argument does
+  * an empty list fails `--check`
 
-Format (tab separated, `#` starts a comment line, the fifth field optional):
+Format (tab separated, `#` starts a comment line):
 
-  src/joint.rs:955:23<TAB><hash><TAB>replace + with - in solve_ball_joint<TAB><reason>[<TAB><tests>]
+  src/joint.rs:955:23<TAB><hash><TAB>replace + with - in solve_ball_joint<TAB><reason><TAB><tests>
 
 Usage:
 
@@ -47,6 +49,9 @@ LIST = HERE / "mutants-equivalent.txt"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 MISSED_RE = re.compile(r"^(?P<file>[^:\s]+):(?P<line>\d+):(?P<col>\d+): (?P<mutation>.+)$")
 REPLACE_RE = re.compile(r"^replace (?P<op>\S+) with \S+ in ")
+APPROX_RE = re.compile(
+    r"up to (?:the )?rounding|rounding error|approximately|approximate|roughly|nearly|"
+    r"almost|close to|negligible|within [0-9]|≈|~=", re.I)
 TEST_RE = re.compile(r"tests/[A-Za-z0-9_/]+\.rs::[A-Za-z_][A-Za-z0-9_]*")
 
 
@@ -88,12 +93,13 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         if not raw.strip() or raw.startswith("#"):
             continue
         parts = raw.split("\t")
-        if len(parts) not in (4, 5):
-            errors.append(f"line {n}: expected 4 or 5 tab-separated fields, found {len(parts)}")
+        if len(parts) != 5:
+            errors.append(f"line {n}: expected 5 tab-separated fields (the last names the tests "
+                          f"that pin the argument), found {len(parts)}")
             continue
         pos, digest, mutation, reason = (p.strip() for p in parts[:4])
-        tests = tuple(t.strip() for t in parts[4].split(",")) if len(parts) == 5 else ()
-        if len(parts) == 5 and not all(TEST_RE.fullmatch(t) for t in tests):
+        tests = tuple(t.strip() for t in parts[4].split(","))
+        if not all(TEST_RE.fullmatch(t) for t in tests):
             errors.append(f"line {n}: tests {parts[4].strip()!r} are not tests/<file>.rs::<fn>")
             continue
         m = re.fullmatch(r"(?P<file>[^:\s]+):(?P<line>\d+):(?P<col>\d+)", pos)
@@ -108,6 +114,11 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
             continue
         if not reason:
             errors.append(f"line {n}: empty reason (say why no test can see this mutant)")
+            continue
+        m_approx = APPROX_RE.search(reason)
+        if m_approx:
+            errors.append(f"line {n}: the reason argues approximately ({m_approx.group(0)!r}): "
+                          f"equivalent means every bit of every observable result is equal")
             continue
         e = Entry(m["file"], int(m["line"]), int(m["col"]), digest, mutation, reason, n, tests)
         if e.key in seen:

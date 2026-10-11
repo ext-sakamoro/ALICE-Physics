@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5769 |
+| 🟢 Not ignored (run by CI) | 5775 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5867** |
+| **Total** | **5873** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5769)
+## 🟢 Not ignored (5775)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -544,6 +544,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_friction_cap.rs` | 4 |
 | `analytic_critically_damped_tether.rs` | 4 |
 | `analytic_sdf_dynamic_collider_pose.rs` | 4 |
+| `analytic_slider_reaction_limit.rs` | 4 |
 | `analytic_step_default_projection.rs` | 4 |
 | `analytic_world_query_boundaries.rs` | 4 |
 | `audit_bridge_self_joint.rs` | 4 |
@@ -591,6 +592,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |
 | `analytic_gjk_separation_distance.rs` | 2 |
+| `analytic_impulse_sign_exact.rs` | 2 |
 | `analytic_impulsive_burn_vis_viva.rs` | 2 |
 | `analytic_mesh_grazing_cast.rs` | 2 |
 | `analytic_rotation_integration.rs` | 2 |

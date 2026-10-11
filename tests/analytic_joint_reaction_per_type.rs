@@ -14,9 +14,13 @@
 //! stiffness `k`, no damping and the body at rest, the row is
 //! `λ = k s h² / (1 + k h² w)`, a reaction of `k s / (1 + k h² w)`.
 //!
-//! Only the magnitude is reported, so flipping the sign of an accumulated row
-//! does not change it (the first row starts from zero, and later rows of a
-//! joint are orthogonal to it). Those sign mutants are equivalent; the
+//! Only the magnitude is reported. Where a joint adds to the impulse on one
+//! line only and from zero, flipping that line's sign negates the impulse
+//! exactly and leaves the magnitude unchanged in every bit
+//! (tests/analytic_impulse_sign_exact.rs); those sign mutants are equivalent.
+//! The slider adds a limit row after its perpendicular row, and the two are
+//! orthogonal only up to fixed-point rounding, so its sign flips are not
+//! equivalent: tests/analytic_slider_reaction_limit.rs pins them. The
 //! magnitude below is what the rows' scaling must reproduce.
 
 use alice_physics::joint::{
