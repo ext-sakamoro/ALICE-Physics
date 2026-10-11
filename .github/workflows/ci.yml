@@ -9,8 +9,8 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
-  # nightly Mac Intel leg only, and only when main received a commit in the last
-  # 25 hours (the `gate` job); every other job skips the schedule
+  # nightly Mac Intel leg only, and only when main's HEAD has no successful Intel
+  # job yet (the `gate` job); every other job skips the schedule
   schedule:
     - cron: '15 16 * * *'
 
@@ -18,32 +18,29 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  # On the schedule: run only if main received a commit in the last 25 hours (an
-  # idle night does not rerun the Mac Intel leg). Any other event: run.
+  # On the schedule: a safety net. Every commit reaching main already runs all 5 OS
+  # on its push, so the nightly runs the Mac Intel leg only when main's HEAD has no
+  # successful `Test (macos-15-intel)` job (scripts/intel_nightly_gate.py reads
+  # HEAD's CI runs with the read-only token; an API error runs the leg). Any other
+  # event: run.
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
     outputs:
-      run: ${{ steps.decide.outputs.run }}
+      run: ${{ steps.decide.outputs.run || 'true' }}
     steps:
       - uses: actions/checkout@v5
         if: github.event_name == 'schedule'
-        with:
-          fetch-depth: 50
       - id: decide
-        shell: bash
-        run: |
-          if [ "${{ github.event_name }}" != schedule ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif ! recent=$(git rev-list -1 --since='25 hours ago' HEAD); then
-            echo "::warning::could not read the history of main: running the leg"
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          elif [ -n "$recent" ]; then
-            echo "run=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "no commit on main in the last 25 hours: the nightly Mac Intel leg is skipped"
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          fi
+        if: github.event_name == 'schedule'
+        # a crash of the script leaves the output empty, which reads as 'true' above
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python3 scripts/intel_nightly_gate.py
 
   test:
     name: Test (${{ matrix.os }})
@@ -124,6 +121,8 @@ jobs:
         run: python scripts/mutants_equivalent.py --check
       - name: Mutation in-diff plan (tests)
         run: python scripts/test_mutants_in_diff_plan.py
+      - name: Nightly Mac Intel gate (tests)
+        run: python scripts/test_intel_nightly_gate.py
       # the weekly ignored-test run fails on a crash, a binary that runs too
       # long, or a run that checked nothing; these keep that runner honest on
       # every push (the run itself is too heavy for the landing path)
