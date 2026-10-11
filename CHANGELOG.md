@@ -23,6 +23,14 @@ were introduced during that release window.
 - 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する
 - 変異試験: 観測できる結果の全 bit を変えない同値変異を `scripts/mutants-equivalent.txt` に理由・行の hash・根拠を固定する試験つきで登録し、in-diff の変異試験と週次の ratchet が missed に数えないようにした 行が変わった entry は `scripts/mutants_equivalent.py --check` (CI / preflight) で失敗し、その変異は再び missed になる
 - CI: Mac Intel (`macos-15-intel`) の試験は main への push と毎晩の schedule でだけ走らせる `ci/**` の staging push と pull request は残る 4 OS で走り、取り込み (main への fast-forward の push) が 5 OS すべての run を始め、それが公開の根拠になる 毎晩の schedule は安全網で、main の HEAD に成功した Mac Intel の job が無い時だけその脚を走らせる (`scripts/intel_nightly_gate.py` が HEAD の CI の run を読み取り専用の token で読む、読めなければ走らせる)
+- CI: `main` で走る workflow を `ci/**` の push でも走らせ、landing 前の `ci/<id>` の SHA で結果が揃うようにした 以前は `ci/**` で走るのが CI と Python binding だけで、Security & Hygiene・Fuzz・Downstream・Bench gate・台帳 3 本 (integration / oracle / wiring)・Re-export check は `main` に入った後にしか走らなかった (`main` への fast-forward 後に Security & Hygiene が red になった)
+  - `on.push` の `paths` を外し、各 workflow の `changes` job が `scripts/changed_paths.py` と `.github/paths/<workflow>.txt` で走るかを決める 新しい branch と force push は `merge-base(origin/main)..SHA`、それ以外の push は `before..after`、pull request は `base...head` を比べ、schedule と手動実行は常に走り、失敗・新しい branch の空の diff・照合 0 件は走らせる (fail-closed) 最後の `Gate` job は走るべき job が skip・cancel・失敗した時に失敗する
+  - path の一覧は各 job が実行・読み込む file (manifest・lock・toolchain・呼ぶ script と import 先・baseline・台帳・`#[path]` の対象) から作り直した 例: Security & Hygiene に `**/*.rs` と `**/Cargo.toml` (cargo-machete が全 manifest と全 `.rs` を読む)・`rust-toolchain.toml`・`README.md`・`.gitignore`
+  - Fuzz の全 target の build は schedule と手動実行でも走る (Gate が全 event で同じ job の組を要求するため)
+  - concurrency: `ci/**` の push は `main` の run を cancel しない Bench gate・Miri and loom・Integration Status は `main` と `ci` の 2 group で `cancel-in-progress: false` (同時に走るのは `main` 1 本と `ci/**` 1 本まで)
+  - Miri and loom は unsafe・並列の code (`.github/paths/unsafe-and-parallel.txt`) を変えた push だけで走り、`ci/**` では起動だけして結果は landing 後に読む (`after-landing`)
+  - `.github/ci-evidence.toml` に各 workflow の証拠の区分 (`landing` / `after-landing` / `schedule-only` / `tag-only`) と landing 後に読む matrix の leg (macOS の test) を置き、`docs/CI_TRIGGERS.md` に trigger の表を置いた `scripts/ci_triggers_check.py` (CI と preflight) が表・区分・workflow の食い違いと比較 0 件で失敗する
+  - 規則の改訂 (2026-10-12): 重い job は `ci/**` の push で走らせない、という規則を改めた 理由は landing の証拠から 8 本の workflow が抜けており、landing 後に `main` が Security & Hygiene で red になったこと 改訂後: 重い job は path の gate の後ろでだけ `ci/**` で走ってよく (Miri and loom は unsafe・並列の code に絞った gate)、同時に走る重い run の数は concurrency で 1 workflow につき `main` 1 本と `ci/**` 1 本に抑える 週次の変異試験は push で走らせない `scripts/ci_load_check.py` がこの形を検査する
 
 ## [2.3.0] - 2026-10-11
 

@@ -1,0 +1,39 @@
+# Which workflow runs are evidence for a landing. scripts/land.py pushes the commits to
+# ci/<id>, waits for its CI, then fast-forwards main to the same SHA.
+#
+#   landing        must be green on the ci/<id> SHA before main is fast-forwarded to it
+#   after-landing  started on the ci/<id> SHA (when its changes job outputs run=true); its
+#                  result is read after the landing and does not hold it
+#   schedule-only  never runs on a ci/** push (schedule, manual dispatch, pull request)
+#   tag-only       runs on a version tag
+#
+# Every workflow in .github/workflows has exactly one class here. docs/CI_TRIGGERS.md shows
+# the same table; scripts/ci_triggers_check.py checks this file against the workflows and
+# the document.
+
+[workflows]
+"bench-gate.yml" = "landing"
+"ci.yml" = "landing"
+"downstream.yml" = "landing"
+"fuzz.yml" = "landing"
+"integration-status.yml" = "landing"
+"oracle-status.yml" = "landing"
+"python-binding.yml" = "landing"
+"quality-deep.yml" = "schedule-only"
+"reexport_check.yml" = "landing"
+"release.yml" = "tag-only"
+"security-audit.yml" = "landing"
+"unsafe-and-parallel.yml" = "after-landing"
+"wiring-status.yml" = "landing"
+
+# legs of a landing workflow whose result is read after the landing: the job id and the
+# matrix value of the leg (the macOS test legs take the longest of the CI matrix)
+[[after-landing-legs]]
+workflow = "ci.yml"
+job = "test"
+matrix = "macos-latest"
+
+[[after-landing-legs]]
+workflow = "ci.yml"
+job = "test"
+matrix = "macos-15-intel"
