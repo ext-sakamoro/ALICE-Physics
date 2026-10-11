@@ -35,20 +35,40 @@ jobs:
       - run: python3 scripts/changed_paths.py decide --patterns-file .github/paths/gated.txt
   heavy:
     needs: changes
+  gate:
+    name: Gate
+    if: always()
+    needs: [changes, heavy]
+    steps:
+      - run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"
 """
+OS = ("${{ fromJSON(github.event_name == 'schedule' && '[\"intel\"]' || "
+      "(github.event_name == 'push' && github.ref == 'refs/heads/main') && "
+      "'[\"macos-latest\", \"intel\", \"ubuntu-latest\"]' || '[\"macos-latest\", \"ubuntu-latest\"]') }}")
 CI = """name: CI
 on:
   push:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '15 16 * * *'
   workflow_dispatch:
 jobs:
+  gate:
+    outputs:
+      run: ${{ steps.decide.outputs.run || 'true' }}
+    steps:
+      - run: python3 scripts/intel_nightly_gate.py
   test:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
     strategy:
       matrix:
-        os: [macos-latest, ubuntu-latest]
-"""
+        os: OS
+  lint:
+    if: github.event_name != 'schedule'
+""".replace("OS", OS)
 WEEKLY = """name: W
 on:
   schedule:
@@ -74,14 +94,23 @@ EVIDENCE = """[workflows]
 "release.yml" = "tag-only"
 "weekly.yml" = "schedule-only"
 
-[[after-landing-legs]]
+[[legs]]
 workflow = "ci.yml"
 job = "test"
 matrix = "macos-latest"
+class = "after-landing"
+events = ["push main", "push ci/**", "pull_request", "workflow_dispatch"]
+
+[[legs]]
+workflow = "ci.yml"
+job = "test"
+matrix = "intel"
+class = "main-after-landing"
+events = ["push main", "schedule"]
 """
 ROWS = """| workflow | push | path gate | pull_request | schedule | dispatch | ci/** push | class |
 |---|---|---|---|---|---|---|---|
-| `ci.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
+| `ci.yml` | `main, ci/**` | - | `main` | yes | yes | runs | landing |
 | `gated.yml` | `main, ci/**` | `.github/paths/gated.txt` | `main (paths)` | yes | yes | runs when the paths match | after-landing |
 | `release.yml` | `tags v*` | - | - | - | - | - | tag-only |
 | `weekly.yml` | - | - | - | yes | yes | - | schedule-only |
@@ -92,9 +121,10 @@ DISPATCH = """| workflow |
 | `gated.yml` |
 | `weekly.yml` |
 """
-LEGS = """| workflow | job | matrix |
-|---|---|---|
-| `ci.yml` | `test` | `macos-latest` |
+LEGS = """| workflow | job | matrix | class | events |
+|---|---|---|---|---|
+| `ci.yml` | `test` | `macos-latest` | after-landing | push main, push ci/**, pull_request, workflow_dispatch |
+| `ci.yml` | `test` | `intel` | main-after-landing | push main, schedule |
 """
 
 
@@ -205,21 +235,118 @@ class Triggers(unittest.TestCase):
     # --- legs ------------------------------------------------------------------------------
 
     def test_a_leg_of_a_non_landing_workflow_fails(self):
-        ev = EVIDENCE.replace('workflow = "ci.yml"', 'workflow = "gated.yml"')
+        ev = EVIDENCE.replace('workflow = "ci.yml"', 'workflow = "gated.yml"', 1)
         self.has(self.errors(evidence=ev), "not a landing workflow")
 
     def test_a_leg_with_an_unknown_job_fails(self):
-        ev = EVIDENCE.replace('job = "test"', 'job = "tests"')
+        ev = EVIDENCE.replace('job = "test"', 'job = "tests"', 1)
         self.has(self.errors(evidence=ev), "no job 'tests'")
 
     def test_a_leg_with_an_unknown_matrix_value_fails(self):
         for v in ("macos-15-intel", "macos"):
             ev = EVIDENCE.replace('matrix = "macos-latest"', f'matrix = "{v}"')
-            self.has(self.errors(evidence=ev), "not in the job")
+            self.has(self.errors(evidence=ev), "not in the job for any event")
+
+    def test_declared_events_must_equal_the_evaluated_matrix(self):
+        for wrong in ('["push main", "push ci/**", "pull_request"]',
+                      '["push main", "push ci/**", "pull_request", "workflow_dispatch", "schedule"]'):
+            ev = EVIDENCE.replace('["push main", "push ci/**", "pull_request", "workflow_dispatch"]', wrong)
+            self.has(self.errors(evidence=ev), "macos-latest: declared events")
+        ev = EVIDENCE.replace('["push main", "schedule"]', '["push main", "push ci/**", "schedule"]')
+        self.has(self.errors(evidence=ev), "intel: declared events")
+
+    def test_a_matrix_change_shows_as_an_event_mismatch(self):
+        # the Mac Intel leg added to the ci/** and dispatch runs
+        body = CI.replace("|| '[\"macos-latest\", \"ubuntu-latest\"]')", "|| '[\"macos-latest\", \"intel\", \"ubuntu-latest\"]')")
+        self.assertNotEqual(body, CI)
+        e = self.errors(**{"ci.yml": body})
+        self.has(e, "intel: declared events")
+        self.has(e, "class main-after-landing needs a main push run and no ci/** push run")
+
+    def test_an_event_that_does_not_trigger_the_workflow_is_not_counted(self):
+        # without the schedule trigger the matrix's schedule branch never runs
+        body = CI.replace("  schedule:\n    - cron: '15 16 * * *'\n", "")
+        e = self.errors(**{"ci.yml": body})
+        self.has(e, "intel: declared events ['push main', 'schedule'] but the workflow runs it on ['push main']")
+
+    def test_an_undeclared_main_only_leg_fails(self):
+        ev = EVIDENCE.split("[[legs]]")[0] + "[[legs]]" + EVIDENCE.split("[[legs]]")[1]
+        legs = "\n".join(LEGS.splitlines()[:3]) + "\n"
+        e = self.errors(evidence=ev, document=doc(legs=legs))
+        self.has(e, "leg os=intel runs on a main push but not on a ci/** push and is not declared")
+
+    def test_leg_classes(self):
+        ev = EVIDENCE.replace('class = "main-after-landing"', 'class = "after-landing"')
+        self.has(self.errors(evidence=ev), "class after-landing but it is not started on a ci/** push")
+        ev = EVIDENCE.replace('class = "after-landing"\n', 'class = "main-after-landing"\n', 1)
+        self.has(self.errors(evidence=ev), "class main-after-landing needs")
+        ev = EVIDENCE.replace('class = "after-landing"\n', 'class = "later"\n', 1)
+        self.has(self.errors(evidence=ev), "class 'later' is not one of")
+
+    def test_unknown_event_label_and_non_list_fail(self):
+        ev = EVIDENCE.replace('"schedule"]', '"nightly"]')
+        self.has(self.errors(evidence=ev), "unknown events")
+        ev = EVIDENCE.replace('events = ["push main", "schedule"]', 'events = "push main"')
+        self.has(self.errors(evidence=ev), "`events` is not a list")
+
+    def test_an_unreadable_matrix_expression_fails(self):
+        body = CI.replace("github.event_name == 'schedule'", "contains(github.event_name, 'sched')")
+        self.has(self.errors(**{"ci.yml": body}), "ci.yml: job test:")
+
+    def test_a_runtime_matrix_is_skipped_by_the_sweep(self):
+        body = CI.replace("  lint:\n", "  fz:\n    strategy:\n      matrix:\n        t: ${{ fromJSON(needs.x.outputs.list) }}\n  lint:\n")
+        self.assertEqual(self.errors(**{"ci.yml": body}), [])
 
     def test_legs_of_the_doc_and_the_evidence_must_agree(self):
-        self.has(self.errors(document=doc(legs=LEGS.replace("macos-latest", "ubuntu-latest"))), "missing from the table")
-        self.has(self.errors(document=doc(legs=LEGS.replace("macos-latest", "ubuntu-latest"))), "is not in .github/ci-evidence.toml")
+        self.has(self.errors(document=doc(legs=LEGS.replace("| after-landing |", "| main-after-landing |"))), "missing from the table")
+        self.has(self.errors(document=doc(legs=LEGS.replace("workflow_dispatch |", "schedule |"))), "is not in .github/ci-evidence.toml")
+
+    # --- the guard's gate job versus ci.yml's gate job ---------------------------------------
+
+    def test_a_path_gated_workflow_needs_the_guard_gate_job(self):
+        self.has(self.errors(**{"gated.yml": GATED.split("  gate:\n")[0]}), "no `gate` job running")
+        body = GATED.replace("changed_paths.py gate", "intel_nightly_gate.py")
+        self.has(self.errors(**{"gated.yml": body}), "no `gate` job running")
+
+    def test_the_guard_gate_job_runs_always_and_needs_every_job(self):
+        self.has(self.errors(**{"gated.yml": GATED.replace("    if: always()\n", "")}), "not `if: always()`")
+        self.has(self.errors(**{"gated.yml": GATED.replace("needs: [changes, heavy]", "needs: [changes]")}), "does not need ['heavy']")
+
+    def test_ci_gate_job_is_not_the_guard(self):
+        self.assertEqual(self.errors(), [])  # ci.yml has a `gate` job and no path gate
+        body = CI.replace("intel_nightly_gate.py", "changed_paths.py gate")
+        self.has(self.errors(**{"ci.yml": body}), "ci.yml: a `gate` job runs changed_paths.py gate, but the workflow has no path gate")
+
+    # --- the expression evaluator ----------------------------------------------------------
+
+    def test_evaluate(self):
+        ev = ct.evaluate
+        ctx = {"github.event_name": "push", "github.ref": "refs/heads/main"}
+        self.assertEqual(ev("'a' && 'b'", ctx), "b")
+        self.assertEqual(ev("'' && 'b'", ctx), "")
+        self.assertEqual(ev("'' || 'b'", ctx), "b")
+        self.assertEqual(ev("'a' || 'b'", ctx), "a")
+        self.assertTrue(ev("github.event_name == 'push'", ctx))
+        self.assertTrue(ev("github.ref != 'x'", ctx))
+        self.assertFalse(ev("!(github.ref == 'refs/heads/main')", ctx))
+        self.assertEqual(ev("fromJSON('[\"a\", \"b\"]')", ctx), ["a", "b"])
+        self.assertEqual(ev("'it''s'", ctx), "it's")
+        self.assertEqual(ev("false || true", ctx), True)
+        for bad in ("unknown.x", "'a", "('a'", "'a' 'b'", "fromJSON('[')", "a.b == 'x'", "#"):
+            with self.assertRaises(ct.ExprError, msg=bad):
+                ev(bad, ctx)
+
+    def test_the_real_ci_matrix(self):
+        text = (HERE.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        job = ct.jobs(text)["test"]
+        got = {label: ct.matrix_values(job, "os", {"github.event_name": e, "github.ref": ref})
+               for label, e, ref, _ in ct.EVENTS}
+        four = ["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]
+        self.assertEqual(got["push main"], ["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"])
+        self.assertEqual(got["push ci/**"], four)
+        self.assertEqual(got["pull_request"], four)
+        self.assertEqual(got["workflow_dispatch"], four)
+        self.assertEqual(got["schedule"], ["macos-15-intel"])
 
     # --- dispatch --------------------------------------------------------------------------
 

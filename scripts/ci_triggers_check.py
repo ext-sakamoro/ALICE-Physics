@@ -12,12 +12,18 @@ docs/CI_TRIGGERS.md; the evidence class of the row is compared with
     path gate, pull_request, schedule, dispatch, behaviour on a ci/** push, class);
   * the class fits the triggers: landing and after-landing run on ci/**, schedule-only
     has no push trigger, tag-only is pushed by tags only;
-  * every after-landing leg names a landing workflow, one of its jobs and a matrix value
-    of that job, and the second table of the document lists the same legs;
+  * every declared leg (a matrix value of a job of a landing workflow) names the events it
+    runs on, and they equal the events for which the job's matrix (a literal list, or a
+    `fromJSON(...)` expression of github.event_name and github.ref, evaluated here) holds
+    the value; a leg that runs on a main push but not on a ci/** push must be declared;
+    the second table of the document lists the same legs;
   * every landing and after-landing workflow has `workflow_dispatch` (a run dropped by
     the one-pending-run-per-group rule is re-created on the ci/<id> SHA with
     `gh workflow run`), and the dispatchable list of the document names exactly the
     workflows that have it;
+  * a path-gated workflow has the guard's `gate` job (`changed_paths.py gate`, `if:
+    always()`, needs every other job), and a workflow without a path gate has none (ci.yml's
+    `gate` job is the nightly Mac Intel decision, a different job);
   * a workflow that runs on ci/** cannot cancel a main run: its concurrency group
     includes the ref, or `cancel-in-progress` is false.
 
@@ -30,6 +36,7 @@ Fails (exit 1) on a finding, and when no row was compared.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from pathlib import Path
@@ -48,11 +55,159 @@ DOC = "docs/CI_TRIGGERS.md"
 EVIDENCE = ".github/ci-evidence.toml"
 CLASSES = ("landing", "after-landing", "schedule-only", "tag-only")
 COLUMNS = ("workflow", "push", "path gate", "pull_request", "schedule", "dispatch", "ci/** push", "class")
-LEG_COLUMNS = ("workflow", "job", "matrix")
+LEG_COLUMNS = ("workflow", "job", "matrix", "class", "events")
 WF_TABLE = "ci-triggers:workflows"
 LEG_TABLE = "ci-triggers:after-landing-legs"
+# the events a matrix leg is evaluated for: (label, github.event_name, github.ref, trigger key)
+EVENTS = (
+    ("push main", "push", "refs/heads/main", "push"),
+    ("push ci/**", "push", "refs/heads/ci/x", "push"),
+    ("pull_request", "pull_request", "refs/pull/1/merge", "pull_request"),
+    ("workflow_dispatch", "workflow_dispatch", "refs/heads/ci/x", "workflow_dispatch"),
+    ("schedule", "schedule", "refs/heads/main", "schedule"),
+)
+# leg classes: started on the ci/<id> SHA and read after the landing, or not started on
+# ci/** at all (main push and schedule only) and read on main after the landing
+LEG_CLASSES = ("after-landing", "main-after-landing")
 DISPATCH_TABLE = "ci-triggers:dispatchable"
 DISPATCH_COLUMNS = ("workflow",)
+
+
+class ExprError(ValueError):
+    pass
+
+
+def _tokens(s: str) -> list[str]:
+    out, i = [], 0
+    while i < len(s):
+        c = s[i]
+        if c.isspace():
+            i += 1
+        elif c == "'":
+            j = s.find("'", i + 1)
+            while j != -1 and s[j + 1:j + 2] == "'":  # '' is an escaped quote
+                j = s.find("'", j + 2)
+            if j == -1:
+                raise ExprError(f"unterminated string in {s!r}")
+            out.append(s[i:j + 1])
+            i = j + 1
+        elif s.startswith(("&&", "||", "==", "!="), i):
+            out.append(s[i:i + 2])
+            i += 2
+        elif c in "()!,":
+            out.append(c)
+            i += 1
+        else:
+            m = re.match(r"[A-Za-z_][A-Za-z0-9_.\-]*", s[i:])
+            if not m:
+                raise ExprError(f"unexpected {c!r} in {s!r}")
+            out.append(m.group(0))
+            i += len(m.group(0))
+    return out
+
+
+def evaluate(expr: str, ctx: dict[str, str]):
+    """a GitHub expression of `&&`, `||`, `==`, `!=`, `!`, parentheses, string literals,
+    `fromJSON(...)` and the context names in ctx (anything else is an error, so a matrix the
+    evaluator cannot read is reported instead of guessed)"""
+    toks = _tokens(expr)
+    pos = 0
+
+    def peek():
+        return toks[pos] if pos < len(toks) else None
+
+    def take(want=None):
+        nonlocal pos
+        tok = peek()
+        if tok is None or (want is not None and tok != want):
+            raise ExprError(f"expected {want or 'a token'} in {expr!r}")
+        pos += 1
+        return tok
+
+    def primary():
+        tok = take()
+        if tok == "(":
+            v = or_()
+            take(")")
+            return v
+        if tok == "!":
+            return not primary()
+        if tok.startswith("'"):
+            return tok[1:-1].replace("''", "'")
+        if tok == "fromJSON":
+            take("(")
+            v = or_()
+            take(")")
+            try:
+                return json.loads(v)
+            except (TypeError, ValueError) as e:
+                raise ExprError(f"fromJSON of {v!r}: {e}") from e
+        if tok in ("true", "false"):
+            return tok == "true"
+        if tok in ctx:
+            return ctx[tok]
+        raise ExprError(f"unknown name {tok!r} in {expr!r}")
+
+    def cmp_():
+        v = primary()
+        while peek() in ("==", "!="):
+            op = take()
+            w = primary()
+            v = (v == w) if op == "==" else (v != w)
+        return v
+
+    def and_():
+        v = cmp_()
+        while peek() == "&&":
+            take()
+            w = cmp_()
+            v = w if v else v
+        return v
+
+    def or_():
+        v = and_()
+        while peek() == "||":
+            take()
+            w = and_()
+            v = v if v else w
+        return v
+
+    out = or_()
+    if pos != len(toks):
+        raise ExprError(f"trailing {toks[pos]!r} in {expr!r}")
+    return out
+
+
+def matrix_values(job: str, key: str, ctx: dict[str, str]) -> list[str] | None:
+    """the values of matrix `key` in a job block for an event (None: the key is absent)"""
+    m = re.search(rf"^\s+{re.escape(key)}:\s*(.+?)\s*$", job.split("matrix:", 1)[1] if "matrix:" in job else "", re.M)
+    if not m:
+        return None
+    v = m.group(1)
+    if v.startswith("${{") and v.endswith("}}"):
+        out = evaluate(v[3:-2], ctx)
+    elif v.startswith("["):
+        out = [x.strip().strip("'\"") for x in v.strip("[]").split(",") if x.strip()]
+    else:
+        raise ExprError(f"matrix {key}: cannot read {v!r}")
+    if not isinstance(out, list):
+        raise ExprError(f"matrix {key}: {v!r} is not a list")
+    return [str(x) for x in out]
+
+
+def leg_events(text: str, job: str, key: str, value: str) -> tuple[list[str], list[str]]:
+    """(events whose run includes the leg, events the workflow is triggered by)"""
+    on = cp.on_block(text)
+    triggered = [label for label, _ev, _ref, trig in EVENTS if cp.sub_block(on, trig, 2) is not None
+                 or any(re.match(rf"^  {trig}:", l) for l in on)]
+    present = []
+    for label, ev, ref, _trig in EVENTS:
+        if label not in triggered:
+            continue
+        vals = matrix_values(job, key, {"github.event_name": ev, "github.ref": ref})
+        if vals is not None and value in vals:
+            present.append(label)
+    return present, triggered
 
 
 def derive(name: str, text: str) -> dict[str, str]:
@@ -118,6 +273,30 @@ def table(doc: str, marker: str, columns: tuple[str, ...]) -> tuple[list[dict[st
     return rows, errors
 
 
+def guard_gate_errors(name: str, text: str, gated: bool) -> list[str]:
+    """the changes-guard `gate` job (name `Gate`) of a path-gated workflow: it runs
+    `changed_paths.py gate`, always, and needs `changes` and every other job; ci.yml's own
+    `gate` job (the nightly Mac Intel decision) is a different job and must not be read as it"""
+    js = jobs(text)
+    g = js.get("gate")
+    runs_guard = g is not None and "changed_paths.py gate" in g
+    if not gated:
+        if runs_guard:
+            return [f"{name}: a `gate` job runs changed_paths.py gate, but the workflow has no path gate"]
+        return []
+    if g is None or not runs_guard:
+        return [f"{name}: path-gated, but no `gate` job running scripts/changed_paths.py gate"]
+    errors = []
+    if not re.search(r"^\s+if:\s*always\(\)\s*$", g, re.M):
+        errors.append(f"{name}: the guard's gate job is not `if: always()`")
+    m = re.search(r"^\s+needs:\s*\[(.*)\]\s*$", g, re.M)
+    needs = {x.strip() for x in m.group(1).split(",")} if m else set()
+    missing = sorted(set(js) - {"gate"} - needs)
+    if missing:
+        errors.append(f"{name}: the guard's gate job does not need {missing}")
+    return errors
+
+
 def concurrency_errors(name: str, text: str) -> list[str]:
     conc = top_block(text, "concurrency")
     group, cancel = scalar(conc, "group"), scalar(conc, "cancel-in-progress")
@@ -136,7 +315,7 @@ def check(root: Path) -> tuple[list[str], int]:
     except (OSError, tomllib.TOMLDecodeError) as e:
         return [f"{EVIDENCE}: {e}"], 0
     classes = ev.get("workflows", {})
-    legs = ev.get("after-landing-legs", [])
+    legs = ev.get("legs", [])
     try:
         doc = (root / DOC).read_text(encoding="utf-8")
     except OSError as e:
@@ -182,27 +361,73 @@ def check(root: Path) -> tuple[list[str], int]:
             errors.append(f"{name}: class tag-only but its push trigger is {want['push']!r}")
         if want["ci/** push"] != "-":
             errors += concurrency_errors(name, files[name])
+        errors += guard_gate_errors(name, files[name], want["path gate"] != "-")
         if cls in ("landing", "after-landing") and want["dispatch"] != "yes":
             errors.append(f"{name}: class {cls} but no workflow_dispatch (a dropped run cannot be "
                           "re-created on the ci/<id> SHA)")
 
     want_legs = set()
     for leg in legs:
-        w, j, mval = leg.get("workflow"), leg.get("job"), leg.get("matrix")
-        want_legs.add((w, j, mval))
+        w, j, key, mval = leg.get("workflow"), leg.get("job"), leg.get("key", "os"), leg.get("matrix")
+        lcls, events = leg.get("class"), leg.get("events")
+        label = f"{w}/{j}/{mval}"
+        if not isinstance(events, list):
+            errors.append(f"{EVIDENCE}: leg {label}: `events` is not a list")
+            events = []
+        want_legs.add((w, j, mval, lcls, ", ".join(events)))
         if classes.get(w) != "landing":
-            errors.append(f"{EVIDENCE}: after-landing leg of {w!r}, which is not a landing workflow")
+            errors.append(f"{EVIDENCE}: leg {label} of {w!r}, which is not a landing workflow")
             continue
+        if lcls not in LEG_CLASSES:
+            errors.append(f"{EVIDENCE}: leg {label}: class {lcls!r} is not one of {', '.join(LEG_CLASSES)}")
         js = jobs(files.get(w, ""))
         if j not in js:
-            errors.append(f"{EVIDENCE}: after-landing leg {w}/{j}: no job {j!r}")
-        elif not re.search(rf"(?<![\w.-]){re.escape(str(mval))}(?![\w.-])", js[j]):
-            errors.append(f"{EVIDENCE}: after-landing leg {w}/{j}: matrix value {mval!r} not in the job")
-    doc_legs = {(r["workflow"], r["job"], r["matrix"]) for r in leg_rows}
+            errors.append(f"{EVIDENCE}: leg {label}: no job {j!r}")
+            continue
+        try:
+            present, triggered = leg_events(files[w], js[j], key, str(mval))
+        except ExprError as e:
+            errors.append(f"{w}: job {j}: {e}")
+            continue
+        if not present:
+            errors.append(f"{EVIDENCE}: leg {label}: matrix value {mval!r} not in the job for any event")
+            continue
+        unknown = [e for e in events if e not in [x[0] for x in EVENTS]]
+        if unknown:
+            errors.append(f"{EVIDENCE}: leg {label}: unknown events {unknown}")
+        if events != present:
+            errors.append(f"{EVIDENCE}: leg {label}: declared events {events} but the workflow runs it on {present}")
+        if lcls == "after-landing" and "push ci/**" not in present:
+            errors.append(f"{EVIDENCE}: leg {label}: class after-landing but it is not started on a ci/** push")
+        if lcls == "main-after-landing" and ("push ci/**" in present or "push main" not in present):
+            errors.append(f"{EVIDENCE}: leg {label}: class main-after-landing needs a main push run "
+                          "and no ci/** push run")
+    # a leg of a landing workflow that runs on main but not on ci/** must be declared:
+    # otherwise the landing reads a ci/** run that silently lacks it
+    declared = {(lg.get("workflow"), lg.get("job"), str(lg.get("matrix"))) for lg in legs}
+    for w, cls in classes.items():
+        if cls != "landing" or w not in files:
+            continue
+        for j, block in jobs(files[w]).items():
+            for key, expr in re.findall(r"^\s+([A-Za-z_][\w-]*):\s*(\$\{\{.*fromJSON.*)$", block, re.M):
+                # a matrix computed from job outputs or inputs is not known before the run
+                if re.search(r"\b(needs|steps|inputs|matrix|vars|env|secrets)\.", expr):
+                    continue
+                try:
+                    main_vals = matrix_values(block, key, {"github.event_name": "push", "github.ref": "refs/heads/main"}) or []
+                    ci_vals = matrix_values(block, key, {"github.event_name": "push", "github.ref": "refs/heads/ci/x"}) or []
+                except ExprError as e:
+                    errors.append(f"{w}: job {j}: {e}")
+                    continue
+                for v in main_vals:
+                    if v not in ci_vals and (w, j, v) not in declared:
+                        errors.append(f"{w}: job {j}: leg {key}={v} runs on a main push but not on a ci/** "
+                                      f"push and is not declared in {EVIDENCE}")
+    doc_legs = {tuple(r[c] for c in LEG_COLUMNS) for r in leg_rows}
     for leg in sorted(want_legs - doc_legs, key=str):
-        errors.append(f"{DOC}: after-landing leg {leg} missing from the table")
+        errors.append(f"{DOC}: leg {leg} missing from the table")
     for leg in sorted(doc_legs - want_legs, key=str):
-        errors.append(f"{DOC}: after-landing leg {leg} is not in {EVIDENCE}")
+        errors.append(f"{DOC}: leg {leg} is not in {EVIDENCE}")
 
     have = {n for n, text in files.items() if derive(n, text)["dispatch"] == "yes"}
     listed = [r["workflow"] for r in dispatch_rows]

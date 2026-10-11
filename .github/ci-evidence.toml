@@ -4,6 +4,7 @@
 #   landing        must be green on the ci/<id> SHA before main is fast-forwarded to it
 #   after-landing  started on the ci/<id> SHA (when its changes job outputs run=true); its
 #                  result is read after the landing and does not hold it
+# (the legs below have their own classes)
 #   schedule-only  never runs on a ci/** push (schedule, manual dispatch, pull request)
 #   tag-only       runs on a version tag
 #
@@ -26,14 +27,25 @@
 "unsafe-and-parallel.yml" = "after-landing"
 "wiring-status.yml" = "landing"
 
-# legs of a landing workflow whose result is read after the landing: the job id and the
-# matrix value of the leg (the macOS test legs take the longest of the CI matrix)
-[[after-landing-legs]]
+# legs of a landing workflow whose result is not read before the landing: the job id, the
+# matrix value and the events whose run includes the leg (scripts/ci_triggers_check.py
+# evaluates the job's matrix for each event and fails when they differ)
+#   after-landing       started on the ci/<id> SHA with the rest of the run, read after the landing
+#   main-after-landing  not started on ci/** at all: runs on the push to main (and on the
+#                       nightly schedule), read on main after the landing
+# event labels: "push main", "push ci/**", "pull_request", "workflow_dispatch", "schedule"
+
+# the arm64 leg that holds the golden hashes: red after a landing is fixed or reverted at once
+[[legs]]
 workflow = "ci.yml"
 job = "test"
 matrix = "macos-latest"
+class = "after-landing"
+events = ["push main", "push ci/**", "pull_request", "workflow_dispatch"]
 
-[[after-landing-legs]]
+[[legs]]
 workflow = "ci.yml"
 job = "test"
 matrix = "macos-15-intel"
+class = "main-after-landing"
+events = ["push main", "schedule"]

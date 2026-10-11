@@ -15,6 +15,7 @@ files disagree, or when it compares no row (CI test job and `scripts/preflight.s
 |---|---|
 | landing | must be green on the `ci/<id>` SHA before `main` is fast-forwarded to it |
 | after-landing | started on the `ci/<id>` SHA (when its changes job outputs `run=true`); its result is read after the landing and does not hold it |
+| main-after-landing | (a matrix leg only) not started on `ci/**`; runs on the push to `main` (and the schedule), read on `main` after the landing |
 | schedule-only | never runs on a `ci/**` push (schedule, manual dispatch, pull request) |
 | tag-only | runs on a version tag |
 
@@ -33,8 +34,12 @@ with the patterns in `.github/paths/<workflow>.txt`:
 - any error, an empty diff on a new branch, or a non-empty diff in which no file was
   compared runs the jobs (fail-closed);
 - the heavy jobs `need` the changes job and run when it outputs `run=true`;
-- the last job, `Gate`, fails when `run=true` and a heavy job was skipped, cancelled or
-  failed, and when `run=false` and a heavy job ran.
+- the last job, `gate` (shown as `Gate`), runs `changed_paths.py gate` and fails when
+  `run=true` and a heavy job was skipped, cancelled or failed, and when `run=false` and a
+  heavy job ran. `ci.yml` has no path gate and no such job: its own `gate` job (shown as
+  `gate`) decides whether the nightly schedule runs the Mac Intel leg
+  (`scripts/intel_nightly_gate.py`), and is a different job. `scripts/ci_triggers_check.py`
+  requires the guard's `gate` job in every path-gated workflow and in no other.
 
 Each list names every file a job of the workflow executes or reads (manifests, lock,
 toolchain file, scripts it calls and the scripts they import, baselines, committed
@@ -48,7 +53,7 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | workflow | push | path gate | pull_request | schedule | dispatch | ci/** push | class |
 |---|---|---|---|---|---|---|---|
 | `bench-gate.yml` | `main, ci/**` | `.github/paths/bench-gate.txt` | - | - | yes | runs when the paths match | landing |
-| `ci.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
+| `ci.yml` | `main, ci/**` | - | `main` | yes | yes | runs | landing |
 | `downstream.yml` | `main, ci/**` | `.github/paths/downstream.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `fuzz.yml` | `main, ci/**` | `.github/paths/fuzz.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
 | `integration-status.yml` | `main, ci/**` | `.github/paths/integration-status.txt` | - | - | yes | runs when the paths match | landing |
@@ -62,20 +67,31 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `wiring-status.yml` | `main, ci/**` | `.github/paths/wiring-status.txt` | - | - | yes | runs when the paths match | landing |
 <!-- ci-triggers:workflows:end -->
 
-## After-landing legs of landing workflows
+## Legs of landing workflows read after the landing
 
 The macOS legs of the test matrix take the longest. The landing does not wait for
-either of them: they start with the rest of the run, and their result is read after the
-landing. A release (crates.io, PyPI) needs every leg green.
+either of them, and a release (crates.io, PyPI) needs every leg green.
 
-The `macos-latest` leg is the arm64 leg that holds the golden hashes: a red result there
-after a landing is fixed or reverted at once.
+- `macos-latest` (class `after-landing`): starts on the `ci/<id>` SHA with the rest of
+  the run; its result is read after the landing. It is the arm64 leg that holds the
+  golden hashes: a red result there after a landing is fixed or reverted at once.
+- `macos-15-intel` (class `main-after-landing`): does **not** run on a `ci/**` push, a
+  pull request or a manual run. It runs on the push to `main` (all 5 OS) and on the
+  nightly schedule (that leg alone, when `main`'s HEAD has no successful Intel job); its
+  result is read on `main` after the landing.
+
+The `test` matrix is computed from the event: the nightly schedule runs Mac Intel only,
+a push to `main` runs all 5 OS, and every other event, a manual run (`workflow_dispatch`,
+on any branch) included, runs the 4 others. The `events` column is checked against that
+expression: `scripts/ci_triggers_check.py` evaluates the matrix for each event and fails
+when a leg's declared events differ, or when a leg that runs on a `main` push but not on
+a `ci/**` push is not declared.
 
 <!-- ci-triggers:after-landing-legs:begin -->
-| workflow | job | matrix |
-|---|---|---|
-| `ci.yml` | `test` | `macos-latest` |
-| `ci.yml` | `test` | `macos-15-intel` |
+| workflow | job | matrix | class | events |
+|---|---|---|---|---|
+| `ci.yml` | `test` | `macos-latest` | after-landing | push main, push ci/**, pull_request, workflow_dispatch |
+| `ci.yml` | `test` | `macos-15-intel` | main-after-landing | push main, schedule |
 <!-- ci-triggers:after-landing-legs:end -->
 
 ## Dropped runs
