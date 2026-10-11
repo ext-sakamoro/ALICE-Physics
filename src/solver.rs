@@ -7120,6 +7120,10 @@ impl core::fmt::Debug for PhysicsWorld {
 }
 
 #[cfg(all(test, feature = "std"))]
+#[path = "../tests/lib/solver_missed_oracles.rs"]
+mod missed_oracles;
+
+#[cfg(all(test, feature = "std"))]
 mod tests {
     use super::*;
 
