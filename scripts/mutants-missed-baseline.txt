@@ -43,7 +43,6 @@
 [default] src/math.rs: replace Vec3Fix::cross_simd -> Self with Default::default()
 [default] src/math.rs: replace Vec3Fix::dot_batch_4 -> [Fix128; 4] with [Default::default(); 4]
 [default] src/math.rs: replace simd_width -> usize with 1
-[default] src/solver.rs: delete ! in PhysicsWorld::integrate_positions
 [default] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
 [default] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
 [default] src/solver.rs: delete ! in PhysicsWorld::pre_process_contacts
@@ -60,24 +59,15 @@
 [default] src/solver.rs: delete ! in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: delete ! in PhysicsWorld::substep_batched
 [default] src/solver.rs: delete ! in PhysicsWorld::substep_with_bridge
-[default] src/solver.rs: delete - in PhysicsWorld::update_velocities
-[default] src/solver.rs: delete - in PhysicsWorld::update_velocities
-[default] src/solver.rs: delete - in PhysicsWorld::update_velocities
 [default] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::build_one_contact_world
 [default] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::hub_world
 [default] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
 [default] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
-[default] src/solver.rs: replace && with || in PhysicsWorld::detect_collisions
 [default] src/solver.rs: replace && with || in PhysicsWorld::remove_body
 [default] src/solver.rs: replace && with || in PhysicsWorld::step
 [default] src/solver.rs: replace && with || in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace && with || in PhysicsWorld::step_tgs
 [default] src/solver.rs: replace && with || in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with + in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with + in PhysicsWorld::resolve_sdf_collisions
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_contact_pair
@@ -89,19 +79,6 @@
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace * with + in PhysicsWorld::solve_distance_pair
-[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with / in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace * with / in PhysicsWorld::resolve_sdf_collisions
 [default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace * with / in PhysicsWorld::solve_contact_pair
@@ -113,16 +90,6 @@
 [default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace * with / in PhysicsWorld::solve_distance_pair
-[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace * with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace + with * in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace + with * in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace + with * in PhysicsWorld::resolve_sdf_collisions
 [default] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace + with * in PhysicsWorld::solve_contact_pair
@@ -132,10 +99,6 @@
 [default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace + with * in PhysicsWorld::solve_distance_pair
-[default] src/solver.rs: replace + with * in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace + with - in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace + with - in PhysicsWorld::integrate_positions
-[default] src/solver.rs: replace + with - in PhysicsWorld::resolve_sdf_collisions
 [default] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace + with - in PhysicsWorld::solve_contact_pair
@@ -145,42 +108,28 @@
 [default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace + with - in PhysicsWorld::solve_distance_pair
-[default] src/solver.rs: replace + with - in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace - with + in PhysicsWorld::integrate_positions
 [default] src/solver.rs: replace - with + in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace - with + in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace - with + in PhysicsWorld::solve_distance_pair
-[default] src/solver.rs: replace - with + in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace - with / in PhysicsWorld::integrate_positions
 [default] src/solver.rs: replace - with / in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace - with / in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace - with / in PhysicsWorld::solve_distance_pair
-[default] src/solver.rs: replace - with / in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace / with % in PhysicsWorld::integrate_positions
 [default] src/solver.rs: replace / with % in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace / with % in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace / with % in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace / with % in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace / with % in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace / with * in PhysicsWorld::integrate_positions
 [default] src/solver.rs: replace / with * in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace / with * in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace / with * in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace / with * in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace / with * in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
-[default] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
-[default] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
-[default] src/solver.rs: replace < with <= in PhysicsWorld::detect_collisions
-[default] src/solver.rs: replace < with <= in PhysicsWorld::raycast
-[default] src/solver.rs: replace < with <= in PhysicsWorld::raycast
-[default] src/solver.rs: replace < with <= in PhysicsWorld::raycast
 [default] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
 [default] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
 [default] src/solver.rs: replace < with <= in PhysicsWorld::solve_contact_pair
@@ -189,35 +138,27 @@
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step_tgs
+[default] src/solver.rs: replace < with <= in PhysicsWorld::step_tgs
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
 [default] src/solver.rs: replace < with == in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace < with == in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace < with == in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace < with == in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace < with == in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: replace < with == in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace < with == in PhysicsWorld::update_velocities
 [default] src/solver.rs: replace < with > in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace < with > in PhysicsWorld::solve_distance_pair
 [default] src/solver.rs: replace < with > in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace < with > in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace < with > in PhysicsWorld::step_with_bridge
 [default] src/solver.rs: replace < with > in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace < with > in PhysicsWorld::update_velocities
 [default] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
 [default] src/solver.rs: replace <= with > in PhysicsWorld::step_parallel
 [default] src/solver.rs: replace <= with > in PhysicsWorld::step_with_bridge
-[default] src/solver.rs: replace == with != in PhysicsWorld::batches_are_body_disjoint
-[default] src/solver.rs: replace == with != in PhysicsWorld::update_velocities
-[default] src/solver.rs: replace > with >= in PhysicsWorld::raycast
-[default] src/solver.rs: replace > with >= in PhysicsWorld::raycast
-[default] src/solver.rs: replace > with >= in PhysicsWorld::raycast
-[default] src/solver.rs: replace > with >= in PhysicsWorld::update_velocities
+[default] src/solver.rs: replace > with >= in PhysicsWorld::step_tgs
 [default] src/solver.rs: replace BodyRef<'_>::get -> &RigidBody with Box::leak(Box::new(Default::default()))
 [default] src/solver.rs: replace BodyRef<'_>::set_position with ()
 [default] src/solver.rs: replace PhysicsWorld::gpu_solver_bridge_installed -> bool with false
@@ -236,10 +177,6 @@
 [default] src/solver.rs: replace PhysicsWorld::substep_with_bridge with ()
 [default] src/solver.rs: replace PhysicsWorld::take_gpu_solver_bridge -> Option<Box<dyn crate::gpu_bridge::GpuSolverBridge +Send +Sync>> with None
 [default] src/solver.rs: replace PhysicsWorld::take_gpu_solver_bridge -> Option<Box<dyn crate::gpu_bridge::GpuSolverBridge +Send +Sync>> with Some(Box::new(Default::default()))
-[default] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
-[default] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
-[default] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
-[default] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
 [default] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
 [default] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
 [default] src/solver.rs: replace || with && in PhysicsWorld::solve_contact_constraints_with_bridge
@@ -290,7 +227,6 @@
 [parallel] src/solver.rs: delete field gravity from struct SolverConfig expression in tests::hub_world
 [parallel] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
 [parallel] src/solver.rs: replace != with == in PhysicsWorld::solve_constraints_batched
-[parallel] src/solver.rs: replace && with || in PhysicsWorld::detect_collisions
 [parallel] src/solver.rs: replace && with || in PhysicsWorld::remove_body
 [parallel] src/solver.rs: replace && with || in PhysicsWorld::step
 [parallel] src/solver.rs: replace && with || in PhysicsWorld::step_parallel
@@ -370,13 +306,6 @@
 [parallel] src/solver.rs: replace / with * in PhysicsWorld::solve_distance_pair
 [parallel] src/solver.rs: replace / with * in PhysicsWorld::step_parallel
 [parallel] src/solver.rs: replace / with * in PhysicsWorld::step_with_bridge
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::deserialize_state
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::detect_collisions
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::raycast
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::raycast
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::raycast
 [parallel] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
 [parallel] src/solver.rs: replace < with <= in PhysicsWorld::remove_body
 [parallel] src/solver.rs: replace < with <= in PhysicsWorld::solve_contact_pair
@@ -387,8 +316,6 @@
 [parallel] src/solver.rs: replace < with <= in PhysicsWorld::step_parallel
 [parallel] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
 [parallel] src/solver.rs: replace < with <= in PhysicsWorld::step_with_bridge
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
-[parallel] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
 [parallel] src/solver.rs: replace < with <= in PhysicsWorld::update_velocities
 [parallel] src/solver.rs: replace < with == in PhysicsWorld::solve_contact_pair
 [parallel] src/solver.rs: replace < with == in PhysicsWorld::solve_distance_pair
@@ -407,19 +334,12 @@
 [parallel] src/solver.rs: replace <= with > in PhysicsWorld::solve_contact_pair
 [parallel] src/solver.rs: replace <= with > in PhysicsWorld::step_parallel
 [parallel] src/solver.rs: replace <= with > in PhysicsWorld::step_with_bridge
-[parallel] src/solver.rs: replace == with != in PhysicsWorld::batches_are_body_disjoint
 [parallel] src/solver.rs: replace == with != in PhysicsWorld::update_velocities
-[parallel] src/solver.rs: replace > with >= in PhysicsWorld::raycast
-[parallel] src/solver.rs: replace > with >= in PhysicsWorld::raycast
-[parallel] src/solver.rs: replace > with >= in PhysicsWorld::raycast
-[parallel] src/solver.rs: replace > with >= in PhysicsWorld::update_velocities
 [parallel] src/solver.rs: replace PhysicsWorld::pre_process_contacts with ()
 [parallel] src/solver.rs: replace PhysicsWorld::solve_contact_pair with ()
 [parallel] src/solver.rs: replace PhysicsWorld::step_parallel with ()
 [parallel] src/solver.rs: replace PhysicsWorld::step_with_bridge with ()
 [parallel] src/solver.rs: replace PhysicsWorld::substep_with_bridge with ()
-[parallel] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
-[parallel] src/solver.rs: replace || with && in PhysicsWorld::detect_collisions
 [parallel] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
 [parallel] src/solver.rs: replace || with && in PhysicsWorld::resolve_sdf_collisions
 [parallel] src/solver.rs: replace || with && in PhysicsWorld::solve_constraints_batched
