@@ -1,6 +1,8 @@
 //! Audit S1-5 oracles for `alice_physics::contact_cache`.
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types)]
 
 use alice_physics::collider::Contact;
 use alice_physics::contact_cache::{BodyPairKey, ContactCache, ContactManifold};

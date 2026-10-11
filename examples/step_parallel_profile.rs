@@ -15,6 +15,8 @@
 //!   mode: "step" | "step_parallel"
 //!
 //! Prints a single line: `TOTAL_MS <f64> FRAMES <usize> SUBSTEPS <u32>`
+// a timing harness: it prints how long the steps took, the steps do not read the clock
+#![allow(clippy::disallowed_methods)]
 
 use std::time::Instant;
 

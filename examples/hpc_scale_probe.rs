@@ -26,6 +26,8 @@
 //! assertions — it is a measurement harness, not a test. The numbers it produces
 //! belong in the wall record, not in a golden file, because they are
 //! machine-specific by construction.
+// a timing harness: it prints how long the steps took, the steps do not read the clock
+#![allow(clippy::disallowed_methods)]
 
 use alice_physics::eulerian_grid::{project_pressure, MacGrid};
 use alice_physics::math::{Fix128, Vec3Fix};

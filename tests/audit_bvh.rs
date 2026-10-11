@@ -9,6 +9,8 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types)]
 // the Morton cell index closed form is evaluated in f64
 #![allow(clippy::disallowed_methods)]
 

@@ -4998,6 +4998,8 @@ pub fn p2g_normalized_with(
 // ============================================================================
 
 #[cfg(test)]
+// the deadlines and timings in these tests time the run, never the result
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     #[cfg(not(feature = "std"))]

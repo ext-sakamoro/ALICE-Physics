@@ -36,6 +36,8 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types)]
 // `log2` / `powi` on `f64` are disallowed crate-wide because the platform libm
 // is not bit-exact across targets. Every use here is in the *reporting* of a
 // convergence order or a closed-form beam deflection — the solve itself is

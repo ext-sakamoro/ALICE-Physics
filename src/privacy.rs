@@ -114,6 +114,8 @@ impl XorShift64 {
     /// (AUD-A-S4W3-029).
     #[cfg(feature = "std")]
     #[must_use]
+    // deprecated and documented as not private: the clock seed is its contract
+    #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
     pub fn from_entropy() -> Self {
         use std::collections::hash_map::RandomState;
         use std::hash::{BuildHasher, Hasher};

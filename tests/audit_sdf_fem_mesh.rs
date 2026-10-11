@@ -5,6 +5,8 @@
 //! to define what the mesh should be.
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types)]
 
 use alice_physics::sdf_collider::{ClosureSdf, SdfField};
 use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, RefineError, SdfTetMesh};

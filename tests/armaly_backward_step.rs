@@ -523,6 +523,8 @@
 //! at `Re = 16` would be needed for that and was not constructed.
 
 #![cfg(feature = "std")]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types, clippy::disallowed_methods)]
 
 use alice_physics::cfd_solver::CfdSolver;
 use alice_physics::eulerian_grid::{FaceBc, MacGrid};

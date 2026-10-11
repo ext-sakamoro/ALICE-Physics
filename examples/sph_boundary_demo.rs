@@ -9,6 +9,8 @@
 //! ```bash
 //! cargo run --example sph_boundary_demo --features std --release
 //! ```
+// a timing harness: it prints how long the steps took, the steps do not read the clock
+#![allow(clippy::disallowed_methods)]
 
 use alice_physics::sdf_collider::ClosureSdf;
 use alice_physics::sdf_sph::{SphConfig, SphParticle, SphSolver};

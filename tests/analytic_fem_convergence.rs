@@ -66,6 +66,8 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types)]
 // The oracle values are closed-form f64 evaluations, not simulation state.
 #![allow(clippy::disallowed_methods)]
 

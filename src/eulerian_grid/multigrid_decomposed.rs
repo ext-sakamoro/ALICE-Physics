@@ -950,6 +950,8 @@ impl<T: SlabTransport> Decomposed<'_, T> {
 }
 
 #[cfg(test)]
+// the deadlines and timings in these tests time the run, never the result
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::eulerian_grid::project_pressure_multigrid;

@@ -88,7 +88,7 @@ pub(crate) type DetHashMap<K, V> = std::collections::HashMap<K, V, DetBuildHashe
 #[cfg(test)]
 mod tests {
     use super::{DetHashMap, DetHasher};
-    use core::hash::{BuildHasher, Hash, Hasher};
+    use core::hash::{BuildHasher, Hasher};
 
     fn fnv(bytes: &[u8]) -> u64 {
         let mut h = DetHasher::default();
@@ -125,11 +125,7 @@ mod tests {
         let a: DetHashMap<(i32, i32, i32), u32> = DetHashMap::default();
         let b: DetHashMap<(i32, i32, i32), u32> = DetHashMap::default();
         let key = (3, -1, 7);
-        let hash = |m: &DetHashMap<(i32, i32, i32), u32>| {
-            let mut h = m.hasher().build_hasher();
-            key.hash(&mut h);
-            h.finish()
-        };
+        let hash = |m: &DetHashMap<(i32, i32, i32), u32>| m.hasher().hash_one(key);
         assert_eq!(hash(&a), hash(&b));
     }
 }

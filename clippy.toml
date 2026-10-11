@@ -54,4 +54,18 @@ disallowed-methods = [
     { path = "f64::powi", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f64::cbrt", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f64::hypot", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
+    # Determinism, second gate: no OS entropy and no wall clock in the crate
+    # (tests that time a deadline allow these at the test, with a reason)
+    { path = "std::time::Instant::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
+    { path = "std::time::SystemTime::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
+    { path = "std::collections::hash_map::RandomState::new", reason = "seeds from OS randomness; use crate::det_hash::DetHashMap" },
+]
+
+# HashMap / HashSet with the default hasher seed from OS randomness, so any
+# iteration order varies per process; use crate::det_hash::DetHashMap (no
+# seed) or a BTreeMap
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "default hasher seeds from OS randomness; use crate::det_hash::DetHashMap or BTreeMap" },
+    { path = "std::collections::HashSet", reason = "default hasher seeds from OS randomness; use a BTreeSet or a DetHashMap" },
+    { path = "std::collections::hash_map::RandomState", reason = "seeds from OS randomness; use crate::det_hash::DetBuildHasher" },
 ]

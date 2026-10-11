@@ -49,6 +49,8 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types)]
 // 参照実装側は f32 の幾何をそのまま使う (決定論の対象は `Fix128` 側)
 #![allow(clippy::disallowed_methods)]
 

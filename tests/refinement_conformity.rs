@@ -26,6 +26,8 @@
 
 #![cfg(feature = "std")]
 #![allow(clippy::disallowed_methods)]
+// test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
+#![allow(clippy::disallowed_types)]
 
 use std::collections::HashMap;
 
