@@ -124,6 +124,9 @@ jobs:
         run: python scripts/test_mutants_in_diff_plan.py
       - name: Nightly Mac Intel gate (tests)
         run: python scripts/test_intel_nightly_gate.py
+      # PyYAML for the timeout check, pinned by the hash of every file of the release
+      - name: Install PyYAML (pinned)
+        run: python -m pip install --require-hashes -r scripts/requirements-ci.txt
       - name: Workflow job timeouts (tests)
         run: python scripts/test_workflow_timeouts.py
       # every job of every workflow carries a timeout-minutes within the cap

@@ -143,16 +143,10 @@ class Layouts(Case):
         self.workflow("name: x\non: push\n", "empty.yml")
         self.assertTrue(any("empty.yml: no job found" in e for e in self.errors()))
 
-    def test_a_runs_on_outside_every_found_job_fails(self) -> None:
+    def test_an_explicit_complex_key_job_is_read(self) -> None:
         # a job hidden from the parser by an unusual layout still leaves its runs-on
         self.workflow(GOOD + "  ? weird\n  : runs-on: x\n", "x.yml")
-        self.assertTrue(any("outside every job" in e or "a job key was expected" in e for e in self.errors()))
-
-    def test_runs_on_and_job_level_uses_outside_the_found_jobs_are_orphans(self) -> None:
-        text = "jobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v5\n"
-        self.assertEqual(wt.orphans(text, []), [3])
-        found, _ = wt.parse(text)
-        self.assertEqual(wt.orphans(text, found), [])
+        self.assertTrue(any("job `weird` has no job-level timeout-minutes" in e for e in self.errors()))
 
     def test_a_runs_on_under_another_top_level_key_fails_the_check(self) -> None:
         # e.g. a job template defined outside `jobs:` (an anchor) that the check cannot see
@@ -167,11 +161,55 @@ class Layouts(Case):
         self.workflow("on: push\njobs:\n  b: {runs-on: x,\n      steps: []}\n")
         self.assertTrue(any("job `b` has no job-level timeout-minutes" in e for e in self.errors()))
 
-    def test_a_hash_without_a_space_before_it_is_not_a_comment(self) -> None:
-        self.assertEqual(wt.strip_comment("  runs-on: self#hosted  # note"), "  runs-on: self#hosted")
 
-    def test_a_comment_hash_inside_quotes_is_kept(self) -> None:
-        self.assertEqual(wt.strip_comment("  a: 'x # y'  # note"), "  a: 'x # y'")
+
+class Parser(Case):
+    def test_a_job_built_from_an_anchor_has_the_anchor_s_limit(self) -> None:
+        base = "on: push\nx-base: &base\n  runs-on: x\n  timeout-minutes: 7\njobs:\n  b:\n    <<: *base\n    steps:\n      - run: echo\n"
+        self.workflow(base)
+        found = [e for e in self.errors() if "job `b`" in e]
+        self.assertEqual(found, [])
+
+    def test_a_job_from_an_anchor_without_a_limit_fails(self) -> None:
+        self.workflow("on: push\njobs:\n  a: &base\n    runs-on: x\n    timeout-minutes: 7\n"
+                      "    steps:\n      - run: echo\n  b:\n    runs-on: x\n    steps:\n      - run: echo\n")
+        self.assertTrue(any("job `b` has no job-level" in e for e in self.errors()))
+
+    def test_invalid_yaml_fails_the_file(self) -> None:
+        self.workflow("on: push\njobs:\n\tb:\n\t\truns-on: x\n", "x.yml")
+        errs = self.errors()
+        self.assertTrue(any("x.yml: not valid YAML" in e for e in errs), errs)
+        self.assertTrue(any("x.yml: no job found" in e for e in errs))
+
+    def test_runs_on_inside_a_run_block_of_a_job_is_not_an_orphan(self) -> None:
+        self.workflow(GOOD.replace("      - run: echo hi\n        timeout-minutes: 5\n",
+                                   "      - run: |\n          echo 'runs-on: nowhere'\n        timeout-minutes: 5\n"))
+        self.assertEqual(self.errors(), [])
+
+    def test_runs_on_inside_a_top_level_block_scalar_is_not_an_orphan(self) -> None:
+        self.workflow("on: push\nx-doc: |\n  runs-on: described here\n" + GOOD.split("on: push\n", 1)[1])
+        self.assertEqual(self.errors(), [])
+
+    def test_a_quoted_runs_on_text_outside_the_jobs_fails_closed(self) -> None:
+        self.workflow("on: push\nenv:\n  NOTE: 'runs-on: x'\n" + GOOD.split("on: push\n", 1)[1])
+        self.assertTrue(any("ci.yml:3: a runs-on / uses key outside every job" in e for e in self.errors()))
+
+    def test_without_pyyaml_the_check_fails(self) -> None:
+        self.workflow(GOOD)
+        saved = sys.modules.get("yaml")
+        sys.modules["yaml"] = None  # import yaml raises ImportError
+        try:
+            with self.assertRaises(SystemExit):
+                wt.check(self.root)
+        finally:
+            if saved is not None:
+                sys.modules["yaml"] = saved
+            else:
+                del sys.modules["yaml"]
+
+    def test_the_orphan_scan_does_not_use_the_parser(self) -> None:
+        text = "jobs:\n  a:\n    runs-on: x\n    steps:\n      - uses: actions/checkout@v5\n"
+        self.assertEqual(wt.orphans(text, [], []), [3, 5])
 
 
 class RealRepository(unittest.TestCase):

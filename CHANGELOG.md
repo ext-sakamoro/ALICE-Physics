@@ -21,7 +21,7 @@ were introduced during that release window.
 - 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する
 - 変異試験: 観測できる結果の全 bit を変えない同値変異を `scripts/mutants-equivalent.txt` に理由・行の hash・根拠を固定する試験つきで登録し、in-diff の変異試験と週次の ratchet が missed に数えないようにした 行が変わった entry は `scripts/mutants_equivalent.py --check` (CI / preflight) で失敗し、その変異は再び missed になる
 - CI: Mac Intel (`macos-15-intel`) の試験は main への push と毎晩の schedule でだけ走らせる `ci/**` の staging push と pull request は残る 4 OS で走り、取り込み (main への fast-forward の push) が 5 OS すべての run を始め、それが公開の根拠になる 毎晩の schedule は安全網で、main の HEAD に成功した Mac Intel の job が無い時だけその脚を走らせる (`scripts/intel_nightly_gate.py` が HEAD の CI の run を読み取り専用の token で読む、読めなければ走らせる)
-- CI: 全 workflow の全 job に `timeout-minutes` を置いた (実測の 95 パーセンタイルの約 2 倍) `scripts/workflow_timeouts.py` (CI / preflight) が、job 単位の `timeout-minutes` が無い job と 360 分を超える値で失敗する
+- CI: 全 workflow の全 job に `timeout-minutes` を置いた (実測の 95 パーセンタイルの約 2 倍) `scripts/workflow_timeouts.py` (CI / preflight、workflow は hash で固定した PyYAML で読む) が、job 単位の `timeout-minutes` が無い job と 360 分を超える値で失敗する
 
 ## [2.3.0] - 2026-10-11
 
