@@ -120,14 +120,17 @@ Both golden suites run in CI on macOS (ARM and x86), Linux (ARM and x86),
 Windows and `wasm32-wasip1`.
 <!-- claim-test: test_determinism_golden_hash -->
 
-**No entropy, no clock.** No production path draws OS entropy or reads the
-wall clock. Randomness a caller wants (privacy noise) comes from a key or seed
-the caller passes, or from the `alice-crypto` constructors that `privacy`
-re-exports (`SecureRng::from_entropy`, `DpNoise::try_from_entropy`), which only
-the caller calls; the deprecated `privacy` types still seed from the clock.
-`scripts/entropy_guard.py` checks `src/` outside test modules in CI. With the
-`wasm` feature, those entropy constructors use the browser's
-`crypto.getRandomValues`.
+**No entropy, no clock, no seeded hash order.** Production code (everything in
+`src/` outside test modules) draws no OS entropy, reads no wall clock and uses no
+`HashMap` / `HashSet` / `RandomState` with the default (OS-seeded) hasher; its
+maps use a fixed-seed hasher or a `BTreeMap`. The one exception is the
+deprecated `privacy::XorShift64::from_entropy`, whose clock seed is its
+documented behaviour, and the deprecated constructors that call it. clippy's
+`disallowed-types` / `disallowed-methods` (clippy.toml) and
+`scripts/entropy_guard.py` check this in CI. Randomness a caller wants comes
+from a key or seed the caller passes, or from the `privacy-crypto` feature's
+`SecureRng::from_entropy` / `DpNoise::try_from_entropy`, which only the caller
+calls (with `wasm`, from the browser's `crypto.getRandomValues`).
 
 **Your own code.** `ClosureSdf` takes a user closure. The solver stays
 deterministic, but inside the closure you need to call
@@ -339,6 +342,7 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 | `wasm` | | WebAssembly bindings through `wasm-bindgen`. Requires `std`; cannot be combined with `ffi`. |
 | `python` | | Python bindings (PyO3 + NumPy). |
 | `gpu-solver-bridge` | | `GpuSolverBridge` trait for external GPU solver backends. No cost when off. |
+| `privacy-crypto` | | `privacy` re-exports `alice-crypto`'s differential-privacy primitives (`SecureRng`, `DpNoise`, `dp_int`, `randomized_response`, …) and adds `KeyedRappor`. Off by default, so `std` alone pulls no entropy source. `alice-crypto` is then a public dependency: its breaking releases are breaking for this crate. On `wasm32-unknown-unknown` it needs `wasm` too (browser entropy). |
 | `neural` | | Deterministic neural controller using [`alice-ml`](https://crates.io/crates/alice-ml). |
 | `replay` | | Replay recording and playback using [`alice-db`](https://crates.io/crates/alice-db). |
 | `analytics` | | Simulation profiling using [`alice-analytics`](https://crates.io/crates/alice-analytics). |

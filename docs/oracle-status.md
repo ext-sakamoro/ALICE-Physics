@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5755 |
+| 🟢 Not ignored (run by CI) | 5757 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5853** |
+| **Total** | **5855** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5755)
+## 🟢 Not ignored (5757)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -305,6 +305,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_privacy_wiring.rs` | 15 |
 | `analytic_rope_attach_wiring.rs` | 15 |
 | `analytic_sdf_body_collider.rs` | 15 |
+| `analytic_sdf_fem_mesh_wiring.rs` | 15 |
 | `analytic_self_contact.rs` | 15 |
 | `analytic_thermoplastic_coupling.rs` | 15 |
 | `audit_fsi_advanced.rs` | 15 |
@@ -317,7 +318,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_pressure_solvers.rs` | 14 |
 | `analytic_scene_io_wiring.rs` | 14 |
 | `analytic_sdf_destruction_wiring.rs` | 14 |
-| `analytic_sdf_fem_mesh_wiring.rs` | 14 |
 | `analytic_sdf_manifold_wiring.rs` | 14 |
 | `analytic_sensors.rs` | 14 |
 | `analytic_smoke_fire_wiring.rs` | 14 |
@@ -357,6 +357,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_broadphase_hybrid.rs` | 12 |
 | `analytic_collision_mesh_gen_wiring.rs` | 12 |
 | `analytic_contact_cache_wiring.rs` | 12 |
+| `analytic_db_bridge_wiring.rs` | 12 |
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `analytic_sdf_contact_record.rs` | 12 |
@@ -379,7 +380,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_animation_blend_wiring.rs` | 11 |
 | `analytic_contact_viz_wiring.rs` | 11 |
 | `analytic_coupled_field.rs` | 11 |
-| `analytic_db_bridge_wiring.rs` | 11 |
 | `analytic_flow_viz_wiring.rs` | 11 |
 | `analytic_joint_break_world.rs` | 11 |
 | `analytic_mass_properties.rs` | 11 |

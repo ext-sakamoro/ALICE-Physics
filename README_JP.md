@@ -114,9 +114,9 @@ cargo run --release --example rollback_netcode
 2 つの golden テストは CI 上で macOS (ARM / x86)、Linux (ARM / x86)、Windows、`wasm32-wasip1` で実行している
 <!-- claim-test: test_determinism_golden_hash -->
 
-**entropy も時計も使わない** production の経路は OS の entropy を引かず、時計も読まない
-利用者が乱数を使いたい時 (privacy の noise) は、利用者が渡す鍵か seed を使うか、`privacy` が再 export する `alice-crypto` の構築子 (`SecureRng::from_entropy` / `DpNoise::try_from_entropy`) を利用者が呼ぶ この crate 自身はそれらを呼ばない (非推奨の `privacy` の型は今も時計を seed にする)
-`scripts/entropy_guard.py` が CI で `src/` の試験以外の code を検査する `wasm` feature では、それらの entropy の構築子は browser の `crypto.getRandomValues` を使う
+**entropy も時計も seed つきの hash 順も使わない** production の code (`src/` の試験 module 以外) は OS の entropy を引かず、時計を読まず、既定の (OS の乱数で seed を作る) hasher の `HashMap` / `HashSet` / `RandomState` を使わない map は seed の無い hasher か `BTreeMap` を使う
+例外は非推奨の `privacy::XorShift64::from_entropy` (時計で seed を作ることが仕様) と、それを呼ぶ非推奨の構築子だけ clippy の `disallowed-types` / `disallowed-methods` (clippy.toml) と `scripts/entropy_guard.py` が CI で検査する
+利用者が乱数を使いたい時は、利用者が渡す鍵か seed を使うか、`privacy-crypto` feature の `SecureRng::from_entropy` / `DpNoise::try_from_entropy` を利用者が呼ぶ (`wasm` では browser の `crypto.getRandomValues` から)
 
 **利用者が渡すコード** `ClosureSdf` は利用者のクロージャを受け取る
 ソルバー自体は決定論的だが、クロージャの中では `f32::sin` などの代わりに `alice_physics::det_math::{sin, exp, …}` を呼ぶ必要がある
@@ -263,6 +263,7 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 | `wasm` | | `wasm-bindgen` による WebAssembly バインディング `std` が必要、`ffi` とは併用不可 |
 | `python` | | Python バインディング (PyO3 + NumPy) |
 | `gpu-solver-bridge` | | 外部 GPU ソルバー用の `GpuSolverBridge` トレイト 無効時のコストはない |
+| `privacy-crypto` | | `privacy` が `alice-crypto` の差分プライバシー (`SecureRng`、`DpNoise`、`dp_int`、`randomized_response` など) を再 export し、`KeyedRappor` を足す 既定で off なので `std` だけでは entropy 源を引かない この feature では `alice-crypto` が公開依存になり、その破壊的な版は本 crate の破壊的な版になる `wasm32-unknown-unknown` では `wasm` も要る (browser の entropy) |
 | `neural` | | [`alice-ml`](https://crates.io/crates/alice-ml) を使う決定論的ニューラルコントローラー |
 | `replay` | | [`alice-db`](https://crates.io/crates/alice-db) を使うリプレイの記録と再生 |
 | `analytics` | | [`alice-analytics`](https://crates.io/crates/alice-analytics) を使うシミュレーションのプロファイリング |

@@ -8,10 +8,10 @@
 //! `PhysicsMetricsSink` is a round-trip persistence API, not a closed-form
 //! formula, so the oracle here is "what you put in via `record_step` /
 //! `record_energy` is exactly what `query_energy` / `query_bodies` /
-//! `query_contacts` give back" -- each of the three metrics lives in its
-//! own `AliceDB` instance opened with `FitConfig::lossless = true`
-//! (`src/db_bridge.rs`'s own module doc: "metric series must read back
-//! exactly"), so every value below is checked for **bit-exact** equality
+//! `query_contacts` give back" -- each of the three metrics is an exact
+//! series of one `AliceDB` (one record per step with the value's `f32` bits;
+//! `src/db_bridge.rs`'s module doc), so every value below is checked for
+//! **bit-exact** equality
 //! against a hand-written expected tuple, never a value re-derived by
 //! calling the sink again.
 //!
@@ -31,7 +31,7 @@ use alice_physics::db_bridge::PhysicsMetricsSink;
 const STEPS: i64 = 8; // steps 0..=7 go through record_step
 
 /// Kinetic energy hand-assigned at `step` (not an integer multiple of 1.0,
-/// to exercise the lossless round trip on a non-trivial `f32` bit pattern).
+/// to exercise the exact round trip on a non-trivial `f32` bit pattern).
 fn energy_at(step: i64) -> f32 {
     10.0 + 0.25 * step as f32
 }
@@ -47,7 +47,7 @@ fn contacts_at(step: i64) -> f32 {
 }
 
 /// The energy-only step recorded via `record_energy` (never touches
-/// `bodies_db` / `contacts_db`).
+/// the bodies / contacts series).
 const ENERGY_ONLY_STEP: i64 = STEPS; // = 8
 const ENERGY_ONLY_VALUE: f32 = 99.5;
 
@@ -84,11 +84,11 @@ fn main() {
     sink.record_energy(ENERGY_ONLY_STEP, ENERGY_ONLY_VALUE)
         .expect("record_energy");
     println!(
-        "[db_bridge] record_energy({ENERGY_ONLY_STEP}): energy={ENERGY_ONLY_VALUE} (bodies_db / contacts_db untouched)"
+        "[db_bridge] record_energy({ENERGY_ONLY_STEP}): energy={ENERGY_ONLY_VALUE} (bodies series / contacts series untouched)"
     );
     sink.flush().expect("flush");
 
-    // --- full-range round trip: energy_db has STEPS+1 rows, bodies_db/contacts_db have STEPS ---
+    // --- full-range round trip: the energy series has STEPS+1 rows, the bodies / contacts series have STEPS ---
     let energy_full = sink
         .query_energy(0, ENERGY_ONLY_STEP)
         .expect("query_energy full range");
@@ -97,7 +97,7 @@ fn main() {
     println!("[db_bridge] query_energy(0, {ENERGY_ONLY_STEP}) -> {energy_full:?}");
     assert_eq!(
         energy_full, want_energy_full,
-        "energy_db must round-trip every record_step value plus the record_energy-only value"
+        "the energy series must round-trip every record_step value plus the record_energy-only value"
     );
     println!("[db_bridge] ok: query_energy full-range round trip matches exactly");
 
@@ -108,7 +108,7 @@ fn main() {
     println!("[db_bridge] query_bodies(0, {ENERGY_ONLY_STEP}) -> {bodies_full:?}");
     assert_eq!(
         bodies_full, want_bodies_full,
-        "bodies_db must round-trip exactly the record_step values, and must NOT gain a row at \
+        "bodies series must round-trip exactly the record_step values, and must NOT gain a row at \
          the record_energy-only step"
     );
     println!("[db_bridge] ok: query_bodies full-range round trip matches exactly (no phantom row)");
@@ -120,7 +120,7 @@ fn main() {
     println!("[db_bridge] query_contacts(0, {ENERGY_ONLY_STEP}) -> {contacts_full:?}");
     assert_eq!(
         contacts_full, want_contacts_full,
-        "contacts_db must round-trip exactly the record_step values, and must NOT gain a row at \
+        "contacts series must round-trip exactly the record_step values, and must NOT gain a row at \
          the record_energy-only step"
     );
     println!(
@@ -134,7 +134,7 @@ fn main() {
     assert_eq!(energy_partial, want_energy_partial);
     println!("[db_bridge] ok: query_energy partial range [2, 5] is inclusive on both ends");
 
-    // --- boundary: the record_energy-only step has no row in bodies_db / contacts_db ---
+    // --- boundary: the record_energy-only step has no row in bodies series / contacts series ---
     let bodies_at_energy_only_step = sink
         .query_bodies(ENERGY_ONLY_STEP, ENERGY_ONLY_STEP)
         .expect("query_bodies at energy-only step");
@@ -146,7 +146,9 @@ fn main() {
     );
     assert!(bodies_at_energy_only_step.is_empty());
     assert!(contacts_at_energy_only_step.is_empty());
-    println!("[db_bridge] ok: record_energy writes only energy_db, confirmed by direct query");
+    println!(
+        "[db_bridge] ok: record_energy writes only the energy series, confirmed by direct query"
+    );
 
     // --- boundary: a range entirely before any recorded step ---
     let before_any = sink

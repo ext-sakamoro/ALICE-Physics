@@ -34,6 +34,7 @@
 //! | `wasm` | WebAssembly bindings via wasm-bindgen. |
 //! | `analytics` | ALICE-Analytics simulation profiling (`DDSketch`, `HyperLogLog`). |
 //! | `gpu-solver-bridge` | `GpuSolverBridge` trait for external GPU solver backends. No cost when off. |
+//! | `privacy-crypto` | `privacy` re-exports `alice-crypto`'s differential-privacy primitives and adds `KeyedRappor`. Off by default; `alice-crypto` becomes a public dependency. |
 //!
 //! # Example
 //!

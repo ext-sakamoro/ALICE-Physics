@@ -4,34 +4,29 @@
 //! `query_energy`, `query_bodies`, `query_contacts`.
 //!
 //! `PhysicsMetricsSink` is a persistence bridge, not a closed-form formula:
-//! each of its three `AliceDB` instances (`energy_db` / `bodies_db` /
-//! `contacts_db`) is opened with `FitConfig { lossless: true, .. }`
-//! (`src/db_bridge.rs`'s own module doc: "metric series must read back
-//! exactly"), so the oracle throughout this file is **bit-exact equality**
+//! its three metrics are exact series of one `AliceDB` (one record per step,
+//! the value's `f32` bits, no model fit; `src/db_bridge.rs`'s module doc), so
+//! the oracle throughout this file is **bit-exact equality**
 //! between what was passed to `record_step`/`record_energy` and what comes
 //! back from `query_energy`/`query_bodies`/`query_contacts` -- never a
 //! value re-derived by calling the sink a second time.
 //!
 //! There is no `aggregate`/`downsample` call anywhere in `src/db_bridge.rs`
 //! -- `query_energy`/`query_bodies`/`query_contacts` are each a direct
-//! `self.<metric>_db.scan(start, end)`, i.e. a raw range query that hands
-//! back every recorded `(step, value)` pair unmodified. There is therefore
-//! no sum/average semantics to independently verify here; the tests below
-//! instead cover the round trip itself, channel isolation (`record_energy`
-//! must not touch `bodies_db`/`contacts_db`), and the boundary behavior of
-//! the underlying `AliceDB::scan` range query (confirmed directly against
-//! `alice-db` 0.2.0-beta.3's `StorageEngine::query_range` /
-//! `DataSegment::query_range`, which clamp `[start, end]` to
-//! `[self.start_time, self.end_time]` and return an empty `Vec` whenever
-//! the clamped `query_start > query_end` -- covering both a plain reversed
-//! range and a range entirely outside what was ever recorded).
+//! `Series::scan_f32(start, end)` of that metric's series, a range query
+//! (inclusive on both ends) that hands back every recorded `(step, value)`
+//! pair unmodified. There is therefore no sum/average semantics to verify
+//! here; the tests below cover the round trip itself, channel isolation
+//! (`record_energy` must not touch the bodies / contacts series), sparse and
+//! gapped steps, out-of-order writes, and the boundary behavior of the range
+//! query (a reversed range and a range outside what was recorded are empty).
 //!
 //! Unlike `alice_physics::replay` (`ReplayRecorder`/`ReplayPlayer`), there
 //! is no per-body `id` parameter here -- each metric is a single scalar
 //! time series -- so "querying a non-existent id" below means querying a
 //! step that was never written to that particular series (in particular,
-//! a step recorded only via `record_energy`, which `bodies_db`/
-//! `contacts_db` never see).
+//! a step recorded only via `record_energy`, which the bodies / contacts
+//! series never see).
 
 #![cfg(all(feature = "std", feature = "replay"))]
 
@@ -81,7 +76,7 @@ fn record_step_round_trips_exactly_through_all_three_series() {
 }
 
 #[test]
-fn record_energy_round_trips_exactly_and_touches_only_energy_db() {
+fn record_energy_round_trips_exactly_and_touches_only_energy_series() {
     let dir = tempfile::tempdir().unwrap();
     let sink = open_sink(&dir, "energy_only");
 
@@ -95,11 +90,11 @@ fn record_energy_round_trips_exactly_and_touches_only_energy_db() {
     );
     assert!(
         sink.query_bodies(0, 1).unwrap().is_empty(),
-        "record_energy must never write to bodies_db"
+        "record_energy must never write to bodies series"
     );
     assert!(
         sink.query_contacts(0, 1).unwrap().is_empty(),
-        "record_energy must never write to contacts_db"
+        "record_energy must never write to contacts series"
     );
 }
 
@@ -160,7 +155,7 @@ fn a_write_is_visible_before_flush() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn querying_a_step_recorded_only_in_energy_db_is_absent_from_the_other_two() {
+fn querying_a_step_recorded_only_in_energy_series_is_absent_from_the_other_two() {
     let dir = tempfile::tempdir().unwrap();
     let sink = open_sink(&dir, "mixed");
 
@@ -168,21 +163,21 @@ fn querying_a_step_recorded_only_in_energy_db_is_absent_from_the_other_two() {
         sink.record_step(step, energy_at(step), bodies_at(step), contacts_at(step))
             .unwrap();
     }
-    // step 5 exists only in energy_db.
+    // step 5 exists only in energy series.
     sink.record_energy(5, 123.0).unwrap();
     sink.flush().unwrap();
 
     assert_eq!(sink.query_energy(5, 5).unwrap(), vec![(5, 123.0)]);
     assert!(
         sink.query_bodies(5, 5).unwrap().is_empty(),
-        "step 5 was never passed to record_step, so bodies_db has no row for it"
+        "step 5 was never passed to record_step, so bodies series has no row for it"
     );
     assert!(
         sink.query_contacts(5, 5).unwrap().is_empty(),
-        "step 5 was never passed to record_step, so contacts_db has no row for it"
+        "step 5 was never passed to record_step, so contacts series has no row for it"
     );
 
-    // the energy-only step must not leak into a wider bodies_db/contacts_db
+    // the energy-only step must not leak into a wider bodies series/contacts series
     // range query either.
     assert_eq!(sink.query_bodies(0, 5).unwrap().len(), 5);
     assert_eq!(sink.query_contacts(0, 5).unwrap().len(), 5);
@@ -269,6 +264,34 @@ fn a_series_with_a_gap_reads_back_exactly_the_recorded_steps() {
     assert_eq!(bits(sink.query_contacts(0, 14).unwrap()), want(contacts_at));
 }
 
+/// Out-of-order writes and overwrites: a step written after a later one is
+/// stored, and writing a step again replaces its value (each step is one exact
+/// series record). Up to 2.2.0 the sink used the lossless time-series store,
+/// which with `alice-db` 0.3.0 refuses a key at or before the last one written
+/// (`LosslessKeyOrderError`).
+#[test]
+fn out_of_order_writes_are_stored_and_a_rewritten_step_keeps_the_last_value() {
+    let dir = tempfile::tempdir().unwrap();
+    let sink = open_sink(&dir, "order");
+
+    sink.record_energy(5, 1.0).unwrap();
+    sink.record_energy(3, 2.0).unwrap(); // before the last written step
+    sink.record_energy(5, 7.0).unwrap(); // the same step again
+    let bits = |v: Vec<(i64, f32)>| {
+        v.into_iter()
+            .map(|(s, x)| (s, x.to_bits()))
+            .collect::<Vec<_>>()
+    };
+    let want = vec![(3, 2.0_f32.to_bits()), (5, 7.0_f32.to_bits())];
+    assert_eq!(
+        bits(sink.query_energy(0, 10).unwrap()),
+        want,
+        "before flush"
+    );
+    sink.flush().unwrap();
+    assert_eq!(bits(sink.query_energy(0, 10).unwrap()), want, "after flush");
+}
+
 // ---------------------------------------------------------------------------
 // Lossless round trip of non-trivial f32 bit patterns
 // ---------------------------------------------------------------------------
@@ -294,7 +317,7 @@ fn extreme_and_fractional_f32_values_round_trip_bit_exact() {
         assert_eq!(
             got_value.to_bits(),
             want.to_bits(),
-            "step {step}: lossless storage must preserve the exact bit pattern of {want} \
+            "step {step}: exact series storage must preserve the exact bit pattern of {want} \
              (including the sign of zero), not just an approximately-equal value"
         );
     }
