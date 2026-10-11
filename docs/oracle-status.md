@@ -6,8 +6,8 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5754 |
-| 🔴 Red by design | 73 |
+| 🟢 Not ignored (run by CI) | 5755 |
+| 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
 | **Total** | **5853** |
@@ -15,7 +15,7 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (73)
+## 🔴 Red by design (72)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -44,7 +44,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `escape_index_above_the_24_bit_field_is_not_silently_truncated` (audit_bvh.rs) — known defect: AUD-A-S3W2-011: the escape index is stored in 24 bits and ESCAPE_NONE (u32::MAX) is masked to 0x…
 - `feet_position_is_the_capsule_bottom` (audit_character.rs) — known defect: AUD-A-S3W3-003: feet_position doc says capsule bottom but returns the lower hemisphere centre (c…
 - `from_f64_non_finite_and_out_of_range_are_not_silently_plausible` (audit_math.rs) — known defect: AUD-A-S1W5-018: Fix128::from_f64(NaN) returns ZERO silently, from_f64(+/-inf) and from_f64(-1e30…
-- `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) — known defect: AUD-A-S5W1-001: non-contiguous steps are re-spaced uniformly by the storage layer; a query for a…
 - `hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown` (analytic_hilbert_breakdown_boundary.rs) — known defect: COV-NUM-080: gmres returns Ok(..) for a Hilbert system past the ~2^40 condition-number threshold…
 - `hover_with_add_force_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: add_force is a frame-head impulse while gravity is per substep, so a hovering body climbs n g dt^2 (s…
 - `hover_with_force_field_keeps_altitude_for_every_substep_count` (analytic_external_force_substep.rs) — src gap: force fields are applied once at the head of the frame while gravity is per substep, so a field-held …
@@ -104,15 +103,13 @@ is the intended one.
 |--------|----------|-------------|
 | AUD-A-S34-030 | `rigid_half_turn_in_two_increments_is_currently_refused_as_inverted` (audit_c_linear_elastic_fem.rs) | `rigid_half_turn_in_an_even_number_of_increments_is_stress_free` (audit_c_linear_elastic_fem.rs) |
 
-## 🌐 Root cause outside this repository (1)
+## 🌐 Root cause outside this repository (0)
 
 Known defects whose reason says `root: external <crate> <version>`: the fix belongs in that
 dependency. When Cargo.lock resolves a different version, re-check whether the defect
 remains.
 
-| Defect | Test | Crate | Reason says | Resolved | Status |
-|--------|------|-------|-------------|----------|--------|
-| AUD-A-S5W1-001 | `gapped_series_returns_exactly_the_recorded_pairs` (audit_db_bridge.rs) | `alice-db` | 0.2.0-beta.3 | 0.3.0 | ⚠️ re-check |
+- (none)
 
 ## ⚠️ Known defects without an id (3)
 
@@ -155,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5754)
+## 🟢 Not ignored (5755)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -398,6 +395,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_anisotropic_friction.rs` | 11 |
 | `audit_contact_cache.rs` | 11 |
 | `audit_creep_longterm.rs` | 11 |
+| `audit_db_bridge.rs` | 11 |
 | `audit_kinematic_loop.rs` | 11 |
 | `audit_nonunit_quaternion_entry.rs` | 11 |
 | `audit_piezoelectric.rs` | 11 |
@@ -419,7 +417,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_physics2d_wiring.rs` | 10 |
 | `analytic_sdf_sph_wiring.rs` | 10 |
 | `analytic_snapshot_material_table.rs` | 10 |
-| `audit_db_bridge.rs` | 10 |
 | `audit_filament_db.rs` | 10 |
 | `audit_smoke_fire.rs` | 10 |
 | `coupling_channel_inventory.rs` | 10 |

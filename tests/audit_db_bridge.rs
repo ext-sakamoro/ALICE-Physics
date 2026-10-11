@@ -17,19 +17,21 @@ fn c(step: i64) -> f32 {
     ((step * 7) % 11) as f32 * 0.5
 }
 
-/// `open` creates missing parent directories and one sub-database per
-/// metric under the given directory.
+/// `open` creates missing parent directories and one database, `metrics`,
+/// under the given directory; the three metrics are exact series in it (up
+/// to 2.2.0 the sink kept one database per metric: `energy` / `bodies` /
+/// `contacts`).
 #[test]
-fn open_creates_nested_directory_with_three_metric_databases() {
+fn open_creates_nested_directory_with_one_metrics_database() {
     let dir = tempfile::tempdir().unwrap();
-    let nested = dir.path().join("a").join("b").join("metrics");
+    let nested = dir.path().join("a").join("b").join("run");
     assert!(!nested.exists());
     let sink = PhysicsMetricsSink::open(&nested).unwrap();
     sink.record_step(0, 1.0, 2.0, 3.0).unwrap();
     sink.flush().unwrap();
-    assert!(nested.is_dir());
-    for name in ["energy", "bodies", "contacts"] {
-        assert!(nested.join(name).exists(), "missing sub-database {name}");
+    assert!(nested.join("metrics").is_dir(), "missing database metrics");
+    for old in ["energy", "bodies", "contacts"] {
+        assert!(!nested.join(old).exists(), "2.2.0 layout {old} created");
     }
 }
 
@@ -160,7 +162,6 @@ fn uniformly_strided_steps_round_trip() {
 /// A series with a gap returns exactly the recorded `(step, value)` pairs
 /// and nothing for the unrecorded steps.
 #[test]
-#[ignore = "known defect: AUD-A-S5W1-001: non-contiguous steps are re-spaced uniformly by the storage layer; a query for an unrecorded step is non-empty and recorded steps come back at wrong indices, with no error; root: external alice-db 0.2.0-beta.3 (Segment::query_range rebuilds timestamps at a uniform step from start_time / end_time / point_count)"]
 fn gapped_series_returns_exactly_the_recorded_pairs() {
     let dir = tempfile::tempdir().unwrap();
     let sink = PhysicsMetricsSink::open(dir.path()).unwrap();
