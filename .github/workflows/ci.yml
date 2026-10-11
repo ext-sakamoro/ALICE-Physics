@@ -86,6 +86,12 @@ jobs:
         run: python scripts/mutants_equivalent.py --check
       - name: Mutation in-diff plan (tests)
         run: python scripts/test_mutants_in_diff_plan.py
+      - name: Joint entry points (tests)
+        run: python scripts/test_joint_entry_points.py
+      # every pub PhysicsWorld method reaching the joints validates them at its
+      # start or says why it needs no check (scripts/joint-entry-points.txt)
+      - name: Joint entry points are classified
+        run: python scripts/joint_entry_points.py
       # the weekly ignored-test run fails on a crash, a binary that runs too
       # long, or a run that checked nothing; these keep that runner honest on
       # every push (the run itself is too heavy for the landing path)

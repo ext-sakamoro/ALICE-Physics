@@ -1,0 +1,21 @@
+# The pub PhysicsWorld methods that reach the joints (directly or through the
+# methods they call), classified for scripts/joint_entry_points.py:
+#   validated-at-entry  its body calls validate_joints / check_step or a method
+#                       listed here as validated-at-entry (checked by the scan)
+#   n/a                 reaches the joints without solving them by index
+# name<TAB>class<TAB>reason
+step	validated-at-entry	try_step checks the joints at the start; step panics on StepError::Joint
+step_n	validated-at-entry	calls step each frame
+try_step	validated-at-entry	check_step runs validate_joints before anything else of the step
+step_parallel	validated-at-entry	try_step_parallel checks the joints; step_parallel panics on StepError::Joint
+try_step_parallel	validated-at-entry	check_step runs validate_joints before the batched step
+step_with_bridge	validated-at-entry	its own check_step at the start; panics on StepError::Joint
+substep_with_bridge	validated-at-entry	callable alone, so it runs validate_joints at its start
+solve_joints_with_bridge	validated-at-entry	public bridge solve outside a step: validate_joints before uploading
+add_joint	n/a	asserts both indices are in range and differ before pushing the joint
+remove_joint	n/a	removes by index from the list, solves nothing
+remove_body	n/a	drops the joints of the removed body and renumbers the rest, solves nothing
+joint_count	n/a	reads the length only
+snapshot_world	n/a	serialises the joints as they are, solves nothing
+restore_world	n/a	restore_world_checked refuses a joint naming a missing body (DanglingIndex) or a self-joint (SelfJoint) before installing
+restore_world_checked	n/a	validate refuses a joint naming a missing body (DanglingIndex) or a self-joint (SelfJoint) before installing
