@@ -34,8 +34,9 @@ fn panics() {}
 
 
 def entry(pos: str = "src/a.rs:3:11", digest: str | None = None, mutation: str = MUT,
-          reason: str = REASON, tests: str | None = PIN) -> str:
-    line = f"{pos}\t{digest or me.line_digest(LINE)}\t{mutation}\t{reason}"
+          reason: str = REASON, tests: str | None = PIN, fn_digest: str | None = None) -> str:
+    fn_digest = fn_digest or me.fn_digest_at(SRC, 3, "f")
+    line = f"{pos}\t{digest or me.line_digest(LINE)}\t{fn_digest}\t{mutation}\t{reason}"
     return line + (f"\t{tests}" if tests is not None else "") + "\n"
 
 
@@ -83,7 +84,7 @@ class CheckTest(Case):
 
     def test_a_wrong_field_count_fails(self) -> None:
         self.write_list(f"src/a.rs:3:11\t{me.line_digest(LINE)}\t{MUT}\n")
-        self.assertTrue(any("expected 5 tab-separated" in e for e in self.check()))
+        self.assertTrue(any("expected 6 tab-separated" in e for e in self.check()))
 
     def test_a_duplicate_entry_fails(self) -> None:
         self.write_list(entry(), entry())
@@ -110,7 +111,7 @@ class PinningTestsTest(Case):
 
     def test_an_entry_without_pinning_tests_fails(self) -> None:
         self.write_list(entry(tests=None))
-        self.assertTrue(any("expected 5 tab-separated fields" in e for e in self.check()))
+        self.assertTrue(any("expected 6 tab-separated fields" in e for e in self.check()))
 
     def test_a_named_test_that_is_gone_makes_the_entry_stale(self) -> None:
         self.write_list(entry(tests="tests/pin.rs::plain,tests/pin.rs::renamed"))
@@ -134,11 +135,48 @@ class PinningTestsTest(Case):
         self.assertEqual(self.filtered(MISSED), ([MISSED], []))
 
 
+class FunctionHashTest(Case):
+    def test_a_second_accumulation_row_in_the_function_makes_the_entry_stale(self) -> None:
+        self.write_list(entry())
+        self.write_src(SRC.replace("    s\n}", "    s = s + 1;\n    s\n}"))
+        self.assertIn(LINE, (self.root / "src/a.rs").read_text(encoding="utf-8").splitlines()[2])
+        self.assertTrue(any("fn f in src/a.rs changed" in e for e in self.check()))
+        self.assertEqual(self.filtered(MISSED), ([MISSED], []))
+
+    def test_a_change_outside_the_function_keeps_the_entry(self) -> None:
+        self.write_list(entry())
+        self.write_src(SRC + "\nfn other() -> u8 {\n    1\n}\n")
+        self.assertEqual(self.check(), [])
+
+    def test_a_line_outside_the_named_function_fails(self) -> None:
+        self.write_list(entry(mutation="replace + with - in g"))
+        self.assertTrue(any("is not inside fn g" in e for e in self.check()))
+
+    def test_a_line_after_the_named_function_closes_fails(self) -> None:
+        src = "fn g() -> u8 {\n    1\n}\n" + SRC  # g closes before the entry's line
+        self.write_src(src)
+        self.write_list(entry(pos="src/a.rs:6:11", mutation="replace + with - in g",
+                              fn_digest=me.line_digest("fn g() -> u8 {\n1\n}")))
+        self.assertTrue(any("is not inside fn g" in e for e in self.check()))
+
+    def test_a_method_name_is_read_after_the_type(self) -> None:
+        self.assertEqual(me.fn_name("replace < with <= in PhysicsWorld::break_overloaded_joints"),
+                         "break_overloaded_joints")
+        self.assertEqual(me.fn_name("replace f -> Option<Vec<u8>> with None in Thing::f"), "f")
+
+    def test_braces_in_strings_and_comments_do_not_end_the_function(self) -> None:
+        src = 'fn f() {\n    let a = "}";\n    // }\n    let b = \'}\';\n    a\n}\nfn g() {}\n'
+        self.assertEqual(me.fn_text(src, 5, "f").splitlines()[-1], "}")
+        self.assertEqual(len(me.fn_text(src, 5, "f").splitlines()), 6)
+
+
 class ExactnessTest(Case):
     def test_a_reason_that_argues_up_to_rounding_fails(self) -> None:
         for wording in ("equal up to rounding", "equal up to the rounding of p . c",
                         "approximately the same", "nearly orthogonal", "|p + c| ≈ |p - c|",
-                        "the difference is negligible"):
+                        "the difference is negligible", "equal to within rounding",
+                        "equal modulo rounding", "differs only in the low bits", "up to an ulp",
+                        "approx. equal", "practically the same"):
             with self.subTest(wording=wording):
                 self.write_list(entry(reason=wording))
                 self.assertTrue(any("argues approximately" in e for e in self.check()))
