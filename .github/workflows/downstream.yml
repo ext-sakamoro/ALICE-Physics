@@ -11,15 +11,11 @@ name: Downstream
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'Cargo.toml'
-      - 'rust-toolchain.toml'
-      - 'scripts/downstream_check.sh'
-      - 'scripts/downstream_select_tag.py'
-      - 'scripts/downstream_test_counts.py'
-      - '.github/workflows/downstream.yml'
+    # no paths here: a branch created at a SHA another ref already has gets an empty
+    # diff from GitHub's filter and the run is skipped; the changes job below compares
+    # with merge-base(origin/main) instead (patterns: .github/paths/downstream.txt)
+    # ci/**: the same checks on the ci/<id> branch before main is fast-forwarded to it
+    branches: [main, 'ci/**']
   pull_request:
     branches: [main]
     paths:
@@ -29,21 +25,56 @@ on:
       - 'scripts/downstream_check.sh'
       - 'scripts/downstream_select_tag.py'
       - 'scripts/downstream_test_counts.py'
+      - 'scripts/ansi.py'
+      - 'scripts/changed_paths.py'
       - '.github/workflows/downstream.yml'
+      - '.github/paths/downstream.txt'
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
+  # one group per ref; a newer push cancels the older run of its branch, never a main run
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # which files changed: a new or force-pushed branch is compared with merge-base(origin/main),
+  # another push with before..after, a pull request with base...head; schedule and manual
+  # runs always run; any error runs (fail-closed) — scripts/changed_paths.py
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after || github.sha }}
+          CREATED: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/changed_paths.py decide --event "$EVENT"
+          --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
+          --base "$PR_BASE" --head "$PR_HEAD"
+          --patterns-file .github/paths/downstream.txt
+
   downstream:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: ALICE-SDF, ALICE-LOL and ALICE-TRT against this commit
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -90,3 +121,19 @@ jobs:
           DOWNSTREAM_ROOT: ${{ runner.temp }}/downstream
           DOWNSTREAM_TARGET_DIR: ${{ runner.temp }}/downstream/target
         run: bash scripts/downstream_check.sh --no-fetch
+
+  # one result for the workflow: run=true needs every job above to succeed, run=false needs
+  # them skipped (a skipped, cancelled or failed job after run=true is red)
+  # not a required status check: a pull request that touches none of the paths has no run
+  gate:
+    name: Gate
+    if: always()
+    needs: [changes, downstream]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: gate
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"

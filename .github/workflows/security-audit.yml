@@ -10,25 +10,11 @@ name: Security & Hygiene
 
 on:
   push:
-    branches: [main]
-    paths:
-      - 'Cargo.toml'
-      - 'Cargo.lock'
-      - 'src/**'
-      - 'deny.toml'
-      # snapshot 再生成 commit でも public-api job を再実行する (paths 漏れだと red が残り続ける)
-      - 'docs/PUBLIC_API_SNAPSHOT.txt'
-      - '.github/workflows/security-audit.yml'
-      - 'scripts/semver_checked.py'
-      - 'scripts/ansi.py'
-      - 'scripts/line_coverage_ratchet.py'
-      - 'scripts/line-coverage-baseline.txt'
-      - '.github/actions/**'
-      - 'examples/*/Cargo.toml'
-      - 'bindings/*/Cargo.toml'
-      - 'bindings/*/*/Cargo.toml'
-      - 'scripts/cfg-items/Cargo.toml'
-      - 'scripts/cfg-items/Cargo.lock'
+    # no paths here: a branch created at a SHA another ref already has gets an empty
+    # diff from GitHub's filter and the run is skipped; the changes job below compares
+    # with merge-base(origin/main) instead (patterns: .github/paths/security-audit.txt)
+    # ci/**: the same checks on the ci/<id> branch before main is fast-forwarded to it
+    branches: [main, 'ci/**']
   pull_request:
     branches: [main]
     paths:
@@ -36,25 +22,29 @@ on:
       - 'Cargo.lock'
       - 'src/**'
       - 'deny.toml'
-      # snapshot 再生成 commit でも public-api job を再実行する (paths 漏れだと red が残り続ける)
+      - 'scripts/cfg-items/Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '**/Cargo.toml'
+      - '**/*.rs'
+      - '.gitignore'
+      - 'README.md'
       - 'docs/PUBLIC_API_SNAPSHOT.txt'
-      - '.github/workflows/security-audit.yml'
       - 'scripts/semver_checked.py'
       - 'scripts/ansi.py'
-      - '.github/actions/**'
-      - 'examples/*/Cargo.toml'
-      - 'bindings/*/Cargo.toml'
-      - 'bindings/*/*/Cargo.toml'
-      - 'scripts/cfg-items/Cargo.toml'
-      - 'scripts/cfg-items/Cargo.lock'
+      - 'scripts/line_coverage_ratchet.py'
+      - 'scripts/line-coverage-baseline.txt'
+      - 'scripts/changed_paths.py'
+      - '.github/workflows/security-audit.yml'
+      - '.github/paths/security-audit.txt'
   schedule:
     # 毎週月曜 09:00 UTC = 18:00 JST
     - cron: '0 9 * * 1'
   workflow_dispatch:
 
 concurrency:
+  # one group per ref; a newer push cancels the older run of its branch, never a main run
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 env:
   CARGO_TERM_COLOR: always
@@ -62,7 +52,38 @@ env:
   CARGO_HTTP_MULTIPLEXING: "false"
 
 jobs:
+  # which files changed: a new or force-pushed branch is compared with merge-base(origin/main),
+  # another push with before..after, a pull request with base...head; schedule and manual
+  # runs always run; any error runs (fail-closed) — scripts/changed_paths.py
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after || github.sha }}
+          CREATED: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/changed_paths.py decide --event "$EVENT"
+          --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
+          --base "$PR_BASE" --head "$PR_HEAD"
+          --patterns-file .github/paths/security-audit.txt
+
   audit:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: cargo audit (RustSec CVE scan)
     runs-on: ubuntu-latest
     steps:
@@ -98,6 +119,8 @@ jobs:
         run: cargo audit --file scripts/cfg-items/Cargo.lock --deny yanked
 
   deny:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: cargo-deny (license + advisories + bans + sources)
     runs-on: ubuntu-latest
     steps:
@@ -118,6 +141,8 @@ jobs:
         run: cargo deny --manifest-path scripts/cfg-items/Cargo.toml --config deny.toml check all
 
   unused-deps:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: cargo-machete (unused dependencies)
     runs-on: ubuntu-latest
     steps:
@@ -128,6 +153,8 @@ jobs:
       - uses: bnjbvr/cargo-machete@main
 
   stub-guard:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: Stub / mock / dbg guard (grep)
     runs-on: ubuntu-latest
     steps:
@@ -176,6 +203,8 @@ jobs:
           fi
 
   package-integrity:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: Package integrity (publish される .crate が build できるか)
     runs-on: ubuntu-latest
     steps:
@@ -215,6 +244,8 @@ jobs:
           cargo check
 
   coverage:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: Coverage (cargo-llvm-cov, line-coverage ratchet)
     runs-on: ubuntu-latest
     steps:
@@ -249,6 +280,8 @@ jobs:
           retention-days: 30
 
   public-api-diff:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: cargo-public-api (surface snapshot verification)
     # macos-latest (aarch64) を採用: SIMD items (`Fix128::sub_simd` /
     # `Vec3Fix::cross_simd` / `dot_batch_4` / `Fix128::pack_pair` 等) は
@@ -319,6 +352,8 @@ jobs:
           echo "✓ Public API snapshot matches docs/PUBLIC_API_SNAPSHOT.txt"
 
   semver-checks:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: cargo-semver-checks (API compat、hard-gate)
     runs-on: ubuntu-latest
     # v0.14.0-preview.4 で `publish = false` を解除、crates.io publish 済
@@ -378,3 +413,19 @@ jobs:
           if [ "$rc" -ne 0 ]; then
             echo "::warning::cargo semver-checks reports semver findings (informational); see the job summary"
           fi
+
+  # one result for the workflow: run=true needs every job above to succeed, run=false needs
+  # them skipped (a skipped, cancelled or failed job after run=true is red)
+  # not a required status check: a pull request that touches none of the paths has no run
+  gate:
+    name: Gate
+    if: always()
+    needs: [changes, audit, deny, unused-deps, stub-guard, package-integrity, coverage, public-api-diff, semver-checks]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: gate
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"

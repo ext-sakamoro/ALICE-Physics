@@ -2,7 +2,8 @@ name: Re-export consistency check
 
 on:
   push:
-    branches: [main]
+    # ci/**: also on the ci/<id> branch before main is fast-forwarded to it (no path filter)
+    branches: [main, 'ci/**']
   pull_request:
     branches: [main]
 

@@ -136,6 +136,11 @@ jobs:
         run: python scripts/test_ci_load_check.py
       - name: Heavy workflows stay off the landing path
         run: python scripts/ci_load_check.py
+      # the changes jobs of the path-gated workflows
+      - name: Changed-paths decider (tests and sync)
+        run: |
+          python scripts/test_changed_paths.py
+          python scripts/changed_paths.py sync
       - name: Downstream release-tag selection (tests)
         run: python scripts/test_downstream_select_tag.py
       - name: Downstream per-binary test counts (tests)

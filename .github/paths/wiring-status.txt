@@ -1,0 +1,19 @@
+# the paths that run .github/workflows/wiring-status.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+# wiring_guard.py scans every .rs file under the root and reads the manifest
+**/*.rs
+Cargo.toml
+scripts/wiring_guard.py
+scripts/wiring-baseline.txt
+scripts/gen-wiring-status.py
+# wiring_guard.py checks the `wiring debt` markers against this table
+docs/wiring-debt.md
+# the committed ledger is compared with the regenerated one
+docs/wiring-status.md
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/wiring-status.yml
+.github/paths/wiring-status.txt

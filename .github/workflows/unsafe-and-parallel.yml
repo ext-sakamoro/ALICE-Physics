@@ -3,33 +3,63 @@ name: Miri and loom (changed unsafe or parallel code)
 # The raw-pointer slice wrappers of the parallel step (src/solver.rs) are the
 # crate's only unsafe code; Miri checks them for undefined behaviour and loom
 # explores the thread interleavings of one colour batch. quality-deep.yml runs
-# both weekly; this workflow runs them after a push to main changes the unsafe or
-# parallel code they cover (not on ci/** branches: those carry the landing path).
+# both weekly; this workflow runs them when a push changes the unsafe or parallel
+# code they cover (.github/paths/unsafe-and-parallel.txt), on main and on the ci/**
+# branches. On a ci/** branch the run is started on the SHA that main is then
+# fast-forwarded to, and its result is read after the landing (it takes 45-95 min);
+# .github/ci-evidence.toml declares it after-landing.
 on:
   push:
-    branches: [main]
-    paths:
-      - 'src/solver.rs'
-      - 'src/solver_tgs*.rs'
-      - 'src/bvh.rs'
-      - 'src/contact_cache.rs'
-      - 'src/multi_world.rs'
-      - 'src/query.rs'
-      - 'src/laminate.rs'
-      - 'Cargo.toml'
-      - 'rust-toolchain.toml'
-      - '.github/workflows/unsafe-and-parallel.yml'
+    # no paths here: a branch created at a SHA another ref already has gets an empty
+    # diff from GitHub's filter and the run is skipped; the changes job below compares
+    # with merge-base(origin/main) instead (patterns: .github/paths/unsafe-and-parallel.txt)
+    # ci/**: started on the ci/<id> branch when the paths match, read after the landing
+    branches: [main, 'ci/**']
+
 permissions:
   contents: read
 
-# heavy analysis never runs on the ci/** branches the landing script waits on, and
-# never more than one run at a time: a newer push to main cancels the older run
 concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: true
+  # two groups: at most one main run and one ci/** run at a time; a new run waits instead
+  # of cancelling the running one, so a ci/** push never cancels the main run (GitHub keeps
+  # one waiting run per group: a newer push replaces the older waiting one)
+  # (scripts/ci_load_check.py requires this shape)
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && 'main' || 'ci' }}
+  cancel-in-progress: false
 
 jobs:
+  # which files changed: a new or force-pushed branch is compared with merge-base(origin/main),
+  # another push with before..after, a pull request with base...head; schedule and manual
+  # runs always run; any error runs (fail-closed) — scripts/changed_paths.py
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after || github.sha }}
+          CREATED: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/changed_paths.py decide --event "$EVENT"
+          --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
+          --base "$PR_BASE" --head "$PR_HEAD"
+          --patterns-file .github/paths/unsafe-and-parallel.txt
+
   loom:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: loom (batch colouring protocol, --cfg loom)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -48,6 +78,8 @@ jobs:
           LOOM_MAX_PREEMPTIONS: 3
 
   miri:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
     name: Miri (UB 検出、parallel feature)
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -75,3 +107,19 @@ jobs:
         run: cargo +nightly miri test --lib -- bvh::tests contact_cache::tests
         env:
           MIRIFLAGS: -Zmiri-disable-isolation
+
+  # one result for the workflow: run=true needs every job above to succeed, run=false needs
+  # them skipped (a skipped, cancelled or failed job after run=true is red)
+  # not a required status check: a pull request that touches none of the paths has no run
+  gate:
+    name: Gate
+    if: always()
+    needs: [changes, loom, miri]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: gate
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"

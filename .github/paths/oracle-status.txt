@@ -1,0 +1,20 @@
+# the paths that run .github/workflows/oracle-status.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+# gen-oracle-status.py reads tests/*.rs; src/**/*.rs is kept from the previous filter
+tests/**/*.rs
+src/**/*.rs
+# the dependency versions come from Cargo.lock; `cargo metadata --locked` reads the
+# manifest and the lock with the pinned toolchain
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+scripts/gen-oracle-status.py
+# the committed ledger is compared with the regenerated one
+docs/oracle-status.md
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/oracle-status.yml
+.github/paths/oracle-status.txt

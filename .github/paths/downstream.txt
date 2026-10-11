@@ -1,0 +1,19 @@
+# the paths that run .github/workflows/downstream.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+# the downstream crates build this crate's lib through a path patch (manifest + src);
+# they resolve with their own Cargo.lock
+src/**
+Cargo.toml
+rust-toolchain.toml
+scripts/downstream_check.sh
+scripts/downstream_select_tag.py
+# downstream_test_counts.py imports ansi.py
+scripts/downstream_test_counts.py
+scripts/ansi.py
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/downstream.yml
+.github/paths/downstream.txt

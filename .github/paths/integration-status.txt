@@ -1,0 +1,23 @@
+# the paths that run .github/workflows/integration-status.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+# rust-analyzer indexes the crate with all its targets (tests, examples, benches) and the
+# fuzz crate: every .rs file and every manifest, resolved with the lock and the pinned toolchain
+**/*.rs
+**/Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+scripts/scip_index.sh
+# scip_reach.py imports wiring_guard.py and reads scripts/wiring-baseline.txt
+scripts/scip_reach.py
+scripts/test_scip_reach.py
+scripts/wiring_guard.py
+scripts/wiring-baseline.txt
+# the committed ledger is compared with the regenerated one (a hand edit must be checked)
+docs/integration-status.md
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/integration-status.yml
+.github/paths/integration-status.txt

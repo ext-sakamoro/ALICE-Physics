@@ -1,0 +1,19 @@
+# the paths that run .github/workflows/bench-gate.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+# instruction counts depend on the compiled lib, the bench, the resolved dependencies
+# (gungraun) and the compiler version
+src/**
+benches/instruction_counts.rs
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+# bench_counts_check.py imports ansi.py
+scripts/bench_counts_check.py
+scripts/ansi.py
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/bench-gate.yml
+.github/paths/bench-gate.txt

@@ -1,0 +1,29 @@
+# the paths that run .github/workflows/unsafe-and-parallel.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+# a path gate on purpose: Miri and loom take 45-95 min, so they run when the unsafe or
+# parallel code they exercise changes, not on every change of src/ (scripts/ci_load_check.py
+# fails when an unrelated src file would start them)
+# the code under test: the batched / parallel solver and its submodules (solver::tests,
+# loom_tests), the BVH and the contact cache (Miri), and the other files with raw-pointer
+# or parallel paths
+src/solver.rs
+src/solver/**
+src/solver_tgs*.rs
+src/bvh.rs
+src/contact_cache.rs
+src/multi_world.rs
+src/query.rs
+src/laminate.rs
+# compiled into the bvh module of the lib tests (#[path])
+tests/lib/bvh_oracles.rs
+# rayon / crossbeam / loom versions (Stacked Borrows reports depend on them) and the toolchain
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/unsafe-and-parallel.yml
+.github/paths/unsafe-and-parallel.txt

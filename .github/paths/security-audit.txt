@@ -1,0 +1,36 @@
+# the paths that run .github/workflows/security-audit.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+Cargo.toml
+Cargo.lock
+src/**
+deny.toml
+# cargo audit and cargo deny also check the separate scripts/cfg-items workspace
+# through its own lock (its Cargo.toml is covered by **/Cargo.toml below)
+scripts/cfg-items/Cargo.lock
+# every cargo job runs at the repository root, where this file picks the toolchain
+rust-toolchain.toml
+# cargo-machete reads every manifest under the root (fuzz/Cargo.toml and
+# scripts/cfg-items/Cargo.toml have their own) and every .rs file under it as a use of a
+# dependency (tests/, benches/, examples/, fuzz/); the coverage job compiles
+# tests/lib/bvh_oracles.rs and tests/law_id_world.rs into the lib tests (#[path])
+**/Cargo.toml
+**/*.rs
+# cargo package lists the files it packages through git (.gitignore filters them) and
+# needs the manifest's `readme`
+.gitignore
+README.md
+# public-api-diff compares with the committed snapshot
+docs/PUBLIC_API_SNAPSHOT.txt
+# semver-checks reads its log with semver_checked.py, which imports ansi.py
+scripts/semver_checked.py
+scripts/ansi.py
+# the coverage job: the ratchet and its baseline
+scripts/line_coverage_ratchet.py
+scripts/line-coverage-baseline.txt
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/security-audit.yml
+.github/paths/security-audit.txt
