@@ -2,6 +2,8 @@
 """Tests for scripts/entropy_guard.py: the repository passes, each entropy or
 clock source in production code is reported, test modules are exempt, and the
 allowed counts are exact."""
+import contextlib
+import io
 import os
 import sys
 import tempfile
@@ -76,6 +78,55 @@ class EntropyGuard(unittest.TestCase):
         eg.ALLOWED[("src/a.rs", "OsRng")] = (1, "reason")
         p = self.problems({"src/a.rs": "pub fn f() {}\n"})
         self.assertTrue(any("matches nothing" in x for x in p), p)
+
+    def test_an_aliased_clock_is_found(self):
+        src = "use std::time::Instant as Clock;\npub fn f() { let _ = Clock::now(); }\n"
+        p = self.problems({"src/a.rs": src})
+        self.assertTrue(any("Instant::now" in x and "src/a.rs:2" in x for x in p), p)
+
+    def test_an_aliased_map_is_found(self):
+        src = "use std::collections::HashMap as Map;\npub fn f() -> Map<u8, u8> { Map::new() }\n"
+        p = self.problems({"src/a.rs": src})
+        self.assertTrue(any(x.startswith("HashMap") for x in p), p)
+
+    def test_a_call_split_over_lines_is_found(self):
+        src = "pub fn f() {\n    let _ = std::time::Instant\n        ::now();\n}\n"
+        p = self.problems({"src/a.rs": src})
+        self.assertTrue(any("Instant::now" in x and "src/a.rs:2" in x for x in p), p)
+
+    def test_random_state_new_is_found(self):
+        src = "pub fn f() { let _ = std::collections::hash_map::RandomState::new(); }\n"
+        self.assertTrue(any(x.startswith("RandomState") for x in self.problems({"src/a.rs": src})))
+
+    def test_a_default_hasher_map_is_found(self):
+        for src in ["pub fn f() { let _: std::collections::HashMap<u8, u8> = std::collections::HashMap::new(); }\n",
+                    "pub fn f() { let _ = std::collections::HashSet::<u8>::new(); }\n"]:
+            self.assertEqual(len(self.problems({"src/a.rs": src})), 1, src)
+
+    def test_the_seedless_map_alias_is_not_a_finding(self):
+        src = "pub fn f() { let _: DetHashMap<u8, u8> = DetHashMap::default(); }\n"
+        self.assertEqual(self.problems({"src/a.rs": src}), [])
+
+    def test_unix_epoch_elapsed_is_found(self):
+        src = "pub fn f() { let _ = std::time::UNIX_EPOCH.elapsed(); }\n"
+        self.assertTrue(any(x.startswith("UNIX_EPOCH") for x in self.problems({"src/a.rs": src})))
+
+    def test_attributes_between_cfg_test_and_the_module_keep_it_exempt(self):
+        src = ("pub fn f() {}\n\n#[cfg(test)]\n// timing only\n#[allow(clippy::disallowed_methods)]\n"
+               "mod tests {\n    fn t() { let _ = std::time::Instant::now(); }\n}\n")
+        self.assertEqual(self.problems({"src/a.rs": src}), [])
+
+    def test_main_exits_1_when_it_scans_no_file(self):
+        root = tree({"README.md": "x\n"})
+        saved = eg.ROOT
+        try:
+            eg.ROOT = root
+            with contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()):
+                code = eg.main()
+        finally:
+            eg.ROOT = saved
+        self.assertEqual(code, 1)
+        self.assertIn("compared nothing", err.getvalue())
 
     def test_no_source_file_compares_nothing(self):
         _, files, _ = eg.check(tree({"README.md": "x\n"}))
