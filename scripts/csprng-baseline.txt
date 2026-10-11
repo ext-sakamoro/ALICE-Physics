@@ -11,16 +11,17 @@
 #   - 浮動小数点の逆変換で noise を作っている (Mironov CCS 2012、snapping も離散 noise も無い)
 #   置き換え先は `alice_crypto::dp::{SecureRng, DpNoise}`
 #   ⚠️ license の向きが未決 (permissive → AGPL は引けない) なので置き場の判断が要る
-src/privacy.rs: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
-src/privacy.rs: `sample` が浮動小数点の逆変換で noise を作っている (Mironov CCS 2012) snapping / 離散 noise にするか `// FLOAT-DP-ACCEPTED: <理由>` を置く
-src/privacy.rs: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
-src/privacy.rs: `from_entropy` が時刻を seed にしている (hash を挟んでも seed 空間が時刻幅に縮む — CSPRNG を使う)
+src/privacy.rs: [impl LaplaceNoise / fn sample #8eb906ce02b3] `sample` が浮動小数点の逆変換で noise を作っている (Mironov CCS 2012) snapping / 離散 noise にするか `// FLOAT-DP-ACCEPTED: <理由>` を置く
+src/privacy.rs: [impl XorShift64 / fn from_entropy #3212f4e955a2] `from_entropy` が時刻を seed にしている (hash を挟んでも seed 空間が時刻幅に縮む — CSPRNG を使う)
+src/privacy.rs: [impl XorShift64 / fn next_u64 #41bcc7c290d6] 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
+src/privacy.rs: [struct XorShift64 #a3c5abb83b9e] 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
 #
 # === 群 2: 決定論が目的の PRNG (理由 marker を置けば解消する、置き換え不要) ===
 #   simulation の再現性のための PRNG は正しい設計 marker で意図を明示するだけ
-#   - src/rng.rs:63      ... 本 crate の決定論 PRNG (lockstep の再現性が目的)
-#   - src/bvh.rs:1278    ... 試験用の LCG が production の `src/` に居る
-#                            ⚠️ `#[cfg(test)]` が付いていないので本番 build にも入る
-#                            marker を置くか、test module へ移すかの判断が要る
-src/bvh.rs: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い
-src/rng.rs: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い
+#   - src/rng.rs `impl DeterministicRng / fn next_u32` ... 本 crate の決定論 PRNG (lockstep の再現性が目的)
+#   - src/bvh.rs `mod tests / struct Lcg` ... 試験用の LCG (module 名は tests だが `#[cfg(test)]` が無く本番 build に入る)
+#                            marker を置くか、`#[cfg(test)]` の下へ移すかの判断が要る
+#
+# 各行の key は `file: [囲む item の連なり #行の hash] message` (行番号は持たない)
+src/bvh.rs: [mod tests / struct Lcg #9cd576e8fa15] 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い
+src/rng.rs: [impl DeterministicRng / fn next_u32 #cb400bd88ae4] 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い

@@ -227,7 +227,52 @@ def main() -> int:
         if not ok:
             failures += 1
 
-    total = len(CASES) + 1 + len(compare_cases) + 1
+    # baseline key = file + enclosing items + hash of the line (a swap is not a quiet change)
+    gen = (
+        "pub struct Gen { state: u64 }\n"
+        "impl Gen {\n"
+        "    pub fn next_u64(&mut self) -> u64 {\n"
+        "        let x = self.state;\n"
+        "        self.state = x ^ (x << 13);\n"
+        "        x\n"
+        "    }\n"
+        "}\n"
+    )
+    base_v, _ = run_case("src/rng.rs", gen)
+    key_base = Counter(csprng_guard.baseline_key(v) for v in base_v)
+    marked = gen.replace("        self.state = x ^ (x << 13);",
+                         "        // DETERMINISTIC-RNG: lockstep replay needs the same sequence\n"
+                         "        self.state = x ^ (x << 13);")
+    site_cases = [
+        ("F 置き換え (既存を marker で直し、同じ file に新しい PRNG を足す) は 新規 1 + 解消 1",
+         marked + "pub struct XorShiftZz(pub u64);\n", (1, 1)),
+        ("F 別の所の編集で行が動くだけなら 新規 0 + 解消 0", "// a\n\n// b\n" + gen, (0, 0)),
+        ("F item の名前を変えると 新規 1 + 解消 1", gen.replace("Gen", "Gen2"), (1, 1)),
+        ("F baseline の行そのものを変えると 新規 1 + 解消 1 (理由を見直す)",
+         gen.replace("x << 13", "x << 17"), (1, 1)),
+        ("F comment だけの編集は 新規 0 + 解消 0",
+         gen.replace("x ^ (x << 13);", "x ^ (x << 13); // shift").replace("    pub fn", "    // doc\n    pub fn"),
+         (0, 0)),
+    ]
+    for label, body, (want_new, want_stale) in site_cases:
+        got_v, checked = run_case("src/rng.rs", body)
+        new, stale = csprng_guard.compare(got_v, key_base)
+        ok = (len(new), len(stale)) == (want_new, want_stale) and checked > 0
+        print(f"{'ok  ' if ok else 'FAIL'} {label}: 新規 {len(new)} 解消 {len(stale)} (検査 {checked})")
+        if not ok:
+            failures += 1
+            for v in new + stale:
+                print(f"       {v}")
+
+    # a tuple / unit struct ends at its `;` and does not hold the next item's lines
+    code = "pub struct Seed(pub u64);\nfn f() {\n    let x = 1;\n}\n"
+    got = csprng_guard.site(code, 2)
+    ok = got.startswith("[fn f #")
+    print(f"{'ok  ' if ok else 'FAIL'} F tuple struct の範囲は `;` で終わる: {got}")
+    if not ok:
+        failures += 1
+
+    total = len(CASES) + 1 + len(compare_cases) + 1 + len(site_cases) + 1
     print(f"\n{total - failures}/{total} pass")
     return 1 if failures else 0
 

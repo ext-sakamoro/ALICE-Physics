@@ -47,6 +47,7 @@ entry は行番号を外した `file: message` で、件数で比べる (同じ 
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections import Counter
 import sys
@@ -253,17 +254,17 @@ def audit(root: Path) -> tuple[list[str], int]:
                 reason = marker_above(lines, ln, MARKER_RNG)
                 if secret:
                     violations.append(
-                        f"{rel}:{ln + 1}: 秘匿が要る経路に予測可能な PRNG がある "
+                        f"{rel}:{ln + 1}: {site(code, ln)} 秘匿が要る経路に予測可能な PRNG がある "
                         f"(理由を書いても認めない — CSPRNG を使う)"
                     )
                 elif reason is None:
                     violations.append(
-                        f"{rel}:{ln + 1}: 予測可能な PRNG の定義に "
+                        f"{rel}:{ln + 1}: {site(code, ln)} 予測可能な PRNG の定義に "
                         f"`// DETERMINISTIC-RNG: <理由>` が無い"
                     )
                 elif len(reason) < MIN_REASON:
                     violations.append(
-                        f"{rel}:{ln + 1}: DETERMINISTIC-RNG の理由が短い "
+                        f"{rel}:{ln + 1}: {site(code, ln)} DETERMINISTIC-RNG の理由が短い "
                         f"({len(reason)} 字、{MIN_REASON} 字以上)"
                     )
 
@@ -280,7 +281,7 @@ def audit(root: Path) -> tuple[list[str], int]:
             if CSPRNG.search(body):
                 continue
             violations.append(
-                f"{rel}:{ln + 1}: `{name}` が時刻を seed にしている "
+                f"{rel}:{ln + 1}: {site(code, ln)} `{name}` が時刻を seed にしている "
                 f"(hash を挟んでも seed 空間が時刻幅に縮む — CSPRNG を使う)"
             )
 
@@ -309,13 +310,13 @@ def audit(root: Path) -> tuple[list[str], int]:
             reason = marker_above(lines, ln, MARKER_DP)
             if reason is None:
                 violations.append(
-                    f"{rel}:{ln + 1}: `{name}` が浮動小数点の逆変換で noise を作っている "
+                    f"{rel}:{ln + 1}: {site(code, ln)} `{name}` が浮動小数点の逆変換で noise を作っている "
                     f"(Mironov CCS 2012) snapping / 離散 noise にするか "
                     f"`// FLOAT-DP-ACCEPTED: <理由>` を置く"
                 )
             elif len(reason) < MIN_REASON:
                 violations.append(
-                    f"{rel}:{ln + 1}: FLOAT-DP-ACCEPTED の理由が短い "
+                    f"{rel}:{ln + 1}: {site(code, ln)} FLOAT-DP-ACCEPTED の理由が短い "
                     f"({len(reason)} 字、{MIN_REASON} 字以上)"
                 )
 
@@ -323,6 +324,54 @@ def audit(root: Path) -> tuple[list[str], int]:
 
 
 LINE_NO = re.compile(r"^([^:\s]+\.rs):\d+: ")
+
+
+ITEM_RE = re.compile(
+    r"\b(?:(impl)\b(?:\s*<[^{;]*?>)?\s*([^{;]+?)\s*(?:where\b[^{;]*)?(?=[{;])"
+    r"|(struct|enum|union|fn|trait|mod)\s+([A-Za-z_][A-Za-z0-9_]*))")
+
+
+def item_spans(code: str) -> list[tuple[int, int, str]]:
+    """(start, end, label) of every item: from its keyword to its matching `}`, or
+    to the `;` of a unit / tuple struct or a declaration without a body"""
+    out = []
+    for m in ITEM_RE.finditer(code):
+        label = f"impl {' '.join(m.group(2).split())}" if m.group(1) else f"{m.group(3)} {m.group(4)}"
+        i = m.end()
+        depth, paren = 0, 0
+        while i < len(code):
+            ch = code[i]
+            if ch in "([":
+                paren += 1
+            elif ch in ")]":
+                paren -= 1
+            elif ch == ";" and depth == 0 and paren <= 0:
+                break
+            elif ch == "{" and paren <= 0:
+                depth += 1
+            elif ch == "}" and paren <= 0:
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        out.append((m.start(), i, label))
+    return out
+
+
+def site(code: str, ln: int) -> str:
+    """`[<items holding line ln> #<hash of the line>]`: the key of a violation
+    besides its file and message. The items are the chain of `impl` / `struct` /
+    `fn` / ... whose span holds the last code character of the line (a header line ends in `{`); the hash is
+    over the line with comments removed and whitespace collapsed. A line moved by
+    an edit elsewhere keeps its key; a renamed item, an edit of the line, or a
+    new site gets a new one."""
+    lines = code.split("\n")
+    start = sum(len(x) + 1 for x in lines[:ln])
+    text = lines[ln] if ln < len(lines) else ""
+    pos = start + max(len(text.rstrip()) - 1, 0)  # the last code character of the line
+    chain = [label for a, b, label in sorted(item_spans(code)) if a <= pos <= b]
+    digest = hashlib.sha256(" ".join(text.split()).encode("utf-8")).hexdigest()[:12]
+    return f"[{' / '.join(chain) or '(top level)'} #{digest}]"
 
 
 def baseline_key(violation: str) -> str:
