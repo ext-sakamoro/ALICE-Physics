@@ -78,6 +78,12 @@ jobs:
         run: python scripts/test_mutants_ratchet.py
       - name: Mutants exclude_re entries still match a real mutant (tests)
         run: python scripts/test_mutants_exclude_check.py
+      - name: Equivalent mutants (tests)
+        run: python scripts/test_mutants_equivalent.py
+      # every equivalent-mutant entry has a reason and still matches its source line
+      # (a moved or edited line fails here); an empty list fails
+      - name: Equivalent mutants still match the source
+        run: python scripts/mutants_equivalent.py --check
       - name: Mutation in-diff plan (tests)
         run: python scripts/test_mutants_in_diff_plan.py
       # the weekly ignored-test run fails on a crash, a binary that runs too

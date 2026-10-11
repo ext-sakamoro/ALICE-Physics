@@ -184,19 +184,24 @@ jobs:
             echo "no mutant in the changed lines"
             exit 0
           fi
-          missed=$(grep -c . mutants.out/missed.txt 2>/dev/null || true)
+          # equivalent mutants (scripts/mutants-equivalent.txt, keyed by position and the
+          # hash of their source line) are reported by cargo-mutants on every run; only
+          # the others are survivors
+          python3 scripts/mutants_equivalent.py --filter mutants.out/missed.txt > mutants.out/missed-real.txt
+          missed=$(grep -c . mutants.out/missed-real.txt || true)
           if [ "${missed:-0}" -gt 0 ]; then
             echo "::error::$missed mutant(s) of the changed lines were missed (see the summary)"
+            cat mutants.out/missed-real.txt
           fi
           if ! python3 scripts/mutants_ratchet.py --out mutants.out --complete-only; then
             echo "::error::the in-diff run did not finish: its mutants were not all tested (cargo-mutants exit $rc)"
             exit 1
           fi
-          # 0 = all caught, 2 = a mutant survived (fails: the change came without a test that sees it),
+          # 0 = all caught, 2 = a mutant survived (fails unless every survivor is a listed
+          # equivalent mutant: the change came without a test that sees it),
           # 3 = timeouts only (reported, not failed), anything else = baseline red / usage error
           case $rc in
-            0|3) [ "${missed:-0}" -eq 0 ] || exit 1 ;;
-            2) exit 1 ;;
+            0|2|3) [ "${missed:-0}" -eq 0 ] || exit 1 ;;
             *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit "$rc" ;;
           esac
       # `--cargo-arg=--lib` restricts both the build and the test run of every mutant to the

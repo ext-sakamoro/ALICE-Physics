@@ -24,6 +24,12 @@ so that edits elsewhere in the file do not move them; repeated identical
 mutants are counted. Each entry carries its feature axis, taken from the
 directory name (`...-default` / `...-parallel`).
 
+A missed mutant listed in scripts/mutants-equivalent.txt (an equivalent mutant,
+keyed by its exact position and the hash of its source line, see
+scripts/mutants_equivalent.py) is counted as tested but not as missed: it is
+neither a new survivor nor written to the baseline. A stale entry does not
+apply, so the mutant reads missed again.
+
   python3 scripts/mutants_ratchet.py --out mutants-out-*          # check
   python3 scripts/mutants_ratchet.py --out mutants-out-* --write  # record the missed set
 """
@@ -38,9 +44,12 @@ from collections import Counter
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import mutants_equivalent  # noqa: E402
 BASELINE = HERE / "mutants-missed-baseline.txt"
 POS_RE = re.compile(r"^(\S+?\.rs):\d+(?::\d+)?: ")
 OUTCOMES = ("caught", "missed", "timeout", "unviable")
+EQUIVALENT = HERE / "mutants-equivalent.txt"
 
 
 def axis_of(d: Path) -> str:
@@ -51,9 +60,11 @@ def normalise(line: str) -> str:
     return POS_RE.sub(r"\1: ", line.strip())
 
 
-def read_run(dirs: list[Path]) -> dict[str, Counter]:
-    """`{outcome: Counter("[axis] mutant")}` over every output directory."""
-    out = {k: Counter() for k in OUTCOMES}
+def read_run(dirs: list[Path], equivalent: set | None = None) -> dict[str, Counter]:
+    """`{outcome: Counter("[axis] mutant")}` over every output directory; a missed
+    mutant whose key is in `equivalent` goes to the `equivalent` outcome."""
+    equivalent = equivalent or set()
+    out = {k: Counter() for k in (*OUTCOMES, "equivalent")}
     for d in dirs:
         root = d / "mutants.out" if (d / "mutants.out").is_dir() else d
         for k in OUTCOMES:
@@ -61,7 +72,10 @@ def read_run(dirs: list[Path]) -> dict[str, Counter]:
             if f.is_file():
                 for line in f.read_text(encoding="utf-8", errors="replace").splitlines():
                     if line.strip():
-                        out[k][f"[{axis_of(d)}] {normalise(line)}"] += 1
+                        bucket = k
+                        if k == "missed" and mutants_equivalent.missed_key(line) in equivalent:
+                            bucket = "equivalent"
+                        out[bucket][f"[{axis_of(d)}] {normalise(line)}"] += 1
     return out
 
 
@@ -102,7 +116,7 @@ def completeness(dirs: list[Path], expect_dirs: int) -> list[str]:
 
 def compare(run: dict[str, Counter], base: Counter) -> tuple[list[str], int]:
     # unviable mutants did not build: nothing was tested for them
-    tested = sum(sum(run[k].values()) for k in ("caught", "missed", "timeout"))
+    tested = sum(sum(run[k].values()) for k in ("caught", "missed", "timeout", "equivalent"))
     errors = []
     if tested == 0:
         return ["no mutant was tested (compared nothing)"], 0
@@ -120,6 +134,10 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--out", nargs="+", required=True, help="mutants.out directories (or their parents)")
     ap.add_argument("--baseline", default=str(BASELINE))
+    ap.add_argument("--equivalent", default=str(EQUIVALENT),
+                    help="list of equivalent mutants (scripts/mutants_equivalent.py)")
+    ap.add_argument("--source-root", default=str(mutants_equivalent.ROOT),
+                    help="tree the equivalent entries are checked against")
     ap.add_argument("--write", action="store_true", help="record the missed mutants as the baseline")
     ap.add_argument("--expect-dirs", type=int, default=1,
                     help="number of output directories a complete run has (shards x feature axes)")
@@ -136,7 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.complete_only:
         print(f"complete: {len(dirs)} output director{'y' if len(dirs) == 1 else 'ies'}")
         return 0
-    run = read_run(dirs)
+    run = read_run(dirs, mutants_equivalent.valid_keys(Path(args.equivalent), Path(args.source_root)))
     if args.write:
         lines = sorted(run["missed"].elements())
         Path(args.baseline).write_text(
@@ -148,7 +166,8 @@ def main(argv: list[str] | None = None) -> int:
     errors, tested = compare(run, read_baseline(Path(args.baseline)))
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
-    print(f"compared: tested {tested}, missed {sum(run['missed'].values())}, caught {sum(run['caught'].values())}")
+    print(f"compared: tested {tested}, missed {sum(run['missed'].values())}, "
+          f"equivalent {sum(run['equivalent'].values())}, caught {sum(run['caught'].values())}")
     return 1 if errors else 0
 
 
