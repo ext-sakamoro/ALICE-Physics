@@ -263,7 +263,7 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 | `wasm` | | `wasm-bindgen` による WebAssembly バインディング `std` が必要、`ffi` とは併用不可 |
 | `python` | | Python バインディング (PyO3 + NumPy) |
 | `gpu-solver-bridge` | | 外部 GPU ソルバー用の `GpuSolverBridge` トレイト 無効時のコストはない |
-| `privacy-crypto` | | `privacy` が `alice-crypto` の差分プライバシー (`SecureRng`、`DpNoise`、`dp_int`、`randomized_response` など) を再 export し、`KeyedRappor` を足す 既定で off なので `std` だけでは entropy 源を引かない この feature では `alice-crypto` が公開依存になり、その破壊的な版は本 crate の破壊的な版になる `wasm32-unknown-unknown` では `wasm` も要る (browser の entropy) |
+| `privacy-crypto` | | `privacy` が `alice-crypto` の差分プライバシー (`SecureRng`、`DpNoise`、`dp_int`、`randomized_response` など) を再 export し、`KeyedRappor` を足す 既定で off なので `std` だけでは entropy 源を引かない この feature では `alice-crypto` が公開依存になり、その破壊的な版は本 crate の破壊的な版になる `wasm32-unknown-unknown` では `wasm` と併せて有効にする (`--features std,wasm,privacy-crypto`、browser の entropy を与える) `std,privacy-crypto` だけでは getrandom の「"js" feature を有効にせよ」の error で compile できない |
 | `neural` | | [`alice-ml`](https://crates.io/crates/alice-ml) を使う決定論的ニューラルコントローラー |
 | `replay` | | [`alice-db`](https://crates.io/crates/alice-db) を使うリプレイの記録と再生 |
 | `analytics` | | [`alice-analytics`](https://crates.io/crates/alice-analytics) を使うシミュレーションのプロファイリング |

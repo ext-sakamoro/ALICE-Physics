@@ -342,7 +342,7 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 | `wasm` | | WebAssembly bindings through `wasm-bindgen`. Requires `std`; cannot be combined with `ffi`. |
 | `python` | | Python bindings (PyO3 + NumPy). |
 | `gpu-solver-bridge` | | `GpuSolverBridge` trait for external GPU solver backends. No cost when off. |
-| `privacy-crypto` | | `privacy` re-exports `alice-crypto`'s differential-privacy primitives (`SecureRng`, `DpNoise`, `dp_int`, `randomized_response`, …) and adds `KeyedRappor`. Off by default, so `std` alone pulls no entropy source. `alice-crypto` is then a public dependency: its breaking releases are breaking for this crate. On `wasm32-unknown-unknown` it needs `wasm` too (browser entropy). |
+| `privacy-crypto` | | `privacy` re-exports `alice-crypto`'s differential-privacy primitives (`SecureRng`, `DpNoise`, `dp_int`, `randomized_response`, …) and adds `KeyedRappor`. Off by default, so `std` alone pulls no entropy source. `alice-crypto` is then a public dependency: its breaking releases are breaking for this crate. On `wasm32-unknown-unknown` enable it together with `wasm` (`--features std,wasm,privacy-crypto`), which supplies the browser's entropy; `std,privacy-crypto` alone fails to compile there with getrandom's "you may need to enable the \"js\" feature" error. |
 | `neural` | | Deterministic neural controller using [`alice-ml`](https://crates.io/crates/alice-ml). |
 | `replay` | | Replay recording and playback using [`alice-db`](https://crates.io/crates/alice-db). |
 | `analytics` | | Simulation profiling using [`alice-analytics`](https://crates.io/crates/alice-analytics). |

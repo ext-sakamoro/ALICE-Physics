@@ -74,6 +74,11 @@ class EntropyGuard(unittest.TestCase):
         eg.ALLOWED[("src/a.rs", "SystemTime::now")] = (2, "reason")
         self.assertTrue(any("1 call sites, ALLOWED says 2" in x for x in self.problems({"src/a.rs": src})))
 
+    def test_an_allowed_entry_needs_a_reason(self):
+        src = "pub fn f() { let _ = std::time::SystemTime::now(); }\n"
+        eg.ALLOWED[("src/a.rs", "SystemTime::now")] = (1, "  ")
+        self.assertTrue(any("has no reason" in x for x in self.problems({"src/a.rs": src})))
+
     def test_a_stale_allowed_entry_fails(self):
         eg.ALLOWED[("src/a.rs", "OsRng")] = (1, "reason")
         p = self.problems({"src/a.rs": "pub fn f() {}\n"})

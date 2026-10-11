@@ -142,7 +142,9 @@ def check(root: Path) -> tuple[list[str], int, int]:
             problems.append(f"{key[1]} in production code: {where}")
         elif allowed[0] != len(lines):
             problems.append(f"{key[1]} in {key[0]}: {len(lines)} call sites, ALLOWED says {allowed[0]} ({where})")
-    for key, (count, _) in sorted(ALLOWED.items()):
+    for key, (count, reason) in sorted(ALLOWED.items()):
+        if not reason.strip():
+            problems.append(f"ALLOWED entry {key[1]} in {key[0]} has no reason")
         if key not in counts:
             problems.append(f"ALLOWED entry {key[1]} in {key[0]} ({count}) matches nothing: remove it")
     return problems, len(files), len(PATTERNS)
