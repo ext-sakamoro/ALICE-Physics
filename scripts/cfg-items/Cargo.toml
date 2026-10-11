@@ -1,0 +1,14 @@
+[package]
+name = "cfg-items"
+version = "0.0.0"
+publish = false
+edition = "2021"
+description = "Lists the cfg-gated items of Rust source files with their line spans (scripts/mutants_in_diff_plan.py)"
+
+# a tool of the scripts, not part of the alice-physics package
+[workspace]
+
+[dependencies]
+syn = { version = "2", default-features = false, features = ["full", "parsing", "visit", "printing"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+quote = "1"

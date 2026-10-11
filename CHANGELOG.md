@@ -18,6 +18,7 @@ were introduced during that release window.
 ### Changed
 
 - `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push した時の挙動を書いた 2 つの body の間の joint は次の step の joint solve で panic し (`add_joint` は事前に assert で拒む)、同じ body 同士の joint は solve と island の作り直しが飛ばすので、無い時と同じに進む
+- 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する
 
 ## [2.3.0] - 2026-10-11
 

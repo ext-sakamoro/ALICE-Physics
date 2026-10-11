@@ -8,15 +8,22 @@ runs only the unit tests, so the integration oracles in tests/ never see the
 mutants. This script reads the diff and prints, as JSON:
 
   * `features`: the features to add so every changed module compiles (taken
-    from the `cfg` attributes on its `mod` line in src/lib.rs, from the
-    `cfg` attributes of the items (fn / impl / mod) that enclose a changed
-    line inside the file, plus the `required-features` of the tests below);
+    from the `cfg` attributes on the `mod` declarations on the way from
+    src/lib.rs to the file, from the `cfg` attributes of every node (item,
+    impl / trait item, field, variant, match arm, statement) whose span holds a
+    changed line, plus the `required-features` of the tests below);
   * `tests`: the integration test targets whose file name contains the name of
     a changed module (`tests/audit_replay.rs` for `src/replay.rs`), to run
     besides `--lib`;
   * `skipped`: changed files whose module cannot be compiled on the host at
     all (it requires `not(feature = "std")`, or a wasm / python build); they
     are removed from the diff written to `--out`, and listed so the run says so.
+
+The spans and attributes come from a Rust parser (`syn`, scripts/cfg-items), not
+from a line scanner: an item header that spans several lines (a long signature,
+a `where` clause, a brace on its own line, a multi-line `#[cfg(all(...))]`) keeps
+its attribute. The helper is built with cargo on first use; a file that does not
+parse fails the plan.
 
   python3 scripts/mutants_in_diff_plan.py change.diff --features "parallel" --out planned.diff
 """
@@ -25,8 +32,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,42 +44,177 @@ ROOT = Path(__file__).resolve().parent.parent
 HOST_UNBUILDABLE = {"wasm", "python"}
 FILE_RE = re.compile(r"^\+\+\+ b/(\S+)$", re.M)
 MOD_RE = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z0-9_]+)\s*;")
-CFG_RE = re.compile(r"^\s*#\[cfg\((.*)\)\]\s*$")
 FEATURE_RE = re.compile(r'feature\s*=\s*"([^"]+)"')
 
 
-def module_gates(lib_rs: str) -> dict[str, str]:
-    """`{module: cfg expression}` for every `mod` line of lib.rs with a cfg above it."""
-    gates: dict[str, str] = {}
-    pending: list[str] = []
-    for line in lib_rs.splitlines():
-        m = CFG_RE.match(line)
-        if m:
-            pending.append(m.group(1))
-            continue
-        mm = MOD_RE.match(line)
-        if mm and pending:
-            gates[mm.group(1)] = " , ".join(pending)
-        if line.strip() and not line.strip().startswith(("#[", "//")):
-            pending = []
-    return gates
+CFG_ITEMS = Path(__file__).resolve().parent / "cfg-items"
+
+
+@dataclass(frozen=True)
+class Span:
+    """A node with a `#[cfg(...)]` attribute: lines `start..=end` (1-based)."""
+    start: int
+    end: int
+    kind: str  # "file" (inner attribute), "mod", or "item"
+    name: str  # the module name for "mod"
+    cfg: str
+
+
+_helper: Path | None = None
+
+
+def helper() -> Path:
+    """Build scripts/cfg-items once and return its binary."""
+    global _helper
+    if _helper is None:
+        base = os.environ.get("CARGO_TARGET_DIR")
+        target = Path(base) / "cfg-items" if base else CFG_ITEMS / "target"
+        subprocess.run(
+            ["cargo", "build", "--release", "--quiet", "--locked",
+             "--manifest-path", str(CFG_ITEMS / "Cargo.toml"), "--target-dir", str(target)],
+            check=True,
+        )
+        exe = "cfg-items.exe" if os.name == "nt" else "cfg-items"
+        _helper = target / "release" / exe
+    return _helper
+
+
+def cfg_spans(path: Path) -> list[Span]:
+    """The cfg-gated nodes of one Rust file, from the parser. A file that does not
+    parse raises (the plan must not guess which features a line needs)."""
+    r = subprocess.run([str(helper()), str(path)], capture_output=True, text=True,
+                       encoding="utf-8", check=False)
+    if r.returncode != 0:
+        raise RuntimeError(f"cfg-items failed on {path}: {r.stderr.strip()}")
+    spans = []
+    for line in r.stdout.splitlines():
+        _, start, end, kind, name, cfg = line.split("\t", 5)
+        spans.append(Span(int(start), int(end), kind, name, cfg))
+    return spans
+
+
+def module_gates(spans: list[Span]) -> dict[str, str]:
+    """`{module: cfg expression}` for every `mod` declaration with a cfg on it."""
+    gates: dict[str, list[str]] = {}
+    for s in spans:
+        if s.kind == "mod":
+            gates.setdefault(s.name, []).append(s.cfg)
+    return {m: " , ".join(c) for m, c in gates.items()}
+
+
+def module_path_gates(path: str, root: Path) -> list[str]:
+    """The cfgs on the `mod` declarations from src/lib.rs down to a src/ file:
+    `src/a/b.rs` is gated by `mod a` in lib.rs and by `mod b` in src/a.rs or
+    src/a/mod.rs."""
+    parts = Path(path).parts
+    if parts[:1] != ("src",) or len(parts) < 2:
+        return []
+    names = list(parts[1:-1]) + [Path(parts[-1]).stem]
+    if names[-1] == "mod":
+        names.pop()
+    out: list[str] = []
+    parent = root / "src" / "lib.rs"
+    for k, name in enumerate(names):
+        if name in ("lib", "main") or not parent.is_file():
+            break
+        out.extend(s.cfg for s in cfg_spans(parent) if s.kind == "mod" and s.name == name)
+        here = root / "src" / Path(*names[: k + 1])
+        parent = here / "mod.rs" if (here / "mod.rs").is_file() else here.with_suffix(".rs")
+    return out
+
+
+CFG_TOKEN_RE = re.compile(r'\s*(?:([A-Za-z_][A-Za-z0-9_]*)|("(?:\\.|[^"\\])*")|([=(),]))')
+# what the host test run (Linux, `cargo test`, std on) makes true; any other
+# configuration predicate is taken as true so the code is still compiled
+HOST_FALSE = {("target_arch", "wasm32"), ("target_family", "wasm"), ("target_os", "windows"),
+              ("target_os", "macos"), ("windows", None), ("miri", None)}
+
+
+def parse_cfg(cfg: str):
+    """A cfg expression as a tree: ("all"|"any"|"not", [children]) or ("pred", name, value)."""
+    toks = []
+    pos = 0
+    while pos < len(cfg):
+        m = CFG_TOKEN_RE.match(cfg, pos)
+        if not m or m.end() == pos:
+            if cfg[pos:].strip():
+                raise ValueError(f"cannot read cfg {cfg!r} at {pos}")
+            break
+        toks.append(m.group(1) or m.group(2) or m.group(3))
+        pos = m.end()
+    k = 0
+
+    def expr():
+        nonlocal k
+        name = toks[k]
+        k += 1
+        if k < len(toks) and toks[k] == "(":
+            k += 1
+            kids = []
+            while toks[k] != ")":
+                kids.append(expr())
+                if toks[k] == ",":
+                    k += 1
+            k += 1
+            return (name, kids)
+        if k < len(toks) and toks[k] == "=":
+            value = toks[k + 1][1:-1]
+            k += 2
+            return ("pred", name, value)
+        return ("pred", name, None)
+
+    tree = expr()
+    if k != len(toks):
+        raise ValueError(f"trailing tokens in cfg {cfg!r}")
+    return tree
+
+
+def _solve(node, positive: bool):
+    """(features that must be on, features that must be off) for `node` to be
+    `positive` on the host, or None when it cannot be."""
+    if node[0] == "pred":
+        _, name, value = node
+        if name == "feature":
+            if positive:
+                return None if value in HOST_UNBUILDABLE else ({value}, set())
+            return None if value == "std" else (set(), {value})
+        truth = (name, value) not in HOST_FALSE
+        return (set(), set()) if truth == positive else None
+    op, kids = node
+    if op == "not":
+        return _solve(kids[0], not positive)
+    # all(...) true / any(...) false need every child; the other two need one
+    if (op == "all") == positive:
+        on, off = set(), set()
+        for kid in kids:
+            r = _solve(kid, positive)
+            if r is None:
+                return None
+            on |= r[0]
+            off |= r[1]
+        return None if on & off else (on, off)
+    for kid in kids:
+        r = _solve(kid, positive)
+        if r is not None:
+            return r
+    return None
 
 
 def features_for(cfg: str) -> tuple[list[str], bool]:
-    """(features to turn on, buildable on the host) for a cfg expression.
+    """(features to turn on, buildable on the host) for a cfg expression, or for
+    several joined with " , " (all of them must hold).
 
-    Positive `feature = ".."` terms are collected; inside `any(..)` the first
-    is enough. A `not(feature = ...)` or a host-unbuildable feature makes the
-    module unbuildable for the host test run."""
-    if "not(" in cfg:
+    The expression is evaluated, not matched as text: `feature = ".."` terms are
+    chosen as needed (`any(..)` takes its first satisfiable alternative), `test`
+    is true, a wasm / Windows target is false, `not(..)` follows De Morgan. A
+    cfg that needs a host-unbuildable feature or `not(feature = "std")` makes
+    the code unbuildable for the host test run."""
+    if not cfg.strip():
+        return [], True
+    r = _solve(parse_cfg(f"all({cfg})"), True)
+    if r is None:
         return [], False
-    if cfg.strip().startswith("any("):
-        names = FEATURE_RE.findall(cfg)[:1]
-    else:
-        names = FEATURE_RE.findall(cfg)
-    if any(n in HOST_UNBUILDABLE for n in names):
-        return [], False
-    return [n for n in names if n != "std"], True
+    return sorted(n for n in r[0] if n != "std"), True
 
 
 def required_features(cargo_toml: str) -> dict[str, list[str]]:
@@ -107,7 +252,6 @@ def split_diff(diff: str) -> list[tuple[str, str]]:
 
 
 HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@", re.M)
-STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
 
 
 def changed_lines(file_diff: str) -> list[int]:
@@ -129,46 +273,21 @@ def changed_lines(file_diff: str) -> list[int]:
     return out
 
 
-def item_gates(source: str, lines: list[int]) -> list[str]:
-    """The `cfg` expressions on the items enclosing each of `lines` (1-based).
+def item_gates(spans: list[Span], lines: list[int]) -> list[str]:
+    """The `cfg` expressions of the nodes whose span holds one of `lines` (1-based).
 
-    A module that is not gated in lib.rs can still gate one function or impl
-    (`#[cfg(feature = "gpu-solver-bridge")] pub fn ...`); without that feature
-    the item is not compiled and its mutants all read missed. Brace depth is
-    counted with strings and `//` comments removed; the `cfg` attributes
-    directly above a line that opens a block belong to that block."""
-    wanted = set(lines)
+    A module that is not gated in lib.rs can still gate one function, impl,
+    field, match arm or statement (`#[cfg(feature = "gpu-solver-bridge")] pub fn ...`);
+    without that feature the node is not compiled and its mutants all read missed."""
     found: list[str] = []
-    stack: list[tuple[int, list[str]]] = []  # (depth before the block, its cfgs)
-    pending: list[str] = []
-    depth = 0
-    for n, raw in enumerate(source.splitlines(), 1):
-        code = STRING_RE.sub('""', raw).split("//")[0]
-        stripped = code.strip()
-        if n in wanted:
-            for _, cfgs in stack:
-                found.extend(cfgs)
-            found.extend(pending)
-        m = CFG_RE.match(raw)  # the raw line: masking strings would blank the feature name
-        if m:
-            pending.append(m.group(1))
-            continue
-        if not stripped or stripped.startswith("#["):
-            continue
-        opens, closes = code.count("{"), code.count("}")
-        if opens > closes:
-            stack.append((depth, pending))
-        depth += opens - closes
-        while stack and depth <= stack[-1][0]:
-            stack.pop()
-        pending = []
+    for s in spans:
+        if any(s.start <= n <= s.end for n in lines):
+            found.append(s.cfg)
     return found
 
 
 def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
-    lib_rs = (root / "src/lib.rs").read_text(encoding="utf-8")
     cargo = (root / "Cargo.toml").read_text(encoding="utf-8")
-    gates = module_gates(lib_rs)
     req = required_features(cargo)
     tests_dir = root / "tests"
     test_names = sorted(p.stem for p in tests_dir.glob("*.rs")) if tests_dir.is_dir() else []
@@ -178,16 +297,24 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     for path, text in split_diff(diff):
         module = module_of(path)
         if module is None:
+            # lib.rs / main.rs have no module gate, but their items can carry one
+            # (`#[cfg(feature = "privacy-crypto")] pub use ...`)
+            source = root / path
+            if path.startswith("src/") and path.endswith(".rs") and source.is_file():
+                for cfg in item_gates(cfg_spans(source), changed_lines(text)):
+                    item_feats, item_buildable = features_for(cfg)
+                    if item_buildable:
+                        features.update(item_feats)
             kept.append(text)
             continue
-        feats, buildable = features_for(gates.get(module, ""))
+        feats, buildable = features_for(" , ".join(module_path_gates(path, root)))
         if not buildable:
             skipped.append(path)
             continue
         features.update(feats)
         source = root / path
         if source.is_file():
-            for cfg in item_gates(source.read_text(encoding="utf-8"), changed_lines(text)):
+            for cfg in item_gates(cfg_spans(source), changed_lines(text)):
                 item_feats, item_buildable = features_for(cfg)
                 if item_buildable:
                     features.update(item_feats)
