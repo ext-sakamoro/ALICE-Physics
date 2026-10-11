@@ -16,10 +16,14 @@ survivor:
     again until someone re-reads the argument and updates the entry)
   * for `replace <op> with ...` the text at `col` must start with `<op>`
   * every entry carries a non-empty reason; an empty list fails `--check`
+  * an entry whose equivalence rests on behaviour elsewhere (not on the line
+    itself) names the tests that pin that behaviour in a fifth field,
+    `tests/<file>.rs::<fn>` separated by commas; `--check` fails when a named
+    file or `#[test] fn` is gone, so the mutant comes back when its argument does
 
-Format (tab separated, `#` starts a comment line):
+Format (tab separated, `#` starts a comment line, the fifth field optional):
 
-  src/joint.rs:955:23<TAB><hash>:<TAB>replace + with - in solve_ball_joint<TAB><reason>
+  src/joint.rs:955:23<TAB><hash><TAB>replace + with - in solve_ball_joint<TAB><reason>[<TAB><tests>]
 
 Usage:
 
@@ -43,6 +47,18 @@ LIST = HERE / "mutants-equivalent.txt"
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 MISSED_RE = re.compile(r"^(?P<file>[^:\s]+):(?P<line>\d+):(?P<col>\d+): (?P<mutation>.+)$")
 REPLACE_RE = re.compile(r"^replace (?P<op>\S+) with \S+ in ")
+TEST_RE = re.compile(r"tests/[A-Za-z0-9_/]+\.rs::[A-Za-z_][A-Za-z0-9_]*")
+
+
+def has_test(root: Path, ref: str) -> bool:
+    """`tests/x.rs::name` names a `#[test] fn name` (attributes may sit between)."""
+    file, _, name = ref.partition("::")
+    path = root / file
+    if not path.is_file():
+        return False
+    text = path.read_text(encoding="utf-8")
+    pat = rf"#\[test\]\s*(?:#\[[^\]]*\]\s*)*(?:pub\s+)?fn\s+{re.escape(name)}\s*\("
+    return re.search(pat, text) is not None
 
 
 @dataclass(frozen=True)
@@ -54,6 +70,7 @@ class Entry:
     mutation: str
     reason: str
     lineno: int  # line of the entry in the list, for messages
+    tests: tuple[str, ...] = ()  # `tests/<file>.rs::<fn>` that pin the invariant
 
     @property
     def key(self) -> tuple[str, int, int, str]:
@@ -71,10 +88,14 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         if not raw.strip() or raw.startswith("#"):
             continue
         parts = raw.split("\t")
-        if len(parts) != 4:
-            errors.append(f"line {n}: expected 4 tab-separated fields, found {len(parts)}")
+        if len(parts) not in (4, 5):
+            errors.append(f"line {n}: expected 4 or 5 tab-separated fields, found {len(parts)}")
             continue
-        pos, digest, mutation, reason = (p.strip() for p in parts)
+        pos, digest, mutation, reason = (p.strip() for p in parts[:4])
+        tests = tuple(t.strip() for t in parts[4].split(",")) if len(parts) == 5 else ()
+        if len(parts) == 5 and not all(TEST_RE.fullmatch(t) for t in tests):
+            errors.append(f"line {n}: tests {parts[4].strip()!r} are not tests/<file>.rs::<fn>")
+            continue
         m = re.fullmatch(r"(?P<file>[^:\s]+):(?P<line>\d+):(?P<col>\d+)", pos)
         if not m:
             errors.append(f"line {n}: position {pos!r} is not file:line:col")
@@ -88,7 +109,7 @@ def parse(text: str) -> tuple[list[Entry], list[str]]:
         if not reason:
             errors.append(f"line {n}: empty reason (say why no test can see this mutant)")
             continue
-        e = Entry(m["file"], int(m["line"]), int(m["col"]), digest, mutation, reason, n)
+        e = Entry(m["file"], int(m["line"]), int(m["col"]), digest, mutation, reason, n, tests)
         if e.key in seen:
             errors.append(f"line {n}: duplicate entry {pos} {mutation}")
             continue
@@ -112,6 +133,9 @@ def stale_reason(e: Entry, root: Path) -> str | None:
     m = REPLACE_RE.match(e.mutation)
     if m and not text[e.col - 1:].startswith(m["op"]):
         return f"{e.file}:{e.line}:{e.col} does not start with {m['op']!r}"
+    gone = [t for t in e.tests if not has_test(root, t)]
+    if gone:
+        return f"the test that pins the argument is gone: {', '.join(gone)}"
     return None
 
 

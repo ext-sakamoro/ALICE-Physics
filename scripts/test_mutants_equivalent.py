@@ -69,7 +69,7 @@ class CheckTest(Case):
 
     def test_a_wrong_field_count_fails(self) -> None:
         self.write_list(f"src/a.rs:3:11\t{me.line_digest(LINE)}\t{MUT}\n")
-        self.assertTrue(any("4 tab-separated" in e for e in self.check()))
+        self.assertTrue(any("4 or 5 tab-separated" in e for e in self.check()))
 
     def test_a_duplicate_entry_fails(self) -> None:
         self.write_list(entry(), entry())
@@ -87,6 +87,47 @@ class CheckTest(Case):
     def test_a_line_past_the_end_fails(self) -> None:
         self.write_list(entry(pos="src/a.rs:30:11"))
         self.assertTrue(any("has 5 lines" in e for e in self.check()))
+
+
+class PinningTestsTest(Case):
+    TESTS = """\
+#[test]
+fn plain() {}
+
+#[test]
+#[should_panic(expected = "x")]
+fn panics() {}
+"""
+
+    def setUp(self) -> None:
+        super().setUp()
+        (self.root / "tests").mkdir()
+        (self.root / "tests" / "pin.rs").write_text(self.TESTS, encoding="utf-8")
+
+    def test_named_tests_that_exist_pass(self) -> None:
+        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::plain, tests/pin.rs::panics\n")
+        self.assertEqual(self.check(), [])
+
+    def test_a_named_test_that_is_gone_makes_the_entry_stale(self) -> None:
+        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::plain,tests/pin.rs::renamed\n")
+        self.assertTrue(any("is gone: tests/pin.rs::renamed" in e for e in self.check()))
+
+    def test_a_function_without_the_test_attribute_does_not_count(self) -> None:
+        (self.root / "tests" / "pin.rs").write_text("fn plain() {}\n", encoding="utf-8")
+        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::plain\n")
+        self.assertTrue(any("is gone" in e for e in self.check()))
+
+    def test_a_named_test_file_that_is_gone_makes_the_entry_stale(self) -> None:
+        self.write_list(entry().rstrip("\n") + "\ttests/missing.rs::plain\n")
+        self.assertTrue(any("is gone" in e for e in self.check()))
+
+    def test_a_malformed_test_reference_fails(self) -> None:
+        self.write_list(entry().rstrip("\n") + "\tplain\n")
+        self.assertTrue(any("tests/<file>.rs::<fn>" in e for e in self.check()))
+
+    def test_a_stale_pin_does_not_filter(self) -> None:
+        self.write_list(entry().rstrip("\n") + "\ttests/pin.rs::renamed\n")
+        self.assertEqual(self.filtered(MISSED), ([MISSED], []))
 
 
 class FilterTest(Case):
