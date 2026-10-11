@@ -1677,10 +1677,11 @@ pub struct PhysicsWorld {
     // ── Integrated Subsystems ──────────────────────────────────────────
     /// Joint constraints (solved each substep alongside distance/contact)
     ///
-    /// [`Self::add_joint`] checks that both body indices are in range. A joint
-    /// pushed here directly with an index past the last body makes the next
-    /// step panic in the joint solve (index out of bounds), except a joint whose
-    /// two indices are equal: the solve skips it, and so do the island rebuilds.
+    /// [`Self::add_joint`] checks that both body indices are in range and
+    /// differ. A joint pushed here directly is checked at the start of every
+    /// step: one that names a body past the last or the same body twice makes
+    /// [`Self::try_step`] return [`crate::world_participant::StepError::Joint`]
+    /// and [`Self::step`] panic, with the world unchanged.
     pub joints: Vec<Joint>,
     /// Joint motors (one-axis PD controllers), applied every substep by
     /// [`Self::step`]; see [`Self::add_joint_motor`]
@@ -2480,7 +2481,8 @@ impl PhysicsWorld {
     ///
     /// # Panics
     ///
-    /// Panics if either body index in the joint is out of bounds.
+    /// Panics if either body index in the joint is out of bounds, or if both
+    /// name the same body.
     pub fn add_joint(&mut self, joint: Joint) -> usize {
         let (a, b) = joint.bodies();
         assert!(
@@ -2490,6 +2492,7 @@ impl PhysicsWorld {
             b,
             self.bodies.len()
         );
+        assert!(a != b, "Joint joins body {a} to itself");
         let idx = self.joints.len();
         self.islands.resize(self.bodies.len());
         self.islands.union(a, b);
@@ -3317,12 +3320,21 @@ impl PhysicsWorld {
     ///
     /// # Participants
     ///
-    /// `step` is [`Self::try_step`] with the result dropped: while a fault is
-    /// recorded ([`Self::fault`]) it leaves the world unchanged. Without
-    /// registered participants no fault is ever recorded and `step` runs as
-    /// it always has.
+    /// `step` is [`Self::try_step`] with the participant results dropped: while
+    /// a fault is recorded ([`Self::fault`]) it leaves the world unchanged.
+    /// Without registered participants no fault is ever recorded and `step`
+    /// runs as it always has.
+    ///
+    /// # Panics
+    ///
+    /// When a joint in [`Self::joints`] names a body index past the last body
+    /// or the same body twice ([`crate::world_participant::StepError::Joint`],
+    /// whose message the panic carries); the world is unchanged. Use
+    /// [`Self::try_step`] to get the error instead.
     pub fn step(&mut self, dt: Fix128) {
-        let _ = self.try_step(dt);
+        if let Err(e @ crate::world_participant::StepError::Joint { .. }) = self.try_step(dt) {
+            panic!("{e}");
+        }
     }
 
     /// Bring every body's rotations to unit length before a step reads them
@@ -3371,9 +3383,8 @@ impl PhysicsWorld {
         self.islands.reset_unions();
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            // every joint is valid here: the step checked them all at its start
+            self.islands.union(a, b);
         }
 
         let substep_dt = dt / Fix128::from_int(self.config.substeps as i64);
@@ -3882,9 +3893,8 @@ impl PhysicsWorld {
         self.islands.reset_unions();
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            // every joint is valid here: the step checked them all at its start
+            self.islands.union(a, b);
         }
 
         // Phase 1: Apply force fields (identical call to `step`), then
@@ -4221,10 +4231,20 @@ impl PhysicsWorld {
     ///
     /// # Participants
     ///
-    /// `step_parallel` is [`Self::try_step_parallel`] with the result dropped.
+    /// `step_parallel` is [`Self::try_step_parallel`] with the participant
+    /// results dropped.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::step`], on a joint that names a missing body or the same body
+    /// twice.
     #[cfg(feature = "parallel")]
     pub fn step_parallel(&mut self, dt: Fix128) {
-        let _ = self.try_step_parallel(dt);
+        if let Err(e @ crate::world_participant::StepError::Joint { .. }) =
+            self.try_step_parallel(dt)
+        {
+            panic!("{e}");
+        }
     }
 
     /// The step body behind [`Self::try_step_parallel`] (checks already done,
@@ -4245,9 +4265,8 @@ impl PhysicsWorld {
         self.islands.reset_unions();
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            // every joint is valid here: the step checked them all at its start
+            self.islands.union(a, b);
         }
 
         // Phase 1: Apply force fields
@@ -5485,9 +5504,13 @@ impl PhysicsWorld {
         // one fails nothing runs, as `step` does. This path runs the XPBD
         // substep loop whatever the backend, so the step rules are checked
         // against the width it hands out, `dt / substeps`.
+        // A joint that names a missing body or the same body twice panics, as in
+        // `step` (`StepError::Joint`).
         let h = Self::divided_substep_width(dt, self.config.substeps);
-        if !matches!(self.check_step(dt, h), Ok(true)) {
-            return;
+        match self.check_step(dt, h) {
+            Ok(true) => {}
+            Err(e @ crate::world_participant::StepError::Joint { .. }) => panic!("{e}"),
+            Ok(false) | Err(_) => return,
         }
         self.make_body_rotations_unit();
         self.wake_on_sdf_shape_change();
@@ -5503,9 +5526,8 @@ impl PhysicsWorld {
         self.islands.reset_unions();
         for j in &self.joints {
             let (a, b) = j.bodies();
-            if a < self.bodies.len() && b < self.bodies.len() {
-                self.islands.union(a, b);
-            }
+            // every joint is valid here: the step checked them all at its start
+            self.islands.union(a, b);
         }
 
         // Phase 1: Apply force fields
@@ -5569,6 +5591,11 @@ impl PhysicsWorld {
     /// contact solve of the XPBD substep, so with [`SolverBackend::Tgs`] this
     /// gives the same bits as with [`SolverBackend::Xpbd`]. A bridge path for
     /// TGS does not exist yet; use [`Self::step`] for TGS.
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::step`], on a joint that names a missing body or the same body
+    /// twice (checked at the start, before anything moves).
     #[cfg(feature = "gpu-solver-bridge")]
     pub fn substep_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
@@ -5576,7 +5603,10 @@ impl PhysicsWorld {
         dt: Fix128,
     ) {
         // Callable on its own (outside `step_with_bridge`), so it is an entry
-        // of its own for the rotations too.
+        // of its own for the joint check and the rotations too.
+        if let Err(e) = self.validate_joints() {
+            panic!("{e}");
+        }
         self.make_body_rotations_unit();
         self.apply_joint_motors(dt);
         self.integrate_positions(dt);
@@ -5804,9 +5834,8 @@ impl PhysicsWorld {
             self.islands.reset_unions();
             for j in &self.joints {
                 let (a, b) = j.bodies();
-                if a < self.bodies.len() && b < self.bodies.len() {
-                    self.islands.union(a, b);
-                }
+                // every joint is valid here: the step checked them all at its start
+                self.islands.union(a, b);
             }
         }
     }

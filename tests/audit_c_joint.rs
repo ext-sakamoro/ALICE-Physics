@@ -1,16 +1,20 @@
-//! Audit oracles for `joint` (self-referential joint): a `BallJoint(a, a)` must
-//! leave the body exactly as an unconstrained body (closed-form free fall,
-//! bit-equal to the same world without the joint, finite state).
+//! Audit oracles for `joint` (self-referential joint `BallJoint(a, a)`).
 //!
-//! Expected values: semi-implicit Euler free fall from rest with `n` substeps of
-//! `h`, `y = y0 - g h^2 n (n + 1) / 2` (exact in Fix128 for `h = 1/512`), and the
-//! same world stepped without any joint.
+//! A world refuses a self-joint: `add_joint` panics, and one pushed into
+//! `joints` directly makes `try_step` return `StepError::Joint` with the body
+//! bit-unchanged (and `step` panic). The free function `solve_joints` takes
+//! any joints and skips a self-joint, leaving the body bit-unchanged.
+//!
+//! The unconstrained reference is semi-implicit Euler free fall from rest with
+//! `n` substeps of `h`, `y = y0 - g h^2 n (n + 1) / 2` (exact in Fix128 for
+//! `h = 1/512`).
 
 #![cfg(feature = "std")]
 
 use alice_physics::joint::{solve_joints, BallJoint, Joint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics::world_participant::StepError;
 
 /// `dt = 1/64`, 8 substeps: `h = 1/512` (exact).
 fn dt() -> Fix128 {
@@ -35,7 +39,8 @@ fn world(with_self_joint: Option<(Vec3Fix, Vec3Fix)>) -> (PhysicsWorld, usize) {
         Fix128::ONE,
     ));
     if let Some((la, lb)) = with_self_joint {
-        w.add_joint(Joint::Ball(BallJoint::new(a, a, la, lb)));
+        // pushed directly: `add_joint` refuses a self-joint
+        w.joints.push(Joint::Ball(BallJoint::new(a, a, la, lb)));
     }
     (w, a)
 }
@@ -46,59 +51,65 @@ fn free_fall_y(y0: i64, substeps_total: i64) -> Fix128 {
         - Fix128::from_ratio(10 * substeps_total * (substeps_total + 1) / 2, 512 * 512)
 }
 
-fn finite(v: Vec3Fix) -> bool {
-    [v.x, v.y, v.z].iter().all(|c| c.to_f64().is_finite())
-}
-
-/// The existing self-referential case (both local anchors at the centre): after
-/// 60 frames the body is exactly where a free body falls and bit-equal to the world
-/// without the joint, rotation untouched.
 #[test]
-fn self_referential_ball_joint_with_coincident_anchors_is_a_free_body() {
-    let frames = 60_i64;
-    let (mut with, a) = world(Some((Vec3Fix::ZERO, Vec3Fix::ZERO)));
-    let (mut without, b) = world(None);
-    for _ in 0..frames {
-        with.step(dt());
-        without.step(dt());
-    }
-    let p = with.bodies[a].position;
-    assert!(finite(p) && finite(with.bodies[a].velocity));
-    assert_eq!(p.x, Fix128::ZERO);
-    assert_eq!(p.z, Fix128::ZERO);
-    assert_eq!(p.y, free_fall_y(5, frames * 8), "y after {frames} frames");
-    assert_eq!(with.bodies[a].position, without.bodies[b].position);
-    assert_eq!(with.bodies[a].velocity, without.bodies[b].velocity);
-    assert_eq!(with.bodies[a].rotation, QuatFix::IDENTITY);
-    assert_eq!(with.bodies[a].angular_velocity, Vec3Fix::ZERO);
+#[should_panic(expected = "Joint joins body 0 to itself")]
+fn add_joint_refuses_a_self_referential_joint() {
+    let (mut w, a) = world(None);
+    w.add_joint(Joint::Ball(BallJoint::new(
+        a,
+        a,
+        Vec3Fix::ZERO,
+        Vec3Fix::ZERO,
+    )));
 }
 
-/// A body cannot be displaced relative to itself: with two different local anchors
-/// on the same body the constraint is unsatisfiable by any motion, and the only
-/// motion-free answer is to leave the body as a free body.
+/// A self-joint pushed into `joints` directly, with coincident or distinct
+/// anchors: every `try_step` is refused with `StepError::Joint` and the body is
+/// bit-unchanged, while the same world without the joint falls freely.
 #[test]
 // AUD-A-S34-010
-fn self_referential_ball_joint_with_distinct_anchors_is_a_free_body() {
-    let frames = 30_i64;
-    let la = Vec3Fix::from_int(1, 0, 0);
-    let lb = Vec3Fix::from_int(-1, 0, 0);
-    let (mut with, a) = world(Some((la, lb)));
-    let (mut without, b) = world(None);
-    for _ in 0..frames {
-        with.step(dt());
-        without.step(dt());
+fn a_self_referential_joint_refuses_the_step_and_leaves_the_body_unchanged() {
+    for (la, lb) in [
+        (Vec3Fix::ZERO, Vec3Fix::ZERO),
+        (Vec3Fix::from_int(1, 0, 0), Vec3Fix::from_int(-1, 0, 0)),
+    ] {
+        let frames = 30_i64;
+        let (mut with, a) = world(Some((la, lb)));
+        let (mut without, b) = world(None);
+        let start = (
+            with.bodies[a].position,
+            with.bodies[a].velocity,
+            with.bodies[a].rotation,
+        );
+        for _ in 0..frames {
+            assert_eq!(
+                with.try_step(dt()),
+                Err(StepError::Joint {
+                    index: 0,
+                    bodies: (a, a),
+                    body_count: 1
+                })
+            );
+            without.step(dt());
+        }
+        assert_eq!(
+            (
+                with.bodies[a].position,
+                with.bodies[a].velocity,
+                with.bodies[a].rotation
+            ),
+            start,
+            "a refused step moved the body"
+        );
+        assert_eq!(without.bodies[b].position.y, free_fall_y(5, frames * 8));
     }
-    let p = with.bodies[a].position;
-    assert!(
-        finite(p) && finite(with.bodies[a].velocity),
-        "non-finite state {p:?}"
-    );
-    assert_eq!(
-        with.bodies[a].position, without.bodies[b].position,
-        "position differs from the unconstrained body"
-    );
-    assert_eq!(with.bodies[a].rotation, without.bodies[b].rotation);
-    assert_eq!(p.y, free_fall_y(5, frames * 8));
+}
+
+#[test]
+#[should_panic(expected = "step refused: joint 0 joins body 0 to itself (body count = 1)")]
+fn step_panics_on_a_self_referential_joint() {
+    let (mut w, _) = world(Some((Vec3Fix::ZERO, Vec3Fix::ZERO)));
+    w.step(dt());
 }
 
 /// Direct solver call: one `solve_joints` pass with `BallJoint(0, 0)` and coincident

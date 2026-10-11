@@ -49,6 +49,13 @@ name = "fuzz_joint"
 path = "fuzz_targets/fuzz_joint.rs"
 doc = false
 
+# 範囲外・自己 joint を直接 push した world の step 入口検査 — try_step は panic せず
+# StepError::Joint を返して world を変えない、有効な joint だけなら step は panic しない
+[[bin]]
+name = "fuzz_joint_validation"
+path = "fuzz_targets/fuzz_joint_validation.rs"
+doc = false
+
 # 統合 CFD solver — MAC grid + temperature scalar + 3 advection scheme の
 # seeded discontinuity 耐性 (数値安定性 gate)
 [[bin]]

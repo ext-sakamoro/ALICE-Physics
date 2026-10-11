@@ -436,6 +436,25 @@ impl PhysicsWorld {
     /// ([`Self::participant_substep_width`] on [`Self::try_step`],
     /// [`Self::divided_substep_width`] on the paths that always run the XPBD
     /// substep loop); the step rules are checked against it.
+    /// Every joint names two different bodies that exist ([`StepError::Joint`]
+    /// for the first that does not). The steps check this at their start, so the
+    /// joint solve, the island rebuilds and the friction pass inside a step only
+    /// ever see valid joints. Changes nothing.
+    pub(super) fn validate_joints(&self) -> Result<(), StepError> {
+        let body_count = self.bodies.len();
+        for (index, joint) in self.joints.iter().enumerate() {
+            let (a, b) = joint.bodies();
+            if a >= body_count || b >= body_count || a == b {
+                return Err(StepError::Joint {
+                    index,
+                    bodies: (a, b),
+                    body_count,
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn check_step(&self, dt: Fix128, h: Fix128) -> Result<bool, StepError> {
         if let Some(f) = self.fault {
             return Err(StepError::Faulted(f));
@@ -443,6 +462,7 @@ impl PhysicsWorld {
         if dt <= Fix128::ZERO {
             return Ok(false);
         }
+        self.validate_joints()?;
         #[cfg(feature = "std")]
         {
             let list = self.lock_participants();

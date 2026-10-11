@@ -515,6 +515,43 @@ pub enum StepError {
         /// Bodies in the world.
         bodies: usize,
     },
+    /// The joint at `index` of `PhysicsWorld::joints` names a body index past
+    /// the last body, or the same body twice: the step is refused and the world
+    /// is left unchanged, nothing ran. `joints` is a public field, so a joint
+    /// can reach a step without `PhysicsWorld::add_joint`'s check; every step
+    /// checks all joints at its start.
+    Joint {
+        /// Index of the joint in `PhysicsWorld::joints`.
+        index: usize,
+        /// The two body indices the joint names.
+        bodies: (usize, usize),
+        /// Bodies in the world.
+        body_count: usize,
+    },
+}
+
+impl core::fmt::Display for StepError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Faulted(fault) => write!(f, "step refused: a fault is recorded ({fault:?})"),
+            Self::FaultRaised(fault) => write!(f, "a participant failed during the step ({fault:?})"),
+            Self::Rule { index, error } => {
+                write!(f, "step refused: participant {index} cannot follow the substep ({error:?})")
+            }
+            Self::BodyCount { field, samples, bodies } => write!(
+                f,
+                "step refused: per-body field {field:?} has {samples} samples for {bodies} bodies"
+            ),
+            Self::Joint { index, bodies: (a, b), body_count } if a == b => write!(
+                f,
+                "step refused: joint {index} joins body {a} to itself (body count = {body_count})"
+            ),
+            Self::Joint { index, bodies: (a, b), body_count } => write!(
+                f,
+                "step refused: joint {index} names bodies ({a}, {b}), out of bounds (body count = {body_count})"
+            ),
+        }
+    }
 }
 
 /// Why a participant rejected a snapshot payload.

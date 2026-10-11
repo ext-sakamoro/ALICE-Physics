@@ -15,9 +15,14 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `world_participant::StepError::Joint`: step の開始時に見つけた不正な joint (範囲外の body index か自己 joint)
+- `WorldSnapshotError::SelfJoint { index, body }`: 自己 joint を含む snapshot の復元を拒む (範囲外の index は今までどおり `DanglingIndex`)
+
 ### Changed
 
-- `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push した時の挙動を書いた 2 つの body の間の joint は次の step の joint solve で panic し (`add_joint` は事前に assert で拒む)、同じ body 同士の joint は solve と island の作り直しが飛ばすので、無い時と同じに進む
+- **Behavior change:** 範囲外の body index を持つ joint と同じ body 同士の joint (自己 joint) は、step の開始時に拒む (2026-10-12 に決定) `PhysicsWorld::try_step` / `try_step_parallel` は新しい `StepError::Joint { index, bodies, body_count }` を返して world を変えず (何も走らない)、`step` / `step_parallel` / `step_with_bridge` / `substep_with_bridge` はその message で panic する `add_joint` は自己 joint も拒む 2.3.0 までは、2 つの body の間の範囲外の joint は step の途中の joint solve で index out of bounds の panic になり、自己 joint は solve と island の作り直しが黙って飛ばして「無い時と同じに進む」としていた (その挙動を固定していた試験はこの変更で反転した) 公開の free function `joint::solve_joints*` は今までどおり自己 joint を飛ばす
 - 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する
 - 変異試験: 観測できる結果の全 bit を変えない同値変異を `scripts/mutants-equivalent.txt` に理由・行の hash・根拠を固定する試験つきで登録し、in-diff の変異試験と週次の ratchet が missed に数えないようにした 行が変わった entry は `scripts/mutants_equivalent.py --check` (CI / preflight) で失敗し、その変異は再び missed になる
 
