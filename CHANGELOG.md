@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 
+- `world_shape_query` の曲面 (円柱・円錐) の経路を lib の unit test で確かめる試験を足した 点と線分の厳密距離 (`point_cylinder_exact` / `point_cone_exact` / `exact_round_dist`) を子午面の閉形式と、許容幅際の cast と接線方向の経路を独立な `f64` の距離と、近接線の探索 (`graze_contact` / `dips_below`) を根の分かる凸な gap と突き合わせる CI の line coverage ratchet は lib の unit test だけを数えるので、統合試験でしか通っていなかった分岐をここでも通す (`world_shape_query.rs` 91.11% → 96.51%、src の動作は変えていない)
 - `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push した時の挙動を書いた 2 つの body の間の joint は次の step の joint solve で panic し (`add_joint` は事前に assert で拒む)、同じ body 同士の joint は solve と island の作り直しが飛ばすので、無い時と同じに進む
 - 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する
 - 変異試験: 観測できる結果の全 bit を変えない同値変異を `scripts/mutants-equivalent.txt` に理由・行の hash・根拠を固定する試験つきで登録し、in-diff の変異試験と週次の ratchet が missed に数えないようにした 行が変わった entry は `scripts/mutants_equivalent.py --check` (CI / preflight) で失敗し、その変異は再び missed になる

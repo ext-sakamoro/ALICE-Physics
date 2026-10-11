@@ -5455,4 +5455,745 @@ mod tests {
             );
         }
     }
+
+    /// An independent `f64` reference for a cone and a cylinder (solids of
+    /// revolution): the distance of a point is the distance in its meridian
+    /// half-plane `(ρ, y)` to a triangle or a rectangle, a segment's is the
+    /// minimum of that convex function along it (ternary search), and along a
+    /// straight path the gap is convex in time, so its minimum and first zero
+    /// are found by ternary search and bisection. `f64` is exact to about
+    /// `2⁻⁵²` here, far below the `2⁻³²` of the casts.
+    #[allow(clippy::disallowed_methods)] // f64 oracle, not production arithmetic
+    mod round_reference {
+        use super::*;
+
+        /// `2⁻³²`.
+        pub(super) const TOL: f64 = 1.0 / 4_294_967_296.0;
+
+        /// A cone (apex at `hh`, base of radius `r` at `−hh` about its
+        /// geometric centre, which is `hh/2` above the body position) or a
+        /// cylinder (about the body position).
+        #[derive(Clone, Copy, Debug)]
+        pub(super) struct Solid {
+            pub(super) cone: bool,
+            pub(super) r: f64,
+            pub(super) hh: f64,
+        }
+
+        fn seg2(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+            let (ex, ey) = (b.0 - a.0, b.1 - a.1);
+            let u = (((p.0 - a.0) * ex + (p.1 - a.1) * ey) / (ex * ex + ey * ey)).clamp(0.0, 1.0);
+            ((p.0 - a.0 - u * ex).powi(2) + (p.1 - a.1 - u * ey).powi(2)).sqrt()
+        }
+
+        impl Solid {
+            pub(super) fn shape(self) -> Shape {
+                let (radius, half_height) = (fx(self.r), fx(self.hh));
+                if self.cone {
+                    Shape::Cone {
+                        radius,
+                        half_height,
+                    }
+                } else {
+                    Shape::Cylinder {
+                        radius,
+                        half_height,
+                    }
+                }
+            }
+
+            /// The signed distance of `l` in the frame of the geometric
+            /// centre (negative inside).
+            pub(super) fn signed(self, l: [f64; 3]) -> f64 {
+                let (r, h) = (self.r, self.hh);
+                let rho = (l[0] * l[0] + l[2] * l[2]).sqrt();
+                if self.cone {
+                    let p = (rho, l[1]);
+                    let (a, b, c) = ((0.0, -h), (0.0, h), (r, -h));
+                    let to_side = seg2(p, b, c);
+                    let to_base = seg2(p, c, a);
+                    if p.1 >= -h && p.0 * 2.0 * h <= r * (h - p.1) {
+                        -to_side.min(to_base)
+                    } else {
+                        seg2(p, a, b).min(to_side).min(to_base)
+                    }
+                } else {
+                    let (dx, dy) = (rho - r, l[1].abs() - h);
+                    let out = (dx.max(0.0).powi(2) + dy.max(0.0).powi(2)).sqrt();
+                    out + dx.max(dy).min(0.0)
+                }
+            }
+        }
+
+        /// `v` turned by the quaternion `q = (w, x, y, z)`, or by its inverse.
+        pub(super) fn rotate(q: [f64; 4], v: [f64; 3], inverse: bool) -> [f64; 3] {
+            let s = if inverse { -1.0 } else { 1.0 };
+            let (w, x, y, z) = (q[0], s * q[1], s * q[2], s * q[3]);
+            let t = [
+                2.0 * (y * v[2] - z * v[1]),
+                2.0 * (z * v[0] - x * v[2]),
+                2.0 * (x * v[1] - y * v[0]),
+            ];
+            [
+                v[0] + w * t[0] + (y * t[2] - z * t[1]),
+                v[1] + w * t[1] + (z * t[0] - x * t[2]),
+                v[2] + w * t[2] + (x * t[1] - y * t[0]),
+            ]
+        }
+
+        pub(super) fn f3(v: Vec3Fix) -> [f64; 3] {
+            [v.x.to_f64(), v.y.to_f64(), v.z.to_f64()]
+        }
+
+        /// A solid posed at `position` turned by `turn`, in a world and in `f64`.
+        pub(super) struct Scene {
+            pub(super) solid: Solid,
+            pub(super) world: PhysicsWorld,
+            pub(super) posed: PosedShape,
+            position: [f64; 3],
+            q: [f64; 4],
+        }
+
+        impl Scene {
+            pub(super) fn new(solid: Solid, position: [f64; 3], turn: QuatFix) -> Self {
+                let mut world = world();
+                let i = world.add_body(RigidBody::new_static(p3(position)));
+                assert!(world.set_body_shape(i, &solid.shape()));
+                world.bodies[i].rotation = turn;
+                let r = world.bodies[i].rotation;
+                Self {
+                    solid,
+                    world,
+                    posed: PosedShape {
+                        shape: solid.shape(),
+                        position: p3(position),
+                        rotation: r,
+                    },
+                    position: f3(p3(position)),
+                    q: [r.w.to_f64(), r.x.to_f64(), r.y.to_f64(), r.z.to_f64()],
+                }
+            }
+
+            /// Turned about `axis` by `angle`.
+            pub(super) fn turned(
+                solid: Solid,
+                position: [f64; 3],
+                axis: [f64; 3],
+                angle: f64,
+            ) -> Self {
+                let turn = QuatFix::from_axis_angle(p3(unit(axis)), fx(angle));
+                Self::new(solid, position, turn)
+            }
+
+            /// The signed distance of the world point `p`.
+            pub(super) fn point(&self, p: [f64; 3]) -> f64 {
+                let o = self.position;
+                let mut l = rotate(self.q, [p[0] - o[0], p[1] - o[1], p[2] - o[2]], true);
+                if self.solid.cone {
+                    l[1] -= 0.5 * self.solid.hh;
+                }
+                self.solid.signed(l)
+            }
+
+            /// The signed distance of the segment `a`–`b`.
+            pub(super) fn segment(&self, a: [f64; 3], b: [f64; 3]) -> f64 {
+                let at = |s: f64| {
+                    self.point([
+                        a[0] + s * (b[0] - a[0]),
+                        a[1] + s * (b[1] - a[1]),
+                        a[2] + s * (b[2] - a[2]),
+                    ])
+                };
+                if a == b {
+                    return at(0.0);
+                }
+                let (mut lo, mut hi) = (0.0f64, 1.0f64);
+                for _ in 0..100 {
+                    let m1 = lo + (hi - lo) / 3.0;
+                    let m2 = hi - (hi - lo) / 3.0;
+                    if at(m1) <= at(m2) {
+                        hi = m2;
+                    } else {
+                        lo = m1;
+                    }
+                }
+                at(0.5 * (lo + hi)).min(at(0.0)).min(at(1.0))
+            }
+        }
+
+        /// A cast of the core `a`–`b` grown by `r` along `d` (normalized by
+        /// the cast) up to `max_t`: the inputs given to the code under test and
+        /// the same in `f64`.
+        pub(super) struct Cast {
+            fixed: [Vec3Fix; 3],
+            a: [f64; 3],
+            b: [f64; 3],
+            d: [f64; 3],
+            r: f64,
+            max_t: f64,
+        }
+
+        impl Cast {
+            pub(super) fn new(a: [f64; 3], b: [f64; 3], d: [f64; 3], r: f64, max_t: f64) -> Self {
+                let fixed = [p3(a), p3(b), p3(d)];
+                Self {
+                    a: f3(fixed[0]),
+                    b: f3(fixed[1]),
+                    d: unit(f3(fixed[2])),
+                    fixed,
+                    r,
+                    max_t,
+                }
+            }
+
+            /// The gap at `t`.
+            pub(super) fn gap(&self, s: &Scene, t: f64) -> f64 {
+                let mv = |p: [f64; 3]| {
+                    [
+                        p[0] + t * self.d[0],
+                        p[1] + t * self.d[1],
+                        p[2] + t * self.d[2],
+                    ]
+                };
+                s.segment(mv(self.a), mv(self.b)) - self.r
+            }
+
+            /// The least gap on `[0, max_t]`.
+            pub(super) fn least(&self, s: &Scene) -> f64 {
+                let (mut lo, mut hi) = (0.0f64, self.max_t);
+                for _ in 0..120 {
+                    let m1 = lo + (hi - lo) / 3.0;
+                    let m2 = hi - (hi - lo) / 3.0;
+                    if self.gap(s, m1) <= self.gap(s, m2) {
+                        hi = m2;
+                    } else {
+                        lo = m1;
+                    }
+                }
+                self.gap(s, 0.5 * (lo + hi))
+            }
+
+            /// The time of the code under test's hit.
+            pub(super) fn run(&self, s: &Scene) -> Option<f64> {
+                let f = RayFilter::default();
+                let (r, max_t) = (fx(self.r), fx(self.max_t));
+                let h = if self.fixed[0] == self.fixed[1] {
+                    s.world
+                        .cast_sphere(self.fixed[0], r, self.fixed[2], max_t, &f)
+                } else {
+                    s.world
+                        .cast_capsule(self.fixed[0], self.fixed[1], r, self.fixed[2], max_t, &f)
+                };
+                h.map(|h| h.t.to_f64())
+            }
+        }
+    }
+
+    /// The exact distance of a point to a cylinder and a cone in their frame
+    /// ([`point_cylinder_exact`], [`point_cone_exact`]) against the meridian
+    /// closed form: outside, the distance, a nearest point on the surface and
+    /// the normal from it toward the point; inside or on the surface, `Inside`.
+    /// Points beside, above and below each, at their rims, on the axis (where
+    /// the part across it is 0) and beyond the cone's apex.
+    #[test]
+    #[allow(clippy::disallowed_methods)] // f64 oracle, not production arithmetic
+    fn point_distances_to_a_cylinder_and_a_cone_are_their_meridian_closed_forms() {
+        use round_reference::Solid;
+        let solids = [
+            Solid {
+                cone: false,
+                r: 0.9,
+                hh: 0.7,
+            },
+            Solid {
+                cone: true,
+                r: 1.0,
+                hh: 0.8,
+            },
+        ];
+        // (ρ, y) in the meridian half-plane, turned about the axis by (c, s)
+        let meridian = [
+            (1.5, 0.1),
+            (0.3, 1.4),
+            (0.3, -1.6),
+            (1.3, 1.2),
+            (1.4, -1.1),
+            (0.0, 2.0),
+            (0.0, -2.0),
+            (0.2, 0.0),
+            (0.0, 0.0),
+            (0.7, 0.5),
+            (2.0, 2.0),
+            (0.05, 1.3),
+            (1.0, -0.79),
+        ];
+        let turns = [(1.0, 0.0), (0.6, 0.8), (-0.28, 0.96), (0.0, -1.0)];
+        let (mut outside, mut inside) = (0, 0);
+        for solid in solids {
+            let (radius, hh) = (fx(solid.r), fx(solid.hh));
+            for &(rho, y) in &meridian {
+                for &(c, s) in &turns {
+                    let p = [rho * c, y, rho * s];
+                    let want = solid.signed(p);
+                    let got = if solid.cone {
+                        point_cone_exact(p3(p), radius, hh)
+                    } else {
+                        point_cylinder_exact(p3(p), radius, hh)
+                    };
+                    match got {
+                        Dist::Outside {
+                            dist,
+                            point,
+                            normal,
+                        } => {
+                            outside += 1;
+                            assert!(want > 0.0, "{solid:?} {p:?}: outside, closed form {want}");
+                            assert!(
+                                (dist.to_f64() - want).abs() < EXACT,
+                                "{solid:?} {p:?}: distance {} but the closed form is {want}",
+                                dist.to_f64()
+                            );
+                            let q = round_reference::f3(point);
+                            assert!(
+                                solid.signed(q).abs() < EXACT,
+                                "{solid:?} {p:?}: nearest point {q:?} is {} off the surface",
+                                solid.signed(q)
+                            );
+                            let to = [
+                                (p[0] - q[0]) / want,
+                                (p[1] - q[1]) / want,
+                                (p[2] - q[2]) / want,
+                            ];
+                            assert_vec(normal, to, 1e-10, "normal");
+                        }
+                        Dist::Inside => {
+                            inside += 1;
+                            assert!(want <= 0.0, "{solid:?} {p:?}: inside, closed form {want}");
+                        }
+                        Dist::AtLeast(_) => panic!("{solid:?} {p:?}: a bound, not a distance"),
+                    }
+                }
+            }
+            // on the surface: the cylinder's cap, the cone's base
+            let on = if solid.cone {
+                point_cone_exact(v3(0.5, -0.8, 0.0), radius, hh)
+            } else {
+                point_cylinder_exact(v3(0.3, 0.7, 0.0), radius, hh)
+            };
+            assert!(matches!(on, Dist::Inside), "{solid:?}: on the surface");
+        }
+        // not vacuous: both kinds of answer were checked
+        assert!(
+            outside >= 70 && inside >= 10,
+            "{outside} outside, {inside} inside"
+        );
+    }
+
+    /// [`exact_round_dist`] of points and segments to a posed cylinder and cone
+    /// (aligned, turned, moved) against the `f64` reference: the least distance
+    /// along the segment, and a nearest point on the surface; `None` for a solid
+    /// that is not a cylinder or a cone.
+    #[test]
+    fn exact_round_distances_are_the_least_along_the_segment() {
+        use round_reference::{Scene, Solid};
+        let cylinder = Solid {
+            cone: false,
+            r: 0.9,
+            hh: 0.7,
+        };
+        let cone = Solid {
+            cone: true,
+            r: 1.0,
+            hh: 0.8,
+        };
+        let position = [0.25, -0.5, 0.75];
+        let scenes = [
+            Scene::new(cylinder, position, QuatFix::IDENTITY),
+            Scene::turned(cylinder, position, [0.6, 0.7, -0.2], 0.9),
+            Scene::new(cone, position, QuatFix::IDENTITY),
+            Scene::turned(cone, position, [0.6, 0.7, -0.2], 0.9),
+        ];
+        let cores = [
+            ([2.5, -0.4, 0.8], [2.5, -0.4, 0.8]),
+            ([0.1, 2.0, 0.9], [0.6, 2.2, 0.4]),
+            ([-1.5, -2.5, 1.0], [-1.0, -2.0, 2.0]),
+            ([1.6, 1.0, -0.5], [1.4, 1.6, -0.9]),
+            ([-2.0, 0.0, 0.75], [2.5, 0.0, 3.0]),
+            ([0.25, 3.0, 0.75], [0.25, 3.0, 0.75]),
+        ];
+        let mut checked = 0;
+        for s in &scenes {
+            for &(a, b) in &cores {
+                let (pa, pb) = (p3(a), p3(b));
+                let (a, b) = (round_reference::f3(pa), round_reference::f3(pb));
+                let want = s.segment(a, b);
+                let got = exact_round_dist(&s.posed, pa, pb).expect("a cylinder or a cone");
+                match got {
+                    Dist::Outside { dist, point, .. } => {
+                        checked += 1;
+                        assert!(
+                            (dist.to_f64() - want).abs() < 1e-10,
+                            "{:?} {a:?}–{b:?}: distance {} but the reference is {want}",
+                            s.solid,
+                            dist.to_f64()
+                        );
+                        let q = round_reference::f3(point);
+                        assert!(
+                            s.point(q).abs() < 1e-10,
+                            "{:?}: nearest point {q:?} is {} off the surface",
+                            s.solid,
+                            s.point(q)
+                        );
+                    }
+                    _ => assert!(
+                        want <= 0.0,
+                        "{:?} {a:?}–{b:?}: inside, reference {want}",
+                        s.solid
+                    ),
+                }
+            }
+        }
+        assert!(checked >= 20, "only {checked} distances checked");
+        let ball = PosedShape {
+            shape: Shape::Box {
+                half_extents: v3(1.0, 1.0, 1.0),
+            },
+            position: Vec3Fix::ZERO,
+            rotation: QuatFix::IDENTITY,
+        };
+        assert!(exact_round_dist(&ball, v3(3.0, 0.0, 0.0), v3(3.0, 0.0, 0.0)).is_none());
+    }
+
+    /// Casts onto a cone and a cylinder at the edge of what a time of impact
+    /// can tell apart (paths that graze a rim, a cap or a base, or go into the
+    /// side just below a cap, `1` to `40·2⁻³²` deep): each path goes more than
+    /// `2⁻³²` in, and the hit is within `[−1, +2]·2⁻³²` of the surface by the
+    /// `f64` reference. These go through the lower bound's step, the exact
+    /// distance where GJK's bounds straddle a decision, and the search along a
+    /// near-tangent path.
+    #[test]
+    fn casts_at_the_edge_of_the_tolerance_stop_at_the_curved_surface() {
+        use round_reference::{Cast, Scene, Solid, TOL};
+        let cyl = |r, hh| Solid { cone: false, r, hh };
+        let cone = |r, hh| Solid { cone: true, r, hh };
+        let p = [0.25, -0.5, 0.75];
+        let tilt = [0.6, 0.7, -0.2];
+        let cases: Vec<(&str, Scene, Cast)> = vec![
+            (
+                "segment over a rim",
+                Scene::new(cyl(0.9, 0.7), p, QuatFix::IDENTITY),
+                Cast::new(
+                    [-1.6640986290561979, 0.19999999975304572, 1.8206196513237867],
+                    [-1.834506720909574, 0.41213203410901, 1.6942824745669378],
+                    [0.5955591626715423, 0.0, -0.8033114487905494],
+                    0.0,
+                    4.0,
+                ),
+            ),
+            (
+                "segment over a rim, stepping by the lower bound",
+                Scene::new(cyl(0.9, 0.7), p, QuatFix::IDENTITY),
+                Cast::new(
+                    [1.8673886946205231, 0.19999999967072768, -0.7312338808982968],
+                    [2.0622378155658776, 0.41213203402669196, -0.6473660082245325],
+                    [-0.3953569432753914, 0.0, 0.9185275648579845],
+                    0.0,
+                    4.0,
+                ),
+            ),
+            (
+                "segment over a turned rim",
+                Scene::turned(cyl(0.9, 0.7), p, tilt, 0.9),
+                Cast::new(
+                    [-0.21852465418609512, -0.6507157640535539, 2.998948511156243],
+                    [
+                        -0.34405370476815655,
+                        -0.41720885309588485,
+                        3.139365675331331,
+                    ],
+                    [-0.06648810702703647, 0.487707135982694, -0.8704717578046512],
+                    0.0,
+                    4.0,
+                ),
+            ),
+            (
+                "sphere over a cone's rim",
+                Scene::new(cone(1.0, 0.8), p, QuatFix::IDENTITY),
+                Cast::new(
+                    [-1.7015908184354425, -0.9027621356993638, 1.8439950540065662],
+                    [-1.7015908184354425, -0.9027621356993638, 1.8439950540065662],
+                    [0.5606127132316385, 0.0, -0.8280781278134695],
+                    1.0 / 256.0,
+                    4.0,
+                ),
+            ),
+            (
+                "sphere onto a turned cone",
+                Scene::turned(cone(1.0, 0.8), p, tilt, 0.9),
+                Cast::new(
+                    [0.634936017399154, 0.008205912075554433, -1.4320403873864982],
+                    [0.634936017399154, 0.008205912075554433, -1.4320403873864982],
+                    [0.19818663470094447, -0.5210934105185997, 0.8301708952619384],
+                    1.0 / 256.0,
+                    4.0,
+                ),
+            ),
+            (
+                "sphere along a turned cone's base",
+                Scene::turned(cone(1.0, 0.8), p, tilt, 0.9),
+                Cast::new(
+                    [1.4096423077353353, -1.9430159060992016, 1.6571642739508496],
+                    [1.4096423077353353, -1.9430159060992016, 1.6571642739508496],
+                    [-0.7361296676461404, 0.528908761536265, -0.422337109879486],
+                    1.0 / 65536.0,
+                    4.0,
+                ),
+            ),
+            (
+                "segment into a cylinder's side below its cap",
+                Scene::new(cyl(0.9, 0.7), p, QuatFix::IDENTITY),
+                Cast::new(
+                    [-1.695761194159812, 0.19999999973806548, 0.2143570449433858],
+                    [-1.695761194159812, 0.4999999997380655, 0.2143570449433858],
+                    [0.9909759596810406, 0.0, 0.1340397229713666],
+                    0.0,
+                    4.0,
+                ),
+            ),
+            (
+                "segment into a turned cylinder's side below its cap",
+                Scene::turned(cyl(0.9, 0.7), p, tilt, 0.9),
+                Cast::new(
+                    [
+                        -0.7916938670894744,
+                        1.1912886520345445,
+                        -0.03569496775777914,
+                    ],
+                    [-0.6883045505593128, 1.4402697713519372, 0.09590689944358055],
+                    [0.7223971058724328, -0.5328868033551468, 0.4406518764706059],
+                    0.0,
+                    4.0,
+                ),
+            ),
+            (
+                "sphere grazing into a turned cone",
+                Scene::turned(cone(1.0, 0.8), [0.0; 3], tilt, 0.9),
+                Cast::new(
+                    [3.49676953785352, -1.9311419641957024, -0.20807093324643489],
+                    [3.49676953785352, -1.9311419641957024, -0.20807093324643489],
+                    [
+                        -0.8417749934677569,
+                        0.49646776600120957,
+                        -0.21197787076514807,
+                    ],
+                    1.0 / 65536.0,
+                    10.0,
+                ),
+            ),
+            (
+                "sphere at 9·10⁻¹⁰ rad to a turned cone's base",
+                Scene::turned(
+                    cone(0.6428203322684567, 0.7475816177966408),
+                    [
+                        -1.6526587531452606,
+                        -1.2186799371102097,
+                        0.18938048544987396,
+                    ],
+                    [
+                        -0.5803070933934578,
+                        0.7790505106677301,
+                        -0.23732673508311564,
+                    ],
+                    1.8984897774453202,
+                ),
+                Cast::new(
+                    [
+                        -0.8965821042720563,
+                        -3.3486672559565704,
+                        -0.9839086836373099,
+                    ],
+                    [
+                        -0.8965821042720563,
+                        -3.3486672559565704,
+                        -0.9839086836373099,
+                    ],
+                    [-0.1482674077997217, 0.8136896687128683, 0.5620728589901773],
+                    1.0 / 65536.0,
+                    10.0,
+                ),
+            ),
+            (
+                "capsule sliding onto a turned cylinder's cap at 9·10⁻¹⁰ rad",
+                Scene::turned(
+                    cyl(0.9012093363780878, 0.5179403340707722),
+                    [
+                        -0.4023466290173019,
+                        -0.46594330930383876,
+                        -1.2957395342946256,
+                    ],
+                    [
+                        -0.6714485362126652,
+                        -0.09612558018852724,
+                        -0.7347902667097514,
+                    ],
+                    0.5010374581070209,
+                ),
+                Cast::new(
+                    [1.8608221708009296, -2.0500185708660865, -1.4757067685941365],
+                    [1.3062351220451092, -1.5734718199873896, -0.7798910803267063],
+                    [
+                        -0.9249401521738037,
+                        0.2939600468880599,
+                        -0.24098382877309632,
+                    ],
+                    1.0 / 65536.0,
+                    10.0,
+                ),
+            ),
+        ];
+        for (what, scene, cast) in &cases {
+            let least = cast.least(scene);
+            assert!(
+                least < -TOL,
+                "{what}: the path goes only {} in",
+                least / TOL
+            );
+            let t = cast
+                .run(scene)
+                .unwrap_or_else(|| panic!("{what}: no hit, the path goes {} in", least / TOL));
+            let g = cast.gap(scene, t) / TOL;
+            assert!(
+                (-1.0..=2.0).contains(&g),
+                "{what}: a hit at t = {t} with gap {g}·2⁻³², expected within [−1, +2]"
+            );
+        }
+    }
+
+    /// Paths that pass a cylinder's side tangentially, `2⁻²⁷` (32 tolerances)
+    /// outside it, inside the gap where the slope is not a proof of separation
+    /// (`2⁻²⁴`) and well outside it: none goes in, and none is a hit; the
+    /// same paths `2⁻²⁷` inside the side are hits at its surface.
+    #[test]
+    fn paths_tangent_to_a_cylinder_hit_only_when_they_go_in() {
+        use round_reference::{Cast, Scene, Solid, TOL};
+        let solid = Solid {
+            cone: false,
+            r: 0.9,
+            hh: 0.7,
+        };
+        let scene = Scene::new(solid, [0.0; 3], QuatFix::IDENTITY);
+        let off = 1.0 / 134_217_728.0; // 2⁻²⁷
+        for (g, hit) in [(off, false), (64.0 * off, false), (-off, true)] {
+            for r in [0.0, 1.0 / 65536.0] {
+                let z = 0.9 + r + g;
+                let cast = if r == 0.0 {
+                    // a short vertical segment of radius 0 across the axis' height
+                    Cast::new([-3.0, 0.1, z], [-3.0, 0.3, z], [1.0, 0.0, 0.0], 0.0, 6.0)
+                } else {
+                    Cast::new([-3.0, 0.2, z], [-3.0, 0.2, z], [1.0, 0.0, 0.0], r, 6.0)
+                };
+                // the least gap is g, at x = 0 (`t = 3`)
+                let least = cast.least(&scene);
+                assert!(
+                    (least - g).abs() < 1e-3 * TOL,
+                    "g = {g:e}, r = {r}: least gap {least:e}"
+                );
+                match (cast.run(&scene), hit) {
+                    (None, false) => {}
+                    (Some(t), true) => {
+                        let gt = cast.gap(&scene, t) / TOL;
+                        assert!(
+                            (-1.0..=2.0).contains(&gt),
+                            "g = {g:e}, r = {r}: a hit at t = {t} with gap {gt}·2⁻³²"
+                        );
+                    }
+                    (got, _) => panic!("g = {g:e}, r = {r}: {got:?}, expected a hit: {hit}"),
+                }
+            }
+        }
+    }
+
+    /// [`graze_contact`] and [`dips_below`] on gap functions whose roots are
+    /// known: `(t − 1)² − c` (into the solid by `c` at `t = 1`, first in at
+    /// `1 − √c`), `(t − 1)² + c` (never in), a gap that is inside (`None`)
+    /// below `−1/8`, and one that falls linearly and is in only at the far end.
+    #[test]
+    fn the_near_tangent_searches_find_the_roots_of_a_convex_gap() {
+        type Gap<'a> = &'a dyn Fn(f64) -> Option<f64>;
+        /// A gap function in `f64` given to the searches as `Fix128`.
+        fn as_dist(g: Gap<'_>) -> impl Fn(Fix128) -> Dist + '_ {
+            move |t: Fix128| match g(t.to_f64()) {
+                Some(v) => Dist::Outside {
+                    dist: fx(v),
+                    point: Vec3Fix::ZERO,
+                    normal: Vec3Fix::UNIT_Y,
+                },
+                None => Dist::Inside,
+            }
+        }
+        let tol = 1.0 / 4_294_967_296.0;
+        let quadratic = |c: f64| move |t: f64| Some((t - 1.0) * (t - 1.0) - c);
+        let deep_inside = |t: f64| {
+            let g = (t - 1.0) * (t - 1.0) - 0.25;
+            (g >= -0.125).then_some(g)
+        };
+        let falling = |t: f64| Some(0.5 - 0.25 * t);
+        let (t0, max_t) = (Fix128::ZERO, fx(3.0));
+        // first in (the gap within ±2⁻³²) at 1 − √c
+        let (q4, q20, never) = (
+            quadratic(0.25),
+            quadratic(1.0 / 1_048_576.0),
+            quadratic(-1e-3),
+        );
+        let cases: [(&str, Gap<'_>, Option<f64>); 5] = [
+            ("into by 1/4", &q4, Some(0.5)),
+            ("into by 2⁻²⁰", &q20, Some(1.0 - 1.0 / 1024.0)),
+            ("inside below −1/8", &deep_inside, Some(0.5)),
+            ("in only at the far end", &falling, Some(2.0)),
+            ("never in", &never, None),
+        ];
+        for (name, g, root) in cases {
+            let got = graze_contact(as_dist(g), Fix128::ZERO, Fix128::ZERO, t0, max_t);
+            match (got, root) {
+                (None, None) => {}
+                (Some(c), Some(root)) => {
+                    let t = c.t.to_f64();
+                    // the clear end of a bisection to within the tolerance
+                    let gap = g(t).expect("the contact is outside");
+                    assert!(
+                        (-tol..=tol).contains(&gap) || (gap > 0.0 && (t - root).abs() < 1e-9),
+                        "{name}: contact at t = {t} with gap {gap:e}, the root is {root}"
+                    );
+                    assert!(
+                        (t - root).abs() < 1e-6,
+                        "{name}: t = {t}, the root is {root}"
+                    );
+                    assert_vec(c.normal, [0.0, 1.0, 0.0], EXACT, "normal");
+                }
+                (got, _) => panic!(
+                    "{name}: {:?}, the root is {root:?}",
+                    got.map(|c| c.t.to_f64())
+                ),
+            }
+            // dips_below from t0 with the gap and speed there
+            let gap_at = |t: Fix128| g(t.to_f64()).map(fx);
+            let f0 = g(0.0).expect("clear at the start");
+            let speed = match name {
+                "in only at the far end" => 0.25,
+                _ => 2.0,
+            };
+            assert_eq!(
+                dips_below(gap_at, t0, fx(f0), fx(speed), max_t),
+                root.is_some(),
+                "{name}: dips below"
+            );
+        }
+        // a path that sinks too little to go in by the far end
+        let shallow = |t: f64| Some((t - 1.0) * (t - 1.0) - 0.5 * tol);
+        let gap_at = |t: Fix128| shallow(t.to_f64()).map(fx);
+        assert!(
+            !dips_below(gap_at, t0, fx(1.0), fx(2.0), max_t),
+            "half a tolerance in"
+        );
+    }
 }
