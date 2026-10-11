@@ -356,6 +356,12 @@ class Shapes(unittest.TestCase):
                 checked += 1
         self.assertGreaterEqual(checked, 25, "the fixtures mark every shape")
 
+    def test_a_diff_path_with_backslashes_is_read_as_a_src_path(self):
+        diff = "diff --git a/src\\lib.rs b/src\\lib.rs\n--- a/src\\lib.rs\n+++ b/src\\lib.rs\n@@ -2 +2 @@\n-o\n+n\n"
+        (self.root / "src/lib.rs").write_text(
+            "pub mod shapes;\n#[cfg(feature = \"theta\")]\npub use shapes::*;\n", encoding="utf-8")
+        self.assertEqual(mp.plan(diff, [], self.root)["features"], ["theta"])
+
     def test_a_nested_module_gated_where_it_is_declared(self):
         self.assertEqual(self.plan_line("src/outer/inner.rs", 2), ["eta"])
 
@@ -483,7 +489,7 @@ class RealSource(unittest.TestCase):
         root = HERE.parent
         checked = 0
         for f in sorted(self.SRC.rglob("*.rs")):
-            rel = str(f.relative_to(root))
+            rel = f.relative_to(root).as_posix()
             module_feats, module_ok = mp.features_for(" , ".join(mp.module_path_gates(rel, root)))
             if not module_ok:
                 continue

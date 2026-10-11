@@ -295,6 +295,7 @@ def plan(diff: str, base_features: list[str], root: Path = ROOT) -> dict:
     tests: set[str] = set()
     kept, skipped = [], []
     for path, text in split_diff(diff):
+        path = path.replace("\\", "/")  # a diff written on Windows by another tool
         module = module_of(path)
         if module is None:
             # lib.rs / main.rs have no module gate, but their items can carry one
