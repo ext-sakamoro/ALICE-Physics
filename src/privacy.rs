@@ -8,10 +8,11 @@
 //! The private mechanisms are those of `alice-crypto`, re-exported here with
 //! the `privacy-crypto` feature (off by default, so `std` alone pulls no
 //! entropy source):
-//! keyed ChaCha20 ([`SecureRng`]), discrete Laplace noise sampled with integer
-//! arithmetic in constant time ([`dp_count`], [`dp_int`], [`dp_sum`],
-//! [`DpNoise`]), [`randomized_response`] and [`bernoulli_ratio`], plus
-//! [`KeyedRappor`] built on them. [`PrivacyBudget`] and [`PrivateAggregator`]
+//! keyed ChaCha20 (`SecureRng`), discrete Laplace noise sampled with integer
+//! arithmetic in constant time (`dp_count`, `dp_int`, `dp_sum`, `DpNoise`),
+//! `randomized_response` and `bernoulli_ratio`, plus `KeyedRappor` built on
+//! them (plain names: the items exist only with the feature, so no links).
+//! [`PrivacyBudget`] and [`PrivateAggregator`]
 //! draw no randomness and stay as they are.
 //!
 //! # Security
@@ -589,7 +590,7 @@ impl KeyedRappor {
     }
 }
 
-/// The Bloom encoding of `value` used by [`Rappor`] and [`KeyedRappor`]:
+/// The Bloom encoding of `value` used by [`Rappor`] and `KeyedRappor` (with `privacy-crypto`):
 /// three FNV hashes, one bit each
 fn bloom_bits(value: u64) -> [u8; RAPPOR_BITS] {
     use crate::sketch::FnvHasher;
