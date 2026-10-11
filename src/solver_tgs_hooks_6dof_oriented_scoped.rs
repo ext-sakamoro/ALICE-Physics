@@ -28,13 +28,13 @@
 #![allow(dead_code)]
 #![allow(rustdoc::broken_intra_doc_links)]
 
+use crate::det_hash::DetHashMap;
 use crate::math::Fix128;
 use crate::solver_tgs::{dispatch_islands, tgs_step, ImpulseCache, Island, TgsConfig};
 use crate::solver_tgs_hooks_6dof_oriented::{
     Body6DofOrientedState, ContactOriented, JointOriented, Pgs6DofOrientedConfig,
     Pgs6DofOrientedHooks,
 };
-use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Single-island solve
@@ -69,7 +69,7 @@ pub(crate) fn solve_oriented_island_isolated(
     let world_indices: Vec<usize> = island.bodies.clone();
     let mut local_bodies: Vec<Body6DofOrientedState> =
         world_indices.iter().map(|&i| world_bodies[i]).collect();
-    let world_to_local: HashMap<usize, usize> = world_indices
+    let world_to_local: DetHashMap<usize, usize> = world_indices
         .iter()
         .enumerate()
         .map(|(local, &world)| (world, local))
@@ -235,7 +235,7 @@ pub(crate) fn solve_oriented_islands_parallel(
         let world_indices: Vec<usize> = island.bodies.clone();
         let mut local_bodies: Vec<Body6DofOrientedState> =
             world_indices.iter().map(|&i| world_bodies[i]).collect();
-        let world_to_local: HashMap<usize, usize> = world_indices
+        let world_to_local: DetHashMap<usize, usize> = world_indices
             .iter()
             .enumerate()
             .map(|(local, &world)| (world, local))

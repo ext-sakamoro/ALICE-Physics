@@ -382,6 +382,35 @@ fn boundary_faces_reports_which_face_and_how_many_tets_claimed_it() {
     }
 }
 
+/// Two non-manifold faces: the error names the smallest one, whatever order
+/// the tetrahedra were listed in (the use counts are kept in face order, so no
+/// hash order or process seed decides which face is reported)
+#[test]
+fn boundary_faces_reports_the_smallest_of_several_non_manifold_faces() {
+    let vertices: Vec<[f32; 3]> = (0..12u8).map(|i| [f32::from(i), 0.0, 0.0]).collect();
+    let tets = |base: u32, fourths: [u32; 3]| {
+        fourths.map(|d| alice_physics::sdf_fem_mesh::Tetrahedron {
+            vertices: [base, base + 1, base + 2, d],
+        })
+    };
+    let low = tets(0, [3, 4, 5]); // face [0, 1, 2], three uses
+    let high = tets(6, [9, 10, 11]); // face [6, 7, 8], three uses
+    for order in [[high, low], [low, high]] {
+        let mesh = SdfTetMesh {
+            vertices: vertices.clone(),
+            tets: order.concat(),
+        };
+        assert_eq!(
+            mesh.boundary_faces(),
+            Err(BoundaryFaceError::NonManifoldFace {
+                face: [0, 1, 2],
+                uses: 3
+            }),
+            "the smallest non-manifold face, for either order of the tets"
+        );
+    }
+}
+
 // ---------------------------------------------------------------------------
 // refine_by_max_edge_length (deprecated) vs try_refine_conforming
 // ---------------------------------------------------------------------------

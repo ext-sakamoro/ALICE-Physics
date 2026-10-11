@@ -18,7 +18,7 @@ use crate::math::{Fix128, Vec3Fix};
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
-use std::collections::HashMap;
+use crate::det_hash::DetHashMap;
 
 /// Maximum contact points per manifold (internal cap, currently 4).
 pub(crate) const MAX_MANIFOLD_POINTS: usize = 4;
@@ -263,7 +263,7 @@ pub struct ContactCache {
     pub manifolds: Vec<ContactManifold>,
     /// `HashMap` index for O(1) manifold lookup (std feature only)
     #[cfg(feature = "std")]
-    pub(crate) pair_index: HashMap<BodyPairKey, usize>,
+    pub(crate) pair_index: DetHashMap<BodyPairKey, usize>,
     /// Maximum stale frames before manifold is removed
     pub max_stale_frames: u32,
     /// Warm starting factor (0.0 = off, 1.0 = full warm start)
@@ -277,7 +277,7 @@ impl ContactCache {
         Self {
             manifolds: Vec::new(),
             #[cfg(feature = "std")]
-            pair_index: HashMap::new(),
+            pair_index: DetHashMap::default(),
             max_stale_frames: 3,
             warm_start_factor: Fix128::from_ratio(8, 10), // 0.8 default
         }

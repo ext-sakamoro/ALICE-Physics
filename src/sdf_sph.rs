@@ -328,7 +328,7 @@ pub fn spiky_grad(r: f32, h: f32) -> f32 {
 
 /// Uniform-cell spatial hash sized to the SPH kernel radius.
 ///
-/// Cells are indexed by a `HashMap<(i32,i32,i32), Vec<usize>>`; a
+/// Cells are indexed by a `DetHashMap<(i32,i32,i32), Vec<usize>>` (no random seed); a
 /// query iterates the 3×3×3 neighbourhood around a probe position and
 /// yields every particle in those cells. The cell size is set to the
 /// kernel radius so each 3×3×3 neighbourhood strictly covers the SPH
@@ -337,7 +337,7 @@ pub fn spiky_grad(r: f32, h: f32) -> f32 {
 /// Ephemeral by design: rebuild each step (`build`).
 pub struct SphSpatialHash {
     cell_size: f32,
-    cells: std::collections::HashMap<(i32, i32, i32), Vec<usize>>,
+    cells: crate::det_hash::DetHashMap<(i32, i32, i32), Vec<usize>>,
 }
 
 impl SphSpatialHash {
@@ -345,8 +345,8 @@ impl SphSpatialHash {
     #[must_use]
     pub fn build(particles: &[SphParticle], kernel_radius: f32) -> Self {
         let cell_size = kernel_radius.max(1.0e-6);
-        let mut cells: std::collections::HashMap<(i32, i32, i32), Vec<usize>> =
-            std::collections::HashMap::new();
+        let mut cells: crate::det_hash::DetHashMap<(i32, i32, i32), Vec<usize>> =
+            crate::det_hash::DetHashMap::default();
         for (i, p) in particles.iter().enumerate() {
             let key = position_to_cell(p.position, cell_size);
             cells.entry(key).or_default().push(i);

@@ -49,9 +49,10 @@
 #![allow(dead_code)]
 #![allow(rustdoc::broken_intra_doc_links)]
 
+use crate::det_hash::DetHashMap;
 use crate::error::PhysicsError;
 use crate::math::Fix128;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 // ---------------------------------------------------------------------------
 // Trait shape
@@ -116,9 +117,9 @@ pub(crate) struct CachedImpulse {
 /// that stale IDs do not grow the map indefinitely.
 #[derive(Debug, Default, Clone)]
 pub(crate) struct ImpulseCache {
-    pub(crate) entries: HashMap<u64, CachedImpulse>,
+    pub(crate) entries: DetHashMap<u64, CachedImpulse>,
     // Bit set of IDs touched during the current tick.
-    pub(crate) live: HashMap<u64, ()>,
+    pub(crate) live: DetHashMap<u64, ()>,
     // Warm-starting hit/miss counters (Turn D: observability).
     pub(crate) hits: u64,
     pub(crate) misses: u64,
@@ -334,7 +335,7 @@ pub(crate) fn build_islands<B: BodyLike, C: ContactLike, J: JointLike>(
 
     // Bucket bodies by representative. Static bodies are added to
     // every island that references them below.
-    let mut buckets: HashMap<usize, Island> = HashMap::new();
+    let mut buckets: BTreeMap<usize, Island> = BTreeMap::new();
     for (i, body) in bodies.iter().enumerate() {
         if body.is_dynamic() {
             let root = uf.find(i);

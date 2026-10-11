@@ -58,7 +58,8 @@
 //! - The generated mesh is intended for downstream FEM callers; it is not tuned
 //!   for rendering.
 
-use std::collections::HashMap;
+use crate::det_hash::DetHashMap;
+use std::collections::BTreeMap;
 
 use crate::sdf_collider::SdfField;
 
@@ -191,7 +192,7 @@ impl SdfTetMesh {
     /// [`BoundaryFaceError::NonManifoldFace`] when some face is used more than
     /// twice.
     pub fn boundary_faces(&self) -> Result<Vec<[u32; 3]>, BoundaryFaceError> {
-        let mut uses: HashMap<[u32; 3], usize> = HashMap::new();
+        let mut uses: BTreeMap<[u32; 3], usize> = BTreeMap::new();
         for tet in &self.tets {
             let v = tet.vertices;
             for face in [
@@ -205,6 +206,9 @@ impl SdfTetMesh {
                 *uses.entry(key).or_insert(0) += 1;
             }
         }
+        // `uses` is ordered by face, so the first non-manifold face reported is
+        // the smallest one and the boundary faces come out sorted: the result
+        // does not depend on any hash order
         let mut out = Vec::new();
         for (face, count) in uses {
             if count > 2 {
@@ -214,9 +218,6 @@ impl SdfTetMesh {
                 out.push(face);
             }
         }
-        // `HashMap` iteration order is unspecified, so sort before returning:
-        // the caller must not see a different order from one run to the next.
-        out.sort_unstable();
         Ok(out)
     }
 
@@ -286,7 +287,7 @@ impl SdfTetMesh {
         // Midpoints persist across passes: a tetrahedron has to split on an edge
         // whose midpoint exists, whichever pass created it. The condition clears
         // itself, because after the split neither half holds that edge any more.
-        let mut midpoints: HashMap<(u32, u32), u32> = HashMap::new();
+        let mut midpoints: DetHashMap<(u32, u32), u32> = DetHashMap::default();
         let mut passes = 0_u32;
         for _ in 0..max_passes {
             passes += 1;
@@ -384,7 +385,7 @@ impl SdfTetMesh {
         // edge that already carries a midpoint. One predicate, two uses.
         const SPLIT_LONGEST: f32 = -1.0;
         const PROPAGATE_ONLY: f32 = f32::INFINITY;
-        let mut midpoints: HashMap<(u32, u32), u32> = HashMap::new();
+        let mut midpoints: DetHashMap<(u32, u32), u32> = DetHashMap::default();
         let mut passes = 0_u32;
         for pass in 0..max_passes {
             passes += 1;
@@ -436,7 +437,7 @@ impl SdfTetMesh {
         &self,
         tet: &Tetrahedron,
         limit_sq: f32,
-        midpoints: &HashMap<(u32, u32), u32>,
+        midpoints: &DetHashMap<(u32, u32), u32>,
     ) -> Option<usize> {
         let edges = tet_edges(tet.vertices);
         let mut best: Option<(usize, f32, (u32, u32))> = None;
@@ -462,7 +463,7 @@ impl SdfTetMesh {
         best.map(|(k, _, _)| k)
     }
 
-    fn midpoint_of(&mut self, a: u32, b: u32, midpoints: &mut HashMap<(u32, u32), u32>) -> u32 {
+    fn midpoint_of(&mut self, a: u32, b: u32, midpoints: &mut DetHashMap<(u32, u32), u32>) -> u32 {
         let key = (a.min(b), a.max(b));
         if let Some(&idx) = midpoints.get(&key) {
             return idx;
@@ -616,7 +617,7 @@ pub fn generate<F: SdfField + ?Sized>(
 ) -> SdfTetMesh {
     assert!(cell > 0.0, "cell must be positive");
     let mut mesh = SdfTetMesh::default();
-    let mut vertex_index: HashMap<(i32, i32, i32), u32> = HashMap::new();
+    let mut vertex_index: DetHashMap<(i32, i32, i32), u32> = DetHashMap::default();
     let [nx, ny, nz] = lattice_cells(min, max, cell);
 
     for iz in 0..nz {
@@ -843,7 +844,7 @@ pub fn generate_marching_tets<F: SdfField + ?Sized>(
 ) -> SdfTetMesh {
     assert!(cell > 0.0, "cell must be positive");
     let mut mesh = SdfTetMesh::default();
-    let mut table: HashMap<VertexKey, u32> = HashMap::new();
+    let mut table: DetHashMap<VertexKey, u32> = DetHashMap::default();
     let [nx, ny, nz] = lattice_cells(min, max, cell);
 
     let lattice = WarpedLattice::build(sdf, min, cell, [nx, ny, nz]);
@@ -894,7 +895,7 @@ fn corner_pos(min: [f32; 3], cell: f32, ix: i32, iy: i32, iz: i32) -> [f32; 3] {
 /// against the SDF represented by `sdf_values` at the four vertices.
 fn marching_tet_emit(
     mesh: &mut SdfTetMesh,
-    table: &mut HashMap<VertexKey, u32>,
+    table: &mut DetHashMap<VertexKey, u32>,
     ids: [[i32; 3]; 4],
     v: [[f32; 3]; 4],
     sdf: [f32; 4],
@@ -909,7 +910,7 @@ fn marching_tet_emit(
     if mask == 0b0000 {
         return;
     }
-    let corner = |mesh: &mut SdfTetMesh, table: &mut HashMap<VertexKey, u32>, i: usize| -> u32 {
+    let corner = |mesh: &mut SdfTetMesh, table: &mut DetHashMap<VertexKey, u32>, i: usize| -> u32 {
         intern(mesh, table, VertexKey::Corner(ids[i]), v[i])
     };
     if mask == 0b1111 {
@@ -1024,7 +1025,7 @@ impl VertexKey {
 /// Return the index of `key`, inserting `position` on first sight.
 fn intern(
     mesh: &mut SdfTetMesh,
-    table: &mut HashMap<VertexKey, u32>,
+    table: &mut DetHashMap<VertexKey, u32>,
     key: VertexKey,
     position: [f32; 3],
 ) -> u32 {
@@ -1102,7 +1103,7 @@ const SNAP_CELL_FRACTION: f32 = 0.30;
 
 fn crossing_vertex(
     mesh: &mut SdfTetMesh,
-    table: &mut HashMap<VertexKey, u32>,
+    table: &mut DetHashMap<VertexKey, u32>,
     ids: [[i32; 3]; 4],
     v: [[f32; 3]; 4],
     sdf: [f32; 4],
