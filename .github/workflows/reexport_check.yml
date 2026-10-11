@@ -6,6 +6,9 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
+  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  workflow_dispatch:
 
 jobs:
   reexport_diff:

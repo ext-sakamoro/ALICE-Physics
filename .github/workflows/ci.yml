@@ -13,6 +13,9 @@ on:
   # job yet (the `gate` job); every other job skips the schedule
   schedule:
     - cron: '15 16 * * *'
+  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  workflow_dispatch:
 
 env:
   CARGO_TERM_COLOR: always

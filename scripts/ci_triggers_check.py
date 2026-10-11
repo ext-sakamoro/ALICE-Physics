@@ -14,6 +14,10 @@ docs/CI_TRIGGERS.md; the evidence class of the row is compared with
     has no push trigger, tag-only is pushed by tags only;
   * every after-landing leg names a landing workflow, one of its jobs and a matrix value
     of that job, and the second table of the document lists the same legs;
+  * every landing and after-landing workflow has `workflow_dispatch` (a run dropped by
+    the one-pending-run-per-group rule is re-created on the ci/<id> SHA with
+    `gh workflow run`), and the dispatchable list of the document names exactly the
+    workflows that have it;
   * a workflow that runs on ci/** cannot cancel a main run: its concurrency group
     includes the ref, or `cancel-in-progress` is false.
 
@@ -47,6 +51,8 @@ COLUMNS = ("workflow", "push", "path gate", "pull_request", "schedule", "dispatc
 LEG_COLUMNS = ("workflow", "job", "matrix")
 WF_TABLE = "ci-triggers:workflows"
 LEG_TABLE = "ci-triggers:after-landing-legs"
+DISPATCH_TABLE = "ci-triggers:dispatchable"
+DISPATCH_COLUMNS = ("workflow",)
 
 
 def derive(name: str, text: str) -> dict[str, str]:
@@ -139,6 +145,8 @@ def check(root: Path) -> tuple[list[str], int]:
     errors += errs
     leg_rows, errs = table(doc, LEG_TABLE, LEG_COLUMNS)
     errors += errs
+    dispatch_rows, errs = table(doc, DISPATCH_TABLE, DISPATCH_COLUMNS)
+    errors += errs
 
     names = set(files)
     for label, got in ((EVIDENCE, set(classes)), (DOC, {r["workflow"] for r in rows})):
@@ -174,6 +182,9 @@ def check(root: Path) -> tuple[list[str], int]:
             errors.append(f"{name}: class tag-only but its push trigger is {want['push']!r}")
         if want["ci/** push"] != "-":
             errors += concurrency_errors(name, files[name])
+        if cls in ("landing", "after-landing") and want["dispatch"] != "yes":
+            errors.append(f"{name}: class {cls} but no workflow_dispatch (a dropped run cannot be "
+                          "re-created on the ci/<id> SHA)")
 
     want_legs = set()
     for leg in legs:
@@ -192,6 +203,15 @@ def check(root: Path) -> tuple[list[str], int]:
         errors.append(f"{DOC}: after-landing leg {leg} missing from the table")
     for leg in sorted(doc_legs - want_legs, key=str):
         errors.append(f"{DOC}: after-landing leg {leg} is not in {EVIDENCE}")
+
+    have = {n for n, text in files.items() if derive(n, text)["dispatch"] == "yes"}
+    listed = [r["workflow"] for r in dispatch_rows]
+    for n in sorted(have - set(listed)):
+        errors.append(f"{DOC}: dispatchable list misses {n}")
+    for n in sorted(set(listed) - have):
+        errors.append(f"{DOC}: dispatchable list names {n}, which has no workflow_dispatch")
+    if len(listed) != len(set(listed)):
+        errors.append(f"{DOC}: dispatchable list names a workflow twice")
 
     if compared == 0:
         errors.append("no workflow row compared (compared nothing)")

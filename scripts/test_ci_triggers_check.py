@@ -42,6 +42,7 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
+  workflow_dispatch:
 jobs:
   test:
     strategy:
@@ -80,10 +81,16 @@ matrix = "macos-latest"
 """
 ROWS = """| workflow | push | path gate | pull_request | schedule | dispatch | ci/** push | class |
 |---|---|---|---|---|---|---|---|
-| `ci.yml` | `main, ci/**` | - | `main` | - | - | runs | landing |
+| `ci.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `gated.yml` | `main, ci/**` | `.github/paths/gated.txt` | `main (paths)` | yes | yes | runs when the paths match | after-landing |
 | `release.yml` | `tags v*` | - | - | - | - | - | tag-only |
 | `weekly.yml` | - | - | - | yes | yes | - | schedule-only |
+"""
+DISPATCH = """| workflow |
+|---|
+| `ci.yml` |
+| `gated.yml` |
+| `weekly.yml` |
 """
 LEGS = """| workflow | job | matrix |
 |---|---|---|
@@ -91,9 +98,10 @@ LEGS = """| workflow | job | matrix |
 """
 
 
-def doc(rows: str = ROWS, legs: str = LEGS) -> str:
+def doc(rows: str = ROWS, legs: str = LEGS, dispatch: str = DISPATCH) -> str:
     return ("# T\n\n<!-- ci-triggers:workflows:begin -->\n" + rows + "<!-- ci-triggers:workflows:end -->\n\n"
-            "<!-- ci-triggers:after-landing-legs:begin -->\n" + legs + "<!-- ci-triggers:after-landing-legs:end -->\n")
+            "<!-- ci-triggers:after-landing-legs:begin -->\n" + legs + "<!-- ci-triggers:after-landing-legs:end -->\n\n"
+            "<!-- ci-triggers:dispatchable:begin -->\n" + dispatch + "<!-- ci-triggers:dispatchable:end -->\n")
 
 
 def tree(evidence: str = EVIDENCE, document: str | None = None, **over: str | None) -> Path:
@@ -212,6 +220,29 @@ class Triggers(unittest.TestCase):
     def test_legs_of_the_doc_and_the_evidence_must_agree(self):
         self.has(self.errors(document=doc(legs=LEGS.replace("macos-latest", "ubuntu-latest"))), "missing from the table")
         self.has(self.errors(document=doc(legs=LEGS.replace("macos-latest", "ubuntu-latest"))), "is not in .github/ci-evidence.toml")
+
+    # --- dispatch --------------------------------------------------------------------------
+
+    def test_a_landing_workflow_without_dispatch_fails(self):
+        body = CI.replace("  workflow_dispatch:\n", "")
+        rows = ROWS.replace("| `main` | - | yes | runs | landing |", "| `main` | - | - | runs | landing |")
+        e = self.errors(document=doc(rows, dispatch=DISPATCH.replace("| `ci.yml` |\n", "")), **{"ci.yml": body})
+        self.has(e, "ci.yml: class landing but no workflow_dispatch")
+
+    def test_an_after_landing_workflow_without_dispatch_fails(self):
+        body = GATED.replace("  workflow_dispatch:\n    inputs:\n      x:\n        type: string\n", "")
+        e = self.errors(**{"gated.yml": body})
+        self.has(e, "gated.yml: class after-landing but no workflow_dispatch")
+        self.has(e, "`dispatch`")
+        self.has(e, "names gated.yml, which has no workflow_dispatch")
+
+    def test_the_dispatchable_list_must_match(self):
+        self.has(self.errors(document=doc(dispatch=DISPATCH.replace("| `weekly.yml` |\n", ""))), "misses weekly.yml")
+        self.has(self.errors(document=doc(dispatch=DISPATCH + "| `release.yml` |\n")), "names release.yml")
+        self.has(self.errors(document=doc(dispatch=DISPATCH + "| `ci.yml` |\n")), "twice")
+        self.has(self.errors(document=doc(dispatch="")), "table ci-triggers:dispatchable has no header")
+        no_table = doc().split("<!-- ci-triggers:dispatchable:begin -->")[0]
+        self.has(self.errors(document=no_table), "no table between <!-- ci-triggers:dispatchable")
 
     # --- concurrency -----------------------------------------------------------------------
 

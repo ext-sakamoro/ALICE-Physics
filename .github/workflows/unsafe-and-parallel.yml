@@ -15,6 +15,9 @@ on:
     # with merge-base(origin/main) instead (patterns: .github/paths/unsafe-and-parallel.txt)
     # ci/**: started on the ci/<id> branch when the paths match, read after the landing
     branches: [main, 'ci/**']
+  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  workflow_dispatch:
 
 permissions:
   contents: read

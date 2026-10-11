@@ -23,6 +23,9 @@ on:
       - 'scripts/changed_paths.py'
       - '.github/workflows/python-binding.yml'
       - '.github/paths/python-binding.txt'
+  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  workflow_dispatch:
 
 concurrency:
   # one group per ref; a newer push cancels the older run of its branch, never a main run

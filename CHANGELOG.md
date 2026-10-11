@@ -30,6 +30,7 @@ were introduced during that release window.
   - concurrency: `ci/**` の push は `main` の run を cancel しない Bench gate・Miri and loom・Integration Status は `main` と `ci` の 2 group で `cancel-in-progress: false` (同時に走るのは `main` 1 本と `ci/**` 1 本まで)
   - Miri and loom は unsafe・並列の code (`.github/paths/unsafe-and-parallel.txt`) を変えた push だけで走り、`ci/**` では起動だけして結果は landing 後に読む (`after-landing`)
   - `.github/ci-evidence.toml` に各 workflow の証拠の区分 (`landing` / `after-landing` / `schedule-only` / `tag-only`) と landing 後に読む matrix の leg (macOS の test) を置き、`docs/CI_TRIGGERS.md` に trigger の表を置いた `scripts/ci_triggers_check.py` (CI と preflight) が表・区分・workflow の食い違いと比較 0 件で失敗する
+  - landing と after-landing の全 workflow に `workflow_dispatch` を足した 同じ concurrency group で待てる run は 1 本なので、途中の SHA の run は落ちうる 落ちた run (run 0 件・cancelled は証拠にならない) は `gh workflow run <workflow> --ref ci/<id>` で作り直す 手動実行では changes job が常に `run=true` を出す `scripts/ci_triggers_check.py` は dispatch の無い landing / after-landing の workflow と、文書の一覧との食い違いで失敗する
   - 規則の改訂 (2026-10-12): 重い job は `ci/**` の push で走らせない、という規則を改めた 理由は landing の証拠から 8 本の workflow が抜けており、landing 後に `main` が Security & Hygiene で red になったこと 改訂後: 重い job は path の gate の後ろでだけ `ci/**` で走ってよく (Miri and loom は unsafe・並列の code に絞った gate)、同時に走る重い run の数は concurrency で 1 workflow につき `main` 1 本と `ci/**` 1 本に抑える 週次の変異試験は push で走らせない `scripts/ci_load_check.py` がこの形を検査する
 
 ## [2.3.0] - 2026-10-11

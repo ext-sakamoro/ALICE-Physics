@@ -47,25 +47,29 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 <!-- ci-triggers:workflows:begin -->
 | workflow | push | path gate | pull_request | schedule | dispatch | ci/** push | class |
 |---|---|---|---|---|---|---|---|
-| `bench-gate.yml` | `main, ci/**` | `.github/paths/bench-gate.txt` | - | - | - | runs when the paths match | landing |
-| `ci.yml` | `main, ci/**` | - | `main` | - | - | runs | landing |
+| `bench-gate.yml` | `main, ci/**` | `.github/paths/bench-gate.txt` | - | - | yes | runs when the paths match | landing |
+| `ci.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `downstream.yml` | `main, ci/**` | `.github/paths/downstream.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `fuzz.yml` | `main, ci/**` | `.github/paths/fuzz.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
 | `integration-status.yml` | `main, ci/**` | `.github/paths/integration-status.txt` | - | - | yes | runs when the paths match | landing |
-| `oracle-status.yml` | `main, ci/**` | `.github/paths/oracle-status.txt` | - | - | - | runs when the paths match | landing |
-| `python-binding.yml` | `main, ci/**` | `.github/paths/python-binding.txt` | `main (paths)` | - | - | runs when the paths match | landing |
+| `oracle-status.yml` | `main, ci/**` | `.github/paths/oracle-status.txt` | - | - | yes | runs when the paths match | landing |
+| `python-binding.yml` | `main, ci/**` | `.github/paths/python-binding.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `quality-deep.yml` | - | - | `main (paths)` | yes | yes | - | schedule-only |
-| `reexport_check.yml` | `main, ci/**` | - | `main` | - | - | runs | landing |
+| `reexport_check.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `release.yml` | `tags v*` | - | - | - | - | - | tag-only |
 | `security-audit.yml` | `main, ci/**` | `.github/paths/security-audit.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
-| `unsafe-and-parallel.yml` | `main, ci/**` | `.github/paths/unsafe-and-parallel.txt` | - | - | - | runs when the paths match | after-landing |
-| `wiring-status.yml` | `main, ci/**` | `.github/paths/wiring-status.txt` | - | - | - | runs when the paths match | landing |
+| `unsafe-and-parallel.yml` | `main, ci/**` | `.github/paths/unsafe-and-parallel.txt` | - | - | yes | runs when the paths match | after-landing |
+| `wiring-status.yml` | `main, ci/**` | `.github/paths/wiring-status.txt` | - | - | yes | runs when the paths match | landing |
 <!-- ci-triggers:workflows:end -->
 
 ## After-landing legs of landing workflows
 
-The macOS legs of the test matrix take the longest. They start on the `ci/<id>` SHA
-with the rest of the run, and their result is read after the landing.
+The macOS legs of the test matrix take the longest. The landing does not wait for
+either of them: they start with the rest of the run, and their result is read after the
+landing. A release (crates.io, PyPI) needs every leg green.
+
+The `macos-latest` leg is the arm64 leg that holds the golden hashes: a red result there
+after a landing is fixed or reverted at once.
 
 <!-- ci-triggers:after-landing-legs:begin -->
 | workflow | job | matrix |
@@ -73,6 +77,43 @@ with the rest of the run, and their result is read after the landing.
 | `ci.yml` | `test` | `macos-latest` |
 | `ci.yml` | `test` | `macos-15-intel` |
 <!-- ci-triggers:after-landing-legs:end -->
+
+## Dropped runs
+
+GitHub keeps one pending run per concurrency group: while a run of a group is in
+progress, a newer run waits, and a third one replaces the waiting one. The run of a
+middle SHA can therefore be dropped without a result.
+
+For the landing check, an expected workflow with **no run** for the `ci/<id>` SHA, or with
+a **cancelled** run, is **no evidence** (neither green nor red). Re-create the run and wait
+for it:
+
+```sh
+gh workflow run <workflow>.yml --ref ci/<id>   # or: gh run rerun <run-id>
+```
+
+A manual run always runs every job (its changes job outputs `run=true`), so the `Gate`
+job of a path-gated workflow then needs every job to succeed. Bench gate compares a
+manual run with `merge-base(origin/main)` (a manual run has no previous SHA). The
+workflows that can be dispatched are listed below; every landing and after-landing
+workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
+
+<!-- ci-triggers:dispatchable:begin -->
+| workflow |
+|---|
+| `bench-gate.yml` |
+| `ci.yml` |
+| `downstream.yml` |
+| `fuzz.yml` |
+| `integration-status.yml` |
+| `oracle-status.yml` |
+| `python-binding.yml` |
+| `quality-deep.yml` |
+| `reexport_check.yml` |
+| `security-audit.yml` |
+| `unsafe-and-parallel.yml` |
+| `wiring-status.yml` |
+<!-- ci-triggers:dispatchable:end -->
 
 ## Concurrency
 

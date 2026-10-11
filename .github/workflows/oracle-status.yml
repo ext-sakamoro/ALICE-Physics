@@ -7,6 +7,9 @@ on:
     # with merge-base(origin/main) instead (patterns: .github/paths/oracle-status.txt)
     # ci/**: the same checks on the ci/<id> branch before main is fast-forwarded to it
     branches: [main, 'ci/**']
+  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  workflow_dispatch:
 
 permissions:
   contents: read
