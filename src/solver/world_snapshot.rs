@@ -73,6 +73,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// | unknown enum tag / non-boolean byte / unrepresentable value inside the payload | [`Self::InvalidValue`] |
 /// | material table with 0 or more than 65,536 materials, or a material whose id is not its index | [`Self::InvalidValue`] (`section: "material_table"`) |
 /// | a joint / constraint / contact / SDF collider / batch / proxy index past its target | [`Self::DanglingIndex`] |
+/// | a joint naming the same body twice | [`Self::SelfJoint`] |
 /// | target world holds a different number of SDF fields | [`Self::SdfFieldCountMismatch`] |
 /// | target world holds a different number of hooks / modifiers / bridges | [`Self::CallbackCountMismatch`] |
 /// | target world holds other participants (count, kinds, order) | [`Self::ParticipantMismatch`] |
@@ -127,6 +128,15 @@ pub enum WorldSnapshotError {
         index: usize,
         /// Length of what it indexes.
         len: usize,
+    },
+    /// A joint names the same body twice (index `index` in the joints section).
+    /// A world refuses such a joint at the start of every step, so a restore
+    /// refuses it here rather than leaving it for a later step to reject.
+    SelfJoint {
+        /// Index of the joint in the snapshot's joints.
+        index: usize,
+        /// The body it names twice.
+        body: usize,
     },
     /// The snapshot holds a different number of SDF colliders than the target
     /// world holds SDF fields (fields are code and are not in the blob).
@@ -237,6 +247,10 @@ impl core::fmt::Display for WorldSnapshotError {
             Self::DanglingIndex { section, index, len } => write!(
                 f,
                 "world snapshot {section} refers to index {index} of {len}"
+            ),
+            Self::SelfJoint { index, body } => write!(
+                f,
+                "world snapshot joint {index} joins body {body} to itself"
             ),
             Self::SdfFieldCountMismatch { snapshot, world } => write!(
                 f,
@@ -2580,10 +2594,13 @@ fn validate(d: &Decoded) -> Res<()> {
             })
         }
     };
-    for j in &d.joints {
+    for (index, j) in d.joints.iter().enumerate() {
         let (a, b) = j.bodies();
         check("joints", a, n)?;
         check("joints", b, n)?;
+        if a == b {
+            return Err(WorldSnapshotError::SelfJoint { index, body: a });
+        }
     }
     for c in &d.distance_constraints {
         check("distance_constraints", c.body_a, n)?;

@@ -2163,6 +2163,7 @@ fn test_deserialize_empty_and_truncated() {
 // ============================================================================
 
 #[test]
+#[should_panic(expected = "Joint joins body 0 to itself")]
 fn test_self_referential_joint() {
     let config = PhysicsConfig::default();
     let mut world = PhysicsWorld::new(config);
@@ -2171,13 +2172,9 @@ fn test_self_referential_joint() {
         Fix128::ONE,
     ));
 
-    // Self-referential joint should not crash the solver
+    // A self-referential joint is refused (it would join nothing)
     let joint = Joint::Ball(BallJoint::new(a, a, Vec3Fix::ZERO, Vec3Fix::ZERO));
     world.add_joint(joint);
-
-    let dt = Fix128::from_ratio(1, 60);
-    // Should not panic or infinite loop
-    run_world(&mut world, 60, dt);
 }
 
 // ============================================================================

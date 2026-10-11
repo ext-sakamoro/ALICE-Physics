@@ -10403,6 +10403,9 @@ pub alice_physics::prelude::WorldSnapshotError::ReservedNotZero
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
 pub alice_physics::prelude::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::prelude::WorldSnapshotError::SelfJoint
+pub alice_physics::prelude::WorldSnapshotError::SelfJoint::body: usize
+pub alice_physics::prelude::WorldSnapshotError::SelfJoint::index: usize
 pub alice_physics::prelude::WorldSnapshotError::SemanticsMismatch
 pub alice_physics::prelude::WorldSnapshotError::SemanticsMismatch::expected: [u8; 32]
 pub alice_physics::prelude::WorldSnapshotError::SemanticsMismatch::stored: [u8; 32]
@@ -17994,6 +17997,9 @@ pub alice_physics::solver::WorldSnapshotError::ReservedNotZero
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
 pub alice_physics::solver::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::solver::WorldSnapshotError::SelfJoint
+pub alice_physics::solver::WorldSnapshotError::SelfJoint::body: usize
+pub alice_physics::solver::WorldSnapshotError::SelfJoint::index: usize
 pub alice_physics::solver::WorldSnapshotError::SemanticsMismatch
 pub alice_physics::solver::WorldSnapshotError::SemanticsMismatch::expected: [u8; 32]
 pub alice_physics::solver::WorldSnapshotError::SemanticsMismatch::stored: [u8; 32]
@@ -20501,6 +20507,10 @@ pub alice_physics::world_participant::StepError::BodyCount::field: alice_physics
 pub alice_physics::world_participant::StepError::BodyCount::samples: usize
 pub alice_physics::world_participant::StepError::FaultRaised(alice_physics::world_participant::WorldFault)
 pub alice_physics::world_participant::StepError::Faulted(alice_physics::world_participant::WorldFault)
+pub alice_physics::world_participant::StepError::Joint
+pub alice_physics::world_participant::StepError::Joint::bodies: (usize, usize)
+pub alice_physics::world_participant::StepError::Joint::body_count: usize
+pub alice_physics::world_participant::StepError::Joint::index: usize
 pub alice_physics::world_participant::StepError::Rule
 pub alice_physics::world_participant::StepError::Rule::error: alice_physics::world_participant::RegisterError
 pub alice_physics::world_participant::StepError::Rule::index: usize
@@ -20510,6 +20520,8 @@ impl core::cmp::Eq for alice_physics::world_participant::StepError
 impl core::cmp::PartialEq for alice_physics::world_participant::StepError
 pub fn alice_physics::world_participant::StepError::eq(&self, &Self) -> bool
 impl core::fmt::Debug for alice_physics::world_participant::StepError
+pub fn alice_physics::world_participant::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::world_participant::StepError
 pub fn alice_physics::world_participant::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for alice_physics::world_participant::StepError
 impl core::marker::Freeze for alice_physics::world_participant::StepError
@@ -21622,6 +21634,9 @@ pub alice_physics::WorldSnapshotError::ReservedNotZero
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch::snapshot: usize
 pub alice_physics::WorldSnapshotError::SdfFieldCountMismatch::world: usize
+pub alice_physics::WorldSnapshotError::SelfJoint
+pub alice_physics::WorldSnapshotError::SelfJoint::body: usize
+pub alice_physics::WorldSnapshotError::SelfJoint::index: usize
 pub alice_physics::WorldSnapshotError::SemanticsMismatch
 pub alice_physics::WorldSnapshotError::SemanticsMismatch::expected: [u8; 32]
 pub alice_physics::WorldSnapshotError::SemanticsMismatch::stored: [u8; 32]

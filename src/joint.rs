@@ -745,6 +745,14 @@ impl Joint {
 ///
 /// Modifies body positions/rotations in-place to satisfy constraints.
 ///
+/// # Joints passed directly
+///
+/// This free function takes any `&[Joint]`: a joint whose two body indices are
+/// equal is skipped (it solves nothing), and a joint naming an index past the
+/// end of `bodies` panics on the index. `PhysicsWorld` checks its joints at the
+/// start of every step and refuses both, so inside a world step neither case
+/// reaches this function.
+///
 /// # Joint compliance contract
 ///
 /// - One call is one XPBD solve of every joint starting from `λ = 0`
@@ -771,6 +779,8 @@ pub fn solve_joints(joints: &[Joint], bodies: &mut [crate::solver::RigidBody], d
 /// `−w_b λ n`). Angular rows are not included.
 fn solve_one(joint: &Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) -> Vec3Fix {
     let (a, b) = joint.bodies();
+    // the free functions take any `&[Joint]`: a self-joint solves nothing (a
+    // world refuses it at the start of a step, so this is for direct callers)
     if a == b {
         return Vec3Fix::ZERO;
     }

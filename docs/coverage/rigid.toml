@@ -205,7 +205,7 @@ axis = "joint"
 item = "ball (spherical) joint"
 source = "Bullet btPoint2PointConstraint; PhysX PxSphericalJoint; MuJoCo ball"
 status = "implemented+oracle"
-evidence = "src/joint.rs::BallJoint tests/audit_joint.rs::ball_dynamic_pair_splits_the_correction_by_inverse_mass tests/analytic_tgs_joints_in_substep.rs::pendulums_of_every_pivoting_joint_keep_the_closed_form_period_and_stay_attached tests/audit_c_joint.rs::self_referential_ball_joint_with_distinct_anchors_is_a_free_body (known defect)"
+evidence = "src/joint.rs::BallJoint tests/audit_joint.rs::ball_dynamic_pair_splits_the_correction_by_inverse_mass tests/analytic_tgs_joints_in_substep.rs::pendulums_of_every_pivoting_joint_keep_the_closed_form_period_and_stay_attached tests/audit_c_joint.rs::a_self_referential_joint_refuses_the_step_and_leaves_the_body_unchanged"
 oracle_candidate = ""
 limitation = ""
 

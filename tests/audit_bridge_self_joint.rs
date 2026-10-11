@@ -1,24 +1,16 @@
 //! Audit oracles for solver: a joint whose two ends are the same body on the
 //! GPU bridge path
 //!
-//! The CPU joint solve (`joint::solve_joints` / `solve_joints_breakable`) skips a
-//! joint with `body_a == body_b`: a body cannot move relative to itself, so the
-//! joint constrains nothing and the body stays a free body. A backend behind
-//! `GpuSolverBridge` walks the uploaded joint list top to bottom and has no such
-//! rule, so `solve_joints_with_bridge` must not upload those joints at all.
+//! A backend behind `GpuSolverBridge` walks the uploaded joint list top to
+//! bottom and would apply both sides' corrections of a self-joint to one body.
+//! The world refuses such a joint before anything reaches the backend: a step
+//! with the bridge installed returns `StepError::Joint` from `try_step` (the
+//! backend receives nothing and the bodies are unchanged), and a direct
+//! `solve_joints_with_bridge` call panics with the same message. A world of
+//! ordinary joints uploads its joints unchanged and in order.
 //!
-//! Measured through `PhysicsWorld::step` with the bridge installed, against a
-//! reference backend that runs the crate's own CPU `solve_joints` on what it
-//! receives:
-//! - the joint lists the backend receives are exactly the lists of a world built
-//!   without the self joints (same joints, same order), and nothing is uploaded
-//!   when every joint is a self joint
-//! - body position, velocity, rotation and angular velocity are bit-identical to
-//!   that world
-//!
-//! The reference backend skips self joints itself (it calls `solve_joints`), so
-//! the body-state comparison alone would also hold for an upload that still
-//! contains them; the received lists are what distinguish the two.
+//! Measured against a reference backend that runs the crate's own CPU
+//! `solve_joints` on what it receives and logs every joint list it gets.
 
 #![cfg(feature = "gpu-solver-bridge")]
 
@@ -28,6 +20,7 @@ use alice_physics::joint::{
 };
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics::world_participant::StepError;
 use std::sync::{Arc, Mutex};
 
 fn fx(v: f64) -> Fix128 {
@@ -200,68 +193,72 @@ fn run(joints: &[Joint]) -> (Vec<BodyState>, Vec<Vec<Joint>>) {
     (state, received)
 }
 
-/// One self joint: no upload at all, and the world matches a world with no joint.
-#[test]
-fn a_single_self_joint_is_not_uploaded_and_leaves_the_body_free() {
-    let (free_state, free_log) = run(&[]);
-    assert!(free_log.is_empty(), "no joint, no upload");
-
-    let (state, received) = run(&[ball(2, 2)]);
-    assert_eq!(
-        received, free_log,
-        "a self joint alone must not reach the backend"
-    );
-    assert_eq!(state, free_state, "the body stays a free body");
+/// The world with `joints` pushed directly (bypassing `add_joint`) and a
+/// `JointReference` installed, and the log of what the backend receives.
+fn world_with(joints: &[Joint]) -> (PhysicsWorld, Log) {
+    let mut w = bodies_world();
+    w.joints.extend_from_slice(joints);
+    let log: Log = Arc::new(Mutex::new(Vec::new()));
+    w.set_gpu_solver_bridge(Some(Box::new(JointReference::new(Arc::clone(&log)))));
+    (w, log)
 }
 
-/// Self joints of several kinds mixed in among ordinary joints: the backend
-/// receives exactly the ordinary joints in their order, and the world matches a
-/// world built with the ordinary joints only.
+fn state(w: &PhysicsWorld) -> Vec<BodyState> {
+    w.bodies
+        .iter()
+        .map(|b| (b.position, b.velocity, b.rotation, b.angular_velocity))
+        .collect()
+}
+
+/// A self joint of every kind, alone or among ordinary joints: the step is
+/// refused at its start with the index of the first self joint, nothing reaches
+/// the backend and no body moves.
 #[test]
-fn self_joints_mixed_with_ordinary_joints_are_dropped_in_order() {
-    // the ordinary joints form a chain 0-1-2-3, so their order changes the result
+fn a_step_with_a_self_joint_is_refused_before_anything_reaches_the_backend() {
     let ordinary = [ball(0, 1), fixed(1, 2), hinge(2, 3), slider(3, 4)];
-    let mixed = [
-        fixed(1, 1),
-        ordinary[0],
-        hinge(3, 3),
-        ordinary[1],
-        spring(0, 0),
-        ordinary[2],
-        ball(4, 4),
-        cone_twist(2, 2),
-        ordinary[3],
-        slider(4, 4),
+    let cases: Vec<(Vec<Joint>, usize, usize)> = vec![
+        (vec![ball(2, 2)], 0, 2),
+        (vec![ordinary[0], fixed(1, 1), ordinary[1]], 1, 1),
+        (vec![ordinary[0], ordinary[1], hinge(3, 3)], 2, 3),
+        (vec![slider(3, 3)], 0, 3),
+        (vec![ordinary[2], spring(4, 4)], 1, 4),
+        (vec![cone_twist(0, 0), ordinary[3]], 0, 0),
     ];
-
-    let (expected_state, expected_log) = run(&ordinary);
-    assert!(!expected_log.is_empty(), "the ordinary joints are uploaded");
-    assert!(
-        expected_log.iter().all(|l| l.as_slice() == ordinary),
-        "the ordinary world uploads its joints unchanged"
-    );
-
-    let (state, received) = run(&mixed);
-    assert_eq!(received, expected_log, "only the ordinary joints, in order");
-    assert_eq!(state, expected_state);
+    for (joints, index, body) in cases {
+        let (mut w, log) = world_with(&joints);
+        let before = state(&w);
+        assert_eq!(
+            w.try_step(dt()),
+            Err(StepError::Joint {
+                index,
+                bodies: (body, body),
+                body_count: 5
+            }),
+            "{joints:?}"
+        );
+        assert!(
+            log.lock().unwrap().is_empty(),
+            "{joints:?}: something reached the backend"
+        );
+        assert_eq!(state(&w), before, "{joints:?}: a body moved");
+    }
 }
 
-/// Every joint a self joint, one of each kind: nothing is uploaded and the world
-/// matches a world with no joint.
 #[test]
-fn a_world_of_self_joints_only_uploads_nothing() {
-    let (free_state, _) = run(&[]);
-    let all_self = [
-        ball(0, 0),
-        fixed(1, 1),
-        hinge(2, 2),
-        slider(3, 3),
-        spring(4, 4),
-        cone_twist(0, 0),
-    ];
-    let (state, received) = run(&all_self);
-    assert_eq!(received.len(), 0, "nothing reaches the backend");
-    assert_eq!(state, free_state);
+#[should_panic(expected = "step refused: joint 1 joins body 3 to itself (body count = 5)")]
+fn a_direct_bridge_solve_with_a_self_joint_panics_before_uploading() {
+    let (mut w, _) = world_with(&[ball(0, 1), hinge(3, 3)]);
+    let mut backend = JointReference::new(Arc::new(Mutex::new(Vec::new())));
+    w.solve_joints_with_bridge(&mut backend, dt());
+}
+
+/// Ordinary joints only: every step uploads them unchanged and in order.
+#[test]
+fn ordinary_joints_are_uploaded_unchanged_and_in_order() {
+    let ordinary = [ball(0, 1), fixed(1, 2), hinge(2, 3), slider(3, 4)];
+    let (_, log) = run(&ordinary);
+    assert!(!log.is_empty(), "the ordinary joints are uploaded");
+    assert!(log.iter().all(|l| l.as_slice() == ordinary));
 }
 
 /// Non-vacuity: the ordinary chain moves the bodies away from the free motion,
