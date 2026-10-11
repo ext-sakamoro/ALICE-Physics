@@ -48,15 +48,21 @@ crate-type = ["rlib", "cdylib", "staticlib"]
 
 [features]
 default = ["std"]
-std = ["alice-det-math/std", "dep:alice-crypto", "alice-crypto/std"]
+std = ["alice-det-math/std"]
 simd = []            # Enable SIMD (AVX2) optimizations for x86_64
 parallel = ["rayon"] # Parallel constraint solving via graph coloring
 python = ["pyo3", "numpy"] # Python bindings (PyO3 + NumPy zero-copy)
 ffi = ["std"]              # C FFI for Unity/UE5/game engines
-# WebAssembly bindings for browsers; `getrandom/js` gives alice-crypto's getrandom
-# (privacy::SecureRng / DpNoise entropy) the browser's crypto.getRandomValues,
-# without which getrandom does not build for wasm32-unknown-unknown
-wasm = ["wasm-bindgen", "js-sys", "dep:getrandom", "getrandom/js"]
+# WebAssembly bindings for browsers. With `privacy-crypto` on, `getrandom?/js`
+# gives alice-crypto's getrandom (the `SecureRng::from_entropy` /
+# `DpNoise::try_from_entropy` entropy) the browser's crypto.getRandomValues;
+# without `privacy-crypto` there is no getrandom in the build at all
+wasm = ["wasm-bindgen", "js-sys", "getrandom?/js"]
+# Differential-privacy primitives re-exported from alice-crypto in `privacy`
+# (SecureRng, DpNoise, dp_int, ..., KeyedRappor). Additive and off by default:
+# `std` alone never pulls alice-crypto or an entropy source. alice-crypto is a
+# public dependency of this feature (its types appear in `privacy`)
+privacy-crypto = ["std", "dep:alice-crypto", "alice-crypto/std", "dep:getrandom"]
 gpu-solver-bridge = ["std"]  # GpuSolverBridge trait for external GPU offload (opt-in, no runtime overhead when off)
 # J-4 restoration (v0.14.0-preview.8、2026-09-13) — sibling 3 crate が crates.io に
 # publish されたため、v0.14.0-preview.4 で削除した bridge 3 feature を復活
@@ -110,6 +116,14 @@ sha2 = "0.10"
 # the wasm32-wasip1 CI test job (dev-deps are built for `cargo test`).
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 loom = "0.7"
+
+[[example]]
+name = "privacy_budget_and_rappor"
+required-features = ["privacy-crypto"]
+
+[[example]]
+name = "laplace_noise_aggregate"
+required-features = ["privacy-crypto"]
 
 [[example]]
 name = "basic_physics"

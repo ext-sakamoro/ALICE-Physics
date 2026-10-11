@@ -5,7 +5,9 @@
 //!
 //! # Which types to use
 //!
-//! The private mechanisms are those of `alice-crypto` (re-exported here):
+//! The private mechanisms are those of `alice-crypto`, re-exported here with
+//! the `privacy-crypto` feature (off by default, so `std` alone pulls no
+//! entropy source):
 //! keyed ChaCha20 ([`SecureRng`]), discrete Laplace noise sampled with integer
 //! arithmetic in constant time ([`dp_count`], [`dp_int`], [`dp_sum`],
 //! [`DpNoise`]), [`randomized_response`] and [`bernoulli_ratio`], plus
@@ -25,6 +27,8 @@
 //! # Examples
 //!
 //! ```
+//! # #[cfg(feature = "privacy-crypto")]
+//! # fn main() {
 //! use alice_physics::privacy::{dp_int, KeyedRappor, PrivacyBudget, SecureRng};
 //!
 //! // integer value with sensitivity 1, ε = 1, from a 32-byte secret key
@@ -41,11 +45,15 @@
 //! let mut budget = PrivacyBudget::new(10.0);
 //! assert!(budget.try_spend(1.0));
 //! assert_eq!(budget.remaining(), 9.0);
+//! # }
+//! # #[cfg(not(feature = "privacy-crypto"))]
+//! # fn main() {}
 //! ```
 
 // the deprecated types refer to each other; the deprecation is for callers
 #![allow(deprecated)]
 
+#[cfg(feature = "privacy-crypto")]
 pub use alice_crypto::dp::{
     bernoulli_ratio, dp_count, dp_int, dp_sum, randomized_response, DpError, DpNoise, EntropyError,
     SecureRng, RR_MAX_EPSILON_WHOLE,
@@ -501,6 +509,7 @@ impl Rappor {
 /// keyed ChaCha20 stream ([`bernoulli_ratio`]) and the result is chosen by
 /// arithmetic, so the work and the keystream use do not depend on the value
 /// being reported. The Bloom encoding is the one [`Rappor`] uses.
+#[cfg(feature = "privacy-crypto")]
 pub struct KeyedRappor {
     f: (u64, u64),
     p: (u64, u64),
@@ -508,6 +517,7 @@ pub struct KeyedRappor {
     rng: SecureRng,
 }
 
+#[cfg(feature = "privacy-crypto")]
 impl core::fmt::Debug for KeyedRappor {
     fn fmt(&self, fmt: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         fmt.debug_struct("KeyedRappor")
@@ -518,6 +528,7 @@ impl core::fmt::Debug for KeyedRappor {
     }
 }
 
+#[cfg(feature = "privacy-crypto")]
 impl KeyedRappor {
     /// A RAPPOR encoder whose noise comes from the 32-byte secret `key`
     ///
@@ -750,7 +761,7 @@ impl PrivateAggregator {
 // Tests
 // ============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "privacy-crypto"))]
 mod keyed_rappor_tests {
     use super::{bloom_bits, DpError, KeyedRappor, RAPPOR_BITS};
 

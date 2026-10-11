@@ -200,8 +200,8 @@ cargo clippy --all-targets --features "$NATIVE" -- -D warnings
 # surfaces as an ambiguity error at this exact feature combination — missed
 # here before and only caught by CI (2026-10-03, program item 16,
 # tests/analytic_multi_world_wiring.rs:339 `[0,2].into_iter().collect()`).
-step "clippy -D warnings (full native feature set incl. neural/replay/analytics, all targets)"
-cargo clippy --all-targets --features "$NATIVE,neural,replay,analytics" -- -D warnings
+step "clippy -D warnings (full native feature set incl. neural/replay/analytics/privacy-crypto, all targets)"
+cargo clippy --all-targets --features "$NATIVE,neural,replay,analytics,privacy-crypto" -- -D warnings
 
 step "wasm32-wasip1 golden tests build (dev-deps are built for the target too)"
 rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm32-wasip1
@@ -211,7 +211,10 @@ cargo test --test determinism_golden_contacts --target wasm32-wasip1 --no-run
 
 step "wasm32-unknown-unknown build with every browser feature (CI job js-binding)"
 rustup target list --installed | grep -q wasm32-unknown-unknown || rustup target add wasm32-unknown-unknown
+cargo build --lib --target wasm32-unknown-unknown
+cargo build --lib --target wasm32-unknown-unknown --no-default-features --features std
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,replay,analytics,gpu-solver-bridge,simd"
+cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
 
 step "rustdoc -D warnings (default + docs.rs feature set)"
 RUSTDOCFLAGS="-Dwarnings" cargo doc --lib --no-deps
@@ -234,6 +237,7 @@ cargo test --no-fail-fast
 
 step "cargo test --lib (native feature set)"
 cargo test --lib --features "$NATIVE"
+cargo test --lib --features privacy-crypto privacy
 
 # same commands as ci.yml: the integration tests gated on `parallel` (in 29 test
 # files) and the SIMD paths with simd alone

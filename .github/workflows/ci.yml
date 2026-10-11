@@ -215,6 +215,9 @@ jobs:
       # them failing in the unmutated tree
       - name: Test (full native feature set, lib)
         run: cargo test --lib --features "std,simd,parallel,ffi,gpu-solver-bridge"
+      # the alice-crypto re-exports and KeyedRappor are behind their own feature
+      - name: Test (privacy-crypto, lib)
+        run: cargo test --lib --features privacy-crypto privacy
 
       # PHYSICS_SEMANTICS_ID and its table are constants no cfg gates: the same
       # file runs in `cargo test` above (default features) and here with the
@@ -336,8 +339,16 @@ jobs:
       # every feature that applies in a browser, built for the browser target
       # (parallel / python / ffi do not apply; simd has no wasm path and falls
       # back to scalar; replay records to memory there)
+      # the default and std-only builds draw no entropy source: a dependency
+      # that needs one (getrandom) must not reach them (2.3.0 review)
+      - name: Build for wasm32-unknown-unknown (default features)
+        run: cargo build --lib --target wasm32-unknown-unknown
+      - name: Build for wasm32-unknown-unknown (std only)
+        run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features std
       - name: Build for wasm32-unknown-unknown with every browser feature
         run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,replay,analytics,gpu-solver-bridge,simd"
+      - name: Build for wasm32-unknown-unknown (privacy-crypto, entropy from the browser)
+        run: cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
 
   wasm-test:
     name: Test (wasm32-wasip1 via wasmtime)
@@ -419,7 +430,7 @@ jobs:
       - name: Clippy (full native feature set, lib + all targets)
         run: >-
           cargo clippy
-          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics"
+          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics,privacy-crypto"
           --all-targets -- -D warnings
 
   # The declared `rust-version` is compiled with exactly that toolchain from the

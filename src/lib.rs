@@ -641,11 +641,12 @@ pub use pipeline::{
 pub use plane_collider::PlaneCollider;
 #[cfg(feature = "std")]
 pub use pressure::{PressureConfig, PressureModifier};
+#[cfg(feature = "privacy-crypto")]
+pub use privacy::KeyedRappor;
 #[cfg(feature = "std")]
 #[allow(deprecated)] // kept for existing callers, who see the deprecation at their use
 pub use privacy::{
-    KeyedRappor, LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor,
-    XorShift64,
+    LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
 };
 pub use profiling::{PhysicsProfiler, ProfileEntry, StepStats};
 pub use query::{
@@ -807,11 +808,12 @@ pub mod prelude {
     pub use crate::plane_collider::PlaneCollider;
     #[cfg(feature = "std")]
     pub use crate::pressure::{PressureConfig, PressureModifier};
+    #[cfg(feature = "privacy-crypto")]
+    pub use crate::privacy::KeyedRappor;
     #[cfg(feature = "std")]
     #[allow(deprecated)] // kept for existing callers, who see the deprecation at their use
     pub use crate::privacy::{
-        KeyedRappor, LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor,
-        XorShift64,
+        LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
     };
     pub use crate::profiling::{PhysicsProfiler, ProfileEntry, StepStats};
     pub use crate::query::{
