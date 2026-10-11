@@ -126,6 +126,12 @@ WAITS = """| workflow | class | waits for |
 | `ci.yml` | landing | success; started only: test |
 | `gated.yml` | after-landing | started: heavy jobs started, or all skipped by the changes job |
 """
+AFTER = """| item | class |
+|---|---|
+| ci.yml: test | after-landing |
+| ci.yml: test | main-after-landing |
+| gated.yml | after-landing |
+"""
 LEGS = """| workflow | job | matrix | class | events |
 |---|---|---|---|---|
 | `ci.yml` | `test` | `macos-latest` | after-landing | push main, push ci/**, pull_request, workflow_dispatch |
@@ -133,11 +139,12 @@ LEGS = """| workflow | job | matrix | class | events |
 """
 
 
-def doc(rows: str = ROWS, legs: str = LEGS, dispatch: str = DISPATCH, waits: str = WAITS) -> str:
+def doc(rows: str = ROWS, legs: str = LEGS, dispatch: str = DISPATCH, waits: str = WAITS, after: str = AFTER) -> str:
     return ("# T\n\n<!-- ci-triggers:workflows:begin -->\n" + rows + "<!-- ci-triggers:workflows:end -->\n\n"
             "<!-- ci-triggers:after-landing-legs:begin -->\n" + legs + "<!-- ci-triggers:after-landing-legs:end -->\n\n"
             "<!-- ci-triggers:dispatchable:begin -->\n" + dispatch + "<!-- ci-triggers:dispatchable:end -->\n\n"
-            "<!-- ci-triggers:landing-waits:begin -->\n" + waits + "<!-- ci-triggers:landing-waits:end -->\n")
+            "<!-- ci-triggers:landing-waits:begin -->\n" + waits + "<!-- ci-triggers:landing-waits:end -->\n\n"
+            "<!-- ci-triggers:after-landing-wait:begin -->\n" + after + "<!-- ci-triggers:after-landing-wait:end -->\n")
 
 
 def tree(evidence: str = EVIDENCE, document: str | None = None, **over: str | None) -> Path:
@@ -390,6 +397,18 @@ class Triggers(unittest.TestCase):
     def test_a_missing_landing_waits_table_fails(self):
         no_table = doc().split("<!-- ci-triggers:landing-waits:begin -->")[0]
         self.has(self.errors(document=no_table), "no table between <!-- ci-triggers:landing-waits")
+
+    def test_the_after_landing_table_must_match_land_py(self):
+        self.has(self.errors(document=doc(after=AFTER.replace("| gated.yml | after-landing |\n", ""))),
+                 "after-landing-wait row ('gated.yml', 'after-landing') missing")
+        self.has(self.errors(document=doc(after=AFTER + "| weekly.yml | after-landing |\n")),
+                 "('weekly.yml', 'after-landing') is not what land.py --wait reads")
+        no_table = doc().split("<!-- ci-triggers:after-landing-wait:begin -->")[0]
+        self.has(self.errors(document=no_table), "no table between <!-- ci-triggers:after-landing-wait")
+
+    def test_land_py_failing_to_derive_the_after_set_shows(self):
+        ev = EVIDENCE.replace('job = "test"', 'job = "tests"', 1)
+        self.has(self.errors(evidence=ev), "scripts/land.py cannot derive the after-landing set")
 
     def test_land_py_failing_to_derive_shows(self):
         body = CI.replace("  workflow_dispatch:\n", "")

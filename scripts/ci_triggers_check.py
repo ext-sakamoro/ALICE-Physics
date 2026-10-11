@@ -24,7 +24,8 @@ docs/CI_TRIGGERS.md; the evidence class of the row is compared with
   * a path-gated workflow has the guard's `gate` job (`changed_paths.py gate`, `if:
     always()`, needs every other job), and a workflow without a path gate has none (ci.yml's
     `gate` job is the nightly Mac Intel decision, a different job);
-  * the landing-waits table equals what scripts/land.py derives and waits on;
+  * the landing-waits table equals what scripts/land.py derives and waits on, and the
+    after-landing-wait table equals what `land.py --wait` reads on main;
   * a workflow that runs on ci/** cannot cancel a main run: its concurrency group
     includes the ref, or `cancel-in-progress` is false.
 
@@ -74,6 +75,8 @@ DISPATCH_TABLE = "ci-triggers:dispatchable"
 DISPATCH_COLUMNS = ("workflow",)
 WAIT_TABLE = "ci-triggers:landing-waits"
 WAIT_COLUMNS = ("workflow", "class", "waits for")
+AFTER_TABLE = "ci-triggers:after-landing-wait"
+AFTER_COLUMNS = ("item", "class")
 
 
 class ExprError(ValueError):
@@ -331,6 +334,8 @@ def check(root: Path) -> tuple[list[str], int]:
     errors += errs
     wait_rows, errs = table(doc, WAIT_TABLE, WAIT_COLUMNS)
     errors += errs
+    after_rows, errs = table(doc, AFTER_TABLE, AFTER_COLUMNS)
+    errors += errs
 
     names = set(files)
     for label, got in ((EVIDENCE, set(classes)), (DOC, {r["workflow"] for r in rows})):
@@ -456,6 +461,19 @@ def check(root: Path) -> tuple[list[str], int]:
             errors.append(f"{DOC}: landing-waits row {row} missing (scripts/land.py waits on it)")
         for row in sorted(got_wait - want_wait):
             errors.append(f"{DOC}: landing-waits row {row} is not what scripts/land.py waits on")
+
+    # the after-landing table equals what `land.py --wait` reads (land.after_landing_items)
+    try:
+        want_after = {(land.after_item_label(i), i["cls"]) for i in land.after_landing_items(root)}
+    except land.LandError as e:
+        errors.append(f"scripts/land.py cannot derive the after-landing set: {e}")
+        want_after = None
+    if want_after is not None:
+        got_after = {tuple(r[c] for c in AFTER_COLUMNS) for r in after_rows}
+        for row in sorted(want_after - got_after):
+            errors.append(f"{DOC}: after-landing-wait row {row} missing (land.py --wait reads it)")
+        for row in sorted(got_after - want_after):
+            errors.append(f"{DOC}: after-landing-wait row {row} is not what land.py --wait reads")
 
     if compared == 0:
         errors.append("no workflow row compared (compared nothing)")

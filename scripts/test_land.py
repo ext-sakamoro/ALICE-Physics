@@ -70,15 +70,11 @@ class FakeLander(land.Lander):
     def run_compile_check(self):
         self.calls.append("compile")
 
-    def wait_ci(self, ref, sha):
-        self.calls.append(f"wait_ci {ref}")
-        if self.ci_result != "success":
-            raise land.LandError(f"CI on {ref} ended `{self.ci_result}`")
-
     def wait_evidence(self, ref, sha):
         self.calls.append(f"wait_evidence {ref}")
         if self.ci_result != "success":
             raise land.LandError(f"CI on {ref} ended `{self.ci_result}`")
+        self.record.append("evidence: ci.yml run 1 success")
 
     def fetch(self):
         if self.before_push is not None and "checks" in self.calls:
@@ -123,24 +119,23 @@ class Repo:
 
 
 class Pure(unittest.TestCase):
-    def test_lane_by_path(self):
-        self.assertEqual(land.lane_of(["src/a.rs", "tests/x.rs"]), "direct")
-        for p in (".github/workflows/ci.yml", "scripts/x.py", "Cargo.toml", "Cargo.lock", "bindings/A.cs"):
-            self.assertEqual(land.lane_of(["src/a.rs", p]), "ci", p)
-        self.assertEqual(land.lane_of(["docs/Cargo.toml.md"]), "direct")
-
     def test_docs_only(self):
         self.assertTrue(land.docs_only(["docs/oracle-status.md", "CHANGELOG.md", "README_JP.md"]))
         self.assertFalse(land.docs_only(["docs/x.md", "src/a.rs"]))
         self.assertFalse(land.docs_only([]))
 
-    def test_os_specific_code_goes_to_the_ci_lane(self):
-        self.assertEqual(land.lane_of(["src/a.rs"], "#[cfg(windows)]\nfn f() {}"), "ci")
-        self.assertEqual(land.lane_of(["src/a.rs"], 'let v = std::env::var("X");'), "ci")
-        self.assertEqual(land.lane_of(["src/a.rs"], "fn plain() {}"), "direct")
-        for p in ("fuzz/Cargo.toml", "deny.toml", "rust-toolchain.toml", "include/a.h", "unreal-plugin/x.cpp",
-                  ".gitattributes", ".cargo/config.toml"):
-            self.assertEqual(land.lane_of([p]), "ci", p)
+    def test_direct_reason_rules(self):
+        self.assertIsNone(land.direct_reason_problem(False, None))
+        self.assertIn("at least 12", land.direct_reason_problem(True, None))
+        self.assertIn("at least 12", land.direct_reason_problem(True, "x" * 11))
+        self.assertIn("at least 12", land.direct_reason_problem(True, "  " + "x" * 11 + "   "))
+        self.assertIsNone(land.direct_reason_problem(True, "x" * 12))
+        self.assertIn("only for --direct", land.direct_reason_problem(False, "revert the red main"))
+
+    def test_the_cli_refuses_direct_without_a_reason(self):
+        for argv in (["--id", "x", "--direct"], ["--id", "x", "--direct", "--reason", "too short"],
+                     ["--id", "x", "--reason", "revert the red main abc"]):
+            self.assertEqual(land.main(argv), 2, argv)
 
     def test_changelog_duplicates(self):
         ok = "# C\n\n## [Unreleased]\n\n### Added\n- a\n- b\n\n## [1.0.0]\n\n### Added\n- a\n"
@@ -178,14 +173,37 @@ class Landing(unittest.TestCase):
         self.assertIn("lib-test gate", str(cm.exception))
         self.assertIn("src/c.rs: new source file without lib tests", str(cm.exception))
 
-    def test_direct_lane_lands_and_regenerates(self):
+    def test_a_src_only_change_takes_the_ci_lane(self):
         commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         lander = self.r.lander()
         sha = lander.land()
         self.assertEqual(self.r.origin_head(), sha)
-        self.assertNotIn("wait_evidence ci/T-1", lander.calls)
+        self.assertIn("wait_evidence ci/T-1", lander.calls)
+        self.assertIn("lane: ci (ci/T-1)", lander.record)
+        self.assertIn("evidence: ci.yml run 1 success", lander.record)
+        self.assertIn(f"landed: {sha} on main (attempt 1)", lander.record)
+        self.assertTrue(any(l.startswith("evidence SHA: ") for l in lander.record))
         self.assertEqual((self.r.work / "docs/integration-status.md").read_text(), "ledger: a.rs, b.rs\n")
         self.assertIn("docs: regenerate the generated ledgers", git(self.r.work, "log", "-1", "--format=%s"))
+
+    def test_direct_landing_is_recorded_with_its_reason(self):
+        commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        logged = []
+        lander = FakeLander(self.r.work, "T-1", direct_reason="  revert the red main of abc1234  ")
+        lander.log = logged.append
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertNotIn("wait_evidence ci/T-1", lander.calls)
+        self.assertIn("lane: DIRECT (emergency, no ci/ evidence) reason: revert the red main of abc1234", lander.record)
+        self.assertTrue(any("WARNING: DIRECT LANDING" in l for l in logged), logged)
+        self.assertTrue(any("WARNING: reason: revert the red main of abc1234" in l for l in logged))
+        self.assertTrue(any("landing record:" in l for l in logged))
+        self.assertTrue(any("lane: DIRECT" in l for l in logged))
+
+    def test_direct_landing_without_a_good_reason_is_refused(self):
+        for reason in ("", "too short", " " * 20):
+            with self.assertRaisesRegex(land.LandError, "at least 12"):
+                FakeLander(self.r.work, "T-1", direct_reason=reason)
 
     def test_ci_lane_waits_for_the_branch_ci(self):
         commit(self.r.work, {"scripts/x.py": "print(1)\n"}, "ci: add x")
@@ -465,62 +483,6 @@ class Landing(unittest.TestCase):
         self.assertNotIn("wait_evidence ci/T-1", lander.calls)
 
 
-class WaitCi(unittest.TestCase):
-    """wait_ci against a scripted run list (no network)."""
-
-    def lander(self, answers, at="abc"):
-        class L(land.Lander):
-            def git(self, *a, check=True):
-                return "git@github.com:o/r.git"
-
-            def list_runs(self, slug, ref):
-                return answers.pop(0) if answers else []
-
-            def remote_sha(self, ref):
-                return at
-        lnd = L(Path("."), "T", log=lambda *_: None)
-        lnd.poll_seconds = 0
-        return lnd
-
-    def test_success(self):
-        self.lander([[], [{"headSha": "abc", "databaseId": 1, "status": "completed", "conclusion": "success"}]]
-                    ).wait_ci("main", "abc")
-
-    def test_cancelled_is_not_green(self):
-        with self.assertRaisesRegex(land.LandError, "cancelled .*unverified"):
-            self.lander([[{"headSha": "abc", "databaseId": 1, "status": "completed", "conclusion": "cancelled"}]]
-                        ).wait_ci("main", "abc")
-
-    def test_no_run_at_all_times_out_instead_of_looping(self):
-        old = land.NO_RUN_TIMEOUT
-        land.NO_RUN_TIMEOUT = -1
-        try:
-            with self.assertRaisesRegex(land.LandError, "no ci.yml run"):
-                self.lander([]).wait_ci("main", "abc")
-        finally:
-            land.NO_RUN_TIMEOUT = old
-
-    def test_a_push_that_did_not_reach_the_ref_fails_at_once(self):
-        # with no run and the ref elsewhere there is nothing to wait for: not 30 minutes of polling
-        with self.assertRaisesRegex(land.LandError, "points at def1234, not abc"):
-            self.lander([[]] * 3, at="def1234567").wait_ci("ci/x", "abc")
-
-    def test_a_ref_that_holds_the_sha_keeps_waiting_for_a_late_run(self):
-        late = {"headSha": "abc", "databaseId": 7, "status": "completed", "conclusion": "success"}
-        self.lander([[], [], [], [late]]).wait_ci("ci/x", "abc")
-
-    def test_the_timeout_shows_what_gh_listed(self):
-        other = {"headSha": "fff0000", "databaseId": 9, "status": "completed", "conclusion": "success",
-                 "createdAt": "2026-10-05T12:19:24Z", "event": "push"}
-        old = land.NO_RUN_TIMEOUT
-        land.NO_RUN_TIMEOUT = -1
-        try:
-            with self.assertRaisesRegex(land.LandError, r"fff0000 push completed/success created 2026-10-05T12:19:24Z"):
-                self.lander([[other]]).wait_ci("ci/x", "abc")
-        finally:
-            land.NO_RUN_TIMEOUT = old
-
-
 FAKE_GH = r"""import json, os, sys
 path = os.environ["FAKE_GH_STATE"]
 st = json.load(open(path, encoding="utf-8"))
@@ -616,6 +578,7 @@ class WaitEvidence(unittest.TestCase):
         lnd.poll_seconds = 0
         lnd.max_polls = 12
         lnd.wait_evidence("ci/T", SHA)
+        return lnd
 
     def st(self) -> dict:
         return json.loads(self.state.read_text())
@@ -670,6 +633,26 @@ class WaitEvidence(unittest.TestCase):
     def test_all_green_passes(self):
         self.wait([self.green()])
         self.assertEqual(self.st()["dispatched"], [])
+
+    def test_the_record_lists_each_run_relied_on(self):
+        lnd = self.wait([self.green()])
+        lines = [l for l in lnd.record if l.startswith("evidence: ")]
+        self.assertEqual(len(lines), len(self.expected))
+        self.assertIn(f"evidence: security-audit.yml run {self.rid('security-audit.yml')} success", lines)
+        self.assertIn(f"evidence: ci.yml run {self.rid('ci.yml')} in_progress", lines)
+
+    def test_a_newer_red_run_beats_an_older_green_one(self):
+        for f in ("security-audit.yml", "bench-gate.yml"):
+            runs = self.green()
+            i = self.rid(f) - 1
+            runs.append(dict(runs[i], databaseId=500, conclusion="failure", event="workflow_dispatch"))
+            with self.assertRaisesRegex(land.LandError, f"is red for .*\\n  {f}: run 500 ended failure"):
+                self.wait([runs])
+
+    def test_a_push_that_did_not_reach_the_ref_fails_at_once(self):
+        with self.assertRaisesRegex(land.LandError, "the push did not reach it"):
+            self.wait([[]], at="d" * 40)
+        self.assertEqual(self.st()["polls"], 1)
 
     def test_one_red_stops(self):
         runs = self.green()
@@ -816,6 +799,176 @@ class WaitEvidence(unittest.TestCase):
         lnd.poll_seconds = 0
         with self.assertRaisesRegex(land.LandError, "gh run list --repo failed"):
             lnd.wait_evidence("ci/T", SHA)
+
+
+class WaitAfter(unittest.TestCase):
+    """wait_after on main against a fake `gh` (no network)."""
+
+    def setUp(self):
+        self.dir = Path(tempfile.mkdtemp())
+        self.gh = self.dir / "gh.py"
+        self.gh.write_text(FAKE_GH, encoding="utf-8")
+        self.state = self.dir / "state.json"
+        self.old = os.environ.get("FAKE_GH_STATE")
+        os.environ["FAKE_GH_STATE"] = str(self.state)
+
+    def tearDown(self):
+        if self.old is None:
+            os.environ.pop("FAKE_GH_STATE", None)
+        else:
+            os.environ["FAKE_GH_STATE"] = self.old
+        shutil.rmtree(self.dir, ignore_errors=True)
+
+    def st(self) -> dict:
+        return json.loads(self.state.read_text())
+
+    @staticmethod
+    def job(name, status="completed", concl="success"):
+        return {"name": name, "status": status, "conclusion": concl}
+
+    def ci(self, mac="success", intel="success", mac_status="completed", intel_status="completed"):
+        return [self.job("Test (ubuntu-latest)"), self.job("Test (macos-latest)", mac_status, mac),
+                self.job("Test (macos-15-intel)", intel_status, intel)]
+
+    def miri(self, heavy="success", status="completed", changes="success"):
+        return [self.job("Changed paths", "completed", changes),
+                self.job("loom (batch colouring protocol, --cfg loom)", status, heavy),
+                self.job("Miri (UB 検出、parallel feature)", status, heavy), self.job("Gate")]
+
+    def go(self, ci_jobs=None, miri_jobs=None, runs=None, extra_jobs=None, polls=3):
+        runs = runs if runs is not None else [ok_run("CI", 1), ok_run("Miri and loom (changed unsafe or parallel code)", 2)]
+        jobs = {"1": ci_jobs if ci_jobs is not None else self.ci(), "2": miri_jobs if miri_jobs is not None else self.miri()}
+        jobs.update(extra_jobs or {})
+        self.state.write_text(json.dumps({"list": [runs], "jobs": jobs, "on_dispatch": {}, "added": [],
+                                          "dispatched": [], "calls": [], "polls": 0}))
+
+        class L(land.Lander):
+            def git(self, *a, check=True):
+                return "git@github.com:o/r.git"
+        lnd = L(ROOT, "T", log=lambda *_: None)
+        lnd.gh_cmd = [sys.executable, str(self.gh)]
+        lnd.poll_seconds = 0
+        lnd.after_max_polls = polls
+        return lnd.wait_after(SHA)
+
+    def test_the_items_are_derived(self):
+        labels = [land.after_item_label(i) for i in land.after_landing_items(ROOT)]
+        self.assertEqual(labels, ["ci.yml: Test (macos-latest)", "ci.yml: Test (macos-15-intel)", "unsafe-and-parallel.yml"])
+
+    def test_all_green(self):
+        code, lines = self.go()
+        self.assertEqual(code, 0, lines)
+        self.assertEqual(len(lines), 3)
+        self.assertTrue(all(l.startswith("ok: ") for l in lines), lines)
+
+    def test_miri_that_did_not_run_is_reported(self):
+        code, lines = self.go(miri_jobs=self.miri(heavy="skipped"))
+        self.assertEqual(code, 0)
+        self.assertIn("ok: unsafe-and-parallel.yml: run 2: did not run (the changes job said run=false)", lines)
+
+    def test_a_red_leg_says_revert_or_fix_now(self):
+        for kw, label in (({"mac": "failure"}, "Test (macos-latest)"), ({"intel": "failure"}, "Test (macos-15-intel)")):
+            code, lines = self.go(ci_jobs=self.ci(**kw))
+            self.assertEqual(code, land.EXIT_RED)
+            red = [l for l in lines if l.startswith("REVERT OR FIX NOW")]
+            self.assertEqual(len(red), 1, lines)
+            self.assertIn(label, red[0])
+            self.assertIn("run 1", red[0])
+
+    def test_red_miri_says_revert_or_fix_now(self):
+        code, lines = self.go(miri_jobs=self.miri(heavy="failure"))
+        self.assertEqual(code, land.EXIT_RED)
+        self.assertTrue(any(l.startswith("REVERT OR FIX NOW: unsafe-and-parallel.yml") and "run 2" in l for l in lines), lines)
+
+    def test_red_changes_job_is_red(self):
+        code, _ = self.go(miri_jobs=self.miri(changes="failure"))
+        self.assertEqual(code, land.EXIT_RED)
+
+    def test_unfinished_is_pending_with_ids(self):
+        code, lines = self.go(ci_jobs=self.ci(intel="", intel_status="in_progress"))
+        self.assertEqual(code, land.EXIT_PENDING)
+        self.assertNotEqual(land.EXIT_PENDING, land.EXIT_RED)
+        self.assertIn("pending: ci.yml: Test (macos-15-intel): job 'Test (macos-15-intel)' in_progress in run 1", lines)
+        self.assertEqual(self.st()["polls"], 3)  # polled up to the bound
+
+    def test_miri_not_finished_is_pending(self):
+        code, lines = self.go(miri_jobs=self.miri(heavy="", status="in_progress"))
+        self.assertEqual(code, land.EXIT_PENDING)
+
+    def test_no_run_is_pending_not_green(self):
+        code, lines = self.go(runs=[ok_run("CI", 1)])
+        self.assertEqual(code, land.EXIT_PENDING)
+        self.assertIn("pending: unsafe-and-parallel.yml: no run for the SHA yet", lines)
+
+    def test_a_missing_leg_job_is_pending_not_green(self):
+        code, lines = self.go(ci_jobs=self.ci()[:2])
+        self.assertEqual(code, land.EXIT_PENDING)
+        self.assertTrue(any("no job 'Test (macos-15-intel)'" in l for l in lines), lines)
+
+    def test_a_cancelled_leg_is_pending_not_green(self):
+        code, _ = self.go(ci_jobs=self.ci(intel="cancelled"))
+        self.assertEqual(code, land.EXIT_PENDING)
+
+    def test_the_nightly_re_run_of_the_intel_leg_counts(self):
+        # the push run's Intel leg was cancelled; the nightly run (newer id) passed it
+        runs = [ok_run("CI", 1), ok_run("CI", 3, event="schedule"), ok_run("Miri and loom (changed unsafe or parallel code)", 2)]
+        code, lines = self.go(ci_jobs=self.ci(intel="cancelled"), runs=runs,
+                              extra_jobs={"3": [self.job("Test (macos-15-intel)")]})
+        self.assertEqual(code, 0, lines)
+        self.assertIn("ok: ci.yml: Test (macos-15-intel): job 'Test (macos-15-intel)' success in run 3", lines)
+
+    def test_the_newest_leg_result_counts(self):
+        runs = [ok_run("CI", 1), ok_run("CI", 3, event="schedule"), ok_run("Miri and loom (changed unsafe or parallel code)", 2)]
+        code, _ = self.go(runs=runs, extra_jobs={"3": [self.job("Test (macos-15-intel)", "completed", "failure")]})
+        self.assertEqual(code, land.EXIT_RED)
+
+    def test_runs_of_another_sha_do_not_count(self):
+        runs = [dict(ok_run("CI", 1), headSha="e" * 40), ok_run("Miri and loom (changed unsafe or parallel code)", 2)]
+        code, _ = self.go(runs=runs)
+        self.assertEqual(code, land.EXIT_PENDING)
+
+    def test_red_stops_polling_early(self):
+        self.go(ci_jobs=self.ci(mac="failure"), polls=5)
+        self.assertEqual(self.st()["polls"], 1)
+
+    def test_miri_changes_job_running_is_pending(self):
+        miri = self.miri(heavy="", status="queued")
+        miri[0].update(status="in_progress", conclusion="")
+        code, lines = self.go(miri_jobs=miri)
+        self.assertEqual(code, land.EXIT_PENDING)
+        self.assertIn("pending: unsafe-and-parallel.yml: run 2: the changes job has not finished", lines)
+
+    def test_a_cancelled_miri_run_is_pending_not_green(self):
+        runs = [ok_run("CI", 1), ok_run("Miri and loom (changed unsafe or parallel code)", 2, conclusion="cancelled")]
+        code, lines = self.go(runs=runs)
+        self.assertEqual(code, land.EXIT_PENDING)
+        self.assertTrue(any("ended cancelled (no result; re-run it)" in l for l in lines), lines)
+
+    def test_an_empty_after_landing_set_fails(self):
+        d = self.dir / "tree"
+        (d / ".github" / "workflows").mkdir(parents=True)
+        (d / ".github" / "workflows" / "w.yml").write_text("name: W\non:\n  push:\n    branches: [main]\njobs:\n  a: {}\n")
+        (d / ".github" / "ci-evidence.toml").write_text('[workflows]\n"w.yml" = "landing"\n')
+        with self.assertRaisesRegex(land.LandError, "compared nothing"):
+            land.after_landing_items(d)
+
+    def test_miri_partly_skipped_is_red(self):
+        miri = self.miri()
+        miri[1].update(conclusion="skipped")
+        code, lines = self.go(miri_jobs=miri)
+        self.assertEqual(code, land.EXIT_RED)
+        self.assertTrue(any("heavy jobs partly skipped" in l for l in lines), lines)
+
+    def test_the_cli_exit_codes(self):
+        class L(land.Lander):
+            def __init__(s, code):
+                s.code, s.id, s.branch = code, "T", "main"
+
+            def wait_after(s, sha):
+                return s.code, ["x"]
+        self.assertEqual(land.report_after(L(0), SHA), 0)
+        self.assertEqual(land.report_after(L(land.EXIT_RED), SHA), land.EXIT_RED)
+        self.assertEqual(land.report_after(L(land.EXIT_PENDING), SHA), land.EXIT_PENDING)
 
 
 class Verdict(unittest.TestCase):

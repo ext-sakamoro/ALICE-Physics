@@ -1,7 +1,8 @@
 # CI triggers and landing evidence
 
 A change lands in two steps: `scripts/land.py` pushes the commits to a `ci/<id>`
-branch, waits for its CI, then fast-forwards `main` to the same SHA. The runs on the
+branch, waits for its CI, then moves `main` (fast-forward, after a rebase when `main`
+moved meanwhile). The runs on the
 `ci/<id>` SHA are the evidence for the landing. This page lists, for every workflow,
 what starts it and what its run on a `ci/**` branch means.
 
@@ -96,9 +97,10 @@ a `ci/**` push is not declared.
 
 ## What the landing waits on
 
-`scripts/land.py` pushes a change of the CI lane to `ci/<id>` and waits on every workflow
-whose `on.push` runs on `ci/**`, with the class of `.github/ci-evidence.toml` (the list is
-derived from the workflow files, not written in the script):
+Every landing takes the `ci/<id>` lane: `scripts/land.py` pushes the commits to
+`ci/<id>` and waits on every workflow whose `on.push` runs on `ci/**`, with the class of
+`.github/ci-evidence.toml` (the list is derived from the workflow files, not written in
+the script), before `main` moves. A change of `src/` only is no exception.
 
 - **landing**: the newest run for the SHA completes with conclusion `success`. For a
   path-gated workflow that is the `Gate` job's verdict, so a run whose heavy jobs were
@@ -113,8 +115,13 @@ derived from the workflow files, not written in the script):
   re-creates the run with `gh workflow run <workflow> --ref ci/<id>`, at most twice per
   workflow, then stops. Absence is never read as success, and a landing that would wait on
   0 workflows fails.
+- The newest run for the SHA counts: a newer red run (a re-run or a manual run) stops the
+  landing even when an older run of the same workflow was green.
 - One `gh run list` per poll (every 30 s) plus one `gh run view` per unfinished run whose
   decision needs its jobs; the wait is bounded at 2 hours.
+- The landing record printed at the end names the lane, the evidence SHA, one line per
+  expected workflow (`evidence: <workflow> run <id> <conclusion>`) and the landed SHA, so
+  it can be pasted as evidence.
 
 `scripts/ci_triggers_check.py` compares this table with what `scripts/land.py` derives:
 
@@ -133,6 +140,42 @@ derived from the workflow files, not written in the script):
 | `unsafe-and-parallel.yml` | after-landing | started: heavy jobs started, or all skipped by the changes job |
 | `wiring-status.yml` | landing | success |
 <!-- ci-triggers:landing-waits:end -->
+
+### Emergency escape: `--direct`
+
+`python3 scripts/land.py --id <id> --direct --reason "<why, at least 12 characters>"`
+lands without the `ci/<id>` push and without any CI evidence, for an emergency such as
+reverting a red `main`. It is refused without a reason or with a shorter one. It prints a
+warning with the reason, and the landing record carries
+`lane: DIRECT (emergency, no ci/ evidence) reason: <why>`. There is no environment
+variable or default that skips the `ci/<id>` lane.
+
+## What is read after the landing
+
+`python3 scripts/land.py --id <id> --wait` (after the landing) or
+`--wait-only <SHA>` reads the after-landing set on `main` for the landed SHA and reports
+each item on its own line:
+
+- each matrix leg of class `after-landing` or `main-after-landing` (the macOS test legs):
+  the job in the newest run of its workflow that has it (the push to `main`, or a nightly
+  re-run of the Mac Intel leg);
+- each workflow of class `after-landing` (Miri and loom): its newest run; when its
+  changes job said `run=false` it is reported as not run.
+
+Exit codes: `0` every item green; `4` an item is red, and the line reads
+`REVERT OR FIX NOW: <workflow>: <job> ... run <id>`; `3` an item had not finished within
+3 hours (pending, with the run ids); `1` any other error. A missing run or job, or a
+cancelled one, is pending, never green.
+
+`scripts/ci_triggers_check.py` compares this table with what `scripts/land.py` derives:
+
+<!-- ci-triggers:after-landing-wait:begin -->
+| item | class |
+|---|---|
+| ci.yml: Test (macos-latest) | after-landing |
+| ci.yml: Test (macos-15-intel) | main-after-landing |
+| unsafe-and-parallel.yml | after-landing |
+<!-- ci-triggers:after-landing-wait:end -->
 
 ## Dropped runs
 

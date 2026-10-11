@@ -8,12 +8,12 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      CHANGELOG line when src/ changes (--no-changelog for a pure refactor);
   2. regenerates the ledgers (they are checked against a freshly built index)
      and runs `scripts/preflight.sh --fast` once;
-  3. CI lane: when the change touches .github/, scripts/, Cargo.toml / .lock or
-     bindings/ (the parts whose failures were OS / runner specific), pushes
-     HEAD to `ci/<id>` and waits for the evidence of every workflow that runs on
-     ci/** (wait_evidence: the classes of .github/ci-evidence.toml; a missing or
-     dropped run is re-created with `gh workflow run`); other changes go straight
-     on (their post-push CI on main has been green);
+  3. pushes HEAD to `ci/<id>` and waits for the evidence of every workflow that
+     runs on ci/** (wait_evidence: the classes of .github/ci-evidence.toml; a
+     missing or dropped run is re-created with `gh workflow run`); every landing
+     takes this lane. The one exception is the emergency escape `--direct
+     --reason "<why>"` (e.g. reverting a red main): it skips the ci/ push, prints
+     a warning and puts the reason in the landing record;
   4. rebases on the latest origin/main with a fixed committer; a conflict in a
      generated ledger is resolved by taking main's copy (it is regenerated
      next), any other conflict stops the landing;
@@ -25,10 +25,21 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
 Generated ledgers are not meant to be edited on a branch: they are rebuilt at
 landing time, so two landings never conflict on them.
 
+The landing record (printed at the end) lists the lane and, per expected
+workflow, the run id and conclusion the landing relied on.
+
+After the land, `--wait` / `--wait-only SHA` read the after-landing set on main
+(after_landing_items): the after-landing legs (macos-latest), the legs that run on
+main only (macos-15-intel, also re-run by the nightly safety net) and the
+after-landing workflows when they ran (Miri and loom). Exit codes: 0 all green,
+EXIT_RED (4) a red result ("REVERT OR FIX NOW"), EXIT_PENDING (3) not finished
+within the bound, 1 any other error.
+
 Usage:
   python3 scripts/land.py --id AUD-A-S1W2-005            # land
   python3 scripts/land.py --id tgs-keys --dry-run         # everything but the pushes
-  python3 scripts/land.py --id x --wait                   # also poll the main CI
+  python3 scripts/land.py --id x --wait                   # also read the after-landing set on main
+  python3 scripts/land.py --id revert-x --direct --reason "revert the red main of abc1234"
 """
 
 from __future__ import annotations
@@ -61,16 +72,12 @@ SEMI_GENERATED = ("docs/MODULES.md",)
 # both sides changed the same lines. A union merge is not used: it keeps the old
 # and the new version of a rewritten line side by side
 APPEND_ONLY = ("CHANGELOG.md",)
-# changes whose failures have been OS / runner / toolchain specific
-CI_LANE_RE = re.compile(
-    r"^(\.github/|scripts/|Cargo\.(toml|lock)$|bindings/|fuzz/|deny\.toml$|rust-toolchain|include/"
-    r"|unreal-plugin/|\.gitattributes$|\.cargo/)")
-# added code that behaves differently per OS / locale / terminal
-OS_CODE_RE = re.compile(r"cfg\((?:[^)]*\b)?(windows|unix|target_os|target_arch|target_family)\b|std::env::var|std::fs::")
+DIRECT_REASON_MIN = 12  # characters of --reason required by the emergency --direct landing
+EXIT_PENDING = 3        # --wait: the after-landing set did not finish within the bound
+EXIT_RED = 4            # --wait: an after-landing result is red
 SIGNATURE_RE = re.compile(r"Co-Authored-By:|^\s*Generated with\b|\U0001F916", re.I | re.M)
 NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
 NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
-NO_RUN_TIMEOUT = 1800  # seconds without any run for the pushed SHA (the GitHub queue can be slow)
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MAX_ATTEMPTS = 5
 
@@ -248,12 +255,107 @@ def run_verdict(wf: dict, run: dict | None, jobs: list[dict] | None) -> tuple[st
     return "ok", f"run {rid}: heavy jobs started {[j.get('name') for j in heavy]} (result read after the landing)"
 
 
-def lane_of(paths: list[str], added: str = "") -> str:
-    """`ci` when a path belongs to the CI lane or an added line is OS-specific
-    code, otherwise `direct`."""
-    if any(CI_LANE_RE.match(p) for p in paths) or OS_CODE_RE.search(added):
-        return "ci"
-    return "direct"
+def direct_reason_problem(direct: bool, reason: str | None) -> str | None:
+    """why the emergency --direct landing is refused (None: allowed or not asked for)"""
+    if reason is not None and not direct:
+        return "--reason is only for --direct"
+    if not direct:
+        return None
+    if reason is None or len(reason.strip()) < DIRECT_REASON_MIN:
+        return (f"--direct needs --reason with at least {DIRECT_REASON_MIN} characters "
+                "(why main cannot wait for the ci/ evidence, e.g. reverting a red main)")
+    return None
+
+
+def after_landing_items(root: Path) -> list[dict]:
+    """What --wait reads on main after a landing: each after-landing or main-after-landing
+    matrix leg of .github/ci-evidence.toml (a job of its workflow) and each after-landing
+    workflow. Each: kind (leg / workflow), file, name (the run's workflowName), job (the
+    leg's job display name, or None), cls, jobs {id: display name}."""
+    import tomllib
+    try:
+        ev = tomllib.loads((root / EVIDENCE_FILE).read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise LandError(f"{EVIDENCE_FILE}: {e}") from None
+    from ci_load_check import jobs as job_blocks
+    out = []
+    files = {p.name: p.read_text(encoding="utf-8") for p in (root / ".github" / "workflows").glob("*.yml")}
+    for leg in ev.get("legs", []):
+        cls, f = leg.get("class"), leg.get("workflow")
+        if cls not in ("after-landing", "main-after-landing"):
+            continue
+        if f not in files:
+            raise LandError(f"{EVIDENCE_FILE}: leg of {f!r}, which is not a workflow")
+        blocks = job_blocks(files[f])
+        j = leg.get("job")
+        if j not in blocks:
+            raise LandError(f"{EVIDENCE_FILE}: leg {f}/{j}: no such job")
+        display = _yaml_scalar(blocks[j], "name", 4) or j
+        key = leg.get("key", "os")
+        display = re.sub(r"\$\{\{\s*matrix\." + re.escape(key) + r"\s*\}\}", str(leg.get("matrix")), display)
+        out.append({"kind": "leg", "file": f, "name": _yaml_scalar(files[f], "name", 0) or f,
+                    "job": display, "cls": cls, "jobs": {}})
+    for f, cls in sorted(ev.get("workflows", {}).items()):
+        if cls != "after-landing" or f not in files:
+            continue
+        blocks = job_blocks(files[f])
+        out.append({"kind": "workflow", "file": f, "name": _yaml_scalar(files[f], "name", 0) or f, "job": None,
+                    "cls": cls, "jobs": {j: (_yaml_scalar(b, "name", 4) or j) for j, b in blocks.items()}})
+    if not out:
+        raise LandError(f"no after-landing leg or workflow in {EVIDENCE_FILE} (compared nothing)")
+    return out
+
+
+def after_item_label(item: dict) -> str:
+    return f"{item['file']}: {item['job']}" if item["kind"] == "leg" else item["file"]
+
+
+def after_verdict(item: dict, runs: list[dict], jobs_of) -> tuple[str, str]:
+    """(state, why) of one after-landing item on main. state: ok / red / pending.
+    `runs`: the runs of the item's workflow for the SHA; `jobs_of(run_id)` lists a run's jobs.
+    A leg counts in the newest run that has its job (the push run, or a nightly re-run);
+    a workflow counts in its newest run. A missing run or job is pending, never ok."""
+    if not runs:
+        return "pending", "no run for the SHA yet"
+    runs = sorted(runs, key=lambda r: r.get("databaseId", 0), reverse=True)
+    if item["kind"] == "leg":
+        for run in runs:
+            for j in jobs_of(run["databaseId"]):
+                if j.get("name") != item["job"]:
+                    continue
+                rid = run["databaseId"]
+                if j.get("status") != "completed":
+                    return "pending", f"job {item['job']!r} {j.get('status')} in run {rid}"
+                if j.get("conclusion") == "success":
+                    return "ok", f"job {item['job']!r} success in run {rid}"
+                if j.get("conclusion") in ("cancelled", "skipped"):
+                    return "pending", f"job {item['job']!r} {j.get('conclusion')} in run {rid} (no result; re-run it)"
+                return "red", f"job {item['job']!r} ended {j.get('conclusion')} in run {rid}"
+        return "pending", f"no job {item['job']!r} in runs {[r['databaseId'] for r in runs]} yet"
+    run = runs[0]
+    rid = run["databaseId"]
+    if run.get("status") == "completed" and run.get("conclusion") in ("cancelled", "skipped", "stale"):
+        return "pending", f"run {rid} ended {run.get('conclusion')} (no result; re-run it)"
+    jobs = jobs_of(rid)
+    changes_name, gate_name = item["jobs"].get("changes"), item["jobs"].get("gate")
+    ch = [j for j in jobs if j.get("name") == changes_name]
+    heavy = [j for j in jobs if j.get("name") not in (changes_name, gate_name)]
+    if not ch or ch[0].get("status") != "completed":
+        return "pending", f"run {rid}: the changes job has not finished"
+    if ch[0].get("conclusion") != "success":
+        return "red", f"run {rid}: the changes job ended {ch[0].get('conclusion')}"
+    if heavy and all(j.get("status") == "completed" and j.get("conclusion") == "skipped" for j in heavy):
+        return "ok", f"run {rid}: did not run (the changes job said run=false)"
+    bad = [j for j in heavy if j.get("status") == "completed" and j.get("conclusion") not in ("success", "skipped")]
+    if bad:
+        return "red", f"job {bad[0].get('name')!r} ended {bad[0].get('conclusion')} in run {rid}"
+    if not heavy or any(j.get("status") != "completed" for j in heavy):
+        return "pending", f"run {rid}: heavy jobs not finished"
+    if any(j.get("conclusion") == "skipped" for j in heavy):
+        return "red", f"run {rid}: heavy jobs partly skipped"
+    if run.get("status") == "completed" and run.get("conclusion") != "success":
+        return "red", f"run {rid} ended {run.get('conclusion')}"
+    return "ok", f"run {rid}: heavy jobs success"
 
 
 def is_subsequence(short: list[str], long: list[str]) -> bool:
@@ -370,7 +472,8 @@ def message_problems(message: str) -> list[str]:
 
 class Lander:
     def __init__(self, root: Path, ident: str, *, dry_run: bool = False, no_changelog: bool = False,
-                 replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=print):
+                 replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=print,
+                 direct_reason: str | None = None):
         self.root, self.id, self.dry_run = root, ident, dry_run
         self.no_changelog, self.remote, self.branch, self.log = no_changelog, remote, branch, log
         self.replace_ci = replace_ci
@@ -380,6 +483,12 @@ class Lander:
         self.poll_seconds = 30
         self.gh_cmd = ["gh"]   # tests run a fake gh script here (no network)
         self.max_polls = 240  # 2 hours at 30 s: the 4-OS CI run and the queued heavy runs
+        self.after_max_polls = 360  # 3 hours at 30 s: the Mac Intel leg and Miri on main
+        problem = direct_reason_problem(direct_reason is not None, direct_reason)
+        if problem:
+            raise LandError(problem)
+        self.direct_reason = direct_reason.strip() if direct_reason is not None else None
+        self.record: list[str] = []  # the landing record: lane, reason, the runs relied on
 
     # --- plumbing (overridden in tests) ------------------------------------------
 
@@ -450,15 +559,6 @@ class Lander:
         if problems:
             raise LandError("\n  ".join(problems))
 
-    def list_runs(self, slug: str, ref: str) -> list[dict]:
-        out = subprocess.run(
-            ["gh", "run", "list", "--repo", slug, "--workflow", "ci.yml", "--branch", ref, "--limit", "20",
-             "--json", "headSha,databaseId,status,conclusion,createdAt,event"], capture_output=True, text=True)
-        if out.returncode != 0:
-            self.last_list_error = out.stderr.strip()
-            return []
-        return json.loads(out.stdout or "[]")
-
     def gh_json(self, *args: str):
         """`gh <args>` parsed as JSON; LandError when gh fails (never read as an empty list)."""
         out = subprocess.run([*self.gh_cmd, *args], capture_output=True, text=True, encoding="utf-8",
@@ -510,8 +610,10 @@ class Lander:
         for _ in range(self.max_polls):
             runs = self.list_branch_runs(slug, ref)
             states = {}
+            chosen: dict[str, dict | None] = {}
             for w in expected:
                 run = newest_run(runs, w["name"], sha)
+                chosen[w["file"]] = run
                 state, why = run_verdict(w, run, None)
                 if state == "need-jobs":
                     state, why = run_verdict(w, run, self.run_jobs(slug, run["databaseId"]))
@@ -540,6 +642,10 @@ class Lander:
                 for f in sorted(ok):
                     self.log(f"  {f}: {states[f][1]}")
                 self.log(f"CI on {ref}: evidence complete for {len(ok)} workflows")
+                for f in sorted(ok):
+                    run = chosen[f] or {}
+                    concl = run.get("conclusion") or run.get("status")
+                    self.record.append(f"evidence: {f} run {run.get('databaseId')} {concl}")
                 return
             if not any(s != "missing" for s, _ in states.values()) and (at := self.remote_sha(ref)) != sha:
                 raise LandError(f"{ref} on {self.remote} points at {at[:7] or 'nothing'}, not {sha[:7]}: "
@@ -553,40 +659,38 @@ class Lander:
         out = self.git("ls-remote", self.remote, f"refs/heads/{ref}", check=False).split()
         return out[0] if out else ""
 
-    def wait_ci(self, ref: str, sha: str) -> None:
-        """Wait for the ci.yml run of `sha` on `ref`; raise unless it succeeds."""
-        repo = self.git("remote", "get-url", self.remote)
-        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", repo)
-        slug = m.group(1) if m else repo
-        started = time.monotonic()
-        self.last_list_error = ""
-        for _ in range(180):
-            seen = self.list_runs(slug, ref)
-            runs = [r for r in seen if r["headSha"] == sha]
-            if not runs:
-                # no run yet: either GitHub has not created it, or the push never reached the ref
-                at = self.remote_sha(ref)
-                if at != sha:
-                    raise LandError(f"{ref} on {self.remote} points at {at[:7] or 'nothing'}, not {sha[:7]}: "
-                                    "the push did not reach it, or the ref moved (no CI run to wait for)")
-                if time.monotonic() - started > NO_RUN_TIMEOUT:
-                    listing = "\n    ".join(f"{r.get('headSha', '')[:7]} {r.get('event', '')} {r.get('status', '')}"
-                                            f"/{r.get('conclusion', '')} created {r.get('createdAt', '')} "
-                                            f"run {r.get('databaseId', '')}" for r in seen) or "(none)"
-                    raise LandError(f"no ci.yml run for {sha[:7]} on {ref} after {NO_RUN_TIMEOUT // 60} minutes, "
-                                    f"although {ref} holds it (the workflow did not trigger, or GitHub is slow): "
-                                    f"not treated as success. `gh run list` for {ref}:\n    {listing}"
-                                    + (f"\n  gh error: {self.last_list_error}" if self.last_list_error else ""))
-            if runs and runs[0]["status"] == "completed":
-                c = runs[0]["conclusion"]
-                if c != "success":
-                    why = {"cancelled": "cancelled (a later push or a manual cancel; unverified, not green)",
-                           "skipped": "skipped (nothing ran; unverified, not green)"}.get(c, c)
-                    raise LandError(f"CI on {ref} ended {why} (run {runs[0]['databaseId']})")
-                self.log(f"CI on {ref} succeeded (run {runs[0]['databaseId']})")
-                return
+    def wait_after(self, sha: str) -> tuple[int, list[str]]:
+        """Read the after-landing set (after_landing_items) for `sha` on main. Returns
+        (exit code, report lines): 0 every item green, EXIT_RED when one is red (the
+        message says REVERT OR FIX NOW), EXIT_PENDING when one did not finish in time."""
+        items = after_landing_items(self.root)
+        slug = self.slug()
+        states: dict[str, tuple[str, str]] = {}
+        for _ in range(self.after_max_polls):
+            runs = self.list_branch_runs(slug, self.branch)
+            cache: dict[int, list[dict]] = {}
+
+            def jobs_of(rid: int) -> list[dict]:
+                if rid not in cache:
+                    cache[rid] = self.run_jobs(slug, rid)
+                return cache[rid]
+            for it in items:
+                mine = [r for r in runs if r.get("workflowName") == it["name"] and r.get("headSha") == sha]
+                states[after_item_label(it)] = after_verdict(it, mine, jobs_of)
+            if any(s == "red" for s, _ in states.values()) or all(s == "ok" for s, _ in states.values()):
+                break
             time.sleep(self.poll_seconds)
-        raise LandError(f"CI on {ref} did not finish in 90 minutes")
+        lines = []
+        for label, (s, why) in states.items():
+            if s == "red":
+                lines.append(f"REVERT OR FIX NOW: {label}: {why} (main at {sha[:7]})")
+            else:
+                lines.append(f"{s}: {label}: {why}")
+        if any(s == "red" for s, _ in states.values()):
+            return EXIT_RED, lines
+        if all(s == "ok" for s, _ in states.values()):
+            return 0, lines
+        return EXIT_PENDING, lines
 
     # --- steps -------------------------------------------------------------------
 
@@ -715,9 +819,17 @@ class Lander:
         if problems:
             raise LandError("commit checks failed:\n  " + "\n  ".join(problems))
         self.lib_test_gate()
-        added = "\n".join(l[1:] for l in self.git("diff", "-U0", f"{self.upstream()}...HEAD").splitlines()
-                          if l.startswith("+") and not l.startswith("+++"))
-        lane = lane_of(self.paths(f"{self.upstream()}...HEAD"), added)
+        if self.direct_reason is not None:
+            lane = "direct"
+            for line in ("!" * 78,
+                         "WARNING: DIRECT LANDING: no ci/ push, no CI evidence before main moves",
+                         f"WARNING: reason: {self.direct_reason}",
+                         "!" * 78):
+                self.log(line)
+            self.record.append(f"lane: DIRECT (emergency, no ci/ evidence) reason: {self.direct_reason}")
+        else:
+            lane = "ci"
+            self.record.append(f"lane: ci (ci/{self.id})")
         self.log(f"lane: {lane}")
         # preflight checks the ledgers against a freshly built index, so a branch
         # whose ledgers were written from an older index (or not at all) would fail
@@ -728,6 +840,7 @@ class Lander:
         if lane == "ci":
             ref = f"ci/{self.id}"
             sha = self.git("rev-parse", "HEAD")
+            self.record.append(f"evidence SHA: {sha} on {ref}")
             if self.dry_run:
                 self.log(f"dry run: would push {sha[:7]} to {ref} and wait for its CI")
             else:
@@ -775,11 +888,30 @@ class Lander:
             self.fetch()
             if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
                 self.log(f"landed {sha[:7]} on {self.branch} (attempt {attempt})")
+                self.record.append(f"landed: {sha} on {self.branch} (attempt {attempt})")
+                self.log("landing record:")
+                for line in self.record:
+                    self.log(f"  {line}")
                 if lane == "ci":
                     self.git("push", "-q", self.remote, f":refs/heads/ci/{self.id}", check=False)
                 return sha
             self.log(f"{self.branch} moved during attempt {attempt}; rebasing again")
         raise LandError(f"could not land in {MAX_ATTEMPTS} attempts")
+
+
+def report_after(lander: "Lander", sha: str) -> int:
+    code, lines = lander.wait_after(sha)
+    for line in lines:
+        print(line, file=sys.stderr if code else sys.stdout)
+    if code == EXIT_RED:
+        print(f"error: an after-landing result on {lander.branch} is red for {sha[:7]}: REVERT OR FIX NOW",
+              file=sys.stderr)
+    elif code == EXIT_PENDING:
+        print(f"pending: the after-landing set on {lander.branch} did not finish for {sha[:7]}; "
+              f"run again: python3 scripts/land.py --id {lander.id} --wait-only {sha}", file=sys.stderr)
+    else:
+        print(f"after-landing set on {lander.branch} green for {sha[:7]}")
+    return code
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -794,37 +926,37 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-changelog", action="store_true", help="src/ change without a CHANGELOG line")
     ap.add_argument("--replace-ci", action="store_true",
                     help="overwrite ci/<id> although it holds other commits (your own earlier attempt)")
-    ap.add_argument("--wait", action="store_true", help="after landing, wait for the main CI run")
-    ap.add_argument("--wait-only", metavar="SHA", help="only wait for the main CI run of SHA")
+    ap.add_argument("--direct", action="store_true",
+                    help="emergency only (e.g. reverting a red main): land without the ci/ evidence; "
+                         "needs --reason, prints a warning and records the reason")
+    ap.add_argument("--reason", help=f"why --direct (at least {DIRECT_REASON_MIN} characters)")
+    ap.add_argument("--wait", action="store_true", help="after landing, read the after-landing set on main")
+    ap.add_argument("--wait-only", metavar="SHA", help="only read the after-landing set on main for SHA")
     args = ap.parse_args(argv)
     if not re.fullmatch(r"[A-Za-z0-9._-]+", args.id):
         print("error: --id may hold letters, digits, '.', '_' and '-' only", file=sys.stderr)
         return 2
+    problem = direct_reason_problem(args.direct, args.reason)
+    if problem:
+        print(f"error: {problem}", file=sys.stderr)
+        return 2
     root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip())
     lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
-                    replace_ci=args.replace_ci)
-    if args.wait_only:
-        try:
-            lander.wait_ci(lander.branch, args.wait_only)
-        except LandError as e:
-            print(f"error: {e}", file=sys.stderr)
-            return 1
-        print(f"CI on {lander.branch} green for {args.wait_only[:7]}")
-        return 0
+                    replace_ci=args.replace_ci, direct_reason=args.reason if args.direct else None)
     try:
+        if args.wait_only:
+            return report_after(lander, args.wait_only)
         sha = lander.land()
         if args.dry_run:
-            pass
-        elif args.wait:
-            lander.wait_ci(lander.branch, sha)
-            print(f"CI on {lander.branch} green for {sha[:7]}")
-        else:
-            print(f"pushed {sha[:7]}; CI on {lander.branch} NOT confirmed yet: "
-                  f"python3 scripts/land.py --id {args.id} --wait-only {sha}")
+            return 0
+        if args.wait:
+            return report_after(lander, sha)
+        print(f"pushed {sha[:7]}; the after-landing set on {lander.branch} is NOT read yet: "
+              f"python3 scripts/land.py --id {args.id} --wait-only {sha}")
     except LandError as e:
         print(f"error: {e}", file=sys.stderr)
         if "CI on" in str(e):
-            print("note: a red workflow after a land is not \"an unrelated existing red\" until the same "
+            print("note: a red workflow is not \"an unrelated existing red\" until the same "
                   "workflow's run on the commit before it (by headSha) is shown green; if it was green, "
                   "the red is this land's", file=sys.stderr)
         return 1
