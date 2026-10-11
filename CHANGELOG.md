@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 
+- Security & Hygiene: `scripts/cfg-items` (変異試験の script が使う構文解析器、別 workspace) から使っていない直接依存 `quote` を外した (`cargo-machete` が失敗していた、`syn` の推移的な依存としては lock に残る) 行の網羅率の baseline に新しい 4 file (`det_hash.rs` / `law_id.rs` / `semantics.rs` / `solver/world_ccd.rs`) と全体の上昇を記録した root の `cargo audit` / `cargo deny` は cfg-items の `Cargo.lock` を読んでいなかったので、audit と deny の step を別に足し、その `Cargo.toml` / `Cargo.lock` を発火の path に足した crate に本 crate と同じ license を書き、`deny.toml` に license の例外を足した
 - `world_shape_query` の曲面 (円柱・円錐) の経路を lib の unit test で確かめる試験を足した 点と線分の厳密距離 (`point_cylinder_exact` / `point_cone_exact` / `exact_round_dist`) を子午面の閉形式と、許容幅際の cast と接線方向の経路を独立な `f64` の距離と、近接線の探索 (`graze_contact` / `dips_below`) を根の分かる凸な gap と突き合わせる CI の line coverage ratchet は lib の unit test だけを数えるので、統合試験でしか通っていなかった分岐をここでも通す (`world_shape_query.rs` 91.11% → 96.51%、src の動作は変えていない)
 - `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push した時の挙動を書いた 2 つの body の間の joint は次の step の joint solve で panic し (`add_joint` は事前に assert で拒む)、同じ body 同士の joint は solve と island の作り直しが飛ばすので、無い時と同じに進む
 - 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する

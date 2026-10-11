@@ -27,6 +27,8 @@ on:
       - 'examples/*/Cargo.toml'
       - 'bindings/*/Cargo.toml'
       - 'bindings/*/*/Cargo.toml'
+      - 'scripts/cfg-items/Cargo.toml'
+      - 'scripts/cfg-items/Cargo.lock'
   pull_request:
     branches: [main]
     paths:
@@ -43,6 +45,8 @@ on:
       - 'examples/*/Cargo.toml'
       - 'bindings/*/Cargo.toml'
       - 'bindings/*/*/Cargo.toml'
+      - 'scripts/cfg-items/Cargo.toml'
+      - 'scripts/cfg-items/Cargo.lock'
   schedule:
     # 毎週月曜 09:00 UTC = 18:00 JST
     - cron: '0 9 * * 1'
@@ -88,6 +92,11 @@ jobs:
             --ignore RUSTSEC-2025-0141 \
             --ignore RUSTSEC-2026-0235
 
+      # scripts/cfg-items is a separate workspace (the source parser of the
+      # mutation scripts) with its own lock, which the root audit does not read
+      - name: Run cargo audit (scripts/cfg-items)
+        run: cargo audit --file scripts/cfg-items/Cargo.lock --deny yanked
+
   deny:
     name: cargo-deny (license + advisories + bans + sources)
     runs-on: ubuntu-latest
@@ -104,6 +113,9 @@ jobs:
 
       - name: Run cargo deny check all
         run: cargo deny --all-features check all
+
+      - name: Run cargo deny check all (scripts/cfg-items, its own workspace)
+        run: cargo deny --manifest-path scripts/cfg-items/Cargo.toml --config deny.toml check all
 
   unused-deps:
     name: cargo-machete (unused dependencies)
