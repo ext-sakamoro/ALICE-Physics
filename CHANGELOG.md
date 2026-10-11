@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 
+- crate 内部 (`pub(crate)`) の PETG の creep の preset 2 つ (`FindleyParameters::petg_25c_moderate` / `NortonCreep::petg_room_temp`) を消した どちらも材料の較正が無い仮の値で、solver はどこからも使っていなかった (PLA 以外の材料の creep は従来どおり model しない) 公開 API は変わらない preset の値で閉形式を確かめていた試験は、試験の中に置いた同じ定数 (較正値ではないと doc に書いた) で続け、PETG が PLA より creep が小さいことを確かめていた 2 本 (仮の値そのものの主張で、Findley の方は 3887 h 以降で逆転する) は消した `docs/wiring-debt.md` の `structural-pub-crate-residue` 行は使う marker が無くなったので消した
 - `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push した時の挙動を書いた 2 つの body の間の joint は次の step の joint solve で panic し (`add_joint` は事前に assert で拒む)、同じ body 同士の joint は solve と island の作り直しが飛ばすので、無い時と同じに進む
 - 変異試験の in-diff 計画: 変更行を含む item の `cfg(feature)` を構文解析 (`scripts/cfg-items`、`syn`) で求める 複数行の signature・`where`・単独行の `{`・複数行の `#[cfg(all(..))]`・入れ子の module・`lib.rs` の item でも feature を有効にし、cfg 式は文字列の照合でなく評価する
 - 変異試験: 観測できる結果の全 bit を変えない同値変異を `scripts/mutants-equivalent.txt` に理由・行の hash・根拠を固定する試験つきで登録し、in-diff の変異試験と週次の ratchet が missed に数えないようにした 行が変わった entry は `scripts/mutants_equivalent.py --check` (CI / preflight) で失敗し、その変異は再び missed になる

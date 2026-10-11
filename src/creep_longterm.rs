@@ -47,10 +47,9 @@
 //! `CREEP_FROZEN_AT`) and the standalone `strain_at` are crate-internal and
 //! reached through `predict_strain`; `CREEP_FROZEN_AT` is the saturation
 //! sentinel `effective_time_at_temp` turns into "no effective time" (see its
-//! doc for the threshold). `petg_25c_moderate` has no consumer (the solver
-//! installs the PLA preset for PLA only and leaves creep unmodelled for
-//! other materials; this PETG fit is uncalibrated) and carries an `ALLOW-UNWIRED` debt marker;
-//! its oracle is a unit test in this module.
+//! doc for the threshold). The solver installs the PLA preset for PLA only
+//! and leaves creep unmodelled for other materials: there is no calibrated
+//! fit for them to install.
 
 use crate::filament_db::MaterialProperties;
 use crate::math::Fix128;
@@ -98,26 +97,6 @@ impl FindleyParameters {
         Self {
             epsilon_0: Fix128::from_ratio(3, 1000),
             m: Fix128::from_ratio(83, 1_000_000_000_000_000_i64),
-            n_int: 3,
-        }
-    }
-
-    /// PETG at 25 °C: `ε₀ = 0.2 %`, `m = 1e-13 /h³`, `n = 3`
-    /// (`ε(4380 h) = 0.2 % + 1e-13 · 4380³ ≈ 1.04 %`).
-    ///
-    /// The elastic term is lower than PLA's (higher `T_g`), but `m` was not
-    /// recalibrated when the PLA preset dropped to `8.3e-14` in 1.2.0, so
-    /// this preset creeps *more* than `pla_25c_moderate` after
-    /// `t = (0.001 / 1.7e-14)^(1/3) ≈ 3887 h`. Treat it as a placeholder
-    /// fit until a PETG datasheet calibration replaces `m`.
-    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt structural-pub-crate-residue (structural_solver::new installs the PLA preset for PLA only; this PETG fit is uncalibrated), oracle src/creep_longterm.rs tests::petg_preset_findley_matches_closed_form_at_six_months
-    #[allow(dead_code)]
-    #[must_use]
-    pub(crate) fn petg_25c_moderate() -> Self {
-        Self {
-            epsilon_0: Fix128::from_ratio(2, 1000),
-            m: Fix128::from_ratio(1, 10_000_000_000_000_i64),
             n_int: 3,
         }
     }
@@ -326,14 +305,6 @@ mod tests {
     }
 
     #[test]
-    fn petg_lower_creep_than_pla() {
-        let pla = FindleyParameters::pla_25c_moderate();
-        let petg = FindleyParameters::petg_25c_moderate();
-        let t = Fix128::from_int(1000);
-        assert!(petg.strain_at(t) < pla.strain_at(t));
-    }
-
-    #[test]
     fn wlf_shift_at_ref_temp_is_unity() {
         let wlf = WlfConstants::universal();
         let a = wlf_shift_factor(Fix128::from_int(60), Fix128::from_int(60), &wlf);
@@ -417,7 +388,17 @@ mod tests {
         assert!(e_hot > e_room);
     }
 
-    /// Oracle: Findley `ε(t) = ε₀ + m·tⁿ` with the PETG preset's constants
+    /// Constants for the closed-form oracles below: `ε₀ = 0.002`, `m = 1e-13`,
+    /// `n = 3`. Chosen for exact hand arithmetic, not a material calibration.
+    fn findley_fixture() -> FindleyParameters {
+        FindleyParameters {
+            epsilon_0: Fix128::from_ratio(2, 1000),
+            m: Fix128::from_ratio(1, 10_000_000_000_000_i64),
+            n_int: 3,
+        }
+    }
+
+    /// Oracle: Findley `ε(t) = ε₀ + m·tⁿ` with [`findley_fixture`]'s constants
     /// (`ε₀ = 0.002`, `m = 1e-13`, `n = 3`) at 6 months, evaluated by hand:
     /// `4380³ = 84 027 672 000`, `m·t³ = 0.0084027672`, total
     /// `0.0104027672`. Routed through `predict_strain` at 25 °C, below the
@@ -426,9 +407,9 @@ mod tests {
     /// term carries a relative error of `0.4 / 1.8e6 = 2.2e-7`
     /// (`1.9e-9` absolute); `1e-8` leaves no room for a wrong constant.
     #[test]
-    fn petg_preset_findley_matches_closed_form_at_six_months() {
+    fn findley_matches_closed_form_at_six_months_below_tg() {
         let got = predict_strain(
-            &FindleyParameters::petg_25c_moderate(),
+            &findley_fixture(),
             &MaterialProperties::petg(),
             Fix128::from_int(4380),
             Fix128::from_int(25),
@@ -438,11 +419,11 @@ mod tests {
         assert!((got - want).abs() < 1e-8, "got {got}, want {want}");
     }
 
-    /// Degenerate time for the PETG preset: `strain_at` documents
-    /// `t ≤ 0 → ε₀`, so zero and negative hours return exactly `0.002`.
+    /// Degenerate time: `strain_at` documents `t ≤ 0 → ε₀`, so zero and
+    /// negative hours return exactly the fixture's `0.002`.
     #[test]
-    fn petg_preset_degenerate_time_returns_epsilon_0() {
-        let p = FindleyParameters::petg_25c_moderate();
+    fn findley_degenerate_time_returns_epsilon_0() {
+        let p = findley_fixture();
         let m = MaterialProperties::petg();
         let t25 = Fix128::from_int(25);
         assert_eq!(

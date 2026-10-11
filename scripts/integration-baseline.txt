@@ -7,9 +7,7 @@
 # applies to them.
 src/coupled_iteration.rs::ContractionMonitor::best_residual
 src/coupled_iteration.rs::EquilibrationScale::round_trip_bound
-src/creep_longterm.rs::FindleyParameters::petg_25c_moderate
 src/linear_elastic_fem.rs::ThermalExpansion::new
-src/plastic.rs::NortonCreep::petg_room_temp
 src/solver_tgs.rs::par_dispatch_islands
 src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel
 # deprecated-privacy (docs/wiring-debt.md): deprecated because they are not

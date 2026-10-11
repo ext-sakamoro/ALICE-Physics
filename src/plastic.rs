@@ -43,10 +43,9 @@
 //! `PlasticModel::with_hardening` is the public way to pick the hardening law
 //! of a model installed on `StructuralSolver::plastic_model` (the solver's
 //! default is the isotropic `from_fdm_material`; see
-//! `examples/plastic_hardening_bauschinger.rs`). `NortonCreep::petg_room_temp`
-//! has no consumer (the solver installs the PLA creep preset for PLA only) and
-//! carries an `ALLOW-UNWIRED` debt marker with a closed-form oracle in this
-//! module's unit tests. Stress tensors
+//! `examples/plastic_hardening_bauschinger.rs`). The solver installs the PLA
+//! creep preset for PLA only: there is no calibrated fit for other
+//! materials. Stress tensors
 //! (von Mises, hydrostatic part) live in the public
 //! `linear_elastic_fem::StressTensor`.
 
@@ -288,21 +287,6 @@ impl NortonCreep {
         }
     }
 
-    /// PETG at 25°C — lower creep than PLA (higher Tg):
-    /// `A = 1e-13 /(MPa³·s)`, `n = 3`, about 6.3× below the PLA calibration.
-    // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
-    // ALLOW-UNWIRED: wiring debt structural-pub-crate-residue (structural_solver::new installs the PLA creep preset for PLA only; this PETG fit is uncalibrated), oracle src/plastic.rs tests::petg_norton_preset_integrates_a_sigma_cubed_dt
-    #[allow(dead_code)]
-    #[must_use]
-    pub(crate) fn petg_room_temp() -> Self {
-        // ≈ 6× lower than the PLA calibration (1.2.0: 1e-11 was 16× *above*
-        // the corrected PLA value)
-        Self {
-            a: Fix128::from_ratio(1, 10_000_000_000_000_i64),
-            n: 3,
-        }
-    }
-
     /// Instantaneous creep strain rate (per second) at stress `sigma_mpa` (crate-internal).
     #[must_use]
     pub(crate) fn strain_rate_per_s(&self, sigma_mpa: Fix128) -> Fix128 {
@@ -455,16 +439,6 @@ mod tests {
     }
 
     #[test]
-    fn petg_creeps_slower_than_pla() {
-        let pla = NortonCreep::pla_room_temp();
-        let petg = NortonCreep::petg_room_temp();
-        let sigma = Fix128::from_int(20);
-        let r_pla = pla.strain_rate_per_s(sigma);
-        let r_petg = petg.strain_rate_per_s(sigma);
-        assert!(r_petg < r_pla);
-    }
-
-    #[test]
     fn creep_strain_independent_of_plastic_strain() {
         let creep = NortonCreep::pla_room_temp();
         let model = PlasticModel::from_fdm_material(&MaterialProperties::pla());
@@ -554,15 +528,24 @@ mod tests {
         );
     }
 
-    /// Oracle: Norton `ε_c = A·σⁿ·Δt` by hand with the PETG preset
+    /// Constants for the closed-form oracles below: `A = 1e-13 /(MPa³·s)`,
+    /// `n = 3`. Chosen for exact hand arithmetic, not a material calibration.
+    fn norton_fixture() -> NortonCreep {
+        NortonCreep {
+            a: Fix128::from_ratio(1, 10_000_000_000_000_i64),
+            n: 3,
+        }
+    }
+
+    /// Oracle: Norton `ε_c = A·σⁿ·Δt` by hand with [`norton_fixture`]
     /// (`A = 1e-13`, `n = 3`): `σ = 20 MPa`, `Δt = 10⁶ s` →
     /// `1e-13 · 8000 · 10⁶ = 8e-4`. The exponent is odd, so a compressive
     /// `−20 MPa` gives `−8e-4` (signed creep). Tolerance: `A = 1e-13` is
     /// `1 844 674.4` Fix128 ulp stored truncated (relative `2.2e-7`, i.e.
     /// `1.8e-10` absolute here); `1e-9` leaves no room for a wrong constant.
     #[test]
-    fn petg_norton_preset_integrates_a_sigma_cubed_dt() {
-        let creep = NortonCreep::petg_room_temp();
+    fn norton_integrates_a_sigma_cubed_dt() {
+        let creep = norton_fixture();
         let dt = Fix128::from_int(1_000_000);
         let mut state = PlasticState::default();
         creep.integrate(Fix128::from_int(20), dt, &mut state);
@@ -574,11 +557,11 @@ mod tests {
         assert!((got_neg + 8e-4).abs() < 1e-9, "got {got_neg}");
     }
 
-    /// Degenerate inputs for the PETG preset: zero stress and zero time step
-    /// leave the creep strain exactly unchanged (`ε̇ = 0` / `Δt = 0`).
+    /// Degenerate inputs: zero stress and zero time step leave the creep
+    /// strain exactly unchanged (`ε̇ = 0` / `Δt = 0`).
     #[test]
-    fn petg_norton_preset_degenerate_stress_or_dt_leaves_state() {
-        let creep = NortonCreep::petg_room_temp();
+    fn norton_degenerate_stress_or_dt_leaves_state() {
+        let creep = norton_fixture();
         let mut state = PlasticState {
             creep_strain: Fix128::from_ratio(1, 1000),
             ..Default::default()

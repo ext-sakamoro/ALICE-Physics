@@ -3,8 +3,8 @@
 //! Only `PlasticModel`, `PlasticState`, `HardeningType`, `NortonCreep`,
 //! `PlasticModel::from_fdm_material`, `NortonCreep::pla_room_temp` and
 //! `NortonCreep::integrate` are reachable from outside the crate; the radial
-//! return (`radial_return_1d`), `current_yield_mpa`, `with_hardening`,
-//! `petg_room_temp` and `StressTensor` are `pub(crate)`. The radial return is
+//! return (`radial_return_1d`), `current_yield_mpa`, `with_hardening` and
+//! `StressTensor` are `pub(crate)`. The radial return is
 //! driven here through the public `StructuralSolver::step`, whose
 //! `plastic_model` field is public so the hardening law can be chosen.
 //!
