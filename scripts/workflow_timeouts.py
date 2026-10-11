@@ -19,9 +19,9 @@ Rules, per job under the top-level `jobs:` of each workflow file:
   * a workflow file in which no job is found fails, file by file (the check
     compared nothing there), and so does a `runs-on:` key, or a `uses:` key
     that is not a step's, outside every job found: the parser missed a job
-  * keys may be quoted, spaced (`jobs :`) or flow-style
-    (`build: {runs-on: x, timeout-minutes: 10}`); the job indent is taken
-    from the first job, the job-level key indent from each job's first key
+  * the files are read with PyYAML (scripts/requirements-ci.txt, pinned by
+    hash), so any valid layout is read (indent, quoted or spaced keys, flow
+    style); without PyYAML the check fails
 
   python3 scripts/workflow_timeouts.py
 """
@@ -34,113 +34,77 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 CAP = 360
-KEY_RE = re.compile(
-    r"""^(?P<indent>[ ]*)(?:"(?P<dq>[^"]*)"|'(?P<sq>[^']*)'|(?P<plain>[A-Za-z0-9_.$-][^:#'"]*?))"""
-    r"""[ ]*:(?:[ ]+(?P<value>.*?))?[ ]*$""")
-FLOW_KEY_RE = re.compile(r"""(?:^|[{,])\s*["']?([A-Za-z0-9_-]+)["']?\s*:\s*([^,}]*)""")
+TOKEN_RE = re.compile(r"""["']?\b(runs-on|uses)\b["']?\s*:""")
+
+
+def load_yaml():
+    """PyYAML, installed from scripts/requirements-ci.txt (pinned by hash). No
+    fallback: without the parser the check cannot see the jobs, so it fails."""
+    try:
+        import yaml  # noqa: PLC0415
+    except ImportError as e:
+        raise SystemExit(
+            "error: PyYAML is required: python -m pip install --require-hashes "
+            "-r scripts/requirements-ci.txt") from e
+    return yaml
 
 
 class Job:
-    """A job under the top-level `jobs:` key: its name, the lines it spans
-    (1-based, inclusive) and its job-level keys (block or flow style)."""
+    """A job under the top-level `jobs` key: its name, its value (a mapping, as
+    parsed) and the lines it spans (1-based, inclusive)."""
 
-    def __init__(self, name: str, start: int) -> None:
-        self.name, self.start, self.end = name, start, start
-        self.keys: dict[str, str] = {}
-        self.key_indent: int | None = None
+    def __init__(self, name: str, value, start: int, end: int) -> None:
+        self.name, self.value, self.start, self.end = name, value, start, end
 
 
-def strip_comment(line: str) -> str:
-    """The line without a trailing `# comment` outside quotes."""
-    out, quote = [], ""
-    for k, ch in enumerate(line):
-        if quote:
-            quote = "" if ch == quote else quote
-        elif ch in "'\"":
-            quote = ch
-        elif ch == "#" and (k == 0 or line[k - 1] in " \t"):
-            break
-        out.append(ch)
-    return "".join(out).rstrip()
-
-
-def key_of(line: str) -> tuple[int, str, str] | None:
-    """(indent, key, value) of a mapping line, or None."""
-    m = KEY_RE.match(line)
-    if not m:
-        return None
-    key = m["dq"] if m["dq"] is not None else m["sq"] if m["sq"] is not None else m["plain"]
-    return len(m["indent"]), key.strip(), (m["value"] or "").strip()
-
-
-def parse(text: str) -> tuple[list[Job], list[str]]:
-    """The jobs of a workflow file, and the parse errors (lines the parser could
-    not place: an indent below the jobs, or a flow-style job left open)."""
+def parse(text: str) -> tuple[list[Job], list[tuple[int, int]], list[str]]:
+    """(jobs, line spans of block scalars, errors) of a workflow file, by PyYAML."""
+    yaml = load_yaml()
+    try:
+        data = yaml.safe_load(text)
+        root = yaml.compose(text)
+    except yaml.YAMLError as e:
+        return [], [], [f"not valid YAML: {e}".replace("\n", " ")]
     jobs: list[Job] = []
-    errors: list[str] = []
-    in_jobs, child_indent, job = False, None, None
-    flow: list[str] | None = None
-    for n, raw in enumerate(text.splitlines(), 1):
-        line = strip_comment(raw)
-        if not line.strip():
-            continue
-        if flow is not None and job is not None:
-            flow.append(line)
-            job.end = n
-            if "".join(flow).count("{") <= "".join(flow).count("}"):
-                job.keys.update((k, v.strip()) for k, v in FLOW_KEY_RE.findall(" ".join(flow)))
-                flow = None
-            continue
-        indent = len(line) - len(line.lstrip(" "))
-        if indent == 0:
-            kv = key_of(line)
-            in_jobs = kv is not None and kv[1] == "jobs"
-            child_indent, job = None, None
-            continue
-        if not in_jobs:
-            continue
-        if child_indent is None:
-            child_indent = indent
-        if indent < child_indent:
-            errors.append(f"line {n}: indented less than the jobs above it")
-            continue
-        kv = key_of(line)
-        if indent == child_indent:
-            if kv is None:
-                errors.append(f"line {n}: a job key was expected")
-                continue
-            job = Job(kv[1], n)
-            jobs.append(job)
-            if kv[2].startswith("{"):
-                flow = [kv[2]]
-                if kv[2].count("{") <= kv[2].count("}"):
-                    job.keys.update((k, v.strip()) for k, v in FLOW_KEY_RE.findall(kv[2]))
-                    flow = None
-            continue
-        if job is None:
-            continue
-        job.end = n
-        if job.key_indent is None:
-            job.key_indent = indent
-        if indent == job.key_indent and kv is not None:
-            job.keys[kv[1]] = kv[2]
-    if flow is not None:
-        errors.append("a flow-style job is not closed")
-    return jobs, errors
+    blocks: list[tuple[int, int]] = []
+
+    def walk(node) -> None:
+        if isinstance(node, yaml.ScalarNode):
+            if node.style in ("|", ">"):
+                blocks.append((node.start_mark.line + 2, node.end_mark.line))
+        elif isinstance(node, yaml.SequenceNode):
+            for child in node.value:
+                walk(child)
+        elif isinstance(node, yaml.MappingNode):
+            for k, v in node.value:
+                walk(k)
+                walk(v)
+
+    if root is not None:
+        walk(root)
+    if not isinstance(data, dict) or not isinstance(root, yaml.MappingNode):
+        return [], blocks, ["the file is not a mapping"]
+    values = data.get("jobs")
+    nodes = next((v for k, v in root.value if isinstance(k, yaml.ScalarNode) and k.value == "jobs"), None)
+    if not isinstance(values, dict) or not isinstance(nodes, yaml.MappingNode):
+        return [], blocks, []
+    for k, v in nodes.value:
+        end = v.end_mark.line + (0 if v.end_mark.column == 0 else 1)
+        jobs.append(Job(str(k.value), values.get(k.value), k.start_mark.line + 1, max(end, k.start_mark.line + 1)))
+    return jobs, blocks, []
 
 
-def orphans(text: str, jobs: list[Job]) -> list[int]:
-    """Lines with a `runs-on:` key, or a `uses:` key that is not a step's, outside
-    every parsed job: a job the parser did not see."""
-    spans = [(j.start, j.end) for j in jobs]
+def orphans(text: str, jobs: list[Job], blocks: list[tuple[int, int]]) -> list[int]:
+    """Lines of a plain text scan holding a `runs-on:` / `uses:` token outside
+    every parsed job and outside every block scalar: a job the parser did not
+    see. Fail-closed: a quoted value containing `runs-on:` outside the jobs also
+    counts (rename the text rather than loosen the check)."""
+    spans = [(j.start, j.end) for j in jobs] + blocks
     out = []
-    for n, raw in enumerate(text.splitlines(), 1):
-        line = strip_comment(raw)
-        kv = key_of(line)
-        flow_runs_on = re.search(r"""[{,]\s*["']?runs-on["']?\s*:""", line)
-        if (kv and kv[1] in ("runs-on", "uses")) or flow_runs_on:
-            if not any(a <= n <= b for a, b in spans):
-                out.append(n)
+    for n, line in enumerate(text.splitlines(), 1):
+        code = line.split(" #")[0] if not line.lstrip().startswith("#") else ""
+        if TOKEN_RE.search(code) and not any(a <= n <= b for a, b in spans):
+            out.append(n)
     return out
 
 
@@ -163,24 +127,27 @@ def check(root: Path = ROOT) -> tuple[list[str], int, int]:
     for wf in sorted((root / ".github" / "workflows").glob("*.y*ml")):
         rel = wf.relative_to(root).as_posix()
         text = wf.read_text(encoding="utf-8")
-        found, parse_errors = parse(text)
+        found, blocks, parse_errors = parse(text)
         errors.extend(f"{rel}: {e}" for e in parse_errors)
         if not found:
             errors.append(f"{rel}: no job found (checked nothing in this file)")
-        for line in orphans(text, found):
+        for line in orphans(text, found, blocks):
             errors.append(f"{rel}:{line}: a runs-on / uses key outside every job the check found")
         for job in found:
-            uses = job.keys.get("uses")
+            if not isinstance(job.value, dict):
+                errors.append(f"{rel}:{job.start}: job `{job.name}` is not a mapping")
+                continue
+            uses = job.value.get("uses")
             if uses:
                 calls += 1
-                if uses.startswith("./") and not (root / uses).is_file():
+                if str(uses).startswith("./") and not (root / str(uses)).is_file():
                     errors.append(f"{rel}:{job.start}: job `{job.name}` calls {uses}, which does not exist")
                 continue
-            value = job.keys.get("timeout-minutes")
+            value = job.value.get("timeout-minutes")
             if value is None:
                 errors.append(f"{rel}:{job.start}: job `{job.name}` has no job-level timeout-minutes")
                 continue
-            picks = limits(value)
+            picks = [value] if isinstance(value, int) and not isinstance(value, bool) else limits(str(value))
             if not picks:
                 errors.append(f"{rel}:{job.start}: job `{job.name}` timeout-minutes {value!r} names no minutes")
             for v in picks:

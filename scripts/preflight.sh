@@ -118,8 +118,15 @@ python3 scripts/test_mutants_exclude_check.py
 python3 scripts/test_mutants_equivalent.py
 python3 scripts/mutants_equivalent.py --check
 python3 scripts/test_mutants_in_diff_plan.py
-python3 scripts/test_workflow_timeouts.py
-python3 scripts/workflow_timeouts.py
+# PyYAML for the timeout check (scripts/requirements-ci.txt, pinned by hash), in a
+# venv outside the repository (the system python may refuse pip installs)
+CI_VENV="${XDG_CACHE_HOME:-$HOME/.cache}/alice-physics-ci-venv"
+if ! "$CI_VENV/bin/python" -c 'import yaml' 2>/dev/null; then
+  python3 -m venv "$CI_VENV"
+  "$CI_VENV/bin/python" -m pip install -q --require-hashes -r scripts/requirements-ci.txt
+fi
+"$CI_VENV/bin/python" scripts/test_workflow_timeouts.py
+"$CI_VENV/bin/python" scripts/workflow_timeouts.py
 python3 scripts/test_run_ignored.py
 python3 scripts/run_ignored.py --list > /dev/null
 python3 scripts/test_bench_counts_check.py
