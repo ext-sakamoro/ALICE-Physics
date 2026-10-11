@@ -115,6 +115,8 @@ python3 scripts/test_coverage_check.py
 python3 scripts/test_line_coverage_ratchet.py
 python3 scripts/test_mutants_ratchet.py
 python3 scripts/test_mutants_exclude_check.py
+python3 scripts/test_mutants_skip_check.py
+python3 scripts/mutants_skip_check.py
 python3 scripts/test_mutants_in_diff_plan.py
 python3 scripts/test_run_ignored.py
 python3 scripts/run_ignored.py --list > /dev/null

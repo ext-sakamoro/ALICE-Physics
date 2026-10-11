@@ -15,8 +15,13 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/mutants_skip_check.py` と `scripts/mutants-skip-ledger.txt`: `#[mutants::skip]` を台帳と突き合わせる cargo-mutants 27.1.0 は struct literal の field 削除変異を `--re` / `--exclude-re` / `exclude_re` で絞らないので、軸で compile されない test helper の変異はその軸で見逃しに数えられる skip は test でしか compile されない code (`#[cfg(test)]` / `#[cfg(all(test, ...))]` の中) にだけ許し、台帳に 12 文字以上の理由を書く 属性は括弧の対応で読み、`#[::mutants::skip]` と任意の述語の `cfg_attr` (入れ子を含む) も skip として数える module や関数全体を外す inner の `#![...]` の skip は拒否し、読めた属性の外にある `mutants::skip` が 1 つでもあれば失敗にする 本番の build が compile する code への skip・台帳に無い skip・skip の無い台帳行・比較 0 件を失敗にする (`scripts/test_mutants_skip_check.py`、ci.yml と preflight) dev-dependency に `mutants` (属性だけの crate) を足した
+
 ### Changed
 
+- `contact_constraints` と `add_contact` の doc に、step が接触を消して検出し直すので、step の間に足した接触 (同じ body を 2 度指すものを含む) は次の step で解かれないことを書いた
 - `PhysicsWorld::joints` の doc に、範囲外の body index を持つ joint を直接 push した時の挙動を書いた 2 つの body の間の joint は次の step の joint solve で panic し (`add_joint` は事前に assert で拒む)、同じ body 同士の joint は solve と island の作り直しが飛ばすので、無い時と同じに進む
 
 ## [2.3.0] - 2026-10-11
