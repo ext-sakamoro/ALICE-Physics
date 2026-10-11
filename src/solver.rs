@@ -1605,6 +1605,11 @@ pub struct PhysicsWorld {
     /// Distance constraints between bodies
     pub distance_constraints: Vec<DistanceConstraint>,
     /// Contact constraints from collision detection
+    ///
+    /// A step clears this list and fills it from collision detection (each
+    /// substep on the XPBD path, once per step on the TGS path), so a
+    /// constraint added between steps, including one naming the same body
+    /// twice, does not reach the next step's solve.
     pub contact_constraints: Vec<ContactConstraint>,
     /// SDF colliders for implicit collision detection
     pub sdf_colliders: Vec<SdfCollider>,
@@ -3057,6 +3062,10 @@ impl PhysicsWorld {
     }
 
     /// Add contact constraint
+    ///
+    /// For driving the solver stages directly: a step clears the contact
+    /// constraints and detects them again, so a contact added between steps
+    /// is not solved by the next step (see [`Self::contact_constraints`]).
     pub fn add_contact(&mut self, contact: ContactConstraint) {
         // Update contact cache for warm starting
         let key = crate::contact_cache::BodyPairKey::new(contact.body_a, contact.body_b);
@@ -7653,6 +7662,7 @@ mod tests {
     /// has to come from `detect_collisions` (a manually added contact would
     /// be cleared at the start of the substep).
     #[cfg(feature = "gpu-solver-bridge")]
+    #[mutants::skip]
     fn build_one_contact_world() -> PhysicsWorld {
         let mut world = PhysicsWorld::new(SolverConfig {
             gravity: Vec3Fix::ZERO,
@@ -7930,10 +7940,7 @@ mod tests {
 
     /// Hub body + `spokes` distance constraints, each spoke its own body.
     fn hub_world(hub: RigidBody, spokes: usize) -> PhysicsWorld {
-        let mut world = PhysicsWorld::new(SolverConfig {
-            gravity: Vec3Fix::ZERO,
-            ..Default::default()
-        });
+        let mut world = PhysicsWorld::new(SolverConfig::default());
         let hub_idx = world.add_body(hub);
         for i in 0..spokes {
             let spoke = world.add_body(RigidBody::new_dynamic(
