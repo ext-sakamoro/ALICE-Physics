@@ -15,6 +15,8 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-12
+
 ### Added
 
 - `privacy-crypto` feature (追加の feature、既定で off): `privacy` が `alice-crypto` 0.4 の差分プライバシーを再 export する: `SecureRng` (32 byte の秘密鍵の ChaCha20) / `DpNoise` / `dp_count` / `dp_int` / `dp_sum` / `randomized_response` / `bernoulli_ratio` / `DpError` / `EntropyError` / `RR_MAX_EPSILON_WHOLE` の 10 個 noise は整数演算だけで定数時間に標本化され、浮動小数点の逆関数法を使わない `KeyedRappor` (同じ feature): 鍵つきの noise 源と分数の確率 (`f` / `p` / `q`) の RAPPOR、1 bit ごとに同じ 4 回の Bernoulli を引いて算術で選ぶので、仕事と keystream の使用量が報告する値に依らない 試験は報告確率の閉形式 (`f = 1/2, p = 3/4, q = 1/4` で 5/8 と 3/8)、`f = 0, p = 1, q = 0` が Bloom filter そのもの、鍵の再現、不正な分数の拒否 (p と q を入れ替える変異で red) 例 `privacy_budget_and_rappor` / `laplace_noise_aggregate` は新しい API を使い、`privacy-crypto` を要求する **`alice-crypto` はこの feature の公開依存になる** (再 export する型は `alice-crypto` の型) ので、`alice-crypto` の破壊的な版への追従は本 crate の破壊的な版になる `alice-crypto` は本 crate と同じライセンス (`deny.toml` に例外を足した)
