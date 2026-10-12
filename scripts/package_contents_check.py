@@ -1,10 +1,17 @@
 """Checks the file list of the published .crate (`cargo package --list`).
 
 Cargo.toml ships an `include` allowlist; this check fails when the list
-  - is empty (nothing was compared),
+  - is empty (nothing was compared), or no Cargo target or no Rust source was
+    compared,
   - contains a path under repository tooling or host-binding directories, or the
-    toolchain pin, or
-  - lacks a file the crate needs (manifest, lib root, licence, README).
+    toolchain pin,
+  - lacks a file the crate needs (manifest, lib root, licence, README),
+  - lacks a Cargo target (lib, test, bench, example) that `cargo metadata` reports,
+  - lacks a file that a packaged Rust source pulls in with `include!` /
+    `include_str!` / `include_bytes!` or `#[path = "..."]` (resolved against the
+    source's directory; the crate or its tests would not compile from crates.io),
+  - lacks a `tests/fixtures/...` file that a packaged source names in a string
+    literal, or any git-tracked file under a `tests/fixtures/...` directory it names
 
 run: python3 scripts/package_contents_check.py            (runs cargo package --list)
      python3 scripts/package_contents_check.py --list F   (reads a saved list)
@@ -12,8 +19,14 @@ run: python3 scripts/package_contents_check.py            (runs cargo package --
 from __future__ import annotations
 
 import argparse
+import json
+import os
+import posixpath
+import re
 import subprocess
 import sys
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # first path component that must not be shipped
 FORBIDDEN_DIRS = (
@@ -37,12 +50,41 @@ REQUIRED = (
     "LICENSE-COMMERCIAL.md",
 )
 
+EMBED_RE = re.compile(
+    r'(?:\binclude(?:_str|_bytes)?!\s*\(\s*"([^"]+)"\s*\))|(?:#\[path\s*=\s*"([^"]+)"\s*\])'
+)
+# fixtures that tests open at run time (`CARGO_MANIFEST_DIR` + this path)
+FIXTURE_RE = re.compile(r'"/?(tests/fixtures(?:/[^"]*[^"/])?)/?"')
 
-def check(paths: list[str]) -> list[str]:
+
+def embedded_paths(rel: str, text: str) -> list[str]:
+    """Package-relative paths that `rel` embeds; a path that leaves the package
+    keeps its leading `../`, so it can never match a listed file."""
+    out = []
+    for m in EMBED_RE.finditer(text):
+        target = m.group(1) or m.group(2)
+        out.append(posixpath.normpath(posixpath.join(posixpath.dirname(rel), target)))
+    return out
+
+
+def check(
+    paths: list[str],
+    targets: list[str],
+    sources: dict[str, str],
+    tracked: list[str],
+) -> tuple[list[str], dict[str, int]]:
+    """(errors, counts compared)
+
+    paths: `cargo package --list` lines; targets: package-relative source path of
+    every Cargo target; sources: text of each packaged `.rs` file; tracked: files
+    git tracks (to expand a fixture directory).
+    """
     errors: list[str] = []
+    counts = {"files": 0, "targets": 0, "sources": 0, "embeds": 0, "fixtures": 0}
     paths = [p.strip() for p in paths if p.strip()]
     if not paths:
-        return ["package list is empty (0 files compared)"]
+        return ["package list is empty (0 files compared)"], counts
+    counts["files"] = len(paths)
     for p in paths:
         top = p.split("/", 1)[0]
         if "/" in p and top in FORBIDDEN_DIRS:
@@ -53,17 +95,53 @@ def check(paths: list[str]) -> list[str]:
     for req in REQUIRED:
         if req not in have:
             errors.append(f"required file missing from the package: {req}")
-    return errors
+    for t in targets:
+        counts["targets"] += 1
+        if t not in have:
+            errors.append(f"Cargo target missing from the package: {t}")
+    if counts["targets"] == 0:
+        errors.append("no Cargo target was compared")
+    for rel, text in sorted(sources.items()):
+        counts["sources"] += 1
+        for dep in embedded_paths(rel, text):
+            counts["embeds"] += 1
+            if dep not in have:
+                errors.append(f"{rel} embeds {dep}, which is not in the package")
+        for fixture in FIXTURE_RE.findall(text):
+            under = [f for f in tracked if f.startswith(fixture + "/")]
+            for f in under or [fixture]:
+                counts["fixtures"] += 1
+                if f not in have:
+                    errors.append(f"{rel} reads {f}, which is not in the package")
+    if counts["sources"] == 0:
+        errors.append("no packaged Rust source was scanned")
+    return errors, counts
 
 
 def cargo_list() -> list[str]:
     out = subprocess.run(
         ["cargo", "package", "--list", "--locked", "--allow-dirty"],
-        check=True,
-        capture_output=True,
-        text=True,
+        cwd=ROOT, check=True, capture_output=True, text=True,
     )
-    return out.stdout.splitlines()
+    return [line.replace("\\", "/") for line in out.stdout.splitlines()]
+
+
+def cargo_targets() -> list[str]:
+    out = subprocess.run(
+        ["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"],
+        cwd=ROOT, check=True, capture_output=True, text=True,
+    ).stdout
+    pkg = next(p for p in json.loads(out)["packages"] if p["name"] == "alice-physics")
+    base = os.path.dirname(pkg["manifest_path"])
+    return sorted(
+        os.path.relpath(t["src_path"], base).replace(os.sep, "/") for t in pkg["targets"]
+    )
+
+
+def git_tracked() -> list[str]:
+    return subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, check=True, capture_output=True, text=True
+    ).stdout.splitlines()
 
 
 def main() -> int:
@@ -75,12 +153,21 @@ def main() -> int:
             paths = f.read().splitlines()
     else:
         paths = cargo_list()
-    errors = check(paths)
+    sources = {}
+    for rel in (p.strip() for p in paths):
+        if rel.endswith(".rs"):
+            with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
+                sources[rel] = f.read()
+    errors, counts = check(paths, cargo_targets(), sources, git_tracked())
     for e in errors:
         print(f"ERROR: {e}", file=sys.stderr)
     if errors:
         return 1
-    print(f"package contents: {len([p for p in paths if p.strip()])} files, none forbidden")
+    print(
+        f"package contents: {counts['files']} files, none forbidden; "
+        f"{counts['targets']} Cargo targets present; {counts['sources']} sources scanned, "
+        f"{counts['embeds']} embedded paths and {counts['fixtures']} fixture paths present"
+    )
     return 0
 
 

@@ -239,6 +239,10 @@ jobs:
         run: cargo package --no-verify --allow-dirty
 
       - name: 展開して隔離 build
+        # job の CARGO_TERM_COLOR: always のままだと Executable が色の escape で囲まれ
+        # (直後が空白でなく escape になる)、下の件数が 0 になる
+        env:
+          CARGO_TERM_COLOR: never
         run: |
           set -euo pipefail
           crate=$(find target/package -maxdepth 1 -name '*.crate' | head -1)
@@ -253,6 +257,12 @@ jobs:
           # wasm / ffi が排他 feature (src/lib.rs の compile_error!) なので --all-features は
           # 設計上必ず落ちる packaging 検査としては default features で成立する
           cargo check
+          # test target (lib の unit test と #[path] / include_bytes! で取り込む file を含む)
+          # も展開した crate だけで build できるかを見る build した test binary が 0 本なら fail
+          cargo test --tests --no-run --locked 2>&1 | tee "$tmp/test-build.log"
+          n=$(grep -c 'Executable ' "$tmp/test-build.log" || true)
+          echo "test binaries built from the packaged crate: $n"
+          [ "$n" -gt 0 ] || { echo "::error::展開した crate から test binary が 1 本も build されていない"; exit 1; }
 
   coverage:
     needs: changes
