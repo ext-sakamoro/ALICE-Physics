@@ -123,6 +123,8 @@ class FakeLander(land.Lander):
             self.moves = [before_push]
         self.fired = 0
         self.lock_poll_seconds = 0.05
+        # the test origin is a local bare repository: its own URL is the expected remote
+        self.expected_remote_urls = (self.git("config", "--get", "remote.origin.url"),)
 
     def run_preflight(self):
         self.preflight_runs += 1
@@ -1487,10 +1489,47 @@ def call_sites(source: str) -> tuple[int, list[str]]:
     return sites, bad
 
 
+def git_call_sites(source: str) -> tuple[int, list[str]]:
+    """(git / gh calls, unpinned): a subprocess call whose argument list starts with the
+    pinned git and forced config (`*self.git_argv` / `*git_argv()`) or the pinned gh
+    (`*self.gh()`) is pinned; one that starts with anything else naming git or gh, or with an
+    expression that is neither of those, counts as an unpinned git / gh call"""
+    import ast
+    n, bad = 0, []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name) and node.func.value.id == "subprocess"):
+            continue
+        if not node.args or not isinstance(node.args[0], ast.List) or not node.args[0].elts:
+            continue
+        first = node.args[0].elts[0]
+        src = ast.unparse(first)
+        if src in ("*self.git_argv", "*git_argv()", "*self.gh()"):
+            n += 1
+        elif "git" in src.lower() or "gh" in src.lower() or "GIT" in src:
+            n += 1
+            bad.append(f"line {node.lineno}: `{src}` is not the pinned git / gh with the forced config")
+    return n, bad
+
+
 class CallSites(Isolated):
     """Every process land.py starts gets the clean environment (a static check of the source)."""
 
     SOURCE = (Path(__file__).resolve().parent / "land.py").read_text(encoding="utf-8")
+
+    def test_every_git_call_is_pinned(self):
+        n, bad = git_call_sites(self.SOURCE)
+        print(f"git calls: {n}, pinned: {n - len(bad)}", file=sys.stderr)
+        self.assertGreater(n, 0, "no git call found (compared nothing)")
+        self.assertEqual(bad, [])
+        self.assertIn("self.git_argv = git_argv()", self.SOURCE)
+        for snippet in ("subprocess.run(['git', 'push'], env=clean_env())",
+                        "subprocess.run(['gh', 'api'], env=clean_env())",
+                        "subprocess.run([GIT, 'push'], env=clean_env())",
+                        "subprocess.run([pinned_git(), 'push'], env=clean_env())"):
+            m, b = git_call_sites(self.SOURCE + "\n\n" + snippet + "\n")
+            self.assertEqual((m, len(b)), (n + 1, 1), snippet)
+        self.assertEqual(git_call_sites("x = 1\n"), (0, []))
 
     def test_every_call_site_is_wrapped(self):
         n, bad = call_sites(self.SOURCE)
@@ -1575,6 +1614,170 @@ class Output(Isolated):
         self.assertGreater(len(prints), 0)
         self.assertEqual([c.lineno for c in prints if not any(k.arg == "flush" for k in c.keywords)], [])
         self.assertIn("log=say", CallSites.SOURCE)
+
+
+def marker_script(path: Path, marker: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!/bin/sh\necho \"$0 $*\" >> '{marker.as_posix()}'\nexit 1\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+class HostileConfig(Isolated):
+    """A same-user environment that differs (by accident or on purpose) must not change what
+    land.py pushes, where, or which programs run."""
+
+    def setUp(self):
+        super().setUp()
+        self.r = Repo()
+        self.addCleanup(self.r.close)
+        self.d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.d, True)
+        self.marker = self.d / "marker"
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+
+    def home_with(self, gitconfig: str) -> dict[str, str]:
+        home = self.d / "home"
+        (home / ".config" / "git").mkdir(parents=True, exist_ok=True)
+        (home / ".gitconfig").write_text(gitconfig, encoding="utf-8")
+        (home / ".config" / "git" / "config").write_text(gitconfig, encoding="utf-8")
+        return {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")}
+
+    def land_with(self, env: dict[str, str], lander=None):
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            lander = lander or self.r.lander()
+            return lander, lander.land()
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def evil_copy(self) -> Path:
+        evil = self.d / "evil.git"
+        subprocess.run(["git", "clone", "-q", "--bare", str(self.r.origin), str(evil)], check=True, capture_output=True)
+        return evil
+
+    def heads(self, repo: Path) -> str:
+        return subprocess.run(["git", "--git-dir", str(repo), "show-ref"], capture_output=True, text=True).stdout
+
+    def test_insteadof_and_pushinsteadof_to_another_repository_are_refused(self):
+        evil = self.evil_copy()
+        origin = str(self.r.origin)
+        for key in ("insteadOf", "pushInsteadOf"):
+            before_evil, before_origin = self.heads(evil), self.r.origin_head()
+            env = self.home_with(f'[url "{evil.as_posix()}"]\n\t{key} = {origin}\n')
+            with self.assertRaisesRegex(land.LandError, rf"refusing remote 'origin': its effective (push|fetch) URL "
+                                                        rf"'{re.escape(evil.as_posix())}' is not the repository's remote"):
+                self.land_with(env)
+            self.assertEqual(self.heads(evil), before_evil, f"{key}: nothing reached the other repository")
+            self.assertEqual(self.r.origin_head(), before_origin)
+
+    def test_hooks_from_the_global_config_do_not_run(self):
+        hooks = self.d / "hooks"
+        # client-side hooks (the receiving side of these tests is a local bare repository, whose
+        # own hooks are the server's business, as on GitHub)
+        for name in ("pre-push", "post-commit", "post-rewrite", "pre-commit"):
+            marker_script(hooks / name, self.marker)
+        git(self.r.work, "-c", "user.email=me@machine.local", "commit", "-q", "--amend", "--no-edit")  # a rebase
+        lander, sha = self.land_with(self.home_with(f"[core]\n\thooksPath = {hooks.as_posix()}\n"))
+        self.assertIn("rebase", lander.calls)
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertFalse(self.marker.exists(), self.marker.read_text() if self.marker.exists() else "")
+
+    def test_a_git_and_an_ssh_earlier_on_path_are_not_run(self):
+        fake = self.d / "bin"
+        marker_script(fake / "git", self.marker)
+        marker_script(fake / "ssh", self.marker)
+        lander, sha = self.land_with({"PATH": f"{fake}{os.pathsep}{os.environ['PATH']}"})
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertFalse(self.marker.exists(), self.marker.read_text() if self.marker.exists() else "")
+
+    def test_git_program_variables_are_not_passed_on(self):
+        progs = self.d / "progs"
+        for name in ("ssh", "proxy", "git-receive-pack", "git-upload-pack", "git-remote-https"):
+            marker_script(progs / name, self.marker)
+        env = {"GIT_SSH_COMMAND": str(progs / "ssh"), "GIT_SSH": str(progs / "ssh"),
+               "GIT_EXEC_PATH": str(progs), "GIT_PROXY_COMMAND": str(progs / "proxy")}
+        lander, sha = self.land_with(env)
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertFalse(self.marker.exists(), self.marker.read_text() if self.marker.exists() else "")
+
+    def test_children_get_no_loader_or_program_variables_and_a_fixed_path(self):
+        fake = self.d / "bin"
+        marker_script(fake / "git", self.marker)
+        marker_script(fake / "ssh", self.marker)
+        names = ["LD_PRELOAD", "LD_LIBRARY_PATH", "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "GIT_SSH_COMMAND",
+                 "GIT_SSH", "GIT_SSH_VARIANT", "GIT_EXEC_PATH", "GIT_PROXY_COMMAND", "GIT_ASKPASS", "SSH_ASKPASS",
+                 "GIT_TEMPLATE_DIR", "GIT_EXTERNAL_DIFF", "GIT_PAGER", "PAGER", "GIT_EDITOR", "EDITOR", "VISUAL",
+                 "GIT_TRACE", "GIT_TRACE_PACKET"]
+        env = {k: "/nonexistent/x" for k in names}
+        env["PATH"] = f"{fake}{os.pathsep}{os.environ['PATH']}"
+        old = {k: os.environ.get(k) for k in env}
+        os.environ.update(env)
+        try:
+            lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+            probe = ("import os, shutil, sys; bad = [k for k in " + repr(names) + " if k in os.environ]; "
+                     "g, s = shutil.which('git'), shutil.which('ssh'); "
+                     f"bad += [x for x in (g, s) if x and x.startswith({str(fake)!r})]; "
+                     "sys.exit(1 if bad else 0)")
+            lander.sh(sys.executable, "-c", probe)   # LandError if the child saw any of them
+            for e in (lander.git_env, land.clean_env(), land.clean_env(cargo=True)):
+                self.assertEqual([k for k in names if k in e], [])
+                self.assertNotIn(str(fake), e["PATH"])
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+
+    def test_git_and_gh_are_pinned(self):
+        argv = land.git_argv()
+        self.assertTrue(os.path.isabs(argv[0]), argv)
+        self.assertIn(argv[0], {os.path.realpath(c) for c in land.GIT_CANDIDATES})
+        self.assertEqual(argv[1:], list(land.FORCED_GIT_CONFIG))
+        for want in ("core.hooksPath=/dev/null", "core.fsmonitor=false", "core.sshCommand=/usr/bin/ssh",
+                     "protocol.ext.allow=never"):
+            self.assertIn(want, land.FORCED_GIT_CONFIG)
+        with self.assertRaisesRegex(land.LandError, "PATH is not searched"):
+            land.pinned_tool(("/nonexistent/git", str(self.d)))
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        self.assertEqual(lander.git_argv, argv)
+        gh = [os.path.realpath(c) for c in land.GH_CANDIDATES if os.path.isfile(os.path.realpath(c))]
+        if gh:
+            self.assertEqual(lander.gh(), [gh[0]])
+        cargo = land.clean_env(cargo=True)["PATH"].split(os.pathsep)
+        self.assertTrue(cargo[-1].endswith(os.path.join(".cargo", "bin")) or "CARGO_HOME" in os.environ, cargo)
+
+    def test_github_remote_forms(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        for url in ("https://github.com/o/r.git", "git@github.com:o/r", "ssh://git@github.com/o/r.git"):
+            git(self.r.work, "remote", "set-url", "origin", url)
+            self.assertEqual(lander.slug(), "o/r")
+            lander.check_remote()   # the effective URLs equal the configured GitHub URL
+        git(self.r.work, "remote", "set-url", "origin", "https://github.com/o/r.git")
+        git(self.r.work, "remote", "set-url", "--push", "origin", "https://github.com/x/r.git")
+        with self.assertRaisesRegex(land.LandError, "effective push URL 'https://github.com/x/r.git' is not the "
+                                                    "repository's remote \\(https://github.com/o/r"):
+            lander.check_remote()
+        git(self.r.work, "remote", "set-url", "--delete", "--push", "origin", "https://github.com/x/r.git")
+        git(self.r.work, "config", "url.https://github.com/evil/.insteadOf", "https://github.com/o/")
+        with self.assertRaisesRegex(land.LandError, "effective push URL 'https://github.com/evil/r.git'"):
+            lander.check_remote()
+        # fetch redirected, push kept: the evidence would be read from another repository
+        git(self.r.work, "config", "url.https://github.com/o/.pushInsteadOf", "https://github.com/o/")
+        with self.assertRaisesRegex(land.LandError, "effective fetch URL 'https://github.com/evil/r.git'"):
+            lander.check_remote()
+        git(self.r.work, "config", "--unset", "url.https://github.com/o/.pushInsteadOf")
+        git(self.r.work, "config", "--unset", "url.https://github.com/evil/.insteadOf")
+        git(self.r.work, "remote", "set-url", "origin", "https://example.org/o/r.git")
+        with self.assertRaisesRegex(land.LandError, "is not a GitHub owner/repo URL"):
+            lander.check_remote()
+        self.assertIsNone(land.remote_url_problem("https://github.com/o/r", ("https://github.com/o/r",)))
+        self.assertIsNotNone(land.remote_url_problem("https://github.com/o/r2", ("https://github.com/o/r",)))
 
 
 class AmbientEnv(Isolated):

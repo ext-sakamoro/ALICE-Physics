@@ -33,9 +33,22 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      from the GitHub API, and requires author and committer to be LAND_IDENTITY
      ("REVERT OR FIX NOW" otherwise).
 
-land.py refuses to start when the environment selects a repository (REFUSED_ENV:
-GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...), and runs every child process with
-clean_env(), which also drops the ambient identity and injected config.
+A different environment of the same user (by accident or on purpose) must not change
+what land.py pushes, where, or as whom:
+  - it refuses to start when the environment selects a repository (REFUSED_ENV:
+    GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...);
+  - git and gh run by absolute path from fixed locations (GIT_CANDIDATES /
+    GH_CANDIDATES, never PATH), every git call with FORCED_GIT_CONFIG (no hooks, no
+    fsmonitor, ssh as /usr/bin/ssh, no ext:: transport; command-line config wins over
+    the global and system files, which stay for credential helpers);
+  - every child process gets clean_env(): the ambient identity, injected config, the
+    programs git or ssh would run (GIT_SSH*, GIT_EXEC_PATH, GIT_PROXY_COMMAND, askpass,
+    pager, editor), GIT_TRACE* and LD_* / DYLD_* dropped, and a fixed PATH (the system
+    directories, /opt/homebrew/bin, /usr/local/bin; for preflight and cargo also
+    $CARGO_HOME/bin or ~/.cargo/bin);
+  - before the first fetch and before every push, the effective fetch and push URLs of
+    the remote (after insteadOf / pushInsteadOf / pushurl) must be the GitHub URL of
+    the owner/repo that gh is told (check_remote).
 
 Generated ledgers are not meant to be edited on a branch: they are rebuilt at
 landing time, so two landings never conflict on them.
@@ -87,7 +100,69 @@ DENIED_NAMES = ("web-flow", "github")
 SCRUBBED_ENV_RE = re.compile(
     r"^(GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL|DATE)|GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_COMMON_DIR"
     r"|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_NAMESPACE|GIT_CEILING_DIRECTORIES"
-    r"|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$")
+    r"|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+"
+    # programs git or ssh would run instead of the expected ones, and loader injection
+    r"|GIT_SSH_COMMAND|GIT_SSH|GIT_SSH_VARIANT|GIT_EXEC_PATH|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS"
+    r"|GIT_TEMPLATE_DIR|GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_EDITOR|EDITOR|VISUAL|GIT_TRACE.*"
+    r"|LD_.*|DYLD_.*)$")
+
+# git and gh are run by absolute path, resolved once from fixed locations (never from PATH),
+# and every child process gets a fixed PATH: a `git` or `ssh` placed earlier on the caller's
+# PATH is never run. /opt/homebrew/bin and /usr/local/bin are the package prefixes of the
+# machines that land; the preflight child (bash, python3, cargo, rustup) also gets the cargo
+# directory ($CARGO_HOME/bin, default ~/.cargo/bin).
+GIT_CANDIDATES = ("/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git",
+                  r"C:\Program Files\Git\cmd\git.exe")
+GH_CANDIDATES = ("/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh",
+                 r"C:\Program Files\GitHub CLI\gh.exe")
+SYSTEM_PATH = ("/usr/bin", "/bin", "/usr/sbin", "/sbin", "/opt/homebrew/bin", "/usr/local/bin")
+# forced on every git call (command-line config wins over the global and system files, which
+# are kept: credential helpers live there): no hooks, no fsmonitor program, ssh by absolute
+# path, no ext:: transport
+SSH = "/usr/bin/ssh"
+FORCED_GIT_CONFIG = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+                     "-c", f"core.sshCommand={SSH}", "-c", "protocol.ext.allow=never")
+
+
+def pinned_tool(candidates: tuple[str, ...]) -> str:
+    """the real path of the first candidate that exists and is executable"""
+    for c in candidates:
+        real = os.path.realpath(c)
+        if os.path.isfile(real) and os.access(real, os.X_OK):
+            return real
+    raise LandError(f"none of {', '.join(candidates)} is an executable (PATH is not searched)")
+
+
+_PINNED: dict[str, str] = {}
+
+
+def pinned_git() -> str:
+    if "git" not in _PINNED:
+        _PINNED["git"] = pinned_tool(GIT_CANDIDATES)
+    return _PINNED["git"]
+
+
+def git_argv() -> list[str]:
+    """the start of every git command line: the pinned git and the forced config"""
+    return [pinned_git(), *FORCED_GIT_CONFIG]
+
+
+def safe_path(cargo: bool = False) -> str:
+    """the fixed PATH of a child process (the pinned git's directory first)"""
+    dirs = [os.path.dirname(pinned_git())]
+    if os.name == "nt":
+        root = os.environ.get("SystemRoot", r"C:\Windows")
+        dirs += [os.path.join(root, "System32"), root]
+    else:
+        dirs += list(SYSTEM_PATH)
+    if cargo:
+        dirs.append(os.path.join(os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo"),
+                                 "bin"))
+    seen: list[str] = []
+    for d in dirs:
+        if d not in seen:
+            seen.append(d)
+    return os.pathsep.join(seen)
 
 
 # variables that select another repository, working tree, index or object store: land.py refuses
@@ -134,9 +209,23 @@ def line_buffered_output() -> None:
             pass
 
 
-def clean_env() -> dict[str, str]:
-    """os.environ without the variables SCRUBBED_ENV_RE matches"""
-    return {k: v for k, v in os.environ.items() if not SCRUBBED_ENV_RE.match(k)}
+def clean_env(cargo: bool = False) -> dict[str, str]:
+    """os.environ without the variables SCRUBBED_ENV_RE matches, with the fixed PATH"""
+    env = {k: v for k, v in os.environ.items() if not SCRUBBED_ENV_RE.match(k)}
+    env["PATH"] = safe_path(cargo)
+    return env
+
+
+GITHUB_URL_FORMS = ("https://github.com/{slug}", "https://github.com/{slug}.git",
+                    "git@github.com:{slug}", "git@github.com:{slug}.git",
+                    "ssh://git@github.com/{slug}", "ssh://git@github.com/{slug}.git")
+
+
+def remote_url_problem(url: str, allowed: tuple[str, ...]) -> str | None:
+    """why `url` (an effective fetch or push URL) is not one of `allowed`"""
+    if url.strip() in allowed:
+        return None
+    return f"{url.strip()!r} is not the repository's remote ({' / '.join(allowed)})"
 
 
 def identity_problem(name: str, email: str) -> str | None:
@@ -677,11 +766,16 @@ class Lander:
         if problem:
             raise LandError(f"LAND_IDENTITY {IDENTITY!r} is refused: {problem}")
         self.ident_cfg = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
-        # every git process: the ambient identity / repository / config variables dropped
+        # every git process: the pinned git with the forced config, and the ambient
+        # identity / repository / program variables dropped
+        self.git_argv = git_argv()
         self.git_env = clean_env()
+        # tests compare the effective remote URLs with their local bare repository instead of
+        # the GitHub forms (set in code, never from the environment)
+        self.expected_remote_urls: tuple[str, ...] | None = None
         self.preflight_runs = 0
         self.poll_seconds = 30
-        self.gh_cmd = ["gh"]   # tests run a fake gh script here (no network)
+        self.gh_cmd: list[str] | None = None   # the pinned gh on first use; tests run a fake gh script here
         self.max_polls = 240  # 2 hours at 30 s: the 4-OS CI run and the queued heavy runs
         self.after_max_polls = 360  # 3 hours at 30 s: the Mac Intel leg and Miri on main
         self.lock_wait_seconds = LOCK_WAIT_MINUTES * 60
@@ -695,14 +789,14 @@ class Lander:
     # --- plumbing (overridden in tests) ------------------------------------------
 
     def git(self, *args: str, check: bool = True) -> str:
-        r = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, env=self.git_env)
+        r = subprocess.run([*self.git_argv, *args], cwd=self.root, capture_output=True, text=True, env=self.git_env)
         if check and r.returncode != 0:
             raise LandError(f"git {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
         return r.stdout.strip()
 
     def sh(self, *cmd: str) -> None:
         self.log("$ " + " ".join(cmd))
-        r = subprocess.run(list(cmd), cwd=self.root, env={**clean_env(), "PYTHONIOENCODING": "utf-8"})
+        r = subprocess.run(list(cmd), cwd=self.root, env={**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"})
         if r.returncode != 0:
             raise LandError(f"`{' '.join(cmd)}` failed (exit {r.returncode})")
 
@@ -711,7 +805,7 @@ class Lander:
         per-push coverage ratchet runs `--lib` only and would turn red after the land."""
         gate = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib_test_gate.py")
         r = subprocess.run([sys.executable, gate, self.upstream(), "--root", self.root],
-                           cwd=self.root, capture_output=True, text=True, env=clean_env())
+                           cwd=self.root, capture_output=True, text=True, env=clean_env(cargo=True))
         for line in r.stdout.splitlines():
             self.log(line)
         if r.returncode != 0:
@@ -738,7 +832,7 @@ class Lander:
 
     def regenerate_public_api(self) -> None:
         r = subprocess.run(["cargo", f"+{NIGHTLY}", "public-api", "--features", NATIVE, "--simplified"],
-                           cwd=self.root, capture_output=True, text=True, env=clean_env())
+                           cwd=self.root, capture_output=True, text=True, env=clean_env(cargo=True))
         if r.returncode != 0 or not r.stdout.strip():
             raise LandError(f"cargo +{NIGHTLY} public-api failed (install the toolchain and cargo-public-api): "
                             f"{r.stderr.strip()[-300:]}")
@@ -761,9 +855,14 @@ class Lander:
         if problems:
             raise LandError("\n  ".join(problems))
 
+    def gh(self) -> list[str]:
+        if self.gh_cmd is None:
+            self.gh_cmd = [pinned_tool(GH_CANDIDATES)]
+        return self.gh_cmd
+
     def gh_json(self, *args: str):
         """`gh <args>` parsed as JSON; LandError when gh fails (never read as an empty list)."""
-        out = subprocess.run([*self.gh_cmd, *args], capture_output=True, text=True, env=clean_env(), encoding="utf-8",
+        out = subprocess.run([*self.gh(), *args], capture_output=True, text=True, env=clean_env(), encoding="utf-8",
                              errors="replace")
         if out.returncode != 0:
             raise LandError(f"gh {' '.join(args[:3])} failed: {out.stderr.strip()[:300]}")
@@ -785,15 +884,35 @@ class Lander:
                 for j in (data or {}).get("jobs", [])]
 
     def dispatch(self, slug: str, wf_file: str, ref: str) -> None:
-        r = subprocess.run([*self.gh_cmd, "workflow", "run", wf_file, "--repo", slug, "--ref", ref],
+        r = subprocess.run([*self.gh(), "workflow", "run", wf_file, "--repo", slug, "--ref", ref],
                            capture_output=True, text=True, env=clean_env(), encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise LandError(f"gh workflow run {wf_file} --ref {ref} failed: {r.stderr.strip()[:300]}")
 
     def slug(self) -> str:
-        repo = self.git("remote", "get-url", self.remote)
-        m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", repo)
+        """owner/repo from the configured URL of the remote (as written, before insteadOf)"""
+        repo = self.git("config", "--get", f"remote.{self.remote}.url", check=False)
+        m = re.fullmatch(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
+                         r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?", repo.strip())
         return m.group(1) if m else repo
+
+    def check_remote(self) -> None:
+        """The effective fetch and push URLs of the remote (after insteadOf / pushInsteadOf and
+        any pushurl) must be the repository's GitHub URL for slug() (the one gh is told), or the
+        test's expected URLs; refuse otherwise, naming both."""
+        if self.expected_remote_urls is not None:
+            allowed = self.expected_remote_urls
+        else:
+            slug = self.slug()
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", slug):
+                raise LandError(f"remote {self.remote!r}: {slug!r} is not a GitHub owner/repo URL")
+            allowed = tuple(f.format(slug=slug) for f in GITHUB_URL_FORMS)
+        for label, args in (("push URL", ("remote", "get-url", "--push", self.remote)),
+                            ("fetch URL", ("ls-remote", "--get-url", self.remote))):
+            url = self.git(*args)
+            problem = remote_url_problem(url, allowed)
+            if problem:
+                raise LandError(f"refusing remote {self.remote!r}: its effective {label} {problem}")
 
     def wait_evidence(self, ref: str, sha: str) -> None:
         """Wait until every workflow expected on a ci/** push has its evidence for `sha` on
@@ -935,7 +1054,7 @@ class Lander:
 
     def owns_ref(self, sha: str) -> bool:
         """A ci/<id> head we pushed earlier (a previous attempt of the same commits)."""
-        r = subprocess.run(["git", "cherry", "HEAD", sha], cwd=self.root, capture_output=True, text=True,
+        r = subprocess.run([*self.git_argv, "cherry", "HEAD", sha], cwd=self.root, capture_output=True, text=True,
                            env=self.git_env)
         return r.returncode == 0 and all(line.startswith("-") for line in r.stdout.splitlines())
 
@@ -945,9 +1064,9 @@ class Lander:
         # attributes are read from the empty tree: a base that still carries
         # `CHANGELOG.md merge=union` must not merge it behind merge_append()'s back
         # write the empty tree object EMPTY_TREE names (mktree reads the entries from stdin)
-        subprocess.run(["git", "mktree"], cwd=self.root, input="", capture_output=True, text=True,
+        subprocess.run([*self.git_argv, "mktree"], cwd=self.root, input="", capture_output=True, text=True,
                        env=self.git_env)
-        r = subprocess.run(["git", *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "rebase", "--force-rebase",
+        r = subprocess.run([*self.git_argv, *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "rebase", "--force-rebase",
                             self.upstream()],
                            cwd=self.root, capture_output=True, text=True, env=self.git_env)
         while r.returncode != 0:
@@ -967,7 +1086,7 @@ class Lander:
                 else:
                     self.git("checkout", "--ours", "--", p)   # main's copy; regenerated after the rebase
                 self.git("add", "--", p)
-            r = subprocess.run(["git", *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "-c", "core.editor=true",
+            r = subprocess.run([*self.git_argv, *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "-c", "core.editor=true",
                                 "rebase", "--continue"],
                                cwd=self.root, capture_output=True, text=True, env=self.git_env)
 
@@ -977,7 +1096,7 @@ class Lander:
         import tempfile
         stages = {}
         for n in (1, 2, 3):
-            r = subprocess.run(["git", "show", f":{n}:{path}"], cwd=self.root, capture_output=True, text=True,
+            r = subprocess.run([*self.git_argv, "show", f":{n}:{path}"], cwd=self.root, capture_output=True, text=True,
                                env=self.git_env)
             stages[n] = transform(r.stdout) if r.returncode == 0 else ""
         with tempfile.TemporaryDirectory() as d:
@@ -986,8 +1105,8 @@ class Lander:
                 f = Path(d) / f"{n}"
                 f.write_text(stages[n], encoding="utf-8")
                 files.append(str(f))
-            cmd = ["git", "merge-file", "-p", *(["--diff3"] if diff3 else []), *files]
-            r = subprocess.run(cmd, capture_output=True, text=True, env=self.git_env)
+            r = subprocess.run([*self.git_argv, "merge-file", "-p", *(["--diff3"] if diff3 else []), *files],
+                               capture_output=True, text=True, env=self.git_env)
         (self.root / path).write_text(r.stdout, encoding="utf-8")
         return r.returncode == 0
 
@@ -1081,7 +1200,7 @@ class Lander:
     def needs_rebase(self) -> bool:
         """HEAD is not on the upstream, or a commit of ours lacks the fixed committer (a
         rebase that is not needed would give the commits a new date and a new SHA)."""
-        r = subprocess.run(["git", "merge-base", "--is-ancestor", self.upstream(), "HEAD"], cwd=self.root,
+        r = subprocess.run([*self.git_argv, "merge-base", "--is-ancestor", self.upstream(), "HEAD"], cwd=self.root,
                            env=self.git_env)
         if r.returncode != 0:
             return True
@@ -1116,12 +1235,13 @@ class Lander:
                 return
             if existing:
                 self.git("fetch", "-q", self.remote, existing[0], check=False)
-                r = subprocess.run(["git", "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root,
+                r = subprocess.run([*self.git_argv, "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root,
                                    env=self.git_env)
                 if r.returncode != 0 and not self.owns_ref(existing[0]) and not self.replace_ci:
                     raise LandError(f"{ref} holds other commits; pick another --id, or pass --replace-ci "
                                     "if it is your own earlier attempt (e.g. amended after a red CI)")
         # our own ci/<id>: a re-evidence push replaces the earlier attempt (and its pending run)
+        self.check_remote()
         self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
         self.wait_evidence(ref, sha)
 
@@ -1130,6 +1250,7 @@ class Lander:
             return self._land()
 
     def _land(self) -> str:
+        self.check_remote()
         self.fetch()
         problems = self.check_commits()
         if problems:
@@ -1193,7 +1314,8 @@ class Lander:
                 return sha
             before_push = self.git("rev-parse", self.upstream())
             self.check_push_identity(before_push)
-            r = subprocess.run(["git", "push", "-q", self.remote, f"HEAD:{self.branch}"], cwd=self.root,
+            self.check_remote()
+            r = subprocess.run([*self.git_argv, "push", "-q", self.remote, f"HEAD:{self.branch}"], cwd=self.root,
                                capture_output=True, text=True, env=self.git_env)
             self.fetch()
             if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
@@ -1263,7 +1385,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {', '.join(refused)} set in the environment: land.py does not land a repository "
               "chosen by the environment; unset it and run from the checkout", file=sys.stderr, flush=True)
         return 2
-    root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+    root = Path(subprocess.run([*git_argv(), "rev-parse", "--show-toplevel"], capture_output=True, text=True,
                                env=clean_env()).stdout.strip())
     try:
         lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
