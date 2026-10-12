@@ -25,7 +25,8 @@ docs/CI_TRIGGERS.md; the evidence class of the row is compared with
     always()`, needs every other job), and a workflow without a path gate has none (ci.yml's
     `gate` job is the nightly Mac Intel decision, a different job);
   * the landing-waits table equals what scripts/land.py derives and waits on, and the
-    after-landing-wait table equals what `land.py --wait` reads on main;
+    after-landing-wait table equals what `land.py --wait` reads on main, and the document
+    names every ledger land.py counts as a document when main moves;
   * a workflow that runs on ci/** cannot cancel a main run: its concurrency group
     includes the ref, or `cancel-in-progress` is false.
 
@@ -474,6 +475,11 @@ def check(root: Path) -> tuple[list[str], int]:
             errors.append(f"{DOC}: after-landing-wait row {row} missing (land.py --wait reads it)")
         for row in sorted(got_after - want_after):
             errors.append(f"{DOC}: after-landing-wait row {row} is not what land.py --wait reads")
+
+    # the ledgers land.py counts as documents (land.LOCAL_LEDGERS) are named in the document
+    for ledger in sorted(land.LOCAL_LEDGERS):
+        if f"`{ledger}`" not in doc:
+            errors.append(f"{DOC}: does not name `{ledger}`, which scripts/land.py counts as a document")
 
     if compared == 0:
         errors.append("no workflow row compared (compared nothing)")

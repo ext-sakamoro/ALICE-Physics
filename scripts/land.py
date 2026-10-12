@@ -6,21 +6,24 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
   1. checks the commits: author and committer identity, no internal vocabulary
      in the messages (the docs_lint word list and private-name hashes), a
      CHANGELOG line when src/ changes (--no-changelog for a pure refactor);
-  2. regenerates the ledgers (they are checked against a freshly built index)
-     and runs `scripts/preflight.sh --fast` once;
-  3. pushes HEAD to `ci/<id>` and waits for the evidence of every workflow that
+  2. takes the per-repository landing lock of this machine (LandLock, held until
+     the push to main; a second landing waits up to --lock-wait-minutes);
+  3. rebases on origin/main when needed (with a fixed committer; a conflict in a
+     generated ledger takes main's copy, any other conflict stops), rebuilds and
+     commits the ledgers, runs the checks and `scripts/preflight.sh --fast`;
+  4. pushes HEAD to `ci/<id>` and waits for the evidence of every workflow that
      runs on ci/** (wait_evidence: the classes of .github/ci-evidence.toml; a
      missing or dropped run is re-created with `gh workflow run`); every landing
      takes this lane. The one exception is the emergency escape `--direct
      --reason "<why>"` (e.g. reverting a red main): it skips the ci/ push, prints
      a warning and puts the reason in the landing record;
-  4. rebases on the latest origin/main with a fixed committer; a conflict in a
-     generated ledger is resolved by taking main's copy (it is regenerated
-     next), any other conflict stops the landing;
-  5. regenerates the generated ledgers on that base (SCIP index first) and
-     commits them, then runs the document / ledger checks;
-  6. pushes HEAD to main, starting again from 4 when main moved meanwhile
-     (preflight is re-run only when the new main commits touch more than documents).
+  5. fetches main again: unmoved, it pushes the evidenced SHA itself; moved by
+     documents only (docs_only), it rebases and runs the local checks; moved by
+     code, it rebases, checks (preflight or a compile check), pushes the new SHA to
+     `ci/<id>` and waits for the evidence again, at most MAX_EVIDENCE rounds in all,
+     then stops ("main is moving");
+  6. pushes HEAD to main (fast-forward only), going back to 5 when main moved
+     meanwhile.
 
 Generated ledgers are not meant to be edited on a branch: they are rebuilt at
 landing time, so two landings never conflict on them.
@@ -79,7 +82,11 @@ SIGNATURE_RE = re.compile(r"Co-Authored-By:|^\s*Generated with\b|\U0001F916", re
 NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
 NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-MAX_ATTEMPTS = 5
+MAX_ATTEMPTS = 6        # pushes to main (a push that loses a race to another landing retries)
+MAX_EVIDENCE = 3        # evidence rounds on ci/<id>: the first and two after main gained code
+MOVING_MESSAGE = "main is moving: wait for a quiet main or coordinate a landing slot"
+LOCK_DIR_ENV = "LAND_LOCK_DIR"  # where the per-repository landing lock lives (tests point it elsewhere)
+LOCK_WAIT_MINUTES = 30
 
 
 class LandError(Exception):
@@ -435,12 +442,47 @@ def blank_integration(text: str) -> str:
 
 
 DOCS_RE = re.compile(r"^(docs/|README[^/]*\.md$|CHANGELOG\.md$)")
+# ledgers land.py rebuilds from the tree and checks locally after every rebase (run_checks):
+# a main commit that only rewrote them cannot make the landed tree's ledgers stale.
+# docs/PUBLIC_API_SNAPSHOT.txt is not here: it depends on the toolchain and the platform and
+# only CI's public-api job compares it
+LOCAL_LEDGERS = frozenset(("docs/integration-status.md", "docs/integration-levels.md",
+                           "docs/oracle-status.md", "docs/wiring-status.md", "docs/coverage/status.md"))
 
 
-def docs_only(paths: list[str]) -> bool:
-    """True for a change to documents only (ledger bot commits included): it cannot
-    change what the tests see, so preflight need not run again for it."""
-    return bool(paths) and all(DOCS_RE.match(p) for p in paths)
+def workflow_input_rules(root: Path) -> list:
+    """the pattern lists of .github/paths/*.txt (each: the files a path-gated workflow reads),
+    compiled; LandError when there is none or one cannot be read"""
+    import changed_paths as cp
+    lists = sorted((root / ".github" / "paths").glob("*.txt"))
+    if not lists:
+        raise LandError("no .github/paths/*.txt: the workflow inputs are unknown")
+    out = []
+    for f in lists:
+        try:
+            out.append(cp.compile_patterns(cp.read_patterns(str(f), [])))
+        except (cp.PatternError, OSError) as e:
+            raise LandError(f"{f.name}: {e}") from None
+    return out
+
+
+def docs_only(paths: list[str], input_rules: list) -> bool:
+    """True when every path is a document that no workflow reads: under docs/, a top-level
+    README*.md or CHANGELOG.md, and not selected by any .github/paths list (the inputs of the
+    path-gated workflows), except the ledgers land.py rebuilds and checks after every rebase
+    (LOCAL_LEDGERS). Such a change cannot change what the tests or the gated workflows see.
+    False for an empty list (nothing compared)."""
+    import changed_paths as cp
+    if not paths:
+        return False
+    for p in paths:
+        if not DOCS_RE.match(p):
+            return False
+        if p in LOCAL_LEDGERS:
+            continue
+        if any(cp.selected(p, rules) for rules in input_rules):
+            return False
+    return True
 
 
 # files whose change can alter how every other file builds or tests
@@ -456,6 +498,65 @@ def overlaps(ours: list[str], theirs: list[str]) -> bool:
     to main's CI, so a landing is not re-tested in full every time main moves."""
     mine = {p for p in ours if not DOCS_RE.match(p)}
     return any(p in mine or BUILD_WIDE_RE.search(p) for p in theirs if not DOCS_RE.match(p))
+
+
+class LandLock:
+    """An exclusive lock per repository and machine (flock on POSIX, msvcrt on Windows),
+    held from the first fetch to the push to main. A second landing waits up to `wait`
+    seconds, then fails naming the holder (written next to the lock)."""
+
+    def __init__(self, path: Path, wait: float, poll: float = 5.0, label: str = ""):
+        self.path, self.wait, self.poll, self.label = path, wait, poll, label
+        self.holder = path.with_suffix(".holder")
+        self.fh = None
+
+    def _try(self) -> bool:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self.fh.seek(0)  # msvcrt locks from the current position: always byte 0
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            return False
+
+    def __enter__(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.fh = open(self.path, "a+")
+        start = time.monotonic()
+        while not self._try():
+            if time.monotonic() - start >= self.wait:
+                try:
+                    who = self.holder.read_text(encoding="utf-8").strip()
+                except OSError:
+                    who = "unknown holder"
+                self.fh.close()
+                raise LandError(f"another landing holds {self.path} ({who}); waited "
+                                f"{self.wait / 60:.1f} minutes")
+            time.sleep(self.poll)
+        self.holder.write_text(f"pid {os.getpid()} started {time.strftime('%Y-%m-%dT%H:%M:%S%z')} "
+                               f"{self.label}\n", encoding="utf-8")
+        return self
+
+    def __exit__(self, *exc):
+        try:
+            self.holder.unlink()
+        except OSError:
+            pass
+        try:
+            if os.name == "nt":
+                import msvcrt
+                self.fh.seek(0)
+                msvcrt.locking(self.fh.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.fh.fileno(), fcntl.LOCK_UN)
+        finally:
+            self.fh.close()
+        return False
 
 
 def message_problems(message: str) -> list[str]:
@@ -484,6 +585,8 @@ class Lander:
         self.gh_cmd = ["gh"]   # tests run a fake gh script here (no network)
         self.max_polls = 240  # 2 hours at 30 s: the 4-OS CI run and the queued heavy runs
         self.after_max_polls = 360  # 3 hours at 30 s: the Mac Intel leg and Miri on main
+        self.lock_wait_seconds = LOCK_WAIT_MINUTES * 60
+        self.lock_poll_seconds = 5.0
         problem = direct_reason_problem(direct_reason is not None, direct_reason)
         if problem:
             raise LandError(problem)
@@ -813,7 +916,66 @@ class Lander:
         self.git(*self.ident_cfg, "commit", "-q", "--author", IDENTITY, "-m",
                  "docs: regenerate the generated ledgers")
 
+    def lock(self) -> LandLock:
+        base = os.environ.get(LOCK_DIR_ENV) or str(Path.home() / ".cache" / "alice-land")
+        try:
+            name = self.slug()
+        except LandError:
+            name = self.root.name
+        name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_") or "repo"
+        return LandLock(Path(base) / f"{name}.lock", self.lock_wait_seconds, self.lock_poll_seconds,
+                        label=f"landing {self.id} in {self.root}")
+
+    def needs_rebase(self) -> bool:
+        """HEAD is not on the upstream, or a commit of ours lacks the fixed committer (a
+        rebase that is not needed would give the commits a new date and a new SHA)."""
+        r = subprocess.run(["git", "merge-base", "--is-ancestor", self.upstream(), "HEAD"], cwd=self.root)
+        if r.returncode != 0:
+            return True
+        who = self.git("log", "--format=%cn <%ce>", f"{self.upstream()}..HEAD").splitlines()
+        return any(w != IDENTITY for w in who)
+
+    def prepare(self, verify: str) -> str:
+        """Rebase when needed, rebuild and commit the ledgers, run the checks, then
+        `verify`: preflight / compile / none. Returns HEAD."""
+        if self.needs_rebase():
+            self.rebase()
+        self.regenerate()
+        self.commit_regenerated()
+        self.run_checks()
+        if verify == "preflight":
+            self.run_preflight()
+        elif verify == "compile":
+            self.run_compile_check()
+        return self.git("rev-parse", "HEAD")
+
+    def push_evidence(self, sha: str, first: bool) -> None:
+        """Push `sha` to ci/<id> and wait for the expected set (wait_evidence)."""
+        ref = f"ci/{self.id}"
+        self.record = [l for l in self.record if not l.startswith("evidence: ")]
+        if first:
+            existing = self.git("ls-remote", self.remote, f"refs/heads/{ref}").split()
+            if existing and existing[0] == sha:
+                # an earlier run of this script pushed the same commit and stopped while
+                # waiting: wait for (or take the result of) that run instead of pushing again
+                self.log(f"{ref} already holds {sha[:7]}: reusing its CI runs")
+                self.wait_evidence(ref, sha)
+                return
+            if existing:
+                self.git("fetch", "-q", self.remote, existing[0], check=False)
+                r = subprocess.run(["git", "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root)
+                if r.returncode != 0 and not self.owns_ref(existing[0]) and not self.replace_ci:
+                    raise LandError(f"{ref} holds other commits; pick another --id, or pass --replace-ci "
+                                    "if it is your own earlier attempt (e.g. amended after a red CI)")
+        # our own ci/<id>: a re-evidence push replaces the earlier attempt (and its pending run)
+        self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
+        self.wait_evidence(ref, sha)
+
     def land(self) -> str:
+        with self.lock():
+            return self._land()
+
+    def _land(self) -> str:
         self.fetch()
         problems = self.check_commits()
         if problems:
@@ -831,54 +993,46 @@ class Lander:
             lane = "ci"
             self.record.append(f"lane: ci (ci/{self.id})")
         self.log(f"lane: {lane}")
-        # preflight checks the ledgers against a freshly built index, so a branch
-        # whose ledgers were written from an older index (or not at all) would fail
-        # there; regenerate them first, as is done again after every rebase
-        self.regenerate()
-        self.commit_regenerated()
-        self.run_preflight()
+        # the ledgers are rebuilt before the first preflight: it checks them against a
+        # freshly built index, so ledgers written from an older index would fail there
+        sha = self.prepare("preflight")
+        base = self.git("rev-parse", self.upstream())
+        evidence_sha, rounds, moved_any = None, 0, False
         if lane == "ci":
-            ref = f"ci/{self.id}"
-            sha = self.git("rev-parse", "HEAD")
-            self.record.append(f"evidence SHA: {sha} on {ref}")
             if self.dry_run:
-                self.log(f"dry run: would push {sha[:7]} to {ref} and wait for its CI")
+                self.log(f"dry run: would push {sha[:7]} to ci/{self.id} and wait for its CI")
             else:
-                existing = self.git("ls-remote", self.remote, f"refs/heads/{ref}").split()
-                if existing and existing[0] == sha:
-                    # an earlier run of this script pushed the same commit and stopped while
-                    # waiting: wait for (or take the result of) that run instead of pushing again
-                    self.log(f"{ref} already holds {sha[:7]}: reusing its CI runs")
-                    self.wait_evidence(ref, sha)
-                    existing = None
-                if existing:
-                    self.git("fetch", "-q", self.remote, existing[0], check=False)
-                    r = subprocess.run(["git", "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root)
-                    if r.returncode != 0 and not self.owns_ref(existing[0]) and not self.replace_ci:
-                        raise LandError(f"{ref} holds other commits; pick another --id, or pass --replace-ci "
-                                        "if it is your own earlier attempt (e.g. amended after a red CI)")
-                if existing is not None:
-                    self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
-                    self.wait_evidence(ref, sha)
-        verified_base = self.git("merge-base", "HEAD", self.upstream())
+                self.push_evidence(sha, first=True)
+                evidence_sha, rounds = sha, 1
         for attempt in range(1, MAX_ATTEMPTS + 1):
             self.fetch()
             new = self.git("rev-parse", self.upstream())
-            moved = self.git("rev-list", f"{verified_base}..{new}").split()
-            ours = self.paths(f"{self.upstream()}...HEAD")
-            theirs = sorted({p for c in moved for p in self.paths(f"{c}^!")})
-            code_moved = any(not docs_only(self.paths(f"{c}^!")) for c in moved)
-            self.rebase()
-            self.regenerate()
-            self.commit_regenerated()
-            self.run_checks()
-            if code_moved and overlaps(ours, theirs):
-                self.log("main gained commits touching our files or the build: preflight again")
-                self.run_preflight()
-            elif code_moved:
-                self.log("main gained commits in other files: compile check (main's CI runs their tests)")
-                self.run_compile_check()
-            verified_base = new
+            moved = self.git("rev-list", f"{base}..{new}").split()
+            if moved:
+                moved_any = True
+                theirs = sorted({p for c in moved for p in self.paths(f"{c}^!")})
+                ours = self.paths(f"{self.upstream()}...HEAD")
+                try:
+                    code_moved = not docs_only(theirs, workflow_input_rules(self.root))
+                except LandError as e:
+                    self.log(f"the workflow inputs cannot be read ({e}): treating the move as code")
+                    code_moved = True
+                verify = "none" if not code_moved else ("preflight" if overlaps(ours, theirs) else "compile")
+                if code_moved and lane == "ci" and not self.dry_run:
+                    if rounds >= MAX_EVIDENCE:
+                        raise LandError(f"{MOVING_MESSAGE} (main gained code after {rounds} evidence rounds "
+                                        f"on ci/{self.id}; last evidence {evidence_sha[:7]})")
+                    self.log(f"main gained code commits ({len(moved)}): rebasing and gathering the "
+                             f"evidence again (round {rounds + 1} of {MAX_EVIDENCE})")
+                    sha = self.prepare(verify)
+                    base = new
+                    self.push_evidence(sha, first=False)
+                    evidence_sha, rounds = sha, rounds + 1
+                    continue
+                self.log("main gained " + ("documents only" if not code_moved else "code (direct lane)")
+                         + f" ({len(moved)} commits): rebasing, local checks")
+                sha = self.prepare(verify)
+                base = new
             sha = self.git("rev-parse", "HEAD")
             if self.dry_run:
                 self.log(f"dry run: would push {sha[:7]} to {self.branch}")
@@ -887,17 +1041,26 @@ class Lander:
                                capture_output=True, text=True)
             self.fetch()
             if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
+                if lane == "direct":
+                    why = "direct (no evidence)"
+                elif rounds > 1:
+                    why = f"re-evidenced (evidence rounds {rounds})"
+                elif moved_any:
+                    why = "docs-only-moved"
+                else:
+                    why = "main-unmoved"
                 self.log(f"landed {sha[:7]} on {self.branch} (attempt {attempt})")
-                self.record.append(f"landed: {sha} on {self.branch} (attempt {attempt})")
+                self.record += [f"evidence SHA: {evidence_sha or '-'}" + (f" on ci/{self.id}" if evidence_sha else ""),
+                                f"landed SHA: {sha} on {self.branch} (attempt {attempt})",
+                                f"reason: {why}"]
                 self.log("landing record:")
                 for line in self.record:
                     self.log(f"  {line}")
                 if lane == "ci":
                     self.git("push", "-q", self.remote, f":refs/heads/ci/{self.id}", check=False)
                 return sha
-            self.log(f"{self.branch} moved during attempt {attempt}; rebasing again")
-        raise LandError(f"could not land in {MAX_ATTEMPTS} attempts")
-
+            self.log(f"{self.branch} moved during attempt {attempt}; checking what it gained")
+        raise LandError(f"could not land in {MAX_ATTEMPTS} attempts ({MOVING_MESSAGE})")
 
 def report_after(lander: "Lander", sha: str) -> int:
     code, lines = lander.wait_after(sha)
@@ -930,6 +1093,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="emergency only (e.g. reverting a red main): land without the ci/ evidence; "
                          "needs --reason, prints a warning and records the reason")
     ap.add_argument("--reason", help=f"why --direct (at least {DIRECT_REASON_MIN} characters)")
+    ap.add_argument("--lock-wait-minutes", type=float, default=LOCK_WAIT_MINUTES,
+                    help="how long a landing waits for another landing on this machine (default 30)")
     ap.add_argument("--wait", action="store_true", help="after landing, read the after-landing set on main")
     ap.add_argument("--wait-only", metavar="SHA", help="only read the after-landing set on main for SHA")
     args = ap.parse_args(argv)
@@ -943,6 +1108,7 @@ def main(argv: list[str] | None = None) -> int:
     root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip())
     lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
                     replace_ci=args.replace_ci, direct_reason=args.reason if args.direct else None)
+    lander.lock_wait_seconds = args.lock_wait_minutes * 60
     try:
         if args.wait_only:
             return report_after(lander, args.wait_only)

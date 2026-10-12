@@ -139,8 +139,12 @@ LEGS = """| workflow | job | matrix | class | events |
 """
 
 
+LEDGERS = "".join(f"- `{x}`\n" for x in ("docs/integration-status.md", "docs/integration-levels.md",
+                                          "docs/oracle-status.md", "docs/wiring-status.md", "docs/coverage/status.md"))
+
+
 def doc(rows: str = ROWS, legs: str = LEGS, dispatch: str = DISPATCH, waits: str = WAITS, after: str = AFTER) -> str:
-    return ("# T\n\n<!-- ci-triggers:workflows:begin -->\n" + rows + "<!-- ci-triggers:workflows:end -->\n\n"
+    return ("# T\n\n" + LEDGERS + "\n<!-- ci-triggers:workflows:begin -->\n" + rows + "<!-- ci-triggers:workflows:end -->\n\n"
             "<!-- ci-triggers:after-landing-legs:begin -->\n" + legs + "<!-- ci-triggers:after-landing-legs:end -->\n\n"
             "<!-- ci-triggers:dispatchable:begin -->\n" + dispatch + "<!-- ci-triggers:dispatchable:end -->\n\n"
             "<!-- ci-triggers:landing-waits:begin -->\n" + waits + "<!-- ci-triggers:landing-waits:end -->\n\n"
@@ -409,6 +413,10 @@ class Triggers(unittest.TestCase):
     def test_land_py_failing_to_derive_the_after_set_shows(self):
         ev = EVIDENCE.replace('job = "test"', 'job = "tests"', 1)
         self.has(self.errors(evidence=ev), "scripts/land.py cannot derive the after-landing set")
+
+    def test_the_document_names_the_ledgers_counted_as_documents(self):
+        d = doc().replace("- `docs/oracle-status.md`\n", "")
+        self.has(self.errors(document=d), "does not name `docs/oracle-status.md`")
 
     def test_land_py_failing_to_derive_shows(self):
         body = CI.replace("  workflow_dispatch:\n", "")

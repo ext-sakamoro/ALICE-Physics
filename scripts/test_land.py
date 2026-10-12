@@ -8,18 +8,23 @@ regeneration, checks, CI wait) are recorded instead of run. One rule per case.
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import land  # noqa: E402
 
+# the landing lock of these tests lives in a throwaway directory, not in the home cache
+os.environ[land.LOCK_DIR_ENV] = tempfile.mkdtemp(prefix="land-lock-")
+atexit.register(shutil.rmtree, os.environ[land.LOCK_DIR_ENV], True)
 NAME, EMAIL = "Moroya Sakamoto", "sakamoro@alicelaw.net"
 ID = ["-c", f"user.name={NAME}", "-c", f"user.email={EMAIL}"]
 
@@ -48,11 +53,21 @@ def commit(root: Path, files: dict[str, str], msg: str, author: str = f"{NAME} <
 class FakeLander(land.Lander):
     """Heavy steps recorded; regeneration writes a ledger derived from src/."""
 
-    def __init__(self, *a, ci_result: str = "success", before_push=None, **k):
+    def __init__(self, *a, ci_result: str = "success", before_push=None, lock_wait=None, **k):
         super().__init__(*a, log=lambda *_: None, **k)
+        if lock_wait is not None:
+            self.lock_wait_seconds = lock_wait
         self.calls: list[str] = []
         self.ci_result = ci_result
-        self.before_push = before_push
+        # main moves: one hook per round, fired at the first fetch after each round of checks
+        if before_push is None:
+            self.moves = []
+        elif isinstance(before_push, list):
+            self.moves = list(before_push)
+        else:
+            self.moves = [before_push]
+        self.fired = 0
+        self.lock_poll_seconds = 0.05
 
     def run_preflight(self):
         self.preflight_runs += 1
@@ -70,16 +85,21 @@ class FakeLander(land.Lander):
     def run_compile_check(self):
         self.calls.append("compile")
 
+    def rebase(self):
+        self.calls.append("rebase")
+        super().rebase()
+
     def wait_evidence(self, ref, sha):
         self.calls.append(f"wait_evidence {ref}")
+        self.evidenced = getattr(self, "evidenced", []) + [sha]
         if self.ci_result != "success":
             raise land.LandError(f"CI on {ref} ended `{self.ci_result}`")
         self.record.append("evidence: ci.yml run 1 success")
 
     def fetch(self):
-        if self.before_push is not None and "checks" in self.calls:
-            hook, self.before_push = self.before_push, None
-            hook()
+        if self.moves and self.fired < self.calls.count("checks"):
+            self.fired += 1
+            self.moves.pop(0)()
         super().fetch()
 
 
@@ -96,6 +116,8 @@ class Repo:
         git(self.upstream, "checkout", "-q", "-b", "main")
         commit(self.upstream, {"src/a.rs": "fn a() {}\n",
                                 "scripts/lib-test-exempt.txt": "src/b.rs fixture for the landing steps\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n",
+                               # the inputs of a path-gated workflow: what docs_only() excludes
+                               ".github/paths/w.txt": "src/**\nREADME.md\ndocs/PUBLIC_API_SNAPSHOT.txt\ndocs/wiring-status.md\n",
                                "docs/integration-status.md": "ledger: a.rs\n",
                                **({".gitattributes": "CHANGELOG.md merge=union\n"} if gitattributes else {})},
                "init")
@@ -120,9 +142,38 @@ class Repo:
 
 class Pure(unittest.TestCase):
     def test_docs_only(self):
-        self.assertTrue(land.docs_only(["docs/oracle-status.md", "CHANGELOG.md", "README_JP.md"]))
-        self.assertFalse(land.docs_only(["docs/x.md", "src/a.rs"]))
-        self.assertFalse(land.docs_only([]))
+        rules = land.workflow_input_rules(ROOT)
+        d = lambda *p: land.docs_only(list(p), rules)  # noqa: E731
+        self.assertTrue(d("CHANGELOG.md"))
+        self.assertTrue(d("README_JP.md", "docs/ROADMAP.md"))
+        # the ledgers land.py rebuilds and checks after every rebase, though workflows read them
+        self.assertTrue(d("docs/oracle-status.md", "docs/wiring-status.md", "docs/integration-status.md",
+                          "docs/integration-levels.md", "docs/coverage/status.md"))
+        self.assertTrue(d("CHANGELOG.md", "docs/oracle-status.md"))
+        self.assertFalse(d("CHANGELOG.md", "src/a.rs"))
+        self.assertFalse(d("docs/x.md", "src/a.rs"))
+        self.assertFalse(d())
+        # documents that a workflow reads (from .github/paths): not docs-only
+        self.assertFalse(d("docs/PUBLIC_API_SNAPSHOT.txt"))   # security-audit public-api job
+        self.assertFalse(d("README.md"))                      # cargo package / wheel metadata
+        self.assertFalse(d("docs/wiring-debt.md"))            # wiring_guard
+        self.assertFalse(d("CHANGELOG.md", "docs/PUBLIC_API_SNAPSHOT.txt"))
+        self.assertFalse(d("docs/x.rs"))                      # **/*.rs: a source file wherever it is
+        # outside the document paths
+        for p in ("README.md/x", "sub/README.md", "sub/CHANGELOG.md", "Cargo.toml", ".github/paths/x.txt",
+                  "scripts/x.py", "tests/a.rs"):
+            self.assertFalse(d(p), p)
+        # no input list at all: nothing is docs-only (fail-closed)
+        with self.assertRaises(land.LandError):
+            land.workflow_input_rules(Path(tempfile.mkdtemp()))
+
+    def test_docs_only_follows_the_lists(self):
+        import changed_paths as cp
+        rules = [cp.compile_patterns(["docs/ROADMAP.md"])]
+        self.assertFalse(land.docs_only(["docs/ROADMAP.md"], rules))
+        self.assertTrue(land.docs_only(["docs/ROADMAP.md"], []))
+        self.assertTrue(land.docs_only(["docs/oracle-status.md"], [cp.compile_patterns(["docs/**"])]))
+
 
     def test_direct_reason_rules(self):
         self.assertIsNone(land.direct_reason_problem(False, None))
@@ -181,8 +232,10 @@ class Landing(unittest.TestCase):
         self.assertIn("wait_evidence ci/T-1", lander.calls)
         self.assertIn("lane: ci (ci/T-1)", lander.record)
         self.assertIn("evidence: ci.yml run 1 success", lander.record)
-        self.assertIn(f"landed: {sha} on main (attempt 1)", lander.record)
-        self.assertTrue(any(l.startswith("evidence SHA: ") for l in lander.record))
+        self.assertIn(f"landed SHA: {sha} on main (attempt 1)", lander.record)
+        self.assertIn(f"evidence SHA: {sha} on ci/T-1", lander.record)   # the evidenced SHA itself landed
+        self.assertIn("reason: main-unmoved", lander.record)
+        self.assertNotIn("rebase", lander.calls)  # already on main with the fixed committer: not rewritten
         self.assertEqual((self.r.work / "docs/integration-status.md").read_text(), "ledger: a.rs, b.rs\n")
         self.assertIn("docs: regenerate the generated ledgers", git(self.r.work, "log", "-1", "--format=%s"))
 
@@ -199,6 +252,8 @@ class Landing(unittest.TestCase):
         self.assertTrue(any("WARNING: reason: revert the red main of abc1234" in l for l in logged))
         self.assertTrue(any("landing record:" in l for l in logged))
         self.assertTrue(any("lane: DIRECT" in l for l in logged))
+        self.assertIn("evidence SHA: -", lander.record)
+        self.assertIn("reason: direct (no evidence)", lander.record)
 
     def test_direct_landing_without_a_good_reason_is_refused(self):
         for reason in ("", "too short", " " * 20):
@@ -299,24 +354,34 @@ class Landing(unittest.TestCase):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         lander = self.r.lander()
         lander.land()
-        self.assertEqual(lander.calls[:2], ["regenerate", "preflight"], lander.calls)
+        self.assertLess(lander.calls.index("regenerate"), lander.calls.index("preflight"), lander.calls)
         landed = git(self.r.work, "show", "HEAD:docs/integration-status.md")
         self.assertIn("b.rs", landed)
 
     def test_docs_only_upstream_does_not_rerun_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
-        self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"}, "docs: oracle-status")
-        lander = self.r.lander()
-        lander.land()
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"},
+                                                                         "docs: oracle-status"))
+        sha = lander.land()
         self.assertEqual(lander.preflight_runs, 1)
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 1)
+        self.assertNotIn("compile", lander.calls)
+        self.assertIn("reason: docs-only-moved", lander.record)
+        self.assertIn(f"evidence SHA: {lander.evidenced[0]} on ci/T-1", lander.record)
+        self.assertIn(f"landed SHA: {sha} on main (attempt 1)", lander.record)
+        self.assertNotEqual(lander.evidenced[0], sha)  # rebased onto the documents
 
     def test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
-        self.r.push_upstream({"src/c.rs": "fn c() {}\n"}, "feat: c")
-        lander = self.r.lander()
-        lander.land()
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream({"src/c.rs": "fn c() {}\n"}, "feat: c"))
+        sha = lander.land()
         self.assertEqual(lander.preflight_runs, 1)
         self.assertIn("compile", lander.calls)
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
+        self.assertEqual(lander.evidenced[-1], sha)
+        self.assertIn("reason: re-evidenced (evidence rounds 2)", lander.record)
+        self.assertEqual([l for l in lander.record if l.startswith("evidence: ")],
+                         ["evidence: ci.yml run 1 success"])  # only the runs of the last evidence SHA
 
     def test_upstream_touching_our_file_reruns_preflight(self):
         write(self.r.work, "src/b.rs", "fn b1() {}\n\n\n\n\nfn b2() {}\n")
@@ -325,18 +390,100 @@ class Landing(unittest.TestCase):
         git(self.r.work, "push", "-q", "origin", "HEAD:main")
         commit(self.r.work, {"src/b.rs": "fn b1() { mine }\n\n\n\n\nfn b2() {}\n",
                              "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b1")
-        self.r.push_upstream({"src/b.rs": "fn b1() {}\n\n\n\n\nfn b2() { theirs }\n"}, "feat: b2")
-        lander = self.r.lander()
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream(
+            {"src/b.rs": "fn b1() {}\n\n\n\n\nfn b2() { theirs }\n"}, "feat: b2"))
         lander.land()
         self.assertEqual(lander.preflight_runs, 2)
         self.assertNotIn("compile", lander.calls)
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
 
     def test_upstream_changing_the_build_reruns_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
-        self.r.push_upstream({"Cargo.toml": "[package]\nname = \"x\"\n"}, "build: deps")
-        lander = self.r.lander()
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream({"Cargo.toml": "[package]\nname = \"x\"\n"},
+                                                                         "build: deps"))
         lander.land()
         self.assertEqual(lander.preflight_runs, 2)
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
+
+    def test_a_snapshot_move_is_code_and_is_evidenced_again(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream({"docs/PUBLIC_API_SNAPSHOT.txt": "pub fn z\n"},
+                                                                         "docs: snapshot"))
+        lander.land()
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
+        self.assertIn("reason: re-evidenced (evidence rounds 2)", lander.record)
+
+    def test_a_changelog_and_source_move_is_code(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream(
+            {"CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- c\n", "src/c.rs": "fn c() {}\n"}, "feat: c"))
+        lander.land()
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
+
+    def test_main_moving_by_code_three_times_stops(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+
+        def move(n):
+            return lambda: self.r.push_upstream({f"src/m{n}.rs": f"fn m{n}() {{}}\n"}, f"feat: m{n}")
+        lander = self.r.lander(before_push=[move(1), move(2), move(3)])
+        with self.assertRaisesRegex(land.LandError, "main is moving: wait for a quiet main or coordinate a landing slot"):
+            lander.land()
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), land.MAX_EVIDENCE)
+        subjects = subprocess.run(["git", "log", "--format=%s", "main"], cwd=self.r.origin, capture_output=True,
+                                  text=True).stdout.splitlines()
+        self.assertEqual(subjects[0], "feat: m3")
+        self.assertNotIn("feat: b", subjects)
+
+    def test_unreadable_workflow_inputs_treat_a_docs_move_as_code(self):
+        (self.r.work / ".github/paths/w.txt").unlink()
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream({"docs/ROADMAP.md": "x\n"}, "docs: roadmap"))
+        lander.land()
+        self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
+
+    def test_two_code_moves_still_land(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+
+        def move(n):
+            return lambda: self.r.push_upstream({f"src/m{n}.rs": f"fn m{n}() {{}}\n"}, f"feat: m{n}")
+        lander = self.r.lander(before_push=[move(1), move(2)])
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertIn("reason: re-evidenced (evidence rounds 3)", lander.record)
+        self.assertEqual(lander.evidenced[-1], sha)
+
+    def test_lock_contention_waits_then_times_out(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        lander.lock_wait_seconds = 0.3
+        held = lander.lock()
+        with held:
+            before = self.r.origin_head()
+            start = time.monotonic()
+            with self.assertRaisesRegex(land.LandError, rf"another landing holds .*pid {os.getpid()} started "):
+                self.r.lander(lock_wait=0.3).land()
+            self.assertGreaterEqual(time.monotonic() - start, 0.3)
+            self.assertEqual(self.r.origin_head(), before)
+        self.assertFalse(held.holder.exists(), "the holder note goes with the lock")
+
+    def test_lock_contention_waits_for_the_holder(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        import threading
+        held = self.r.lander().lock()
+        held.__enter__()
+        t = threading.Timer(0.4, held.__exit__, (None, None, None))
+        t.start()
+        start = time.monotonic()
+        sha = self.r.lander(lock_wait=10).land()
+        t.join()
+        self.assertGreaterEqual(time.monotonic() - start, 0.3)
+        self.assertEqual(self.r.origin_head(), sha)
+
+    def test_the_lock_is_per_repository_in_the_configured_dir(self):
+        lock = self.r.lander().lock()
+        self.assertEqual(lock.path.parent, Path(os.environ[land.LOCK_DIR_ENV]))
+        self.assertTrue(lock.path.name.endswith(".lock"))
+        self.assertIn("origin.git", lock.path.name)
 
     def test_overlaps(self):
         self.assertFalse(land.overlaps(["src/a.rs", "CHANGELOG.md"], ["src/c.rs", "CHANGELOG.md"]))
@@ -361,7 +508,9 @@ class Landing(unittest.TestCase):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         git(self.r.work, "-c", "user.email=me@machine.local", "commit", "-q", "--amend", "--no-edit")
         # main has not moved: a plain rebase would keep the commit (and its committer) as is
-        self.r.lander().land()
+        lander = self.r.lander()
+        lander.land()
+        self.assertIn("rebase", lander.calls)
         committers = git(self.r.work, "log", "-3", "--format=%ce").splitlines()
         self.assertTrue(all(c == EMAIL for c in committers), committers)
 

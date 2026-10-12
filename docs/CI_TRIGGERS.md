@@ -119,9 +119,49 @@ the script), before `main` moves. A change of `src/` only is no exception.
   landing even when an older run of the same workflow was green.
 - One `gh run list` per poll (every 30 s) plus one `gh run view` per unfinished run whose
   decision needs its jobs; the wait is bounded at 2 hours.
-- The landing record printed at the end names the lane, the evidence SHA, one line per
-  expected workflow (`evidence: <workflow> run <id> <conclusion>`) and the landed SHA, so
-  it can be pasted as evidence.
+- The landing record printed at the end names the lane, one line per expected workflow
+  (`evidence: <workflow> run <id> <conclusion>`, for the last evidence SHA), the evidence
+  SHA, the landed SHA and a reason class, so it can be pasted as evidence:
+  - `main-unmoved`: `main` did not move after the evidence; the evidenced SHA itself lands;
+  - `docs-only-moved`: `main` gained documents only; the change is rebased onto them and
+    the local checks run again (no new evidence);
+  - `re-evidenced (evidence rounds N)`: `main` gained code; see below;
+  - `direct (no evidence)`: the emergency escape.
+
+### When `main` moves after the evidence
+
+After the evidence, `land.py` fetches `main` again before pushing:
+
+- **Documents only**: every changed file is under `docs/`, a top-level `README*.md` or
+  `CHANGELOG.md`, and no `.github/paths/*.txt` list (the inputs of the path-gated
+  workflows) selects it. The ledgers `land.py` rebuilds and checks after every rebase
+  (`docs/integration-status.md`, `docs/integration-levels.md`, `docs/oracle-status.md`,
+  `docs/wiring-status.md`, `docs/coverage/status.md`) count as documents although
+  workflows read them. Not documents: `docs/PUBLIC_API_SNAPSHOT.txt`, `README.md` and
+  `docs/wiring-debt.md` (workflow inputs), a `.rs` file anywhere, and a change that mixes
+  a document with any other file. When the lists cannot be read, every move counts as
+  code. The change is rebased, the ledgers rebuilt and the local checks (documents,
+  ledgers, `CHANGELOG`) run again.
+- **Code**: the change is rebased and checked (`preflight.sh --fast` when `main` touched
+  our files or the build, otherwise a compile check), the new SHA is pushed to our own
+  `ci/<id>` (a force update of the earlier attempt) and the expected set is awaited again
+  for the **new SHA only** (the newest run of each workflow for that SHA). At most 3
+  evidence rounds in all; when `main` gains code a third time the landing stops with
+  `main is moving: wait for a quiet main or coordinate a landing slot`.
+- A re-evidence push follows the heavy-job rules: Bench gate, Miri and loom and
+  Integration Status use one `ci` concurrency group with `cancel-in-progress: false`, so a
+  new `ci/**` run waits for the running one, and GitHub keeps one pending run per group: the
+  pending run of the earlier attempt is replaced, and no extra heavy run starts in
+  parallel.
+
+### Landing lock
+
+`land.py` takes an exclusive lock per repository on this machine
+(`~/.cache/alice-land/<repository>.lock`; the directory can be set with
+`LAND_LOCK_DIR`) from the first fetch to the push to `main`. A second landing waits up to
+`--lock-wait-minutes` (default 30), then stops naming the holder (pid, start time,
+landing id). The lock is per machine: landings from different machines are serialized
+only by the fast-forward-only push to `main` and the re-evidence loop above.
 
 `scripts/ci_triggers_check.py` compares this table with what `scripts/land.py` derives:
 
