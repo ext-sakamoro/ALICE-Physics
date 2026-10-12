@@ -967,7 +967,9 @@ class Landing(Isolated):
                  "r'GIT_(AUTHOR|COMMITTER)_|GIT_DIR$|GIT_WORK_TREE$|GIT_INDEX_FILE$|GIT_CONFIG_(COUNT|KEY|VALUE|PARAMETERS)', k)]; "
                  "sys.exit(1 if bad else 0)")
         lander.sh(sys.executable, "-c", probe)  # LandError if the child saw any of them
-        self.assertEqual(sorted(k for k in lander.git_env if land.SCRUBBED_ENV_RE.match(k)), [])
+        # nothing ambient that the scrub matches; only the fixed values land.py sets itself
+        self.assertEqual(sorted(k for k in lander.git_env if land.SCRUBBED_ENV_RE.match(k)
+                                and lander.git_env[k] != land.CHILD_PYTHON_ENV.get(k)), [])
 
     def test_landed_commits_carry_the_fixed_committer(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
@@ -2258,6 +2260,7 @@ class ChildTools(Isolated):
         text = "\n".join(lines)
         self.assertGreaterEqual(executed, 4, text)
         self.assertTrue(any(l.startswith("ok   python3: ") for l in lines), text)
+        self.assertTrue(any(l.startswith("ok   python-env: ") for l in lines), text)
         self.assertTrue(any(l.startswith("ok   git: git version") for l in lines), text)
         self.assertEqual(failed, 0, text)
         self.assertIn(f"env-smoke: executed {executed}, skipped ", text)
@@ -2268,8 +2271,9 @@ class ChildTools(Isolated):
         self.assertEqual(executed, 0)
         self.assertGreater(failed, 0)
         self.assertIn("env-smoke: nothing executed (compared nothing)", lines)
-        executed, failed, lines = land.env_smoke(lander, steps=("rust-analyzer",) if os.name == "nt" else ("bash",))
-        self.assertEqual(failed, 0, lines)
+        # independent of the runner's tools: git is always there (pinned)
+        executed, failed, lines = land.env_smoke(lander, steps=("git",))
+        self.assertEqual((executed, failed), (1, 0), lines)
         with self.assertRaisesRegex(land.LandError, "unknown step"):
             land.env_smoke(lander, steps=("make",))
 
@@ -2306,6 +2310,51 @@ class ChildTools(Isolated):
         self.assertEqual((executed, failed), (1, 1), lines)
         self.assertIn("is '/usr/bin/python3', not the interpreter running land.py", lines[0])
 
+    def fake_cargo(self, rustup_which: str | None, analyzer_exit: int = 0) -> Path:
+        """a cargo bin directory with a rustup and a rust-analyzer proxy: `rustup which
+        rust-analyzer` prints `rustup_which` (exit 0) or fails like a missing component (None)"""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        real = d / "real-rust-analyzer"
+        real.write_text(f"#!/bin/sh\necho rust-analyzer 0.0.0-fake\nexit {analyzer_exit}\n")
+        which = (f"echo {real}" if rustup_which == "real" else
+                 "echo \"error: Unknown binary 'rust-analyzer' in official toolchain 'stable'\" >&2; exit 1")
+        (d / "rustup").write_text(f"#!/bin/sh\nif [ \"$1\" = which ]; then {which}; fi\n")
+        (d / "rust-analyzer").write_text("#!/bin/sh\necho \"error: Unknown binary 'rust-analyzer'\" >&2\nexit 1\n")
+        for f in (real, d / "rustup", d / "rust-analyzer"):
+            f.chmod(0o755)
+        old = land.cargo_bin
+        land.cargo_bin = lambda: str(d)
+        self.addCleanup(setattr, land, "cargo_bin", old)
+        return d
+
+    @unittest.skipIf(os.name == "nt", "shell-script fakes of rustup")
+    def test_rust_analyzer_proxy_without_the_component_is_skipped(self):
+        self.fake_cargo(None)
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        executed, failed, lines = land.env_smoke(lander, steps=("rust-analyzer", "git"))
+        self.assertEqual((executed, failed), (1, 0), lines)
+        self.assertIn("skip rust-analyzer: rustup: the component is not installed in the active toolchain", lines)
+        self.assertIn("env-smoke: executed 1, skipped 1", lines)
+
+    @unittest.skipIf(os.name == "nt", "shell-script fakes of rustup")
+    def test_an_installed_rust_analyzer_that_fails_fails(self):
+        self.fake_cargo("real", analyzer_exit=2)
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        executed, failed, lines = land.env_smoke(lander, steps=("rust-analyzer",))
+        self.assertEqual((executed, failed), (1, 1), lines)
+        self.assertTrue(lines[0].startswith("FAIL rust-analyzer: exit 2"), lines)
+        self.fake_cargo("real", analyzer_exit=0)
+        executed, failed, lines = land.env_smoke(lander, steps=("rust-analyzer",))
+        self.assertEqual((executed, failed), (1, 0), lines)
+        self.assertIn("real-rust-analyzer", lines[0])
+
+    def test_the_git_line_names_the_pinned_git(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        _, _, lines = land.env_smoke(lander, steps=("git",))
+        self.assertTrue(lines[0].startswith("ok   git: git version"), lines)
+        self.assertIn(f"({land.pinned_git()} via the tests' tripwire)", lines[0])
+
     def test_the_cli_exit_code(self):
         import contextlib
         import io
@@ -2319,6 +2368,94 @@ class ChildTools(Isolated):
             land.SMOKE_STEPS = old
         self.assertEqual(rc, 1, out.getvalue())
         self.assertIn("env-smoke: executed 0, skipped 0", out.getvalue())
+
+
+class ChildPython(Isolated):
+    """A child python started by land.py runs the interpreter's own code only, whatever the
+    ambient environment plants (PYTHONPATH, PYTHONHOME, PYTHONSTARTUP, user site-packages)."""
+
+    def hostile(self, drop=()):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        env, marker, probe = land.hostile_python_env(str(d))
+        land.plant_user_site(env, marker)
+        for k in drop:
+            env.pop(k)
+        saved = {k: os.environ.get(k) for k in env}
+
+        def restore():
+            for k, v in saved.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self.addCleanup(restore)
+        os.environ.update(env)        # ambient, not a minimal environment
+        return env, Path(marker), probe
+
+    def child_env(self):
+        return land.Lander(self.r.work, "T", log=lambda *_: None).child_env()
+
+    def test_no_python_variable_reaches_a_child(self):
+        self.hostile()
+        env = self.child_env()
+        self.assertEqual(sorted(k for k in env if k.startswith("PYTHON")),
+                         sorted(land.CHILD_PYTHON_ENV))
+        for k, v in land.CHILD_PYTHON_ENV.items():
+            self.assertEqual(env[k], v)
+        for k in ("PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE", "PYTHONINSPECT", "PYTHONSAFEPATH",
+                  "PYTHONWARNINGS", "VIRTUAL_ENV", "__PYVENV_LAUNCHER__"):
+            self.assertNotIn(k, env)
+        self.assertIn("HOME", env)   # kept (credentials, gh): its user site is disabled instead
+
+    def test_the_probe_runs_clean(self):
+        env, marker, probe = self.hostile()
+        r = subprocess.run([sys.executable, probe], env=self.child_env(), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(got["sibling"], "probe")
+        self.assertFalse(got["user_site"])
+        self.assertFalse(marker.exists(), marker.read_text() if marker.exists() else "")
+
+    def test_a_real_script_with_a_sibling_import_runs_clean(self):
+        # scripts/test_ansi.py imports its sibling ansi.py and re / unittest from the stdlib;
+        # the planted directory has all three names
+        env, marker, _ = self.hostile()
+        r = subprocess.run([sys.executable, str(REAL_ROOT / "scripts" / "test_ansi.py")], cwd=self.r.work,
+                           env=self.child_env(), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr[-500:])
+        self.assertIn("OK", r.stderr)
+        self.assertFalse(marker.exists(), marker.read_text() if marker.exists() else "")
+
+    def test_without_the_scrub_the_plant_would_run(self):
+        # the control: the same hostile variables, not scrubbed (PYTHONHOME dropped, so the
+        # interpreter starts): the planted json / user-site code runs
+        env, marker, probe = self.hostile(drop=("PYTHONHOME",))
+        raw = {**os.environ}
+        r = subprocess.run([sys.executable, probe], env=raw, capture_output=True, text=True)
+        self.assertTrue(marker.exists(), r.stdout + r.stderr)
+
+    def test_the_env_smoke_step_catches_a_broken_sanitizer(self):
+        # the smoke injects the hostile environment itself: with the scrub or the user-site
+        # setting broken, its python-env step fails (a minimal environment around it, as in CI,
+        # changes nothing)
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        for attr, broken in (("SCRUBBED_ENV_RE", re.compile(r"^(?!PYTHON)(" + land.SCRUBBED_ENV_RE.pattern[1:] + ")")),
+                             ("CHILD_PYTHON_ENV", {})):
+            old = getattr(land, attr)
+            setattr(land, attr, broken)
+            try:
+                executed, failed, lines = land.env_smoke(lander, steps=("python-env",))
+            finally:
+                setattr(land, attr, old)
+            self.assertEqual((executed, failed), (1, 1), (attr, lines))
+            self.assertTrue(lines[0].startswith("FAIL python-env: "), lines)
+
+    def test_the_env_smoke_step(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        executed, failed, lines = land.env_smoke(lander, steps=("python-env",))
+        self.assertEqual((executed, failed), (1, 0), lines)
+        self.assertTrue(lines[0].startswith("ok   python-env: sibling=probe user_site=False"), lines)
 
 
 class AmbientEnv(Isolated):

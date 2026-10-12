@@ -116,7 +116,18 @@ SCRUBBED_ENV_RE = re.compile(
     r"|LD_.*|DYLD_.*"
     # TLS trust overrides (a proxy alone cannot forge a GitHub answer; a replaced CA can)
     r"|SSL_CERT_FILE|SSL_CERT_DIR|GIT_SSL_NO_VERIFY|GIT_SSL_CAINFO|GIT_SSL_CAPATH|CURL_CA_BUNDLE"
-    r"|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED)$")
+    r"|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED"
+    # Python: every PYTHON* variable (PYTHONPATH / PYTHONHOME / PYTHONSTARTUP / PYTHONUSERBASE /
+    # PYTHONSAFEPATH / ... would plant or move modules for the scripts land.py starts, and for the
+    # python3 that preflight.sh and scip_index.sh start), the macOS launcher variable that moves
+    # sys.executable, and the virtual environment / conda activation variables (the children
+    # use the interpreter running land.py, chosen by path, not an activated environment)
+    r"|PYTHON.*|__PYVENV_LAUNCHER__|VIRTUAL_ENV|VIRTUAL_ENV_PROMPT|CONDA_.*)$")
+
+# set for every child after the scrub: no user site-packages (a .pth file under the home
+# directory would run code in every child python), no bytecode written into the checkout,
+# UTF-8 standard streams
+CHILD_PYTHON_ENV = {"PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1", "PYTHONIOENCODING": "utf-8"}
 
 # git and gh are run by absolute path, resolved once from fixed locations (never from PATH),
 # and every child process gets a fixed PATH: a `git` or `ssh` placed earlier on the caller's
@@ -262,6 +273,7 @@ def clean_env(cargo: bool = False) -> dict[str, str]:
     """os.environ without the variables SCRUBBED_ENV_RE matches, with the fixed PATH"""
     env = {k: v for k, v in os.environ.items() if not SCRUBBED_ENV_RE.match(k)}
     env["PATH"] = safe_path(cargo)
+    env.update(CHILD_PYTHON_ENV)
     return env
 
 
@@ -883,7 +895,7 @@ class Lander:
 
     def child_env(self) -> dict[str, str]:
         """the environment of every tool child (preflight, scip_index, the ledger scripts, cargo)"""
-        return {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}
+        return {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}   # (clean_env sets it too)
 
     def sh(self, *cmd: str) -> None:
         self.log("$ " + " ".join(cmd))
@@ -1449,7 +1461,57 @@ class Lander:
 # (child_env(): clean_env(cargo=True), safe_path), each one executed; CI runs it in a minimal
 # environment on every OS so a change of the sanitizer cannot leave the real landing without
 # a working python3 / bash / cargo / rustc / rust-analyzer / git
-SMOKE_STEPS: tuple[str, ...] = ("python3", "bash", "cargo", "rustc", "rust-analyzer", "git")
+SMOKE_STEPS: tuple[str, ...] = ("python3", "python-env", "bash", "cargo", "rustc", "rust-analyzer", "git")
+
+
+def hostile_python_env(d: str) -> tuple[dict[str, str], str, str]:
+    """An ambient environment that plants code for a child python (the --env-smoke step and the
+    tests use it): PYTHONPATH with a `json` that shadows the stdlib, a garbage PYTHONHOME,
+    PYTHONSTARTUP / PYTHONINSPECT, a PYTHONUSERBASE and a HOME whose user site-packages holds a
+    .pth that runs code. Returns (variables, marker file, a probe script that imports json and a
+    sibling module and prints what it found)."""
+    marker = os.path.join(d, "planted-code-ran")
+    plant = os.path.join(d, "plant")
+    os.makedirs(plant, exist_ok=True)
+    note = f"open({marker!r}, 'a').write(__name__ + '\\n')\n"
+    for name in ("json.py", "re.py", "unittest.py", "sibling.py", "ansi.py", "sitecustomize.py", "usercustomize.py"):
+        with open(os.path.join(plant, name), "w", encoding="utf-8") as fh:
+            fh.write(note)
+    home = os.path.join(d, "home")
+    env = {"HOME": home, "USERPROFILE": home, "PYTHONUSERBASE": os.path.join(d, "userbase"),
+           "PYTHONPATH": plant, "PYTHONHOME": os.path.join(d, "no-such-home"),
+           "PYTHONSTARTUP": os.path.join(plant, "json.py"), "PYTHONINSPECT": "1", "PYTHONSAFEPATH": "1",
+           "PYTHONWARNINGS": "error", "VIRTUAL_ENV": os.path.join(d, "venv"), "__PYVENV_LAUNCHER__": "/x"}
+    probe_dir = os.path.join(d, "probe")
+    os.makedirs(probe_dir, exist_ok=True)
+    with open(os.path.join(probe_dir, "sibling.py"), "w", encoding="utf-8") as fh:
+        fh.write("ORIGIN = 'probe'\n")
+    probe = os.path.join(probe_dir, "probe.py")
+    with open(probe, "w", encoding="utf-8") as fh:
+        fh.write("import json, os, site, sys\nimport sibling\n"
+                 "print(f'sibling={sibling.ORIGIN} user_site={site.ENABLE_USER_SITE} json from the stdlib')\n"
+                 "print(json.dumps({'sibling': sibling.ORIGIN, 'json': os.path.dirname(json.__file__),"
+                 " 'user_site': site.ENABLE_USER_SITE, 'path': sys.path}))\n")
+    return env, marker, probe
+
+
+def plant_user_site(env: dict[str, str], marker: str) -> None:
+    """a .pth that writes `marker` in every user site-packages the probe python could read,
+    for both HOME and PYTHONUSERBASE (plain user site, macOS framework builds)"""
+    import sysconfig
+    ver = f"{sys.version_info[0]}.{sys.version_info[1]}"
+    dirs = set()
+    for base in (env["HOME"], env["PYTHONUSERBASE"], os.path.join(env["HOME"], ".local"),
+                 os.path.join(env["HOME"], "Library", "Python", ver)):
+        for scheme in ("posix_user", "osx_framework_user", "nt_user"):
+            try:
+                dirs.add(sysconfig.get_path("purelib", scheme, vars={"userbase": base}))
+            except KeyError:
+                pass
+    for site_dir in dirs:
+        os.makedirs(site_dir, exist_ok=True)
+        with open(os.path.join(site_dir, "planted.pth"), "w", encoding="utf-8") as fh:
+            fh.write(f"import os; open({marker!r}, 'a').write('pth\\n')\n")
 
 
 def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[int, int, list[str]]:
@@ -1460,7 +1522,7 @@ def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[i
     path = lander.child_env()["PATH"]
     executed, failed, skipped, lines = 0, 0, 0, []
 
-    def run(name: str, argv: list[str], check=None):
+    def run(name: str, argv: list[str], check=None, shown: str | None = None):
         nonlocal executed, failed
         executed += 1
         try:
@@ -1477,7 +1539,7 @@ def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[i
             failed += 1
             lines.append(f"FAIL {name}: {problem} ({' '.join(argv[:3])})")
         else:
-            lines.append(f"ok   {name}: {first} ({argv[0]})")
+            lines.append(f"ok   {name}: {first} ({shown or argv[0]})")
 
     def skip(name: str, why: str):
         nonlocal skipped
@@ -1500,6 +1562,45 @@ def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[i
                 return f"python3 on the child PATH is {got!r}, not the interpreter running land.py ({sys.executable})"
             run("python3", [exe, "-c", "import sys, tomllib; assert sys.version_info >= (3, 11), sys.version; "
                                        "print(sys.version.split()[0]); print(sys.executable)"], same_python)
+        elif step == "python-env":
+            # a hostile ambient environment injected here, so a minimal environment around the
+            # smoke (CI runs it under env -i) cannot hide a sanitizer that lets PYTHON* through
+            import json
+            import tempfile
+            d = tempfile.mkdtemp(prefix="land-env-smoke-")
+            try:
+                hostile, marker, probe = hostile_python_env(d)
+                plant_user_site(hostile, marker)
+                env = {}
+
+                def clean_child(out: str, marker=marker, env=env) -> str | None:
+                    if os.path.exists(marker):
+                        with open(marker, encoding="utf-8") as fh:
+                            return f"planted code ran in the child: {fh.read().split()}"
+                    try:
+                        got = json.loads(out.strip().splitlines()[-1])
+                    except (ValueError, IndexError):
+                        return f"probe output unreadable: {out[:200]!r}"
+                    if got["sibling"] != "probe" or got["user_site"]:
+                        return f"child python saw {got}"
+                    if "plant" in json.dumps(got["path"]):
+                        return f"the planted directory is on the child's sys.path: {got['path']}"
+                    leaked = sorted(k for k in env if k.startswith("PYTHON") and k not in CHILD_PYTHON_ENV)
+                    return f"PYTHON variables reach the child: {leaked}" if leaked else None
+                saved = {k: os.environ.get(k) for k in hostile}
+                os.environ.update(hostile)   # ambient while the child is started (run() reads child_env())
+                try:
+                    env.update(lander.child_env())
+                    run("python-env", [sys.executable, probe], clean_child)
+                finally:
+                    for k, v in saved.items():
+                        if v is None:
+                            os.environ.pop(k, None)
+                        else:
+                            os.environ[k] = v
+            finally:
+                import shutil as _sh
+                _sh.rmtree(d, ignore_errors=True)
         elif step == "bash":
             if os.name == "nt":
                 skip("bash", "no bash child on Windows (preflight and scip_index run on POSIX)")
@@ -1510,18 +1611,29 @@ def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[i
             exe = shutil.which(step, path=path)
             run(step, [exe or step, "-V"])
         elif step == "rust-analyzer":
-            exe = shutil.which("rust-analyzer", path=path)
-            if exe is None:
-                skip("rust-analyzer", "not on the cargo PATH of this machine")
-                continue
-            probe = subprocess.run([exe, "--version"], env=lander.child_env(), capture_output=True, text=True,
-                                   timeout=120)
-            if probe.returncode != 0 and "not installed" in (probe.stderr + probe.stdout):
-                skip("rust-analyzer", "the rustup proxy is there, the component is not installed")
-                continue
+            # installed or not is decided by rustup, not by reading an error message: with a
+            # rustup on the cargo PATH, `rustup which rust-analyzer` (in the checkout, so its
+            # toolchain file applies) names the real binary when the component is installed;
+            # without rustup, a rust-analyzer on the cargo PATH is a direct install
+            rustup = shutil.which("rustup", path=path)
+            exe = None
+            if rustup:
+                w = subprocess.run([rustup, "which", "rust-analyzer"], cwd=lander.root, env=lander.child_env(),
+                                   capture_output=True, text=True, timeout=120)
+                if w.returncode == 0 and w.stdout.strip():
+                    exe = w.stdout.strip()
+                else:
+                    skip("rust-analyzer", "rustup: the component is not installed in the active toolchain")
+                    continue
+            else:
+                exe = shutil.which("rust-analyzer", path=path)
+                if exe is None:
+                    skip("rust-analyzer", "not on the cargo PATH, and no rustup")
+                    continue
             run("rust-analyzer", [exe, "--version"])
         elif step == "git":
-            run("git", [*lander.git_argv, "version"])
+            run("git", [*lander.git_argv, "version"],
+                shown=pinned_git() + (" via the tests' tripwire" if TOOL_OVERRIDE.get("git") else ""))
         else:
             raise LandError(f"env-smoke: unknown step {step!r}")
     lines.append(f"env-smoke: executed {executed}, skipped {skipped}")
