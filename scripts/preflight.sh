@@ -71,6 +71,8 @@ python3 scripts/test_changed_paths.py
 python3 scripts/changed_paths.py sync
 python3 scripts/test_ci_triggers_check.py
 python3 scripts/ci_triggers_check.py
+python3 scripts/test_package_contents_check.py
+python3 scripts/package_contents_check.py
 # CI only (not reproduced here): the cargo semver-checks run of security-audit.yml
 # (needs the previous commit built as a baseline) and the `cargo +nightly build --bins`
 # of every fuzz target in fuzz.yml; their log readers and target list are tested above

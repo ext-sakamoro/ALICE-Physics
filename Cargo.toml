@@ -18,6 +18,28 @@ categories = ["game-development", "simulation", "science"]
 # had never been compiled (1.70 cannot even parse the lockfile).
 rust-version = "1.85"
 readme = "README.md"
+# Files shipped in the published .crate, as an allowlist: a directory added to the
+# repository stays out of the package until it is listed here. The tests read only
+# src/ and tests/ (include_bytes! fixtures, #[path] modules, source scans), so
+# repository tooling (.github/, scripts/, docs/, fuzz/) and the host bindings that
+# are built from the repository (web/, unreal-plugin/, python/) are not shipped.
+# rust-toolchain.toml is left out so the pinned toolchain is not forced on anyone
+# who builds the unpacked crate. scripts/package_contents_check.py checks the list.
+include = [
+    "/src/**/*.rs",
+    "/tests/**/*.rs",
+    "/tests/fixtures/*.bin",
+    "/examples/*.rs",
+    "/benches/*.rs",
+    "/include/alice_physics.h",
+    "/README.md",
+    "/README_JP.md",
+    "/LICENSE-AGPL",
+    "/LICENSE-COMMERCIAL.md",
+    "/TRADEMARK_NOTICE",
+    "/CHANGELOG.md",
+    "/SECURITY.md",
+]
 
 # docs.rs build feature set — omits `wasm` because it is mutually exclusive with
 # `ffi` at the crate level (see `compile_error!` in `src/lib.rs`). docs.rs builds

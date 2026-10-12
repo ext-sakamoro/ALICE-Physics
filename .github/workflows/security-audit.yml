@@ -33,6 +33,10 @@ on:
       - 'scripts/ansi.py'
       - 'scripts/line_coverage_ratchet.py'
       - 'scripts/line-coverage-baseline.txt'
+      - 'scripts/package_contents_check.py'
+      - 'scripts/test_package_contents_check.py'
+      - 'LICENSE-AGPL'
+      - 'LICENSE-COMMERCIAL.md'
       - 'scripts/changed_paths.py'
       - '.github/workflows/security-audit.yml'
       - '.github/paths/security-audit.txt'
@@ -222,6 +226,13 @@ jobs:
       # semver-checks は baseline を build するので結果的に検出するが、
       # (a) 壊れた版を publish した後にしか分からない
       # (b) 未 publish crate は baseline が無く発火しない ので予防にならない
+      # Cargo.toml の include (allowlist) が repository の道具 (.github/ scripts/ docs/ 等) と
+      # toolchain の pin を出荷していないか、必要 file が揃っているかを見る (0 件は fail)
+      - name: 出荷 file の一覧
+        run: |
+          python3 scripts/test_package_contents_check.py
+          python3 scripts/package_contents_check.py
+
       - name: cargo package (.crate を作る)
         # --no-verify: 未 publish の sibling に path dep がある repo では verify step が
         #   registry 解決で落ちる 展開後の隔離 build が本体なので verify は不要
