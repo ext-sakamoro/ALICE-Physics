@@ -61,16 +61,38 @@ def local(url):
 for a in args:
     if NET.search(a) and not a.startswith("file://"):
         trip(f"network argument {a!r}")
-# the subcommand, after -c / -C and other global options
+# git's main options (git(1), git.c handle_options), before the subcommand:
+#   redirect the repository, the work tree, the programs or the config source: land.py never
+#   passes them, so any of them trips (with a separate value or `=value`)
+REDIRECT = ("-C", "--git-dir", "--work-tree", "--namespace", "--super-prefix", "--exec-path",
+            "--config-env", "--shallow-file", "--bare")
+#   take a separate value (or `=value`) and are allowed
+VALUED = ("-c", "--attr-source", "--list-cmds")
+#   flags without a value that change nothing about where git reads or sends
+FLAGS = ("-p", "--paginate", "-P", "--no-pager", "--no-replace-objects", "--no-lazy-fetch",
+         "--no-optional-locks", "--no-advice", "--literal-pathspecs", "--no-literal-pathspecs",
+         "--glob-pathspecs", "--noglob-pathspecs", "--icase-pathspecs")
+# anything else before the subcommand (an unknown option, a value missing at the end, an
+# informational option such as --version that leaves no subcommand) trips: fail closed
 i, cwd = 0, None
 while i < len(args) and args[i].startswith("-"):
-    if args[i] in ("-c", "-C"):
-        if args[i] == "-C":
-            cwd = args[i + 1]
-        i += 2
-    else:
+    opt, eq, _ = args[i].partition("=")
+    if opt in REDIRECT:
+        trip(f"main option {opt} redirects git")
+    if opt in VALUED:
+        if eq:
+            i += 1
+        elif i + 1 < len(args):
+            i += 2
+        else:
+            trip(f"main option {opt} without its value")
+    elif args[i] in FLAGS:
         i += 1
-sub = args[i] if i < len(args) else ""
+    else:
+        trip(f"unknown main option {args[i]!r} before the subcommand")
+if i >= len(args):
+    trip("no subcommand")
+sub = args[i]
 rest = args[i + 1:]
 if sub in ("fetch", "push", "pull", "ls-remote", "clone", "remote") and "--get-url" not in rest \
         and not (sub == "remote" and rest[:1] != ["update"]):
@@ -2126,6 +2148,41 @@ class Harness(Isolated):
         # a name that is no remote and no path: resolves to itself, which is not local
         lander.git("fetch", "-q", "nosuchremote", check=False)
         self.assertIn("fetch reaches 'nosuchremote'", self.tripped())
+
+    def test_main_options_that_redirect_git_trip(self):
+        git(self.r.work, "remote", "add", "far", "ssh://git@unroutable.invalid/o/r.git")
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        net = str(self.r.dir / "net")
+        for opt in ("--git-dir", "--work-tree", "--namespace", "--super-prefix", "--exec-path", "--config-env",
+                    "--shallow-file", "-C"):
+            for form in ([opt, net], [f"{opt}={net}"]):
+                if opt == "-C" and "=" in form[0]:
+                    continue
+                with self.subTest(form=form):
+                    lander.git(*form, "push", "-q", "far", "HEAD:refs/heads/x", check=False)
+                    self.assertIn(f"main option {opt} redirects git", self.tripped())
+        lander.git("--bare", "push", "-q", "origin", "HEAD:refs/heads/x", check=False)
+        self.assertIn("main option --bare redirects git", self.tripped())
+
+    def test_an_undetermined_subcommand_trips(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        for args, why in ((("--frobnicate", "push", "-q", "origin"), "unknown main option '--frobnicate'"),
+                          (("-x", "status"), "unknown main option '-x'"),
+                          (("--version",), "unknown main option '--version'"),
+                          (("-c",), "main option -c without its value"),
+                          (("-c", "a.b=c"), "no subcommand"),
+                          (("--attr-source",), "main option --attr-source without its value")):
+            with self.subTest(args=args):
+                lander.git(*args, check=False)
+                self.assertIn(why, self.tripped())
+
+    def test_land_py_argv_shapes_pass(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        tree = land.EMPTY_TREE
+        self.assertTrue(lander.git(*lander.ident_cfg, f"--attr-source={tree}", "rev-parse", "HEAD"))
+        self.assertTrue(lander.git("-c", "core.editor=true", "--no-pager", "rev-parse", "HEAD"))
+        self.assertTrue(lander.git("--attr-source", tree, "rev-parse", "HEAD"))
+        self.assertEqual(self.tripped(), "")
 
     def test_local_git_passes_through(self):
         lander = land.Lander(self.r.work, "T", log=lambda *_: None)
