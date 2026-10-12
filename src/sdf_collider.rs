@@ -359,7 +359,7 @@ impl<A: SdfField, B: SdfField> SdfUnion<A, B> {
 impl<A: SdfField, B: SdfField> SdfField for SdfUnion<A, B> {
     #[inline]
     fn distance(&self, x: f32, y: f32, z: f32) -> f32 {
-        self.a.distance(x, y, z).min(self.b.distance(x, y, z))
+        crate::det_math::min(self.a.distance(x, y, z), self.b.distance(x, y, z))
     }
 
     fn normal(&self, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
@@ -391,8 +391,8 @@ impl<A: SdfField, B: SdfField> SdfField for SdfUnion<A, B> {
 #[inline]
 #[must_use]
 pub(crate) fn fd_normal_step(base_eps: f32, x: f32, y: f32, z: f32) -> f32 {
-    let scale = x.abs().max(y.abs()).max(z.abs());
-    base_eps.max(1.0e-4 * scale)
+    let scale = crate::det_math::max(crate::det_math::max(x.abs(), y.abs()), z.abs());
+    crate::det_math::max(base_eps, 1.0e-4 * scale)
 }
 
 /// Base step of the central-difference SDF normal, used near the origin

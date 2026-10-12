@@ -276,7 +276,7 @@ impl PhysicsModifier for ThermalModifier {
         // Freeze growth: cold areas grow (distance decreases), capped to prevent unbounded expansion
         if temp < self.config.freeze_temperature && self.config.freeze_rate > 0.0 {
             let cold = self.config.freeze_temperature - temp;
-            let freeze_offset = (cold * self.config.freeze_rate).min(1.0);
+            let freeze_offset = crate::det_math::min(cold * self.config.freeze_rate, 1.0);
             d -= freeze_offset;
         }
 

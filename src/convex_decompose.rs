@@ -164,8 +164,9 @@ impl VoxelGrid {
         let (lo, hi) = compute_bounds(&mesh.vertices);
         let cell = self.cell_size.to_f32();
         let range = |lo: Fix128, hi: Fix128, origin: Fix128| {
-            let first = ((lo - origin).to_f32() / cell).floor().max(0.0) as usize;
-            let last = (((hi - origin).to_f32() / cell).ceil().max(0.0) as usize).min(self.res);
+            let first = crate::det_math::max(((lo - origin).to_f32() / cell).floor(), 0.0) as usize;
+            let last = (crate::det_math::max(((hi - origin).to_f32() / cell).ceil(), 0.0) as usize)
+                .min(self.res);
             first..last
         };
         let mut outside = 0usize;

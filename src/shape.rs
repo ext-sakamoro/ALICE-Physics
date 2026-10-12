@@ -299,9 +299,10 @@ impl Shape {
     fn longest_f64(&self) -> f64 {
         let f = Fix128::to_f64;
         match *self {
-            Self::Box { half_extents } => f(half_extents.x)
-                .max(f(half_extents.y))
-                .max(f(half_extents.z)),
+            Self::Box { half_extents } => crate::det_math::max64(
+                crate::det_math::max64(f(half_extents.x), f(half_extents.y)),
+                f(half_extents.z),
+            ),
             Self::Cylinder {
                 radius,
                 half_height,
@@ -309,13 +310,15 @@ impl Shape {
             | Self::Cone {
                 radius,
                 half_height,
-            } => f(radius).max(f(half_height)),
-            Self::Ellipsoid { radii } => f(radii.x).max(f(radii.y)).max(f(radii.z)),
+            } => crate::det_math::max64(f(radius), f(half_height)),
+            Self::Ellipsoid { radii } => {
+                crate::det_math::max64(crate::det_math::max64(f(radii.x), f(radii.y)), f(radii.z))
+            }
             Self::Wedge {
                 width,
                 height,
                 depth,
-            } => f(width).max(f(height)).max(f(depth)),
+            } => crate::det_math::max64(crate::det_math::max64(f(width), f(height)), f(depth)),
             Self::Torus {
                 major_radius,
                 minor_radius,

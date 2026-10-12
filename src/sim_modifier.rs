@@ -470,7 +470,7 @@ pub(crate) fn observe_max(out: &mut ObservationSink, channel: u32, f: &ScalarFie
         .iter()
         .copied()
         .filter(|v| !v.is_nan())
-        .reduce(f32::max);
+        .reduce(crate::det_math::max);
     if let Some(m) = max {
         out.push(channel, Fix128::from_f32(m));
     }

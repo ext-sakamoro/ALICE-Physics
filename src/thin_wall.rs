@@ -203,7 +203,7 @@ pub fn measure_thickness_at(
             break;
         }
         iterations += 1;
-        let step = d.max(config.min_step_mm);
+        let step = crate::det_math::max(d, config.min_step_mm);
         approach += step;
         if iterations > config.max_iterations || approach > max_dist_f32 {
             return None;
@@ -399,7 +399,10 @@ pub fn sample_surface_points(
         // `f64` intermediate: avoids compounding `f32` rounding across
         // iterations the way repeated `+= step` did; the last point is
         // clamped onto `max` (it would be up to one step beyond it)
-        ((f64::from(min) + f64::from(i) * f64::from(step)) as f32).min(max)
+        crate::det_math::min(
+            (f64::from(min) + f64::from(i) * f64::from(step)) as f32,
+            max,
+        )
     }
 
     let lo = [xmin, ymin, zmin];

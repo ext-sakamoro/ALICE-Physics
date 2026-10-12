@@ -167,7 +167,7 @@ impl ErosionModifier {
                         let (snx, sny, snz) = sdf.normal(wx, wy, wz);
                         // Dot product: how much the surface faces the flow
                         let alignment = -snz.mul_add(fz, snx.mul_add(fx, sny * fy));
-                        let exp = alignment.max(0.0); // Only windward faces
+                        let exp = crate::det_math::max(alignment, 0.0); // Only windward faces
                         let idx = self.exposure.index(ix, iy, iz);
                         self.exposure.data[idx] = exp;
                     }
@@ -228,7 +228,7 @@ impl PhysicsModifier for ErosionModifier {
             if exp > 0.0 {
                 let rate = self.compute_rate(exp);
                 self.erosion_depth.data[i] =
-                    rate.mul_add(dt, self.erosion_depth.data[i]).min(max_depth);
+                    crate::det_math::min(rate.mul_add(dt, self.erosion_depth.data[i]), max_depth);
             }
         }
 

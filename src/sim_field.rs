@@ -158,9 +158,9 @@ impl ScalarField3D {
         let max_x = (self.nx - 1) as f32;
         let max_y = (self.ny - 1) as f32;
         let max_z = (self.nz - 1) as f32;
-        let gx = gx.max(0.0).min(max_x);
-        let gy = gy.max(0.0).min(max_y);
-        let gz = gz.max(0.0).min(max_z);
+        let gx = crate::det_math::min(crate::det_math::max(gx, 0.0), max_x);
+        let gy = crate::det_math::min(crate::det_math::max(gy, 0.0), max_y);
+        let gz = crate::det_math::min(crate::det_math::max(gz, 0.0), max_z);
 
         let ix0 = gx as usize;
         let iy0 = gy as usize;
@@ -370,7 +370,10 @@ impl ScalarField3D {
 
     /// Maximum value in the field
     pub fn max_value(&self) -> f32 {
-        self.data.iter().copied().fold(f32::NEG_INFINITY, f32::max)
+        self.data
+            .iter()
+            .copied()
+            .fold(f32::NEG_INFINITY, crate::det_math::max)
     }
 
     /// Check if a world-space point is inside the field bounds

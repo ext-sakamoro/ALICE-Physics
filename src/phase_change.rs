@@ -188,8 +188,8 @@ impl PhaseChangeModifier {
     fn process_transitions(&mut self) {
         let melt_t = self.config.melt_temperature;
         let boil_t = self.config.boil_temperature;
-        let lh_fusion = self.config.latent_heat_fusion.max(0.0);
-        let lh_vaporization = self.config.latent_heat_vaporization.max(0.0);
+        let lh_fusion = crate::det_math::max(self.config.latent_heat_fusion, 0.0);
+        let lh_vaporization = crate::det_math::max(self.config.latent_heat_vaporization, 0.0);
         let lh_total = lh_fusion + lh_vaporization;
 
         let n = self.temperature.cell_count();
@@ -200,7 +200,8 @@ impl PhaseChangeModifier {
 
             // Solid → Liquid: superheat above T_m fills the fusion buffer
             if phase_val < 0.5 && temp > melt_t {
-                let absorbed = (temp - melt_t).min(lh_fusion - lh).max(0.0);
+                let absorbed =
+                    crate::det_math::max(crate::det_math::min(temp - melt_t, lh_fusion - lh), 0.0);
                 temp -= absorbed;
                 lh += absorbed;
                 if lh >= lh_fusion {
@@ -211,7 +212,8 @@ impl PhaseChangeModifier {
 
             // Liquid → Gas: superheat above T_b fills the vaporization buffer
             if (0.5..1.5).contains(&phase_val) && temp > boil_t {
-                let absorbed = (temp - boil_t).min(lh_total - lh).max(0.0);
+                let absorbed =
+                    crate::det_math::max(crate::det_math::min(temp - boil_t, lh_total - lh), 0.0);
                 temp -= absorbed;
                 lh += absorbed;
                 if lh >= lh_total {
@@ -222,7 +224,7 @@ impl PhaseChangeModifier {
 
             // Gas → Liquid: subcooling below T_b drains the vaporization buffer
             if phase_val >= 1.5 && temp < boil_t && lh > lh_fusion {
-                let released = (boil_t - temp).min(lh - lh_fusion);
+                let released = crate::det_math::min(boil_t - temp, lh - lh_fusion);
                 temp += released;
                 lh -= released;
                 if lh <= lh_fusion {
@@ -236,12 +238,12 @@ impl PhaseChangeModifier {
             // fusion buffer until the cell freezes
             if (0.5..1.5).contains(&phase_val) {
                 if temp < boil_t && lh > lh_fusion {
-                    let released = (boil_t - temp).min(lh - lh_fusion);
+                    let released = crate::det_math::min(boil_t - temp, lh - lh_fusion);
                     temp += released;
                     lh -= released;
                 }
                 if temp < melt_t && lh > 0.0 {
-                    let released = (melt_t - temp).min(lh);
+                    let released = crate::det_math::min(melt_t - temp, lh);
                     temp += released;
                     lh -= released;
                 }
@@ -253,7 +255,7 @@ impl PhaseChangeModifier {
 
             // Solid: a partly-melted cell that cools gives its progress back
             if phase_val < 0.5 && temp < melt_t && lh > 0.0 {
-                let released = (melt_t - temp).min(lh);
+                let released = crate::det_math::min(melt_t - temp, lh);
                 temp += released;
                 lh -= released;
             }
@@ -277,14 +279,16 @@ impl PhaseChangeModifier {
 
             if phase_val >= 1.5 {
                 // Gas: expand and dissipate (increase SDF = material removed)
-                self.sdf_offset.data[i] = (gas_expand + gas_dissipate)
-                    .mul_add(dt, self.sdf_offset.data[i])
-                    .min(max_offset);
+                self.sdf_offset.data[i] = crate::det_math::min(
+                    (gas_expand + gas_dissipate).mul_add(dt, self.sdf_offset.data[i]),
+                    max_offset,
+                );
             } else if phase_val >= 0.5 {
                 // Liquid: slight material softening
-                self.sdf_offset.data[i] = (liquid_flow * 0.1)
-                    .mul_add(dt, self.sdf_offset.data[i])
-                    .min(max_offset);
+                self.sdf_offset.data[i] = crate::det_math::min(
+                    (liquid_flow * 0.1).mul_add(dt, self.sdf_offset.data[i]),
+                    max_offset,
+                );
             }
             // Solid: no offset change
         }
@@ -294,7 +298,7 @@ impl PhaseChangeModifier {
         // from the source equals the amount the destination accepts (its
         // `max_offset` head-room), so the column total is conserved.
         if liquid_flow > 0.0 {
-            let fraction = (liquid_flow * dt).min(1.0);
+            let fraction = crate::det_math::min(liquid_flow * dt, 1.0);
             let nx = self.sdf_offset.nx;
             let ny = self.sdf_offset.ny;
             let nz = self.sdf_offset.nz;
@@ -310,8 +314,9 @@ impl PhaseChangeModifier {
                         if source <= 0.0 {
                             continue;
                         }
-                        let room = (max_offset - self.sdf_offset.data[below_idx]).max(0.0);
-                        let transfer = (source * fraction).min(room);
+                        let room =
+                            crate::det_math::max(max_offset - self.sdf_offset.data[below_idx], 0.0);
+                        let transfer = crate::det_math::min(source * fraction, room);
                         if transfer > 0.0 {
                             self.sdf_offset.data[below_idx] += transfer;
                             self.sdf_offset.data[idx] = source - transfer;

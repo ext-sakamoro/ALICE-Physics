@@ -350,7 +350,7 @@ impl SdfCharacter {
                     [nx, ny, nz] = up;
                 }
             }
-            let push = push.min(self.max_push);
+            let push = crate::det_math::min(push, self.max_push);
             pos[0] += nx * push;
             pos[1] += ny * push;
             pos[2] += nz * push;

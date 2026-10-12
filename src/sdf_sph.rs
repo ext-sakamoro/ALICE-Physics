@@ -165,7 +165,8 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
             });
             self.particles[i].density = rho;
             let excess = rho - self.config.rest_density;
-            self.particles[i].pressure = (self.config.gas_stiffness * excess).max(0.0);
+            self.particles[i].pressure =
+                crate::det_math::max(self.config.gas_stiffness * excess, 0.0);
         }
     }
 
@@ -193,14 +194,16 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
                 }
                 let r = r_sq.sqrt();
                 let pressure_scale = m
-                    * ((pi.pressure + pj.pressure) / (2.0 * pj.density.max(1.0e-6)))
+                    * ((pi.pressure + pj.pressure)
+                        / (2.0 * crate::det_math::max(pj.density, 1.0e-6)))
                     * spiky_grad(r, h)
-                    / pi.density.max(1.0e-6);
+                    / crate::det_math::max(pi.density, 1.0e-6);
                 ax += pressure_scale * dx / r;
                 ay += pressure_scale * dy / r;
                 az += pressure_scale * dz / r;
                 let viscosity_scale = self.config.viscosity * m
-                    / (pj.density.max(1.0e-6) * pi.density.max(1.0e-6))
+                    / (crate::det_math::max(pj.density, 1.0e-6)
+                        * crate::det_math::max(pi.density, 1.0e-6))
                     * viscosity_lap(r, h);
                 ax += viscosity_scale * (pj.velocity[0] - pi.velocity[0]);
                 ay += viscosity_scale * (pj.velocity[1] - pi.velocity[1]);
@@ -242,7 +245,8 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
             }
             self.particles[i].density = rho;
             let excess = rho - self.config.rest_density;
-            self.particles[i].pressure = (self.config.gas_stiffness * excess).max(0.0);
+            self.particles[i].pressure =
+                crate::det_math::max(self.config.gas_stiffness * excess, 0.0);
         }
     }
 
@@ -270,15 +274,17 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
                 let r = r_sq.sqrt();
                 // Pressure force: symmetric Spiky gradient.
                 let pressure_scale = m
-                    * ((pi.pressure + pj.pressure) / (2.0 * pj.density.max(1.0e-6)))
+                    * ((pi.pressure + pj.pressure)
+                        / (2.0 * crate::det_math::max(pj.density, 1.0e-6)))
                     * spiky_grad(r, h)
-                    / pi.density.max(1.0e-6);
+                    / crate::det_math::max(pi.density, 1.0e-6);
                 ax += pressure_scale * dx / r;
                 ay += pressure_scale * dy / r;
                 az += pressure_scale * dz / r;
                 // Viscosity force: Laplacian of the velocity difference.
                 let viscosity_scale = self.config.viscosity * m
-                    / (pj.density.max(1.0e-6) * pi.density.max(1.0e-6))
+                    / (crate::det_math::max(pj.density, 1.0e-6)
+                        * crate::det_math::max(pi.density, 1.0e-6))
                     * viscosity_lap(r, h);
                 ax += viscosity_scale * (pj.velocity[0] - pi.velocity[0]);
                 ay += viscosity_scale * (pj.velocity[1] - pi.velocity[1]);
@@ -344,7 +350,7 @@ impl SphSpatialHash {
     /// Build the hash from the current particle positions.
     #[must_use]
     pub fn build(particles: &[SphParticle], kernel_radius: f32) -> Self {
-        let cell_size = kernel_radius.max(1.0e-6);
+        let cell_size = crate::det_math::max(kernel_radius, 1.0e-6);
         let mut cells: crate::det_hash::DetHashMap<(i32, i32, i32), Vec<usize>> =
             crate::det_hash::DetHashMap::default();
         for (i, p) in particles.iter().enumerate() {

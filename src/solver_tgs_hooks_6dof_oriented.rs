@@ -663,7 +663,7 @@ impl TgsHooks for Pgs6DofOrientedHooks<'_> {
             let mag_sq = tentative_t1 * tentative_t1 + tentative_t2 * tentative_t2;
             let limit_sq = limit * limit;
             let (new_t1, new_t2) = if mag_sq > limit_sq && limit > Fix128::ZERO {
-                let mag_sq_f = mag_sq.to_f32().max(1e-12);
+                let mag_sq_f = crate::det_math::max(mag_sq.to_f32(), 1e-12);
                 let scale_f = limit.to_f32() / mag_sq_f.sqrt();
                 let scale = Fix128::from_f32(scale_f);
                 (tentative_t1 * scale, tentative_t2 * scale)
