@@ -74,12 +74,19 @@ sub = args[i] if i < len(args) else ""
 rest = args[i + 1:]
 if sub in ("fetch", "push", "pull", "ls-remote", "clone", "remote") and "--get-url" not in rest \
         and not (sub == "remote" and rest[:1] != ["update"]):
-    names = [x for x in rest if not x.startswith("-") and ":" not in x.split("/")[0]][:1] or ["origin"]
-    for name in names:
-        for q in (["ls-remote", "--get-url", name], ["remote", "get-url", "--push", name]):
-            r = subprocess.run([REAL, *(["-C", cwd] if cwd else []), *q], capture_output=True, text=True)
-            if r.returncode == 0 and r.stdout.strip() and not local(r.stdout):
-                trip(f"{sub} reaches {r.stdout.strip()!r}")
+    # the repository is the first argument that is not an option (`push [opts] <repo> [refspec]`);
+    # none: origin. It must resolve, as a configured remote, to a local fetch and push URL: a
+    # name or path that git cannot resolve trips too (fail closed)
+    name = next((x for x in rest if not x.startswith("-")), "origin")
+    for q in (["ls-remote", "--get-url", name], ["remote", "get-url", "--push", name]):
+        r = subprocess.run([REAL, *(["-C", cwd] if cwd else []), *q], capture_output=True, text=True)
+        url = r.stdout.strip()
+        if r.returncode != 0 or not url:
+            trip(f"{sub}: cannot resolve {name!r} ({' '.join(q)} exit {r.returncode}): fail closed")
+        if not local(url):
+            trip(f"{sub} reaches {url!r}")
+if os.name != "nt":
+    os.execv(REAL, [REAL, *args])   # no second process on POSIX
 sys.exit(subprocess.call([REAL, *args]))
 """
 GH_TRIPWIRE = r"""import sys
@@ -91,8 +98,11 @@ sys.exit(97)
 for _name, _src in (("git_tripwire.py", GIT_TRIPWIRE), ("gh_tripwire.py", GH_TRIPWIRE)):
     (TRIP_DIR / _name).write_text(_src.replace("@REAL@", repr(REAL_GIT)).replace("@MARKER@", repr(str(TRIPWIRE))),
                                   encoding="utf-8")
-land.TOOL_OVERRIDE["git"] = [sys.executable, str(TRIP_DIR / "git_tripwire.py")]
-land.TOOL_OVERRIDE["gh"] = [sys.executable, str(TRIP_DIR / "gh_tripwire.py")]
+# -I: the wrapper ignores PYTHON* variables and the user's site directory (a hostile
+# PYTHONPATH cannot replace it); -S: no site import, a cheaper start (the wrapper runs for
+# every git call of land.py in these tests, about 2300 per run)
+land.TOOL_OVERRIDE["git"] = [sys.executable, "-I", "-S", str(TRIP_DIR / "git_tripwire.py")]
+land.TOOL_OVERRIDE["gh"] = [sys.executable, "-I", "-S", str(TRIP_DIR / "gh_tripwire.py")]
 
 
 def live_enabled(env) -> bool:
@@ -2096,9 +2106,26 @@ class Harness(Isolated):
         for args in (("fetch", "-q", "far"), ("push", "-q", "far", "HEAD:refs/heads/x"), ("ls-remote", "far")):
             lander.git(*args, check=False)
             self.assertIn("reaches 'ssh://git@unroutable.invalid/o/r.git'", self.tripped(), args)
-        git(self.r.work, "config", "url.ssh://git@unroutable.invalid/.pushInsteadOf", str(self.r.dir) + "/")
+        # the prefix is the origin URL exactly as the clone wrote it (a path with the separators
+        # of the platform: a hand-built prefix did not match on Windows and the push stayed local)
+        origin_url = git(self.r.work, "config", "--get", "remote.origin.url")
+        git(self.r.work, "config", "url.ssh://git@unroutable.invalid/x.git.pushInsteadOf", origin_url)
+        self.assertEqual(subprocess.run([REAL_GIT, "-C", str(self.r.work), "remote", "get-url", "--push", "origin"],
+                                        capture_output=True, text=True).stdout.strip(),
+                         "ssh://git@unroutable.invalid/x.git", "the pushInsteadOf really applies")
         lander.git("push", "-q", "origin", "HEAD:refs/heads/x", check=False)
-        self.assertIn("push reaches 'ssh://git@unroutable.invalid/", self.tripped())
+        self.assertIn("push reaches 'ssh://git@unroutable.invalid/x.git'", self.tripped())
+
+    def test_a_remote_that_cannot_be_resolved_trips(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        # a local path given as the repository: not a configured remote, so its push URL
+        # cannot be resolved; the tripwire refuses instead of guessing that it is local
+        lander.git("push", "-q", str(self.r.origin), "HEAD:refs/heads/x", check=False)
+        self.assertIn("cannot resolve", self.tripped())
+        self.assertEqual(git(self.r.upstream, "ls-remote", "origin", "refs/heads/x"), "", "nothing was pushed")
+        # a name that is no remote and no path: resolves to itself, which is not local
+        lander.git("fetch", "-q", "nosuchremote", check=False)
+        self.assertIn("fetch reaches 'nosuchremote'", self.tripped())
 
     def test_local_git_passes_through(self):
         lander = land.Lander(self.r.work, "T", log=lambda *_: None)
