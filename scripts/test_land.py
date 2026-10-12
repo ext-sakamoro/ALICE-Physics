@@ -29,6 +29,60 @@ atexit.register(shutil.rmtree, os.environ[land.LOCK_DIR_ENV], True)
 NAME, EMAIL = "Moroya Sakamoto", "sakamoro@alicelaw.net"
 ID = ["-c", f"user.name={NAME}", "-c", f"user.email={EMAIL}"]
 
+# Variables a shell may export that change what git does in these tests: the identity
+# (git's environment wins over `-c user.*`), the repository or index git works on, and
+# injected config. Every test runs with them removed (Isolated) and restored afterwards.
+AMBIENT_ENV_RE = re.compile(
+    r"^(GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL|DATE)|LAND_IDENTITY|GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE"
+    r"|GIT_COMMON_DIR|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_NAMESPACE"
+    r"|GIT_CEILING_DIRECTORIES|GIT_CONFIG.*)$")
+DEFAULT_IDENTITY = f"{NAME} <{EMAIL}>"
+
+
+class Isolated(unittest.TestCase):
+    """Runs each test without the ambient git identity / repository variables and with
+    land.py's default identity, whatever the shell exports."""
+
+    def setUp(self):
+        saved = {k: v for k, v in os.environ.items() if AMBIENT_ENV_RE.match(k)}
+        for k in saved:
+            del os.environ[k]
+        old_identity = land.IDENTITY
+        land.IDENTITY = DEFAULT_IDENTITY
+
+        def restore():
+            for k in [k for k in os.environ if AMBIENT_ENV_RE.match(k)]:
+                del os.environ[k]
+            os.environ.update(saved)
+            land.IDENTITY = old_identity
+        self.addCleanup(restore)
+
+
+# what a shell might export, all pointing elsewhere
+def hostile_env(elsewhere: Path) -> dict[str, str]:
+    return {"GIT_COMMITTER_NAME": "Ambient Committer", "GIT_COMMITTER_EMAIL": "ambient@committer.invalid",
+            "GIT_AUTHOR_NAME": "Ambient Author", "GIT_AUTHOR_EMAIL": "ambient@author.invalid",
+            "GIT_COMMITTER_DATE": "2001-01-01T00:00:00", "GIT_AUTHOR_DATE": "2001-01-01T00:00:00",
+            "LAND_IDENTITY": "web-flow <ambient@identity.invalid>",
+            "GIT_DIR": str(elsewhere / ".git"), "GIT_WORK_TREE": str(elsewhere),
+            "GIT_INDEX_FILE": str(elsewhere / "index"),
+            "GIT_CONFIG_COUNT": "2", "GIT_CONFIG_KEY_0": "user.email", "GIT_CONFIG_VALUE_0": "ambient@config.invalid",
+            # injected hooks: a commit or a rebase run with them leaves a marker in `elsewhere`
+            "GIT_CONFIG_KEY_1": "core.hooksPath", "GIT_CONFIG_VALUE_1": str(elsewhere / "hooks"),
+            "GIT_CONFIG_PARAMETERS": "'user.name'='Ambient Config'"}
+
+
+def hostile_hooks(elsewhere: Path) -> Path:
+    """hooks under `elsewhere` that write a marker when git runs them"""
+    hooks = elsewhere / "hooks"
+    hooks.mkdir(parents=True, exist_ok=True)
+    marker = elsewhere / "hook-ran"
+    for name in ("pre-commit", "post-commit", "post-rewrite"):
+        h = hooks / name
+        h.write_text(f"#!/bin/sh\necho {name} >> '{marker.as_posix()}'\n", encoding="utf-8")
+        h.chmod(0o755)
+    return marker
+
 
 def git(cwd: Path, *args: str) -> str:
     r = subprocess.run(["git", *ID, *args], cwd=cwd, capture_output=True, text=True)
@@ -141,7 +195,7 @@ class Repo:
         shutil.rmtree(self.dir, ignore_errors=True)
 
 
-class Pure(unittest.TestCase):
+class Pure(Isolated):
     def test_docs_only(self):
         rules = land.workflow_input_rules(ROOT)
         d = lambda *p: land.docs_only(list(p), rules)  # noqa: E731
@@ -209,7 +263,7 @@ class Pure(unittest.TestCase):
         self.assertTrue(land.message_problems("fix: found by the worker"))
 
 
-class Identity(unittest.TestCase):
+class Identity(Isolated):
     def test_denied_forms(self):
         p = land.identity_problem
         for name, email in (("Some One", "noreply@github.com"), ("Some One", "NoReply@GitHub.com "),
@@ -244,8 +298,9 @@ class Identity(unittest.TestCase):
             land.IDENTITY = old
 
 
-class Landing(unittest.TestCase):
+class Landing(Isolated):
     def setUp(self):
+        super().setUp()
         self.r = Repo()
 
     def tearDown(self):
@@ -557,6 +612,64 @@ class Landing(unittest.TestCase):
         self.assertEqual(self.r.origin_head(), sha)
         self.assertGreaterEqual(lander.calls.count("checks"), 2)
 
+    def test_an_ambient_git_env_does_not_change_the_landed_identity(self):
+        # land.py's own git processes (the rebase included) under a shell that exports
+        # another identity, another repository and injected config: the landed commits still
+        # carry the landing identity, and this checkout (not `elsewhere`) is landed
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        git(self.r.work, "-c", "user.email=me@machine.local", "commit", "-q", "--amend", "--no-edit")  # forces a rebase
+        elsewhere = Path(tempfile.mkdtemp())
+        subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        marker = hostile_hooks(elsewhere)
+        hostile = hostile_env(elsewhere)
+        del hostile["LAND_IDENTITY"]  # read at import; the refusal of a denied override is tested in Identity
+        os.environ.update(hostile)
+        lander = self.r.lander()
+        sha = lander.land()
+        for k in hostile:
+            del os.environ[k]
+        self.assertIn("rebase", lander.calls)
+        self.assertEqual(self.r.origin_head(), sha)
+        people = git(self.r.work, "log", "-3", "--format=%an <%ae>|%cn <%ce>|%cd", "--date=format:%Y").splitlines()
+        for line in people:
+            author, committer, year = line.split("|")
+            self.assertEqual(committer, DEFAULT_IDENTITY, people)
+            self.assertNotEqual(year, "2001", people)
+        self.assertEqual(git(self.r.work, "log", "-1", "--format=%an <%ae>", "HEAD~1"), DEFAULT_IDENTITY)
+        self.assertEqual(subprocess.run(["git", "-C", str(elsewhere), "rev-list", "--all"], capture_output=True,
+                                        text=True).stdout, "", "nothing was written to the other repository")
+        self.assertFalse(marker.exists(), "no injected hook ran")
+
+    def test_an_ambient_git_env_does_not_force_a_rebase(self):
+        # already on main with the landing identity: the evidenced SHA lands unchanged
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        mine = git(self.r.work, "rev-parse", "HEAD")
+        elsewhere = Path(tempfile.mkdtemp())
+        subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        hostile = hostile_env(elsewhere)
+        del hostile["LAND_IDENTITY"]
+        os.environ.update(hostile)
+        lander = self.r.lander()
+        sha = lander.land()
+        for k in hostile:
+            del os.environ[k]
+        self.assertNotIn("rebase", lander.calls)
+        self.assertEqual(sha, lander.evidenced[0])
+        self.assertEqual(git(self.r.work, "rev-parse", "HEAD~1"), mine)  # ours, then the ledger commit
+
+    def test_child_processes_get_the_clean_env(self):
+        elsewhere = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        os.environ.update(hostile_env(elsewhere))
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        probe = ("import os, re, sys; bad = [k for k in os.environ if re.match("
+                 "r'GIT_(AUTHOR|COMMITTER)_|GIT_DIR$|GIT_WORK_TREE$|GIT_INDEX_FILE$|GIT_CONFIG_(COUNT|KEY|VALUE|PARAMETERS)', k)]; "
+                 "sys.exit(1 if bad else 0)")
+        lander.sh(sys.executable, "-c", probe)  # LandError if the child saw any of them
+        self.assertEqual(sorted(k for k in lander.git_env if land.SCRUBBED_ENV_RE.match(k)), [])
+
     def test_landed_commits_carry_the_fixed_committer(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         git(self.r.work, "-c", "user.email=me@machine.local", "commit", "-q", "--amend", "--no-edit")
@@ -716,10 +829,11 @@ def ok_run(name: str, rid: int, **k) -> dict:
             "conclusion": "success", "event": "push", "createdAt": "2026-10-12T00:00:00Z", **k}
 
 
-class WaitEvidence(unittest.TestCase):
+class WaitEvidence(Isolated):
     """wait_evidence against a fake `gh` on PATH (no network)."""
 
     def setUp(self):
+        super().setUp()
         self.dir = Path(tempfile.mkdtemp())
         self.gh = self.dir / "gh.py"
         self.gh.write_text(FAKE_GH, encoding="utf-8")
@@ -1003,10 +1117,11 @@ class WaitEvidence(unittest.TestCase):
             lnd.wait_evidence("ci/T", SHA)
 
 
-class WaitAfter(unittest.TestCase):
+class WaitAfter(Isolated):
     """wait_after on main against a fake `gh` (no network)."""
 
     def setUp(self):
+        super().setUp()
         self.dir = Path(tempfile.mkdtemp())
         self.gh = self.dir / "gh.py"
         self.gh.write_text(FAKE_GH, encoding="utf-8")
@@ -1173,7 +1288,31 @@ class WaitAfter(unittest.TestCase):
         self.assertEqual(land.report_after(L(land.EXIT_PENDING), SHA), land.EXIT_PENDING)
 
 
-class Verdict(unittest.TestCase):
+class AmbientEnv(Isolated):
+    """The key cases in a child process whose environment is hostile throughout."""
+
+    KEY = ["Landing.test_a_denied_committer_in_the_range_is_refused",
+           "Landing.test_an_ambient_git_env_does_not_force_a_rebase",
+           "Landing.test_landed_commits_carry_the_fixed_committer",
+           "Landing.test_a_src_only_change_takes_the_ci_lane",
+           "Landing.test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight",
+           "Landing.test_wrong_author_is_refused",
+           "Identity.test_the_override_is_refused",
+           "WaitEvidence.test_all_green_passes",
+           "WaitAfter.test_all_green"]
+
+    def test_the_key_cases_pass_under_a_hostile_environment(self):
+        elsewhere = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, elsewhere, True)
+        subprocess.run(["git", "init", "-q", str(elsewhere)], check=True)
+        env = {**os.environ, **hostile_env(elsewhere)}
+        r = subprocess.run([sys.executable, os.path.abspath(__file__), *self.KEY], env=env,
+                           capture_output=True, text=True, timeout=600)
+        self.assertEqual(r.returncode, 0, r.stderr[-3000:])
+        self.assertIn(f"Ran {len(self.KEY)} tests", r.stderr)
+
+
+class Verdict(Isolated):
     """run_verdict, one state per case."""
     W = {"file": "w.yml", "name": "W", "cls": "landing", "legs": [], "jobs": {}}
     L = {"file": "ci.yml", "name": "CI", "cls": "landing", "legs": ["Test (m)"], "jobs": {}}

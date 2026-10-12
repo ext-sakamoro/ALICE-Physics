@@ -70,6 +70,22 @@ DENIED_EMAIL_SUFFIXES = ("@users.noreply.github.com",)
 DENIED_NAMES = ("web-flow", "github")
 
 
+# git environment variables that override the identity land.py gives with `-c user.*` (the
+# environment wins over -c), point git at another repository or index, or inject config.
+# land.py drops them for every git (and child) process it starts, so its `-c user.*`
+# identity applies and the ambient environment of a shell cannot change who commits the
+# landing, when, or which repository is landed
+SCRUBBED_ENV_RE = re.compile(
+    r"^(GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL|DATE)|GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_COMMON_DIR"
+    r"|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_NAMESPACE|GIT_CEILING_DIRECTORIES"
+    r"|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$")
+
+
+def clean_env() -> dict[str, str]:
+    """os.environ without the variables SCRUBBED_ENV_RE matches"""
+    return {k: v for k, v in os.environ.items() if not SCRUBBED_ENV_RE.match(k)}
+
+
 def identity_problem(name: str, email: str) -> str | None:
     """Why `name <email>` may not author or commit a landed commit (None: allowed).
     Compared case-insensitively, surrounding spaces ignored."""
@@ -608,6 +624,8 @@ class Lander:
         if problem:
             raise LandError(f"LAND_IDENTITY {IDENTITY!r} is refused: {problem}")
         self.ident_cfg = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
+        # every git process: the ambient identity / repository / config variables dropped
+        self.git_env = clean_env()
         self.preflight_runs = 0
         self.poll_seconds = 30
         self.gh_cmd = ["gh"]   # tests run a fake gh script here (no network)
@@ -624,14 +642,14 @@ class Lander:
     # --- plumbing (overridden in tests) ------------------------------------------
 
     def git(self, *args: str, check: bool = True) -> str:
-        r = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True)
+        r = subprocess.run(["git", *args], cwd=self.root, capture_output=True, text=True, env=self.git_env)
         if check and r.returncode != 0:
             raise LandError(f"git {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
         return r.stdout.strip()
 
     def sh(self, *cmd: str) -> None:
         self.log("$ " + " ".join(cmd))
-        r = subprocess.run(list(cmd), cwd=self.root, env={**os.environ, "PYTHONIOENCODING": "utf-8"})
+        r = subprocess.run(list(cmd), cwd=self.root, env={**clean_env(), "PYTHONIOENCODING": "utf-8"})
         if r.returncode != 0:
             raise LandError(f"`{' '.join(cmd)}` failed (exit {r.returncode})")
 
@@ -640,7 +658,7 @@ class Lander:
         per-push coverage ratchet runs `--lib` only and would turn red after the land."""
         gate = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib_test_gate.py")
         r = subprocess.run([sys.executable, gate, self.upstream(), "--root", self.root],
-                           cwd=self.root, capture_output=True, text=True)
+                           cwd=self.root, capture_output=True, text=True, env=clean_env())
         for line in r.stdout.splitlines():
             self.log(line)
         if r.returncode != 0:
@@ -667,7 +685,7 @@ class Lander:
 
     def regenerate_public_api(self) -> None:
         r = subprocess.run(["cargo", f"+{NIGHTLY}", "public-api", "--features", NATIVE, "--simplified"],
-                           cwd=self.root, capture_output=True, text=True)
+                           cwd=self.root, capture_output=True, text=True, env=clean_env())
         if r.returncode != 0 or not r.stdout.strip():
             raise LandError(f"cargo +{NIGHTLY} public-api failed (install the toolchain and cargo-public-api): "
                             f"{r.stderr.strip()[-300:]}")
@@ -864,7 +882,8 @@ class Lander:
 
     def owns_ref(self, sha: str) -> bool:
         """A ci/<id> head we pushed earlier (a previous attempt of the same commits)."""
-        r = subprocess.run(["git", "cherry", "HEAD", sha], cwd=self.root, capture_output=True, text=True)
+        r = subprocess.run(["git", "cherry", "HEAD", sha], cwd=self.root, capture_output=True, text=True,
+                           env=self.git_env)
         return r.returncode == 0 and all(line.startswith("-") for line in r.stdout.splitlines())
 
     def rebase(self) -> None:
@@ -873,10 +892,11 @@ class Lander:
         # attributes are read from the empty tree: a base that still carries
         # `CHANGELOG.md merge=union` must not merge it behind merge_append()'s back
         # write the empty tree object EMPTY_TREE names (mktree reads the entries from stdin)
-        subprocess.run(["git", "mktree"], cwd=self.root, input="", capture_output=True, text=True)
+        subprocess.run(["git", "mktree"], cwd=self.root, input="", capture_output=True, text=True,
+                       env=self.git_env)
         r = subprocess.run(["git", *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "rebase", "--force-rebase",
                             self.upstream()],
-                           cwd=self.root, capture_output=True, text=True)
+                           cwd=self.root, capture_output=True, text=True, env=self.git_env)
         while r.returncode != 0:
             conflicted = [p for p in self.git("diff", "--name-only", "--diff-filter=U").splitlines() if p]
             if not conflicted:
@@ -896,7 +916,7 @@ class Lander:
                 self.git("add", "--", p)
             r = subprocess.run(["git", *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "-c", "core.editor=true",
                                 "rebase", "--continue"],
-                               cwd=self.root, capture_output=True, text=True)
+                               cwd=self.root, capture_output=True, text=True, env=self.git_env)
 
     def merge_stages(self, path: str, *, diff3: bool = False, transform=lambda t: t) -> bool:
         """3-way merge of the conflict stages of `path` (main, base, branch) after
@@ -904,7 +924,8 @@ class Lander:
         import tempfile
         stages = {}
         for n in (1, 2, 3):
-            r = subprocess.run(["git", "show", f":{n}:{path}"], cwd=self.root, capture_output=True, text=True)
+            r = subprocess.run(["git", "show", f":{n}:{path}"], cwd=self.root, capture_output=True, text=True,
+                               env=self.git_env)
             stages[n] = transform(r.stdout) if r.returncode == 0 else ""
         with tempfile.TemporaryDirectory() as d:
             files = []
@@ -913,7 +934,7 @@ class Lander:
                 f.write_text(stages[n], encoding="utf-8")
                 files.append(str(f))
             cmd = ["git", "merge-file", "-p", *(["--diff3"] if diff3 else []), *files]
-            r = subprocess.run(cmd, capture_output=True, text=True)
+            r = subprocess.run(cmd, capture_output=True, text=True, env=self.git_env)
         (self.root / path).write_text(r.stdout, encoding="utf-8")
         return r.returncode == 0
 
@@ -961,7 +982,8 @@ class Lander:
     def needs_rebase(self) -> bool:
         """HEAD is not on the upstream, or a commit of ours lacks the fixed committer (a
         rebase that is not needed would give the commits a new date and a new SHA)."""
-        r = subprocess.run(["git", "merge-base", "--is-ancestor", self.upstream(), "HEAD"], cwd=self.root)
+        r = subprocess.run(["git", "merge-base", "--is-ancestor", self.upstream(), "HEAD"], cwd=self.root,
+                           env=self.git_env)
         if r.returncode != 0:
             return True
         who = self.git("log", "--format=%cn <%ce>", f"{self.upstream()}..HEAD").splitlines()
@@ -995,7 +1017,8 @@ class Lander:
                 return
             if existing:
                 self.git("fetch", "-q", self.remote, existing[0], check=False)
-                r = subprocess.run(["git", "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root)
+                r = subprocess.run(["git", "merge-base", "--is-ancestor", existing[0], "HEAD"], cwd=self.root,
+                                   env=self.git_env)
                 if r.returncode != 0 and not self.owns_ref(existing[0]) and not self.replace_ci:
                     raise LandError(f"{ref} holds other commits; pick another --id, or pass --replace-ci "
                                     "if it is your own earlier attempt (e.g. amended after a red CI)")
@@ -1070,7 +1093,7 @@ class Lander:
                 self.log(f"dry run: would push {sha[:7]} to {self.branch}")
                 return sha
             r = subprocess.run(["git", "push", "-q", self.remote, f"HEAD:{self.branch}"], cwd=self.root,
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, env=self.git_env)
             self.fetch()
             if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
                 if lane == "direct":
@@ -1137,7 +1160,8 @@ def main(argv: list[str] | None = None) -> int:
     if problem:
         print(f"error: {problem}", file=sys.stderr)
         return 2
-    root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip())
+    root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True,
+                               env=clean_env()).stdout.strip())
     try:
         lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
                         replace_ci=args.replace_ci, direct_reason=args.reason if args.direct else None)
