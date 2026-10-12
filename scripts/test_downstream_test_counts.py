@@ -22,12 +22,12 @@ test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fini
      Running tests/test_sim_bridge_oracle.rs (target/debug/deps/test_sim_bridge_oracle-3c4d)
 
 running 4 tests
-test result: ok. 4 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.05s
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
 
 """
 
 # the second binary has every test compiled out (or filtered away)
-ONE_EMPTY = TWO_BINARIES.replace("running 4 tests\ntest result: ok. 4 passed; 0 failed; 1 ignored",
+ONE_EMPTY = TWO_BINARIES.replace("running 4 tests\ntest result: ok. 4 passed; 0 failed; 0 ignored",
                                  "running 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored")
 
 COLOURED = TWO_BINARIES.replace("     Running tests/test_sim", "\x1b[1m\x1b[92m     Running\x1b[0m tests/test_sim")
@@ -89,6 +89,20 @@ class Count(unittest.TestCase):
                 with open(p, "w", encoding="utf-8") as f:
                     f.write(text)
                 self.assertEqual(tc.main(["x", p]), want)
+
+
+class Ignored(unittest.TestCase):
+    def test_ignored_test_in_selected_set_fails(self) -> None:
+        # a provider-facing test marked #[ignore]: the binary still passes 4, but fails
+        log = TWO_BINARIES.replace("4 passed; 0 failed; 0 ignored", "4 passed; 0 failed; 1 ignored")
+        total, errors = tc.check(log)
+        self.assertEqual(total, 13)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("ignored 1 test(s)", errors[0])
+
+    def test_filtered_out_is_not_ignored(self) -> None:
+        log = TWO_BINARIES.replace("0 filtered out; finished in 0.20s", "125 filtered out; finished in 0.20s")
+        self.assertEqual(tc.check(log), (13, []))
 
 
 if __name__ == "__main__":

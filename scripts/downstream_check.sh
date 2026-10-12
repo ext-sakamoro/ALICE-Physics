@@ -71,8 +71,9 @@
 # ALICE-LOL and ALICE-TRT manifests must accept this checkout's version
 # (scripts/downstream_select_tag.py --check); a downstream that still requires
 # an older major fails here with the requirement, and its steps are skipped.
-# Each test binary of a step must run at least one test (a `Running` section
-# with 0 tests fails even when the other binaries of the step ran some;
+# Each test binary of a step must run at least one test and ignore none (a
+# `Running` section with 0 tests, or with a test marked #[ignore] in the selected
+# set, fails even when the other binaries of the step ran some;
 # scripts/downstream_test_counts.py), and the resolved alice-physics must be
 # this checkout (a patch cargo cannot apply falls back to crates.io with only a
 # warning, which would test the published version instead).

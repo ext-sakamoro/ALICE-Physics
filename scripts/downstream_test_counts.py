@@ -11,10 +11,16 @@ that is meant to run tests; doctests are not run there (they are tested in the
 downstream repositories), and if a step does run them, the `Doc-tests` section
 is held to the same rule.
 
+A test marked `#[ignore]` in a selected set is not run, and a binary whose
+provider-facing test is ignored would still pass on its other tests: a binary
+that reports any ignored test fails too (the sets are named per step, so this
+covers only the tests the step selected; filtered-out tests are not ignored).
+
   python3 scripts/downstream_test_counts.py LOG
 
 prints `<binary>: <n> passed` per binary on stderr and the total on stdout;
-the exit status is 1 when a binary passed 0 tests or the log has no binary.
+the exit status is 1 when a binary passed 0 tests, ignored a test, or the log
+has no binary.
 """
 
 from __future__ import annotations
@@ -24,31 +30,37 @@ import sys
 
 from ansi import ANSI_RE  # noqa: E402  (CSI, charset selectors, OSC)
 HEADER_RE = re.compile(r"^\s*(?:Running\s+(.+?)(?:\s+\([^()]*\))?|Doc-tests\s+(\S+))\s*$")
-RESULT_RE = re.compile(r"^test result: \w+\. (\d+) passed;")
+RESULT_RE = re.compile(r"^test result: \w+\. (\d+) passed;(?: \d+ failed;)?(?: (\d+) ignored;)?")
+
+
+def count_ignored(log: str) -> list[tuple[str, int, int]]:
+    """(binary, passed, ignored) for each test binary in the log, in order."""
+    out: list[tuple[str, int, int]] = []
+    for line in ANSI_RE.sub("", log).splitlines():
+        h = HEADER_RE.match(line)
+        if h:
+            out.append((h.group(1) or f"doctests {h.group(2)}", 0, 0))
+            continue
+        r = RESULT_RE.match(line)
+        if r and out:
+            name, n, ig = out[-1]
+            out[-1] = (name, n + int(r.group(1)), ig + int(r.group(2) or 0))
+    return out
 
 
 def count(log: str) -> list[tuple[str, int]]:
     """(binary, passed) for each test binary in the log, in order."""
-    out: list[tuple[str, int]] = []
-    for line in ANSI_RE.sub("", log).splitlines():
-        h = HEADER_RE.match(line)
-        if h:
-            out.append((h.group(1) or f"doctests {h.group(2)}", 0))
-            continue
-        r = RESULT_RE.match(line)
-        if r and out:
-            name, n = out[-1]
-            out[-1] = (name, n + int(r.group(1)))
-    return out
+    return [(name, n) for name, n, _ in count_ignored(log)]
 
 
 def check(log: str) -> tuple[int, list[str]]:
     """(total passed, errors)."""
-    bins = count(log)
-    errors = [f"{name} ran 0 tests" for name, n in bins if n == 0]
+    bins = count_ignored(log)
+    errors = [f"{name} ran 0 tests" for name, n, _ in bins if n == 0]
+    errors += [f"{name} ignored {ig} test(s) of its selected set" for name, _, ig in bins if ig]
     if not bins:
         errors.append("no test binary ran")
-    return sum(n for _, n in bins), errors
+    return sum(n for _, n, _ in bins), errors
 
 
 def main(argv: list[str]) -> int:
