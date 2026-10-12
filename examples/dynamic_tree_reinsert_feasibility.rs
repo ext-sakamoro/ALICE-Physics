@@ -1,4 +1,4 @@
-//! Feasibility check for 6e's question: does an unmoving body skip the
+//! Feasibility check: does an unmoving body skip the
 //! margin padding recompute (`DynamicAabbTree::fatten`, which calls
 //! `MetricWeights::euclidean_radius`)? Answers by direct measurement
 //! against the real `DynamicAabbTree::update` (no src changes).
