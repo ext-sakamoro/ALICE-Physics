@@ -38,7 +38,8 @@ what land.py pushes, where, or as whom:
   - it refuses to start when the environment selects a repository (REFUSED_ENV:
     GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...);
   - git and gh run by absolute path from fixed locations (GIT_CANDIDATES /
-    GH_CANDIDATES, never PATH), every git call with FORCED_GIT_CONFIG (no hooks, no
+    GH_CANDIDATES, never PATH; git is the first candidate at least GIT_MIN_VERSION, the
+    oldest git with every option land.py passes), every git call with FORCED_GIT_CONFIG (no hooks, no
     fsmonitor, ssh as /usr/bin/ssh, no ext:: transport; command-line config wins over
     the global and system files, which stay for credential helpers);
   - every child process gets clean_env(): the ambient identity, injected config, the
@@ -147,17 +148,65 @@ FORCED_GIT_CONFIG = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=fal
                      "-c", f"core.sshCommand={SSH}", "-c", "protocol.ext.allow=never")
 
 
+# the oldest git that has every option land.py passes; the candidates are tried in order and
+# the first one at least this new is used (an older system git, such as Apple's git on some
+# macOS images, is skipped, never run with an option it rejects). Raise it with the option:
+#   --attr-source=<tree> (global option)  2.42
+GIT_MIN_VERSION = (2, 42)
+
+
+def executable(candidate: str) -> str | None:
+    """the real path of the candidate if it exists and is executable"""
+    real = os.path.realpath(candidate)
+    if os.name == "nt":
+        # os.access(X_OK) says little on Windows: an existing .exe file is required
+        return real if real.lower().endswith(".exe") and os.path.isfile(real) else None
+    return real if os.path.isfile(real) and os.access(real, os.X_OK) else None
+
+
 def pinned_tool(candidates: tuple[str, ...]) -> str:
     """the real path of the first candidate that exists and is executable"""
     for c in candidates:
-        real = os.path.realpath(c)
-        if os.name == "nt":
-            # os.access(X_OK) says little on Windows: an existing .exe file is required
-            if real.lower().endswith(".exe") and os.path.isfile(real):
-                return real
-        elif os.path.isfile(real) and os.access(real, os.X_OK):
+        real = executable(c)
+        if real:
             return real
     raise LandError(f"none of {', '.join(candidates)} is an executable (PATH is not searched)")
+
+
+def git_version(text: str) -> tuple[int, int, int] | None:
+    """(major, minor, patch) from `git version 2.39.5 (Apple Git-154)` / `git version
+    2.47.1.windows.1`; None for anything else"""
+    m = re.match(r"git version (\d+)\.(\d+)(?:\.(\d+))?", text.strip())
+    return (int(m[1]), int(m[2]), int(m[3] or 0)) if m else None
+
+
+def version_text(v: tuple[int, ...]) -> str:
+    return ".".join(map(str, v))
+
+
+def pinned_git_from(candidates: tuple[str, ...], minimum: tuple[int, ...] = GIT_MIN_VERSION) -> str:
+    """the real path of the first candidate that is executable and reports at least `minimum`;
+    otherwise refuse, naming every candidate and what it was"""
+    seen = []
+    for c in candidates:
+        real = executable(c)
+        if real is None:
+            seen.append(f"{c}: not an executable")
+            continue
+        try:
+            # the git directory is left out of PATH here: it is what is being decided
+            # (`git --version` starts no other program)
+            r = subprocess.run([real, "--version"], env=clean_env(with_git=False), capture_output=True,
+                               text=True, timeout=60)
+            v = git_version(r.stdout) if r.returncode == 0 else None
+            what = r.stdout.strip() or r.stderr.strip() or f"exit {r.returncode}"
+        except (OSError, subprocess.TimeoutExpired) as e:
+            v, what = None, str(e)
+        if v is not None and v >= tuple(minimum):
+            return real
+        seen.append(f"{c}: {what[:80]}" + ("" if v is None else f" (older than {version_text(minimum)})"))
+    raise LandError(f"no git at least {version_text(minimum)} at the fixed locations (PATH is not searched): "
+                    + "; ".join(seen))
 
 
 _PINNED: dict[str, str] = {}
@@ -171,7 +220,7 @@ FORBIDDEN_ROOTS: set[str] = set()
 
 def pinned_git() -> str:
     if "git" not in _PINNED:
-        _PINNED["git"] = pinned_tool(GIT_CANDIDATES)
+        _PINNED["git"] = pinned_git_from(GIT_CANDIDATES)
     return _PINNED["git"]
 
 
@@ -205,7 +254,7 @@ def cargo_bin() -> str:
     return os.path.join(os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo"), "bin")
 
 
-def safe_path(cargo: bool = False) -> str:
+def safe_path(cargo: bool = False, with_git: bool = True) -> str:
     """the fixed PATH of a child process: the directory of the Python running land.py first
     (python3 for the scripts), the cargo directory for the cargo children, then the system
     directories; git itself is started by absolute path, its directory comes last"""
@@ -217,7 +266,8 @@ def safe_path(cargo: bool = False) -> str:
         dirs += [os.path.join(root, "System32"), root]
     else:
         dirs += list(SYSTEM_PATH)
-    dirs.append(os.path.dirname(pinned_git()))
+    if with_git:
+        dirs.append(os.path.dirname(pinned_git()))
     seen: list[str] = []
     for d in dirs:
         if d not in seen:
@@ -269,10 +319,11 @@ def line_buffered_output() -> None:
             pass
 
 
-def clean_env(cargo: bool = False) -> dict[str, str]:
-    """os.environ without the variables SCRUBBED_ENV_RE matches, with the fixed PATH"""
+def clean_env(cargo: bool = False, with_git: bool = True) -> dict[str, str]:
+    """os.environ without the variables SCRUBBED_ENV_RE matches, with the fixed PATH
+    (with_git=False: without the pinned git's directory, for choosing that git)"""
     env = {k: v for k, v in os.environ.items() if not SCRUBBED_ENV_RE.match(k)}
-    env["PATH"] = safe_path(cargo)
+    env["PATH"] = safe_path(cargo, with_git)
     env.update(CHILD_PYTHON_ENV)
     return env
 
@@ -1632,8 +1683,16 @@ def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[i
                     continue
             run("rust-analyzer", [exe, "--version"])
         elif step == "git":
-            run("git", [*lander.git_argv, "version"],
-                shown=pinned_git() + (" via the tests' tripwire" if TOOL_OVERRIDE.get("git") else ""))
+            def new_enough(out: str) -> str | None:
+                v = git_version(out)
+                if v is None:
+                    return f"no version in {out.strip()[:80]!r}"
+                if v < GIT_MIN_VERSION:
+                    return f"git {version_text(v)} is older than {version_text(GIT_MIN_VERSION)} (GIT_MIN_VERSION)"
+                return None
+            run("git", [*lander.git_argv, "version"], check=new_enough,
+                shown=pinned_git() + (" via the tests' tripwire" if TOOL_OVERRIDE.get("git") else "")
+                + f", minimum {version_text(GIT_MIN_VERSION)}")
         else:
             raise LandError(f"env-smoke: unknown step {step!r}")
     lines.append(f"env-smoke: executed {executed}, skipped {skipped}")

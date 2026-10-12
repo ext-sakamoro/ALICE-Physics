@@ -37,7 +37,7 @@ land.FORBIDDEN_ROOTS.add(os.path.realpath(REAL_ROOT))
 TRIP_DIR = Path(tempfile.mkdtemp(prefix="land-tripwire-"))
 atexit.register(shutil.rmtree, TRIP_DIR, True)
 TRIPWIRE = TRIP_DIR / "tripwire"
-REAL_GIT = land.pinned_tool(land.GIT_CANDIDATES)
+REAL_GIT = land.pinned_git()   # the same choice as land.py (the first git new enough)
 GIT_TRIPWIRE = r"""import os, re, subprocess, sys
 REAL, MARKER = @REAL@, @MARKER@
 args = sys.argv[1:]
@@ -2088,6 +2088,81 @@ class GhEnvironment(Isolated):
             land.os.name = old
 
 
+class GitVersion(Isolated):
+    """git is the first candidate at least GIT_MIN_VERSION: an older git earlier in the list
+    (Apple's git on some macOS images) is skipped, and no new enough git is a refusal that
+    names every candidate."""
+
+    def setUp(self):
+        super().setUp()
+        self.d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.d, True)
+
+    def fake_git(self, name: str, says: str) -> str:
+        """an executable that prints `says` for --version / version (POSIX only: a script)"""
+        f = self.d / name
+        f.write_text(f"#!/bin/sh\necho '{says}'\n", encoding="utf-8")
+        f.chmod(0o755)
+        return str(f)
+
+    def test_the_version_is_read_from_every_known_form(self):
+        self.assertEqual(land.git_version("git version 2.39.5 (Apple Git-154)\n"), (2, 39, 5))
+        self.assertEqual(land.git_version("git version 2.47.1.windows.1"), (2, 47, 1))
+        self.assertEqual(land.git_version("git version 2.42"), (2, 42, 0))
+        self.assertIsNone(land.git_version("hub version 2.14.2"))
+        self.assertIsNone(land.git_version(""))
+        self.assertGreaterEqual(land.git_version(subprocess.run([REAL_GIT, "--version"], capture_output=True,
+                                                                text=True).stdout), land.GIT_MIN_VERSION)
+
+    def test_the_minimum_is_the_newest_option_land_py_passes(self):
+        # --attr-source=<tree> as a global option is in git 2.42; land.py passes it to rebase / commit
+        self.assertIn('f"--attr-source={EMPTY_TREE}"', Path(land.__file__).read_text(encoding="utf-8"))
+        self.assertGreaterEqual(land.GIT_MIN_VERSION, (2, 42))
+
+    @unittest.skipIf(os.name == "nt", "the fake git is a shell script")
+    def test_an_older_git_first_is_skipped(self):
+        old = self.fake_git("git-old", "git version 2.39.5 (Apple Git-154)")
+        self.assertEqual(land.pinned_git_from((old, REAL_GIT)), os.path.realpath(REAL_GIT))
+        # pinned_git() itself makes this choice from GIT_CANDIDATES
+        saved = (land.GIT_CANDIDATES, dict(land._PINNED))
+        self.addCleanup(lambda: (setattr(land, "GIT_CANDIDATES", saved[0]), land._PINNED.clear(),
+                                 land._PINNED.update(saved[1])))
+        land.GIT_CANDIDATES = (old, REAL_GIT)
+        land._PINNED.pop("git", None)
+        self.assertEqual(land.pinned_git(), os.path.realpath(REAL_GIT))
+        junk = self.fake_git("git-junk", "not a git")
+        self.assertEqual(land.pinned_git_from((str(self.d / "missing"), junk, old, REAL_GIT)),
+                         os.path.realpath(REAL_GIT))
+
+    @unittest.skipIf(os.name == "nt", "the fake git is a shell script")
+    def test_no_git_new_enough_refuses_and_names_every_candidate(self):
+        old = self.fake_git("git-old", "git version 2.39.5 (Apple Git-154)")
+        older = self.fake_git("git-older", "git version 2.30.1")
+        missing = str(self.d / "missing")
+        with self.assertRaises(land.LandError) as e:
+            land.pinned_git_from((old, missing, older))
+        text = str(e.exception)
+        self.assertIn("no git at least 2.42", text)
+        self.assertIn(f"{old}: git version 2.39.5 (Apple Git-154) (older than 2.42)", text)
+        self.assertIn(f"{older}: git version 2.30.1 (older than 2.42)", text)
+        self.assertIn(f"{missing}: not an executable", text)
+        # a version equal to the minimum is enough
+        exact = self.fake_git("git-exact", "git version 2.42.0")
+        self.assertEqual(land.pinned_git_from((old, exact)), os.path.realpath(exact))
+
+    @unittest.skipIf(os.name == "nt", "the fake git is a shell script")
+    def test_the_env_smoke_fails_on_a_git_older_than_the_minimum(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        executed, failed, lines = land.env_smoke(lander, steps=("git",))
+        self.assertEqual((executed, failed), (1, 0), lines)
+        self.assertTrue(lines[0].startswith("ok   git: git version"), lines)
+        self.assertIn(f"minimum {land.version_text(land.GIT_MIN_VERSION)}", lines[0])
+        lander.git_argv = [self.fake_git("git-old", "git version 2.39.5 (Apple Git-154)")]
+        executed, failed, lines = land.env_smoke(lander, steps=("git",))
+        self.assertEqual((executed, failed), (1, 1), lines)
+        self.assertIn("git 2.39.5 is older than 2.42 (GIT_MIN_VERSION)", lines[0])
+
+
 class Harness(Isolated):
     """The guards of this test module: no Lander on this checkout, no network, no real gh."""
 
@@ -2353,7 +2428,8 @@ class ChildTools(Isolated):
         lander = land.Lander(self.r.work, "T", log=lambda *_: None)
         _, _, lines = land.env_smoke(lander, steps=("git",))
         self.assertTrue(lines[0].startswith("ok   git: git version"), lines)
-        self.assertIn(f"({land.pinned_git()} via the tests' tripwire)", lines[0])
+        self.assertIn(f"({land.pinned_git()} via the tests' tripwire, minimum "
+                      f"{land.version_text(land.GIT_MIN_VERSION)})", lines[0])
 
     def test_the_cli_exit_code(self):
         import contextlib
