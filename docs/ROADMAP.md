@@ -183,42 +183,42 @@ kinematic bodyが動的bodyを押すsceneで衝突検出との配線順序も確
 ⚠️ **contact_cache は既存 2026-09-30 の方針「CPU `step()` には復活させない」の確認が必須だった** — `ContactCache` の warm-start 7 item は `PhysicsWorld::step()` から一度も読まれず、実 warm-start は別機構 (`ContactConstraint::cached_lambda`) 方針の範囲外 (`step()` を一切呼ばない standalone example) として配線
 ⚠️ 測定のみ実施、修正は未対応: `smoke_fire::reaction_rate_kg_per_m3_s` は温度/気体定数のみ guard し密度の符号は無検証 (負の gas_constant で exp_fix 飽和まで到達) / `raycast::sweep_sphere` と `ccd::sphere_sphere_toi` が意味論重複 / **`wave_ship::Jonswap::spectrum_density` の正規化定数が JONSWAP peak-enhancement 補正 `(1-0.287·ln(gamma))` を欠き、既定 `north_sea()` (gamma=3.3) で moment から回復する Hs が公称値の約 1.235 倍になる** (DNV-RP-C205 予測値と 0.12% 差で一致、欠落補正が原因と確認済、修正は既定出力を変える semver 相当の判断につき未対応 (別途判断)) / 同 far-tail が Fix128 解像度限界で floor noise (符号バグではない)
 
-### 第 50 increment (2026-10-03、配線作業 第 9 件 (F3c/F3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
+### 第 50 increment (2026-10-03、配線作業 第 9 件 (形状 3c/3d) — SDF の凸分解と compound の broad-phase、幾何クエリ)
 
 `decompose_sdf` が `concavity_threshold` を無視して**常に `max_hulls` 個へ切っていた** (凸な球・箱も 16 個に割れる) ので、cluster の hull の中にあって SDF の外にあるセルの体積 / hull の体積を concavity とし、閾値を超える間だけ・予算の範囲で切る実装にした `CompoundShape::{from_decomposition, from_sdf}` (追加のみ) が凸片を compound にし、`add_compound_body` で**凹んだ形のまま衝突する** body になる (L 字の切り欠きに置いた probe は触れない)
 ⚠️ **既存の欠陥 4 つを検出・修正**: ① `concavity_threshold` が未使用 ② **`volumes` が bounding box の体積** (球で hull の 1.8 倍、`min_volume` の判定も bbox) ⇒ hull の実体積 ③ `max_vertices_per_hull` が `len < 2·cap` で効かない (floor の stride が 1) かつ stride が走査順で面上の点を落として**箱の角を失う** (hull が 10% 縮む) ⇒ 極値点 (接する面の法線が 3 次元を張る頂点) だけを残し、上限超過は最遠点サンプリングで選ぶ ④ `centers` が頂点の平均で偏る ⇒ hull の重心 ⚠️ `build_hull_mesh` の頂点は面上・辺上の共面点を含む (9³ の殻で 164 個、真の角は 8) ので極値点の絞り込みが要る
 oracle: 面が格子線に乗る箱で境界セルの中心が面から cell/2 内側に来るので、hull の体積は **`(辺 − c)` の積** (L 字は 2 本の棒の積を足した閉形式、独立に格子から導出) 球は上限 (凸の内側) と下限 (表面から 1 セル以内) 予算が cut の両側へ分かれること (4 つの球で予算 1/2/3/4/16 → 1/2/3/4/4) 閾値が hull 体積の割合であること 8 点未満は切らないこと compound の質量・重心が 2 本の棒の和 L 字 body の切り欠きの probe 変異 22 件中 21 red、生存 1 件は等価 (空 cluster の再帰) 途中で見つけた oracle 側の誤り: 球が格子の境界に接して切れていた / 切り欠きの probe が凸包の外だった (凸包の斜辺は x + y = 3)
-F3d: `body_collider` の narrow-phase が `world_aabb` で body 全体の box を先に判定し `overlapping_children` で相手の box と重なる子だけを GJK/EPA に渡す (結果は変わらず、遠い子を省く) `OrientedBox::{axis_aligned, corner, corners}` / `Cone::{apex, base_center}` / `AABB::from_metric_ball` は Rodrigues 回転 (f64) と metric ball の境界のブルートフォースで oracle 化し example に載せた 変異 17 件中 16 red、生存 1 件は等価 (相手でなく自分の box で絞る = 絞り込みなし、性能のみ)
+形状 3d: `body_collider` の narrow-phase が `world_aabb` で body 全体の box を先に判定し `overlapping_children` で相手の box と重なる子だけを GJK/EPA に渡す (結果は変わらず、遠い子を省く) `OrientedBox::{axis_aligned, corner, corners}` / `Cone::{apex, base_center}` / `AABB::from_metric_ball` は Rodrigues 回転 (f64) と metric ball の境界のブルートフォースで oracle 化し example に載せた 変異 17 件中 16 red、生存 1 件は等価 (相手でなく自分の box で絞る = 絞り込みなし、性能のみ)
 baseline 退役 10 行 (`decompose_sdf` / `DecompositionResult` / `corner` / `corners` / `apex` / `base_center` / `from_metric_ball` + 巻き込み 3 (`metric::{L1, LINF, axis_extent}`、example が通す)) ⚠️ `world_aabb` / `overlapping_children` / `axis_aligned` の 3 行は同時並行の第 18 件 (`e90ec33`、example 経由) が先に退役した ので本件はそれらを narrow-phase の絞り込みに**実配線**した差分だけを持つ、example は `examples/convex_decomposition.rs` / `examples/geometry_queries.rs`
-残り (F3e): `compound::compute_aabb` (キャッシュは誰も読まない) / `build_convex_hull` (共面点を頂点に含み coplanar で panic)
+残り (形状 3e): `compound::compute_aabb` (キャッシュは誰も読まない) / `build_convex_hull` (共面点を頂点に含み coplanar で panic)
 
 ### 第 49 increment (2026-10-03、配線作業 第 18 件 — `cubic_elastic_fem`/`compound`/`raycast`/`ccd`/`solver_tgs` 未配線)
 
 並行 5 件 (`cubic_elastic_fem` 9 item / `compound` 8 item + `box_collider::axis_aligned` / `raycast` 9 item / `ccd` 7 item / `solver_tgs` 残 9 item 中 8 item) 変異: cubic_elastic_fem 9/9、compound 13/14 (1 件は軸整列回転のみの test では不可視だった真の oracle gap、対角 120 度回転 test 追加で解消)、raycast 22/22 (初回 3 件生存、カプセル接線・t=0 境界・両キャップ命中の scene 追加で解消)、ccd 15/19 (4 件 equivalent mutant)
-⚠️ **`compound.rs` は別の作業 (F3b-1, `dafc824`〜`b9472f6`) と同時並行で配線** — rebase で両者を統合 (`add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`child_world_aabb` は別の作業 が `PhysicsWorld::add_compound_body` 経由で先行配線済、本 batch は残る `compute_aabb`/`overlapping_children`/`world_aabb` を含む全 8 item + 自身の example で独立に配線、両方が共存しても矛盾なし)
+⚠️ **`compound.rs` は別の作業 (形状 3b-1, `dafc824`〜`b9472f6`) と同時並行で配線** — rebase で両者を統合 (`add_sphere`/`add_capsule`/`add_convex_hull`/`add_box`/`child_world_aabb` は別の作業 が `PhysicsWorld::add_compound_body` 経由で先行配線済、本 batch は残る `compute_aabb`/`overlapping_children`/`world_aabb` を含む全 8 item + 自身の example で独立に配線、両方が共存しても矛盾なし)
 ⚠️⚠️ **`solver_tgs` 残 9 item は方針「本実装」により skeleton を撤去**: `ccd::adaptive_toi_substeps` が `solver_tgs::adaptive_substeps_for_ccd` を実際に呼ぶように実装 (旧実装は `speculative_contact` の有無だけで定数を返す skeleton だった)、`solve_oriented_islands_serial`/`_parallel` を `dispatch_islands`/`par_dispatch_islands` 経由に書き換え (無挙動変更)、`step_tgs` に `ImpulseCache::sweep()` を配線、新規 `PhysicsWorld::{tgs_cache_stats, reset_tgs_cache_stats}` + `TgsCacheStats` (`#[non_exhaustive]`) で warm-start 診断を公開 API 化 (snapshot +78/−0) ⚠️ **`par_dispatch_islands` 自体は未達** — 唯一の呼出元候補 `step_tgs` が常に serial 固定で、parallel 経路に繋ぐには `ImpulseCache` の island 単位 split/merge という別の設計変更が要るため保留
 baseline 44 行退役 (実配線 38、名前衝突の巻き込み 6 = `quadratic_elastic_fem.rs::corner_count`/`element_count`/`element_nodes` + `bvh.rs::BvhStats`/`bvh.rs::stats`/`sdf_adaptive.rs::stats`)
 
-### 第 48 increment (2026-10-03、配線作業 第 9 件 (F3b-1) — compound body と凸包の質量特性)
+### 第 48 increment (2026-10-03、配線作業 第 9 件 (形状 3b-1) — compound body と凸包の質量特性)
 
 複数の形状でできた body (亜鈴・L 字など) を作れなかった `PhysicsWorld::add_compound_body(&CompoundShape, density, position)` を足し、子の質量・重心・慣性を合成して**主軸系**に置く (重心を原点、`body.rotation` = 主軸の回転、子は重心基準に付け替え) 衝突は子ごと: 2 つの子の間の隙間は body の一部でなく、凸包の中でも触れない 子の組のうち最も深い接触が採られる (追加のみ、`CompoundShape::mass_properties` / `build_hull_mesh` / `HullMesh` / `principal_axes` / `CompoundChild::support_world`)
 ⚠️ **既存の欠陥 3 つを検出・修正**: ① **`convex_hull_mass_properties` が誤っていた** (立方体で質量 12 / 正解 24、重心がずれ、Ixx 3.5 / 正解 16) ⇒ 凸包メッシュの四面体分解による厳密積分 (∫xxᵀ dV = V/20 (Σpₖpₖᵀ + (Σpₖ)(Σpₖ)ᵀ)) に置換 ② **compound の球の子の AABB が子の回転を無視** ③ **`support_world` が -1e6 の番兵を使い、全子が遠方にあると誤った点を返した**
 oracle: 箱 / 立方体 / 非対称な楔の凸包を閉形式と求積で、compound の質量・重心・慣性を子の閉形式 (平行軸) と**和集合の求積**で、回転した子の重心、軸が x のカプセル (円柱 + 半球 2 つ)、回転した箱 (x/y の慣性の交換)、非対称な箱 (−3 / +5) の隙間 probe、最も深い子の接触 変異 36 件中 35 red、生存 1 件は等価 (質量 0 の子の除外、冗長なので削除) 途中で見つけた oracle 側の誤り: カプセルの円柱の I⊥ に r²/3 を使っていた (正しくは r²/4) 実装は正しく、**oracle の閉形式を独立に求積で確かめるまで変異の red を信用しない**
 baseline 退役 11 行 (`compound::{add_box,add_capsule,add_sphere,add_convex_hull,child_world_aabb}` / `compute_centroid` / `box`・`capsule`・`sphere`・`convex_hull_mass_properties` / `translate_inertia`、実配線 11、巻き込み 0) 呼出元は `add_compound_body`、example は `examples/compound_bodies.rs`
-残り (F3c): `compound::{compute_aabb, overlapping_children, world_aabb}` / `build_convex_hull` / `convex_decompose` / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
+残り (形状 3c): `compound::{compute_aabb, overlapping_children, world_aabb}` / `build_convex_hull` / `convex_decompose` / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
 ### 第 47 increment (2026-10-03、配線作業 第 17 件 — `prestressed`/`piezoelectric`/`rolling_contact`/`sdf_force` 未配線 28 item)
 
 並行 4 件、全て src 無変更 変異: prestressed 7/7 (実装) + 2/5 (guard、3 件は Fix128::Div のゼロ除算契約と算術等価)、piezoelectric 11/12 red (permittivity 単独配線変異は voltage_from_force/force_from_voltage が残る限り推移的到達性で観測不能)、rolling_contact 14/14、sdf_force 15/17 (生存 2 件は算術的に等価、`contain` の境界 off-by-one は dist=0 で push が恒等的に 0 になる式の性質、`apply_sdf_force_fields` の is_static skip は inv_mass=0 と同一条件の性能最適化) baseline 28 行退役 (実配線 27、名前衝突の巻き込み 1 = `force.rs::with_affected_bodies`) production entry point: `examples/prestressed_joints_and_cables.rs` / `examples/piezoelectric_materials.rs` / `examples/rolling_contact_fatigue.rs` / `examples/sdf_force_fields.rs`
 ⚠️ 測定のみ実施、修正は未対応: rolling_contact.rs は f32 ベースで engineering module family の他 (fatigue/laminate_failure) の Fix128 決定論と不整合 / sdf_force の `attract` は `min(strength*|dist|, max_force)` clamp が Fix128 の表現域境界付近 (`|dist| ~ 4.6e18`) で `strength*dist_fix` 自体が mod-2^128 wrap するため `min()` が意図した値と比較できず破られる (通常の大距離 1e9 等では問題なし)
 
-### 第 40 increment (2026-10-03、配線作業 第 9 件 (F3a) — 凸形状どうしの GJK/EPA narrow-phase)
+### 第 40 increment (2026-10-03、配線作業 第 9 件 (形状 3a) — 凸形状どうしの GJK/EPA narrow-phase)
 
-形状つき body (F1) は衝突が外接球どうしのままだったので、箱どうしが球として検出されていた `collider::contact(a, b)` (GJK の後に EPA、追加のみ) と、`PhysicsWorld::{set_body_shape, colliders_overlap}`、`PosedShape` (姿勢つきの `Shape` を `Support` にする) を足した `add_shaped_body` は形状を body に付け、**両方の body が形状を持つ組は GJK/EPA の接触で決める** (片方でも持たなければ従来の球どうし) 接触の法線は B→A、depth は分離に要る最短の並進
+形状つき body (第 34 increment) は衝突が外接球どうしのままだったので、箱どうしが球として検出されていた `collider::contact(a, b)` (GJK の後に EPA、追加のみ) と、`PhysicsWorld::{set_body_shape, colliders_overlap}`、`PosedShape` (姿勢つきの `Shape` を `Support` にする) を足した `add_shaped_body` は形状を body に付け、**両方の body が形状を持つ組は GJK/EPA の接触で決める** (片方でも持たなければ従来の球どうし) 接触の法線は B→A、depth は分離に要る最短の並進
 ⚠️ **既存の欠陥 2 つを検出・修正**: ① `gjk` が simplex を返さず `epa` (四面体を要求) と**公開 API だけでは繋がらなかった** ⇒ `gjk_core` に分けて simplex を返し、衝突時に四面体へ補完する (辺・頂点でだけ接する box は 1 点の simplex で止まる) ② **`epa` が反復上限で `None` を返し、曲面形状 (球・円柱・円錐・楕円体・環) の接触を必ず落としていた** ⇒ 上限に達したら最近面から接触を返す (球どうしで数 1e-3 の誤差)
 oracle: 重なる箱の depth と法線を **分離軸判定 (15 軸、箱の回転軸から書き起こし)** と比較 (積み重ね / 最短軸 / 5 通りの回転) 同軸の円柱 / 球 / 同位置の箱 / 辺・角でだけ接する箱 (depth 0) / 退化 (平らな箱) / 世界: 2 箱が depth/2 ずつ離れる、外接球だけが重なる箱は接触しない、静的な箱の上に落とした箱と円錐・楔が**重心**の高さで静止 (cone: 底が重心の 1 下)、回転した body、remove 後も形状が body と一緒、event の法線と接近速度 変異 24 件中 23 red、生存 1 件は等価 (補完に使う方向の順序) + 配線変異
 baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 0) 呼出元は `contact` (solver の `detect_collisions`) と `colliders_overlap`、example は `examples/convex_contacts.rs`
-⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (F3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
+⚠️ 衝突は依然として 1 点の接触 (manifold なし): 接触点は EPA の支持点で、接触拘束は位置と質量だけで解く (回転は拘束に入らない) 残り (形状 3b/c): `compound` (8) / `convex_mesh_builder` (2) / `convex_decompose` (2) / `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}` / `from_metric_ball`
 
 ### 第 46 increment (2026-10-03、配線作業 第 16 件 — `material`/`replay`/`multi_world`/`sdf_fem_mesh` 未配線 34 item)
 
@@ -244,7 +244,7 @@ baseline 退役 3 行 (`gjk` / `epa` / `GjkResult`、実配線 3、巻き込み 
 
 並行 4 件、全て src 無変更 変異 red: hyperelastic 11/12 (silicone_soft の c2 1 ULP が観測不能)、compressible 実装 11/12 + 配線 10/12 (2 件は module 内 sibling 経由の別経路)、interpolation 11/12 (slerp の冗長 guard)、articulation 12/13 (apply_motors の force.is_zero() が算術等価) baseline 47 行退役 + motor::set_position_target (articulation example から真の呼出)
 
-### 第 39 increment (2026-10-03、配線作業 第 9 件 (F2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
+### 第 39 increment (2026-10-03、配線作業 第 9 件 (形状 2) — 静的 collider: `StaticCollider` と `PhysicsWorld::add_static_collider`)
 
 `PhysicsWorld` の衝突は「球 (body ごとの衝突半径) と SDF collider」だけで、`plane_collider` / `heightfield` / `trimesh` の球衝突は呼出元が 0 件だった `StaticCollider::{Plane, HeightField, TriMesh}` と `add_static_collider` / `remove_static_collider` / `static_collider_count` を足した 球 body を substep ごとに SDF collider と同じ位置 (逐次 / batched / bridge の 3 経路すべて) で面の法線方向へ深さだけ押し出す (追加のみの公開 API) 衝突球は body の衝突半径、無ければ `set_sdf_collision_radius` の既定値 (SDF と同じ)
 ⚠️ **oracle が既存の欠陥を 2 つ検出**: ① `HeightField::collide_sphere` が斜面で**垂直距離**を使っており球を `r·(1/cosθ − 1)` 埋めていた (傾き 1/2 で 0.0142 の誤差) ⇒ 法線方向の距離 (`Δy·n_y`) に ② 幅 0 の高さ場の `get_height` が `width − 1` の u32 underflow で panic (空の高さ場 / 間隔 0 は面なしとして None)
@@ -269,13 +269,13 @@ baseline 退役 19 行 (実配線 19、巻き込み 0): plane 7 / heightfield 7 
 
 並行 8 件、各 module に example 経由の production 入口 + oracle + 退化入力 test 変異 red: anomaly 48/48、pipeline 32/32、privacy 実装 46/47 + 配線 21/26 (生存は等価/guard 限界)、profiling 32/32、maxwell_fdtd 20/20、sketch 実装 31/31 + 配線 16/17 (生存 1 は構造的観測不能)、transient_thermal 15/15、joint 25/25 baseline 退役 135 行 + 名前衝突 5 行 ⚠️ `DDSketch::quantile` の doc 誤り (`α` → 正しくは `2α/(1+α)`) を修正、oracle 差替で ignore 解消 ⚠️ 残 2 件: joint の wrap-to-zero 二乗 / `solve_joints_breakable` が `PhysicsWorld::step` から未配線 (設計判断、未対応)
 
-### 第 34 increment (2026-10-03、配線作業 第 9 件 (F1) — 形状つき body: `Shape` と `PhysicsWorld::add_shaped_body`)
+### 第 34 increment (2026-10-03、配線作業 第 9 件 (形状 1) — 形状つき body: `Shape` と `PhysicsWorld::add_shaped_body`)
 
 `RigidBody::new` は質量が何でも慣性を単位球 (`m·2/5`) にしており、箱も輪も同じ torque で同じ角速度で回っていた 形状の閉形式 (`volume` / `inertia_diagonal` / `bounding_sphere_radius`) は box / cylinder / cone / ellipsoid / wedge / torus に実装されていたが呼出元が 0 件だった `Shape` (6 形状) と `PhysicsWorld::add_shaped_body(shape, density, 重心位置)` を足した body は密度 × 体積の質量、**重心まわりの主慣性**、重心まわりの外接球を衝突半径に持つ (追加のみの公開 API、`ShapeError` で退化・密度非正・桁あふれを拒否)
 ⚠️ **oracle が既存の数式欠陥を 3 つ検出**: ① `355/113` (π の近似、相対誤差 8.5e-8、torus は π² で 1.7e-7) を cylinder / ellipsoid / cone / torus が使っていた (`Fix128::PI` に) ② **円錐の慣性の係数が入れ替わっていた** (`3/80 r² + 3/20 h²`、正しくは重心まわりで `3/20 r² + 3/80 h²`、実測で相対誤差 40%) 重心位置 (頂点側 `−half_height/2`) も返すようにした ③ **楔の慣性が重心まわりでなかった** (`Iyy = w²/18`、正しくは `w²/24`、`Izz` も) 重心位置 (`−height/6`) を追加
 oracle は 2 系統: 教科書の閉形式と、**立体の数値積分** (bounding box の midpoint 格子 + `inside` 述語で、体積・重心・重心まわりの慣性を定義から直接求める 公式を知らない) 外接半径は「立体の全点を含み、かつ到達される」で検査 (tall cone / tall wedge で apex 項が支配する寸法を含む) 桁を振る sweep で「wrap した質量を受け入れない」(`Fix128` は wrap する) 変異 **20/20 red** (初回 16/20、生存 4 件は apex が支配しない寸法・保護の二重化 → test を足して red) + 配線変異 (example を外すと 7 件が未配線に戻る)
 baseline 退役 13 行 (実配線 13、巻き込み 0): box / cone / cylinder / ellipsoid / torus / wedge の `volume` + `inertia_diagonal` と `ellipsoid::bounding_sphere_radius` 呼出元は `examples/shaped_bodies.rs` (6 形状に同じ torque、ω = τ·dt/I を印字)
-⚠️ 衝突検出は依然として球 (外接球) 同士: 箱同士は球同士として検出される 形状自体の narrow-phase は F3 (GJK/EPA) で 残る未配線: `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}`
+⚠️ 衝突検出は依然として球 (外接球) 同士: 箱同士は球同士として検出される 形状自体の narrow-phase は 形状 3 (GJK/EPA) で 残る未配線: `box_collider::{axis_aligned, corner, corners}` / `cone::{apex, base_center}`
 
 ### 第 33 increment (2026-10-03、配線作業 第 6 件 — `PhysicsWorld` API 44 本 / `multiphase` VOF・level-set / 構造 4 module の `allow(dead_code)` 撤去)
 
@@ -1148,7 +1148,7 @@ Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` �
 
 ### ADR-003 revision (2026-09-14): γ 直行に変更
 
-**背景**: 2026-09-13 の集中 session で B / C / D / E / F / G / H / I / J の全 9 v1.0 Items を landing 完了 6 iteration の audit campaign 中、以下 6 sibling repo に対して毎 iter downstream survey 実施 (`rg 'alice_physics::'`):
+**背景**: 2026-09-13 の集中作業で B / C / D / E / F / G / H / I / J の全 9 v1.0 Items を landing 完了 6 iteration の audit campaign 中、以下 6 sibling repo に対して毎 iter downstream survey 実施 (`rg 'alice_physics::'`):
 - ALICE-Bamboo (実運用)
 - ALICE-TRT (`impl GpuSolverBridge for TrtSolverAdapter` 実装済)
 - ALICE-SDF (`impl SdfField for CompiledSdfField` 実装済)

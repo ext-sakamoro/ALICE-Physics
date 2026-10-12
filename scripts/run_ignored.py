@@ -329,7 +329,7 @@ def emit(lines: list[str]) -> None:
     A copy goes to `target/ignored-report.md` (inside the already-ignored build
     directory, so it does not show up in `git status`) for the weekly run to
     upload: the classification is half of what this job produces, and a step
-    summary is not something a later session can diff against.
+    summary is not something a later run can diff against.
     """
     body = "\n".join(lines) + "\n"
     sys.stdout.write(body)

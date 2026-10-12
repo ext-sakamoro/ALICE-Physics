@@ -58,7 +58,7 @@ Commit `427d378`. Adds forward-compat marker to structs that leak internal types
 
 | Iteration | Modules | Pub items | Downgraded | Snapshot Δ |
 |-----------|--------:|----------:|-----------:|-----------:|
-| 1 (pre-session) | 7 | 53 | 0 | 0 |
+| 1 (baseline) | 7 | 53 | 0 | 0 |
 | 2 (P1 solver) | 9 | 127 | 4 | −22 |
 | 3 (P2 math/BVH) | 3 | 108 | 8 | −24 |
 | 4 (P3 CFD) | 4 | 58 | 31 | −91 |

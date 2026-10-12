@@ -22,8 +22,8 @@
 //! The original PDF was not reachable from here, so this is **not a primary
 //! verification**: three independent transcriptions of the Re=100 column
 //! were compared and agree on all 17 rows (a public gist, the Table 2 of an
-//! Uppsala thesis `diva2:1668016`, and a re-fetch of the gist in a later
-//! session). The same gist has transcription errors in the Re=3200 and
+//! Uppsala thesis `diva2:1668016`, and a re-fetch of the gist at a later
+//! date). The same gist has transcription errors in the Re=3200 and
 //! Re=10000 columns, which are not used here.
 
 #![cfg(feature = "std")]

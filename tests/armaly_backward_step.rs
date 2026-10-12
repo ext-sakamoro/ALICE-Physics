@@ -439,7 +439,7 @@
 //!
 //! ⚠️ **Put that marker in the test's own output, not in the shell's.** The
 //! mutations below were announced with a shell `echo` before each run, which
-//! is invisible to anything reading the `cargo test` stream — and a session
+//! is invisible to anything reading the `cargo test` stream — and a process
 //! watching this file's output from outside picked up three of the mutation
 //! failures as genuine ones. Whatever reads the failure has to see the marker
 //! in the same stream, or the mutation run has to write somewhere that is not

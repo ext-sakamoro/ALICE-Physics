@@ -43,7 +43,7 @@
 //! ⚠️ **A mutation run must print `### MUTATION: <what was changed>` on its own
 //! line**, and the restored green must land in the same log. A destruction test
 //! produces a real red on purpose, and anyone reading the output from outside —
-//! another session triaging failures, a later reader of a log — cannot otherwise
+//! a concurrent run triaging failures, a later reader of a log — cannot otherwise
 //! tell it from a genuine break. The marker costs one line and no coordination;
 //! announcing mutations over messages instead does not scale, because destruction
 //! tests come in batches.
