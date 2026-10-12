@@ -323,10 +323,15 @@ class Repo:
         self.dir = Path(tempfile.mkdtemp())
         self.origin = self.dir / "origin.git"
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(self.origin)], check=True)
+        # a commit, rebase, merge or received push starts `git maintenance run --auto --detach`;
+        # it can still pack refs or write into .git while a test reads them or the directory is
+        # removed
+        git(self.origin, "config", "maintenance.auto", "false")
         self.upstream = self.dir / "upstream"
         subprocess.run(["git", "clone", "-q", str(self.origin), str(self.upstream)], check=True,
                        capture_output=True)
         git(self.upstream, "checkout", "-q", "-b", "main")
+        git(self.upstream, "config", "maintenance.auto", "false")
         commit(self.upstream, {"src/a.rs": "fn a() {}\n",
                                 "scripts/lib-test-exempt.txt": "src/b.rs fixture for the landing steps\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n",
                                # the inputs of a path-gated workflow: what docs_only() excludes
@@ -337,6 +342,7 @@ class Repo:
         git(self.upstream, "push", "-q", "origin", "main")
         self.work = self.dir / "work"
         subprocess.run(["git", "clone", "-q", str(self.origin), str(self.work)], check=True, capture_output=True)
+        git(self.work, "config", "maintenance.auto", "false")
 
     def lander(self, **k) -> FakeLander:
         return FakeLander(self.work, "T-1", **k)

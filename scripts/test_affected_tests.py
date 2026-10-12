@@ -162,6 +162,9 @@ class ChangedFiles(unittest.TestCase):
             root = Path(d)
             run = lambda *a: subprocess.run(a, cwd=root, check=True, capture_output=True)
             run("git", "init", "-q", "-b", "main")
+            # no detached `git maintenance` after the commit: it can still write into .git
+            # while the temporary directory is removed
+            run("git", "config", "maintenance.auto", "false")
             (root / "tests").mkdir()
             (root / "tests" / "old.rs").write_text("// old\n")
             run("git", "add", ".")

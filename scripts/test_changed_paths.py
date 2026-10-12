@@ -34,6 +34,9 @@ class Repo:
         self.env = {**os.environ, **GIT_ENV, "HOME": str(path)}
         self.run("init", "-q", "-b", "main")
         self.run("config", "commit.gpgsign", "false")
+        # a commit starts `git maintenance run --auto --detach`, which can still write into .git
+        # while the temporary directory is removed (Directory not empty: 'info' on macOS)
+        self.run("config", "maintenance.auto", "false")
         # git for Windows refuses a tab, quote or control character in an index path by
         # default (core.protectNTFS); the fixture records such names without writing them
         self.run("config", "core.protectNTFS", "false")
