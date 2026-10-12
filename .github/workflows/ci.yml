@@ -180,6 +180,19 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      # the tools land.py's children need (python3 >= 3.11, bash, cargo, rustc, rust-analyzer
+      # when installed, git) started the way a landing starts them, from a minimal environment;
+      # seconds, and it fails when it executed nothing
+      - name: Landing child environment (env-smoke)
+        shell: bash
+        run: |
+          py="$(command -v python)"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            env -i SYSTEMROOT="$SYSTEMROOT" USERPROFILE="$USERPROFILE" HOME="$HOME" PATH=/usr/bin "$py" scripts/land.py --env-smoke
+          else
+            env -i HOME="$HOME" USER="${USER:-runner}" PATH=/usr/bin:/bin "$py" scripts/land.py --env-smoke
+          fi
+
       - uses: Swatinem/rust-cache@v2
 
       # Cargo.lock is committed: every job builds the same dependency versions

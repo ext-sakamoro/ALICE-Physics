@@ -1618,6 +1618,10 @@ def call_sites(source: str) -> tuple[int, list[str]]:
     def built_by_clean_env(v) -> bool:
         if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id in ("clean_env", "gh_env"):
             return True
+        # Lander.child_env() returns {**clean_env(cargo=True), ...} (checked in test_every_call_site_is_wrapped)
+        if isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == "child_env" \
+                and isinstance(v.func.value, ast.Name) and v.func.value.id in ("self", "lander"):
+            return True
         if isinstance(v, ast.Attribute) and v.attr == "git_env" and isinstance(v.value, ast.Name) and v.value.id == "self":
             return True
         if isinstance(v, ast.Dict):
@@ -1695,6 +1699,7 @@ class CallSites(Isolated):
         self.assertGreater(n, 0, "no call site found (compared nothing)")
         self.assertEqual(bad, [])
         self.assertIn("self.git_env = clean_env()", self.SOURCE)
+        self.assertIn('return {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}', self.SOURCE)
 
     def test_a_bare_call_is_found(self):
         for snippet in ("subprocess.run(['git', 'status'])", "subprocess.run(['x'], env=os.environ)",
@@ -1920,7 +1925,7 @@ class HostileConfig(Isolated):
         if gh:
             self.assertEqual(lander.gh(), [gh[0]])
         cargo = land.clean_env(cargo=True)["PATH"].split(os.pathsep)
-        self.assertTrue(cargo[-1].endswith(os.path.join(".cargo", "bin")) or "CARGO_HOME" in os.environ, cargo)
+        self.assertEqual(cargo[1], land.cargo_bin(), cargo)   # right after the running Python
 
     def test_github_remote_forms(self):
         lander = land.Lander(self.r.work, "T", log=lambda *_: None)
@@ -2218,6 +2223,102 @@ class Harness(Isolated):
                 cls, meth = name.split(".")
                 fn = getattr(globals()[cls], meth)
                 self.assertTrue(getattr(fn, "__unittest_skip__", False), name)
+
+
+class ChildTools(Isolated):
+    """The tools land.py's children need resolve on the child PATH: python3 is the interpreter
+    running land.py (>= 3.11, for tomllib), then cargo / rustc / rust-analyzer, bash, git."""
+
+    def test_the_running_python_comes_first(self):
+        for cargo in (False, True):
+            first = land.safe_path(cargo).split(os.pathsep)[0]
+            self.assertEqual(first, land.python_dir(), cargo)
+        if os.name != "nt":
+            import shutil
+            exe = shutil.which("python3", path=land.safe_path(cargo=True))
+            self.assertEqual(os.path.dirname(exe), land.python_dir())
+            self.assertEqual(os.path.realpath(exe), os.path.realpath(sys.executable))
+        self.assertIn(land.cargo_bin(), land.safe_path(cargo=True).split(os.pathsep))
+        self.assertNotIn(land.cargo_bin(), land.safe_path().split(os.pathsep))
+        self.assertIn(os.path.dirname(land.pinned_git()), land.safe_path().split(os.pathsep))
+
+    @unittest.skipIf(os.name == "nt", "python3 is a POSIX name; Windows children do not run the scripts")
+    def test_python3_in_the_child_env_is_this_interpreter(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        r = subprocess.run(["python3", "-c", "import sys, tomllib; print(sys.executable)"], cwd=self.r.work,
+                           env=lander.child_env(), capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = r.stdout.strip()
+        self.assertTrue(os.path.dirname(got) == os.path.dirname(sys.executable)
+                        or os.path.realpath(got) == os.path.realpath(sys.executable), (got, sys.executable))
+
+    def test_the_env_smoke_executes_the_tools(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        executed, failed, lines = land.env_smoke(lander)
+        text = "\n".join(lines)
+        self.assertGreaterEqual(executed, 4, text)
+        self.assertTrue(any(l.startswith("ok   python3: ") for l in lines), text)
+        self.assertTrue(any(l.startswith("ok   git: git version") for l in lines), text)
+        self.assertEqual(failed, 0, text)
+        self.assertIn(f"env-smoke: executed {executed}, skipped ", text)
+
+    def test_nothing_executed_fails(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        executed, failed, lines = land.env_smoke(lander, steps=())
+        self.assertEqual(executed, 0)
+        self.assertGreater(failed, 0)
+        self.assertIn("env-smoke: nothing executed (compared nothing)", lines)
+        executed, failed, lines = land.env_smoke(lander, steps=("rust-analyzer",) if os.name == "nt" else ("bash",))
+        self.assertEqual(failed, 0, lines)
+        with self.assertRaisesRegex(land.LandError, "unknown step"):
+            land.env_smoke(lander, steps=("make",))
+
+    def test_a_failing_step_fails(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        old = land.python_dir
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        if os.name != "nt":
+            (d / "python3").write_text("#!/bin/sh\nexit 3\n")
+            (d / "python3").chmod(0o755)
+        land.python_dir = lambda: str(d)
+        try:
+            executed, failed, lines = land.env_smoke(lander, steps=("python3",))
+        finally:
+            land.python_dir = old
+        if os.name != "nt":
+            self.assertEqual((executed, failed), (1, 1), lines)
+            self.assertTrue(lines[0].startswith("FAIL python3: exit 3"), lines)
+
+    @unittest.skipIf(os.name == "nt", "a shell script as python3")
+    def test_another_python3_fails(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        (d / "python3").write_text("#!/bin/sh\necho 3.9.6\necho /usr/bin/python3\n")
+        (d / "python3").chmod(0o755)
+        old = land.python_dir
+        land.python_dir = lambda: str(d)
+        try:
+            executed, failed, lines = land.env_smoke(lander, steps=("python3",))
+        finally:
+            land.python_dir = old
+        self.assertEqual((executed, failed), (1, 1), lines)
+        self.assertIn("is '/usr/bin/python3', not the interpreter running land.py", lines[0])
+
+    def test_the_cli_exit_code(self):
+        import contextlib
+        import io
+        old = land.SMOKE_STEPS
+        out = io.StringIO()
+        try:
+            land.SMOKE_STEPS = ()
+            with contextlib.redirect_stdout(out), contextlib.chdir(self.r.work):
+                rc = land.main(["--env-smoke"])
+        finally:
+            land.SMOKE_STEPS = old
+        self.assertEqual(rc, 1, out.getvalue())
+        self.assertIn("env-smoke: executed 0, skipped 0", out.getvalue())
 
 
 class AmbientEnv(Isolated):

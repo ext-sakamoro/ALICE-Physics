@@ -169,17 +169,44 @@ def git_argv() -> list[str]:
     return [*(TOOL_OVERRIDE.get("git") or [pinned_git()]), *FORCED_GIT_CONFIG]
 
 
+_PYTHON_DIR: list[str] = []
+
+
+def python_dir() -> str:
+    """a directory whose `python3` is the interpreter running land.py (the scripts land.py
+    starts need Python >= 3.11, and /usr/bin/python3 may be older): the interpreter's own
+    directory when it holds a python3, otherwise a private directory with a python3 link"""
+    if not _PYTHON_DIR:
+        here = os.path.dirname(sys.executable)
+        name = "python3.exe" if os.name == "nt" else "python3"
+        cand = os.path.join(here, name)
+        if os.name == "nt" or (os.path.isfile(cand) and os.path.realpath(cand) == os.path.realpath(sys.executable)):
+            _PYTHON_DIR.append(here)
+        else:
+            import tempfile
+            d = tempfile.mkdtemp(prefix="land-python-")
+            os.symlink(sys.executable, os.path.join(d, "python3"))
+            _PYTHON_DIR.append(d)
+    return _PYTHON_DIR[0]
+
+
+def cargo_bin() -> str:
+    return os.path.join(os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo"), "bin")
+
+
 def safe_path(cargo: bool = False) -> str:
-    """the fixed PATH of a child process (the pinned git's directory first)"""
-    dirs = [os.path.dirname(pinned_git())]
+    """the fixed PATH of a child process: the directory of the Python running land.py first
+    (python3 for the scripts), the cargo directory for the cargo children, then the system
+    directories; git itself is started by absolute path, its directory comes last"""
+    dirs = [python_dir()]
+    if cargo:
+        dirs.append(cargo_bin())
     if os.name == "nt":
         root = os.environ.get("SystemRoot", r"C:\Windows")
         dirs += [os.path.join(root, "System32"), root]
     else:
         dirs += list(SYSTEM_PATH)
-    if cargo:
-        dirs.append(os.path.join(os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo"),
-                                 "bin"))
+    dirs.append(os.path.dirname(pinned_git()))
     seen: list[str] = []
     for d in dirs:
         if d not in seen:
@@ -854,9 +881,13 @@ class Lander:
             raise LandError(f"git {' '.join(args)} failed: {r.stderr.strip() or r.stdout.strip()}")
         return r.stdout.strip()
 
+    def child_env(self) -> dict[str, str]:
+        """the environment of every tool child (preflight, scip_index, the ledger scripts, cargo)"""
+        return {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}
+
     def sh(self, *cmd: str) -> None:
         self.log("$ " + " ".join(cmd))
-        r = subprocess.run(list(cmd), cwd=self.root, env={**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"})
+        r = subprocess.run(list(cmd), cwd=self.root, env=self.child_env())
         if r.returncode != 0:
             raise LandError(f"`{' '.join(cmd)}` failed (exit {r.returncode})")
 
@@ -883,11 +914,11 @@ class Lander:
 
     def regenerate(self) -> None:
         self.sh("bash", "scripts/scip_index.sh")
-        self.sh("python3", "scripts/integration_levels.py", "--write")
-        self.sh("python3", "scripts/scip_reach.py", "--write", "docs/integration-status.md")
-        self.sh("python3", "scripts/gen-oracle-status.py")
-        self.sh("python3", "scripts/gen-wiring-status.py")
-        self.sh("python3", "scripts/coverage_check.py", "--write-status")
+        self.sh(sys.executable, "scripts/integration_levels.py", "--write")
+        self.sh(sys.executable, "scripts/scip_reach.py", "--write", "docs/integration-status.md")
+        self.sh(sys.executable, "scripts/gen-oracle-status.py")
+        self.sh(sys.executable, "scripts/gen-wiring-status.py")
+        self.sh(sys.executable, "scripts/coverage_check.py", "--write-status")
         self.regenerate_public_api()
 
     def regenerate_public_api(self) -> None:
@@ -899,13 +930,13 @@ class Lander:
         (self.root / "docs/PUBLIC_API_SNAPSHOT.txt").write_text(r.stdout, encoding="utf-8")
 
     def run_checks(self) -> None:
-        for cmd in (["python3", "scripts/integration_levels.py", "--check"],
-                    ["python3", "scripts/readme_sync.py", "--check"],
-                    ["python3", "scripts/docs_lint.py", "--check"],
-                    ["python3", "scripts/scip_reach.py", "--check-baseline"],
-                    ["python3", "scripts/gen-oracle-status.py", "--check"],
-                    ["python3", "scripts/wiring_guard.py"],
-                    ["python3", "scripts/coverage_check.py"]):
+        for cmd in ([sys.executable, "scripts/integration_levels.py", "--check"],
+                    [sys.executable, "scripts/readme_sync.py", "--check"],
+                    [sys.executable, "scripts/docs_lint.py", "--check"],
+                    [sys.executable, "scripts/scip_reach.py", "--check-baseline"],
+                    [sys.executable, "scripts/gen-oracle-status.py", "--check"],
+                    [sys.executable, "scripts/wiring_guard.py"],
+                    [sys.executable, "scripts/coverage_check.py"]):
             self.sh(*cmd)
         self.check_changelog()
 
@@ -1414,6 +1445,92 @@ class Lander:
             self.log(f"{self.branch} moved during attempt {attempt}; checking what it gained")
         raise LandError(f"could not land in {MAX_ATTEMPTS} attempts ({MOVING_MESSAGE})")
 
+# --env-smoke: the tools the landing's children need, started the way the landing starts them
+# (child_env(): clean_env(cargo=True), safe_path), each one executed; CI runs it in a minimal
+# environment on every OS so a change of the sanitizer cannot leave the real landing without
+# a working python3 / bash / cargo / rustc / rust-analyzer / git
+SMOKE_STEPS: tuple[str, ...] = ("python3", "bash", "cargo", "rustc", "rust-analyzer", "git")
+
+
+def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[int, int, list[str]]:
+    """(executed, failed, report lines); a step skipped (not available on this machine) is
+    reported and counted apart, never as executed"""
+    import shutil
+    steps = SMOKE_STEPS if steps is None else steps
+    path = lander.child_env()["PATH"]
+    executed, failed, skipped, lines = 0, 0, 0, []
+
+    def run(name: str, argv: list[str], check=None):
+        nonlocal executed, failed
+        executed += 1
+        try:
+            r = subprocess.run(argv, cwd=lander.root, env=lander.child_env(), capture_output=True, text=True,
+                               timeout=120)
+            out = (r.stdout or r.stderr).strip().splitlines()
+            first = out[0] if out else ""
+            problem = None if r.returncode == 0 else f"exit {r.returncode}: {(r.stderr or r.stdout).strip()[:200]}"
+            if problem is None and check:
+                problem = check(r.stdout)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            first, problem = "", str(e)
+        if problem:
+            failed += 1
+            lines.append(f"FAIL {name}: {problem} ({' '.join(argv[:3])})")
+        else:
+            lines.append(f"ok   {name}: {first} ({argv[0]})")
+
+    def skip(name: str, why: str):
+        nonlocal skipped
+        skipped += 1
+        lines.append(f"skip {name}: {why}")
+
+    for step in steps:
+        if step == "python3":
+            exe = shutil.which("python3", path=path) or (shutil.which("python", path=path) if os.name == "nt" else None)
+            if exe is None:
+                run("python3", ["python3", "-V"])
+                continue
+            want = os.path.dirname(sys.executable)
+
+            def same_python(out: str, want=want) -> str | None:
+                got = out.strip().splitlines()[-1] if out.strip() else ""
+                if os.path.dirname(got) == want or \
+                        os.path.dirname(os.path.realpath(got)) == os.path.dirname(os.path.realpath(sys.executable)):
+                    return None
+                return f"python3 on the child PATH is {got!r}, not the interpreter running land.py ({sys.executable})"
+            run("python3", [exe, "-c", "import sys, tomllib; assert sys.version_info >= (3, 11), sys.version; "
+                                       "print(sys.version.split()[0]); print(sys.executable)"], same_python)
+        elif step == "bash":
+            if os.name == "nt":
+                skip("bash", "no bash child on Windows (preflight and scip_index run on POSIX)")
+                continue
+            exe = shutil.which("bash", path=path)
+            run("bash", [exe or "bash", "--version"])
+        elif step in ("cargo", "rustc"):
+            exe = shutil.which(step, path=path)
+            run(step, [exe or step, "-V"])
+        elif step == "rust-analyzer":
+            exe = shutil.which("rust-analyzer", path=path)
+            if exe is None:
+                skip("rust-analyzer", "not on the cargo PATH of this machine")
+                continue
+            probe = subprocess.run([exe, "--version"], env=lander.child_env(), capture_output=True, text=True,
+                                   timeout=120)
+            if probe.returncode != 0 and "not installed" in (probe.stderr + probe.stdout):
+                skip("rust-analyzer", "the rustup proxy is there, the component is not installed")
+                continue
+            run("rust-analyzer", [exe, "--version"])
+        elif step == "git":
+            run("git", [*lander.git_argv, "version"])
+        else:
+            raise LandError(f"env-smoke: unknown step {step!r}")
+    lines.append(f"env-smoke: executed {executed}, skipped {skipped}")
+    if executed == 0:
+        lines.append("env-smoke: nothing executed (compared nothing)")
+        failed += 1
+    return executed, failed, lines
+
+
 def report_after(lander: "Lander", sha: str) -> int:
     code, lines = lander.wait_after(sha)
     for line in lines:
@@ -1432,7 +1549,9 @@ def report_after(lander: "Lander", sha: str) -> int:
 def main(argv: list[str] | None = None) -> int:
     line_buffered_output()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("--id", required=True, help="issue / defect id or group name (used for ci/<id>)")
+    ap.add_argument("--id", help="issue / defect id or group name (used for ci/<id>)")
+    ap.add_argument("--env-smoke", action="store_true",
+                    help="only start each tool the landing's children need, the way the landing starts them")
     ap.add_argument("--dry-run", action="store_true", help="run every step except the pushes")
     ap.add_argument("--no-changelog", action="store_true", help="src/ change without a CHANGELOG line")
     ap.add_argument("--replace-ci", action="store_true",
@@ -1446,6 +1565,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--wait", action="store_true", help="after landing, read the after-landing set on main")
     ap.add_argument("--wait-only", metavar="SHA", help="only read the after-landing set on main for SHA")
     args = ap.parse_args(argv)
+    if sys.version_info < (3, 11):
+        print(f"error: land.py needs Python 3.11 or newer (running {sys.version.split()[0]})", file=sys.stderr, flush=True)
+        return 2
+    if args.env_smoke:
+        args.id = args.id or "env-smoke"
+    if args.id is None:
+        print("error: --id is required", file=sys.stderr, flush=True)
+        return 2
     if not re.fullmatch(r"[A-Za-z0-9._-]+", args.id):
         print("error: --id may hold letters, digits, '.', '_' and '-' only", file=sys.stderr, flush=True)
         return 2
@@ -1467,6 +1594,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {e}", file=sys.stderr, flush=True)
         return 2
     lander.lock_wait_seconds = args.lock_wait_minutes * 60
+    if args.env_smoke:
+        executed, failed, lines = env_smoke(lander)
+        for line in lines:
+            print(line, flush=True)
+        return 1 if failed else 0
     try:
         if args.wait_only:
             return report_after(lander, args.wait_only)

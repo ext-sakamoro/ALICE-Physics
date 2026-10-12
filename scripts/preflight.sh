@@ -92,6 +92,8 @@ python3 scripts/test_run_feature_gated_tests.py
 step "integration levels oracle + C ABI coverage (docs/integration-levels.md)"
 python3 scripts/test_integration_levels.py
 python3 scripts/test_land.py
+# the landing's child tools from a minimal environment (as CI does on every OS)
+env -i HOME="$HOME" USER="${USER:-}" PATH=/usr/bin:/bin "$(python3 -c 'import sys; print(sys.executable)')" scripts/land.py --env-smoke
 python3 scripts/integration_levels.py --no-index --check
 
 step "oracle ledger links (PIN / root external)"
