@@ -108,6 +108,7 @@ a `ci/**` push is not declared.
 |---|---|---|---|---|
 | `ci.yml` | `test` | `macos-latest` | after-landing | push main, push ci/**, pull_request, workflow_dispatch |
 | `ci.yml` | `test` | `macos-15-intel` | main-after-landing | push main, schedule |
+| `ci.yml` | `determinism-release` | `macos-latest` | after-landing | push main, push ci/**, pull_request, workflow_dispatch |
 <!-- ci-triggers:after-landing-legs:end -->
 
 ## What the landing waits on
@@ -184,7 +185,7 @@ only by the fast-forward-only push to `main` and the re-evidence loop above.
 | workflow | class | waits for |
 |---|---|---|
 | `bench-gate.yml` | landing | success |
-| `ci.yml` | landing | success; started only: Test (macos-latest) |
+| `ci.yml` | landing | success; started only: Test (macos-latest), Determinism tests (release, macos-latest) |
 | `downstream.yml` | landing | success |
 | `fuzz.yml` | landing | success |
 | `integration-status.yml` | landing | success |
@@ -228,6 +229,7 @@ cancelled one, is pending, never green.
 | item | class |
 |---|---|
 | ci.yml: Test (macos-latest) | after-landing |
+| ci.yml: Determinism tests (release, macos-latest) | after-landing |
 | ci.yml: Test (macos-15-intel) | main-after-landing |
 | unsafe-and-parallel.yml | after-landing |
 <!-- ci-triggers:after-landing-wait:end -->

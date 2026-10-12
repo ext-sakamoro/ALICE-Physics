@@ -1442,6 +1442,7 @@ class WaitEvidence(Isolated):
         return [{"name": "gate", "status": "completed", "conclusion": "success"},
                 {"name": "Test (ubuntu-latest)", "status": "completed", "conclusion": "success"},
                 {"name": "Test (macos-latest)", "status": leg_status, "conclusion": leg_concl},
+                {"name": "Determinism tests (release, macos-latest)", "status": leg_status, "conclusion": leg_concl},
                 {"name": "Clippy", "status": "completed", "conclusion": "success"}]
 
     def miri_jobs(self, heavy="in_progress", concl="") -> list[dict]:
@@ -1482,7 +1483,8 @@ class WaitEvidence(Isolated):
         for absent in ("quality-deep.yml", "release.yml"):
             self.assertNotIn(absent, files)
         ci = next(w for w in self.expected if w["file"] == "ci.yml")
-        self.assertEqual(ci["legs"], ["Test (macos-latest)"])  # the Intel leg is not expected on ci/**
+        # the Intel leg is not expected on ci/**
+        self.assertEqual(ci["legs"], ["Test (macos-latest)", "Determinism tests (release, macos-latest)"])
         self.assertGreaterEqual(len(self.expected), 10)
 
     def tree(self, wf: dict[str, str], evidence: str) -> Path:
@@ -1717,8 +1719,10 @@ class WaitAfter(Isolated):
     def job(name, status="completed", concl="success"):
         return {"name": name, "status": status, "conclusion": concl}
 
-    def ci(self, mac="success", intel="success", mac_status="completed", intel_status="completed"):
+    def ci(self, mac="success", intel="success", mac_status="completed", intel_status="completed",
+           rel="success", rel_status="completed"):
         return [self.job("Test (ubuntu-latest)"), self.job("Test (macos-latest)", mac_status, mac),
+                self.job("Determinism tests (release, macos-latest)", rel_status, rel),
                 self.job("Test (macos-15-intel)", intel_status, intel)]
 
     def miri(self, heavy="success", status="completed", changes="success"):
@@ -1744,12 +1748,13 @@ class WaitAfter(Isolated):
 
     def test_the_items_are_derived(self):
         labels = [land.after_item_label(i) for i in land.after_landing_items(ROOT)]
-        self.assertEqual(labels, ["ci.yml: Test (macos-latest)", "ci.yml: Test (macos-15-intel)", "unsafe-and-parallel.yml"])
+        self.assertEqual(labels, ["ci.yml: Test (macos-latest)", "ci.yml: Test (macos-15-intel)",
+                                  "ci.yml: Determinism tests (release, macos-latest)", "unsafe-and-parallel.yml"])
 
     def test_all_green(self):
         code, lines = self.go()
         self.assertEqual(code, 0, lines)
-        self.assertEqual(len(lines), 3)
+        self.assertEqual(len(lines), 4)
         self.assertTrue(all(l.startswith("ok: ") for l in lines), lines)
 
     def test_miri_that_did_not_run_is_reported(self):
@@ -1758,7 +1763,8 @@ class WaitAfter(Isolated):
         self.assertIn("ok: unsafe-and-parallel.yml: run 2: did not run (the changes job said run=false)", lines)
 
     def test_a_red_leg_says_revert_or_fix_now(self):
-        for kw, label in (({"mac": "failure"}, "Test (macos-latest)"), ({"intel": "failure"}, "Test (macos-15-intel)")):
+        for kw, label in (({"mac": "failure"}, "Test (macos-latest)"), ({"intel": "failure"}, "Test (macos-15-intel)"),
+                          ({"rel": "failure"}, "Determinism tests (release, macos-latest)")):
             code, lines = self.go(ci_jobs=self.ci(**kw))
             self.assertEqual(code, land.EXIT_RED)
             red = [l for l in lines if l.startswith("REVERT OR FIX NOW")]

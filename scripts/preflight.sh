@@ -154,6 +154,19 @@ python3 scripts/test_gen_status.py
 step "affected-test selector oracle (preflight --fast)"
 python3 scripts/test_affected_tests.py
 
+# CI's "Determinism tests (release, ...)" job: the same tests optimised (the sign of a zero
+# result can differ from the unoptimised build on a target with a fused multiply-add)
+step "determinism tests (release)"
+mkdir -p target
+cargo test --release --lib -- max_min_tests windward_alignment 2>&1 | tee target/determinism-release-lib.log
+cargo test --release --test determinism_golden --test determinism_golden_f32 --test determinism_golden_contacts --test determinism_golden_paths --test determinism_zero_tie 2>&1 | tee target/determinism-release-tests.log
+for f in target/determinism-release-lib.log target/determinism-release-tests.log; do
+  n=$(sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -c '^test result: ok\. [1-9]' || true)
+  z=$(sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -c '^test result: ok\. 0 passed' || true)
+  echo "$f: $n binaries with tests passed, $z with none"
+  [ "$n" -gt 0 ] && [ "$z" -eq 0 ] || { echo "a test binary ran no test: $f" >&2; exit 1; }
+done
+
 step "example runner oracle (scripts/run_examples.py, run in full mode and ci.yml job examples)"
 python3 scripts/test_run_examples.py
 
@@ -226,6 +239,7 @@ step "clippy -D warnings (library code, f32 / f64 max and min forbidden)"
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "$NATIVE,neural,replay,analytics,privacy-crypto" -- -D warnings
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "python" -- -D clippy::disallowed_methods
+CLIPPY_CONF_DIR=.github/clippy-lib RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)" cargo rustc --lib --crate-type rlib --no-default-features -- -D clippy::disallowed_methods
 step "library clippy configuration (tests, then current + canary)"
 python3 scripts/test_clippy_lib_gate.py
 python3 scripts/clippy_lib_gate.py

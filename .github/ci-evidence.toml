@@ -53,3 +53,13 @@ matrix = "macos-15-intel"
 class = "main-after-landing"
 events = ["push main", "schedule"]
 events_when_landing_scripts = ["push main", "push ci/**", "workflow_dispatch", "schedule"]
+
+# the optimised determinism tests on arm64 macOS (a target with a fused multiply-add): read
+# after the landing like the other macOS legs; ubuntu-24.04-arm covers the same rewrite
+# before it
+[[legs]]
+workflow = "ci.yml"
+job = "determinism-release"
+matrix = "macos-latest"
+class = "after-landing"
+events = ["push main", "push ci/**", "pull_request", "workflow_dispatch"]

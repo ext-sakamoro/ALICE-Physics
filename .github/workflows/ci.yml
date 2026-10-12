@@ -377,6 +377,47 @@ jobs:
   # rust-analyzer SCIP index of the crate: every symbol a known-defect reason
   # names must exist (scripts/audit_refs.py), and no public item may become
   # unreached by non-test code without updating scripts/integration-baseline.txt
+  # The determinism tests in release on the targets with a fused multiply-add
+  # instruction (aarch64) and without one (x86_64): the optimiser may rewrite a
+  # negated fused multiply-add into one with negated operands, which changes the
+  # sign of a zero result, and only an optimised build on an FMA target shows it
+  # (x86_64's default target calls libm's fma and has nothing to rewrite) The
+  # test legs above run the same tests unoptimised; the counts are read per test
+  # binary so a filter that matches nothing is red
+  determinism-release:
+    if: github.event_name != 'schedule'
+    name: Determinism tests (release, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # the job does not run on the schedule (if: above); the matrix says the same so
+        # scripts/ci_triggers_check.py reads the macOS leg's events correctly
+        os: ${{ fromJSON(github.event_name == 'schedule' && '["ubuntu-latest"]' || '["ubuntu-latest", "ubuntu-24.04-arm", "macos-latest"]') }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: determinism-release
+      - name: Determinism tests (release)
+        shell: bash
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          set -euo pipefail
+          mkdir -p target
+          cargo test --release --lib -- max_min_tests windward_alignment 2>&1 | tee target/determinism-release-lib.log
+          cargo test --release --test determinism_golden --test determinism_golden_f32 --test determinism_golden_contacts --test determinism_golden_paths --test determinism_zero_tie 2>&1 | tee target/determinism-release-tests.log
+          # every test binary that ran must have passed at least one test
+          for f in target/determinism-release-lib.log target/determinism-release-tests.log; do
+            n=$(grep -c '^test result: ok\. [1-9]' "$f" || true)
+            z=$(grep -c '^test result: ok\. 0 passed' "$f" || true)
+            echo "$f: $n binaries with tests passed, $z with none"
+            [ "$n" -gt 0 ] && [ "$z" -eq 0 ] || { echo "::error::$f: a test binary ran no test"; exit 1; }
+          done
+
   scip:
     if: github.event_name != 'schedule'
     name: SCIP checks (defect references, L0 ratchet)
@@ -572,12 +613,17 @@ jobs:
       # disallowed methods only (libm and max / min): src/wasm.rs has exported
       # functions with more arguments than clippy's default, which no other step
       # lints either
-      - name: Clippy (library code, max / min forbidden, wasm and python bindings)
+      # The no_std build (`cfg(not(feature = "std"))` code) is linted the same way,
+      # as an rlib through clippy-driver: `cargo clippy` also builds the cdylib and
+      # staticlib crate types, which a no_std build cannot link (no allocator, no
+      # panic handler); its existing unused-import warnings are not part of this gate
+      - name: Clippy (library code, max / min forbidden, wasm and python bindings, no_std)
         env:
           CLIPPY_CONF_DIR: .github/clippy-lib
         run: |
           cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods
           cargo clippy --lib --features "python" -- -D clippy::disallowed_methods
+          RUSTC_WORKSPACE_WRAPPER="$(rustup which clippy-driver)" cargo rustc --lib --crate-type rlib --no-default-features -- -D clippy::disallowed_methods
       - name: Library clippy configuration is current and fires (canary)
         run: python3 scripts/clippy_lib_gate.py
 
