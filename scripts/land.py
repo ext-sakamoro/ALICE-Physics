@@ -49,6 +49,15 @@ what land.py pushes, where, or as whom:
   - before the first fetch and before every push, the effective fetch and push URLs of
     the remote (after insteadOf / pushInsteadOf / pushurl) must be the GitHub URL of
     the owner/repo that gh is told (check_remote).
+  - gh runs with gh_env(): every GH_* / GITHUB_*_TOKEN variable dropped except
+    GH_TOKEN and GITHUB_TOKEN, GH_HOST=github.com, prompts and update checks off, the
+    config directory under the account's home from the user database; every --repo is
+    host-qualified (github.com/<owner>/<repo>) and every `gh api` names --hostname
+    github.com. Proxies are kept; the TLS trust overrides (SSL_CERT_FILE, SSL_CERT_DIR,
+    GIT_SSL_*, CURL_CA_BUNDLE, NODE_EXTRA_CA_CERTS, NODE_TLS_REJECT_UNAUTHORIZED) are
+    dropped for every child, so a proxy cannot answer for github.com. Before a landing
+    and before --wait reads anything, `gh auth status --active --hostname github.com`
+    must succeed (check_gh_auth).
 
 Generated ledgers are not meant to be edited on a branch: they are rebuilt at
 landing time, so two landings never conflict on them.
@@ -104,7 +113,10 @@ SCRUBBED_ENV_RE = re.compile(
     # programs git or ssh would run instead of the expected ones, and loader injection
     r"|GIT_SSH_COMMAND|GIT_SSH|GIT_SSH_VARIANT|GIT_EXEC_PATH|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS"
     r"|GIT_TEMPLATE_DIR|GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|GIT_EDITOR|EDITOR|VISUAL|GIT_TRACE.*"
-    r"|LD_.*|DYLD_.*)$")
+    r"|LD_.*|DYLD_.*"
+    # TLS trust overrides (a proxy alone cannot forge a GitHub answer; a replaced CA can)
+    r"|SSL_CERT_FILE|SSL_CERT_DIR|GIT_SSL_NO_VERIFY|GIT_SSL_CAINFO|GIT_SSL_CAPATH|CURL_CA_BUNDLE"
+    r"|NODE_EXTRA_CA_CERTS|NODE_TLS_REJECT_UNAUTHORIZED)$")
 
 # git and gh are run by absolute path, resolved once from fixed locations (never from PATH),
 # and every child process gets a fixed PATH: a `git` or `ssh` placed earlier on the caller's
@@ -128,7 +140,11 @@ def pinned_tool(candidates: tuple[str, ...]) -> str:
     """the real path of the first candidate that exists and is executable"""
     for c in candidates:
         real = os.path.realpath(c)
-        if os.path.isfile(real) and os.access(real, os.X_OK):
+        if os.name == "nt":
+            # os.access(X_OK) says little on Windows: an existing .exe file is required
+            if real.lower().endswith(".exe") and os.path.isfile(real):
+                return real
+        elif os.path.isfile(real) and os.access(real, os.X_OK):
             return real
     raise LandError(f"none of {', '.join(candidates)} is an executable (PATH is not searched)")
 
@@ -214,6 +230,42 @@ def clean_env(cargo: bool = False) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not SCRUBBED_ENV_RE.match(k)}
     env["PATH"] = safe_path(cargo)
     return env
+
+
+# gh: every variable gh reads (GH_*, GITHUB_ENTERPRISE_TOKEN, ...) is dropped except the two
+# token variables (legitimate auth for github.com); GH_HOST is forced to github.com, prompts
+# and update checks are off, and the config directory is the one under the account's home
+# directory from the user database (not $HOME / $XDG_CONFIG_HOME, which an environment can
+# point at a config with another host or an `http_unix_socket`). Proxies are kept (networks
+# need them; TLS to github.com is still verified because the CA overrides are dropped).
+GH_HOSTNAME = "github.com"
+GH_KEPT = ("GH_TOKEN", "GITHUB_TOKEN")
+GH_SCRUBBED_RE = re.compile(r"^(GH_.*|GITHUB_ENTERPRISE_TOKEN|GITHUB_.*_TOKEN)$")
+
+
+def account_home() -> str | None:
+    """the home directory of the account running land.py, from the user database"""
+    try:
+        import pwd
+        return pwd.getpwuid(os.getuid()).pw_dir
+    except (ImportError, KeyError, AttributeError):
+        return None
+
+
+def gh_env() -> dict[str, str]:
+    env = {k: v for k, v in clean_env().items() if not GH_SCRUBBED_RE.match(k) or k in GH_KEPT}
+    env["GH_HOST"] = GH_HOSTNAME
+    env["GH_PROMPT_DISABLED"] = "1"
+    env["GH_NO_UPDATE_NOTIFIER"] = "1"
+    home = account_home()
+    if home:
+        env["GH_CONFIG_DIR"] = os.path.join(home, ".config", "gh")
+    return env
+
+
+def repo_arg(slug: str) -> str:
+    """the --repo value: host-qualified, so GH_HOST or a config cannot pick another host"""
+    return f"{GH_HOSTNAME}/{slug}"
 
 
 GITHUB_URL_FORMS = ("https://github.com/{slug}", "https://github.com/{slug}.git",
@@ -862,30 +914,30 @@ class Lander:
 
     def gh_json(self, *args: str):
         """`gh <args>` parsed as JSON; LandError when gh fails (never read as an empty list)."""
-        out = subprocess.run([*self.gh(), *args], capture_output=True, text=True, env=clean_env(), encoding="utf-8",
+        out = subprocess.run([*self.gh(), *args], capture_output=True, text=True, env=gh_env(), encoding="utf-8",
                              errors="replace")
         if out.returncode != 0:
-            raise LandError(f"gh {' '.join(args[:3])} failed: {out.stderr.strip()[:300]}")
+            raise LandError(f"gh {' '.join(args[:4])} failed: {out.stderr.strip()[:300]}")
         try:
             return json.loads(out.stdout or "null")
         except ValueError as e:
             raise LandError(f"gh {' '.join(args[:3])}: not JSON: {e}") from None
 
     def list_branch_runs(self, slug: str, ref: str) -> list[dict]:
-        runs = self.gh_json("run", "list", "--repo", slug, "--branch", ref, "--limit", "100", "--json",
+        runs = self.gh_json("run", "list", "--repo", repo_arg(slug), "--branch", ref, "--limit", "100", "--json",
                             "workflowName,headSha,databaseId,status,conclusion,createdAt,event")
         if not isinstance(runs, list):
             raise LandError("gh run list did not return a list")
         return runs
 
     def run_jobs(self, slug: str, run_id: int) -> list[dict]:
-        data = self.gh_json("run", "view", str(run_id), "--repo", slug, "--json", "jobs")
+        data = self.gh_json("run", "view", str(run_id), "--repo", repo_arg(slug), "--json", "jobs")
         return [{"name": j.get("name"), "status": j.get("status"), "conclusion": j.get("conclusion")}
                 for j in (data or {}).get("jobs", [])]
 
     def dispatch(self, slug: str, wf_file: str, ref: str) -> None:
-        r = subprocess.run([*self.gh(), "workflow", "run", wf_file, "--repo", slug, "--ref", ref],
-                           capture_output=True, text=True, env=clean_env(), encoding="utf-8", errors="replace")
+        r = subprocess.run([*self.gh(), "workflow", "run", wf_file, "--repo", repo_arg(slug), "--ref", ref],
+                           capture_output=True, text=True, env=gh_env(), encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise LandError(f"gh workflow run {wf_file} --ref {ref} failed: {r.stderr.strip()[:300]}")
 
@@ -895,6 +947,16 @@ class Lander:
         m = re.fullmatch(r"(?:https://github\.com/|git@github\.com:|ssh://git@github\.com/)"
                          r"([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?/?", repo.strip())
         return m.group(1) if m else repo
+
+    def check_gh_auth(self) -> None:
+        """gh, run with gh_env(), is logged in to github.com; refuse to start otherwise"""
+        # --active: the account gh uses (another, inactive login on the host may be unreadable)
+        r = subprocess.run([*self.gh(), "auth", "status", "--active", "--hostname", GH_HOSTNAME], capture_output=True,
+                           text=True, env=gh_env(), encoding="utf-8", errors="replace")
+        text = (r.stdout + r.stderr).strip()
+        if r.returncode != 0 or GH_HOSTNAME not in text:
+            raise LandError(f"gh is not logged in to {GH_HOSTNAME} (gh auth status --active --hostname {GH_HOSTNAME} "
+                            f"exit {r.returncode}): {text[:300]}")
 
     def check_remote(self) -> None:
         """The effective fetch and push URLs of the remote (after insteadOf / pushInsteadOf and
@@ -985,6 +1047,7 @@ class Lander:
         (exit code, report lines): 0 every item green, EXIT_RED when one is red (the
         message says REVERT OR FIX NOW), EXIT_PENDING when one did not finish in time."""
         items = after_landing_items(self.root)
+        self.check_gh_auth()
         slug = self.slug()
         states: dict[str, tuple[str, str]] = {}
         for _ in range(self.after_max_polls):
@@ -1144,7 +1207,7 @@ class Lander:
     def api_commit_identity(self, sha: str) -> tuple[str, str, str, str]:
         """(author name, author email, committer name, committer email) of `sha` from the
         GitHub API (`gh api repos/<slug>/commits/<sha>`)"""
-        data = self.gh_json("api", f"repos/{self.slug()}/commits/{sha}")
+        data = self.gh_json("api", "--hostname", GH_HOSTNAME, f"repos/{self.slug()}/commits/{sha}")
         try:
             c = data["commit"]
             return c["author"]["name"], c["author"]["email"], c["committer"]["name"], c["committer"]["email"]
@@ -1251,6 +1314,8 @@ class Lander:
 
     def _land(self) -> str:
         self.check_remote()
+        if not self.dry_run:
+            self.check_gh_auth()   # the evidence and the post-push identity read go through gh
         self.fetch()
         problems = self.check_commits()
         if problems:

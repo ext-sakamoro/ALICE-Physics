@@ -153,6 +153,9 @@ class FakeLander(land.Lander):
             raise land.LandError(f"CI on {ref} ended `{self.ci_result}`")
         self.record.append("evidence: ci.yml run 1 success")
 
+    def check_gh_auth(self):
+        self.calls.append("gh-auth")
+
     def api_commit_identity(self, sha):
         # the GitHub API stand-in: the commit as the remote holds it
         self.calls.append("api")
@@ -789,7 +792,7 @@ class Landing(Isolated):
         lnd = L(self.r.work, "T", log=lambda *_: None)
         lnd.gh_cmd = [sys.executable, str(d / "gh.py")]
         self.assertEqual(lnd.api_commit_identity("abc"), (NAME, EMAIL, "GitHub", "noreply@github.com"))
-        with self.assertRaisesRegex(land.LandError, "gh api repos/o/r/commits/def failed"):
+        with self.assertRaisesRegex(land.LandError, "gh api --hostname github.com repos/o/r/commits/def failed"):
             lnd.api_commit_identity("def")
         state.write_text(json.dumps({"calls": [], "api": {"repos/o/r/commits/abc": {"sha": "abc"}}}))
         with self.assertRaisesRegex(land.LandError, "no author / committer"):
@@ -958,16 +961,25 @@ path = os.environ["FAKE_GH_STATE"]
 st = json.load(open(path, encoding="utf-8"))
 a = sys.argv[1:]
 st["calls"].append(a)
+# what gh would read from its environment
+st.setdefault("envs", []).append({k: v for k, v in os.environ.items()
+                                  if k.startswith(("GH_", "GITHUB_")) or "PROXY" in k.upper() or k.startswith("SSL_")})
 rc = 0
-if a[:2] == ["run", "list"]:
+if a[:2] == ["auth", "status"]:
+    ok = st.get("auth", True)
+    print("github.com\n  Logged in to github.com account someone" if ok else "github.com\n  X Failed to log in",
+          file=sys.stderr)
+    rc = 0 if ok else 1
+elif a[:2] == ["run", "list"]:
     i = min(st["polls"], len(st["list"]) - 1)
     st["polls"] += 1
     print(json.dumps(st["list"][i] + st["added"], ensure_ascii=True))
 elif a[:2] == ["run", "view"]:
     print(json.dumps({"jobs": st["jobs"].get(a[2], [])}, ensure_ascii=True))
 elif a[:1] == ["api"]:
-    if a[1] in st.get("api", {}):
-        print(json.dumps(st["api"][a[1]]))
+    path_arg = [x for i, x in enumerate(a[1:], 1) if x != "--hostname" and a[i - 1] != "--hostname"][0]
+    if path_arg in st.get("api", {}):
+        print(json.dumps(st["api"][path_arg]))
     else:
         print("HTTP 404", file=sys.stderr)
         rc = 1
@@ -1151,7 +1163,7 @@ class WaitEvidence(Isolated):
         finally:
             land.NO_RUN_GRACE = old
         self.assertEqual(self.st()["dispatched"], ["fuzz.yml"])
-        self.assertIn(["workflow", "run", "fuzz.yml", "--repo", "o/r", "--ref", "ci/T"], self.st()["calls"])
+        self.assertIn(["workflow", "run", "fuzz.yml", "--repo", "github.com/o/r", "--ref", "ci/T"], self.st()["calls"])
         self.assertFalse(any(c[:2] not in (["run", "list"], ["run", "view"], ["workflow", "run"]) for c in self.st()["calls"]))
 
     def test_a_missing_run_waits_for_the_grace_before_re_creating(self):
@@ -1274,7 +1286,7 @@ class WaitEvidence(Isolated):
         lnd = L(ROOT, "T", log=lambda *_: None)
         lnd.gh_cmd = [sys.executable, str(self.gh)]
         lnd.poll_seconds = 0
-        with self.assertRaisesRegex(land.LandError, "gh run list --repo failed"):
+        with self.assertRaisesRegex(land.LandError, "gh run list --repo github.com/o/r failed"):
             lnd.wait_evidence("ci/T", SHA)
 
 
@@ -1462,7 +1474,7 @@ def call_sites(source: str) -> tuple[int, list[str]]:
     sites, bad = 0, []
 
     def built_by_clean_env(v) -> bool:
-        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id == "clean_env":
+        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id in ("clean_env", "gh_env"):
             return True
         if isinstance(v, ast.Attribute) and v.attr == "git_env" and isinstance(v.value, ast.Name) and v.value.id == "self":
             return True
@@ -1506,6 +1518,9 @@ def git_call_sites(source: str) -> tuple[int, list[str]]:
         src = ast.unparse(first)
         if src in ("*self.git_argv", "*git_argv()", "*self.gh()"):
             n += 1
+            env = [ast.unparse(k.value) for k in node.keywords if k.arg == "env"]
+            if src == "*self.gh()" and env != ["gh_env()"]:
+                bad.append(f"line {node.lineno}: gh without env=gh_env()")
         elif "git" in src.lower() or "gh" in src.lower() or "GIT" in src:
             n += 1
             bad.append(f"line {node.lineno}: `{src}` is not the pinned git / gh with the forced config")
@@ -1526,7 +1541,8 @@ class CallSites(Isolated):
         for snippet in ("subprocess.run(['git', 'push'], env=clean_env())",
                         "subprocess.run(['gh', 'api'], env=clean_env())",
                         "subprocess.run([GIT, 'push'], env=clean_env())",
-                        "subprocess.run([pinned_git(), 'push'], env=clean_env())"):
+                        "subprocess.run([pinned_git(), 'push'], env=clean_env())",
+                        "subprocess.run([*self.gh(), 'api', 'x'], env=clean_env())"):
             m, b = git_call_sites(self.SOURCE + "\n\n" + snippet + "\n")
             self.assertEqual((m, len(b)), (n + 1, 1), snippet)
         self.assertEqual(git_call_sites("x = 1\n"), (0, []))
@@ -1635,11 +1651,15 @@ class HostileConfig(Isolated):
         self.marker = self.d / "marker"
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
 
-    def home_with(self, gitconfig: str) -> dict[str, str]:
+    def home_with(self, settings: list[tuple[str, str]]) -> dict[str, str]:
+        """a HOME / XDG_CONFIG_HOME whose global git config holds `settings`, written by git
+        itself (`git config --file`), so paths with backslashes are quoted correctly"""
         home = self.d / "home"
         (home / ".config" / "git").mkdir(parents=True, exist_ok=True)
-        (home / ".gitconfig").write_text(gitconfig, encoding="utf-8")
-        (home / ".config" / "git" / "config").write_text(gitconfig, encoding="utf-8")
+        for f in (home / ".gitconfig", home / ".config" / "git" / "config"):
+            f.write_text("", encoding="utf-8")
+            for key, value in settings:
+                subprocess.run([land.pinned_git(), "config", "--file", str(f), "--add", key, value], check=True)
         return {"HOME": str(home), "XDG_CONFIG_HOME": str(home / ".config")}
 
     def land_with(self, env: dict[str, str], lander=None):
@@ -1665,12 +1685,16 @@ class HostileConfig(Isolated):
 
     def test_insteadof_and_pushinsteadof_to_another_repository_are_refused(self):
         evil = self.evil_copy()
-        origin = str(self.r.origin)
+        origin = git(self.r.work, "config", "--get", "remote.origin.url")   # as the clone wrote it
         for key in ("insteadOf", "pushInsteadOf"):
             before_evil, before_origin = self.heads(evil), self.r.origin_head()
-            env = self.home_with(f'[url "{evil.as_posix()}"]\n\t{key} = {origin}\n')
+            env = self.home_with([(f"url.{evil.as_posix()}.{key}", origin)])
             with self.assertRaisesRegex(land.LandError, rf"refusing remote 'origin': its effective (push|fetch) URL "
                                                         rf"'{re.escape(evil.as_posix())}' is not the repository's remote"):
+                # the config really redirects (a fixture that git cannot parse would prove nothing)
+                self.assertEqual(subprocess.run([land.pinned_git(), "-C", str(self.r.work), "remote", "get-url", "--push",
+                                                 "origin"], env={**os.environ, **env}, capture_output=True,
+                                                text=True).stdout.strip(), evil.as_posix())
                 self.land_with(env)
             self.assertEqual(self.heads(evil), before_evil, f"{key}: nothing reached the other repository")
             self.assertEqual(self.r.origin_head(), before_origin)
@@ -1682,7 +1706,7 @@ class HostileConfig(Isolated):
         for name in ("pre-push", "post-commit", "post-rewrite", "pre-commit"):
             marker_script(hooks / name, self.marker)
         git(self.r.work, "-c", "user.email=me@machine.local", "commit", "-q", "--amend", "--no-edit")  # a rebase
-        lander, sha = self.land_with(self.home_with(f"[core]\n\thooksPath = {hooks.as_posix()}\n"))
+        lander, sha = self.land_with(self.home_with([("core.hooksPath", str(hooks))]))
         self.assertIn("rebase", lander.calls)
         self.assertEqual(self.r.origin_head(), sha)
         self.assertFalse(self.marker.exists(), self.marker.read_text() if self.marker.exists() else "")
@@ -1778,6 +1802,138 @@ class HostileConfig(Isolated):
             lander.check_remote()
         self.assertIsNone(land.remote_url_problem("https://github.com/o/r", ("https://github.com/o/r",)))
         self.assertIsNotNone(land.remote_url_problem("https://github.com/o/r2", ("https://github.com/o/r",)))
+
+
+HOSTILE_GH = {"GH_HOST": "unroutable.invalid", "GH_ENTERPRISE_TOKEN": "hostile", "GITHUB_ENTERPRISE_TOKEN": "hostile",
+              "GH_CONFIG_DIR": "/nonexistent/gh", "GH_PATH": "/nonexistent/gh", "GH_BROWSER": "x", "GH_PAGER": "x",
+              "GH_EDITOR": "x", "GH_DEBUG": "api", "GH_REPO": "evil/repo",
+              "SSL_CERT_FILE": "/nonexistent/ca.pem", "SSL_CERT_DIR": "/nonexistent", "CURL_CA_BUNDLE": "/x",
+              "GIT_SSL_NO_VERIFY": "1", "GIT_SSL_CAINFO": "/x", "NODE_EXTRA_CA_CERTS": "/x"}
+# GH_CONFIG_DIR is set again by land.py (the account's own), so it is checked by value
+GH_SCRUBBED = [k for k in HOSTILE_GH if k not in ("GH_HOST", "GH_CONFIG_DIR")]
+
+
+class GhEnvironment(Isolated):
+    """gh is pinned to github.com: the environment cannot point it at another host."""
+
+    def setUp(self):
+        super().setUp()
+        self.d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.d, True)
+        (self.d / "gh.py").write_text(FAKE_GH, encoding="utf-8")
+        self.state = self.d / "state.json"
+        old = {k: os.environ.get(k) for k in [*HOSTILE_GH, "FAKE_GH_STATE", "GH_TOKEN", "GITHUB_TOKEN"]}
+
+        def restore():
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self.addCleanup(restore)
+        os.environ.update(HOSTILE_GH)
+        os.environ["GH_TOKEN"], os.environ["GITHUB_TOKEN"] = "token-a", "token-b"
+        os.environ["FAKE_GH_STATE"] = str(self.state)
+
+    def lander(self, auth=True, api=None, lists=None):
+        self.state.write_text(json.dumps({"calls": [], "auth": auth, "api": api or {}, "list": lists or [[]],
+                                          "jobs": {}, "on_dispatch": {}, "added": [], "dispatched": [], "polls": 0}))
+
+        class L(land.Lander):
+            def slug(self):
+                return "o/r"
+        lnd = L(ROOT, "T", log=lambda *_: None)
+        lnd.gh_cmd = [sys.executable, str(self.d / "gh.py")]
+        return lnd
+
+    def st(self):
+        return json.loads(self.state.read_text())
+
+    def assert_env(self, envs):
+        self.assertTrue(envs)
+        for e in envs:
+            self.assertEqual(e.get("GH_HOST"), "github.com", e)
+            self.assertEqual([k for k in GH_SCRUBBED if k in e], [], e)
+            self.assertEqual((e.get("GH_TOKEN"), e.get("GITHUB_TOKEN")), ("token-a", "token-b"))
+            self.assertNotEqual(e.get("GH_CONFIG_DIR"), HOSTILE_GH["GH_CONFIG_DIR"])
+            if land.account_home():
+                self.assertEqual(e.get("GH_CONFIG_DIR"), os.path.join(land.account_home(), ".config", "gh"))
+
+    def test_every_gh_call_is_pinned_to_github_com(self):
+        lnd = self.lander(api={"repos/o/r/commits/abc": {"commit": {"author": {"name": NAME, "email": EMAIL},
+                                                                     "committer": {"name": NAME, "email": EMAIL}}}})
+        lnd.check_gh_auth()
+        lnd.list_branch_runs("o/r", "ci/T")
+        lnd.run_jobs("o/r", 7)
+        lnd.dispatch("o/r", "fuzz.yml", "ci/T")
+        lnd.api_commit_identity("abc")
+        calls = self.st()["calls"]
+        self.assertEqual(calls[0], ["auth", "status", "--active", "--hostname", "github.com"])
+        for c in calls[1:4]:
+            self.assertEqual(c[c.index("--repo") + 1], "github.com/o/r", c)
+        self.assertEqual(calls[4][:3], ["api", "--hostname", "github.com"])
+        self.assert_env(self.st()["envs"])
+
+    def test_auth_status_failing_refuses(self):
+        with self.assertRaisesRegex(land.LandError, "gh is not logged in to github.com"):
+            self.lander(auth=False).check_gh_auth()
+
+    def test_the_landing_and_the_wait_check_auth_first(self):
+        lnd = self.lander(auth=False)
+        lnd.poll_seconds, lnd.after_max_polls = 0, 1   # a missing check must fail fast, not poll
+        with self.assertRaisesRegex(land.LandError, "gh is not logged in"):
+            lnd.wait_after(SHA)
+        self.assertEqual(self.st()["calls"], [["auth", "status", "--active", "--hostname", "github.com"]])
+
+        class NoRemote(land.Lander):
+            def check_remote(self):
+                pass
+
+            def lock(self):
+                import contextlib
+                return contextlib.nullcontext()
+        # a throwaway repository: if the check were missing, nothing real is fetched or pushed
+        repo = Repo()
+        self.addCleanup(repo.close)
+        lnd = NoRemote(repo.work, "T", log=lambda *_: None)
+        lnd.gh_cmd = [sys.executable, str(self.d / "gh.py")]
+        with self.assertRaisesRegex(land.LandError, "gh is not logged in"):
+            lnd.land()
+
+    def test_gh_env(self):
+        e = land.gh_env()
+        self.assertEqual(e["GH_HOST"], "github.com")
+        self.assertEqual([k for k in GH_SCRUBBED if k in e], [])
+        self.assertEqual((e["GH_TOKEN"], e["GITHUB_TOKEN"]), ("token-a", "token-b"))
+        self.assertEqual(e["GH_PROMPT_DISABLED"], "1")
+        self.assertNotEqual(e.get("GH_CONFIG_DIR"), HOSTILE_GH["GH_CONFIG_DIR"])
+        self.assertEqual(land.repo_arg("o/r"), "github.com/o/r")
+        for k in ("SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_NO_VERIFY", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"):
+            self.assertNotIn(k, land.clean_env())
+
+    def test_a_real_gh_ignores_a_hostile_host(self):
+        # safe offline: an unknown host fails to resolve, github.com may or may not be reachable;
+        # either way the request must not go to the host the environment named
+        gh = [os.path.realpath(c) for c in land.GH_CANDIDATES if os.path.isfile(os.path.realpath(c))]
+        if not gh:
+            self.skipTest("no gh at the fixed locations")
+        r = subprocess.run([gh[0], "api", "--hostname", "github.com", "rate_limit", "--jq", ".resources.core.limit"],
+                           capture_output=True, text=True, env=land.gh_env(), timeout=60)
+        self.assertNotIn("unroutable.invalid", r.stdout + r.stderr)
+
+    def test_windows_candidates_need_an_exe(self):
+        exe = self.d / "tool.exe"
+        exe.write_text("x")
+        plain = self.d / "tool"
+        plain.write_text("x")
+        old = os.name
+        try:
+            land.os.name = "nt"
+            self.assertEqual(land.pinned_tool((str(plain), str(exe))), os.path.realpath(exe))
+            with self.assertRaisesRegex(land.LandError, "PATH is not searched"):
+                land.pinned_tool((str(plain), str(self.d)))
+        finally:
+            land.os.name = old
 
 
 class AmbientEnv(Isolated):
