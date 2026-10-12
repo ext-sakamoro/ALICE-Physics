@@ -190,14 +190,19 @@ impl DestructionShape {
                 let qx = lx.abs() - hx;
                 let qy = ly.abs() - hy;
                 let qz = lz.abs() - hz;
-                let outside = qz
-                    .max(0.0)
+                let outside = crate::det_math::max(qz, 0.0)
                     .mul_add(
-                        qz.max(0.0),
-                        qx.max(0.0).mul_add(qx.max(0.0), qy.max(0.0) * qy.max(0.0)),
+                        crate::det_math::max(qz, 0.0),
+                        crate::det_math::max(qx, 0.0).mul_add(
+                            crate::det_math::max(qx, 0.0),
+                            crate::det_math::max(qy, 0.0) * crate::det_math::max(qy, 0.0),
+                        ),
                     )
                     .sqrt();
-                let inside = qx.max(qy).max(qz).min(0.0);
+                let inside = crate::det_math::min(
+                    crate::det_math::max(crate::det_math::max(qx, qy), qz),
+                    0.0,
+                );
                 outside + inside
             }
             DestructionType::Cylinder {
@@ -206,11 +211,13 @@ impl DestructionShape {
             } => {
                 let d_radial = crate::det_math::hypot(lx, lz) - radius;
                 let d_axial = ly.abs() - half_height;
-                let outside = d_radial
-                    .max(0.0)
-                    .mul_add(d_radial.max(0.0), d_axial.max(0.0) * d_axial.max(0.0))
+                let outside = crate::det_math::max(d_radial, 0.0)
+                    .mul_add(
+                        crate::det_math::max(d_radial, 0.0),
+                        crate::det_math::max(d_axial, 0.0) * crate::det_math::max(d_axial, 0.0),
+                    )
                     .sqrt();
-                let inside = d_radial.max(d_axial).min(0.0);
+                let inside = crate::det_math::min(crate::det_math::max(d_radial, d_axial), 0.0);
                 outside + inside
             }
             DestructionType::Custom { sdf } => sdf(lx, ly, lz),

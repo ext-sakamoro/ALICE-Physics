@@ -295,7 +295,7 @@ impl PhysicsModifier for FractureModifier {
             // CSG subtraction: max(original, -crack)
             // Only subtract where inside the original shape
             if d < width * 2.0 {
-                d = d.max(-crack_dist);
+                d = crate::det_math::max(d, -crack_dist);
             }
         }
 

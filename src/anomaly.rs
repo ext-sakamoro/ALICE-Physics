@@ -822,7 +822,7 @@ impl CompositeDetector {
         let ewma_score = self.ewma.anomaly_score(value);
         let zscore_score = self.zscore.z_score(value).abs();
 
-        mad_score.max(ewma_score).max(zscore_score)
+        crate::det_math::max64(crate::det_math::max64(mad_score, ewma_score), zscore_score)
     }
 
     /// Get count of observations

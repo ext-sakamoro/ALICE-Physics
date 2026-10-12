@@ -111,7 +111,7 @@ impl PressureModifier {
     /// `impulse` = impact impulse, `radius` = impact area
     pub fn apply_impact(&mut self, x: f32, y: f32, z: f32, impulse: f32, radius: f32) {
         let dent_depth = impulse * self.config.deformation_rate;
-        let clamped = dent_depth.min(self.config.max_deformation);
+        let clamped = crate::det_math::min(dent_depth, self.config.max_deformation);
         self.deformation.splat(x, y, z, clamped, radius);
         // impacts add into the field: keep the sum within max_deformation now,
         // not only at the next update
@@ -142,7 +142,8 @@ impl PressureModifier {
             if p > threshold {
                 let excess = p - threshold;
                 let delta = excess * rate * dt;
-                self.deformation.data[i] = (self.deformation.data[i] + delta).min(max_d);
+                self.deformation.data[i] =
+                    crate::det_math::min(self.deformation.data[i] + delta, max_d);
             }
         }
     }

@@ -242,7 +242,7 @@ fn viridis_color(t: f64) -> [u8; 4] {
     ];
 
     let t = t.clamp(0.0, 1.0);
-    let segment = (t * 4.0).min(3.999);
+    let segment = crate::det_math::min64(t * 4.0, 3.999);
     let idx = segment as usize;
     let frac = segment - idx as f64;
 
