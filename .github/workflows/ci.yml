@@ -97,6 +97,8 @@ jobs:
         run: python scripts/test_semver_checked.py
       - name: Escape-sequence stripping for tool output (tests)
         run: python scripts/test_ansi.py
+      - name: Clippy configuration of the library code (tests)
+        run: python scripts/test_clippy_lib_gate.py
       # public documents: no development-process vocabulary or private names;
       # CHANGELOG version headings and [Unreleased] categories well formed
       - name: Docs lint (tests)
@@ -497,6 +499,24 @@ jobs:
           cargo clippy
           --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics,privacy-crypto"
           --all-targets -- -D warnings
+
+      # The library code also may not call f32 / f64 max and min (the sign of an
+      # equal pair of zeros differs between aarch64 and x86_64); it uses
+      # det_math::max / min The extra entries are in .github/clippy-lib/clippy.toml,
+      # generated from clippy.toml, so tests / examples / benches keep the std
+      # functions The script checks that file is up to date and that clippy with
+      # it flags every forbidden form in scripts/clippy-lib-canary (exit non-zero
+      # and one diagnostic per form), so a configuration clippy does not read
+      # cannot pass
+      - name: Clippy (library code, f32 / f64 max and min forbidden)
+        env:
+          CLIPPY_CONF_DIR: .github/clippy-lib
+        run: >-
+          cargo clippy --lib
+          --features "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics,privacy-crypto"
+          -- -D warnings
+      - name: Library clippy configuration is current and fires (canary)
+        run: python3 scripts/clippy_lib_gate.py
 
   # The declared `rust-version` is compiled with exactly that toolchain from the
   # committed Cargo.lock (generated with resolver = "3", which picks versions

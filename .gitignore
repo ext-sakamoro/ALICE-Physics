@@ -21,3 +21,5 @@ __pycache__/
 
 # scripts/cfg-items build output when CARGO_TARGET_DIR is unset
 /scripts/cfg-items/target/
+# scripts/clippy-lib-canary build output when CARGO_TARGET_DIR is unset
+/scripts/clippy-lib-canary/target/
