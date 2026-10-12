@@ -466,9 +466,9 @@ C ABI, the Unity / Unreal bindings, the Python bindings or the WebAssembly
 build. Commercial licence enquiries: <contact@extoria.co.jp>
 
 The optional `neural` and `replay` features pull in additional AGPL-licensed
-crates. `analytics` and the required `alice-det-math` are `MIT OR Apache-2.0`;
-the required `alice-crypto` (differential privacy) has the same licence as this
-crate.
+crates. `analytics` and the required `alice-det-math` are `Apache-2.0` (both
+since their 0.5 releases); `alice-crypto`, pulled in by the optional
+`privacy-crypto` feature, has the same licence as this crate.
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 

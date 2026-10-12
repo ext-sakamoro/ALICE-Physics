@@ -10,7 +10,7 @@
 //! # Hex form
 //!
 //! ```text
-//! 3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72
+//! cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469
 //! ```
 //!
 //! # Entries
@@ -179,14 +179,14 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "alice-det-math",
-        hex32("d2209b30f6f1f45baa1b638bcdfee34ac64773b2e63b9c083b2e77afc691398e"),
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
     ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
 /// [`PHYSICS_SEMANTICS_PINS`] described in the [module documentation](self).
 ///
-/// Hex: `3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72`.
+/// Hex: `cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("3aa1464559166369539c6c972b5140f35ab7d3adc181badcbe18d02a1fa8df72");
+    hex32("cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469");
