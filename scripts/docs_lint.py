@@ -61,8 +61,10 @@ def words(*alts: str) -> str:
 
 FORBIDDEN = [
     ("agent process", re.compile(words(r"workers?", r"subagents?", r"multi[- ]?agents?", r"skills?")
-                                 # `git worktree add` is a command, not a description of how the work was done
-                                 + r"|(?<!git )" + words(r"worktrees?")
+                                 # `git worktree add` is a command, not a description of how the work was done;
+                                 # so is the same command as an argument list ("worktree", "add" in a script)
+                                 + r"|(?<!git )(?:(?<!\")|(?!worktree\",\s*\"(?:add|remove|prune|list)\"))"
+                                 + words(r"worktrees?")
                                  + r"|ワーカー|マルチエージェント|エージェント|調停役|並走\s*session|他\s*session|session\s*名")),
     ("session name", re.compile(r"(?<![A-Za-z0-9])(?:ys|sakamoro)-[0-9a-f]{2}(?![A-Za-z0-9])")),
     ("internal tracker", re.compile(words(r"Backlog") + r"|memory\s*(?:側|化|に|へ|file)|(?<![A-Za-z0-9_])memory/")),

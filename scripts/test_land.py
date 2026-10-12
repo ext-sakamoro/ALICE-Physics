@@ -601,13 +601,22 @@ class Landing(Isolated):
         self.assertIn(b"#[path", before)
         self.r.push_upstream({"CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- theirs\n"},
                              "docs(changelog): theirs")
-        lander = self.r.lander()
+        class Reflog(FakeLander):
+            # the reflog of land.py's own working copy, read before it is removed
+            def _land(self):
+                sha = super()._land()
+                self.reflog = git(self.root, "reflog", "--format=%gs").splitlines()
+                return sha
+        lander = Reflog(self.r.work, "T-1")
         sha = lander.land()
         # the pick stopped on the conflict and was committed by land.py itself (between the
         # rebase's start and finish), not by `rebase --continue`
-        log = git(self.r.work, "reflog", "--format=%gs").splitlines()
-        start, finish = log.index("rebase (start): checkout origin/main"), log.index("rebase (finish): returning to refs/heads/main")
-        self.assertIn("commit: feat: b with a cfg path", log[finish:start], log)
+        # (a detached HEAD: the rebase ends without a `finish` entry; a pick finished by
+        # `rebase --continue` would show as `rebase (continue): ...`)
+        log = lander.reflog
+        start = log.index("rebase (start): checkout origin/main")
+        self.assertIn("commit: feat: b with a cfg path", log[:start], log)
+        self.assertFalse([l for l in log if l.startswith("rebase (continue)")], log)
         git(self.r.upstream, "fetch", "-q")
         landed = git(self.r.upstream, "rev-list", "--reverse", "origin/main~2..origin/main").split()
         ours = [c for c in landed if git(self.r.upstream, "log", "-1", "--format=%s", c) == "feat: b with a cfg path"]
@@ -630,7 +639,7 @@ class Landing(Isolated):
                 super().regenerate()
                 if not getattr(self, "rewritten", False):
                     self.rewritten = True
-                    msg = self.root / ".git" / "stripped.txt"
+                    msg = Path(tempfile.mkdtemp()) / "stripped.txt"   # (the working copy's .git is a file)
                     msg.write_text("feat: b with a cfg path\n\ntrailing text\n", encoding="utf-8")
                     subprocess.run(["git", *ID, "commit", "-q", "--amend", "-F", str(msg)], cwd=self.root, check=True)
         for kw in ({}, {"direct_reason": "revert the red main of abc1234"}):   # the ci/ lane and --direct
@@ -717,6 +726,161 @@ class Landing(Isolated):
         self.assertIn(f"evidence SHA: {lander.evidenced[0]} on ci/T-1", lander.record)
         self.assertIn(f"landed SHA: {sha} on main (attempt 1)", lander.record)
         self.assertNotEqual(lander.evidenced[0], sha)  # rebased onto the documents
+
+    # --- what reaches main is the evidence: land.py's own working copy, the evidence rule ----
+
+    def landing_logs(self, lander) -> list[str]:
+        logged = []
+        lander.log = logged.append
+        return logged
+
+    def test_the_last_line_names_evidence_landed_and_rule(self):
+        commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        source = git(self.r.work, "rev-parse", "HEAD")
+        lander = self.r.lander()
+        logged = self.landing_logs(lander)
+        sha = lander.land()
+        self.assertEqual(logged[-1], f"EVIDENCE {sha} LANDED {sha} RULE main-unmoved")
+        self.assertIn(f"source SHA: {source} (the checkout's HEAD at the start)", lander.record)
+        self.assertEqual(git(self.r.work, "rev-parse", "HEAD"), sha)   # the checkout follows the landing
+        self.assertEqual(git(self.r.work, "worktree", "list", "--porcelain").count("worktree "), 1)  # removed
+        # docs-only-moved and direct name their rule too
+        commit(self.r.work, {"src/c.rs": "fn c() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n- c\n",
+                             "scripts/lib-test-exempt.txt": "src/b.rs fixture for the landing steps\nsrc/c.rs fixture\n"},
+               "feat: c")
+        lander = self.r.lander(before_push=lambda: self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"},
+                                                                         "docs: oracle-status"))
+        logged = self.landing_logs(lander)
+        sha = lander.land()
+        self.assertEqual(logged[-1], f"EVIDENCE {lander.evidenced[0]} LANDED {sha} RULE docs-only-moved")
+        commit(self.r.work, {"docs/d.md": "d\n"}, "docs: d")
+        lander = FakeLander(self.r.work, "T-1", direct_reason="revert the red main of abc1234")
+        logged = self.landing_logs(lander)
+        sha = lander.land()
+        self.assertEqual(logged[-1], f"EVIDENCE - LANDED {sha} RULE direct")
+
+    def test_a_checkout_moved_during_the_wait_is_refused(self):
+        # what happened once: during the CI wait the operator checked out another branch (a child of
+        # the evidence) in the same checkout, and the push of HEAD took that commit to main
+        commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        before = self.r.origin_head()
+        work = self.r.work
+
+        class Meddled(FakeLander):
+            def wait_evidence(self, ref, sha):
+                super().wait_evidence(ref, sha)
+                git(work, "checkout", "-q", "-b", "next")
+                commit(work, {"docs/next.md": "unverified\n"}, "docs: next")
+        lander = Meddled(work, "T-1")
+        with self.assertRaisesRegex(land.LandError, "the checkout's HEAD moved during the landing"):
+            lander.land()
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_working_copy_moved_after_the_preparation_is_refused(self):
+        commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        before = self.r.origin_head()
+
+        class Moved(FakeLander):
+            # a step between the preparation and the push that moves land.py's own HEAD
+            def check_remote(self):
+                super().check_remote()
+                if "wait_evidence ci/T-1" in self.calls and not getattr(self, "moved", False):
+                    self.moved = True
+                    git(self.root, *ID, "commit", "-q", "--allow-empty", "-m", "docs: extra")
+        with self.assertRaisesRegex(land.LandError, "land.py's working copy moved from the prepared [0-9a-f]{7}"):
+            Moved(self.r.work, "T-1").land()
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_checkout_with_changes_is_not_overwritten_after_the_landing(self):
+        # changes made in the checkout during the landing, in a file the landing changes: the
+        # landing stands, `reset --keep` refuses and leaves the checkout and the change as they were
+        commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        source = git(self.r.work, "rev-parse", "HEAD")
+        work = self.r.work
+
+        class Edited(FakeLander):
+            def wait_evidence(self, ref, sha):
+                super().wait_evidence(ref, sha)
+                write(work, "docs/integration-status.md", "edited by hand\n")
+        lander = Edited(work, "T-1")
+        logged = self.landing_logs(lander)
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertNotEqual(sha, source)   # the ledger commit: the file differs between the two
+        self.assertEqual(git(work, "rev-parse", "HEAD"), source)
+        self.assertEqual((work / "docs/integration-status.md").read_text(), "edited by hand\n")
+        self.assertTrue(lander.checkout_lagging)
+        self.assertTrue(any(l.startswith(f"landed {sha[:7]}, but the checkout stays at {source[:7]}") for l in logged), logged)
+        self.assertEqual(land.landing_exit(0, lander), land.EXIT_CHECKOUT)
+        self.assertEqual(land.landing_exit(land.EXIT_RED, lander), land.EXIT_RED)   # a red main comes first
+        self.assertEqual(land.landing_exit(0, self.r.lander()), 0)
+
+    def test_an_evidence_branch_moved_after_the_evidence_is_refused(self):
+        commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        before = self.r.origin_head()
+        upstream = self.r.upstream
+
+        class Moved(FakeLander):
+            def wait_evidence(self, ref, sha):
+                super().wait_evidence(ref, sha)
+                git(upstream, "push", "-q", "--force", "origin", f"{before}:refs/heads/{ref}")
+        with self.assertRaisesRegex(land.LandError, "ci/T-1 is [0-9a-f]{7}, not the evidence [0-9a-f]{7}"):
+            Moved(self.r.work, "T-1").land()
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_docs_only_moved_with_a_change_beyond_the_evidence_is_refused(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        before = self.r.origin_head()
+
+        class Extra(FakeLander):
+            # a step after the evidence that slips in a change of its own (a source file in an
+            # existing commit: the commit count and the messages stay as they were)
+            def prepare(self, verify):
+                sha = super().prepare(verify)
+                if self.calls.count("checks") >= 2:
+                    write(self.root, "src/z.rs", "fn z() {}\n")
+                    git(self.root, "add", "src/z.rs")
+                    git(self.root, *ID, "commit", "-q", "--amend", "--no-edit")
+                    sha = git(self.root, "rev-parse", "HEAD")
+                return sha
+        lander = Extra(self.r.work, "T-1")
+        lander.moves = [lambda: self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"}, "docs: oracle-status")]
+        with self.assertRaisesRegex(land.LandError, "differs from the evidence [0-9a-f]{7} outside the paths main "
+                                                    "gained and the ledgers: \\['src/z.rs'\\]"):
+            lander.land()
+        self.assertEqual(self.r.origin_head(), git(self.r.upstream, "rev-parse", "HEAD"))   # only main's own doc
+        self.assertNotEqual(self.r.origin_head(), before)
+
+    def test_docs_only_moved_with_the_patches_moved_between_commits_is_refused(self):
+        # the same tree, the same commits and messages, but the change of one commit moved into
+        # another: only the patch comparison sees it
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        commit(self.r.work, {"src/b.rs": "y\n", "docs/c.md": "c\n"}, "feat: b then c")
+
+        class Shuffled(FakeLander):
+            def prepare(self, verify):
+                sha = super().prepare(verify)
+                if self.calls.count("checks") >= 2:
+                    base = git(self.root, "merge-base", "HEAD", self.upstream())
+                    ours = git(self.root, "rev-list", "--reverse", f"{base}..HEAD").split()
+                    git(self.root, "checkout", "-q", "--detach", base)
+                    write(self.root, "src/b.rs", "y\n")
+                    write(self.root, "CHANGELOG.md", git(self.root, "show", f"{ours[0]}:CHANGELOG.md") + "\n")
+                    git(self.root, "add", "-A")
+                    git(self.root, *ID, "commit", "-q", "-C", ours[0])
+                    write(self.root, "docs/c.md", "c\n")
+                    git(self.root, "add", "-A")
+                    git(self.root, *ID, "commit", "-q", "-C", ours[1])
+                    for c in ours[2:]:
+                        git(self.root, *ID, "cherry-pick", "--allow-empty", c)
+                    self.assertEqual(git(self.root, "rev-parse", "HEAD^{tree}"), git(self.root, "rev-parse", f"{sha}^{{tree}}"))
+                    sha = git(self.root, "rev-parse", "HEAD")
+                return sha
+            assertEqual = unittest.TestCase().assertEqual
+        lander = Shuffled(self.r.work, "T-1")
+        lander.moves = [lambda: self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"}, "docs: oracle-status")]
+        with self.assertRaisesRegex(land.LandError, "does not carry the patches of the evidence [0-9a-f]{7} \\(2 commits vs 2\\)"):
+            lander.land()
 
     def test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
@@ -1788,7 +1952,7 @@ class CallSites(Isolated):
         self.assertGreater(n, 0, "no call site found (compared nothing)")
         self.assertEqual(bad, [])
         self.assertIn("self.git_env = clean_env()", self.SOURCE)
-        self.assertIn('return {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}', self.SOURCE)
+        self.assertIn('env = {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}', self.SOURCE)
 
     def test_a_bare_call_is_found(self):
         for snippet in ("subprocess.run(['git', 'status'])", "subprocess.run(['x'], env=os.environ)",

@@ -25,8 +25,18 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      code, it rebases, checks (preflight or a compile check), pushes the new SHA to
      `ci/<id>` and waits for the evidence again, at most MAX_EVIDENCE rounds in all,
      then stops ("main is moving");
-  6. pushes HEAD to main (fast-forward only), going back to 5 when main moved
-     meanwhile.
+  6. pushes the prepared SHA to main by name (`<sha>:main`, fast-forward only), going
+     back to 5 when main moved meanwhile. Before that push the evidence rule must hold
+     (evidence_rule): the landed SHA is the evidence SHA (main-unmoved / re-evidenced), or
+     main gained documents only and our commits carry the same patches as the evidence
+     with every other difference in the moved paths or the ledgers (docs-only-moved);
+     origin's ci/<id> must still be the evidence SHA. The last line of a landing is
+     `EVIDENCE <sha|-> LANDED <sha> RULE <rule>`.
+  All of it runs in a detached working copy of land.py's own (own_copy, a `git worktree`
+  made at start from the checkout's HEAD, the source SHA, read once) and removed at the end: the
+  checkout itself is never pushed. If the checkout's HEAD moves during the landing, the
+  landing stops before main moves; after a landing the checkout is moved to the landed
+  SHA (`reset --keep`).
   7. before that push, requires author and committer of every commit about to reach
      main to be LAND_IDENTITY (check_push_identity); after it, reads the landed
      commits back from the remote (git, after a fetch) and the tip
@@ -71,7 +81,10 @@ After the land, `--wait` / `--wait-only SHA` read the after-landing set on main
 main only (macos-15-intel, also re-run by the nightly safety net) and the
 after-landing workflows when they ran (Miri and loom). Exit codes: 0 all green,
 EXIT_RED (4) a red result ("REVERT OR FIX NOW"), EXIT_PENDING (3) not finished
-within the bound, 1 any other error.
+within the bound, EXIT_CHECKOUT (5) landed (and green when waited for) but the checkout
+could not be moved to the landed SHA (`reset --keep` refused: changes made there during the
+landing; nothing in it is overwritten), 1 any other error. The last line of a landing is
+`EVIDENCE <sha|-> LANDED <sha> RULE <rule>` (printed again after the --wait report).
 
 Usage:
   python3 scripts/land.py --id AUD-A-S1W2-005            # land
@@ -83,11 +96,14 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -406,6 +422,7 @@ APPEND_ONLY = ("CHANGELOG.md",)
 DIRECT_REASON_MIN = 12  # characters of --reason required by the emergency --direct landing
 EXIT_PENDING = 3        # --wait: the after-landing set did not finish within the bound
 EXIT_RED = 4            # --wait: an after-landing result is red
+EXIT_CHECKOUT = 5       # landed, but the checkout could not follow (reset --keep refused)
 SIGNATURE_RE = re.compile(r"Co-Authored-By:|^\s*Generated with\b|\U0001F916", re.I | re.M)
 NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
 NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
@@ -907,6 +924,11 @@ class Lander:
         if os.path.realpath(root) in FORBIDDEN_ROOTS:
             raise LandError(f"refusing to land in {root}: a forbidden root (the tests' own checkout)")
         self.root, self.id, self.dry_run = root, ident, dry_run
+        # the checkout land.py was started in; self.root becomes land.py's own working copy
+        # for the landing (own_copy)
+        self.checkout, self.source_sha = root, None
+        self.checkout_lagging = False   # landed, but `reset --keep` of the checkout was refused
+        self.evidence_line = ""
         self.no_changelog, self.remote, self.branch, self.log = no_changelog, remote, branch, log
         self.replace_ci = replace_ci
         m = re.fullmatch(r"(.+?) <([^<>]+)>", IDENTITY)
@@ -947,8 +969,50 @@ class Lander:
         return r.stdout.strip()
 
     def child_env(self) -> dict[str, str]:
-        """the environment of every tool child (preflight, scip_index, the ledger scripts, cargo)"""
-        return {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}   # (clean_env sets it too)
+        """the environment of every tool child (preflight, scip_index, the ledger scripts, cargo);
+        the cargo build directory stays the checkout's (not the temporary copy's) unless
+        CARGO_TARGET_DIR names one"""
+        env = {**clean_env(cargo=True), "PYTHONIOENCODING": "utf-8"}   # (clean_env sets it too)
+        env.setdefault("CARGO_TARGET_DIR", str(Path(self.checkout) / "target"))
+        return env
+
+    def checkout_git(self, *args: str) -> str:
+        """git in the checkout land.py was started in (not its own working copy)"""
+        r = subprocess.run([*self.git_argv, *args], cwd=self.checkout, capture_output=True, text=True,
+                           env=self.git_env)
+        if r.returncode != 0:
+            raise LandError(f"git {' '.join(args)} in {self.checkout} failed: {r.stderr.strip() or r.stdout.strip()}")
+        return r.stdout.strip()
+
+    @contextlib.contextmanager
+    def own_copy(self):
+        """The landing works in a detached working copy (`git worktree add --detach`) made from
+        the checkout's HEAD, read once
+        (the source SHA); the checkout is not read again except by check_checkout_unmoved."""
+        if self.checkout_git("status", "--porcelain"):
+            raise LandError("the checkout has uncommitted changes")
+        self.source_sha = self.checkout_git("rev-parse", "HEAD")
+        d = tempfile.mkdtemp(prefix="land-wt-")
+        wt = os.path.join(d, "wt")
+        self.checkout_git("worktree", "add", "-q", "--detach", wt, self.source_sha)
+        self.record.append(f"source SHA: {self.source_sha} (the checkout's HEAD at the start)")
+        self.root = Path(wt)
+        try:
+            yield
+        finally:
+            self.root = self.checkout
+            subprocess.run([*self.git_argv, "worktree", "remove", "--force", wt], cwd=self.checkout,
+                           capture_output=True, env=self.git_env)
+            subprocess.run([*self.git_argv, "worktree", "prune"], cwd=self.checkout, capture_output=True,
+                           env=self.git_env)
+            shutil.rmtree(d, ignore_errors=True)
+
+    def check_checkout_unmoved(self) -> None:
+        now = self.checkout_git("rev-parse", "HEAD")
+        if now != self.source_sha:
+            raise LandError(f"the checkout's HEAD moved during the landing ({self.source_sha[:7]} -> {now[:7]}): "
+                            "nothing was pushed to main; land.py works in its own working copy, but a moved "
+                            "checkout means something else is acting on it")
 
     def sh(self, *cmd: str) -> None:
         self.log("$ " + " ".join(cmd))
@@ -1460,12 +1524,76 @@ class Lander:
         # our own ci/<id>: a re-evidence push replaces the earlier attempt (and its pending run)
         self.check_remote()
         self.check_messages()
-        self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
+        if self.git("rev-parse", "HEAD") != sha:
+            raise LandError(f"HEAD is not the prepared {sha[:7]}: nothing pushed to {ref}")
+        self.git("push", "-q", "--force", self.remote, f"{sha}:refs/heads/{ref}")
         self.wait_evidence(ref, sha)
 
     def land(self) -> str:
         with self.lock():
-            return self._land()
+            with self.own_copy():
+                sha = self._land()
+            if not self.dry_run:
+                # the checkout follows the landing, as when land.py rebased it in place; `--keep`
+                # refuses (and changes nothing) when the checkout has changes in files the move
+                # would touch: the landing stands, the checkout is reported as behind
+                try:
+                    self.checkout_git("reset", "-q", "--keep", sha)
+                except LandError as e:
+                    self.checkout_lagging = True
+                    self.log(f"landed {sha[:7]}, but the checkout stays at {self.source_sha[:7]}: {e}; "
+                             f"put its changes away and run `git reset --keep {sha[:7]}` there")
+            return sha
+
+    def patch_ids(self, rev_range: str, skip: set[str]) -> list[str]:
+        """`git patch-id --stable` of each commit in rev_range that is not the ledger commit,
+        over the paths outside `skip`"""
+        out = []
+        for c in self.git("rev-list", "--reverse", rev_range).split():
+            if self.git("log", "-1", "--format=%s", c) == REGEN_MESSAGE:
+                continue
+            spec = ["--", "."] + [f":(exclude,literal){p}" for p in sorted(skip)]
+            show = subprocess.run([*self.git_argv, "show", "--format=", "--no-color", c, *spec], cwd=self.root,
+                                  capture_output=True, env=self.git_env)
+            pid = subprocess.run([*self.git_argv, "patch-id", "--stable"], cwd=self.root, input=show.stdout,
+                                 capture_output=True, env=self.git_env)
+            out.append(pid.stdout.decode().split()[0] if pid.stdout.strip() else "(empty)")
+        return out
+
+    def evidence_rule(self, lane: str, evidence_sha: str | None, evidence_base: str | None,
+                      rounds: int, sha: str) -> str:
+        """The rule the push to main stands on, or LandError: the landed SHA is the evidence SHA,
+        or main gained documents only since the evidence and our commits carry the evidence's
+        patches with every other difference in the paths main gained or in the ledgers"""
+        if lane == "direct":
+            return "direct"
+        if self.dry_run:
+            return "dry-run"
+        if evidence_sha is None or evidence_base is None:
+            raise LandError("no evidence SHA on the ci lane: nothing pushed to main")
+        tip = self.git("ls-remote", self.remote, f"refs/heads/ci/{self.id}").split()
+        if not tip or tip[0] != evidence_sha:
+            raise LandError(f"ci/{self.id} is {tip[0][:7] if tip else 'gone'}, not the evidence {evidence_sha[:7]}: "
+                            "nothing pushed to main")
+        if sha == evidence_sha:
+            return "re-evidenced" if rounds > 1 else "main-unmoved"
+        base_now = self.git("merge-base", sha, self.upstream())
+        gained = set(self.paths(f"{evidence_base}..{base_now}"))
+        moved_code = [p for p in gained if not docs_only([p], workflow_input_rules(self.root))]
+        if moved_code:
+            raise LandError(f"landing {sha[:7]} without evidence: main gained code {moved_code[:5]} after the "
+                            f"evidence {evidence_sha[:7]}")
+        ledgers = set(GENERATED) | set(SEMI_GENERATED)
+        stray = [p for p in self.paths(f"{evidence_sha}..{sha}") if p not in gained and p not in ledgers]
+        if stray:
+            raise LandError(f"{sha[:7]} differs from the evidence {evidence_sha[:7]} outside the paths main "
+                            f"gained and the ledgers: {stray[:5]}")
+        theirs = self.patch_ids(f"{evidence_base}..{evidence_sha}", gained | ledgers)
+        ours = self.patch_ids(f"{base_now}..{sha}", gained | ledgers)
+        if theirs != ours:
+            raise LandError(f"{sha[:7]} does not carry the patches of the evidence {evidence_sha[:7]} "
+                            f"({len(ours)} commits vs {len(theirs)})")
+        return "docs-only-moved"
 
     def _land(self) -> str:
         self.check_remote()
@@ -1493,19 +1621,18 @@ class Lander:
         # freshly built index, so ledgers written from an older index would fail there
         sha = self.prepare("preflight")
         base = self.git("rev-parse", self.upstream())
-        evidence_sha, rounds, moved_any = None, 0, False
+        evidence_sha, evidence_base, rounds = None, None, 0
         if lane == "ci":
             if self.dry_run:
                 self.log(f"dry run: would push {sha[:7]} to ci/{self.id} and wait for its CI")
             else:
                 self.push_evidence(sha, first=True)
-                evidence_sha, rounds = sha, 1
+                evidence_sha, evidence_base, rounds = sha, base, 1
         for attempt in range(1, MAX_ATTEMPTS + 1):
             self.fetch()
             new = self.git("rev-parse", self.upstream())
             moved = self.git("rev-list", f"{base}..{new}").split()
             if moved:
-                moved_any = True
                 theirs = sorted({p for c in moved for p in self.paths(f"{c}^!")})
                 ours = self.paths(f"{self.upstream()}...HEAD")
                 try:
@@ -1523,7 +1650,7 @@ class Lander:
                     sha = self.prepare(verify)
                     base = new
                     self.push_evidence(sha, first=False)
-                    evidence_sha, rounds = sha, rounds + 1
+                    evidence_sha, evidence_base, rounds = sha, new, rounds + 1
                     continue
                 self.log("main gained " + ("documents only" if not code_moved else "code (direct lane)")
                          + f" ({len(moved)} commits): rebasing, local checks")
@@ -1537,19 +1664,17 @@ class Lander:
             self.check_push_identity(before_push)
             self.check_messages()
             self.check_remote()
-            r = subprocess.run([*self.git_argv, "push", "-q", self.remote, f"HEAD:{self.branch}"], cwd=self.root,
-                               capture_output=True, text=True, env=self.git_env)
+            self.check_checkout_unmoved()
+            if self.git("rev-parse", "HEAD") != sha:
+                raise LandError(f"land.py's working copy moved from the prepared {sha[:7]}: nothing pushed to main")
+            rule = self.evidence_rule(lane, evidence_sha, evidence_base, rounds, sha)
+            r = subprocess.run([*self.git_argv, "push", "-q", self.remote, f"{sha}:refs/heads/{self.branch}"],
+                               cwd=self.root, capture_output=True, text=True, env=self.git_env)
             self.fetch()
             if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
                 self.verify_landed_identity(before_push, sha)
-                if lane == "direct":
-                    why = "direct (no evidence)"
-                elif rounds > 1:
-                    why = f"re-evidenced (evidence rounds {rounds})"
-                elif moved_any:
-                    why = "docs-only-moved"
-                else:
-                    why = "main-unmoved"
+                why = {"direct": "direct (no evidence)",
+                       "re-evidenced": f"re-evidenced (evidence rounds {rounds})"}.get(rule, rule)
                 self.log(f"landed {sha[:7]} on {self.branch} (attempt {attempt})")
                 self.record += [f"evidence SHA: {evidence_sha or '-'}" + (f" on ci/{self.id}" if evidence_sha else ""),
                                 f"landed SHA: {sha} on {self.branch} (attempt {attempt})",
@@ -1559,6 +1684,8 @@ class Lander:
                     self.log(f"  {line}")
                 if lane == "ci":
                     self.git("push", "-q", self.remote, f":refs/heads/ci/{self.id}", check=False)
+                self.evidence_line = f"EVIDENCE {evidence_sha or '-'} LANDED {sha} RULE {rule}"
+                self.log(self.evidence_line)
                 return sha
             self.log(f"{self.branch} moved during attempt {attempt}; checking what it gained")
         raise LandError(f"could not land in {MAX_ATTEMPTS} attempts ({MOVING_MESSAGE})")
@@ -1772,6 +1899,14 @@ def report_after(lander: "Lander", sha: str) -> int:
     return code
 
 
+def landing_exit(rc: int, lander: "Lander") -> int:
+    """the exit code after a landing: the --wait result first (red / pending), then a checkout
+    that could not follow"""
+    if rc != 0:
+        return rc
+    return EXIT_CHECKOUT if lander.checkout_lagging else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     line_buffered_output()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
@@ -1831,10 +1966,14 @@ def main(argv: list[str] | None = None) -> int:
         sha = lander.land()
         if args.dry_run:
             return 0
+        rc = 0
         if args.wait:
-            return report_after(lander, sha)
-        print(f"pushed {sha[:7]}; the after-landing set on {lander.branch} is NOT read yet: "
-              f"python3 scripts/land.py --id {args.id} --wait-only {sha}", flush=True)
+            rc = report_after(lander, sha)
+            print(lander.evidence_line, flush=True)
+        else:
+            print(f"pushed {sha[:7]}; the after-landing set on {lander.branch} is NOT read yet: "
+                  f"python3 scripts/land.py --id {args.id} --wait-only {sha}", flush=True)
+        return landing_exit(rc, lander)
     except LandError as e:
         print(f"error: {e}", file=sys.stderr, flush=True)
         if "CI on" in str(e):

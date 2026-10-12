@@ -225,6 +225,20 @@ class DevelopmentVocabulary(unittest.TestCase):
         wf = "jobs:\n  x:\n    steps:\n      - run: git worktree add /tmp/base origin/main\n"
         self.assertEqual(errors({".github/workflows/x.yml": wf}), [])
 
+    def test_a_git_worktree_argument_list_is_not_a_description(self):
+        ok = ('subprocess.run(["git", "worktree", "add", "-q", "--detach", wt, sha])\n'
+              'self.git("worktree", "remove", "--force", wt)\nself.git("worktree",  "prune")\n'
+              'self.git("worktree", "list")\n')
+        self.assertEqual(errors({"scripts/a.py": ok}), [])
+        # anything else still flags: prose next to the call, another subcommand, a bare string
+        for text in ('self.git("worktree", "add", wt)  # in a worktree of its own\n',
+                     'self.git("worktree", "move", a, b)\n',
+                     'name = "worktree"\n',
+                     "self.git('worktree', 'add', wt)\n",
+                     'msg = "made in a worktree", "add"\n'):
+            e = errors({"scripts/a.py": text})
+            self.assertTrue(any("agent process `worktree`" in x for x in e), (text, e))
+
     def test_physics_words_that_share_letters_are_not_flagged(self):
         # a numerical integrator and a CCD agent radius are physics, not process
         src = "// the integrator's order\n// zero agent radius still converges\nlet reference_temp_k = 1;\nproject_pressure_multigrid();\n"
