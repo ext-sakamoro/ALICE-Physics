@@ -1,6 +1,6 @@
 //! Combustion, Smoke and Fire (Arrhenius + Soot + Buoyancy)
 //!
-//! Phase G4 of the ALICE-Physics completeness project. Implements a
+//! Implements a
 //! simplified single-step combustion model useful for VFX fire and
 //! engineering fire-safety analyses:
 //!

@@ -1,6 +1,6 @@
 //! Bimaterial Interface Stress Analysis (Multi-Filament / Composite Bonding)
 //!
-//! Phase B5 of the ALICE-Physics completeness project. Covers the interface
+//! Covers the interface
 //! between two dissimilar materials — the failure mode responsible for
 //! delamination in multi-material FDM prints (Bambu X1C dual-filament,
 //! Prusa XL toolchanger) and for bond-line separation in composite lay-ups.

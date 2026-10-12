@@ -1,6 +1,6 @@
 //! Classical Laminate Theory (CLT) for Stacked-Ply Composites
 //!
-//! Phase D4 of the ALICE-Physics completeness project. FDM prints are
+//! FDM prints are
 //! effectively laminates — a stack of anisotropic plies at various angles
 //! (raster orientation per layer). Classical Laminate Theory computes the
 //! **ABD stiffness matrix** relating the laminate's in-plane force /

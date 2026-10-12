@@ -1,6 +1,6 @@
 //! Thin-Wall Detection for 3D Print Safety
 //!
-//! Phase A2 of the ALICE-Physics completeness project. Detects regions where
+//! Detects regions where
 //! the local wall thickness falls below a manufacturability threshold (e.g.
 //! `nozzle_diameter × 2 = 0.8mm` for a 0.4mm nozzle). Uses SDF-based sphere
 //! marching along the inward surface normal to measure "opposite surface

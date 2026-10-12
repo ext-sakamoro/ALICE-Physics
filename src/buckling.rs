@@ -1,6 +1,6 @@
 //! Column and Shell Buckling Analysis
 //!
-//! Phase B3 of the ALICE-Physics completeness project. Extends the basic
+//! Extends the basic
 //! Euler buckling formula already provided in `beam_stress.rs` with the
 //! **slenderness-ratio family** of column-stability criteria:
 //!

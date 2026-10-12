@@ -1,6 +1,6 @@
 //! Print Orientation Optimization for Load-Aligned Strength
 //!
-//! Phase C2 of the ALICE-Physics completeness project. Given a **load
+//! Given a **load
 //! direction** (unit vector in world space) and an **anisotropic material**
 //! (layer strength ratio < 1), sweep candidate print orientations to find
 //! the one that maximises the effective strength along the load.

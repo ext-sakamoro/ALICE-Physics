@@ -454,7 +454,7 @@ source = "Ahn et al. 2002 (FDM anisotropy); Gibson-Rosen-Stucker ch.13"
 status = "partial"
 evidence = "src/filament_db.rs::youngs_at_angle tests/analytic_filament_db_wiring.rs::yield_and_youngs_at_angle_quarter_pi_matches_an_independent_f32_trig_oracle doc は Reuss 型と書くが式は Voigt 型 (known defect tests/audit_filament_db.rs::youngs_at_angle_is_a_lower_bound_reuss_form)"
 oracle_candidate = "E08 の変換式との差を 45° で"
-limitation = "src/filament_db.rs::youngs_at_angle 'This is a first-order engineering approximation; use `anisotropic.rs` (Phase B1) for the full Hill / Tsai-Wu criterion.'"
+limitation = "src/filament_db.rs::youngs_at_angle 'This is a first-order engineering approximation; use `anisotropic.rs` for the full Hill / Tsai-Wu criterion.'"
 
 [[item]]
 id = "COV-MAT-036"

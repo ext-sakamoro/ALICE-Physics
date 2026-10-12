@@ -1,6 +1,6 @@
 //! Ocean Waves + Ship Dynamics (JONSWAP + Froude-Krylov)
 //!
-//! Phase G5 of the ALICE-Physics completeness project. Provides the wave
+//! Provides the wave
 //! generation and vessel-response building blocks needed for maritime
 //! simulation:
 //!

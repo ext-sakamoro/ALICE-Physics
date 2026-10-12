@@ -1,6 +1,6 @@
 //! Advanced Fluid-Structure Interaction (Deformable / Articulation Coupling)
 //:
-//! Phase G3 of the ALICE-Physics completeness project. Extends the existing
+//! Extends the existing
 //! `cloth_fluid` two-way coupling module to work with **deformable** solids
 //! (`deformable.rs`) and **articulated** bodies (`articulation.rs`).
 //!

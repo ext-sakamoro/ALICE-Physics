@@ -1,6 +1,6 @@
 //! Warp Risk Analysis for 3D Printed Parts (Cooling Shrinkage → Curl / Peel)
 //!
-//! Phase C4 of the ALICE-Physics completeness project. Given a printed part's
+//! Given a printed part's
 //! **footprint** (build-plate contact area and maximum in-plane dimension),
 //! its **material** (shrinkage ratio + Young's modulus) and the print/chamber
 //! conditions, estimates the risk of warping — the layer 1 detaching or the

@@ -1,6 +1,6 @@
 //! Anisotropic Material Behaviour for FDM & Fiber-Reinforced Composites
 //!
-//! Phase B1 of the ALICE-Physics completeness project. Elevates the isotropic
+//! Elevates the isotropic
 //! `MaterialProperties` (see [`crate::filament_db`]) to a full **orthotropic**
 //! description that captures the direction-dependence of 3D printed parts:
 //! `E_L` (along-fiber, XY), `E_T` (cross-fiber in-plane), `E_Z` (through-layer).

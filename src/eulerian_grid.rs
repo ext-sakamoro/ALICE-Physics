@@ -1,6 +1,6 @@
 //! Eulerian Fluid Grid (MAC + FLIP/PIC)
 //!
-//! Phase F4 of the ALICE-Physics completeness project. Provides a
+//! Provides a
 //! **staggered marker-and-cell (MAC) grid** for grid-based fluid solvers,
 //! plus the classical **FLIP** (Fluid-Implicit Particle) and **PIC**
 //! (Particle-In-Cell) particle ↔ grid transfer operators.

@@ -1,6 +1,6 @@
 //! Prestressed / Pretensioned Joint & Cable Analysis
 //!
-//! Phase D5 of the ALICE-Physics completeness project. Covers the mechanics
+//! Covers the mechanics
 //! of joints that carry a **pre-load** (bolts, cables, threaded fasteners) —
 //! where the joint stiffness and safety depend on the interplay between the
 //! initial tension and the externally applied working load.

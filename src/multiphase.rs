@@ -1,6 +1,6 @@
 //! Multi-Phase Flow (VOF + Level Set)
 //!
-//! Phase F2 of the ALICE-Physics completeness project. Tracks the interface
+//! Tracks the interface
 //! between two immiscible fluids (water/air, oil/water, molten polymer/gas)
 //! using both **Volume of Fluid** (VOF) and **Level Set** representations.
 //!
@@ -22,8 +22,8 @@
 //! # Implementation scope
 //!
 //! Fully 3D grids with explicit `Vec<Fix128>` storage. Simple upwind advection
-//! (first-order); higher-order MUSCL-Hancock deferred to Phase G6 sharp
-//! interface capture.
+//! (first-order); higher-order MUSCL-Hancock deferred to the sharp
+//! interface capture in `interface_capture`.
 //!
 //! # References
 //!
@@ -134,7 +134,7 @@ impl Grid3d {
 // LIMITATION(COV-MULTIPHASE-001): Simplification: assumes uniform velocity across the grid (rigid-body convection).
 /// Simplification: assumes uniform velocity across the grid (rigid-body
 /// convection). For a spatially varying field pair this routine with an
-/// `EulerianGrid` velocity field from `eulerian_grid.rs` (Phase F4).
+/// `EulerianGrid` velocity field from `eulerian_grid.rs`.
 pub(crate) fn advect_vof_uniform(
     field: &mut Grid3d,
     ux_m_per_s: Fix128,

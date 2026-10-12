@@ -1,6 +1,6 @@
 //! FDM Layer Adhesion Analysis (Print-Direction × Load-Direction Matrix)
 //!
-//! Phase C1 of the ALICE-Physics completeness project. Practical extension of
+//! Practical extension of
 //! `anisotropic.rs`: rather than modelling full orthotropic elasticity, this
 //! module provides a **quick 6×6 lookup** that returns the effective strength
 //! for a given loading direction relative to the print orientation. Useful

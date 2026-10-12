@@ -1,6 +1,6 @@
 //! Continuum Surface Force (CSF) for Surface Tension
 //!
-//! Phase G2 of the ALICE-Physics completeness project. Implements the
+//! Implements the
 //! **Brackbill/Kothe/Zemach 1992** continuum surface force reformulation
 //! of surface tension, suitable for level-set / VOF grid-based fluid
 //! solvers.

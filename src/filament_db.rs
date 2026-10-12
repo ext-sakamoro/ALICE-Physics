@@ -1,7 +1,7 @@
 //! 3D Printing Material & Sheet Metal Property Database
 //!
 //! Deterministic material property database for 3D printing safety verification
-//! (Phase A of ALICE-Physics completeness project). Extends `material.rs`
+//! Extends `material.rs`
 //! (friction/restitution for rigid body contact) with **mechanical strength**
 //! properties needed for stress analysis, thin-wall detection, print orientation
 //! optimization, and warp risk analysis.
@@ -202,9 +202,9 @@ impl MaterialProperties {
     /// in a direction the load has a component along gives 0.
     ///
     /// At θ = 0 (pure XY load) returns `youngs_modulus_gpa`; at θ = π/2
-    // LIMITATION(COV-MAT-035): This is a first-order engineering approximation; use `anisotropic.rs` (Phase B1) for the full Hill / Tsai-Wu criterion.
+    // LIMITATION(COV-MAT-035): This is a first-order engineering approximation; use `anisotropic.rs` for the full Hill / Tsai-Wu criterion.
     /// (pure Z load) returns `youngs_z()`. This is a first-order engineering
-    /// approximation; use `anisotropic.rs` (Phase B1) for the full Hill /
+    /// approximation; use `anisotropic.rs` for the full Hill /
     /// Tsai-Wu criterion.
     #[must_use]
     pub fn youngs_at_angle(&self, theta: Fix128) -> Fix128 {
@@ -334,7 +334,7 @@ impl MaterialProperties {
     ///
     /// Source: MatWeb TPU Shore 95A generic + NinjaTek NinjaFlex datasheet.
     /// Young's modulus is highly deformation-dependent; stored value is small-
-    /// strain (< 5% elongation). Use `hyperelastic.rs` (Phase B4) for large
+    /// strain (< 5% elongation). Use `hyperelastic.rs` for large
     /// deformations.
     #[must_use]
     pub fn tpu() -> Self {

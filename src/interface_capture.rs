@@ -1,6 +1,6 @@
 //! Sharp Interface Capturing (Level Set FSM + PLIC VOF Reconstruction)
 //!
-//! Phase G6 of the ALICE-Physics completeness project. Sharpens the diffuse
+//! Sharpens the diffuse
 //! interfaces of `multiphase` by:
 //!
 //! - **Fast Sweeping Method** for level-set reinitialisation — a single

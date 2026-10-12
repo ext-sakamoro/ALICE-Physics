@@ -1,6 +1,6 @@
 //! Thin-Wall Vibration & Printer Resonance Risk
 //!
-//! Phase E2 of the ALICE-Physics completeness project. FDM printed parts
+//! FDM printed parts
 //! with thin planar walls (< 3 mm) can resonate with printer-generated
 //! vibration and produce "spaghetti"-like buckling, layer smearing, or
 //! post-print acoustic buzz. This module compares a wall's first natural

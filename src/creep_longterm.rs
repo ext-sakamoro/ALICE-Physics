@@ -1,6 +1,6 @@
 //! Long-Term Creep Prediction (Findley + Time-Temperature Superposition)
 //!
-//! Phase E4 of the ALICE-Physics completeness project. Extends the Norton
+//! Extends the Norton
 //! power-law creep in `plastic.rs` with the **Findley** three-parameter
 //! model that captures both the initial elastic strain and the transient
 //! logarithmic-like creep phase common to polymers over months / years.

@@ -1,6 +1,6 @@
 //! Modal Analysis — Natural Frequency of Beams / Plates / Springs
 //!
-//! Phase D2 of the ALICE-Physics completeness project. Predicts the natural
+//! Predicts the natural
 //! frequencies of common structural elements so a designer can check for
 //! resonance with printer vibration (typically 40–150 Hz from stepper motors
 //! and cooling fans) or environmental excitation (wind, HVAC, etc.).

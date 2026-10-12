@@ -1,6 +1,6 @@
 //! Support Structure Volume Estimation for 3D Printing
 //!
-//! Phase A4 of the ALICE-Physics completeness project. Given a set of overhang
+//! Given a set of overhang
 //! regions (typically produced upstream by a slicer, mesh overhang detector or
 //! `alice-print::overhang`), estimates the filament volume consumed by support
 //! structures, plus rough print-time / filament-length figures.

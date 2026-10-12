@@ -1,6 +1,6 @@
 //! Elastoplastic Deformation with von Mises Yield & Creep Prediction
 //!
-//! Phase B2 of the ALICE-Physics completeness project. Extends the elastic
+//! Extends the elastic
 //! stress models (`beam_stress`, `anisotropic`) with **permanent (plastic)
 //! deformation** and **long-term creep** — the two mechanisms responsible for
 //! FDM part failures that "elastic-only" analysis misses:

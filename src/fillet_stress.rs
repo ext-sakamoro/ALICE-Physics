@@ -1,6 +1,6 @@
 //! Stress Concentration Factors (Peterson / Neuber)
 //!
-//! Phase E1 of the ALICE-Physics completeness project. Sharp geometric
+//! Sharp geometric
 //! features (holes, notches, shoulders) concentrate stress locally to values
 //! many times the nominal — Peterson's `K_t` factor captures this multiplier.
 //!

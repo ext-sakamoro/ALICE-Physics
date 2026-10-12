@@ -1,6 +1,6 @@
 //! Compressible Fluid Dynamics — Ideal Gas + Shock Relations
 //!
-//! Phase F3 of the ALICE-Physics completeness project. Covers the essentials
+//! Covers the essentials
 //! of compressible-flow analysis at engineering fidelity:
 //!
 //! - Ideal-gas equation of state and isentropic (adiabatic) relations.

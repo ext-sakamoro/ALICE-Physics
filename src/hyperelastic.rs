@@ -1,6 +1,6 @@
 //! Nonlinear Hyperelastic Constitutive Models (Rubber / TPU / Silicone)
 //!
-//! Phase B4 of the ALICE-Physics completeness project. Provides strain-
+//! Provides strain-
 //! energy-density formulations for large-deformation elastic response, needed
 //! for TPU printed parts, silicone gaskets, elastomeric snap-fits and any
 //! material stretching beyond ~10% strain where linear Hooke's law breaks

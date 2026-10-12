@@ -1,6 +1,6 @@
 //! Beam Stress Analysis for 3D Print Safety
 //!
-//! Phase A3 of the ALICE-Physics completeness project. Static-load stress and
+//! Static-load stress and
 //! deflection analysis for engineering beams, covering the common load cases
 //! that dominate FDM printed part failures (cantilever hooks, shelf brackets,
 //! SKADIS pegboard accessories, snap-fit tabs).

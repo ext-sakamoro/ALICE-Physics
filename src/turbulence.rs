@@ -1,6 +1,6 @@
 //! Turbulence Closure Models — Smagorinsky LES + k-ε + k-ω
 //!
-//! Phase G1 of the ALICE-Physics completeness project. Provides the three
+//! Provides the three
 //! most common Reynolds-Averaged (RANS) and Large Eddy Simulation (LES)
 //! turbulence closures — each computes an effective **eddy viscosity**
 //! `ν_t` (m²/s) that augments the molecular viscosity in the momentum

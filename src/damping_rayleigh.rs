@@ -1,6 +1,6 @@
 //! Rayleigh (Proportional) Damping Model
 //!
-//! Phase D3 of the ALICE-Physics completeness project. The most widely used
+//! The most widely used
 //! damping model in structural dynamics: assumes the damping matrix `C` is a
 //! linear combination of the mass matrix `M` and stiffness matrix `K`.
 //!

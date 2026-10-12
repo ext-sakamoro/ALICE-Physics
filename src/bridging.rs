@@ -1,6 +1,6 @@
 //! Bridging Distance Analysis for Support-Free Overhangs
 //!
-//! Phase C3 of the ALICE-Physics completeness project. Given a set of
+//! Given a set of
 //! **bridge edges** — horizontal spans that must be printed without support
 //! by extruding filament between two anchor points — this module compares
 //! each span length against the material's maximum reliable bridging

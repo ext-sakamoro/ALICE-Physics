@@ -1,6 +1,6 @@
 //! Non-Newtonian Fluid Constitutive Models
 //!
-//! Phase F1 of the ALICE-Physics completeness project. Real fluids of
+//! Real fluids of
 //! engineering interest (molten polymers during extrusion, blood, ketchup,
 //! cornstarch slurry, drilling mud, silicone gels) do not obey Newton's
 //! linear law τ = μ·γ̇. This module provides three widely-used constitutive

@@ -1,6 +1,6 @@
 //! Thermal Stress in Constrained Parts
 //!
-//! Phase E3 of the ALICE-Physics completeness project. When a printed part is
+//! When a printed part is
 //! **constrained** and undergoes temperature change (heated bed cooling, oven
 //! post-cure, outdoor exposure), the frustrated thermal expansion generates
 //! in-plane stress that can crack the part or peel it off the build plate.

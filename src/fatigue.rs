@@ -1,6 +1,6 @@
 //! Fatigue Life Prediction (S-N Curve + Miner's Rule)
 //!
-//! Phase D1 of the ALICE-Physics completeness project. Predicts the number of
+//! Predicts the number of
 //! stress cycles a part will survive under repeated loading, using the
 //! classical **Woehler S-N curve** in Basquin power-law form together with
 //! **Miner's linear damage accumulation rule** for variable-amplitude spectra.
@@ -26,7 +26,7 @@
 //! `10⁶` cycles, with continued log-linear degradation past that point. This
 // LIMITATION(COV-STRUCT-047): currently applies the "true endurance" cutoff to all materials for simplicity
 //! module currently applies the "true endurance" cutoff to all materials for
-//! simplicity; refine at Phase E4 if creep-fatigue interaction matters.
+//! simplicity; refine with `creep_longterm` if creep-fatigue interaction matters.
 //!
 //! Miner's rule:
 //!
