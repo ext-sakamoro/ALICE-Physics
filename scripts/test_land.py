@@ -11,6 +11,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -208,6 +209,41 @@ class Pure(unittest.TestCase):
         self.assertTrue(land.message_problems("fix: found by the worker"))
 
 
+class Identity(unittest.TestCase):
+    def test_denied_forms(self):
+        p = land.identity_problem
+        for name, email in (("Some One", "noreply@github.com"), ("Some One", "NoReply@GitHub.com "),
+                            ("Some One", "41898282+bot@users.noreply.github.com"),
+                            ("Some One", "x@USERS.NOREPLY.GITHUB.COM"),
+                            ("web-flow", "a@b.c"), ("Web-Flow", "a@b.c"), ("GitHub", "a@b.c"), (" github ", "a@b.c")):
+            self.assertIsNotNone(p(name, email), (name, email))
+        for name, email in ((NAME, EMAIL), ("GitHub Actions fan", "a@b.c"), ("Some One", "noreply@github.com.example"),
+                            ("Some One", "users.noreply.github.com@example.org"),
+                            ("Some One", "a@users.noreply.github.com.example.org"), ("webflow", "a@b.c")):
+            self.assertIsNone(p(name, email), (name, email))
+
+    def test_the_override_is_refused(self):
+        old = land.IDENTITY
+        try:
+            for ident in ("Some One <noreply@github.com>", "Some One <9+me@users.noreply.github.com>",
+                          "web-flow <a@b.c>", "GitHub <a@b.c>", "GITHUB <a@b.c>", "no email here"):
+                land.IDENTITY = ident
+                with self.assertRaisesRegex(land.LandError, "LAND_IDENTITY .* (is refused|is not `Name <email>`)"):
+                    land.Lander(Path("."), "T", log=lambda *_: None)
+            land.IDENTITY = f"{NAME} <{EMAIL}>"
+            land.Lander(Path("."), "T", log=lambda *_: None)  # the normal identity is accepted
+        finally:
+            land.IDENTITY = old
+
+    def test_the_cli_refuses_a_denied_override(self):
+        old = land.IDENTITY
+        try:
+            land.IDENTITY = "web-flow <a@b.c>"
+            self.assertEqual(land.main(["--id", "x", "--dry-run"]), 2)
+        finally:
+            land.IDENTITY = old
+
+
 class Landing(unittest.TestCase):
     def setUp(self):
         self.r = Repo()
@@ -272,6 +308,23 @@ class Landing(unittest.TestCase):
         with self.assertRaises(land.LandError):
             self.r.lander(ci_result="failure").land()
         self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_denied_committer_in_the_range_is_refused(self):
+        commit(self.r.work, {"docs/x.md": "x\n"}, "docs: x")
+        for name, email in (("Some One", "noreply@github.com"), ("Some One", "1234+someone@users.noreply.github.com"),
+                            ("web-flow", "a@b.c"), ("GitHub", "a@b.c")):
+            commit(self.r.work, {"docs/y.md": name + email + "\n"}, "docs: y")
+            git(self.r.work, "-c", f"user.name={name}", "-c", f"user.email={email}", "commit", "-q", "--amend",
+                "--no-edit")
+            sha = git(self.r.work, "rev-parse", "--short=7", "HEAD")
+            with self.assertRaisesRegex(land.LandError, re.escape(f"{sha}: committer `{name} <{email}>` is refused")):
+                self.r.lander().land()
+            git(self.r.work, "reset", "-q", "--hard", "HEAD~1")
+
+    def test_a_denied_author_is_refused_with_its_field(self):
+        commit(self.r.work, {"docs/x.md": "x\n"}, "docs: x", author="GitHub <noreply@github.com>")
+        with self.assertRaisesRegex(land.LandError, "author `GitHub <noreply@github.com>` is refused: the email"):
+            self.r.lander().land()
 
     def test_wrong_author_is_refused(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- b\n"}, "feat: b",

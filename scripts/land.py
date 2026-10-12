@@ -3,7 +3,10 @@
 
 Run from a checkout whose HEAD sits on top of an origin/main base. The script
 
-  1. checks the commits: author and committer identity, no internal vocabulary
+  1. checks the commits: the author is LAND_IDENTITY, and no author or committer
+     (nor LAND_IDENTITY itself) is a GitHub identity (identity_problem:
+     noreply@github.com, *@users.noreply.github.com, the names web-flow and
+     GitHub, case-insensitive); no internal vocabulary
      in the messages (the docs_lint word list and private-name hashes), a
      CHANGELOG line when src/ changes (--no-changelog for a pure refactor);
   2. takes the per-repository landing lock of this machine (LandLock, held until
@@ -59,6 +62,25 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 IDENTITY = os.environ.get("LAND_IDENTITY", "Moroya Sakamoto <sakamoro@alicelaw.net>")
+# identities that are never an author or committer of a landed commit, whatever
+# LAND_IDENTITY says: GitHub's own (web-flow commits from the web UI, merges and bots,
+# and the per-account noreply addresses), which put a GitHub account on the commit
+DENIED_EMAILS = ("noreply@github.com",)
+DENIED_EMAIL_SUFFIXES = ("@users.noreply.github.com",)
+DENIED_NAMES = ("web-flow", "github")
+
+
+def identity_problem(name: str, email: str) -> str | None:
+    """Why `name <email>` may not author or commit a landed commit (None: allowed).
+    Compared case-insensitively, surrounding spaces ignored."""
+    n, e = name.strip().lower(), email.strip().lower()
+    if e in DENIED_EMAILS:
+        return f"the email {email!r} is GitHub's noreply address"
+    if any(e.endswith(s) for s in DENIED_EMAIL_SUFFIXES):
+        return f"the email {email!r} is a GitHub account noreply address"
+    if n in DENIED_NAMES:
+        return f"the name {name!r} is a GitHub identity"
+    return None
 GENERATED = (
     "docs/integration-status.md",
     "docs/integration-levels.md",
@@ -578,7 +600,13 @@ class Lander:
         self.root, self.id, self.dry_run = root, ident, dry_run
         self.no_changelog, self.remote, self.branch, self.log = no_changelog, remote, branch, log
         self.replace_ci = replace_ci
-        name, email = re.fullmatch(r"(.*) <(.*)>", IDENTITY).groups()
+        m = re.fullmatch(r"(.+?) <([^<>]+)>", IDENTITY)
+        if not m:
+            raise LandError(f"LAND_IDENTITY {IDENTITY!r} is not `Name <email>`")
+        name, email = m.groups()
+        problem = identity_problem(name, email)
+        if problem:
+            raise LandError(f"LAND_IDENTITY {IDENTITY!r} is refused: {problem}")
         self.ident_cfg = ["-c", f"user.name={name}", "-c", f"user.email={email}"]
         self.preflight_runs = 0
         self.poll_seconds = 30
@@ -818,9 +846,13 @@ class Lander:
             raise LandError(f"nothing to land: HEAD has no commit beyond {self.upstream()} (compared nothing)")
         problems = []
         for sha in shas:
-            who = self.git("log", "-1", "--format=%an <%ae>|%cn <%ce>", sha).split("|")
-            if who[0] != IDENTITY:
-                problems.append(f"{sha[:7]}: author `{who[0]}` is not `{IDENTITY}`")
+            an, ae, cn, ce = self.git("log", "-1", "--format=%an%x00%ae%x00%cn%x00%ce", sha).split("\0")
+            for field, name, email in (("author", an, ae), ("committer", cn, ce)):
+                problem = identity_problem(name, email)
+                if problem:
+                    problems.append(f"{sha[:7]}: {field} `{name} <{email}>` is refused: {problem}")
+            if f"{an} <{ae}>" != IDENTITY:
+                problems.append(f"{sha[:7]}: author `{an} <{ae}>` is not `{IDENTITY}`")
             msg = self.git("log", "-1", "--format=%B", sha)
             problems += [f"{sha[:7]}: {p}" for p in message_problems(msg)]
             if SIGNATURE_RE.search(msg):
@@ -1106,8 +1138,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {problem}", file=sys.stderr)
         return 2
     root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True).stdout.strip())
-    lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
-                    replace_ci=args.replace_ci, direct_reason=args.reason if args.direct else None)
+    try:
+        lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
+                        replace_ci=args.replace_ci, direct_reason=args.reason if args.direct else None)
+    except LandError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     lander.lock_wait_seconds = args.lock_wait_minutes * 60
     try:
         if args.wait_only:

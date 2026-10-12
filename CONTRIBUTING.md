@@ -68,6 +68,9 @@ publishes a new release changes nothing until the lock is updated.
 - Dependabot opens weekly pull requests that update the lock. Their changes
   are re-committed locally with the project author rather than merged on
   GitHub, and land with `scripts/land.py`, which regenerates the ledger.
+  `land.py` refuses a commit whose author or committer is a GitHub identity
+  (`noreply@github.com`, `*@users.noreply.github.com`, the names `web-flow` and
+  `GitHub`), and refuses such an identity as `LAND_IDENTITY` too.
 - The lock only fixes this repository's builds. A project that depends on
   `alice-physics` resolves its own versions: Cargo ignores the lock file of a
   dependency, including the copy inside the published package.
