@@ -285,7 +285,7 @@ pub fn trilinear_sample(field: &Grid3d, cx: Fix128, cy: Fix128, cz: Fix128) -> F
     c0 * om_w + c1 * w
 }
 
-/// Semi-Lagrangian VOF advection (Session 3 I3 upgrade).
+/// Semi-Lagrangian VOF advection.
 ///
 /// For each cell, trace back along the constant velocity by `dt`, sample
 /// the previous field trilinearly, and write to the new field. This is

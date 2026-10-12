@@ -275,7 +275,7 @@ impl KOmegaState {
 }
 
 // ============================================================================
-// Dynamic Smagorinsky (Session 3 I10 upgrade)
+// Dynamic Smagorinsky
 // ============================================================================
 
 /// Compute a **dynamic** Smagorinsky coefficient `C_s(x,t)` from local flow
@@ -311,7 +311,7 @@ pub(crate) fn dynamic_smagorinsky_cs(strain_grid: Fix128, strain_test: Fix128) -
 }
 
 // ============================================================================
-// Wall functions (Session 3 I8 upgrade)
+// Wall functions
 // ============================================================================
 
 /// von Kármán constant κ (≈ 0.41) for log-law wall function (crate-internal).

@@ -1,6 +1,6 @@
-//! Integrated CFD Solver (Session 3 S1)
+//! Integrated CFD Solver
 //!
-//! Wires together the Session 1-2 fluid modules into a single time-stepping
+//! Wires together the individual fluid modules into a single time-stepping
 //! loop that a user can drive with `solver.step(dt)`. Combines:
 //!
 //! - MAC-grid velocity storage & pressure projection (`eulerian_grid`)

@@ -1,6 +1,6 @@
-//! Structural (Solid Mechanics) Time-Stepping Solver (Session 3 S2)
+//! Structural (Solid Mechanics) Time-Stepping Solver
 //!
-//! Composes Session 1-2 strength / plasticity / creep / fatigue / buckling
+//! Composes the strength / plasticity / creep / fatigue / buckling
 //! models into a single time-stepping loop that follows a component through
 //! its service life:
 //!

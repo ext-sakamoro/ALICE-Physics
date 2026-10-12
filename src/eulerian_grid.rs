@@ -1068,7 +1068,7 @@ fn poisson_rhs(grid: &MacGrid, scale: Fix128) -> Vec<Fix128> {
 /// This is O(n · iterations); acceptable for grids up to ~64³. For larger
 /// problems use [`project_pressure_multigrid`] (reached from a solver step by
 /// `CfdSolver::step_multigrid`).
-/// Session 3 I9 upgrade: alias to `project_pressure_red_black_gs`, which
+/// Alias to `project_pressure_red_black_gs`, which
 /// converges ~2× faster than Jacobi while retaining the same API. Older
 /// callers see no behavioural change; a call with the same `iterations` now
 /// yields a strictly smaller residual.
@@ -1425,7 +1425,7 @@ pub fn project_pressure_multigrid(
     subtract_pressure_gradient(grid, dt_s / density_kg_m3 * inv_dx);
 }
 
-/// Red-black Gauss-Seidel variant of `project_pressure` (Session 3 I9).
+/// Red-black Gauss-Seidel variant of `project_pressure`.
 ///
 /// Alternates two sweeps per iteration: "red" cells where `i+j+k` is even and
 /// "black" cells where it is odd. Immediately-updated pressures propagate
@@ -4254,7 +4254,7 @@ fn linf_norm(v: &[Fix128]) -> Fix128 {
 }
 
 // ============================================================================
-// Trilinear P2G / G2P (Session 3 I2 upgrade)
+// Trilinear P2G / G2P
 // ============================================================================
 
 /// Split a world coordinate `p` (m) into `(base_index, frac)` for a
@@ -4474,7 +4474,7 @@ fn corner_range(corners: &[Fix128; 8]) -> (Fix128, Fix128) {
 /// Grid-to-particle: trilinear-sample velocity at world position `pos_m`.
 ///
 /// Correct MAC-grid staggering is applied per component; velocities read
-/// from their own face grids. Session 3 I2 upgrade from nearest-cell.
+/// from their own face grids (trilinear, not nearest-cell).
 #[must_use]
 pub fn g2p_velocity(grid: &MacGrid, pos_m: Vec3Fix) -> Vec3Fix {
     if grid.dx.is_zero() {
@@ -4488,7 +4488,7 @@ pub fn g2p_velocity(grid: &MacGrid, pos_m: Vec3Fix) -> Vec3Fix {
 }
 
 /// Scatter one particle's velocity onto the 8 nearest u-face grid nodes
-/// using trilinear weights (Session 3 I2 upgrade). The caller must
+/// using trilinear weights. The caller must
 /// separately track per-cell weight sums if quantitative velocity means
 /// are required — this routine only accumulates weighted deposits.
 fn deposit_u_trilinear<S: FaceSink>(sink: &mut S, pos_m: Vec3Fix, vx: Fix128) {
