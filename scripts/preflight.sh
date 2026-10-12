@@ -215,6 +215,17 @@ cargo clippy --all-targets --features "$NATIVE" -- -D warnings
 step "clippy -D warnings (full native feature set incl. neural/replay/analytics/privacy-crypto, all targets)"
 cargo clippy --all-targets --features "$NATIVE,neural,replay,analytics,privacy-crypto" -- -D warnings
 
+# the library code also may not call f32 / f64 max and min (CI's "Clippy
+# (library code, ...)" step; .github/clippy-lib/clippy.toml is generated from
+# clippy.toml and the script checks it is current and fires on the canary)
+step "clippy -D warnings (library code, f32 / f64 max and min forbidden)"
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "$NATIVE,neural,replay,analytics,privacy-crypto" -- -D warnings
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "python" -- -D clippy::disallowed_methods
+step "library clippy configuration (tests, then current + canary)"
+python3 scripts/test_clippy_lib_gate.py
+python3 scripts/clippy_lib_gate.py
+
 step "wasm32-wasip1 golden tests build (dev-deps are built for the target too)"
 rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm32-wasip1
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run

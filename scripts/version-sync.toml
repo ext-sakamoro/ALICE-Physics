@@ -16,6 +16,10 @@ reason = "cargo-fuzz harness, not published (version 0.0.0)"
 file = "scripts/cfg-items/Cargo.toml"
 reason = "helper of scripts/mutants_in_diff_plan.py, not published (version 0.0.0)"
 
+[[independent]]
+file = "scripts/clippy-lib-canary/Cargo.toml"
+reason = "fixture of scripts/clippy_lib_gate.py, not published (version 0.0.0)"
+
 [[historical]]
 file = "docs/ROADMAP.md"
 reason = "a dated log of past releases (0.14 previews, 1.0.0); the current version is in Cargo.toml and README"
