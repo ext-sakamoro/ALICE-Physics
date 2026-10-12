@@ -27,6 +27,15 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      then stops ("main is moving");
   6. pushes HEAD to main (fast-forward only), going back to 5 when main moved
      meanwhile.
+  7. before that push, requires author and committer of every commit about to reach
+     main to be LAND_IDENTITY (check_push_identity); after it, reads the landed
+     commits back from the remote (git, after a fetch) and the tip
+     from the GitHub API, and requires author and committer to be LAND_IDENTITY
+     ("REVERT OR FIX NOW" otherwise).
+
+land.py refuses to start when the environment selects a repository (REFUSED_ENV:
+GIT_DIR, GIT_WORK_TREE, GIT_INDEX_FILE, ...), and runs every child process with
+clean_env(), which also drops the ambient identity and injected config.
 
 Generated ledgers are not meant to be edited on a branch: they are rebuilt at
 landing time, so two landings never conflict on them.
@@ -79,6 +88,50 @@ SCRUBBED_ENV_RE = re.compile(
     r"^(GIT_(AUTHOR|COMMITTER)_(NAME|EMAIL|DATE)|GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|GIT_COMMON_DIR"
     r"|GIT_OBJECT_DIRECTORY|GIT_ALTERNATE_OBJECT_DIRECTORIES|GIT_NAMESPACE|GIT_CEILING_DIRECTORIES"
     r"|GIT_CONFIG_PARAMETERS|GIT_CONFIG_COUNT|GIT_CONFIG_KEY_\d+|GIT_CONFIG_VALUE_\d+)$")
+
+
+# variables that select another repository, working tree, index or object store: land.py refuses
+# to start when one is set (picking a repository silently is the dangerous direction);
+# clean_env() still drops them for every child process
+REFUSED_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR", "GIT_OBJECT_DIRECTORY",
+               "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE")
+
+
+def refused_env() -> list[str]:
+    """the REFUSED_ENV variables set in this process's environment"""
+    return [k for k in REFUSED_ENV if k in os.environ]
+
+
+def landed_identity_problems(rows: list[tuple[str, str, str, str, str, str]], identity: str) -> list[str]:
+    """rows: (sha, author name, author email, committer name, committer email, source).
+    A problem per field that is not `identity` or is a denied identity, and one when no row
+    was read (nothing compared)."""
+    if not rows:
+        return ["no landed commit was read from the remote (compared nothing)"]
+    out = []
+    for sha, an, ae, cn, ce, source in rows:
+        for field, name, email in (("author", an, ae), ("committer", cn, ce)):
+            who = f"{name} <{email}>"
+            problem = identity_problem(name, email)
+            if who != identity or problem:
+                out.append(f"{sha[:7]} {field} `{who}` ({source})"
+                           + (f": {problem}" if problem else f": not `{identity}`"))
+    return out
+
+
+def say(msg: str) -> None:
+    """the default log: one flushed line (a landing waits for minutes; output redirected to
+    a file must show each line as it happens, not at exit)"""
+    print(msg, flush=True)
+
+
+def line_buffered_output() -> None:
+    """stdout / stderr in UTF-8 and line-buffered, also when redirected to a file or a pipe"""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", line_buffering=True)
+        except (AttributeError, ValueError):
+            pass
 
 
 def clean_env() -> dict[str, str]:
@@ -611,7 +664,7 @@ def message_problems(message: str) -> list[str]:
 
 class Lander:
     def __init__(self, root: Path, ident: str, *, dry_run: bool = False, no_changelog: bool = False,
-                 replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=print,
+                 replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=say,
                  direct_reason: str | None = None):
         self.root, self.id, self.dry_run = root, ident, dry_run
         self.no_changelog, self.remote, self.branch, self.log = no_changelog, remote, branch, log
@@ -710,7 +763,7 @@ class Lander:
 
     def gh_json(self, *args: str):
         """`gh <args>` parsed as JSON; LandError when gh fails (never read as an empty list)."""
-        out = subprocess.run([*self.gh_cmd, *args], capture_output=True, text=True, encoding="utf-8",
+        out = subprocess.run([*self.gh_cmd, *args], capture_output=True, text=True, env=clean_env(), encoding="utf-8",
                              errors="replace")
         if out.returncode != 0:
             raise LandError(f"gh {' '.join(args[:3])} failed: {out.stderr.strip()[:300]}")
@@ -733,7 +786,7 @@ class Lander:
 
     def dispatch(self, slug: str, wf_file: str, ref: str) -> None:
         r = subprocess.run([*self.gh_cmd, "workflow", "run", wf_file, "--repo", slug, "--ref", ref],
-                           capture_output=True, text=True, encoding="utf-8", errors="replace")
+                           capture_output=True, text=True, env=clean_env(), encoding="utf-8", errors="replace")
         if r.returncode != 0:
             raise LandError(f"gh workflow run {wf_file} --ref {ref} failed: {r.stderr.strip()[:300]}")
 
@@ -969,6 +1022,52 @@ class Lander:
         self.git(*self.ident_cfg, "commit", "-q", "--author", IDENTITY, "-m",
                  "docs: regenerate the generated ledgers")
 
+    def api_commit_identity(self, sha: str) -> tuple[str, str, str, str]:
+        """(author name, author email, committer name, committer email) of `sha` from the
+        GitHub API (`gh api repos/<slug>/commits/<sha>`)"""
+        data = self.gh_json("api", f"repos/{self.slug()}/commits/{sha}")
+        try:
+            c = data["commit"]
+            return c["author"]["name"], c["author"]["email"], c["committer"]["name"], c["committer"]["email"]
+        except (TypeError, KeyError) as e:
+            raise LandError(f"gh api commits/{sha[:7]}: no author / committer ({e})") from None
+
+    def identity_rows(self, rev_range: str, source: str) -> list[tuple[str, str, str, str, str, str]]:
+        rows = []
+        for c in self.git("rev-list", "--reverse", rev_range).split():
+            an, ae, cn, ce = self.git("log", "-1", "--format=%an%x00%ae%x00%cn%x00%ce", c).split("\0")
+            rows.append((c, an, ae, cn, ce, source))
+        return rows
+
+    def check_push_identity(self, before: str) -> None:
+        """Before the push: every commit about to reach main (before..HEAD, after the
+        rebase) has author and committer IDENTITY and no denied identity; refuse otherwise."""
+        problems = landed_identity_problems(self.identity_rows(f"{before}..HEAD", "local"), IDENTITY)
+        if problems:
+            raise LandError(f"refusing to push to {self.branch}: commit identity of {before[:7]}..HEAD:\n  "
+                            + "\n  ".join(problems))
+
+    def verify_landed_identity(self, before: str, sha: str) -> None:
+        """After the push (the backstop of check_push_identity): read every landed commit
+        (before..sha on the fetched remote branch) with git, and the tip from the GitHub API,
+        and require author and committer to be IDENTITY and not denied. A mismatch raises
+        "REVERT OR FIX NOW" (main has moved: fix forward, no history rewrite)."""
+        rows = self.identity_rows(f"{before}..{self.upstream()}", "remote")
+        try:
+            rows.append((sha, *self.api_commit_identity(sha), "GitHub API"))
+        except LandError as e:
+            rows.append((sha, "?", f"unreadable: {e}", "?", "?", "GitHub API"))
+        for c, an, ae, cn, ce, source in rows:
+            self.record.append(f"landed identity: {c[:7]} author {an} <{ae}> committer {cn} <{ce}> ({source})")
+        problems = landed_identity_problems(rows, IDENTITY)
+        if problems:
+            for line in self.record:
+                self.log(f"  {line}")
+            raise LandError(f"REVERT OR FIX NOW: landed commit identity on {self.branch} "
+                            f"({before[:7]}..{sha[:7]}):\n  " + "\n  ".join(problems)
+                            + "\n  fix forward with a new commit (a revert or a correction); do not rewrite "
+                            f"the history of {self.branch}")
+
     def lock(self) -> LandLock:
         base = os.environ.get(LOCK_DIR_ENV) or str(Path.home() / ".cache" / "alice-land")
         try:
@@ -1092,10 +1191,13 @@ class Lander:
             if self.dry_run:
                 self.log(f"dry run: would push {sha[:7]} to {self.branch}")
                 return sha
+            before_push = self.git("rev-parse", self.upstream())
+            self.check_push_identity(before_push)
             r = subprocess.run(["git", "push", "-q", self.remote, f"HEAD:{self.branch}"], cwd=self.root,
                                capture_output=True, text=True, env=self.git_env)
             self.fetch()
             if r.returncode == 0 and self.git("rev-parse", self.upstream()) == sha:
+                self.verify_landed_identity(before_push, sha)
                 if lane == "direct":
                     why = "direct (no evidence)"
                 elif rounds > 1:
@@ -1120,24 +1222,20 @@ class Lander:
 def report_after(lander: "Lander", sha: str) -> int:
     code, lines = lander.wait_after(sha)
     for line in lines:
-        print(line, file=sys.stderr if code else sys.stdout)
+        print(line, file=sys.stderr if code else sys.stdout, flush=True)
     if code == EXIT_RED:
         print(f"error: an after-landing result on {lander.branch} is red for {sha[:7]}: REVERT OR FIX NOW",
-              file=sys.stderr)
+              file=sys.stderr, flush=True)
     elif code == EXIT_PENDING:
         print(f"pending: the after-landing set on {lander.branch} did not finish for {sha[:7]}; "
-              f"run again: python3 scripts/land.py --id {lander.id} --wait-only {sha}", file=sys.stderr)
+              f"run again: python3 scripts/land.py --id {lander.id} --wait-only {sha}", file=sys.stderr, flush=True)
     else:
-        print(f"after-landing set on {lander.branch} green for {sha[:7]}")
+        print(f"after-landing set on {lander.branch} green for {sha[:7]}", flush=True)
     return code
 
 
 def main(argv: list[str] | None = None) -> int:
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            stream.reconfigure(encoding="utf-8")
-        except (AttributeError, ValueError):
-            pass
+    line_buffered_output()
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--id", required=True, help="issue / defect id or group name (used for ci/<id>)")
     ap.add_argument("--dry-run", action="store_true", help="run every step except the pushes")
@@ -1154,11 +1252,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--wait-only", metavar="SHA", help="only read the after-landing set on main for SHA")
     args = ap.parse_args(argv)
     if not re.fullmatch(r"[A-Za-z0-9._-]+", args.id):
-        print("error: --id may hold letters, digits, '.', '_' and '-' only", file=sys.stderr)
+        print("error: --id may hold letters, digits, '.', '_' and '-' only", file=sys.stderr, flush=True)
         return 2
     problem = direct_reason_problem(args.direct, args.reason)
     if problem:
-        print(f"error: {problem}", file=sys.stderr)
+        print(f"error: {problem}", file=sys.stderr, flush=True)
+        return 2
+    refused = refused_env()
+    if refused:
+        print(f"error: {', '.join(refused)} set in the environment: land.py does not land a repository "
+              "chosen by the environment; unset it and run from the checkout", file=sys.stderr, flush=True)
         return 2
     root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True,
                                env=clean_env()).stdout.strip())
@@ -1166,7 +1269,7 @@ def main(argv: list[str] | None = None) -> int:
         lander = Lander(root, args.id, dry_run=args.dry_run, no_changelog=args.no_changelog,
                         replace_ci=args.replace_ci, direct_reason=args.reason if args.direct else None)
     except LandError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f"error: {e}", file=sys.stderr, flush=True)
         return 2
     lander.lock_wait_seconds = args.lock_wait_minutes * 60
     try:
@@ -1178,13 +1281,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.wait:
             return report_after(lander, sha)
         print(f"pushed {sha[:7]}; the after-landing set on {lander.branch} is NOT read yet: "
-              f"python3 scripts/land.py --id {args.id} --wait-only {sha}")
+              f"python3 scripts/land.py --id {args.id} --wait-only {sha}", flush=True)
     except LandError as e:
-        print(f"error: {e}", file=sys.stderr)
+        print(f"error: {e}", file=sys.stderr, flush=True)
         if "CI on" in str(e):
             print("note: a red workflow is not \"an unrelated existing red\" until the same "
                   "workflow's run on the commit before it (by headSha) is shown green; if it was green, "
-                  "the red is this land's", file=sys.stderr)
+                  "the red is this land's", file=sys.stderr, flush=True)
         return 1
     return 0
 

@@ -151,6 +151,12 @@ class FakeLander(land.Lander):
             raise land.LandError(f"CI on {ref} ended `{self.ci_result}`")
         self.record.append("evidence: ci.yml run 1 success")
 
+    def api_commit_identity(self, sha):
+        # the GitHub API stand-in: the commit as the remote holds it
+        self.calls.append("api")
+        return tuple(self.git("log", "-1", "--format=%an%x00%ae%x00%cn%x00%ce", f"{self.upstream()}").split("\0")) \
+            if self.git("rev-parse", self.upstream()) == sha else ("?", "?", "?", "?")
+
     def fetch(self):
         if self.moves and self.fired < self.calls.count("checks"):
             self.fired += 1
@@ -659,6 +665,153 @@ class Landing(Isolated):
         self.assertEqual(sha, lander.evidenced[0])
         self.assertEqual(git(self.r.work, "rev-parse", "HEAD~1"), mine)  # ours, then the ledger commit
 
+    def test_the_landed_identity_is_read_back_from_the_remote(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        sha = lander.land()
+        lines = [l for l in lander.record if l.startswith("landed identity: ")]
+        landed = git(self.r.work, "rev-list", "--reverse", f"{sha}~2..{sha}").split()
+        self.assertEqual(len(lines), len(landed) + 1, lines)  # every landed commit, plus the API's tip
+        for c in landed:
+            self.assertIn(f"landed identity: {c[:7]} author {DEFAULT_IDENTITY} committer {DEFAULT_IDENTITY} (remote)", lines)
+        self.assertIn(f"landed identity: {sha[:7]} author {DEFAULT_IDENTITY} committer {DEFAULT_IDENTITY} (GitHub API)", lines)
+        self.assertIn("api", lander.calls)
+
+    def test_a_wrong_identity_from_the_api_says_revert_or_fix_now(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+
+        class Wrong(FakeLander):
+            def api_commit_identity(self, sha):
+                return (NAME, EMAIL, "GitHub", "noreply@github.com")
+        lander = Wrong(self.r.work, "T-1")
+        with self.assertRaisesRegex(land.LandError, "REVERT OR FIX NOW: landed commit identity on main .*\n  .* committer "
+                                                    "`GitHub <noreply@github.com>` \\(GitHub API\\)"):
+            lander.land()
+        self.assertTrue(any(l.endswith("committer GitHub <noreply@github.com> (GitHub API)") for l in lander.record))
+
+    def test_a_wrong_identity_read_by_git_says_revert_or_fix_now(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+
+        class Wrong(FakeLander):
+            # the remote reads a different committer than the local check saw (the backstop)
+            pushed = False
+
+            def check_push_identity(self, before):
+                super().check_push_identity(before)
+                self.pushed = True
+
+            def git(self, *a, check=True):
+                out = super().git(*a, check=check)
+                if self.pushed and a[:3] == ("log", "-1", "--format=%an%x00%ae%x00%cn%x00%ce") \
+                        and self.calls[-1:] != ["api"]:
+                    return out.rsplit("\0", 2)[0] + "\0Someone Else\0someone@else.invalid"
+                return out
+        with self.assertRaisesRegex(land.LandError, "(?s)REVERT OR FIX NOW: landed commit identity.*committer "
+                                                    "`Someone Else <someone@else.invalid>` \\(remote\\): not.*"
+                                                    "fix forward with a new commit.*do not rewrite"):
+            Wrong(self.r.work, "T-1").land()
+
+    def test_a_wrong_identity_before_the_push_refuses_to_push(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        before = self.r.origin_head()
+        for bad in ("Someone Else\0someone@else.invalid", "web-flow\0x@y.invalid"):
+            class Wrong(FakeLander):
+                def check_push_identity(self, before_push):
+                    real = self.git
+
+                    def fake(*a, check=True):
+                        out = real(*a, check=check)
+                        if a[:3] == ("log", "-1", "--format=%an%x00%ae%x00%cn%x00%ce"):
+                            return out.rsplit("\0", 2)[0] + "\0" + bad
+                        return out
+                    self.git = fake
+                    try:
+                        super().check_push_identity(before_push)
+                    finally:
+                        self.git = real
+            with self.assertRaisesRegex(land.LandError, "(?s)refusing to push to main: commit identity.*committer.*\\(local\\)"):
+                Wrong(self.r.work, "T-1").land()
+            self.assertEqual(self.r.origin_head(), before, "nothing reached main")
+
+    def test_the_local_identity_check_reads_the_pushed_range(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        seen = []
+
+        class Spy(FakeLander):
+            def identity_rows(self, rev_range, source):
+                rows = super().identity_rows(rev_range, source)
+                seen.append((source, len(rows)))
+                return rows
+        sha = Spy(self.r.work, "T-1").land()
+        self.assertEqual(seen[0], ("local", 2))   # ours and the ledger commit
+        self.assertEqual(seen[1], ("remote", 2))
+        self.assertEqual(self.r.origin_head(), sha)
+
+    def test_an_unreadable_api_commit_says_revert_or_fix_now(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+
+        class NoApi(FakeLander):
+            def api_commit_identity(self, sha):
+                raise land.LandError("HTTP 404")
+        with self.assertRaisesRegex(land.LandError, "(?s)REVERT OR FIX NOW: landed commit identity.*unreadable: HTTP 404"):
+            NoApi(self.r.work, "T-1").land()
+
+    def test_landed_identity_problems(self):
+        ok = ("a" * 40, NAME, EMAIL, NAME, EMAIL, "remote")
+        self.assertEqual(land.landed_identity_problems([ok], DEFAULT_IDENTITY), [])
+        self.assertIn("compared nothing", land.landed_identity_problems([], DEFAULT_IDENTITY)[0])
+        for i, field in ((1, "author"), (3, "committer")):
+            row = list(ok)
+            row[i] = "Other"
+            p = land.landed_identity_problems([tuple(row)], DEFAULT_IDENTITY)
+            self.assertEqual(len(p), 1, p)
+            self.assertIn(f"aaaaaaa {field} `Other <{EMAIL}>` (remote): not", p[0])
+        # a denied identity is named as such even when LAND_IDENTITY were that identity
+        p = land.landed_identity_problems([("b" * 40, "web-flow", "x@y", "web-flow", "x@y", "GitHub API")], "web-flow <x@y>")
+        self.assertEqual(len(p), 2)
+        self.assertIn("is a GitHub identity", p[0])
+
+    def test_the_api_reader_parses_gh_output(self):
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        (d / "gh.py").write_text(FAKE_GH, encoding="utf-8")
+        state = d / "state.json"
+        state.write_text(json.dumps({"calls": [], "api": {"repos/o/r/commits/abc": {"commit": {
+            "author": {"name": NAME, "email": EMAIL}, "committer": {"name": "GitHub", "email": "noreply@github.com"}}}}}))
+        os.environ["FAKE_GH_STATE"] = str(state)
+        self.addCleanup(os.environ.pop, "FAKE_GH_STATE", None)
+
+        class L(land.Lander):
+            def slug(self):
+                return "o/r"
+        lnd = L(self.r.work, "T", log=lambda *_: None)
+        lnd.gh_cmd = [sys.executable, str(d / "gh.py")]
+        self.assertEqual(lnd.api_commit_identity("abc"), (NAME, EMAIL, "GitHub", "noreply@github.com"))
+        with self.assertRaisesRegex(land.LandError, "gh api repos/o/r/commits/def failed"):
+            lnd.api_commit_identity("def")
+        state.write_text(json.dumps({"calls": [], "api": {"repos/o/r/commits/abc": {"sha": "abc"}}}))
+        with self.assertRaisesRegex(land.LandError, "no author / committer"):
+            lnd.api_commit_identity("abc")
+
+    def test_a_repository_chosen_by_the_environment_is_refused(self):
+        import contextlib
+        import io
+        for var in land.REFUSED_ENV:
+            os.environ[var] = str(self.r.upstream)
+            err = io.StringIO()
+            with contextlib.redirect_stderr(err):
+                rc = land.main(["--id", "x", "--dry-run"])
+            del os.environ[var]
+            self.assertEqual(rc, 2, var)
+            self.assertIn(f"error: {var} set in the environment", err.getvalue())
+        os.environ["GIT_DIR"], os.environ["GIT_NAMESPACE"] = "/x", "n"
+        self.assertEqual(land.refused_env(), ["GIT_DIR", "GIT_NAMESPACE"])
+        del os.environ["GIT_DIR"], os.environ["GIT_NAMESPACE"]
+        # the identity / config / ceiling variables are not refused (they are scrubbed)
+        for var in ("GIT_COMMITTER_NAME", "GIT_AUTHOR_EMAIL", "GIT_CONFIG_COUNT", "GIT_CEILING_DIRECTORIES"):
+            os.environ[var] = "x"
+        self.assertEqual(land.refused_env(), [])
+
     def test_child_processes_get_the_clean_env(self):
         elsewhere = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, elsewhere, True)
@@ -810,6 +963,12 @@ if a[:2] == ["run", "list"]:
     print(json.dumps(st["list"][i] + st["added"], ensure_ascii=True))
 elif a[:2] == ["run", "view"]:
     print(json.dumps({"jobs": st["jobs"].get(a[2], [])}, ensure_ascii=True))
+elif a[:1] == ["api"]:
+    if a[1] in st.get("api", {}):
+        print(json.dumps(st["api"][a[1]]))
+    else:
+        print("HTTP 404", file=sys.stderr)
+        rc = 1
 elif a[:2] == ["workflow", "run"]:
     st["dispatched"].append(a[2])
     st["added"] += st["on_dispatch"].get(a[2], [])
@@ -1288,10 +1447,141 @@ class WaitAfter(Isolated):
         self.assertEqual(land.report_after(L(land.EXIT_PENDING), SHA), land.EXIT_PENDING)
 
 
+SUBPROCESS_FUNCS = {"run", "Popen", "check_output", "call", "check_call", "getoutput", "getstatusoutput"}
+
+
+def call_sites(source: str) -> tuple[int, list[str]]:
+    """(call sites, unwrapped): every subprocess.* / os.system / os.popen / os.exec* / os.spawn*
+    call in `source`; a site is wrapped when it passes env= built by clean_env(): `clean_env()`,
+    `self.git_env`, or a dict that spreads `**clean_env()`. os.system and os.popen cannot take
+    an env, so they are always unwrapped"""
+    import ast
+    tree = ast.parse(source)
+    sites, bad = 0, []
+
+    def built_by_clean_env(v) -> bool:
+        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id == "clean_env":
+            return True
+        if isinstance(v, ast.Attribute) and v.attr == "git_env" and isinstance(v.value, ast.Name) and v.value.id == "self":
+            return True
+        if isinstance(v, ast.Dict):
+            return any(k is None and built_by_clean_env(val) for k, val in zip(v.keys, v.values))
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            mod = node.module if isinstance(node, ast.ImportFrom) else None
+            if mod == "subprocess" or (mod == "os" and any(a.name in ("system", "popen") for a in node.names)):
+                bad.append(f"line {node.lineno}: `from {mod} import ...` hides call sites from this check")
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        owner = node.func.value.id if isinstance(node.func.value, ast.Name) else None
+        name = node.func.attr
+        if owner == "subprocess" and name in SUBPROCESS_FUNCS:
+            sites += 1
+            env = [k.value for k in node.keywords if k.arg == "env"]
+            if not env or not built_by_clean_env(env[0]):
+                bad.append(f"line {node.lineno}: subprocess.{name} without env= from clean_env()")
+        elif owner == "os" and (name in ("system", "popen") or name.startswith(("exec", "spawn"))):
+            sites += 1
+            bad.append(f"line {node.lineno}: os.{name} (cannot pass the clean environment)")
+    return sites, bad
+
+
+class CallSites(Isolated):
+    """Every process land.py starts gets the clean environment (a static check of the source)."""
+
+    SOURCE = (Path(__file__).resolve().parent / "land.py").read_text(encoding="utf-8")
+
+    def test_every_call_site_is_wrapped(self):
+        n, bad = call_sites(self.SOURCE)
+        print(f"call sites: {n}, wrapped: {n - len([b for b in bad if 'line' in b])}", file=sys.stderr)
+        self.assertGreater(n, 0, "no call site found (compared nothing)")
+        self.assertEqual(bad, [])
+        self.assertIn("self.git_env = clean_env()", self.SOURCE)
+
+    def test_a_bare_call_is_found(self):
+        for snippet in ("subprocess.run(['git', 'status'])", "subprocess.run(['x'], env=os.environ)",
+                        "subprocess.check_output(['x'], env={**os.environ})", "os.system('git status')",
+                        "subprocess.Popen(['x'], env=dict(clean_env))"):
+            n, bad = call_sites(self.SOURCE + "\n\n" + snippet + "\n")
+            self.assertEqual(n, call_sites(self.SOURCE)[0] + 1, snippet)
+            self.assertEqual(len(bad), 1, (snippet, bad))
+
+    def test_wrapped_forms(self):
+        for snippet in ("subprocess.run(['x'], env=clean_env())", "subprocess.run(['x'], env={**clean_env(), 'A': '1'})",
+                        "subprocess.run(['x'], env=self.git_env)"):
+            self.assertEqual(call_sites(snippet), (1, []), snippet)
+
+    def test_no_call_site_and_hidden_imports(self):
+        self.assertEqual(call_sites("x = 1\n"), (0, []))
+        self.assertTrue(call_sites("from subprocess import run\nrun(['x'])\n")[1])
+
+
+class Output(Isolated):
+    """land.py's lines reach a redirected stdout while it runs, not at exit."""
+
+    def line_before_exit(self, code: str) -> str:
+        """run `code` (after `import land`) with stdout redirected to a file; return what the
+        file holds while the process is still running (it sleeps after writing)"""
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        out = d / "out.txt"
+        script = f"import sys, time; sys.path.insert(0, {str(Path(__file__).resolve().parent)!r}); import land\n{code}\ntime.sleep(30)\n"
+        with open(out, "w", encoding="utf-8") as fh:
+            proc = subprocess.Popen([sys.executable, "-c", script], stdout=fh, stderr=subprocess.STDOUT)
+        try:
+            deadline = time.monotonic() + 20
+            text = ""
+            while time.monotonic() < deadline:
+                text = out.read_text(encoding="utf-8")
+                if "MARKER" in text:
+                    break
+                time.sleep(0.1)
+            self.assertIsNone(proc.poll(), "the process is still running")
+            return text
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_the_default_log_flushes(self):
+        text = self.line_before_exit("land.Lander(land.Path('.'), 'T').log('MARKER from log')")
+        self.assertIn("MARKER from log", text)
+
+    def test_main_makes_plain_prints_line_buffered(self):
+        text = self.line_before_exit("land.line_buffered_output(); print('MARKER from print')")
+        self.assertIn("MARKER from print", text)
+
+    def test_without_flushing_nothing_arrives(self):
+        # the control: a plain print to a file stays in the buffer while the process runs
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        out = d / "out.txt"
+        with open(out, "w", encoding="utf-8") as fh:
+            proc = subprocess.Popen([sys.executable, "-c", "import time; print('MARKER unflushed'); time.sleep(30)"],
+                                    stdout=fh)
+        try:
+            time.sleep(1.5)
+            self.assertIsNone(proc.poll())
+            self.assertNotIn("MARKER", out.read_text(encoding="utf-8"))
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_every_print_flushes(self):
+        import ast
+        tree = ast.parse(CallSites.SOURCE)
+        prints = [c for c in ast.walk(tree) if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+                  and c.func.id == "print"]
+        self.assertGreater(len(prints), 0)
+        self.assertEqual([c.lineno for c in prints if not any(k.arg == "flush" for k in c.keywords)], [])
+        self.assertIn("log=say", CallSites.SOURCE)
+
+
 class AmbientEnv(Isolated):
     """The key cases in a child process whose environment is hostile throughout."""
 
     KEY = ["Landing.test_a_denied_committer_in_the_range_is_refused",
+           "Landing.test_the_landed_identity_is_read_back_from_the_remote",
            "Landing.test_an_ambient_git_env_does_not_force_a_rebase",
            "Landing.test_landed_commits_carry_the_fixed_committer",
            "Landing.test_a_src_only_change_takes_the_ci_lane",
