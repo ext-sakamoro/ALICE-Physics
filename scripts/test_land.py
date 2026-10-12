@@ -26,6 +26,101 @@ import land  # noqa: E402
 # the landing lock of these tests lives in a throwaway directory, not in the home cache
 os.environ[land.LOCK_DIR_ENV] = tempfile.mkdtemp(prefix="land-lock-")
 atexit.register(shutil.rmtree, os.environ[land.LOCK_DIR_ENV], True)
+
+# --- the harness guards --------------------------------------------------------------
+# A Lander never runs against this checkout (land.py refuses a forbidden root before its
+# first git call), and every git / gh that land.py starts goes through a tripwire wrapper:
+# an argument or a remote naming a network host, or any gh that is not a test's fake, writes
+# TRIPWIRE and exits 97. Isolated fails a test that tripped it.
+REAL_ROOT = Path(__file__).resolve().parent.parent
+land.FORBIDDEN_ROOTS.add(os.path.realpath(REAL_ROOT))
+TRIP_DIR = Path(tempfile.mkdtemp(prefix="land-tripwire-"))
+atexit.register(shutil.rmtree, TRIP_DIR, True)
+TRIPWIRE = TRIP_DIR / "tripwire"
+REAL_GIT = land.pinned_tool(land.GIT_CANDIDATES)
+GIT_TRIPWIRE = r"""import os, re, subprocess, sys
+REAL, MARKER = @REAL@, @MARKER@
+args = sys.argv[1:]
+NET = re.compile(r"^(?:(?:https?|ssh|git|ftps?)://|[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:)|github\.com", re.I)
+
+
+def trip(why):
+    with open(MARKER, "a", encoding="utf-8") as fh:
+        fh.write(f"git: {why} :: {' '.join(args)}\n")
+    print(f"TRIPWIRE git: {why}", file=sys.stderr)
+    sys.exit(97)
+
+
+def local(url):
+    url = url.strip()
+    if url.startswith("file://"):
+        url = url[len("file://"):]
+    return bool(url) and not NET.search(url) and (os.path.isabs(url) or os.path.exists(url))
+
+
+for a in args:
+    if NET.search(a) and not a.startswith("file://"):
+        trip(f"network argument {a!r}")
+# the subcommand, after -c / -C and other global options
+i, cwd = 0, None
+while i < len(args) and args[i].startswith("-"):
+    if args[i] in ("-c", "-C"):
+        if args[i] == "-C":
+            cwd = args[i + 1]
+        i += 2
+    else:
+        i += 1
+sub = args[i] if i < len(args) else ""
+rest = args[i + 1:]
+if sub in ("fetch", "push", "pull", "ls-remote", "clone", "remote") and "--get-url" not in rest \
+        and not (sub == "remote" and rest[:1] != ["update"]):
+    names = [x for x in rest if not x.startswith("-") and ":" not in x.split("/")[0]][:1] or ["origin"]
+    for name in names:
+        for q in (["ls-remote", "--get-url", name], ["remote", "get-url", "--push", name]):
+            r = subprocess.run([REAL, *(["-C", cwd] if cwd else []), *q], capture_output=True, text=True)
+            if r.returncode == 0 and r.stdout.strip() and not local(r.stdout):
+                trip(f"{sub} reaches {r.stdout.strip()!r}")
+sys.exit(subprocess.call([REAL, *args]))
+"""
+GH_TRIPWIRE = r"""import sys
+with open(@MARKER@, "a", encoding="utf-8") as fh:
+    fh.write("gh: " + " ".join(sys.argv[1:]) + "\n")
+print("TRIPWIRE gh: a gh that is not a test's fake", file=sys.stderr)
+sys.exit(97)
+"""
+for _name, _src in (("git_tripwire.py", GIT_TRIPWIRE), ("gh_tripwire.py", GH_TRIPWIRE)):
+    (TRIP_DIR / _name).write_text(_src.replace("@REAL@", repr(REAL_GIT)).replace("@MARKER@", repr(str(TRIPWIRE))),
+                                  encoding="utf-8")
+land.TOOL_OVERRIDE["git"] = [sys.executable, str(TRIP_DIR / "git_tripwire.py")]
+land.TOOL_OVERRIDE["gh"] = [sys.executable, str(TRIP_DIR / "gh_tripwire.py")]
+
+
+def live_enabled(env) -> bool:
+    """live tests (the network) run only when asked for, and never in CI"""
+    return env.get("LAND_LIVE_TESTS") == "1" and not env.get("CI")
+
+
+LIVE_TESTS: list[str] = []
+
+
+def live(fn):
+    """mark a test that reaches the network: skipped unless LAND_LIVE_TESTS=1, always in CI"""
+    LIVE_TESTS.append(fn.__qualname__)
+    fn.live = True
+    return unittest.skipUnless(live_enabled(os.environ), "live test (network): set LAND_LIVE_TESTS=1, "
+                                                         "never in CI")(fn)
+
+
+def assert_local_origin(work: Path, inside: Path) -> None:
+    """the effective fetch and push URLs of `work`'s origin (after insteadOf) are a local
+    bare repository inside `inside`; AssertionError otherwise"""
+    for q in (["remote", "get-url", "--push", "origin"], ["ls-remote", "--get-url", "origin"]):
+        url = subprocess.run([REAL_GIT, "-C", str(work), *q], capture_output=True, text=True).stdout.strip()
+        path = url[len("file://"):] if url.startswith("file://") else url
+        real, root = os.path.realpath(path), os.path.realpath(inside)
+        if not (path and os.path.isabs(path) and os.path.isdir(real) and real.startswith(root + os.sep)):
+            raise AssertionError(f"the test repository's origin {url!r} ({' '.join(q)}) is not a local "
+                                 f"repository inside {inside}: refusing to run the test")
 NAME, EMAIL = "Moroya Sakamoto", "sakamoro@alicelaw.net"
 ID = ["-c", f"user.name={NAME}", "-c", f"user.email={EMAIL}"]
 
@@ -56,6 +151,26 @@ class Isolated(unittest.TestCase):
             os.environ.update(saved)
             land.IDENTITY = old_identity
         self.addCleanup(restore)
+        self.addCleanup(self.check_tripwire)
+        # the throwaway repository every Lander of the test works in
+        self.r = Repo()
+        self.addCleanup(lambda: self.r.close())
+        assert_local_origin(self.r.work, self.r.dir)
+
+    def check_tripwire(self):
+        if TRIPWIRE.exists():
+            text = TRIPWIRE.read_text(encoding="utf-8")
+            TRIPWIRE.unlink()
+            self.fail(f"the network / gh tripwire fired during the test:\n{text}")
+
+    def wf_root(self) -> Path:
+        """a throwaway repository holding a copy of this repository's .github (for the tests
+        that read the workflows and the evidence classes)"""
+        repo = Repo()
+        self.addCleanup(repo.close)
+        assert_local_origin(repo.work, repo.dir)
+        shutil.copytree(REAL_ROOT / ".github", repo.work / ".github", dirs_exist_ok=True)
+        return repo.work
 
 
 # what a shell might export, all pointing elsewhere
@@ -294,9 +409,9 @@ class Identity(Isolated):
                           "web-flow <a@b.c>", "GitHub <a@b.c>", "GITHUB <a@b.c>", "no email here"):
                 land.IDENTITY = ident
                 with self.assertRaisesRegex(land.LandError, "LAND_IDENTITY .* (is refused|is not `Name <email>`)"):
-                    land.Lander(Path("."), "T", log=lambda *_: None)
+                    land.Lander(self.r.work, "T", log=lambda *_: None)
             land.IDENTITY = f"{NAME} <{EMAIL}>"
-            land.Lander(Path("."), "T", log=lambda *_: None)  # the normal identity is accepted
+            land.Lander(self.r.work, "T", log=lambda *_: None)  # the normal identity is accepted
         finally:
             land.IDENTITY = old
 
@@ -310,12 +425,6 @@ class Identity(Isolated):
 
 
 class Landing(Isolated):
-    def setUp(self):
-        super().setUp()
-        self.r = Repo()
-
-    def tearDown(self):
-        self.r.close()
 
     def test_a_new_source_file_without_lib_tests_stops_the_land(self):
         commit(self.r.work, {"src/c.rs": "pub fn c() {}\n",
@@ -1050,7 +1159,8 @@ class WaitEvidence(Isolated):
                 {"name": "Miri (UB 検出、parallel feature)", "status": heavy, "conclusion": concl},
                 {"name": "Gate", "status": "pending", "conclusion": ""}]
 
-    def wait(self, lists, jobs=None, on_dispatch=None, at=SHA, root=ROOT):
+    def wait(self, lists, jobs=None, on_dispatch=None, at=SHA, root=None):
+        root = root or self.wf_root()
         jobs = jobs if jobs is not None else {str(self.rid("ci.yml")): self.ci_jobs(),
                                               str(self.rid("unsafe-and-parallel.yml")): self.miri_jobs()}
         self.state.write_text(json.dumps({"list": lists, "jobs": jobs, "on_dispatch": on_dispatch or {},
@@ -1283,7 +1393,7 @@ class WaitEvidence(Isolated):
         class L(land.Lander):
             def git(self, *a, check=True):
                 return "git@github.com:o/r.git"
-        lnd = L(ROOT, "T", log=lambda *_: None)
+        lnd = L(self.wf_root(), "T", log=lambda *_: None)
         lnd.gh_cmd = [sys.executable, str(self.gh)]
         lnd.poll_seconds = 0
         with self.assertRaisesRegex(land.LandError, "gh run list --repo github.com/o/r failed"):
@@ -1335,7 +1445,7 @@ class WaitAfter(Isolated):
         class L(land.Lander):
             def git(self, *a, check=True):
                 return "git@github.com:o/r.git"
-        lnd = L(ROOT, "T", log=lambda *_: None)
+        lnd = L(self.wf_root(), "T", log=lambda *_: None)
         lnd.gh_cmd = [sys.executable, str(self.gh)]
         lnd.poll_seconds = 0
         lnd.after_max_polls = polls
@@ -1599,7 +1709,9 @@ class Output(Isolated):
             proc.wait()
 
     def test_the_default_log_flushes(self):
-        text = self.line_before_exit("land.Lander(land.Path('.'), 'T').log('MARKER from log')")
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
+        text = self.line_before_exit(f"land.Lander(land.Path({str(root)!r}), 'T').log('MARKER from log')")
         self.assertIn("MARKER from log", text)
 
     def test_main_makes_plain_prints_line_buffered(self):
@@ -1644,8 +1756,6 @@ class HostileConfig(Isolated):
 
     def setUp(self):
         super().setUp()
-        self.r = Repo()
-        self.addCleanup(self.r.close)
         self.d = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.d, True)
         self.marker = self.d / "marker"
@@ -1759,6 +1869,10 @@ class HostileConfig(Isolated):
                     os.environ[k] = v
 
     def test_git_and_gh_are_pinned(self):
+        # without the tests' tripwire override: the pinned git and the forced config
+        saved = dict(land.TOOL_OVERRIDE)
+        land.TOOL_OVERRIDE.clear()
+        self.addCleanup(land.TOOL_OVERRIDE.update, saved)
         argv = land.git_argv()
         self.assertTrue(os.path.isabs(argv[0]), argv)
         self.assertIn(argv[0], {os.path.realpath(c) for c in land.GIT_CANDIDATES})
@@ -1842,7 +1956,7 @@ class GhEnvironment(Isolated):
         class L(land.Lander):
             def slug(self):
                 return "o/r"
-        lnd = L(ROOT, "T", log=lambda *_: None)
+        lnd = L(self.wf_root(), "T", log=lambda *_: None)
         lnd.gh_cmd = [sys.executable, str(self.d / "gh.py")]
         return lnd
 
@@ -1892,10 +2006,8 @@ class GhEnvironment(Isolated):
             def lock(self):
                 import contextlib
                 return contextlib.nullcontext()
-        # a throwaway repository: if the check were missing, nothing real is fetched or pushed
-        repo = Repo()
-        self.addCleanup(repo.close)
-        lnd = NoRemote(repo.work, "T", log=lambda *_: None)
+        # the throwaway repository: if the check were missing, nothing real is fetched or pushed
+        lnd = NoRemote(self.r.work, "T", log=lambda *_: None)
         lnd.gh_cmd = [sys.executable, str(self.d / "gh.py")]
         with self.assertRaisesRegex(land.LandError, "gh is not logged in"):
             lnd.land()
@@ -1911,6 +2023,7 @@ class GhEnvironment(Isolated):
         for k in ("SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_NO_VERIFY", "GIT_SSL_CAINFO", "CURL_CA_BUNDLE"):
             self.assertNotIn(k, land.clean_env())
 
+    @live
     def test_a_real_gh_ignores_a_hostile_host(self):
         # safe offline: an unknown host fails to resolve, github.com may or may not be reachable;
         # either way the request must not go to the host the environment named
@@ -1934,6 +2047,93 @@ class GhEnvironment(Isolated):
                 land.pinned_tool((str(plain), str(self.d)))
         finally:
             land.os.name = old
+
+
+class Harness(Isolated):
+    """The guards of this test module: no Lander on this checkout, no network, no real gh."""
+
+    def tripped(self) -> str:
+        text = TRIPWIRE.read_text(encoding="utf-8") if TRIPWIRE.exists() else ""
+        if TRIPWIRE.exists():
+            TRIPWIRE.unlink()
+        return text
+
+    def test_the_tests_own_checkout_is_refused_before_any_git_call(self):
+        def no_git():
+            raise AssertionError("a git command line was built")
+        old = land.git_argv
+        land.git_argv = no_git
+        try:
+            for root in (REAL_ROOT, REAL_ROOT / "scripts" / ".."):
+                with self.assertRaisesRegex(land.LandError, "forbidden root"):
+                    land.Lander(root, "T", log=lambda *_: None)
+                with self.assertRaisesRegex(land.LandError, "forbidden root"):
+                    FakeLander(root, "T")
+        finally:
+            land.git_argv = old
+        self.assertIn(os.path.realpath(REAL_ROOT), land.FORBIDDEN_ROOTS)
+
+    def test_the_sandbox_origin_is_local(self):
+        assert_local_origin(self.r.work, self.r.dir)
+        for url in ("https://github.com/o/r.git", "git@github.com:o/r.git", str(REAL_ROOT)):
+            git(self.r.work, "remote", "set-url", "origin", url)
+            with self.assertRaisesRegex(AssertionError, "refusing to run the test"):
+                assert_local_origin(self.r.work, self.r.dir)
+        git(self.r.work, "remote", "set-url", "origin", str(self.r.origin))
+        git(self.r.work, "config", f"url.https://github.com/o/r.git.insteadOf", str(self.r.origin))
+        with self.assertRaisesRegex(AssertionError, "refusing to run the test"):
+            assert_local_origin(self.r.work, self.r.dir)
+
+    def test_a_network_argument_trips(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        out = lander.git("ls-remote", "https://github.com.invalid/o/r", check=False)
+        self.assertEqual(out, "")
+        self.assertIn("git: network argument 'https://github.com.invalid/o/r'", self.tripped())
+
+    def test_a_remote_that_reaches_the_network_trips(self):
+        git(self.r.work, "remote", "add", "far", "ssh://git@unroutable.invalid/o/r.git")
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        for args in (("fetch", "-q", "far"), ("push", "-q", "far", "HEAD:refs/heads/x"), ("ls-remote", "far")):
+            lander.git(*args, check=False)
+            self.assertIn("reaches 'ssh://git@unroutable.invalid/o/r.git'", self.tripped(), args)
+        git(self.r.work, "config", "url.ssh://git@unroutable.invalid/.pushInsteadOf", str(self.r.dir) + "/")
+        lander.git("push", "-q", "origin", "HEAD:refs/heads/x", check=False)
+        self.assertIn("push reaches 'ssh://git@unroutable.invalid/", self.tripped())
+
+    def test_local_git_passes_through(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        lander.git("fetch", "-q", "origin")
+        self.assertTrue(lander.git("ls-remote", "origin", "main"))
+        self.assertEqual(lander.git("remote", "get-url", "--push", "origin"), str(self.r.origin))
+        self.assertEqual(self.tripped(), "")
+
+    def test_a_real_gh_trips(self):
+        lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+        with self.assertRaisesRegex(land.LandError, "gh is not logged in"):
+            lander.check_gh_auth()
+        self.assertIn("gh: auth status --active --hostname github.com", self.tripped())
+
+    def test_a_trip_fails_the_test(self):
+        class Inner(Isolated):
+            def test_x(self):
+                land.Lander(self.r.work, "T", log=lambda *_: None).git("ls-remote", "git@github.com:o/r", check=False)
+        result = unittest.TestResult()
+        unittest.defaultTestLoader.loadTestsFromTestCase(Inner).run(result)
+        self.assertEqual(len(result.failures), 1, result.failures)
+        self.assertIn("tripwire fired", result.failures[0][1])
+        self.assertFalse(TRIPWIRE.exists())
+
+    def test_no_live_test_runs_in_ci(self):
+        self.assertFalse(live_enabled({"CI": "true", "LAND_LIVE_TESTS": "1"}))
+        self.assertFalse(live_enabled({}))
+        self.assertTrue(live_enabled({"LAND_LIVE_TESTS": "1"}))
+        self.assertEqual(LIVE_TESTS, ["GhEnvironment.test_a_real_gh_ignores_a_hostile_host"])
+        if os.environ.get("CI"):
+            self.assertFalse(live_enabled(os.environ), "a live test would run in CI")
+            for name in LIVE_TESTS:
+                cls, meth = name.split(".")
+                fn = getattr(globals()[cls], meth)
+                self.assertTrue(getattr(fn, "__unittest_skip__", False), name)
 
 
 class AmbientEnv(Isolated):

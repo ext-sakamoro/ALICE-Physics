@@ -150,6 +150,12 @@ def pinned_tool(candidates: tuple[str, ...]) -> str:
 
 
 _PINNED: dict[str, str] = {}
+# Test-only hooks, set from Python by scripts/test_land.py (never from the environment):
+# TOOL_OVERRIDE replaces the command that starts git / gh (the tests run tripwire wrappers
+# that fail on any network host), FORBIDDEN_ROOTS lists checkouts a Lander must not touch
+# (the tests' own checkout).
+TOOL_OVERRIDE: dict[str, list[str]] = {}
+FORBIDDEN_ROOTS: set[str] = set()
 
 
 def pinned_git() -> str:
@@ -160,7 +166,7 @@ def pinned_git() -> str:
 
 def git_argv() -> list[str]:
     """the start of every git command line: the pinned git and the forced config"""
-    return [pinned_git(), *FORCED_GIT_CONFIG]
+    return [*(TOOL_OVERRIDE.get("git") or [pinned_git()]), *FORCED_GIT_CONFIG]
 
 
 def safe_path(cargo: bool = False) -> str:
@@ -807,6 +813,8 @@ class Lander:
     def __init__(self, root: Path, ident: str, *, dry_run: bool = False, no_changelog: bool = False,
                  replace_ci: bool = False, remote: str = "origin", branch: str = "main", log=say,
                  direct_reason: str | None = None):
+        if os.path.realpath(root) in FORBIDDEN_ROOTS:
+            raise LandError(f"refusing to land in {root}: a forbidden root (the tests' own checkout)")
         self.root, self.id, self.dry_run = root, ident, dry_run
         self.no_changelog, self.remote, self.branch, self.log = no_changelog, remote, branch, log
         self.replace_ci = replace_ci
@@ -909,7 +917,7 @@ class Lander:
 
     def gh(self) -> list[str]:
         if self.gh_cmd is None:
-            self.gh_cmd = [pinned_tool(GH_CANDIDATES)]
+            self.gh_cmd = list(TOOL_OVERRIDE.get("gh") or [pinned_tool(GH_CANDIDATES)])
         return self.gh_cmd
 
     def gh_json(self, *args: str):
