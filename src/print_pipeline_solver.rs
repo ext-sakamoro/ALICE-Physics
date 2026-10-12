@@ -1,6 +1,6 @@
-//! 3D Print Full Safety Pipeline (Session 3 S3)
+//! 3D Print Full Safety Pipeline
 //!
-//! Aggregates every Session 1-2 print-safety check into a single
+//! Aggregates every individual print-safety check into a single
 //! one-shot analysis, meant to be run before 3MF export. Callers supply
 //! the geometry (footprint + optional cross section), material name, and
 //! optional load / environment overrides; the solver returns a combined

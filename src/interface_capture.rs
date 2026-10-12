@@ -144,7 +144,7 @@ fn min_neighbor(field: &Grid3d, i: usize, j: usize, k: usize, axis: usize) -> Fi
 
 /// Solve the 3-D Godunov Eikonal update `|∇φ| = 1` at a cell given the
 /// absolute-distance neighbours `(a, b, c)` and cell spacing `dx`
-/// (Session 3 I5 upgrade — replaces the 1-neighbour `min + dx`).
+/// (replaces the earlier 1-neighbour `min + dx`).
 ///
 /// Algorithm (Sethian, *Level Set Methods* 2nd ed. §8.4):
 /// 1. Sort ascending: `a ≤ b ≤ c`.
@@ -223,7 +223,7 @@ pub fn plic_normal(vof: &Grid3d, i: usize, j: usize, k: usize) -> Vec3Fix {
 /// Position of the PLIC plane inside a cubic cell such that the volume of
 /// fluid on the negative side matches `f · Δx³`.
 ///
-/// Session 3 I4 upgrade: uses the Scardovelli-Zaleski / Rider-Kothe
+/// Uses the Scardovelli-Zaleski / Rider-Kothe
 /// analytical formula (2000) for the small-volume regime via
 /// [`crate::math_util::cbrt_fix`] and bisects the exact cut volume
 /// ([`truncated_cube_volume`]) for the intermediate regime. `normal` should be a

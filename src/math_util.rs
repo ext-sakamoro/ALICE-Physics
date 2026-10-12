@@ -1,6 +1,6 @@
 //! Deterministic Numerical Utilities (Fix128 Transcendentals & Solvers)
 //!
-//! Common numerical primitives shared across Session 2 modules. Kept in one
+//! Common numerical primitives shared across the Fix128 modules. Kept in one
 //! place so that Fix128 range-reduction + Taylor-series conventions stay
 //! bit-consistent between `creep_longterm`, `smoke_fire`, and any future
 //! module that needs `exp` / `log` / `pow`.

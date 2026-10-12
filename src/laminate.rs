@@ -196,7 +196,7 @@ impl AbdMatrix {
 
 /// Compute the ABD matrix from an ordered ply stack.
 ///
-/// Session 3 I11 upgrade: pre-computes each ply's `z_lower / z_upper` in a
+/// Pre-computes each ply's `z_lower / z_upper` in a
 /// single pass so the main integration loop is data-parallel-ready. When
 /// the `parallel` feature is enabled, ply contributions accumulate via
 /// `rayon::par_iter` reducers.
