@@ -166,7 +166,7 @@ impl ErosionModifier {
                     if dist < surface_threshold {
                         let (snx, sny, snz) = sdf.normal(wx, wy, wz);
                         // Dot product: how much the surface faces the flow
-                        let alignment = -snz.mul_add(fz, snx.mul_add(fx, sny * fy));
+                        let alignment = windward_alignment((snx, sny, snz), (fx, fy, fz));
                         let exp = crate::det_math::max(alignment, 0.0); // Only windward faces
                         let idx = self.exposure.index(ix, iy, iz);
                         self.exposure.data[idx] = exp;
@@ -359,9 +359,78 @@ impl Participant for ErosionModifier {
 // Tests
 // ============================================================================
 
+/// `-(n · f)`, how much a surface with normal `n` faces a flow `f`
+///
+/// Written with the negation on the operands, `(-n.z)·f.z + ((-n.x)·f.x +
+/// (-n.y)·f.y)` (two fused multiply-adds), not as the negated result
+/// `-(n.z·f.z + (n.x·f.x + n.y·f.y))`: the optimiser may rewrite a negated
+/// fused multiply-add into one with negated operands, and the two differ in the
+/// sign of a zero result, so the negated-result form gave -0 unoptimized and
+/// +0 optimized on targets with a fused multiply-add instruction (aarch64) when
+/// nonzero terms cancel exactly The operand form has one meaning on every
+/// target and profile: the same bits as the negated result wherever the result
+/// is not zero, and at a zero result the IEEE sum of the negated terms, which
+/// is -0 only when every term `n_i·f_i` is +0 and +0 otherwise (what the
+/// optimizer produced for the negated form) The exposure stored from it is
+/// `max(alignment, 0)`, which is +0 for either zero, so stored values do not
+/// change
+#[inline]
+fn windward_alignment(n: (f32, f32, f32), f: (f32, f32, f32)) -> f32 {
+    (-n.2).mul_add(f.2, (-n.0).mul_add(f.0, (-n.1) * f.1))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // the negated-result form, with the negation kept out of the optimiser's
+    // reach (black_box), as the reference value
+    fn negated_result(n: (f32, f32, f32), f: (f32, f32, f32)) -> f32 {
+        -core::hint::black_box(n.2.mul_add(f.2, n.0.mul_add(f.0, n.1 * f.1)))
+    }
+
+    #[test]
+    fn windward_alignment_equals_the_negated_dot_product_and_defines_the_sign_of_a_zero_result() {
+        // 0.5 · 0.70710677 is exact, so (0.5, 0, -0.5) against (s, 0, s) cancels
+        // to an exact zero from nonzero terms
+        let s = core::hint::black_box(core::f32::consts::FRAC_1_SQRT_2);
+        let vals = [-1.0, -0.5, -0.0, 0.0, 0.5, 1.0, s, -s];
+        let (mut compared, mut sign_differs, mut cancellations) = (0, 0, 0);
+        for &nx in &vals {
+            for &ny in &vals {
+                for &nz in &vals {
+                    for &fx in &vals {
+                        for &fy in &vals {
+                            for &fz in &vals {
+                                let (n, f) = (core::hint::black_box((nx, ny, nz)), (fx, fy, fz));
+                                let got = windward_alignment(n, f);
+                                let reference = negated_result(n, f);
+                                compared += 1;
+                                if reference != 0.0 {
+                                    assert_eq!(got.to_bits(), reference.to_bits(), "{n:?} {f:?}");
+                                    continue;
+                                }
+                                let terms = [nx * fx, ny * fy, nz * fz];
+                                let all_positive_zero = terms.iter().all(|t| t.to_bits() == 0);
+                                let want = if all_positive_zero { 0x8000_0000 } else { 0 };
+                                assert_eq!(got.to_bits(), want, "{n:?} {f:?}: zero result");
+                                if got.to_bits() != reference.to_bits() {
+                                    sign_differs += 1;
+                                    if terms.iter().any(|t| *t != 0.0) {
+                                        cancellations += 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(compared, 8_usize.pow(6));
+        // the lattice reaches both kinds of zero result where the two forms differ
+        assert!(cancellations > 0, "no exact cancellation of nonzero terms");
+        assert!(sign_differs > cancellations, "no mixed-sign zero terms");
+    }
     use crate::sdf_collider::ClosureSdf;
 
     #[test]

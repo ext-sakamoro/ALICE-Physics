@@ -70,8 +70,12 @@ fn the_maximum_of_a_field_of_signed_zeros_is_positive_zero() {
 }
 
 fn exposure_state(normal: (f32, f32, f32)) -> (Vec<u32>, Vec<u8>) {
+    exposure_state_in(normal, (1.0, 0.0, 0.0))
+}
+
+fn exposure_state_in(normal: (f32, f32, f32), flow: (f32, f32, f32)) -> (Vec<u32>, Vec<u8>) {
     let cfg = ErosionConfig {
-        flow_direction: (1.0, 0.0, 0.0),
+        flow_direction: flow,
         ..ErosionConfig::default()
     };
     let mut er = ErosionModifier::new(cfg, 4, (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0));
@@ -105,4 +109,20 @@ fn erosion_exposure_on_flat_degenerate_and_sloped_normals_has_fixed_bits() {
             "{normal:?}: write_state does not end with the exposure field"
         );
     }
+}
+
+#[test]
+fn erosion_exposure_where_nonzero_terms_cancel_exactly_is_positive_zero() {
+    // flow (1, 0, 1) is normalised to (s, 0, s) with s = 0.70710677, and
+    // 0.5 · s is exact, so the normal (0.5, 0, -0.5) gives an alignment of an
+    // exact zero from nonzero terms (the case whose zero sign depended on the
+    // optimisation level); the stored exposure is +0 either way
+    let (bits, state) = exposure_state_in((0.5, 0.0, -0.5), (1.0, 0.0, 1.0));
+    assert_eq!(bits.len(), 64);
+    assert!(bits.iter().all(|&b| b == POS), "{bits:08x?}");
+    let tail: Vec<u32> = state[state.len() - 4 * 64..]
+        .chunks_exact(4)
+        .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
+    assert_eq!(tail, bits);
 }

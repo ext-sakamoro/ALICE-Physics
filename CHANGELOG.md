@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed
+
+- `ErosionModifier::compute_exposure_from_normals`: 法線と流れの向きの内積の符号反転を、2 つの fused multiply-add の結果でなく項の側に置いた (`(-n.z)·f.z + ((-n.x)·f.x + (-n.y)·f.y)`) 結果を反転した形は最適化で項を反転した形に書き換えられることがあり、0 の符号が変わる fused multiply-add 命令を持つ target (aarch64) では、0 でない項が正確に打ち消す時に最適化なしで -0、最適化ありで +0 になっていた 今の形はどの target・profile でも同じで、結果が 0 でない所は前と同じ bit、結果が 0 の所は反転した項の IEEE の和 (すべての項 `n_i·f_i` が +0 の時だけ -0、それ以外は +0、前に最適化ありで出ていた値) これは定義の変更で、最適化なしの前の値とは 0 の符号が違う 保存される exposure は `max(内積, 0)` なので ±0 のどちらでも +0 で、変わらない 試験: erosion の unit test (8⁶ 通りの格子で、結果が 0 でない所の bit 一致と 0 の符号の規則、打ち消しと符号の混ざった 0 の両方を含む、元の形に戻すと失敗) と `tests/determinism_zero_tie.rs` の打ち消しの例 (exposure が +0)
+
 ## [3.0.1] - 2026-10-13
 
 ### Fixed
