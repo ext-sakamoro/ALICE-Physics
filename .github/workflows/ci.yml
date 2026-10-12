@@ -151,6 +151,9 @@ jobs:
           python scripts/ci_triggers_check.py
       - name: Downstream release-tag selection (tests)
         run: python scripts/test_downstream_select_tag.py
+      # includes a cargo build of a small provider and consumer (offline, no dependencies)
+      - name: Downstream major-bump requirement rewrite (tests)
+        run: python scripts/test_downstream_major_rewrite.py
       - name: Downstream per-binary test counts (tests)
         run: python scripts/test_downstream_test_counts.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)

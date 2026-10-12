@@ -56,6 +56,17 @@
 #              GPU. TRT_GPU_PROBE=0 skips the probe (the tests then prove only
 #              that the trait implementation builds and the CPU tests pass)
 #
+# When this checkout is a major bump over the newest alice-physics on crates.io
+# (2.2.0 published, 3.0.0 here), the downstream repositories cannot accept it yet:
+# their requirements name the published major, and raising them in their own
+# repositories needs the new version to be published first. In the fetched
+# copies only, every requirement on alice-physics that accepts the published
+# release is raised to this checkout's version (scripts/downstream_major_rewrite.py,
+# which prints each edited line), so the downstream code is built and tested
+# against the new major with nothing changed but the requirement. Any other
+# commit (a minor or patch over the published release, or a version that is
+# already published) leaves the manifests as fetched.
+#
 # Before building, every requirement on alice-physics in the placed ALICE-SDF,
 # ALICE-LOL and ALICE-TRT manifests must accept this checkout's version
 # (scripts/downstream_select_tag.py --check); a downstream that still requires
@@ -182,6 +193,19 @@ fi
 PATCH="patch.crates-io.alice-physics.path=\"$LINK\""
 failed=()
 summary=()
+# downstream crates whose steps ran; fewer than the 3 at the end fails (a crate
+# skipped for any reason, or none compared at all)
+compared=0
+
+# a major bump over the published release: raise the requirements that accept the
+# published release to this version in the fetched copies (no change otherwise)
+trees=()
+for name in "${REPOS[@]}"; do trees+=(--tree "$ROOT/$name"); done
+echo "==> requirements on alice-physics against the published release"
+if ! python3 "$PHYSICS_DIR/scripts/downstream_major_rewrite.py" --provider "$PHYSICS_DIR" "${trees[@]}"; then
+    echo "error: the major-bump rewrite of the downstream requirements failed" >&2
+    exit 1
+fi
 
 # the resolved alice-physics must be a path package at this checkout
 check_resolved() {
@@ -254,6 +278,7 @@ physics_version() {
 
 export CARGO_TARGET_DIR="$TARGET/sdf"
 if requirements_ok sdf "$SDF"; then
+    compared=$((compared + 1))
     check_resolved sdf "$SDF" --features physics --config "$PATCH"
     run sdf-lib "$SDF" cargo test --features physics --config "$PATCH" --lib -- physics_bridge:: sim_bridge::
     run sdf-tests "$SDF" cargo test --features physics --config "$PATCH" \
@@ -263,6 +288,7 @@ fi
 
 export CARGO_TARGET_DIR="$TARGET/lol"
 if requirements_ok lol "$LOL"; then
+    compared=$((compared + 1))
     check_resolved lol-world-auditor "$LOL" -p alice-world-auditor --features physics
     check_resolved lol "$LOL" -p alice-lol --features physics
     # its integration tests (`--test '*'`); the lib has no unit tests, and a
@@ -324,13 +350,20 @@ RUST
 
 export CARGO_TARGET_DIR="$TARGET/trt"
 if requirements_ok trt "$TRT"; then
+    compared=$((compared + 1))
     check_resolved trt "$TRT" --features physics-solver
     trt_gpu_probe
     run trt-lib "$TRT" cargo test --features physics-solver --lib -- physics_bridge:: fix128:: --test-threads=1
 fi
 
+if [ "$compared" -eq 0 ]; then
+    failed+=("no downstream crate was built and tested")
+elif [ "$compared" -ne 3 ]; then
+    failed+=("only $compared of 3 downstream crates were built and tested")
+fi
+
 echo
-echo "downstream ($ROOT):"
+echo "downstream ($ROOT): $compared of 3 compared"
 for s in "${summary[@]}"; do echo "  $s"; done
 if [ ${#failed[@]} -gt 0 ]; then
     echo "FAILED: ${failed[*]}" >&2

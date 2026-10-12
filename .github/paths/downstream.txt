@@ -10,6 +10,8 @@ Cargo.toml
 rust-toolchain.toml
 scripts/downstream_check.sh
 scripts/downstream_select_tag.py
+# downstream_major_rewrite.py imports downstream_select_tag.py
+scripts/downstream_major_rewrite.py
 # downstream_test_counts.py imports ansi.py
 scripts/downstream_test_counts.py
 scripts/ansi.py
