@@ -81,6 +81,21 @@ either of them, and a release (crates.io, PyPI) needs every leg green.
   nightly schedule (that leg alone, when `main`'s HEAD has no successful Intel job); its
   result is read on `main` after the landing.
 
+### Mac Intel on a `ci/**` push (landing script changes)
+
+When the branch changes `scripts/land.py` or `scripts/test_land.py`, the Mac Intel leg
+also runs on the `ci/**` push and on a manual run, as an ordinary job of the run: the
+landing waits for it like the other legs. Those files start the runner's own git and
+tools, and the Intel image has different ones (its system git was older than the
+`--attr-source` option land.py passes, which only showed after a landing). The `gate`
+job of `ci.yml` decides it with `scripts/changed_paths.py decide` (a new or force-pushed
+branch and a manual run are compared with `merge-base(origin/main)`, a later push with
+`before..after`; an error or a step without an answer runs the leg) and outputs
+`landing_scripts`. The cost is one Intel job (about 100 min) per such branch. In
+`.github/ci-evidence.toml` the leg's `events_when_landing_scripts` lists the events it
+runs on then, and `scripts/ci_triggers_check.py` evaluates the matrix with that output
+true and false and compares both.
+
 The `test` matrix is computed from the event: the nightly schedule runs Mac Intel only,
 a push to `main` runs all 5 OS, and every other event, a manual run (`workflow_dispatch`,
 on any branch) included, runs the 4 others. The `events` column is checked against that

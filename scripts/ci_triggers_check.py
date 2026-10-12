@@ -72,6 +72,16 @@ EVENTS = (
 # leg classes: started on the ci/<id> SHA and read after the landing, or not started on
 # ci/** at all (main push and schedule only) and read on main after the landing
 LEG_CLASSES = ("after-landing", "main-after-landing")
+# job outputs a matrix expression may read: each is evaluated as 'false' for the leg's
+# `events` and as 'true' for its own key (a leg the output adds to an event declares the
+# events it then runs on; an output not listed here makes the matrix unknown before the run)
+CONDITION_OUTPUTS = {"needs.gate.outputs.landing_scripts": "events_when_landing_scripts"}
+
+
+def event_ctx(ev: str, ref: str, true_output: str | None = None) -> dict[str, str]:
+    ctx = {"github.event_name": ev, "github.ref": ref}
+    ctx.update({o: "true" if o == true_output else "false" for o in CONDITION_OUTPUTS})
+    return ctx
 DISPATCH_TABLE = "ci-triggers:dispatchable"
 DISPATCH_COLUMNS = ("workflow",)
 WAIT_TABLE = "ci-triggers:landing-waits"
@@ -202,8 +212,10 @@ def matrix_values(job: str, key: str, ctx: dict[str, str]) -> list[str] | None:
     return [str(x) for x in out]
 
 
-def leg_events(text: str, job: str, key: str, value: str) -> tuple[list[str], list[str]]:
-    """(events whose run includes the leg, events the workflow is triggered by)"""
+def leg_events(text: str, job: str, key: str, value: str,
+               true_output: str | None = None) -> tuple[list[str], list[str]]:
+    """(events whose run includes the leg, events the workflow is triggered by); every
+    CONDITION_OUTPUTS output is 'false' except `true_output`"""
     on = cp.on_block(text)
     triggered = [label for label, _ev, _ref, trig in EVENTS if cp.sub_block(on, trig, 2) is not None
                  or any(re.match(rf"^  {trig}:", l) for l in on)]
@@ -211,7 +223,7 @@ def leg_events(text: str, job: str, key: str, value: str) -> tuple[list[str], li
     for label, ev, ref, _trig in EVENTS:
         if label not in triggered:
             continue
-        vals = matrix_values(job, key, {"github.event_name": ev, "github.ref": ref})
+        vals = matrix_values(job, key, event_ctx(ev, ref, true_output))
         if vals is not None and value in vals:
             present.append(label)
     return present, triggered
@@ -408,6 +420,23 @@ def check(root: Path) -> tuple[list[str], int]:
             errors.append(f"{EVIDENCE}: leg {label}: unknown events {unknown}")
         if events != present:
             errors.append(f"{EVIDENCE}: leg {label}: declared events {events} but the workflow runs it on {present}")
+        for output, field in CONDITION_OUTPUTS.items():
+            when = leg.get(field)
+            if output not in js[j]:
+                if when is not None:
+                    errors.append(f"{EVIDENCE}: leg {label}: `{field}` but the job does not read {output}")
+                continue
+            try:
+                present_when, _ = leg_events(files[w], js[j], key, str(mval), output)
+            except ExprError as e:
+                errors.append(f"{w}: job {j}: {e}")
+                continue
+            if when is None and present_when != present:
+                errors.append(f"{EVIDENCE}: leg {label}: with {output} true the workflow runs it on "
+                              f"{present_when}; declare `{field}`")
+            elif when is not None and when != present_when:
+                errors.append(f"{EVIDENCE}: leg {label}: declared `{field}` {when} but with {output} true "
+                              f"the workflow runs it on {present_when}")
         if lcls == "after-landing" and "push ci/**" not in present:
             errors.append(f"{EVIDENCE}: leg {label}: class after-landing but it is not started on a ci/** push")
         if lcls == "main-after-landing" and ("push ci/**" in present or "push main" not in present):
@@ -422,11 +451,14 @@ def check(root: Path) -> tuple[list[str], int]:
         for j, block in jobs(files[w]).items():
             for key, expr in re.findall(r"^\s+([A-Za-z_][\w-]*):\s*(\$\{\{.*fromJSON.*)$", block, re.M):
                 # a matrix computed from job outputs or inputs is not known before the run
-                if re.search(r"\b(needs|steps|inputs|matrix|vars|env|secrets)\.", expr):
+                # (the CONDITION_OUTPUTS are evaluated as 'false': a leg one of them adds on
+                # a ci/** push is still missing from the ordinary ci/** run)
+                names = re.findall(r"\b(?:needs|steps|inputs|matrix|vars|env|secrets)\.[\w.\-]+", expr)
+                if any(n not in CONDITION_OUTPUTS for n in names):
                     continue
                 try:
-                    main_vals = matrix_values(block, key, {"github.event_name": "push", "github.ref": "refs/heads/main"}) or []
-                    ci_vals = matrix_values(block, key, {"github.event_name": "push", "github.ref": "refs/heads/ci/x"}) or []
+                    main_vals = matrix_values(block, key, event_ctx("push", "refs/heads/main")) or []
+                    ci_vals = matrix_values(block, key, event_ctx("push", "refs/heads/ci/x")) or []
                 except ExprError as e:
                     errors.append(f"{w}: job {j}: {e}")
                     continue

@@ -356,14 +356,49 @@ class Triggers(unittest.TestCase):
     def test_the_real_ci_matrix(self):
         text = (HERE.parent / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
         job = ct.jobs(text)["test"]
-        got = {label: ct.matrix_values(job, "os", {"github.event_name": e, "github.ref": ref})
-               for label, e, ref, _ in ct.EVENTS}
+        got = {label: ct.matrix_values(job, "os", ct.event_ctx(e, ref)) for label, e, ref, _ in ct.EVENTS}
         four = ["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]
-        self.assertEqual(got["push main"], ["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"])
+        five = ["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]
+        self.assertEqual(got["push main"], five)
         self.assertEqual(got["push ci/**"], four)
         self.assertEqual(got["pull_request"], four)
         self.assertEqual(got["workflow_dispatch"], four)
         self.assertEqual(got["schedule"], ["macos-15-intel"])
+        # a branch that changes the landing script: the Intel leg on the ci/** push and a manual
+        # run too (read before the landing), never on a pull request
+        ls = "needs.gate.outputs.landing_scripts"
+        got = {label: ct.matrix_values(job, "os", ct.event_ctx(e, ref, ls)) for label, e, ref, _ in ct.EVENTS}
+        self.assertEqual(got["push main"], five)
+        self.assertEqual(got["push ci/**"], five)
+        self.assertEqual(got["pull_request"], four)
+        self.assertEqual(got["workflow_dispatch"], five)
+        self.assertEqual(got["schedule"], ["macos-15-intel"])
+
+    # --- a leg a job output adds ------------------------------------------------------------
+
+    OS_LS = OS.replace("|| '[\"macos-latest\", \"ubuntu-latest\"]'",
+                       "|| (github.event_name != 'pull_request' && needs.gate.outputs.landing_scripts == 'true') && "
+                       "'[\"macos-latest\", \"intel\", \"ubuntu-latest\"]' || '[\"macos-latest\", \"ubuntu-latest\"]'")
+    WHEN = 'events_when_landing_scripts = ["push main", "push ci/**", "workflow_dispatch", "schedule"]\n'
+
+    def ls_tree(self, evidence: str):
+        self.assertNotEqual(self.OS_LS, OS)
+        return self.errors(evidence=evidence, **{"ci.yml": CI.replace(OS, self.OS_LS)})
+
+    def test_a_leg_a_job_output_adds_is_declared(self):
+        ev = EVIDENCE + self.WHEN
+        self.assertEqual(self.ls_tree(ev), [])
+        self.has(self.ls_tree(EVIDENCE), "declare `events_when_landing_scripts`")
+        wrong = EVIDENCE + self.WHEN.replace('"push ci/**", ', "")
+        self.has(self.ls_tree(wrong), "declared `events_when_landing_scripts`")
+
+    def test_a_declaration_without_the_output_in_the_matrix_fails(self):
+        self.has(self.errors(evidence=EVIDENCE + self.WHEN), "the job does not read needs.gate.outputs.landing_scripts")
+
+    def test_an_unknown_job_output_in_the_matrix_fails(self):
+        other = self.OS_LS.replace("landing_scripts", "something_else")
+        e = self.errors(evidence=EVIDENCE + self.WHEN, **{"ci.yml": CI.replace(OS, other)})
+        self.has(e, "unknown name 'needs.gate.outputs.something_else'")
 
     # --- dispatch --------------------------------------------------------------------------
 

@@ -26,6 +26,12 @@ jobs:
   # successful `Test (macos-15-intel)` job (scripts/intel_nightly_gate.py reads
   # HEAD's CI runs with the read-only token; an API error runs the leg). Any other
   # event: run.
+  # On a ci/** push or a manual run: `landing_scripts` is true when the branch changes
+  # the landing script or its tests (compared with merge-base(origin/main) on a new or
+  # force-pushed branch and on a manual run, before..after otherwise; an error is true).
+  # The Mac Intel leg then runs on the ci/<id> SHA too and is read before the landing:
+  # those files run the runner's own git and tools, which differ on the Intel image
+  # (docs/CI_TRIGGERS.md, Mac Intel on a ci/** push).
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -34,9 +40,29 @@ jobs:
       contents: read
     outputs:
       run: ${{ steps.decide.outputs.run || 'true' }}
+      # skipped (main push, schedule, pull request): false; ran without an answer: true
+      landing_scripts: ${{ steps.landing.outcome == 'skipped' && 'false' || steps.landing.outputs.run || 'true' }}
     steps:
       - uses: actions/checkout@v5
         if: github.event_name == 'schedule'
+      - uses: actions/checkout@v5
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
+        with:
+          fetch-depth: 0
+      - id: landing
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref != 'refs/heads/main')
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after || github.sha }}
+          CREATED: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+        # a manual run is compared like a new branch (changed_paths.py runs every manual run)
+        run: >-
+          if [ "$EVENT" = workflow_dispatch ]; then EVENT=push CREATED=true; fi;
+          python3 scripts/changed_paths.py decide --event "$EVENT"
+          --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
+          --pattern 'scripts/land.py' --pattern 'scripts/test_land.py'
       - id: decide
         if: github.event_name == 'schedule'
         # a crash of the script leaves the output empty, which reads as 'true' above
@@ -63,8 +89,10 @@ jobs:
         # The Mac Intel leg (about 100 min) runs on pushes to main (all 5 OS) and on
         # the nightly schedule (that leg alone); a ci/** staging push or a pull request
         # runs the other four. Landing reads the non-macOS legs; macOS results are
-        # read after landing.
-        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-15-intel"]' || (github.event_name == 'push' && github.ref == 'refs/heads/main') && '["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]' || '["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]') }}
+        # read after landing. Exception: a ci/** push or a manual run whose branch
+        # changes the landing script or its tests (gate: landing_scripts) runs all 5,
+        # and the landing reads the Intel leg too.
+        os: ${{ fromJSON(github.event_name == 'schedule' && '["macos-15-intel"]' || (github.event_name == 'push' && github.ref == 'refs/heads/main') && '["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]' || (github.event_name != 'pull_request' && needs.gate.outputs.landing_scripts == 'true') && '["macos-latest", "macos-15-intel", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]' || '["macos-latest", "ubuntu-latest", "ubuntu-24.04-arm", "windows-latest"]') }}
     steps:
       - uses: actions/checkout@v5
 

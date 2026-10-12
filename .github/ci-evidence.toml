@@ -34,6 +34,9 @@
 #   main-after-landing  not started on ci/** at all: runs on the push to main (and on the
 #                       nightly schedule), read on main after the landing
 # event labels: "push main", "push ci/**", "pull_request", "workflow_dispatch", "schedule"
+# events_when_landing_scripts: the events whose run includes the leg when the ci.yml gate
+# says the branch changes the landing script or its tests (needs.gate.outputs.landing_scripts);
+# on a ci/** push the leg is then an ordinary job of the run, read before the landing
 
 # the arm64 leg that holds the golden hashes: red after a landing is fixed or reverted at once
 [[legs]]
@@ -49,3 +52,4 @@ job = "test"
 matrix = "macos-15-intel"
 class = "main-after-landing"
 events = ["push main", "schedule"]
+events_when_landing_scripts = ["push main", "push ci/**", "workflow_dispatch", "schedule"]
