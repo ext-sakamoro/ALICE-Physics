@@ -575,6 +575,93 @@ class Landing(Isolated):
         sha = self.r.lander().land()
         self.assertEqual(self.r.origin_head(), sha)
 
+    HASH_BODY = ("feat: b with a cfg path\n\n"
+                 "#[path = \"../tests/b_oracle.rs\"] brings the oracle into the lib tests\n"
+                 "# a line that starts with a hash\n"
+                 "  #indented hash\n\n"
+                 "trailing text\n")
+
+    def commit_with_hash_lines(self) -> str:
+        write(self.r.work, "src/b.rs", "x\n")
+        write(self.r.work, "CHANGELOG.md", "# Changelog\n\n## [Unreleased]\n\n- start\n- mine\n")
+        git(self.r.work, "add", "-A")
+        msg = self.r.dir / "msg.txt"
+        msg.write_text(self.HASH_BODY, encoding="utf-8")
+        subprocess.run(["git", *ID, "commit", "-q", "--cleanup=verbatim", "-F", str(msg), "--author", f"{NAME} <{EMAIL}>",
+                        "--date", "2001-02-03T04:05:06+00:00"], cwd=self.r.work, check=True)
+        return git(self.r.work, "rev-parse", "HEAD")
+
+    def raw(self, repo: Path, rev: str) -> bytes:
+        out = subprocess.run(["git", "cat-file", "commit", rev], cwd=repo, capture_output=True, check=True).stdout
+        return out.partition(b"\n\n")[2]
+
+    def test_a_hash_line_survives_a_conflicted_rebase(self):
+        mine = self.commit_with_hash_lines()
+        before = self.raw(self.r.work, mine)
+        self.assertIn(b"#[path", before)
+        self.r.push_upstream({"CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- theirs\n"},
+                             "docs(changelog): theirs")
+        lander = self.r.lander()
+        sha = lander.land()
+        # the pick stopped on the conflict and was committed by land.py itself (between the
+        # rebase's start and finish), not by `rebase --continue`
+        log = git(self.r.work, "reflog", "--format=%gs").splitlines()
+        start, finish = log.index("rebase (start): checkout origin/main"), log.index("rebase (finish): returning to refs/heads/main")
+        self.assertIn("commit: feat: b with a cfg path", log[finish:start], log)
+        git(self.r.upstream, "fetch", "-q")
+        landed = git(self.r.upstream, "rev-list", "--reverse", "origin/main~2..origin/main").split()
+        ours = [c for c in landed if git(self.r.upstream, "log", "-1", "--format=%s", c) == "feat: b with a cfg path"]
+        self.assertEqual(len(ours), 1, landed)
+        self.assertEqual(self.raw(self.r.upstream, ours[0]), before)   # byte-identical, '#' lines kept
+        who = git(self.r.upstream, "log", "-1", "--format=%an <%ae>|%at|%cn <%ce>", ours[0])
+        self.assertEqual(who, f"{NAME} <{EMAIL}>|981173106|{NAME} <{EMAIL}>")   # 2001-02-03T04:05:06Z
+        self.assertEqual(self.r.origin_head(), sha)
+        text = (self.r.work / "CHANGELOG.md").read_text()
+        self.assertIn("- mine", text)
+        self.assertIn("- theirs", text)
+
+    def test_a_changed_message_is_refused_before_the_push(self):
+        mine = self.commit_with_hash_lines()
+        before_head = self.r.origin_head()
+
+        class Rewriting(FakeLander):
+            # stands for any step that would change a message (what the default cleanup did)
+            def regenerate(self):
+                super().regenerate()
+                if not getattr(self, "rewritten", False):
+                    self.rewritten = True
+                    msg = self.root / ".git" / "stripped.txt"
+                    msg.write_text("feat: b with a cfg path\n\ntrailing text\n", encoding="utf-8")
+                    subprocess.run(["git", *ID, "commit", "-q", "--amend", "-F", str(msg)], cwd=self.root, check=True)
+        for kw in ({}, {"direct_reason": "revert the red main of abc1234"}):   # the ci/ lane and --direct
+            lander = Rewriting(self.r.work, "T-1", **kw)
+            with self.assertRaisesRegex(land.LandError, "commit message of [0-9a-f]{7} \\(was [0-9a-f]{7}\\) differs from "
+                                                        "before the rebase; first difference: "):
+                lander.land()
+            self.assertEqual(self.r.origin_head(), before_head, f"nothing was pushed ({kw})")
+            self.assertNotIn("wait_evidence ci/T-1", lander.calls)
+            git(self.r.work, "reset", "-q", "--hard", mine)
+
+    def test_the_message_invariant(self):
+        mine = self.commit_with_hash_lines()
+        lander = self.r.lander()
+        lander.fetch()
+        with self.assertRaisesRegex(land.LandError, "compared nothing"):
+            lander.check_messages()               # nothing recorded before the rebase
+        lander.original_messages = lander.our_messages()
+        lander.check_messages()                   # unchanged: passes
+        # land.py's own ledger commit is not one of ours and does not count
+        write(self.r.work, "docs/integration-status.md", "ledger: changed\n")
+        git(self.r.work, "commit", "-qam", land.REGEN_MESSAGE)
+        lander.check_messages()
+        # any other change: the first differing line is named
+        lander.original_messages = [(s, m.replace(b"# a line", b"# A line")) for s, m in lander.original_messages]
+        with self.assertRaisesRegex(land.LandError, r"first difference: '- # A line"):
+            lander.check_messages()
+        lander.original_messages = lander.original_messages * 2
+        with self.assertRaisesRegex(land.LandError, "2 commits before the rebase, 1 now"):
+            lander.check_messages()
+
     def test_changelog_lines_from_both_sides_merge(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- mine\n"}, "feat: b")
         self.r.push_upstream({"CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- theirs\n"}, "docs(changelog): theirs")

@@ -411,6 +411,7 @@ NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
 NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MAX_ATTEMPTS = 6        # pushes to main (a push that loses a race to another landing retries)
+REGEN_MESSAGE = "docs: regenerate the generated ledgers"   # the only commit message land.py writes
 MAX_EVIDENCE = 3        # evidence rounds on ci/<id>: the first and two after main gained code
 MOVING_MESSAGE = "main is moving: wait for a quiet main or coordinate a landing slot"
 LOCK_DIR_ENV = "LAND_LOCK_DIR"  # where the per-repository landing lock lives (tests point it elsewhere)
@@ -935,6 +936,7 @@ class Lander:
             raise LandError(problem)
         self.direct_reason = direct_reason.strip() if direct_reason is not None else None
         self.record: list[str] = []  # the landing record: lane, reason, the runs relied on
+        self.original_messages: list[tuple[str, bytes]] = []
 
     # --- plumbing (overridden in tests) ------------------------------------------
 
@@ -1251,6 +1253,16 @@ class Lander:
                 else:
                     self.git("checkout", "--ours", "--", p)   # main's copy; regenerated after the rebase
                 self.git("add", "--", p)
+            # commit the resolved pick ourselves, with its message verbatim: `rebase --continue`
+            # would commit it with the default cleanup, which drops body lines that start with
+            # `#` (e.g. `#[path = ...]`). -C REBASE_HEAD keeps the author, the date and the message;
+            # the committer is the fixed identity
+            c = subprocess.run([*self.git_argv, *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "commit", "-q",
+                                "--no-verify", "--cleanup=verbatim", "-C", "REBASE_HEAD"],
+                               cwd=self.root, capture_output=True, text=True, env=self.git_env)
+            if c.returncode != 0:
+                self.git("rebase", "--abort", check=False)
+                raise LandError(f"committing the resolved pick failed: {(c.stderr or c.stdout).strip()[:300]}")
             r = subprocess.run([*self.git_argv, *self.ident_cfg, f"--attr-source={EMPTY_TREE}", "-c", "core.editor=true",
                                 "rebase", "--continue"],
                                cwd=self.root, capture_output=True, text=True, env=self.git_env)
@@ -1303,8 +1315,7 @@ class Lander:
         if stray:
             raise LandError(f"regeneration touched files that are not ledgers: {stray}")
         self.git("add", "--", *names)
-        self.git(*self.ident_cfg, "commit", "-q", "--author", IDENTITY, "-m",
-                 "docs: regenerate the generated ledgers")
+        self.git(*self.ident_cfg, "commit", "-q", "--author", IDENTITY, "-m", REGEN_MESSAGE)
 
     def api_commit_identity(self, sha: str) -> tuple[str, str, str, str]:
         """(author name, author email, committer name, committer email) of `sha` from the
@@ -1386,6 +1397,47 @@ class Lander:
             self.run_compile_check()
         return self.git("rev-parse", "HEAD")
 
+    def raw_message(self, sha: str) -> bytes:
+        """the message of `sha` exactly as stored (the commit object after its header)"""
+        r = subprocess.run([*self.git_argv, "cat-file", "commit", sha], cwd=self.root, capture_output=True,
+                           env=self.git_env)
+        if r.returncode != 0:
+            raise LandError(f"git cat-file commit {sha[:7]} failed: {r.stderr.decode('utf-8', 'replace').strip()}")
+        head, sep, body = r.stdout.partition(b"\n\n")
+        return body if sep else b""
+
+    def our_messages(self) -> list[tuple[str, bytes]]:
+        """(sha, message) of the commits HEAD has beyond the upstream, oldest first, without
+        the ledger commits land.py makes itself"""
+        out = []
+        for sha in self.git("rev-list", "--reverse", f"{self.upstream()}..HEAD").split():
+            msg = self.raw_message(sha)
+            if msg.rstrip(b"\n") != REGEN_MESSAGE.encode():
+                out.append((sha, msg))
+        return out
+
+    def check_messages(self) -> None:
+        """Before every push: the messages of the commits about to be pushed are byte-identical,
+        in order, to those of the commits as they were before any rebase (land.py never
+        rewrites a message). Refuse otherwise, naming the commit and the first differing line,
+        and when nothing was compared."""
+        import difflib
+        now = self.our_messages()
+        before = self.original_messages
+        if not before or not now:
+            raise LandError(f"commit messages: compared nothing ({len(before)} before the rebase, {len(now)} now)")
+        if len(now) != len(before):
+            raise LandError(f"commit messages: {len(before)} commits before the rebase, {len(now)} now "
+                            "(a commit was dropped or added): refusing to push")
+        for (old_sha, old), (new_sha, new) in zip(before, now):
+            if old != new:
+                a = old.decode("utf-8", "replace").splitlines(keepends=True)
+                b = new.decode("utf-8", "replace").splitlines(keepends=True)
+                first = next((f"{ln!r}" for ln in difflib.ndiff(a, b) if ln[:1] in "-+"), "(line ends)")
+                raise LandError(f"commit message of {new_sha[:7]} (was {old_sha[:7]}) differs from before the "
+                                f"rebase; first difference: {first}: refusing to push")
+        self.log(f"commit messages: {len(now)} byte-identical to before the rebase")
+
     def push_evidence(self, sha: str, first: bool) -> None:
         """Push `sha` to ci/<id> and wait for the expected set (wait_evidence)."""
         ref = f"ci/{self.id}"
@@ -1407,6 +1459,7 @@ class Lander:
                                     "if it is your own earlier attempt (e.g. amended after a red CI)")
         # our own ci/<id>: a re-evidence push replaces the earlier attempt (and its pending run)
         self.check_remote()
+        self.check_messages()
         self.git("push", "-q", "--force", self.remote, f"HEAD:refs/heads/{ref}")
         self.wait_evidence(ref, sha)
 
@@ -1422,6 +1475,7 @@ class Lander:
         problems = self.check_commits()
         if problems:
             raise LandError("commit checks failed:\n  " + "\n  ".join(problems))
+        self.original_messages = self.our_messages()   # before any rebase
         self.lib_test_gate()
         if self.direct_reason is not None:
             lane = "direct"
@@ -1481,6 +1535,7 @@ class Lander:
                 return sha
             before_push = self.git("rev-parse", self.upstream())
             self.check_push_identity(before_push)
+            self.check_messages()
             self.check_remote()
             r = subprocess.run([*self.git_argv, "push", "-q", self.remote, f"HEAD:{self.branch}"], cwd=self.root,
                                capture_output=True, text=True, env=self.git_env)
