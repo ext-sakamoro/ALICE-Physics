@@ -291,6 +291,16 @@ command -v wasm-bindgen >/dev/null && command -v node >/dev/null \
   || { echo "the wasm-bindgen CLI (Cargo.lock's version) and node are needed (cargo install wasm-bindgen-cli --version <ver> --locked; node 18+)" >&2; exit 1; }
 bash scripts/run_js_binding_tests.sh
 
+step "Python binding (maturin wheel + python/tests/test_binding.py; CI python-binding.yml)"
+# a venv under the target dir with maturin and numpy, made once
+py_target="${CARGO_TARGET_DIR:-target}"
+py_venv="$py_target/python-binding-venv"
+[ -x "$py_venv/bin/maturin" ] || { python3 -m venv "$py_venv" && "$py_venv/bin/pip" install -q maturin numpy; }
+rm -rf "$py_target/python-wheels"
+"$py_venv/bin/maturin" build --features python --out "$py_target/python-wheels"
+"$py_venv/bin/pip" install -q --force-reinstall "$py_target"/python-wheels/*.whl
+"$py_venv/bin/python" python/tests/test_binding.py
+
 step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
 cargo test --lib --features "neural,replay,analytics"
 

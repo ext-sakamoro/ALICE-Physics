@@ -34,7 +34,7 @@ were introduced during that release window.
   | WebAssembly package (`web/pkg`, `tests/js`) | `wasm-pack build --target web --out-dir web/pkg -- --features wasm` | `bash scripts/build_wasm_pkg.sh web web/pkg` (`cargo rustc --crate-type cdylib` + the wasm-bindgen CLI of the version in `Cargo.lock`, which the script checks) |
   | Python wheel | `maturin build --features python` | unchanged (maturin asks for the cdylib itself) |
 
-  `cargo build --features ffi` now builds only the rlib, so the README keeps these commands in one block that CI runs (`scripts/binding_build_commands.py --run c`) and checks against `web/package.json` and the Python workflow (`--check`).
+  `cargo build --features ffi` now builds only the rlib, so the README keeps these commands in one block that CI runs (`scripts/binding_build_commands.py --run c`) and checks against `web/package.json` and the Python workflow (`--check`). The full `scripts/preflight.sh` (not `--quick`) now builds and tests the WebAssembly package and the Python wheel too, as the CI jobs do.
 - CI and `scripts/preflight.sh` check the `no_std` story the way a user meets it: `scripts/no_std_consumer.py` builds `consumers/no_std` (a `#![no_std]` crate with `default-features = false`) with warnings denied and requires alice-physics built, and only as an rlib. It fails on 3.0.0. The `--crate-type rlib` overrides in CI (`no_std` build, MSRV, feature powerset) are gone.
 
 ## [3.0.0] - 2026-10-12
