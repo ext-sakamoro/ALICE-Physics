@@ -113,6 +113,8 @@ jobs:
         run: python scripts/version_sync.py --check
       - name: Lib-test gate (tests)
         run: python scripts/test_lib_test_gate.py
+      - name: Release determinism check (tests of the checker)
+        run: python scripts/test_determinism_release.py
       - name: no_std dependent check (tests of the checker)
         run: python scripts/test_no_std_consumer.py
       - name: Binding build commands in the README (tests and check)
@@ -405,18 +407,7 @@ jobs:
         shell: bash
         env:
           CARGO_TERM_COLOR: never
-        run: |
-          set -euo pipefail
-          mkdir -p target
-          cargo test --release --lib -- max_min_tests windward_alignment 2>&1 | tee target/determinism-release-lib.log
-          cargo test --release --test determinism_golden --test determinism_golden_f32 --test determinism_golden_contacts --test determinism_golden_paths --test determinism_zero_tie 2>&1 | tee target/determinism-release-tests.log
-          # every test binary that ran must have passed at least one test
-          for f in target/determinism-release-lib.log target/determinism-release-tests.log; do
-            n=$(grep -c '^test result: ok\. [1-9]' "$f" || true)
-            z=$(grep -c '^test result: ok\. 0 passed' "$f" || true)
-            echo "$f: $n binaries with tests passed, $z with none"
-            [ "$n" -gt 0 ] && [ "$z" -eq 0 ] || { echo "::error::$f: a test binary ran no test"; exit 1; }
-          done
+        run: python3 scripts/determinism_release.py
 
   scip:
     if: github.event_name != 'schedule'

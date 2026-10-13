@@ -18,7 +18,7 @@ were introduced during that release window.
 ### Changed
 
 - `ErosionModifier::compute_exposure_from_normals`: 法線と流れの向きの内積の符号反転を、2 つの fused multiply-add の結果でなく項の側に置いた (`(-n.z)·f.z + ((-n.x)·f.x + (-n.y)·f.y)`) 結果を反転した形は最適化で項を反転した形に書き換えられることがあり、0 の符号が変わる fused multiply-add 命令を持つ target (aarch64) では、0 でない項が正確に打ち消す時に最適化なしで -0、最適化ありで +0 になっていた 今の形はどの target・profile でも同じで、結果が 0 でない所は前と同じ bit、結果が 0 の所は反転した項の IEEE の和 (すべての項 `n_i·f_i` が +0 の時だけ -0、それ以外は +0、前に最適化ありで出ていた値) これは定義の変更で、最適化なしの前の値とは 0 の符号が違う 保存される exposure は `max(内積, 0)` なので ±0 のどちらでも +0 で、変わらない 試験: erosion の unit test (8⁶ 通りの格子で、結果が 0 でない所の bit 一致と 0 の符号の規則、打ち消しと符号の混ざった 0 の両方を含む、元の形に戻すと失敗) と `tests/determinism_zero_tie.rs` の打ち消しの例 (exposure が +0)
-- CI: 決定論の試験を release でも回す (`Determinism tests (release, …)`、ubuntu-latest・ubuntu-24.04-arm・macos-latest、test binary ごとに通った試験が 0 本なら失敗) 最適化で 0 の符号が変わるのは fused multiply-add 命令を持つ target の最適化 build だけで、x86_64 の既定の target は fma を libm で呼ぶので書き換えが起きず、最適化なしの test leg でも見えない macOS の leg は他の macOS の leg と同じく landing の後に読む (`.github/ci-evidence.toml`)
+- CI: 決定論の試験を release でも回す (`Determinism tests (release, …)`、ubuntu-latest・ubuntu-24.04-arm・macos-latest、`scripts/determinism_release.py`: library の絞り込み語は 1 語ずつ別に走らせ、語ごと・test binary ごとに通った試験が 0 本なら失敗 (語を 1 回の実行にまとめると、当たらなくなった語があっても他の語の件数で通っていた)) 最適化で 0 の符号が変わるのは fused multiply-add 命令を持つ target の最適化 build だけで、x86_64 の既定の target は fma を libm で呼ぶので書き換えが起きず、最適化なしの test leg でも見えない macOS の leg は他の macOS の leg と同じく landing の後に読む (`.github/ci-evidence.toml`)
 - CI: library の max / min と libm の検査を no_std の build にも掛ける (`cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods`、`[lib] crate-type` が rlib だけになったので上書きは要らない) no_std だけの code に `f32::max` を入れると失敗することを確かめた
 
 ## [3.0.1] - 2026-10-13

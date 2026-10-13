@@ -157,15 +157,8 @@ python3 scripts/test_affected_tests.py
 # CI's "Determinism tests (release, ...)" job: the same tests optimised (the sign of a zero
 # result can differ from the unoptimised build on a target with a fused multiply-add)
 step "determinism tests (release)"
-mkdir -p target
-cargo test --release --lib -- max_min_tests windward_alignment 2>&1 | tee target/determinism-release-lib.log
-cargo test --release --test determinism_golden --test determinism_golden_f32 --test determinism_golden_contacts --test determinism_golden_paths --test determinism_zero_tie 2>&1 | tee target/determinism-release-tests.log
-for f in target/determinism-release-lib.log target/determinism-release-tests.log; do
-  n=$(sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -c '^test result: ok\. [1-9]' || true)
-  z=$(sed 's/\x1b\[[0-9;]*m//g' "$f" | grep -c '^test result: ok\. 0 passed' || true)
-  echo "$f: $n binaries with tests passed, $z with none"
-  [ "$n" -gt 0 ] && [ "$z" -eq 0 ] || { echo "a test binary ran no test: $f" >&2; exit 1; }
-done
+python3 scripts/test_determinism_release.py
+python3 scripts/determinism_release.py
 
 step "example runner oracle (scripts/run_examples.py, run in full mode and ci.yml job examples)"
 python3 scripts/test_run_examples.py
