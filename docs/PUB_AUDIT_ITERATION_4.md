@@ -34,7 +34,7 @@ Iteration 4 focuses on **clear dead pub** — items with zero usage anywhere. Cr
 | Item | Before | After | Rationale |
 |------|--------|-------|-----------|
 | `project_pressure_red_black_gs` (line 198) | `pub` | `pub(crate)` | Internal delegate reached via `project_pressure` public wrapper; zero external refs |
-| `project_pressure_jacobi` (line 299) | `pub` | `pub(crate)` | Session 3 I9 legacy benchmark; only unit-test usage |
+| `project_pressure_jacobi` (line 299) | `pub` | `pub(crate)` | v0.10–v0.12 wave (I9) legacy benchmark; only unit-test usage |
 | `project_pressure_bicgstab` (line 428) | `pub` | `pub(crate)` | Only unit-test usage |
 | `BicgstabStats` (line 611) + 3 fields | `pub` | `pub(crate)` | Return type of `project_pressure_bicgstab`; downgraded together |
 | `p2g_trilinear` (line 1007) | `pub` | `pub(crate)` | Zero usage anywhere |
@@ -74,8 +74,8 @@ Bulk reduction of the reserved RANS / wall-function API family. Only `SMAGORINSK
 | `KOmegaState` struct + 2 fields + `impl` block | `pub` | `pub(crate)` | k-ω RANS state; zero external usage |
 | `KEpsilonState::eddy_viscosity`, `advance_k`, `advance_epsilon` | `pub` | `pub(crate)` | k-ε method surface |
 | `KOmegaState::eddy_viscosity`, `from_k_epsilon` | `pub` | `pub(crate)` | k-ω method surface |
-| `dynamic_smagorinsky_cs` | `pub` | `pub(crate)` | Session 3 I10 estimator; zero external usage |
-| `y_plus`, `u_plus`, `wall_k_epsilon` | `pub` | `pub(crate)` | Session 3 I8 wall functions; zero external usage |
+| `dynamic_smagorinsky_cs` | `pub` | `pub(crate)` | v0.10–v0.12 wave (I10) estimator; zero external usage |
+| `y_plus`, `u_plus`, `wall_k_epsilon` | `pub` | `pub(crate)` | v0.10–v0.12 wave (I8) wall functions; zero external usage |
 
 **Snapshot delta**: 63 lines removed (structs + fields + method fns + trait auto-impls + constants).
 

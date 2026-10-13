@@ -28,7 +28,7 @@ to have accidental `pub` exposure of internal helpers.
 
 ## Interpretation
 
-The "priority modules" flagged in ROADMAP were the recently-added Session 4
+The "priority modules" flagged in ROADMAP were the recently-added v0.13.0 wave
 modules (v0.13.0) and v0.14.0 preview additions. These modules were designed
 with a public API contract in mind and reviewed carefully at land time; they
 do not have significant accidental `pub` exposure.

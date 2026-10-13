@@ -70,7 +70,7 @@ The following items were part of the `0.14.0-preview.X` public surface but are `
 | Item | Status | Migration |
 |------|--------|-----------|
 | `eulerian_grid::project_pressure_red_black_gs` | removed | Use `project_pressure` (which delegates to the red-black GS variant internally). |
-| `eulerian_grid::project_pressure_jacobi` | removed | Session 3 legacy benchmark — no runtime API. |
+| `eulerian_grid::project_pressure_jacobi` | removed | v0.10–v0.12 wave legacy benchmark — no runtime API. |
 | `eulerian_grid::project_pressure_bicgstab` | removed | Advanced iterative variant with unit-test-only usage. If needed post-1.0, request via a semver-minor bump. |
 | `eulerian_grid::BicgstabStats` | removed | Return type of the removed BiCGStab variant. |
 | `eulerian_grid::p2g_trilinear`, `p2g_nearest` | removed | Zero external usage. Implement locally or request via post-1.0 semver-minor. |
@@ -99,7 +99,7 @@ The following items were part of the `0.14.0-preview.X` public surface but are `
 | `turbulence::KE_C_MU`, `KE_SIGMA_K`, `KE_SIGMA_EPS`, `KE_C1_EPS`, `KE_C2_EPS`, `KW_BETA_STAR`, `KW_BETA` (k-ε / k-ω constants) | removed | Zero usage. Standard values (Launder & Spalding 1974, Wilcox 1988) are publicly available. |
 | `turbulence::VON_KARMAN`, `LOG_LAW_B`, `Y_PLUS_TRANSITION` (wall-function constants) | removed | Same. |
 | `turbulence::KEpsilonState`, `KOmegaState` (RANS state types) + methods | removed | k-ε / k-ω transport is not wired to `cfd_solver` yet. The `SMAGORINSKY_*` path remains available. |
-| `turbulence::dynamic_smagorinsky_cs`, `y_plus`, `u_plus`, `wall_k_epsilon` | removed | Session 3 wall-function helpers with zero adoption. |
+| `turbulence::dynamic_smagorinsky_cs`, `y_plus`, `u_plus`, `wall_k_epsilon` | removed | v0.10–v0.12 wave wall-function helpers with zero adoption. |
 
 `SMAGORINSKY_CS`, `smagorinsky_eddy_viscosity`, and `strain_rate_magnitude` remain `pub` (used by `cfd_solver`).
 

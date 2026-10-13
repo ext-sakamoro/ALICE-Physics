@@ -1,6 +1,6 @@
 //! PLA shelf life simulation — 6 month creep + fatigue accumulation.
 //!
-//! Session 3 E2 demo. Models a PLA shelf under sustained bending load at
+//! v0.10–v0.12 wave E2 demo. Models a PLA shelf under sustained bending load at
 //! ambient temperature (55 °C — close to Tg to accelerate creep) and prints
 //! the progressive damage / creep strain over simulated time.
 

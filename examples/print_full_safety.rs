@@ -1,6 +1,6 @@
 //! Full print-safety pipeline demo for a SKADIS-style pegboard.
 //!
-//! Session 3 E3 demo. Runs the integrated `print_pipeline_solver` on a
+//! v0.10–v0.12 wave E3 demo. Runs the integrated `print_pipeline_solver` on a
 //! representative 300 × 300 × 5 mm PLA plate with a load direction, one
 //! overhang region, and a fillet detail — printing the aggregated report.
 

@@ -1,6 +1,6 @@
 //! CFD gravity settling demo — water settling under gravity + projection.
 //!
-//! Session 3 E1 demo. Sets up a 12×12×12 water column, runs the integrated
+//! v0.10–v0.12 wave E1 demo. Sets up a 12×12×12 water column, runs the integrated
 //! CFD solver for N steps, and prints the vertical velocity profile at the
 //! grid centreline so you can see gravity acceleration + pressure
 //! projection interaction (walls damp the fall, pressure builds up).

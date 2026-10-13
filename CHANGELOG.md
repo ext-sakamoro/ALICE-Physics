@@ -1574,7 +1574,7 @@ API surface CI gate + fuzz coverage expansion.
 
 - **`ragdoll_demo`** — drops a 1.75 m / 75 kg adult male ragdoll from a pelvis
   height of 4 m and reports pelvis / head / left-hand / right-foot altitudes over
-  2 s of free fall. Exercises the v0.13.0 Session 4 `ragdoll` module (Tier ★★★ G1),
+  2 s of free fall. Exercises the v0.13.0 wave's `ragdoll` module (Tier ★★★ G1),
   the 15-bone / 14-joint builder wiring, and joint constraint stability.
 - **`bfecc_advection_demo`** — compares Semi-Lagrangian / MacCormack / BFECC
   scalar advection on a 16×8×8 MAC grid with a uniform +X flow carrying a
@@ -1584,7 +1584,7 @@ API surface CI gate + fuzz coverage expansion.
 - **`sph_boundary_demo`** — drops a 8×8×8 = 512-particle water block into a
   hemispherical bowl SDF and compares the naive `O(N²)` `step` against the
   spatial-hash-accelerated `O(N·k)` `step_hashed`. Exercises the v0.13.0
-  Session 4 `sdf_sph` module (Tier ★★ S3) and the v0.14.0-preview.1
+  v0.13.0 wave's `sdf_sph` module (Tier ★★ S3) and the v0.14.0-preview.1
   `SphSpatialHash` + `step_hashed` additions.
 
 ### Added — 2 new fuzz targets (3 → 5)
@@ -1633,7 +1633,7 @@ for the pre-publish investigation trail.
 
 ### Added — v0.14.0 preview trail (waves 1-4)
 
-Four preview waves ship on top of v0.13.0's Session 4 (see below). Each preview
+Four preview waves ship on top of the v0.13.0 wave (see below). Each preview
 adds test coverage and does not remove pre-existing functionality (v0.14.0-preview.4
 removes 3 optional bridge features, see the Removed section below).
 
@@ -1692,7 +1692,7 @@ rely on `alice-physics` not requiring nightly or an MSRV newer than declared.
 
 ## [0.13.0] - 2026-09-12
 
-### Added — 19 modules across 3 tiers (Session 4 completeness push)
+### Added — 19 modules across 3 tiers (the v0.13.0 wave)
 
 Extends the v0.10-0.12 engineering-solver foundation with a 19-module
 push covering game-physics polish (ragdoll / character state / netcode
@@ -1771,7 +1771,7 @@ partner. Combine both crates for the 20-module coverage.
 
 ### Module count
 
-Total src/ files: 138 → 146 (Session 4 additions); `pub mod` count in
+Total src/ files: 138 → 146 (v0.13.0 wave additions); `pub mod` count in
 `lib.rs`: → 144.
 
 ## [0.12.0] - 2026-07-08

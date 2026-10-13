@@ -3,7 +3,7 @@
 //! neighbour search (`step`) against the spatial-hash-accelerated
 //! `O(N·k)` variant (`step_hashed`).
 //!
-//! Illustrates the v0.13.0 Session 4 (S3 Tier ★★) and
+//! Illustrates the v0.13.0 wave (S3 Tier ★★) and
 //! v0.14.0-preview.1 (`SphSpatialHash` / `step_hashed`) additions.
 //!
 //! ```bash

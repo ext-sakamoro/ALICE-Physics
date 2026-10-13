@@ -1,7 +1,7 @@
 //! Humanoid ragdoll demo — drop a 1.75 m / 75 kg adult male ragdoll from
 //! a height of 4 m and simulate 2 seconds of free fall + ground impact.
 //!
-//! Illustrates the v0.13.0 Session 4 `ragdoll` module (Tier ★★★ G1).
+//! Illustrates the v0.13.0 wave's `ragdoll` module (Tier ★★★ G1).
 //!
 //! ```bash
 //! cargo run --example ragdoll_demo --features std

@@ -761,7 +761,7 @@ Post-1.0 stability contract: 19,406-item public surface は 1.x で breaking な
 
 ## 過去 milestone (v1.0 到達までの歴史)
 
-**v0.13.0 landed** (commit `f37df0e`) — Session 4 push で 19 module 追加 (Tier ★★★ 4 + ★★ 7 + ★ 8)、ALICE-SDF v1.7.7 の `morphology` を S1 tier-★★★ integration partner として組合わせて 20 module 完備
+**v0.13.0 landed** (commit `f37df0e`) — v0.13.0 wave で 19 module 追加 (Tier ★★★ 4 + ★★ 7 + ★ 8)、ALICE-SDF v1.7.7 の `morphology` を S1 tier-★★★ integration partner として組合わせて 20 module 完備
 
 **v0.14.0-preview.1 landed** (commit `155bdbf` + ALICE-Fluid `935b7a6`) — Physics 拡張 v2 Priority 1 5 items (Marching Tets / 3D IPM / spatial hash SPH / Crank-Nicolson / BFECC scalar)、+16 test Physics + 7 test Fluid
 
@@ -777,7 +777,7 @@ Post-1.0 stability contract: 19,406-item public surface は 1.x で breaking な
 
 - module 総数: 146 src file、`pub mod` 144
 - lib test: 1364 (1327 → 1343 → 1364、v2 Priority 1+2 sprint で +37)
-- Session 1-3 (v0.10-0.12) baseline: 1175 lib tests + 53 alice-bamboo 統合 tests
+- v0.10–v0.12 wave baseline: 1175 lib tests + 53 alice-bamboo 統合 tests
 - Cargo.toml: `publish = false` (crates.io 未公開状態)、`rust-version = "1.70.0"`
 
 Related sub-roadmaps:
@@ -785,11 +785,11 @@ Related sub-roadmaps:
 
 ## Phase 一覧
 
-### ✅ v0.10.0 - v0.12.0 (Session 1-3、shipped 2026-07-08)
+### ✅ v0.10.0 - v0.12.0 (shipped 2026-07-08)
 
 Engineering-solver 基盤 35 module + 3 統合 solver loop — 3D プリント安全性 (warp / thin-wall / stress / bridging) から composite / plastic / fatigue 力学、乱流、VOF / level-set 多相流、実行可能な CFD 時間ステップ loop、GpuSolverBridge joint-solve pipeline (ALICE-TRT v3.1.0 協調)
 
-### ✅ v0.13.0 (Session 4、19 module、shipped 2026-09-12)
+### ✅ v0.13.0 (19 module、shipped 2026-09-12)
 
 commit `f37df0e`
 
@@ -1110,7 +1110,7 @@ Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` �
 
 ## 判断記録 (ADR)
 
-### ADR-001 (2026-09-12): v0.13.0 で Session 4 20 module を単一 release として ship する
+### ADR-001 (2026-09-12): v0.13.0 で追加の 20 module を単一 release として ship する
 
 **背景**: v0.12.0 (2026-07-08) 以降、Unreleased で 20 module (Tier ★★★ 5 + ★★ 7 + ★ 8) が積み上がっていた
 
@@ -1120,7 +1120,7 @@ Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` �
 - v0.13.0 = Tier ★★★ のみ、v0.14.0 = Tier ★★、v0.15.0 = Tier ★ (段階 ship) → **reject**: overhead 大、20 module は依存関係が交差してるので分離コスト高
 - v1.0.0 直行 → **reject**: 実運用検証未了、public API surface freeze 未完 (詳細は OQ1 + Item B 参照)
 
-**根拠**: Session 4 として 3 tier 構造で発表することで「1.0 に向けた最後の module 追加 wave」の signaling になる v1.0.0 は API freeze の意味を持たせ、feature 追加は v0.14.0-v0.16.0 で緩やかに
+**根拠**: v0.13.0 wave として 3 tier 構造で発表することで「1.0 に向けた最後の module 追加 wave」の signaling になる v1.0.0 は API freeze の意味を持たせ、feature 追加は v0.14.0-v0.16.0 で緩やかに
 
 ### ADR-002 (2026-09-12): v1.0.0 前に crates.io publish を試験実施する (v0.16.x 前後)
 
@@ -1141,7 +1141,7 @@ Neo-Hookean は `P = μF + [K(J−1) − μ]·cof(F)` (Mooney-Rivlin も `cof` �
 **決定 (当初)**: α (v0.13.0 → v0.14.0 → ... → v0.16.x → rc.1 → rc.2 → v1.0.0 の段階昇格) を採用
 
 **代替案 (当初)**:
-- **γ (直行)**: Cargo.toml `0.13.0 → 1.0.0` に bump、README も 1.0 表記に、Session 4 module も全部「v1.0.0 included」に格上げ → reject: 実運用ドッグフーディング未実施、public API surface freeze 未完
+- **γ (直行)**: Cargo.toml `0.13.0 → 1.0.0` に bump、README も 1.0 表記に、v0.13.0 wave の module も全部「v1.0.0 included」に格上げ → reject: 実運用ドッグフーディング未実施、public API surface freeze 未完
 - **β (RC 短縮)**: 現在の main を `v1.0.0-rc.1` として freeze publish、feedback 経て v1.0.0 → reject: Unreleased backlog は既に v0.13.0 で吸収済だが、新 module (client_prediction 等) の実運用検証がない状態で RC 出すと feedback の意味が薄い
 
 **根拠 (当初)**: 「downstream crate が今から `alice-physics = "1"` で pin して 6 ヶ月 breaking change なしを我々が保証できるか?」 = 現状 n 判定 (実運用検証未了)、ALICE-Bamboo の実運用で 3 ヶ月連続 breaking change なしを先に達成することが 1.0 コミットの根拠になる (semver 契約は約束ではなく実績の追認)
