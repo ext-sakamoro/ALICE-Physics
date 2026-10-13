@@ -67,7 +67,7 @@ preview.4 で **`cargo publish --dry-run` が clean pass** したため、`Cargo
 ```bash
 $ cargo publish --dry-run --allow-dirty
     Updating crates.io index
-error: failed to verify manifest at `/Users/ys/ALICE-Physics/Cargo.toml`
+error: failed to verify manifest at `~/ALICE-Physics/Cargo.toml`
 
 Caused by:
   all dependencies must have a version requirement specified when publishing.
