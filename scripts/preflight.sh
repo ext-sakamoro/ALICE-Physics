@@ -49,6 +49,10 @@ print_skip_summary() {
 step "actionlint (workflow YAML)"
 actionlint .github/workflows/*.yml
 
+step "workflow-timeouts (every job has timeout-minutes; CI job actionlint)"
+python3 scripts/test_workflow_timeouts.py
+python3 scripts/workflow_timeouts.py
+
 step "cargo fmt --check"
 cargo fmt -- --check
 

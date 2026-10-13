@@ -85,6 +85,7 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     name: Fuzz targets
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       list: ${{ steps.list.outputs.list }}
     steps:
@@ -104,6 +105,7 @@ jobs:
     if: needs.changes.outputs.run == 'true'
     name: Fuzz — build every target
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install nightly toolchain
@@ -121,6 +123,7 @@ jobs:
     needs: [changes, targets]
     if: needs.changes.outputs.run == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:

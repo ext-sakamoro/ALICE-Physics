@@ -76,6 +76,10 @@ jobs:
     needs: gate
     if: needs.gate.outputs.run == 'true'
     runs-on: ${{ matrix.os }}
+    # per leg, from the slowest of the last successful runs: Intel macOS (max 192 min,
+    # avg 100) stays at the 360-minute cap of a hosted runner, since twice its
+    # maximum is above it; Windows (max 80) 160; the other legs (max 60) 120
+    timeout-minutes: ${{ matrix.os == 'macos-15-intel' && 360 || matrix.os == 'windows-latest' && 160 || 120 }}
     strategy:
       fail-fast: false
       matrix:
@@ -356,6 +360,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: Run examples (release)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -390,6 +395,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: Determinism tests (release, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
     strategy:
       fail-fast: false
       matrix:
@@ -413,6 +419,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: SCIP checks (defect references, L0 ratchet)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -436,6 +443,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: Test (neural / replay / analytics via crates.io siblings)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain
@@ -455,6 +463,7 @@ jobs:
     # the wasm-bindgen package called from JavaScript (Node), as an application would
     name: Test (WebAssembly binding from JavaScript)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install Rust toolchain (with wasm32-unknown-unknown)
@@ -503,6 +512,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: Test (wasm32-wasip1 via wasmtime)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -561,6 +571,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: Clippy
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -628,6 +639,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: MSRV (rust-version = 1.85)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install MSRV toolchain
@@ -651,6 +663,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: Format
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
 
@@ -691,6 +704,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: Doc (RUSTDOCFLAGS=-Dwarnings)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
@@ -712,6 +726,7 @@ jobs:
     if: github.event_name != 'schedule'
     name: actionlint (workflow YAML 検証)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v5
       - name: Run actionlint
@@ -719,6 +734,12 @@ jobs:
         with:
           fail_level: error
           reporter: github-check
+      # every job has a job-level timeout-minutes (a hung step otherwise holds a shared
+      # runner for GitHub's 6-hour limit); the checker's own tests run first
+      - name: workflow-timeouts
+        run: |
+          python3 scripts/test_workflow_timeouts.py
+          python3 scripts/workflow_timeouts.py
 
   feature-powerset:
     if: github.event_name != 'schedule'
@@ -728,6 +749,7 @@ jobs:
     # - python (pyo3 build) / neural / replay / analytics (sibling crate 実体必要) は除外
     name: Feature powerset (cargo-hack)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable

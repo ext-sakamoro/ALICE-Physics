@@ -256,6 +256,7 @@ jobs:
     needs: mutants
     if: always() && (github.event.schedule == '0 18 * * 0' || (github.event_name == 'workflow_dispatch' && inputs.scope == ''))
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: actions/download-artifact@v7
