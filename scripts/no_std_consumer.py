@@ -88,8 +88,16 @@ def main(argv: list[str]) -> int:
     print(f"no_std consumer: {LIB} artifacts {n}, errors {len(errors)}")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
-    if n == 0 and proc.returncode == 0:
+    code = exit_code(errors, n, proc.returncode)
+    if code == 2:
         print(f"error: no {LIB} artifact was read (compared nothing)", file=sys.stderr)
+    return code
+
+
+def exit_code(errors: list[str], n: int, rc: int) -> int:
+    """2 when a successful build produced no alice-physics artifact (nothing compared),
+    1 on any error, 0 otherwise"""
+    if n == 0 and rc == 0:
         return 2
     return 1 if errors else 0
 

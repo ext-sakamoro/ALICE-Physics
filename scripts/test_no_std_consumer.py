@@ -49,6 +49,17 @@ class Judge(unittest.TestCase):
         old = art("alice-physics 3.0.1 (path+file:///w/ALICE-Physics)", ["rlib"], ["/t/x.rlib"])
         self.assertEqual(len(nc.artifacts([old], "alice-physics")), 1)
 
+    def test_a_successful_build_with_no_artifact_compares_nothing(self):
+        # a fresh build that cargo reported as up to date with no alice-physics message:
+        # rc 0, nothing compared -> 2, not a pass
+        errors, n = nc.judge([], 0)
+        self.assertEqual(nc.exit_code(errors, n, 0), 2)
+
+    def test_exit_codes(self):
+        self.assertEqual(nc.exit_code([], 1, 0), 0)
+        self.assertEqual(nc.exit_code(["x"], 1, 0), 1)
+        self.assertEqual(nc.exit_code(["x"], 0, 101), 1)
+
     def test_other_packages_are_not_counted(self):
         other = art("registry+https://x#alice-physics-ffi@1.0.0", ["rlib"], ["/t/y.rlib"])
         self.assertEqual(nc.artifacts([other], "alice-physics"), [])
