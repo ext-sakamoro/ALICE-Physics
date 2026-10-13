@@ -888,6 +888,191 @@ class Landing(Isolated):
         with self.assertRaisesRegex(land.LandError, "does not carry the patches of the evidence [0-9a-f]{7} \\(2 commits vs 2\\)"):
             lander.land()
 
+    def changelog_on_both_sides(self, ours: str = "- b\n") -> None:
+        """our commit adds `ours` to CHANGELOG.md; main adds `- u` to the same list after the evidence"""
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n" + ours}, "feat: b")
+        self.r.moved = lambda: self.r.push_upstream({"CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- u\n"},
+                                                    "docs: changelog")
+
+    def resolving(self, path: str, drop: list[str], replace: dict[str, str] | None = None,
+                  restore: str | None = None) -> "FakeLander":
+        """a landing whose rebase resolution leaves out the lines `drop` from `path` (one occurrence each),
+        replaces whole lines by `replace`, or (`restore`) writes `path` back with that content"""
+        class Resolved(FakeLander):
+            def prepare(self, verify):
+                sha = super().prepare(verify)
+                if self.calls.count("checks") >= 2:
+                    if restore is not None:
+                        text = restore
+                    else:
+                        text = self.git("cat-file", "blob", self.git("rev-parse", "HEAD:./" + path)) + "\n"
+                    for line in drop:
+                        text = text.replace(line + "\n", "", 1)
+                    for line, by in (replace or {}).items():
+                        text = text.replace(line + "\n", by + "\n", 1)
+                    write(self.root, path, text)
+                    git(self.root, "add", "--", "./" + path)
+                    git(self.root, *ID, "commit", "-q", "--amend", "--no-edit")
+                    sha = git(self.root, "rev-parse", "HEAD")
+                return sha
+        lander = Resolved(self.r.work, "T-1")
+        lander.moves = [self.r.moved]
+        return lander
+
+    def refused_with(self, lander, detail: str) -> None:
+        with self.assertRaisesRegex(land.LandError, "drops lines in a path main changed after the evidence [0-9a-f]{7}: "
+                                                    + detail + "$"):
+            lander.land()
+        self.assertEqual(self.r.origin_head(), git(self.r.upstream, "rev-parse", "HEAD"))   # only main's own doc
+
+    def test_docs_only_moved_keeps_the_lines_of_both_sides_in_a_path_main_gained(self):
+        self.changelog_on_both_sides()
+        lander = self.r.lander()
+        lander.moves = [self.r.moved]
+        logged = self.landing_logs(lander)
+        sha = lander.land()
+        self.assertIn("reason: docs-only-moved", lander.record)
+        self.assertIn("docs-only-moved: 2 lines main or the evidence added in 1 path(s) main changed are kept", logged)
+        text = git(self.r.origin, "show", f"{sha}:CHANGELOG.md")
+        self.assertIn("- b", text)
+        self.assertIn("- u", text)
+
+    def test_docs_only_moved_that_drops_our_line_is_refused(self):
+        # the patch comparison leaves out the paths main gained: only the counted lines see it
+        self.changelog_on_both_sides()
+        self.refused_with(self.resolving("CHANGELOG.md", ["- b"]),
+                          "CHANGELOG.md \\(main: 0 of 1 lines, ours: 1 of 1 lines\\)")
+
+    def test_docs_only_moved_that_drops_mains_line_is_refused(self):
+        # the other side: a resolution that keeps ours and drops main's line would revert main's change
+        self.changelog_on_both_sides()
+        self.refused_with(self.resolving("CHANGELOG.md", ["- u"]),
+                          "CHANGELOG.md \\(main: 1 of 1 lines, ours: 0 of 1 lines\\)")
+
+    def test_docs_only_moved_that_drops_both_sides_is_refused(self):
+        self.changelog_on_both_sides()
+        self.refused_with(self.resolving("CHANGELOG.md", ["- b", "- u"]),
+                          "CHANGELOG.md \\(main: 1 of 1 lines, ours: 1 of 1 lines\\)")
+
+    def test_docs_only_moved_counts_a_line_added_twice(self):
+        # two copies added, one kept: a set comparison would pass this
+        self.doc_on_both_sides("docs/notes.md", ours="- ours\n- ours\n")
+        self.refused_with(self.resolving("docs/notes.md", ["- ours"]),
+                          "docs/notes.md \\(main: 0 of 1 lines, ours: 1 of 2 lines\\)")
+
+    def doc_on_both_sides(self, old: str, new: str | None = None, ours: str = "- ours\n") -> None:
+        """`old` exists before the evidence; ours appends `ours` at its end; main inserts `- main` at its
+        start (renaming it to `new`): the two edits do not overlap, so the rebase has no conflict"""
+        self.r.push_upstream({old: "doc\none\ntwo\nthree\n"}, "docs: start")
+        git(self.r.work, "pull", "-q", "--rebase", "origin", "main")
+        commit(self.r.work, {"src/b.rs": "x\n", old: "doc\none\ntwo\nthree\n" + ours,
+                             "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        upstream = self.r.upstream
+
+        def moved():
+            git(upstream, "pull", "-q", "--rebase", "origin", "main")
+            target = new or old
+            if new:
+                git(upstream, "mv", old, new)
+            write(upstream, target, "- main\ndoc\none\ntwo\nthree\n")
+            git(upstream, "add", "-A")
+            git(upstream, *ID, "commit", "-q", "-m", "docs: move")
+            git(upstream, "push", "-q", "origin", "main")
+        self.r.moved = moved
+
+    def test_docs_only_moved_follows_a_document_main_renamed(self):
+        self.doc_on_both_sides("docs/guide.md", "docs/guide-2.md")
+        lander = self.r.lander()
+        lander.moves = [self.r.moved]
+        logged = self.landing_logs(lander)
+        sha = lander.land()
+        self.assertIn("reason: docs-only-moved", lander.record)
+        text = git(self.r.origin, "show", f"{sha}:docs/guide-2.md")
+        self.assertIn("- ours", text)
+        self.assertIn("- main", text)
+        self.assertTrue(any(l.startswith("docs-only-moved: 2 lines") for l in logged), logged)
+
+    def test_docs_only_moved_in_a_renamed_document_that_drops_our_line_is_refused(self):
+        self.doc_on_both_sides("docs/guide.md", "docs/guide-2.md")
+        self.refused_with(self.resolving("docs/guide-2.md", ["- ours"]),
+                          "docs/guide-2.md \\(main: 0 of 1 lines, ours: 1 of 1 lines\\)")
+
+    def test_docs_only_moved_reads_a_path_with_a_space_and_non_ascii_characters(self):
+        # git quotes such a path in its text output; the NUL-separated reading names it as it is
+        self.doc_on_both_sides("docs/ノート 1.md")
+        self.refused_with(self.resolving("docs/ノート 1.md", ["- main"]),
+                          "docs/ノート 1.md \\(main: 1 of 1 lines, ours: 0 of 1 lines\\)")
+
+    def test_kept_lines_reads_a_path_that_looks_like_pathspec_magic(self):
+        # `:x.md` given to git as a pathspec is magic and matches nothing, so every side would read
+        # empty; a root file is not a document, so this is checked on the function, not via land()
+        # (the commits are made with plumbing: a `:` in a file name cannot be written on Windows)
+        root = self.r.work
+
+        def tree_commit(text: str, parent: str, msg: str) -> str:
+            # bytes on stdin: in text mode Windows would turn each \n into \r\n
+            blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=root, input=text.encode(),
+                                  capture_output=True, check=True).stdout.decode().strip()
+            tree = subprocess.run(["git", "mktree", "-z"], cwd=root, input=f"100644 blob {blob}\t:x.md\0".encode(),
+                                  capture_output=True, check=True).stdout.decode().strip()
+            return git(root, "commit-tree", tree, "-p", parent, "-m", msg)
+        start = git(root, "rev-parse", "HEAD")
+        base = tree_commit("doc\none\n", start, "docs: start")
+        evidence = tree_commit("doc\none\n- ours\n", base, "docs: ours")
+        main = tree_commit("- main\ndoc\none\n", base, "docs: main")
+        landed = tree_commit("- main\ndoc\none\n", main, "docs: ours, resolved without our line")
+        lander = self.r.lander()
+        with self.assertRaisesRegex(land.LandError, ":x.md \\(main: 0 of 1 lines, ours: 1 of 1 lines\\)$"):
+            lander.check_kept_lines(evidence, base, main, landed, set())
+
+    def test_docs_only_moved_with_a_document_main_renamed_into_a_ledger_is_refused(self):
+        # a ledger is regenerated, so our line in the renamed file would be lost without a dropped line
+        self.doc_on_both_sides("docs/notes.md", "docs/oracle-status.md")
+        lander = self.r.lander()
+        lander.moves = [self.r.moved]
+        with self.assertRaisesRegex(land.LandError, "main renamed docs/notes.md into the ledger "
+                                                    "docs/oracle-status.md, which is regenerated"):
+            lander.land()
+        self.assertEqual(self.r.origin_head(), git(self.r.upstream, "rev-parse", "HEAD"))
+
+    def test_docs_only_moved_that_brings_back_a_document_main_deleted_is_refused(self):
+        self.r.push_upstream({"docs/old.md": "old\n"}, "docs: old")
+        git(self.r.work, "pull", "-q", "--rebase", "origin", "main")
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        upstream = self.r.upstream
+
+        def moved():
+            git(upstream, "pull", "-q", "--rebase", "origin", "main")
+            git(upstream, "rm", "-q", "docs/old.md")
+            git(upstream, *ID, "commit", "-q", "-m", "docs: drop old")
+            git(upstream, "push", "-q", "origin", "main")
+        self.r.moved = moved
+        with self.assertRaisesRegex(land.LandError, "main deleted docs/old.md, the landed tree has it again"):
+            self.resolving("docs/old.md", [], restore="old\n").land()
+        self.assertEqual(self.r.origin_head(), git(self.r.upstream, "rev-parse", "HEAD"))
+
+    def test_docs_only_moved_that_brings_back_the_old_name_of_a_renamed_document_is_refused(self):
+        self.doc_on_both_sides("docs/notes.md", "docs/notes-2.md", ours="")
+        with self.assertRaisesRegex(land.LandError, "main renamed docs/notes.md to docs/notes-2.md, "
+                                                    "the landed tree has docs/notes.md again"):
+            self.resolving("docs/notes.md", [], restore="doc\n").land()
+        self.assertEqual(self.r.origin_head(), git(self.r.upstream, "rev-parse", "HEAD"))
+
+    def test_docs_only_moved_splits_lines_at_newline_only(self):
+        # str.splitlines() also splits at a form feed: "a<FF>b" would match a landed "b" and "a"
+        self.doc_on_both_sides("docs/notes.md", ours="a\x0cb\n")
+        self.refused_with(self.resolving("docs/notes.md", [], replace={"a\x0cb": "b\na"}),
+                          "docs/notes.md \\(main: 0 of 1 lines, ours: 1 of 1 lines\\)")
+
+    def test_docs_only_moved_with_only_ledgers_gained_compares_none(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        lander.moves = [lambda: self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"}, "docs: oracle-status")]
+        logged = self.landing_logs(lander)
+        lander.land()
+        self.assertIn("reason: docs-only-moved", lander.record)
+        self.assertIn("docs-only-moved: main changed no path outside the ledgers (0 compared)", logged)
+
     def test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         lander = self.r.lander(before_push=lambda: self.r.push_upstream({"src/c.rs": "fn c() {}\n"}, "feat: c"))

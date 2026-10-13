@@ -140,7 +140,11 @@ the script), before `main` moves. A change of `src/` only is no exception.
   SHA, the landed SHA and a reason class, so it can be pasted as evidence:
   - `main-unmoved`: `main` did not move after the evidence; the evidenced SHA itself lands;
   - `docs-only-moved`: `main` gained documents only; the change is rebased onto them and
-    the local checks run again (no new evidence);
+    the local checks run again (no new evidence); in every document `main` changed, each line
+    `main` or the evidence added must still be in the landed file (counted, renames followed),
+    a document `main` renamed into a ledger must not carry a change of the evidence, and a
+    document `main` deleted (or the old name of one it renamed) must stay gone unless the evidence
+    changed it, or nothing lands;
   - `re-evidenced (evidence rounds N)`: `main` gained code; see below;
   - `direct (no evidence)`: the emergency escape.
 

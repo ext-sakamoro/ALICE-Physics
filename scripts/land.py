@@ -29,7 +29,8 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      back to 5 when main moved meanwhile. Before that push the evidence rule must hold
      (evidence_rule): the landed SHA is the evidence SHA (main-unmoved / re-evidenced), or
      main gained documents only and our commits carry the same patches as the evidence
-     with every other difference in the moved paths or the ledgers (docs-only-moved);
+     with every other difference in the moved paths or the ledgers, and in every path main
+     changed, each line main or the evidence added is still in the landed file (docs-only-moved);
      origin's ci/<id> must still be the evidence SHA. The last line of a landing is
      `EVIDENCE <sha|-> LANDED <sha> RULE <rule>`.
   All of it runs in a detached working copy of land.py's own (own_copy, a `git worktree`
@@ -96,6 +97,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import collections
 import contextlib
 import json
 import os
@@ -1255,9 +1257,18 @@ class Lander:
     def commits(self) -> list[str]:
         return self.git("rev-list", "--reverse", f"{self.upstream()}..HEAD").split()
 
+    def raw(self, *args: str) -> bytes:
+        """git's stdout as bytes, unstripped (self.git strips, which changes a first or a last line)"""
+        r = subprocess.run([*self.git_argv, *args], cwd=self.root, capture_output=True, env=self.git_env)
+        if r.returncode != 0:
+            raise LandError(f"git {' '.join(args)} failed: {r.stderr.decode(errors='replace').strip()}")
+        return r.stdout
+
     def paths(self, rev_range: str) -> list[str]:
-        out = self.git("diff", "--name-only", rev_range)
-        return [p for p in out.splitlines() if p]
+        """the paths a range changes, read NUL-separated: a path with a space, a quote or a non-ASCII
+        character is the path itself, not git's quoted form; a rename lists both names"""
+        out = self.raw("diff", "--name-only", "--no-renames", "-z", rev_range)
+        return [p.decode("utf-8", "surrogateescape") for p in out.split(b"\0") if p]
 
     def check_commits(self) -> list[str]:
         if self.git("status", "--porcelain"):
@@ -1301,7 +1312,8 @@ class Lander:
                             self.upstream()],
                            cwd=self.root, capture_output=True, text=True, env=self.git_env)
         while r.returncode != 0:
-            conflicted = [p for p in self.git("diff", "--name-only", "--diff-filter=U").splitlines() if p]
+            conflicted = [p.decode("utf-8", "surrogateescape")
+                          for p in self.raw("diff", "--name-only", "--diff-filter=U", "-z").split(b"\0") if p]
             if not conflicted:
                 self.git("rebase", "--abort", check=False)
                 raise LandError(f"rebase failed: {r.stderr.strip()}")
@@ -1564,7 +1576,8 @@ class Lander:
                       rounds: int, sha: str) -> str:
         """The rule the push to main stands on, or LandError: the landed SHA is the evidence SHA,
         or main gained documents only since the evidence and our commits carry the evidence's
-        patches with every other difference in the paths main gained or in the ledgers"""
+        patches with every other difference in the paths main gained or in the ledgers, and with
+        each line main or the evidence added to a path main gained still in the landed file"""
         if lane == "direct":
             return "direct"
         if self.dry_run:
@@ -1593,7 +1606,104 @@ class Lander:
         if theirs != ours:
             raise LandError(f"{sha[:7]} does not carry the patches of the evidence {evidence_sha[:7]} "
                             f"({len(ours)} commits vs {len(theirs)})")
+        self.check_kept_lines(evidence_sha, evidence_base, base_now, sha, ledgers)
         return "docs-only-moved"
+
+    def check_kept_lines(self, evidence_sha: str, evidence_base: str, base_now: str, sha: str,
+                         ledgers: set[str]) -> None:
+        """the paths main changed are left out of the patch-id comparison, so a rebase that resolved a
+        conflict in one of them by dropping a line would pass it: in each of those paths, every line
+        main added since the evidence base and every line the evidence added must still be in the
+        landed file. Lines are counted (a line added twice is kept twice; when both sides added the
+        same line, the larger count is required), whitespace-only lines are not counted, and a path
+        main renamed is followed to its new name. A path main renamed into a ledger (regenerated, so
+        an edit of ours in it would be lost) is refused when the evidence changed it, and a path main
+        deleted, or the old name of a path main renamed, must stay gone unless the evidence changed it. Paths are read NUL-separated, files
+        by blob id from a full tree listing (no pathspec, so `:x.md` is a name), and lines are split
+        at \\n only (\\r before it dropped), so no diff header and no other line break is parsed.
+        By design the check is on line counts, not order: a line both sides added once is kept once,
+        and a move main made that the landed file reverts is not seen."""
+        changed = self.paths(f"{evidence_base}..{base_now}")
+        renamed_to: dict[str, str] = {}
+        status = self.raw("diff", "-M", "--name-status", "-z", evidence_base, base_now).split(b"\0")
+        k = 0
+        while k < len(status) and status[k]:
+            code = status[k].decode()
+            if code.startswith(("R", "C")):
+                old, new = (status[k + 1].decode("utf-8", "surrogateescape"),
+                            status[k + 2].decode("utf-8", "surrogateescape"))
+                if code.startswith("R"):
+                    renamed_to[old] = new
+                k += 3
+            else:
+                k += 2
+        ours = set(self.paths(f"{evidence_base}..{evidence_sha}"))
+        trees: dict[str, dict[str, str]] = {}
+
+        def tree(rev: str) -> dict[str, str]:
+            if rev not in trees:
+                listing = self.raw("ls-tree", "-r", "-z", "--full-tree", rev).split(b"\0")
+                trees[rev] = {}
+                for entry in listing:
+                    if entry:
+                        meta, _, name = entry.partition(b"\t")
+                        trees[rev][name.decode("utf-8", "surrogateescape")] = meta.split()[2].decode()
+            return trees[rev]
+
+        def lines(rev: str, path: str) -> collections.Counter:
+            oid = tree(rev).get(path)
+            if oid is None:
+                return collections.Counter()
+            text = self.raw("cat-file", "blob", oid).decode("utf-8", "surrogateescape")
+            return collections.Counter(line.removesuffix("\r") for line in text.split("\n") if line.strip())
+
+        # (old name at the evidence base, name at main now) for each path main changed
+        pairs, problems = [], []
+        renamed_new = set(renamed_to.values())
+        for p in changed:
+            if p in renamed_to:
+                pairs.append((p, renamed_to[p]))
+            elif p not in renamed_new:
+                pairs.append((p, p))
+        for old, new in pairs:
+            if old not in tree(evidence_base) and new not in tree(base_now):
+                raise LandError(f"main changed {new}, but it is in neither the evidence base nor main "
+                                "(the path could not be read)")
+        dropped, compared, paths = [], 0, 0
+        for old, new in sorted(pairs, key=lambda x: x[1]):
+            if old != new and old not in ours and old not in tree(base_now) and old in tree(sha):
+                problems.append(f"main renamed {old} to {new}, the landed tree has {old} again")
+            if new in ledgers:
+                if old != new and old in ours:
+                    problems.append(f"main renamed {old} into the ledger {new}, which is regenerated: "
+                                    "the evidence's change to it would be lost")
+                continue
+            if new not in tree(base_now) and old == new:
+                if old not in ours and new in tree(sha):
+                    problems.append(f"main deleted {new}, the landed tree has it again")
+                if old not in ours:
+                    continue
+            paths += 1
+            base = lines(evidence_base, old)
+            need_main = lines(base_now, new) - base
+            need_ours = (lines(evidence_sha, old) - base) if old in ours else collections.Counter()
+            landed = lines(sha, new)
+            compared += sum((need_main | need_ours).values())
+            lost_main = sum((need_main - landed).values())
+            lost_ours = sum((need_ours - landed).values())
+            if lost_main or lost_ours:
+                dropped.append(f"{new} (main: {lost_main} of {sum(need_main.values())} lines, "
+                               f"ours: {lost_ours} of {sum(need_ours.values())} lines)")
+        if dropped:
+            problems.insert(0, f"{sha[:7]} drops lines in a path main changed after the evidence "
+                               f"{evidence_sha[:7]}: " + ", ".join(dropped))
+        if problems:
+            raise LandError("; ".join(problems))
+        if not paths:
+            self.log("docs-only-moved: main changed no path outside the ledgers (0 compared)")
+            return
+        self.log(f"docs-only-moved: {compared} lines main or the evidence added in {paths} path(s) "
+                 "main changed are kept")
 
     def _land(self) -> str:
         self.check_remote()
