@@ -29,7 +29,8 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      back to 5 when main moved meanwhile. Before that push the evidence rule must hold
      (evidence_rule): the landed SHA is the evidence SHA (main-unmoved / re-evidenced), or
      main gained documents only and our commits carry the same patches as the evidence
-     with every other difference in the moved paths or the ledgers (docs-only-moved);
+     with every other difference in the moved paths or the ledgers, and every line the
+     evidence added to a path main also changed is still in the landed file (docs-only-moved);
      origin's ci/<id> must still be the evidence SHA. The last line of a landing is
      `EVIDENCE <sha|-> LANDED <sha> RULE <rule>`.
   All of it runs in a detached working copy of land.py's own (own_copy, a `git worktree`
@@ -96,6 +97,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import collections
 import contextlib
 import json
 import os
@@ -1564,7 +1566,8 @@ class Lander:
                       rounds: int, sha: str) -> str:
         """The rule the push to main stands on, or LandError: the landed SHA is the evidence SHA,
         or main gained documents only since the evidence and our commits carry the evidence's
-        patches with every other difference in the paths main gained or in the ledgers"""
+        patches with every other difference in the paths main gained or in the ledgers, and with
+        every line the evidence added to a path main gained still in the landed file"""
         if lane == "direct":
             return "direct"
         if self.dry_run:
@@ -1593,7 +1596,40 @@ class Lander:
         if theirs != ours:
             raise LandError(f"{sha[:7]} does not carry the patches of the evidence {evidence_sha[:7]} "
                             f"({len(ours)} commits vs {len(theirs)})")
+        self.check_kept_lines(evidence_sha, evidence_base, sha, gained - ledgers)
         return "docs-only-moved"
+
+    def check_kept_lines(self, evidence_sha: str, evidence_base: str, sha: str, gained: set[str]) -> None:
+        """the paths main gained are left out of the patch-id comparison, so a rebase that resolved a
+        conflict in one of them by dropping our line would pass it: every line the evidence added to
+        such a path must still be in the landed file (counted, so a line added twice is kept twice)"""
+        shared = sorted(gained & set(self.paths(f"{evidence_base}..{evidence_sha}")))
+        if not shared:
+            self.log("docs-only-moved: our commits change none of the paths main gained (0 compared)")
+            return
+        def raw(*args: str) -> list[str]:   # (not self.git: its strip() would change a first or a last line)
+            r = subprocess.run([*self.git_argv, *args], cwd=self.root, capture_output=True, env=self.git_env)
+            if r.returncode != 0:
+                raise LandError(f"git {' '.join(args)} failed: {r.stderr.decode(errors='replace').strip()}")
+            return r.stdout.decode("utf-8", "surrogateescape").splitlines()
+
+        dropped, compared = [], 0
+        for p in shared:
+            # (a line of whitespace only is not counted: a merge may fold blank lines without losing anything)
+            added = collections.Counter(
+                line[1:] for line in raw("diff", "-U0", "--no-color", "--no-ext-diff", evidence_base, evidence_sha,
+                                         "--", p)
+                if line.startswith("+") and not line.startswith(("+++ a/", "+++ b/", "+++ /dev/null")) and line[1:].strip())
+            landed = collections.Counter(raw("show", f"{sha}:{p}")) if self.git("ls-tree", sha, "--", p) \
+                else collections.Counter()
+            compared += sum(added.values())
+            missing = sum((added - landed).values())
+            if missing:
+                dropped.append(f"{p} ({missing} of {sum(added.values())} lines)")
+        if dropped:
+            raise LandError(f"{sha[:7]} drops lines the evidence {evidence_sha[:7]} added in a path main gained: "
+                            + ", ".join(dropped))
+        self.log(f"docs-only-moved: {compared} lines the evidence added in {len(shared)} path(s) main gained are kept")
 
     def _land(self) -> str:
         self.check_remote()

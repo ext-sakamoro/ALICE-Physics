@@ -888,6 +888,56 @@ class Landing(Isolated):
         with self.assertRaisesRegex(land.LandError, "does not carry the patches of the evidence [0-9a-f]{7} \\(2 commits vs 2\\)"):
             lander.land()
 
+    def changelog_on_both_sides(self) -> None:
+        """our commit adds `- b` to CHANGELOG.md; main adds `- u` to the same list after the evidence"""
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        self.r.moved = lambda: self.r.push_upstream({"CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- u\n"},
+                                                    "docs: changelog")
+
+    def test_docs_only_moved_keeps_our_lines_in_a_path_main_gained(self):
+        self.changelog_on_both_sides()
+        lander = self.r.lander()
+        lander.moves = [self.r.moved]
+        logged = self.landing_logs(lander)
+        sha = lander.land()
+        self.assertIn("reason: docs-only-moved", lander.record)
+        self.assertIn("docs-only-moved: 1 lines the evidence added in 1 path(s) main gained are kept", logged)
+        text = git(self.r.origin, "show", f"{sha}:CHANGELOG.md")
+        self.assertIn("- b", text)
+        self.assertIn("- u", text)
+
+    def test_docs_only_moved_that_drops_our_line_in_a_path_main_gained_is_refused(self):
+        # both sides touch the same document and the rebase resolves the conflict by keeping only
+        # main's side: the patch comparison leaves out the paths main gained, so only the count of
+        # the lines the evidence added sees it
+        self.changelog_on_both_sides()
+
+        class Dropped(FakeLander):
+            def prepare(self, verify):
+                sha = super().prepare(verify)
+                if self.calls.count("checks") >= 2:
+                    text = git(self.root, "show", "HEAD:CHANGELOG.md") + "\n"
+                    write(self.root, "CHANGELOG.md", text.replace("- b\n", ""))
+                    git(self.root, "add", "CHANGELOG.md")
+                    git(self.root, *ID, "commit", "-q", "--amend", "--no-edit")
+                    sha = git(self.root, "rev-parse", "HEAD")
+                return sha
+        lander = Dropped(self.r.work, "T-1")
+        lander.moves = [self.r.moved]
+        with self.assertRaisesRegex(land.LandError, "drops lines the evidence [0-9a-f]{7} added in a path main gained: "
+                                                    "CHANGELOG.md \\(1 of 1 lines\\)$"):
+            lander.land()
+        self.assertEqual(self.r.origin_head(), git(self.r.upstream, "rev-parse", "HEAD"))   # only main's own doc
+
+    def test_docs_only_moved_with_no_path_in_common_compares_none(self):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        lander = self.r.lander()
+        lander.moves = [lambda: self.r.push_upstream({"docs/other.md": "other\n"}, "docs: other")]
+        logged = self.landing_logs(lander)
+        lander.land()
+        self.assertIn("reason: docs-only-moved", lander.record)
+        self.assertIn("docs-only-moved: our commits change none of the paths main gained (0 compared)", logged)
+
     def test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight(self):
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         lander = self.r.lander(before_push=lambda: self.r.push_upstream({"src/c.rs": "fn c() {}\n"}, "feat: c"))
