@@ -158,8 +158,10 @@ step "example runner oracle (scripts/run_examples.py, run in full mode and ci.ym
 python3 scripts/test_run_examples.py
 
 # Fast static gates that failed late in practice (no_std build, public API drift)
-step "no_std rlib build (cdylib crate-type needs std, so rustc --crate-type rlib)"
-cargo rustc --lib --no-default-features --crate-type rlib
+step "no_std build, and a no_std dependent (consumers/no_std, warnings denied)"
+cargo build --lib --no-default-features
+python3 scripts/test_no_std_consumer.py
+python3 scripts/no_std_consumer.py
 
 step "public API snapshot (needs nightly + cargo-public-api)"
 if cargo +nightly public-api --version >/dev/null 2>&1; then

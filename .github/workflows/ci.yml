@@ -113,6 +113,8 @@ jobs:
         run: python scripts/version_sync.py --check
       - name: Lib-test gate (tests)
         run: python scripts/test_lib_test_gate.py
+      - name: no_std dependent check (tests of the checker)
+        run: python scripts/test_no_std_consumer.py
       - name: Preflight runs every cargo test of ci.yml (tests and check)
         run: |
           python scripts/test_preflight_ci_parity.py
@@ -259,12 +261,14 @@ jobs:
       - name: Oracle ledger links (PIN / root external)
         run: python scripts/gen-oracle-status.py --check
 
-      # `crate-type` includes cdylib/staticlib (FFI consumers, 1.2.0); a no_std
-      # cdylib needs a panic_handler + allocator, so the no_std *library* build is
-      # checked as rlib only (same workaround as ALICE-ML). Downstream no_std
-      # users always get the rlib.
-      - name: Build (no_std, rlib)
-        run: cargo rustc --lib --no-default-features --crate-type rlib
+      # A crate that depends on this one builds every crate type in `[lib]
+      # crate-type`, so the no_std story is checked the way a user meets it: a
+      # `#![no_std]` crate with `default-features = false` (consumers/no_std),
+      # warnings denied, alice-physics built and only as an rlib.
+      - name: Build (no_std)
+        run: cargo build --lib --no-default-features
+      - name: Build (no_std dependent, warnings denied)
+        run: python3 scripts/no_std_consumer.py
 
       - name: Build (std only)
         run: cargo build --lib --no-default-features --features "std"
@@ -293,10 +297,13 @@ jobs:
       - name: Check (Python binding)
         run: cargo check --lib --features "python"
 
+      # `[lib] crate-type` is rlib only (3.0.1); the C libraries are built on
+      # request, the same commands as release.yml
       - name: Build (FFI) + assert cdylib / staticlib artifacts
         shell: bash
         run: |
-          cargo build --features "ffi"
+          cargo rustc --lib --features "ffi" --crate-type cdylib
+          cargo rustc --lib --features "ffi" --crate-type staticlib
           ls target/debug/
           # `-f` tests, not `ls a b c | grep`: under `set -o pipefail` a missing
           # sibling name makes `ls` exit 2 and fails the pipeline even when the
@@ -590,8 +597,8 @@ jobs:
 
       - name: cargo check on MSRV (lib, default features)
         run: cargo +1.85 check --lib
-      - name: cargo check on MSRV (lib, no_std, rlib)
-        run: cargo +1.85 rustc --lib --no-default-features --crate-type rlib
+      - name: cargo check on MSRV (lib, no_std)
+        run: cargo +1.85 build --lib --no-default-features
       # Library only: dev-dependencies (criterion / serde_derive) and the
       # sibling-crate bridge features (neural / replay / analytics) follow
       # their own MSRV, see README "Minimum supported Rust version".
@@ -687,9 +694,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-hack
         uses: taiki-e/install-action@cargo-hack
-      # rustc --crate-type rlib: combos without `std` cannot build the cdylib
-      # (no panic_handler / allocator), see "Build (no_std, rlib)" above.
       - name: Powerset (depth 2, wasm/python/bridge 除外)
-        run: cargo hack rustc --lib --crate-type rlib --feature-powerset --depth 2 --exclude-features python,neural,replay,analytics,wasm
+        run: cargo hack build --lib --feature-powerset --depth 2 --exclude-features python,neural,replay,analytics,wasm
       - name: std + wasm (相互排他 ffi なし)
         run: cargo check --lib --no-default-features --features std,wasm

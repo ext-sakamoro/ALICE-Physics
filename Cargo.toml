@@ -1,6 +1,6 @@
 [package]
 name = "alice-physics"
-version = "3.0.0"
+version = "3.0.1"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+); paired with the CI `msrv` job
 # that compiles with exactly `rust-version` (std + no_std) so the claim is verified.
@@ -62,11 +62,15 @@ ignored = ["js-sys", "getrandom"]
 [lib]
 name = "alice_physics"
 path = "src/lib.rs"
-# rlib for Rust users; cdylib (.so/.dll/.dylib) + staticlib (.a) for the C ABI
-# consumers (`--features ffi`: Unity C# P/Invoke, unreal-plugin/, include/).
-# Before 1.2.0 only the rlib was produced, so the Unity / UE5 bindings had
-# nothing to link against.
-crate-type = ["rlib", "cdylib", "staticlib"]
+# rlib only. A crate that depends on this one builds every crate type listed
+# here, so a cdylib / staticlib in this list was built in no_std mode too and
+# failed for want of an allocator and a panic handler (3.0.0). The C ABI
+# libraries (Unity C# P/Invoke, unreal-plugin/, include/) are built on request:
+#   cargo rustc --lib --release --features ffi --crate-type cdylib
+#   cargo rustc --lib --release --features ffi --crate-type staticlib
+# (release.yml builds the published binaries this way;
+# scripts/no_std_consumer.py checks the no_std dependent build)
+crate-type = ["rlib"]
 
 [features]
 default = ["std"]

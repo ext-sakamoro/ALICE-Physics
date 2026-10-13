@@ -813,6 +813,8 @@ impl CoupledField {
 /// it would be a breaking one.
 #[derive(Debug)]
 pub struct TemperatureRise {
+    // ALLOW-DEAD: read only by linear_elastic_fem (a std module) through field(); a no_std build constructs the type but has no reader
+    #[cfg_attr(not(feature = "std"), allow(dead_code))]
     field: CoupledField,
 }
 
@@ -836,6 +838,7 @@ impl TemperatureRise {
     }
 
     /// The shifted field, for the consumer that samples it.
+    #[cfg(feature = "std")]
     pub(crate) const fn field(&self) -> &CoupledField {
         &self.field
     }

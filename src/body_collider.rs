@@ -9,9 +9,12 @@
 //!
 //! Author: Moroya Sakamoto
 
+#[cfg(feature = "std")]
 use crate::box_collider::OrientedBox;
 use crate::collider::{contact, gjk, Contact, Sphere, Support, AABB};
-use crate::compound::{CompoundChild, CompoundShape, ShapeRef};
+#[cfg(feature = "std")]
+use crate::compound::ShapeRef;
+use crate::compound::{CompoundChild, CompoundShape};
 use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 #[cfg(feature = "std")]
 use crate::sdf_collider::{

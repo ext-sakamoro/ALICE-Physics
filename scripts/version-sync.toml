@@ -17,6 +17,10 @@ file = "scripts/cfg-items/Cargo.toml"
 reason = "helper of scripts/mutants_in_diff_plan.py, not published (version 0.0.0)"
 
 [[independent]]
+file = "consumers/no_std/Cargo.toml"
+reason = "no_std dependent built by scripts/no_std_consumer.py, not published (version 0.0.0)"
+
+[[independent]]
 file = "scripts/clippy-lib-canary/Cargo.toml"
 reason = "fixture of scripts/clippy_lib_gate.py, not published (version 0.0.0)"
 

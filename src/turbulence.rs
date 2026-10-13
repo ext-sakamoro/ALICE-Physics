@@ -57,43 +57,52 @@ pub const SMAGORINSKY_CS: Fix128 = Fix128 {
     lo: 0x2B85_1EB8_51EB_851F, // ≈ 0.17
 };
 
+#[cfg(feature = "std")]
 /// k-ε model constants (Launder & Spalding 1974, crate-internal).
 pub(crate) const KE_C_MU: Fix128 = Fix128 {
     hi: 0,
     lo: 0x170A3D70A3D70A3D, // 0.09 to 2⁻⁶⁴ (= ⌊9·2⁶⁴/100⌋, what `from_ratio(9, 100)` yields) (the earlier literal 0x1707_5F6F_D21F_F2E5 was 0.08995625, caught by the
                             // wall-model oracle on `k = u_τ²/√C_μ`; the unit test below tolerated 1e-2)
 };
+#[cfg(feature = "std")]
 /// k-ε turbulent Prandtl number for k (crate-internal).
 pub(crate) const KE_SIGMA_K: Fix128 = Fix128::ONE;
+#[cfg(feature = "std")]
 /// k-ε turbulent Prandtl number for ε (≈ 1.3, crate-internal).
 pub(crate) const KE_SIGMA_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0x4CCC_CCCC_CCCC_CCCD,
 };
+#[cfg(feature = "std")]
 /// k-ε constant C_{ε1} (≈ 1.44, crate-internal).
 pub(crate) const KE_C1_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0x70A3_D70A_3D70_A3D7,
 };
+#[cfg(feature = "std")]
 /// k-ε constant C_{ε2} (≈ 1.92, crate-internal).
 pub(crate) const KE_C2_EPS: Fix128 = Fix128 {
     hi: 1,
     lo: 0xEB85_1EB8_51EB_851F,
 };
 
+#[cfg(feature = "std")]
 /// k-ω model constant β* (= 0.09, crate-internal).
 pub(crate) const KW_BETA_STAR: Fix128 = KE_C_MU;
+#[cfg(feature = "std")]
 /// k-ω model constant β (= 3/40 = 0.075, crate-internal).
 pub(crate) const KW_BETA: Fix128 = Fix128 {
     hi: 0,
     lo: 0x1333_3333_3333_3333,
 };
+#[cfg(feature = "std")]
 /// k-ω model constant α (= 5/9, Wilcox 1988, crate-internal): the production
 /// coefficient of the ω equation, `dω/dt = α (ω/k) P_k − β ω²`.
 pub(crate) const KW_ALPHA: Fix128 = Fix128 {
     hi: 0,
     lo: 0x8E38_E38E_38E3_8E38,
 };
+#[cfg(feature = "std")]
 /// k-ω turbulent Prandtl numbers σ_k = σ_ω = 2 (Wilcox 1988, crate-internal).
 pub(crate) const KW_SIGMA: Fix128 = Fix128::from_int(2);
 
@@ -143,6 +152,7 @@ pub fn strain_rate_magnitude(
 // k-ε
 // ============================================================================
 
+#[cfg(feature = "std")]
 /// k-ε turbulence state at a single point (crate-internal; the RANS step of
 /// `cfd_solver` holds one per cell).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -153,6 +163,7 @@ pub(crate) struct KEpsilonState {
     pub(crate) epsilon: Fix128,
 }
 
+#[cfg(feature = "std")]
 impl KEpsilonState {
     /// Eddy viscosity `ν_t = C_μ · k² / ε` (m²/s).
     #[must_use]
@@ -207,6 +218,7 @@ impl KEpsilonState {
 // k-ω
 // ============================================================================
 
+#[cfg(feature = "std")]
 /// k-ω turbulence state at a single point (crate-internal; the RANS step of
 /// `cfd_solver` converts each cell from and back to its `(k, ε)` storage).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -217,6 +229,7 @@ pub(crate) struct KOmegaState {
     pub(crate) omega: Fix128,
 }
 
+#[cfg(feature = "std")]
 impl KOmegaState {
     /// Eddy viscosity `ν_t = k / ω` (m²/s).
     #[must_use]
@@ -278,6 +291,7 @@ impl KOmegaState {
 // Dynamic Smagorinsky
 // ============================================================================
 
+#[cfg(feature = "std")]
 /// Compute a **dynamic** Smagorinsky coefficient `C_s(x,t)` from local flow
 /// state using a Germano-style estimator. Returns a clamped value in
 /// `[0.05, 0.25]` to avoid unphysical excursions.
@@ -446,6 +460,7 @@ pub(crate) fn friction_velocity_checked(u_rel: Fix128, y_p: Fix128, nu: Fix128) 
     (lo + hi).half()
 }
 
+#[cfg(feature = "std")]
 /// Non-dimensional wall distance `y+ = ρ·u_τ·y / μ`.
 #[must_use]
 pub(crate) fn y_plus(
@@ -475,6 +490,7 @@ pub(crate) fn u_plus(y_plus_val: Fix128) -> Fix128 {
     ln_yp / VON_KARMAN + LOG_LAW_B
 }
 
+#[cfg(feature = "std")]
 /// Wall-consistent turbulent kinetic energy and dissipation in the log
 /// region. Given friction velocity `u_τ` (m/s) and wall distance `y` (m):
 ///

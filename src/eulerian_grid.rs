@@ -1077,6 +1077,7 @@ pub fn project_pressure(grid: &mut MacGrid, dt_s: Fix128, density_kg_m3: Fix128,
 }
 
 mod multigrid_decomposed;
+#[cfg(feature = "std")]
 pub(crate) use multigrid_decomposed::project_pressure_multigrid_decomposed;
 
 #[cfg(feature = "std")]

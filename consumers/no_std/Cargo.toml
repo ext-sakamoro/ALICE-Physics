@@ -1,0 +1,12 @@
+# A crate that depends on alice-physics the way a no_std user does
+# (default-features = false), built by scripts/no_std_consumer.py. Not published.
+[package]
+name = "alice-physics-no-std-consumer"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+alice-physics = { path = "../..", default-features = false }
+
+[workspace]

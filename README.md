@@ -351,7 +351,7 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 
 | Target | Where | Notes |
 |--------|-------|-------|
-| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi`; builds `cdylib` and `staticlib` |
+| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `cargo rustc --lib --features ffi --crate-type cdylib` (or `staticlib`) |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | P/Invoke over the C ABI |
 | Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | Blueprint component over part of the C ABI |
 | Python | `src/python.rs` | `--features python`; `PhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and `DeterministicSimulation` classes, NumPy batch APIs |

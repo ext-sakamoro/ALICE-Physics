@@ -23,3 +23,6 @@ __pycache__/
 /scripts/cfg-items/target/
 # scripts/clippy-lib-canary build output when CARGO_TARGET_DIR is unset
 /scripts/clippy-lib-canary/target/
+
+# the no_std dependent of scripts/no_std_consumer.py resolves on each run
+/consumers/no_std/Cargo.lock

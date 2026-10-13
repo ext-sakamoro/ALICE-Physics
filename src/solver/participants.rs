@@ -443,6 +443,9 @@ impl PhysicsWorld {
         if dt <= Fix128::ZERO {
             return Ok(false);
         }
+        // the participants' step rules, the only readers of `h`, need `std`
+        #[cfg(not(feature = "std"))]
+        let _ = h;
         #[cfg(feature = "std")]
         {
             let list = self.lock_participants();

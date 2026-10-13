@@ -15,6 +15,18 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-13
+
+### Fixed
+
+- 3.0.0 could not be used as a dependency of a `no_std` crate. `[lib] crate-type` listed `cdylib` and `staticlib` beside `rlib`, and a crate that depends on this one builds every listed type: with `default-features = false` the cdylib / staticlib were built without `std` and failed for want of a `#[global_allocator]` and a `#[panic_handler]`. `crate-type` is now `["rlib"]`. The library's own `no_std` build had been checked with `cargo rustc --crate-type rlib`, which overrides the listed types and so could not see this.
+- The `no_std` build no longer warns: items used only by `std` modules (the k-epsilon / k-omega state and constants, the wall functions behind `cfd_solver`, `fd_normal_step`, the multigrid re-export, two imports of `body_collider`) are compiled only with `std`.
+
+### Changed
+
+- Building the C ABI libraries from source now names the crate type: `cargo rustc --lib --release --features ffi --crate-type cdylib` (or `staticlib`). `cargo build --features ffi` builds only the rlib. The released binaries are built this way already and do not change.
+- CI and `scripts/preflight.sh` check the `no_std` story the way a user meets it: `scripts/no_std_consumer.py` builds `consumers/no_std` (a `#![no_std]` crate with `default-features = false`) with warnings denied and requires alice-physics built, and only as an rlib. It fails on 3.0.0. The `--crate-type rlib` overrides in CI (`no_std` build, MSRV, feature powerset) are gone.
+
 ## [3.0.0] - 2026-10-12
 
 ### Added

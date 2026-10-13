@@ -377,6 +377,7 @@ impl<A: SdfField, B: SdfField> SdfField for SdfUnion<A, B> {
     }
 }
 
+#[cfg(feature = "std")]
 /// Central-difference step for an f32 SDF normal at `(x, y, z)`.
 ///
 /// `base_eps` is used as is near the origin. An absolute step stops resolving

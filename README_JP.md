@@ -272,7 +272,7 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 
 | 対象 | 場所 | 備考 |
 |------|------|------|
-| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi` `cdylib` と `staticlib` を生成 |
+| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `cargo rustc --lib --features ffi --crate-type cdylib` (`staticlib` も同様) |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | C ABI への P/Invoke |
 | Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | C ABI の一部を包む Blueprint コンポーネント |
 | Python | `src/python.rs` | `--features python` `PhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `DeterministicSimulation` クラス、NumPy の一括 API |
