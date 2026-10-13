@@ -351,11 +351,11 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 
 | Target | Where | Notes |
 |--------|-------|-------|
-| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `cargo rustc --lib --features ffi --crate-type cdylib` (or `staticlib`) |
+| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi` (the commands below build the cdylib and the staticlib) |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | P/Invoke over the C ABI |
 | Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | Blueprint component over part of the C ABI |
-| Python | `src/python.rs` | `--features python`; `PhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and `DeterministicSimulation` classes, NumPy batch APIs |
-| WebAssembly | [`web/`](web/) | `--features wasm`; `WasmPhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and a Three.js viewer built with `wasm-pack` |
+| Python | `src/python.rs` | `--features python` (maturin, commands below); `PhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and `DeterministicSimulation` classes, NumPy batch APIs |
+| WebAssembly | [`web/`](web/) | `--features wasm`; `WasmPhysicsWorld` (bodies, collision radius and shapes, static colliders, joints) and a Three.js viewer (built with the commands below) |
 
 The bindings cover what you need to build and step a scene (bodies, collision radius and shapes,
 static colliders, joints, impulses, state serialization), not every module: the standalone modules
@@ -365,9 +365,17 @@ declare every exported function; the Unreal Engine component wraps part of them,
 it does not wrap are listed with the reason in
 [`docs/integration-levels.md`](docs/integration-levels.md).
 
+<!-- binding-build-commands: run by scripts/binding_build_commands.py -->
 ```sh
-cargo build --release --features ffi
+# C ABI (C / C++, Unity, Unreal Engine): the shared and the static library in target/release
+cargo rustc --lib --release --features ffi --crate-type cdylib
+cargo rustc --lib --release --features ffi --crate-type staticlib
+# WebAssembly package for the browser (web/pkg); needs the wasm-bindgen CLI of the version in Cargo.lock
+bash scripts/build_wasm_pkg.sh web web/pkg
+# Python wheel (target/wheels)
+maturin build --release --features python
 ```
+<!-- /binding-build-commands -->
 
 ## Performance
 

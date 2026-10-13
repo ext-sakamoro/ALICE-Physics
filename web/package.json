@@ -4,7 +4,7 @@
   "description": "ALICE-Physics WebAssembly 3D Viewer",
   "private": true,
   "scripts": {
-    "build:wasm": "cd .. && wasm-pack build --target web --out-dir web/pkg -- --features wasm",
+    "build:wasm": "cd .. && bash scripts/build_wasm_pkg.sh web web/pkg",
     "dev": "vite",
     "build": "npm run build:wasm && vite build",
     "preview": "vite preview"

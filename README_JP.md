@@ -272,17 +272,25 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 
 | 対象 | 場所 | 備考 |
 |------|------|------|
-| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `cargo rustc --lib --features ffi --crate-type cdylib` (`staticlib` も同様) |
+| C / C++ | [`include/alice_physics.h`](include/alice_physics.h) | `--features ffi` (下の手順で cdylib と staticlib を作る) |
 | Unity (C#) | [`bindings/AlicePhysics.cs`](bindings/AlicePhysics.cs) | C ABI への P/Invoke |
 | Unreal Engine 5 | [`unreal-plugin/`](unreal-plugin/README.md) | C ABI の一部を包む Blueprint コンポーネント |
-| Python | `src/python.rs` | `--features python` `PhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `DeterministicSimulation` クラス、NumPy の一括 API |
-| WebAssembly | [`web/`](web/) | `--features wasm` `WasmPhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `wasm-pack` でビルドする Three.js ビューア |
+| Python | `src/python.rs` | `--features python` (maturin、下の手順) `PhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と `DeterministicSimulation` クラス、NumPy の一括 API |
+| WebAssembly | [`web/`](web/) | `--features wasm` `WasmPhysicsWorld` (body・衝突半径と形状・静的コライダー・ジョイント) と Three.js ビューア (下の手順でビルド) |
 
 バインディングが覆うのはシーンを組んで進めるのに要る範囲 (body・衝突半径と形状・静的コライダー・ジョイント・撃力・状態の直列化) で、全モジュールではない 上の表の standalone のモジュールは Rust からのみ使える C ABI と各利用側の対応は CI が `scripts/integration_levels.py` で検査する C ヘッダ・`bindings/AlicePhysics.h`・Unity のバインディングは公開関数をすべて宣言し、Unreal Engine のコンポーネントはその一部を包む 包まない関数とその理由は [`docs/integration-levels.md`](docs/integration-levels.md) (英語) にある
 
+<!-- binding-build-commands: scripts/binding_build_commands.py が実行する -->
 ```sh
-cargo build --release --features ffi
+# C ABI (C / C++・Unity・Unreal Engine): 共有ライブラリと静的ライブラリを target/release に作る
+cargo rustc --lib --release --features ffi --crate-type cdylib
+cargo rustc --lib --release --features ffi --crate-type staticlib
+# ブラウザ向け WebAssembly パッケージ (web/pkg) Cargo.lock と同じ版の wasm-bindgen CLI が要る
+bash scripts/build_wasm_pkg.sh web web/pkg
+# Python の wheel (target/wheels)
+maturin build --release --features python
 ```
+<!-- /binding-build-commands -->
 
 ## 性能
 

@@ -62,6 +62,9 @@ def judge(messages: list[dict], rc: int) -> tuple[list[str], int]:
 
 
 def main(argv: list[str]) -> int:
+    # Windows runners print in cp1252: a compiler message quoting a non-ASCII line must not crash the check
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(errors="backslashreplace")
     cmd = ["cargo", "build", "--manifest-path", str(CONSUMER), "--message-format=json"]
     if "--target" in argv:
         cmd += ["--target", argv[argv.index("--target") + 1]]

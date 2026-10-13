@@ -20,11 +20,21 @@ were introduced during that release window.
 ### Fixed
 
 - 3.0.0 could not be used as a dependency of a `no_std` crate. `[lib] crate-type` listed `cdylib` and `staticlib` beside `rlib`, and a crate that depends on this one builds every listed type: with `default-features = false` the cdylib / staticlib were built without `std` and failed for want of a `#[global_allocator]` and a `#[panic_handler]`. `crate-type` is now `["rlib"]`. The library's own `no_std` build had been checked with `cargo rustc --crate-type rlib`, which overrides the listed types and so could not see this.
+- The browser package (`web/`, `npm run build:wasm`) could not be built: `wasm-pack build --release` ran `wasm-opt`, which rejects the bulk-memory instructions the current compiler emits for wasm32 ("Bulk memory operations require bulk memory"). The new build (`scripts/build_wasm_pkg.sh`) does not run `wasm-opt`; its exports, JavaScript glue and type declarations are the same as wasm-pack's (compared on 3.0.0), and the `.wasm` is not size-optimised.
 - The `no_std` build no longer warns: items used only by `std` modules (the k-epsilon / k-omega state and constants, the wall functions behind `cfd_solver`, `fd_normal_step`, the multigrid re-export, two imports of `body_collider`) are compiled only with `std`.
 
 ### Changed
 
-- Building the C ABI libraries from source now names the crate type: `cargo rustc --lib --release --features ffi --crate-type cdylib` (or `staticlib`). `cargo build --features ffi` builds only the rlib. The released binaries are built this way already and do not change.
+- Building a binding from source now asks for the crate type (`[lib] crate-type` is rlib only). The released binaries are built the same way already and do not change:
+
+  | Binding | 3.0.0 | 3.0.1 |
+  |---|---|---|
+  | C ABI shared library (C / C++, Unity, Unreal Engine) | `cargo build --release --features ffi` | `cargo rustc --lib --release --features ffi --crate-type cdylib` |
+  | C ABI static library | (same command) | `cargo rustc --lib --release --features ffi --crate-type staticlib` |
+  | WebAssembly package (`web/pkg`, `tests/js`) | `wasm-pack build --target web --out-dir web/pkg -- --features wasm` | `bash scripts/build_wasm_pkg.sh web web/pkg` (`cargo rustc --crate-type cdylib` + the wasm-bindgen CLI of the version in `Cargo.lock`, which the script checks) |
+  | Python wheel | `maturin build --features python` | unchanged (maturin asks for the cdylib itself) |
+
+  `cargo build --features ffi` now builds only the rlib, so the README keeps these commands in one block that CI runs (`scripts/binding_build_commands.py --run c`) and checks against `web/package.json` and the Python workflow (`--check`).
 - CI and `scripts/preflight.sh` check the `no_std` story the way a user meets it: `scripts/no_std_consumer.py` builds `consumers/no_std` (a `#![no_std]` crate with `default-features = false`) with warnings denied and requires alice-physics built, and only as an rlib. It fails on 3.0.0. The `--crate-type rlib` overrides in CI (`no_std` build, MSRV, feature powerset) are gone.
 
 ## [3.0.0] - 2026-10-12

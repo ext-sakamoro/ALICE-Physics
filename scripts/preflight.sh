@@ -162,6 +162,8 @@ step "no_std build, and a no_std dependent (consumers/no_std, warnings denied)"
 cargo build --lib --no-default-features
 python3 scripts/test_no_std_consumer.py
 python3 scripts/no_std_consumer.py
+python3 scripts/test_binding_build_commands.py
+python3 scripts/binding_build_commands.py --check
 
 step "public API snapshot (needs nightly + cargo-public-api)"
 if cargo +nightly public-api --version >/dev/null 2>&1; then
@@ -284,9 +286,9 @@ step "cargo test --lib (wasm module) + cargo check (python)"
 cargo test --lib --features "wasm" "wasm::"
 cargo check --lib --features "python"
 
-step "WebAssembly binding from JavaScript (wasm-pack + node; CI job js-binding)"
-command -v wasm-pack >/dev/null && command -v node >/dev/null \
-  || { echo "wasm-pack and node are needed (cargo install wasm-pack; node 18+)" >&2; exit 1; }
+step "WebAssembly binding from JavaScript (cargo rustc + wasm-bindgen CLI + node; CI job js-binding)"
+command -v wasm-bindgen >/dev/null && command -v node >/dev/null \
+  || { echo "the wasm-bindgen CLI (Cargo.lock's version) and node are needed (cargo install wasm-bindgen-cli --version <ver> --locked; node 18+)" >&2; exit 1; }
 bash scripts/run_js_binding_tests.sh
 
 step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
