@@ -239,9 +239,9 @@ cargo clippy --all-targets --features "$NATIVE,neural,replay,analytics,privacy-c
 # clippy.toml and the script checks it is current and fires on the canary)
 step "clippy -D warnings (library code, f32 / f64 max and min forbidden)"
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "$NATIVE,neural,replay,analytics,privacy-crypto" -- -D warnings
-CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods
-CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "python" -- -D clippy::disallowed_methods
-CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods -D clippy::disallowed_types
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "python" -- -D clippy::disallowed_methods -D clippy::disallowed_types
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods -D clippy::disallowed_types
 step "library clippy configuration (tests, then current + canary)"
 python3 scripts/test_clippy_lib_gate.py
 python3 scripts/clippy_lib_gate.py

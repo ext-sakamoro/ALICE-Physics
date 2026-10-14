@@ -121,6 +121,71 @@ class EntropyGuard(unittest.TestCase):
                "mod tests {\n    fn t() { let _ = std::time::Instant::now(); }\n}\n")
         self.assertEqual(self.problems({"src/a.rs": src}), [])
 
+    # The cases below follow ALICE-DB's guard fixes (ALICE-DB 39822ee, b08a967):
+    # each is a source the guard missed before, with a production call after
+    # or inside a construct the line-based scan misread.
+
+    def test_random_state_default_is_found(self):
+        # `RandomState::default()` reaches the same OS-seeded hasher as
+        # `::new()`, and clippy cannot ban a trait method by the type alone
+        src = "pub fn f() { let _ = std::collections::hash_map::RandomState::default(); }\n"
+        self.assertTrue(any(x.startswith("RandomState") for x in self.problems({"src/a.rs": src})))
+
+    def test_a_qualified_self_clock_call_is_found(self):
+        for call in ["<std::time::Instant>::now()", "<std::time::Instant as SomeTrait>::now()",
+                     "<std::time::SystemTime>::now()"]:
+            p = self.problems({"src/a.rs": f"pub fn f() {{ let _ = {call}; }}\n"})
+            self.assertEqual(len(p), 1, (call, p))
+
+    def test_a_qualified_self_aliased_clock_is_found(self):
+        src = "use std::time::Instant as Clock;\npub fn f() { let _ = <Clock>::now(); }\n"
+        self.assertTrue(any("Instant::now" in x for x in self.problems({"src/a.rs": src})))
+
+    def test_uuid_v4_is_found(self):
+        for call in ["uuid::Uuid::new_v4()", "<uuid::Uuid>::new_v4()"]:
+            p = self.problems({"src/a.rs": f"pub fn f() {{ let _ = {call}; }}\n"})
+            self.assertEqual(len(p), 1, (call, p))
+
+    def _after_test_module(self, inner: str):
+        """A test module holding `inner`, then a production clock call."""
+        return ("#[cfg(test)]\nmod t {\n" + inner + "\n    fn t() {}\n}\n\n"
+                "pub fn f() { let _ = std::time::Instant::now(); }\n")
+
+    def test_a_char_literal_brace_does_not_break_the_test_module_skip(self):
+        for inner in ["    const C: char = '{';", "    const B: u8 = b'{';", "    const E: char = '\\'';"]:
+            p = self.problems({"src/a.rs": self._after_test_module(inner)})
+            self.assertTrue(any("Instant::now" in x for x in p), (inner, p))
+
+    def test_a_raw_string_brace_does_not_break_the_test_module_skip(self):
+        # one embedded plain quote before the brace: pairing quotes leaves `hi{`
+        for inner in ['    const S: &str = r#"say "hi{"#;', '    const S: &[u8] = br"{";']:
+            p = self.problems({"src/a.rs": self._after_test_module(inner)})
+            self.assertTrue(any("Instant::now" in x for x in p), (inner, p))
+
+    def test_a_block_comment_brace_does_not_break_the_test_module_skip(self):
+        for inner in ["    /* { */", "    /* outer /* { */ still a comment */", "    /*\n    {\n    */"]:
+            p = self.problems({"src/a.rs": self._after_test_module(inner)})
+            self.assertTrue(any("Instant::now" in x for x in p), (inner, p))
+
+    def test_a_lifetime_is_not_a_char_literal(self):
+        # `'a` has no closing quote: it must stay code, so the braces count
+        src = ("#[cfg(test)]\nmod t {\n    fn t<'a>(x: &'a str) -> &'a str { x }\n}\n\n"
+               "pub fn f() { let _ = std::time::Instant::now(); }\n")
+        self.assertTrue(any("Instant::now" in x for x in self.problems({"src/a.rs": src})))
+
+    def test_a_block_comment_and_strings_are_not_calls(self):
+        src = ('pub fn f() {\n    /* std::time::Instant::now() */\n'
+               '    let _ = r#"std::time::Instant::now()"#;\n    let _ = \'"\';\n}\n')
+        self.assertEqual(self.problems({"src/a.rs": src}), [])
+
+    def test_a_cfg_all_test_module_is_exempt_and_code_after_it_is_checked(self):
+        src = ('#[cfg(all(test, feature = "std"))]\nmod t {\n    fn t() { let _ = std::time::Instant::now(); }\n}\n\n'
+               "pub fn f() { let _ = rand::thread_rng(); }\n")
+        p = self.problems({"src/a.rs": src})
+        self.assertEqual(len(p), 1, p)
+        self.assertIn("thread_rng", p[0])
+        self.assertIn("src/a.rs:6", p[0])
+
     def test_main_exits_1_when_it_scans_no_file(self):
         root = tree({"README.md": "x\n"})
         saved = eg.ROOT

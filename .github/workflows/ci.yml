@@ -619,7 +619,9 @@ jobs:
           -- -D warnings
       # `wasm` and `python` are left out of the set above (`wasm` × `ffi` is a
       # compile_error!), so their modules are linted on their own, for the
-      # disallowed methods only (libm and max / min): src/wasm.rs has exported
+      # disallowed methods (libm and max / min) and the disallowed types
+      # (std HashMap / HashSet / RandomState, seeded from OS randomness) only:
+      # src/wasm.rs has exported
       # functions with more arguments than clippy's default, which no other step
       # lints either
       # The no_std build (`cfg(not(feature = "std"))` code) is linted the same way
@@ -629,9 +631,9 @@ jobs:
         env:
           CLIPPY_CONF_DIR: .github/clippy-lib
         run: |
-          cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods
-          cargo clippy --lib --features "python" -- -D clippy::disallowed_methods
-          cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods
+          cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods -D clippy::disallowed_types
+          cargo clippy --lib --features "python" -- -D clippy::disallowed_methods -D clippy::disallowed_types
+          cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods -D clippy::disallowed_types
       - name: Library clippy configuration is current and fires (canary)
         run: python3 scripts/clippy_lib_gate.py
 

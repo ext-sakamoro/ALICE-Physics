@@ -25,6 +25,7 @@ were introduced during that release window.
 
 ### Changed
 
+- CI: OS の乱数と時計の検査 (`scripts/entropy_guard.py`) の抜けを塞いだ (ALICE-DB の同じ検査の修正 39822ee / b08a967 に合わせた) 文字列・raw 文字列・char literal・コメントを先に取り除くので、`'{'` や `/* { */` で test module を飛ばす範囲の波括弧の数がずれて、その後の本番 code を見逃すことが無くなった `<std::time::Instant>::now()` や `<Instant as Trait>::now()` の形も見つける `#[cfg(all(test, ..))]` の module も試験として飛ばす `Uuid::new_v4` も探す 試験 `scripts/test_entropy_guard.py` に 11 本 (変更前の検査で 8 本が失敗、検査を外す変異 6 件はすべて失敗) library の clippy の wasm / python / no_std の lane が `disallowed_types` (std の `HashMap` / `HashSet` / `RandomState`) も拒否する (`HashSet` を入れた probe で wasm の lane が失敗することを確かめた) preflight も同じ
 - CI: build した library と実行形式を tracked にしない検査 (`scripts/tracked_binaries.py`、試験 `scripts/test_tracked_binaries.py`) を追加 例外は `.github/tracked-binaries.txt` に理由付きで書いた path だけ、読めない file と走査 0 件でも失敗する CI と preflight で走る
 - `Vehicle::update` の力の計算を `Vehicle::chassis_force` (車体を読むだけで力を返し、車の状態は `update` と同じに進める) に分けた `update` はその力を 1 回の impulse で当てる 結果は変わらない: 変更前の main で取った `tests/vehicle_update_bits.rs` の 2 本の digest と、既存の車両の試験 (`tests/default_configs.rs`、`tests/analytic_vehicle_wiring.rs`、`tests/integration_physics.rs`、vehicle の lib の unit test) が変えずに通る
 
