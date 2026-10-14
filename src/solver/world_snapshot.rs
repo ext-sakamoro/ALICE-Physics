@@ -2556,6 +2556,11 @@ fn r_fields(r: &mut R<'_>) -> Res<Vec<u8>> {
                     .samples()
                     .ok_or(WorldSnapshotError::InvalidValue { section: SECTION })?
             }
+            2 => crate::world_participant::FieldLayout::Channels {
+                count: r.usize(SECTION)?,
+            }
+            .samples()
+            .ok_or(WorldSnapshotError::InvalidValue { section: SECTION })?,
             _ => return Err(WorldSnapshotError::InvalidValue { section: SECTION }),
         };
         let bytes = samples

@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2604 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2621 |
 | live | reached without examples (crate-internal roots or a binding) | 608 |
-| | **total** | **3243** |
+| | **total** | **3260** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2604)
+## L1 — example-only (2621)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -275,7 +275,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/transient_thermal.rs`: `TemperatureDependence`, `TemperatureDependence::evaluate`, `ThermalMaterial`, `ThermalMaterial::aluminum_6061`, `ThermalMaterial::conductivity_at`, `ThermalMaterial::density_at`, `ThermalMaterial::diffusivity_at`, `ThermalMaterial::heat_capacity_at`, `ThermalMaterial::pla_polymer`, `ThermalMaterial::specific_heat_at`, `ThermalMaterial::steel_1018`, `ThermalMaterial::titanium_ti6al4v`, `crank_nicolson_step_1d`, `crank_nicolson_step_1d_nonlinear`, `stable_dt_1d`, `stable_dt_3d`, `transient_step_1d`, `transient_step_3d`
 - `src/trimesh.rs`: `TriMesh::closest_point`, `TriMesh::collide_aabb`, `TriMesh::collide_capsule`, `TriMesh::from_triangles`, `TriMesh::triangle_count`
 - `src/turbulence.rs`: `FRICTION_VELOCITY_BISECTIONS`, `KE_C1_EPS`, `KE_C2_EPS`, `KE_C_MU`, `KE_SIGMA_EPS`, `KE_SIGMA_K`, `KEpsilonState`, `KEpsilonState::advance`, `KEpsilonState::advance_epsilon`, `KEpsilonState::advance_k`, `KEpsilonState::eddy_viscosity`, `KOmegaState`, `KOmegaState::advance`, `KOmegaState::eddy_viscosity`, `KOmegaState::from_k_epsilon`, `KOmegaState::to_k_epsilon`, `KW_ALPHA`, `KW_BETA`, `KW_BETA_STAR`, `KW_SIGMA`, `LOG_LAW_B`, `SMAGORINSKY_CS`, `VON_KARMAN`, `WallFunctionError`, `Y_PLUS_TRANSITION`, `dynamic_smagorinsky_cs`, `friction_velocity`, `friction_velocity_checked`, `smagorinsky_eddy_viscosity`, `smagorinsky_eddy_viscosity_with`, `strain_rate_magnitude`, `u_plus`, `wall_k_epsilon`, `y_plus`
-- `src/vehicle.rs`: `EngineConfig`, `Vehicle`, `Vehicle::grounded_wheels`, `Vehicle::new`, `Vehicle::new_default`, `Vehicle::shift_down`, `Vehicle::shift_up`, `Vehicle::update`, `VehicleConfig`, `WheelConfig`, `WheelState`
+- `src/vehicle.rs`: `EngineConfig`, `VEHICLE_INPUTS`, `VEHICLE_INPUT_BRAKE`, `VEHICLE_INPUT_STEERING`, `VEHICLE_INPUT_THROTTLE`, `VEHICLE_OBS_BRAKE`, `VEHICLE_OBS_ENGINE_RPM`, `VEHICLE_OBS_GEAR`, `VEHICLE_OBS_GROUNDED`, `VEHICLE_OBS_SPEED_KMH`, `VEHICLE_OBS_STEERING`, `VEHICLE_OBS_THROTTLE`, `VEHICLE_PARTICIPANT_KIND`, `Vehicle`, `Vehicle::chassis_force`, `Vehicle::grounded_wheels`, `Vehicle::new`, `Vehicle::new_default`, `Vehicle::shift_down`, `Vehicle::shift_up`, `Vehicle::update`, `VehicleConfig`, `VehicleParticipant`, `VehicleParticipant::new`, `VehicleParticipant::vehicle`, `VehicleParticipant::with_inputs`, `WheelConfig`, `WheelState`
 - `src/vehicle_dynamics/mod.rs`: `AbsConfig`, `AeroConfig`, `BrakeSystem`, `DriverInput`, `DynamicVehicle`, `DynamicVehicle::forward_speed`, `DynamicVehicle::grounded_wheels`, `DynamicVehicle::new`, `DynamicVehicle::update`, `DynamicVehicleConfig`, `DynamicVehicleConfig::passenger_car`, `Environment`, `WheelDynamicsState`
 - `src/vehicle_dynamics/powertrain.rs`: `Differential`, `Powertrain`, `Powertrain::axle_torque`, `Powertrain::engine_rpm`, `Powertrain::from_engine_config`, `Powertrain::shift_down`, `Powertrain::shift_up`, `Powertrain::total_ratio`, `TorqueCurve`, `TorqueCurve::torque_at`
 - `src/vehicle_dynamics/scenario.rs`: `RECORDING_MAGIC`, `RECORDING_VERSION`, `Recording`, `Recording::dt`, `Recording::frame_count`, `Recording::from_bytes`, `Recording::input_mut`, `Recording::inputs`, `Recording::replay`, `Recording::restore`, `Recording::to_bytes`, `Recording::vehicle_count`, `Recording::vehicles`, `ReplayError`, `Scenario`, `Scenario::add_vehicle`, `Scenario::chassis`, `Scenario::is_recording`, `Scenario::new`, `Scenario::run_tracks`, `Scenario::start_recording`, `Scenario::step`, `Scenario::step_with`, `Scenario::stop_recording`, `ScenarioVehicle`, `StoppingDistanceMeter`, `StoppingDistanceMeter::distance`, `StoppingDistanceMeter::frames_to_stop`, `StoppingDistanceMeter::is_stopped`, `StoppingDistanceMeter::new`, `StoppingDistanceMeter::sample`, `StoppingDistanceMeter::travelled`, `VehicleSnapshot`, `longitudinal_state`, `time_headway`, `time_to_collision`, `up_from_gravity`

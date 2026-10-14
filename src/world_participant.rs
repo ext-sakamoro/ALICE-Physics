@@ -56,6 +56,7 @@
 //! | `CRWD` | `0x4352_5744` | `crowd_force::CrowdParticipant` |
 //! | `MDVV` | `0x4d44_5656` | `molecular_dynamics::MdParticipant` |
 //! | `MEDM` | `0x4d45_444d` | `coupling_medium::DragMedium` |
+//! | `VHCL` | `0x5648_434c` | `vehicle::VehicleParticipant` |
 //!
 //! # Coupling through ports
 //!
@@ -91,7 +92,9 @@
 //! * **Values.** A field is an array of [`Fix128`] on a [`FieldLayout`]: one
 //!   sample per rigid body ([`FieldLayout::PerBody`], the way to hand a body a
 //!   quantity other than a force: heat, charge, deposited mass) or a uniform
-//!   grid of cubic cells ([`FieldLayout::Grid`]). A vector quantity is three
+//!   grid of cubic cells ([`FieldLayout::Grid`]), or a plain list of values
+//!   with no position ([`FieldLayout::Channels`], the way a caller hands
+//!   actions to an actuator between steps). A vector quantity is three
 //!   fields, one per component, so every rule below (sums, conservation,
 //!   snapshot) is the scalar one.
 //! * **Reads.** [`SubstepCtx::field`] returns the value committed at the end of
@@ -1038,6 +1041,18 @@ pub enum FieldLayout {
         /// Cells per axis `[nx, ny, nz]` (each at least 1).
         dims: [usize; 3],
     },
+    // LIMITATION(COV-ENGINE-022): The world does not record the writes; a replaying caller keeps the list of (frame, values) itself.
+    /// `count` values with no position, indexed `0..count` (at least 1): a
+    /// list the caller and the participants agree on, such as the inputs of
+    /// an actuator written by the caller between steps
+    /// ([`crate::PhysicsWorld::set_field`]) and read committed by the
+    /// participant, so they are world state that snapshots carry. The world
+    /// does not record the writes: a caller that replays keeps the list of
+    /// `(frame, values)` itself.
+    Channels {
+        /// Number of values.
+        count: usize,
+    },
 }
 
 impl FieldLayout {
@@ -1053,6 +1068,7 @@ impl FieldLayout {
                 }
                 dims[0].checked_mul(dims[1])?.checked_mul(dims[2])
             }
+            Self::Channels { count } => (count > 0).then_some(count),
         }
     }
 }
@@ -1300,6 +1316,10 @@ impl FieldBoard {
                 for d in dims {
                     out.extend_from_slice(&(d as u64).to_le_bytes());
                 }
+            }
+            FieldLayout::Channels { count } => {
+                out.push(2);
+                out.extend_from_slice(&(count as u64).to_le_bytes());
             }
         }
     }

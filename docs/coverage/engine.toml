@@ -281,10 +281,10 @@ id = "COV-ENGINE-022"
 axis = "state"
 item = "input log recording and re-simulation of the general world (replay by re-running inputs)"
 source = "GGPO sync test / replays; Photon Quantum replay; Gaffer on Games, Deterministic Lockstep"
-status = "missing"
-evidence = "入力列を記録する型は src に 0 件 (InputLog / record_input で検索、推測) 車両 scenario の入力再生は COV-MBD-056"
+status = "partial"
+evidence = "行動を world の場 (src/world_participant.rs::FieldLayout の Channels) に置き、呼び手が frame の間に PhysicsWorld::set_field で書くと、初期 snapshot と (frame, 行動) の列から world を bit 一致で再生できる: tests/analytic_vehicle_participant.rs::actions_are_world_state_replay_and_fork (車両の参加者 src/vehicle.rs::VehicleParticipant、150 frame の走行の再生と途中の分岐) 入力列を記録する型は無く、列は呼び手が持つ 車両 scenario の入力再生は COV-MBD-056"
 oracle_candidate = "netcode の FrameInput 列を保存し、新しい world で再生して checksum 列が一致"
-limitation = ""
+limitation = "src/world_participant.rs::FieldLayout 'The world does not record the writes: a caller that replays keeps the list of'"
 
 [[item]]
 id = "COV-ENGINE-023"
