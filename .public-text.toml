@@ -1,0 +1,95 @@
+# Settings for the public text check (scripts/public_text.sh).
+#
+# scripts/docs_lint.py holds this repository's own list of words a public document
+# must not use, and scripts/test_docs_lint.py feeds that list the words it must
+# catch: both files name those words on purpose. scripts/land.py passes git
+# subcommand names to git as argument lists, and scripts/test_land.py tests the
+# landing tool's own commit message check. Each entry allows one kind of finding
+# in one file, with the exact number of lines; a different number fails the
+# check, so a new line of that kind in these files is a finding again.
+
+[public-text]
+
+[[public-text.allow]]
+path = "scripts/docs_lint.py"
+class = "agent process"
+count = 6
+why = "the documentation linter's word list"
+
+[[public-text.allow]]
+path = "scripts/docs_lint.py"
+class = "device"
+count = 1
+why = "the documentation linter's word list"
+
+[[public-text.allow]]
+path = "scripts/docs_lint.py"
+class = "internal tracker"
+count = 1
+why = "the documentation linter's word list"
+
+[[public-text.allow]]
+path = "scripts/docs_lint.py"
+class = "note link"
+count = 1
+why = "the documentation linter's word list"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "agent process"
+count = 26
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "device"
+count = 2
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "instruction source"
+count = 1
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "internal note"
+count = 6
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "internal tracker"
+count = 7
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "note link"
+count = 2
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "private address"
+count = 2
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/test_docs_lint.py"
+class = "session name"
+count = 3
+why = "test inputs for the documentation linter"
+
+[[public-text.allow]]
+path = "scripts/land.py"
+class = "agent process"
+count = 3
+why = "git subcommand names in the argument lists the landing tool passes to git"
+
+[[public-text.allow]]
+path = "scripts/test_land.py"
+class = "agent process"
+count = 4
+why = "test inputs for the landing tool's commit message check, and a git subcommand name"
