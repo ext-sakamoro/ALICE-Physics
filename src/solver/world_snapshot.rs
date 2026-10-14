@@ -3722,4 +3722,90 @@ mod tests {
         );
         assert_eq!(t.snapshot_world(), blob);
     }
+
+    /// Ids of the impulse-cache test: distinctive byte patterns (so their
+    /// position in a blob can be found) chosen so that the map's own
+    /// iteration order is not ascending (checked in the test).
+    fn cache_ids() -> Vec<u64> {
+        (1..=24u64)
+            .map(|k| 0x5a00_0000_0000_0000 | (k * 0x0001_0203_0405_0607))
+            .collect()
+    }
+
+    /// An impulse that depends on the id (through its low byte, so the
+    /// impulse's own bytes never repeat the id's pattern).
+    fn cache_impulse(id: u64) -> crate::solver_tgs::CachedImpulse {
+        let k = (id & 0xff) as i64;
+        crate::solver_tgs::CachedImpulse {
+            normal: Fix128::from_int(k),
+            tangent1: Fix128::from_ratio(k, 3),
+            tangent2: -Fix128::from_ratio(k, 7),
+        }
+    }
+
+    /// oracle (format, "entries sorted by id"): the TGS impulse cache is
+    /// written in ascending id order whatever order the map iterates in.
+    /// The same entries inserted in two orders, one into a map grown to a
+    /// larger capacity first, give the same blob; every id appears in the
+    /// blob at offsets that increase with the id; and the map's own
+    /// iteration order is checked to differ from the ascending order, so a
+    /// writer that iterated the map without sorting could not pass.
+    #[cfg(feature = "std")]
+    #[test]
+    fn impulse_cache_is_written_in_ascending_id_order() {
+        let ids = cache_ids();
+        let mut a = scene(SolverBackend::Tgs, Broadphase::Bvh);
+        let mut b = scene(SolverBackend::Tgs, Broadphase::Bvh);
+        for &id in &ids {
+            a.tgs_impulse_cache.entries.insert(id, cache_impulse(id));
+        }
+        b.tgs_impulse_cache.entries.reserve(4096);
+        for &id in ids.iter().rev() {
+            b.tgs_impulse_cache.entries.insert(id, cache_impulse(id));
+        }
+        let iterated: Vec<u64> = a.tgs_impulse_cache.entries.keys().copied().collect();
+        let mut ascending = iterated.clone();
+        ascending.sort_unstable();
+        assert_ne!(
+            iterated, ascending,
+            "the map must not already iterate in id order"
+        );
+
+        let blob = a.snapshot_world();
+        assert_eq!(
+            b.snapshot_world(),
+            blob,
+            "insertion order and capacity leak into the blob"
+        );
+
+        let mut sorted = ids.clone();
+        sorted.sort_unstable();
+        let offsets: Vec<usize> = sorted
+            .iter()
+            .map(|id| {
+                let needle = id.to_le_bytes();
+                let hits: Vec<usize> = blob
+                    .windows(8)
+                    .enumerate()
+                    .filter(|(_, w)| *w == needle)
+                    .map(|(i, _)| i)
+                    .collect();
+                assert_eq!(
+                    hits.len(),
+                    1,
+                    "id {id:#x} must appear once in the blob: {hits:?}"
+                );
+                hits[0]
+            })
+            .collect();
+        assert!(
+            offsets.windows(2).all(|w| w[0] < w[1]),
+            "ids are not written in ascending order: {offsets:?}"
+        );
+
+        // and the order survives a round trip (the restored world writes the same blob)
+        let mut c = scene(SolverBackend::Tgs, Broadphase::Bvh);
+        c.restore_world(&blob).expect("restore");
+        assert_eq!(c.snapshot_world(), blob);
+    }
 }
