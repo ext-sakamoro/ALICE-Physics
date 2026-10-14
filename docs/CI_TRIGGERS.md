@@ -58,6 +58,7 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `downstream.yml` | `main, ci/**` | `.github/paths/downstream.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `fuzz.yml` | `main, ci/**` | `.github/paths/fuzz.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
 | `integration-status.yml` | `main, ci/**` | `.github/paths/integration-status.txt` | - | - | yes | runs when the paths match | landing |
+| `law-readme-block.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `oracle-status.yml` | `main, ci/**` | `.github/paths/oracle-status.txt` | - | - | yes | runs when the paths match | landing |
 | `python-binding.yml` | `main, ci/**` | `.github/paths/python-binding.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `quality-deep.yml` | - | - | `main (paths)` | yes | yes | - | schedule-only |
@@ -193,6 +194,7 @@ only by the fast-forward-only push to `main` and the re-evidence loop above.
 | `downstream.yml` | landing | success |
 | `fuzz.yml` | landing | success |
 | `integration-status.yml` | landing | success |
+| `law-readme-block.yml` | landing | success |
 | `oracle-status.yml` | landing | success |
 | `python-binding.yml` | landing | success |
 | `reexport_check.yml` | landing | success |
@@ -266,6 +268,7 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
 | `downstream.yml` |
 | `fuzz.yml` |
 | `integration-status.yml` |
+| `law-readme-block.yml` |
 | `oracle-status.yml` |
 | `python-binding.yml` |
 | `quality-deep.yml` |

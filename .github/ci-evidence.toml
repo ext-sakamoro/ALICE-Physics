@@ -18,6 +18,7 @@
 "downstream.yml" = "landing"
 "fuzz.yml" = "landing"
 "integration-status.yml" = "landing"
+"law-readme-block.yml" = "landing"
 "oracle-status.yml" = "landing"
 "python-binding.yml" = "landing"
 "quality-deep.yml" = "schedule-only"
