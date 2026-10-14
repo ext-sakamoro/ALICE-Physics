@@ -8,8 +8,8 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2604 |
-| live | reached without examples (crate-internal roots or a binding) | 608 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2602 |
+| live | reached without examples (crate-internal roots or a binding) | 610 |
 | | **total** | **3243** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2604)
+## L1 — example-only (2602)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -286,5 +286,5 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/wave_ship.rs`: `Jonswap`, `Jonswap::north_sea`, `Jonswap::peak_omega`, `Jonswap::spectrum_density`, `ShipResponse`, `ShipResponse::advance`, `WaveComponent`, `free_surface_elevation`, `froude_krylov_vertical_n`
 - `src/wind_zone.rs`: `WindZone`, `WindZone::force_on`, `WindZone::force_on_particle`, `WindZone::instantaneous_wind_vector`, `WindZone::light_breeze`, `WindZone::storm`
 - `src/world_character.rs`: `PhysicsWorld::move_character`, `PhysicsWorld::move_character_with_filter`
-- `src/world_participant.rs`: `FieldAccessError`, `FieldBoard::check_values`, `FieldBoard::declare`, `FieldBoard::mode`, `FieldBoard::read_values`, `FieldBoard::set`, `FieldBoard::write_values`, `FieldError`, `FieldLayout::samples`, `FieldStage::is_empty`, `ForceAccumulator::add_force`, `ForceAccumulator::add_torque`, `ForceAccumulator::clear`, `ForceAccumulator::is_empty`, `ObservationSink`, `ObservationSink::new`, `ObservationSink::push`, `ObservationSink::values`, `Observed`, `Observed::verdict`, `ParticipantFault::from_tag`, `ParticipantFault::tag`, `ParticipantKind::get`, `ParticipantKind::new`, `ParticipantMismatch`, `ParticipantMismatch::classify`, `ParticipantPlan::new`, `ParticipantPlan::order`, `Port::access`, `Port::id`, `Port::reads`, `Port::reads_committed`, `Port::writes`, `PortId::get`, `PortId::new`, `RemapError`, `StateError`, `SubstepCtx::add_force`, `SubstepCtx::add_torque`, `SubstepCtx::bodies`, `SubstepCtx::field`, `SubstepCtx::h`, `SubstepCtx::sdf_contacts`, `SubstepCtx::stage_field`, `SubstepCtx::substep_index`, `SubstepCtx::substeps`, `Verdict`, `check_field_ports`, `deposit_bodies`, `execution_order`, `remap_conserving`, `run_substep`
+- `src/world_participant.rs`: `FieldAccessError`, `FieldBoard::check_values`, `FieldBoard::declare`, `FieldBoard::mode`, `FieldBoard::read_values`, `FieldBoard::set`, `FieldBoard::write_values`, `FieldError`, `FieldLayout::samples`, `FieldStage::is_empty`, `ForceAccumulator::add_force`, `ForceAccumulator::add_torque`, `ForceAccumulator::clear`, `ForceAccumulator::is_empty`, `ObservationSink`, `ObservationSink::new`, `ObservationSink::push`, `ObservationSink::values`, `Observed`, `Observed::verdict`, `ParticipantFault::from_tag`, `ParticipantFault::tag`, `ParticipantKind::new`, `ParticipantMismatch`, `ParticipantMismatch::classify`, `ParticipantPlan::new`, `ParticipantPlan::order`, `Port::access`, `Port::id`, `Port::reads`, `Port::reads_committed`, `Port::writes`, `PortId::new`, `RemapError`, `StateError`, `SubstepCtx::add_force`, `SubstepCtx::add_torque`, `SubstepCtx::bodies`, `SubstepCtx::field`, `SubstepCtx::h`, `SubstepCtx::sdf_contacts`, `SubstepCtx::stage_field`, `SubstepCtx::substep_index`, `SubstepCtx::substeps`, `Verdict`, `check_field_ports`, `deposit_bodies`, `execution_order`, `remap_conserving`, `run_substep`
 - `src/world_shape_query.rs`: `Penetration`, `PhysicsWorld::capsule_penetrations`, `PhysicsWorld::overlap_aabb`

@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- 参加者の登録と step の誤りを標準の error として扱えるようにした `RegisterError` と `StepError` が `Display` と `std::error::Error` を実装し (`std` のとき)、`?` で `Box<dyn Error>` に渡せる `StepError::Rule` は原因の `RegisterError` を `source()` に持つ `WorldFault` と `ParticipantFault` も `Display` を実装し、参加者の kind は 4 文字の ASCII (印字できなければ 16 進) で書く 追加だけで、既存の型と値は変えていない 試験 `tests/world_participant_errors.rs` (全 variant の文言・`source` の有無・world から返る誤りが `?` を通って元の型に戻ること) と lib の unit test 変異 5 件 (`Rule` の source を落とす / 他の variant に source を付ける / kind を常に 16 進 / fault の文言の入れ替え / 記録済みの fault を Debug で書く) はすべて失敗する
+
 ### Changed
 
 - CI: build した library と実行形式を tracked にしない検査 (`scripts/tracked_binaries.py`、試験 `scripts/test_tracked_binaries.py`) を追加 例外は `.github/tracked-binaries.txt` に理由付きで書いた path だけ、読めない file と走査 0 件でも失敗する CI と preflight で走る
