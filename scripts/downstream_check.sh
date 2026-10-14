@@ -299,55 +299,10 @@ if requirements_ok lol "$LOL"; then
     run lol-lib "$LOL" cargo test -p alice-lol --features physics --lib -- law:: stdlib::hardsurface::reinforcement
 fi
 
-# ask the placed ALICE-TRT for a GPU adapter the way its tests do
-# (`GpuDevice::new`); its GPU tests return early, and pass, without one
-trt_gpu_probe() {
-    local probe="$ROOT/trt-gpu-probe" log="$ROOT/logs/trt-gpu-probe.log" out
-    if [ "${TRT_GPU_PROBE:-1}" = 0 ]; then
-        echo "trt: GPU probe skipped (TRT_GPU_PROBE=0); its GPU tests return early without an adapter"
-        summary+=("trt GPU adapter: not probed (TRT_GPU_PROBE=0)")
-        return
-    fi
-    mkdir -p "$probe/src"
-    cat > "$probe/Cargo.toml" <<'TOML'
-[package]
-name = "trt-gpu-probe"
-version = "0.0.0"
-edition = "2021"
-publish = false
-
-[dependencies]
-alice-trt = { path = "../ALICE-TRT", features = ["physics-solver"] }
-
-[workspace]
-TOML
-    cat > "$probe/src/main.rs" <<'RUST'
-fn main() {
-    match alice_trt::GpuDevice::new() {
-        Ok(device) => println!("{}", device.info()),
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    }
-}
-RUST
-    # the versions cargo tree just resolved for ALICE-TRT, so the probe reuses its build
-    if [ -f "$TRT/Cargo.lock" ]; then
-        cp "$TRT/Cargo.lock" "$probe/Cargo.lock"
-    fi
-    echo "==> trt-gpu-probe: alice_trt::GpuDevice::new()"
-    # run from ALICE-TRT so its rust-toolchain.toml picks the toolchain of the tests
-    if out=$(cd "$TRT" && cargo run -q --manifest-path "$probe/Cargo.toml" 2>"$log") && [ -n "$out" ]; then
-        echo "trt: GPU adapter: $out"
-        summary+=("trt GPU adapter: $out")
-    else
-        cat "$log" >&2
-        echo "error: trt: ALICE-TRT finds no GPU adapter (${out:-no output}); its GPU tests would return early and pass without running" >&2
-        failed+=("trt (no GPU adapter)")
-        summary+=("trt GPU adapter: none")
-    fi
-}
+# trt_gpu_probe: scripts/downstream_trt_probe.sh (sourced, so its tests can run it
+# against a stand-in cargo)
+# shellcheck source=downstream_trt_probe.sh
+. "$PHYSICS_DIR/scripts/downstream_trt_probe.sh"
 
 export CARGO_TARGET_DIR="$TARGET/trt"
 if requirements_ok trt "$TRT"; then
