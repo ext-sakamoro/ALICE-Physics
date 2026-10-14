@@ -293,10 +293,11 @@ fn energy(world: &PhysicsWorld) -> f64 {
 /// * symplectic Euler under a central pair force keeps `Σ m·x×v` exactly in
 ///   exact arithmetic (the kick is parallel to each pair's separation, the
 ///   drift is parallel to the velocity), so only the rounding of `F·h/m`
-///   and `x + v·h` is left: `< 1e-14` (each of the `25 600` substeps
+///   and `x + v·h` is left: `< 2e-14` (each of the `25 600` substeps
 ///   truncates a velocity by `≤ 2⁻⁶³` and a position by `≤ 2⁻⁶⁴`, times
 ///   masses `≤ 4`, lever arms `≤ 5` and speeds `≤ 1.5`: a linear worst case
-///   of `≈ 1.4·10⁻¹⁴` for the largest term; measured `9·10⁻¹⁶`);
+///   of `≈ 1.4·10⁻¹⁴` for the largest term, so the assertion sits above
+///   it; measured `9·10⁻¹⁶`);
 /// * the staged forces cancel exactly, so `Σ m·v` changes only by the
 ///   truncation of `F·inv_mass·h`: `≤ m·2⁻⁶³` per body and substep, `Σ m =
 ///   5.5`, so `≤ 1.5·10⁻¹⁴` over the run (asserted `< 2e-14`, measured
@@ -329,7 +330,7 @@ fn momenta_are_conserved_and_energy_is_bounded() {
     let p1 = v3(total_momentum(&vel, &mass).expect("p"));
     for c in 0..3 {
         assert!(
-            (l1[c] - l0[c]).abs() < 1e-14,
+            (l1[c] - l0[c]).abs() < 2e-14,
             "L[{c}] {} vs {}",
             l1[c],
             l0[c]
