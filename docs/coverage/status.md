@@ -12,7 +12,7 @@ crate has today.
 | `docs/coverage/bio.toml` | 141 | 0 | 4 | 0 | 137 | 0 |
 | `docs/coverage/cfd.toml` | 121 | 39 | 2 | 6 | 74 | 0 |
 | `docs/coverage/chem.toml` | 140 | 8 | 1 | 0 | 131 | 0 |
-| `docs/coverage/couple.toml` | 123 | 10 | 3 | 4 | 106 | 0 |
+| `docs/coverage/couple.toml` | 123 | 11 | 3 | 4 | 105 | 0 |
 | `docs/coverage/em.toml` | 113 | 20 | 2 | 5 | 86 | 0 |
 | `docs/coverage/engine.toml` | 153 | 65 | 10 | 7 | 71 | 0 |
 | `docs/coverage/env.toml` | 152 | 21 | 2 | 2 | 127 | 0 |
@@ -41,7 +41,7 @@ crate has today.
 | `docs/coverage/stat.toml` | 107 | 0 | 0 | 0 | 107 | 0 |
 | `docs/coverage/struct.toml` | 152 | 33 | 0 | 10 | 109 | 0 |
 | `docs/coverage/therm.toml` | 128 | 17 | 0 | 3 | 108 | 0 |
-| **total** | 4292 | 586 | 74 | 104 | 3522 | 6 |
+| **total** | 4292 | 587 | 74 | 104 | 3521 | 6 |
 
 ## `docs/coverage/acous.toml`
 
@@ -166,7 +166,7 @@ crate has today.
 | co-simulation | 6 | 1 | 1 | 0 | 4 | 0 |
 | electromechanical | 14 | 2 | 0 | 0 | 12 | 0 |
 | em-optics | 1 | 0 | 0 | 0 | 1 | 0 |
-| framework | 7 | 0 | 1 | 0 | 6 | 0 |
+| framework | 7 | 1 | 1 | 0 | 5 | 0 |
 | fsi-formulation | 9 | 1 | 0 | 0 | 8 | 0 |
 | fsi-interface | 10 | 1 | 0 | 1 | 8 | 0 |
 | multiphase-environment | 1 | 0 | 0 | 0 | 1 | 0 |
