@@ -8454,6 +8454,30 @@ impl core::marker::Unpin for alice_physics::nbody::DirectSum
 impl core::marker::UnsafeUnpin for alice_physics::nbody::DirectSum
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::nbody::DirectSum
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::nbody::DirectSum
+pub struct alice_physics::nbody::NBodyParticipant
+impl alice_physics::nbody::NBodyParticipant
+pub fn alice_physics::nbody::NBodyParticipant::law(&self) -> &alice_physics::nbody::DirectSum
+pub fn alice_physics::nbody::NBodyParticipant::new(alice_physics::nbody::DirectSum) -> Self
+impl alice_physics::world_participant::Participant for alice_physics::nbody::NBodyParticipant
+pub fn alice_physics::nbody::NBodyParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::nbody::NBodyParticipant::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::nbody::NBodyParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::nbody::NBodyParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::nbody::NBodyParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::nbody::NBodyParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::nbody::NBodyParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::nbody::NBodyParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::clone::Clone for alice_physics::nbody::NBodyParticipant
+pub fn alice_physics::nbody::NBodyParticipant::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::nbody::NBodyParticipant
+pub fn alice_physics::nbody::NBodyParticipant::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::nbody::NBodyParticipant
+impl core::marker::Send for alice_physics::nbody::NBodyParticipant
+impl core::marker::Sync for alice_physics::nbody::NBodyParticipant
+impl core::marker::Unpin for alice_physics::nbody::NBodyParticipant
+impl core::marker::UnsafeUnpin for alice_physics::nbody::NBodyParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::nbody::NBodyParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::nbody::NBodyParticipant
 pub struct alice_physics::nbody::VelocityVerlet
 impl alice_physics::nbody::VelocityVerlet
 pub fn alice_physics::nbody::VelocityVerlet::new() -> Self
@@ -8471,6 +8495,9 @@ impl core::marker::Unpin for alice_physics::nbody::VelocityVerlet
 impl core::marker::UnsafeUnpin for alice_physics::nbody::VelocityVerlet
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::nbody::VelocityVerlet
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::nbody::VelocityVerlet
+pub const alice_physics::nbody::NBODY_OBS_BODIES: u32
+pub const alice_physics::nbody::NBODY_OBS_POTENTIAL: u32
+pub const alice_physics::nbody::NBODY_PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
 pub fn alice_physics::nbody::kinetic_energy(&[alice_physics::math::Vec3Fix], &[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::math::Fix128, alice_physics::nbody::NBodyError>
 pub fn alice_physics::nbody::total_momentum(&[alice_physics::math::Vec3Fix], &[alice_physics::math::Fix128]) -> core::result::Result<alice_physics::math::Vec3Fix, alice_physics::nbody::NBodyError>
 pub mod alice_physics::netcode
@@ -20882,6 +20909,15 @@ pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
 pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::nbody::NBodyParticipant
+pub fn alice_physics::nbody::NBodyParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::nbody::NBodyParticipant::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::nbody::NBodyParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::nbody::NBodyParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::nbody::NBodyParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::nbody::NBodyParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::nbody::NBodyParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::nbody::NBodyParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl alice_physics::world_participant::Participant for alice_physics::phase_change::PhaseChangeModifier
 pub fn alice_physics::phase_change::PhaseChangeModifier::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
 pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_physics::world_participant::ParticipantKind

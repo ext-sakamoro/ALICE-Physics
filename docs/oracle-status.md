@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5814 |
+| 🟢 Not ignored (run by CI) | 5821 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5912** |
+| **Total** | **5919** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5814)
+## 🟢 Not ignored (5821)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -383,6 +383,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_flow_viz_wiring.rs` | 11 |
 | `analytic_joint_break_world.rs` | 11 |
 | `analytic_mass_properties.rs` | 11 |
+| `analytic_nbody_participant.rs` | 11 |
 | `analytic_physics2d_tethers.rs` | 11 |
 | `analytic_polar_decomposition.rs` | 11 |
 | `analytic_pressure_wiring.rs` | 11 |
@@ -568,7 +569,6 @@ Per-file counts (the test names are in `tests/`):
 | `spatial_hash_range.rs` | 4 |
 | `tgs_stable_cache_keys.rs` | 4 |
 | `world_ccd_off_bit_identity.rs` | 4 |
-| `world_participant_errors.rs` | 4 |
 | `world_snapshot_history_independence.rs` | 4 |
 | `analytic_axial_support.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
