@@ -12,7 +12,9 @@ notice, so they cannot pass on a script that merges the two.
 
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +22,75 @@ import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROBE = os.path.join(HERE, "downstream_trt_probe.sh")
+
+
+def posix(path: str) -> str:
+    """A path in the form bash accepts on every platform (Git for Windows bash takes C:/x)."""
+    return path.replace("\\", "/")
+
+
+def usable_bash(candidate: str) -> bool:
+    """True when `candidate` is a bash that runs a script and prints plain text.
+
+    Judged on the raw bytes: the WSL launcher that Windows puts first on PATH answers in
+    UTF-16 ("W\\0i\\0n\\0...") or fails, and must not be taken for a shell."""
+    try:
+        p = subprocess.run([candidate, "-c", "echo probe-ok"], capture_output=True, check=False, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return plain_ok(p.returncode, p.stdout)
+
+
+def plain_ok(returncode: int, stdout: bytes) -> bool:
+    return returncode == 0 and stdout.strip() == b"probe-ok"
+
+
+def bash_candidates() -> list[str]:
+    found: list[str] = []
+    if os.environ.get("ALICE_TEST_BASH"):
+        found.append(os.environ["ALICE_TEST_BASH"])
+    if os.name == "nt":
+        # Git for Windows first: <git root>/bin/bash.exe, from `git --exec-path` (<root>/mingw64/libexec/git-core)
+        git = shutil.which("git")
+        roots = []
+        if git:
+            roots.append(os.path.dirname(os.path.dirname(git)))
+            try:
+                ep = subprocess.run([git, "--exec-path"], capture_output=True, text=True, check=False).stdout.strip()
+                if ep:
+                    roots += [os.path.normpath(os.path.join(ep, *[".."] * n)) for n in (2, 3)]
+            except OSError:
+                pass
+        roots += [os.path.join(os.environ.get("ProgramFiles", "C:\\Program Files"), "Git")]
+        for r in roots:
+            found += [os.path.join(r, "bin", "bash.exe"), os.path.join(r, "usr", "bin", "bash.exe")]
+    which = shutil.which("bash")
+    if which:
+        found.append(which)
+    return [c for c in dict.fromkeys(found) if os.path.exists(c) or c == which]
+
+
+def resolve_bash(candidates: list[str] | None = None) -> str:
+    """The first usable bash; raises (the tests fail) when there is none, never skips."""
+    cands = bash_candidates() if candidates is None else candidates
+    for c in cands:
+        if usable_bash(c):
+            return c
+    raise RuntimeError(f"no usable bash among {cands!r}; set ALICE_TEST_BASH")
+
+
+_TMP = tempfile.mkdtemp(prefix="trt-probe-test-")
+atexit.register(shutil.rmtree, _TMP, ignore_errors=True)
+
+
+def lf_copy(path: str) -> str:
+    """The script with LF line endings (a Windows checkout may have CRLF, which bash reads as part of every word)."""
+    with open(path, encoding="utf-8", newline="") as f:
+        text = f.read().replace("\r\n", "\n")
+    out = os.path.join(_TMP, f"{len(os.listdir(_TMP))}-{os.path.basename(path)}")
+    with open(out, "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    return out
 
 MSRV = (
     "error: rustc 1.92.0 is not supported by the following package:\n"
@@ -65,9 +136,9 @@ def run_probe(build: str, run: str, script: str = PROBE, build_err: str = MSRV,
         os.makedirs(os.path.join(root, "ALICE-TRT"))
         env = dict(
             os.environ,
-            PROBE=script,
-            ROOT=root,
-            TRT=os.path.join(root, "ALICE-TRT"),
+            PROBE=posix(lf_copy(script)),
+            ROOT=posix(root),
+            TRT=posix(os.path.join(root, "ALICE-TRT")),
             FAKE_BUILD=build,
             FAKE_RUN=run,
             FAKE_BUILD_ERR=build_err,
@@ -75,8 +146,8 @@ def run_probe(build: str, run: str, script: str = PROBE, build_err: str = MSRV,
         env.pop("TRT_GPU_PROBE", None)
         if probe_env is not None:
             env["TRT_GPU_PROBE"] = probe_env
-        p = subprocess.run(["bash", "-c", DRIVER], env=env, capture_output=True, text=True, check=False)
-        return p.stdout, p.stderr
+        p = subprocess.run([resolve_bash(), "-c", DRIVER], env=env, capture_output=True, check=False)
+        return p.stdout.decode("utf-8", "replace"), p.stderr.decode("utf-8", "replace")
 
 
 def failures(script: str = PROBE) -> list[str]:
@@ -120,6 +191,25 @@ def failures(script: str = PROBE) -> list[str]:
 
 
 class ProbeTest(unittest.TestCase):
+    def test_bash_resolves(self) -> None:
+        self.assertTrue(usable_bash(resolve_bash()))
+
+    def test_resolver_rejects_utf16_launcher(self) -> None:
+        # what the WSL launcher prints, and an exit-0 answer with other text
+        wsl = "Windows Subsystem for Linux has no installed distributions.".encode("utf-16-le")
+        self.assertFalse(plain_ok(0, wsl))
+        self.assertFalse(plain_ok(0, "p\0r\0o\0b\0e\0-\0o\0k\0\n\0".encode()))
+        self.assertFalse(plain_ok(1, b"probe-ok\n"))
+        self.assertTrue(plain_ok(0, b"probe-ok\r\n"))
+        # and a stand-in executable that is not a shell is not taken for one
+        self.assertFalse(usable_bash(os.path.join(_TMP, "does-not-exist")))
+        with self.assertRaises(RuntimeError):
+            resolve_bash([os.path.join(_TMP, "does-not-exist")])
+
+    def test_no_bash_fails_loudly(self) -> None:
+        with self.assertRaises(RuntimeError):
+            resolve_bash([])
+
     def test_coloured_error_is_extracted(self) -> None:
         out, err = run_probe("fail", "adapter", build_err=COLOURED)
         self.assertIn("RC_FAILED=trt (GPU probe build failed)", out)
