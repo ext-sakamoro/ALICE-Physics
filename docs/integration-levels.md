@@ -43,7 +43,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 11 / 0 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `world_participant` | step | 38 / 25 / 0 / 28 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 40 / 23 / 0 / 28 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |

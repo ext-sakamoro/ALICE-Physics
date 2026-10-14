@@ -20365,6 +20365,8 @@ impl core::cmp::PartialEq for alice_physics::world_participant::ParticipantFault
 pub fn alice_physics::world_participant::ParticipantFault::eq(&self, &Self) -> bool
 impl core::fmt::Debug for alice_physics::world_participant::ParticipantFault
 pub fn alice_physics::world_participant::ParticipantFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::world_participant::ParticipantFault
+pub fn alice_physics::world_participant::ParticipantFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for alice_physics::world_participant::ParticipantFault
 impl core::marker::StructuralPartialEq for alice_physics::world_participant::ParticipantFault
 impl core::marker::Freeze for alice_physics::world_participant::ParticipantFault
@@ -20438,7 +20440,10 @@ pub fn alice_physics::world_participant::RegisterError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::world_participant::RegisterError
 impl core::cmp::PartialEq for alice_physics::world_participant::RegisterError
 pub fn alice_physics::world_participant::RegisterError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::world_participant::RegisterError
 impl core::fmt::Debug for alice_physics::world_participant::RegisterError
+pub fn alice_physics::world_participant::RegisterError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::world_participant::RegisterError
 pub fn alice_physics::world_participant::RegisterError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for alice_physics::world_participant::RegisterError
 impl core::marker::Freeze for alice_physics::world_participant::RegisterError
@@ -20509,7 +20514,11 @@ pub fn alice_physics::world_participant::StepError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::world_participant::StepError
 impl core::cmp::PartialEq for alice_physics::world_participant::StepError
 pub fn alice_physics::world_participant::StepError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::world_participant::StepError
+pub fn alice_physics::world_participant::StepError::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
 impl core::fmt::Debug for alice_physics::world_participant::StepError
+pub fn alice_physics::world_participant::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::world_participant::StepError
 pub fn alice_physics::world_participant::StepError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for alice_physics::world_participant::StepError
 impl core::marker::Freeze for alice_physics::world_participant::StepError
@@ -20578,6 +20587,8 @@ impl core::cmp::Eq for alice_physics::world_participant::WorldFault
 impl core::cmp::PartialEq for alice_physics::world_participant::WorldFault
 pub fn alice_physics::world_participant::WorldFault::eq(&self, &Self) -> bool
 impl core::fmt::Debug for alice_physics::world_participant::WorldFault
+pub fn alice_physics::world_participant::WorldFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::world_participant::WorldFault
 pub fn alice_physics::world_participant::WorldFault::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for alice_physics::world_participant::WorldFault
 impl core::marker::StructuralPartialEq for alice_physics::world_participant::WorldFault

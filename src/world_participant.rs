@@ -517,6 +517,132 @@ pub enum StepError {
     },
 }
 
+/// A kind as its four ASCII letters when they are printable (`PRBE`), else as
+/// hex (`0x00000007`).
+struct KindText(ParticipantKind);
+
+impl core::fmt::Display for KindText {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let bytes = self.0.get().to_be_bytes();
+        if bytes.iter().all(|b| b.is_ascii_graphic()) {
+            for &b in &bytes {
+                write!(f, "{}", char::from(b))?;
+            }
+            Ok(())
+        } else {
+            write!(f, "{:#010x}", self.0.get())
+        }
+    }
+}
+
+impl core::fmt::Display for ParticipantFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            Self::OutOfRange => "a value left its range",
+            Self::InvalidState => "its state is inconsistent",
+        })
+    }
+}
+
+impl core::fmt::Display for WorldFault {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Participant { index, kind, fault } => {
+                write!(
+                    f,
+                    "participant {index} ({}) failed: {fault}",
+                    KindText(*kind)
+                )
+            }
+            Self::RigidOverflow => f.write_str("the rigid integration left the range of Fix128"),
+            Self::ForceOutOfRange { body } => {
+                write!(
+                    f,
+                    "the participant force on body {body} left the range of Fix128"
+                )
+            }
+            Self::FieldOutOfRange { field, index } => write!(
+                f,
+                "committing field {} left the range of Fix128 at participant {index}",
+                field.get()
+            ),
+        }
+    }
+}
+
+impl core::fmt::Display for RegisterError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NonPositiveStep => {
+                f.write_str("the world substep or the participant's fixed step is not positive")
+            }
+            Self::StepRuleMismatch { substep, step } => {
+                write!(f, "the fixed step {step} does not divide the substep {substep}")
+            }
+            Self::Order(OrderError::Cycle { members }) => {
+                write!(f, "the declared ports form a loop through participants {members:?}")
+            }
+            Self::Field(FieldPortError::SecondWriter { field, first, second }) => write!(
+                f,
+                "replace field {} is written by participants {first} and {second}",
+                field.get()
+            ),
+            Self::Field(FieldPortError::ReadOfField { participant, field }) => write!(
+                f,
+                "participant {participant} reads field {} with a plain read (a field is read committed)",
+                field.get()
+            ),
+            Self::Field(FieldPortError::UnknownField { participant, field }) => write!(
+                f,
+                "participant {participant} reads port {} as committed, but no field has that id",
+                field.get()
+            ),
+        }
+    }
+}
+
+impl core::fmt::Display for StepError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Faulted(fault) => {
+                write!(
+                    f,
+                    "a fault is already recorded, the world was not stepped: {fault}"
+                )
+            }
+            Self::FaultRaised(fault) => write!(f, "a participant failed during this step: {fault}"),
+            Self::Rule { index, error } => {
+                write!(
+                    f,
+                    "participant {index} cannot follow this frame's substep: {error}"
+                )
+            }
+            Self::BodyCount {
+                field,
+                samples,
+                bodies,
+            } => write!(
+                f,
+                "per-body field {} has {samples} samples but the world has {bodies} bodies",
+                field.get()
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for RegisterError {}
+
+#[cfg(feature = "std")]
+impl std::error::Error for StepError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Rule { error, .. } => Some(error),
+            _ => None,
+        }
+    }
+}
+
 /// Why a participant rejected a snapshot payload.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -1885,4 +2011,112 @@ pub fn wakes_parked_body(
         .checked_world_inv_inertia_apply(torque)
         .and_then(|a| a.checked_scale(h));
     changes(dv) || changes(dw)
+}
+
+#[cfg(test)]
+mod error_text_tests {
+    use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::{format, string::ToString};
+
+    /// Every variant prints a message naming what it carries (the exact
+    /// texts are pinned in `tests/world_participant_errors.rs`).
+    #[test]
+    fn every_variant_names_its_values() {
+        let field = PortId::new(11);
+        let kind = ParticipantKind::new(u32::from_be_bytes(*b"ABCD"));
+        let faults = [
+            WorldFault::Participant {
+                index: 5,
+                kind,
+                fault: ParticipantFault::OutOfRange,
+            },
+            WorldFault::Participant {
+                index: 6,
+                kind: ParticipantKind::new(1),
+                fault: ParticipantFault::InvalidState,
+            },
+            WorldFault::RigidOverflow,
+            WorldFault::ForceOutOfRange { body: 12 },
+            WorldFault::FieldOutOfRange { field, index: 13 },
+        ];
+        let texts: Vec<_> = faults.iter().map(ToString::to_string).collect();
+        assert!(texts[0].contains("participant 5 (ABCD)"));
+        assert!(texts[1].contains("(0x00000001)") && texts[1].contains("inconsistent"));
+        assert!(texts[2].contains("rigid"));
+        assert!(texts[3].contains("body 12"));
+        assert!(texts[4].contains("field 11") && texts[4].contains("participant 13"));
+        let registers = [
+            RegisterError::NonPositiveStep,
+            RegisterError::StepRuleMismatch {
+                substep: Fix128::ONE,
+                step: Fix128::from_int(3),
+            },
+            RegisterError::Order(OrderError::Cycle {
+                members: vec![1, 4],
+            }),
+            RegisterError::Field(FieldPortError::SecondWriter {
+                field,
+                first: 2,
+                second: 3,
+            }),
+            RegisterError::Field(FieldPortError::ReadOfField {
+                participant: 7,
+                field,
+            }),
+            RegisterError::Field(FieldPortError::UnknownField {
+                participant: 8,
+                field,
+            }),
+        ];
+        for (e, part) in registers.iter().zip([
+            "not positive",
+            "3.0000",
+            "[1, 4]",
+            "2 and 3",
+            "participant 7",
+            "participant 8",
+        ]) {
+            assert!(e.to_string().contains(part), "{e:?}: {e}");
+        }
+        let steps = [
+            StepError::Faulted(faults[2]),
+            StepError::FaultRaised(faults[3]),
+            StepError::Rule {
+                index: 9,
+                error: RegisterError::NonPositiveStep,
+            },
+            StepError::BodyCount {
+                field,
+                samples: 1,
+                bodies: 2,
+            },
+        ];
+        for (e, part) in
+            steps
+                .iter()
+                .zip(["already recorded", "body 12", "participant 9", "1 samples"])
+        {
+            assert!(e.to_string().contains(part), "{e:?}: {e}");
+        }
+        assert_eq!(
+            format!("{}", ParticipantFault::OutOfRange),
+            "a value left its range"
+        );
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn only_the_rule_error_has_a_source() {
+        use std::error::Error;
+        let rule = StepError::Rule {
+            index: 0,
+            error: RegisterError::NonPositiveStep,
+        };
+        assert!(rule.source().is_some());
+        assert!(StepError::FaultRaised(WorldFault::RigidOverflow)
+            .source()
+            .is_none());
+        assert!(RegisterError::NonPositiveStep.source().is_none());
+    }
 }

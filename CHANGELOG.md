@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- 参加者の登録と step の誤りを標準の error として扱えるようにした `RegisterError` と `StepError` が `Display` と `std::error::Error` を実装し (`std` のとき)、`?` で `Box<dyn Error>` に渡せる `StepError::Rule` は原因の `RegisterError` を `source()` に持つ `WorldFault` と `ParticipantFault` も `Display` を実装し、参加者の kind は 4 文字の ASCII (印字できなければ 16 進) で書く 追加だけで、既存の型と値は変えていない 試験 `tests/world_participant_errors.rs` (全 variant の文言・`source` の有無・world から返る誤りが `?` を通って元の型に戻ること) と lib の unit test 変異 5 件 (`Rule` の source を落とす / 他の variant に source を付ける / kind を常に 16 進 / fault の文言の入れ替え / 記録済みの fault を Debug で書く) はすべて失敗する
+
 ### Changed
 
 - CI: 上限の無かった 32 job に `timeout-minutes` を付けた (止まった step は共有 runner を GitHub の上限の 6 時間まで占有しうる) 値は直近の成功した run 15 本の所要時間の最大の 2 倍・中央値の 4 倍の大きい方を 5 分単位に切り上げ、cargo を使う job は最低 15 分、他は最低 10 分 `test` は leg ごとに決める: macOS Intel (最大 192 分、平均 100 分) は 2 倍が上限を超えるので hosted runner の上限の 360 分、Windows (最大 80 分) 160 分、他の leg (最大 60 分) 120 分 既に上限のある job は変えていない `scripts/workflow_timeouts.py` (試験 `scripts/test_workflow_timeouts.py`、ALICE-LOL と byte 一致) が全 job の上限を検査し、job を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
