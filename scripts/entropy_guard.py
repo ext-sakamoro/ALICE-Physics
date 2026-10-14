@@ -9,18 +9,29 @@ constructors re-exported by `privacy` (`SecureRng::from_entropy`,
 `DpNoise::try_from_entropy`), which the caller chooses to call: the crate
 itself never calls them.
 
-Checked in every src/**/*.rs file, outside `#[cfg(test)]` modules, with the
-code of a file joined (a call split over lines still matches) and `use .. as`
-aliases of `Instant` / `SystemTime` / `RandomState` / `HashMap` / `HashSet`
-resolved:
+Checked in every src/**/*.rs file, outside `#[cfg(test)]` / `#[cfg(all(test,
+...))]` modules, with strings, raw strings, char literals and comments removed
+first (so a `'{'` or a `/* { */` cannot throw off the brace depth the test
+module skip relies on), the code of a file joined (a call split over lines
+still matches), `use .. as` aliases of `Instant` / `SystemTime` /
+`RandomState` / `HashMap` / `HashSet` resolved, and a fully-qualified-self
+call (`<std::time::Instant>::now()`, `<Instant as Trait>::now()`) recognised
+the same as the plain form:
 
     getrandom  OsRng  thread_rng  rand::random  from_entropy(  try_from_entropy(
     SystemTime::now  Instant::now  UNIX_EPOCH  RandomState  HashMap  HashSet
+    Uuid::new_v4
+
+`RandomState` in any use, not only `::new`: `::default()` reaches the same
+OS-seeded hasher and clippy cannot ban a trait method by the type alone.
 
 (`HashMap` / `HashSet` because their default hasher is seeded from OS
 randomness; the crate uses `det_hash::DetHashMap`.) clippy's
 `disallowed-types` / `disallowed-methods` in clippy.toml is the first layer;
-this script is the second, readable without compiling.
+this script is the second, readable without compiling. The sanitizer, the
+qualified-self form, the `cfg(all(test, ..))` skip and `Uuid::new_v4` follow
+ALICE-DB's guard (commits 39822ee and b08a967); this one keeps its stricter
+`HashMap` / `HashSet` scan, which ALICE-DB leaves to a separate gate.
 
 A definition (`fn from_entropy`) is not a call. ALLOWED lists the call sites
 that stay, each with its reason and exact count: a count that drifts either way
@@ -36,23 +47,29 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+# A qualified-self call wraps the type in `<...>` and may add `as Trait`
+# before the closing `>` (`<std::time::Instant>::now()`, `<std::time::Instant
+# as SomeTrait>::now()`): the type name's own `\b` boundary does not care about
+# the angle brackets, so only the `::method` suffix needs to tolerate them.
+_QUALIFIED_SELF = r"(?:\s+as\s+\w+)?\s*>?\s*"
 PATTERNS = {
     "getrandom": r"\bgetrandom\b",
     "OsRng": r"\bOsRng\b",
     "thread_rng": r"\bthread_rng\b",
     "rand::random": r"\brand\s*::\s*random\b",
     "from_entropy(": r"(?<!fn )\b(?:try_)?from_entropy\s*\(",
-    "SystemTime::now": r"\bSystemTime\s*::\s*now\b",
-    "Instant::now": r"\bInstant\s*::\s*now\b",
+    "SystemTime::now": r"\bSystemTime\b" + _QUALIFIED_SELF + r"::\s*now\b",
+    "Instant::now": r"\bInstant\b" + _QUALIFIED_SELF + r"::\s*now\b",
     "UNIX_EPOCH": r"\bUNIX_EPOCH\b",
     "RandomState": r"\bRandomState\b",
     "HashMap": r"\bHashMap\b",
     "HashSet": r"\bHashSet\b",
+    "Uuid::new_v4": r"\bUuid\b" + _QUALIFIED_SELF + r"::\s*new_v4\b",
 }
 # `use std::time::Instant as Clock;` makes `Clock::now()` the same call
 ALIASABLE = {
-    "Instant": ("Instant::now", r"\b{}\s*::\s*now\b"),
-    "SystemTime": ("SystemTime::now", r"\b{}\s*::\s*now\b"),
+    "Instant": ("Instant::now", r"\b{}\b" + _QUALIFIED_SELF + r"::\s*now\b"),
+    "SystemTime": ("SystemTime::now", r"\b{}\b" + _QUALIFIED_SELF + r"::\s*now\b"),
     "RandomState": ("RandomState", r"\b{}\b"),
     "HashMap": ("HashMap", r"\b{}\b"),
     "HashSet": ("HashSet", r"\b{}\b"),
@@ -70,19 +87,75 @@ ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
     ),
     ("src/det_hash.rs", "HashMap"): (1, "the DetHashMap alias names the std map with the fixed hasher"),
 }
-STRING_RE = re.compile(r'"(?:\\.|[^"\\])*"')
+# A char literal ('{', '\n', '\u{1F600}', also after a `b` prefix) but not a
+# lifetime ('a, 'static: those have no closing quote, so they never match.
+CHAR_RE = re.compile(r"'(?:\\u\{[0-9a-fA-F_]+\}|\\x[0-9a-fA-F]{2}|\\.|[^'\\\n])'")
+RAW_RE = re.compile(r'b?r(#*)"')
+
+
+def sanitize(text: str) -> str:
+    """One pass over the source, in order: string (escapes), raw string
+    (`r#".."#`, `br".."`), char literal, `//` comment, `/* */` comment
+    (nested). A string becomes `""`, a char `''`, a comment nothing; newlines
+    are kept so line numbers stay. Because every construct is read where it
+    starts, a `/*` inside a string or a line comment, or a quote inside a
+    comment, opens nothing. Without this, a char literal that happens to spell
+    a brace (`'{'`) throws off the brace-depth count a `#[cfg(test)] mod { .. }`
+    skip relies on, hiding whatever production code follows in the same file."""
+    out: list[str] = []
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        two = text[i:i + 2]
+        if two == "//":
+            j = text.find("\n", i)
+            i = n if j < 0 else j
+        elif two == "/*":
+            depth, i = 1, i + 2
+            while i < n and depth:
+                if text[i:i + 2] == "/*":
+                    depth, i = depth + 1, i + 2
+                elif text[i:i + 2] == "*/":
+                    depth, i = depth - 1, i + 2
+                else:
+                    if text[i] == "\n":
+                        out.append("\n")
+                    i += 1
+        elif c == '"':
+            i += 1
+            while i < n and text[i] != '"':
+                if text[i] == "\\" and i + 1 < n:
+                    out.append("\n" if text[i + 1] == "\n" else "")
+                    i += 1
+                elif text[i] == "\n":
+                    out.append("\n")
+                i += 1
+            i += 1
+            out.append('""')
+        elif (c in "rb") and (i == 0 or not (text[i - 1].isalnum() or text[i - 1] == "_")) and (m := RAW_RE.match(text, i)):
+            end = text.find('"' + m.group(1), m.end())
+            end = n if end < 0 else end + 1 + len(m.group(1))
+            out.append("\n" * text.count("\n", i, end) + '""')
+            i = end
+        elif c == "'" and (m := CHAR_RE.match(text, i)):
+            out.append("''")
+            i = m.end()
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def production_lines(text: str) -> list[tuple[int, str]]:
-    """(line number, code) outside `#[cfg(test)]` modules, strings and `//` comments removed."""
+    """(line number, code) outside `#[cfg(test)]` / `#[cfg(all(test, ..))]`
+    modules, strings, chars and comments removed."""
     out = []
     skip_depth = None  # brace depth at which the test module started
     pending_test = False
     depth = 0
-    for n, raw in enumerate(text.splitlines(), 1):
-        code = STRING_RE.sub('""', raw).split("//")[0]
+    for n, code in enumerate(sanitize(text).splitlines(), 1):
         stripped = code.strip()
-        if skip_depth is None and stripped.startswith("#[cfg(test)]"):
+        if skip_depth is None and (stripped.startswith("#[cfg(test)]") or re.match(r"#\[cfg\(all\(test\s*,", stripped)):
             pending_test = True
             continue
         opens, closes = code.count("{"), code.count("}")
