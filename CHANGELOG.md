@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `nbody::NBodyParticipant`: `DirectSum` の重力を world の参加者として substep の内側で働かせる (kind `NBDY`、`PhysicsWorld::add_participant` で登録し `try_step` / `try_step_parallel` で進める) substep の頭の body から対 `i < j` ごとの力 `G·mᵢ·mⱼ·d/(|d|²+ε²)^{3/2}` を 1 回計算して `i` に足し `j` から引くので、staging した力の和は厳密に 0 world は `F·inv_mass·h` を速度に足してから位置を積分するので、方式は substep 幅の symplectic Euler (誤差は frame 長でなく substep 幅で縮む) static と kinematic の body は参加しない (`kick_bodies` と同じ) 積と和はすべて範囲を検査し、外れたら `ParticipantFault::OutOfRange` で何も staging せず状態も変えない 観測は前の substep の位置エネルギーと参加した body 数 snapshot の payload は 36 byte (version / `G` と `ε` の digest / 位置エネルギー / body 数) で、別の `G` や `ε` の payload は拒む 試験 `tests/analytic_nbody_participant.rs`: 円軌道の振れが substep 幅の半分 (`h/2` に 5 % 以内、XPBD と TGS、substeps 1 と 4) / staging した力の和が厳密に 0 で `DirectSum::accelerations` と一致 / 角運動量 (`< 1e-14`) と運動量 (`< 2e-14`) の保存とエネルギーの有界性 / 遅い引力で body が寝ない / snapshot と分岐の bit 一致 / 範囲外の力は fault で参加者も body も変えない / 退化入力 / 3 体の digest (XPBD と TGS) / 並列で thread 数に依らず、逐次と body と payload が一致 実装の変異 12 件と配線の変異 1 件 (力を staging しない) はすべて失敗する example `participant_nbody`
+
 ### Changed
 
 - CI: 上限の無かった 32 job に `timeout-minutes` を付けた (止まった step は共有 runner を GitHub の上限の 6 時間まで占有しうる) 値は直近の成功した run 15 本の所要時間の最大の 2 倍・中央値の 4 倍の大きい方を 5 分単位に切り上げ、cargo を使う job は最低 15 分、他は最低 10 分 `test` は leg ごとに決める: macOS Intel (最大 192 分、平均 100 分) は 2 倍が上限を超えるので hosted runner の上限の 360 分、Windows (最大 80 分) 160 分、他の leg (最大 60 分) 120 分 既に上限のある job は変えていない `scripts/workflow_timeouts.py` (試験 `scripts/test_workflow_timeouts.py`、ALICE-LOL と byte 一致) が全 job の上限を検査し、job を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る

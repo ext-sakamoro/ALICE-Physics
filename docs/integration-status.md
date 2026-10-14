@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2604 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2610 |
 | live | reached without examples (crate-internal roots or a binding) | 608 |
-| | **total** | **3243** |
+| | **total** | **3249** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2604)
+## L1 — example-only (2610)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -209,7 +209,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/motor.rs`: `JointMotor::new`, `PdController3D::new`, `PdController3D::set_rotation_target`, `PdController::disable`, `PdController::set_position_target`, `PdController::set_velocity_target`
 - `src/multi_world.rs`: `MultiWorld`, `MultiWorld::add_world`, `MultiWorld::new`, `MultiWorld::step_all`, `MultiWorld::step_all_parallel`, `MultiWorld::total_body_count`, `MultiWorld::transfer_body`, `MultiWorld::world_count`, `Portal`, `Portal::new`, `Portal::transform_a_to_b`, `Portal::transform_b_to_a`
 - `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
-- `src/nbody.rs`: `DirectSum`, `DirectSum::accelerations`, `DirectSum::gravitational_constant`, `DirectSum::kick_bodies`, `DirectSum::new`, `DirectSum::potential_energy`, `DirectSum::softening`, `DirectSum::step_world`, `NBodyError`, `VelocityVerlet`, `VelocityVerlet::new`, `VelocityVerlet::step`, `kinetic_energy`, `total_momentum`
+- `src/nbody.rs`: `DirectSum`, `DirectSum::accelerations`, `DirectSum::gravitational_constant`, `DirectSum::kick_bodies`, `DirectSum::new`, `DirectSum::potential_energy`, `DirectSum::softening`, `DirectSum::step_world`, `NBODY_OBS_BODIES`, `NBODY_OBS_POTENTIAL`, `NBODY_PARTICIPANT_KIND`, `NBodyError`, `NBodyParticipant`, `NBodyParticipant::law`, `NBodyParticipant::new`, `VelocityVerlet`, `VelocityVerlet::new`, `VelocityVerlet::step`, `kinetic_energy`, `total_momentum`
 - `src/netcode.rs`: `DeterministicSimulation::advance_frame`, `DeterministicSimulation::dt`, `DeterministicSimulation::get_snapshot`, `DeterministicSimulation::snapshot_count`
 - `src/netcode_prediction.rs`: `PredictedInput`, `PredictionBuffer`, `PredictionBuffer::drop_acknowledged`, `PredictionBuffer::head_snapshot`, `PredictionBuffer::inputs`, `PredictionBuffer::is_empty`, `PredictionBuffer::len`, `PredictionBuffer::new`, `PredictionBuffer::push`, `ReconcileError`, `Snapshot`, `reconcile`, `reconcile_checked`
 - `src/neural.rs`: `Activation`, `ControllerConfig`, `ControllerOutput`, `DeterministicNetwork`, `DeterministicNetwork::forward`, `DeterministicNetwork::input_size`, `DeterministicNetwork::new`, `DeterministicNetwork::num_layers`, `DeterministicNetwork::output_size`, `FEATURES_PER_BODY`, `FixedTernaryWeight`, `FixedTernaryWeight::from_ternary_weight`, `FixedTernaryWeight::from_ternary_weight_with_scale`, `FixedTernaryWeight::in_features`, `FixedTernaryWeight::out_features`, `FixedTernaryWeight::scale`, `RagdollController`, `RagdollController::compute`, `RagdollController::config`, `RagdollController::network`, `RagdollController::new`, `fix128_hard_tanh`, `fix128_leaky_relu`, `fix128_relu`, `fix128_tanh_approx`, `fix128_ternary_matvec`
