@@ -1230,4 +1230,185 @@ mod participant_tests {
         bad[VEHICLE_STATE_HEAD + 12 * 16] = 2;
         assert_eq!(b.check_state(&bad), Err(StateError::InvalidValue));
     }
+
+    use crate::world_participant::{
+        FieldBoard, FieldLayout, FieldMode, FieldStage, ForceAccumulator,
+    };
+
+    const INPUTS: PortId = PortId::new(5);
+
+    /// A chassis resting with every default wheel on the ground.
+    fn chassis() -> RigidBody {
+        let w = VehicleConfig::default().wheels[0];
+        let y = w.suspension_rest + w.radius - w.local_position.y - Fix128::from_ratio(1, 10);
+        RigidBody::new_dynamic(
+            Vec3Fix::new(Fix128::ZERO, y, Fix128::ZERO),
+            Fix128::from_int(1200),
+        )
+    }
+
+    fn board(values: &[Fix128]) -> FieldBoard {
+        let mut b = FieldBoard::new();
+        b.declare(
+            INPUTS,
+            FieldLayout::Channels {
+                count: values.len(),
+            },
+            FieldMode::Replace,
+        )
+        .expect("declare");
+        b.set(INPUTS, values).expect("set");
+        b
+    }
+
+    /// Run one substep of `p` on `bodies`, with the input board if given;
+    /// returns the result and the staged force on body 0.
+    fn run(
+        p: &mut VehicleParticipant,
+        bodies: &[RigidBody],
+        inputs: Option<&FieldBoard>,
+    ) -> (Result<(), ParticipantFault>, Vec3Fix) {
+        let h = Fix128::from_ratio(1, 240);
+        let mut acc = ForceAccumulator::new(bodies.len());
+        let mut stage = FieldStage::new();
+        let ports = p.ports.clone();
+        let result = {
+            let ctx = SubstepCtx::new(bodies, &mut acc, 0, 4, h).expect("ctx");
+            let mut ctx = match inputs {
+                Some(b) => ctx.with_fields(b, &mut stage, &ports),
+                None => ctx,
+            };
+            p.substep(&mut ctx, h)
+        };
+        let force = acc.force(0).unwrap_or(Vec3Fix::ZERO);
+        (result, force)
+    }
+
+    /// Without inputs the staged force is `chassis_force` of the vehicle as
+    /// built; the state advances as `chassis_force` advances it.
+    #[test]
+    fn substep_stages_the_chassis_force() {
+        let bodies = [chassis()];
+        let mut p = resident();
+        let mut twin = Vehicle::new(VehicleConfig::default());
+        let want = twin.chassis_force(&bodies[0], Fix128::from_ratio(1, 240));
+        let (r, f) = run(&mut p, &bodies, None);
+        assert_eq!(r, Ok(()));
+        assert_eq!(f, want);
+        assert_ne!(f, Vec3Fix::ZERO);
+        assert_eq!(p.vehicle.wheel_states, twin.wheel_states);
+    }
+
+    /// Inputs in range are applied before the force; out of range, wrong
+    /// length or a missing field are faults that stage nothing and leave the
+    /// participant unchanged.
+    #[test]
+    fn inputs_are_checked_and_applied() {
+        let bodies = [chassis()];
+        let half = Fix128::from_ratio(1, 2);
+        let mut p = resident().with_inputs(INPUTS);
+        let ok = board(&[half, Fix128::ZERO, -half]);
+        let (r, f) = run(&mut p, &bodies, Some(&ok));
+        assert_eq!(r, Ok(()));
+        assert_ne!(f, Vec3Fix::ZERO);
+        assert_eq!((p.vehicle.throttle, p.vehicle.steering), (half, -half));
+
+        for (values, fault) in [
+            (
+                vec![Fix128::from_int(2), Fix128::ZERO, Fix128::ZERO],
+                ParticipantFault::OutOfRange,
+            ),
+            (
+                vec![Fix128::ZERO, -half, Fix128::ZERO],
+                ParticipantFault::OutOfRange,
+            ),
+            (
+                vec![Fix128::ZERO, Fix128::ZERO, Fix128::from_int(-2)],
+                ParticipantFault::OutOfRange,
+            ),
+            (
+                vec![Fix128::ZERO, Fix128::ZERO],
+                ParticipantFault::InvalidState,
+            ),
+        ] {
+            let mut q = resident().with_inputs(INPUTS);
+            let mut before = Vec::new();
+            q.write_state(&mut before);
+            let (r, f) = run(&mut q, &bodies, Some(&board(&values)));
+            assert_eq!(r, Err(fault), "{values:?}");
+            assert_eq!(f, Vec3Fix::ZERO);
+            let mut after = Vec::new();
+            q.write_state(&mut after);
+            assert_eq!(after, before);
+        }
+        let mut q = resident().with_inputs(INPUTS);
+        assert_eq!(
+            run(&mut q, &bodies, None).0,
+            Err(ParticipantFault::InvalidState)
+        );
+    }
+
+    /// A chassis index past the bodies is `InvalidState`; a static chassis
+    /// is left alone (no force, no state change).
+    #[test]
+    fn chassis_index_and_static_chassis() {
+        let mut p = VehicleParticipant::new(Vehicle::new(VehicleConfig::default()), 3);
+        assert_eq!(
+            run(&mut p, &[chassis()], None).0,
+            Err(ParticipantFault::InvalidState)
+        );
+        let static_body = RigidBody::new_static(chassis().position);
+        let mut p = resident();
+        let (r, f) = run(&mut p, &[static_body], None);
+        assert_eq!((r, f), (Ok(()), Vec3Fix::ZERO));
+        assert_eq!(
+            p.vehicle.wheel_states,
+            Vehicle::new(VehicleConfig::default()).wheel_states
+        );
+    }
+
+    /// The observation reports speed, rpm, gear, inputs and grounded wheels
+    /// in channel order.
+    #[test]
+    fn observation_channels() {
+        let mut p = resident();
+        p.vehicle.current_gear = 1;
+        p.vehicle.throttle = Fix128::ONE;
+        p.vehicle.wheel_states[0].grounded = true;
+        p.vehicle.wheel_states[2].grounded = true;
+        let mut sink = ObservationSink::new();
+        p.observe(&mut sink);
+        let v = sink.values();
+        assert_eq!(v.len(), 7);
+        assert_eq!(
+            v[VEHICLE_OBS_GEAR as usize],
+            (VEHICLE_OBS_GEAR, Fix128::ONE)
+        );
+        assert_eq!(
+            v[VEHICLE_OBS_THROTTLE as usize],
+            (VEHICLE_OBS_THROTTLE, Fix128::ONE)
+        );
+        assert_eq!(
+            v[VEHICLE_OBS_GROUNDED as usize],
+            (VEHICLE_OBS_GROUNDED, Fix128::from_int(2))
+        );
+        assert_eq!(v[VEHICLE_OBS_ENGINE_RPM as usize].1, p.vehicle.engine_rpm);
+        assert_eq!(v[VEHICLE_OBS_SPEED_KMH as usize].1, Fix128::ZERO);
+        assert_eq!(v[VEHICLE_OBS_BRAKE as usize].1, Fix128::ZERO);
+        assert_eq!(v[VEHICLE_OBS_STEERING as usize].1, Fix128::ZERO);
+    }
+
+    /// A gear that does not fit `usize` is refused.
+    #[test]
+    fn gear_out_of_usize_is_refused() {
+        let a = resident();
+        let mut bytes = Vec::new();
+        a.write_state(&mut bytes);
+        bytes[12..20].copy_from_slice(&u64::MAX.to_le_bytes());
+        if usize::try_from(u64::MAX).is_err() {
+            assert_eq!(a.check_state(&bytes), Err(StateError::InvalidValue));
+        } else {
+            assert_eq!(a.check_state(&bytes), Ok(()));
+        }
+    }
 }
