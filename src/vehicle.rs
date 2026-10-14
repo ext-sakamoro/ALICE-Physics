@@ -293,10 +293,27 @@ impl Vehicle {
     /// "is the car settled" logic. Substep-level coupling needs a force
     /// accumulator on `RigidBody`, which is a layout change (`#[repr(C)]`,
     /// FFI header) and therefore a 2.0 item.
-    #[allow(clippy::too_many_lines)]
     pub fn update(&mut self, chassis: &mut RigidBody, dt: Fix128) {
         if chassis.is_static() {
             return;
+        }
+        let force = self.chassis_force(chassis, dt);
+        chassis.apply_impulse(force * dt);
+    }
+
+    /// The force the wheels, the engine, the brakes and the air put on
+    /// `chassis` over a step of `dt`, with the vehicle state advanced as
+    /// [`Self::update`] advances it (wheel contact, suspension, spin, speed,
+    /// engine rpm). The chassis is only read. [`Self::update`] is this force
+    /// applied as one impulse `F·dt`; a world participant can stage it in
+    /// every substep instead.
+    ///
+    /// A static chassis gets no force and the state is left unchanged.
+    #[allow(clippy::too_many_lines)]
+    #[must_use]
+    pub fn chassis_force(&mut self, chassis: &RigidBody, dt: Fix128) -> Vec3Fix {
+        if chassis.is_static() {
+            return Vec3Fix::ZERO;
         }
 
         let forward = chassis.rotation.rotate_vec(Vec3Fix::UNIT_Z);
@@ -477,15 +494,13 @@ impl Vehicle {
             total_force = total_force - up * (self.config.downforce * speed_sq);
         }
 
-        // Apply forces (impulse = force * dt)
-        chassis.apply_impulse(total_force * dt);
-
         // Update engine RPM
         let wheel_rpm = self.speed_kmh.abs() * Fix128::from_ratio(100, 36) * gear_ratio;
         self.engine_rpm = wheel_rpm.abs();
         if self.engine_rpm < self.config.engine.idle_rpm {
             self.engine_rpm = self.config.engine.idle_rpm;
         }
+        total_force
     }
 
     /// Shift gear up
