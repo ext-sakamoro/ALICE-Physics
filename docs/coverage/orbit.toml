@@ -387,7 +387,7 @@ axis = "n-body law"
 item = "N-body gravity among PhysicsWorld bodies (world step as the drift)"
 source = "REBOUND additional forces on a host simulation; Aarseth ch.1"
 status = "partial"
-evidence = "src/nbody.rs::step_world / tests/analytic_nbody.rs::step_world_follows_the_leapfrog_closed_form / tests/analytic_nbody.rs::kick_bodies_ignores_non_dynamic_bodies / tests/analytic_nbody.rs::step_world_keeps_slow_bodies_awake 静的な惑星を引力源にするには force の Point 場 (行 COV-ORBIT-086)"
+evidence = "src/nbody.rs::step_world / tests/analytic_nbody.rs::step_world_follows_the_leapfrog_closed_form / tests/analytic_nbody.rs::kick_bodies_ignores_non_dynamic_bodies / tests/analytic_nbody.rs::step_world_keeps_slow_bodies_awake 静的な惑星を引力源にするには force の Point 場 (行 COV-ORBIT-086) world の参加者としても載る: src/nbody.rs::NBodyParticipant が substep ごとに対の力を staging し、world が substep 幅で積分する (symplectic Euler、円軌道の振れ ±h/2 は tests/analytic_nbody_participant.rs::swing_is_half_the_substep_width、角運動量と運動量の保存は tests/analytic_nbody_participant.rs::momenta_are_conserved_and_energy_is_bounded、snapshot と分岐は tests/analytic_nbody_participant.rs::snapshot_fork_is_bit_identical_and_another_law_is_refused)"
 oracle_candidate = ""
 limitation = "src/nbody.rs::kick_bodies 'Static and kinematic bodies neither feel nor exert the attraction (they have no finite mass)'"
 

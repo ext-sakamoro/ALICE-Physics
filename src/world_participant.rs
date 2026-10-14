@@ -56,6 +56,7 @@
 //! | `CRWD` | `0x4352_5744` | `crowd_force::CrowdParticipant` |
 //! | `MDVV` | `0x4d44_5656` | `molecular_dynamics::MdParticipant` |
 //! | `MEDM` | `0x4d45_444d` | `coupling_medium::DragMedium` |
+//! | `NBDY` | `0x4e42_4459` | `nbody::NBodyParticipant` |
 //!
 //! # Coupling through ports
 //!
