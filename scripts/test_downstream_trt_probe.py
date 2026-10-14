@@ -26,13 +26,21 @@ MSRV = (
     "  alice-ml@0.3.0 requires rustc 1.98.1\n"
 )
 
+COLOURED = (
+    "\x1b[1m\x1b[91merror\x1b[0m\x1b[1m: rustc 1.92.0 is not supported by the following package:\x1b[0m\n"
+    "  alice-ml@0.3.0 requires rustc 1.98.1\n"
+)
+WARN_ONLY = "\x1b[1m\x1b[93mwarning\x1b[0m: unused manifest key\n  --> x\n"
+NO_MATCH = "linker `cc` not found\nsome line\n"
+
 # FAKE_BUILD: ok | fail ; FAKE_RUN: adapter | empty | exit1
 DRIVER = r"""
-set -uo pipefail
+set -euo pipefail
 . "$PROBE"
 cargo() {
     case "$1" in
         build)
+            case " $* " in *" --color never "*) ;; *) [ -z "${REQUIRE_NO_COLOR:-}" ] || { echo "probe built with colour" >&2; return 102; } ;; esac
             if [ "$FAKE_BUILD" = fail ]; then printf '%s' "$FAKE_BUILD_ERR" >&2; return 101; fi
             return 0 ;;
         run)
@@ -50,7 +58,8 @@ echo "RC_SUMMARY=${summary[*]-}"
 """
 
 
-def run_probe(build: str, run: str, script: str = PROBE) -> tuple[str, str]:
+def run_probe(build: str, run: str, script: str = PROBE, build_err: str = MSRV,
+              probe_env: str | None = None) -> tuple[str, str]:
     with tempfile.TemporaryDirectory() as root:
         os.makedirs(os.path.join(root, "logs"))
         os.makedirs(os.path.join(root, "ALICE-TRT"))
@@ -61,9 +70,11 @@ def run_probe(build: str, run: str, script: str = PROBE) -> tuple[str, str]:
             TRT=os.path.join(root, "ALICE-TRT"),
             FAKE_BUILD=build,
             FAKE_RUN=run,
-            FAKE_BUILD_ERR=MSRV,
+            FAKE_BUILD_ERR=build_err,
         )
         env.pop("TRT_GPU_PROBE", None)
+        if probe_env is not None:
+            env["TRT_GPU_PROBE"] = probe_env
         p = subprocess.run(["bash", "-c", DRIVER], env=env, capture_output=True, text=True, check=False)
         return p.stdout, p.stderr
 
@@ -78,6 +89,20 @@ def failures(script: str = PROBE) -> list[str]:
         wrong.append(f"build error message lost: {err!r}")
     if "no GPU adapter" in err or "no GPU adapter" in out:
         wrong.append("build error reported as a missing adapter")
+    for build_err in (COLOURED, NO_MATCH):
+        out, err = run_probe("fail", "adapter", script, build_err=build_err)
+        if "RC_FAILED=trt (GPU probe build failed)" not in out:
+            wrong.append(f"build error {build_err!r}: script did not report it: {out!r}")
+        tail = err.split("the adapter was not asked")[-1]
+        if (": error: rustc 1.92.0" if build_err is COLOURED else "linker") not in tail:
+            wrong.append(f"build error {build_err!r}: message not extracted: {err!r}")
+    os.environ["REQUIRE_NO_COLOR"] = "1"
+    try:
+        out, _ = run_probe("ok", "adapter", script)
+    finally:
+        del os.environ["REQUIRE_NO_COLOR"]
+    if "RC_FAILED=\n" not in out:
+        wrong.append("probe built with colour")
     for run in ("empty", "exit1"):
         out, err = run_probe("ok", run, script)
         if "RC_FAILED=trt (no GPU adapter)" not in out:
@@ -95,6 +120,39 @@ def failures(script: str = PROBE) -> list[str]:
 
 
 class ProbeTest(unittest.TestCase):
+    def test_coloured_error_is_extracted(self) -> None:
+        out, err = run_probe("fail", "adapter", build_err=COLOURED)
+        self.assertIn("RC_FAILED=trt (GPU probe build failed)", out)
+        self.assertIn("failed to build, so the adapter was not asked: error: rustc 1.92.0 is not supported", err)
+        self.assertIn("alice-ml@0.3.0 requires rustc 1.98.1", err.split("not asked:")[1])
+        self.assertNotIn("RC_FAILED=trt (no GPU adapter)", out)
+
+    def test_warning_fallback(self) -> None:
+        out, err = run_probe("fail", "adapter", build_err=WARN_ONLY)
+        self.assertIn("RC_FAILED=trt (GPU probe build failed)", out)
+        self.assertIn("not asked: warning: unused manifest key", err)
+
+    def test_no_match_falls_back_to_last_lines_and_does_not_abort(self) -> None:
+        out, err = run_probe("fail", "adapter", build_err=NO_MATCH)
+        self.assertIn("RC_FAILED=trt (GPU probe build failed)", out)  # the script went on to report
+        self.assertIn("linker `cc` not found", err.split("not asked:")[1])
+
+    def test_skip_path(self) -> None:
+        out, err = run_probe("fail", "empty", probe_env="0")
+        self.assertIn("RC_FAILED=\n", out)
+        self.assertIn("not probed (TRT_GPU_PROBE=0)", out)
+        self.assertIn("GPU probe skipped", out)
+
+    def test_probe_built_without_colour(self) -> None:
+        # the stand-in cargo rejects a build without `--color never`
+        with tempfile.TemporaryDirectory():
+            os.environ["REQUIRE_NO_COLOR"] = "1"
+            try:
+                out, _ = run_probe("ok", "adapter")
+            finally:
+                del os.environ["REQUIRE_NO_COLOR"]
+        self.assertIn("RC_FAILED=\n", out)
+
     def test_script_is_correct(self) -> None:
         self.assertEqual(failures(), [])
 
@@ -122,8 +180,18 @@ class ProbeTest(unittest.TestCase):
         self.assertNotEqual(self.mutated('if ! (cd "$TRT" && cargo build', 'if (cd "$TRT" && cargo build'), [])
 
     def test_mutant_message_dropped(self) -> None:
-        self.assertNotEqual(self.mutated('asked: ${msg:-$(tail -n 1 "$build_log")}', 'asked',
+        self.assertNotEqual(self.mutated('asked: ${msg:-no compiler output}', 'asked',
                                          '    cat "$build_log" >&2\n', ""), [])
+
+    def test_mutant_colour_not_stripped(self) -> None:
+        self.assertNotEqual(self.mutated('s/${esc}\\[[0-9;]*[A-Za-z]//g', 's/NOTHING//g'), [])
+
+    def test_mutant_extraction_fatal(self) -> None:
+        self.assertNotEqual(self.mutated("grep -m1 -A1 '^error' | tr '\\n' ' ' || true)",
+                                         "grep -m1 -A1 '^error' | tr '\\n' ' ')"), [])
+
+    def test_mutant_no_colour_flag_dropped(self) -> None:
+        self.assertNotEqual(self.mutated('cargo build -q --color never', 'cargo build -q'), [])
 
     def test_mutant_empty_output_passes(self) -> None:
         self.assertNotEqual(self.mutated('&& [ -n "$out" ]', ""), [])
