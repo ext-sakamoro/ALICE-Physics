@@ -23,6 +23,7 @@ on:
       - 'Cargo.toml'
       - 'rust-toolchain.toml'
       - 'scripts/downstream_check.sh'
+      - 'scripts/downstream_trt_probe.sh'
       - 'scripts/downstream_select_tag.py'
       - 'scripts/downstream_major_rewrite.py'
       - 'scripts/downstream_test_counts.py'
