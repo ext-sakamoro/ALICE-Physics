@@ -1365,6 +1365,23 @@ mod participant_tests {
             p.vehicle.wheel_states,
             Vehicle::new(VehicleConfig::default()).wheel_states
         );
+
+        // with inputs, the static chassis is still left alone: the inputs are
+        // not recorded in the vehicle state (payload and observation unchanged)
+        let half = Fix128::from_ratio(1, 2);
+        let mut p = resident().with_inputs(INPUTS);
+        let mut before = Vec::new();
+        p.write_state(&mut before);
+        let mut seen_before = ObservationSink::new();
+        p.observe(&mut seen_before);
+        let (r, f) = run(&mut p, &[static_body], Some(&board(&[half, half, half])));
+        assert_eq!((r, f), (Ok(()), Vec3Fix::ZERO));
+        let mut after = Vec::new();
+        p.write_state(&mut after);
+        assert_eq!(after, before);
+        let mut seen_after = ObservationSink::new();
+        p.observe(&mut seen_after);
+        assert_eq!(seen_after.values(), seen_before.values());
     }
 
     /// The observation reports speed, rpm, gear, inputs and grounded wheels
