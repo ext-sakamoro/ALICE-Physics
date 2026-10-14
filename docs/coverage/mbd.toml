@@ -563,7 +563,7 @@ axis = "vehicle"
 item = "simple ray-cast vehicle (forces summed at the centre of mass)"
 source = "Bullet raycast vehicle; PhysX vehicle (simple)"
 status = "partial"
-evidence = "src/vehicle.rs::WheelConfig tests/analytic_vehicle_wiring.rs::spring_force_is_stiffness_times_compression tests/analytic_vehicle_wiring.rs::drive_force_is_torque_over_radius_split_across_driven_grounded_wheels"
+evidence = "src/vehicle.rs::WheelConfig tests/analytic_vehicle_wiring.rs::spring_force_is_stiffness_times_compression tests/analytic_vehicle_wiring.rs::drive_force_is_torque_over_radius_split_across_driven_grounded_wheels world の参加者としても載る: src/vehicle.rs::VehicleParticipant が substep ごとに力を積み、静止の車高が閉形式に 1e-9 で frame 末の縦速度が 1e-12 未満 (tests/analytic_vehicle_participant.rs::suspension_rests_with_zero_frame_end_velocity)、空気抵抗と駆動は閉形式に一致 (tests/analytic_vehicle_participant.rs::drag_follows_the_closed_form_to_first_order_in_the_substep、tests/analytic_vehicle_participant.rs::throttle_drive_follows_the_tanh_closed_form)"
 oracle_candidate = ""
 limitation = "src/vehicle.rs 'forces are summed and applied at the centre of mass as one impulse, so the wheels do not produce yaw or load transfer by themselves.'"
 
