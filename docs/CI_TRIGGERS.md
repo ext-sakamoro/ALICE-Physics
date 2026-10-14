@@ -59,6 +59,7 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `fuzz.yml` | `main, ci/**` | `.github/paths/fuzz.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
 | `integration-status.yml` | `main, ci/**` | `.github/paths/integration-status.txt` | - | - | yes | runs when the paths match | landing |
 | `oracle-status.yml` | `main, ci/**` | `.github/paths/oracle-status.txt` | - | - | yes | runs when the paths match | landing |
+| `public-text.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `python-binding.yml` | `main, ci/**` | `.github/paths/python-binding.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `quality-deep.yml` | - | - | `main (paths)` | yes | yes | - | schedule-only |
 | `reexport_check.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
@@ -194,6 +195,7 @@ only by the fast-forward-only push to `main` and the re-evidence loop above.
 | `fuzz.yml` | landing | success |
 | `integration-status.yml` | landing | success |
 | `oracle-status.yml` | landing | success |
+| `public-text.yml` | landing | success |
 | `python-binding.yml` | landing | success |
 | `reexport_check.yml` | landing | success |
 | `security-audit.yml` | landing | success |
@@ -267,6 +269,7 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
 | `fuzz.yml` |
 | `integration-status.yml` |
 | `oracle-status.yml` |
+| `public-text.yml` |
 | `python-binding.yml` |
 | `quality-deep.yml` |
 | `reexport_check.yml` |

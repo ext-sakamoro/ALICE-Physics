@@ -19,6 +19,7 @@
 "fuzz.yml" = "landing"
 "integration-status.yml" = "landing"
 "oracle-status.yml" = "landing"
+"public-text.yml" = "landing"
 "python-binding.yml" = "landing"
 "quality-deep.yml" = "schedule-only"
 "reexport_check.yml" = "landing"
