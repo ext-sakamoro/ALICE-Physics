@@ -8323,6 +8323,8 @@ pub fn alice_physics::multi_world::MultiWorld::step_all(&mut self, alice_physics
 pub fn alice_physics::multi_world::MultiWorld::step_all_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::multi_world::MultiWorld::total_body_count(&self) -> usize
 pub fn alice_physics::multi_world::MultiWorld::transfer_body(&mut self, usize, usize, usize, alice_physics::math::Vec3Fix) -> core::option::Option<usize>
+pub fn alice_physics::multi_world::MultiWorld::try_step_all(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
+pub fn alice_physics::multi_world::MultiWorld::try_step_all_parallel(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
 pub fn alice_physics::multi_world::MultiWorld::world_count(&self) -> usize
 impl core::default::Default for alice_physics::multi_world::MultiWorld
 pub fn alice_physics::multi_world::MultiWorld::default() -> Self
@@ -13105,6 +13107,8 @@ pub fn alice_physics::multi_world::MultiWorld::step_all(&mut self, alice_physics
 pub fn alice_physics::multi_world::MultiWorld::step_all_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::multi_world::MultiWorld::total_body_count(&self) -> usize
 pub fn alice_physics::multi_world::MultiWorld::transfer_body(&mut self, usize, usize, usize, alice_physics::math::Vec3Fix) -> core::option::Option<usize>
+pub fn alice_physics::multi_world::MultiWorld::try_step_all(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
+pub fn alice_physics::multi_world::MultiWorld::try_step_all_parallel(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
 pub fn alice_physics::multi_world::MultiWorld::world_count(&self) -> usize
 impl core::default::Default for alice_physics::multi_world::MultiWorld
 pub fn alice_physics::multi_world::MultiWorld::default() -> Self
@@ -24366,6 +24370,8 @@ pub fn alice_physics::multi_world::MultiWorld::step_all(&mut self, alice_physics
 pub fn alice_physics::multi_world::MultiWorld::step_all_parallel(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::multi_world::MultiWorld::total_body_count(&self) -> usize
 pub fn alice_physics::multi_world::MultiWorld::transfer_body(&mut self, usize, usize, usize, alice_physics::math::Vec3Fix) -> core::option::Option<usize>
+pub fn alice_physics::multi_world::MultiWorld::try_step_all(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
+pub fn alice_physics::multi_world::MultiWorld::try_step_all_parallel(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
 pub fn alice_physics::multi_world::MultiWorld::world_count(&self) -> usize
 impl core::default::Default for alice_physics::multi_world::MultiWorld
 pub fn alice_physics::multi_world::MultiWorld::default() -> Self

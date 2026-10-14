@@ -12,6 +12,7 @@
 
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::solver::{PhysicsConfig, PhysicsWorld};
+use crate::world_participant::StepError;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -77,6 +78,36 @@ impl MultiWorld {
         self.worlds.par_iter_mut().for_each(|world| {
             world.step(dt);
         });
+    }
+
+    /// Step every world with [`PhysicsWorld::try_step`], in index order, and
+    /// return each world's result (`results[i]` is world `i`'s). A world that
+    /// fails does not stop the others.
+    ///
+    /// [`Self::step_all`] calls [`PhysicsWorld::step`], which is `try_step`
+    /// with the result dropped, so both leave every world bit for bit the
+    /// same; this one also reports participant faults
+    /// ([`StepError::FaultRaised`], then [`StepError::Faulted`] while the
+    /// fault stays recorded) and refused steps.
+    #[must_use = "the results report participant faults; use `step_all` to ignore them"]
+    pub fn try_step_all(&mut self, dt: Fix128) -> Vec<Result<(), StepError>> {
+        self.worlds
+            .iter_mut()
+            .map(|world| world.try_step(dt))
+            .collect()
+    }
+
+    /// [`Self::try_step_all`] with the worlds stepped in parallel using
+    /// Rayon. The results are in world order and equal the sequential ones;
+    /// the worlds are bit for bit those of the sequential call. Requires the
+    /// `parallel` feature.
+    #[cfg(feature = "parallel")]
+    #[must_use = "the results report participant faults; use `step_all_parallel` to ignore them"]
+    pub fn try_step_all_parallel(&mut self, dt: Fix128) -> Vec<Result<(), StepError>> {
+        self.worlds
+            .par_iter_mut()
+            .map(|world| world.try_step(dt))
+            .collect()
     }
 
     /// Transfer a rigid body from one world to another.
@@ -416,5 +447,31 @@ mod tests {
         let mut empty = MultiWorld::new();
         empty.step_all_parallel(dt);
         assert_eq!(empty.world_count(), 0);
+    }
+
+    /// One result per world in world order, and the worlds end as with
+    /// `step_all` (no participants, so every result is `Ok`).
+    #[test]
+    fn try_step_all_returns_one_result_per_world() {
+        let build = || {
+            let mut m = MultiWorld::new();
+            for i in 0..3 {
+                let w = m.add_world(PhysicsConfig::default());
+                m.worlds[w].add_body(RigidBody::new_dynamic(
+                    Vec3Fix::new(Fix128::from_int(i), Fix128::from_int(5), Fix128::ZERO),
+                    Fix128::ONE,
+                ));
+            }
+            m
+        };
+        let mut a = build();
+        let mut b = build();
+        let dt = Fix128::from_ratio(1, 60);
+        assert_eq!(a.try_step_all(dt), vec![Ok(()); 3]);
+        b.step_all(dt);
+        for (x, y) in a.worlds.iter().zip(&b.worlds) {
+            assert_eq!(x.snapshot_world(), y.snapshot_world());
+        }
+        assert!(MultiWorld::new().try_step_all(dt).is_empty());
     }
 }
