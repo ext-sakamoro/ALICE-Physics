@@ -14954,6 +14954,7 @@ pub alice_physics::prelude::Vehicle::steering: alice_physics::math::Fix128
 pub alice_physics::prelude::Vehicle::throttle: alice_physics::math::Fix128
 pub alice_physics::prelude::Vehicle::wheel_states: alloc::vec::Vec<alice_physics::vehicle::WheelState>
 impl alice_physics::vehicle::Vehicle
+pub fn alice_physics::vehicle::Vehicle::chassis_force(&mut self, &alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::vehicle::Vehicle::grounded_wheels(&self) -> usize
 pub fn alice_physics::vehicle::Vehicle::new(alice_physics::vehicle::VehicleConfig) -> Self
 pub fn alice_physics::vehicle::Vehicle::new_default() -> Self
@@ -19136,6 +19137,7 @@ pub alice_physics::vehicle::Vehicle::steering: alice_physics::math::Fix128
 pub alice_physics::vehicle::Vehicle::throttle: alice_physics::math::Fix128
 pub alice_physics::vehicle::Vehicle::wheel_states: alloc::vec::Vec<alice_physics::vehicle::WheelState>
 impl alice_physics::vehicle::Vehicle
+pub fn alice_physics::vehicle::Vehicle::chassis_force(&mut self, &alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::vehicle::Vehicle::grounded_wheels(&self) -> usize
 pub fn alice_physics::vehicle::Vehicle::new(alice_physics::vehicle::VehicleConfig) -> Self
 pub fn alice_physics::vehicle::Vehicle::new_default() -> Self
@@ -19173,6 +19175,27 @@ impl core::marker::Unpin for alice_physics::vehicle::VehicleConfig
 impl core::marker::UnsafeUnpin for alice_physics::vehicle::VehicleConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle::VehicleConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle::VehicleConfig
+pub struct alice_physics::vehicle::VehicleParticipant
+impl alice_physics::vehicle::VehicleParticipant
+pub fn alice_physics::vehicle::VehicleParticipant::new(alice_physics::vehicle::Vehicle, usize) -> Self
+pub fn alice_physics::vehicle::VehicleParticipant::vehicle(&self) -> &alice_physics::vehicle::Vehicle
+pub fn alice_physics::vehicle::VehicleParticipant::with_inputs(self, alice_physics::world_participant::PortId) -> Self
+impl alice_physics::world_participant::Participant for alice_physics::vehicle::VehicleParticipant
+pub fn alice_physics::vehicle::VehicleParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::vehicle::VehicleParticipant::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::vehicle::VehicleParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::vehicle::VehicleParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::vehicle::VehicleParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::vehicle::VehicleParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::vehicle::VehicleParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::vehicle::VehicleParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl core::marker::Freeze for alice_physics::vehicle::VehicleParticipant
+impl core::marker::Send for alice_physics::vehicle::VehicleParticipant
+impl core::marker::Sync for alice_physics::vehicle::VehicleParticipant
+impl core::marker::Unpin for alice_physics::vehicle::VehicleParticipant
+impl core::marker::UnsafeUnpin for alice_physics::vehicle::VehicleParticipant
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle::VehicleParticipant
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle::VehicleParticipant
 pub struct alice_physics::vehicle::WheelConfig
 pub alice_physics::vehicle::WheelConfig::bump_damping: alice_physics::math::Fix128
 pub alice_physics::vehicle::WheelConfig::bump_stop_stiffness: alice_physics::math::Fix128
@@ -19233,6 +19256,18 @@ impl core::marker::Unpin for alice_physics::vehicle::WheelState
 impl core::marker::UnsafeUnpin for alice_physics::vehicle::WheelState
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::vehicle::WheelState
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::vehicle::WheelState
+pub const alice_physics::vehicle::VEHICLE_INPUTS: usize
+pub const alice_physics::vehicle::VEHICLE_INPUT_BRAKE: usize
+pub const alice_physics::vehicle::VEHICLE_INPUT_STEERING: usize
+pub const alice_physics::vehicle::VEHICLE_INPUT_THROTTLE: usize
+pub const alice_physics::vehicle::VEHICLE_OBS_BRAKE: u32
+pub const alice_physics::vehicle::VEHICLE_OBS_ENGINE_RPM: u32
+pub const alice_physics::vehicle::VEHICLE_OBS_GEAR: u32
+pub const alice_physics::vehicle::VEHICLE_OBS_GROUNDED: u32
+pub const alice_physics::vehicle::VEHICLE_OBS_SPEED_KMH: u32
+pub const alice_physics::vehicle::VEHICLE_OBS_STEERING: u32
+pub const alice_physics::vehicle::VEHICLE_OBS_THROTTLE: u32
+pub const alice_physics::vehicle::VEHICLE_PARTICIPANT_KIND: alice_physics::world_participant::ParticipantKind
 pub mod alice_physics::vehicle_dynamics
 pub mod alice_physics::vehicle_dynamics::powertrain
 pub enum alice_physics::vehicle_dynamics::powertrain::Differential
@@ -20274,6 +20309,8 @@ impl core::marker::UnsafeUnpin for alice_physics::world_participant::FieldError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::world_participant::FieldError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::world_participant::FieldError
 #[non_exhaustive] pub enum alice_physics::world_participant::FieldLayout
+pub alice_physics::world_participant::FieldLayout::Channels
+pub alice_physics::world_participant::FieldLayout::Channels::count: usize
 pub alice_physics::world_participant::FieldLayout::Grid
 pub alice_physics::world_participant::FieldLayout::Grid::cell: alice_physics::math::Fix128
 pub alice_physics::world_participant::FieldLayout::Grid::dims: [usize; 3]
@@ -20949,6 +20986,15 @@ pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
 pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
+impl alice_physics::world_participant::Participant for alice_physics::vehicle::VehicleParticipant
+pub fn alice_physics::vehicle::VehicleParticipant::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
+pub fn alice_physics::vehicle::VehicleParticipant::kind(&self) -> alice_physics::world_participant::ParticipantKind
+pub fn alice_physics::vehicle::VehicleParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
+pub fn alice_physics::vehicle::VehicleParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
+pub fn alice_physics::vehicle::VehicleParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::vehicle::VehicleParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
+pub fn alice_physics::vehicle::VehicleParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
+pub fn alice_physics::vehicle::VehicleParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl<P: alice_physics::pair_potential::PairPotential + core::marker::Send> alice_physics::world_participant::Participant for alice_physics::molecular_dynamics::MdParticipant<P>
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::check_state(&self, &[u8]) -> core::result::Result<(), alice_physics::world_participant::StateError>
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::kind(&self) -> alice_physics::world_participant::ParticipantKind
@@ -26343,6 +26389,7 @@ pub alice_physics::Vehicle::steering: alice_physics::math::Fix128
 pub alice_physics::Vehicle::throttle: alice_physics::math::Fix128
 pub alice_physics::Vehicle::wheel_states: alloc::vec::Vec<alice_physics::vehicle::WheelState>
 impl alice_physics::vehicle::Vehicle
+pub fn alice_physics::vehicle::Vehicle::chassis_force(&mut self, &alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::vehicle::Vehicle::grounded_wheels(&self) -> usize
 pub fn alice_physics::vehicle::Vehicle::new(alice_physics::vehicle::VehicleConfig) -> Self
 pub fn alice_physics::vehicle::Vehicle::new_default() -> Self

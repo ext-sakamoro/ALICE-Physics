@@ -29,6 +29,10 @@
 
 use crate::math::{Fix128, Vec3Fix};
 use crate::solver::RigidBody;
+use crate::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, Port, PortId, StateError,
+    SubstepCtx,
+};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec;
@@ -546,6 +550,383 @@ impl core::fmt::Debug for Vehicle {
 // Tests
 // ============================================================================
 
+// ============================================================================
+// World participant
+// ============================================================================
+
+/// Snapshot tag of [`VehicleParticipant`]: the ASCII code `VHCL`, big endian.
+pub const VEHICLE_PARTICIPANT_KIND: ParticipantKind =
+    ParticipantKind::new(u32::from_be_bytes(*b"VHCL"));
+
+/// Number of values in the action field a [`VehicleParticipant`] reads
+/// ([`crate::world_participant::FieldLayout::Channels`] with this count).
+pub const VEHICLE_INPUTS: usize = 3;
+/// Index of the throttle (`0..=1`) in the action field.
+pub const VEHICLE_INPUT_THROTTLE: usize = 0;
+/// Index of the brake (`0..=1`) in the action field.
+pub const VEHICLE_INPUT_BRAKE: usize = 1;
+/// Index of the steering (`−1..=1`) in the action field.
+pub const VEHICLE_INPUT_STEERING: usize = 2;
+
+/// Observation channel: forward speed in km/h.
+pub const VEHICLE_OBS_SPEED_KMH: u32 = 0;
+/// Observation channel: the engine speed indicator ([`Vehicle::engine_rpm`]).
+pub const VEHICLE_OBS_ENGINE_RPM: u32 = 1;
+/// Observation channel: the current gear (0 = first).
+pub const VEHICLE_OBS_GEAR: u32 = 2;
+/// Observation channel: the throttle in force.
+pub const VEHICLE_OBS_THROTTLE: u32 = 3;
+/// Observation channel: the brake in force.
+pub const VEHICLE_OBS_BRAKE: u32 = 4;
+/// Observation channel: the steering in force.
+pub const VEHICLE_OBS_STEERING: u32 = 5;
+/// Observation channel: how many wheels touch the ground.
+pub const VEHICLE_OBS_GROUNDED: u32 = 6;
+
+/// Payload layout version written by [`VehicleParticipant`].
+const VEHICLE_STATE_VERSION: u32 = 1;
+
+/// Bytes of the payload before the wheels: `version: u32`, `digest: u64`,
+/// `gear: u64`, then rpm, throttle, brake, steering, speed (`Fix128`).
+const VEHICLE_STATE_HEAD: usize = 4 + 8 + 8 + 5 * 16;
+
+/// Bytes per wheel: compression, suspension force, spin angle, spin speed,
+/// lateral and longitudinal slip, contact point and ground normal (12
+/// `Fix128`), then `grounded: u8`.
+const VEHICLE_STATE_WHEEL: usize = 12 * 16 + 1;
+
+/// A [`Vehicle`] as a participant of a [`crate::PhysicsWorld`]: it drives
+/// the body `chassis` with the force of [`Vehicle::chassis_force`] in every
+/// substep, so the suspension, drive, brakes and drag are integrated with
+/// the substep width like gravity (the frame-head impulse of
+/// [`Vehicle::update`] leaves the chassis velocity sampled near
+/// `−g·dt/2` at rest; staged per substep it rests).
+///
+/// # Inputs as world state
+///
+/// With [`Self::with_inputs`] the throttle, brake and steering are read in
+/// every substep from a world field declared
+/// [`crate::world_participant::FieldLayout::Channels`] `{ count: VEHICLE_INPUTS }` (indices
+/// [`VEHICLE_INPUT_THROTTLE`], [`VEHICLE_INPUT_BRAKE`],
+/// [`VEHICLE_INPUT_STEERING`]), read committed. The caller writes the field
+/// between steps with [`crate::PhysicsWorld::set_field`]: one write holds for
+/// every substep of the next frame (and the frames after, until the next
+/// write). Because the inputs are world state, a snapshot carries them, a
+/// fork continues with the inputs in force, and a drive is replayed bit for
+/// bit from the initial snapshot and the list of `(frame, inputs)` writes.
+/// Without inputs the vehicle keeps the throttle, brake and steering it was
+/// built with.
+///
+/// # Faults
+///
+/// A throttle or brake outside `0..=1` or a steering outside `−1..=1` is
+/// [`ParticipantFault::OutOfRange`]; an input field of another length or a
+/// chassis index past the world's bodies is
+/// [`ParticipantFault::InvalidState`]. In both cases nothing is staged and
+/// the participant is unchanged. The vehicle's own arithmetic is not
+/// range-checked; the force reaching the body is
+/// (`WorldFault::ForceOutOfRange`). A static chassis gets no force and the
+/// vehicle state is left unchanged.
+///
+/// # Snapshot payload
+///
+/// Little endian: `version: u32` (1), `digest: u64`, the gear (`u64`), the
+/// engine rpm, throttle, brake, steering and speed (`Fix128` each, `hi: i64`,
+/// `lo: u64`), then per wheel the compression, suspension force, spin angle,
+/// spin speed, lateral slip, longitudinal slip, contact point (3) and
+/// ground normal (3) as `Fix128` and `grounded` as one byte. The digest is
+/// FNV-1a 64 over the whole configuration, the chassis index and the input
+/// field; [`Participant::check_state`] refuses a payload of another length
+/// ([`StateError::Length`]), version or digest ([`StateError::InvalidValue`]).
+pub struct VehicleParticipant {
+    vehicle: Vehicle,
+    chassis: usize,
+    inputs: Option<PortId>,
+    ports: Vec<Port>,
+    digest: u64,
+}
+
+impl VehicleParticipant {
+    /// The participant driving body `chassis` with `vehicle`, its inputs
+    /// those the vehicle holds.
+    #[must_use]
+    pub fn new(vehicle: Vehicle, chassis: usize) -> Self {
+        let digest = vehicle_digest(&vehicle.config, chassis, None);
+        Self {
+            vehicle,
+            chassis,
+            inputs: None,
+            ports: Vec::new(),
+            digest,
+        }
+    }
+
+    /// Read the throttle, brake and steering from the world field `field`
+    /// (declared [`crate::world_participant::FieldLayout::Channels`] `{ count: VEHICLE_INPUTS }`
+    /// before this participant is registered).
+    #[must_use]
+    pub fn with_inputs(mut self, field: PortId) -> Self {
+        self.inputs = Some(field);
+        self.ports = vec![Port::reads_committed(field)];
+        self.digest = vehicle_digest(&self.vehicle.config, self.chassis, Some(field));
+        self
+    }
+
+    /// The vehicle and its state.
+    #[must_use]
+    pub fn vehicle(&self) -> &Vehicle {
+        &self.vehicle
+    }
+
+    /// The throttle, brake and steering for this substep (checked), or the
+    /// fault.
+    fn inputs(&self, ctx: &SubstepCtx<'_>) -> Result<Option<[Fix128; 3]>, ParticipantFault> {
+        let Some(id) = self.inputs else {
+            return Ok(None);
+        };
+        let values = ctx.field(id).map_err(|_| ParticipantFault::InvalidState)?;
+        if values.len() != VEHICLE_INPUTS {
+            return Err(ParticipantFault::InvalidState);
+        }
+        let (zero, one) = (Fix128::ZERO, Fix128::ONE);
+        let throttle = values[VEHICLE_INPUT_THROTTLE];
+        let brake = values[VEHICLE_INPUT_BRAKE];
+        let steering = values[VEHICLE_INPUT_STEERING];
+        if !(zero..=one).contains(&throttle)
+            || !(zero..=one).contains(&brake)
+            || !(-one..=one).contains(&steering)
+        {
+            return Err(ParticipantFault::OutOfRange);
+        }
+        Ok(Some([throttle, brake, steering]))
+    }
+}
+
+fn vehicle_digest(config: &VehicleConfig, chassis: usize, inputs: Option<PortId>) -> u64 {
+    let mut h = Fnv::new();
+    h.word(config.wheels.len() as u64);
+    for w in &config.wheels {
+        h.vec(w.local_position);
+        for f in [
+            w.suspension_rest,
+            w.spring_stiffness,
+            w.damping,
+            w.radius,
+            w.max_steer_angle,
+            w.progressive_rate,
+            w.bump_damping,
+            w.rebound_damping,
+            w.bump_stop_stiffness,
+            w.bump_stop_threshold,
+        ] {
+            h.fix(f);
+        }
+        h.word(u64::from(w.driven) | (u64::from(w.has_brake) << 1));
+    }
+    let e = &config.engine;
+    for f in [e.max_torque, e.max_rpm, e.idle_rpm, e.engine_brake] {
+        h.fix(f);
+    }
+    h.word(e.num_gears as u64);
+    h.word(config.gear_ratios.len() as u64);
+    for &g in &config.gear_ratios {
+        h.fix(g);
+    }
+    for f in [
+        config.brake_force,
+        config.aero_drag,
+        config.downforce,
+        config.ground_height,
+        config.anti_roll_stiffness,
+    ] {
+        h.fix(f);
+    }
+    h.word(chassis as u64);
+    h.word(inputs.map_or(u64::MAX, |p| u64::from(p.get())));
+    h.0
+}
+
+/// FNV-1a 64.
+struct Fnv(u64);
+
+impl Fnv {
+    const fn new() -> Self {
+        Self(0xcbf2_9ce4_8422_2325)
+    }
+    fn bytes(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.0 ^= u64::from(b);
+            self.0 = self.0.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    fn word(&mut self, w: u64) {
+        self.bytes(&w.to_le_bytes());
+    }
+    fn fix(&mut self, f: Fix128) {
+        self.bytes(&f.hi.to_le_bytes());
+        self.bytes(&f.lo.to_le_bytes());
+    }
+    fn vec(&mut self, v: Vec3Fix) {
+        self.fix(v.x);
+        self.fix(v.y);
+        self.fix(v.z);
+    }
+}
+
+fn put_fix(out: &mut Vec<u8>, f: Fix128) {
+    out.extend_from_slice(&f.hi.to_le_bytes());
+    out.extend_from_slice(&f.lo.to_le_bytes());
+}
+
+fn get_fix(bytes: &[u8], at: &mut usize) -> Fix128 {
+    let mut hi = [0u8; 8];
+    let mut lo = [0u8; 8];
+    hi.copy_from_slice(&bytes[*at..*at + 8]);
+    lo.copy_from_slice(&bytes[*at + 8..*at + 16]);
+    *at += 16;
+    Fix128 {
+        hi: i64::from_le_bytes(hi),
+        lo: u64::from_le_bytes(lo),
+    }
+}
+
+fn get_u64(bytes: &[u8], at: &mut usize) -> u64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&bytes[*at..*at + 8]);
+    *at += 8;
+    u64::from_le_bytes(b)
+}
+
+impl Participant for VehicleParticipant {
+    fn kind(&self) -> ParticipantKind {
+        VEHICLE_PARTICIPANT_KIND
+    }
+
+    fn ports(&self) -> &[Port] {
+        &self.ports
+    }
+
+    fn substep(&mut self, ctx: &mut SubstepCtx<'_>, h: Fix128) -> Result<(), ParticipantFault> {
+        let inputs = self.inputs(ctx)?;
+        let force = {
+            let Some(body) = ctx.bodies().get(self.chassis) else {
+                return Err(ParticipantFault::InvalidState);
+            };
+            if body.is_static() {
+                return Ok(());
+            }
+            if let Some([throttle, brake, steering]) = inputs {
+                self.vehicle.throttle = throttle;
+                self.vehicle.brake = brake;
+                self.vehicle.steering = steering;
+            }
+            self.vehicle.chassis_force(body, h)
+        };
+        ctx.add_force(self.chassis, force)
+            .map_err(|_| ParticipantFault::InvalidState)
+    }
+
+    fn observe(&self, out: &mut ObservationSink) {
+        let v = &self.vehicle;
+        let grounded = v.wheel_states.iter().filter(|w| w.grounded).count();
+        out.push(VEHICLE_OBS_SPEED_KMH, v.speed_kmh);
+        out.push(VEHICLE_OBS_ENGINE_RPM, v.engine_rpm);
+        out.push(VEHICLE_OBS_GEAR, Fix128::from_int(v.current_gear as i64));
+        out.push(VEHICLE_OBS_THROTTLE, v.throttle);
+        out.push(VEHICLE_OBS_BRAKE, v.brake);
+        out.push(VEHICLE_OBS_STEERING, v.steering);
+        out.push(VEHICLE_OBS_GROUNDED, Fix128::from_int(grounded as i64));
+    }
+
+    fn write_state(&self, out: &mut Vec<u8>) {
+        let v = &self.vehicle;
+        out.extend_from_slice(&VEHICLE_STATE_VERSION.to_le_bytes());
+        out.extend_from_slice(&self.digest.to_le_bytes());
+        out.extend_from_slice(&(v.current_gear as u64).to_le_bytes());
+        for f in [v.engine_rpm, v.throttle, v.brake, v.steering, v.speed_kmh] {
+            put_fix(out, f);
+        }
+        for w in &v.wheel_states {
+            for f in [
+                w.compression,
+                w.suspension_force,
+                w.spin_angle,
+                w.spin_speed,
+                w.lateral_slip,
+                w.longitudinal_slip,
+                w.contact_point.x,
+                w.contact_point.y,
+                w.contact_point.z,
+                w.ground_normal.x,
+                w.ground_normal.y,
+                w.ground_normal.z,
+            ] {
+                put_fix(out, f);
+            }
+            out.extend_from_slice(&[u8::from(w.grounded)]);
+        }
+    }
+
+    fn check_state(&self, bytes: &[u8]) -> Result<(), StateError> {
+        let expected = VEHICLE_STATE_HEAD + VEHICLE_STATE_WHEEL * self.vehicle.wheel_states.len();
+        if bytes.len() != expected {
+            return Err(StateError::Length {
+                expected,
+                found: bytes.len(),
+            });
+        }
+        let mut version = [0u8; 4];
+        version.copy_from_slice(&bytes[0..4]);
+        let mut at = 4;
+        let digest = get_u64(bytes, &mut at);
+        let gear = get_u64(bytes, &mut at);
+        if u32::from_le_bytes(version) != VEHICLE_STATE_VERSION
+            || digest != self.digest
+            || usize::try_from(gear).is_err()
+        {
+            return Err(StateError::InvalidValue);
+        }
+        let mut at = 4 + 8 + 8 + 5 * 16;
+        for _ in 0..self.vehicle.wheel_states.len() {
+            at += 12 * 16;
+            if bytes[at] > 1 {
+                return Err(StateError::InvalidValue);
+            }
+            at += 1;
+        }
+        Ok(())
+    }
+
+    fn read_state(&mut self, bytes: &[u8]) {
+        let v = &mut self.vehicle;
+        let mut at = 4 + 8;
+        v.current_gear = usize::try_from(get_u64(bytes, &mut at)).unwrap_or_default();
+        v.engine_rpm = get_fix(bytes, &mut at);
+        v.throttle = get_fix(bytes, &mut at);
+        v.brake = get_fix(bytes, &mut at);
+        v.steering = get_fix(bytes, &mut at);
+        v.speed_kmh = get_fix(bytes, &mut at);
+        for w in &mut v.wheel_states {
+            w.compression = get_fix(bytes, &mut at);
+            w.suspension_force = get_fix(bytes, &mut at);
+            w.spin_angle = get_fix(bytes, &mut at);
+            w.spin_speed = get_fix(bytes, &mut at);
+            w.lateral_slip = get_fix(bytes, &mut at);
+            w.longitudinal_slip = get_fix(bytes, &mut at);
+            let cx = get_fix(bytes, &mut at);
+            let cy = get_fix(bytes, &mut at);
+            let cz = get_fix(bytes, &mut at);
+            w.contact_point = Vec3Fix::new(cx, cy, cz);
+            let nx = get_fix(bytes, &mut at);
+            let ny = get_fix(bytes, &mut at);
+            let nz = get_fix(bytes, &mut at);
+            w.ground_normal = Vec3Fix::new(nx, ny, nz);
+            w.grounded = bytes[at] == 1;
+            at += 1;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -776,5 +1157,77 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod participant_tests {
+    use super::*;
+    #[cfg(not(feature = "std"))]
+    use alloc::vec::Vec;
+
+    fn resident() -> VehicleParticipant {
+        VehicleParticipant::new(Vehicle::new(VehicleConfig::default()), 0)
+    }
+
+    /// The kind is `VHCL`; the digest separates the configuration, the
+    /// chassis index and the input field.
+    #[test]
+    fn kind_and_digest() {
+        let a = resident();
+        assert_eq!(a.kind().get(), 0x5648_434c);
+        let mut config = VehicleConfig::default();
+        config.aero_drag = config.aero_drag + Fix128::ONE;
+        assert_ne!(
+            a.digest,
+            VehicleParticipant::new(Vehicle::new(config), 0).digest
+        );
+        assert_ne!(
+            a.digest,
+            VehicleParticipant::new(Vehicle::new(VehicleConfig::default()), 1).digest
+        );
+        let with = resident().with_inputs(PortId::new(7));
+        assert_ne!(a.digest, with.digest);
+        assert_eq!(with.ports(), &[Port::reads_committed(PortId::new(7))]);
+        assert!(a.ports().is_empty());
+    }
+
+    /// The payload reads back what was written, and is refused with the
+    /// stated error for another length, version, digest, gear or grounded
+    /// byte.
+    #[test]
+    fn payload_round_trip_and_refusals() {
+        let mut a = resident();
+        a.vehicle.current_gear = 2;
+        a.vehicle.throttle = Fix128::from_ratio(1, 2);
+        a.vehicle.wheel_states[1].grounded = true;
+        a.vehicle.wheel_states[3].spin_angle = Fix128::from_int(7);
+        let mut bytes = Vec::new();
+        a.write_state(&mut bytes);
+        let expected = VEHICLE_STATE_HEAD + 4 * VEHICLE_STATE_WHEEL;
+        assert_eq!(bytes.len(), expected);
+        let mut b = resident();
+        assert_eq!(b.check_state(&bytes), Ok(()));
+        b.read_state(&bytes);
+        let mut again = Vec::new();
+        b.write_state(&mut again);
+        assert_eq!(again, bytes);
+        assert_eq!(b.vehicle.wheel_states, a.vehicle.wheel_states);
+        assert_eq!(
+            b.check_state(&bytes[1..]),
+            Err(StateError::Length {
+                expected,
+                found: expected - 1
+            })
+        );
+        let mut bad = bytes.clone();
+        bad[0] = 9;
+        assert_eq!(b.check_state(&bad), Err(StateError::InvalidValue));
+        let mut bad = bytes.clone();
+        bad[4] ^= 1;
+        assert_eq!(b.check_state(&bad), Err(StateError::InvalidValue));
+        let mut bad = bytes.clone();
+        bad[VEHICLE_STATE_HEAD + 12 * 16] = 2;
+        assert_eq!(b.check_state(&bad), Err(StateError::InvalidValue));
     }
 }
