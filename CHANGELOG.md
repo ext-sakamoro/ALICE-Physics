@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- `MultiWorld::try_step_all` (と `parallel` の `try_step_all_parallel`): 各 world を `PhysicsWorld::try_step` で進め、world の順に結果を返す 参加者の fault (`FaultRaised`、記録が残る間は `Faulted`) と拒否された step が呼び手に届く (`step_all` は `step` を呼ぶので結果を捨てる) 1 つの world の失敗は他を止めない `step` は結果を捨てた `try_step` なので、world は `step_all` と bit 一致 `step_all` は変えていない 試験 `tests/multi_world_try_step_all.rs`: world ごとの結果が単独の `try_step` と一致 (fault の起きた frame とその後) / 30 frame 後の world が `step_all` と bit 一致 (fault の起きた world と参加者の無い world を含む) / 空と `dt ≤ 0` / 並列で thread 1・2・8 の結果と world が逐次と一致 変異 4 件 (fault を捨てる / 順を逆にする / 最初の失敗で止める / 並列で fault を捨てる) はすべて失敗する
+
 ### Changed
 
 - CI: 上限の無かった 32 job に `timeout-minutes` を付けた (止まった step は共有 runner を GitHub の上限の 6 時間まで占有しうる) 値は直近の成功した run 15 本の所要時間の最大の 2 倍・中央値の 4 倍の大きい方を 5 分単位に切り上げ、cargo を使う job は最低 15 分、他は最低 10 分 `test` は leg ごとに決める: macOS Intel (最大 192 分、平均 100 分) は 2 倍が上限を超えるので hosted runner の上限の 360 分、Windows (最大 80 分) 160 分、他の leg (最大 60 分) 120 分 既に上限のある job は変えていない `scripts/workflow_timeouts.py` (試験 `scripts/test_workflow_timeouts.py`、ALICE-LOL と byte 一致) が全 job の上限を検査し、job を 1 つも読めなければ失敗する CI (actionlint job) と preflight で走る
