@@ -145,6 +145,11 @@ jobs:
         run: python scripts/test_docs_lint.py
       - name: Docs lint (public documents, CHANGELOG structure)
         run: python scripts/docs_lint.py --check
+      # no built library or executable is tracked outside .github/tracked-binaries.txt
+      - name: Tracked binaries (tests)
+        run: python scripts/test_tracked_binaries.py
+      - name: Tracked binaries (no built binary is tracked)
+        run: python scripts/tracked_binaries.py
       # coverage tables (docs/coverage/*.toml, hand-written): every cited test and
       # source symbol exists, oracles are not ignored, partial items and the
       # LIMITATION(<id>) comments in src/ point at each other

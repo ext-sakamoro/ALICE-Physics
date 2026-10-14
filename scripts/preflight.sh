@@ -88,6 +88,10 @@ python3 scripts/csprng_guard.py
 python3 scripts/test_docs_lint.py
 python3 scripts/docs_lint.py --check
 
+step "tracked binaries (no built library or executable is tracked)"
+python3 scripts/test_tracked_binaries.py
+python3 scripts/tracked_binaries.py
+
 step "SCIP reach analysis oracle (docs/integration-status.md の解析器)"
 python3 scripts/test_scip_reach.py
 python3 scripts/test_audit_refs.py
