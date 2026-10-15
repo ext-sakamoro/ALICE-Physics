@@ -22,7 +22,10 @@
 //! numbers (they are data, not the code under test) so that the tolerance
 //! only has to absorb Fix128 rounding of the arithmetic.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Norton creep A sigma^n dt and Findley e0 + m t^n per material for structural_solver creep"
+)]
 
 use alice_physics::beam_stress::{CrossSection, LoadCase};
 use alice_physics::creep_longterm::FindleyParameters;

@@ -33,7 +33,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 lidar range to a wall 5/(cos e cos a) and Gaussian moments of DeterministicRng"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::plane_collider::PlaneCollider;

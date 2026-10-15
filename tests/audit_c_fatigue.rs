@@ -7,7 +7,6 @@
 //! `1e6 / 32 = 31250` cycles exactly, so 31250 cycles are a damage of one and
 //! one cycle is `1 / 31250`.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::fatigue::{miner_damage, SnCurve};
 use alice_physics::filament_db::MaterialProperties;

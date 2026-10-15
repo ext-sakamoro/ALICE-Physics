@@ -48,7 +48,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cos/sin of a quarter-turn build the rigid rotation that must give zero stress in large-rotation FEM"
+)]
 
 use alice_physics::linear_elastic_fem::{
     solve, solve_corotational, BoundaryConditions, CorotationalConfig, ElasticMaterial,

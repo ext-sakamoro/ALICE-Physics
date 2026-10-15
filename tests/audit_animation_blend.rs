@@ -2,7 +2,10 @@
 //! Reference values: linear interpolation of keyframes, constant-angular-velocity SLERP about a
 //! fixed axis (closed form: rotation by `t * arc`), loop/clamp time arithmetic, and the stated
 //! transition speed (weight units per second).
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 constant-angular-velocity SLERP rotation and angle 2 atan2(|v|, w) for animation_blend"
+)]
 
 use alice_physics::animation_blend::{
     AnimationBlender, AnimationClip, BlendMode, BonePose, Keyframe, SkeletonPose,

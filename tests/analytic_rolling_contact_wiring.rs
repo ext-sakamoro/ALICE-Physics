@@ -64,7 +64,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Hertz contact radius cubed a^3 = 3PR/(4E*) for the flat-rail rolling_contact case"
+)]
 
 use alice_physics::rolling_contact::{
     basquin_cycles_to_failure, hertzian_sphere_sphere, materials, rolling_contact_life_cycles,

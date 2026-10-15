@@ -4,7 +4,6 @@
 //! trajectory (independent of the closed forms in `src/ccd.rs`) and against
 //! first-principles geometry. Scenes come from a fixed LCG so runs are
 //! reproducible.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::ccd::{
     aabb_plane_toi, adaptive_toi_substeps, capsule_plane_toi, conservative_advancement, needs_ccd,

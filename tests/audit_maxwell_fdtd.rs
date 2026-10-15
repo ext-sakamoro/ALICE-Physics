@@ -2,7 +2,11 @@
 //! closed forms of the pml helpers. Expected values are derived by hand from Faraday / Ampere on
 //! the Yee lattice, not read back from the solver.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 PML theoretical reflection exp(-2 sum sigma) closed form for maxwell_fdtd"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::maxwell_fdtd::{

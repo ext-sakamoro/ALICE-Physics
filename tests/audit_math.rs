@@ -3,7 +3,10 @@
 //! References are independent of the implementation: i128 / 256-bit integer arithmetic for the
 //! fixed-point operators, f64 libm for transcendental functions (accuracy ~1e-16, far below the
 //! tolerances used), closed forms for geometry.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm sin/cos/exp/ln/atan against Fix128 transcendentals in the math audit"
+)]
 #![allow(clippy::many_single_char_names)]
 
 use alice_physics::math::{Fix128, Mat3Fix, PolarError, QuatFix, Vec3Fix};

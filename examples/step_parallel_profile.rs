@@ -15,8 +15,6 @@
 //!   mode: "step" | "step_parallel"
 //!
 //! Prints a single line: `TOTAL_MS <f64> FRAMES <usize> SUBSTEPS <u32>`
-// a timing harness: it prints how long the steps took, the steps do not read the clock
-#![allow(clippy::disallowed_methods)]
 
 use std::time::Instant;
 
@@ -54,6 +52,10 @@ fn main() {
     let mut world = build_world(substeps);
     let dt = Fix128::from_ratio(1, 60);
 
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: total wall time of the step_parallel profile that is printed"
+    )]
     let start = Instant::now();
     match mode {
         "step" => {
@@ -77,6 +79,10 @@ fn main() {
             std::process::exit(1);
         }
     }
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: total wall time of the step_parallel profile that is printed"
+    )]
     let elapsed = start.elapsed();
 
     // Keep the final state live so the compiler cannot elide the loop.

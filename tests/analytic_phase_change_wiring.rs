@@ -16,7 +16,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
 use alice_physics::sim_modifier::PhysicsModifier;

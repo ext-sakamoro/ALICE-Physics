@@ -20,7 +20,10 @@
 //!
 //! Nothing here touches `src/`.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 exp envelope of structural damping decay exp(-zeta wn t) in the Facchinetti wake-oscillator VIV test"
+)]
 
 use alice_physics::aeroelasticity::{viv_step, VivParameters, VivState};
 use core::f64::consts::PI;

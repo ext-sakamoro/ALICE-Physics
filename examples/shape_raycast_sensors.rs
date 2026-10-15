@@ -8,8 +8,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::collider::Capsule;
 use alice_physics::compound::CompoundShape;
 use alice_physics::heightfield::HeightField;

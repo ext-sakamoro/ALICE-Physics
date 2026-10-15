@@ -61,8 +61,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-// The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::laminate_failure::{
     failure_index, hashin_failure_mode, puck_failure_mode, tsai_hill_failure_index,

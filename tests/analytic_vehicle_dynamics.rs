@@ -31,7 +31,10 @@
 //! `μ_s = 1.0`, `μ_k = 0.8` unless stated.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Ackermann turning radius sqrt((L/tan delta)^2 + b^2) and pitch asin for vehicle_dynamics"
+)]
 
 use alice_physics::anisotropic_friction::AnisotropicFriction;
 use alice_physics::buoyancy_zone::ZoneShape;

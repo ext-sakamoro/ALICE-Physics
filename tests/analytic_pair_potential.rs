@@ -31,7 +31,10 @@
 
 #![cfg(feature = "std")]
 // f64 `powi` / `exp` / `sqrt` compute closed-form references, not state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Lennard-Jones 4 eps[(s/r)^12 - (s/r)^6], Morse and Yukawa closed forms for pair_potential"
+)]
 
 use alice_physics::electromagnetic::EmSource;
 use alice_physics::math::{Fix128, Vec3Fix};

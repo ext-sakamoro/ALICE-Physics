@@ -21,7 +21,10 @@
 // The f64 values in this file are the *oracle* (closed-form references and
 // tolerance arithmetic), not simulation state, so the det_math determinism
 // gate (disallowed f32/f64 libm calls) does not apply.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 free-fall bound 2 + g t^2/2 for the default FluidConfig block falling as a whole"
+)]
 
 use alice_physics::audio_physics::{AudioConfig, AudioEventType, AudioGenerator, AudioMaterial};
 use alice_physics::character::{CharacterConfig, CharacterController};

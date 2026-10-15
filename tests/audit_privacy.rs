@@ -11,7 +11,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 #![allow(clippy::needless_range_loop)]
 // The deprecated privacy types (not differentially private) stay pinned here
 // until the breaking release that removes them
@@ -158,6 +157,10 @@ fn xorshift_range_and_bool_frequencies() {
 
 // ------------------------------------------------------------------ Laplace
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: Laplace CDF 1/2 exp(x/b) and 1 - 1/2 exp(-x/b) that the noise histogram is compared with"
+)]
 fn laplace_cdf(x: f64, b: f64) -> f64 {
     if x < 0.0 {
         0.5 * (x / b).exp()
@@ -279,6 +282,10 @@ fn invalid_parameters_are_refused_instead_of_producing_non_finite_output() {
 /// Worst-case likelihood ratio of a report for the two inputs, for the mechanism
 /// "truth with probability p, otherwise a fair random bit" (the module's own
 /// description): epsilon = ln((p + (1-p)/2) / ((1-p)/2)).
+#[allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: randomized response epsilon = ln((p + (1-p)/2) / ((1-p)/2))"
+)]
 fn rr_epsilon(p: f64) -> f64 {
     ((p + 0.5 * (1.0 - p)) / (0.5 * (1.0 - p))).ln()
 }
@@ -415,6 +422,10 @@ fn rappor_clamps_its_parameters_to_the_documented_ranges() {
 
 #[test]
 #[ignore = "known defect: AUD-A-S4W3-023: Rappor::default_params documents 'approximately epsilon = 2' but with f = 0.5, p = 0.75, q = 0.25 each Bloom bit has likelihood ratio 5/3 (epsilon 0.51) and two values differ in up to 6 bits, so one report has epsilon up to 3.07 (the permanent-response bound is 6.59)"]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: RAPPOR per-bit epsilon ln(max(a/c, (1-c)/(1-a))) from Erlingsson et al."
+)]
 fn rappor_default_params_epsilon_is_about_two() {
     let (f, p, q) = Rappor::default_params().params();
     // P(out = 1 | bloom = 1), P(out = 1 | bloom = 0)
@@ -517,6 +528,10 @@ fn aggregator_sum_mean_count_and_reset() {
 #[test]
 fn from_entropy_seed_is_not_recoverable_from_the_clock() {
     use std::time::{SystemTime, UNIX_EPOCH};
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: brackets the clock-seeded constructor with clock reads to bound its seed"
+    )]
     let now = || {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)

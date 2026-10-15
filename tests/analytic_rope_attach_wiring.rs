@@ -9,7 +9,6 @@
 //!   subtracted, i.e. velocity -= correction / dt where correction = rope shift);
 //! * break test is `lambda / dt^2 > break_force` (strict).
 //! * anchor world point = `body.position + rotate(body.rotation, local_anchor)`.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::rope_attach::{

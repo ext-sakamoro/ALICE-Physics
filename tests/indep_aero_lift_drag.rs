@@ -20,7 +20,10 @@
 
 #![cfg(feature = "std")]
 // f64 trig computes references outside the crate.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 flow direction (cos a, -sin a) and post-stall C_L/C_D blend for lift_drag force checks"
+)]
 
 use std::f64::consts::PI;
 

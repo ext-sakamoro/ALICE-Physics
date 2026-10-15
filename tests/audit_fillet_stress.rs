@@ -3,7 +3,6 @@
 //! implementation: the shoulder fillet is checked against `pilkey`, an f64
 //! transcription of the published Peterson curve fit (Pilkey, Formulas for
 //! Stress, Strain, and Structural Matrices 2nd ed.), written here separately.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::fillet_stress::*;
 use alice_physics::math::Fix128;

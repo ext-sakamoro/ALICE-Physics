@@ -19,7 +19,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 damped velocity d^n and restitution bounce speed for contact filters in the XPBD velocity pass"
+)]
 
 use alice_physics::collider::Contact;
 use alice_physics::math::{Fix128, Vec3Fix};

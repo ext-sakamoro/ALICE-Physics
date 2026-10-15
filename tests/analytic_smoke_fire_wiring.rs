@@ -58,7 +58,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Arrhenius rate A exp(-Ea/(R T)) rho_f rho_o and temperature ratio for smoke_fire combustion"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::smoke_fire::{

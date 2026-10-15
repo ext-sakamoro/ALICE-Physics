@@ -18,7 +18,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 ball volume 4/3 pi r^3 and torus volume 2 pi^2 R r^2 for SDF-generated collision meshes"
+)]
 
 use alice_physics::collision_mesh_gen::{
     compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,

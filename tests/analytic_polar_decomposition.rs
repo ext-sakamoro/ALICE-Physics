@@ -42,7 +42,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "measurement table: powi only appears in an eprintln of |det F|/max|F|^3 flatness for the polar-decomposition degeneracy sweep"
+)]
 
 use alice_physics::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
 

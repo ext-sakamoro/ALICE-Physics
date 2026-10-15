@@ -164,7 +164,10 @@ fn hll_small_range_uses_linear_counting_closed_form() {
         h.insert_hash((1u64 << 63) | idx as u64);
     }
     let zeros = (m - k) as f64;
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: f64 HyperLogLog linear counting m ln(m/zeros) for the small-range estimator"
+    )]
     let want = m as f64 * (m as f64 / zeros).ln();
     let got = h.cardinality();
     assert!((got - want).abs() < 1e-9 * want, "{got} vs {want}");
@@ -366,7 +369,10 @@ fn hll_linear_counting_applies_up_to_two_and_a_half_m() {
         raw > 2.0 * m as f64 && raw <= 2.5 * m as f64,
         "scene raw {raw}"
     );
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: f64 HyperLogLog linear counting m ln(m/24) up to 2.5 m for the sketch estimator"
+    )]
     let want = m as f64 * (m as f64 / 24.0).ln();
     let got = h.cardinality();
     assert!((got - want).abs() < 1e-9 * want, "{got} vs {want}");

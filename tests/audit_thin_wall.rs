@@ -11,7 +11,8 @@
     clippy::disallowed_methods,
     clippy::field_reassign_with_default,
     clippy::unnecessary_map_or,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 box SDF |max(q, 0)| built by hand for the thin_wall wall-thickness definition"
 )]
 
 use alice_physics::math::{Fix128, Vec3Fix};

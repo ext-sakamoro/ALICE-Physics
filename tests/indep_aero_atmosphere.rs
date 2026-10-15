@@ -24,7 +24,10 @@
 
 #![cfg(feature = "std")]
 // f64 `ln` / `exp` / `powf` compute references outside the crate.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 hydrostatic pressure P0 exp(-g0 M/R int dh/T) and troposphere density power law for Isa1976"
+)]
 
 use alice_physics::atmosphere::{AtmosphereState, Isa1976, IsaError};
 use alice_physics::math::Fix128;

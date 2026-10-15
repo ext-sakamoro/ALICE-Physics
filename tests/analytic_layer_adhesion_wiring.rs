@@ -26,7 +26,6 @@
 //! Nothing here touches `src/`.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::filament_db::MaterialProperties;
 use alice_physics::layer_adhesion::{EffectiveStrength, PrintOrientation};

@@ -7,7 +7,10 @@
 //! values here are closed forms (mass-weighted XPBD projection, constraint
 //! residual of the documented equation), not the module's own formulas.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 z-rotation and weld torque sin(phi/2) for pulley / gear / weld joint_extra solves"
+)]
 
 use alice_physics::joint_extra::{
     solve_extra_joints, solve_pulley_to_length, ExtraJoint, GearJoint, MouseJoint, PulleyJoint,

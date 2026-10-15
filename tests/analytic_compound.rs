@@ -17,7 +17,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 parallel-axis inertia of capsule children and quadrature of the rotated compound union for mass properties"
+)]
 // Matrix oracles index rows and columns on purpose: `t[a][b]` reads as the maths does.
 #![allow(clippy::needless_range_loop)]
 

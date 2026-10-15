@@ -237,7 +237,10 @@ fn friction_cones_mu_zero_boundary_half_angle_near_zero() {
 /// Independent oracle: platform `f64::atan(1_000_000.0)`, a different
 /// algorithm from `Fix128::atan`'s CORDIC implementation.
 #[test]
-#[allow(clippy::disallowed_methods)] // independent f64 libm oracle, never fed back into Fix128 state
+#[allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 atan(mu) half-angle of the friction cone for very large mu, approaching pi/2 in generate_friction_cones"
+)]
 fn friction_cones_very_large_mu_boundary_half_angle_approaches_half_pi() {
     let mu = Fix128::from_int(1_000_000);
     let half_angle_ref = 1_000_000.0_f64.atan();
@@ -279,7 +282,10 @@ fn friction_cones_negative_normal_force_height_is_not_clamped() {
 #[test]
 fn friction_cones_zero_normal_degenerates_normal_not_half_angle_or_height() {
     let mu = Fix128::from_ratio(3, 10); // 0.3
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: f64 atan(0.3) friction cone half-angle expected for the zero-normal degenerate contact in generate_friction_cones"
+    )]
     // independent f64 libm oracle, never fed back into Fix128 state
     let half_angle_ref = 0.3_f64.atan();
     let contacts = [(Vec3Fix::ZERO, Vec3Fix::ZERO, Fix128::from_int(9))];

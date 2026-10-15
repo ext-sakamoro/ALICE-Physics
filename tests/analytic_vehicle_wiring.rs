@@ -9,7 +9,11 @@
 //! zeroed in the config (`aero_drag`, `downforce`, `anti_roll_stiffness`).
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::field_reassign_with_default)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::field_reassign_with_default,
+    reason = "analytic reference: f64 steering force components 2 F sin(delta), F (cos(delta) - 1) of the coded lateral friction model"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::RigidBody;

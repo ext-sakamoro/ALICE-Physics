@@ -18,7 +18,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cylinder/cone support value r sin(theta) + h cos(theta) for directions 2^-e off the axis"
+)]
 
 use alice_physics::collider::Support;
 use alice_physics::cone::Cone;

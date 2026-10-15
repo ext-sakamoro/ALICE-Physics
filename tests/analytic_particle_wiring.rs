@@ -9,7 +9,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "measured quantity: acos turns the emitted velocity into an angle, asserted within the cone half-angle spread/2"
+)]
 
 use alice_physics::force::ForceField;
 use alice_physics::math::{Fix128, Vec3Fix};

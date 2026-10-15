@@ -43,7 +43,10 @@
 
 #![cfg(feature = "std")]
 // f64 transcendentals compute reference values, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 port of the Toro exact Riemann solver (PREFUN/GUESSP pressure functions) for euler_fv references"
+)]
 
 use alice_physics::compressible::{normal_shock_jump, IdealGas};
 use alice_physics::euler_fv::{

@@ -5,7 +5,11 @@
 //! independent rotation-matrix extraction of the rotation error (so the 3-D
 //! controller is not checked against its own quaternion product).
 
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 rotation matrix and rotation-vector extraction acos((tr - 1)/2) for PD motor error"
+)]
 
 use alice_physics::joint::{BallJoint, Joint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

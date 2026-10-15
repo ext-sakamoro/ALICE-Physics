@@ -8,7 +8,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 explosion falloff 100 * (1 - d/R)^n with fractional n for force fields"
+)]
 #![allow(clippy::needless_range_loop)]
 
 use alice_physics::force::{apply_force_fields, compute_force, ForceField, ForceFieldInstance};

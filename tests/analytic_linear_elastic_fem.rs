@@ -40,7 +40,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 von Mises stress closed form sqrt(0.5 * sum of squared principal differences) for linear elastic FEM"
+)]
 
 use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
 use alice_physics::linear_elastic_fem::{

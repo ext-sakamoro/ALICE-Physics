@@ -33,7 +33,10 @@ fn close(actual: f64, expected: f64, rel_tol: f64) -> bool {
 }
 
 #[test]
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm ln compared with Fix128::ln across magnitudes at 1e-9 relative tolerance"
+)]
 fn ln_matches_f64_reference_across_magnitudes() {
     for &x in &[
         0.5,
@@ -80,7 +83,10 @@ fn ln_is_additive_under_multiplication() {
 }
 
 #[test]
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "test input: powi builds the input ladder 0.01 * 2^k for the monotonicity check of Fix128 ln"
+)]
 fn ln_is_monotonically_increasing() {
     let mut prev = Fix128::from_f64(0.01).ln();
     for k in 0..40 {

@@ -43,7 +43,10 @@
 
 #![cfg(feature = "std")]
 // Expected values are f64 closed forms and a f64 reference bisection.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 log-law u+ = ln(y+)/kappa + B and viscous sublayer edge for the turbulence wall model"
+)]
 
 use alice_physics::cfd_solver::{
     CfdSolver, PressureSolver, PressureSolverError, StepError, StepOptions, WallModel,

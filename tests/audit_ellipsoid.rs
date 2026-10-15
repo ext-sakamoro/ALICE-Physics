@@ -5,7 +5,11 @@
 //! parametric sample of the surface, the textbook volume and inertia, and an
 //! independent f64 Rodrigues rotation.
 
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 Rodrigues rotation, parametric surface samples and implicit membership for Ellipsoid"
+)]
 
 use alice_physics::collider::Support;
 use alice_physics::ellipsoid::Ellipsoid;

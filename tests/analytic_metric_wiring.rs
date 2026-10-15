@@ -6,7 +6,10 @@
 //!   AND against the explicit extremal directions derived by hand:
 //!   max at `h ~ (w1+winf, w1, w1)`, min at `(1,..,1)/sqrt(k)` over `k` axes
 //! * metric axioms for non-negative weights (homogeneity, triangle inequality, symmetry)
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 sphere sweep directions (sin th cos ph, ...) brute-forcing MetricWeights lipschitz and minimum"
+)]
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::metric::{MetricError, MetricWeights};

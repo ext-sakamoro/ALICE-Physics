@@ -25,7 +25,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 damped displacement and slope gravity g sin/cos(atan mu) for XPBD static friction (Mueller et al. 2020)"
+)]
 
 use alice_physics::collider::Contact;
 use alice_physics::math::{Fix128, Vec3Fix};

@@ -16,7 +16,6 @@
 //! there is no axial load. The plastic model's own yield stress is a public
 //! field and is set independently of the material.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::beam_stress::{CrossSection, LoadCase};
 use alice_physics::filament_db::MaterialProperties;

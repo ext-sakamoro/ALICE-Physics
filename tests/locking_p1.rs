@@ -45,7 +45,10 @@
 // printed slope and nothing that is asserted to the bit. Same exemption, and
 // same reason, as `tests/mms_linear_elastic.rs` and
 // `tests/analytic_fem_convergence.rs`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Euler-Bernoulli tip deflection PL^3/(3EI) for the P1 locking measurement"
+)]
 
 use alice_physics::linear_elastic_fem::{
     solve, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, FemSolution,

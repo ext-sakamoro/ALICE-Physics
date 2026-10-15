@@ -9,7 +9,10 @@
 //! cargo run --release --example sph_spatial_hash --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: brute-force squared distance to every particle checks all inside kernel radius h were visited by the hash"
+)]
 
 use alice_physics::sdf_sph::{SphParticle, SphSpatialHash};
 

@@ -19,7 +19,10 @@
 //!   nothing, a snapshot of another vehicle is refused, the parallel step
 //!   agrees, a digest of a drive is pinned, and the crate's semantics
 //!   identifier is the one main had.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 throttle velocity v* tanh(t sqrt(F c)/m) closed form for VehicleParticipant drive"
+)]
 
 use alice_physics::solver::DeclareFieldError;
 use alice_physics::vehicle::{

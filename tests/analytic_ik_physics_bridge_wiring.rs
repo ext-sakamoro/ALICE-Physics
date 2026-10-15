@@ -3,7 +3,10 @@
 //! immovable body, and (driven through `RagdollBuilder`) steers a bone to a target.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 geometric convergence 10 - 8 * 0.5^n of repeated ik_physics_bridge stabilisation passes"
+)]
 
 use alice_physics::ik_physics_bridge::{IkTarget, IkTargetSet};
 use alice_physics::math::{Fix128, Vec3Fix};

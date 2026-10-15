@@ -36,8 +36,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::ccd::{sphere_sphere_toi, TOI};
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::plane_collider::PlaneCollider;

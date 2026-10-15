@@ -38,7 +38,10 @@
 // outside the crate, not simulation state, so the determinism gate on f64
 // transcendentals does not apply (same convention as
 // tests/analytic_added_mass_coupling.rs).
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 wind turbulence base + turb sin(2 pi f t) closed form for WindZone instantaneous_wind_vector"
+)]
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

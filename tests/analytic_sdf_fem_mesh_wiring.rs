@@ -26,8 +26,6 @@
 #![cfg(feature = "std")]
 // The reference computations below work in plain f32/f64 geometry; the
 // crate's own determinism gate (`Fix128` + `alice_physics::det_math`) is not
-// in scope for an independent check written against it.
-#![allow(clippy::disallowed_methods)]
 
 use std::panic::{self, AssertUnwindSafe};
 

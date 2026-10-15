@@ -24,7 +24,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cone/cylinder signed distance and cast directions for curved sphere/capsule casts"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::shape::Shape;

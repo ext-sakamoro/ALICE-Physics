@@ -53,7 +53,10 @@
 //! by fewer than `N` ulp. That bound is derived from the arithmetic, not tuned
 //! to an observation.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 dual-cell weight 2^-b of the conserved sum for plastic dissipation heat diffusion"
+)]
 
 use alice_physics::coupled_field::{CoupledField, TemperatureRise};
 use alice_physics::linear_elastic_fem::{

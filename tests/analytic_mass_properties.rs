@@ -13,7 +13,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
 #![allow(clippy::disallowed_types)]
 // Matrix oracles index rows and columns on purpose: `t[a][b]` reads as the maths does.

@@ -1,7 +1,10 @@
 //! Audit oracles for `alice_physics::multiphase`.
 //! Expected values: hand-derived closed forms (translation of a slab, affine reproduction by
 //! trilinear interpolation, Laplacian of a signed-distance sphere = 2/rho).
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 mean curvature -12/13^1.5 of the analytic level set for multiphase curvature"
+)]
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::multiphase::{

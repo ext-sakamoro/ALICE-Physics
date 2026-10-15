@@ -9,7 +9,10 @@
 //! cargo run --release --example sdf_manifold_patch --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "measured quantity: atan2 orders the simulated contact points to measure the patch area, asserted against 1.0"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};

@@ -6,7 +6,10 @@
 //! * `angle_to_z_axis = acos(z_rot / |v|)` after `R_Y R_X` (matrices rebuilt here in f64)
 //! * the grid optimum equals an independent f64 brute force over the same grid; a load already
 //!   in the layer plane (X or Y) cannot be improved, a load along Z gains `sigma_xy - sigma_z`
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 rotation of the load axis and effective yield sigma_z cos^2 + sigma_xy sin^2 for print_orientation"
+)]
 
 use alice_physics::filament_db::MaterialProperties;
 use alice_physics::math::Fix128;

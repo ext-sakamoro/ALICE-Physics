@@ -28,7 +28,6 @@
 //! fixed-point rounding (`~1e-18`); `1e-9` is four orders below one substep's sink. The
 //! narrow-phase values are closed forms of exactly representable inputs (rotations by
 //! `pi/2` / `pi/4` are the only inexact step), checked to `1e-12`.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
 use alice_physics::physics2d::{

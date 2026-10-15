@@ -2,7 +2,10 @@
 //! Expectations come from closed forms (trilinear interpolation, discrete heat equation,
 //! exponential relaxation, arithmetic / weighted means), not from the implementation.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 diffusion growth factors 0.96^40 / 1.04^40 and decay exp(-1) for coupled_field"
+)]
 
 use alice_physics::coupled_field::*;
 use alice_physics::math::{Fix128, Vec3Fix};

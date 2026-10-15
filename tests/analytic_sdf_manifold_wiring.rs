@@ -9,7 +9,10 @@
 //! maximises the contact area is the square's four corners (area 1.0).
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 radial distance on the curved SDF surface for the deepest sdf_manifold contact"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};

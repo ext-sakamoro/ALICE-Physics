@@ -18,7 +18,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 XPBD gap fraction d0 * ratio^k for repeated compliant joint solves (Macklin, Mueller, Chentanez 2016)"
+)]
 
 #[allow(deprecated)] // the separation-based variant is pinned below
 use alice_physics::joint::solve_joints_breakable;

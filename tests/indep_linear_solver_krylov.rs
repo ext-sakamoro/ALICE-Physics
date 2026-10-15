@@ -19,7 +19,11 @@
 
 #![cfg(feature = "std")]
 // f64 `cos` only builds the reference spectrum; dense loops index matrices.
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 Poisson 2D eigenvalues 4 - 2 cos(i pi/7) - 2 cos(j pi/7) counted for GMRES termination"
+)]
 
 use alice_physics::linear_solver::{
     bicgstab, gmres, BreakdownKind, DenseMatrix, FnOperator, IdentityPreconditioner,

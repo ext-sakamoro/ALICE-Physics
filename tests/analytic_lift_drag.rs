@@ -32,7 +32,10 @@
 #![cfg(feature = "std")]
 // f64 transcendentals here compute closed-form references outside the
 // crate, not simulation state (same convention as the other analytic tests).
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 thin-aerofoil C_L = 2 pi alpha, flat-plate post-stall 2 sin^2 alpha and induced drag (Anderson) for lift_drag"
+)]
 
 use std::f64::consts::PI;
 

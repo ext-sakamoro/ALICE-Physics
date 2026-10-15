@@ -20,7 +20,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "test input: cbrt sizes the crowd floor so the body density stays constant as the count grows"
+)]
 #![allow(clippy::needless_range_loop)]
 
 use alice_physics::collider::{contact, Sphere};

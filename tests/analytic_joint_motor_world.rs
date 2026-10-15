@@ -55,7 +55,10 @@
 
 // The expected values are closed forms evaluated in f64 here, outside the
 // deterministic path, so the platform libm is fine for them.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 PD motor velocity closed form (1 - h kp/I)^n and first-order response 1 - exp(-2kt) for joint motors"
+)]
 
 use alice_physics::joint::{BallJoint, HingeJoint, Joint};
 use alice_physics::motor::{MotorMode, PdController};

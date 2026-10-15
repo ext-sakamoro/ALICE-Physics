@@ -11,8 +11,6 @@
 //! cargo run --release --example nbody_figure_eight
 //! ```
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::nbody::{kinetic_energy, total_momentum, DirectSum, VelocityVerlet};
 use alice_physics::{PhysicsConfig, PhysicsWorld, RigidBody};

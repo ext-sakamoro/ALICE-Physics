@@ -18,7 +18,10 @@
 
 #![cfg(feature = "std")]
 // f64 `powf` / `powi` / `exp` compute closed-form references, not state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 pedestrian relaxation v0 + (v - v0) e^(-n x) and LJ r_min = 2^(1/6) for crowd and MD participants"
+)]
 
 use alice_physics::crowd_force::{
     CrowdParticipant, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,

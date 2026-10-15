@@ -83,7 +83,10 @@
 // into `Fix128` production state -- same convention as
 // `tests/engineering_oracles_solid.rs` and
 // `tests/analytic_laminate_failure_wiring.rs`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cos/sin feed the Jones Q-bar ply rotation formula for laminate ABD matrix references"
+)]
 
 use alice_physics::anisotropic::OrthotropicElasticity;
 use alice_physics::laminate::{compute_abd, is_symmetric_stack, AbdMatrix, Ply, Sym3};

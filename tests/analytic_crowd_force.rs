@@ -41,7 +41,10 @@
 
 #![cfg(feature = "std")]
 // f64 transcendentals compute closed-form references, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Helbing social force relaxation v0 + (v - v0) e^(-t/tau) and its discrete (1 - dt/tau)^n form"
+)]
 
 use alice_physics::crowd_force::{
     CrowdForceError, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,

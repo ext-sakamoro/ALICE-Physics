@@ -65,8 +65,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-// The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::coupled_field::{CoupledField, TemperatureRise};
 use alice_physics::linear_elastic_fem::{

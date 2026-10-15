@@ -18,7 +18,10 @@
 #![cfg(feature = "std")]
 // the oracles are closed forms in f64 with the platform libm (exp, powi),
 // independent of the fixed-point code they check; nothing here reads the clock
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Arrhenius rate A exp(-Ea/(R T)) (Turns ch. 4) and Fix128 resolution 2^-64 for smoke_fire"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::smoke_fire::{

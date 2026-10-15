@@ -8,7 +8,6 @@
 
 #![cfg(feature = "std")]
 #![allow(
-    clippy::disallowed_methods,
     clippy::field_reassign_with_default,
     clippy::unnecessary_map_or,
     clippy::needless_range_loop

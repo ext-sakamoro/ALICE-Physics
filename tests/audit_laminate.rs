@@ -1,6 +1,5 @@
 //! Audit S1-5 oracles for `alice_physics::laminate` (Jones, Mechanics of Composite
 //! Materials ch. 2 and 4: closed-form Q-bar rotation and ABD for simple stacks).
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::anisotropic::OrthotropicElasticity;
 use alice_physics::laminate::*;

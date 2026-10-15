@@ -705,6 +705,11 @@ jobs:
         run: python3 scripts/test_no_private_minmax.py
       - name: Private max / min guard (no local copy of alice-det-math's max / min)
         run: python3 scripts/no_private_minmax.py
+      # every allow of the libm / clock ban states its reason, and none hides a clock read
+      - name: Allow reason guard (test first)
+        run: python3 scripts/test_allow_reason_guard.py
+      - name: Allow reason guard (reasons stated, no wide allow over a clock read)
+        run: python3 scripts/allow_reason_guard.py
       - name: Predictable randomness guard (test first)
         run: python3 scripts/test_csprng_guard.py
       - name: Predictable randomness guard

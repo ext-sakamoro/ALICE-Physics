@@ -43,7 +43,10 @@
 //! | world 全体の step | 2 体・格子の scene は 2⁶¹ まで平行移動で bit 一致 | — |
 
 // 参照値と許容幅の計算にだけ f64 の libm を使う (判定は緩い許容幅で、bit 一致は求めない)
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm sin/exp/ln/atan values compared with Fix128 transcendentals at boundary inputs 2^30..2^62"
+)]
 
 use alice_physics::sdf_collider::collide_sphere_sdf;
 use alice_physics::solver::Broadphase;

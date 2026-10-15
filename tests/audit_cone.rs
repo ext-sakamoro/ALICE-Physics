@@ -7,7 +7,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Rodrigues rotation and boundary sampling r (cos a, sin a) for cone support and AABB"
+)]
 #![allow(clippy::needless_range_loop)]
 
 use alice_physics::collider::Support;

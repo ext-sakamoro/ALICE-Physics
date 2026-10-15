@@ -11,7 +11,10 @@
 //! Units: km, s, `μ = 398 600.4418 km³/s²` (a test-local value; the crate
 //! carries no body constants).
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 Newton Kepler solver and vis-viva / orbit radius a(1-e^2)/(1+e cos nu) (Vallado, Meeus) for kepler"
+)]
 
 use alice_physics::kepler::{
     j2_arg_periapsis_rate, j2_raan_rate, mean_from_true_anomaly, mean_motion, orbital_period,

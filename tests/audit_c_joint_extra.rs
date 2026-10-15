@@ -7,7 +7,10 @@
 //! `lambda = C / (w_1 + ratio^2 w_2)`; and, for the dispatch, each joint solved alone
 //! on its own bodies.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 z-rotation quaternion and angle 2 atan2(z, w) for gear / rack-and-pinion XPBD projections"
+)]
 
 use alice_physics::joint_extra::{
     solve_extra_joints, ExtraJoint, GearJoint, MouseJoint, PulleyJoint, RackAndPinionJoint,

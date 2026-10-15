@@ -18,7 +18,6 @@
 //! Nothing here touches `src/`.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::bridging::{analyze_bridges, check_span, BridgeSpan, BridgingReport};
 use alice_physics::filament_db::MaterialProperties;

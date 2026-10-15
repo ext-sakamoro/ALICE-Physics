@@ -15,7 +15,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 viscous shear-mode decay exp(-nu pi^2 t/L^2) and SPH spiky gradient for fluid modules"
+)]
 
 use alice_physics::acoustic_wave::{leapfrog_step, speeds, stable_dt};
 use alice_physics::aeroelasticity::{viv_step, VivParameters, VivState};

@@ -27,7 +27,10 @@
 //! No expected value is produced by calling the code under test.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 LJ dimer stiffness 72 eps/(2^(1/3) sigma^2) and r_eq = 2^(1/6) sigma for molecular_dynamics"
+)]
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::molecular_dynamics::{MdError, PeriodicBox, VelocityVerlet};

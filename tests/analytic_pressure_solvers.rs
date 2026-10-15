@@ -51,7 +51,10 @@
 
 #![cfg(feature = "std")]
 // Bounds are closed-form f64 evaluations of the grid parameters, not state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 residual floor 2^-24 in the expected divergence bound for CfdSolver pressure solvers"
+)]
 
 use alice_physics::cfd_solver::{CfdSolver, PressureSolver, PressureSolverError};
 use alice_physics::eulerian_grid::MacGrid;

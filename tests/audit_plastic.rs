@@ -21,7 +21,8 @@
     clippy::disallowed_methods,
     clippy::field_reassign_with_default,
     clippy::unnecessary_map_or,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 radial return plastic strain f0/h (1 - r^n) and Norton creep A sigma^n dt for plastic"
 )]
 
 use alice_physics::beam_stress::{CrossSection, LoadCase};

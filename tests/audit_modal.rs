@@ -11,7 +11,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 hollow section second moment pi/64 (od^4 - id^4) and plate rigidity for modal frequencies (Rao, Blevins)"
+)]
 
 use alice_physics::beam_stress::CrossSection;
 use alice_physics::filament_db::MaterialProperties;

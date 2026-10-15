@@ -18,7 +18,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Hertz contact radius cbrt(3PR*/(4E*)) (Johnson) and Basquin power law for misc engineering modules"
+)]
 
 use alice_physics::anisotropic_friction::AnisotropicFriction;
 use alice_physics::filament_db::{MaterialCategory, MaterialProperties};

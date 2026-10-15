@@ -17,8 +17,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-// f64 `powi` / `sqrt` are oracle references computed outside the crate.
-#![allow(clippy::disallowed_methods)]
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

@@ -7,7 +7,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 poly6 kernel density sum 315/(64 pi h^9) (h^2 - r^2)^3 and rest spacing cbrt(m/rho) for Fluid::new_block"
+)]
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

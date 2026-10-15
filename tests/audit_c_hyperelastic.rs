@@ -11,7 +11,7 @@
 //! takes the same number of steps as the finite-difference Newton iteration;
 //! a tangent that is off by a constant converges linearly and takes more.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::many_single_char_names)]
+#![allow(clippy::many_single_char_names)]
 
 use alice_physics::hyperelastic::{cauchy_stress, volumetric_modulus, HyperelasticModel};
 use alice_physics::linear_elastic_fem::{

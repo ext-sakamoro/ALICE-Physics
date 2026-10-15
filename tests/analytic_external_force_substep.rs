@@ -47,8 +47,6 @@
 
 #![cfg(feature = "std")]
 // The f64 values here are the oracle (closed-form references), not
-// simulation state, so the det_math determinism gate does not apply.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::force::{ForceField, ForceFieldInstance};
 use alice_physics::math::{Fix128, Vec3Fix};

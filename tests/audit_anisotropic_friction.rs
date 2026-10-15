@@ -1,7 +1,6 @@
 //! Audit oracles for `alice_physics::anisotropic_friction`.
 //! Expected values come from the friction-ellipse closed form
 //! F = -N * diag(mu) * v_hat (hand derived), not from the implementation.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::anisotropic_friction::AnisotropicFriction;
 use alice_physics::math::{Fix128, Vec3Fix};

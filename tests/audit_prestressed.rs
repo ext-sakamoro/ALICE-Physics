@@ -1,7 +1,10 @@
 //! Audit oracle for `prestressed`: independent derivations, not copies of the
 //! formulas in `src/prestressed.rs`.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 catenary sag a (cosh(L/2a) - 1) limit for prestressed cable pretension"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::prestressed::{

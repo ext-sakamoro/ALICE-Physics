@@ -8,11 +8,7 @@
 //! * the normal of a modified field is the unit gradient of the modified
 //!   distance; for `d' = |p| - 1 + k x` it is `(p / |p| + (k, 0, 0))`
 //!   normalised.
-#![allow(
-    clippy::disallowed_methods,
-    clippy::type_complexity,
-    clippy::needless_range_loop
-)]
+#![allow(clippy::type_complexity, clippy::needless_range_loop)]
 
 use alice_physics::sdf_collider::{ClosureSdf, SdfField};
 use alice_physics::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};

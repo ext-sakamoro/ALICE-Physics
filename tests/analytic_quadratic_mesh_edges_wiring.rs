@@ -8,7 +8,6 @@
 //!   elements in order and each element's pairs `(0,1) (0,2) (0,3) (1,2) (1,3) (2,3)`
 //! * the node of an edge sits at the exact midpoint of its two corners (`1/2` is exact in binary)
 //! * `edge_node` is symmetric and `None` for pairs that are not an edge of any tet
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
 use alice_physics::quadratic_elastic_fem::QuadraticMesh;

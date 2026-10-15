@@ -524,7 +524,7 @@
 
 #![cfg(feature = "std")]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types, clippy::disallowed_methods)]
+#![allow(clippy::disallowed_types)]
 
 use alice_physics::cfd_solver::CfdSolver;
 use alice_physics::eulerian_grid::{FaceBc, MacGrid};
@@ -2688,6 +2688,10 @@ fn trace_x_1(setting: &TraceSetting) -> Trace {
          dt=1/{dt_recip} steps={steps} courant={:.4}",
         1.5 * dt.to_f64() / dx
     );
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: elapsed seconds printed in the Armaly x_1 trace, never part of a result"
+    )]
     let start = std::time::Instant::now();
     let mut last: Option<f64> = None;
     let faces = |g: &alice_physics::eulerian_grid::MacGrid| -> Vec<f64> {
@@ -2751,12 +2755,17 @@ fn trace_x_1(setting: &TraceSetting) -> Trace {
                 t_settle = Some(t);
             }
             unsteadiness_previous = unsteadiness;
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: elapsed seconds printed in the Armaly x_1 trace, never part of a result"
+            )]
+            let elapsed = start.elapsed().as_secs_f64();
             println!(
                 "[x_1 trace] ny={ny} {scheme_name} t={t:7.1} x_1={x_1:?} upper={separation:?}..{reattachment:?} \
                  max|du/dt|={unsteadiness:.3e} dx_1={x_1_moved:.2e} max|div|={:.2e} \
                  t_settle={t_settle:?} elapsed={:.0}s",
                 max_abs_divergence(&solver.grid),
-                start.elapsed().as_secs_f64()
+                elapsed
             );
             last = x_1;
             if stop_when_settled && t_settle.is_some() {

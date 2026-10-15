@@ -32,7 +32,10 @@
 //! cargo run --release --example vehicle_dynamics --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: slope tan theta = 0.5 gives the plane normal and the drift bound g sin theta dt^2 asserted for the parked car"
+)]
 
 use alice_physics::heightfield::HeightField;
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

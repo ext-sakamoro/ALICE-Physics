@@ -38,7 +38,10 @@
 // printed slope and nothing that is asserted to the bit. Same exemption, and
 // same reason, as `tests/mms_linear_elastic.rs` and
 // `tests/analytic_fem_convergence.rs`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 observed convergence order and slope log2 of error ratios for the P2 oracle design"
+)]
 
 use alice_physics::linear_elastic_fem::{
     solve, Axis, BoundaryConditions, ElasticMaterial, SolverConfig,

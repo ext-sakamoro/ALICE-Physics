@@ -19,8 +19,6 @@
 //! cargo run --example structural_fatigue_buckling_per_material
 //! ```
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::beam_stress::{CrossSection, LoadCase};
 use alice_physics::fatigue::SnCurve;
 use alice_physics::filament_db::MaterialProperties;

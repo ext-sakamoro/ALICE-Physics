@@ -4999,8 +4999,6 @@ pub fn p2g_normalized_with(
 // ============================================================================
 
 #[cfg(test)]
-// the deadlines and timings in these tests time the run, never the result
-#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     #[cfg(not(feature = "std"))]
@@ -6315,6 +6313,10 @@ mod tests {
         listener
             .set_nonblocking(true)
             .expect("poll for rank 1 instead of blocking on it");
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let deadline = Instant::now() + Duration::from_secs(60);
         let link = loop {
             match listener.accept() {
@@ -6332,10 +6334,12 @@ mod tests {
                      `{XPROC_CHILD}` still name a test?"
                 );
             }
-            assert!(
-                Instant::now() < deadline,
-                "rank 1 did not connect within 60 s",
-            );
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+            )]
+            let now = Instant::now();
+            assert!(now < deadline, "rank 1 did not connect within 60 s");
             std::thread::sleep(Duration::from_millis(2));
         };
         link.set_nonblocking(false)
@@ -6798,12 +6802,21 @@ mod tests {
     fn reap_child_ranks(kids: &mut [std::process::Child]) {
         use std::time::{Duration, Instant};
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let deadline = Instant::now() + Duration::from_secs(60);
         for kid in kids {
             loop {
+                #[allow(
+                    clippy::disallowed_methods,
+                    reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+                )]
+                let now = Instant::now();
                 match kid.try_wait() {
                     Ok(Some(_)) | Err(_) => break,
-                    Ok(None) if Instant::now() >= deadline => {
+                    Ok(None) if now >= deadline => {
                         let _ = kid.kill();
                         let _ = kid.wait();
                         break;
@@ -6824,6 +6837,10 @@ mod tests {
         listener
             .set_nonblocking(true)
             .expect("poll for a peer rank instead of blocking on it");
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             match listener.accept() {
@@ -6837,10 +6854,12 @@ mod tests {
                 Err(e) if e.kind() == ErrorKind::WouldBlock => {}
                 Err(e) => panic!("accepting {who} failed: {e}"),
             }
-            assert!(
-                Instant::now() < deadline,
-                "{who} did not connect within 60 s"
-            );
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+            )]
+            let now = Instant::now();
+            assert!(now < deadline, "{who} did not connect within 60 s");
             std::thread::sleep(Duration::from_millis(2));
         }
     }
@@ -6875,6 +6894,10 @@ mod tests {
             listener
                 .set_nonblocking(true)
                 .expect("poll for a child rank instead of blocking on it");
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+            )]
             let deadline = Instant::now() + Duration::from_secs(60);
             let link = loop {
                 match listener.accept() {
@@ -6891,10 +6914,12 @@ mod tests {
                         );
                     }
                 }
-                assert!(
-                    Instant::now() < deadline,
-                    "rank {rank} did not connect within 60 s",
-                );
+                #[allow(
+                    clippy::disallowed_methods,
+                    reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+                )]
+                let now = Instant::now();
+                assert!(now < deadline, "rank {rank} did not connect within 60 s");
                 std::thread::sleep(Duration::from_millis(2));
             };
             link.set_nonblocking(false)
@@ -7823,6 +7848,10 @@ mod tests {
         let b = slab_bounds(n, ranks, rank);
         let (k0, k1) = b;
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let t0 = std::time::Instant::now();
         let mut faces = SlabFaces::new(n, n, n, dx, b);
         for k in k0..k1 {
@@ -7833,18 +7862,38 @@ mod tests {
             }
         }
         let mut storage = SlabStorage::for_slab(plane, n, b, 1);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let seeded = t0.elapsed();
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let t1 = std::time::Instant::now();
         let stencil = SlabStencil::build(&faces, rho * dx * dx / dt);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let stencil_built = t1.elapsed();
 
         let bytes = storage.bytes().add(faces.bytes()).add(stencil.bytes());
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let t2 = std::time::Instant::now();
         for colour in 0..2u32 {
             sweep_slab_colour(&mut storage, &faces, &stencil, colour);
         }
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let swept = t2.elapsed();
 
         let owned = (k1 - k0) * plane;
@@ -7924,11 +7973,24 @@ mod tests {
             for (i, slot) in grid.u.iter_mut().enumerate() {
                 *slot = probe_u(i);
             }
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+            )]
             let t = std::time::Instant::now();
             project_pressure_red_black_gs(&mut grid, dt, rho, 1);
-            t.elapsed()
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+            )]
+            let took = t.elapsed();
+            took
         };
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let t0 = std::time::Instant::now();
         let mut faces: Vec<SlabFaces> = bounds
             .iter()
@@ -7951,8 +8013,16 @@ mod tests {
                 .collect(),
             staging: vec![Fix128::ZERO; plane],
         };
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let seeded = t0.elapsed();
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let t1 = std::time::Instant::now();
         project_pressure_slab_local_over(
             &mut faces,
@@ -7962,6 +8032,10 @@ mod tests {
             HaloSchedule::EverySweep,
             &mut transport,
         );
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let solved = t1.elapsed();
 
         let per_rank: Vec<usize> = faces
@@ -9211,6 +9285,10 @@ mod tests {
             listener
                 .set_nonblocking(true)
                 .expect("poll for a child rank instead of blocking on it");
+            #[allow(
+                clippy::disallowed_methods,
+                reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+            )]
             let deadline = Instant::now() + Duration::from_secs(60);
             let link = loop {
                 match listener.accept() {
@@ -9227,10 +9305,12 @@ mod tests {
                         );
                     }
                 }
-                assert!(
-                    Instant::now() < deadline,
-                    "a child rank did not connect within 60 s",
-                );
+                #[allow(
+                    clippy::disallowed_methods,
+                    reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+                )]
+                let now = Instant::now();
+                assert!(now < deadline, "a child rank did not connect within 60 s");
                 std::thread::sleep(Duration::from_millis(2));
             };
             link.set_nonblocking(false)
@@ -10504,14 +10584,23 @@ mod tests {
             scene = run.scene,
             iterations = run.iterations,
         );
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
         let started = std::time::Instant::now();
         let (folds, whole) =
             assert_banded_slab_processes_agree(run.n, run.ranks, run.scene, run.iterations);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: deadlines and per-cell timings of the solver tests, never part of a result"
+        )]
+        let took = started.elapsed();
         println!(
             "  agreed in {:?} ({:.1} ns per cell per iteration, distributed and single-process \
              runs together)",
-            started.elapsed(),
-            started.elapsed().as_secs_f64() * 1.0e9 / (cells * run.iterations as usize) as f64,
+            took,
+            took.as_secs_f64() * 1.0e9 / (cells * run.iterations as usize) as f64,
         );
         // ⚠️ What the assertions above establish is that *this machine's*
         // distributed run matches *this machine's* single-process run. Two

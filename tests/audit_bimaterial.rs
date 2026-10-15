@@ -6,8 +6,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::bimaterial::{
     analyze_bimaterial, effective_modulus_reuss_mpa, effective_modulus_voigt_mpa,
     interfacial_bond_strength_mpa, published_cte_per_c, thermal_residual_stress_mpa,

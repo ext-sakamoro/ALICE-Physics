@@ -24,7 +24,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 tight AABB half-extent sum_j |R_ij| h_j and support of rotated convex shapes"
+)]
 #![allow(clippy::needless_range_loop)]
 
 use alice_physics::box_collider::OrientedBox;

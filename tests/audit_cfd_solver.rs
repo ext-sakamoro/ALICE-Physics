@@ -18,7 +18,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 log-law u+ = ln(y+)/0.41 + 5.5 for the cfd_solver wall summary envelope"
+)]
 
 use alice_physics::cfd_solver::{
     AdvectionScheme, CfdSolver, PressureSolver, StepError, StepOptions, WallModel,
