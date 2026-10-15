@@ -346,67 +346,17 @@ pub mod det_math {
     // `f32::max` / `f32::min` (and `f64`) leave the sign of an equal pair of
     // zeros unspecified, and the targets differ: aarch64 returns +0 from max and
     // -0 from min, x86_64 returns the argument (`0.0f32.max(-0.0)` is -0 there),
-    // and x86_64's `f64::min(0.0, -0.0)` is -0 unoptimized and +0 optimized The
-    // functions below fix that case: a NaN operand yields the other operand (as
-    // std does), an equal pair of zeros yields +0 from max and -0 from min (IEEE
-    // 754-2019 maximumNumber / minimumNumber, which is what aarch64 already
-    // returns), and every other pair is ordered by value Production code uses
-    // these; the lib clippy pass forbids `f32::max` / `f32::min` / `f64::max` /
-    // `f64::min` (`.github/clippy-lib/clippy.toml`)
-
-    /// `max` with a defined zero sign: NaN yields the other operand, `max(-0.0,
-    /// 0.0)` and `max(0.0, -0.0)` are `+0.0`
-    #[inline]
-    #[must_use]
-    pub(crate) fn max(a: f32, b: f32) -> f32 {
-        if a.is_nan() || b > a {
-            b
-        } else if b.is_nan() || a > b || !a.is_sign_negative() {
-            a
-        } else {
-            b
-        }
-    }
-
-    /// `min` with a defined zero sign: NaN yields the other operand, `min(-0.0,
-    /// 0.0)` and `min(0.0, -0.0)` are `-0.0`
-    #[inline]
-    #[must_use]
-    pub(crate) fn min(a: f32, b: f32) -> f32 {
-        if a.is_nan() || b < a {
-            b
-        } else if b.is_nan() || a < b || a.is_sign_negative() {
-            a
-        } else {
-            b
-        }
-    }
-
-    /// [`max`] for `f64`
-    #[inline]
-    #[must_use]
-    pub(crate) fn max64(a: f64, b: f64) -> f64 {
-        if a.is_nan() || b > a {
-            b
-        } else if b.is_nan() || a > b || !a.is_sign_negative() {
-            a
-        } else {
-            b
-        }
-    }
-
-    /// [`min`] for `f64`
-    #[inline]
-    #[must_use]
-    pub(crate) fn min64(a: f64, b: f64) -> f64 {
-        if a.is_nan() || b < a {
-            b
-        } else if b.is_nan() || a < b || a.is_sign_negative() {
-            a
-        } else {
-            b
-        }
-    }
+    // and x86_64's `f64::min(0.0, -0.0)` is -0 unoptimized and +0 optimized
+    // alice-det-math's `max` / `min` / `max64` / `min64` fix that case: a NaN
+    // operand yields the other operand (as std does), two NaN operands give the
+    // canonical NaN, an equal pair of zeros yields +0 from max and -0 from min
+    // (IEEE 754-2019 maximumNumber / minimumNumber, which is what aarch64
+    // already returns), and every other pair is ordered by value Production
+    // code uses them through this module; the lib clippy pass forbids
+    // `f32::max` / `f32::min` / `f64::max` / `f64::min`
+    // (`.github/clippy-lib/clippy.toml`), and `scripts/no_private_minmax.py`
+    // refuses a crate-local copy of the four
+    pub(crate) use alice_det_math::{max, max64, min, min64};
 
     #[cfg(test)]
     mod max_min_tests {
@@ -516,6 +466,146 @@ pub mod det_math {
             assert_eq!(max64(n, p).to_bits(), 0);
             assert_eq!(min64(p, n).to_bits(), 0x8000_0000_0000_0000);
             assert_eq!(min64(n, p).to_bits(), 0x8000_0000_0000_0000);
+        }
+
+        /// oracle (alice-det-math's NaN policy): two NaN operands give the
+        /// canonical NaN, whatever their payloads and signs, in both orders
+        #[test]
+        fn a_pair_of_nans_gives_the_canonical_nan() {
+            let nans32 = [
+                0x7fc0_0000u32,
+                0xffc0_0000,
+                0x7fa1_2345,
+                0xffc0_0001,
+                0x7f80_0001,
+            ];
+            let mut compared = 0;
+            for &x in &nans32 {
+                for &y in &nans32 {
+                    let (a, b) = (
+                        core::hint::black_box(f32::from_bits(x)),
+                        core::hint::black_box(f32::from_bits(y)),
+                    );
+                    assert_eq!(
+                        max(a, b).to_bits(),
+                        f32::NAN.to_bits(),
+                        "max({x:08x}, {y:08x})"
+                    );
+                    assert_eq!(
+                        min(a, b).to_bits(),
+                        f32::NAN.to_bits(),
+                        "min({x:08x}, {y:08x})"
+                    );
+                    compared += 2;
+                }
+            }
+            let nans64 = [
+                0x7ff8_0000_0000_0000u64,
+                0xfff8_0000_0000_0000,
+                0x7ff0_0000_0000_0001,
+                0xfff8_0000_0000_0001,
+            ];
+            for &x in &nans64 {
+                for &y in &nans64 {
+                    let (a, b) = (
+                        core::hint::black_box(f64::from_bits(x)),
+                        core::hint::black_box(f64::from_bits(y)),
+                    );
+                    assert_eq!(
+                        max64(a, b).to_bits(),
+                        f64::NAN.to_bits(),
+                        "max64({x:016x}, {y:016x})"
+                    );
+                    assert_eq!(
+                        min64(a, b).to_bits(),
+                        f64::NAN.to_bits(),
+                        "min64({x:016x}, {y:016x})"
+                    );
+                    compared += 2;
+                }
+            }
+            assert_eq!(compared, 2 * 25 + 2 * 16);
+        }
+
+        /// oracle (rule, bit-exact): on a fixed-seed sweep of bit patterns,
+        /// every pair with at most one NaN gives the value of the rule above
+        /// to the bit (the NaN operand yields the other one unchanged) Random
+        /// bit patterns almost never give a pair of zeros, so every fifth
+        /// operand is drawn from ±0, the smallest subnormals and ±inf
+        #[test]
+        fn pairs_with_at_most_one_nan_follow_the_rule_bit_for_bit() {
+            let mut s: u64 = 0x9e37_79b9_7f4a_7c15;
+            let mut next = move || {
+                s ^= s << 13;
+                s ^= s >> 7;
+                s ^= s << 17;
+                s
+            };
+            const SPECIAL32: [u32; 6] = [0, 0x8000_0000, 1, 0x8000_0001, 0x7f80_0000, 0xff80_0000];
+            const SPECIAL64: [u64; 6] = [
+                0,
+                1 << 63,
+                1,
+                (1 << 63) | 1,
+                0x7ff0_0000_0000_0000,
+                0xfff0_0000_0000_0000,
+            ];
+            let mut compared = 0u64;
+            let mut zero_pairs = 0u64;
+            for k in 0..200_000u64 {
+                let r = next();
+                let pick32 = |bits: u32, j: u64| {
+                    if j % 5 == 0 {
+                        SPECIAL32[(bits as usize) % 6]
+                    } else {
+                        bits
+                    }
+                };
+                let (a, b) = (
+                    f32::from_bits(pick32(r as u32, k)),
+                    f32::from_bits(pick32((r >> 32) as u32, k / 5 + k)),
+                );
+                if a == 0.0 && b == 0.0 {
+                    zero_pairs += 1;
+                }
+                if a.is_nan() && b.is_nan() {
+                    continue;
+                }
+                let (x, y) = (core::hint::black_box(a), core::hint::black_box(b));
+                // widening a non-NaN f32 is exact, and the rule returns a non-NaN here
+                let (ea, eb) = (f64::from(a), f64::from(b));
+                assert_eq!(
+                    f64::from(max(x, y)).to_bits(),
+                    expected_max(ea, eb).to_bits()
+                );
+                assert_eq!(
+                    f64::from(min(x, y)).to_bits(),
+                    expected_min(ea, eb).to_bits()
+                );
+                let pick64 = |bits: u64, j: u64| {
+                    if j % 5 == 0 {
+                        SPECIAL64[(bits as usize) % 6]
+                    } else {
+                        bits
+                    }
+                };
+                let (c, d) = (
+                    f64::from_bits(pick64(next(), k)),
+                    f64::from_bits(pick64(next(), k / 5 + k)),
+                );
+                if c == 0.0 && d == 0.0 {
+                    zero_pairs += 1;
+                }
+                if !(c.is_nan() && d.is_nan()) {
+                    let (x, y) = (core::hint::black_box(c), core::hint::black_box(d));
+                    assert_eq!(max64(x, y).to_bits(), expected_max(c, d).to_bits());
+                    assert_eq!(min64(x, y).to_bits(), expected_min(c, d).to_bits());
+                    compared += 2;
+                }
+                compared += 2;
+            }
+            assert!(compared > 700_000, "compared {compared}");
+            assert!(zero_pairs > 100, "zero pairs {zero_pairs}");
         }
     }
 }

@@ -700,6 +700,11 @@ jobs:
         run: python3 scripts/test_entropy_guard.py
       - name: Entropy guard (no OS entropy or wall clock in production code)
         run: python3 scripts/entropy_guard.py
+      # float max / min come from alice-det-math, never a crate-local copy
+      - name: Private max / min guard (test first)
+        run: python3 scripts/test_no_private_minmax.py
+      - name: Private max / min guard (no local copy of alice-det-math's max / min)
+        run: python3 scripts/no_private_minmax.py
       - name: Predictable randomness guard (test first)
         run: python3 scripts/test_csprng_guard.py
       - name: Predictable randomness guard
