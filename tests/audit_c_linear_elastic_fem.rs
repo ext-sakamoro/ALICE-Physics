@@ -8,7 +8,6 @@
 //! mode the constraints left free has no equilibrium at all. None of them is
 //! read back from the implementation under test.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::cast_precision_loss)]
 
 use alice_physics::linear_elastic_fem::{
     solve, solve_corotational, Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial,

@@ -5,7 +5,10 @@
 //! 座標は 1/16 刻みの dyadic なので Fix128 と f64 で入力が厳密に一致する
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 distance from the ray hit to the micro-triangle centroid for trimesh miss checks"
+)]
 
 use alice_physics::collider::AABB;
 use alice_physics::math::{Fix128, Vec3Fix};

@@ -10,7 +10,8 @@
 #![allow(
     clippy::disallowed_methods,
     clippy::needless_range_loop,
-    clippy::cast_precision_loss
+    clippy::cast_precision_loss,
+    reason = "analytic reference: f64 Lame parameters e / (2^-k ...) at the edge of the accepted Poisson interval for linear_elastic_fem"
 )]
 
 use alice_physics::coupled_field::{CoupledField, TemperatureRise};

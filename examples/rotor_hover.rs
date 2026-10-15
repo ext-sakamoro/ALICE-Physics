@@ -16,7 +16,10 @@
 //! ```
 
 // f64 `powi` computes a closed-form reference, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: hover speed n = sqrt(m g / (CT rho D^4)), asserted against speed_for_thrust"
+)]
 
 use alice_physics::atmosphere::Isa1976;
 use alice_physics::math::{Fix128, Vec3Fix};

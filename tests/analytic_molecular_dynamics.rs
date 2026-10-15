@@ -31,7 +31,10 @@
 
 #![cfg(feature = "std")]
 // f64 `sqrt` / `acos` compute closed-form references, not state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 LJ dimer period 2 pi h / acos(1 - (omega h)^2/2) and r_min = 2^(1/6) sigma for velocity Verlet MD"
+)]
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::molecular_dynamics::{

@@ -353,8 +353,10 @@ fn slab_test(
 /// shape as [`crate::solver::SolverBackend::Tgs`]'s own `no_std` note (a
 /// coarser-but-correct policy, not silently ignored or state corruption).
 #[must_use]
-// 1.0.0 で公開済の signature (crates.io)、引数 struct 化は semver major = 2.0 で実施
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "public signature since 1.0.0 on crates.io; folding the arguments into a struct is a semver-major API change"
+)]
 pub fn adaptive_toi_substeps(
     pos_a: Vec3Fix,
     vel_a: Vec3Fix,

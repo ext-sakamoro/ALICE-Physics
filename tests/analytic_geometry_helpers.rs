@@ -8,9 +8,15 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Rodrigues rotation and unit sphere directions for oriented-box corners, cone apex and metric ball box"
+)]
 // Axis loops index three parallel arrays on purpose.
-#![allow(clippy::needless_range_loop)]
+#![allow(
+    clippy::needless_range_loop,
+    reason = "axis loops index the corner, min and max arrays by the same k on purpose"
+)]
 
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::{Support, AABB};

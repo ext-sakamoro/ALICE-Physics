@@ -101,7 +101,6 @@ fn fixed_point_port_agrees_with_the_f32_reference() {
         (0.125, 0.25, 0.625),
     ] {
         let got = MetricWeights::new(fix(a), fix(b), fix(c)).unwrap();
-        #[allow(clippy::cast_possible_truncation)]
         let want = RefWeights::new(a as f32, b as f32, c as f32).unwrap();
         close(
             got.lipschitz(),
@@ -189,9 +188,7 @@ fn the_euclidean_metric_leaves_every_proxy_box_bit_identical() {
     explicit.metric = MetricWeights::L2;
 
     for (i, b) in boxes.iter().enumerate() {
-        #[allow(clippy::cast_possible_truncation)]
         let id_a = plain.insert(*b, i as u32);
-        #[allow(clippy::cast_possible_truncation)]
         let id_b = explicit.insert(*b, i as u32);
         assert_eq!(
             plain.get_aabb(id_a),

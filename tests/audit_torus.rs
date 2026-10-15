@@ -14,7 +14,8 @@
 #![allow(
     clippy::disallowed_methods,
     clippy::type_complexity,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 torus surface sampling (R + r cos v) cos u and quaternion for torus support maximiser"
 )]
 
 use alice_physics::collider::Support;

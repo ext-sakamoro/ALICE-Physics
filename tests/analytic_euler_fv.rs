@@ -43,7 +43,10 @@
 
 #![cfg(feature = "std")]
 // f64 transcendentals compute reference values, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 port of the Toro exact Riemann solver (PREFUN/GUESSP pressure functions) for euler_fv references"
+)]
 
 use alice_physics::compressible::{normal_shock_jump, IdealGas};
 use alice_physics::euler_fv::{
@@ -249,7 +252,10 @@ fn as_prim(v: W) -> Primitive {
 
 /// Riemann problems used throughout: (name, left, right, Toro Table 4.2 (p*, u*)
 /// with one unit of the last printed digit as tolerance, or None).
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Toro Riemann case table: name, left and right states and optional star-state tuple with tolerances"
+)]
 fn riemann_cases() -> Vec<(&'static str, W, W, Option<(f64, f64, f64, f64)>)> {
     vec![
         // Toro Table 4.1 Test 1 (Sod)

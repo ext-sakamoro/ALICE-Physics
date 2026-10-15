@@ -19,8 +19,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::{Capsule, ConvexHull, Sphere, AABB};
 use alice_physics::compound::CompoundShape;

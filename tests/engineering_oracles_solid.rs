@@ -15,7 +15,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Roark beam deflections and section second moments for solid mechanics modules"
+)]
 
 use alice_physics::anisotropic::OrthotropicElasticity;
 use alice_physics::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};

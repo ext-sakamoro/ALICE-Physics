@@ -741,7 +741,6 @@ impl Cloth {
     /// angle is exactly `π`, so that error term became `1 + cos(angle) ≥ 0` —
     /// sign-blind — and the cloth accumulated energy until it flew upward.
     #[inline(always)]
-    #[allow(clippy::many_single_char_names, clippy::similar_names)]
     fn solve_bend_constraints(&mut self, dt: Fix128) {
         let compliance = self.config.bend_compliance / (dt * dt);
 
@@ -1805,7 +1804,6 @@ fn max2(a: Fix128, b: Fix128) -> Fix128 {
 /// parallel to the plane, outside the barycentric triangle, outside the segment's
 /// parameter range — because in all three the segment does not cross this triangle and
 /// there is nothing to repair.
-#[allow(clippy::many_single_char_names)]
 fn segment_pierces_triangle(
     p0: Vec3Fix,
     p1: Vec3Fix,
@@ -1884,7 +1882,6 @@ fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
 /// unclamped face-region solve returns a point outside the triangle, and the contact is
 /// reported against a plane instead of against the triangle
 /// (`closest_point_clamps_into_the_edge_and_vertex_regions` pins each region).
-#[allow(clippy::many_single_char_names, clippy::similar_names)]
 fn closest_point_on_triangle(
     p: Vec3Fix,
     a: Vec3Fix,

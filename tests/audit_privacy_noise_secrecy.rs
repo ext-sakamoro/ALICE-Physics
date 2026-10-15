@@ -18,7 +18,10 @@
 //! 要らない)
 // The deprecated privacy types (not differentially private) stay pinned here
 // until the breaking release that removes them
-#![allow(deprecated)]
+#![allow(
+    deprecated,
+    reason = "pins the deprecated non-DP privacy types (LaplaceNoise, XorShift64, ...) until the breaking release removes them"
+)]
 
 use alice_physics::privacy::{LaplaceNoise, XorShift64};
 
@@ -67,13 +70,11 @@ fn two_published_uniform_draws_determine_the_seeded_state_uniquely() {
     let second = victim.next_f64();
 
     // 観測した f64 から上位 53 bit を戻す (乗算のみ)
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
     let top53 = (first * 9_007_199_254_740_992.0) as u64;
 
     let mut matched = Vec::new();
     for low in 0..2048u64 {
         let state = (top53 << 11) | low;
-        #[allow(clippy::cast_precision_loss)]
         let next = ((step(state) >> 11) as f64) / 9_007_199_254_740_992.0;
         if next.to_bits() == second.to_bits() {
             matched.push(state);
@@ -97,7 +98,6 @@ fn two_published_uniform_draws_determine_the_seeded_state_uniquely() {
     //    予測してしまい off-by-one で落ちる)
     let mut state = step(step(matched[0]));
     for i in 0..100 {
-        #[allow(clippy::cast_precision_loss)]
         let predicted = ((state >> 11) as f64) / 9_007_199_254_740_992.0;
         assert_eq!(
             victim.next_f64().to_bits(),

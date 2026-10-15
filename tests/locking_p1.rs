@@ -37,7 +37,10 @@
 
 #![cfg(feature = "std")]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types)]
+#![allow(
+    clippy::disallowed_types,
+    reason = "HashMap/HashSet only count or look up tetrahedron face uses in this test; no assertion depends on hash iteration order"
+)]
 // `log2` / `powi` on `f64` are disallowed crate-wide because the platform libm
 // is not bit-exact across targets. Every use here is in the *reporting* of a
 // convergence order or a closed-form beam deflection — the solve itself is
@@ -45,7 +48,10 @@
 // printed slope and nothing that is asserted to the bit. Same exemption, and
 // same reason, as `tests/mms_linear_elastic.rs` and
 // `tests/analytic_fem_convergence.rs`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Euler-Bernoulli tip deflection PL^3/(3EI) for the P1 locking measurement"
+)]
 
 use alice_physics::linear_elastic_fem::{
     solve, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, FemSolution,

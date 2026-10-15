@@ -10,7 +10,10 @@
 //! cargo run --release --example em_lorentz_cyclotron --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "measured quantity: |F| of the simulated Lorentz force via powi, asserted against Coulomb k q1 q2 / r^2"
+)]
 
 use alice_physics::electromagnetic::{lorentz_force, lorentz_force_sum, ChargedBody, EmSource};
 use alice_physics::math::{Fix128, Vec3Fix};

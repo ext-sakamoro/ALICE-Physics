@@ -33,9 +33,11 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types)]
+#![allow(
+    clippy::disallowed_types,
+    reason = "HashMap/HashSet only count or look up mesh faces in this test; no assertion depends on hash iteration order"
+)]
 
 use alice_physics::sdf_collider::{ClosureSdf, SdfField};
 use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};

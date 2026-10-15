@@ -9,7 +9,10 @@
 //! * seeded crack direction = `normalize(-gz, 0, gx)` of the central-difference gradient
 //! * a crack grows `propagation_speed * dt` per update and stops at `max_crack_length`
 //! * capsule distance of a point at perpendicular distance `p` from the axis: `p - crack_width`
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 smoothstep splat distance and stress decay exp(-0.2) of the FractureModifier crack field"
+)]
 
 use alice_physics::fracture::{Crack, FractureConfig, FractureModifier};
 use alice_physics::sim_modifier::PhysicsModifier;

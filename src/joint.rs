@@ -1316,7 +1316,6 @@ fn solve_spring_joint(
 }
 
 /// Solve D6 joint: per-axis locking/limiting for all 6 DOF
-#[allow(clippy::too_many_lines)]
 fn solve_d6_joint(joint: &D6Joint, bodies: &mut [crate::solver::RigidBody], dt: Fix128) -> Vec3Fix {
     let mut impulse = Vec3Fix::ZERO;
     let body_a = bodies[joint.body_a];
@@ -1856,7 +1855,10 @@ mod tests {
         assert_eq!(ball.joint_type(), JointType::Ball);
     }
 
-    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
+    #[allow(
+        deprecated,
+        reason = "test pins the deprecated separation-based solve_joints_breakable until it is removed"
+    )]
     #[test]
     fn test_breakable_joint() {
         let mut bodies = vec![
@@ -1877,7 +1879,10 @@ mod tests {
         assert_eq!(broken[0], 0);
     }
 
-    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
+    #[allow(
+        deprecated,
+        reason = "test pins the deprecated separation-based solve_joints_breakable beside the force-based replacement"
+    )]
     #[test]
     fn test_unbreakable_joint() {
         let mut bodies = vec![
@@ -1915,7 +1920,10 @@ mod tests {
         assert!(broken.is_empty(), "Joint should not break under low force");
     }
 
-    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
+    #[allow(
+        deprecated,
+        reason = "test pins the deprecated separation-based solve_joints_breakable: no break force means never breaking"
+    )]
     #[test]
     fn test_no_break_force() {
         let mut bodies = vec![
@@ -2568,7 +2576,10 @@ mod tests {
         assert_eq!(anchored.compute_force(&bodies), Fix128::ZERO);
     }
 
-    #[allow(deprecated)] // pins the separation-based solve_joints_breakable
+    #[allow(
+        deprecated,
+        reason = "test pins the deprecated separation-based solve_joints_breakable strict threshold and broken-joint skipping"
+    )]
     #[test]
     fn solve_joints_breakable_breaks_strictly_above_threshold_and_skips_broken() {
         // 距離 5 の ball joint: break 5 → 壊れない (`>` は false)、break 4 → 壊れて解かれない

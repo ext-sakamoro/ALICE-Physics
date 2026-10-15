@@ -112,7 +112,10 @@ impl FindleyParameters {
     /// fit until a PETG datasheet calibration replaces `m`.
     // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
     // ALLOW-UNWIRED: wiring debt structural-pub-crate-residue (structural_solver::new installs the PLA preset for PLA only; this PETG fit is uncalibrated), oracle src/creep_longterm.rs tests::petg_preset_findley_matches_closed_form_at_six_months
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "pub(crate) PETG creep preset has no crate caller: structural_solver installs only the PLA preset and this fit is uncalibrated"
+    )]
     #[must_use]
     pub(crate) fn petg_25c_moderate() -> Self {
         Self {

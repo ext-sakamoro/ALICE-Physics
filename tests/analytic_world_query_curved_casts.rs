@@ -24,7 +24,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cone/cylinder signed distance and cast directions for curved sphere/capsule casts"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::shape::Shape;
@@ -632,7 +635,10 @@ fn a_capsule_sliding_onto_a_cylinder_cap_hits_it() {
 }
 
 /// One cast onto a posed solid, from `a`–`b` along `d` with radius `r`.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "posed_cast mirrors the pose and cast inputs: solid, position, axis, angle, segment a-b, direction and radius"
+)]
 fn posed_cast(
     solid: Solid,
     position: [f64; 3],

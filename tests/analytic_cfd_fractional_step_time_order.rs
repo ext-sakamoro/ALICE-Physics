@@ -29,7 +29,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 forward-Euler factor (1 - nu mu dt)^n and discrete eigenvalue of the cosine shear-diffusion mode for CfdSolver"
+)]
 
 use alice_physics::cfd_solver::CfdSolver;
 use alice_physics::math::{Fix128, Vec3Fix};

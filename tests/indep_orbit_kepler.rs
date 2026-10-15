@@ -19,7 +19,10 @@
 //!
 //! No expected value is produced by calling the function under test.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 bisection and Bessel-series Kepler solvers and orbital elements for kepler second oracle set"
+)]
 
 use alice_physics::kepler::{
     j2_arg_periapsis_rate, j2_raan_rate, orbital_period, solve_kepler, vis_viva_speed, KeplerError,

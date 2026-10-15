@@ -15,7 +15,10 @@
 //! calling the code under test.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 wind(t) = base + turb sin(2 pi f t) closed form from the wind_zone module doc"
+)]
 
 use alice_physics::buoyancy_zone::ZoneShape;
 use alice_physics::math::{Fix128, Vec3Fix};

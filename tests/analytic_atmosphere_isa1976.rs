@@ -24,7 +24,10 @@
 #![cfg(feature = "std")]
 // f64 `exp` computes a closed-form reference outside the crate, not
 // simulation state (same convention as the other analytic tests).
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 exp of the ISA 1976 isothermal stratosphere scale-height pressure ratio exp(-k dh)"
+)]
 
 use alice_physics::atmosphere::{AtmosphereState, Isa1976, IsaError};
 use alice_physics::buoyancy_zone::ZoneShape;

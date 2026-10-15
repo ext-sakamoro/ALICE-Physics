@@ -347,7 +347,10 @@ mod tests {
     //! Oracles. Every expected value is an f64 closed form written out here
     //! (Fiala polynomial, Pacejka formula, the brush law of this module's doc)
     //! and evaluated with platform libm — never by calling the code under test.
-    #![allow(clippy::disallowed_methods)] // f64 libm closed forms are the oracle on purpose
+    #![allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: f64 Fiala polynomial, Pacejka Magic Formula and brush-law tire forces compared to the Fix128 tire models"
+    )]
 
     use super::*;
 

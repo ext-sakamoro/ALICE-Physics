@@ -82,7 +82,10 @@
 
 #![cfg(feature = "std")]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types, clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_types,
+    reason = "HashMap/HashSet only count or look up tetrahedron face uses in this test; no assertion depends on hash iteration order"
+)]
 
 use std::collections::HashMap;
 

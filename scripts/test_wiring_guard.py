@@ -249,6 +249,17 @@ class Markers(unittest.TestCase):
         })
         self.assertNotIn("dead_code", kinds(wg.check(r)))
 
+    def test_an_allow_dead_code_split_over_lines_with_a_reason_is_found(self):
+        # rustfmt splits an allow with a reason over several lines, and the reason
+        # may hold `)`: neither may hide the dead_code from the check
+        split = '#[allow(\n    dead_code,\n    reason = "kept for the pub(crate) caller (later)"\n)]\nfn f() {}\n'
+        r = crate({"src/lib.rs": LIB, "src/a.rs": split, "src/b.rs": "pub fn x() {}\n"})
+        self.assertIn("dead_code", kinds(wg.check(r)))
+        r = crate({"src/lib.rs": LIB, "src/a.rs": "// ALLOW-DEAD: reserved variants awaiting solver integration\n" + split,
+                   "src/b.rs": "pub fn x() {}\n"})
+        self.assertNotIn("dead_code", kinds(wg.check(r)))
+        self.assertNotIn("stale_marker", kinds(wg.check(r)))
+
     def test_allow_dead_code_marker_with_a_short_reason_is_rejected(self):
         r = crate({
             "src/lib.rs": LIB,

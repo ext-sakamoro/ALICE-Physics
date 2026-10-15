@@ -14,7 +14,6 @@
 //! `μ_s = 1.0`, `μ_k = 0.8`).
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::anisotropic_friction::AnisotropicFriction;
 use alice_physics::buoyancy_zone::ZoneShape;

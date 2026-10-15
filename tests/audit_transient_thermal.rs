@@ -4,7 +4,10 @@
 //! rate of the finite-volume Neumann Laplacian), from a conservation integral
 //! and from maximum-principle bounds, never from the update formulas in
 //! `src/transient_thermal.rs`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cosine eigenmode decay exp(-lambda t) of the finite-volume Neumann Laplacian for transient_thermal"
+)]
 
 use alice_physics::transient_thermal::{
     crank_nicolson_step_1d, crank_nicolson_step_1d_nonlinear, stable_dt_1d, stable_dt_3d,

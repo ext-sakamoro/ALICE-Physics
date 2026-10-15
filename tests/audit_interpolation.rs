@@ -1,6 +1,9 @@
 //! Audit oracles for `alice_physics::interpolation`.
 //! Expected values are closed forms in f64 (affine blend, NLERP/SLERP angle formulas).
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 quaternion about y and NLERP/SLERP angle 2 atan2(|v|, w) for interpolation"
+)]
 
 use alice_physics::interpolation::{
     lerp_fix128, lerp_vec3, slerp, BodySnapshot, InterpolationState, WorldSnapshot,

@@ -29,7 +29,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::audio_physics::{AudioConfig, AudioEventType, AudioGenerator};
 use alice_physics::collider::Contact;

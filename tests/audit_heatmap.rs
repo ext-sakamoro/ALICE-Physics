@@ -13,7 +13,8 @@
 #![allow(
     clippy::disallowed_methods,
     clippy::type_complexity,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 3D distance d for the linear-falloff stress sum force (1 - d/2) on heatmap pixels"
 )]
 
 use alice_physics::heatmap::{

@@ -27,7 +27,10 @@
 //! cargo run --release --example aeroelasticity_viv_lock_in --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: forced oscillator transfer F / sqrt((wn^2-w^2)^2 + (2 zeta wn w)^2), asserted vs body/wake amplitude ratio"
+)]
 
 use alice_physics::aeroelasticity::{viv_step, VivParameters, VivState};
 use core::f64::consts::PI;

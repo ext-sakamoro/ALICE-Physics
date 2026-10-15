@@ -41,7 +41,10 @@
 
 #![cfg(feature = "std")]
 // f64 transcendentals compute closed-form references, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Helbing social force relaxation v0 + (v - v0) e^(-t/tau) and its discrete (1 - dt/tau)^n form"
+)]
 
 use alice_physics::crowd_force::{
     CrowdForceError, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
@@ -86,7 +89,10 @@ fn model(lambda: f64, cutoff: f64) -> SocialForce {
     SocialForce::new(params(), params(), fx(lambda), fx(cutoff)).expect("valid params")
 }
 
-#[allow(clippy::too_many_arguments)] // one literal per field keeps the scenes readable
+#[allow(
+    clippy::too_many_arguments,
+    reason = "ped takes one literal per Pedestrian field (eight scalars) so each scene reads as a table"
+)]
 fn ped(x: f64, y: f64, vx: f64, vy: f64, r: f64, ex: f64, ey: f64, v0: f64) -> Pedestrian {
     Pedestrian {
         position: v2(x, y),

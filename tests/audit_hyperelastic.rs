@@ -1,7 +1,11 @@
 //! Audit oracle for `hyperelastic`. Expected values: hand closed forms, an
 //! independent f64 energy derivative, and textbook simple-shear / uniaxial results.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 principal stretch squares l_i^2 for hyperelastic invariants I1, I2"
+)]
 
 use alice_physics::hyperelastic::{
     cauchy_stress, small_strain_moduli, small_strain_shear_modulus, strain_energy_density,

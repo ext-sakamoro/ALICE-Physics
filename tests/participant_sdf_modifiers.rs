@@ -25,7 +25,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::erosion::{ErosionConfig, ErosionModifier, ErosionType};
 use alice_physics::fracture::{Crack, FractureConfig, FractureModifier};

@@ -2386,7 +2386,6 @@ impl CfdSolver {
     /// Compared to MacCormack, BFECC pays one extra semi-Lagrangian
     /// pass but removes the phase-error residual on the compensator,
     /// giving cleaner spectra on smooth flow.
-    #[allow(clippy::too_many_lines)] // canonical 3-pass BFECC structure
     fn advect_velocity_bfecc(&mut self, dt_s: Fix128) {
         let u_n = self.grid.clone();
         let dx = self.grid.dx;

@@ -9,7 +9,6 @@
 //! * the model problem `e_{j+1} = -(m_f/m) e_j` of the module documentation.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::coupled_iteration::{
     residual_norm_inf, residual_norm_l2_checked, run_sub_iteration, ConfigFault,

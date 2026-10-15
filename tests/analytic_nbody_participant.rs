@@ -20,7 +20,6 @@
 //!   identical, a snapshot of another law is refused, an out-of-range force
 //!   is a fault that leaves the participant unchanged, the law identifier
 //!   names the participant, and a digest of the stepped world is pinned.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::nbody::{
     kinetic_energy, total_momentum, DirectSum, NBodyParticipant, NBODY_OBS_BODIES,

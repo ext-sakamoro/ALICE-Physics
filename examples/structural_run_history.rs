@@ -15,8 +15,6 @@
 //! cargo run --example structural_run_history --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::beam_stress::{CrossSection, LoadCase};
 use alice_physics::filament_db::MaterialProperties;
 use alice_physics::math::Fix128;

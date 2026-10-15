@@ -23,7 +23,6 @@
 //! rest height is exact up to fixed-point rounding of the normalisations (`~1e-18`). The
 //! oracles allow `1e-9` m and `1e-9` m/s, four orders of magnitude below one substep's sink:
 //! a solver that leaves any measurable fraction of the sink, or pushes the wrong way, fails.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
 use alice_physics::physics2d::{

@@ -44,7 +44,10 @@
 #![cfg(feature = "std")]
 // The f64 values here are the oracle (closed-form references) and the f64
 // model of the defect, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 rotation angle 2 atan2 and chord model 2/h sin(w h/2) for constant-torque rotation integration"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::sleeping::SleepConfig;

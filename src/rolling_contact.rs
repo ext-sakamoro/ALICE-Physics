@@ -141,7 +141,10 @@ pub fn basquin_cycles_to_failure(
 ///
 /// Same conditions as [`hertzian_sphere_sphere`] and
 /// [`basquin_cycles_to_failure`].
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "public life estimate takes load, two radii, two moduli, two Poisson ratios and three Basquin constants as plain floats"
+)]
 #[must_use]
 pub fn rolling_contact_life_cycles(
     load_n: f32,

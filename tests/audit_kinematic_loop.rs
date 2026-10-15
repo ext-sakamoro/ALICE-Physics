@@ -8,7 +8,6 @@
 //! below, never by calling `residual` / `apply`.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::kinematic_loop::{four_bar_linkage, LoopClosureConstraint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

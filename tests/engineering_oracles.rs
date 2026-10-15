@@ -10,7 +10,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Carslaw-Jaeger cosine mode decay exp(-alpha pi^2 t/L^2) and Basquin life for engineering modules"
+)]
 
 use alice_physics::fatigue::{miner_damage, SnCurve};
 use alice_physics::math::Fix128;

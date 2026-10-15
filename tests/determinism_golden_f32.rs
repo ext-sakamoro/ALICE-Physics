@@ -17,7 +17,10 @@
 //! in CHANGELOG.
 // The deprecated privacy types (not differentially private) stay pinned here
 // until the breaking release that removes them
-#![allow(deprecated)]
+#![allow(
+    deprecated,
+    reason = "pins the deprecated non-DP privacy types (LaplaceNoise, XorShift64, ...) until the breaking release removes them"
+)]
 
 use alice_physics::collider::Contact;
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

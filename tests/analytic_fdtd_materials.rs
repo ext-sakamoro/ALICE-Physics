@@ -92,7 +92,11 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 Yee FDTD three-term recurrence, Taflove coefficients and Gaussian-sine source for material distributions"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::maxwell_fdtd::{

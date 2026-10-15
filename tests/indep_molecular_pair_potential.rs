@@ -23,7 +23,10 @@
 //! Parameters: LJ `ε = 0.45, σ = 1.3`; Morse `D = 2.2, a = 1.4, r_e = 0.85`;
 //! reduced Coulomb `k = 1`, `q = (1.5, −0.8)`.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 LJ minimum 2^(1/6) sigma, curvature and exact 2^-12 / 2^-6 ratios for pair_potential"
+)]
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::pair_potential::{

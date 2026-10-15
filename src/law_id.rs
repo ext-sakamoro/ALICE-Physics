@@ -354,7 +354,10 @@ impl PhysicsWorld {
 // as well, so that the `--lib` line coverage measures it (the file is
 // unchanged and still runs as an integration test).
 #[cfg(all(test, feature = "std"))]
-#[allow(unreachable_patterns)] // a catch-all for `#[non_exhaustive]` enums, unreachable inside the crate
+#[allow(
+    unreachable_patterns,
+    reason = "the included law_id oracle has catch-all arms for non_exhaustive enums that are unreachable inside the defining crate"
+)]
 #[path = "../tests/law_id_world.rs"]
 mod world_law_oracle;
 

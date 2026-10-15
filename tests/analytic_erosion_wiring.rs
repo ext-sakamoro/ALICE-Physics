@@ -12,7 +12,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 exposure decay exp(-5 dt) and accumulated depth of the documented erosion rate law"
+)]
 
 use alice_physics::erosion::{
     ErosionConfig, ErosionModifier, ErosionType, EXPOSURE_DECAY_PER_S, WATER_PREFACTOR,

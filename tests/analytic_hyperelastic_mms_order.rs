@@ -59,12 +59,14 @@
 //! not part of the answer, the error would not move.
 
 #![cfg(feature = "std")]
-// the measurement table records how long each solve took; no asserted value reads the clock
-#![allow(clippy::disallowed_methods)]
 // The helpers are small dense-linear-algebra loops over fixed 3x3 / 4-vertex
 // shapes where index loops read as the maths; the boxed solver closure is a
 // one-off in a test.
-#![allow(clippy::needless_range_loop, clippy::type_complexity)]
+#![allow(
+    clippy::needless_range_loop,
+    clippy::type_complexity,
+    reason = "quadrature and finite-difference loops index parallel arrays; solver closures need nested Box<dyn Fn> types"
+)]
 use alice_physics::cubic_elastic_fem::{solve_cubic_hyperelastic, CubicMesh};
 use alice_physics::hyperelastic::HyperelasticModel;
 use alice_physics::linear_elastic_fem::{
@@ -127,6 +129,10 @@ fn config(consistent: bool) -> CorotationalConfig {
 }
 
 // ---- manufactured field and the body force it demands ----
+#[allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: manufactured displacement u = A sin(pi y)(1+z) etc. that the solve must reproduce"
+)]
 fn exact(p: [f64; 3]) -> [f64; 3] {
     let pi = std::f64::consts::PI;
     [
@@ -210,6 +216,10 @@ fn body_force(p: [f64; 3]) -> [f64; 3] {
 }
 
 // ---- quadrature: collapsed Gauss-Legendre on the reference tetrahedron ----
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: Gauss-Legendre nodes from Newton on P_n with the cos initial guess, for the error integral"
+)]
 fn gauss_legendre(n: usize) -> Vec<(f64, f64)> {
     let mut out = Vec::new();
     for i in 0..n {
@@ -261,6 +271,10 @@ fn tet_rule(n: usize) -> Vec<([f64; 4], f64)> {
     }
     out
 }
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: monomials x^a y^b z^c whose exact integrals check the collapsed quadrature"
+)]
 fn monomials(p: [f64; 3], degree: usize) -> Vec<f64> {
     let mut m = Vec::new();
     for a in 0..=degree {
@@ -468,6 +482,10 @@ fn try_run(
     consistent: bool,
 ) -> Result<Level, FemError> {
     AMPLITUDE.with(|a| a.set(amplitude));
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: seconds per solve recorded in the convergence table, not asserted"
+    )]
     let t0 = std::time::Instant::now();
     let h = SIDE / n as f64;
     let sdf = kuhn_cube(n, h, JITTER);
@@ -540,14 +558,23 @@ fn try_run(
     };
     let d = solve(&bc)?;
     let (max_err, rms) = measure(&pos, &d);
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: seconds per solve recorded in the convergence table, not asserted"
+    )]
+    let secs = t0.elapsed().as_secs_f64();
     Ok(Level {
         h,
         max_err,
         rms,
-        secs: t0.elapsed().as_secs_f64(),
+        secs,
     })
 }
 
+#[allow(
+    clippy::disallowed_methods,
+    reason = "measurement table: observed order ln(rms ratio) / ln(h ratio) between two refinement levels"
+)]
 fn slope(coarse: &Level, fine: &Level) -> f64 {
     (coarse.rms / fine.rms).ln() / (coarse.h / fine.h).ln()
 }

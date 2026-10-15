@@ -20,7 +20,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 damped free motion x_n, v_n = V0 d^n of the contact-filter scene, once per substep"
+)]
 
 use alice_physics::collider::Contact;
 use alice_physics::math::{Fix128, Vec3Fix};

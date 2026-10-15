@@ -8,7 +8,6 @@
 //! * `next_bounded(m)` is rejection sampling with threshold `(2^32 - m) mod m`:
 //!   an independent replay over `next_u32` of a cloned generator must agree,
 //!   and the output is uniform on `0..m`.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::rng::DeterministicRng;
 

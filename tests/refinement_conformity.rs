@@ -25,9 +25,15 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "measured quantity: acos turns refined tetrahedra into dihedral angles, asserted above the 8 degree minimum"
+)]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types)]
+#![allow(
+    clippy::disallowed_types,
+    reason = "HashMap/HashSet only count or look up refined mesh faces in this test; no assertion depends on hash iteration order"
+)]
 
 use std::collections::HashMap;
 

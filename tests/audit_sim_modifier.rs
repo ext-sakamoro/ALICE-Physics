@@ -9,9 +9,8 @@
 //!   distance; for `d' = |p| - 1 + k x` it is `(p / |p| + (k, 0, 0))`
 //!   normalised.
 #![allow(
-    clippy::disallowed_methods,
     clippy::type_complexity,
-    clippy::needless_range_loop
+    reason = "the recorder field is an Arc<Mutex<Vec<(f32, f32, f32, f32)>>> shared with the modifier under test"
 )]
 
 use alice_physics::sdf_collider::{ClosureSdf, SdfField};

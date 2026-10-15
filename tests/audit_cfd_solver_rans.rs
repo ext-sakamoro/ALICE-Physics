@@ -16,7 +16,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 log-law friction velocity root u_tau (ln(u_tau y/nu)/0.41 + 5.5) = u for RANS reports"
+)]
 
 use alice_physics::cfd_solver::{
     CfdSolver, PressureSolver, RansState, StepError, StepOptions, TurbulenceModel, WallModel,

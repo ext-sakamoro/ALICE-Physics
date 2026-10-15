@@ -14,7 +14,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 step height 2^-k and gap sqrt((11-t)^2 + (r-h)^2) - r for cast precision at 2^-32 tolerance"
+)]
 
 use alice_physics::heightfield::HeightField;
 use alice_physics::math::{Fix128, Vec3Fix};

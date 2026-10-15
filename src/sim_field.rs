@@ -432,7 +432,10 @@ impl VectorField3D {
     }
 
     /// Splat a vector at world-space position
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "public splat takes world position xyz, vector xyz and radius as scalars, matching the scalar field splat API"
+    )]
     pub fn splat(&mut self, wx: f32, wy: f32, wz: f32, vx: f32, vy: f32, vz: f32, radius: f32) {
         self.x.splat(wx, wy, wz, vx, radius);
         self.y.splat(wx, wy, wz, vy, radius);
@@ -459,7 +462,6 @@ impl VectorField3D {
 // ============================================================================
 
 #[cfg(test)]
-#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

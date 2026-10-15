@@ -173,7 +173,6 @@ impl ModifiedSdf {
     }
 
     /// Get mutable access to a modifier by index
-    #[allow(clippy::option_if_let_else)]
     pub fn modifier_mut(&mut self, index: usize) -> Option<&mut dyn PhysicsModifier> {
         match self.modifiers.get_mut(index) {
             Some(m) => Some(m.as_mut()),

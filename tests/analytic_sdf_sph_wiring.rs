@@ -11,7 +11,10 @@
 //! pinned here; it is tracked as the open issue `sdf_sph pressure force`.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 SPH kernels poly6, spiky gradient and viscosity Laplacian (Mueller, Charypar, Gross 2003)"
+)]
 
 use alice_physics::sdf_collider::ClosureSdf;
 use alice_physics::sdf_sph::{

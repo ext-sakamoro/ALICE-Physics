@@ -28,7 +28,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 damped displacement and pendulum pose sin/cos(theta0) for TGS joints in substep"
+)]
 
 use alice_physics::heightfield::HeightField;
 use alice_physics::joint::{

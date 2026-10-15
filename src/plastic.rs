@@ -292,7 +292,10 @@ impl NortonCreep {
     /// `A = 1e-13 /(MPa³·s)`, `n = 3`, about 6.3× below the PLA calibration.
     // ALLOW-DEAD: pub(crate) with no crate caller, same debt as the ALLOW-UNWIRED marker below
     // ALLOW-UNWIRED: wiring debt structural-pub-crate-residue (structural_solver::new installs the PLA creep preset for PLA only; this PETG fit is uncalibrated), oracle src/plastic.rs tests::petg_norton_preset_integrates_a_sigma_cubed_dt
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "pub(crate) PETG creep preset has no crate caller: structural_solver installs only the PLA creep preset; this fit is uncalibrated"
+    )]
     #[must_use]
     pub(crate) fn petg_room_temp() -> Self {
         // ≈ 6× lower than the PLA calibration (1.2.0: 1e-11 was 16× *above*

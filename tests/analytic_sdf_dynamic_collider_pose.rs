@@ -23,8 +23,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::sdf_collider::{
     collide_point_sdf, collide_sphere_sdf, detect_sdf_contacts, sync_dynamic_sdf_colliders,

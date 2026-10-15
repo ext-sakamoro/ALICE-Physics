@@ -6,7 +6,10 @@
 //! point spike, the exponential decay factor, and the yield law
 //! `delta = (p - threshold) * rate * dt`.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 pressure decay exp(-k dt) and yield law for one explicit diffusion step of pressure"
+)]
 
 use alice_physics::pressure::{PressureConfig, PressureModifier};
 use alice_physics::sim_modifier::PhysicsModifier;

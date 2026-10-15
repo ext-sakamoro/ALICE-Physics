@@ -11,7 +11,8 @@
     clippy::disallowed_methods,
     clippy::field_reassign_with_default,
     clippy::unnecessary_map_or,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 Findley power law 0.002 + 1e-6 t^n and quarter-power literature fit for creep_longterm"
 )]
 
 use alice_physics::creep_longterm::{predict_strain, FindleyParameters};

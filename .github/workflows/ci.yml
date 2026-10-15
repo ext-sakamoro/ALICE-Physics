@@ -639,6 +639,11 @@ jobs:
           cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods -D clippy::disallowed_types
       - name: Library clippy configuration is current and fires (canary)
         run: python3 scripts/clippy_lib_gate.py
+      # the manifest's allow_attributes_without_reason fires on every form of a
+      # reasonless allow (canary), and each clock read clippy finds is covered
+      # only by an allow on its own statement
+      - name: Allow reasons (canary + clock reads)
+        run: python3 scripts/allow_reason_guard.py --clippy
 
   # The declared `rust-version` is compiled with exactly that toolchain from the
   # committed Cargo.lock (generated with resolver = "3", which picks versions
@@ -708,6 +713,11 @@ jobs:
         run: python3 scripts/test_no_private_minmax.py
       - name: Private max / min guard (no local copy of alice-det-math's max / min)
         run: python3 scripts/no_private_minmax.py
+      # clippy refuses a reasonless allow (Cargo.toml); this judges the reasons
+      - name: Allow reason guard (test first)
+        run: python3 scripts/test_allow_reason_guard.py
+      - name: Allow reason guard (reasons worth reading, no lint group, production allows counted)
+        run: python3 scripts/allow_reason_guard.py
       - name: Predictable randomness guard (test first)
         run: python3 scripts/test_csprng_guard.py
       - name: Predictable randomness guard

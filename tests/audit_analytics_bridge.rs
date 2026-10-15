@@ -6,7 +6,10 @@
 //! a 4096-register HyperLogLog (checked with a 4-sigma margin).
 
 #![cfg(all(feature = "std", feature = "analytics"))]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "test input: powi builds the step-time ladder 1e-2 to 1e8; the expected percentiles are literals"
+)]
 
 use alice_physics::analytics_bridge::PhysicsTelemetry;
 

@@ -24,7 +24,10 @@
 //!    distance gives a NaN normal.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 sphere sample points and central-difference truncation bound for DistanceSdfQuery normals"
+)]
 
 use std::cell::Cell;
 use std::rc::Rc;

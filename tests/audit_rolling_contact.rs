@@ -3,7 +3,10 @@
 //! 期待値は Hertz 点接触の教科書式 (Johnson, Contact Mechanics ch.4) を f64 で独立に評価したもの
 //! a = (3 P R* / 4 E*)^(1/3),  p0 = (6 P E*^2 / (pi^3 R*^2))^(1/3) (a を経由しない形)
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Hertz contact radius (3PR*/(4E*))^(1/3) and peak pressure (Johnson ch. 4) for rolling_contact"
+)]
 
 use alice_physics::rolling_contact::{
     basquin_cycles_to_failure, hertzian_sphere_sphere, materials, rolling_contact_life_cycles,

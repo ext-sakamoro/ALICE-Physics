@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed
+
+- すべての `allow` / `expect` に理由を必須にした: `Cargo.toml` の `[lints.clippy] allow_attributes_without_reason = "deny"` (`#[allow]` / `#![allow]` / `cfg_attr` の中 / `expect` / 空白を挟んだ path / rustc の lint のどの形でも clippy が拒否する) `clippy::disallowed_methods` (platform の libm と時計) の allow は種類 (`analytic reference` / `independent reference` / `measurement table` / `measured quantity` / `test input` / `timing harness` / `deprecated API`) と具体の参照で始まる理由を持ち (252 件)、何も禁止された呼び出しを含まない 111 件は外した 時計を読む行は文単位の allow にし、file・module・関数単位の allow が時計の読み取りを覆わないようにした (assert や format の引数の中の時計の読み取りは `let` に出した、挙動は同じ) それ以外の lint の allow 110 件に理由を書き、効いていない allow 49 件を外した: 既定で無効な lint (`float_cmp` や cast 系などの pedantic / nursery、crate 先頭の 11 件の一括 allow を含む) と、clippy を `expect` で 6 つの feature の組で回してどの組でも何も抑えていなかったもの 呼び出し元の無い試験 helper `non_newtonian::tests::approx_eq` は消した 検査 `scripts/allow_reason_guard.py` (試験 `scripts/test_allow_reason_guard.py`) は manifest の lint が deny のままで lint group を設定していないこと、lint group の allow が無いこと、理由が 25 字以上で placeholder や lint 名そのものでないこと、本番の code (`cfg(test)` の外) の `disallowed_methods` の allow (`privacy` の非推奨の時計の seed の 2 件だけ件数付きで許す) を見る `--clippy` では manifest の `[lints]` を写した canary の crate で理由の無い 7 つの形すべてに diagnostic が出ることと、clippy が見つけた時計の読み取り (別名や macro の中も含む) が文単位の allow だけに覆われていることを確かめる (CI の clippy job と preflight) 比較 0 件は失敗する 検査を壊す変異 16 件はすべて失敗し、manifest の lint を warn に戻すと canary が失敗する 配線検査 `scripts/wiring_guard.py` は `allow(dead_code)` を 1 行ずつ探していたため、rustfmt が理由付きで複数行に分けた allow を見落としていた file 全体で探すようにした (試験を 1 本足した、変更前の検査では失敗する)
+
 ## [3.1.0] - 2026-10-16
 
 ### Added

@@ -1742,7 +1742,10 @@ impl QuatFix {
     }
 
     /// Quaternion multiplication (composition of rotations)
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "QuatFix::mul is the public inherent composition method callers use; no std Mul impl exists and adding one is a separate API change"
+    )]
     #[must_use]
     pub fn mul(self, rhs: Self) -> Self {
         Self {
@@ -2602,7 +2605,10 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::disallowed_methods)] // f64::powf is the oracle
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: platform f64::powf over bases 1e-3..1e3 compared to Fix128 powf within relative tolerance"
+    )]
     fn powf_pos_matches_f64_reference() {
         let mut worst = 0.0f64;
         for bi in 0..40 {
@@ -2640,7 +2646,10 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::disallowed_methods)] // f64::exp is the oracle
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: platform f64::exp compared to Fix128::exp over a sweep of x"
+    )]
     fn exp_matches_f64_reference() {
         for i in 0..=400 {
             let x = -40.0 + 80.0 * f64::from(i) / 400.0;
@@ -3018,7 +3027,10 @@ mod tests {
 
     #[test]
     // 参照値として platform libm を使う (許容 1e-12、決定論の pin は *_golden_bit_patterns 側)
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: platform f64::atan at 0.5, 3, -0.125, 1000 compared to CORDIC Fix128::atan within 1e-12"
+    )]
     fn atan_matches_f64_within_1e12() {
         for (v, expect) in [
             (Fix128::ZERO, 0.0),
@@ -3058,7 +3070,10 @@ mod tests {
 
     #[test]
     // 参照値として platform libm を使う (許容 1e-12、決定論の pin は *_golden_bit_patterns 側)
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: platform f64::atan2 in every quadrant and on axes compared to Fix128::atan2 within 1e-12"
+    )]
     fn atan2_matches_f64_in_every_quadrant_and_on_axes() {
         let cases: [(i64, i64); 10] = [
             (1, 1),
@@ -3110,7 +3125,6 @@ mod tests {
 
     #[test]
     // 参照値として platform libm を使う (許容 1e-12、決定論の pin は *_golden_bit_patterns 側)
-    #[allow(clippy::disallowed_methods)]
     fn atan_identities_hold() {
         // odd: atan(-x) == -atan(x) (CORDIC は符号対称なので bit-exact ではなく 1e-12)
         for v in [
@@ -3687,7 +3701,10 @@ mod tests {
 
     #[test]
     // 参照値として platform libm を使う (許容 1e-11、決定論の pin は sin_cos_golden_bit_patterns 側)
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: platform f64 sin / cos at large and negative angles compared to Fix128 sin_cos within 1e-11"
+    )]
     fn sin_cos_large_and_negative_angles_reduce_correctly() {
         let two_pi = core::f64::consts::PI * 2.0;
         let cases: [(Fix128, f64); 9] = [
@@ -3919,7 +3936,10 @@ mod tests {
     // f64 reference over a dense sweep of the domain.
 
     #[test]
-    #[allow(clippy::disallowed_methods)] // the f64 libm values are the oracle on purpose
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: f64 sin / cos over [-4pi,4pi] and atan over [-40,40] sweep compared to Fix128 CORDIC"
+    )]
     fn transcendental_sweep_matches_f64_reference() {
         // CORDIC with 48 iterations: worst-case error ≈ 2^-46 ≈ 1.4e-14 plus
         // range-reduction rounding; f64 reference itself carries 1e-16.
@@ -4101,7 +4121,10 @@ mod tests {
     /// case within 1e-12 of the f64 reference, including the quadrant
     /// boundaries and the exact axes.
     #[test]
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: platform f64::atan2 compared to Fix128::atan2 when x is a few ulp, within 1e-12"
+    )]
     fn atan2_is_accurate_when_x_is_a_few_ulp() {
         let ulp2 = Fix128::from_raw(0, 2);
         let cases = [

@@ -313,7 +313,6 @@ impl Vehicle {
     /// every substep instead.
     ///
     /// A static chassis gets no force and the state is left unchanged.
-    #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn chassis_force(&mut self, chassis: &RigidBody, dt: Fix128) -> Vec3Fix {
         if chassis.is_static() {

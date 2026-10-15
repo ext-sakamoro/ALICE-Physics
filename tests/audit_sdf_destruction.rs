@@ -13,7 +13,8 @@
 #![allow(
     clippy::disallowed_methods,
     clippy::type_complexity,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 quaternion and cylinder SDF for sharp/smooth subtraction in sdf_destruction"
 )]
 
 use alice_physics::collider::Contact;

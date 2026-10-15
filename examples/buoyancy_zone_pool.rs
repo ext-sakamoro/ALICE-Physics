@@ -18,8 +18,6 @@
 //! cargo run --release --example buoyancy_zone_pool --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::buoyancy_zone::{BuoyancyZone, ZoneShape};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{BodyType, RigidBody};

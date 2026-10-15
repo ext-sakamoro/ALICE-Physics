@@ -44,7 +44,10 @@
 // superposition closed form below are independent f64 evaluations of the
 // textbook formula, not simulation state -- same rationale as
 // `tests/engineering_oracles_fluid.rs`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: JONSWAP spectrum with DNV normalisation and Airy superposition sum of a cos(kx - wt + phase), asserted"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::wave_ship::{

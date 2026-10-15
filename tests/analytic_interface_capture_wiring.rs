@@ -14,7 +14,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 PLIC corner-tetrahedron cut length (6 f)^(1/3) for truncated_cube_volume in interface_capture"
+)]
 
 use alice_physics::interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume};
 use alice_physics::math::{Fix128, Vec3Fix};

@@ -20,7 +20,10 @@
 //!
 //! No expected value is produced by calling the code under test.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 bisection Kepler solution and Euclidean distance for the eccentric two-body nbody references"
+)]
 
 use alice_physics::nbody::{kinetic_energy, total_momentum, DirectSum, NBodyError, VelocityVerlet};
 use alice_physics::{Fix128, Vec3Fix};

@@ -13,8 +13,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::{contact, Contact, Sphere};
 use alice_physics::cylinder::Cylinder;

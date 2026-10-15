@@ -103,7 +103,10 @@ fn scan_matches_point_reads_after_the_round_trip() {
     let player = ReplayPlayer::from_bytes(&rec.to_bytes().unwrap(), BODIES).unwrap();
     // `body` is the argument of `scan_positions` and the inner index of
     // `expected[frame]`, not an iteration over one slice
-    #[allow(clippy::needless_range_loop)]
+    #[allow(
+        clippy::needless_range_loop,
+        reason = "body is both the scan_positions argument and the expected[frame][body] index, not an iteration over one slice"
+    )]
     for body in 0..BODIES {
         let scan = player.scan_positions(body, 0, FRAMES - 1).unwrap();
         assert_eq!(scan.len(), FRAMES as usize, "body {body}");

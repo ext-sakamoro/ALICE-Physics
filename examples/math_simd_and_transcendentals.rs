@@ -57,7 +57,10 @@ fn close(actual: f64, expected: f64, tol: f64) -> bool {
 // lint is not meant to catch (it guards production code computing results
 // with non-deterministic libm, not oracle references in a wiring example),
 // same convention as `src/math.rs::atan_matches_f64_within_1e12`.
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: platform f64::atan at known angles compared to the crate CORDIC Fix128::atan"
+)]
 fn main() {
     // =======================================================================
     // atan -- compiles on every platform, no feature gate.

@@ -62,7 +62,10 @@
 #![cfg(feature = "std")]
 // The deprecated privacy types (not differentially private) stay pinned here
 // until the breaking release that removes them
-#![allow(deprecated)]
+#![allow(
+    deprecated,
+    reason = "pins the deprecated non-DP privacy types (LaplaceNoise, XorShift64, ...) until the breaking release removes them"
+)]
 
 use alice_physics::det_math::{exp64, ln64};
 use alice_physics::privacy::{

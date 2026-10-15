@@ -26,7 +26,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 rotation angle 2 atan2(s, w) about an axis for Euler-equation free rotation closed forms"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
@@ -64,7 +67,10 @@ enum Entry {
 }
 
 fn entries() -> Vec<(SolverBackend, Entry)> {
-    #[allow(unused_mut)]
+    #[allow(
+        unused_mut,
+        reason = "v is only extended under the parallel feature; without it the mut binding is unused"
+    )]
     let mut v = vec![
         (SolverBackend::Xpbd, Entry::Step),
         (SolverBackend::Tgs, Entry::Step),

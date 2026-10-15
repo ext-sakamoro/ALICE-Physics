@@ -76,7 +76,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 dihedral angles acos, convergence order ln ratio and exact cavity volume for mesh quality"
+)]
 
 use alice_physics::sdf_collider::{ClosureSdf, SdfField};
 use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};

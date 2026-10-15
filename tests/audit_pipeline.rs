@@ -9,7 +9,6 @@
 //!   maximum timestamp seen, `event_count` counts every processed event;
 //! * the quantile estimate of a `DDSketch` with accuracy `alpha` is within a
 //!   relative `alpha` of the exact value.
-#![allow(clippy::float_cmp, clippy::needless_range_loop)]
 
 use alice_physics::pipeline::{
     MetricEntry, MetricEvent, MetricPipeline, MetricRegistry, MetricSlot, MetricSnapshot,

@@ -102,7 +102,13 @@ fn y(w: &PhysicsWorld) -> f64 {
 type StepPath = (&'static str, fn(&mut PhysicsWorld, Fix128));
 
 fn xpbd_paths() -> Vec<StepPath> {
-    #[cfg_attr(not(feature = "parallel"), allow(unused_mut))]
+    #[cfg_attr(
+        not(feature = "parallel"),
+        allow(
+            unused_mut,
+            reason = "paths is only extended under the parallel feature; without it the mut binding is unused"
+        )
+    )]
     let mut paths: Vec<StepPath> = vec![("step", |w, dt| w.step(dt))];
     #[cfg(feature = "parallel")]
     paths.push(("step_parallel", |w, dt| w.step_parallel(dt)));

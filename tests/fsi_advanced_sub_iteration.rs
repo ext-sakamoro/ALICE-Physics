@@ -82,8 +82,6 @@
 //! without relaxation", not "partitioned coupling cannot solve this".
 
 #![cfg(feature = "std")]
-// The f64 values are closed-form references, not simulation state.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::coupled_iteration::{
     residual_norm_inf, run_sub_iteration, CoupledIterationError, SubIterationConfig,

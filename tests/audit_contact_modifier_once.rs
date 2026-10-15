@@ -9,7 +9,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
 #![cfg(feature = "std")]
 
 use alice_physics::collider::Contact;

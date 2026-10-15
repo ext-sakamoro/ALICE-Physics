@@ -204,27 +204,6 @@
 // `cargo doc --no-deps --all-features` at v0.14.0-preview.3 landing,
 // escalated from `warn` on 2026-09-13 (v1.0 roadmap Item D).
 #![deny(missing_docs)]
-// Pedantic: suppress lints inherent to physics/math code.
-// - Cast lints: Fixed-point ↔ float conversions and index casts are pervasive.
-// - Naming: coordinate variables (px, py, pz), vertex indices (v0, v1, v2).
-// - must_use: pure functions returning computed values are the norm; annotating
-//   every constructor and accessor adds noise without improving safety.
-// - doc_markdown: technical identifiers in docs are context-obvious.
-// - unreadable_literal: hash constants and bit patterns are more readable without separators.
-// - large_stack_arrays: physics lookup tables and inline data are intentional.
-#![allow(
-    clippy::cast_possible_truncation,
-    clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
-    clippy::cast_lossless,
-    clippy::cast_possible_wrap,
-    clippy::similar_names,
-    clippy::many_single_char_names,
-    clippy::module_name_repetitions,
-    clippy::unreadable_literal,
-    clippy::large_stack_arrays,
-    clippy::doc_markdown
-)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[cfg(all(feature = "wasm", feature = "ffi"))]
@@ -874,7 +853,10 @@ pub use heatmap::{
 };
 pub use heightfield::HeightField;
 pub use interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
-#[allow(deprecated)] // re-exported for compatibility until 3.0
+#[allow(
+    deprecated,
+    reason = "re-exports the deprecated solve_joints_breakable for existing callers; removing it is a semver-major change"
+)]
 pub use joint::{
     solve_joints, solve_joints_breakable, solve_joints_breaking_on_force,
     solve_joints_with_reaction_forces,
@@ -915,7 +897,10 @@ pub use pressure::{PressureConfig, PressureModifier};
 #[cfg(feature = "privacy-crypto")]
 pub use privacy::KeyedRappor;
 #[cfg(feature = "std")]
-#[allow(deprecated)] // kept for existing callers, who see the deprecation at their use
+#[allow(
+    deprecated,
+    reason = "re-exports deprecated non-private privacy types for existing callers, who see the deprecation at their use site"
+)]
 pub use privacy::{
     LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
 };
@@ -1043,7 +1028,10 @@ pub mod prelude {
     };
     pub use crate::heightfield::HeightField;
     pub use crate::interpolation::{BodySnapshot, InterpolationState, WorldSnapshot};
-    #[allow(deprecated)] // re-exported for compatibility until 3.0
+    #[allow(
+        deprecated,
+        reason = "prelude re-exports the deprecated solve_joints_breakable for existing callers; removal is a semver-major change"
+    )]
     pub use crate::joint::{
         solve_joints, solve_joints_breakable, solve_joints_breaking_on_force,
         solve_joints_with_reaction_forces,
@@ -1085,7 +1073,10 @@ pub mod prelude {
     #[cfg(feature = "privacy-crypto")]
     pub use crate::privacy::KeyedRappor;
     #[cfg(feature = "std")]
-    #[allow(deprecated)] // kept for existing callers, who see the deprecation at their use
+    #[allow(
+        deprecated,
+        reason = "prelude re-exports deprecated privacy types for existing callers, who see the deprecation at their use site"
+    )]
     pub use crate::privacy::{
         LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
     };

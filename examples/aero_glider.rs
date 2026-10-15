@@ -20,7 +20,10 @@
 //! ```
 
 // f64 transcendentals compute the closed-form references, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: steady glide speed and angle gamma = atan(CD/CL), V from lift balance, asserted against the simulated glide"
+)]
 
 use alice_physics::atmosphere::Isa1976;
 use alice_physics::lift_drag::{LiftDragParams, LiftDragSurface, THIN_AIRFOIL_LIFT_SLOPE};

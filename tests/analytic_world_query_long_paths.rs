@@ -15,7 +15,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 ellipse surface point and normal (cos th, 2 sin th) for a grazing sphere cast onto an ellipsoid"
+)]
 
 use alice_physics::character::{CharacterConfig, CharacterController};
 use alice_physics::heightfield::HeightField;

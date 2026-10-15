@@ -15,7 +15,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 friction cone half-angle atan(mu) checked against FrictionCone::half_angle"
+)]
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};

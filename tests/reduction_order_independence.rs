@@ -37,8 +37,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-// The control arm measures f64 rounding on purpose.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
 

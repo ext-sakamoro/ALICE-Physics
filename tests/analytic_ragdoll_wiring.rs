@@ -9,7 +9,6 @@
 //! and with gravity off the bones keep their initial spacing.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::joint::Joint;
 use alice_physics::math::{Fix128, Vec3Fix};

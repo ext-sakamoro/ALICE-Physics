@@ -27,7 +27,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 damped sliding velocity (v0 + mu g/beta) e^(-beta t) - mu g/beta, Mueller et al. XPBD 2020 friction cap"
+)]
 
 use alice_physics::collider::Contact;
 use alice_physics::math::{Fix128, Vec3Fix};

@@ -7,8 +7,6 @@
 //! cargo run --release --example vehicle_scenario
 //! ```
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 use alice_physics::vehicle_dynamics::scenario::{

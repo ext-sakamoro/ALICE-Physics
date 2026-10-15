@@ -5,7 +5,11 @@
 //! an independent f64 Rodrigues rotation. Nothing is obtained by calling the
 //! box's own methods to produce the expected value.
 
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 Rodrigues rotation of the eight corners for OrientedBox brute-force bounds"
+)]
 
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::Support;

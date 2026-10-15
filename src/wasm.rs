@@ -601,7 +601,10 @@ impl WasmPhysicsWorld {
     /// C ABI's `AlicePhysicsShape`: 0 box, 1 cylinder, 2 cone, 3 ellipsoid,
     /// 4 wedge, 5 torus); mass and inertia come from `density`.
     #[wasm_bindgen(js_name = "addShapedBody")]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "wasm-bindgen export cannot take a struct from JS cheaply; kind, three sizes, density and xyz position are flat numbers"
+    )]
     pub fn add_shaped_body(
         &mut self,
         kind: u32,
@@ -639,7 +642,10 @@ impl WasmPhysicsWorld {
     /// Add a static height field (`width × depth` heights, row-major, `x`
     /// fastest) from the min corner `(ox, oy, oz)`.
     #[wasm_bindgen(js_name = "addStaticHeightField")]
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "wasm-bindgen export takes heights, grid size, spacing and origin xyz as flat JS numbers instead of a struct"
+    )]
     pub fn add_static_heightfield(
         &mut self,
         heights: &[f64],

@@ -41,7 +41,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cubic polynomial in barycentric coordinates that the P3 tetrahedron basis must interpolate exactly"
+)]
 
 use std::collections::BTreeSet;
 

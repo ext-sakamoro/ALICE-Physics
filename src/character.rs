@@ -397,7 +397,14 @@ impl CharacterController {
         &self,
         pos: Vec3Fix,
         bodies: &[RigidBody],
-        #[cfg_attr(not(feature = "std"), allow(unused_variables))] sdf_colliders: &[SdfCollider],
+        #[cfg_attr(
+            not(feature = "std"),
+            allow(
+                unused_variables,
+                reason = "the SDF ground probe loop is cfg(feature = std), so the no_std build never reads sdf_colliders"
+            )
+        )]
+        sdf_colliders: &[SdfCollider],
     ) -> (bool, Option<usize>) {
         let feet = Vec3Fix::new(
             pos.x,

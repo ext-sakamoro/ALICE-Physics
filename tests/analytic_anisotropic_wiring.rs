@@ -70,7 +70,10 @@
 // reference value that is never written back into `Fix128` production
 // state -- same convention as `tests/analytic_laminate_wiring.rs` and
 // `tests/engineering_oracles_solid.rs`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cos/sin feed the Jones off-axis modulus formula E(theta) for the orthotropic elasticity reference"
+)]
 
 use alice_physics::anisotropic::{
     evaluate_failure, AnisotropicStrength, FailureCriterion, FailureReport, OrthotropicElasticity,

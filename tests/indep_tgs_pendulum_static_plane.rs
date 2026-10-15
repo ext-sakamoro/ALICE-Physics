@@ -23,7 +23,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 damped pendulum period with beta = -ln(d)/dt and mean decay for TGS pendulum on a plane"
+)]
 
 use alice_physics::joint::{BallJoint, HingeJoint, Joint};
 use alice_physics::math::{Fix128, Vec3Fix};

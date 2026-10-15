@@ -11,7 +11,10 @@
 //! cargo run --release --example spherical_planet_walk --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "measured quantity: radius of the simulated walker via powi, asserted against the closed-form landing radius"
+)]
 
 use alice_physics::sdf_character::SdfCharacter;
 use alice_physics::sdf_collider::{SdfField, SdfUnion};

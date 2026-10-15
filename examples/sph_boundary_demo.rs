@@ -9,8 +9,6 @@
 //! ```bash
 //! cargo run --example sph_boundary_demo --features std --release
 //! ```
-// a timing harness: it prints how long the steps took, the steps do not read the clock
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::sdf_collider::ClosureSdf;
 use alice_physics::sdf_sph::{SphConfig, SphParticle, SphSolver};
@@ -62,11 +60,19 @@ fn simulate<F>(label: &str, mut solver_step: F) -> f32
 where
     F: FnMut(f32),
 {
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: wall time of the SPH demo run that the example prints"
+    )]
     let start = Instant::now();
     let dt = 1.0 / 240.0;
     for _ in 0..60 {
         solver_step(dt);
     }
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "timing harness: wall time of the SPH demo run that the example prints"
+    )]
     let elapsed = start.elapsed().as_secs_f32();
     println!(
         "{:>20} : {:>7.2} ms for 60 steps × 512 particles",

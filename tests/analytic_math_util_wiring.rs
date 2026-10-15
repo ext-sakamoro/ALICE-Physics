@@ -6,7 +6,10 @@
 //! * `pow_int(x, n) == x^n` by exact integer arithmetic; `n < 0` is `1 / x^|n|`;
 //!   `pow_int(0, n<0) == 0` (documented), `pow_int(x, 0) == 1`.
 //! * `clamp_fix` is `min(max(x, lo), hi)`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm cbrt and 2^(62/3), 2^(-64/3) references for math_util::cbrt_fix at the documented range ends"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::math_util::{cbrt_fix, clamp_fix, pow_int};

@@ -176,7 +176,10 @@ pub fn capsule_cast(
 /// Earliest `t` in `[0, max_t]` at which the segment `a + t d`–`b + t d`
 /// (unit axis `u`, length `len`) comes within `reach` of `c`: a ray from `c`
 /// along `−d` against the capsule of radius `reach` around `a`–`b`.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "capsule time-of-impact helper needs segment ends, axis, length, reach, direction, point and range; all are precomputed"
+)]
 fn capsule_toi(
     a: Vec3Fix,
     b: Vec3Fix,

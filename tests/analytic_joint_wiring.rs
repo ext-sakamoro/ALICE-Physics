@@ -74,7 +74,10 @@
 
 #![cfg(feature = "std")]
 
-#[allow(deprecated)] // the separation-based variant is pinned below
+#[allow(
+    deprecated,
+    reason = "imports the deprecated separation-based solve_joints_breakable so the tests below can pin it until removal"
+)]
 use alice_physics::joint::solve_joints_breakable;
 use alice_physics::joint::{
     solve_joints, BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint,
@@ -243,7 +246,10 @@ fn joints_without_with_break_force_report_none() {
 // B. Breakable ramp: exact bit closed form
 // ===========================================================================
 
-#[allow(deprecated)] // pins the separation-based solve_joints_breakable
+#[allow(
+    deprecated,
+    reason = "pins the deprecated separation-based solve_joints_breakable, which this test calls, until it is removed"
+)]
 #[test]
 fn solve_joints_breakable_ramp_breaks_exactly_at_k_star() {
     let m = Fix128::from_int(2);
@@ -322,7 +328,10 @@ fn solve_joints_non_breakable_variant_never_removes_joints() {
 // C.1 break_force degenerate values: zero and negative
 // ===========================================================================
 
-#[allow(deprecated)] // pins the separation-based solve_joints_breakable
+#[allow(
+    deprecated,
+    reason = "pins the deprecated separation-based solve_joints_breakable, which this test calls, until it is removed"
+)]
 #[test]
 fn break_force_zero_is_a_strict_boundary() {
     let joint_zero = [Joint::Ball(
@@ -354,7 +363,10 @@ fn break_force_zero_is_a_strict_boundary() {
     );
 }
 
-#[allow(deprecated)] // pins the separation-based solve_joints_breakable
+#[allow(
+    deprecated,
+    reason = "pins the deprecated separation-based solve_joints_breakable, which this test calls, until it is removed"
+)]
 #[test]
 fn negative_break_force_breaks_unconditionally_even_at_zero_separation() {
     let joint_neg = [Joint::Ball(
@@ -535,7 +547,10 @@ fn wraps_to_zero_when_squared(shift: u32) -> bool {
     (hh % (1u128 << 64)) == 0
 }
 
-#[allow(deprecated)] // pins the separation-based solve_joints_breakable
+#[allow(
+    deprecated,
+    reason = "pins the deprecated separation-based solve_joints_breakable, which this test calls, until it is removed"
+)]
 #[test]
 fn extreme_separation_squares_wrap_per_the_documented_formula_not_panic() {
     for shift in [32u32, 40, 50, 62] {
@@ -574,7 +589,10 @@ fn extreme_separation_squares_wrap_per_the_documented_formula_not_panic() {
     }
 }
 
-#[allow(deprecated)] // pins the separation-based solve_joints_breakable
+#[allow(
+    deprecated,
+    reason = "pins the deprecated separation-based solve_joints_breakable, which this test calls, until it is removed"
+)]
 #[test]
 fn moderate_separation_below_the_wrap_threshold_computes_the_true_length() {
     // shift=30: 2*shift=60 < 64, no wrap — compute_force must equal 2^30 exactly.

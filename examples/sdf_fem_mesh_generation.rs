@@ -116,13 +116,19 @@ fn main() {
     // whether the pass budget ran out, which is why `try_refine_conforming`
     // is preferred everywhere else in this crate.
     let mut legacy = one_cell.clone();
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "the example calls deprecated refine_by_max_edge_length to contrast it with try_refine_conforming"
+    )]
     let legacy_passes = legacy.refine_by_max_edge_length(0.6, 16);
     report("refine_by_max_edge_length (deprecated, finishes)", &legacy);
     println!("[sdf_fem_mesh] deprecated API reported {legacy_passes} passes");
 
     let mut legacy_short = one_cell.clone();
-    #[allow(deprecated)]
+    #[allow(
+        deprecated,
+        reason = "the example shows deprecated refine_by_max_edge_length with a one-pass budget cannot report an exhausted budget"
+    )]
     let legacy_short_passes = legacy_short.refine_by_max_edge_length(0.6, 1);
     println!(
         "[sdf_fem_mesh] deprecated API with a one-pass budget: reports {legacy_short_passes} \

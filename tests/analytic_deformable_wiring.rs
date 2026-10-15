@@ -10,7 +10,10 @@
 //!   penetration `p = R - d`; particle moves out `p wp/(wp+wr)`, body moves `-p wr/(wp+wr)` (relative shift = `p`);
 //!   an approach speed `u` along the normal becomes `0` (inelastic), conserving momentum; a static body
 //!   (`wr = 0`) takes none of it, so the particle moves the full `p` and ends with zero normal speed
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 cube volume (2h)^3 checked against the five tetrahedra of DeformableBody::new_cube"
+)]
 
 use alice_physics::deformable::DeformableBody;
 use alice_physics::math::{Fix128, Vec3Fix};

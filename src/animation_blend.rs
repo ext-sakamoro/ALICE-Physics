@@ -672,7 +672,10 @@ mod tests {
 
     /// Textbook SLERP in f64 (independent oracle): shortest path, θ = acos(a·b),
     /// `(sin((1-t)θ)·a + sin(tθ)·b) / sin θ`, renormalised.
-    #[allow(clippy::disallowed_methods)] // the f64 libm values are the oracle on purpose
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: textbook f64 SLERP (acos of dot, sin weights) compared against the Fix128 quaternion slerp"
+    )]
     fn slerp_ref(a: [f64; 4], b: [f64; 4], t: f64) -> [f64; 4] {
         let mut dot = a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
         let b = if dot < 0.0 {
@@ -981,7 +984,10 @@ mod tests {
     ///
     /// t=1/2: (0, 0, sin π/8, cos π/8)、t=1/4: (0, 0, sin π/16, cos π/16)
     #[test]
-    #[allow(clippy::disallowed_methods)] // closed-form f64 sin / cos are the oracle
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: closed-form slerp of identity to 90 deg about z, (0,0,sin(pi/8),cos(pi/8)) and pi/16, 3pi/16 points"
+    )]
     fn quat_slerp_identity_to_90deg_closed_form() {
         let a = QuatFix::IDENTITY;
         let b = QuatFix::from_axis_angle(Vec3Fix::from_int(0, 0, 1), Fix128::PI.half());
@@ -1081,7 +1087,10 @@ mod tests {
     /// (1,2,2,4)/5 と (4,2,−2,−1)/5 のような有理直交対は truncation で dot = −2 ulp になり
     /// `Fix128::atan2(≈1, 2 ulp)` が壊れる (math.rs 側 bug、report 済) ので identity を使う
     #[test]
-    #[allow(clippy::disallowed_methods)] // closed-form f64 sin / cos are the oracle
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: closed-form slerp midpoint (sin(pi/8), cos(pi/8)) for an orthogonal quaternion pair, checks no sign flip"
+    )]
     fn quat_slerp_orthogonal_pair_does_not_flip() {
         let a = QuatFix::IDENTITY;
         let b = QuatFix::new(r(1, 3), r(2, 3), r(2, 3), Fix128::ZERO);

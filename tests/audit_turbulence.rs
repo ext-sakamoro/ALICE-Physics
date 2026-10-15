@@ -1,7 +1,11 @@
 //! Audit oracle for the public surface of `turbulence`: Smagorinsky, strain-rate
 //! magnitude, friction velocity. Expected values are hand closed forms / independent f64.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 rotated strain invariance and log-law u+ = ln(y+)/kappa + B for turbulence"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::turbulence::{

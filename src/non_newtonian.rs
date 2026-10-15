@@ -278,12 +278,6 @@ impl HerschelBulkley {
 mod tests {
     use super::*;
 
-    #[allow(dead_code)]
-    fn approx_eq(a: Fix128, b: Fix128, tol: Fix128) -> bool {
-        let d = if a > b { a - b } else { b - a };
-        d <= tol
-    }
-
     #[test]
     fn newtonian_stress_linear() {
         let n = PowerLaw::newtonian(Fix128::from_int(2));

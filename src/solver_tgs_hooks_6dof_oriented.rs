@@ -22,8 +22,14 @@
 //! `pub(crate)` since v0.14.0-preview.8 — see [`crate::solver_tgs`] for the
 //! Option-C rationale.
 
-#![allow(dead_code)]
-#![allow(rustdoc::broken_intra_doc_links)]
+#![allow(
+    dead_code,
+    reason = "6-DOF oriented TGS hooks are pub(crate) since 0.14.0-preview.8 and some helpers have no crate caller yet"
+)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    reason = "docs link TGS items that became private with the pub(crate) change; links are kept until the references are rewritten"
+)]
 
 use crate::gyroscopic::FreeRotation;
 use crate::math::{Fix128, QuatFix, Vec3Fix};

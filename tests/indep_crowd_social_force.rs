@@ -25,7 +25,10 @@
 
 #![cfg(feature = "std")]
 // f64 `ln` / `exp` compute references outside the crate.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 social force repulsion A exp(gap/B) energy and ln of the force for crowd_force decay checks"
+)]
 
 use alice_physics::crowd_force::{
     CrowdForceError, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
