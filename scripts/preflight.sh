@@ -56,6 +56,16 @@ python3 scripts/workflow_timeouts.py
 step "cargo fmt --check"
 cargo fmt -- --check
 
+# every generated file and generated table at once (each later check stops the run at
+# the first stale one; this lists all of them before the slow steps)
+step "generated files are current (scripts/ledgers.py --check, all at once)"
+python3 scripts/test_ledgers.py
+if [[ $quick -eq 1 || $fast -eq 1 ]]; then
+  python3 scripts/ledgers.py --check --allow-missing-tools
+else
+  python3 scripts/ledgers.py --check
+fi
+
 step "README f32 module row = src/"
 python3 scripts/f32_modules.py --check
 

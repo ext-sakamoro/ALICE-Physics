@@ -715,6 +715,10 @@ jobs:
         run: python3 scripts/test_changelog_dup_check.py
       - name: CHANGELOG duplicate bullets ([Unreleased] has no bullet written twice)
         run: python3 scripts/changelog_dup_check.py
+      # the generated-file list and its all-at-once check (the preflight runs the check;
+      # CI regenerates each ledger in its own status workflow)
+      - name: Generated files list and stale check (test)
+        run: python3 scripts/test_ledgers.py
       - name: Predictable randomness guard (test first)
         run: python3 scripts/test_csprng_guard.py
       - name: Predictable randomness guard
