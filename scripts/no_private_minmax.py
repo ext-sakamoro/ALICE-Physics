@@ -31,7 +31,9 @@ NAMES = ("max", "min", "max64", "min64")
 # visibility in front do not matter; a float type on the first parameter is
 # what makes it a copy of the law
 COPY = re.compile(
-    r"\bfn\s+(" + "|".join(NAMES) + r")\s*(<[^>]*>)?\s*\(\s*(mut\s+)?\w+\s*:\s*(?:&\s*(?:mut\s+)?)?(f32|f64)\b"
+    # `r#max` is the same name; the generic list runs to the `(` so a nested
+    # bound (`<T: Into<f32>>`) does not end it early
+    r"\bfn\s+(?:r#)?(" + "|".join(NAMES) + r")\s*(<[^(]*>)?\s*\(\s*(mut\s+)?\w+\s*:\s*(?:&\s*(?:mut\s+)?)?(f32|f64)\b"
 )
 REEXPORT = re.compile(r"pub\(crate\)\s+use\s+alice_det_math::\{([^}]*)\}")
 STRING = re.compile(r'r(#*)"(?:.|\n)*?"\1|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])\'', re.S)

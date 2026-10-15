@@ -44,6 +44,9 @@ class NoPrivateMinmax(unittest.TestCase):
             "fn max<T>(a: f32, b: f32) -> f32 { a }",
             "fn max(a: &f32, b: &f32) -> f32 { *a }",
             "fn min64(a: &mut f64, b: f64) -> f64 { *a }",
+            "pub fn max<T: Into<f32>>(a: f32, b: f32) -> f32 { a }",
+            "fn r#min(a: f32, b: f32) -> f32 { a }",
+            "fn max64<A: Into<Vec<f64>>, B>(a: f64, b: f64) -> f64 { a }",
             "mod m {\n    #[inline]\n    pub(crate) fn min(\n        a: f32,\n        b: f32,\n    ) -> f32 { a }\n}",
         ]
         for src in copies:
