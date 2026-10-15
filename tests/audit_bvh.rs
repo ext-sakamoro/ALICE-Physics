@@ -10,9 +10,10 @@
 
 #![cfg(feature = "std")]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types)]
-// the Morton cell index closed form is evaluated in f64
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_types,
+    reason = "HashSet only checks pair uniqueness in the test; iteration order is never used"
+)]
 
 use alice_physics::bvh::{point_to_morton, BvhNode, BvhPrimitive, LinearBvh};
 use alice_physics::collider::AABB;

@@ -1,9 +1,16 @@
 //! Audit oracle for `joint`: XPBD position / angle corrections of the seven joint types
 //! checked against hand closed forms (generalised inverse mass, exact single-solve rigid limits).
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 joint axis angle atan2(s, c) and twist 2 atan2(s, w) for XPBD joint corrections"
+)]
 
-#[allow(deprecated)] // the separation-based variant is pinned below
+#[allow(
+    deprecated,
+    reason = "imports the deprecated separation-based solve_joints_breakable so the tests below can pin it until removal"
+)]
 use alice_physics::joint::solve_joints_breakable;
 use alice_physics::joint::{
     solve_joints, solve_joints_breaking_on_force, BallJoint, ConeTwistJoint, D6Joint, D6Motion,
@@ -900,7 +907,10 @@ fn reaction_force_is_a_force_not_a_separation() {
     assert_eq!(rigid.reaction_force(&pinned, dt), Fix128::ZERO);
 }
 
-#[allow(deprecated)] // pins the separation-based solve_joints_breakable
+#[allow(
+    deprecated,
+    reason = "pins the deprecated separation-based solve_joints_breakable, which this test calls, until it is removed"
+)]
 #[test]
 fn breakable_returns_descending_indices_skips_them_and_uses_strict_greater() {
     let o = Vec3Fix::ZERO;

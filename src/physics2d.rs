@@ -1827,7 +1827,10 @@ fn solve_revolute(
 }
 
 /// Solve a distance joint.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "XPBD distance solve needs both bodies, both anchors, target, compliance, alpha and the accumulated lambda"
+)]
 fn solve_distance(
     bodies: &mut [RigidBody2D],
     a: usize,
@@ -1886,7 +1889,10 @@ fn solve_distance(
 }
 
 /// Solve a weld joint (position + angle constraint).
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "XPBD weld solve needs both bodies, both anchors, reference angle, compliance and alpha"
+)]
 fn solve_weld(
     bodies: &mut [RigidBody2D],
     a: usize,
@@ -1925,7 +1931,10 @@ fn solve_weld(
 }
 
 /// Solve a mouse joint (pull body toward target).
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "mouse joint solve needs the body, target, force limit, stiffness, damping, sub-step dt and the accumulated impulse"
+)]
 fn solve_mouse(
     bodies: &mut [RigidBody2D],
     body_idx: usize,

@@ -1,5 +1,3 @@
-// PyO3 macro expansion generates identity conversions for PyResult wrappers
-#![allow(clippy::useless_conversion)]
 //! Python Bindings for ALICE-Physics (PyO3 + NumPy Zero-Copy)
 //!
 //! # Optimization Layers
@@ -35,7 +33,6 @@ pub struct PyPhysicsWorld {
     inner: PhysicsWorld,
 }
 
-#[allow(clippy::useless_conversion)]
 #[pymethods]
 impl PyPhysicsWorld {
     /// Create a new physics world with default configuration.
@@ -403,7 +400,10 @@ impl PyPhysicsWorld {
     /// height b), 2 cone (radius a, half height b), 3 ellipsoid (radii a, b,
     /// c), 4 wedge (width a, height b, depth c), 5 torus (major a, minor b).
     /// Mass and inertia come from `density`.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Python binding mirrors the C ABI shape call: kind, three sizes, density and xyz position as flat Python arguments"
+    )]
     #[pyo3(signature = (kind, a, b, c, density, x, y, z))]
     fn add_shaped_body(
         &mut self,
@@ -589,7 +589,10 @@ impl PyPhysicsWorld {
 
     /// Add a spring (rest length and damping not negative, stiffness
     /// positive) and return its index.
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "Python spring binding takes both bodies, both anchors, rest length, stiffness and damping as flat Python arguments"
+    )]
     fn add_spring_joint(
         &mut self,
         body_a: usize,
@@ -838,7 +841,6 @@ pub struct PyDeterministicSimulation {
     inner: DeterministicSimulation,
 }
 
-#[allow(clippy::useless_conversion)]
 #[pymethods]
 impl PyDeterministicSimulation {
     /// Create a new deterministic simulation.
@@ -981,7 +983,10 @@ fn compute_checksum(py: Python<'_>, state_bytes: Vec<u8>) -> u64 {
 ///     bytes (20 bytes)
 #[pyfunction]
 #[pyo3(signature = (player_id, move_x=0.0, move_y=0.0, move_z=0.0, actions=0, aim_x=0.0, aim_y=0.0, aim_z=0.0))]
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "Python keyword API takes player id, movement xyz, action bits and aim xyz as flat arguments with defaults"
+)]
 fn encode_frame_input(
     player_id: u8,
     move_x: f64,
@@ -1007,7 +1012,10 @@ fn encode_frame_input(
 ///
 /// Returns: (player_id, move_x, move_y, move_z, actions, aim_x, aim_y, aim_z)
 #[pyfunction]
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "returns the decoded FrameInput as a flat Python tuple of eight fields, which PyO3 converts to a native tuple"
+)]
 fn decode_frame_input(data: Vec<u8>) -> PyResult<(u8, f64, f64, f64, u32, f64, f64, f64)> {
     if data.len() < 20 {
         return Err(pyo3::exceptions::PyValueError::new_err("Need 20 bytes"));

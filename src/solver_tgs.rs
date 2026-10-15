@@ -46,8 +46,14 @@
 // Reserved TGS extension mechanism — pub(crate) since v0.14.0-preview.8.
 // Broken intra-doc links to now-private items are expected until callers
 // rewrite the references; suppression is scoped to this module.
-#![allow(dead_code)]
-#![allow(rustdoc::broken_intra_doc_links)]
+#![allow(
+    dead_code,
+    reason = "reserved TGS extension module is pub(crate) since 0.14.0-preview.8 and parts have no crate caller yet"
+)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    reason = "docs still link items that became private when the TGS module went pub(crate); links are kept until the references are rewritten"
+)]
 
 use crate::det_hash::DetHashMap;
 use crate::error::PhysicsError;

@@ -14,7 +14,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::multiphase::{initialize_level_set_sphere, Grid3d};

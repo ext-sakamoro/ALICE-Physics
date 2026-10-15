@@ -384,7 +384,6 @@ pub struct DeterministicSimulation {
 impl DeterministicSimulation {
     /// Create a new deterministic simulation
     #[must_use]
-    #[allow(clippy::needless_pass_by_value)] // config.physics is moved (partial consume)
     pub fn new(config: NetcodeConfig) -> Self {
         let world = PhysicsWorld::new(config.physics);
         let player_count = config.player_count as usize;

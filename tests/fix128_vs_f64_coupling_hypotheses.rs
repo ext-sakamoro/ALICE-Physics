@@ -115,7 +115,10 @@
 // comparison, plus closed-form oracle references — never simulation state — so
 // the determinism gate on float transcendentals does not apply. `f64::exp` is
 // used for the reference root of the nonlinear scene.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 Newton root of u = Lambda e^u (Joule map) as reference for the Fix128 coupling iteration"
+)]
 
 use alice_physics::coupled_iteration::{residual_norm_inf, SubIterationConfig};
 use alice_physics::math::Fix128;

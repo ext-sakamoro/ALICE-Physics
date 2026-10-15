@@ -9,7 +9,10 @@
 //! cargo run --release --example character_state_machine --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: cos(slope angle) as expected ground up_alignment; sin / cos also build the inclined plane SDF input"
+)]
 
 use alice_physics::character_state::{transition, CharacterState, CharacterStateContext};
 use alice_physics::sdf_character::SdfCharacter;

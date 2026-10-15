@@ -1735,7 +1735,10 @@ pub fn run_substep(
 /// # Errors
 ///
 /// As [`run_substep`].
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "public substep entry takes participants, plan, frozen flags, bodies, board, forces, time and SDF contacts as separate borrows"
+)]
 pub fn run_substep_with_sdf_contacts(
     participants: &mut [Box<dyn Participant>],
     plan: &ParticipantPlan,

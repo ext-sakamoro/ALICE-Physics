@@ -1571,7 +1571,6 @@ pub unsafe extern "C" fn alice_physics_world_cast_sphere(
 /// # Safety
 /// As `alice_physics_world_cast_ray`.
 #[no_mangle]
-#[allow(clippy::too_many_arguments)]
 pub unsafe extern "C" fn alice_physics_world_cast_capsule(
     world: *const PhysicsWorld,
     a: AliceVec3,

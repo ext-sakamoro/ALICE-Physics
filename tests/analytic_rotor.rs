@@ -20,7 +20,10 @@
 #![cfg(feature = "std")]
 // f64 `powi` / `sqrt` compute closed-form references outside the crate,
 // not simulation state (same convention as the other analytic tests).
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 rotor thrust and torque laws T = C_T rho n^2 D^4, Q = C_Q rho n^2 D^5 (McCormick, Leishman)"
+)]
 
 use std::f64::consts::PI;
 

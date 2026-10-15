@@ -33,7 +33,11 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 complex arithmetic for the FDTD material dispersion and Fresnel reflection references"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::maxwell_fdtd::{

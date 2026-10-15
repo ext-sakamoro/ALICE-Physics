@@ -70,7 +70,14 @@ IDENT_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 DECL_RE = re.compile(r"\b(?:fn|struct|enum|const|static|trait|type|mod|union)\s+([A-Za-z_][A-Za-z0-9_]*)")
 USE_RE = re.compile(r"\b(?:pub(?:\([^)]*\))?\s+)?use\s+[^;]*;")
 CFG_TEST_RE = re.compile(r"#\s*\[\s*cfg\s*\(\s*(?:all\s*\(\s*)?test\b[^\]]*\]")
+# searched over a whole file (strings and comments blanked), so an attribute that
+# rustfmt splits over several lines, `#![allow(\n    dead_code,\n    reason = ..)]`, is found
 ALLOW_DEAD_RE = re.compile(r"#\s*!?\s*\[[^\]]*\ballow\s*\([^)]*\bdead_code\b")
+
+
+def allow_dead_lines(code: str) -> set[int]:
+    """0-based lines on which an `allow(..dead_code..)` attribute starts."""
+    return {code.count("\n", 0, m.start()) for m in ALLOW_DEAD_RE.finditer(code)}
 MARKER_RE = re.compile(r"//\s*ALLOW-(UNWIRED|DEAD)\s*:(.*)$")
 # `// ALLOW-UNWIRED: wiring debt <key> ...` names a tracked debt; the key resolves in
 # DEBT_LEDGER, a public table, so the marker never points at a record outside the repo
@@ -735,6 +742,7 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
     dead_markers: list[tuple[Path, int, str]] = []
     for p in files:
         code_lines = stripped[p].split("\n")
+        dead_lines = allow_dead_lines(stripped[p])
         rel = p.relative_to(root).as_posix()
         for i, rawline in enumerate(raw[p]):
             m = MARKER_RE.search(rawline)
@@ -754,7 +762,7 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
                     if not c.strip():
                         j += 1
                         continue
-                    if kind == "DEAD" and ALLOW_DEAD_RE.search(c):
+                    if kind == "DEAD" and j in dead_lines:
                         target = j
                         break
                     if c.lstrip().startswith("#"):
@@ -774,7 +782,7 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
                 for nm in names:
                     unwired_markers[f"{rel}::{nm}"] = (p, i + 1, reason)
             else:
-                if target is None or not ALLOW_DEAD_RE.search(code_lines[target]):
+                if target is None or target not in dead_lines:
                     vs.append(Violation("stale_marker", f"{rel}:{i + 1}", "ALLOW-DEAD の直後に allow(dead_code) が無い"))
                 else:
                     dead_markers.append((p, target, reason))
@@ -830,8 +838,8 @@ def check(root: Path, baseline_text: str = "") -> list[Violation]:
     actual_unmarked: dict[str, int] = {}
     for p in files:
         rel = p.relative_to(root).as_posix()
-        for i, c in enumerate(stripped[p].split("\n")):
-            if ALLOW_DEAD_RE.search(c) and (p, i) not in marked_lines:
+        for i in sorted(allow_dead_lines(stripped[p])):
+            if (p, i) not in marked_lines:
                 actual_unmarked[rel] = actual_unmarked.get(rel, 0) + 1
     for rel, n in sorted(actual_unmarked.items()):
         allowed = base_dead.get(rel, 0)

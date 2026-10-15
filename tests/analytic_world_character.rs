@@ -29,7 +29,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 slope plane normal (-sin a, cos a) for move_character walkable / sliding slope cases"
+)]
 
 use alice_physics::character::{CharacterConfig, CharacterController};
 use alice_physics::heightfield::HeightField;

@@ -30,8 +30,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::debug_render::{debug_draw_world, DebugDrawData, DebugDrawFlags};
 use alice_physics::joint::{BallJoint, Joint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

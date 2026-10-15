@@ -13,8 +13,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::fsi_advanced::{
     aggregate_forces, buoyancy_force, drag_force, react_back_pressure, SolidSample,
 };

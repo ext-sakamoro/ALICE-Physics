@@ -12,7 +12,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 sphere SDF distances of two bumps for the nearest-hit capsule cast margin check"
+)]
 
 use alice_physics::character::{CharacterConfig, CharacterController};
 use alice_physics::math::{Fix128, Vec3Fix};

@@ -12,7 +12,6 @@
 //!   maximum vertex dot, box the sum of per-axis maxima).
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::collider::{
     contact, epa, gjk, Capsule, ConvexHull, ScaledShape, Sphere, Support, AABB,

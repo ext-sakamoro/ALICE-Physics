@@ -6,7 +6,10 @@
 //! uses planes whose distance and normal are closed forms.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 sin/cos of the tilt angle give the tilted-plane normal and expected up_alignment = cos(theta) for character_state"
+)]
 
 use alice_physics::character_state::{transition, CharacterState, CharacterStateContext};
 use alice_physics::sdf_character::SdfCharacter;

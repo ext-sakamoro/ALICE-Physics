@@ -18,7 +18,10 @@
 //!
 //! Nothing here touches `src/`.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Norton creep strain and WLF shift factor 10^log(aT) for structural_solver run history"
+)]
 
 use alice_physics::beam_stress::{ColumnEndCondition, CrossSection, LoadCase};
 use alice_physics::filament_db::MaterialProperties;

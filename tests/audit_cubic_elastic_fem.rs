@@ -14,7 +14,8 @@
     clippy::disallowed_methods,
     clippy::field_reassign_with_default,
     clippy::unnecessary_map_or,
-    clippy::needless_range_loop
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 documented relative tolerance floor 2^-30 for the cubic FEM linear patch test"
 )]
 
 use alice_physics::cubic_elastic_fem::{

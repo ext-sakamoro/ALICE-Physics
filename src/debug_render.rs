@@ -109,7 +109,6 @@ impl DebugPoint {
 
 /// What to draw in debug mode
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[allow(clippy::struct_excessive_bools)]
 pub struct DebugDrawFlags {
     /// Draw body AABBs: the box the broad-phase tests for each body (a cube
     /// centred on the body position with half-extent equal to its collision

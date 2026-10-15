@@ -25,8 +25,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-// f64 builds scene inputs only, never state that is compared.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::crowd_force::{
     CrowdParticipant, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,

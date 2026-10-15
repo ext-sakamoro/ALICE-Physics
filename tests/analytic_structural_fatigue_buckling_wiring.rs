@@ -21,7 +21,10 @@
 //! snap-through     P = (16 / (3 sqrt 3)) E A (h / L)^3
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Basquin life Ne (Se/S)^m and Euler column buckling pi^2 E I/(KL)^2 for structural_solver"
+)]
 
 use alice_physics::beam_stress::{ColumnEndCondition, CrossSection, LoadCase};
 use alice_physics::buckling::SnapThroughError;

@@ -13,11 +13,16 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types)]
+#![allow(
+    clippy::disallowed_types,
+    reason = "HashMap/HashSet only count or look up mesh edges in this test; no assertion depends on hash iteration order"
+)]
 // Matrix oracles index rows and columns on purpose: `t[a][b]` reads as the maths does.
-#![allow(clippy::needless_range_loop)]
+#![allow(
+    clippy::needless_range_loop,
+    reason = "inertia oracles index rows and columns on purpose so s[a][b] reads as the maths does"
+)]
 
 use alice_physics::convex_mesh_builder::build_hull_mesh;
 use alice_physics::mass_properties::{

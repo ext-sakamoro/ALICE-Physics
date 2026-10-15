@@ -13,7 +13,10 @@
 //! damping 1; gravity read from `world.config.gravity`.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Fix128 resolution 2^-64 tolerance for the free-fall closed form in degenerate vehicle inputs"
+)]
 
 use alice_physics::anisotropic_friction::AnisotropicFriction;
 use alice_physics::math::{Fix128, Vec3Fix};

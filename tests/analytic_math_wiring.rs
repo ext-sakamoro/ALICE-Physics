@@ -58,7 +58,10 @@ fn close(actual: f64, expected: f64, tol: f64) -> bool {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm atan at known angles against Fix128::atan (CORDIC) in math_wiring"
+)]
 fn atan_matches_f64_atan_at_known_angles() {
     // f64::atan is a platform `libm` call -- an independently implemented
     // algorithm, never Fix128::atan itself.
@@ -84,7 +87,10 @@ fn atan_matches_f64_atan_at_known_angles() {
 }
 
 #[test]
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm atan of the inputs compared with Fix128::atan odd symmetry and complement identity"
+)]
 fn atan_odd_symmetry_and_complement_identity() {
     // atan(-x) == -atan(x) (odd function) and atan(x) + atan(1/x) == pi/2
     // for x > 0 -- both closed forms, independent of the implementation.
@@ -125,7 +131,10 @@ fn atan_of_zero_is_within_the_documented_cordic_residual_not_exact_zero() {
 }
 
 #[test]
-#[allow(clippy::disallowed_methods)]
+#[allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm atan at extreme magnitude against Fix128::atan approaching pi/2 without overflow"
+)]
 fn atan_at_extreme_magnitude_approaches_pi_over_2_without_overflow() {
     // CORDIC vectoring mode's vector-magnitude gain growth over 48
     // iterations is bounded (~1.6467x the starting magnitude), so this does

@@ -7,7 +7,6 @@
 //! `base = A * base_layers * layer_h * base_density`, `interface = A * interface_layers * layer_h * interface_density`,
 //! `bulk = A * (H - dense) * bulk_density`; filament length `= V / (pi (d/2)^2)`; time `= V / throughput`.
 //! The quality preset is `bulk 0.10, 4 interface layers, layer 0.1 mm, 600 mm^3/min` on top of the defaults.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
 use alice_physics::support_volume::{

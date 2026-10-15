@@ -23,8 +23,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-// reference values are f64 closed forms of simulation scenes
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
 use alice_physics::linear_elastic_fem::{

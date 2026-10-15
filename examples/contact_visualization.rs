@@ -285,7 +285,10 @@ fn main() {
     //    height = normal_force passed through verbatim (not scaled by
     //    mu, unlike the friction arrows above).
     // ------------------------------------------------------------------
-    #[allow(clippy::disallowed_methods)]
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: friction cone half-angle atan(0.3), asserted against the contact cone half_angle"
+    )]
     // independent f64 libm oracle, never fed back into Fix128 state
     let half_angle_ref = 0.3_f64.atan();
     let contacts_c = [

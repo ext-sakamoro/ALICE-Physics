@@ -54,8 +54,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-// The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
 
 use std::rc::Rc;
 

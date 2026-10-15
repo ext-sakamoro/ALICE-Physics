@@ -15,7 +15,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Newton cooling 20 + 100 exp(-2 * 0.25) and splat distance for ThermalModifier"
+)]
 
 use alice_physics::sim_modifier::PhysicsModifier;
 use alice_physics::thermal::{HeatSource, ThermalConfig, ThermalModifier};

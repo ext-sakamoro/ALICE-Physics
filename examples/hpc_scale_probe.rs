@@ -26,8 +26,6 @@
 //! assertions — it is a measurement harness, not a test. The numbers it produces
 //! belong in the wall record, not in a golden file, because they are
 //! machine-specific by construction.
-// a timing harness: it prints how long the steps took, the steps do not read the clock
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::eulerian_grid::{project_pressure, MacGrid};
 use alice_physics::math::{Fix128, Vec3Fix};
@@ -96,8 +94,16 @@ fn probe_eulerian() {
             *slot = Fix128::from_f64(((i % 7) as f64 - 3.0) * 0.1);
         }
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time per cell and per body that this scale probe prints"
+        )]
         let t0 = Instant::now();
         project_pressure(&mut grid, dt, density, 1);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time per cell and per body that this scale probe prints"
+        )]
         let elapsed = t0.elapsed();
 
         let ns_per_cell = elapsed.as_secs_f64() * 1.0e9 / cells as f64;
@@ -170,8 +176,16 @@ fn probe_rigid_bodies() {
         }
         let bytes = count * size_of::<RigidBody>();
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time per cell and per body that this scale probe prints"
+        )]
         let t0 = Instant::now();
         world.step(dt);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time per cell and per body that this scale probe prints"
+        )]
         let elapsed = t0.elapsed();
 
         let us_per_body = elapsed.as_secs_f64() * 1.0e6 / count as f64;

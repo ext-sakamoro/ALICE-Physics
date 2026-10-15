@@ -1,5 +1,8 @@
 //! Audit S1-5 oracles for `alice_physics::filament_db`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Reuss lower bound 1/(cos^2/E + sin^2/Ez) for filament_db Young modulus at angle"
+)]
 
 use alice_physics::filament_db::*;
 use alice_physics::math::Fix128;

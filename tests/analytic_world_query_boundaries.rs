@@ -11,8 +11,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::character::{CharacterConfig, CharacterController};
 use alice_physics::collider::AABB;
 use alice_physics::heightfield::HeightField;

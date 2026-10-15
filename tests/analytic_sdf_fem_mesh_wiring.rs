@@ -26,8 +26,6 @@
 #![cfg(feature = "std")]
 // The reference computations below work in plain f32/f64 geometry; the
 // crate's own determinism gate (`Fix128` + `alice_physics::det_math`) is not
-// in scope for an independent check written against it.
-#![allow(clippy::disallowed_methods)]
 
 use std::panic::{self, AssertUnwindSafe};
 
@@ -436,7 +434,10 @@ fn one_tet_mesh(side: f32) -> SdfTetMesh {
 /// `max_edge_length`), and the deprecated one's pass count must equal
 /// `try_refine_conforming`'s `Ok` value.
 #[test]
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "compares the deprecated refine_by_max_edge_length with try_refine_conforming until the old method is removed"
+)]
 fn deprecated_refine_matches_try_refine_conforming_when_the_budget_suffices() {
     let mut via_new = one_tet_mesh(1.0);
     let new_passes = via_new
@@ -460,7 +461,10 @@ fn deprecated_refine_matches_try_refine_conforming_when_the_budget_suffices() {
 /// from a clean finish), which is exactly the ambiguity
 /// `try_refine_conforming` was written to remove.
 #[test]
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "pins the deprecated refine_by_max_edge_length behaviour on an exhausted budget until it is removed"
+)]
 fn deprecated_refine_reports_max_passes_on_an_exhausted_budget_old_signature_behaviour() {
     let mut via_new = one_tet_mesh(1.0);
     let result = via_new.try_refine_conforming(0.7, 4);
@@ -513,7 +517,10 @@ fn generate_marching_tets_panics_on_nonpositive_cell_zero_and_negative() {
 }
 
 #[test]
-#[allow(deprecated)]
+#[allow(
+    deprecated,
+    reason = "pins that the deprecated refine_by_max_edge_length panics on a nonpositive threshold until it is removed"
+)]
 fn deprecated_refine_panics_on_nonpositive_threshold() {
     for bad_threshold in [0.0_f32, -1.0_f32] {
         let outcome = panic::catch_unwind(AssertUnwindSafe(|| {

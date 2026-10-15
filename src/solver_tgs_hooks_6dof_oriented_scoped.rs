@@ -25,8 +25,14 @@
 //! `pub(crate)` since v0.14.0-preview.8 — see [`crate::solver_tgs`] for the
 //! Option-C rationale.
 
-#![allow(dead_code)]
-#![allow(rustdoc::broken_intra_doc_links)]
+#![allow(
+    dead_code,
+    reason = "scoped 6-DOF oriented TGS island solvers are pub(crate) since 0.14.0-preview.8 and some have no crate caller yet"
+)]
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    reason = "docs link TGS items that became private with the pub(crate) change; links are kept until the references are rewritten"
+)]
 
 use crate::det_hash::DetHashMap;
 use crate::math::Fix128;
@@ -54,7 +60,10 @@ use crate::solver_tgs_hooks_6dof_oriented::{
 /// # Panics
 /// Panics if a contact in `island.contacts` refers to a body that is
 /// not listed in `island.bodies`.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "island solve takes world bodies, contacts, joints, island, cache, both configs and dt; each is a separate borrow"
+)]
 pub(crate) fn solve_oriented_island_isolated(
     world_bodies: &mut [Body6DofOrientedState],
     world_contacts: &mut [ContactOriented],
@@ -163,7 +172,10 @@ pub(crate) fn solve_oriented_island_isolated(
 /// order — dispatched via [`dispatch_islands`] rather than a
 /// hand-written loop so the traversal is shared with any other consumer
 /// of the `solver_tgs` island-dispatch surface.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "serial island solve takes world bodies, contacts, joints, islands, cache, both configs and dt; each is a separate borrow"
+)]
 pub(crate) fn solve_oriented_islands_serial(
     world_bodies: &mut [Body6DofOrientedState],
     world_contacts: &mut [ContactOriented],
@@ -214,7 +226,10 @@ type IslandUpdate = (
 );
 
 #[cfg(feature = "parallel")]
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "parallel island solve takes world bodies, contacts, joints, islands, caches, both configs and dt; each is a separate borrow"
+)]
 pub(crate) fn solve_oriented_islands_parallel(
     world_bodies: &mut [Body6DofOrientedState],
     world_contacts: &mut [ContactOriented],

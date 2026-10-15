@@ -4,7 +4,6 @@
 //! Chhabra-Richardson) evaluated in plain f64 with multiplication only (the
 //! crate's clippy config forbids platform powf in tests), never the function
 //! under test.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
 use alice_physics::non_newtonian::{Bingham, Carreau, HerschelBulkley, PowerLaw};

@@ -381,7 +381,10 @@ type SeenLog = Arc<Mutex<Vec<(usize, Vec<SdfContact>)>>>;
 fn xpbd_paths() -> Vec<StepPath> {
     #[cfg_attr(
         not(any(feature = "parallel", feature = "gpu-solver-bridge")),
-        allow(unused_mut)
+        allow(
+            unused_mut,
+            reason = "paths is only extended under parallel or gpu-solver-bridge; without both the mut binding is unused"
+        )
     )]
     let mut paths: Vec<StepPath> = vec![("step", |w, dt| w.step(dt))];
     #[cfg(feature = "parallel")]

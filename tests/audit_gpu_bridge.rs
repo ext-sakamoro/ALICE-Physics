@@ -1,6 +1,5 @@
 //! Audit oracles for `alice_physics::gpu_bridge` (trait defaults and host routing).
 #![cfg(feature = "gpu-solver-bridge")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::collider::Contact;
 use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};

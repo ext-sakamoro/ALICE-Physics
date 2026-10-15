@@ -10,8 +10,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::audio_physics::{AudioConfig, AudioGenerator, AudioMaterial};
 use alice_physics::debug_render::{DebugDrawData, DebugDrawFlags};
 use alice_physics::heatmap::{HeatmapConfig, SliceAxis};

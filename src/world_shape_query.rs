@@ -2284,7 +2284,10 @@ fn toi_convex<S: Support>(
 /// wedges, ellipsoids, hulls, mesh triangles, height-field cells) keep GJK's
 /// bounds (`slack` is zero for them; their support points are not moved
 /// onto an axis).
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "refined TOI takes segment, radius, inflation, direction, range, solid, slack and the exact-distance closure"
+)]
 fn toi_convex_refined<S: Support>(
     a: Vec3Fix,
     b: Vec3Fix,
@@ -5215,7 +5218,10 @@ mod tests {
     /// segments of radius 0 through a cap's edge, where GJK stops on a face
     /// whose length is up to `25·2⁻³²` above the distance.
     #[test]
-    #[allow(clippy::disallowed_methods)] // f64 oracle, not production arithmetic
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: f64 meridian-plane distance to cylinder / cone checks the GJK lower bound; sin / cos place sample points"
+    )]
     fn the_lower_bound_is_not_above_the_distance() {
         struct Rng(u64);
         impl Rng {
@@ -5463,7 +5469,10 @@ mod tests {
     /// straight path the gap is convex in time, so its minimum and first zero
     /// are found by ternary search and bisection. `f64` is exact to about
     /// `2⁻⁵²` here, far below the `2⁻³²` of the casts.
-    #[allow(clippy::disallowed_methods)] // f64 oracle, not production arithmetic
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: f64 signed distance of round cone / cylinder via meridian segments, compared to Fix128 shape queries"
+    )]
     mod round_reference {
         use super::*;
 
@@ -5696,7 +5705,6 @@ mod tests {
     /// Points beside, above and below each, at their rims, on the axis (where
     /// the part across it is 0) and beyond the cone's apex.
     #[test]
-    #[allow(clippy::disallowed_methods)] // f64 oracle, not production arithmetic
     fn point_distances_to_a_cylinder_and_a_cone_are_their_meridian_closed_forms() {
         use round_reference::Solid;
         let solids = [

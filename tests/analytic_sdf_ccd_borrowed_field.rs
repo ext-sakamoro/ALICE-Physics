@@ -17,7 +17,6 @@
 //!    match the closed-form depth `r - (|c| - 1)` against a unit sphere.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use std::cell::Cell;
 use std::rc::Rc;

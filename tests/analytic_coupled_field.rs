@@ -23,8 +23,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::float_cmp)]
-
 use alice_physics::coupled_field::{reconcile_mean, CoupledField, CoupledScalar};
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};

@@ -13,7 +13,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 rotated box and parametric ellipsoid surface points for shape-vs-SDF collider contact references"
+)]
 
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::{Capsule, ConvexHull, Sphere};

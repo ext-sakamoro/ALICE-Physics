@@ -7,7 +7,6 @@
 //! * force over `dt`: `dv = F dt / m`, no spin
 //! * non-dynamic bodies ignore both
 //! * `distance_to = |b - a|`, symmetric, zero on itself
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
 use alice_physics::physics2d::{BodyType2D, RigidBody2D, Shape2D, Vec2Fix};

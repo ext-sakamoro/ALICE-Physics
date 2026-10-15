@@ -29,7 +29,10 @@
 
 #![cfg(feature = "std")]
 // f64 transcendentals compute reference values only.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 independent exact Riemann solver (Toro fan and star states) for euler_fv references"
+)]
 
 use alice_physics::euler_fv::{
     exact_riemann, numerical_flux, Boundary, EulerConfig, EulerError, EulerFv1d, Limiter,

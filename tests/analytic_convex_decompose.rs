@@ -15,7 +15,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 SDF sphere distance and sphere volume 4/3 pi r^3 bounds for convex hulls from decompose_sdf"
+)]
 
 use alice_physics::convex_decompose::{decompose_sdf, DecomposeConfig, DecompositionResult};
 use alice_physics::mass_properties::convex_hull_mass_properties;

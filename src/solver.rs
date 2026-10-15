@@ -1339,7 +1339,10 @@ unsafe impl Sync for BodySlicePtr {}
 
 #[cfg(feature = "parallel")]
 impl BodySlicePtr {
-    #[allow(clippy::mut_from_ref)]
+    #[allow(
+        clippy::mut_from_ref,
+        reason = "parallel solver hands disjoint indices of one body slice to threads; get_mut is unsafe and the caller guarantees exclusivity"
+    )]
     #[inline(always)]
     /// # Safety
     ///
@@ -1398,7 +1401,10 @@ impl BodySlicePtr {
 /// static and the kinetic coefficients are equal.
 // LIMITATION(COV-RIGID-080): the combined material carries one coefficient, so the static and the kinetic coefficients are equal.
 // LIMITATION(COV-RIGID-083): Contact points are taken at the body centres: the contact solve is translational only.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "friction correction needs both displacements, normal, both inverse masses, weight sum, mu and the normal lambda"
+)]
 #[inline]
 fn static_friction_correction(
     disp_a: Vec3Fix,
@@ -1477,7 +1483,10 @@ unsafe impl Sync for DistConstraintSlicePtr {}
 
 #[cfg(feature = "parallel")]
 impl DistConstraintSlicePtr {
-    #[allow(clippy::mut_from_ref)]
+    #[allow(
+        clippy::mut_from_ref,
+        reason = "parallel solver writes disjoint distance constraints from threads; get_mut is unsafe and the caller guarantees exclusivity"
+    )]
     #[inline(always)]
     /// # Safety
     ///
@@ -1505,7 +1514,10 @@ unsafe impl Sync for ContactConstraintSlicePtr {}
 
 #[cfg(feature = "parallel")]
 impl ContactConstraintSlicePtr {
-    #[allow(clippy::mut_from_ref)]
+    #[allow(
+        clippy::mut_from_ref,
+        reason = "parallel solver writes back disjoint contact lambdas from threads; get_mut is unsafe and the caller guarantees exclusivity"
+    )]
     #[inline(always)]
     /// # Safety
     ///
@@ -6376,7 +6388,6 @@ impl PhysicsWorld {
     /// pair involving a collider (the plain side as its sphere).
     /// Generates contact constraints and events automatically.
     /// Bodies without a collision radius are skipped.
-    #[allow(clippy::too_many_lines, clippy::items_after_statements)]
     fn detect_collisions(&mut self) {
         let n = self.bodies.len();
         if n < 2 {

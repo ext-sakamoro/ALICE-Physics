@@ -208,8 +208,10 @@ impl ShipResponse {
     /// Explicit Euler step of the linear 2-DOF equation `m·z̈ + c·ż + k·z = F(t)`.
     // LIMITATION(COV-COUPLE-070): Simplified: uses independent SDOF for each DOF (heave/pitch decoupled).
     /// Simplified: uses independent SDOF for each DOF (heave/pitch decoupled).
-    // 1.0.0 で公開済の signature (crates.io)、引数 struct 化は semver major = 2.0 で実施
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "public signature since 1.0.0 on crates.io; folding the arguments into a struct is a semver-major API change"
+    )]
     pub fn advance(
         &mut self,
         heave_force_n: Fix128,

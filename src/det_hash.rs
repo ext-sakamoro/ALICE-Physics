@@ -82,7 +82,10 @@ pub(crate) type DetBuildHasher = BuildHasherDefault<DetHasher>;
 
 /// A `HashMap` whose hasher has no random seed
 // the one place the std map type is named: everything else uses this alias
-#[allow(clippy::disallowed_types)]
+#[allow(
+    clippy::disallowed_types,
+    reason = "the one place the std HashMap is named, to define the seedless DetHashMap alias that the rest of the crate must use"
+)]
 pub(crate) type DetHashMap<K, V> = std::collections::HashMap<K, V, DetBuildHasher>;
 
 #[cfg(test)]

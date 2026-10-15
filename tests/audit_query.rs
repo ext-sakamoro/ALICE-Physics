@@ -10,7 +10,10 @@
 //! * the BVH variants must return the same set as the brute-force variants.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Euclidean distance for brute-force overlap_sphere set and depth"
+)]
 
 use alice_physics::bvh::{BvhPrimitive, LinearBvh};
 use alice_physics::collider::AABB;

@@ -35,7 +35,6 @@ fn world_with(n: usize) -> PhysicsWorld {
 }
 
 /// 各 body の位置 / 速度を frame ごとに書き換えて記録し、書いた f32 の列を返す
-#[allow(clippy::type_complexity)]
 fn record_random(
     path: &std::path::Path,
     bodies: usize,
@@ -122,7 +121,10 @@ fn positions_only_recording_round_trips_and_has_no_velocity() {
 }
 
 #[test]
-#[allow(clippy::needless_range_loop)] // b は scan_positions の引数と want の添字の両方に使う
+#[allow(
+    clippy::needless_range_loop,
+    reason = "b is both the scan_positions argument and the want index, not an iteration over one slice"
+)]
 fn scan_positions_equals_per_frame_get_for_every_body_and_subrange() {
     for full in [true, false] {
         let dir = tempfile::tempdir().unwrap();

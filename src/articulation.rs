@@ -267,7 +267,6 @@ impl ArticulatedBody {
 /// - L/R Upper Leg -> Lower Leg
 ///
 /// Returns `(ArticulatedBody, Vec<RigidBody>)` ready to add to `PhysicsWorld`.
-#[allow(clippy::too_many_lines)]
 #[must_use]
 pub fn build_ragdoll(
     pelvis_pos: Vec3Fix,

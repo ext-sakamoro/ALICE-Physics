@@ -6,7 +6,6 @@
 //! * a JSON value that is present but not a `u32` / `u8` is `Err(InvalidData)`; an absent key takes
 //!   its documented default (`version` 1, `substeps` 8, `iterations` 4, everything else 0)
 //! * every strict prefix of a valid binary file is an `Err`, never a panic and never `Ok`
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::scene_io::{
     load_scene, load_scene_json, save_scene, save_scene_json, PhysicsConfig, PhysicsScene,

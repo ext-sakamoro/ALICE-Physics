@@ -66,7 +66,10 @@ fn trunc_mean(ticks: &[u64]) -> u64 {
 
 /// `(frame_count, enabled, stats as a tuple, summary)` — every observable
 /// field of a profiler, so two profilers can be compared without `PartialEq`.
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "observe returns every profiler field as one tuple so two profilers compare without PartialEq"
+)]
 fn observe(
     p: &PhysicsProfiler,
 ) -> (

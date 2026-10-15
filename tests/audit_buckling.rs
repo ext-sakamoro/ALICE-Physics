@@ -6,7 +6,12 @@
 //! test crate, so the source file is compiled into this test crate with
 //! `#[path]` (its inline tests then run here too). Expected values are textbook
 //! closed forms (Timoshenko & Gere, Johnson, Bazant & Cedolin) in plain f64.
-#![allow(clippy::disallowed_methods, dead_code, unused_imports)]
+#![allow(
+    clippy::disallowed_methods,
+    dead_code,
+    unused_imports,
+    reason = "analytic reference: f64 section second moments b h^3/12 and pi d^4/64 for buckling radius of gyration"
+)]
 
 mod beam_stress {
     pub use alice_physics::beam_stress::*;

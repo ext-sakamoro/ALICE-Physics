@@ -397,7 +397,10 @@ pub(crate) fn multigrid_slab_bounds(
 ///
 /// When `faces` does not describe the layers the decomposition gives `my_rank`, or
 /// `pressure` does not hold the band the first sweep reads.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "rank-local banded multigrid driver needs grid, schedule, rank and transport factory; it mirrors the other on-rank drivers"
+)]
 pub(crate) fn project_pressure_multigrid_banded_on_rank<T, F>(
     faces: &mut SlabFaces,
     pressure: &mut SlabStorage,
@@ -950,8 +953,6 @@ impl<T: SlabTransport> Decomposed<'_, T> {
 }
 
 #[cfg(test)]
-// the deadlines and timings in these tests time the run, never the result
-#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use crate::eulerian_grid::project_pressure_multigrid;
@@ -1778,6 +1779,10 @@ mod tests {
         }
         let mut band = SlabStorage::for_slab(n * n, depth, (k0, k1), HALO);
 
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time of the decomposed multigrid solves that the tests print"
+        )]
         let started = Instant::now();
         project_pressure_multigrid_banded_on_rank(
             &mut faces,
@@ -1790,6 +1795,10 @@ mod tests {
             rank,
             socket_factory(rank, &links),
         );
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time of the decomposed multigrid solves that the tests print"
+        )]
         let secs = started.elapsed().as_secs_f64();
         let fold = fold_band(&faces, &band);
         let words: Vec<String> = fold.0.iter().map(|w| format!("{w:016x}")).collect();
@@ -1973,20 +1982,28 @@ mod tests {
         let cycles = get("ALICE_PHYSICS_MGD_CYCLES", 6) as u32;
         let reference = std::env::var("ALICE_PHYSICS_MGD_REF").is_ok();
         let want = reference.then(|| {
+            #[allow(clippy::disallowed_methods, reason = "timing harness: wall time of the decomposed multigrid solves that the tests print")]
             let started = std::time::Instant::now();
             let f = fold_grid(&solve_single(&seed(n, n, depth, Scene::Open), cycles));
-            eprintln!(
-                "reference (single process, {cycles} cycles): {:.1} s",
-                started.elapsed().as_secs_f64()
-            );
+            #[allow(clippy::disallowed_methods, reason = "timing harness: wall time of the decomposed multigrid solves that the tests print")]
+            let secs = started.elapsed().as_secs_f64();
+            eprintln!("reference (single process, {cycles} cycles): {secs:.1} s");
             f
         });
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time of the decomposed multigrid solves that the tests print"
+        )]
         let started = std::time::Instant::now();
         let reports = run_processes(n, depth, ranks, cycles, 7200, true);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "timing harness: wall time of the decomposed multigrid solves that the tests print"
+        )]
+        let wall = started.elapsed().as_secs_f64();
         eprintln!(
-            "{n}x{n}x{depth} = {} cells over {ranks} processes, {cycles} cycles: wall {:.1} s",
+            "{n}x{n}x{depth} = {} cells over {ranks} processes, {cycles} cycles: wall {wall:.1} s",
             n * n * depth,
-            started.elapsed().as_secs_f64()
         );
         for r in &reports {
             eprintln!(

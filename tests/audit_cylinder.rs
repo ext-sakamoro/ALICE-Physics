@@ -6,7 +6,10 @@
 //! points; the AABB must enclose a dense rim sampling; the surface area is the
 //! textbook `2 pi r (r + 2 hh)`.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 rim points r (cos th, sin th) for brute-force maximum of the Cylinder support function"
+)]
 
 use alice_physics::collider::Support;
 use alice_physics::cylinder::Cylinder;

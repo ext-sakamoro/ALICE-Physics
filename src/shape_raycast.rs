@@ -776,7 +776,6 @@ fn ray_heightfield(
 }
 
 /// The first crossing in `[t0, t1]` of the ray with the bilinear patch of one cell.
-#[allow(clippy::too_many_arguments)]
 fn ray_bilinear_cell(
     origin: Vec3Fix,
     direction: Vec3Fix,

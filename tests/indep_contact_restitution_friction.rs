@@ -26,7 +26,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 incline normal and sliding distance g (sin theta - mu cos theta) t^2/2 for contact friction"
+)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::shape::Shape;
@@ -53,7 +56,10 @@ enum Path {
 }
 
 fn paths() -> Vec<Path> {
-    #[allow(unused_mut)]
+    #[allow(
+        unused_mut,
+        reason = "v is only extended under the parallel feature; without it the mut binding is unused"
+    )]
     let mut v = vec![Path::Serial];
     #[cfg(feature = "parallel")]
     v.push(Path::Batched);

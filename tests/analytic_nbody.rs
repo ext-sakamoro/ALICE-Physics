@@ -12,7 +12,10 @@
 //! runs of the code are compared (order of accuracy, world vs standalone,
 //! determinism) the comparison is a property, not a value.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Newton inverse-square / Plummer force (d^2 + eps^2)^(3/2) and two-body series for nbody"
+)]
 
 use alice_physics::nbody::{kinetic_energy, total_momentum, DirectSum, NBodyError, VelocityVerlet};
 use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};

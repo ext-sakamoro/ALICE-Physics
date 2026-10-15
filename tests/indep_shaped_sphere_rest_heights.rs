@@ -22,8 +22,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
-#![allow(clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 circle and ellipsoid surface sampling for tight boxes of turned shapes and sphere rest heights"
+)]
 
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::AABB;

@@ -15,7 +15,10 @@
 //! ```
 
 // f64 `powf` / `acos` / `exp` compute closed-form references, not state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: LJ minimum r = 2^(1/6), Verlet discrete period via acos, Yukawa e^(-1/0.7); period asserted, rest printed"
+)]
 
 use alice_physics::electromagnetic::EmSource;
 use alice_physics::math::{Fix128, Vec3Fix};

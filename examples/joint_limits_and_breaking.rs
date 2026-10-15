@@ -89,7 +89,6 @@ fn kind_name(kind: JointType) -> &'static str {
     }
 }
 
-#[allow(clippy::too_many_lines)]
 fn main() {
     let dt = q(1, 4);
     let half = q(1, 2);
@@ -227,7 +226,10 @@ fn main() {
         let old = [Joint::Ball(
             BallJoint::new(0, 1, o, o).with_break_force(q(5, 32)),
         )];
-        #[allow(deprecated)] // shown for migration; removed in 3.0
+        #[allow(
+            deprecated,
+            reason = "the example shows the deprecated separation check beside the force-based one so callers can migrate"
+        )]
         let broken = alice_physics::joint::solve_joints_breakable(&old, &mut bodies, dt);
         println!("[joint] migration: deprecated separation check with 5/32 m breaks too: {broken:?} (expect [0])");
     }

@@ -2,7 +2,11 @@
 //! constructors, Max-stress / Hill / Tsai-Wu failure indices. Expected values from textbook
 //! closed forms and independent f64 evaluation.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    clippy::needless_range_loop,
+    reason = "analytic reference: f64 Jones 2.85 off-axis modulus 1/(c^4/EL + s^4/ET + ...) for anisotropic failure audit"
+)]
 
 use alice_physics::anisotropic::{
     evaluate_failure, AnisotropicStrength, FailureCriterion, OrthotropicElasticity,

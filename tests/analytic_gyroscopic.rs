@@ -82,7 +82,10 @@ enum Entry {
 }
 
 fn entries() -> Vec<(SolverBackend, Entry)> {
-    #[allow(unused_mut)]
+    #[allow(
+        unused_mut,
+        reason = "v is only extended under the parallel feature; without it the mut binding is unused"
+    )]
     let mut v: Vec<(SolverBackend, Entry)> = BACKENDS.iter().map(|&b| (b, Entry::Step)).collect();
     #[cfg(feature = "parallel")]
     v.push((SolverBackend::Xpbd, Entry::StepParallel));

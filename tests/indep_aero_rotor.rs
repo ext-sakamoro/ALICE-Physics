@@ -19,7 +19,10 @@
 
 #![cfg(feature = "std")]
 // f64 `sqrt` computes references outside the crate.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 figure of merit C_T^1.5 sqrt(2/pi)/(2 pi C_Q) and momentum-theory wake power for rotor"
+)]
 
 use std::f64::consts::PI;
 

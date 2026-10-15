@@ -16,7 +16,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Euclidean distance for brute-force bilinear height-field bounds in twisted cells"
+)]
 
 use alice_physics::character::{CharacterConfig, CharacterController};
 use alice_physics::heightfield::HeightField;

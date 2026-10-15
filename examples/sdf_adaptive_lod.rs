@@ -10,7 +10,10 @@
 //! cargo run --release --example sdf_adaptive_lod --features std
 //! ```
 
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::needless_range_loop,
+    reason = "the example indexes the parallel xs array and evaluator slots by the same body index i in several loops"
+)]
 
 use alice_physics::math::{QuatFix, Vec3Fix};
 use alice_physics::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};

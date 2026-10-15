@@ -6,7 +6,6 @@
 //! * islands are the connected components of the union graph; they are listed
 //!   in order of their smallest body index, bodies ascending inside each;
 //!   `all_sleeping` is the AND of per-body sleeping flags.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::event::{ContactEventType, EventCollector};
 use alice_physics::joint::{BallJoint, Joint};

@@ -129,6 +129,8 @@ python3 scripts/test_no_private_minmax.py
 python3 scripts/no_private_minmax.py
 python3 scripts/test_libm_dependency_guard.py
 python3 scripts/libm_dependency_guard.py
+python3 scripts/test_allow_reason_guard.py
+python3 scripts/allow_reason_guard.py
 
 step "coverage tables (docs/coverage/*.toml = src/ LIMITATION comments + tests)"
 python3 scripts/test_coverage_check.py
@@ -249,6 +251,8 @@ CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --no-default-features -- -
 step "library clippy configuration (tests, then current + canary)"
 python3 scripts/test_clippy_lib_gate.py
 python3 scripts/clippy_lib_gate.py
+step "allow reasons (canary for the manifest lint + clock reads under wide allows)"
+python3 scripts/allow_reason_guard.py --clippy
 
 step "wasm32-wasip1 golden tests build (dev-deps are built for the target too)"
 rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm32-wasip1

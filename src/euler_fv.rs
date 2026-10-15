@@ -1202,7 +1202,10 @@ mod tests {
     use alloc::string::ToString;
 
     #[test]
-    #[allow(clippy::disallowed_methods)] // f64 ln / exp are the reference here
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "independent reference: platform f64 ln and exp compared to the Fix128 ln / exp helpers at representable inputs"
+    )]
     fn ln_and_exp_are_accurate() {
         for &x in &[1e-9, 0.001_89, 0.3, 1.0, 1.7, 7.0, 4600.0] {
             // reference at the representable input (1e-9 itself is 2⁻⁶⁴-truncated)

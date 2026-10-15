@@ -16,7 +16,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 ellipsoid and torus implicit membership for quadrature of textbook volume and inertia"
+)]
 
 use alice_physics::cone::Cone;
 use alice_physics::cylinder::Cylinder;

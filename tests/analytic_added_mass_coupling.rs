@@ -72,8 +72,6 @@
 // The f64 values here are closed-form oracle references, not simulation state,
 // so the determinism gate on f64 arithmetic does not apply. Note that f64
 // cannot resolve differences below 2⁻⁵³, so no claim finer than that is made
-// through this path; the ulp-level claims use the raw Q64.64 representation.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::coupled_iteration::{
     residual_norm_inf, residual_norm_l2_checked, ConfigFault, ContractionMonitor,

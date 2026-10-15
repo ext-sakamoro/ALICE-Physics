@@ -147,7 +147,6 @@ pub struct FourBarLinkage {
 /// If the four lengths cannot close at crank angle 0 (the coupler and
 /// rocker circles do not intersect); use [`try_four_bar_linkage`] to get
 /// the error instead.
-#[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn four_bar_linkage(
     world: &mut PhysicsWorld,
@@ -181,7 +180,6 @@ pub fn four_bar_linkage(
 /// `InvalidConfiguration` when a length is not positive or when the
 /// coupler / rocker circles about the crank pin and the rocker ground pin
 /// do not intersect (`|r₃ − r₄| ≤ |A O₄| ≤ r₃ + r₄` violated).
-#[allow(clippy::too_many_arguments)]
 pub fn try_four_bar_linkage(
     world: &mut PhysicsWorld,
     ground_position: Vec3Fix,

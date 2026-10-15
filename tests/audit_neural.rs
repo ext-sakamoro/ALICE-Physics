@@ -16,7 +16,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(all(feature = "std", feature = "neural"))]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "independent reference: f64 libm tanh compared with the neural module tanh_approx error bound"
+)]
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 

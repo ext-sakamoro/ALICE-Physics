@@ -52,7 +52,10 @@
 //! ```
 
 // the deprecated types refer to each other; the deprecation is for callers
-#![allow(deprecated)]
+#![allow(
+    deprecated,
+    reason = "the deprecated privacy types refer to each other inside this module; the deprecation is aimed at external callers"
+)]
 
 #[cfg(feature = "privacy-crypto")]
 pub use alice_crypto::dp::{
@@ -115,16 +118,26 @@ impl XorShift64 {
     /// (AUD-A-S4W3-029).
     #[cfg(feature = "std")]
     #[must_use]
-    // deprecated and documented as not private: the clock seed is its contract
-    #[allow(clippy::disallowed_methods, clippy::disallowed_types)]
+    #[allow(
+        clippy::disallowed_types,
+        reason = "deprecated API: the clock seed hashed with RandomState is this constructor's documented contract"
+    )]
     pub fn from_entropy() -> Self {
         use std::collections::hash_map::RandomState;
         use std::hash::{BuildHasher, Hasher};
         use std::time::{SystemTime, UNIX_EPOCH};
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "deprecated API: the wall-clock seed is this constructor's documented contract"
+        )]
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_nanos() as u64)
             .unwrap_or(0x853c49e6748fea9b);
+        #[allow(
+            clippy::disallowed_methods,
+            reason = "deprecated API: the randomly keyed hasher makes the clock seed unrecoverable (AUD-A-S4W3-029)"
+        )]
         let mut h = RandomState::new().build_hasher();
         h.write_u64(nanos);
         Self::new(h.finish())
@@ -451,7 +464,6 @@ impl Rappor {
     }
 
     /// Encode a value into a Bloom filter (simple hash-based)
-    #[allow(clippy::unused_self)]
     fn encode_bloom(&self, value: u64) -> [u8; RAPPOR_BITS] {
         bloom_bits(value)
     }

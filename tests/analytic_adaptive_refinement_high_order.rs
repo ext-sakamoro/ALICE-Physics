@@ -44,8 +44,6 @@
 //! clamped faces as well, and only that mesh knows where they are; the helper
 //! below prescribes by node *position*, so it covers them.
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::cubic_elastic_fem::{solve_adaptive_cubic, solve_cubic, CubicMesh};
 use alice_physics::linear_elastic_fem::{
     AdaptiveConfig, BoundaryConditions, ElasticMaterial, SolverConfig,

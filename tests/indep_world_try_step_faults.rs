@@ -54,7 +54,10 @@ enum Path {
 }
 
 fn paths() -> Vec<Path> {
-    #[allow(unused_mut)]
+    #[allow(
+        unused_mut,
+        reason = "p is only extended under the parallel feature; without it the mut binding is unused"
+    )]
     let mut p = vec![Path::Step];
     #[cfg(feature = "parallel")]
     p.push(Path::Parallel);

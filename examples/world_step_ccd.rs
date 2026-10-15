@@ -12,8 +12,6 @@
 //! cargo run --release --example world_step_ccd
 //! ```
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::material::PhysicsMaterial;
 use alice_physics::shape::Shape;
 use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldCcdConfig};

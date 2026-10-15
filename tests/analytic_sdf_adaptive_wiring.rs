@@ -6,7 +6,6 @@
 //! distance at `(x, 0, 0)` is `x - 1` and the normal is `+X`.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};

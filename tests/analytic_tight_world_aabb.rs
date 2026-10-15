@@ -24,8 +24,14 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-#![allow(clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 tight AABB half-extent sum_j |R_ij| h_j and support of rotated convex shapes"
+)]
+#![allow(
+    clippy::needless_range_loop,
+    reason = "axis loops index the half extents, axis and rotation rows by the same i on purpose"
+)]
 
 use alice_physics::box_collider::OrientedBox;
 use alice_physics::collider::{contact, gjk, Capsule, Sphere, Support, AABB};
@@ -997,7 +1003,13 @@ fn the_world_broadphase_uses_the_collider_boxes() {
     assert!(nearest > 1e-9, "a pair of boxes touches within {nearest}");
     let want = brute_contact_pairs(&scene);
     type StepFn = fn(&mut PhysicsWorld);
-    #[cfg_attr(not(feature = "parallel"), allow(unused_mut))]
+    #[cfg_attr(
+        not(feature = "parallel"),
+        allow(
+            unused_mut,
+            reason = "steps is only extended under the parallel feature; without it the mut binding is unused"
+        )
+    )]
     let mut steps: Vec<(&str, StepFn)> = vec![("step", |w| w.step(fx(1.0 / 60.0)))];
     #[cfg(feature = "parallel")]
     steps.push(("step_parallel", |w| w.step_parallel(fx(1.0 / 60.0))));

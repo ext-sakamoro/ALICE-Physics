@@ -42,7 +42,10 @@
 // The closed-form reference values below are independent f64 evaluations
 // of the Arrhenius formula, not simulation state; this mirrors
 // `tests/engineering_oracles_fluid.rs`'s `#![allow(clippy::disallowed_methods)]`.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: Arrhenius rate A exp(-Ea/(R T)) rhoF rhoO in f64, asserted against the methane and PLA reaction presets"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::smoke_fire::{

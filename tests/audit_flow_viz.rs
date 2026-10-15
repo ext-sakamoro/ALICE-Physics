@@ -11,7 +11,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 speed scale 10^e of inputs and expected magnitude |v| * scale for flow_viz arrows"
+)]
 
 use alice_physics::flow_viz::{
     generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines,

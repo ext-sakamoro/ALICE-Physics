@@ -581,7 +581,10 @@ mod tests {
     /// frame-relative indices, and agrees with `get_position` frame by frame;
     /// it does not leak other bodies' rows.
     #[test]
-    #[allow(clippy::disallowed_methods)] // f32::powi builds the closed-form reference only
+    #[allow(
+        clippy::disallowed_methods,
+        reason = "analytic reference: damped position x_n = 0.1 * sum of 0.99^k over frames, compared to the replay scan per frame"
+    )]
     fn scan_positions_matches_get_position_per_frame_and_body() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("scan.replay");

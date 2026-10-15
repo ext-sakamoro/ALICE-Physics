@@ -5,7 +5,6 @@
 //! `raw = 500 * alpha * (E/5) * (A/50000) * (Lmax/300) * (dT/200)`,
 //! `score = clamp(raw, 0, 1)`, category by `score < 0.25 / 0.5 / 0.75`,
 //! `F/mm = E[GPa] * 1000 * alpha * dT`.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::filament_db::MaterialProperties;
 use alice_physics::math::Fix128;

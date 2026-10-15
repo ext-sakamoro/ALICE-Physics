@@ -18,7 +18,10 @@
 //! ```
 
 // f64 `exp` / `ln` compute closed-form references, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: Helbing social force A exp((r-d)/B), wall force and stopping distance with ln, asserted vs the model"
+)]
 
 use alice_physics::crowd_force::{
     CrowdForceError, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,

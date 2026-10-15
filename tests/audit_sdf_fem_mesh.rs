@@ -4,9 +4,15 @@
 //! recomputation of the generators' own occupancy rule. Nothing is read back from the mesh
 //! to define what the mesh should be.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 polytope volumes of tilted half-spaces and ball volume 4/3 pi r^3 for sdf_fem_mesh"
+)]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
-#![allow(clippy::disallowed_types)]
+#![allow(
+    clippy::disallowed_types,
+    reason = "HashMap/HashSet only count or look up tetrahedron faces in this test; no assertion depends on hash iteration order"
+)]
 
 use alice_physics::sdf_collider::{ClosureSdf, SdfField};
 use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, RefineError, SdfTetMesh};

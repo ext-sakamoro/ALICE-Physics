@@ -8,7 +8,10 @@
 //! to `T_g`. `m = 2^-60` and `n = 1` keep the creep term exact and of order
 //! one at the shifted times reached here.
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 Findley e0 + m t/aT with WLF shift 10^(-C1 dT/(C2 + dT)) for creep_longterm far above Tg"
+)]
 
 use alice_physics::creep_longterm::{predict_strain, FindleyParameters};
 use alice_physics::filament_db::MaterialProperties;

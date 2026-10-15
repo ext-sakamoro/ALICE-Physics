@@ -39,7 +39,6 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::float_cmp)]
 
 use alice_physics::pipeline::{
     MetricEntry, MetricEvent, MetricPipeline, MetricRegistry, MetricSlot, MetricType, RingBuffer,

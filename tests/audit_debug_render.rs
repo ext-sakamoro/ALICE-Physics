@@ -7,8 +7,10 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
-#![allow(clippy::needless_range_loop)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 circle vertices r (cos a, sin a) and chord 2 r sin(pi/16) for debug_render sphere rings"
+)]
 
 use alice_physics::collider::{Contact, AABB};
 use alice_physics::debug_render::{

@@ -6,9 +6,6 @@
 //!
 //! Author: Moroya Sakamoto
 
-#![allow(clippy::disallowed_methods)]
-#![allow(clippy::needless_range_loop)]
-
 use alice_physics::heightfield::HeightField;
 use alice_physics::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};

@@ -40,7 +40,10 @@
 // The f64 `sin()` calls here are closed-form oracle references computed
 // outside the crate, not simulation state, so the determinism gate on f64
 // transcendentals (`clippy::disallowed_methods`) does not apply.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: gust wind base + amplitude sin(2 pi f t) at t = 0.5, 1.5, 0.25 s, asserted against the wind zone vector"
+)]
 
 use alice_physics::buoyancy_zone::ZoneShape;
 use alice_physics::math::{Fix128, Vec3Fix};

@@ -9,7 +9,10 @@
 //! cargo run --release --example ragdoll_ik_targets --features std
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: blended IK halves the gap each pass, x = goal - 8 * 0.5^pass, asserted per pass"
+)]
 
 use alice_physics::ik_physics_bridge::{IkTarget, IkTargetSet};
 use alice_physics::math::{Fix128, Vec3Fix};

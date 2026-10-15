@@ -5,7 +5,10 @@
 //! reflection of a travelling pulse; none is derived by calling the
 //! function under test twice.
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 exact leap-frog discrete dispersion w = 2 asin(C sin(k/2)) for acoustic_wave plane waves"
+)]
 
 use alice_physics::acoustic_wave::{leapfrog_step, speeds, stable_dt};
 

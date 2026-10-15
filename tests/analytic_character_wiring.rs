@@ -8,7 +8,6 @@
 //! function under test for the expected side.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::character::{CharacterConfig, CharacterController, PushImpulse};
 use alice_physics::math::{Fix128, Vec3Fix};

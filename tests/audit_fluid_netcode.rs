@@ -6,7 +6,10 @@
 //! module's own serialiser.
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods, clippy::needless_range_loop)]
+#![allow(
+    clippy::needless_range_loop,
+    reason = "perturbation loop clones the particle list and bumps q[i] for each index and component"
+)]
 
 use alice_physics::fluid_netcode::{FluidDelta, FluidSnapshot};
 use alice_physics::math::{Fix128, Vec3Fix};

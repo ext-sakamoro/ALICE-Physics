@@ -19,7 +19,10 @@
 #![cfg(feature = "std")]
 // The f64 libm values here are the *oracle* (closed-form references), not
 // simulation state, so the det_math determinism gate does not apply.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 small-angle pendulum initial pose and rotation angle 2 atan2(sin, w) equal to omega t"
+)]
 
 use alice_physics::joint::{solve_joints, HingeJoint, Joint};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

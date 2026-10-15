@@ -733,3 +733,9 @@ codegen-units = 1
 [lints.rust]
 # `--cfg loom` selects the loom model tests (quality-deep `loom` job)
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+
+[lints.clippy]
+# every `allow` / `expect` states why (`reason = "…"`); clippy checks the
+# attribute itself, so no spelling of it (cfg_attr, a spaced path, a lint group,
+# an inner attribute) escapes; scripts/allow_reason_guard.py judges the reasons
+allow_attributes_without_reason = "deny"

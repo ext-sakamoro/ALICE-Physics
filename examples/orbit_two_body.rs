@@ -11,8 +11,6 @@
 //! cargo run --release --example orbit_two_body
 //! ```
 
-#![allow(clippy::disallowed_methods)]
-
 use alice_physics::kepler::{
     eccentric_from_true_anomaly, j2_arg_periapsis_rate, j2_raan_rate, mean_from_true_anomaly,
     mean_motion, orbital_period, solve_kepler, specific_angular_momentum, specific_orbital_energy,

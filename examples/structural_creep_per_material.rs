@@ -17,7 +17,10 @@
 //! cargo run --example structural_creep_per_material
 //! ```
 
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: Findley creep 0.003 + 8.3e-14 t^3 vs Norton strain, max asserted against modelled PLA creep"
+)]
 
 use alice_physics::beam_stress::{CrossSection, LoadCase};
 use alice_physics::creep_longterm::FindleyParameters;

@@ -9,7 +9,10 @@
 //! geometry `bottom = centre - height/2`, plane SDF `n . p`).
 
 #![cfg(feature = "std")]
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 tilted SDF plane normal and feet height 0.35/cos(theta) for slope limit in move_and_slide"
+)]
 
 use alice_physics::character::{CharacterConfig, CharacterController};
 use alice_physics::math::{Fix128, QuatFix, Vec3Fix};

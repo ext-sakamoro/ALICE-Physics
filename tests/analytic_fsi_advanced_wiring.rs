@@ -75,8 +75,6 @@
 
 #![cfg(feature = "std")]
 // The expected-value computations below are closed-form hand derivations,
-// not simulation state.
-#![allow(clippy::disallowed_methods)]
 
 use alice_physics::fsi_advanced::{
     aggregate_forces, buoyancy_force, drag_force, react_back_pressure, SolidSample,

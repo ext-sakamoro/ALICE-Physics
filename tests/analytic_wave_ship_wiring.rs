@@ -25,7 +25,10 @@
 
 #![cfg(feature = "std")]
 // The oracle values are closed-form f64 evaluations, not simulation state.
-#![allow(clippy::disallowed_methods)]
+#![allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 JONSWAP spectrum (DNV-RP-C205) and wave elevation closed forms for wave_ship wiring"
+)]
 
 use alice_physics::math::Fix128;
 use alice_physics::wave_ship::{
