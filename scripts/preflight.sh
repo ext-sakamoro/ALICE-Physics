@@ -127,6 +127,8 @@ python3 scripts/test_entropy_guard.py
 python3 scripts/entropy_guard.py
 python3 scripts/test_no_private_minmax.py
 python3 scripts/no_private_minmax.py
+python3 scripts/test_libm_dependency_guard.py
+python3 scripts/libm_dependency_guard.py
 
 step "coverage tables (docs/coverage/*.toml = src/ LIMITATION comments + tests)"
 python3 scripts/test_coverage_check.py

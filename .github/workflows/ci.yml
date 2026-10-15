@@ -709,6 +709,15 @@ jobs:
         run: python3 scripts/test_csprng_guard.py
       - name: Predictable randomness guard
         run: python3 scripts/csprng_guard.py
+      # G1, libm half: a direct libm dependency must come with the libm:: ban
+      # in clippy.toml and scripts/libm_ban_check.py (0 manifests read fails)
+      - name: libm dependency guard (test, then check)
+        run: |
+          # the guard parses Cargo.toml with tomllib (Python 3.11+); this job has
+          # no setup-python, so fail with exit 2 instead of skipping if it is missing
+          python3 -c 'import sys, importlib.util as u; print(sys.version); sys.exit(0 if u.find_spec("tomllib") else 2)'
+          python3 scripts/test_libm_dependency_guard.py
+          python3 scripts/libm_dependency_guard.py
       # 台帳 (docs/wiring-status.md / docs/oracle-status.md) の生成器の試験: 実際の
       # wiring_guard の出力の形を食わせる (違反を 1 件も拾えない空振りを止める)
       - name: status generators oracle (台帳の生成器自身の試験)
