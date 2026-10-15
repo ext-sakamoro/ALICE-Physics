@@ -190,10 +190,12 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 /// `alice-det-math` the build resolved, so the identifier is looked up here
 /// by it ([`semantics_id_for`]); a build against a generation with no row
 /// does not compile, rather than reporting an identifier of another
-/// generation. A new `alice-det-math` release that changes its
-/// `SEMANTICS_ID` therefore needs a release of this crate with its row (an
-/// `alice-det-math` release that changes the identifier is meant to raise
-/// its minor version, so the `"0.5.1"` requirement does not select it).
+/// generation. `alice-det-math` moves `SEMANTICS_ID` in patch releases when
+/// the old identifier is listed in its `PREVIOUS_SEMANTICS_IDS` and the
+/// existing functions are bit-identical (0.5.1 added `max` / `min`); this
+/// table maps each generation to this crate's identifier. A later release of
+/// that kind is selected by the `"0.5.1"` requirement and stops the compile
+/// here until this crate adds its row.
 /// `tests/physics_semantics_id.rs` recomputes every row from the pins in one
 /// build.
 pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
