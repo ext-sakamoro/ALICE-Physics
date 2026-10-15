@@ -1,0 +1,120 @@
+# ALICE-Law conformance manifest for this crate (alice-physics). One entry
+# per gate defined in ALICE-Law's conformance/gates.toml. Schema (status /
+# evidence / since / note / reference_repo) is docs/CONFORMANCE.md's
+# "Manifest" section in that repository; a `pass` or `n/a` entry also names
+# the red mutant that turns the evidence red.
+#
+# Entries here are written from what this repository's own commits, CI
+# workflows and test suites show at origin/main, checked directly rather than
+# assumed: a gate without concrete evidence is `unverified`, not guessed
+# `pass`. alice-physics is a deterministic physics engine. Its Law-bearing
+# arithmetic is Fix128 fixed-point for the solver state plus the f32/f64 field
+# modules that README "Determinism" lists as inside the guarantee (generated
+# by scripts/f32_modules.py, pinned by tests/determinism_golden_f32.rs); it
+# consumes alice-det-math 0.5 for transcendentals and folds det-math's
+# identifier into its own.
+
+[G1]
+status = "fail-known"
+evidence = ["clippy.toml", ".github/clippy-lib/clippy.toml", ".github/workflows/ci.yml clippy job"]
+since = ""
+note = "both clippy configurations omit the combined f32::sin_cos / f64::sin_cos from the banned list (ALICE-Law's measure_conformance.py reports 'missing sin_cos' for clippy.toml and .github/clippy-lib/clippy.toml), which the G1 methods list marks banned. The production call sites that look like transcendentals are on Fix128 (ecc.sin_cos() in kepler.rs, theta.sin_cos() in anisotropic.rs / filament_db.rs / gyroscopic.rs are the crate's fixed-point sin_cos, not platform libm) and the f64 .sin()/.acos() in animation_blend.rs are a slerp oracle inside a test module carrying #[allow(clippy::disallowed_methods)] // the f64 libm values are the oracle on purpose; transcendentals in the Law path go through alice-det-math. So the gap is latent (no production f64::sin_cos call today) but the ban is required and absent, so a future f64::sin_cos would not be caught (C2). CI runs cargo clippy --all-targets -- -D warnings, so the lint fires; the list is short one method per width."
+reference_repo = ""
+
+[G2]
+status = "pass"
+evidence = ["src/lib.rs:361", ".github/clippy-lib/clippy.toml", ".github/workflows/ci.yml Clippy (library code, f32 / f64 max and min forbidden) step", ".github/workflows/ci.yml Clippy (library code, max / min forbidden, wasm and python bindings, no_std) step", "scripts/clippy_lib_gate.py"]
+mutant = "add a raw f32::max / f64::max / f32::min / f64::min call to library code (src, not tests/examples/benches) -> the 'Clippy (library code, f32 / f64 max and min forbidden)' step (ci.yml:613, CLIPPY_CONF_DIR=.github/clippy-lib, cargo clippy --lib --features <std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics,privacy-crypto> -- -D warnings) fails"
+since = ""
+note = "f32/f64 max/min go through the Law helpers crate::det_math::max / min (src/lib.rs:361, pub(crate) -- an internal Law helper the crate's own code uses, not a public API consumers call), which implement IEEE 754-2019 maximumNumber / minimumNumber: the source comment states that std f32/f64 max/min leave the sign of an equal pair of zeros unspecified and differing between targets (x86_64's f64::min(0.0,-0.0) is -0 unoptimised and +0 optimised), and these functions fix it (NaN yields the other operand; an equal pair of zeros yields +0 from max and -0 from min, which is what aarch64 already does). Raw f32/f64 max/min are a default-deny: .github/clippy-lib/clippy.toml bans f32::max/min and f64::max/min as disallowed-methods, enforced by the CI steps 'Clippy (library code, f32 / f64 max and min forbidden)' and 'Clippy (library code, max / min forbidden, wasm and python bindings, no_std)' (both CLIPPY_CONF_DIR=.github/clippy-lib), with 'Library clippy configuration is current and fires' (scripts/clippy_lib_gate.py) as the canary; tests, examples and benches are exempt by design. There is no raw_* exception manifest because there are no exceptions, and max/min has no SIMD variant (the simd feature accelerates Vec3Fix dot/add/sub only; solver hot paths are scalar, README Determinism), so the gate's per-SIMD-width clause has no additional width to test here."
+reference_repo = ""
+
+[G3]
+status = "fail-known"
+evidence = ["src/erosion.rs:379", "tests/determinism_golden_f32.rs"]
+since = ""
+note = "f32/f64 mul_add is Law-bearing in this crate: it is used across the field modules README Determinism lists inside the guarantee (erosion, fracture, pressure, sim_field, sdf_*, thermal, ...), and the conforming operand-negation form is already written where a negation meets an fma (src/erosion.rs:379, (-n.2).mul_add(f.2, (-n.0).mul_add(f.0, (-n.1) * f.1))). The dynamic backstop exists and works -- the aarch64 release determinism leg (G4/G5, scripts/determinism_release.py) found the optimised-vs-unoptimised FMA signed-zero divergence that the erosion fix in CHANGELOG [Unreleased] closed. What is missing is the static mechanism this gate names: a syntax-tree checker over src that bans negating the whole result of an a.mul_add(b,c) in every form, with tests over each negation shape (C5). So an outer -(a.mul_add(b,c)) is caught only after it diverges on the release golden leg, not rejected at the source."
+reference_repo = ""
+
+[G4]
+status = "pass"
+evidence = ["tests/determinism_golden_f32.rs", "scripts/determinism_release.py", ".github/workflows/ci.yml determinism-release job", ".github/workflows/ci.yml test job"]
+mutant = "flip one digest in tests/determinism_golden_f32.rs (or determinism_golden.rs) -> it fails on every leg, in both the debug test matrix and the determinism-release legs"
+since = ""
+note = "the signed-zero / exact-cancellation cases are pinned against fixed bit patterns under both profiles and both arches. The goldens -- determinism_golden, determinism_golden_f32, determinism_golden_contacts, determinism_golden_paths, determinism_zero_tie -- run DEBUG across the CI test matrix (x86_64: ubuntu-latest / macos-15-intel / windows-latest; aarch64: macos-latest / ubuntu-24.04-arm) and RELEASE via the determinism-release job (.github/workflows/ci.yml, name 'Determinism tests (release)'), which runs scripts/determinism_release.py -> cargo test --release on those golden binaries on ubuntu-latest (x86_64), ubuntu-24.04-arm (aarch64) and macos-latest (aarch64), failing when any filter term or test binary ran 0 tests. So the {debug, release} x {x86_64, aarch64} matrix is covered. This is the leg that is designed to catch the aarch64 FMA signed-zero rewrite (the optimiser turning a negated fused multiply-add into negated operands, which only an optimised FMA-target build shows); it found and the erosion fix in CHANGELOG [Unreleased] closed exactly that divergence."
+reference_repo = ""
+
+[G5]
+status = "pass"
+evidence = [".github/workflows/ci.yml determinism-release job", "scripts/determinism_release.py", "scripts/test_determinism_release.py"]
+mutant = "feature-gate or rename one of the goldens the release job runs (or restrict a filter term so it matches nothing) -> scripts/determinism_release.py exits non-zero because a filter term or test binary ran 0 tests; equivalently, flip a digest in one of the release-run goldens (e.g. determinism_golden_f32.rs) -> the release legs redden"
+since = ""
+note = "the Law-bearing determinism goldens run under the release profile in CI, and the aarch64 release leg is present and blocking: the determinism-release job (.github/workflows/ci.yml) runs scripts/determinism_release.py, which invokes cargo test --release on 5 golden test binaries (determinism_golden, determinism_golden_f32, determinism_golden_contacts, determinism_golden_paths, determinism_zero_tie) plus 2 lib filter terms, on ubuntu-latest (x86_64), ubuntu-24.04-arm (aarch64) and macos-latest (aarch64). It does NOT run the whole determinism suite -- determinism_semantic, the cloth / physics2d step digests and golden_coverage are not in the release set. ubuntu-24.04-arm is the required aarch64 release leg whose default codegen uses a hardware fma (the macos-latest aarch64 leg is additionally read after landing via .github/ci-evidence.toml). scripts/test_determinism_release.py is the checker's canary, and determinism_release.py fails if any filter term or test binary ran 0 tests. (The optimiser-dependent FMA signed-zero case that CHANGELOG [Unreleased] fixed for erosion is caught by that module's own unit pin in debug as well as release; the value of this leg is running the pinned goldens it does carry under optimisation.)"
+reference_repo = ""
+
+[G6]
+status = "pass"
+evidence = ["src/semantics.rs:191", "tests/physics_semantics_id.rs", "tests/determinism_physics2d_step_digest.rs"]
+mutant = "change one stepping pin in PHYSICS_SEMANTICS_PINS (or the folded alice-det-math entry), or a pinned function's output bits, without re-recording -> tests/physics_semantics_id.rs fails (the fold no longer equals PHYSICS_SEMANTICS_ID, or an entry no longer equals the golden digest it names)"
+since = ""
+note = "alice-physics computes its own identifier: PHYSICS_SEMANTICS_ID (src/semantics.rs:191, cd9aa3b8... on current main) is the fold of PHYSICS_SEMANTICS_PINS, a table of the crate's stepping-semantics pins together with one entry holding alice_det_math::SEMANTICS_ID (135c407d...), so the identifier folds the crate's own Law pins with the upstream arithmetic crate's identifier -- the textbook G6 shape. tests/physics_semantics_id.rs checks that every entry equals the digest constant its golden asserts, that the det-math entry equals alice_det_math::SEMANTICS_ID, that the fold equals PHYSICS_SEMANTICS_ID, that the fold separates what it should (one changed bit, length-prefix), and that it matches a known byte layout; the constant is the same in every build regardless of feature set. Staleness is therefore visible: a moved pin or a bumped det-math id that is not re-recorded reddens the test."
+reference_repo = "alice-det-math"
+
+[G7]
+status = "fail-known"
+evidence = ["src/db_bridge.rs", "src/analytics_bridge.rs", "src/gpu_bridge.rs", "src/ik_physics_bridge.rs", "src/solver/world_snapshot.rs:2030"]
+since = ""
+note = "the live cross-crate bridges carry Law-bearing values with no producer-identifier handshake: src/db_bridge.rs, src/analytics_bridge.rs, src/gpu_bridge.rs and src/ik_physics_bridge.rs contain no SEMANTICS_ID / law_id / semantics_id reference and no distinctly-typed *Mismatch / *Handshake error, so a value crossing between alice-physics and alice-db / alice-analytics / a GPU backend / the IK layer does not carry and check a G6 identifier at runtime. The only identifier checks in the crate are the build-time G6 fold (src/semantics.rs verifies the folded det-math entry equals alice_det_math::SEMANTICS_ID) and the G8 durable restore (src/solver/world_snapshot.rs:2030 restore_world_checked, which refuses a snapshot whose stored ids mismatch). A separate known gap is that the shared-field declarations are not yet in law_id (recorded in the project backlog). The gate's mechanism -- a handshake error type and a mismatch test on the live bridges -- does not exist."
+reference_repo = ""
+
+[G8]
+status = "pass"
+evidence = ["src/solver/world_snapshot.rs:2030", "tests/world_snapshot_v4.rs"]
+mutant = "flip the stored law_id (or the stepping-semantics id) in a version-4 world-snapshot blob and restore it -> PhysicsWorld::restore_world_checked returns WorldSnapshotError::LawIdMismatch (or SemanticsMismatch), as asserted by tests/world_snapshot_v4.rs::the_header_law_id_is_what_is_compared"
+since = ""
+note = "world snapshots written to a durable form carry their own identifiers in the header and the reader refuses a mismatch. Since version 4 the header carries two content hashes -- the stepping-semantics identifier of the binary that wrote the blob (PHYSICS_SEMANTICS_ID) and the world's rule identifier (PhysicsWorld::law_id of that semantics, the persisted-meaning id describing the stored world's rules, distinct from the arithmetic semantics id) -- plus a format version and a checksum. PhysicsWorld::restore_world_checked (src/solver/world_snapshot.rs:2030) compares the header law_id against the one passed in and returns WorldSnapshotError::LawIdMismatch / SemanticsMismatch on disagreement. tests/world_snapshot_v4.rs covers it: the_writer_emits_version_4, version_4_round_trips_bytes_and_steps, the_header_law_id_is_what_is_compared, and the v2 suite adds every_single_byte_flip_after_the_header_is_a_checksum_mismatch and truncation rejection. A 2.x snapshot (semantics id 3aa14645...) is refused by a 3.0 reader with SemanticsMismatch { stored, expected }."
+reference_repo = ""
+
+[G9]
+status = "pass"
+evidence = ["CHANGELOG.md", "src/semantics.rs", "tests/world_snapshot_v4.rs"]
+mutant = "move the det-math pin or a stepping pin so PHYSICS_SEMANTICS_ID changes, without re-recording it -> tests/physics_semantics_id.rs fails (the fold no longer equals the recorded constant); and a snapshot stamped with a now-foreign id is refused on restore -> the a_foreign_semantics_id_is_refused test fails if that refusal is removed"
+since = ""
+note = "the machine tooth is the identifier move, not the release metadata. A meaning change moves PHYSICS_SEMANTICS_ID and that move is caught: tests/physics_semantics_id.rs fails unless the constant equals the fold of the re-recorded pins (G6), and a_foreign_semantics_id_is_refused asserts a snapshot carrying a different semantics id is refused on restore. CHANGELOG [3.0.0] records the alice-det-math 0.4 -> 0.5 bump as a breaking (major) change -- the det-math id moved d2209b30... -> 135c407d..., so PHYSICS_SEMANTICS_ID moved 3aa14645... -> cd9aa3b8... and 2.x version-4 snapshots no longer restore. HONEST LIMITS: (1) no checker ties a PHYSICS_SEMANTICS_ID change to a semver-major bump or a CHANGELOG entry -- that the move is recorded as major holds by convention / audit, not by a gate; (2) there is no stored 2.x snapshot fixture, so the 2.x-rejection claim rests on a_foreign_semantics_id_is_refused (a synthetic foreign id), not a real old blob."
+reference_repo = ""
+
+[G10]
+status = "fail-known"
+evidence = ["src/privacy.rs:120", "src/privacy.rs:124", "src/privacy.rs:172", "src/privacy.rs:225", "src/privacy.rs:320", "src/privacy.rs:440", "clippy.toml", "scripts/entropy_guard.py", ".github/workflows/ci.yml Clippy job (cargo clippy --all-targets -- -D warnings)"]
+since = ""
+note = "fail-known: a located violation in library code. src/privacy.rs:120 XorShift64::from_entropy reads the wall clock (SystemTime::now at :124), and that seed flows into the production constructors LaplaceNoise::new (:225), RandomizedResponse::new (:320), Rappor::new (:440) and XorShift64::default (:172), so the differential-privacy noise they emit depends on an ambient clock and varies per run: the gate property (Law-bearing output does not depend on the wall clock or OS entropy) is violated at a named site. scripts/entropy_guard.py's ALLOWED set whitelists this (src/privacy.rs SystemTime::now, marked deprecated and documented as not private), but an allowlist is a policy exemption, not a fix; the gate stays non-pass until the clock-seeded constructors are removed (the change ALICE-Analytics made in 315c8a5 for the same copied code). A SECOND gap is a checker hole: the wall clock via .elapsed() is read by no layer -- neither clippy.toml (it bans the constructors Instant::now / SystemTime::now, not the .elapsed() method) nor entropy_guard.py (no .elapsed() pattern) -- and the .elapsed() ban (clippy Instant::elapsed / SystemTime::elapsed plus a canary) is queued but not on main as of 89a5a289. On current main every .elapsed() / std::time::Instant in src is inside a cfg(test) module (src/eulerian_grid.rs mod tests from :5004 and src/eulerian_grid/multigrid_decomposed.rs; src/profiling.rs:304 is a deterministic TickCounter::elapsed(start) tick count in #[test], not a clock), which entropy_guard skips and which is not Law output, so there is no production .elapsed() wall-clock read today, but the next one would pass both layers, and porting the ban needs scoped allow(clippy::disallowed_methods) with a reason on those 11 test sites first because cargo clippy --all-targets lints tests. WHAT IS ENFORCED: std::time::Instant::now, std::time::SystemTime::now and std::collections::hash_map::RandomState::new are banned type-resolved in clippy.toml (cargo clippy --all-targets -- -D warnings), and scripts/entropy_guard.py is the readable second layer, a lexical scan of 12 patterns (getrandom, OsRng, thread_rng, rand::random, from_entropy, SystemTime::now, Instant::now, UNIX_EPOCH, RandomState, HashMap, HashSet, Uuid::new_v4) with scripts/test_entropy_guard.py as its canary, run in the fmt job; 89a5a289 ported ALICE-DB sanitize() (byte-identical) plus the qualified forms <std::time::Instant>::now() / <Instant as Trait>::now() and a cfg(all(test, ..)) skip. G10 flips to pass only after BOTH land: the clock-seeded constructor removal in src/privacy.rs AND the .elapsed() ban port."
+reference_repo = ""
+[G11]
+status = "unverified"
+evidence = []
+since = ""
+note = "not yet audited gate by gate. The crate carries an unusually large body of checker self-tests (scripts/test_entropy_guard.py, test_determinism_release.py, test_docs_lint.py, test_clippy_lib_gate.py, test_public_text.py, test_mutants_ratchet.py and ~40 more) plus a weekly mutants ratchet and compared-nothing guards, so (a) canaries and (b) zero-compared-fails checks are present for many checkers, and (c) the shared public-text checker carries its cross-repo byte-identity via .github/public-text-pin. What is missing is a confirmation that every Law gate's own checker carries all three of (a),(b),(c); that per-gate triad audit has not been done, so this is left unverified rather than claimed pass."
+reference_repo = ""
+
+[G12]
+status = "pass"
+evidence = [".github/workflows/public-text.yml", "scripts/public_text.sh", ".github/public-text-pin", "scripts/test_public_text.py"]
+mutant = "add one of the refused internal words to a tracked document -> the public-text step fails"
+since = ""
+note = "the public-text.yml job runs scripts/public_text.sh, which fetches ALICE-Law's own scripts/public_text_check.py at the revision .github/public-text-pin names (rev ca96d9214ffe0da43e9cb034417a4f6c041ba4be) and refuses it unless its SHA-256 matches the pin (3aef3cdd095b374153dbb74f228828d559cb88f78b33f36570c96cbcb80eb6d5) -- so a crate's own checker does not count, it is ALICE-Law's byte-identical file. It checks the tree at HEAD and the pushed commit range and fails when it compared nothing; scripts/test_public_text.py runs first as the checker's own test. (measure_conformance.py reports G12 'not found' because it greps the literal public_text_check; this workflow invokes it through scripts/public_text.sh, the same shape as the rest of the chain.)"
+reference_repo = "ALICE-Law"
+
+[G13]
+status = "pass"
+evidence = ["clippy.toml", ".github/workflows/ci.yml", "scripts/entropy_guard.py", "src/det_hash.rs"]
+mutant = "introduce a std::collections::HashMap or HashSet into src: in default-feature code cargo clippy --all-targets -- -D warnings (ci.yml:593 default, :601 native) fails on the disallowed-types ban; in feature-gated code (wasm / python / no-default) the library lib lanes (ci.yml:634-636) now also pass -D clippy::disallowed_types so clippy fails there directly (commit 89a5a289 verified a HashSet probe reddens the wasm lane); scripts/entropy_guard.py's lexical HashMap / HashSet pattern is the readable second layer"
+since = ""
+note = "the property that holds is that no RUN-VARYING or address-dependent iteration order reaches Law output: the std maps (default hasher seeded from OS randomness) are banned and the Law-bearing maps use crate::det_hash::DetHashMap (src/det_hash.rs, FNV-1a with a fixed offset basis, no OS seeding), so a DetHashMap's iteration is a pure function of its keys, identical on every run and target. The ban is enforced two ways: clippy.toml's disallowed-types bans std::collections::HashMap / HashSet, checked by the default and native all-targets lanes (ci.yml:593 default, :601 native, -D warnings) and, since commit 89a5a289, by the wasm / python / no-default library lib lanes too (ci.yml:634-636 now pass -D clippy::disallowed_methods -D clippy::disallowed_types, where before they passed only disallowed_methods); scripts/entropy_guard.py's lexical HashMap / HashSet pattern is a readable second layer over feature-gated src. DetHashMap is used in contact_cache, the TGS solver, sdf_sph and sdf_fem_mesh. NOT relied on as evidence: the snapshot writer does sort the TGS impulse-cache entries into a Vec by key before writing (src/solver/world_snapshot.rs:1869), but that sort is unpinned -- removing it leaves the lib world_snapshot tests and the snapshot test files green -- so the determinism here rests on the fixed-seed DetHashMap and the std-map ban, not on that sort (an order-independence test that inserts the cache entries in two orders and compares snapshot bytes would pin it; it does not exist yet)."
+reference_repo = ""
+
+[G14]
+status = "fail-known"
+evidence = ["Cargo.toml", ".github/workflows/ci.yml", "tests/determinism_golden_f32.rs"]
+since = ""
+note = "no shipped build sets a fast-math-style flag or target-cpu=native: there is no .cargo/config* and no build.rs in the tree, and Cargo.toml carries no such profile flag. What the gate requires and is missing: (a) a CI scan step over the build-configuration files for fast-math / native in shipped builds, and (b) explicit tests asserting round-to-nearest-even and no flush-to-zero (C5). The determinism goldens run under both debug and release across both arches (G4/G5) and would redden under a flush-to-zero or non-RNE environment on the modules they pin -- indeed the release leg caught the optimiser-dependent FMA signed-zero case (CHANGELOG [Unreleased]) -- but that coverage is indirect: no test asserts the rounding mode or subnormal handling directly, and no scan keeps a fast-math / native flag out of a future build configuration."
+reference_repo = ""
