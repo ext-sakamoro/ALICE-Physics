@@ -710,6 +710,11 @@ jobs:
         run: python3 scripts/test_allow_reason_guard.py
       - name: Allow reason guard (reasons stated, no wide allow over a clock read)
         run: python3 scripts/allow_reason_guard.py
+      # a bullet rewritten by a later commit must not survive twice in [Unreleased]
+      - name: CHANGELOG duplicate bullets (test first)
+        run: python3 scripts/test_changelog_dup_check.py
+      - name: CHANGELOG duplicate bullets ([Unreleased] has no bullet written twice)
+        run: python3 scripts/changelog_dup_check.py
       - name: Predictable randomness guard (test first)
         run: python3 scripts/test_csprng_guard.py
       - name: Predictable randomness guard
