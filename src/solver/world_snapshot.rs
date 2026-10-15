@@ -208,19 +208,19 @@ pub enum LawCheck {
     /// same): the identifier the caller passed is this target's own
     /// [`PhysicsWorld::law_id`] under [`crate::PHYSICS_SEMANTICS_ID`], and
     /// the header `law_id` equals the target's `law_id` under the earlier
+    /// identifier. [`PhysicsWorld::world_snapshot_ids`] gives that
     /// identifier.
-    VerifiedUnderPrevious {
-        /// The earlier identifier in the blob's header.
-        semantics_id: [u8; 32],
-    },
+    VerifiedUnderPrevious,
     /// Version 4 written under an earlier identifier listed in
     /// [`crate::PREVIOUS_PHYSICS_SEMANTICS_IDS`]; the caller passed no
     /// identifier, so the header `law_id` was not compared with anything.
-    SemanticsPrevious {
-        /// The earlier identifier in the blob's header.
-        semantics_id: [u8; 32],
-    },
+    /// [`PhysicsWorld::world_snapshot_ids`] gives the identifier.
+    SemanticsPrevious,
 }
+
+/// The `(semantics_id, law_id)` in the header of a version 4 world snapshot
+/// ([`PhysicsWorld::world_snapshot_ids`]).
+pub type SnapshotIds = ([u8; 32], [u8; 32]);
 
 /// Lower-case hex of a 32-byte identifier, for error messages.
 struct Hex<'a>(&'a [u8; 32]);
@@ -2066,6 +2066,29 @@ impl PhysicsWorld {
         Ok(check)
     }
 
+    /// The `(semantics_id, law_id)` in the header of a version 4
+    /// [`Self::snapshot_world`] blob, or `None` for a version 1 to 3 blob
+    /// (which carries no identifiers).
+    ///
+    /// The blob gets the structural checks of [`Self::restore_world`] (length,
+    /// magic, version, reserved bytes, payload length, checksum), but the
+    /// identifiers are not judged: a blob written under another stepping
+    /// semantics, which a restore refuses with
+    /// [`WorldSnapshotError::SemanticsMismatch`], still gives its
+    /// identifiers here. After [`Self::restore_world_checked`] reports
+    /// [`LawCheck::VerifiedUnderPrevious`] or [`LawCheck::SemanticsPrevious`],
+    /// this names the earlier identifier the blob was written under.
+    ///
+    /// # Errors
+    ///
+    /// The structural errors of [`Self::restore_world`]: [`WorldSnapshotError::Truncated`],
+    /// [`WorldSnapshotError::BadMagic`], [`WorldSnapshotError::UnsupportedVersion`],
+    /// [`WorldSnapshotError::ReservedNotZero`], [`WorldSnapshotError::TrailingBytes`]
+    /// and [`WorldSnapshotError::ChecksumMismatch`].
+    pub fn world_snapshot_ids(data: &[u8]) -> Result<Option<SnapshotIds>, WorldSnapshotError> {
+        decode_header(data).map(|(_, _, _, ids)| ids)
+    }
+
     fn check_attachable(&self, d: &Decoded) -> Res<()> {
         if d.sdf_poses.len() != self.sdf_colliders.len() {
             return Err(WorldSnapshotError::SdfFieldCountMismatch {
@@ -2202,7 +2225,7 @@ fn law_check(
         };
     }
     let Some(e) = expected else {
-        return Ok(LawCheck::SemanticsPrevious { semantics_id });
+        return Ok(LawCheck::SemanticsPrevious);
     };
     if *e != law(&PHYSICS_SEMANTICS_ID) {
         return Err(WorldSnapshotError::LawIdMismatch {
@@ -2217,10 +2240,14 @@ fn law_check(
             expected: under_previous,
         });
     }
-    Ok(LawCheck::VerifiedUnderPrevious { semantics_id })
+    Ok(LawCheck::VerifiedUnderPrevious)
 }
 
-fn decode(data: &[u8]) -> Res<Decoded> {
+/// The structural checks of a blob (length, magic, version, reserved bytes,
+/// payload length, checksum) and its header: `(version, header length, end of
+/// the body, (semantics_id, law_id) for version 4)`. The identifiers are read,
+/// not judged; [`decode`] checks the semantics.
+fn decode_header(data: &[u8]) -> Res<(u16, usize, usize, Option<SnapshotIds>)> {
     if data.len() < HEADER_LEN + CHECKSUM_LEN {
         return Err(WorldSnapshotError::Truncated);
     }
@@ -2267,6 +2294,16 @@ fn decode(data: &[u8]) -> Res<Decoded> {
         semantics_id.copy_from_slice(&data[SEMANTICS_ID_AT..SEMANTICS_ID_AT + 32]);
         let mut law_id = [0u8; 32];
         law_id.copy_from_slice(&data[LAW_ID_AT..LAW_ID_AT + 32]);
+        Some((semantics_id, law_id))
+    } else {
+        None
+    };
+    Ok((version, header, body_end, ids))
+}
+
+fn decode(data: &[u8]) -> Res<Decoded> {
+    let (version, header, body_end, ids) = decode_header(data)?;
+    if let Some((semantics_id, _)) = ids {
         if semantics_id != PHYSICS_SEMANTICS_ID
             && !PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&semantics_id)
         {
@@ -2275,10 +2312,7 @@ fn decode(data: &[u8]) -> Res<Decoded> {
                 expected: PHYSICS_SEMANTICS_ID,
             });
         }
-        Some((semantics_id, law_id))
-    } else {
-        None
-    };
+    }
 
     let mut r = R {
         data: &data[..body_end],
@@ -3719,11 +3753,11 @@ mod tests {
         };
         assert_eq!(
             law_check(Some((p, then)), None, target),
-            Ok(LawCheck::SemanticsPrevious { semantics_id: p })
+            Ok(LawCheck::SemanticsPrevious)
         );
         assert_eq!(
             law_check(Some((p, then)), Some(&now), target),
-            Ok(LawCheck::VerifiedUnderPrevious { semantics_id: p })
+            Ok(LawCheck::VerifiedUnderPrevious)
         );
         // `expected` is not the target's own current law id
         assert_eq!(

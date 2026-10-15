@@ -174,9 +174,12 @@ fn the_target_own_law_id_verifies_a_previous_blob() {
     let expected = target.law_id(&PHYSICS_SEMANTICS_ID);
     assert_eq!(
         target.restore_world_checked(BLOB, Some(&expected)),
-        Ok(LawCheck::VerifiedUnderPrevious {
-            semantics_id: unhex(WRITER_SEMANTICS)
-        })
+        Ok(LawCheck::VerifiedUnderPrevious)
+    );
+    // the earlier identifier the blob was written under
+    assert_eq!(
+        PhysicsWorld::world_snapshot_ids(BLOB),
+        Ok(Some((unhex(WRITER_SEMANTICS), unhex(WRITER_LAW_ID))))
     );
     same_bodies(&target, &stepped());
 }
@@ -186,9 +189,7 @@ fn without_an_expected_id_only_the_semantics_is_reported() {
     let mut target = scene();
     assert_eq!(
         target.restore_world_checked(BLOB, None),
-        Ok(LawCheck::SemanticsPrevious {
-            semantics_id: unhex(WRITER_SEMANTICS)
-        })
+        Ok(LawCheck::SemanticsPrevious)
     );
 }
 
@@ -244,4 +245,38 @@ fn a_header_law_id_not_under_the_earlier_semantics_is_refused() {
         })
     );
     assert_eq!(target.snapshot_world(), before);
+}
+
+/// `world_snapshot_ids` reads the header without judging it: the 3.0.x blob,
+/// a blob of this build, and a blob of a foreign semantics (which a restore
+/// refuses) all give their identifiers; a blob older than version 4 gives `None`; a blob
+/// that fails a structural check gives that check's error.
+#[test]
+fn the_header_identifiers_are_read_without_judging_them() {
+    let current = stepped();
+    let own = current.snapshot_world();
+    assert_eq!(
+        PhysicsWorld::world_snapshot_ids(&own),
+        Ok(Some((
+            PHYSICS_SEMANTICS_ID,
+            current.law_id(&PHYSICS_SEMANTICS_ID)
+        )))
+    );
+    let foreign = with_id(SEMANTICS_AT, &[0x5a; 32]);
+    assert_eq!(
+        PhysicsWorld::world_snapshot_ids(&foreign),
+        Ok(Some(([0x5a; 32], unhex(WRITER_LAW_ID))))
+    );
+    let older: &[u8] = include_bytes!("fixtures/world_snapshot_v2_stacked.bin");
+    assert_eq!(PhysicsWorld::world_snapshot_ids(older), Ok(None));
+    let mut corrupt = BLOB.to_vec();
+    corrupt[100] ^= 1;
+    assert!(matches!(
+        PhysicsWorld::world_snapshot_ids(&corrupt),
+        Err(WorldSnapshotError::ChecksumMismatch { .. })
+    ));
+    assert_eq!(
+        PhysicsWorld::world_snapshot_ids(&BLOB[..10]),
+        Err(WorldSnapshotError::Truncated)
+    );
 }
