@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5859 |
+| 🟢 Not ignored (run by CI) | 5861 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5958** |
+| **Total** | **5960** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5859)
+## 🟢 Not ignored (5861)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -427,6 +427,7 @@ Per-file counts (the test names are in `tests/`):
 | `fix128_vs_f64_coupling_hypotheses.rs` | 10 |
 | `indep_aero_atmosphere.rs` | 10 |
 | `law_id_world.rs` | 10 |
+| `world_snapshot_previous_semantics.rs` | 10 |
 | `analytic_adaptive_dt.rs` | 9 |
 | `analytic_anisotropic_friction_wiring.rs` | 9 |
 | `analytic_character_state_wiring.rs` | 9 |
@@ -451,7 +452,6 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden.rs` | 9 |
 | `indep_crowd_social_force.rs` | 9 |
 | `vehicle_dynamics_degenerate.rs` | 9 |
-| `world_snapshot_previous_semantics.rs` | 9 |
 | `analytic_added_mass_coupling.rs` | 8 |
 | `analytic_broadphase.rs` | 8 |
 | `analytic_contact_event_normals.rs` | 8 |
@@ -630,6 +630,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_world_query_near_contact.rs` | 1 |
 | `audit_c_plastic.rs` | 1 |
 | `determinism_cloth_step_digest.rs` | 1 |
+| `law_check_cast.rs` | 1 |
 | `replay_alice_db_format.rs` | 1 |
 
 ---

@@ -44,4 +44,17 @@ fn main() {
     let other = tgs.law_id(&PHYSICS_SEMANTICS_ID);
     assert_ne!(before, other, "the backend is part of the law");
     println!("law id (TGS):  {}", hex(&other));
+
+    // a snapshot carries both identifiers in its header, readable without
+    // restoring it
+    let blob = world.snapshot_world();
+    let (semantics, law) = PhysicsWorld::world_snapshot_ids(&blob)
+        .expect("a blob this build wrote")
+        .expect("version 4 carries the identifiers");
+    assert_eq!((semantics, law), (PHYSICS_SEMANTICS_ID, after));
+    println!(
+        "snapshot header: semantics {}, law {}",
+        hex(&semantics),
+        hex(&law)
+    );
 }
