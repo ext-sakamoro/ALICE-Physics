@@ -29,6 +29,7 @@ include = [
     "/src/**/*.rs",
     "/tests/**/*.rs",
     "/tests/fixtures/*.bin",
+    "/tests/fixtures/*.bits",
     "/examples/*.rs",
     "/benches/*.rs",
     "/include/alice_physics.h",
