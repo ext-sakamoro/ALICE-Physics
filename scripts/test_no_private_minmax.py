@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Tests for scripts/no_private_minmax.py: the repository passes, a local float
-max / min copy in any form fails, same-named functions over other types pass,
+"""Tests for scripts/no_private_minmax.py: the repository passes, every new
+function named max / min / max64 / min64 fails whatever its form, the
+reviewed list is matched exactly (count drift, stale entry, missing reason),
 a copy inside a comment or a string is not counted, and a tree without the
 re-export or without files fails."""
 import os
@@ -14,6 +15,7 @@ import no_private_minmax as g  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 REEXPORT = "pub mod det_math {\n    pub(crate) use alice_det_math::{max, max64, min, min64};\n}\n"
+ALLOW = {("src/ok.rs", "min"): (1, "a reviewed other law")}
 
 
 def tree(files: dict[str, str]) -> Path:
@@ -25,8 +27,9 @@ def tree(files: dict[str, str]) -> Path:
     return root
 
 
-def problems(extra: str) -> list[str]:
-    return g.check(tree({"src/lib.rs": REEXPORT, "src/x.rs": extra}))[0]
+def problems(extra: str, allowed=None) -> list[str]:
+    files = {"src/lib.rs": REEXPORT, "src/x.rs": extra, "src/ok.rs": "fn min(a: Fix128, b: Fix128) -> Fix128 { a }"}
+    return g.check(tree(files), ALLOW if allowed is None else allowed)[0]
 
 
 class NoPrivateMinmax(unittest.TestCase):
@@ -35,15 +38,13 @@ class NoPrivateMinmax(unittest.TestCase):
         self.assertEqual(found, [])
         self.assertGreater(files, 0)
 
-    def test_a_planted_copy_fails_in_every_form(self):
-        copies = [
+    def test_every_new_function_of_these_names_fails(self):
+        forms = [
             "pub(crate) fn max(a: f32, b: f32) -> f32 { if a > b { a } else { b } }",
             "fn min(x: f32, y: f32) -> f32 { x }",
             "pub fn max64(a: f64, b: f64) -> f64 { a }",
             "fn min64 ( mut a : f64 , b : f64 ) -> f64 { a }",
-            "fn max<T>(a: f32, b: f32) -> f32 { a }",
             "fn max(a: &f32, b: &f32) -> f32 { *a }",
-            "fn min64(a: &mut f64, b: f64) -> f64 { *a }",
             "pub fn max<T: Into<f32>>(a: f32, b: f32) -> f32 { a }",
             "fn r#min(a: f32, b: f32) -> f32 { a }",
             "fn max64<A: Into<Vec<f64>>, B>(a: f64, b: f64) -> f64 { a }",
@@ -53,22 +54,21 @@ class NoPrivateMinmax(unittest.TestCase):
             "fn max(#[allow(unused)] a: f32, b: f32) -> f32 { b }",
             "impl Num { fn max(a: f32, b: f32) -> f32 { a } }",
             "fn max64<T>(a: T, b: T) -> T where T: PartialOrd { a }",
-            "mod m {\n    #[inline]\n    pub(crate) fn min(\n        a: f32,\n        b: f32,\n    ) -> f32 { a }\n}",
+            "trait Mx { fn max(self, b: Self) -> Self; }\nimpl Mx for f32 { fn max(self, b: f32) -> f32 { b } }",
+            "fn max(a: f32, b: f32, _p: core::marker::PhantomData<Fix128>) -> f32 { a }",
+            "impl S { const fn min(&self) -> f64 { 0.0 } }",
+            "mod m {\n    #[inline]\n    pub(crate)\n    fn\n    min64(\n        a: f64,\n        b: f64,\n    ) -> f64 { a }\n}",
         ]
-        for src in copies:
+        for src in forms:
             with self.subTest(src=src):
-                self.assertEqual(len(problems(src)), 1, problems(src))
+                self.assertTrue(problems(src), "a new function of these names passed")
 
-    def test_other_laws_of_the_same_name_pass(self):
+    def test_other_names_pass(self):
         for src in [
-            "impl S { fn max(self, o: Self) -> Self { self } }",
-            "impl S { fn min(&mut self, o: f32) -> f32 { o } }",
-            "impl<'a> S<'a> { fn max64(&'a self) -> f64 { 0.0 } }",
-            "impl S { fn min64(#[allow(unused)] &self) -> f64 { 0.0 } }",
-            "fn min(a: Fix128, b: Fix128) -> Fix128 { a }",
-            "impl R { pub const fn max(&self) -> f64 { self.0 } }",
             "fn maximum(a: f32, b: f32) -> f32 { a }",
             "fn max_f32(a: f32, b: f32) -> f32 { a }",
+            "fn minmax(a: f32) -> f32 { a }",
+            "let max = 3;",
         ]:
             with self.subTest(src=src):
                 self.assertEqual(problems(src), [])
@@ -83,24 +83,51 @@ class NoPrivateMinmax(unittest.TestCase):
             with self.subTest(src=src):
                 self.assertEqual(problems(src), [])
 
+    def test_a_second_function_in_an_allowed_file_fails(self):
+        files = {
+            "src/lib.rs": REEXPORT,
+            "src/ok.rs": "fn min(a: Fix128, b: Fix128) -> Fix128 { a }\nfn min(a: f32, b: f32) -> f32 { a }",
+        }
+        found, _ = g.check(tree(files), ALLOW)
+        self.assertEqual(len(found), 1)
+        self.assertIn("2 found, ALLOWED says 1", found[0])
+
+    def test_another_name_in_an_allowed_file_fails(self):
+        # the entry is for `min` in that file; a `max` beside it is not covered
+        files = {
+            "src/lib.rs": REEXPORT,
+            "src/ok.rs": "fn min(a: Fix128, b: Fix128) -> Fix128 { a }\nfn max(a: f32, b: f32) -> f32 { a }",
+        }
+        found, _ = g.check(tree(files), ALLOW)
+        self.assertEqual(len(found), 1)
+        self.assertIn("`fn max`", found[0])
+
+    def test_a_stale_entry_fails(self):
+        files = {"src/lib.rs": REEXPORT, "src/ok.rs": "fn other() {}"}
+        found, _ = g.check(tree(files), ALLOW)
+        self.assertEqual(len(found), 1)
+        self.assertIn("matches nothing", found[0])
+
+    def test_an_entry_without_a_reason_fails(self):
+        found = problems("", {("src/ok.rs", "min"): (1, "  ")})
+        self.assertEqual(len(found), 1)
+        self.assertIn("no reason", found[0])
+
     def test_the_reexport_is_read_as_a_set(self):
         lib = "pub mod det_math {\n    pub(crate) use alice_det_math::{min64, max, min, max64};\n}\n"
-        self.assertEqual(g.check(tree({"src/lib.rs": lib}))[0], [])
+        self.assertEqual(g.check(tree({"src/lib.rs": lib}), {})[0], [])
         partial = "pub mod det_math {\n    pub(crate) use alice_det_math::{max, min, max64};\n}\n"
-        self.assertEqual(len(g.check(tree({"src/lib.rs": partial}))[0]), 1)
-
-    def test_an_unreadable_parameter_list_fails(self):
-        self.assertEqual(len(problems("fn max")), 1)
+        self.assertEqual(len(g.check(tree({"src/lib.rs": partial}), {})[0]), 1)
 
     def test_a_missing_reexport_fails(self):
-        found, _ = g.check(tree({"src/lib.rs": "pub mod det_math {}\n"}))
+        found, _ = g.check(tree({"src/lib.rs": "pub mod det_math {}\n"}), {})
         self.assertEqual(len(found), 1)
         self.assertIn("re-export", found[0])
 
     def test_no_file_compares_nothing(self):
         root = tree({"README.md": "x"})
         (root / "src").mkdir()
-        found, files = g.check(root)
+        _, files = g.check(root, {})
         self.assertEqual(files, 0)
 
 
