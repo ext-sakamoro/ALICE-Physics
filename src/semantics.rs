@@ -7,7 +7,7 @@
 //! Two builds with the same identifier step every pinned path to the same
 //! bits; a build that steps any of them differently has a different value.
 //!
-//! # Hex form
+//! # Hex form (with `alice-det-math` 0.5.1; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
 //! 79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108
@@ -177,19 +177,73 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         "installed bridge",
         hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
     ),
+    // the resolved alice-det-math's own identifier, not a copy of it: the
+    // identifier below is looked up by it
+    ("alice-det-math", alice_det_math::SEMANTICS_ID),
+];
+
+/// [`PHYSICS_SEMANTICS_ID`] for each `alice-det-math` generation this crate
+/// knows: `(alice_det_math::SEMANTICS_ID, fold of PHYSICS_SEMANTICS_PINS with
+/// that det-math entry)`.
+///
+/// The det-math entry of [`PHYSICS_SEMANTICS_PINS`] is the identifier of the
+/// `alice-det-math` the build resolved, so the identifier is looked up here
+/// by it ([`semantics_id_for`]); a build against a generation with no row
+/// does not compile. `tests/physics_semantics_id.rs` recomputes every row
+/// from the pins in one build.
+pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
+    // alice-det-math 0.5.0
     (
-        "alice-det-math",
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        hex32("cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469"),
+    ),
+    // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
+    (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        hex32("79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108"),
     ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
-/// [`PHYSICS_SEMANTICS_PINS`] described in the [module documentation](self).
+/// [`PHYSICS_SEMANTICS_PINS`] described in the [module documentation](self),
+/// taken from [`PHYSICS_SEMANTICS_BY_DET_MATH`] by the resolved
+/// `alice-det-math`.
 ///
-/// Hex: `79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108`.
+/// Hex (with `alice-det-math` 0.5.1):
+/// `79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108`.
 /// The same value in every build, whatever cargo features are enabled.
-pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
-    hex32("79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108");
+pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
+
+/// The [`PHYSICS_SEMANTICS_ID`] of a build that resolved the `alice-det-math`
+/// with identifier `det_math`.
+///
+/// # Panics
+///
+/// When [`PHYSICS_SEMANTICS_BY_DET_MATH`] has no row for `det_math` (in a
+/// const context this stops the compile). A new `alice-det-math` generation
+/// needs its row, recomputed from the pins.
+#[must_use]
+pub const fn semantics_id_for(det_math: &[u8; 32]) -> [u8; 32] {
+    let mut i = 0;
+    while i < PHYSICS_SEMANTICS_BY_DET_MATH.len() {
+        if same32(&PHYSICS_SEMANTICS_BY_DET_MATH[i].0, det_math) {
+            return PHYSICS_SEMANTICS_BY_DET_MATH[i].1;
+        }
+        i += 1;
+    }
+    panic!("alice-det-math SEMANTICS_ID has no row in PHYSICS_SEMANTICS_BY_DET_MATH: add its fold");
+}
+
+const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
+    let mut i = 0;
+    while i < 32 {
+        if a[i] != b[i] {
+            return false;
+        }
+        i += 1;
+    }
+    true
+}
 
 /// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
 /// steps to the same bits as this build, newest first.
@@ -200,7 +254,8 @@ pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
 /// [`crate::WorldSnapshotError::SemanticsMismatch`].
 ///
 /// An identifier is listed only when the change that replaced it moved no
-/// determinism golden, so the stepping bits are the same under both:
+/// determinism golden, so the stepping bits are the same under both. Each is
+/// a value of [`PHYSICS_SEMANTICS_BY_DET_MATH`] other than this build's:
 ///
 /// * `cd9aa3b8…` (3.0.0 and 3.0.1): replaced when `alice-det-math` went from
 ///   0.5.0 to 0.5.1, which added `max` / `min` / `max64` / `min64` and left

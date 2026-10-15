@@ -855,7 +855,10 @@ pub use sdf_force::{SdfForceField, SdfForceType};
 pub use sdf_manifold::ManifoldConfig;
 #[cfg(feature = "std")]
 pub use sdf_manifold::SdfManifold;
-pub use semantics::{PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS};
+pub use semantics::{
+    semantics_id_for, PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
+    PREVIOUS_PHYSICS_SEMANTICS_IDS,
+};
 pub use shape::{Shape, ShapeError};
 #[cfg(feature = "std")]
 pub use sim_field::{ScalarField3D, VectorField3D};

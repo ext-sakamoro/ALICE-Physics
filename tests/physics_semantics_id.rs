@@ -40,7 +40,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use alice_physics::{PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS};
+use alice_physics::{
+    semantics_id_for, PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
+    PREVIOUS_PHYSICS_SEMANTICS_IDS,
+};
 use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
@@ -705,4 +708,75 @@ fn ignored() { assert_eq!("", A); }
     assert_eq!(golden_of(raw, "word_only").unwrap(), [0x22; 32]);
     assert!(golden_of(raw, "ignored").is_err());
     assert!(golden_of(raw, "commented").is_err());
+}
+
+// ── (f) one identifier per alice-det-math generation ───────────────────────
+
+/// The pins with the det-math entry replaced by `det_math`.
+fn pins_under(det_math: [u8; 32]) -> Vec<(&'static str, [u8; 32])> {
+    PHYSICS_SEMANTICS_PINS
+        .iter()
+        .map(|&(n, d)| if n == DET_MATH { (n, det_math) } else { (n, d) })
+        .collect()
+}
+
+/// Every row is the fold of the pins under its det-math generation, checked
+/// in one build (the other generations are not resolved here).
+#[test]
+fn every_row_is_the_fold_under_its_det_math_generation() {
+    assert!(!PHYSICS_SEMANTICS_BY_DET_MATH.is_empty());
+    for (det_math, id) in PHYSICS_SEMANTICS_BY_DET_MATH {
+        assert_eq!(
+            hex(&fold(&pins_under(*det_math)).expect("folds")),
+            hex(id),
+            "row for det-math {}",
+            hex(det_math)
+        );
+    }
+}
+
+/// The identifier is the row of the resolved det-math, each generation has
+/// one row, and the rows of earlier generations stay (0.5.0 and 0.5.1).
+#[test]
+fn the_identifier_is_the_row_of_the_resolved_det_math() {
+    assert_eq!(
+        PHYSICS_SEMANTICS_ID,
+        semantics_id_for(&alice_det_math::SEMANTICS_ID)
+    );
+    let keys: BTreeSet<[u8; 32]> = PHYSICS_SEMANTICS_BY_DET_MATH.iter().map(|r| r.0).collect();
+    assert_eq!(
+        keys.len(),
+        PHYSICS_SEMANTICS_BY_DET_MATH.len(),
+        "a generation has two rows"
+    );
+    for det in [
+        "135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000",
+        "85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315",
+    ] {
+        assert!(keys.contains(&unhex32(det)), "no row for det-math {det}");
+    }
+}
+
+/// Every earlier identifier the snapshot reader accepts is the identifier of
+/// another known generation, never this build's.
+#[test]
+fn previous_identifiers_are_rows_of_other_generations() {
+    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.is_empty());
+    for id in PREVIOUS_PHYSICS_SEMANTICS_IDS {
+        assert_ne!(
+            id, &PHYSICS_SEMANTICS_ID,
+            "the current identifier is listed as previous"
+        );
+        assert!(
+            PHYSICS_SEMANTICS_BY_DET_MATH.iter().any(|r| r.1 == *id),
+            "{} is not the identifier of a known generation",
+            hex(id)
+        );
+    }
+}
+
+#[test]
+#[should_panic(expected = "has no row in PHYSICS_SEMANTICS_BY_DET_MATH")]
+fn an_unknown_det_math_generation_has_no_identifier() {
+    let _ = semantics_id_for(&[0x42; 32]);
 }
