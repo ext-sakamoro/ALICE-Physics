@@ -10177,9 +10177,13 @@ impl<'a> core::marker::UnsafeUnpin for alice_physics::particle::LandingTarget<'a
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingTarget<'a>
 #[non_exhaustive] pub enum alice_physics::prelude::LawCheck
+pub alice_physics::prelude::LawCheck::SemanticsPrevious
+pub alice_physics::prelude::LawCheck::SemanticsPrevious::semantics_id: [u8; 32]
 pub alice_physics::prelude::LawCheck::SemanticsVerified
 pub alice_physics::prelude::LawCheck::Unpinned
 pub alice_physics::prelude::LawCheck::Verified
+pub alice_physics::prelude::LawCheck::VerifiedUnderPrevious
+pub alice_physics::prelude::LawCheck::VerifiedUnderPrevious::semantics_id: [u8; 32]
 impl core::clone::Clone for alice_physics::LawCheck
 pub fn alice_physics::LawCheck::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::LawCheck
@@ -17095,8 +17099,11 @@ impl<'a, F> core::marker::UnsafeUnpin for alice_physics::sdf_wind_field::SdfWind
 impl<'a, F> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::RefUnwindSafe, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::UnwindSafe, F: ?core::marker::Sized
 pub mod alice_physics::semantics
+pub const alice_physics::semantics::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
 pub const alice_physics::semantics::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics::semantics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
+pub const alice_physics::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]]
+pub const fn alice_physics::semantics::semantics_id_for(&[u8; 32]) -> [u8; 32]
 pub mod alice_physics::sensors
 #[non_exhaustive] pub struct alice_physics::sensors::ContactReading
 pub alice_physics::sensors::ContactReading::contact_count: usize
@@ -17959,9 +17966,13 @@ impl core::marker::UnsafeUnpin for alice_physics::solver::DeclareFieldError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::DeclareFieldError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::DeclareFieldError
 #[non_exhaustive] pub enum alice_physics::solver::LawCheck
+pub alice_physics::solver::LawCheck::SemanticsPrevious
+pub alice_physics::solver::LawCheck::SemanticsPrevious::semantics_id: [u8; 32]
 pub alice_physics::solver::LawCheck::SemanticsVerified
 pub alice_physics::solver::LawCheck::Unpinned
 pub alice_physics::solver::LawCheck::Verified
+pub alice_physics::solver::LawCheck::VerifiedUnderPrevious
+pub alice_physics::solver::LawCheck::VerifiedUnderPrevious::semantics_id: [u8; 32]
 impl core::clone::Clone for alice_physics::LawCheck
 pub fn alice_physics::LawCheck::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::LawCheck
@@ -21381,9 +21392,13 @@ impl<'a> core::marker::UnsafeUnpin for alice_physics::particle::LandingTarget<'a
 impl<'a> !core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::LandingTarget<'a>
 impl<'a> !core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingTarget<'a>
 #[non_exhaustive] pub enum alice_physics::LawCheck
+pub alice_physics::LawCheck::SemanticsPrevious
+pub alice_physics::LawCheck::SemanticsPrevious::semantics_id: [u8; 32]
 pub alice_physics::LawCheck::SemanticsVerified
 pub alice_physics::LawCheck::Unpinned
 pub alice_physics::LawCheck::Verified
+pub alice_physics::LawCheck::VerifiedUnderPrevious
+pub alice_physics::LawCheck::VerifiedUnderPrevious::semantics_id: [u8; 32]
 impl core::clone::Clone for alice_physics::LawCheck
 pub fn alice_physics::LawCheck::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::LawCheck
@@ -26578,8 +26593,10 @@ impl core::marker::Unpin for alice_physics::anomaly::ZScoreDetector
 impl core::marker::UnsafeUnpin for alice_physics::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::anomaly::ZScoreDetector
+pub const alice_physics::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
 pub const alice_physics::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
+pub const alice_physics::PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]]
 pub const alice_physics::SIMD_WIDTH: usize
 pub trait alice_physics::AnomalyCallback
 pub fn alice_physics::AnomalyCallback::on_anomaly(&mut self, alice_physics::anomaly::AnomalyEvent)
@@ -26736,6 +26753,7 @@ pub fn alice_physics::raycast_any_aabbs(&alice_physics::raycast::Ray, &[(alice_p
 pub fn alice_physics::raycast_any_spheres(&alice_physics::raycast::Ray, &[(alice_physics::collider::Sphere, usize)], alice_physics::math::Fix128) -> bool
 pub fn alice_physics::save_scene(&alice_physics::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
 pub fn alice_physics::save_scene_json(&alice_physics::scene_io::PhysicsScene, &std::path::Path) -> core::io::error::Result<()>
+pub const fn alice_physics::semantics_id_for(&[u8; 32]) -> [u8; 32]
 pub const fn alice_physics::simd_width() -> usize
 pub fn alice_physics::simplify_collision_mesh(&alice_physics::collision_mesh_gen::CollisionMesh, usize) -> alice_physics::collision_mesh_gen::CollisionMesh
 pub fn alice_physics::solve_extra_joints(&mut [alice_physics::solver::RigidBody], &[alice_physics::joint_extra::ExtraJoint], alice_physics::math::Fix128)

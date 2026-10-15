@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5845 |
+| 🟢 Not ignored (run by CI) | 5859 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5944** |
+| **Total** | **5958** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5845)
+## 🟢 Not ignored (5859)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -280,6 +280,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_laminate_failure.rs` | 17 |
 | `indep_participant_laws.rs` | 17 |
 | `participant_sdf_modifiers.rs` | 17 |
+| `physics_semantics_id.rs` | 17 |
 | `analytic_audio_physics_wiring.rs` | 16 |
 | `analytic_damping_rayleigh_wiring.rs` | 16 |
 | `analytic_fdtd_materials.rs` | 16 |
@@ -377,7 +378,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_wedge.rs` | 12 |
 | `indep_molecular_pair_potential.rs` | 12 |
 | `indep_orbit_kepler.rs` | 12 |
-| `physics_semantics_id.rs` | 12 |
 | `world_snapshot_v4.rs` | 12 |
 | `analytic_animation_blend_wiring.rs` | 11 |
 | `analytic_contact_viz_wiring.rs` | 11 |
@@ -451,6 +451,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_golden.rs` | 9 |
 | `indep_crowd_social_force.rs` | 9 |
 | `vehicle_dynamics_degenerate.rs` | 9 |
+| `world_snapshot_previous_semantics.rs` | 9 |
 | `analytic_added_mass_coupling.rs` | 8 |
 | `analytic_broadphase.rs` | 8 |
 | `analytic_contact_event_normals.rs` | 8 |

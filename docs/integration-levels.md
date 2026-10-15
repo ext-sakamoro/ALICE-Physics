@@ -53,7 +53,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `rng` | world API | 0 / 6 / 0 / 6 / 0 | — |
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `semantics` | world API | 0 / 2 / 0 / 1 / 0 | — |
+| `semantics` | world API | 0 / 5 / 0 / 1 / 0 | — |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `solver` | world API (step 53 of 197 items) | 53 / 114 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
