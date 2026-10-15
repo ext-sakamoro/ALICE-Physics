@@ -15,6 +15,8 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-16
+
 ### Added
 
 - CI: libm を直接依存に足した時に G1 の禁止 (clippy.toml の `libm::` path と `scripts/libm_ban_check.py`) が無ければ失敗する検査 `scripts/libm_dependency_guard.py` を足した (ALICE-DetMath と byte 一致) fmt の job (ubuntu、setup-python 無し) で runner の python3 (ubuntu-latest では 3.12) を使い、tomllib が無ければ飛ばさず exit 2 で失敗する
@@ -26,6 +28,8 @@ were introduced during that release window.
 - `vehicle::VehicleParticipant`: `Vehicle` を world の参加者として substep ごとに車体へ力を積む (kind `VHCL`) `with_inputs(field)` で throttle / brake / steering を `Channels { count: VEHICLE_INPUTS }` の場から毎 substep 読む 呼び手が frame の間に書いた行動はその次の frame の全 substep で一定で、snapshot・分岐・replay に入る 範囲外の入力 (throttle と brake は 0..=1、steering は -1..=1) は `OutOfRange`、場の長さ違いと車体の index の範囲外は `InvalidState` で、何も積まず状態も変えない static の車体には力を積まない 観測は速度・rpm・gear・入力・接地した車輪の数 試験 `tests/analytic_vehicle_participant.rs`: 1 輪の静止で車高が閉形式 `radius + rest·(1 − m g/k)` に `1e-9`、frame 末の縦速度が `1e-12` 未満 (frame 先頭の impulse の `Vehicle::update` は `−g·dt/2` 付近) / 空気抵抗だけの減速が `v₀/(1 + (c/m)·v₀·t)` に substep 幅の 1 次で収束 (substeps 1→4 で誤差 4.0 分の 1) / 場から入れた throttle の加速が `v*·tanh(t·√(F·c)/m)` に `1e-6` / 行動は次の frame の全 substep で一定 / 記録した行動の列の replay と途中の分岐が bit 一致 / 不正な入力は fault で何も変えない / 別の車の snapshot は拒否 / 並列で thread 数に依らず逐次と一致 / 走行の digest (XPBD と TGS) / `PHYSICS_SEMANTICS_ID` は main の値のまま 変異 10 件 (入力を読まない / 範囲を見ない / 力を積まない / payload の throttle 欠落 / read_state の回転角の欠落 / `chassis_force` の static の判定なし / digest が車輪を見ない / `count = 0` を通す / snapshot が Channels を読まない / 入力の長さを下限だけ見る) はすべて失敗する example `participant_vehicle`
 
 ### Changed
+
+- 版を 3.1.0 にした `alice-db` の要求を 0.5、`alice-analytics` の要求を `>=0.5, <0.7` にして公開済みの alice-db 0.5.1 と alice-analytics 0.6.0 を受け、`alice-det-math` 0.5.1 の算術の識別子を受ける (以前の識別子は `PREVIOUS_PHYSICS_SEMANTICS_IDS` で引き続き受理) 公開 API は追加だけで、`cargo semver-checks` は 3.0.1 に対して互換でない変更を 0 件と判定する (`LawCheck` は値を持たない enum のまま、以前の識別子は `PhysicsWorld::world_snapshot_ids` で読む)
 
 - 決定論: `Instant::elapsed` と `SystemTime::elapsed` を clippy の禁止 (`clippy.toml`、そこから作る `.github/clippy-lib/clippy.toml`) に足した どちらも `::now()` と同じく時計を読むが、これまでどちらの層にも無かった 既に持っている 2 つの値の差 `duration_since` は時計を読まないので対象外 本番の code に呼び出しは無く、試験と example の 18 箇所は既存の時計の許可 (file か test module ごと、理由付き) の中にある (理由の無かった `tests/analytic_hyperelastic_mms_order.rs` に理由を書いた) `tests/audit_smoke_fire.rs` の「1 K でもすぐ返る」を時計の 1 秒の締め切りから仕事量の上限に替えた: 指数を 16 ずつ掛ける loop は積が 0 になった時点で止まるので、回数は `(log2 A + 64) · ln 2 / 16` 程度 (pre-exponential の A で決まる、指数では決まらない) lib の試験 `smoke_fire::tests::a_huge_exponent_stops_once_the_product_underflows` が回数を上限と比べる (止める条件を外すと 1518 回で失敗) その file は時計を読まなくなったので、file の許可の理由を「oracle が platform の f64 の libm を使う」に書き直した clippy の canary (`scripts/clippy-lib-canary`) に `elapsed` の 5 つの形 (method、path、`SystemTime`、`use .. as` の別名、qualified self) を足し、`duration_since` の行に diagnostic が出たら失敗するようにした `scripts/test_entropy_guard.py` も両方の設定に 2 行があることを確かめる (禁止を外すと両方の canary が失敗する)
 - 依存: `alice-analytics` の要求を `"0.5"` から `">=0.5, <0.7"` に広げた (`analytics` の optional 依存) この crate が使うのは `sketch::{DDSketch256, HyperLogLog12}` だけで、0.6.0 で取り除かれた privacy の constructor は使わない (`privacy` の `LaplaceNoise` などはこの crate 自身の型) lock は公開済みの 0.5.0 のまま 0.6.0 の tree に対して `analytics` の lib の試験と `tests/audit_analytics_bridge.rs` / `tests/analytic_analytics_bridge_wiring.rs` が通ることを確かめた
