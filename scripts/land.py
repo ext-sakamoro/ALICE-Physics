@@ -405,17 +405,10 @@ def identity_problem(name: str, email: str) -> str | None:
     if n in DENIED_NAMES:
         return f"the name {name!r} is a GitHub identity"
     return None
-GENERATED = (
-    "docs/integration-status.md",
-    "docs/integration-levels.md",
-    "docs/oracle-status.md",
-    "docs/wiring-status.md",
-    "docs/PUBLIC_API_SNAPSHOT.txt",
-    "docs/coverage/status.md",
-)
-# hand-written, with a generated column (Integration) that the regeneration
-# rewrites: a conflict is merged with that column blanked, never dropped
-SEMI_GENERATED = ("docs/MODULES.md",)
+# the generated files, the generators and the toolchain pins live in ledgers.py
+# (the preflight's stale check reads the same list)
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from ledgers import GENERATED, NATIVE, NIGHTLY, SEMI_GENERATED, WRITERS  # noqa: E402
 # lists that both sides mostly add to: a conflict is merged by merge_append(),
 # which keeps lines both sides added and a line one side rewrote, and stops when
 # both sides changed the same lines. A union merge is not used: it keeps the old
@@ -426,8 +419,6 @@ EXIT_PENDING = 3        # --wait: the after-landing set did not finish within th
 EXIT_RED = 4            # --wait: an after-landing result is red
 EXIT_CHECKOUT = 5       # landed, but the checkout could not follow (reset --keep refused)
 SIGNATURE_RE = re.compile(r"Co-Authored-By:|^\s*Generated with\b|\U0001F916", re.I | re.M)
-NIGHTLY = "nightly-2026-09-26"  # the security-audit pin
-NATIVE = "std,simd,parallel,ffi,gpu-solver-bridge"
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 MAX_ATTEMPTS = 6        # pushes to main (a push that loses a race to another landing retries)
 REGEN_MESSAGE = "docs: regenerate the generated ledgers"   # the only commit message land.py writes
@@ -1045,11 +1036,8 @@ class Lander:
 
     def regenerate(self) -> None:
         self.sh("bash", "scripts/scip_index.sh")
-        self.sh(sys.executable, "scripts/integration_levels.py", "--write")
-        self.sh(sys.executable, "scripts/scip_reach.py", "--write", "docs/integration-status.md")
-        self.sh(sys.executable, "scripts/gen-oracle-status.py")
-        self.sh(sys.executable, "scripts/gen-wiring-status.py")
-        self.sh(sys.executable, "scripts/coverage_check.py", "--write-status")
+        for _, argv, _ in WRITERS:
+            self.sh(sys.executable, *argv[1:])
         self.regenerate_public_api()
 
     def regenerate_public_api(self) -> None:
