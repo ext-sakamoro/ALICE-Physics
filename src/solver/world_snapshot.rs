@@ -16,7 +16,9 @@
 //! ([`crate::PHYSICS_SEMANTICS_ID`]) and the world's rule identifier
 //! ([`PhysicsWorld::law_id`] of that semantics). A reader refuses a version 4
 //! blob written under other stepping semantics
-//! ([`WorldSnapshotError::SemanticsMismatch`]), and
+//! ([`WorldSnapshotError::SemanticsMismatch`]), except one written under an
+//! earlier identifier listed in [`crate::PREVIOUS_PHYSICS_SEMANTICS_IDS`]
+//! (same stepping bits), and
 //! [`PhysicsWorld::restore_world_checked`] also compares the rule identifier
 //! with one the caller expects and reports what it could verify
 //! ([`LawCheck`]). Version 1 to 3 blobs carry neither hash; they are still
@@ -42,7 +44,7 @@ use crate::material::{
     CombineRule, MaterialTable, PairOverride, PhysicsMaterial, MATERIAL_ID_CAPACITY,
 };
 use crate::math::{Fix128, QuatFix, Vec3Fix};
-use crate::semantics::PHYSICS_SEMANTICS_ID;
+use crate::semantics::{PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS};
 use crate::shape::Shape;
 use crate::sleeping::{IslandManager, SleepConfig, SleepData, SleepState};
 use crate::static_collider::StaticCollider;
@@ -164,9 +166,10 @@ pub enum WorldSnapshotError {
     /// [`crate::world_participant::FieldBoard::check_values`]).
     FieldState(crate::world_participant::StateError),
     /// A version 4 blob was written under other stepping semantics: its
-    /// header `semantics_id` is not this binary's
-    /// [`crate::PHYSICS_SEMANTICS_ID`], so a restored world would not step
-    /// the way the writer's did. Checked after the checksum.
+    /// header `semantics_id` is neither this binary's
+    /// [`crate::PHYSICS_SEMANTICS_ID`] nor one of
+    /// [`crate::PREVIOUS_PHYSICS_SEMANTICS_IDS`], so a restored world would
+    /// not step the way the writer's did. Checked after the checksum.
     SemanticsMismatch {
         /// `semantics_id` stored in the blob's header.
         stored: [u8; 32],
@@ -200,6 +203,23 @@ pub enum LawCheck {
     /// verified. The blob is accepted; a caller that requires verification
     /// can refuse it on this value.
     Unpinned,
+    /// Version 4 written under an earlier identifier listed in
+    /// [`crate::PREVIOUS_PHYSICS_SEMANTICS_IDS`] (the stepping bits are the
+    /// same): the identifier the caller passed is this target's own
+    /// [`PhysicsWorld::law_id`] under [`crate::PHYSICS_SEMANTICS_ID`], and
+    /// the header `law_id` equals the target's `law_id` under the earlier
+    /// identifier.
+    VerifiedUnderPrevious {
+        /// The earlier identifier in the blob's header.
+        semantics_id: [u8; 32],
+    },
+    /// Version 4 written under an earlier identifier listed in
+    /// [`crate::PREVIOUS_PHYSICS_SEMANTICS_IDS`]; the caller passed no
+    /// identifier, so the header `law_id` was not compared with anything.
+    SemanticsPrevious {
+        /// The earlier identifier in the blob's header.
+        semantics_id: [u8; 32],
+    },
 }
 
 /// Lower-case hex of a 32-byte identifier, for error messages.
@@ -1958,10 +1978,13 @@ impl PhysicsWorld {
     ///
     /// | blob | `expected_law_id` | result |
     /// |---|---|---|
-    /// | version 4, header `semantics_id` is not [`crate::PHYSICS_SEMANTICS_ID`] | any | [`WorldSnapshotError::SemanticsMismatch`] |
+    /// | version 4, header `semantics_id` is neither [`crate::PHYSICS_SEMANTICS_ID`] nor in [`crate::PREVIOUS_PHYSICS_SEMANTICS_IDS`] | any | [`WorldSnapshotError::SemanticsMismatch`] |
     /// | version 4 | `Some(id)`, header `law_id == id` | [`LawCheck::Verified`] |
     /// | version 4 | `Some(id)`, header `law_id != id` | [`WorldSnapshotError::LawIdMismatch`] |
     /// | version 4 | `None` | [`LawCheck::SemanticsVerified`] |
+    /// | version 4, earlier `semantics_id` `s` | `Some(id)`, `id == self.law_id(&PHYSICS_SEMANTICS_ID)` and header `law_id == self.law_id(&s)` | [`LawCheck::VerifiedUnderPrevious`] |
+    /// | version 4, earlier `semantics_id` | `Some(id)`, otherwise | [`WorldSnapshotError::LawIdMismatch`] |
+    /// | version 4, earlier `semantics_id` | `None` | [`LawCheck::SemanticsPrevious`] |
     /// | version 1 to 3 | any (not compared) | [`LawCheck::Unpinned`] |
     ///
     /// `expected_law_id` is compared with the header as written, not with
@@ -2033,7 +2056,7 @@ impl PhysicsWorld {
         expected_law_id: Option<&[u8; 32]>,
     ) -> Result<LawCheck, WorldSnapshotError> {
         let d = decode(data)?;
-        let check = law_check(d.ids, expected_law_id)?;
+        let check = law_check(d.ids, expected_law_id, |s| self.law_id(s))?;
         self.check_attachable(&d)?;
         self.check_participants(&d.participants)?;
         self.fields()
@@ -2152,18 +2175,49 @@ impl PhysicsWorld {
 }
 
 /// What a decoded blob's header identifiers verify against `expected`.
-fn law_check(ids: Option<([u8; 32], [u8; 32])>, expected: Option<&[u8; 32]>) -> Res<LawCheck> {
-    let Some((_, stored)) = ids else {
+///
+/// `law` is the target's [`PhysicsWorld::law_id`] (taken before the
+/// restore). It is used only for a blob written under an identifier of
+/// [`PREVIOUS_PHYSICS_SEMANTICS_IDS`] (`decode` has already refused any
+/// other one): its header `law_id` was hashed with that earlier identifier,
+/// so `expected` (an identifier under [`PHYSICS_SEMANTICS_ID`]) is checked
+/// to be the target's own, and the header against the target's identifier
+/// under the earlier semantics.
+fn law_check(
+    ids: Option<([u8; 32], [u8; 32])>,
+    expected: Option<&[u8; 32]>,
+    law: impl Fn(&[u8; 32]) -> [u8; 32],
+) -> Res<LawCheck> {
+    let Some((semantics_id, stored)) = ids else {
         return Ok(LawCheck::Unpinned);
     };
-    match expected {
-        None => Ok(LawCheck::SemanticsVerified),
-        Some(e) if *e == stored => Ok(LawCheck::Verified),
-        Some(e) => Err(WorldSnapshotError::LawIdMismatch {
+    if semantics_id == PHYSICS_SEMANTICS_ID {
+        return match expected {
+            None => Ok(LawCheck::SemanticsVerified),
+            Some(e) if *e == stored => Ok(LawCheck::Verified),
+            Some(e) => Err(WorldSnapshotError::LawIdMismatch {
+                stored,
+                expected: *e,
+            }),
+        };
+    }
+    let Some(e) = expected else {
+        return Ok(LawCheck::SemanticsPrevious { semantics_id });
+    };
+    if *e != law(&PHYSICS_SEMANTICS_ID) {
+        return Err(WorldSnapshotError::LawIdMismatch {
             stored,
             expected: *e,
-        }),
+        });
     }
+    let under_previous = law(&semantics_id);
+    if stored != under_previous {
+        return Err(WorldSnapshotError::LawIdMismatch {
+            stored,
+            expected: under_previous,
+        });
+    }
+    Ok(LawCheck::VerifiedUnderPrevious { semantics_id })
 }
 
 fn decode(data: &[u8]) -> Res<Decoded> {
@@ -2213,7 +2267,9 @@ fn decode(data: &[u8]) -> Res<Decoded> {
         semantics_id.copy_from_slice(&data[SEMANTICS_ID_AT..SEMANTICS_ID_AT + 32]);
         let mut law_id = [0u8; 32];
         law_id.copy_from_slice(&data[LAW_ID_AT..LAW_ID_AT + 32]);
-        if semantics_id != PHYSICS_SEMANTICS_ID {
+        if semantics_id != PHYSICS_SEMANTICS_ID
+            && !PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&semantics_id)
+        {
             return Err(WorldSnapshotError::SemanticsMismatch {
                 stored: semantics_id,
                 expected: PHYSICS_SEMANTICS_ID,
@@ -3623,21 +3679,74 @@ mod tests {
 
     #[test]
     fn law_check_covers_every_case() {
-        use super::{law_check, LawCheck};
-        let (s, l) = ([1u8; 32], [2u8; 32]);
+        use super::{law_check, LawCheck, PHYSICS_SEMANTICS_ID};
+        let (s, l) = (PHYSICS_SEMANTICS_ID, [2u8; 32]);
         let other = [3u8; 32];
-        assert_eq!(law_check(None, None), Ok(LawCheck::Unpinned));
-        assert_eq!(law_check(None, Some(&other)), Ok(LawCheck::Unpinned));
+        // the current semantics never asks the target for its law id
+        let unused = |_: &[u8; 32]| -> [u8; 32] { panic!("law id asked for") };
+        assert_eq!(law_check(None, None, unused), Ok(LawCheck::Unpinned));
         assert_eq!(
-            law_check(Some((s, l)), None),
+            law_check(None, Some(&other), unused),
+            Ok(LawCheck::Unpinned)
+        );
+        assert_eq!(
+            law_check(Some((s, l)), None, unused),
             Ok(LawCheck::SemanticsVerified)
         );
-        assert_eq!(law_check(Some((s, l)), Some(&l)), Ok(LawCheck::Verified));
         assert_eq!(
-            law_check(Some((s, l)), Some(&other)),
+            law_check(Some((s, l)), Some(&l), unused),
+            Ok(LawCheck::Verified)
+        );
+        assert_eq!(
+            law_check(Some((s, l)), Some(&other), unused),
             Err(WorldSnapshotError::LawIdMismatch {
                 stored: l,
                 expected: other
+            })
+        );
+
+        // an earlier semantics `p`: the target's law id is `[4]` under the
+        // current semantics and `[5]` under `p`
+        let p = [9u8; 32];
+        let (now, then) = ([4u8; 32], [5u8; 32]);
+        let target = |id: &[u8; 32]| {
+            if *id == PHYSICS_SEMANTICS_ID {
+                now
+            } else {
+                assert_eq!(*id, p);
+                then
+            }
+        };
+        assert_eq!(
+            law_check(Some((p, then)), None, target),
+            Ok(LawCheck::SemanticsPrevious { semantics_id: p })
+        );
+        assert_eq!(
+            law_check(Some((p, then)), Some(&now), target),
+            Ok(LawCheck::VerifiedUnderPrevious { semantics_id: p })
+        );
+        // `expected` is not the target's own current law id
+        assert_eq!(
+            law_check(Some((p, then)), Some(&other), target),
+            Err(WorldSnapshotError::LawIdMismatch {
+                stored: then,
+                expected: other
+            })
+        );
+        // the header is not the target's law id under `p`
+        assert_eq!(
+            law_check(Some((p, other)), Some(&now), target),
+            Err(WorldSnapshotError::LawIdMismatch {
+                stored: other,
+                expected: then
+            })
+        );
+        // the header holding the current-semantics id is not accepted either
+        assert_eq!(
+            law_check(Some((p, now)), Some(&now), target),
+            Err(WorldSnapshotError::LawIdMismatch {
+                stored: now,
+                expected: then
             })
         );
     }

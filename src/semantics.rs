@@ -190,3 +190,22 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] =
     hex32("79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108");
+
+/// Earlier values of [`PHYSICS_SEMANTICS_ID`] under which every pinned path
+/// steps to the same bits as this build, newest first.
+///
+/// A world snapshot whose header carries one of them restores
+/// ([`crate::LawCheck::VerifiedUnderPrevious`] /
+/// [`crate::LawCheck::SemanticsPrevious`]); any other identifier is still
+/// [`crate::WorldSnapshotError::SemanticsMismatch`].
+///
+/// An identifier is listed only when the change that replaced it moved no
+/// determinism golden, so the stepping bits are the same under both:
+///
+/// * `cd9aa3b8…` (3.0.0 and 3.0.1): replaced when `alice-det-math` went from
+///   0.5.0 to 0.5.1, which added `max` / `min` / `max64` / `min64` and left
+///   the existing functions unchanged (`alice-det-math` 0.5.1 itself lists
+///   the 0.5.0 identifier in its `PREVIOUS_SEMANTICS_IDS`). No golden moved.
+pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[hex32(
+    "cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469",
+)];
