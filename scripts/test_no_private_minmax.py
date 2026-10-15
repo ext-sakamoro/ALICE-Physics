@@ -47,6 +47,12 @@ class NoPrivateMinmax(unittest.TestCase):
             "pub fn max<T: Into<f32>>(a: f32, b: f32) -> f32 { a }",
             "fn r#min(a: f32, b: f32) -> f32 { a }",
             "fn max64<A: Into<Vec<f64>>, B>(a: f64, b: f64) -> f64 { a }",
+            "fn min(a: core::primitive::f32, b: f32) -> f32 { a }",
+            "type Ff = f32;\nfn min(a: Ff, b: Ff) -> Ff { a }",
+            "fn max<F: Fn(f32) -> f32>(a: f32, b: f32) -> f32 { a }",
+            "fn max(#[allow(unused)] a: f32, b: f32) -> f32 { b }",
+            "impl Num { fn max(a: f32, b: f32) -> f32 { a } }",
+            "fn max64<T>(a: T, b: T) -> T where T: PartialOrd { a }",
             "mod m {\n    #[inline]\n    pub(crate) fn min(\n        a: f32,\n        b: f32,\n    ) -> f32 { a }\n}",
         ]
         for src in copies:
@@ -55,6 +61,10 @@ class NoPrivateMinmax(unittest.TestCase):
 
     def test_other_laws_of_the_same_name_pass(self):
         for src in [
+            "impl S { fn max(self, o: Self) -> Self { self } }",
+            "impl S { fn min(&mut self, o: f32) -> f32 { o } }",
+            "impl<'a> S<'a> { fn max64(&'a self) -> f64 { 0.0 } }",
+            "impl S { fn min64(#[allow(unused)] &self) -> f64 { 0.0 } }",
             "fn min(a: Fix128, b: Fix128) -> Fix128 { a }",
             "impl R { pub const fn max(&self) -> f64 { self.0 } }",
             "fn maximum(a: f32, b: f32) -> f32 { a }",
@@ -78,6 +88,9 @@ class NoPrivateMinmax(unittest.TestCase):
         self.assertEqual(g.check(tree({"src/lib.rs": lib}))[0], [])
         partial = "pub mod det_math {\n    pub(crate) use alice_det_math::{max, min, max64};\n}\n"
         self.assertEqual(len(g.check(tree({"src/lib.rs": partial}))[0]), 1)
+
+    def test_an_unreadable_parameter_list_fails(self):
+        self.assertEqual(len(problems("fn max")), 1)
 
     def test_a_missing_reexport_fails(self):
         found, _ = g.check(tree({"src/lib.rs": "pub mod det_math {}\n"}))

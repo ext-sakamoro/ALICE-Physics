@@ -2,20 +2,23 @@
 """The crate's float max / min come from alice-det-math, not from a local copy.
 
 `max` / `min` / `max64` / `min64` with a defined zero sign and NaN policy are
-alice-det-math's law; `src/lib.rs` re-exports them into `det_math`. A local
-`fn max(a: f32, b: f32)` (or `min`, `max64`, `min64`, any parameter names,
-`f32` or `f64`) anywhere in src/ is a second copy of that law that can drift
-from it, so this check fails on one. Functions of the same name over other
-types (`Fix128`, methods taking `&self`) are other laws and pass.
+alice-det-math's law; `src/lib.rs` re-exports them into `det_math`. This
+check denies the names: every `fn max` / `min` / `max64` / `min64` (also
+written `r#max` etc.) anywhere in src/ fails, whatever its parameter types
+are spelled as (`f32`, `core::primitive::f32`, an alias, a generic), unless
 
-Comments and string literals are blanked first, so a copy inside them is not
-counted and a `{` inside them does not hide a real one. The re-export in
-`src/lib.rs` must be present, and scanning no file fails.
+  * its first parameter is `self` / `&self` / `&mut self` (a method of a
+    type, another law: `sketch` and `coupled_field` bounds), or
+  * its parameter list names a type listed in OTHER_LAWS (today `Fix128`:
+    the fixed-point max / min of `euler_fv`).
 
-It matches by name and parameter type, so a renamed copy (`fn fmax`), a
-closure, a `macro_rules!`, a tuple parameter or a fully generic
-`fn max<T>(a: T, b: T)` is not caught here; the lib clippy pass still forbids
-the std `f32::max` / `f64::min` those would have to call.
+Matching the names rather than the float types is deliberate: every spelling
+of a float parameter is caught without listing them. The parameter list is
+read by bracket depth (generics with `Fn(..) -> ..` bounds and parameter
+attributes included); a list that cannot be read fails.
+
+Comments and string literals are blanked first. The re-export in `src/lib.rs`
+must name all four (any order), and scanning no file fails.
 
     python3 scripts/no_private_minmax.py
 """
@@ -27,14 +30,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NAMES = ("max", "min", "max64", "min64")
-# `fn max(a: f32, b: f32)` / `fn min64 ( x : f64 , y : f64 )`, generics and
-# visibility in front do not matter; a float type on the first parameter is
-# what makes it a copy of the law
-COPY = re.compile(
-    # `r#max` is the same name; the generic list runs to the `(` so a nested
-    # bound (`<T: Into<f32>>`) does not end it early
-    r"\bfn\s+(?:r#)?(" + "|".join(NAMES) + r")\s*(<[^(]*>)?\s*\(\s*(mut\s+)?\w+\s*:\s*(?:&\s*(?:mut\s+)?)?(f32|f64)\b"
-)
+# every function of these names, whatever its visibility, generics or
+# parameter spelling; `is_allowed` lets methods and other laws through
+NAME = re.compile(r"\bfn\s+(?:r#)?(" + "|".join(NAMES) + r")\b")
+# non-float types whose own max / min is a different law
+OTHER_LAWS = ("Fix128",)
+SELF_FIRST = re.compile(r"^(?:mut\s+)?(?:&\s*(?:'\w+\s+)?(?:mut\s+)?)?self\b")
+ATTRIBUTE = re.compile(r"#\s*\[[^\]]*\]")
 REEXPORT = re.compile(r"pub\(crate\)\s+use\s+alice_det_math::\{([^}]*)\}")
 STRING = re.compile(r'r(#*)"(?:.|\n)*?"\1|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])\'', re.S)
 LINE_COMMENT = re.compile(r"//[^\n]*")
@@ -51,16 +53,69 @@ def blank(text: str) -> str:
     return LINE_COMMENT.sub(keep_lines, text)
 
 
+def params(code: str, pos: int) -> str | None:
+    """The text inside the parameter list that follows `pos` (after the
+    function name), skipping a generic list; None if it cannot be read."""
+    i, n = pos, len(code)
+    while i < n and code[i].isspace():
+        i += 1
+    if i < n and code[i] == "<":
+        depth = 0
+        while i < n:
+            if code.startswith("->", i):
+                i += 2
+                continue
+            ch = code[i]
+            if ch in "<([":
+                depth += 1
+            elif ch in ">)]":
+                depth -= 1
+                if depth == 0:
+                    i += 1
+                    break
+            i += 1
+        while i < n and code[i].isspace():
+            i += 1
+    if i >= n or code[i] != "(":
+        return None
+    start, depth = i + 1, 0
+    while i < n:
+        if code.startswith("->", i):
+            i += 2
+            continue
+        ch = code[i]
+        if ch in "<([":
+            depth += 1
+        elif ch in ">)]":
+            depth -= 1
+            if depth == 0:
+                return code[start:i]
+        i += 1
+    return None
+
+
+def is_allowed(plist: str) -> bool:
+    """A method (first parameter self) or a function over another law's type."""
+    first = ATTRIBUTE.sub(" ", plist).strip()
+    if SELF_FIRST.match(first):
+        return True
+    return any(re.search(rf"\b{t}\b", plist) for t in OTHER_LAWS)
+
+
 def check(root: Path) -> tuple[list[str], int]:
     problems: list[str] = []
     files = sorted((root / "src").rglob("*.rs"))
     for path in files:
         rel = path.relative_to(root).as_posix()
         code = blank(path.read_text(encoding="utf-8"))
-        for m in COPY.finditer(code):
+        for m in NAME.finditer(code):
+            plist = params(code, m.end())
+            if plist is not None and is_allowed(plist):
+                continue
             line = code.count("\n", 0, m.start()) + 1
+            why = "its parameter list could not be read" if plist is None else "not a method and no other-law type"
             problems.append(
-                f"{rel}:{line}: a local `fn {m.group(1)}` over {m.group(4)}: "
+                f"{rel}:{line}: a local `fn {m.group(1)}` ({why}): "
                 "use the alice-det-math one re-exported in crate::det_math"
             )
     lib = root / "src" / "lib.rs"
