@@ -41,6 +41,24 @@ pub fn d(v: &[f64]) -> f64 {
 pub fn e(x: f32) -> f32 {
     x.sin()
 }
+pub fn f(started: I) -> D {
+    started.elapsed()
+}
+pub fn g(t0: I) -> D {
+    std::time::Instant::elapsed(&t0)
+}
+pub fn h(stamp: S) -> bool {
+    stamp.elapsed().is_ok()
+}
+pub fn i(clock_t: C) -> D {
+    clock_t.elapsed()
+}
+pub fn j(t1: I) -> D {
+    <std::time::Instant>::elapsed(&t1)
+}
+pub fn k(earlier: I, later: I) -> D {
+    later.duration_since(earlier)
+}
 """
 
 
@@ -98,12 +116,22 @@ class Canary(unittest.TestCase):
         self.want = g.canary_lines(CANARY)
 
     def test_the_five_forms_are_found_on_their_lines(self):
-        self.assertEqual(sorted(self.want), [3, 6, 9, 12, 15])
+        self.assertEqual(sorted(self.want), [3, 6, 9, 12, 15, 18, 21, 24, 27, 30])
 
     def test_a_diagnostic_on_every_line_and_a_non_zero_exit_passes(self):
         out = "\n".join(diag(n, "x") for n in self.want)
         errors, n = g.judge_canary(101, out, self.want)
-        self.assertEqual((errors, n), ([], 5))
+        self.assertEqual((errors, n), ([], 10))
+
+    def test_a_diagnostic_on_a_clean_line_fails(self):
+        clean = g.canary_lines(CANARY, g.CANARY_CLEAN)
+        self.assertEqual(sorted(clean), [33])
+        out = "\n".join(diag(n, "x") for n in list(self.want) + [33])
+        errors, _ = g.judge_canary(101, out, self.want, clean)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("must stay clean", errors[0])
+        out = "\n".join(diag(n, "x") for n in self.want)
+        self.assertEqual(g.judge_canary(101, out, self.want, clean)[0], [])
 
     def test_a_missing_line_fails(self):
         out = "\n".join(diag(n, "x") for n in self.want if n != 9)

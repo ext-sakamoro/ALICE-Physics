@@ -16,6 +16,8 @@
 //! Author: Moroya Sakamoto
 
 #![cfg(feature = "std")]
+// the oracles are closed forms in f64 with the platform libm (exp, powi),
+// independent of the fixed-point code they check; nothing here reads the clock
 #![allow(clippy::disallowed_methods)]
 
 use alice_physics::math::Fix128;
@@ -238,9 +240,10 @@ fn arrhenius_rate_reaches_zero_only_below_the_fix128_resolution() {
         "test premise: {want:e} is below the resolution"
     );
     assert_eq!(rate_f64(&methane, 300), 0.0);
-    // 1 K: the exponent is ~1.8e4; the result is 0 and the call returns promptly
-    let start = std::time::Instant::now();
+    // 1 K: the exponent is ~1.8e4; the result is 0. That the call returns
+    // promptly (the exponent loop stops once the product underflows, a few
+    // steps instead of ~1000) is a work count, checked in the lib test
+    // `smoke_fire::tests::a_huge_exponent_stops_once_the_product_underflows`
     assert_eq!(rate_f64(&methane, 1), 0.0);
     assert_eq!(rate_f64(&pla, 1), 0.0);
-    assert!(start.elapsed().as_millis() < 1000);
 }

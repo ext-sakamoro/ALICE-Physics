@@ -107,15 +107,24 @@ pub fn reaction_rate_kg_per_m3_s(
 /// [`EXP_STEP`] while the running product is still large, so the result
 /// reaches 0 only when the true value is below the resolution.
 fn scaled_exp_neg(a: Fix128, x: Fix128) -> Fix128 {
+    scaled_exp_neg_counted(a, x).0
+}
+
+/// [`scaled_exp_neg`] and the number of [`EXP_STEP`] steps it applied. The
+/// loop stops once the running product is 0, so the count is bounded by `a`
+/// and the resolution, not by `x` (a large exponent returns promptly).
+fn scaled_exp_neg_counted(a: Fix128, x: Fix128) -> (Fix128, u32) {
     let step = Fix128::from_int(EXP_STEP);
     let step_factor = exp_fix(Fix128::ZERO - step);
     let mut acc = a;
     let mut rest = x;
+    let mut steps = 0u32;
     while rest > step && !acc.is_zero() {
         acc = acc * step_factor;
         rest = rest - step;
+        steps += 1;
     }
-    acc * exp_fix(Fix128::ZERO - rest)
+    (acc * exp_fix(Fix128::ZERO - rest), steps)
 }
 
 /// Largest exponent step applied at once by [`scaled_exp_neg`]: `e^-16` is
@@ -164,6 +173,34 @@ mod tests {
     fn approx_eq(a: Fix128, b: Fix128, tol: Fix128) -> bool {
         let d = if a > b { a - b } else { b - a };
         d <= tol
+    }
+
+    /// work count (replaces a wall-clock deadline): a huge exponent stops as
+    /// soon as the running product underflows. `a · e^(-16 n)` is below the
+    /// resolution `2^-64` once `n > (log2 a + 64) · ln 2 / 16`; with `a <
+    /// 2^k` that is at most `(k + 64) · 0.0434` steps, plus the last one
+    #[test]
+    fn a_huge_exponent_stops_once_the_product_underflows() {
+        let mut compared = 0;
+        for r in [
+            ArrheniusReaction::methane_air(),
+            ArrheniusReaction::pla_air(),
+        ] {
+            let k = 64 - r.pre_exponential_a.hi.leading_zeros();
+            let bound = ((k + 64) * 434).div_ceil(10_000_u32) + 1;
+            // T = 1 K: E_a / R is about 1e4, i.e. hundreds of steps without the stop
+            let x = r.activation_energy_j_per_mol / r.gas_constant_j_per_mol_k;
+            let naive = (x / Fix128::from_int(EXP_STEP)).hi;
+            let (value, steps) = scaled_exp_neg_counted(r.pre_exponential_a, x);
+            assert!(value.is_zero());
+            assert!(steps <= bound, "{steps} steps, bound {bound}");
+            assert!(
+                i64::from(steps) * 10 < naive,
+                "{steps} steps vs {naive} without the stop"
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 2);
     }
 
     #[test]

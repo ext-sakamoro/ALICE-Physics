@@ -69,6 +69,8 @@ disallowed-methods = [
     # (tests that time a deadline allow these at the test, with a reason)
     { path = "std::time::Instant::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
     { path = "std::time::SystemTime::now", reason = "the wall clock makes results depend on timing; pass time in or use a step count" },
+    { path = "std::time::Instant::elapsed", reason = "reads the wall clock the same as Instant::now; duration_since between two held values does not" },
+    { path = "std::time::SystemTime::elapsed", reason = "reads the wall clock the same as SystemTime::now; duration_since between two held values does not" },
     { path = "std::collections::hash_map::RandomState::new", reason = "seeds from OS randomness; use crate::det_hash::DetHashMap" },
 ]
 

@@ -19,7 +19,9 @@ two. This script
             root file generates (`--write` regenerates it)
   * canary  runs clippy with that configuration on `scripts/clippy-lib-canary`,
             a crate that uses every forbidden form once (method and path calls,
-            a `fold` with `f64::max`, and one libm call), and fails unless
+            a `fold` with `f64::max`, one libm call, and five forms of the wall
+            clock through `Instant::elapsed` / `SystemTime::elapsed`), and a
+            `duration_since` that must stay clean, and fails unless
             clippy exits non-zero with a `disallowed_methods` diagnostic on
             each of those lines: a configuration that clippy did not read, or
             an entry it does not match, would otherwise pass every build
@@ -58,7 +60,12 @@ HEADER = """\
 """
 
 # the lines of the canary that must each get a diagnostic, by the text on them
-CANARY_FORMS = ["a.max(b)", "f32::min(a, b)", "a.min(b)", "f64::max)", "x.sin()"]
+CANARY_FORMS = ["a.max(b)", "f32::min(a, b)", "a.min(b)", "f64::max)", "x.sin()",
+                "started.elapsed()", "std::time::Instant::elapsed(&t0)", "stamp.elapsed()",
+                "clock_t.elapsed()", "<std::time::Instant>::elapsed(&t1)"]
+# the lines that must stay clean (an entry that also matched these would forbid
+# more than the wall clock)
+CANARY_CLEAN = ["later.duration_since(earlier)"]
 
 DIAG = re.compile(r"^(?P<file>[^:\n]+):(?P<line>\d+):\d+: (?:warning|error): use of a disallowed method `(?P<path>[^`]+)`",
                   re.M)
@@ -96,11 +103,11 @@ def check(root_text: str, lib_text: str | None) -> list[str]:
     return []
 
 
-def canary_lines(source: str) -> dict[int, str]:
+def canary_lines(source: str, forms: list[str] | None = None) -> dict[int, str]:
     """Line number of each form in the canary source (each must occur once)."""
     out = {}
     lines = source.split("\n")
-    for form in CANARY_FORMS:
+    for form in CANARY_FORMS if forms is None else forms:
         hits = [n for n, l in enumerate(lines, 1) if form in l and not l.lstrip().startswith("//")]
         if len(hits) != 1:
             raise ValueError(f"canary: `{form}` occurs {len(hits)} times, expected once")
@@ -108,10 +115,14 @@ def canary_lines(source: str) -> dict[int, str]:
     return out
 
 
-def judge_canary(rc: int, output: str, want: dict[int, str]) -> tuple[list[str], int]:
+def judge_canary(rc: int, output: str, want: dict[int, str],
+                 clean: dict[int, str] | None = None) -> tuple[list[str], int]:
     """Errors, and the number of disallowed-method diagnostics on the canary."""
     hit = {int(m["line"]) for m in DIAG.finditer(output) if m["file"].endswith("lib.rs")}
     errors = []
+    for line, form in sorted((clean or {}).items()):
+        if line in hit:
+            errors.append(f"canary line {line} (`{form}`) must stay clean but has a disallowed-method diagnostic")
     if rc == 0:
         errors.append("clippy exited 0 on the canary: the configuration did not forbid anything")
     for line, form in sorted(want.items()):
@@ -124,7 +135,9 @@ def judge_canary(rc: int, output: str, want: dict[int, str]) -> tuple[list[str],
 
 def run_canary() -> list[str]:
     with open(os.path.join(CANARY, "src", "lib.rs"), encoding="utf-8") as f:
-        want = canary_lines(f.read())
+        source = f.read()
+    want = canary_lines(source)
+    clean = canary_lines(source, CANARY_CLEAN)
     env = dict(os.environ, CLIPPY_CONF_DIR=LIB_DIR, CARGO_TERM_COLOR="never")
     target = os.environ.get("CARGO_TARGET_DIR") or os.path.join(tempfile.gettempdir(), "clippy-lib-canary-target")
     cmd = ["cargo", "clippy", "--quiet", "--manifest-path", os.path.join(CANARY, "Cargo.toml"),
@@ -133,7 +146,7 @@ def run_canary() -> list[str]:
     # touch the source so clippy re-lints it (a cached clean check prints nothing)
     os.utime(os.path.join(CANARY, "src", "lib.rs"))
     r = subprocess.run(cmd, env=env, capture_output=True, text=True, cwd=ROOT)
-    errors, n = judge_canary(r.returncode, r.stdout + r.stderr, want)
+    errors, n = judge_canary(r.returncode, r.stdout + r.stderr, want, clean)
     if errors:
         errors.append("clippy output:\n" + (r.stdout + r.stderr)[-3000:])
     else:

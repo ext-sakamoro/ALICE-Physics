@@ -21,3 +21,31 @@ pub fn fold_f64(v: &[f64]) -> f64 {
 pub fn libm_f32(x: f32) -> f32 {
     x.sin()
 }
+
+// the wall clock read through `elapsed` (Instant and SystemTime): five forms
+use std::time::Instant as Clock;
+
+pub fn elapsed_method(started: std::time::Instant) -> std::time::Duration {
+    started.elapsed()
+}
+
+pub fn elapsed_path(t0: std::time::Instant) -> std::time::Duration {
+    std::time::Instant::elapsed(&t0)
+}
+
+pub fn elapsed_system(stamp: std::time::SystemTime) -> bool {
+    stamp.elapsed().is_ok()
+}
+
+pub fn elapsed_alias(clock_t: Clock) -> std::time::Duration {
+    clock_t.elapsed()
+}
+
+pub fn elapsed_qualified_self(t1: std::time::Instant) -> std::time::Duration {
+    <std::time::Instant>::elapsed(&t1)
+}
+
+// must stay clean: the difference of two values already held reads no clock
+pub fn duration_between(earlier: std::time::Instant, later: std::time::Instant) -> std::time::Duration {
+    later.duration_since(earlier)
+}

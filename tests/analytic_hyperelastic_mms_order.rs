@@ -59,6 +59,7 @@
 //! not part of the answer, the error would not move.
 
 #![cfg(feature = "std")]
+// the measurement table records how long each solve took; no asserted value reads the clock
 #![allow(clippy::disallowed_methods)]
 // The helpers are small dense-linear-algebra loops over fixed 3x3 / 4-vertex
 // shapes where index loops read as the maths; the boxed solver closure is a
