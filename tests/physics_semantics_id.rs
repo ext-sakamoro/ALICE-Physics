@@ -780,3 +780,24 @@ fn previous_identifiers_are_rows_of_other_generations() {
 fn an_unknown_det_math_generation_has_no_identifier() {
     let _ = semantics_id_for(&[0x42; 32]);
 }
+
+/// The lookup compares the whole identifier: every row key with any single
+/// byte changed (each of the 32 positions) has no identifier.
+#[test]
+fn a_key_differing_in_any_one_byte_has_no_identifier() {
+    let mut refused = 0;
+    for (det_math, _) in PHYSICS_SEMANTICS_BY_DET_MATH {
+        for i in 0..32 {
+            let mut near = *det_math;
+            near[i] ^= 0x01;
+            let got = std::panic::catch_unwind(|| semantics_id_for(&near));
+            assert!(
+                got.is_err(),
+                "det-math {} with byte {i} changed got an identifier",
+                hex(det_math)
+            );
+            refused += 1;
+        }
+    }
+    assert_eq!(refused, 32 * PHYSICS_SEMANTICS_BY_DET_MATH.len());
+}

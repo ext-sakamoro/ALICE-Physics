@@ -189,8 +189,13 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 /// The det-math entry of [`PHYSICS_SEMANTICS_PINS`] is the identifier of the
 /// `alice-det-math` the build resolved, so the identifier is looked up here
 /// by it ([`semantics_id_for`]); a build against a generation with no row
-/// does not compile. `tests/physics_semantics_id.rs` recomputes every row
-/// from the pins in one build.
+/// does not compile, rather than reporting an identifier of another
+/// generation. A new `alice-det-math` release that changes its
+/// `SEMANTICS_ID` therefore needs a release of this crate with its row (an
+/// `alice-det-math` release that changes the identifier is meant to raise
+/// its minor version, so the `"0.5.1"` requirement does not select it).
+/// `tests/physics_semantics_id.rs` recomputes every row from the pins in one
+/// build.
 pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
