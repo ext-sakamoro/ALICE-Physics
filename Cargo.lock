@@ -63,9 +63,9 @@ dependencies = [
 
 [[package]]
 name = "alice-db"
-version = "0.4.0"
+version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0f23e5f99b21d7637e62fc92b627091fa436e569f9786d81be4ac5ce633af9f"
+checksum = "3cf35bc578904691d5991302c8c3467ecbe575f52b3965bab90122b8dee6c4a8"
 dependencies = [
  "alice-det-math",
  "alice-zip",
@@ -74,7 +74,6 @@ dependencies = [
  "crossbeam-channel",
  "fs2",
  "getrandom 0.2.17",
- "js-sys",
  "log",
  "lzma-rs",
  "memmap2",
