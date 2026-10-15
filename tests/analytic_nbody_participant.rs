@@ -552,8 +552,8 @@ fn three_body_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const THREE_BODY_XPBD: &str = "eb16f632c1ef606f8ee808d71c60fe195478a2a39f4472a2bf5a5e90ab5c667a";
-const THREE_BODY_TGS: &str = "62136ac346eb1cb56141357e87b25863335a0a4e89989e12c874b97083f4fdc9";
+const THREE_BODY_XPBD: &str = "b06c3a5896d576331c0cb62483884f97c8e8f635505890dba106a52a64e91218";
+const THREE_BODY_TGS: &str = "8224c7d056bf7299be75860dfae907bdb185ea144f371632e23cb4b8b2a3620b";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on

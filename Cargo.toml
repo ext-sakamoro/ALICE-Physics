@@ -116,7 +116,7 @@ alice-analytics = { version = ">=0.5, <0.7", optional = true, default-features =
 # evaluates the same transcendental law; re-exported as `alice_physics::det_math`.
 # no_std-capable (software sqrt without `std`), so the module is no longer
 # gated on `std`.
-alice-det-math = { version = "0.5", default-features = false }
+alice-det-math = { version = "0.5.1", default-features = false }
 # Differential privacy: keyed ChaCha20, discrete Laplace and randomized response
 # with integer sampling (privacy::*). Same licence (AGPL-3.0-or-later OR
 # commercial), so the dependency is allowed in this direction
