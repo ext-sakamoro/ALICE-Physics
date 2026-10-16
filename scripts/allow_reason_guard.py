@@ -347,9 +347,100 @@ def clock_hits(messages: list[dict]) -> list[tuple[str, int, str]]:
         if method is None:
             continue
         for sp in msg["spans"]:
-            if sp.get("is_primary") and not sp["file_name"].startswith("/"):
+            if not sp.get("is_primary"):
+                continue
+            sp = call_site(sp)
+            if not sp["file_name"].startswith("/"):
                 out.add((sp["file_name"], sp["line_start"], method))
     return sorted(out)
+
+
+def call_site(span: dict) -> dict:
+    """The outermost call site of a span produced by a macro expansion.
+
+    A clock read written in a macro body is reported at the body (the macro
+    definition), but the lint level that silences it is the one at the place the
+    macro is called; follow `expansion.span` out to that place."""
+    while span.get("expansion") and span["expansion"].get("span"):
+        span = span["expansion"]["span"]
+    return span
+
+
+def clock_check(root: Path, args: list[str]) -> tuple[list[str], list[tuple[str, int, str]]]:
+    """Problems and clock reads of `cargo clippy <args>` in `root`."""
+    rc, msgs = run_json(["cargo", "clippy", *args, "--message-format=json", "--", "--force-warn", LINT], root)
+    problems = [] if rc == 0 else [f"clippy for the clock reads exited {rc}"]
+    hits = clock_hits(msgs)
+    if not hits:
+        problems.append("clippy reported no clock read (compared nothing)")
+    return problems + clock_problems(attributes(root), hits), hits
+
+
+# the clock canary: each function named wide_* reads the clock under a function
+# allow and must be reported; `statement` reads it under an allow on the statement
+CLOCK_CANARY = """\
+#![allow(missing_docs, reason = "canary crate, not documented anywhere")]
+use std::time::Instant as Clk;
+macro_rules! clk {
+    () => {
+        std::time::Instant::now()
+    };
+}
+#[allow(clippy::disallowed_methods, reason = "timing harness: canary, a function allow over a direct read")]
+pub fn wide_direct() -> std::time::Instant {
+    std::time::Instant::now()
+}
+#[allow(clippy::disallowed_methods, reason = "timing harness: canary, a function allow over an aliased read")]
+pub fn wide_alias() -> Clk {
+    Clk::now()
+}
+#[allow(clippy::disallowed_methods, reason = "timing harness: canary, a function allow over a macro read")]
+pub fn wide_macro() -> std::time::Instant {
+    clk!()
+}
+pub fn statement() -> std::time::Instant {
+    #[allow(clippy::disallowed_methods, reason = "timing harness: canary, an allow on the read itself")]
+    let t = std::time::Instant::now();
+    t
+}
+"""
+
+
+def judge_clock_canary(problems: list[str], hits: list[tuple[str, int, str]], source: str) -> list[str]:
+    """Errors: every wide_* allow reported once, nothing else, and a read per function."""
+    lines = source.split("\n")
+    wide = {i for i, l in enumerate(lines, 1) if l.startswith("#[allow(clippy::disallowed_methods")
+            and lines[i].startswith("pub fn wide_")}
+    flagged = set()
+    errors = []
+    for p in problems:
+        m = re.match(r"src/lib\.rs:(\d+): this allow covers", p)
+        if m:
+            flagged.add(int(m.group(1)))
+        else:
+            errors.append(f"clock canary: unexpected problem: {p}")
+    for line in sorted(wide - flagged):
+        errors.append(f"clock canary: the function allow on line {line} covers a clock read but was not reported")
+    for line in sorted(flagged - wide):
+        errors.append(f"clock canary: the allow on line {line} was reported but covers no read outside its statement")
+    if len(hits) != len(wide) + 1:
+        errors.append(f"clock canary: {len(hits)} clock reads, expected {len(wide) + 1}")
+    if not wide:
+        errors.append("clock canary: no function allow in the source (compared nothing)")
+    return errors
+
+
+def run_clock_canary(root: Path) -> list[str]:
+    """The clock check on a crate with this repository's clippy.toml."""
+    tmp = Path(tempfile.mkdtemp(prefix="allow-reason-clock-canary-"))
+    (tmp / "src").mkdir()
+    (tmp / "Cargo.toml").write_text('[package]\nname = "allow-reason-clock-canary"\nversion = "0.0.0"\n'
+                                    'edition = "2021"\npublish = false\n\n[workspace]\n', encoding="utf-8")
+    (tmp / "clippy.toml").write_text((root / "clippy.toml").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp / "src" / "lib.rs").write_text(CLOCK_CANARY, encoding="utf-8")
+    target = os.environ.get("CARGO_TARGET_DIR") or str(Path(tempfile.gettempdir()) / "allow-reason-canary-target")
+    found, hits = clock_check(tmp, ["--target-dir", str(Path(target) / "allow-reason-clock-canary")])
+    return judge_clock_canary(found, hits, CLOCK_CANARY)
 
 
 def run_json(cmd: list[str], cwd: Path) -> tuple[int, list[dict]]:
@@ -449,15 +540,10 @@ def main(argv: list[str]) -> int:
         problems.append("compared nothing (no allow / expect attribute under src/ tests/ examples/ benches/)")
     if "--clippy" in argv:
         problems += run_canary(ROOT)
-        rc, msgs = run_json(["cargo", "clippy", "--all-targets", "--features", FEATURES, "--message-format=json",
-                             "--", "--force-warn", LINT], ROOT)
-        if rc != 0:
-            problems.append(f"clippy for the clock reads exited {rc}")
-        hits = clock_hits(msgs)
-        if not hits:
-            problems.append("clippy reported no clock read (compared nothing)")
-        problems += clock_problems(attributes(ROOT), hits)
-        summary += f", canary run, {len(hits)} clock reads"
+        problems += run_clock_canary(ROOT)
+        found, hits = clock_check(ROOT, ["--all-targets", "--features", FEATURES])
+        problems += found
+        summary += f", canaries run, {len(hits)} clock reads"
     for p in problems:
         print(f"error: {p}", file=sys.stderr)
     print(f"{summary}, {len(problems)} problems")

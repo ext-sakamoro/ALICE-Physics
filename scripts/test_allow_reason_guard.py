@@ -174,6 +174,25 @@ class Clock(unittest.TestCase):
                f"#[allow(clippy::disallowed_methods, {GOOD})]\nfn g() {{}}\n")
         self.assertEqual(clock(src, 3), [])
 
+    def test_a_failed_clippy_run_or_no_read_fails_the_clock_check(self):
+        hit = {"reason": "compiler-message", "message": {
+            "code": {"code": "clippy::disallowed_methods"},
+            "message": "use of a disallowed method `std::time::Instant::now`",
+            "spans": [{"is_primary": True, "file_name": "tests/a.rs", "line_start": 1}]}}
+        saved = g.run_json
+        try:
+            root = tree({"tests/a.rs": "fn f() {}\n"})
+            g.run_json = lambda cmd, cwd: (101, [hit])
+            found, hits = g.clock_check(root, [])
+            self.assertEqual(len(hits), 1)
+            self.assertTrue(any("exited 101" in p for p in found), found)
+            g.run_json = lambda cmd, cwd: (0, [hit])
+            self.assertEqual(g.clock_check(root, [])[0], [])
+            g.run_json = lambda cmd, cwd: (0, [])
+            self.assertTrue(any("compared nothing" in p for p in g.clock_check(root, [])[0]))
+        finally:
+            g.run_json = saved
+
     def test_clock_reads_are_read_from_clippy_messages(self):
         def msg(code, text, file, line):
             return {"reason": "compiler-message", "message": {
@@ -190,6 +209,54 @@ class Clock(unittest.TestCase):
         ])
         self.assertEqual(hits, [("tests/a.rs", 3, "std::time::Instant::now"),
                                 ("tests/a.rs", 9, "std::time::Instant::elapsed")])
+
+
+class MacroClock(unittest.TestCase):
+    def test_a_read_in_a_macro_body_is_placed_at_the_outermost_call(self):
+        inner = {"file_name": "tests/a.rs", "line_start": 2, "expansion": None}
+        middle = {"file_name": "tests/a.rs", "line_start": 9, "expansion": {"span": inner}}
+        primary = {"is_primary": True, "file_name": "tests/a.rs", "line_start": 1, "expansion": {"span": middle}}
+        msg = {"reason": "compiler-message", "message": {
+            "code": {"code": "clippy::disallowed_methods"},
+            "message": "use of a disallowed method `std::time::Instant::now`", "spans": [primary]}}
+        self.assertEqual(g.clock_hits([msg]), [("tests/a.rs", 2, "std::time::Instant::now")])
+
+    def test_a_function_allow_over_a_macro_call_that_reads_the_clock_fails(self):
+        src = ("macro_rules! clk {\n    () => { std::time::Instant::now() };\n}\n"
+               f"#[allow(clippy::disallowed_methods, {GOOD})]\nfn t() {{\n    let _ = clk!();\n}}\n")
+        # the read, after call_site, is on line 6 (the call), not line 2 (the body)
+        self.assertEqual(len(clock(src, 6)), 1)
+        self.assertEqual(clock(src, 2), [])
+
+
+class ClockCanary(unittest.TestCase):
+    def lines(self):
+        src = g.CLOCK_CANARY.split("\n")
+        return [i for i, l in enumerate(src, 1) if l.startswith("#[allow(clippy::disallowed_methods")
+                and src[i].startswith("pub fn wide_")]
+
+    def problems(self, lines):
+        return [f"src/lib.rs:{n}: this allow covers a whole file / module / function and a clock read" for n in lines]
+
+    def hits(self, n):
+        return [("src/lib.rs", k, "std::time::Instant::now") for k in range(n)]
+
+    def test_every_wide_allow_reported_passes(self):
+        wide = self.lines()
+        self.assertEqual(len(wide), 3)
+        self.assertEqual(g.judge_clock_canary(self.problems(wide), self.hits(4), g.CLOCK_CANARY), [])
+
+    def test_a_missed_or_extra_report_or_a_wrong_count_fails(self):
+        wide = self.lines()
+        self.assertEqual(len(g.judge_clock_canary(self.problems(wide[:-1]), self.hits(4), g.CLOCK_CANARY)), 1)
+        self.assertEqual(len(g.judge_clock_canary(self.problems(wide + [21]), self.hits(4), g.CLOCK_CANARY)), 1)
+        self.assertEqual(len(g.judge_clock_canary(self.problems(wide), self.hits(3), g.CLOCK_CANARY)), 1)
+        self.assertEqual(len(g.judge_clock_canary(self.problems(wide) + ["clippy exited 101"], self.hits(4),
+                                                  g.CLOCK_CANARY)), 1)
+
+    def test_a_source_without_a_wide_allow_compares_nothing(self):
+        found = g.judge_clock_canary([], self.hits(1), "pub fn statement() {}\n")
+        self.assertTrue(any("compared nothing" in p for p in found), found)
 
 
 class Canary(unittest.TestCase):
@@ -221,6 +288,30 @@ class Canary(unittest.TestCase):
                                                   g.canary_source())[0])
         found = g.judge_canary(101, [], g.canary_source())
         self.assertTrue(any("compared nothing" in p for p in found), found)
+
+
+class ClippyMode(unittest.TestCase):
+    """--clippy runs both canaries and the repository's clock check; any error fails."""
+
+    def run_main(self, canary=(), clock_canary=(), clock=()):
+        saved = (g.run_canary, g.run_clock_canary, g.clock_check)
+        calls = []
+        g.run_canary = lambda root: calls.append("canary") or list(canary)
+        g.run_clock_canary = lambda root: calls.append("clock canary") or list(clock_canary)
+        g.clock_check = lambda root, args: (calls.append("clock") or list(clock), [("tests/a.rs", 1, "x")])
+        try:
+            rc = g.main(["--clippy"])
+        finally:
+            g.run_canary, g.run_clock_canary, g.clock_check = saved
+        return rc, calls
+
+    def test_all_three_run_and_pass(self):
+        self.assertEqual(self.run_main(), (0, ["canary", "clock canary", "clock"]))
+
+    def test_each_one_fails_the_run(self):
+        for kw in ("canary", "clock_canary", "clock"):
+            with self.subTest(part=kw):
+                self.assertEqual(self.run_main(**{kw: ["boom"]})[0], 1)
 
 
 class Lexer(unittest.TestCase):
