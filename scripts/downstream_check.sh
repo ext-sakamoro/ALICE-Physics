@@ -76,7 +76,11 @@
 # set, fails even when the other binaries of the step ran some;
 # scripts/downstream_test_counts.py), and the resolved alice-physics must be
 # this checkout (a patch cargo cannot apply falls back to crates.io with only a
-# warning, which would test the published version instead).
+# warning, which would test the published version instead). ALICE-SDF's committed
+# Cargo.lock names the published alice-physics, which cargo keeps over the patch
+# on a minor or patch bump, so its lock is first moved to this checkout with
+# `cargo update -p alice-physics` (scripts/downstream_resolve.sh, the fetched
+# copy only).
 #
 #   scripts/downstream_check.sh               fetch, then build and test
 #   scripts/downstream_check.sh --fetch-only  only fetch (CI restores its cache in between)
@@ -208,24 +212,10 @@ if ! python3 "$PHYSICS_DIR/scripts/downstream_major_rewrite.py" --provider "$PHY
     exit 1
 fi
 
-# the resolved alice-physics must be a path package at this checkout
-check_resolved() {
-    local label=$1 dir=$2
-    shift 2
-    local line
-    if ! line=$(cd "$dir" && cargo tree -q -i alice-physics -e normal --depth 0 "$@" 2>&1); then
-        echo "error: $label: cargo tree -i alice-physics failed: $line" >&2
-        failed+=("$label (resolve)")
-        return
-    fi
-    case "$line" in
-        *"($LINK)"* | *"($PHYSICS_DIR)"*) echo "$label: $line" ;;
-        *)
-            echo "error: $label: alice-physics does not resolve to this checkout: $line" >&2
-            failed+=("$label (resolve)")
-            ;;
-    esac
-}
+# relock / check_resolved: scripts/downstream_resolve.sh (sourced, so its tests can
+# run them against a small crate that takes the package from a git source)
+# shellcheck source=downstream_resolve.sh
+. "$PHYSICS_DIR/scripts/downstream_resolve.sh"
 
 # run one cargo step, keep its log, count the tests of each binary it ran
 run() {
@@ -280,6 +270,7 @@ physics_version() {
 export CARGO_TARGET_DIR="$TARGET/sdf"
 if requirements_ok sdf "$SDF"; then
     compared=$((compared + 1))
+    relock sdf "$SDF" --config "$PATCH"
     check_resolved sdf "$SDF" --features physics --config "$PATCH"
     run sdf-lib "$SDF" cargo test --features physics --config "$PATCH" --lib -- physics_bridge:: sim_bridge::
     run sdf-tests "$SDF" cargo test --features physics --config "$PATCH" \

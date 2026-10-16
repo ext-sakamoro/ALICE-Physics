@@ -205,6 +205,9 @@ jobs:
         run: python scripts/test_downstream_test_counts.py
       - name: Downstream GPU probe report (tests)
         run: python scripts/test_downstream_trt_probe.py
+      # a small consumer locked to an older version from a local git source (offline)
+      - name: Downstream lock move and resolve guard (tests)
+        run: python scripts/test_downstream_resolve.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)
         run: python scripts/coverage_check.py
       # SCIP integration ledger (docs/integration-status.md): the analysis is

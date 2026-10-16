@@ -11,6 +11,7 @@ rust-toolchain.toml
 scripts/downstream_check.sh
 # sourced by downstream_check.sh
 scripts/downstream_trt_probe.sh
+scripts/downstream_resolve.sh
 scripts/downstream_select_tag.py
 # downstream_major_rewrite.py imports downstream_select_tag.py
 scripts/downstream_major_rewrite.py
