@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5861 |
+| 🟢 Not ignored (run by CI) | 5863 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5960** |
+| **Total** | **5962** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5861)
+## 🟢 Not ignored (5863)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -615,6 +615,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_fatigue.rs` | 2 |
 | `audit_c_replay.rs` | 2 |
 | `audit_neural_alloc.rs` | 2 |
+| `float_environment.rs` | 2 |
 | `indep_world_try_step_noop.rs` | 2 |
 | `mesh_to_fem_stress.rs` | 2 |
 | `tgs_joints_static_colliders.rs` | 2 |

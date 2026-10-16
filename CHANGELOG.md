@@ -15,6 +15,11 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Added
+
+- CI (ALICE-Law G14): 浮動小数点の結果を変える build の flag を静的と動的の 2 段で検査する (ALICE-DB と同一の `scripts/build_config_guard.py` / `scripts/build_flags_check.py` と test) 静的は target/ 以外の設定・script・Rust を comment を除いて読み、`target-cpu=native`、素の literal でない target-cpu / target-feature / llvm-args の値、command や file から取った RUSTFLAGS、fast-math 系の flag、sse / sse2 を外す target-feature を検出する (意図的な出現は `scripts/build_config_allowlist.toml` に理由付きで書く、`scripts/test_preflight_ci_parity.py` の試験データ 1 行を行と件数で許可) 動的は新しい target dir で `cargo check -v` を走らせ、cargo が rustc に実際に渡した flag を読む 静的は test job (5 OS)、動的は determinism-release job (ubuntu x86 / arm、macOS、default / `std,simd,parallel,ffi,gpu-solver-bridge` / no-default) と preflight で実行
+- `tests/float_environment.rs` (ALICE-DB と同一): round-to-nearest-even と subnormal が flush されないことを実行時に確かめる test test job で debug と release の両方を、ALICE-DB と同じ中身の `scripts/run_tests.sh` を通して `float_environment=2` で実行する (片方を `#[ignore]` にする・cfg で外す・名前を変えると step が失敗する) `alice-law-conformance.toml` の G14 を fail-known から pass にした
+
 ### Changed
 
 - preflight: 生成物 (統合・試験・配線・coverage の台帳、公開 API の一覧、MODULES の列) と生成された表の検査を、最初に 1 回でまとめて行う `scripts/ledgers.py --check` (試験 `scripts/test_ledgers.py`) を足した これまでは別々の step で最初の 1 つが古いと止まり、pub item を足した branch では 1 回の preflight で 1 つずつしか分からなかった 全部の生成器を回して変わった file を全部並べ、tree は元に戻す 生成物の一覧と生成器は `scripts/ledgers.py` の 1 か所に置き、`scripts/land.py` もそこから読む 道具 (rust-analyzer、nightly の cargo-public-api) が無い時は quick / fast では飛ばし、full では失敗する 生成物が無い時もその旨を出して失敗し (再生成で作られた file は消して tree を戻す)、比べた数には生成器が実際に動いた file だけを数える 比べた数が 0 なら失敗する

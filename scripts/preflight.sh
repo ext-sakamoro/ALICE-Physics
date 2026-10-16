@@ -155,6 +155,7 @@ python3 scripts/test_mutants_in_diff_plan.py
 python3 scripts/test_intel_nightly_gate.py
 python3 scripts/test_run_ignored.py
 python3 scripts/run_ignored.py --list > /dev/null
+
 python3 scripts/test_bench_counts_check.py
 python3 scripts/test_ci_load_check.py
 python3 scripts/ci_load_check.py
@@ -165,6 +166,12 @@ python3 scripts/test_downstream_trt_probe.py
 python3 scripts/test_downstream_resolve.py
 python3 scripts/test_coverage_refs_to_symbols.py
 python3 scripts/coverage_check.py
+
+step "build configuration guard (G14) + effective-flags check and run_tests.sh tests"
+python3 scripts/test_build_config_guard.py
+python3 scripts/build_config_guard.py
+python3 scripts/test_build_flags_check.py
+python3 scripts/test_run_tests.py
 
 step "mutants.toml exclude_re entries still match a real mutant (needs cargo-mutants)"
 if command -v cargo-mutants >/dev/null 2>&1; then
@@ -187,6 +194,11 @@ python3 scripts/test_affected_tests.py
 step "determinism tests (release)"
 python3 scripts/test_determinism_release.py
 python3 scripts/determinism_release.py
+
+step "effective rustc flags (G14, release profile, fresh target directory)"
+python3 scripts/build_flags_check.py -- cargo check --release --lib
+python3 scripts/build_flags_check.py -- cargo check --release --lib --features "std,simd,parallel,ffi,gpu-solver-bridge"
+python3 scripts/build_flags_check.py -- cargo check --release --lib --no-default-features
 
 step "example runner oracle (scripts/run_examples.py, run in full mode and ci.yml job examples)"
 python3 scripts/test_run_examples.py
@@ -314,6 +326,10 @@ cargo test --no-fail-fast --features "parallel"
 
 step "cargo test --lib (simd)"
 cargo test --lib --features "simd"
+
+step "float environment (G14, debug and release, both tests must pass)"
+scripts/run_tests.sh float_environment=2 -- cargo test --test float_environment
+scripts/run_tests.sh float_environment=2 -- cargo test --release --test float_environment
 
 # same command as ci.yml: the semantics identifier with the gated stepping
 # paths' features (`cargo test` above runs the file with default features)
