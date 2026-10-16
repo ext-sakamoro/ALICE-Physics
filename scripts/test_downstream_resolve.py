@@ -83,9 +83,11 @@ class Fixture:
         with open(os.path.join(self.consumer, "Cargo.lock"), encoding="utf-8") as f:
             return f.read()
 
-    def run(self, steps: str, directory: str | None = None, resolve: str = RESOLVE) -> tuple[str, str]:
+    def run(self, steps: str, directory: str | None = None, resolve: str = RESOLVE,
+            physics_dir: str | None = None) -> tuple[str, str]:
         env = dict(os.environ, RESOLVE=posix(lf_copy(resolve)), DIR=posix(directory or self.consumer),
-                   PATCH=self.patch, STEPS=steps, PHYSICS_DIR=self.physics, LINK=self.physics)
+                   PATCH=self.patch, STEPS=steps, PHYSICS_DIR=physics_dir or self.physics,
+                   PYTHON=posix(sys.executable))
         env.pop("CARGO_TARGET_DIR", None)
         p = subprocess.run([BASH, "-c", DRIVER], env=env, capture_output=True, text=True, check=False)
         if p.returncode != 0:
@@ -116,6 +118,20 @@ class Resolve(unittest.TestCase):
         self.assertIn("v3.1.0", out)
         self.assertNotEqual(before, self.fx.lock())
         self.assertIn('version = "3.1.0"', self.fx.lock())
+
+    def test_the_guard_compares_directories_not_spellings(self):
+        # cargo prints the path in its own form (on Windows a backslash path with 8.3
+        # short names); another spelling of the same directory is the same checkout
+        other = self.fx.physics + "/../" + os.path.basename(self.fx.physics)
+        failed, out = self.fx.run("relock resolve", physics_dir=other)
+        self.assertEqual(failed, "", out)
+
+    def test_the_guard_refuses_another_directory_with_the_same_version(self):
+        copy = os.path.join(self.fx.root, "copy")
+        shutil.copytree(self.fx.physics, copy)
+        failed, out = self.fx.run("relock resolve", physics_dir=posix(copy))
+        self.assertEqual(failed, "c (resolve)", out)
+        self.assertIn("v3.1.0", out)
 
     def test_a_failed_update_is_reported(self):
         empty = tempfile.mkdtemp(prefix="downstream-resolve-empty-")

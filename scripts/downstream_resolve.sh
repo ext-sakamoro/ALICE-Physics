@@ -15,7 +15,8 @@
 # apply, which falls back to crates.io with only a warning) is reported as
 # "<label> (resolve)".
 #
-# Needs from the caller: PHYSICS_DIR, LINK and the array failed.
+# Needs from the caller: PHYSICS_DIR and the array failed (PYTHON, default
+# python3, runs the directory comparison).
 relock() {
     local label=$1 dir=$2
     shift 2
@@ -25,20 +26,39 @@ relock() {
     fi
 }
 
+# same_dir A B: true when A and B name the same directory. cargo prints the path
+# in its own form (on Windows a backslash path, possibly with 8.3 short names such
+# as RUNNER~1), so the two are compared as directories, not as strings: Python's
+# os.path.samefile (file identity), after cygpath -m turns an MSYS path (/c/...)
+# into one Windows Python reads
+same_dir() {
+    local a=$1 b=$2
+    if command -v cygpath >/dev/null 2>&1; then
+        a=$(cygpath -m "$a")
+        b=$(cygpath -m "$b")
+    fi
+    "${PYTHON:-python3}" -c 'import os, sys
+a, b = sys.argv[1:3]
+sys.exit(0 if os.path.isdir(a) and os.path.isdir(b) and os.path.samefile(a, b) else 1)' "$a" "$b"
+}
+
 check_resolved() {
     local label=$1 dir=$2
     shift 2
-    local line
+    local line path
     if ! line=$(cd "$dir" && cargo tree -q -i alice-physics -e normal --depth 0 "$@" 2>&1); then
         echo "error: $label: cargo tree -i alice-physics failed: $line" >&2
         failed+=("$label (resolve)")
         return
     fi
-    case "$line" in
-        *"($LINK)"* | *"($PHYSICS_DIR)"*) echo "$label: $line" ;;
-        *)
-            echo "error: $label: alice-physics does not resolve to this checkout: $line" >&2
-            failed+=("$label (resolve)")
-            ;;
-    esac
+    # `alice-physics vX.Y.Z (<source>)`: a path package names its directory; a
+    # registry package has no parentheses and a git one a URL, neither a directory
+    # (an empty or non-directory path is refused by same_dir)
+    path=$(printf '%s\n' "$line" | tr -d '\r' | sed -n '1s/^alice-physics v[^ ]* (\(.*\))$/\1/p')
+    if same_dir "$path" "$PHYSICS_DIR"; then
+        echo "$label: $line"
+    else
+        echo "error: $label: alice-physics does not resolve to this checkout: $line" >&2
+        failed+=("$label (resolve)")
+    fi
 }
