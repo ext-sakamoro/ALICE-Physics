@@ -35,7 +35,8 @@
 //!   `[0, 1]`.
 //! * **RAPPOR**: `f = 0, p = 1, q = 0` is the identity on the Bloom filter,
 //!   `f = 0, p = 0, q = 1` its complement, `p = q = 1` all ones and
-//!   `p = q = 0` all zeros regardless of the (unseeded) generator; the Bloom
+//!   `p = q = 0` all zeros regardless of the generator, and `with_seed` reports
+//!   are predicted draw by draw from the seed; the Bloom
 //!   filter is the three `FnvHasher::hash_u128(v | i << 64) mod 64`
 //!   positions.
 //!
@@ -927,26 +928,26 @@ fn rappor_parameter_corners_are_closed_forms() {
         let ones = bloom.iter().filter(|&&b| b == 1).count();
         assert!((1..=3).contains(&ones), "v={v} ones={ones}");
 
-        let mut identity = Rappor::new(0.0, 1.0, 0.0);
+        let mut identity = Rappor::with_seed(0.0, 1.0, 0.0, v);
         for _ in 0..4 {
             let r = identity.privatize(v);
             assert_eq!(r.len(), Rappor::BITS);
             assert_eq!(r, bloom, "f=0 p=1 q=0 is the identity (v={v})");
         }
-        let mut complement = Rappor::new(0.0, 0.0, 1.0);
+        let mut complement = Rappor::with_seed(0.0, 0.0, 1.0, v);
         let expected: Vec<u8> = bloom.iter().map(|&b| 1 - b).collect();
         assert_eq!(
             complement.privatize(v).to_vec(),
             expected,
             "f=0 p=0 q=1 is the complement (v={v})"
         );
-        let mut ones_only = Rappor::new(0.5, 1.0, 1.0);
+        let mut ones_only = Rappor::with_seed(0.5, 1.0, 1.0, v);
         assert_eq!(ones_only.privatize(v), [1u8; RAPPOR_BITS]);
-        let mut zeros_only = Rappor::new(0.5, 0.0, 0.0);
+        let mut zeros_only = Rappor::with_seed(0.5, 0.0, 0.0, v);
         assert_eq!(zeros_only.privatize(v), [0u8; RAPPOR_BITS]);
     }
     // Different values with different Bloom filters give different identity reports.
-    let mut identity = Rappor::new(0.0, 1.0, 0.0);
+    let mut identity = Rappor::with_seed(0.0, 1.0, 0.0, 1);
     let a = identity.privatize(1);
     let b = identity.privatize(2);
     assert_eq!(a, bloom_of(1));
@@ -961,6 +962,14 @@ fn rappor_parameter_corners_are_closed_forms() {
         "f→[0,½], p,q→[0,1]"
     );
     assert_eq!(Rappor::new(-0.1, 0.3, 0.6).params(), (0.0, 0.3, 0.6));
+    assert_eq!(
+        Rappor::with_seed(0.9, 1.5, -1.0, 7).params(),
+        (0.5, 1.0, 0.0)
+    );
+    assert_eq!(
+        Rappor::with_seed(-0.1, 0.3, 0.6, 7).params(),
+        (0.0, 0.3, 0.6)
+    );
     let r = catch_unwind(AssertUnwindSafe(|| {
         Rappor::new(f64::NAN, f64::INFINITY, f64::NEG_INFINITY).params()
     }));
@@ -972,42 +981,83 @@ fn rappor_parameter_corners_are_closed_forms() {
 
 /// The permanent stage with `f = ½` under the identity instantaneous stage
 /// (`p = 1, q = 0`): a Bloom-zero bit reports 1 with probability
-/// `f/2 = ¼`, a Bloom-one bit reports 0 with probability `¼`. The generator
-/// is entropy-seeded (no seeded constructor), so this is a 10σ bound on
-/// 400 reports × 64 bits rather than a bit-exact prediction.
+/// `f/2 = ¼`, a Bloom-one bit reports 0 with probability `¼`: a 10σ bound on
+/// 400 reports × 64 bits, for every seed of `SEEDS` (the exact draws are
+/// pinned by `rappor_with_seed_reports_are_predicted_from_the_seed`).
 #[test]
 fn rappor_permanent_stage_flips_at_rate_f_over_two() {
-    let v = 12345u64;
-    let bloom = bloom_of(v);
-    let ones_in_bloom = bloom.iter().filter(|&&b| b == 1).count();
-    let zeros_in_bloom = RAPPOR_BITS - ones_in_bloom;
-    let mut rappor = Rappor::new(0.5, 1.0, 0.0);
-    let reports = 400usize;
-    let (mut zero_to_one, mut one_to_zero) = (0usize, 0usize);
-    for _ in 0..reports {
-        let r = rappor.privatize(v);
-        for i in 0..RAPPOR_BITS {
-            match (bloom[i], r[i]) {
-                (0, 1) => zero_to_one += 1,
-                (1, 0) => one_to_zero += 1,
-                _ => {}
+    for &seed in &SEEDS {
+        let v = 12345u64;
+        let bloom = bloom_of(v);
+        let ones_in_bloom = bloom.iter().filter(|&&b| b == 1).count();
+        let zeros_in_bloom = RAPPOR_BITS - ones_in_bloom;
+        let mut rappor = Rappor::with_seed(0.5, 1.0, 0.0, seed);
+        let reports = 400usize;
+        let (mut zero_to_one, mut one_to_zero) = (0usize, 0usize);
+        for _ in 0..reports {
+            let r = rappor.privatize(v);
+            for i in 0..RAPPOR_BITS {
+                match (bloom[i], r[i]) {
+                    (0, 1) => zero_to_one += 1,
+                    (1, 0) => one_to_zero += 1,
+                    _ => {}
+                }
             }
         }
+        let n0 = (reports * zeros_in_bloom) as f64;
+        let n1 = (reports * ones_in_bloom) as f64;
+        let (mean0, sd0) = (0.25 * n0, (0.25 * 0.75 * n0).sqrt());
+        let (mean1, sd1) = (0.25 * n1, (0.25 * 0.75 * n1).sqrt());
+        assert!(
+            (zero_to_one as f64 - mean0).abs() <= 10.0 * sd0,
+            "seed {seed}: 0→1 flips {zero_to_one} vs {mean0} ± 10·{sd0}"
+        );
+        assert!(
+            (one_to_zero as f64 - mean1).abs() <= 10.0 * sd1,
+            "seed {seed}: 1→0 flips {one_to_zero} vs {mean1} ± 10·{sd1}"
+        );
+        assert!(
+            zero_to_one > 0 && one_to_zero > 0,
+            "f = ½ must flip in both directions"
+        );
     }
-    let n0 = (reports * zeros_in_bloom) as f64;
-    let n1 = (reports * ones_in_bloom) as f64;
-    let (mean0, sd0) = (0.25 * n0, (0.25 * 0.75 * n0).sqrt());
-    let (mean1, sd1) = (0.25 * n1, (0.25 * 0.75 * n1).sqrt());
-    assert!(
-        (zero_to_one as f64 - mean0).abs() <= 10.0 * sd0,
-        "0→1 flips {zero_to_one} vs {mean0} ± 10·{sd0}"
-    );
-    assert!(
-        (one_to_zero as f64 - mean1).abs() <= 10.0 * sd1,
-        "1→0 flips {one_to_zero} vs {mean1} ± 10·{sd1}"
-    );
-    assert!(
-        zero_to_one > 0 && one_to_zero > 0,
-        "f = ½ must flip in both directions"
-    );
+}
+
+/// The draws of `Rappor::with_seed` follow the generator copy: for each of
+/// the 64 bits the permanent stage draws `U < f` and, only when it is true,
+/// a second `U < ½` for the bit; then the instantaneous stage draws one
+/// `U < p` (permanent bit 1) or `U < q` (bit 0) per bit, in bit order. So the
+/// whole sequence of reports is predicted from the seed, and two encoders
+/// with the same seed report the same sequence.
+#[test]
+fn rappor_with_seed_reports_are_predicted_from_the_seed() {
+    let (f, p, q) = (0.5, 0.75, 0.25);
+    for &seed in &SEEDS {
+        let mut rappor = Rappor::with_seed(f, p, q, seed);
+        let mut twin = Rappor::with_seed(f, p, q, seed);
+        let mut reference = RefRng::new(seed);
+        for v in [0u64, 1, 12345, u64::MAX, 0xdead_beef_cafe_f00d, 7, 7] {
+            let bloom = bloom_of(v);
+            let mut permanent = [0u8; RAPPOR_BITS];
+            for i in 0..RAPPOR_BITS {
+                permanent[i] = if reference.uniform() < f {
+                    u8::from(reference.uniform() < 0.5)
+                } else {
+                    bloom[i]
+                };
+            }
+            let mut want = [0u8; RAPPOR_BITS];
+            for i in 0..RAPPOR_BITS {
+                let rate = if permanent[i] == 1 { p } else { q };
+                want[i] = u8::from(reference.uniform() < rate);
+            }
+            let got = rappor.privatize(v);
+            assert_eq!(got, want, "seed {seed:#x} value {v}");
+            assert_eq!(
+                twin.privatize(v),
+                got,
+                "seed {seed:#x} value {v}: same seed, same report"
+            );
+        }
+    }
 }

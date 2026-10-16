@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 31 |
+| L0 | not reached by any non-test code, examples included | 32 |
 | L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2630 |
 | live | reached without examples (crate-internal roots or a binding) | 608 |
-| | **total** | **3269** |
+| | **total** | **3270** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (29)
+### L0 here but not in the baseline (30)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -48,6 +48,7 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/privacy.rs::Rappor::new`
 - `src/privacy.rs::Rappor::params`
 - `src/privacy.rs::Rappor::privatize`
+- `src/privacy.rs::Rappor::with_seed`
 - `src/privacy.rs::XorShift64::next_bool`
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
@@ -59,7 +60,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (31)
+## L0 — unreached (32)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
@@ -86,6 +87,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/privacy.rs::Rappor::new`
 - `src/privacy.rs::Rappor::params`
 - `src/privacy.rs::Rappor::privatize`
+- `src/privacy.rs::Rappor::with_seed`
 - `src/privacy.rs::XorShift64::next_bool`
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`

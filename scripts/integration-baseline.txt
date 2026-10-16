@@ -34,6 +34,7 @@ src/privacy.rs::Rappor::default_params
 src/privacy.rs::Rappor::new
 src/privacy.rs::Rappor::params
 src/privacy.rs::Rappor::privatize
+src/privacy.rs::Rappor::with_seed
 src/privacy.rs::XorShift64::next_bool
 src/privacy.rs::XorShift64::next_f64
 src/privacy.rs::XorShift64::next_f64_range

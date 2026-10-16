@@ -463,6 +463,24 @@ impl Rappor {
         Self::new(0.5, 0.75, 0.25)
     }
 
+    /// Create with an explicit seed (no OS entropy read)
+    ///
+    /// # Arguments
+    /// * `f` - Probability of flipping a bit in permanent response (0.0 to 0.5)
+    /// * `p` - Probability of setting a 1 bit to 1 in instantaneous response
+    /// * `q` - Probability of setting a 0 bit to 1 in instantaneous response
+    /// * `seed` - Caller-supplied PRNG seed
+    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
+    #[must_use]
+    pub fn with_seed(f: f64, p: f64, q: f64, seed: u64) -> Self {
+        Self {
+            f: f.clamp(0.0, 0.5),
+            p: p.clamp(0.0, 1.0),
+            q: q.clamp(0.0, 1.0),
+            rng: XorShift64::new(seed),
+        }
+    }
+
     /// Encode a value into a Bloom filter (simple hash-based)
     fn encode_bloom(&self, value: u64) -> [u8; RAPPOR_BITS] {
         bloom_bits(value)

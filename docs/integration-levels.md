@@ -186,7 +186,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `privacy` | unused (step 3, standalone 21 of 48 items) | 3 / 0 / 0 / 21 / 24 | C ABI, Python, WebAssembly |
+| `privacy` | unused (step 3, standalone 21 of 49 items) | 3 / 0 / 0 / 21 / 25 | C ABI, Python, WebAssembly |
 
 ### C ABI (`--features ffi`)
 

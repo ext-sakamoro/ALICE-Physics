@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5863 |
+| 🟢 Not ignored (run by CI) | 5864 |
 | 🔴 Red by design | 72 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5962** |
+| **Total** | **5963** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -153,7 +153,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5863)
+## 🟢 Not ignored (5864)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -287,6 +287,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_fracture_wiring.rs` | 16 |
 | `analytic_lift_drag.rs` | 16 |
 | `analytic_linear_elastic_fem.rs` | 16 |
+| `analytic_privacy_wiring.rs` | 16 |
 | `analytic_profiling_wiring.rs` | 16 |
 | `analytic_shape.rs` | 16 |
 | `analytic_structural_solver_wiring.rs` | 16 |
@@ -304,7 +305,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_md_crowd_try_step.rs` | 15 |
 | `analytic_multibody_dynamics.rs` | 15 |
 | `analytic_pipeline_wiring.rs` | 15 |
-| `analytic_privacy_wiring.rs` | 15 |
 | `analytic_rope_attach_wiring.rs` | 15 |
 | `analytic_sdf_body_collider.rs` | 15 |
 | `analytic_sdf_fem_mesh_wiring.rs` | 15 |

@@ -13909,6 +13909,7 @@ pub fn alice_physics::privacy::Rappor::default_params() -> Self
 pub fn alice_physics::privacy::Rappor::new(f64, f64, f64) -> Self
 pub const fn alice_physics::privacy::Rappor::params(&self) -> (f64, f64, f64)
 pub fn alice_physics::privacy::Rappor::privatize(&mut self, u64) -> [u8; 64]
+pub fn alice_physics::privacy::Rappor::with_seed(f64, f64, f64, u64) -> Self
 impl core::clone::Clone for alice_physics::privacy::Rappor
 pub fn alice_physics::privacy::Rappor::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::privacy::Rappor
@@ -15596,6 +15597,7 @@ pub fn alice_physics::privacy::Rappor::default_params() -> Self
 pub fn alice_physics::privacy::Rappor::new(f64, f64, f64) -> Self
 pub const fn alice_physics::privacy::Rappor::params(&self) -> (f64, f64, f64)
 pub fn alice_physics::privacy::Rappor::privatize(&mut self, u64) -> [u8; 64]
+pub fn alice_physics::privacy::Rappor::with_seed(f64, f64, f64, u64) -> Self
 impl core::clone::Clone for alice_physics::privacy::Rappor
 pub fn alice_physics::privacy::Rappor::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::privacy::Rappor
@@ -25268,6 +25270,7 @@ pub fn alice_physics::privacy::Rappor::default_params() -> Self
 pub fn alice_physics::privacy::Rappor::new(f64, f64, f64) -> Self
 pub const fn alice_physics::privacy::Rappor::params(&self) -> (f64, f64, f64)
 pub fn alice_physics::privacy::Rappor::privatize(&mut self, u64) -> [u8; 64]
+pub fn alice_physics::privacy::Rappor::with_seed(f64, f64, f64, u64) -> Self
 impl core::clone::Clone for alice_physics::privacy::Rappor
 pub fn alice_physics::privacy::Rappor::clone(&self) -> Self
 impl core::fmt::Debug for alice_physics::privacy::Rappor
