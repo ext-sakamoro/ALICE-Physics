@@ -7,9 +7,17 @@ a method call and the lint does not see it. `scripts/g2-rewrite-scan` (a syntax-
 so formatting, line breaks, comments, expression operands and a `!` around the condition do
 not hide a site; `#[cfg(test)]` items are skipped) reports in `src/`:
 
-* `expr`:   `if a > b { a } else { b }` (`<`, `>`, `<=`, `>=`, either branch order)
-* `assign`: `if x < lo { x = lo; }` (the assignment anywhere in the block)
+* `expr`:   a selection between the two operands of a comparison (`if a > b { a } else { b }`,
+            `match a > b { true => a, false => b }`; a branch yields its block's tail, a
+            `return` in it, or every arm of an `else if` chain)
+* `return`: `if a > b { return a; }` followed by statements that yield `b`
+* `assign`: `if x < lo { x = lo; }` (the assignment in either branch)
 * `raw`:    a function named `raw_*`, the named helpers that call a platform operation
+* `macro`:  a `macro_rules!` (its bodies are scanned too; the row says what they hold)
+
+A condition is `<`, `>`, `<=`, `>=` or the methods `lt` / `gt` / `le` / `ge`, under
+parentheses and `!`, or a variable bound to one by an earlier `let`. Operands are compared
+after removing parentheses, `*`, `&`, `.clone()` and `.to_owned()`.
 
 Every finding has an entry in the reviewed table `scripts/g2-rewrite-sites.tsv`, keyed by
 file, enclosing function, shape and operands (no line numbers), with one of:
@@ -22,6 +30,8 @@ file, enclosing function, shape and operands (no line numbers), with one of:
 * `selection`: an argmax / argmin that picks an element (and its payload), not a value; the
   rule is written in alice-law-conformance.toml [G2]
 * `pending`: a float site that still waits for a Law helper (the reason names it)
+* `macro-scanned`: a `macro_rules!` whose bodies parsed and were scanned (a selection in one
+  is its own row; a body that does not parse is named in the row and needs its own review)
 
 The operand types were proven with the compiler: each operand wrapped in an identity
 function taking `Fix128` and `cargo check --lib` with the CI feature set naming every
@@ -47,8 +57,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-STATUSES = ("fixed-point", "integer", "equivalent", "selection", "pending")
-SHAPES = ("expr", "assign", "raw")
+STATUSES = ("fixed-point", "integer", "equivalent", "selection", "pending", "macro-scanned")
+SHAPES = ("expr", "return", "assign", "raw", "macro")
 HERE = Path(__file__).resolve().parent
 
 
