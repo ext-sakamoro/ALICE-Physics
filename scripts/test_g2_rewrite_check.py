@@ -73,6 +73,28 @@ impl S {
 }
 """
 RAW_FN = "pub(crate) fn raw_thing(x: f64) -> f64 {\n    x\n}\n"
+EARLY_RETURN = "pub fn low(a: f32, b: f32) -> f32 {\n    if a < b {\n        return a;\n    }\n    b\n}\n"
+DEREF = "pub fn low(a: &f64, b: &f64) -> f64 {\n    if a < b { *a } else { *b }\n}\n"
+CLONE = "pub fn top(a: f64, b: f64) -> f64 {\n    if a.clone() > b { a } else { b.clone() }\n}\n"
+EXTRA_STMT = "pub fn low(a: f32, b: f32) -> f32 {\n    if a < b {\n        let _k = 0;\n        a\n    } else {\n        b\n    }\n}\n"
+ASSIGN_ELSE = "pub fn floor(mut x: f32, y: f32) -> f32 {\n    if x >= y {\n    } else {\n        x = y;\n    }\n    x\n}\n"
+ELSE_IF = "pub fn low(a: f32, b: f32, c: bool) -> f32 {\n    if a < b { a } else if c { b } else { b }\n}\n"
+BOUND = "pub fn low(a: f32, b: f32) -> f32 {\n    let c = a < b;\n    if c { a } else { b }\n}\n"
+METHOD = "pub fn low(a: f32, b: f32) -> f32 {\n    if a.lt(&b) { a } else { b }\n}\n"
+MATCH = "pub fn low(a: f32, b: f32) -> f32 {\n    match a < b {\n        true => a,\n        false => b,\n    }\n}\n"
+MACRO = """macro_rules! m {
+    ($a:expr, $b:expr) => {
+        if $a < $b { $a } else { $b }
+    };
+}
+pub fn use_it(a: f32, b: f32) -> f32 {
+    m!(a, b)
+}
+"""
+MACRO_UNPARSED = """macro_rules! odd {
+    ($a:expr) => { $a + };
+}
+"""
 NOT_A_REWRITE = """pub fn pick(a: f32, b: f32, c: f32) -> f32 {
     if a > b { c } else { b }
 }
@@ -143,10 +165,34 @@ class G2RewriteCheck(unittest.TestCase):
             ("closure.rs", CLOSURE, ("src/closure.rs", "top", "expr", "a > b")),
             ("constfn.rs", CONST_FN, ("src/constfn.rs", "top", "expr", "a > b")),
             ("selfop.rs", SELF_OPERANDS, ("src/selfop.rs", "widen", "assign", "v > self . hi")),
+            ("early.rs", EARLY_RETURN, ("src/early.rs", "low", "return", "a < b")),
+            ("deref.rs", DEREF, ("src/deref.rs", "low", "expr", "a < b")),
+            ("clone.rs", CLONE, ("src/clone.rs", "top", "expr", "a > b")),
+            ("extra.rs", EXTRA_STMT, ("src/extra.rs", "low", "expr", "a < b")),
+            ("aelse.rs", ASSIGN_ELSE, ("src/aelse.rs", "floor", "assign", "x >= y")),
+            ("elseif.rs", ELSE_IF, ("src/elseif.rs", "low", "expr", "a < b")),
+            ("bound.rs", BOUND, ("src/bound.rs", "low", "expr", "a < b")),
+            ("method.rs", METHOD, ("src/method.rs", "low", "expr", "a < b")),
+            ("match.rs", MATCH, ("src/match.rs", "low", "expr", "a < b")),
         ]
         for name, text, key in cases:
             with self.subTest(name=name):
                 self.assert_flagged_then_reviewed(name, text, key)
+
+    def test_a_macro_and_a_select_inside_it_are_reported(self):
+        rc, out = self.run_check({"mac.rs": MACRO}, [])
+        self.assertEqual(rc, 1, out)
+        self.assertIn("not reviewed: src/mac.rs\t<module>\tmacro\tm", out)
+        self.assertIn("not reviewed: src/mac.rs\tmacro m\texpr\ta < b", out)
+        rows = [("src/mac.rs", "<module>", "macro", "m", "macro-scanned", "body parsed and scanned"),
+                ("src/mac.rs", "macro m", "expr", "a < b", "pending", "a select inside the macro")]
+        rc, out = self.run_check({"mac.rs": MACRO}, rows)
+        self.assertEqual(rc, 0, out)
+
+    def test_a_macro_body_that_does_not_parse_is_named(self):
+        rc, out = self.run_check({"odd.rs": MACRO_UNPARSED}, [])
+        self.assertEqual(rc, 1, out)
+        self.assertIn("macro\todd (a body does not parse)", out)
 
     def test_a_raw_function_is_reported(self):
         self.assert_flagged_then_reviewed("raw.rs", RAW_FN, ("src/raw.rs", "raw_thing", "raw", "raw_thing"))
