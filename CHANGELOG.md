@@ -15,6 +15,8 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-10-17
+
 ### Added
 
 - `privacy::Rappor::with_seed(f, p, q, seed)`: 呼び手が渡す seed で生成器を作る constructor (時計も OS の entropy も読まない) `LaplaceNoise::with_seed` と `RandomizedResponse::with_probability` に揃えた `Rappor::new` は変えず deprecated のまま 試験 `tests/analytic_privacy_wiring.rs` の Rappor は seed 付きの constructor を使い、新しい試験が報告の列を試験自身の生成器の写しから bit 単位で予測する (seed を変える・`f` の clamp を外す・`p` と `q` を入れ替える・flip の確率を変える変異はすべて失敗する) `alice-law-conformance.toml` の G10 は fail-known のまま、行番号と残る条件 (時計で seed する constructor の削除) を書き直した 新しい constructor も他の deprecated な privacy の型と同じく、次の破壊的 release で消す未配線の一覧 (`scripts/integration-baseline.txt` の deprecated-privacy) に入れた

@@ -24,9 +24,14 @@ def doc(unreleased: list[str], released: list[str] = ()) -> str:
 
 class Duplicates(unittest.TestCase):
     def test_the_repository_passes(self):
-        problems, compared, _ = g.check((ROOT / "CHANGELOG.md").read_text(encoding="utf-8"))
+        text = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+        problems, compared, _ = g.check(text)
         self.assertEqual(problems, [])
-        self.assertGreater(compared, 0)
+        # the bullets of [Unreleased], counted independently: right after a release the section is
+        # empty and 0 is the right count; a parser that compares nothing while bullets are there fails
+        section = text.split("## [Unreleased]", 1)[1].split("\n## [", 1)[0]
+        bullets = sum(1 for line in section.splitlines() if line.startswith("- "))
+        self.assertEqual(compared, bullets)
 
     def test_the_old_and_the_rewritten_bullet_fail(self):
         problems, compared, _ = g.check(doc([OLD, "- 別の変更", NEW]))

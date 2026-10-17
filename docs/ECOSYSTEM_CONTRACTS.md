@@ -126,7 +126,7 @@ non-`Send` query trait taken by `sdf_ccd::sphere_trace_sdf_field`.
 ```toml
 # ALICE-SDF Cargo.toml: from crates.io, behind its `physics` feature
 [dependencies]
-alice-physics = { version = "3", optional = true }
+alice-physics = { version = "4", optional = true }
 
 [features]
 physics = ["dep:alice-physics"]
@@ -174,7 +174,7 @@ published release.
 ```toml
 # ALICE-Bamboo Cargo.toml
 [dependencies]
-alice-physics = "3"
+alice-physics = "4"
 ```
 
 ## 4. ALICE-Kinematics contract — reserved (post-1.0)
@@ -227,7 +227,7 @@ The alice-physics 1.0 stable contract with ALICE-Kinematics is:
 
 Each partner crate is expected to:
 
-1. **Pin `alice-physics = "3"`** in their `Cargo.toml` (patch and minor updates auto-adopted).
+1. **Pin `alice-physics = "4"`** in their `Cargo.toml` (patch and minor updates auto-adopted).
 2. **Run `cargo test`** on each `alice-physics` semver-minor update; report regressions.
 3. **Coordinate breaking changes** — if a partner needs a currently-frozen item modified, open an issue to schedule the change for 2.0.
 
