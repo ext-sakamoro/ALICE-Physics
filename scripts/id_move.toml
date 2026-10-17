@@ -1,0 +1,17 @@
+# scripts/id_move_check.py (ALICE-Law G9): the identifiers whose value may move only with a
+# breaking version, the previous-identifier list that must keep the released value, and the
+# release tags the base is read from (its values come from the published crate)
+package = "alice-physics"
+manifest = "Cargo.toml"
+tags = ["v{version}"]
+# every feature but wasm (compile_error! with ffi; src/wasm.rs adds no [u8; 32] item)
+doc-features = ["std", "simd", "parallel", "ffi", "python", "privacy-crypto", "gpu-solver-bridge", "neural", "replay", "analytics"]
+
+[exempt]
+RR_MAX_EPSILON_WHOLE = "alice-crypto's dp::RR_MAX_EPSILON_WHOLE (a u64 bound on the randomized-response epsilon), re-exported in privacy: rustdoc gives a re-export no type, it is not an identifier"
+
+[[id]]
+path = "alice_physics::semantics::PHYSICS_SEMANTICS_ID"
+previous = "alice_physics::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS"
+# the 3.1.0 value (79ca5297) is kept: a world snapshot written by the published 3.1.0 restores
+previous-tests = ["tests/world_snapshot_previous_semantics.rs::a_blob_of_the_released_3_1_0_semantics_restores"]
