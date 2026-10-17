@@ -251,6 +251,15 @@ step "library clippy configuration (tests, then current + canary)"
 python3 scripts/test_clippy_lib_gate.py
 python3 scripts/clippy_lib_gate.py
 
+# CI's "Clippy canary" steps: the calls table is generated from clippy.toml (--check
+# compares the bytes), then each banned call is planted in a throwaway crate
+step "clippy canary data (generator tests, generated from clippy.toml, no drift)"
+python3 scripts/test_gen_clippy_canary_calls.py
+python3 scripts/gen_clippy_canary_calls.py --check
+step "clippy canary (tests, then every planted banned call is flagged)"
+python3 scripts/test_clippy_canary.py
+python3 scripts/clippy_canary.py
+
 step "wasm32-wasip1 golden tests build (dev-deps are built for the target too)"
 rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm32-wasip1
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run

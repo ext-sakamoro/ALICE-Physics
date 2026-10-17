@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed
+
+- CI: clippy の禁止一覧の canary (`scripts/clippy_canary.py`) を追加し、植える呼び出しの表 `scripts/clippy_canary_calls.tsv` を `scripts/gen_clippy_canary_calls.py` が `clippy.toml` から 1 entry 1 行で生成して CI が再生成した結果と byte で比べる (この repo は 58 件) `scripts/clippy_canary.py` / `scripts/test_clippy_canary.py` / `scripts/gen_clippy_canary_calls.py` / `scripts/test_gen_clippy_canary_calls.py` は ALICE-DB と byte 単位で同一 clippy job と preflight に 4 step を足した
+
 ## [3.1.0] - 2026-10-16
 
 ### Added

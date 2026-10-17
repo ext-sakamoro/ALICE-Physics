@@ -639,6 +639,19 @@ jobs:
           cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods -D clippy::disallowed_types
       - name: Library clippy configuration is current and fires (canary)
         run: python3 scripts/clippy_lib_gate.py
+      # the lists in clippy.toml only gate anything if clippy flags a call to
+      # them: a throwaway crate with the same clippy.toml plants one banned call
+      # per row of scripts/clippy_canary_calls.tsv (0 rows fail). The rows are
+      # generated from clippy.toml, one per disallowed-methods / disallowed-types
+      # entry; --check fails when the file has drifted from clippy.toml
+      - name: Clippy canary data (generator tests)
+        run: python3 scripts/test_gen_clippy_canary_calls.py
+      - name: Clippy canary data (generated from clippy.toml, no drift)
+        run: python3 scripts/gen_clippy_canary_calls.py --check
+      - name: Clippy canary (tests)
+        run: python3 scripts/test_clippy_canary.py
+      - name: Clippy canary (every planted banned call is flagged)
+        run: python3 scripts/clippy_canary.py
 
   # The declared `rust-version` is compiled with exactly that toolchain from the
   # committed Cargo.lock (generated with resolver = "3", which picks versions
