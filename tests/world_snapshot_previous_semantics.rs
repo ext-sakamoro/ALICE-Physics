@@ -10,6 +10,15 @@
 //! semantics identifier `cd9aa3b8…` and `law_id` `d7096844…`, both printed
 //! by the writing build.
 //!
+//! `tests/fixtures/world_snapshot_v4_semantics_79ca5297.bin` is the same scene
+//! and steps written by the published `alice-physics` 3.1.0 (a crate that
+//! depends on `alice-physics = "=3.1.0"` from crates.io and calls
+//! `snapshot_world`): 2136 bytes, sha256 `43eeb4be…`, semantics identifier
+//! `79ca5297…` (the 3.1.0 release value, the first entry of
+//! `PREVIOUS_PHYSICS_SEMANTICS_IDS`) and `law_id` `bb5c15c7…`, both printed by
+//! that build. It is the test that depends on that list entry: taking
+//! `79ca5297…` out of the list makes it fail.
+//!
 //! oracle: the restored state is compared with `scene()` stepped 30 times
 //! by this build (the stepping bits did not change with the identifier: no
 //! determinism golden moved), and the identifiers with the values the
@@ -27,6 +36,12 @@ const LAW_AT: usize = 48;
 const CHECKSUM: usize = 8;
 
 /// The semantics identifier of `alice-physics` 3.0.x, as the writer printed it.
+const BLOB_3_1_0: &[u8] = include_bytes!("fixtures/world_snapshot_v4_semantics_79ca5297.bin");
+/// The semantics identifier and `scene().law_id(..)` the published 3.1.0 printed.
+const WRITER_3_1_0_SEMANTICS: &str =
+    "79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108";
+const WRITER_3_1_0_LAW_ID: &str =
+    "bb5c15c7521b9d6ad268a5b261090a43032e11e7f75740eb5e504a90da2a7976";
 const WRITER_SEMANTICS: &str = "cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469";
 /// `scene().law_id(&WRITER_SEMANTICS)`, as the writer printed it.
 const WRITER_LAW_ID: &str = "d7096844b0294b098af7f0ad5c1efa5793ceeb808cb86e2ab3aafb85b20008e8";
@@ -139,6 +154,46 @@ fn a_blob_of_the_previous_semantics_restores() {
         original.step(dt());
     }
     same_bodies(&target, &original);
+}
+
+#[test]
+fn the_released_3_1_0_fixture_header_is_what_the_writer_printed() {
+    assert_eq!(BLOB_3_1_0.len(), 2136);
+    assert_eq!(&BLOB_3_1_0[4..6], &4u16.to_le_bytes(), "a version 4 blob");
+    assert_eq!(
+        hex(&BLOB_3_1_0[SEMANTICS_AT..SEMANTICS_AT + 32]),
+        WRITER_3_1_0_SEMANTICS
+    );
+    assert_eq!(hex(&BLOB_3_1_0[LAW_AT..LAW_AT + 32]), WRITER_3_1_0_LAW_ID);
+    assert_ne!(hex(&PHYSICS_SEMANTICS_ID), WRITER_3_1_0_SEMANTICS);
+    assert_eq!(
+        hex(&scene().law_id(&unhex(WRITER_3_1_0_SEMANTICS))),
+        WRITER_3_1_0_LAW_ID
+    );
+}
+
+/// The blob the published 3.1.0 wrote restores (its identifier is the first
+/// entry of `PREVIOUS_PHYSICS_SEMANTICS_IDS`), holds the state this build
+/// reaches by stepping the scene, and the target's own `law_id` verifies it.
+#[test]
+fn a_blob_of_the_released_3_1_0_semantics_restores() {
+    let mut target = scene();
+    target
+        .restore_world(BLOB_3_1_0)
+        .expect("a blob written by the published 3.1.0 restores");
+    same_bodies(&target, &stepped());
+
+    let mut checked = scene();
+    let expected = checked.law_id(&PHYSICS_SEMANTICS_ID);
+    assert_eq!(
+        checked.restore_world_checked(
+            BLOB_3_1_0,
+            Some(&expected),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
+        Ok(LawCheck::VerifiedUnderPrevious)
+    );
+    same_bodies(&checked, &stepped());
 }
 
 /// An identifier that is neither this build's nor a listed earlier one is

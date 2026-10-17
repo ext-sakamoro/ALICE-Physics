@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5879 |
+| 🟢 Not ignored (run by CI) | 5881 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5977** |
+| **Total** | **5979** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5879)
+## 🟢 Not ignored (5881)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -377,6 +377,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_wedge.rs` | 12 |
 | `indep_molecular_pair_potential.rs` | 12 |
 | `indep_orbit_kepler.rs` | 12 |
+| `world_snapshot_previous_semantics.rs` | 12 |
 | `world_snapshot_v4.rs` | 12 |
 | `analytic_animation_blend_wiring.rs` | 11 |
 | `analytic_contact_viz_wiring.rs` | 11 |
@@ -426,7 +427,6 @@ Per-file counts (the test names are in `tests/`):
 | `fix128_vs_f64_coupling_hypotheses.rs` | 10 |
 | `indep_aero_atmosphere.rs` | 10 |
 | `law_id_world.rs` | 10 |
-| `world_snapshot_previous_semantics.rs` | 10 |
 | `analytic_adaptive_dt.rs` | 9 |
 | `analytic_anisotropic_friction_wiring.rs` | 9 |
 | `analytic_character_state_wiring.rs` | 9 |
