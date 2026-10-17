@@ -123,9 +123,8 @@ Windows and `wasm32-wasip1`.
 **No entropy, no clock, no seeded hash order.** Production code (everything in
 `src/` outside test modules) draws no OS entropy, reads no wall clock and uses no
 `HashMap` / `HashSet` / `RandomState` with the default (OS-seeded) hasher; its
-maps use a fixed-seed hasher or a `BTreeMap`. The one exception is the
-deprecated `privacy::XorShift64::from_entropy`, whose clock seed is its
-documented behaviour, and the deprecated constructors that call it. clippy's
+maps use a fixed-seed hasher or a `BTreeMap`, with no exception (the
+deprecated `privacy` generators take their seed as an argument). clippy's
 `disallowed-types` / `disallowed-methods` (clippy.toml) and
 `scripts/entropy_guard.py` check this in CI. Randomness a caller wants comes
 from a key or seed the caller passes, or from the `privacy-crypto` feature's

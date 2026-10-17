@@ -82,11 +82,18 @@ note = "the machine tooth is the identifier move, not the release metadata. A me
 reference_repo = ""
 
 [G10]
-status = "fail-known"
-evidence = ["src/privacy.rs:125", "src/privacy.rs:133", "src/privacy.rs:185", "src/privacy.rs:238", "src/privacy.rs:333", "src/privacy.rs:453", "src/privacy.rs:249", "src/privacy.rs:340", "src/privacy.rs:475", "clippy.toml", "scripts/entropy_guard.py", ".github/workflows/ci.yml Clippy job (cargo clippy --all-targets -- -D warnings)"]
+status = "pass"
+evidence = [
+    "clippy.toml lines 59 to 63 (Instant::now, SystemTime::now, Instant::elapsed, SystemTime::elapsed, RandomState::new banned type-resolved; line 72 RandomState) and .github/clippy-lib/clippy.toml lines 70 to 74; .github/workflows/ci.yml lines 626 and 633 to 636 (cargo clippy --all-targets -- -D warnings, default and full native feature set); scripts/clippy-lib-canary/src/lib.rs plants the clock forms, the elapsed ones at lines 25 to 44",
+    "scripts/entropy_guard.py (12 patterns, ALLOWED holds only the src/det_hash.rs DetHashMap alias, no src/privacy.rs entry) with scripts/test_entropy_guard.py, .github/workflows/ci.yml lines 739 and 741",
+    "scripts/allow_reason_guard.py PRODUCTION is empty: no allow of the clock or entropy ban in non-test src code",
+    "tests/audit_privacy.rs:510 every_constructor_is_defined_by_its_seed: XorShift64::new, LaplaceNoise::with_seed, RandomizedResponse::new(epsilon, seed) and Rappor::with_seed give the same bits for the same seed and different bits for another, and the generator's first draws equal an independent splitmix64 + xorshift64 reference",
+]
+mutant = "measured 2026-10-17 and reverted: adding `let seed = seed ^ std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());` to LaplaceNoise::with_seed in src/privacy.rs makes scripts/entropy_guard.py exit 1 ('SystemTime::now in production code: src/privacy.rs:194', 'UNIX_EPOCH in production code') and cargo clippy --lib -- -D warnings fail with 'use of a disallowed method `std::time::SystemTime::now`'"
 since = ""
-note = "fail-known: a located violation in library code. src/privacy.rs:125 XorShift64::from_entropy reads the wall clock (SystemTime::now at :133), and that seed flows into XorShift64::default (:185) and the deprecated constructors LaplaceNoise::new (:238), RandomizedResponse::new (:333) and Rappor::new (:453), so the noise they emit varies per run. Every one of these types now also has a seeded constructor that reads no clock or OS entropy: LaplaceNoise::with_seed (:249), RandomizedResponse::with_probability (:340) and Rappor::with_seed (:475); the crate's own tests use the seeded ones. The clock-seeded constructors stay (deprecated, documented as not private) until the next breaking release removes them, and scripts/entropy_guard.py's ALLOWED set names that one site; an allowlist is a policy exemption, not a fix, so the gate stays fail-known until the removal. WHAT IS ENFORCED: std::time::Instant::now / SystemTime::now / Instant::elapsed / SystemTime::elapsed and std::collections::hash_map::RandomState::new are banned type-resolved in clippy.toml (cargo clippy --all-targets -- -D warnings; .github/clippy-lib/clippy.toml for the library lanes), every allow of the ban states a reason and none covers a clock read wider than its statement (scripts/allow_reason_guard.py), and scripts/entropy_guard.py is the lexical second layer with scripts/test_entropy_guard.py as its canary. G10 flips to pass when the clock-seeded constructors are removed."
-reference_repo = ""
+note = "met. The clock-seeded constructors of the deprecated privacy module are removed (XorShift64::from_entropy, impl Default for XorShift64, LaplaceNoise::new, Rappor::new, Rappor::default_params), the same change ALICE-Analytics made in 315c8a5 for the same copied code: every generator takes its seed as an argument (XorShift64::new, LaplaceNoise::with_seed, RandomizedResponse::new(epsilon, seed), Rappor::with_seed). Production src reads no wall clock and no OS entropy, with no allowlist entry for either. The .elapsed() wall-clock read is banned in both clippy configurations with canary forms (method, path, SystemTime, alias, qualified self), and every .elapsed() / Instant in src is inside a cfg(test) module. Randomness a caller wants comes from the seed it passes, or from the privacy-crypto re-exports SecureRng::from_entropy / DpNoise::try_from_entropy, which only the caller calls."
+reference_repo = "ALICE-Analytics"
+
 [G11]
 status = "unverified"
 evidence = []

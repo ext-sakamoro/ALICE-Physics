@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5864 |
-| 🔴 Red by design | 72 |
+| 🟢 Not ignored (run by CI) | 5863 |
+| 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5963** |
+| **Total** | **5961** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (72)
+## 🔴 Red by design (71)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -60,7 +60,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `pipeline_colliding_metric_names_do_not_corrupt_each_other` (audit_pipeline.rs) — known defect: AUD-A-S5W3-016: two metrics whose hashes agree modulo SLOTS share one slot: the second metric's …
 - `polar_rotation_is_idempotent_bit_for_bit_on_general_gradients` (audit_math.rs) — known defect: AUD-A-S1W5-027: polar_rotation is not idempotent for general (non-diagonal) gradients: 105 of 20…
 - `puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-005: sigma1 = 0, sigma2 = -50, tau = 75 (> S) の puck が FibreTension を返す (Hashin の fib…
-- `rappor_default_params_epsilon_is_about_two` (audit_privacy.rs) — known defect: AUD-A-S4W3-023: Rappor::default_params documents 'approximately epsilon = 2' but with f = 0.5, p…
 - `recommended_fillet_unreachable_target_not_silently_returned` (audit_fillet_stress.rs) — known defect: AUD-A-S1W5-005: recommended_fillet_radius_mm returns d/2 (K_t=1.2297 > target 1.2 at D/d = 2) fo…
 - `recorded_position_equals_the_engine_state_for_integers_above_2_pow_24` (audit_replay.rs) — known defect: AUD-A-S4W2-015: 記録値は Fix128 状態ではなく to_f32 の丸め (24 bit 仮数)。x = 16777217 を記録すると 16777216 で戻る (エンジン…
 - `remove_body_keeps_the_contact_history_of_the_survivors` (audit_solver.rs) — known defect: AUD-A-S1W2-004: remove_body does not remap the event pair history; the surviving pair re-reports…
@@ -153,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5864)
+## 🟢 Not ignored (5863)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -559,7 +558,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_joint.rs` | 4 |
 | `audit_c_linear_elastic_fem.rs` | 4 |
 | `audit_c_plane_collider.rs` | 4 |
-| `audit_privacy_noise_secrecy.rs` | 4 |
 | `determinism_golden_coverage.rs` | 4 |
 | `determinism_physics2d_step_digest.rs` | 4 |
 | `determinism_zero_tie.rs` | 4 |
@@ -594,6 +592,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_turbulence.rs` | 3 |
 | `audit_gpu_bridge.rs` | 3 |
 | `audit_nonunit_quaternion_compound.rs` | 3 |
+| `audit_privacy_noise_secrecy.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `indep_world_try_step_snapshot.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |

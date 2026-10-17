@@ -351,7 +351,7 @@ fn estimate_proportion_recovers_the_true_rate_from_noisy_reports() {
 #[test]
 fn randomized_response_new_epsilon_is_not_weaker_than_requested() {
     for &eps in &[0.25, 0.5, 1.0, 2.0, 4.0] {
-        let p = RandomizedResponse::new(eps).p_true();
+        let p = RandomizedResponse::new(eps, 1).p_true();
         let actual = rr_epsilon(p);
         assert!(
             actual <= eps + 1e-9,
@@ -385,7 +385,7 @@ fn bloom_of(value: u64) -> [u8; RAPPOR_BITS] {
 fn rappor_per_bit_report_probabilities_follow_the_two_stage_response() {
     // f = 0.5, p = 0.75, q = 0.25: a bloom-1 bit reports 1 with
     // (1 - f/2) p + (f/2) q = 0.625, a bloom-0 bit with (f/2) p + (1 - f/2) q = 0.375.
-    let mut r = Rappor::default_params();
+    let mut r = Rappor::with_seed(0.5, 0.75, 0.25, 0x5eed);
     assert_eq!(r.params(), (0.5, 0.75, 0.25));
     let value = 0xfeed_beefu64;
     let bloom = bloom_of(value);
@@ -416,32 +416,11 @@ fn rappor_per_bit_report_probabilities_follow_the_two_stage_response() {
 
 #[test]
 fn rappor_clamps_its_parameters_to_the_documented_ranges() {
-    let r = Rappor::new(0.9, 1.5, -0.5);
+    let r = Rappor::with_seed(0.9, 1.5, -0.5, 0);
     assert_eq!(r.params(), (0.5, 1.0, 0.0));
-    let r = Rappor::new(-0.1, 0.4, 0.6);
+    let r = Rappor::with_seed(-0.1, 0.4, 0.6, 0);
     assert_eq!(r.params(), (0.0, 0.4, 0.6));
 }
-
-#[test]
-#[ignore = "known defect: AUD-A-S4W3-023: Rappor::default_params documents 'approximately epsilon = 2' but with f = 0.5, p = 0.75, q = 0.25 each Bloom bit has likelihood ratio 5/3 (epsilon 0.51) and two values differ in up to 6 bits, so one report has epsilon up to 3.07 (the permanent-response bound is 6.59)"]
-#[allow(
-    clippy::disallowed_methods,
-    reason = "analytic reference: RAPPOR per-bit epsilon ln(max(a/c, (1-c)/(1-a))) from Erlingsson et al."
-)]
-fn rappor_default_params_epsilon_is_about_two() {
-    let (f, p, q) = Rappor::default_params().params();
-    // P(out = 1 | bloom = 1), P(out = 1 | bloom = 0)
-    let a = (1.0 - f / 2.0) * p + (f / 2.0) * q;
-    let c = (f / 2.0) * p + (1.0 - f / 2.0) * q;
-    let per_bit = (a / c).max((1.0 - c) / (1.0 - a)).ln();
-    let worst = 6.0 * per_bit; // two 3-hash Bloom filters differ in at most 6 bits
-    assert!(
-        (worst - 2.0).abs() < 0.3,
-        "worst-case epsilon of one report: {worst}"
-    );
-}
-
-// ------------------------------------------------------------------ budget
 
 #[test]
 fn budget_sequential_composition_sums_epsilons_and_refuses_overspend() {
@@ -528,35 +507,36 @@ fn aggregator_sum_mean_count_and_reset() {
 // ------------------------------------------------------------------ entropy
 
 #[test]
-fn from_entropy_seed_is_not_recoverable_from_the_clock() {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    #[allow(
-        clippy::disallowed_methods,
-        reason = "timing harness: brackets the clock-seeded constructor with clock reads to bound its seed"
-    )]
-    let now = || {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos() as u64
+fn every_constructor_is_defined_by_its_seed() {
+    // the module reads no clock and no OS randomness: the same seed gives the
+    // same bits, in this process and in any other
+    let draws = |seed: u64| {
+        let mut x = XorShift64::new(seed);
+        let mut l = LaplaceNoise::with_seed(1.0, 0.5, seed);
+        let mut rr = RandomizedResponse::new(1.0, seed);
+        let mut rp = Rappor::with_seed(0.5, 0.75, 0.25, seed);
+        let mut out: Vec<u64> = (0..8).map(|_| x.next_u64()).collect();
+        out.extend((0..8).map(|_| l.sample().to_bits()));
+        out.extend((0..64).map(|i| u64::from(rr.privatize(i % 3 == 0))));
+        out.extend(rp.privatize(0xfeed_beef).iter().map(|&b| u64::from(b)));
+        out
     };
-    let t0 = now();
-    let first = XorShift64::from_entropy().next_u64();
-    let t1 = now();
-    assert!(t1 - t0 < 50_000_000, "clock window unexpectedly large");
-    let found = (t0..=t1).any(|s| step(s) == first);
-    assert!(
-        !found,
-        "seed recovered from the wall clock within a {} ns window",
-        t1 - t0
-    );
+    assert_eq!(draws(42), draws(42));
+    assert_ne!(draws(42), draws(43));
+    // the generator's state is the seed's splitmix64 scramble and nothing else:
+    // the first draws equal the independent reference above
+    let mut x = XorShift64::new(42);
+    let mut state = splitmix(42);
+    for _ in 0..4 {
+        state = step(state);
+        assert_eq!(x.next_u64(), state);
+    }
 }
-
 #[test]
 fn laplace_new_scale_is_sensitivity_over_epsilon() {
-    // the entropy-seeded constructor: the scale does not depend on the generator
+    // the scale does not depend on the generator's seed
     for &(d, e) in &[(2.0, 0.5), (1.0, 4.0), (0.3, 0.1)] {
-        let n = LaplaceNoise::new(d, e);
+        let n = LaplaceNoise::with_seed(d, e, 9);
         assert!((n.scale() - d / e).abs() < 1e-12, "scale {}", n.scale());
     }
 }

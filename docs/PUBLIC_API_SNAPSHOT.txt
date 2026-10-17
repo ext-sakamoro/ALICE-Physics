@@ -12775,7 +12775,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::Landin
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingEvent
 pub struct alice_physics::prelude::LaplaceNoise
 impl alice_physics::privacy::LaplaceNoise
-pub fn alice_physics::privacy::LaplaceNoise::new(f64, f64) -> Self
 pub fn alice_physics::privacy::LaplaceNoise::privatize(&mut self, f64) -> f64
 pub fn alice_physics::privacy::LaplaceNoise::privatize_int(&mut self, i64) -> i64
 pub fn alice_physics::privacy::LaplaceNoise::sample(&mut self) -> f64
@@ -13886,7 +13885,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint_extra::RackAn
 pub struct alice_physics::prelude::RandomizedResponse
 impl alice_physics::privacy::RandomizedResponse
 pub fn alice_physics::privacy::RandomizedResponse::estimate_proportion(f64, u64, u64) -> f64
-pub fn alice_physics::privacy::RandomizedResponse::new(f64) -> Self
+pub fn alice_physics::privacy::RandomizedResponse::new(f64, u64) -> Self
 pub const fn alice_physics::privacy::RandomizedResponse::p_true(&self) -> f64
 pub fn alice_physics::privacy::RandomizedResponse::privatize(&mut self, bool) -> bool
 pub fn alice_physics::privacy::RandomizedResponse::privatize_bit(&mut self, u8) -> u8
@@ -13905,8 +13904,6 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::Randomized
 pub struct alice_physics::prelude::Rappor
 impl alice_physics::privacy::Rappor
 pub const alice_physics::privacy::Rappor::BITS: usize
-pub fn alice_physics::privacy::Rappor::default_params() -> Self
-pub fn alice_physics::privacy::Rappor::new(f64, f64, f64) -> Self
 pub const fn alice_physics::privacy::Rappor::params(&self) -> (f64, f64, f64)
 pub fn alice_physics::privacy::Rappor::privatize(&mut self, u64) -> [u8; 64]
 pub fn alice_physics::privacy::Rappor::with_seed(f64, f64, f64, u64) -> Self
@@ -15106,7 +15103,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::interpolation::W
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::interpolation::WorldSnapshot
 pub struct alice_physics::prelude::XorShift64
 impl alice_physics::privacy::XorShift64
-pub fn alice_physics::privacy::XorShift64::from_entropy() -> Self
 pub const fn alice_physics::privacy::XorShift64::new(u64) -> Self
 pub fn alice_physics::privacy::XorShift64::next_bool(&mut self, f64) -> bool
 pub fn alice_physics::privacy::XorShift64::next_f64(&mut self) -> f64
@@ -15114,8 +15110,6 @@ pub fn alice_physics::privacy::XorShift64::next_f64_range(&mut self, f64, f64) -
 pub fn alice_physics::privacy::XorShift64::next_u64(&mut self) -> u64
 impl core::clone::Clone for alice_physics::privacy::XorShift64
 pub fn alice_physics::privacy::XorShift64::clone(&self) -> Self
-impl core::default::Default for alice_physics::privacy::XorShift64
-pub fn alice_physics::privacy::XorShift64::default() -> Self
 impl core::fmt::Debug for alice_physics::privacy::XorShift64
 pub fn alice_physics::privacy::XorShift64::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::privacy::XorShift64
@@ -15514,7 +15508,6 @@ pub fn alice_physics::print_pipeline_solver::analyze_print_pipeline(alice_physic
 pub mod alice_physics::privacy
 pub struct alice_physics::privacy::LaplaceNoise
 impl alice_physics::privacy::LaplaceNoise
-pub fn alice_physics::privacy::LaplaceNoise::new(f64, f64) -> Self
 pub fn alice_physics::privacy::LaplaceNoise::privatize(&mut self, f64) -> f64
 pub fn alice_physics::privacy::LaplaceNoise::privatize_int(&mut self, i64) -> i64
 pub fn alice_physics::privacy::LaplaceNoise::sample(&mut self) -> f64
@@ -15574,7 +15567,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::PrivateAgg
 pub struct alice_physics::privacy::RandomizedResponse
 impl alice_physics::privacy::RandomizedResponse
 pub fn alice_physics::privacy::RandomizedResponse::estimate_proportion(f64, u64, u64) -> f64
-pub fn alice_physics::privacy::RandomizedResponse::new(f64) -> Self
+pub fn alice_physics::privacy::RandomizedResponse::new(f64, u64) -> Self
 pub const fn alice_physics::privacy::RandomizedResponse::p_true(&self) -> f64
 pub fn alice_physics::privacy::RandomizedResponse::privatize(&mut self, bool) -> bool
 pub fn alice_physics::privacy::RandomizedResponse::privatize_bit(&mut self, u8) -> u8
@@ -15593,8 +15586,6 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::Randomized
 pub struct alice_physics::privacy::Rappor
 impl alice_physics::privacy::Rappor
 pub const alice_physics::privacy::Rappor::BITS: usize
-pub fn alice_physics::privacy::Rappor::default_params() -> Self
-pub fn alice_physics::privacy::Rappor::new(f64, f64, f64) -> Self
 pub const fn alice_physics::privacy::Rappor::params(&self) -> (f64, f64, f64)
 pub fn alice_physics::privacy::Rappor::privatize(&mut self, u64) -> [u8; 64]
 pub fn alice_physics::privacy::Rappor::with_seed(f64, f64, f64, u64) -> Self
@@ -15611,7 +15602,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::privacy::Rappor
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::Rappor
 pub struct alice_physics::privacy::XorShift64
 impl alice_physics::privacy::XorShift64
-pub fn alice_physics::privacy::XorShift64::from_entropy() -> Self
 pub const fn alice_physics::privacy::XorShift64::new(u64) -> Self
 pub fn alice_physics::privacy::XorShift64::next_bool(&mut self, f64) -> bool
 pub fn alice_physics::privacy::XorShift64::next_f64(&mut self) -> f64
@@ -15619,8 +15609,6 @@ pub fn alice_physics::privacy::XorShift64::next_f64_range(&mut self, f64, f64) -
 pub fn alice_physics::privacy::XorShift64::next_u64(&mut self) -> u64
 impl core::clone::Clone for alice_physics::privacy::XorShift64
 pub fn alice_physics::privacy::XorShift64::clone(&self) -> Self
-impl core::default::Default for alice_physics::privacy::XorShift64
-pub fn alice_physics::privacy::XorShift64::default() -> Self
 impl core::fmt::Debug for alice_physics::privacy::XorShift64
 pub fn alice_physics::privacy::XorShift64::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::privacy::XorShift64
@@ -24096,7 +24084,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::particle::Landin
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::particle::LandingEvent
 pub struct alice_physics::LaplaceNoise
 impl alice_physics::privacy::LaplaceNoise
-pub fn alice_physics::privacy::LaplaceNoise::new(f64, f64) -> Self
 pub fn alice_physics::privacy::LaplaceNoise::privatize(&mut self, f64) -> f64
 pub fn alice_physics::privacy::LaplaceNoise::privatize_int(&mut self, i64) -> i64
 pub fn alice_physics::privacy::LaplaceNoise::sample(&mut self) -> f64
@@ -25247,7 +25234,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::joint_extra::RackAn
 pub struct alice_physics::RandomizedResponse
 impl alice_physics::privacy::RandomizedResponse
 pub fn alice_physics::privacy::RandomizedResponse::estimate_proportion(f64, u64, u64) -> f64
-pub fn alice_physics::privacy::RandomizedResponse::new(f64) -> Self
+pub fn alice_physics::privacy::RandomizedResponse::new(f64, u64) -> Self
 pub const fn alice_physics::privacy::RandomizedResponse::p_true(&self) -> f64
 pub fn alice_physics::privacy::RandomizedResponse::privatize(&mut self, bool) -> bool
 pub fn alice_physics::privacy::RandomizedResponse::privatize_bit(&mut self, u8) -> u8
@@ -25266,8 +25253,6 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics::privacy::Randomized
 pub struct alice_physics::Rappor
 impl alice_physics::privacy::Rappor
 pub const alice_physics::privacy::Rappor::BITS: usize
-pub fn alice_physics::privacy::Rappor::default_params() -> Self
-pub fn alice_physics::privacy::Rappor::new(f64, f64, f64) -> Self
 pub const fn alice_physics::privacy::Rappor::params(&self) -> (f64, f64, f64)
 pub fn alice_physics::privacy::Rappor::privatize(&mut self, u64) -> [u8; 64]
 pub fn alice_physics::privacy::Rappor::with_seed(f64, f64, f64, u64) -> Self
@@ -26553,7 +26538,6 @@ impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::interpolation::W
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::interpolation::WorldSnapshot
 pub struct alice_physics::XorShift64
 impl alice_physics::privacy::XorShift64
-pub fn alice_physics::privacy::XorShift64::from_entropy() -> Self
 pub const fn alice_physics::privacy::XorShift64::new(u64) -> Self
 pub fn alice_physics::privacy::XorShift64::next_bool(&mut self, f64) -> bool
 pub fn alice_physics::privacy::XorShift64::next_f64(&mut self) -> f64
@@ -26561,8 +26545,6 @@ pub fn alice_physics::privacy::XorShift64::next_f64_range(&mut self, f64, f64) -
 pub fn alice_physics::privacy::XorShift64::next_u64(&mut self) -> u64
 impl core::clone::Clone for alice_physics::privacy::XorShift64
 pub fn alice_physics::privacy::XorShift64::clone(&self) -> Self
-impl core::default::Default for alice_physics::privacy::XorShift64
-pub fn alice_physics::privacy::XorShift64::default() -> Self
 impl core::fmt::Debug for alice_physics::privacy::XorShift64
 pub fn alice_physics::privacy::XorShift64::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Freeze for alice_physics::privacy::XorShift64

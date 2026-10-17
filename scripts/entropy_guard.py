@@ -77,14 +77,6 @@ ALIASABLE = {
 ALIAS_RE = re.compile(r"\b(Instant|SystemTime|RandomState|HashMap|HashSet)\s+as\s+(\w+)")
 # (file, pattern) -> (count, reason)
 ALLOWED: dict[tuple[str, str], tuple[int, str]] = {
-    ("src/privacy.rs", "SystemTime::now"): (
-        1, "deprecated XorShift64::from_entropy seeds from the clock; documented as not private",
-    ),
-    ("src/privacy.rs", "UNIX_EPOCH"): (2, "the same deprecated clock seed"),
-    ("src/privacy.rs", "RandomState"): (2, "the same deprecated seed, hashed with a randomly keyed hasher"),
-    ("src/privacy.rs", "from_entropy("): (
-        4, "deprecated LaplaceNoise / RandomizedResponse / Rappor constructors call that clock seed",
-    ),
     ("src/det_hash.rs", "HashMap"): (1, "the DetHashMap alias names the std map with the fixed hasher"),
 }
 # A char literal ('{', '\n', '\u{1F600}', also after a `b` prefix) but not a

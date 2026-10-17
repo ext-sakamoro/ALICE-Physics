@@ -671,7 +671,7 @@ fn randomized_response_p_true_closed_form() {
     for &eps in &[0.5, 1.0, 2.0, 1.098_612_288_668_11, 10.0] {
         let e = exp64(eps);
         let expected = 1.0 - 2.0 / (e + 1.0);
-        let rr = RandomizedResponse::new(eps);
+        let rr = RandomizedResponse::new(eps, 1);
         assert_eq!(bits(rr.p_true()), bits(expected), "eps={eps}");
         // the mechanism's own epsilon is the one requested
         let p = rr.p_true();
@@ -682,20 +682,20 @@ fn randomized_response_p_true_closed_form() {
         );
     }
     assert_eq!(
-        bits(RandomizedResponse::new(0.0).p_true()),
+        bits(RandomizedResponse::new(0.0, 1).p_true()),
         bits(0.0),
         "ε = 0 → always the coin"
     );
     assert_eq!(
-        bits(RandomizedResponse::new(-0.5).p_true()),
+        bits(RandomizedResponse::new(-0.5, 1).p_true()),
         bits(0.0),
         "ε < 0 clamps to 0"
     );
     // ε = ln 3 → p = 1/2 to a few ulp of the deterministic exp (e^ε ≈ 3).
-    let p = RandomizedResponse::new(1.098_612_288_668_109_7).p_true();
+    let p = RandomizedResponse::new(1.098_612_288_668_109_7, 1).p_true();
     assert!((p - 0.5).abs() < 1e-14, "p={p}");
     // p = 1 only in the limit: ε = 40 gives p within 1e-16 of 1 but ≤ 1.
-    let near_one = RandomizedResponse::new(40.0).p_true();
+    let near_one = RandomizedResponse::new(40.0, 1).p_true();
     assert!(near_one <= 1.0 && near_one > 1.0 - 1e-16, "p={near_one}");
 
     for &(p, expected) in &[
@@ -870,10 +870,10 @@ fn randomized_response_degenerate_inputs() {
     // ε = −1000 → 1 − 2 = −1 → 0; ε = NaN → NaN; ε = ∞ → 1.
     let r = catch_unwind(AssertUnwindSafe(|| {
         (
-            RandomizedResponse::new(1000.0).p_true(),
-            RandomizedResponse::new(-1000.0).p_true(),
-            RandomizedResponse::new(f64::NAN).p_true(),
-            RandomizedResponse::new(f64::INFINITY).p_true(),
+            RandomizedResponse::new(1000.0, 1).p_true(),
+            RandomizedResponse::new(-1000.0, 1).p_true(),
+            RandomizedResponse::new(f64::NAN, 1).p_true(),
+            RandomizedResponse::new(f64::INFINITY, 1).p_true(),
         )
     }));
     let (big, small, nan, inf) = r.expect("extreme ε must not panic");
@@ -955,13 +955,13 @@ fn rappor_parameter_corners_are_closed_forms() {
     assert_ne!(a, b);
 
     // params: default triple, clamped triple.
-    assert_eq!(Rappor::default_params().params(), (0.5, 0.75, 0.25));
+    assert_eq!(Rappor::with_seed(0.5, 0.75, 0.25, 1).params(), (0.5, 0.75, 0.25));
     assert_eq!(
-        Rappor::new(0.9, 1.5, -1.0).params(),
+        Rappor::with_seed(0.9, 1.5, -1.0, 1).params(),
         (0.5, 1.0, 0.0),
         "f→[0,½], p,q→[0,1]"
     );
-    assert_eq!(Rappor::new(-0.1, 0.3, 0.6).params(), (0.0, 0.3, 0.6));
+    assert_eq!(Rappor::with_seed(-0.1, 0.3, 0.6, 1).params(), (0.0, 0.3, 0.6));
     assert_eq!(
         Rappor::with_seed(0.9, 1.5, -1.0, 7).params(),
         (0.5, 1.0, 0.0)
@@ -971,7 +971,7 @@ fn rappor_parameter_corners_are_closed_forms() {
         (0.0, 0.3, 0.6)
     );
     let r = catch_unwind(AssertUnwindSafe(|| {
-        Rappor::new(f64::NAN, f64::INFINITY, f64::NEG_INFINITY).params()
+        Rappor::with_seed(f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1).params()
     }));
     let (f, p, q) = r.expect("non-finite params must not panic");
     assert!(f.is_nan(), "NaN survives f64::clamp (pinned)");

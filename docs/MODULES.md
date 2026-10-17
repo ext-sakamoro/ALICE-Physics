@@ -280,8 +280,8 @@ this file or listed twice, or when a linked example or test does not exist.
 |--------|---------|---------|---------|-------------|
 | `anomaly` | streaming anomaly detection (EWMA, MAD, z-score) | std | [`anomaly_detectors`](../examples/anomaly_detectors.rs) | standalone |
 | `pipeline` | ring-buffer metric aggregation | std | [`pipeline_events`](../examples/pipeline_events.rs) | standalone |
-| `privacy` | local differential privacy: with `privacy-crypto`, keyed ChaCha20 and integer-sampled discrete Laplace / randomized response from `alice-crypto` and `KeyedRappor` (keyed RAPPOR); `PrivacyBudget` / `PrivateAggregator` with `std` (the xorshift-based types are deprecated, not private) | std | [`privacy_budget_and_rappor`](../examples/privacy_budget_and_rappor.rs) | unused (step 3, standalone 21 of 49 items) |
-| `sketch` | Count-Min, HyperLogLog, DDSketch and heavy hitters | std | [`sketch_streams`](../examples/sketch_streams.rs) | standalone (step 1 of 70 items) |
+| `privacy` | local differential privacy: with `privacy-crypto`, keyed ChaCha20 and integer-sampled discrete Laplace / randomized response from `alice-crypto` and `KeyedRappor` (keyed RAPPOR); `PrivacyBudget` / `PrivateAggregator` with `std` (the xorshift-based types are deprecated, not private) | std | [`privacy_budget_and_rappor`](../examples/privacy_budget_and_rappor.rs) | unused (standalone 21 of 45 items) |
+| `sketch` | Count-Min, HyperLogLog, DDSketch and heavy hitters | std | [`sketch_streams`](../examples/sketch_streams.rs) | standalone |
 
 ## Bindings and bridges
 

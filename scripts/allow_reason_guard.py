@@ -62,10 +62,8 @@ KINDS = (
     "deprecated API",
 )
 PLACEHOLDERS = {"todo", "fixme", "n/a", "na", "tbd", "allow", "allowed", "oracle", "reference", "-", "x", "needed"}
-# (file) -> (count, reason): allows of the ban in non-test src code
-PRODUCTION: dict[str, tuple[int, str]] = {
-    "src/privacy.rs": (2, "the deprecated clock-seeded XorShift64::from_entropy, documented as not private"),
-}
+# (file) -> (count, reason): allows of the ban in non-test src code; empty: none is allowed
+PRODUCTION: dict[str, tuple[int, str]] = {}
 # lint groups: rustc's `warnings` and clippy's groups (an allow of one
 # silences every lint in it, the ban included)
 GROUPS = {

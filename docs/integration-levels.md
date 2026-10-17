@@ -167,7 +167,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_wind_field` | standalone | 0 / 0 / 0 / 3 / 0 | — |
 | `sim_field` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `sim_modifier` | standalone | 0 / 0 / 0 / 35 / 0 | — |
-| `sketch` | standalone (step 1 of 70 items) | 1 / 0 / 0 / 69 / 0 | C ABI, Python, WebAssembly |
+| `sketch` | standalone | 0 / 0 / 0 / 70 / 0 | — |
 | `smoke_fire` | standalone | 0 / 0 / 0 / 7 / 0 | — |
 | `soft_body_cut` | standalone | 0 / 0 / 0 / 4 / 0 | — |
 | `spatial` | standalone | 0 / 0 / 0 / 7 / 0 | — |
@@ -186,7 +186,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `warp_risk` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `wave_ship` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `wind_zone` | standalone | 0 / 0 / 0 / 6 / 0 | — |
-| `privacy` | unused (step 3, standalone 21 of 49 items) | 3 / 0 / 0 / 21 / 25 | C ABI, Python, WebAssembly |
+| `privacy` | unused (standalone 21 of 45 items) | 0 / 0 / 0 / 21 / 24 | — |
 
 ### C ABI (`--features ffi`)
 

@@ -115,7 +115,7 @@ cargo run --release --example rollback_netcode
 <!-- claim-test: test_determinism_golden_hash -->
 
 **entropy も時計も seed つきの hash 順も使わない** production の code (`src/` の試験 module 以外) は OS の entropy を引かず、時計を読まず、既定の (OS の乱数で seed を作る) hasher の `HashMap` / `HashSet` / `RandomState` を使わない map は seed の無い hasher か `BTreeMap` を使う
-例外は非推奨の `privacy::XorShift64::from_entropy` (時計で seed を作ることが仕様) と、それを呼ぶ非推奨の構築子だけ clippy の `disallowed-types` / `disallowed-methods` (clippy.toml) と `scripts/entropy_guard.py` が CI で検査する
+例外は無い (非推奨の `privacy` の乱数生成器も seed を引数で受け取る) clippy の `disallowed-types` / `disallowed-methods` (clippy.toml) と `scripts/entropy_guard.py` が CI で検査する
 利用者が乱数を使いたい時は、利用者が渡す鍵か seed を使うか、`privacy-crypto` feature の `SecureRng::from_entropy` / `DpNoise::try_from_entropy` を利用者が呼ぶ (`wasm` では browser の `crypto.getRandomValues` から)
 
 **利用者が渡すコード** `ClosureSdf` は利用者のクロージャを受け取る

@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 32 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2630 |
-| live | reached without examples (crate-internal roots or a binding) | 608 |
-| | **total** | **3270** |
+| L0 | not reached by any non-test code, examples included | 31 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2631 |
+| live | reached without examples (crate-internal roots or a binding) | 604 |
+| | **total** | **3266** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (30)
+### L0 here but not in the baseline (29)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -29,7 +29,6 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
-- `src/privacy.rs::LaplaceNoise::new`
 - `src/privacy.rs::LaplaceNoise::privatize`
 - `src/privacy.rs::LaplaceNoise::privatize_int`
 - `src/privacy.rs::LaplaceNoise::sample`
@@ -44,11 +43,11 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/privacy.rs::RandomizedResponse::with_probability`
 - `src/privacy.rs::Rappor`
 - `src/privacy.rs::Rappor::BITS`
-- `src/privacy.rs::Rappor::default_params`
-- `src/privacy.rs::Rappor::new`
 - `src/privacy.rs::Rappor::params`
 - `src/privacy.rs::Rappor::privatize`
 - `src/privacy.rs::Rappor::with_seed`
+- `src/privacy.rs::XorShift64`
+- `src/privacy.rs::XorShift64::new`
 - `src/privacy.rs::XorShift64::next_bool`
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
@@ -60,7 +59,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (32)
+## L0 — unreached (31)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
@@ -68,7 +67,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
-- `src/privacy.rs::LaplaceNoise::new`
 - `src/privacy.rs::LaplaceNoise::privatize`
 - `src/privacy.rs::LaplaceNoise::privatize_int`
 - `src/privacy.rs::LaplaceNoise::sample`
@@ -83,11 +81,11 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/privacy.rs::RandomizedResponse::with_probability`
 - `src/privacy.rs::Rappor`
 - `src/privacy.rs::Rappor::BITS`
-- `src/privacy.rs::Rappor::default_params`
-- `src/privacy.rs::Rappor::new`
 - `src/privacy.rs::Rappor::params`
 - `src/privacy.rs::Rappor::privatize`
 - `src/privacy.rs::Rappor::with_seed`
+- `src/privacy.rs::XorShift64`
+- `src/privacy.rs::XorShift64::new`
 - `src/privacy.rs::XorShift64::next_bool`
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
@@ -110,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2630)
+## L1 — example-only (2631)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -255,7 +253,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/shape_raycast.rs`: `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `WorldRayCaster::all`, `WorldRayCaster::any`
 - `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::clear`, `ScalarField3D::contains`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::max_value`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`, `VectorField3D`, `VectorField3D::clear`, `VectorField3D::decay`, `VectorField3D::new`, `VectorField3D::sample`, `VectorField3D::splat`
 - `src/sim_modifier.rs`: `MODIFIER_STATE_VERSION`, `ModifiedSdf`, `ModifiedSdf::add_modifier`, `ModifiedSdf::clear_modifiers`, `ModifiedSdf::modifier_count`, `ModifiedSdf::modifier_mut`, `ModifiedSdf::new`, `ModifiedSdf::update`, `ModifiedSdf::with_modifier`, `PhysicsModifier`, `SingleModifiedSdf`, `SingleModifiedSdf::new`, `SingleModifiedSdf::update`, `StateReader`, `StateReader::bool`, `StateReader::count`, `StateReader::f32`, `StateReader::field`, `StateReader::finish`, `StateReader::new`, `StateReader::u64`, `StateReader::u8`, `StateReader::usize`, `StateReader::vec3`, `StateWriter`, `StateWriter::bool`, `StateWriter::f32`, `StateWriter::field`, `StateWriter::new`, `StateWriter::u64`, `StateWriter::u8`, `StateWriter::usize`, `StateWriter::vec3`, `observe_max`, `observe_sum`
-- `src/sketch.rs`: `CountMinSketch`, `CountMinSketch1024x5`, `CountMinSketch2048x7`, `CountMinSketch4096x5`, `CountMinSketchN`, `CountMinSketchN::DEPTH`, `CountMinSketchN::WIDTH`, `CountMinSketchN::clear`, `CountMinSketchN::confidence`, `CountMinSketchN::error_bound`, `CountMinSketchN::estimate`, `CountMinSketchN::estimate_bytes`, `CountMinSketchN::estimate_hash`, `CountMinSketchN::insert`, `CountMinSketchN::insert_bytes`, `CountMinSketchN::insert_hash`, `CountMinSketchN::new`, `CountMinSketchN::total`, `DDSketch`, `DDSketch1024`, `DDSketch128`, `DDSketch2048`, `DDSketch256`, `DDSketch512`, `DDSketchN`, `DDSketchN::BINS`, `DDSketchN::alpha`, `DDSketchN::clear`, `DDSketchN::count`, `DDSketchN::insert`, `DDSketchN::max`, `DDSketchN::mean`, `DDSketchN::min`, `DDSketchN::new`, `DDSketchN::quantile`, `DDSketchN::sum`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitterEntry`, `HeavyHitters`, `HeavyHitters10`, `HeavyHitters20`, `HeavyHitters5`, `HeavyHittersN`, `HeavyHittersN::K`, `HeavyHittersN::clear`, `HeavyHittersN::cms`, `HeavyHittersN::insert_hash`, `HeavyHittersN::new`, `HeavyHittersN::top`, `HyperLogLog`, `HyperLogLog10`, `HyperLogLog12`, `HyperLogLog14`, `HyperLogLog16`, `HyperLogLogN`, `HyperLogLogN::M`, `HyperLogLogN::P`, `HyperLogLogN::cardinality`, `HyperLogLogN::clear`, `HyperLogLogN::insert`, `HyperLogLogN::insert_bytes`, `HyperLogLogN::insert_hash`, `HyperLogLogN::new`, `HyperLogLogN::registers`, `Mergeable`
+- `src/sketch.rs`: `CountMinSketch`, `CountMinSketch1024x5`, `CountMinSketch2048x7`, `CountMinSketch4096x5`, `CountMinSketchN`, `CountMinSketchN::DEPTH`, `CountMinSketchN::WIDTH`, `CountMinSketchN::clear`, `CountMinSketchN::confidence`, `CountMinSketchN::error_bound`, `CountMinSketchN::estimate`, `CountMinSketchN::estimate_bytes`, `CountMinSketchN::estimate_hash`, `CountMinSketchN::insert`, `CountMinSketchN::insert_bytes`, `CountMinSketchN::insert_hash`, `CountMinSketchN::new`, `CountMinSketchN::total`, `DDSketch`, `DDSketch1024`, `DDSketch128`, `DDSketch2048`, `DDSketch256`, `DDSketch512`, `DDSketchN`, `DDSketchN::BINS`, `DDSketchN::alpha`, `DDSketchN::clear`, `DDSketchN::count`, `DDSketchN::insert`, `DDSketchN::max`, `DDSketchN::mean`, `DDSketchN::min`, `DDSketchN::new`, `DDSketchN::quantile`, `DDSketchN::sum`, `FnvHasher`, `FnvHasher::hash_bytes`, `FnvHasher::hash_u128`, `FnvHasher::hash_u64`, `FnvHasher::new`, `HeavyHitterEntry`, `HeavyHitters`, `HeavyHitters10`, `HeavyHitters20`, `HeavyHitters5`, `HeavyHittersN`, `HeavyHittersN::K`, `HeavyHittersN::clear`, `HeavyHittersN::cms`, `HeavyHittersN::insert_hash`, `HeavyHittersN::new`, `HeavyHittersN::top`, `HyperLogLog`, `HyperLogLog10`, `HyperLogLog12`, `HyperLogLog14`, `HyperLogLog16`, `HyperLogLogN`, `HyperLogLogN::M`, `HyperLogLogN::P`, `HyperLogLogN::cardinality`, `HyperLogLogN::clear`, `HyperLogLogN::insert`, `HyperLogLogN::insert_bytes`, `HyperLogLogN::insert_hash`, `HyperLogLogN::new`, `HyperLogLogN::registers`, `Mergeable`, `splitmix64`
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`

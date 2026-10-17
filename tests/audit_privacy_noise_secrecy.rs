@@ -133,19 +133,3 @@ fn the_laplace_sampler_consumes_exactly_that_uniform_stream() {
     let diff: Vec<u64> = (0..16).map(|_| other.sample().to_bits()).collect();
     assert_ne!(diff, samples);
 }
-
-#[test]
-fn the_entropy_path_is_not_predictable_across_two_instances() {
-    // `from_entropy` 経路は seed が OS 由来なので 2 本の列は一致しない
-    // ⚠️ これは「予測不能」の証明ではない (seed 空間は 64 bit で、1 語観測すれば
-    //    上と同じ論法で以降が確定する) 独立性の最低条件だけを見る
-    let a: Vec<u64> = {
-        let mut r = XorShift64::default();
-        (0..8).map(|_| r.next_u64()).collect()
-    };
-    let b: Vec<u64> = {
-        let mut r = XorShift64::default();
-        (0..8).map(|_| r.next_u64()).collect()
-    };
-    assert_ne!(a, b, "entropy 経路の 2 本が同じ列を返した");
-}

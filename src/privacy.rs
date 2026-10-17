@@ -20,8 +20,10 @@
 //! [`XorShift64`], [`LaplaceNoise`], [`RandomizedResponse`] and [`Rappor`] are
 //! **not private** and are deprecated for that reason (removal is a later,
 //! breaking release): `XorShift64` hands out its internal state, so one
-//! observed draw determines every later one, and its `from_entropy` seed is
-//! derived from the clock; `LaplaceNoise::sample` uses the floating-point
+//! observed draw determines every later one; every constructor takes its seed
+//! as an explicit argument (the module reads no clock and no OS randomness, so
+//! whatever unpredictability the noise has is exactly what the caller's seed
+//! supplies); `LaplaceNoise::sample` uses the floating-point
 //! inverse transform, whose low bits leak the uniform draw (Mironov 2012), so
 //! ε does not hold even with a perfect random source.
 //!
@@ -69,7 +71,7 @@ pub use alice_crypto::dp::{
 
 #[deprecated(
     since = "2.3.0",
-    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+    note = "not differentially private (predictable xorshift64 noise, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
 )]
 /// Simple xorshift64 PRNG for fast random numbers
 ///
@@ -110,45 +112,6 @@ impl XorShift64 {
         }
     }
 
-    /// Create from system entropy (uses address as seed if no std)
-    ///
-    /// The seed is the wall-clock time hashed with the standard library's
-    /// randomly keyed hasher (its keys come from the operating system), so it
-    /// cannot be recovered by trying the clock values around the call
-    /// (AUD-A-S4W3-029).
-    #[cfg(feature = "std")]
-    #[must_use]
-    #[allow(
-        clippy::disallowed_types,
-        reason = "deprecated API: the clock seed hashed with RandomState is this constructor's documented contract"
-    )]
-    pub fn from_entropy() -> Self {
-        use std::collections::hash_map::RandomState;
-        use std::hash::{BuildHasher, Hasher};
-        use std::time::{SystemTime, UNIX_EPOCH};
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "deprecated API: the wall-clock seed is this constructor's documented contract"
-        )]
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_nanos() as u64)
-            .unwrap_or(0x853c49e6748fea9b);
-        #[allow(
-            clippy::disallowed_methods,
-            reason = "deprecated API: the randomly keyed hasher makes the clock seed unrecoverable (AUD-A-S4W3-029)"
-        )]
-        let mut h = RandomState::new().build_hasher();
-        h.write_u64(nanos);
-        Self::new(h.finish())
-    }
-
-    #[cfg(not(feature = "std"))]
-    pub fn from_entropy() -> Self {
-        // Use a fixed seed in no_std environments
-        Self::new(0x853c49e6748fea9b)
-    }
-
     /// Generate next u64
     #[inline]
     pub fn next_u64(&mut self) -> u64 {
@@ -180,12 +143,6 @@ impl XorShift64 {
     }
 }
 
-impl Default for XorShift64 {
-    fn default() -> Self {
-        Self::from_entropy()
-    }
-}
-
 // ============================================================================
 // Laplace Distribution
 // ============================================================================
@@ -198,7 +155,7 @@ impl Default for XorShift64 {
 /// noise scale b = Δf / ε
 #[deprecated(
     since = "2.3.0",
-    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+    note = "not differentially private (predictable xorshift64 noise, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
 )]
 // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
 #[derive(Clone, Debug)]
@@ -220,30 +177,17 @@ fn laplace_scale(sensitivity: f64, epsilon: f64) -> f64 {
 }
 
 impl LaplaceNoise {
-    /// Create a new Laplace noise generator
+    /// Create a Laplace noise generator with an explicit seed
     ///
     /// # Arguments
     /// * `sensitivity` - Maximum change in output for one input change (Δf)
     /// * `epsilon` - Privacy parameter ε (smaller = more privacy)
+    /// * `seed` - seed of the generator (the module reads no clock or OS randomness)
     ///
     /// # Panics
     ///
     /// Panics unless `epsilon` is finite and positive (`ε = 0` would need
     /// infinite noise: every sample was ±inf).
-    #[must_use]
-    pub fn new(sensitivity: f64, epsilon: f64) -> Self {
-        let scale = laplace_scale(sensitivity, epsilon);
-        Self {
-            scale,
-            rng: XorShift64::from_entropy(),
-        }
-    }
-
-    /// Create with explicit seed
-    ///
-    /// # Panics
-    ///
-    /// As [`Self::new`]: unless `epsilon` is finite and positive.
     // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[must_use]
     pub fn with_seed(sensitivity: f64, epsilon: f64, seed: u64) -> Self {
@@ -305,7 +249,7 @@ impl LaplaceNoise {
 /// This provides ε-differential privacy where ε = ln((p + 0.5(1-p)) / (0.5(1-p)))
 #[deprecated(
     since = "2.3.0",
-    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+    note = "not differentially private (predictable xorshift64 noise, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
 )]
 // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
 #[derive(Clone, Debug)]
@@ -319,9 +263,10 @@ pub struct RandomizedResponse {
 impl RandomizedResponse {
     /// Create from privacy parameter epsilon
     ///
-    /// Higher epsilon = more accuracy, less privacy
+    /// Higher epsilon = more accuracy, less privacy; `seed` seeds the
+    /// generator (the module reads no clock or OS randomness)
     #[must_use]
-    pub fn new(epsilon: f64) -> Self {
+    pub fn new(epsilon: f64, seed: u64) -> Self {
         // Truthful with probability p, otherwise a fair coin: the report
         // probabilities are (1 + p) / 2 and (1 - p) / 2, so ε = ln((1 + p) / (1 - p))
         // and p = (e^ε - 1) / (e^ε + 1), written as 1 - 2 / (e^ε + 1) so a large
@@ -330,7 +275,7 @@ impl RandomizedResponse {
         let p_true = (1.0 - 2.0 / (exp_eps + 1.0)).clamp(0.0, 1.0);
         Self {
             p_true,
-            rng: XorShift64::from_entropy(),
+            rng: XorShift64::new(seed),
         }
     }
 
@@ -419,7 +364,7 @@ pub const RAPPOR_BITS: usize = 64;
 /// randomized response to each bit.
 #[deprecated(
     since = "2.3.0",
-    note = "not differentially private (predictable xorshift64 noise, clock seed, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
+    note = "not differentially private (predictable xorshift64 noise, floating-point inverse transform); use privacy::{dp_int, dp_sum, DpNoise, randomized_response, KeyedRappor}"
 )]
 // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
 #[derive(Clone, Debug)]
@@ -438,38 +383,13 @@ impl Rappor {
     // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     pub const BITS: usize = RAPPOR_BITS;
 
-    /// Create a new RAPPOR encoder
+    /// Create a RAPPOR encoder with an explicit seed
     ///
     /// # Arguments
     /// * `f` - Probability of flipping a bit in permanent response (0.0 to 0.5)
     /// * `p` - Probability of setting a 1 bit to 1 in instantaneous response
     /// * `q` - Probability of setting a 0 bit to 1 in instantaneous response
-    #[must_use]
-    pub fn new(f: f64, p: f64, q: f64) -> Self {
-        Self {
-            f: f.clamp(0.0, 0.5),
-            p: p.clamp(0.0, 1.0),
-            q: q.clamp(0.0, 1.0),
-            rng: XorShift64::from_entropy(),
-        }
-    }
-
-    /// Create with typical parameters for ε-differential privacy
-    ///
-    /// Uses f=0.5, p=0.75, q=0.25 for approximately ε=2 privacy
-    // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
-    #[must_use]
-    pub fn default_params() -> Self {
-        Self::new(0.5, 0.75, 0.25)
-    }
-
-    /// Create with an explicit seed (no OS entropy read)
-    ///
-    /// # Arguments
-    /// * `f` - Probability of flipping a bit in permanent response (0.0 to 0.5)
-    /// * `p` - Probability of setting a 1 bit to 1 in instantaneous response
-    /// * `q` - Probability of setting a 0 bit to 1 in instantaneous response
-    /// * `seed` - Caller-supplied PRNG seed
+    /// * `seed` - seed of the generator (the module reads no clock or OS randomness)
     // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[must_use]
     pub fn with_seed(f: f64, p: f64, q: f64, seed: u64) -> Self {
@@ -991,7 +911,7 @@ mod tests {
 
     #[test]
     fn test_rappor() {
-        let mut rappor = Rappor::default_params();
+        let mut rappor = Rappor::with_seed(0.5, 0.75, 0.25, 7);
 
         let encoded1 = rappor.privatize(12345);
         let encoded2 = rappor.privatize(12345);
