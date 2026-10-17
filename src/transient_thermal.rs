@@ -501,10 +501,7 @@ pub fn crank_nicolson_step_1d_nonlinear(
         // Convergence check in L∞.
         let mut max_delta = 0.0_f32;
         for i in 0..n {
-            let d = (next[i] - current[i]).abs();
-            if d > max_delta {
-                max_delta = d;
-            }
+            max_delta = crate::det_math::max(max_delta, (next[i] - current[i]).abs());
         }
         current = next;
         if max_delta < tolerance {
@@ -658,10 +655,7 @@ pub fn stable_dt_3d(t: &[f32], material: &ThermalMaterial, dx: f32) -> f32 {
     assert!(dx > 0.0, "dx must be positive");
     let mut max_alpha = 0.0_f32;
     for &v in t {
-        let alpha = material.diffusivity_at(v);
-        if alpha > max_alpha {
-            max_alpha = alpha;
-        }
+        max_alpha = crate::det_math::max(max_alpha, material.diffusivity_at(v));
     }
     if max_alpha <= 0.0 || !max_alpha.is_finite() {
         return f32::INFINITY;
@@ -683,10 +677,7 @@ pub fn stable_dt_1d(temperatures: &[f32], material: &ThermalMaterial, dx: f32) -
     assert!(dx > 0.0, "dx must be positive");
     let mut max_alpha = 0.0_f32;
     for &t in temperatures {
-        let alpha = material.diffusivity_at(t);
-        if alpha > max_alpha {
-            max_alpha = alpha;
-        }
+        max_alpha = crate::det_math::max(max_alpha, material.diffusivity_at(t));
     }
     if max_alpha <= 0.0 || !max_alpha.is_finite() {
         return f32::INFINITY;

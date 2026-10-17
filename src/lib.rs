@@ -343,6 +343,29 @@ pub mod det_math {
     // library code (`.github/clippy-lib/clippy.toml`)
     pub(crate) use alice_det_math::metric::clamp;
 
+    /// The f64 clamp sites call this one function: alice-det-math has no 64-bit
+    /// clamp yet, and `f64::clamp` is banned in library code. It does what
+    /// `f64::clamp` does, step for step (the bounds asserted ordered, which also
+    /// refuses a NaN bound, then the two comparisons, so a NaN `x` passes through
+    /// with its payload), unlike alice-det-math's 32-bit clamp. Listed in
+    /// `scripts/g2-rewrite-sites.tsv` (ALICE-Law G2 counts it as a pending site);
+    /// it moves to the 64-bit clamp of alice-det-math when that exists
+    #[inline]
+    pub(crate) fn raw_clamp64(x: f64, lo: f64, hi: f64) -> f64 {
+        assert!(
+            lo <= hi,
+            "lo > hi, or a bound is NaN: lo = {lo:?}, hi = {hi:?}"
+        );
+        let mut y = x;
+        if y < lo {
+            y = lo;
+        }
+        if y > hi {
+            y = hi;
+        }
+        y
+    }
+
     #[cfg(test)]
     mod max_min_tests {
         use super::{max, max64, min, min64};

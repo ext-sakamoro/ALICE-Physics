@@ -23,6 +23,9 @@ reason = "no_std dependent built by scripts/no_std_consumer.py, not published (v
 [[independent]]
 file = "scripts/clippy-lib-canary/Cargo.toml"
 reason = "fixture of scripts/clippy_lib_gate.py, not published (version 0.0.0)"
+[[independent]]
+file = "scripts/g2-rewrite-scan/Cargo.toml"
+reason = "syntax-tree scan run by scripts/g2_rewrite_check.py, not published (version 0.0.0)"
 
 [[historical]]
 file = "docs/ROADMAP.md"

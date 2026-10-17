@@ -44,6 +44,9 @@ pub fn e(x: f32) -> f32 {
 pub fn e2(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
+pub fn e3(y: f64) -> f64 {
+    y.clamp(0.0, 1.0)
+}
 pub fn f(started: I) -> D {
     started.elapsed()
 }
@@ -80,8 +83,8 @@ class Render(unittest.TestCase):
         self.assertIn('path = "f32::max"', body[i:body.index('path = "f32::sin"')])
         self.assertEqual(g.count_entries(out), 2 + len(g.EXTRA))
 
-    def test_the_extra_paths_are_exactly_f32_and_f64_max_and_min_and_f32_clamp(self):
-        self.assertEqual(g.EXTRA, ["f32::max", "f32::min", "f64::max", "f64::min", "f32::clamp"])
+    def test_the_extra_paths_are_exactly_f32_and_f64_max_min_and_clamp(self):
+        self.assertEqual(g.EXTRA, ["f32::max", "f32::min", "f64::max", "f64::min", "f32::clamp", "f64::clamp"])
         # the clamp entry names its own replacement, not the max / min one
         self.assertIn("det_math::clamp", g.render(ROOT))
 
@@ -121,17 +124,17 @@ class Canary(unittest.TestCase):
         self.want = g.canary_lines(CANARY)
 
     def test_the_five_forms_are_found_on_their_lines(self):
-        self.assertEqual(sorted(self.want), [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33])
+        self.assertEqual(sorted(self.want), [3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33, 36])
 
     def test_a_diagnostic_on_every_line_and_a_non_zero_exit_passes(self):
         out = "\n".join(diag(n, "x") for n in self.want)
         errors, n = g.judge_canary(101, out, self.want)
-        self.assertEqual((errors, n), ([], 11))
+        self.assertEqual((errors, n), ([], 12))
 
     def test_a_diagnostic_on_a_clean_line_fails(self):
         clean = g.canary_lines(CANARY, g.CANARY_CLEAN)
-        self.assertEqual(sorted(clean), [36])
-        out = "\n".join(diag(n, "x") for n in list(self.want) + [36])
+        self.assertEqual(sorted(clean), [39])
+        out = "\n".join(diag(n, "x") for n in list(self.want) + [39])
         errors, _ = g.judge_canary(101, out, self.want, clean)
         self.assertEqual(len(errors), 1)
         self.assertIn("must stay clean", errors[0])

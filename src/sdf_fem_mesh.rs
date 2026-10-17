@@ -539,9 +539,7 @@ impl SdfTetMesh {
                 let dy = pa[1] - pb[1];
                 let dz = pa[2] - pb[2];
                 let len = dx.mul_add(dx, dy.mul_add(dy, dz * dz)).sqrt();
-                if len > best {
-                    best = len;
-                }
+                best = crate::det_math::max(best, len);
             }
         }
         best
@@ -567,7 +565,7 @@ fn split_children(vs: [u32; 4], a: u32, b: u32, mid: u32) -> [[u32; 4]; 2] {
 fn lattice_cells(min: [f32; 3], max: [f32; 3], cell: f32) -> [i32; 3] {
     let count = |a: usize| {
         let q = (f64::from(max[a]) - f64::from(min[a])) / f64::from(cell);
-        (q * (1.0 + 1e-6)).floor().clamp(1.0, f64::from(i32::MAX)) as i32
+        crate::det_math::raw_clamp64((q * (1.0 + 1e-6)).floor(), 1.0, f64::from(i32::MAX)) as i32
     };
     [count(0), count(1), count(2)]
 }

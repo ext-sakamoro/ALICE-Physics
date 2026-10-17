@@ -48,10 +48,11 @@ CANARY = os.path.join(HERE, "clippy-lib-canary")
 
 REASON = ("the sign of an equal pair of zeros is unspecified and differs between "
           "targets; use alice_physics::det_math::max / min")
-EXTRA = ["f32::max", "f32::min", "f64::max", "f64::min", "f32::clamp"]
+EXTRA = ["f32::max", "f32::min", "f64::max", "f64::min", "f32::clamp", "f64::clamp"]
 # the reason clippy prints for an EXTRA entry (REASON unless listed here)
 EXTRA_REASON = {
     "f32::clamp": "passes a NaN payload through and panics on a NaN or inverted bound; use crate::det_math::clamp (alice-det-math's clamp, the owner of the clamp Law)",
+    "f64::clamp": "alice-det-math has no 64-bit clamp yet; call crate::det_math::raw_clamp64, the one named site",
 }
 
 HEADER = """\
@@ -59,12 +60,12 @@ HEADER = """\
 # do not edit (python3 scripts/clippy_lib_gate.py --write)
 #
 # The library code (`cargo clippy --lib`, CLIPPY_CONF_DIR=.github/clippy-lib)
-# also may not call f32 / f64 max and min, nor f32 clamp; tests, examples and
-# benches use the root configuration
+# also may not call f32 / f64 max and min, nor f32 / f64 clamp; tests, examples
+# and benches use the root configuration
 """
 
 # the lines of the canary that must each get a diagnostic, by the text on them
-CANARY_FORMS = ["a.max(b)", "f32::min(a, b)", "a.min(b)", "f64::max)", "x.clamp(0.0, 1.0)", "x.sin()",
+CANARY_FORMS = ["a.max(b)", "f32::min(a, b)", "a.min(b)", "f64::max)", "x.clamp(0.0, 1.0)", "y.clamp(0.0, 1.0)", "x.sin()",
                 "started.elapsed()", "std::time::Instant::elapsed(&t0)", "stamp.elapsed()",
                 "clock_t.elapsed()", "<std::time::Instant>::elapsed(&t1)"]
 # the lines that must stay clean (an entry that also matched these would forbid

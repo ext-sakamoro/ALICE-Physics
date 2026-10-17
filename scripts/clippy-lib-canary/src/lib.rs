@@ -22,6 +22,10 @@ pub fn clamp_f32(x: f32) -> f32 {
     x.clamp(0.0, 1.0)
 }
 
+pub fn clamp_f64(y: f64) -> f64 {
+    y.clamp(0.0, 1.0)
+}
+
 pub fn libm_f32(x: f32) -> f32 {
     x.sin()
 }

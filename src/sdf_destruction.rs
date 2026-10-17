@@ -318,10 +318,7 @@ impl SdfField for DestructibleSdf {
                 dist = smooth_subtraction(dist, d_shape, destruction.smooth_factor);
             } else {
                 // Sharp subtraction: max(a, -b)
-                let neg_d = -d_shape;
-                if neg_d > dist {
-                    dist = neg_d;
-                }
+                dist = crate::det_math::max(dist, -d_shape);
             }
         }
 

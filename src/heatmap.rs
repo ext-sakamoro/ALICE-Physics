@@ -217,7 +217,7 @@ pub fn heatmap_to_rgba(heatmap: &Heatmap) -> Vec<[u8; 4]> {
         .iter()
         .map(|&val| {
             let t = if has_range {
-                ((val - heatmap.min_value) / range).to_f64().clamp(0.0, 1.0)
+                crate::det_math::raw_clamp64(((val - heatmap.min_value) / range).to_f64(), 0.0, 1.0)
             } else {
                 0.5
             };
@@ -240,7 +240,7 @@ fn viridis_color(t: f64) -> [u8; 4] {
         (0.993, 0.906, 0.144), // bright yellow
     ];
 
-    let t = t.clamp(0.0, 1.0);
+    let t = crate::det_math::raw_clamp64(t, 0.0, 1.0);
     let segment = crate::det_math::min64(t * 4.0, 3.999);
     let idx = segment as usize;
     let frac = segment - idx as f64;

@@ -236,3 +236,70 @@ fn class7_f64_clamp_agrees_with_det_math_0_5_rule_where_it_can() {
     assert_eq!(p(f64::NAN), CANONICAL_NAN64);
     assert_eq!(p(1.5), 1.0f64.to_bits());
 }
+
+/// A field that answers a scripted sequence of distances, one per call, with
+/// the normal `+y`
+struct Scripted {
+    distances: Vec<f32>,
+    next: std::sync::atomic::AtomicUsize,
+}
+
+impl SdfField for Scripted {
+    fn distance(&self, _x: f32, _y: f32, _z: f32) -> f32 {
+        let i = self.next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        black_box(self.distances[i])
+    }
+    fn normal(&self, _x: f32, _y: f32, _z: f32) -> (f32, f32, f32) {
+        (0.0, 1.0, 0.0)
+    }
+}
+
+/// Moves a character through `distances` (the loop samples, then the final
+/// sample of a run that did not converge) and returns the selected distance
+/// bits and the `y` of the selected position: sample `k` is taken at `y = k`
+/// (each step is capped at 1 and the radius 10 is never reached)
+fn select(distances: &[f32]) -> (u32, f32) {
+    use alice_physics::sdf_character::SdfCharacter;
+    let mut c = SdfCharacter::new([0.0, 0.0, 0.0], 10.0, 2.0);
+    c.max_iterations = distances.len() - 1;
+    c.skin_width = 0.0;
+    c.max_push = 1.0;
+    let field = Scripted {
+        distances: distances.to_vec(),
+        next: std::sync::atomic::AtomicUsize::new(0),
+    };
+    let out = c.move_and_slide(&field, [0.0, 0.0, 0.0]);
+    assert!(!out.converged);
+    assert_eq!(
+        field.next.load(std::sync::atomic::Ordering::Relaxed),
+        distances.len(),
+        "every scripted distance was sampled"
+    );
+    (out.best_distance.to_bits(), out.best_position[1])
+}
+
+/// Class: selection (argmax with a payload), `SdfCharacter`'s best sample,
+/// both the loop sample and the final sample of a run that did not converge.
+/// The rule (alice-law-conformance.toml [G2]): the first strict maximum is
+/// kept, a NaN distance is never selected, and a tie keeps the first, so of
+/// `-0` and `+0` the earlier one stays
+#[test]
+fn selection_keeps_the_first_strict_maximum_and_never_a_nan() {
+    let nan = f32::NAN;
+    let cases: [(&[f32], u32, f32); 8] = [
+        (&[0.5, 0.5, 0.5], 0.5f32.to_bits(), 0.0),
+        (&[-0.0, 0.0, -1.0], NEG, 0.0),
+        (&[0.0, -0.0, -1.0], POS, 0.0),
+        (&[nan, -1.0, -2.0], (-1.0f32).to_bits(), 1.0),
+        (&[-2.0, nan, -1.0], (-1.0f32).to_bits(), 2.0),
+        (&[-1.0, -3.0, -1.0], (-1.0f32).to_bits(), 0.0),
+        (&[-3.0, -2.0, -1.0], (-1.0f32).to_bits(), 2.0),
+        (&[nan, nan, nan], f32::NEG_INFINITY.to_bits(), 0.0),
+    ];
+    let mut checked = 0;
+    for (distances, bits, y) in cases {
+        assert_eq!(select(distances), (bits, y), "{distances:?}");
+        checked += 1;
+    }
+    assert_eq!(checked, 8);
+}

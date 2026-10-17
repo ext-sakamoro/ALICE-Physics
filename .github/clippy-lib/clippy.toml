@@ -2,8 +2,8 @@
 # do not edit (python3 scripts/clippy_lib_gate.py --write)
 #
 # The library code (`cargo clippy --lib`, CLIPPY_CONF_DIR=.github/clippy-lib)
-# also may not call f32 / f64 max and min, nor f32 clamp; tests, examples and
-# benches use the root configuration
+# also may not call f32 / f64 max and min, nor f32 / f64 clamp; tests, examples
+# and benches use the root configuration
 
 # Determinism gate (v1.1.0): the platform `libm` is not bit-exact across
 # OS / CPU / compiler, so every float transcendental must go through
@@ -16,6 +16,7 @@ disallowed-methods = [
     { path = "f64::max", reason = "the sign of an equal pair of zeros is unspecified and differs between targets; use alice_physics::det_math::max / min" },
     { path = "f64::min", reason = "the sign of an equal pair of zeros is unspecified and differs between targets; use alice_physics::det_math::max / min" },
     { path = "f32::clamp", reason = "passes a NaN payload through and panics on a NaN or inverted bound; use crate::det_math::clamp (alice-det-math's clamp, the owner of the clamp Law)" },
+    { path = "f64::clamp", reason = "alice-det-math has no 64-bit clamp yet; call crate::det_math::raw_clamp64, the one named site" },
     { path = "f32::sin", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f32::cos", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f32::tan", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },

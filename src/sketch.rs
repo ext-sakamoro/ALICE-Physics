@@ -466,12 +466,8 @@ impl<const BINS: usize> DDSketchN<BINS> {
         self.count += 1;
         self.sum += value;
 
-        if value < self.min {
-            self.min = value;
-        }
-        if value > self.max {
-            self.max = value;
-        }
+        self.min = crate::det_math::min64(self.min, value);
+        self.max = crate::det_math::max64(self.max, value);
 
         if value > 0.0 {
             self.add_at_key(false, self.bucket_key(value), 1);
@@ -679,12 +675,8 @@ impl<const BINS: usize> Mergeable for DDSketchN<BINS> {
         self.count += other.count;
         self.sum += other.sum;
 
-        if other.min < self.min {
-            self.min = other.min;
-        }
-        if other.max > self.max {
-            self.max = other.max;
-        }
+        self.min = crate::det_math::min64(self.min, other.min);
+        self.max = crate::det_math::max64(self.max, other.max);
     }
 }
 

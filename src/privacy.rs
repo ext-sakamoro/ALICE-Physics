@@ -272,7 +272,7 @@ impl RandomizedResponse {
         // and p = (e^ε - 1) / (e^ε + 1), written as 1 - 2 / (e^ε + 1) so a large
         // ε gives 1 rather than ∞/∞ (AUD-A-S4W3-020). A negative ε clamps to 0.
         let exp_eps = crate::det_math::exp64(epsilon);
-        let p_true = (1.0 - 2.0 / (exp_eps + 1.0)).clamp(0.0, 1.0);
+        let p_true = crate::det_math::raw_clamp64(1.0 - 2.0 / (exp_eps + 1.0), 0.0, 1.0);
         Self {
             p_true,
             rng: XorShift64::new(seed),
@@ -286,7 +286,7 @@ impl RandomizedResponse {
         Self {
             // any p in [0, 1] is a valid mechanism (p < 1/2 is more private,
             // not invalid), so only the range is enforced (AUD-A-S4W3-022)
-            p_true: p_true.clamp(0.0, 1.0),
+            p_true: crate::det_math::raw_clamp64(p_true, 0.0, 1.0),
             rng: XorShift64::new(seed),
         }
     }
@@ -347,7 +347,7 @@ impl RandomizedResponse {
         // observed_rate = p*true_rate + 0.5 - 0.5*p
         // true_rate = (observed_rate - 0.5 + 0.5*p) / p
         let true_rate = 0.5f64.mul_add(p_true, observed_rate - 0.5) / p_true;
-        true_rate.clamp(0.0, 1.0)
+        crate::det_math::raw_clamp64(true_rate, 0.0, 1.0)
     }
 }
 
@@ -394,9 +394,9 @@ impl Rappor {
     #[must_use]
     pub fn with_seed(f: f64, p: f64, q: f64, seed: u64) -> Self {
         Self {
-            f: f.clamp(0.0, 0.5),
-            p: p.clamp(0.0, 1.0),
-            q: q.clamp(0.0, 1.0),
+            f: crate::det_math::raw_clamp64(f, 0.0, 0.5),
+            p: crate::det_math::raw_clamp64(p, 0.0, 1.0),
+            q: crate::det_math::raw_clamp64(q, 0.0, 1.0),
             rng: XorShift64::new(seed),
         }
     }

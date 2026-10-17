@@ -1,80 +1,304 @@
-# ALICE-Law G2: comparison rewrites of max / min in src/, reviewed by type (scripts/g2_rewrite_check.py)
-# file<TAB>enclosing fn<TAB>shape<TAB>operands<TAB>status<TAB>reason
+# ALICE-Law G2: max / min written as a comparison, and raw_* helpers, in src/, reviewed by type (scripts/g2_rewrite_check.py)
+# file<TAB>enclosing fn<TAB>shape<TAB>operands (token form from scripts/g2-rewrite-scan)<TAB>status<TAB>reason
 # types were checked with the compiler: each operand wrapped in an identity function taking Fix128,
 # `cargo check --lib` with the CI feature set naming every operand that is not Fix128
-src/animation_blend.rs	update	assign	self.blend_weight < self.target_weight	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/animation_blend.rs	update	assign	self.blend_weight > self.target_weight	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/animation_blend.rs	sample	expr	time > self . duration	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/animation_blend.rs	update	assign	self . blend_weight < self . target_weight	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/animation_blend.rs	update	assign	self . blend_weight > self . target_weight	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/anisotropic.rs	evaluate_failure	expr	d > eps	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/anomaly.rs	new	clamp	0.001, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
-src/anomaly.rs	set_alpha	clamp	0.001, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
+src/anisotropic.rs	max_stress_index	assign	r > * worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/anomaly.rs	non_negative	expr	k < 0.0	equivalent	f64 threshold multiplier: -0 stays -0 and NaN stays NaN on purpose (documented), the value only scales a threshold compared with >, where -0 and +0 give the same result
+src/articulation.rs	invert_small	assign	magnitude > best	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/articulation.rs	solve_with_mass_splitting	assign	inv_m < lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/articulation.rs	solve_with_mass_splitting	assign	inv_m > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/audio_physics.rs	compute_pitch	expr	density_factor < Fix128 :: from_ratio (1 , 2)	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/audio_physics.rs	speed_ratio	expr	ratio > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/bimaterial.rs	interfacial_bond_strength_mpa	expr	a . yield_strength_mpa <= b . yield_strength_mpa	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/body_collider.rs	bounding_radius	assign	d > radius	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/bridging.rs	analyze_bridges	assign	c . length_mm > max_length	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/bvh.rs	point_to_morton	assign	size . y > scale	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/bvh.rs	point_to_morton	assign	size . z > scale	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/bvh.rs	raw_extent	raw	raw_extent	integer	raw Fix128 units as u128 (the name is about the units, not a platform operation)
+src/ccd.rs	on_collision_course_substeps	expr	radius_a < radius_b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/ccd.rs	sphere_capsule_toi	expr	t > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/ccd.rs	swept_aabb	expr	te > t_enter	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/ccd.rs	swept_aabb	expr	tx < t_exit	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/ccd.rs	velocity_l_inf	expr	ax > ay	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/ccd.rs	velocity_l_inf	expr	az > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	advance_rans	assign	production > production_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	apply_turbulent_diffusion	assign	s > max_strain	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	clamp	expr	value > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	compute_max_dt	expr	av > acc	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	fold_face	assign	epsilon > self . epsilon_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	fold_face	assign	k > self . k_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	fold_face	assign	u_tau < self . u_tau_min	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	fold_face	assign	u_tau > self . u_tau_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	fold_face	assign	y_plus_value < self . y_plus_min	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cfd_solver.rs	fold_face	assign	y_plus_value > self . y_plus_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cfd_solver.rs	max_of	expr	b > a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cfd_solver.rs	min_of	expr	b < a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cfd_solver.rs	step_adaptive	assign	dt > dt_ceiling	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cloth.rs	closest_points_on_segments	assign	t < ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cloth.rs	closest_points_on_segments	assign	t > ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cloth.rs	closest_points_on_segments	expr	x > ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cloth.rs	max2	expr	a > b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cloth.rs	max3	expr	a > b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cloth.rs	max3	expr	m > c	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cloth.rs	min2	expr	a < b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cloth.rs	min3	expr	a < b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	aabb	expr	c.a.x < c.b.x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	aabb	expr	c.a.x > c.b.x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	aabb	expr	c.a.y < c.b.y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	aabb	expr	c.a.y > c.b.y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	aabb	expr	c.a.z < c.b.z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	aabb	expr	c.a.z > c.b.z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	child_world_aabb	expr	a.x < b.x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	child_world_aabb	expr	a.x > b.x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	child_world_aabb	expr	a.y < b.y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	child_world_aabb	expr	a.y > b.y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	child_world_aabb	expr	a.z < b.z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/compound.rs	child_world_aabb	expr	a.z > b.z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cloth.rs	min3	expr	m < c	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cloth_fluid.rs	apply_cloth_boundary_to_fluid_with_residual	assign	magnitude > interface_correction	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cloth_fluid.rs	apply_fluid_forces_to_cloth_with_residual	assign	magnitude > interface_force	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	hypot3	assign	ab > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	hypot3	assign	ac > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	support	assign	d > best_dot	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	union	expr	self . max . x > other . max . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	union	expr	self . max . y > other . max . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	union	expr	self . max . z > other . max . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	union	expr	self . min . x < other . min . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	union	expr	self . min . y < other . min . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collider.rs	union	expr	self . min . z < other . min . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collision_mesh_gen.rs	compute_mesh_aabb	assign	v . x < min . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collision_mesh_gen.rs	compute_mesh_aabb	assign	v . x > max . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collision_mesh_gen.rs	compute_mesh_aabb	assign	v . y < min . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collision_mesh_gen.rs	compute_mesh_aabb	assign	v . y > max . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collision_mesh_gen.rs	compute_mesh_aabb	assign	v . z < min . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/collision_mesh_gen.rs	compute_mesh_aabb	assign	v . z > max . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	assign	v . x < min . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	assign	v . x > max . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	assign	v . y < min . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	assign	v . y > max . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	assign	v . z < min . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	assign	v . z > max . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	expr	c . a . x < c . b . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	expr	c . a . x > c . b . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	expr	c . a . y < c . b . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	expr	c . a . y > c . b . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	expr	c . a . z < c . b . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	aabb	expr	c . a . z > c . b . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	assign	wv . x < min . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	assign	wv . x > max . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	assign	wv . y < min . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	assign	wv . y > max . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	assign	wv . z < min . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	assign	wv . z > max . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	expr	a . x < b . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	expr	a . x > b . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	expr	a . y < b . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	expr	a . y > b . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	expr	a . z < b . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	child_world_aabb	expr	a . z > b . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/compound.rs	support_world	assign	dd > best_d	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cone.rs	aabb	expr	ai < base_lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/cone.rs	aabb	expr	ai > base_hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/coupled_field.rs	clamp	assign	*v < lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/coupled_field.rs	clamp	assign	*v > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/contact_cache.rs	add_or_update	assign	dist_sq < best_dist_sq	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/contact_cache.rs	add_or_update	assign	p . depth < shallowest_depth	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	cluster_points_indexed	assign	p . x < bmin . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	cluster_points_indexed	assign	p . x > bmax . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	cluster_points_indexed	assign	p . y < bmin . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	cluster_points_indexed	assign	p . y > bmax . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	cluster_points_indexed	assign	p . z < bmin . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	cluster_points_indexed	assign	p . z > bmax . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	compute_bounds	assign	p . x < min . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	compute_bounds	assign	p . x > max . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	compute_bounds	assign	p . y < min . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	compute_bounds	assign	p . y > max . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	compute_bounds	assign	p . z < min . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	compute_bounds	assign	p . z > max . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_decompose.rs	spread_subset	assign	to_p < * d	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_mesh_builder.rs	find_initial_tetrahedron_checked	assign	cl > max_cross_len	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_mesh_builder.rs	find_initial_tetrahedron_checked	assign	d > max_dist	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/convex_mesh_builder.rs	find_initial_tetrahedron_checked	assign	d > max_plane_dist	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/coupled_field.rs	clamp	assign	* v < lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/coupled_field.rs	clamp	assign	* v > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/coupled_field.rs	locate	expr	g > top	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/coupled_field.rs	max_value	expr	b > a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/dynamic_bvh.rs	fix_upwards	expr	lh > rh	integer	i32 subtree heights (AVL balance), no signed zero or NaN
-src/dynamic_bvh.rs	rotate_left	expr	lh > rh	integer	i32 subtree heights (AVL balance), no signed zero or NaN
-src/dynamic_bvh.rs	rotate_right	expr	lh > rh	integer	i32 subtree heights (AVL balance), no signed zero or NaN
-src/fillet_stress.rs	max_up_to	expr	s < self.hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/heatmap.rs	heatmap_to_rgba	clamp	0.0, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
-src/heatmap.rs	viridis_color	clamp	0.0, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
+src/coupled_iteration.rs	observe	assign	residual < self . best	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/coupled_iteration.rs	residual_norm_inf	assign	magnitude > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cubic_elastic_fem.rs	conjugate_gradient	assign	residual_norm < best_residual	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cubic_elastic_fem.rs	conjugate_gradient	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cubic_elastic_fem.rs	max_abs	assign	a > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cubic_elastic_fem.rs	solve_cubic	assign	residual_norm < best_residual	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/cubic_elastic_fem.rs	solve_cubic	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/dynamic_bvh.rs	fix_upwards	expr	lh > rh	integer	operands are i32 (integer, no signed zero or NaN)
+src/dynamic_bvh.rs	rotate_left	expr	lh > rh	integer	operands are i32 (integer, no signed zero or NaN)
+src/dynamic_bvh.rs	rotate_right	expr	lh > rh	integer	operands are i32 (integer, no signed zero or NaN)
+src/dynamic_fem.rs	conjugate_gradient	assign	residual_norm < best_residual	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/dynamic_fem.rs	conjugate_gradient	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/ellipsoid.rs	bounding_sphere_radius	assign	self . radii . y > max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/ellipsoid.rs	bounding_sphere_radius	assign	self . radii . z > max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/euler_fv.rs	max	expr	a > b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/euler_fv.rs	min	expr	a < b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/eulerian_grid.rs	corner_range	assign	c < lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/eulerian_grid.rs	corner_range	assign	c > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/eulerian_grid.rs	linf_norm	assign	ax > best	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/fillet_stress.rs	kt_u_notch_axial	expr	kt < Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/fillet_stress.rs	max_up_to	expr	s < self . hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/force.rs	field_force_at	expr	dist_sq < floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/force.rs	field_force_at	expr	force_mag > * max_force	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/force.rs	field_force_at	expr	r_cubed < r_cubed_floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/force.rs	point_force_beyond_square_range	expr	force_mag > max_force	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/heatmap.rs	compute_heatmap_minmax	assign	v < min_val	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/heatmap.rs	compute_heatmap_minmax	assign	v > max_val	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/heightfield.rs	aabb	assign	h < min_h	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/heightfield.rs	aabb	assign	h > max_h	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/heightfield.rs	clamp01	expr	v > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/heightfield.rs	sample_normal	expr	at + eps > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/heightfield.rs	sample_normal	expr	at - eps < lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/ik_physics_bridge.rs	apply	expr	self . compliance < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/ik_physics_bridge.rs	apply	expr	target . weight > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/interface_capture.rs	min_neighbor	expr	aa < bb	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/interface_capture.rs	plic_plane_offset	expr	s > dx . double ()	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/interface_capture.rs	truncated_cube_volume	assign	c > a_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/interface_capture.rs	truncated_cube_volume	expr	c < floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/interface_capture.rs	truncated_cube_volume	expr	fraction > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/joint_extra.rs	solve_mouse	expr	total_force < - joint . max_force	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/joint_extra.rs	weld_turns	expr	e > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/joint_extra.rs	weld_turns	expr	four > eighth	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/joint_extra.rs	weld_turns	expr	relative > floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/layer_adhesion.rs	min_fos	assign	fos < worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/lib.rs	raw_clamp64	assign	y < lo	pending	f64 comparisons of the named std-clamp stand-in raw_clamp64 (a NaN x passes through, a -0 x stays -0): wait for the 64-bit clamp of alice-det-math
+src/lib.rs	raw_clamp64	assign	y > hi	pending	f64 comparisons of the named std-clamp stand-in raw_clamp64 (a NaN x passes through, a -0 x stays -0): wait for the 64-bit clamp of alice-det-math
+src/lib.rs	raw_clamp64	raw	raw_clamp64	pending	the one named f64::clamp call: alice-det-math has no 64-bit clamp yet (the f64 clamp sites call this function)
+src/linear_elastic_fem.rs	conjugate_gradient	assign	residual_norm < best_residual	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_elastic_fem.rs	conjugate_gradient	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_elastic_fem.rs	max_abs	assign	a > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_elastic_fem.rs	step	expr	load_norm > residual_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_elastic_fem.rs	step	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_elastic_fem/consistent_tangent.rs	truncated_cg	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_solver.rs	max_abs	assign	a > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_solver.rs	observe	assign	ratio > self . gain	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_solver.rs	record	assign	residual < self . best	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_solver.rs	start	expr	requested > config . absolute_tolerance	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/linear_solver/equilibrate.rs	check_floor	expr	b > a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/linear_solver/precond.rs	factor	expr	v.abs() > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_solver/precond.rs	factor	assign	candidate > pivot	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/linear_solver/precond.rs	factor	expr	v . abs () > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/mass_properties.rs	principal_axes	assign	a [r] [c] . abs () > scale	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/material.rs	apply	expr	a < b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/material.rs	apply	expr	a > b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/math.rs	inverse	expr	x > m	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/math.rs	max_abs_component	assign	a > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/math_util.rs	clamp_fix	expr	x > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/maxwell_fdtd.rs	max_abs_div_b	assign	d > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/maxwell_fdtd.rs	max_abs_field	expr	a > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/maxwell_fdtd.rs	max_abs_gauss_residual	assign	r > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/metric.rs	minimum	expr	k1 < k2	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/metric.rs	minimum	expr	m < k3	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/metric.rs	norm	expr	ax > ay	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/metric.rs	norm	expr	m > az	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/motor.rs	clamp	expr	v > max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/multiphase.rs	advect_vof_uniform	expr	new > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/multiphase.rs	advect_vof_uniform_semi_lagrangian	expr	val > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/multiphase.rs	trilinear_range	assign	c < lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/multiphase.rs	trilinear_range	assign	c > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/neural.rs	clamp_fix128	expr	v > max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/neural.rs	fix128_hard_tanh	assign	* v < Fix128 :: NEG_ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/neural.rs	fix128_hard_tanh	assign	* v > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/particle.rs	compute_emission_velocity	expr	spread > Fix128 :: PI	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	apply_contact_velocity_pass	expr	ea > eb	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/physics2d.rs	apply_contact_velocity_pass	expr	vt_len < max_dv	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	circle_vs_polygon	assign	d > best_dist	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	closest_point_on_segment	expr	t > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	closest_points_segment_segment	expr	x > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/physics2d.rs	overlap_midpoint	expr	hi_a < hi_b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/physics2d.rs	overlap_midpoint	expr	lo_a > lo_b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/physics2d.rs	overlap_midpoint	expr	t < l	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/physics2d.rs	overlap_midpoint	expr	t > h	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/pressure.rs	apply_impact	clamp	0.0, self.config.max_deformation	routed	ScalarField3D::clamp (src/sim_field.rs), which goes through crate::det_math::clamp, not the std clamp
-src/pressure.rs	update	clamp	0.0, self.config.max_deformation	routed	ScalarField3D::clamp (src/sim_field.rs), which goes through crate::det_math::clamp, not the std clamp
-src/privacy.rs	estimate_proportion	clamp	0.0, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
-src/privacy.rs	new	clamp	0.0, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
-src/privacy.rs	with_probability	clamp	0.0, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
-src/privacy.rs	with_seed	clamp	0.0, 0.5	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
-src/privacy.rs	with_seed	clamp	0.0, 1.0	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
+src/physics2d.rs	polygon_vs_polygon	assign	depth < min_depth	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	project_polygon	assign	p < min_proj	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	project_polygon	assign	p > max_proj	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	sat_test_axes	assign	depth < min_depth	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/physics2d.rs	sat_test_axes	expr	overlap1 < overlap2	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/pipeline.rs	merge	assign	other . last_update > self . last_update	integer	operands are u64 (integer, no signed zero or NaN)
+src/pipeline.rs	process	assign	event . timestamp > self . last_update	integer	operands are u64 (integer, no signed zero or NaN)
+src/print_orientation.rs	optimize_grid	assign	y > best_yield	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/profiling.rs	record	assign	ticks > self . peak_ticks	integer	operands are u64 (integer, no signed zero or NaN)
+src/quadratic_elastic_fem.rs	conjugate_gradient	assign	residual_norm < best_residual	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/quadratic_elastic_fem.rs	conjugate_gradient	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/quadratic_elastic_fem.rs	max_abs	assign	a > worst	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/quadratic_elastic_fem.rs	solve_quadratic	assign	residual_norm < best_residual	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/quadratic_elastic_fem.rs	solve_quadratic	expr	requested > RESIDUAL_NORM_FLOOR	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/raycast.rs	ray_aabb_interval	expr	t0 > t_min	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/raycast.rs	ray_aabb_interval	expr	t1 < t_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/sdf_fem_mesh.rs	lattice_cells	clamp	1.0, f64::from(i32::MAX)	pending	f64 std clamp: alice-det-math (the clamp owner) has no 64-bit clamp yet; waits for clamp64 in alice-det-math 0.6 (G2 class clamp with a zero bound, fail-known)
+src/sdf_character.rs	resolve	assign	d > best_distance	selection	f32 argmax with a payload (best_position): the first strict maximum is kept, a NaN distance is never selected, ties keep the first (rule in alice-law-conformance.toml [G2]); moves to the alice-det-math argmax when it exists
+src/sdf_manifold.rs	reduce_manifold	assign	area > best_area	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/sdf_manifold.rs	reduce_manifold	assign	d > best_dist	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/sdf_manifold.rs	reduce_manifold	assign	q > hull	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/sdf_manifold.rs	reduce_manifold	assign	score > best_score	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/sensors.rs	clamp	expr	x > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape.rs	bounding_radius	expr	apex > rim	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape.rs	bounding_radius	expr	corner > apex	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape_raycast.rs	clamp	expr	x > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape_raycast.rs	ray_heightfield	assign	a > t_lo	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape_raycast.rs	ray_heightfield	assign	b < t_hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape_raycast.rs	ray_heightfield	assign	t < t_exit	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/shape_raycast.rs	ray_heightfield	assign	t_exit < t_cell	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape_raycast.rs	ray_planes	assign	t < exit	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape_raycast.rs	segment_meets_box	assign	a > t0	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/shape_raycast.rs	segment_meets_box	assign	b < t1	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/sketch.rs	insert_hash	assign	rho > self . registers [idx]	integer	operands are u8 (integer, no signed zero or NaN)
+src/sketch.rs	merge	assign	src > * dst	integer	operands are u8 (integer, no signed zero or NaN)
 src/solver.rs	broadphase_box	expr	x < y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	broadphase_box	expr	x > y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/trimesh.rs	collide_capsule	expr	a.x < b.x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/trimesh.rs	collide_capsule	expr	a.x > b.x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/trimesh.rs	collide_capsule	expr	a.y < b.y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/trimesh.rs	collide_capsule	expr	a.y > b.y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/trimesh.rs	collide_capsule	expr	a.z < b.z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/trimesh.rs	collide_capsule	expr	a.z > b.z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	raycast	expr	origin . x < endpoint . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	raycast	expr	origin . x > endpoint . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	raycast	expr	origin . y < endpoint . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	raycast	expr	origin . y > endpoint . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	raycast	expr	origin . z < endpoint . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	raycast	expr	origin . z > endpoint . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	update_velocities	expr	tangent_speed < max_friction_impulse	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver_tgs.rs	adaptive_substeps_for	assign	v > v_max	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver_tgs.rs	adaptive_substeps_for_ccd	expr	ccd_step < cfg . max_translation_per_step	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver_tgs_hooks_6dof_oriented.rs	velocity_iteration	assign	new_acc < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/structural_solver.rs	creep_increment	expr	long_term_creep_strain > self . state . creep_strain	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/thin_wall.rs	analyze_thickness	assign	thickness < report . min_thickness_seen	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/thin_wall.rs	analyze_thickness	assign	thickness > report . max_thickness_seen	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/transient_thermal.rs	conductivity_at	expr	k > 0.0	equivalent	f32 `k > 0 ? k : 0` is maximumNumber(k, +0) for every k: -0, +0 and NaN all give the +0 literal
+src/trimesh.rs	closest_points_segment_segment	assign	t < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	closest_points_segment_segment	assign	t > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	closest_points_segment_triangle	assign	d < best_d	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_capsule	assign	depth > max_depth	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_capsule	expr	a . x < b . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_capsule	expr	a . x > b . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_capsule	expr	a . y < b . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_capsule	expr	a . y > b . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_capsule	expr	a . z < b . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_capsule	expr	a . z > b . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	collide_sphere	assign	depth > max_depth	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/trimesh.rs	max3	expr	a > b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	max3	expr	ab > c	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/trimesh.rs	min3	expr	a < b	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/vehicle.rs	chassis_force	assign	self.engine_rpm < self.config.engine.idle_rpm	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/vehicle_dynamics/mod.rs	friction_pgs	expr	v_x.abs() > floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/trimesh.rs	min3	expr	ab < c	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/turbulence.rs	advance	assign	self . k < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/turbulence.rs	advance	assign	self . omega < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/turbulence.rs	advance_epsilon	assign	self . epsilon < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/turbulence.rs	advance_k	assign	self . k < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/turbulence.rs	dynamic_smagorinsky_cs	expr	unclamped > max_cs	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/turbulence.rs	friction_velocity_checked	expr	sublayer_root > u_rel	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle.rs	chassis_force	assign	self . engine_rpm < self . config . engine . idle_rpm	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle.rs	chassis_force	expr	compression > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	clamp	expr	x > hi	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	clamp_friction	expr	j < - limit	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	coulomb	expr	w < Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	coulomb	expr	w > Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	friction_pgs	expr	v_x . abs () > floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	solve_spin_group	expr	self . config . wheel_inertia > Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/vehicle_dynamics/mod.rs	spin	expr	free < w_t	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	tyre_lateral_slope	expr	c > Fix128 :: ZERO	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/mod.rs	update	expr	s . v_x . abs () > floor	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/powertrain.rs	axle_torque	expr	throttle > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vehicle_dynamics/powertrain.rs	engine_rpm	expr	rpm < self . idle_rpm	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/vibration_wall.rs	analyze_wall_resonance	assign	d < best_dist	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/warp_risk.rs	analyze_warp_risk	expr	raw > Fix128 :: ONE	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/warp_risk.rs	rectangle	expr	width_mm > height_mm	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/wedge.rs	aabb	assign	v . x < min . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/wedge.rs	aabb	assign	v . x > max . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/wedge.rs	aabb	assign	v . y < min . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/wedge.rs	aabb	assign	v . y > max . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/wedge.rs	aabb	assign	v . z < min . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/wedge.rs	aabb	assign	v . z > max . z	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/wedge.rs	support	assign	d > best_dot	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/world_shape_query.rs	gjk_bounds	assign	support > lower	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/world_shape_query.rs	max_fix	expr	b > a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/world_shape_query.rs	min_fix	expr	b < a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/world_shape_query.rs	support	assign	d > best_dot	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN

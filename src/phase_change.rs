@@ -206,8 +206,8 @@ impl PhaseChangeModifier {
                 lh += absorbed;
                 if lh >= lh_fusion {
                     phase_val = 1.0;
-                    lh = lh_fusion;
                 }
+                lh = crate::det_math::min(lh, lh_fusion);
             }
 
             // Liquid → Gas: superheat above T_b fills the vaporization buffer
@@ -218,8 +218,8 @@ impl PhaseChangeModifier {
                 lh += absorbed;
                 if lh >= lh_total {
                     phase_val = 2.0;
-                    lh = lh_total;
                 }
+                lh = crate::det_math::min(lh, lh_total);
             }
 
             // Gas → Liquid: subcooling below T_b drains the vaporization buffer
@@ -229,8 +229,8 @@ impl PhaseChangeModifier {
                 lh -= released;
                 if lh <= lh_fusion {
                     phase_val = 1.0;
-                    lh = lh_fusion;
                 }
+                lh = crate::det_math::max(lh, lh_fusion);
             }
 
             // Liquid: a partly-boiled cell that cools first gives back the
