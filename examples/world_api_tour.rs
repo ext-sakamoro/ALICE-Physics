@@ -506,6 +506,17 @@ mod gpu {
             "[world_api] host-owned bridge: substep dispatches={after_substep} step dispatches={} x_a={xa} x_b={xb}",
             dispatches.load(Ordering::SeqCst) - after_substep
         );
+        // A host that drives the contact solve itself: one bridge-routed pass over the
+        // constraints the world collected in that step (checked against the bridge's
+        // semantics identifier first, like every bridge path)
+        let before_pass = dispatches.load(Ordering::SeqCst);
+        world
+            .solve_contact_constraints_with_bridge(&mut bridge)
+            .expect("the bridge computes under this build's semantics");
+        println!(
+            "[world_api] host-driven contact pass: dispatches={}",
+            dispatches.load(Ordering::SeqCst) - before_pass
+        );
 
         // Installed bridge: plain `step` routes through it until taken.
         let dispatches = Arc::new(AtomicUsize::new(0));

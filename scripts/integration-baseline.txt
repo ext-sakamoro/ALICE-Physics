@@ -32,7 +32,9 @@ src/privacy.rs::Rappor::BITS
 src/privacy.rs::Rappor::params
 src/privacy.rs::Rappor::privatize
 src/privacy.rs::Rappor::with_seed
+src/privacy.rs::XorShift64
 src/privacy.rs::XorShift64::next_bool
 src/privacy.rs::XorShift64::next_f64
 src/privacy.rs::XorShift64::next_f64_range
 src/privacy.rs::XorShift64::next_u64
+src/privacy.rs::XorShift64::new

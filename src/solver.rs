@@ -5399,7 +5399,6 @@ impl PhysicsWorld {
     ///
     /// [`crate::PeerMismatch`] naming both identifiers when the bridge does not
     /// compute under this build's [`crate::PHYSICS_SEMANTICS_ID`]; nothing runs.
-    // ALLOW-UNWIRED: public entry for hosts that drive the contact solve themselves; the substep loop calls the core after the step-level check
     #[cfg(feature = "gpu-solver-bridge")]
     pub fn solve_contact_constraints_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
