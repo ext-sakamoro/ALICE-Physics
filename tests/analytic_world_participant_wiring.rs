@@ -247,6 +247,10 @@ mod bridge {
     pub(super) struct Idle;
 
     impl GpuSolverBridge for Idle {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -264,7 +268,8 @@ mod bridge {
     fn the_bridge_path_follows_the_same_closed_form() {
         let mut w = free_body_world(SolverBackend::Xpbd);
         for _ in 0..FRAMES {
-            w.step_with_bridge(&mut Idle, dyadic_dt());
+            w.step_with_bridge(&mut Idle, dyadic_dt())
+                .expect("the bridge computes under this build's semantics");
         }
         assert_closed_form(&w, "bridge");
     }
@@ -398,7 +403,8 @@ fn a_tgs_configured_world_on_the_parallel_path_checks_the_width_it_hands_out() {
 #[test]
 fn a_tgs_configured_world_on_the_bridge_checks_the_width_it_hands_out() {
     a_tgs_configured_world_checks_the_width_the_path_hands_out(|w, dt| {
-        w.step_with_bridge(&mut bridge::Idle, dt);
+        w.step_with_bridge(&mut bridge::Idle, dt)
+            .expect("the bridge computes under this build's semantics");
         None
     });
 }
@@ -1386,7 +1392,9 @@ fn frame(w: &mut PhysicsWorld, path: Path, checked: bool, dt: Fix128) {
             }
         }
         #[cfg(feature = "gpu-solver-bridge")]
-        Path::Bridge => w.step_with_bridge(&mut bridge::Idle, dt),
+        Path::Bridge => w
+            .step_with_bridge(&mut bridge::Idle, dt)
+            .expect("the bridge computes under this build's semantics"),
     }
 }
 

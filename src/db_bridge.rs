@@ -4,6 +4,7 @@
 //! count) as ALICE-DB exact series: every step reads back the `f32` bits it
 //! was written with, whatever the spacing of the steps.
 
+use crate::semantics::{check_peer, PeerMismatch};
 use alice_db::AliceDB;
 use std::io;
 #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
@@ -15,6 +16,54 @@ use std::path::Path;
 const ENERGY: &str = "alice-physics/energy";
 const BODIES: &str = "alice-physics/bodies";
 const CONTACTS: &str = "alice-physics/contacts";
+
+/// Error of a constructor of an ALICE-DB bridge ([`PhysicsMetricsSink`],
+/// `crate::replay`): the linked `alice-db` is not the one this build expects
+/// ([`PeerMismatch`], naming both identifiers), or the database failed.
+#[derive(Debug)]
+pub enum BridgeError {
+    /// The linked `alice-db` exports another identifier than
+    /// [`crate::PHYSICS_PEER_IDS`] expects: no value is exchanged with it.
+    Peer(PeerMismatch),
+    /// The database could not be opened or read.
+    Io(io::Error),
+}
+
+impl std::fmt::Display for BridgeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Peer(e) => e.fmt(f),
+            Self::Io(e) => e.fmt(f),
+        }
+    }
+}
+
+impl std::error::Error for BridgeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Peer(e) => Some(e),
+            Self::Io(e) => Some(e),
+        }
+    }
+}
+
+impl From<io::Error> for BridgeError {
+    fn from(e: io::Error) -> Self {
+        Self::Io(e)
+    }
+}
+
+impl From<PeerMismatch> for BridgeError {
+    fn from(e: PeerMismatch) -> Self {
+        Self::Peer(e)
+    }
+}
+
+/// The handshake of every ALICE-DB bridge: the linked `alice-db`'s identifier
+/// against the one this build expects of it.
+pub(crate) fn alice_db_handshake(bridge: &'static str) -> Result<(), PeerMismatch> {
+    check_peer(bridge, "alice-db", &alice_db::SEMANTICS_ID)
+}
 
 /// Physics metrics sink backed by ALICE-DB.
 ///
@@ -28,8 +77,15 @@ pub struct PhysicsMetricsSink {
 
 impl PhysicsMetricsSink {
     /// Open the physics metrics database at the given directory.
+    ///
+    /// # Errors
+    ///
+    /// [`BridgeError::Peer`] when the linked `alice-db` is not the one this
+    /// build expects (checked first, nothing is opened);
+    /// [`BridgeError::Io`] when the database cannot be opened.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    pub fn open<P: AsRef<Path>>(dir: P) -> io::Result<Self> {
+    pub fn open<P: AsRef<Path>>(dir: P) -> Result<Self, BridgeError> {
+        alice_db_handshake("db_bridge")?;
         let dir = dir.as_ref();
         std::fs::create_dir_all(dir)?;
         Ok(Self {
@@ -39,7 +95,12 @@ impl PhysicsMetricsSink {
 
     /// Keep the metrics in process memory (no filesystem; available on
     /// `wasm32-unknown-unknown`).
-    pub fn in_memory() -> io::Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`].
+    pub fn in_memory() -> Result<Self, BridgeError> {
+        alice_db_handshake("db_bridge")?;
         Ok(Self {
             db: AliceDB::in_memory(alice_db::StorageConfig::default())?,
         })

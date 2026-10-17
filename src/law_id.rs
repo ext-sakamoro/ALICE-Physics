@@ -384,7 +384,7 @@ mod semantics_decoder {
     /// The published identifier decodes to the hex its documentation shows.
     #[test]
     fn the_identifier_matches_its_documented_hex() {
-        let doc = "79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108";
+        let doc = "d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c";
         assert_eq!(hex(&PHYSICS_SEMANTICS_ID), doc);
         assert_eq!(hex32(doc), PHYSICS_SEMANTICS_ID);
         assert!(PHYSICS_SEMANTICS_PINS

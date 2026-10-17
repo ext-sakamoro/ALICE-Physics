@@ -486,6 +486,10 @@ mod bridge {
     pub(super) struct PassThrough;
 
     impl GpuSolverBridge for PassThrough {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -516,9 +520,11 @@ mod bridge {
                 );
                 let mut bridge = PassThrough;
                 if whole_step {
-                    w.step_with_bridge(&mut bridge, dt());
+                    w.step_with_bridge(&mut bridge, dt())
+                        .expect("the bridge computes under this build's semantics");
                 } else {
-                    w.substep_with_bridge(&mut bridge, dt());
+                    w.substep_with_bridge(&mut bridge, dt())
+                        .expect("the bridge computes under this build's semantics");
                 }
                 assert_eq!(
                     w.bodies[i].rotation,
@@ -590,6 +596,7 @@ fn participants_see_the_unit_rotation_on_every_step_path() {
         #[cfg(feature = "gpu-solver-bridge")]
         run("bridge", &|w| {
             w.step_with_bridge(&mut bridge::PassThrough, dt())
+                .expect("the bridge computes under this build's semantics");
         });
     }
 }

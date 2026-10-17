@@ -262,6 +262,10 @@ mod bridge {
     }
 
     impl GpuSolverBridge for NormalProjection {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -330,7 +334,8 @@ mod bridge {
         w.set_body_material(ball, id);
         let mut bridge = NormalProjection::default();
         for _ in 0..FRAMES {
-            w.step_with_bridge(&mut bridge, fx(DT));
+            w.step_with_bridge(&mut bridge, fx(DT))
+                .expect("the bridge computes under this build's semantics");
         }
         let b = w.get_body(ball).expect("ball");
         let (x, y) = (b.position.x.to_f64(), b.position.y.to_f64());

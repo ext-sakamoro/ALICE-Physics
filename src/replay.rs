@@ -59,6 +59,7 @@
 //! let pos = player.get_position(30, 0).unwrap(); // frame 30, body 0
 //! ```
 
+use crate::db_bridge::{alice_db_handshake, BridgeError};
 use crate::solver::PhysicsWorld;
 use alice_db::AliceDB;
 use std::io;
@@ -213,7 +214,14 @@ impl ReplayRecorder {
     /// * `path` - Directory for ALICE-DB storage
     /// * `body_count` - Number of bodies to record per frame
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    pub fn new<P: AsRef<Path>>(path: P, body_count: usize) -> io::Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// [`BridgeError::Peer`] when the linked `alice-db` is not the one this
+    /// build expects (checked first, nothing is removed or opened);
+    /// [`BridgeError::Io`] when the directory cannot be cleared or opened.
+    pub fn new<P: AsRef<Path>>(path: P, body_count: usize) -> Result<Self, BridgeError> {
+        alice_db_handshake("replay")?;
         let db_path = path.as_ref().to_path_buf();
         remove_recording_files(&db_path)?;
         let db = open_lossless(&db_path)?;
@@ -225,7 +233,12 @@ impl ReplayRecorder {
     ///
     /// Take the recording out with [`Self::to_bytes`] and play it back with
     /// [`ReplayPlayer::from_bytes`].
-    pub fn in_memory(body_count: usize) -> io::Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::new`].
+    pub fn in_memory(body_count: usize) -> Result<Self, BridgeError> {
+        alice_db_handshake("replay")?;
         let db = AliceDB::in_memory(lossless_config())?;
         Ok(Self::with_db(
             db,
@@ -378,7 +391,14 @@ impl ReplayPlayer {
     ///
     /// `body_count` is used only when the recording carries no layout.
     #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
-    pub fn open<P: AsRef<Path>>(path: P, body_count: usize) -> io::Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// [`BridgeError::Peer`] when the linked `alice-db` is not the one this
+    /// build expects (checked first); [`BridgeError::Io`] when the replay
+    /// cannot be read.
+    pub fn open<P: AsRef<Path>>(path: P, body_count: usize) -> Result<Self, BridgeError> {
+        alice_db_handshake("replay")?;
         // the file is the layout a file recording shows (and the only one in
         // recordings made before the layout moved into the database)
         let file_layout = read_layout_file(path.as_ref())?;
@@ -394,7 +414,12 @@ impl ReplayPlayer {
     /// (kept in process memory; available on `wasm32-unknown-unknown`).
     ///
     /// `body_count` is used only when the recording carries no layout.
-    pub fn from_bytes(bytes: &[u8], body_count: usize) -> io::Result<Self> {
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::open`].
+    pub fn from_bytes(bytes: &[u8], body_count: usize) -> Result<Self, BridgeError> {
+        alice_db_handshake("replay")?;
         let db = AliceDB::from_bytes(lossless_config(), bytes)?;
         let layout = read_layout_blob(&db)?;
         Ok(Self::with_layout(db, layout, body_count))

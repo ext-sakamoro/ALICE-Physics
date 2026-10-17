@@ -153,7 +153,7 @@ fn ref_cardinality(regs: &[u8; 4096]) -> f64 {
 /// divergence-spike steps (`energy_drift`, fed negative to exercise `abs`).
 #[test]
 fn telemetry_scenario_matches_closed_form_percentiles_and_total_steps() {
-    let mut tel = PhysicsTelemetry::new();
+    let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     const N: usize = 200;
     let mut step_times = Vec::with_capacity(N);
     let mut contacts = Vec::with_capacity(N);
@@ -226,7 +226,7 @@ fn telemetry_scenario_matches_closed_form_percentiles_and_total_steps() {
 /// *raw* from both call orders (2 observations, order-sensitive) = 40.
 #[test]
 fn record_collision_pair_is_order_sensitive_on_the_raw_hash() {
-    let mut tel = PhysicsTelemetry::new();
+    let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     let mut hashes = Vec::new();
 
     for i in 0u64..37 {
@@ -288,7 +288,7 @@ fn record_collision_pair_is_order_sensitive_on_the_raw_hash() {
 
 #[test]
 fn zero_recordings_read_as_the_documented_empty_defaults() {
-    let tel = PhysicsTelemetry::new();
+    let tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     assert_eq!(tel.total_steps(), 0);
     assert_eq!(
         tel.step_time_p50(),
@@ -305,14 +305,14 @@ fn zero_recordings_read_as_the_documented_empty_defaults() {
         "empty HyperLogLog12: m * ln(m / m) = 0 exactly"
     );
 
-    let tel_default = PhysicsTelemetry::default();
+    let tel_default = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     assert_eq!(tel_default.total_steps(), 0);
     assert_eq!(tel_default.unique_collision_pairs(), 0.0);
 }
 
 #[test]
 fn single_recording_gives_p50_equal_p99() {
-    let mut tel = PhysicsTelemetry::new();
+    let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     tel.record_step_time(42.0);
     tel.record_contacts(7.0);
     tel.record_energy_drift(-3.5);
@@ -339,7 +339,7 @@ fn single_recording_gives_p50_equal_p99() {
 
 #[test]
 fn all_identical_values_collapse_every_percentile_to_that_value() {
-    let mut tel = PhysicsTelemetry::new();
+    let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     for _ in 0..500 {
         tel.record_step_time(2_000.0);
         tel.record_contacts(3.0);
@@ -363,8 +363,9 @@ fn all_identical_values_collapse_every_percentile_to_that_value() {
 fn extreme_magnitudes_panic_or_saturate_as_measured() {
     for v in [f64::INFINITY, f64::NEG_INFINITY, f64::NAN] {
         let r = catch_unwind(AssertUnwindSafe(|| {
-            let mut with = PhysicsTelemetry::new();
-            let mut without = PhysicsTelemetry::new();
+            let mut with = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
+            let mut without =
+                PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
             for t in [100.0, 2_000.0, 35.5, 7.25] {
                 with.record_step_time(t);
                 without.record_step_time(t);
@@ -389,7 +390,7 @@ fn extreme_magnitudes_panic_or_saturate_as_measured() {
     // A finite but astronomically large magnitude does not panic, and the
     // post-1.2.0 fix retains it (clamped to the edge bin) instead of
     // dropping it from the histogram.
-    let mut huge = PhysicsTelemetry::new();
+    let mut huge = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     huge.record_step_time(1e300);
     assert_eq!(huge.total_steps(), 1);
     let p = huge.step_time_p99();
@@ -400,7 +401,7 @@ fn extreme_magnitudes_panic_or_saturate_as_measured() {
 
     // A finite but astronomically small positive magnitude: clamped to the
     // opposite edge bin, also finite and retained.
-    let mut tiny = PhysicsTelemetry::new();
+    let mut tiny = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     tiny.record_step_time(1e-300);
     assert_eq!(tiny.total_steps(), 1);
     let p = tiny.step_time_p99();
@@ -411,7 +412,7 @@ fn extreme_magnitudes_panic_or_saturate_as_measured() {
 
     // NaN compares false to both `> 0.0` and `< 0.0`, so it lands in the
     // zero bucket rather than panicking.
-    let mut nan = PhysicsTelemetry::new();
+    let mut nan = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
     let r = catch_unwind(AssertUnwindSafe(|| {
         nan.record_step_time(f64::NAN);
         nan.total_steps()

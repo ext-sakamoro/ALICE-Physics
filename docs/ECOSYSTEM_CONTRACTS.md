@@ -28,6 +28,10 @@ The block below is the complete method list, compared with `src/` by
 
 ```rust
 pub trait GpuSolverBridge {
+    // the PHYSICS_SEMANTICS_ID the backend computes under (added at 4.0.0, required:
+    // every bridge path refuses a backend whose identifier is not this build's)
+    fn semantics_id(&self) -> [u8; 32];
+
     fn send_island(&mut self, positions: &[[Fix128; 3]], velocities: &[[Fix128; 3]]);
     fn dispatch_iterations(&mut self, iters: u32, dt: Fix128);
     fn recv_island(&self, positions: &mut [[Fix128; 3]], velocities: &mut [[Fix128; 3]]);
@@ -47,7 +51,9 @@ pub trait GpuSolverBridge {
 }
 ```
 
-The four methods without a default are required. Every other method has a
+The five methods without a default are required; `semantics_id` (4.0.0)
+returns `alice_physics::PHYSICS_SEMANTICS_ID` for a backend built against this
+crate (ALICE-Law G7). Every other method has a
 default implementation that panics with "not implemented by this
 GpuSolverBridge backend", so a backend that implements only the integrate +
 distance stage still compiles and fails fast when a caller routes contact or

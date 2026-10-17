@@ -931,7 +931,8 @@ pub use sdf_manifold::ManifoldConfig;
 #[cfg(feature = "std")]
 pub use sdf_manifold::SdfManifold;
 pub use semantics::{
-    semantics_id_for, PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
+    check_peer, expected_peer_id, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS,
+    PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
     PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 pub use shape::{Shape, ShapeError};

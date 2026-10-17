@@ -236,7 +236,12 @@ fn malformed_layout_file_is_rejected_with_invalid_data() {
             let e = res
                 .err()
                 .unwrap_or_else(|| panic!("{bad:?} must be rejected"));
-            assert_eq!(e.kind(), std::io::ErrorKind::InvalidData, "{bad:?}");
+            match e {
+                alice_physics::db_bridge::BridgeError::Io(e) => {
+                    assert_eq!(e.kind(), std::io::ErrorKind::InvalidData, "{bad:?}");
+                }
+                other => panic!("{bad:?}: {other}"),
+            }
         }
     }
 }

@@ -41,14 +41,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use alice_physics::{
-    semantics_id_for, PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
-    PREVIOUS_PHYSICS_SEMANTICS_IDS,
+    check_peer, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS, PHYSICS_SEMANTICS_BY_DET_MATH,
+    PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108";
+const PINNED_ID_HEX: &str = "d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -495,8 +495,8 @@ fn every_entry_is_the_golden_its_pin_names() {
     assert!(errors.is_empty(), "{}", errors.join("\n"));
     assert_eq!(
         compared,
-        table.len() - 1,
-        "every non-det-math entry compared"
+        table.len() - 1 - PHYSICS_PEER_IDS.len(),
+        "every entry other than det-math and the peers compared"
     );
     println!("{compared} entries equal their golden");
 }
@@ -514,9 +514,18 @@ fn entry_names_are_the_pinned_combinations_and_det_math() {
     );
     assert!(!expected.contains(DET_MATH));
     expected.insert(DET_MATH.to_string());
+    for (peer, _) in PHYSICS_PEER_IDS {
+        assert!(
+            expected.insert((*peer).to_string()),
+            "{peer} is also a pinned combination"
+        );
+    }
     let names: BTreeSet<String> = table().keys().map(|s| (*s).to_string()).collect();
     assert_eq!(names, expected);
-    assert_eq!(PHYSICS_SEMANTICS_PINS.len(), rows.len() + 1);
+    assert_eq!(
+        PHYSICS_SEMANTICS_PINS.len(),
+        rows.len() + 1 + PHYSICS_PEER_IDS.len()
+    );
     // KNOWN_GAPS is empty once every combination is pinned
     // (`golden_coverage_has_no_gaps` keeps it so); a row added later must not
     // be an entry
@@ -547,6 +556,69 @@ fn the_det_math_entry_is_the_det_math_identifier() {
         "the alice-det-math entry is not alice_det_math::SEMANTICS_ID \
          (the resolved det-math changed its semantics)"
     );
+}
+
+// ── (d') the peer entries ───────────────────────────────────────────────────
+
+/// Each peer's entry in the fold is its entry in PHYSICS_PEER_IDS, and the
+/// table names alice-analytics and alice-db.
+#[test]
+fn the_peer_entries_are_the_peer_table() {
+    let t = table();
+    let names: Vec<&str> = PHYSICS_PEER_IDS.iter().map(|p| p.0).collect();
+    assert_eq!(names, ["alice-analytics", "alice-db"]);
+    for (peer, id) in PHYSICS_PEER_IDS {
+        assert_eq!(t.get(peer).map(|d| hex(d)), Some(hex(id)), "{peer}");
+    }
+}
+
+/// Under the peer's feature, its entry is the identifier the resolved peer
+/// exports (a peer whose identifier moved reddens here first).
+#[cfg(feature = "analytics")]
+#[test]
+fn the_alice_analytics_entry_is_its_exported_identifier() {
+    assert_eq!(
+        check_peer("test", "alice-analytics", &alice_analytics::SEMANTICS_ID),
+        Ok(())
+    );
+}
+
+#[cfg(feature = "replay")]
+#[test]
+fn the_alice_db_entry_is_its_exported_identifier() {
+    assert_eq!(
+        check_peer("test", "alice-db", &alice_db::SEMANTICS_ID),
+        Ok(())
+    );
+}
+
+/// A peer identifier other than the expected one is the mismatch naming both.
+#[test]
+fn another_peer_identifier_is_a_mismatch_naming_both() {
+    let found = [0x5a; 32];
+    let err = check_peer("db_bridge", "alice-db", &found).unwrap_err();
+    assert_eq!(
+        err,
+        PeerMismatch {
+            bridge: "db_bridge",
+            peer: "alice-db",
+            found,
+            expected: PHYSICS_PEER_IDS[1].1,
+        }
+    );
+    let text = err.to_string();
+    assert!(
+        text.contains(&hex(&found)) && text.contains(&hex(&PHYSICS_PEER_IDS[1].1)),
+        "{text}"
+    );
+    for i in 0..32 {
+        let mut near = PHYSICS_PEER_IDS[0].1;
+        near[i] ^= 0x80;
+        assert!(
+            check_peer("t", "alice-analytics", &near).is_err(),
+            "byte {i}"
+        );
+    }
 }
 
 // ── (e) the pinned value, the same in every feature set ─────────────────────
@@ -757,20 +829,46 @@ fn the_identifier_is_the_row_of_the_resolved_det_math() {
     }
 }
 
-/// Every earlier identifier the snapshot reader accepts is the identifier of
-/// another known generation, never this build's.
+/// Every earlier identifier the snapshot reader accepts is, never this
+/// build's, either the identifier of another known generation or the fold of
+/// the same pins without the peer entries (before 4.0.0 they were not folded;
+/// no golden moved when they were), under a known generation.
 #[test]
 fn previous_identifiers_are_rows_of_other_generations() {
     assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.is_empty());
+    let before_peers: Vec<[u8; 32]> = PHYSICS_SEMANTICS_BY_DET_MATH
+        .iter()
+        .map(|(det_math, _)| {
+            let pins: Vec<_> = pins_under(*det_math)
+                .into_iter()
+                .filter(|(n, _)| !PHYSICS_PEER_IDS.iter().any(|p| p.0 == *n))
+                .collect();
+            fold(&pins).expect("folds")
+        })
+        .collect();
     for id in PREVIOUS_PHYSICS_SEMANTICS_IDS {
         assert_ne!(
             id, &PHYSICS_SEMANTICS_ID,
             "the current identifier is listed as previous"
         );
         assert!(
-            PHYSICS_SEMANTICS_BY_DET_MATH.iter().any(|r| r.1 == *id),
+            PHYSICS_SEMANTICS_BY_DET_MATH.iter().any(|r| r.1 == *id) || before_peers.contains(id),
             "{} is not the identifier of a known generation",
             hex(id)
+        );
+    }
+    // the identifiers 3.x reported are accepted
+    for old in [
+        "79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108",
+        "cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469",
+    ] {
+        assert!(
+            PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&unhex32(old)),
+            "{old}"
+        );
+        assert!(
+            before_peers.contains(&unhex32(old)),
+            "{old} is not the fold without the peers"
         );
     }
 }

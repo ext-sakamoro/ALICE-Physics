@@ -5073,11 +5073,13 @@ pub fn alice_physics::gpu_bridge::GpuSolverBridge::dispatch_joint_solve_iteratio
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::recv_body_positions(&self, &mut [[alice_physics::math::Fix128; 3]])
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::recv_contact_constraints(&self, &mut [alice_physics::solver::ContactConstraint])
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::recv_island(&self, &mut [[alice_physics::math::Fix128; 3]], &mut [[alice_physics::math::Fix128; 3]])
+pub fn alice_physics::gpu_bridge::GpuSolverBridge::semantics_id(&self) -> [u8; 32]
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::send_body_rotations(&mut self, &[[alice_physics::math::Fix128; 4]])
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::send_body_state(&mut self, &[[alice_physics::math::Fix128; 3]], &[alice_physics::math::Fix128])
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::send_contact_constraints(&mut self, &[alice_physics::solver::ContactConstraint])
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::send_island(&mut self, &[[alice_physics::math::Fix128; 3]], &[[alice_physics::math::Fix128; 3]])
 pub fn alice_physics::gpu_bridge::GpuSolverBridge::send_joints(&mut self, &[alice_physics::joint::Joint])
+pub fn alice_physics::gpu_bridge::check_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&'static str, &B) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub mod alice_physics::gpu_sdf
 pub struct alice_physics::gpu_sdf::GpuDispatchConfig
 pub alice_physics::gpu_sdf::GpuDispatchConfig::compute_normals: bool
@@ -13513,22 +13515,22 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, al
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
-pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
+pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics::math::QuatFix) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics::math::Fix128) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
 pub const fn alice_physics::solver::PhysicsWorld::sleep_skip(&self) -> bool
-pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
+pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub const fn alice_physics::solver::PhysicsWorld::stage_work(&self) -> alice_physics::solver::StageWork
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
-pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
+pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
 pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
@@ -17088,10 +17090,37 @@ impl<'a, F> core::marker::UnsafeUnpin for alice_physics::sdf_wind_field::SdfWind
 impl<'a, F> core::panic::unwind_safe::RefUnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::RefUnwindSafe, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::UnwindSafe for alice_physics::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::UnwindSafe, F: ?core::marker::Sized
 pub mod alice_physics::semantics
+pub struct alice_physics::semantics::PeerMismatch
+pub alice_physics::semantics::PeerMismatch::bridge: &'static str
+pub alice_physics::semantics::PeerMismatch::expected: [u8; 32]
+pub alice_physics::semantics::PeerMismatch::found: [u8; 32]
+pub alice_physics::semantics::PeerMismatch::peer: &'static str
+impl core::clone::Clone for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::semantics::PeerMismatch
+impl core::cmp::PartialEq for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::semantics::PeerMismatch
+impl core::fmt::Debug for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::semantics::PeerMismatch
+impl core::marker::StructuralPartialEq for alice_physics::semantics::PeerMismatch
+impl core::marker::Freeze for alice_physics::semantics::PeerMismatch
+impl core::marker::Send for alice_physics::semantics::PeerMismatch
+impl core::marker::Sync for alice_physics::semantics::PeerMismatch
+impl core::marker::Unpin for alice_physics::semantics::PeerMismatch
+impl core::marker::UnsafeUnpin for alice_physics::semantics::PeerMismatch
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::semantics::PeerMismatch
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::semantics::PeerMismatch
+pub const alice_physics::semantics::PHYSICS_PEER_IDS: &[(&str, [u8; 32])]
 pub const alice_physics::semantics::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
 pub const alice_physics::semantics::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics::semantics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
 pub const alice_physics::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]]
+pub fn alice_physics::semantics::check_peer(&'static str, &'static str, &[u8; 32]) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
+pub fn alice_physics::semantics::expected_peer_id(&str) -> core::option::Option<[u8; 32]>
 pub const fn alice_physics::semantics::semantics_id_for(&[u8; 32]) -> [u8; 32]
 pub mod alice_physics::sensors
 #[non_exhaustive] pub struct alice_physics::sensors::ContactReading
@@ -18247,22 +18276,22 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, al
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
-pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
+pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics::math::QuatFix) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics::math::Fix128) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
 pub const fn alice_physics::solver::PhysicsWorld::sleep_skip(&self) -> bool
-pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
+pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub const fn alice_physics::solver::PhysicsWorld::stage_work(&self) -> alice_physics::solver::StageWork
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
-pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
+pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
 pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
@@ -24594,6 +24623,30 @@ impl core::marker::Unpin for alice_physics::motor::PdController
 impl core::marker::UnsafeUnpin for alice_physics::motor::PdController
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::motor::PdController
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::motor::PdController
+pub struct alice_physics::PeerMismatch
+pub alice_physics::PeerMismatch::bridge: &'static str
+pub alice_physics::PeerMismatch::expected: [u8; 32]
+pub alice_physics::PeerMismatch::found: [u8; 32]
+pub alice_physics::PeerMismatch::peer: &'static str
+impl core::clone::Clone for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::semantics::PeerMismatch
+impl core::cmp::PartialEq for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics::semantics::PeerMismatch
+impl core::fmt::Debug for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics::semantics::PeerMismatch
+pub fn alice_physics::semantics::PeerMismatch::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::semantics::PeerMismatch
+impl core::marker::StructuralPartialEq for alice_physics::semantics::PeerMismatch
+impl core::marker::Freeze for alice_physics::semantics::PeerMismatch
+impl core::marker::Send for alice_physics::semantics::PeerMismatch
+impl core::marker::Sync for alice_physics::semantics::PeerMismatch
+impl core::marker::Unpin for alice_physics::semantics::PeerMismatch
+impl core::marker::UnsafeUnpin for alice_physics::semantics::PeerMismatch
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::semantics::PeerMismatch
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::semantics::PeerMismatch
 pub struct alice_physics::PhaseChangeConfig
 pub alice_physics::PhaseChangeConfig::ambient_temperature: f32
 pub alice_physics::PhaseChangeConfig::boil_temperature: f32
@@ -24840,22 +24893,22 @@ pub fn alice_physics::solver::PhysicsWorld::set_body_filter(&mut self, usize, al
 pub fn alice_physics::solver::PhysicsWorld::set_body_material(&mut self, usize, alice_physics::material::MaterialId)
 pub fn alice_physics::solver::PhysicsWorld::set_body_shape(&mut self, usize, &alice_physics::shape::Shape) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_broadphase(&mut self, alice_physics::solver::Broadphase)
-pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>)
+pub fn alice_physics::solver::PhysicsWorld::set_gpu_solver_bridge(&mut self, core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_3d_rotation_target(&mut self, usize, alice_physics::math::QuatFix) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_joint_motor_velocity_target(&mut self, usize, alice_physics::math::Fix128) -> bool
 pub fn alice_physics::solver::PhysicsWorld::set_sdf_collision_radius(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_config(&mut self, alice_physics::sleeping::SleepConfig)
 pub fn alice_physics::solver::PhysicsWorld::set_sleep_skip(&mut self, bool)
 pub const fn alice_physics::solver::PhysicsWorld::sleep_skip(&self) -> bool
-pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B)
+pub fn alice_physics::solver::PhysicsWorld::solve_contact_constraints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::solve_joints_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
 pub const fn alice_physics::solver::PhysicsWorld::stage_work(&self) -> alice_physics::solver::StageWork
 pub fn alice_physics::solver::PhysicsWorld::static_collider_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::step(&mut self, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_n(&mut self, usize, alice_physics::math::Fix128)
 pub fn alice_physics::solver::PhysicsWorld::step_parallel(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
-pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128)
+pub fn alice_physics::solver::PhysicsWorld::step_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
+pub fn alice_physics::solver::PhysicsWorld::substep_with_bridge<B: alice_physics::gpu_bridge::GpuSolverBridge + ?core::marker::Sized>(&mut self, &mut B, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::solver::PhysicsWorld::take_gpu_solver_bridge(&mut self) -> core::option::Option<alloc::boxed::Box<(dyn alice_physics::gpu_bridge::GpuSolverBridge + core::marker::Send + core::marker::Sync)>>
 pub fn alice_physics::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics::solver::TgsCacheStats
 pub fn alice_physics::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics::event::TriggerEvent]
@@ -26576,6 +26629,7 @@ impl core::marker::Unpin for alice_physics::anomaly::ZScoreDetector
 impl core::marker::UnsafeUnpin for alice_physics::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::anomaly::ZScoreDetector
+pub const alice_physics::PHYSICS_PEER_IDS: &[(&str, [u8; 32])]
 pub const alice_physics::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
 pub const alice_physics::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
@@ -26709,6 +26763,7 @@ pub fn alice_physics::build_convex_hull(&[alice_physics::math::Vec3Fix]) -> alic
 pub fn alice_physics::capsule_cast(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, &[alice_physics::solver::RigidBody], alice_physics::math::Fix128) -> core::option::Option<alice_physics::query::ShapeCastHit>
 pub fn alice_physics::capsule_mass_properties(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub fn alice_physics::capsule_plane_toi(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<alice_physics::ccd::TOI>
+pub fn alice_physics::check_peer(&'static str, &'static str, &[u8; 32]) -> core::result::Result<(), alice_physics::semantics::PeerMismatch>
 pub fn alice_physics::compute_centroid(&[alice_physics::math::Vec3Fix]) -> alice_physics::math::Vec3Fix
 pub fn alice_physics::compute_mesh_aabb(&alice_physics::collision_mesh_gen::CollisionMesh) -> alice_physics::collider::AABB
 pub fn alice_physics::convex_hull_mass_properties(&[alice_physics::math::Vec3Fix], alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
@@ -26716,6 +26771,7 @@ pub fn alice_physics::cut_cloth(&[alice_physics::math::Vec3Fix], &[(usize, usize
 pub fn alice_physics::cut_deformable(&[alice_physics::math::Vec3Fix], &[(usize, usize)], &alice_physics::soft_body_cut::CutPlane) -> alice_physics::soft_body_cut::CutResult
 pub fn alice_physics::cylinder_mass_properties(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> alice_physics::mass_properties::MassProperties
 pub fn alice_physics::debug_draw_world(&alice_physics::solver::PhysicsWorld, &alice_physics::debug_render::DebugDrawFlags, &mut alice_physics::debug_render::DebugDrawData)
+pub fn alice_physics::expected_peer_id(&str) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::generate_collision_mesh<F>(F, &alice_physics::collision_mesh_gen::CollisionMeshConfig) -> alice_physics::collision_mesh_gen::CollisionMesh where F: core::ops::function::Fn(alice_physics::math::Vec3Fix) -> alice_physics::math::Fix128
 pub fn alice_physics::generate_contact_arrows(&[(alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128)]) -> alloc::vec::Vec<alice_physics::contact_viz::ContactArrow>
 pub fn alice_physics::generate_flow_arrows(&[alice_physics::math::Vec3Fix], &[alice_physics::math::Vec3Fix], &alice_physics::flow_viz::FlowVizConfig) -> alloc::vec::Vec<alice_physics::flow_viz::FlowArrow>

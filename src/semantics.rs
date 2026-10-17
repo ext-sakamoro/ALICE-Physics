@@ -10,7 +10,7 @@
 //! # Hex form (with `alice-det-math` 0.5.1; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108
+//! d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c
 //! ```
 //!
 //! # Entries
@@ -18,7 +18,12 @@
 //! [`PHYSICS_SEMANTICS_PINS`] has one entry per row of the `PINS` table of
 //! `tests/determinism_golden_coverage.rs` (23 rows), named by the
 //! combination that row pins, with the SHA-256 golden of the test it names,
-//! plus one entry `"alice-det-math"` holding `alice_det_math::SEMANTICS_ID`.
+//! plus one entry `"alice-det-math"` holding `alice_det_math::SEMANTICS_ID`,
+//! plus one entry per optional Law-bearing peer this crate exchanges values
+//! with ([`PHYSICS_PEER_IDS`]: `"alice-analytics"`, `"alice-db"`).
+//! **A peer's identifier moving moves this identifier, by design**: a world
+//! stepped by this build and handed to a peer of another arithmetic is a
+//! different exchange.
 //! Several combinations share one digest (for example `step`, `step_n` and
 //! `try_step` give the same bits); each is still its own entry, so the set
 //! of pinned paths is part of the value.
@@ -177,10 +182,106 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         "installed bridge",
         hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
     ),
+    ("alice-analytics", PHYSICS_PEER_IDS[0].1),
+    ("alice-db", PHYSICS_PEER_IDS[1].1),
     // the resolved alice-det-math's own identifier, not a copy of it: the
     // identifier below is looked up by it
     ("alice-det-math", alice_det_math::SEMANTICS_ID),
 ];
+
+/// The identifier each optional Law-bearing peer exports, as this build
+/// expects it: `alice-analytics` (feature `analytics`, read by
+/// [`crate::analytics_bridge`]) and `alice-db` (feature `replay`, read by
+/// [`crate::db_bridge`] and `crate::replay`).
+///
+/// The values are written out, not read from the peers, so the table (and
+/// [`PHYSICS_SEMANTICS_ID`], which folds it) is the same in every feature set.
+/// `tests/physics_semantics_id.rs` checks under each peer's feature that its
+/// entry equals the identifier the resolved peer exports; at run time the
+/// bridges compare the linked peer's identifier with its entry
+/// ([`check_peer`]) and refuse a peer whose identifier moved.
+pub const PHYSICS_PEER_IDS: &[(&str, [u8; 32])] = &[
+    // alice-analytics 0.5 / 0.6: `SEMANTICS_ID`, the alice-det-math 0.5.1 identifier it re-exports
+    (
+        "alice-analytics",
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+    ),
+    // alice-db 0.5: `SEMANTICS_ID`, the alice-det-math 0.5.1 identifier it re-exports
+    (
+        "alice-db",
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+    ),
+];
+
+/// A Law-bearing peer whose identifier is not the one this build expects
+/// ([`PHYSICS_PEER_IDS`]): the bridge refuses to exchange values with it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PeerMismatch {
+    /// The bridge that refused the peer (`"db_bridge"`, `"replay"`, ...).
+    pub bridge: &'static str,
+    /// The peer crate (`"alice-db"`, ...).
+    pub peer: &'static str,
+    /// The identifier the linked peer exports.
+    pub found: [u8; 32],
+    /// The identifier this build expects of it.
+    pub expected: [u8; 32],
+}
+
+impl core::fmt::Display for PeerMismatch {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "{}: {} identifier ", self.bridge, self.peer)?;
+        for b in self.found {
+            write!(f, "{b:02x}")?;
+        }
+        f.write_str(" is not the expected ")?;
+        for b in self.expected {
+            write!(f, "{b:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl core::error::Error for PeerMismatch {}
+
+/// The entry of [`PHYSICS_PEER_IDS`] for `peer`, or `None` when the table has
+/// no such peer.
+#[must_use]
+pub fn expected_peer_id(peer: &str) -> Option<[u8; 32]> {
+    PHYSICS_PEER_IDS
+        .iter()
+        .find(|(name, _)| *name == peer)
+        .map(|(_, id)| *id)
+}
+
+/// Compare the identifier `found` that the linked `peer` exports with the one
+/// this build expects of it.
+///
+/// # Errors
+///
+/// [`PeerMismatch`] naming both identifiers when they differ.
+///
+/// # Panics
+///
+/// When `peer` has no entry in [`PHYSICS_PEER_IDS`] (a bridge to a peer the
+/// table does not list is a programming error, caught by the bridge's tests).
+pub fn check_peer(
+    bridge: &'static str,
+    peer: &'static str,
+    found: &[u8; 32],
+) -> Result<(), PeerMismatch> {
+    let expected =
+        expected_peer_id(peer).unwrap_or_else(|| panic!("{peer} has no entry in PHYSICS_PEER_IDS"));
+    if *found == expected {
+        Ok(())
+    } else {
+        Err(PeerMismatch {
+            bridge,
+            peer,
+            found: *found,
+            expected,
+        })
+    }
+}
 
 /// [`PHYSICS_SEMANTICS_ID`] for each `alice-det-math` generation this crate
 /// knows: `(alice_det_math::SEMANTICS_ID, fold of PHYSICS_SEMANTICS_PINS with
@@ -202,12 +303,12 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469"),
+        hex32("67b299b07d6c466f47638ddc0e08344e2cf951a415ee05e32eae511f046ab674"),
     ),
     // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108"),
+        hex32("d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c"),
     ),
 ];
 
@@ -217,7 +318,7 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.1):
-/// `79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108`.
+/// `d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 
@@ -264,10 +365,14 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// determinism golden, so the stepping bits are the same under both. Each is
 /// a value of [`PHYSICS_SEMANTICS_BY_DET_MATH`] other than this build's:
 ///
-/// * `cd9aa3b8…` (3.0.0 and 3.0.1): replaced when `alice-det-math` went from
-///   0.5.0 to 0.5.1, which added `max` / `min` / `max64` / `min64` and left
-///   the existing functions unchanged (`alice-det-math` 0.5.1 itself lists
-///   the 0.5.0 identifier in its `PREVIOUS_SEMANTICS_IDS`). No golden moved.
-pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[hex32(
-    "cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469",
-)];
+/// * `79ca5297…` (3.1.0) and the 0.5.0-generation `cd9aa3b8…` (3.0.0 and
+///   3.0.1, 3.1.0 with `alice-det-math` 0.5.0): replaced when the peer
+///   identifiers ([`PHYSICS_PEER_IDS`]) were folded in, which moved no golden.
+/// * `cd9aa3b8…` was itself replaced when `alice-det-math` went from 0.5.0
+///   to 0.5.1, which added `max` / `min` / `max64` / `min64` and left the
+///   existing functions unchanged (`alice-det-math` 0.5.1 itself lists the
+///   0.5.0 identifier in its `PREVIOUS_SEMANTICS_IDS`). No golden moved.
+pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[
+    hex32("79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108"),
+    hex32("cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469"),
+];

@@ -1170,6 +1170,10 @@ mod bridge {
     }
 
     impl GpuSolverBridge for CountingBridge {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -1204,7 +1208,9 @@ mod bridge {
         };
         let mut world = PhysicsWorld::new(weightless());
         let (a, b) = overlapping_pair(&mut world);
-        world.step_with_bridge(&mut bridge, dt());
+        world
+            .step_with_bridge(&mut bridge, dt())
+            .expect("the bridge computes under this build's semantics");
         assert_eq!(dispatches.load(Ordering::SeqCst), per_frame());
         assert_eq!(world.bodies[a].position, Vec3Fix::ZERO);
         assert_eq!(world.bodies[b].position, Vec3Fix::from_int(3, 0, 0));
@@ -1237,7 +1243,9 @@ mod bridge {
         };
         let mut world = PhysicsWorld::new(weightless());
         let (a, b) = overlapping_pair(&mut world);
-        world.substep_with_bridge(&mut bridge, dt());
+        world
+            .substep_with_bridge(&mut bridge, dt())
+            .expect("the bridge computes under this build's semantics");
         assert_eq!(
             dispatches.load(Ordering::SeqCst),
             PhysicsConfig::default().iterations
@@ -1261,9 +1269,11 @@ mod bridge {
             "nothing installed yet"
         );
 
-        world.set_gpu_solver_bridge(Some(Box::new(CountingBridge {
-            dispatches: Arc::clone(&dispatches),
-        })));
+        world
+            .set_gpu_solver_bridge(Some(Box::new(CountingBridge {
+                dispatches: Arc::clone(&dispatches),
+            })))
+            .expect("the bridge computes under this build's semantics");
         assert!(world.gpu_solver_bridge_installed());
         world.step(dt());
         assert_eq!(dispatches.load(Ordering::SeqCst), per_frame());
@@ -1283,7 +1293,9 @@ mod bridge {
             "no longer routed"
         );
 
-        world.set_gpu_solver_bridge(None);
+        world
+            .set_gpu_solver_bridge(None)
+            .expect("the bridge computes under this build's semantics");
         assert!(
             !world.gpu_solver_bridge_installed(),
             "Some(None) installs nothing"

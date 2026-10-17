@@ -4,6 +4,7 @@
 //! energy drift) into ALICE-Analytics sketches for profiling and
 //! anomaly detection.
 
+use crate::semantics::{check_peer, PeerMismatch};
 use alice_analytics::sketch::{DDSketch256, HyperLogLog12};
 
 /// Physics telemetry collector backed by ALICE-Analytics sketches.
@@ -35,14 +36,25 @@ impl PhysicsTelemetry {
     /// range `≈ [0.28, 45.6]`): every step time above 45 µs fell outside the
     /// histogram, so `p50` and `p99` both degraded to the running maximum
     /// (990 × 1000 µs + 10 × 50 000 µs reported p50 = 50 000).
-    pub fn new() -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// [`PeerMismatch`] naming both identifiers when the linked
+    /// `alice-analytics` is not the one this build expects
+    /// ([`crate::PHYSICS_PEER_IDS`]).
+    pub fn new() -> Result<Self, PeerMismatch> {
+        check_peer(
+            "analytics_bridge",
+            "alice-analytics",
+            &alice_analytics::SEMANTICS_ID,
+        )?;
+        Ok(Self {
             step_time: DDSketch256::new(Self::ALPHA),
             contacts: DDSketch256::new(Self::ALPHA),
             energy_drift: DDSketch256::new(Self::ALPHA),
             collision_pairs: HyperLogLog12::new(),
             total_steps: 0,
-        }
+        })
     }
 
     /// Record a simulation step's timing.
@@ -108,19 +120,13 @@ impl PhysicsTelemetry {
     }
 }
 
-impl Default for PhysicsTelemetry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
     fn test_physics_telemetry() {
-        let mut tel = PhysicsTelemetry::new();
+        let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
 
         for step in 0u64..200 {
             tel.record_step_time(100.0 + (step % 20) as f64);
@@ -143,7 +149,7 @@ mod tests {
     /// feeding a larger tail raises it, feeding only small values keeps it low.
     #[test]
     fn step_time_and_contacts_p99_track_the_upper_tail() {
-        let mut tel = PhysicsTelemetry::new();
+        let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         // 990 steps at 1.0 ms and 10 at 50 ms: p99 sits at the boundary of the
         // 50 ms tail (between 1 and 50, and >= the p50 of 1 ms)
         for _ in 0..990 {
@@ -174,7 +180,7 @@ mod tests {
             "contacts p99 {ct99} outside [10, 400]"
         );
         // a uniform stream: p99 ≈ the (only) value within sketch error
-        let mut flat = PhysicsTelemetry::new();
+        let mut flat = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         for _ in 0..500 {
             flat.record_step_time(2000.0);
             flat.record_contacts(3.0);
@@ -185,7 +191,7 @@ mod tests {
         // ordering: a tail that occupies rank ≥ 99 % (15 of 1000 samples)
         // raises p99 to the tail value; 10 of 1000 (above) leaves it at the
         // base value — rank arithmetic, not the sketch's max fallback
-        let mut heavy = PhysicsTelemetry::new();
+        let mut heavy = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         for _ in 0..985 {
             heavy.record_step_time(1000.0);
             heavy.record_contacts(10.0);
@@ -233,7 +239,7 @@ mod tests {
     /// quantiles reported 50 000.
     #[test]
     fn quantiles_stay_in_range_for_microsecond_step_times() {
-        let mut tel = PhysicsTelemetry::new();
+        let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         for _ in 0..990 {
             tel.record_step_time(1000.0);
         }
@@ -243,7 +249,7 @@ mod tests {
         assert_within_relative_error(tel.step_time_p50(), 1000.0, "p50");
         assert_within_relative_error(tel.step_time_p99(), 1000.0, "p99");
         // the tail is still visible one rank higher: rank 991+ is 50 000
-        let mut tail = PhysicsTelemetry::new();
+        let mut tail = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         for _ in 0..90 {
             tail.record_step_time(1000.0);
         }
@@ -270,7 +276,7 @@ mod tests {
     /// degrades to `max`.
     #[test]
     fn quantiles_and_cardinality_match_known_sample_sets() {
-        let mut tel = PhysicsTelemetry::new();
+        let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         for _ in 0..10 {
             tel.record_step_time(10.0);
         }
@@ -313,7 +319,7 @@ mod tests {
     #[test]
     fn each_record_method_changes_only_its_own_metric() {
         // record_step_time → step_time sketch + total_steps
-        let mut t = PhysicsTelemetry::new();
+        let mut t = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         t.record_step_time(10.0);
         assert_eq!(t.total_steps(), 1);
         assert_within_relative_error(t.step_time_p50(), 10.0, "step_time_p50");
@@ -324,7 +330,7 @@ mod tests {
         assert_eq!(t.unique_collision_pairs(), 0.0);
 
         // record_contacts → contacts sketch only
-        let mut t = PhysicsTelemetry::new();
+        let mut t = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         t.record_contacts(3.0);
         assert_eq!(t.total_steps(), 0);
         assert_eq!(t.step_time_p50(), 0.0);
@@ -335,7 +341,7 @@ mod tests {
         assert_eq!(t.unique_collision_pairs(), 0.0);
 
         // record_energy_drift → energy sketch only, magnitude of the drift
-        let mut t = PhysicsTelemetry::new();
+        let mut t = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         t.record_energy_drift(-0.5);
         assert_eq!(t.total_steps(), 0);
         assert_eq!(t.step_time_p50(), 0.0);
@@ -344,7 +350,7 @@ mod tests {
         assert_eq!(t.unique_collision_pairs(), 0.0);
 
         // record_collision_pair → HLL only; one register → 4096·ln(4096/4095)
-        let mut t = PhysicsTelemetry::new();
+        let mut t = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         t.record_collision_pair((1u64 << 32) | 2);
         assert_eq!(t.total_steps(), 0);
         assert_eq!(t.step_time_p50(), 0.0);
@@ -361,7 +367,7 @@ mod tests {
     /// 0 (`*=`) or a wrap (`-=`), regardless of the other record calls.
     #[test]
     fn total_steps_counts_each_step_once() {
-        let mut t = PhysicsTelemetry::default();
+        let mut t = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
         for _ in 0..7 {
             t.record_step_time(2.0);
         }

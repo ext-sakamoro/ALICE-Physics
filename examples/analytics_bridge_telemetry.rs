@@ -57,7 +57,7 @@ fn assert_within_contract(actual: f64, v: f64, what: &str) {
 
 fn main() {
     println!("[analytics_bridge] PhysicsTelemetry::new() ALPHA={ALPHA}");
-    let mut tel = PhysicsTelemetry::new();
+    let mut tel = PhysicsTelemetry::new().expect("alice-analytics is the expected peer");
 
     // --- step_time / contacts: 196 steps "nominal" + 4 steps "jank spike" ---
     // --- energy_drift: 197 steps "stable" + 3 steps "divergence spike" ---

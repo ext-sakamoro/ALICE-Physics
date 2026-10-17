@@ -955,13 +955,19 @@ fn rappor_parameter_corners_are_closed_forms() {
     assert_ne!(a, b);
 
     // params: default triple, clamped triple.
-    assert_eq!(Rappor::with_seed(0.5, 0.75, 0.25, 1).params(), (0.5, 0.75, 0.25));
+    assert_eq!(
+        Rappor::with_seed(0.5, 0.75, 0.25, 1).params(),
+        (0.5, 0.75, 0.25)
+    );
     assert_eq!(
         Rappor::with_seed(0.9, 1.5, -1.0, 1).params(),
         (0.5, 1.0, 0.0),
         "f→[0,½], p,q→[0,1]"
     );
-    assert_eq!(Rappor::with_seed(-0.1, 0.3, 0.6, 1).params(), (0.0, 0.3, 0.6));
+    assert_eq!(
+        Rappor::with_seed(-0.1, 0.3, 0.6, 1).params(),
+        (0.0, 0.3, 0.6)
+    );
     assert_eq!(
         Rappor::with_seed(0.9, 1.5, -1.0, 7).params(),
         (0.5, 1.0, 0.0)

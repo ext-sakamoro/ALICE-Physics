@@ -464,6 +464,10 @@ mod gpu {
     }
 
     impl GpuSolverBridge for TracingBridge {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -490,9 +494,13 @@ mod gpu {
         };
         let mut world = PhysicsWorld::new(weightless());
         let (a, b) = two_overlapping_spheres(&mut world);
-        world.substep_with_bridge(&mut bridge, dt);
+        world
+            .substep_with_bridge(&mut bridge, dt)
+            .expect("the bridge computes under this build's semantics");
         let after_substep = dispatches.load(Ordering::SeqCst);
-        world.step_with_bridge(&mut bridge, dt);
+        world
+            .step_with_bridge(&mut bridge, dt)
+            .expect("the bridge computes under this build's semantics");
         let (xa, xb) = xs(&world, a, b);
         println!(
             "[world_api] host-owned bridge: substep dispatches={after_substep} step dispatches={} x_a={xa} x_b={xb}",
@@ -503,9 +511,11 @@ mod gpu {
         let dispatches = Arc::new(AtomicUsize::new(0));
         let mut world = PhysicsWorld::new(weightless());
         let (a, b) = two_overlapping_spheres(&mut world);
-        world.set_gpu_solver_bridge(Some(Box::new(TracingBridge {
-            dispatches: Arc::clone(&dispatches),
-        })));
+        world
+            .set_gpu_solver_bridge(Some(Box::new(TracingBridge {
+                dispatches: Arc::clone(&dispatches),
+            })))
+            .expect("the bridge computes under this build's semantics");
         let installed = world.gpu_solver_bridge_installed();
         world.step(dt);
         let routed = dispatches.load(Ordering::SeqCst);

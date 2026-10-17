@@ -675,6 +675,10 @@ mod bridge {
     }
 
     impl GpuSolverBridge for Recorder {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -739,7 +743,8 @@ mod bridge {
             });
         }
         let mut rec = Recorder::default();
-        w.solve_contact_constraints_with_bridge(&mut rec);
+        w.solve_contact_constraints_with_bridge(&mut rec)
+            .expect("the bridge computes under this build's semantics");
         let pairs: Vec<(usize, usize)> = rec.sent.iter().map(|c| (c.body_a, c.body_b)).collect();
         assert_eq!(pairs, vec![(1, 2), (0, 2)], "sent {pairs:?}");
         assert_eq!(rec.positions_sent, 4);
@@ -776,7 +781,8 @@ mod bridge {
             cached_lambda: Fix128::ZERO,
         });
         let mut rec = Recorder::default();
-        w.solve_contact_constraints_with_bridge(&mut rec);
+        w.solve_contact_constraints_with_bridge(&mut rec)
+            .expect("the bridge computes under this build's semantics");
         assert!(rec.sent.is_empty());
         assert_eq!(rec.positions_sent, 0, "send_body_state must not be called");
         assert_eq!(w.get_body(0).unwrap().position, Vec3Fix::ZERO);
@@ -793,6 +799,10 @@ mod bridge {
     }
 
     impl GpuSolverBridge for JointReference {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}

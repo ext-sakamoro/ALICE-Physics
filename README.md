@@ -137,8 +137,11 @@ deterministic, but inside the closure you need to call
 
 **Naming the law.** `alice_physics::PHYSICS_SEMANTICS_ID` identifies the
 arithmetic and step implementation of a build: it is folded from the pinned
-golden outputs and the `alice-det-math` identifier, and changes exactly when one
-of them changes. `PhysicsWorld::law_id(&PHYSICS_SEMANTICS_ID)` hashes it with the
+golden outputs, the `alice-det-math` identifier and the identifiers of the
+optional peers it exchanges values with (`alice-analytics`, `alice-db`), and
+changes exactly when one of them changes. The bridges to those peers, and every
+GPU bridge path, check the peer's identifier first and refuse a mismatch with a
+`PeerMismatch` naming both. `PhysicsWorld::law_id(&PHYSICS_SEMANTICS_ID)` hashes it with the
 rules a world is configured with (config, contact cache, continuous collision,
 sleep thresholds, materials, force fields and participants), not its bodies.
 Two worlds with the same law identifier, state and inputs step to the same bits,

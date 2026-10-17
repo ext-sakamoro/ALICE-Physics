@@ -542,6 +542,10 @@ mod bridged {
     struct NoOpBridge;
 
     impl GpuSolverBridge for NoOpBridge {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -566,7 +570,8 @@ mod bridged {
             RigidBody::new_dynamic(v3(0.0, 0.2, 0.0), Fix128::ONE),
             fx(0.5),
         );
-        w.step_with_bridge(&mut NoOpBridge, fx(1.0 / 60.0));
+        w.step_with_bridge(&mut NoOpBridge, fx(1.0 / 60.0))
+            .expect("the bridge computes under this build's semantics");
         assert_vec(
             arr(w.get_body(b).expect("body").position),
             [0.0, 0.5, 0.0],

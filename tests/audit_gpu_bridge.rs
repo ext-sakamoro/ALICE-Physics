@@ -11,6 +11,10 @@ use std::sync::{Arc, Mutex};
 /// Implements only the four required methods; every contact / joint method keeps the default.
 struct Minimal;
 impl GpuSolverBridge for Minimal {
+    fn semantics_id(&self) -> [u8; 32] {
+        alice_physics::PHYSICS_SEMANTICS_ID
+    }
+
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
     fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
     fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -93,6 +97,10 @@ fn b_send_cc() {
 /// returns the structured divergence it is documented to carry.
 struct Diverging;
 impl GpuSolverBridge for Diverging {
+    fn semantics_id(&self) -> [u8; 32] {
+        alice_physics::PHYSICS_SEMANTICS_ID
+    }
+
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
     fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
     fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -137,6 +145,10 @@ struct Recorder {
     seen_first_bodies: Arc<Mutex<Vec<(usize, usize)>>>,
 }
 impl GpuSolverBridge for Recorder {
+    fn semantics_id(&self) -> [u8; 32] {
+        alice_physics::PHYSICS_SEMANTICS_ID
+    }
+
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
     fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
     fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -194,7 +206,8 @@ fn contact_upload_keeps_slot_alignment_with_a_sensor_in_slot_zero() {
         seen_len: Arc::clone(&lens),
         seen_first_bodies: Arc::clone(&firsts),
     };
-    w.solve_contact_constraints_with_bridge(&mut rec);
+    w.solve_contact_constraints_with_bridge(&mut rec)
+        .expect("the bridge computes under this build's semantics");
     assert_eq!(
         *lens.lock().unwrap(),
         vec![2],
@@ -209,6 +222,10 @@ fn contact_upload_keeps_slot_alignment_with_a_sensor_in_slot_zero() {
 fn filtered_upload_writes_lambda_back_to_the_original_slot() {
     struct Lam;
     impl GpuSolverBridge for Lam {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _i: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -240,7 +257,8 @@ fn filtered_upload_writes_lambda_back_to_the_original_slot() {
         .push(ContactConstraint::new(a, b, contact()));
     w.contact_constraints
         .push(ContactConstraint::new(b, c, contact()));
-    w.solve_contact_constraints_with_bridge(&mut Lam);
+    w.solve_contact_constraints_with_bridge(&mut Lam)
+        .expect("the bridge computes under this build's semantics");
     assert_eq!(w.contact_constraints[0].cached_lambda, Fix128::ZERO);
     assert_eq!(w.contact_constraints[1].cached_lambda, Fix128::from_int(7));
 }

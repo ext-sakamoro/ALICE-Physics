@@ -10,7 +10,7 @@ use alice_physics::db_bridge::PhysicsMetricsSink;
 use alice_physics::replay::{ReplayPlayer, ReplayRecorder};
 use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());
     world.add_body(RigidBody::new_dynamic(
         Vec3Fix::from_int(0, 20, 0),

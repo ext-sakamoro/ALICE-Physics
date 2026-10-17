@@ -204,6 +204,10 @@ mod bridge {
     }
 
     impl GpuSolverBridge for Recording {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -252,7 +256,8 @@ mod bridge {
             let (m, calls, seen) = scale_friction(Fix128::from_ratio(1, 2));
             let mut w = world(iterations);
             w.add_contact_modifier(Box::new(m));
-            w.step_with_bridge(&mut bridge, dt());
+            w.step_with_bridge(&mut bridge, dt())
+                .expect("the bridge computes under this build's semantics");
             assert_eq!(
                 *frictions.lock().unwrap(),
                 vec![fx(0.1); iterations],
@@ -275,7 +280,8 @@ mod bridge {
             let (m, calls, _) = scale_friction(Fix128::from_ratio(1, 2));
             let mut w = world(iterations);
             w.add_contact_modifier(Box::new(m));
-            w.set_gpu_solver_bridge(Some(Box::new(bridge)));
+            w.set_gpu_solver_bridge(Some(Box::new(bridge)))
+                .expect("the bridge computes under this build's semantics");
             w.step(dt());
             assert_eq!(
                 *frictions.lock().unwrap(),

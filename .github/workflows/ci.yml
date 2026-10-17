@@ -356,6 +356,16 @@ jobs:
       - name: Test (semantics identifier, parallel + gpu-solver-bridge)
         run: cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
 
+      # ALICE-Law G7: the peer entries checked against the resolved alice-db /
+      # alice-analytics, the closed list of boundaries, and every bridge path
+      # refusing a GPU backend of another semantics; run_tests.sh fails unless
+      # that many tests ran (a cfg'd-out test is red, not an empty green run)
+      - name: Test (ALICE-Law G7 handshakes, replay + analytics + gpu-solver-bridge)
+        shell: bash
+        run: |
+          scripts/run_tests.sh physics_semantics_id=21 -- cargo test --test physics_semantics_id --features "replay,analytics"
+          scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "replay,analytics,gpu-solver-bridge"
+
       # Integration tests gated on neural / replay / analytics / gpu-solver-bridge:
       # the steps above enable those features only with --lib, so a file under
       # #![cfg(feature = "replay")] compiled to zero tests and stayed green. The

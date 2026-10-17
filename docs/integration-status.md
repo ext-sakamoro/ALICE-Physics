@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2631 |
+| L0 | not reached by any non-test code, examples included | 32 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2637 |
 | live | reached without examples (crate-internal roots or a binding) | 604 |
-| | **total** | **3266** |
+| | **total** | **3273** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,7 +19,7 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (29)
+### L0 here but not in the baseline (30)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
@@ -52,6 +52,7 @@ The name-based guard counts these as wired; resolved references find no caller.
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
 - `src/privacy.rs::XorShift64::next_u64`
+- `src/solver.rs::PhysicsWorld::solve_contact_constraints_with_bridge`
 
 ### In the baseline but reached here (0)
 
@@ -59,7 +60,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (31)
+## L0 — unreached (32)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
@@ -90,6 +91,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/privacy.rs::XorShift64::next_f64`
 - `src/privacy.rs::XorShift64::next_f64_range`
 - `src/privacy.rs::XorShift64::next_u64`
+- `src/solver.rs::PhysicsWorld::solve_contact_constraints_with_bridge`
 - `src/solver_tgs.rs::par_dispatch_islands`
 - `src/solver_tgs_hooks_6dof_oriented_scoped.rs::solve_oriented_islands_parallel`
 
@@ -108,7 +110,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2631)
+## L1 — example-only (2637)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -151,7 +153,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cubic_elastic_fem.rs`: `AdaptiveCubicSolution`, `CubicMesh`, `CubicMesh::corner_count`, `CubicMesh::edge_node_count`, `CubicMesh::edge_nodes`, `CubicMesh::element_count`, `CubicMesh::element_nodes`, `CubicMesh::face_node`, `CubicMesh::face_node_count`, `CubicMesh::from_tet_mesh`, `CubicMesh::interior_node_positions_are_exact`, `CubicMesh::node_count`, `CubicMesh::node_position`, `reactions`, `shape_values`, `solve_adaptive_cubic`, `solve_cubic`, `solve_cubic_hyperelastic`
 - `src/cylinder.rs`: `Cylinder::surface_area`
 - `src/damping_rayleigh.rs`: `RayleighCoefficients`, `RayleighCoefficients::damping_ratio`, `RayleighCoefficients::fit_two_modes`, `hz_to_omega`, `omega_to_hz`
-- `src/db_bridge.rs`: `PhysicsMetricsSink`, `PhysicsMetricsSink::flush`, `PhysicsMetricsSink::in_memory`, `PhysicsMetricsSink::open`, `PhysicsMetricsSink::query_bodies`, `PhysicsMetricsSink::query_contacts`, `PhysicsMetricsSink::query_energy`, `PhysicsMetricsSink::record_energy`, `PhysicsMetricsSink::record_step`
+- `src/db_bridge.rs`: `BridgeError`, `PhysicsMetricsSink`, `PhysicsMetricsSink::flush`, `PhysicsMetricsSink::in_memory`, `PhysicsMetricsSink::open`, `PhysicsMetricsSink::query_bodies`, `PhysicsMetricsSink::query_contacts`, `PhysicsMetricsSink::query_energy`, `PhysicsMetricsSink::record_energy`, `PhysicsMetricsSink::record_step`, `alice_db_handshake`
 - `src/debug_render.rs`: `DebugColor`, `DebugColor::BLUE`, `DebugColor::CYAN`, `DebugColor::GRAY`, `DebugColor::GREEN`, `DebugColor::MAGENTA`, `DebugColor::ORANGE`, `DebugColor::RED`, `DebugColor::WHITE`, `DebugColor::YELLOW`, `DebugColor::new`, `DebugDrawData`, `DebugDrawData::aabb`, `DebugDrawData::arrow`, `DebugDrawData::axes`, `DebugDrawData::clear`, `DebugDrawData::line`, `DebugDrawData::new`, `DebugDrawData::point`, `DebugDrawData::primitive_count`, `DebugDrawData::sphere`, `DebugDrawFlags`, `DebugLine`, `DebugLine::new`, `DebugPoint`, `DebugPoint::new`, `PhysicsWorld::debug_draw`, `debug_draw_world`
 - `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableBody::step_with_sdf`, `DeformableConfig`
 - `src/dynamic_bvh.rs`: `DynamicAabbTree::get_aabb`, `DynamicAabbTree::height`, `DynamicAabbTree::node_count`, `DynamicAabbTree::proxy_count`, `DynamicAabbTree::query`, `DynamicAabbTree::user_data`
@@ -173,7 +175,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/force.rs`: `ForceFieldInstance::new`, `ForceFieldInstance::with_affected_bodies`
 - `src/fracture.rs`: `Crack`, `FractureConfig`, `FractureModifier`, `FractureModifier::PARTICIPANT_KIND`, `FractureModifier::active_crack_count`, `FractureModifier::apply_stress_at`, `FractureModifier::new`, `FractureModifier::stress_at`
 - `src/fsi_advanced.rs`: `SolidSample`, `aggregate_forces`, `buoyancy_force`, `drag_force`, `react_back_pressure`
-- `src/gpu_bridge.rs`: `DiffFixture`, `GpuDivergence`
+- `src/gpu_bridge.rs`: `DiffFixture`, `GpuDivergence`, `check_bridge`
 - `src/gpu_sdf.rs`: `GpuDispatchConfig`, `GpuSdfBatch`, `GpuSdfBatch::add_query`, `GpuSdfBatch::clear`, `GpuSdfBatch::extract_contacts`, `GpuSdfBatch::new`, `GpuSdfBatch::num_workgroups`, `GpuSdfBatch::prepare_output`, `GpuSdfBatch::query_bytes`, `GpuSdfBatch::query_count`, `GpuSdfBatch::result_bytes_mut`, `GpuSdfContact`, `GpuSdfInstancedBatch`, `GpuSdfMultiDispatch`, `GpuSdfMultiDispatch::add_batch`, `GpuSdfMultiDispatch::new`, `GpuSdfMultiDispatch::total_dispatches`, `GpuSdfMultiDispatch::total_queries`, `SDF_EVAL_WGSL`, `batch_size`, `execute_batch_cpu`
 - `src/heatmap.rs`: `Heatmap`, `HeatmapConfig`, `PhysicsWorld::stress_heatmap`, `SliceAxis`, `generate_stress_heatmap`, `generate_temperature_heatmap`, `heatmap_to_rgba`
 - `src/heightfield.rs`: `HeightField::flat`, `HeightField::set_height`, `HeightField::signed_distance`
@@ -248,7 +250,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sdf_manifold.rs`: `ManifoldConfig`, `SdfManifold`, `SdfManifold::deepest`, `SdfManifold::empty`, `SdfManifold::is_empty`, `SdfManifold::len`, `generate_sdf_manifold`
 - `src/sdf_sph.rs`: `SphConfig`, `SphConfig::water_like`, `SphParticle`, `SphParticle::at_rest`, `SphSolver`, `SphSolver::new`, `SphSolver::step`, `SphSolver::step_hashed`, `SphSpatialHash`, `SphSpatialHash::build`, `SphSpatialHash::cell_size`, `SphSpatialHash::for_each_neighbour`, `SphSpatialHash::populated_cell_count`, `poly6`, `spiky_grad`, `viscosity_lap`
 - `src/sdf_wind_field.rs`: `SdfWindField`, `SdfWindField::new`, `SdfWindField::sample`
-- `src/semantics.rs`: `PHYSICS_SEMANTICS_BY_DET_MATH`, `PHYSICS_SEMANTICS_ID`, `PHYSICS_SEMANTICS_PINS`, `PREVIOUS_PHYSICS_SEMANTICS_IDS`, `hex32`, `semantics_id_for`
+- `src/semantics.rs`: `PHYSICS_PEER_IDS`, `PHYSICS_SEMANTICS_BY_DET_MATH`, `PHYSICS_SEMANTICS_ID`, `PHYSICS_SEMANTICS_PINS`, `PREVIOUS_PHYSICS_SEMANTICS_IDS`, `PeerMismatch`, `check_peer`, `expected_peer_id`, `hex32`, `semantics_id_for`
 - `src/sensors.rs`: `ContactReading`, `ContactSensor`, `ContactSensor::new`, `ContactSensor::read`, `ContactSensor::with_noise`, `GaussianNoise`, `GaussianNoise::apply`, `GaussianNoise::apply_vec`, `GaussianNoise::new`, `GaussianNoise::sample`, `Imu`, `Imu::new`, `Imu::sample`, `Imu::with_accel_noise`, `Imu::with_gyro_noise`, `ImuReading`, `Lidar`, `Lidar::directions`, `Lidar::new`, `Lidar::scan`, `Lidar::scan_from_body`, `Lidar::with_filter`, `Lidar::with_noise`, `Lidar::with_pose`, `LidarScan`, `LidarScan::range`, `PhysicsWorld::lidar_scan`, `PhysicsWorld::lidar_scan_from_body`, `PhysicsWorld::read_contact_sensor`, `PhysicsWorld::sample_imu`
 - `src/shape_raycast.rs`: `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `WorldRayCaster::all`, `WorldRayCaster::any`
 - `src/sim_field.rs`: `ScalarField3D`, `ScalarField3D::add`, `ScalarField3D::cell_count`, `ScalarField3D::clamp`, `ScalarField3D::clear`, `ScalarField3D::contains`, `ScalarField3D::decay`, `ScalarField3D::decay_toward`, `ScalarField3D::diffuse`, `ScalarField3D::get`, `ScalarField3D::gradient`, `ScalarField3D::index`, `ScalarField3D::max_value`, `ScalarField3D::new`, `ScalarField3D::new_filled`, `ScalarField3D::sample`, `ScalarField3D::set`, `ScalarField3D::splat`, `VectorField3D`, `VectorField3D::clear`, `VectorField3D::decay`, `VectorField3D::new`, `VectorField3D::sample`, `VectorField3D::splat`
@@ -257,7 +259,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sleeping.rs`: `Island`, `IslandManager::build_islands`, `IslandManager::sleeping_count`
 - `src/smoke_fire.rs`: `ArrheniusReaction`, `ArrheniusReaction::methane_air`, `ArrheniusReaction::pla_air`, `boussinesq_buoyancy_n_per_m3`, `heat_release_j_per_m3_s`, `reaction_rate_kg_per_m3_s`, `soot_generation_kg_per_m3_s`
 - `src/soft_body_cut.rs`: `CutPlane`, `CutResult`, `cut_cloth`, `cut_deformable`
-- `src/solver.rs`: `BodyAttachments`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_body_with_attachments`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_joint_motor`, `PhysicsWorld::add_joint_motor_3d`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::begin_frame`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_constraint_force`, `PhysicsWorld::contact_events`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::disable_joint_motor`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::end_frame`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::joint_motor_3d_mut`, `PhysicsWorld::joint_motor_mut`, `PhysicsWorld::last_step_sdf_contacts`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::raycast`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_body_with_attachments`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_body_filter`, `PhysicsWorld::set_body_material`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_joint_motor_3d_rotation_target`, `PhysicsWorld::set_joint_motor_velocity_target`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::set_sleep_skip`, `PhysicsWorld::sleep_skip`, `PhysicsWorld::solve_contact_constraints_with_bridge`, `PhysicsWorld::stage_work`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_rotation`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`, `TgsCacheStats::new`
+- `src/solver.rs`: `BodyAttachments`, `BroadphaseStats`, `ContactConstraint::new`, `DistanceConstraint::new`, `DistanceConstraint::with_compliance`, `PhysicsWorld::active_body_count`, `PhysicsWorld::add_body_with_attachments`, `PhysicsWorld::add_compound_body`, `PhysicsWorld::add_contact_modifier`, `PhysicsWorld::add_distance_constraint`, `PhysicsWorld::add_force_field`, `PhysicsWorld::add_joint_motor`, `PhysicsWorld::add_joint_motor_3d`, `PhysicsWorld::add_pre_solve_hook`, `PhysicsWorld::add_sdf_collider`, `PhysicsWorld::batches_are_body_disjoint`, `PhysicsWorld::begin_frame`, `PhysicsWorld::body_count`, `PhysicsWorld::broadphase`, `PhysicsWorld::broadphase_proxy_aabb`, `PhysicsWorld::broadphase_stats`, `PhysicsWorld::clear_contact_modifiers`, `PhysicsWorld::clear_pre_solve_hooks`, `PhysicsWorld::colliders_overlap`, `PhysicsWorld::contact_arrows`, `PhysicsWorld::contact_constraint_force`, `PhysicsWorld::contact_events`, `PhysicsWorld::contact_forces`, `PhysicsWorld::contact_friction_arrows`, `PhysicsWorld::contact_friction_cones`, `PhysicsWorld::disable_joint_motor`, `PhysicsWorld::drain_contact_events`, `PhysicsWorld::drain_trigger_events`, `PhysicsWorld::end_frame`, `PhysicsWorld::get_body`, `PhysicsWorld::get_body_mut`, `PhysicsWorld::gpu_solver_bridge_installed`, `PhysicsWorld::joint_motor_3d_mut`, `PhysicsWorld::joint_motor_mut`, `PhysicsWorld::last_step_sdf_contacts`, `PhysicsWorld::num_batches`, `PhysicsWorld::observe_bodies`, `PhysicsWorld::overflow_detected`, `PhysicsWorld::raycast`, `PhysicsWorld::rebuild_batches`, `PhysicsWorld::remove_body`, `PhysicsWorld::remove_body_with_attachments`, `PhysicsWorld::remove_force_field`, `PhysicsWorld::remove_sdf_collider`, `PhysicsWorld::reset_tgs_cache_stats`, `PhysicsWorld::reset_world`, `PhysicsWorld::sdf_contacts`, `PhysicsWorld::set_body_filter`, `PhysicsWorld::set_body_material`, `PhysicsWorld::set_broadphase`, `PhysicsWorld::set_gpu_solver_bridge`, `PhysicsWorld::set_joint_motor_3d_rotation_target`, `PhysicsWorld::set_joint_motor_velocity_target`, `PhysicsWorld::set_sdf_collision_radius`, `PhysicsWorld::set_sleep_config`, `PhysicsWorld::set_sleep_skip`, `PhysicsWorld::sleep_skip`, `PhysicsWorld::stage_work`, `PhysicsWorld::step_parallel`, `PhysicsWorld::step_with_bridge`, `PhysicsWorld::substep_with_bridge`, `PhysicsWorld::take_gpu_solver_bridge`, `PhysicsWorld::tgs_cache_stats`, `PhysicsWorld::trigger_events`, `RigidBody::add_force`, `RigidBody::add_torque`, `RigidBody::is_kinematic`, `RigidBody::mass`, `RigidBody::set_angular_velocity`, `RigidBody::set_position`, `RigidBody::set_rotation`, `RigidBody::set_velocity`, `RigidBody::speed`, `RigidBody::with_angular_damping`, `RigidBody::with_friction`, `RigidBody::with_gravity_scale`, `RigidBody::with_linear_damping`, `RigidBody::with_restitution`, `RigidBody::with_rotation`, `RigidBody::with_sensor`, `RigidBody::with_velocity`, `TgsCacheStats`, `TgsCacheStats::hit_rate`, `TgsCacheStats::new`
 - `src/solver/participants.rs`: `DeclareFieldError`, `PhysicsWorld::add_participant`, `PhysicsWorld::check_participants`, `PhysicsWorld::clear_fault`, `PhysicsWorld::declare_field`, `PhysicsWorld::fault`, `PhysicsWorld::fields`, `PhysicsWorld::fields_mut`, `PhysicsWorld::observe_body_checked`, `PhysicsWorld::observe_participant`, `PhysicsWorld::participant_count`, `PhysicsWorld::participant_kinds`, `PhysicsWorld::participant_law_parts`, `PhysicsWorld::participant_state`, `PhysicsWorld::read_participants`, `PhysicsWorld::set_fault`, `PhysicsWorld::set_field`, `PhysicsWorld::try_step_parallel`, `PhysicsWorld::write_participants`
 - `src/solver/world_ccd.rs`: `PhysicsWorld::continuous_collision`, `PhysicsWorld::set_continuous_collision`, `WorldCcdConfig::motion_threshold`, `WorldCcdConfig::on`, `WorldCcdConfig::with_enabled`, `WorldCcdConfig::with_motion_threshold`
 - `src/solver/world_snapshot.rs`: `LawCheck`, `PhysicsWorld::WORLD_SNAPSHOT_MAGIC`, `PhysicsWorld::WORLD_SNAPSHOT_VERSION`, `PhysicsWorld::from_world_snapshot`, `PhysicsWorld::restore_world`, `PhysicsWorld::restore_world_checked`, `PhysicsWorld::snapshot_world`, `PhysicsWorld::world_snapshot_ids`, `SnapshotIds`, `WorldSnapshotError`

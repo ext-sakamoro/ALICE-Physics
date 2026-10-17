@@ -66,6 +66,10 @@ impl JointReference {
 }
 
 impl GpuSolverBridge for JointReference {
+    fn semantics_id(&self) -> [u8; 32] {
+        alice_physics::PHYSICS_SEMANTICS_ID
+    }
+
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
     fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
     fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -187,7 +191,8 @@ fn run(joints: &[Joint]) -> (Vec<BodyState>, Vec<Vec<Joint>>) {
         w.add_joint(*j);
     }
     let log: Log = Arc::new(Mutex::new(Vec::new()));
-    w.set_gpu_solver_bridge(Some(Box::new(JointReference::new(Arc::clone(&log)))));
+    w.set_gpu_solver_bridge(Some(Box::new(JointReference::new(Arc::clone(&log)))))
+        .expect("the bridge computes under this build's semantics");
     for _ in 0..STEPS {
         w.step(dt());
     }

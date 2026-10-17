@@ -221,6 +221,10 @@ struct IdentityBridge {
 
 #[cfg(feature = "gpu-solver-bridge")]
 impl alice_physics::gpu_bridge::GpuSolverBridge for IdentityBridge {
+    fn semantics_id(&self) -> [u8; 32] {
+        alice_physics::PHYSICS_SEMANTICS_ID
+    }
+
     fn send_island(&mut self, p: &[[Fix128; 3]], v: &[[Fix128; 3]]) {
         self.positions = p.to_vec();
         self.velocities = v.to_vec();
@@ -258,7 +262,8 @@ impl alice_physics::gpu_bridge::GpuSolverBridge for IdentityBridge {
 fn run_step_with_bridge(mut w: PhysicsWorld) -> PhysicsWorld {
     let mut bridge = IdentityBridge::default();
     for _ in 0..FRAMES {
-        w.step_with_bridge(&mut bridge, dt());
+        w.step_with_bridge(&mut bridge, dt())
+            .expect("the bridge computes under this build's semantics");
     }
     w
 }
@@ -270,7 +275,8 @@ fn run_substep_with_bridge(mut w: PhysicsWorld) -> PhysicsWorld {
     let substeps = w.config.substeps;
     let h = dt() / Fix128::from_int(substeps as i64);
     for _ in 0..FRAMES * substeps {
-        w.substep_with_bridge(&mut bridge, h);
+        w.substep_with_bridge(&mut bridge, h)
+            .expect("the bridge computes under this build's semantics");
     }
     w
 }
@@ -693,7 +699,8 @@ fn golden_step_parallel_shared_body_order() {
 #[test]
 fn golden_installed_bridge() {
     let mut w = path_scene(SolverBackend::Xpbd);
-    w.set_gpu_solver_bridge(Some(Box::new(IdentityBridge::default())));
+    w.set_gpu_solver_bridge(Some(Box::new(IdentityBridge::default())))
+        .expect("the bridge computes under this build's semantics");
     let w = run_step(w);
     assert!(w.bodies.iter().all(|b| b.position.y.to_f64().is_finite()));
     assert_golden(

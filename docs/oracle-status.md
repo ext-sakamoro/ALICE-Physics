@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5863 |
+| 🟢 Not ignored (run by CI) | 5871 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5961** |
+| **Total** | **5969** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5863)
+## 🟢 Not ignored (5871)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -224,6 +224,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_privacy.rs` | 21 |
 | `audit_sketch.rs` | 21 |
 | `determinism_golden_paths.rs` | 21 |
+| `physics_semantics_id.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
 | `analytic_coupling_medium.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
@@ -279,7 +280,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_laminate_failure.rs` | 17 |
 | `indep_participant_laws.rs` | 17 |
 | `participant_sdf_modifiers.rs` | 17 |
-| `physics_semantics_id.rs` | 17 |
 | `analytic_audio_physics_wiring.rs` | 16 |
 | `analytic_damping_rayleigh_wiring.rs` | 16 |
 | `analytic_fdtd_materials.rs` | 16 |
@@ -563,6 +563,7 @@ Per-file counts (the test names are in `tests/`):
 | `determinism_zero_tie.rs` | 4 |
 | `indep_contact_restitution_friction.rs` | 4 |
 | `indep_shaped_sphere_rest_heights.rs` | 4 |
+| `law_g7_boundaries.rs` | 4 |
 | `locking_p1.rs` | 4 |
 | `multi_world_try_step_all.rs` | 4 |
 | `p2_oracle_design.rs` | 4 |

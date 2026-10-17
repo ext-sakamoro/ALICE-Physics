@@ -336,6 +336,10 @@ scripts/run_tests.sh float_environment=2 -- cargo test --release --test float_en
 step "semantics identifier (parallel + gpu-solver-bridge)"
 cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
 
+step "ALICE-Law G7 handshakes (replay + analytics + gpu-solver-bridge)"
+scripts/run_tests.sh physics_semantics_id=21 -- cargo test --test physics_semantics_id --features "replay,analytics"
+scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "replay,analytics,gpu-solver-bridge"
+
 step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
 

@@ -12,10 +12,10 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 | Level | Meaning | Modules |
 |-------|---------|--------:|
-| step | runs when `PhysicsWorld` steps | 24 |
-| world API | used through another `PhysicsWorld` method | 15 |
+| step | runs when `PhysicsWorld` steps | 26 |
+| world API | used through another `PhysicsWorld` method | 14 |
 | binding | reached only from the C ABI, Python or WebAssembly bindings | 2 |
-| standalone | a Rust API that only examples call | 125 |
+| standalone | a Rust API that only examples call | 124 |
 | unused | no caller outside tests | 1 |
 
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
@@ -30,6 +30,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 11 / 4 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `force` | step | 6 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
+| `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 6 / 0 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `math` | step | 67 / 13 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
@@ -37,6 +38,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 24 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
+| `semantics` | step | 5 / 1 / 0 / 4 / 0 | — |
 | `shape_raycast` | step | 28 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
@@ -53,10 +55,9 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `rng` | world API | 0 / 6 / 0 / 6 / 0 | — |
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `semantics` | world API | 0 / 5 / 0 / 1 / 0 | — |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 53 of 199 items) | 53 / 116 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 51 of 199 items) | 51 / 118 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -93,7 +94,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `crowd_force` | standalone | 0 / 0 / 0 / 24 / 0 | — |
 | `cubic_elastic_fem` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `damping_rayleigh` | standalone | 0 / 0 / 0 / 5 / 0 | — |
-| `db_bridge` | standalone | 0 / 0 / 0 / 9 / 0 | — |
+| `db_bridge` | standalone | 0 / 0 / 0 / 11 / 0 | — |
 | `deformable` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `dynamic_fem` | standalone | 0 / 0 / 0 / 9 / 0 | — |
 | `electromagnetic` | standalone | 0 / 0 / 0 / 6 / 0 | — |
@@ -109,7 +110,6 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `fluid_netcode` | standalone | 0 / 0 / 0 / 10 / 0 | — |
 | `fracture` | standalone | 0 / 0 / 0 / 8 / 0 | — |
 | `fsi_advanced` | standalone | 0 / 0 / 0 / 5 / 0 | — |
-| `gpu_bridge` | standalone (step 1 of 3 items) | 1 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `gpu_sdf` | standalone (step 2 of 23 items) | 2 / 0 / 0 / 21 / 0 | C ABI, Python, WebAssembly |
 | `hyperelastic` | standalone | 0 / 0 / 0 / 18 / 0 | — |
 | `ik_physics_bridge` | standalone | 0 / 0 / 0 / 7 / 0 | — |

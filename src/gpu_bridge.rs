@@ -55,6 +55,30 @@ pub struct GpuDivergence {
     pub gpu_lo: u64,
 }
 
+/// Compare a backend's [`GpuSolverBridge::semantics_id`] with this build's
+/// [`crate::PHYSICS_SEMANTICS_ID`].
+///
+/// # Errors
+///
+/// [`crate::PeerMismatch`] naming both identifiers (`peer` is
+/// `"gpu-solver-bridge"`).
+pub fn check_bridge<B: GpuSolverBridge + ?Sized>(
+    path: &'static str,
+    bridge: &B,
+) -> Result<(), crate::PeerMismatch> {
+    let found = bridge.semantics_id();
+    if found == crate::PHYSICS_SEMANTICS_ID {
+        Ok(())
+    } else {
+        Err(crate::PeerMismatch {
+            bridge: path,
+            peer: "gpu-solver-bridge",
+            found,
+            expected: crate::PHYSICS_SEMANTICS_ID,
+        })
+    }
+}
+
 /// External GPU offload backend for the sub-stepping TGS solver.
 ///
 /// Implementations are responsible for the entire island lifecycle
@@ -81,6 +105,14 @@ pub struct GpuDivergence {
 ///   fast when a caller tries to route contact solve through
 ///   them.
 pub trait GpuSolverBridge {
+    /// The [`crate::PHYSICS_SEMANTICS_ID`] this backend computes under: a
+    /// backend reproduces the CPU solver's bits for one build of this crate,
+    /// so it states which. Every `*_with_bridge` path and
+    /// [`crate::PhysicsWorld::set_gpu_solver_bridge`] refuse a backend whose
+    /// identifier is not this build's ([`check_bridge`]). A backend built
+    /// against this crate returns `alice_physics::PHYSICS_SEMANTICS_ID`.
+    fn semantics_id(&self) -> [u8; 32];
+
     /// Upload an island (positions + velocities as
     /// `[Fix128; 3]` per body) into the GPU-side buffer. The
     /// implementer must preserve the caller's index ordering.
@@ -248,6 +280,10 @@ mod tests {
     /// dispatch code.
     struct StubBridge;
     impl GpuSolverBridge for StubBridge {
+        fn semantics_id(&self) -> [u8; 32] {
+            crate::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}

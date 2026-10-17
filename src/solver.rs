@@ -1989,11 +1989,21 @@ impl PhysicsWorld {
     /// externally-owned bridge — those methods ignore the installed
     /// bridge and take a `&mut B` parameter.
     #[cfg(feature = "gpu-solver-bridge")]
+    ///
+    /// # Errors
+    ///
+    /// [`crate::PeerMismatch`] naming both identifiers when the bridge does
+    /// not compute under this build's [`crate::PHYSICS_SEMANTICS_ID`]; the
+    /// bridge is not installed and the installed one (if any) stays.
     pub fn set_gpu_solver_bridge(
         &mut self,
         bridge: Option<Box<dyn crate::gpu_bridge::GpuSolverBridge + Send + Sync>>,
-    ) {
+    ) -> Result<(), crate::PeerMismatch> {
+        if let Some(b) = &bridge {
+            crate::gpu_bridge::check_bridge("set_gpu_solver_bridge", b.as_ref())?;
+        }
         self.gpu_solver_bridge = bridge;
+        Ok(())
     }
 
     /// v0.11.0: remove and return the currently installed GPU solver
@@ -5323,6 +5333,18 @@ impl PhysicsWorld {
         }
     }
 
+    /// [`Self::solve_contact_constraints_with_bridge`] after its check of the bridge.
+    #[cfg(feature = "gpu-solver-bridge")]
+    fn solve_contact_constraints_with_bridge_unchecked<
+        B: crate::gpu_bridge::GpuSolverBridge + ?Sized,
+    >(
+        &mut self,
+        bridge: &mut B,
+    ) {
+        self.apply_contact_filters();
+        self.solve_contact_pass_with_bridge(bridge);
+    }
+
     /// v0.10.0 opt-in: run one PGS contact-solve iteration via a
     /// caller-supplied [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge) instead of the CPU-side
     /// `solve_contact_constraints` hot loop.
@@ -5372,13 +5394,20 @@ impl PhysicsWorld {
     /// v0.9.0 contact-solve methods (`send_contact_constraints`,
     /// `send_body_state`, `dispatch_contact_solve_iteration`,
     /// `recv_contact_constraints`, `recv_body_positions`).
+    ///
+    /// # Errors
+    ///
+    /// [`crate::PeerMismatch`] naming both identifiers when the bridge does not
+    /// compute under this build's [`crate::PHYSICS_SEMANTICS_ID`]; nothing runs.
+    // ALLOW-UNWIRED: public entry for hosts that drive the contact solve themselves; the substep loop calls the core after the step-level check
     #[cfg(feature = "gpu-solver-bridge")]
     pub fn solve_contact_constraints_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
-    ) {
-        self.apply_contact_filters();
-        self.solve_contact_pass_with_bridge(bridge);
+    ) -> Result<(), crate::PeerMismatch> {
+        crate::gpu_bridge::check_bridge("solve_contact_constraints_with_bridge", bridge)?;
+        self.solve_contact_constraints_with_bridge_unchecked(bridge);
+        Ok(())
     }
 
     /// One bridge-routed PGS pass over the constraints that
@@ -5466,28 +5495,9 @@ impl PhysicsWorld {
         }
     }
 
-    /// v0.10.0 opt-in: run one full simulation step with the
-    /// contact-solve stage routed through a caller-supplied
-    /// [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge). Semantically equivalent to
-    /// [`Self::step`] with `substep(_)` replaced by
-    /// [`Self::substep_with_bridge`] inside the substep loop.
-    ///
-    /// # Byte-exact CPU parity
-    ///
-    /// When the bridge implementation is byte-exact vs the CPU
-    /// `solve_contact_constraints`, a full `step_with_bridge`
-    /// produces `self.bodies` and `self.contact_constraints` state
-    /// byte-identical to what a CPU-only `step(dt)` call produces
-    /// from the same initial state and configuration.
-    ///
-    /// # Solver backend
-    ///
-    /// `config.solver_backend` is not consulted: the bridge replaces the
-    /// contact solve of the XPBD substep, so with [`SolverBackend::Tgs`] this
-    /// gives the same bits as with [`SolverBackend::Xpbd`]. A bridge path for
-    /// TGS does not exist yet; use [`Self::step`] for TGS.
+    /// [`Self::step_with_bridge`] after its check of the bridge.
     #[cfg(feature = "gpu-solver-bridge")]
-    pub fn step_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+    fn step_with_bridge_unchecked<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
         dt: Fix128,
@@ -5534,7 +5544,7 @@ impl PhysicsWorld {
             self.kinematic_substeps_left = n - i;
             self.sdf_contact_substep = i;
             let overflow_at_start = self.participants_begin_substep(i, n, substep_dt, &mut frozen);
-            self.substep_with_bridge(bridge, substep_dt);
+            self.substep_with_bridge_unchecked(bridge, substep_dt);
             self.participants_end_substep(overflow_at_start, &frozen);
         }
         self.kinematic_substeps_left = 0;
@@ -5555,25 +5565,19 @@ impl PhysicsWorld {
         self.events.end_frame();
     }
 
-    /// v0.10.0 opt-in: run one substep with the contact-solve stage
-    /// routed through a caller-supplied [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge). The
-    /// integrate + distance-projection + joint + velocity-update
-    /// stages stay on the CPU; only the inner PGS contact-solve
-    /// iterations are dispatched through the bridge.
+    /// v0.10.0 opt-in: run one full simulation step with the
+    /// contact-solve stage routed through a caller-supplied
+    /// [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge). Semantically equivalent to
+    /// [`Self::step`] with `substep(_)` replaced by
+    /// [`Self::substep_with_bridge`] inside the substep loop.
     ///
     /// # Byte-exact CPU parity
     ///
     /// When the bridge implementation is byte-exact vs the CPU
-    /// `solve_contact_constraints` (which every ALICE-TRT
-    /// `TrtSolverAdapter` release since v2.6.0 asserts on the
-    /// 3-platform CI matrix), a full `substep_with_bridge` sequence
+    /// `solve_contact_constraints`, a full `step_with_bridge`
     /// produces `self.bodies` and `self.contact_constraints` state
-    /// byte-identical to what a CPU-only `substep(dt)` call produces
+    /// byte-identical to what a CPU-only `step(dt)` call produces
     /// from the same initial state and configuration.
-    ///
-    /// Called on its own, this runs no participant: the participants of
-    /// [`crate::world_participant`] are called by the step loops
-    /// ([`Self::step_with_bridge`], [`Self::try_step`]) around each substep.
     ///
     /// # Solver backend
     ///
@@ -5581,8 +5585,25 @@ impl PhysicsWorld {
     /// contact solve of the XPBD substep, so with [`SolverBackend::Tgs`] this
     /// gives the same bits as with [`SolverBackend::Xpbd`]. A bridge path for
     /// TGS does not exist yet; use [`Self::step`] for TGS.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::PeerMismatch`] naming both identifiers when the bridge does not
+    /// compute under this build's [`crate::PHYSICS_SEMANTICS_ID`]; nothing runs.
     #[cfg(feature = "gpu-solver-bridge")]
-    pub fn substep_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+    pub fn step_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+        dt: Fix128,
+    ) -> Result<(), crate::PeerMismatch> {
+        crate::gpu_bridge::check_bridge("step_with_bridge", bridge)?;
+        self.step_with_bridge_unchecked(bridge, dt);
+        Ok(())
+    }
+
+    /// [`Self::substep_with_bridge`] after its check of the bridge.
+    #[cfg(feature = "gpu-solver-bridge")]
+    fn substep_with_bridge_unchecked<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
         &mut self,
         bridge: &mut B,
         dt: Fix128,
@@ -5613,7 +5634,7 @@ impl PhysicsWorld {
         for iteration in 0..self.config.iterations {
             self.solve_distance_constraints(dt);
             if iteration == 0 {
-                self.solve_contact_constraints_with_bridge(bridge);
+                self.solve_contact_constraints_with_bridge_unchecked(bridge);
             } else {
                 self.solve_contact_pass_with_bridge(bridge);
             }
@@ -5633,6 +5654,48 @@ impl PhysicsWorld {
         }
 
         self.update_velocities(dt);
+    }
+
+    /// v0.10.0 opt-in: run one substep with the contact-solve stage
+    /// routed through a caller-supplied [`GpuSolverBridge`](crate::gpu_bridge::GpuSolverBridge). The
+    /// integrate + distance-projection + joint + velocity-update
+    /// stages stay on the CPU; only the inner PGS contact-solve
+    /// iterations are dispatched through the bridge.
+    ///
+    /// # Byte-exact CPU parity
+    ///
+    /// When the bridge implementation is byte-exact vs the CPU
+    /// `solve_contact_constraints` (which every ALICE-TRT
+    /// `TrtSolverAdapter` release since v2.6.0 asserts on the
+    /// 3-platform CI matrix), a full `substep_with_bridge` sequence
+    /// produces `self.bodies` and `self.contact_constraints` state
+    /// byte-identical to what a CPU-only `substep(dt)` call produces
+    /// from the same initial state and configuration.
+    ///
+    /// Called on its own, this runs no participant: the participants of
+    /// [`crate::world_participant`] are called by the step loops
+    /// ([`Self::step_with_bridge`], [`Self::try_step`]) around each substep.
+    ///
+    /// # Solver backend
+    ///
+    /// `config.solver_backend` is not consulted: the bridge replaces the
+    /// contact solve of the XPBD substep, so with [`SolverBackend::Tgs`] this
+    /// gives the same bits as with [`SolverBackend::Xpbd`]. A bridge path for
+    /// TGS does not exist yet; use [`Self::step`] for TGS.
+    ///
+    /// # Errors
+    ///
+    /// [`crate::PeerMismatch`] naming both identifiers when the bridge does not
+    /// compute under this build's [`crate::PHYSICS_SEMANTICS_ID`]; nothing runs.
+    #[cfg(feature = "gpu-solver-bridge")]
+    pub fn substep_with_bridge<B: crate::gpu_bridge::GpuSolverBridge + ?Sized>(
+        &mut self,
+        bridge: &mut B,
+        dt: Fix128,
+    ) -> Result<(), crate::PeerMismatch> {
+        crate::gpu_bridge::check_bridge("substep_with_bridge", bridge)?;
+        self.substep_with_bridge_unchecked(bridge, dt);
+        Ok(())
     }
 
     /// v0.12.0: run one joint-solve pass with the joint stage routed
@@ -7618,6 +7681,10 @@ mod tests {
 
     #[cfg(feature = "gpu-solver-bridge")]
     impl crate::gpu_bridge::GpuSolverBridge for RecordingBridge {
+        fn semantics_id(&self) -> [u8; 32] {
+            crate::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
         fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
         fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -7695,7 +7762,9 @@ mod tests {
         };
 
         let mut world = build_one_contact_world();
-        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+        world
+            .set_gpu_solver_bridge(Some(Box::new(bridge)))
+            .expect("the bridge computes under this build's semantics");
         assert!(world.gpu_solver_bridge_installed());
 
         // substep は solve_contact_constraints を `config.iterations`
@@ -7765,7 +7834,9 @@ mod tests {
             send_body_rotations_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
             dispatch_joint_count: std::sync::Arc::new(core::sync::atomic::AtomicUsize::new(0)),
         };
-        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+        world
+            .set_gpu_solver_bridge(Some(Box::new(bridge)))
+            .expect("the bridge computes under this build's semantics");
         assert!(world.gpu_solver_bridge_installed());
 
         let taken = world.take_gpu_solver_bridge();
@@ -7828,7 +7899,9 @@ mod tests {
         };
 
         let mut world = build_one_ball_joint_world();
-        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+        world
+            .set_gpu_solver_bridge(Some(Box::new(bridge)))
+            .expect("the bridge computes under this build's semantics");
 
         let dt = Fix128::from_ratio(1, 60);
         world.substep(dt);
@@ -7902,7 +7975,9 @@ mod tests {
         };
 
         let mut world = build_one_ball_joint_world();
-        world.set_gpu_solver_bridge(Some(Box::new(bridge)));
+        world
+            .set_gpu_solver_bridge(Some(Box::new(bridge)))
+            .expect("the bridge computes under this build's semantics");
 
         let dt = Fix128::from_ratio(1, 60);
         world.substep(dt);

@@ -337,6 +337,10 @@ mod bridge {
     }
 
     impl alice_physics::gpu_bridge::GpuSolverBridge for IdentityBridge {
+        fn semantics_id(&self) -> [u8; 32] {
+            alice_physics::PHYSICS_SEMANTICS_ID
+        }
+
         fn send_island(&mut self, p: &[[Fix128; 3]], v: &[[Fix128; 3]]) {
             self.positions = p.to_vec();
             self.velocities = v.to_vec();
@@ -392,7 +396,8 @@ fn xpbd_paths() -> Vec<StepPath> {
     #[cfg(feature = "gpu-solver-bridge")]
     paths.push(("step_with_bridge", |w, dt| {
         let mut b = bridge::IdentityBridge::default();
-        w.step_with_bridge(&mut b, dt);
+        w.step_with_bridge(&mut b, dt)
+            .expect("the bridge computes under this build's semantics");
     }));
     paths
 }

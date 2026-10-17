@@ -23,6 +23,10 @@ struct JointReference {
 }
 
 impl GpuSolverBridge for JointReference {
+    fn semantics_id(&self) -> [u8; 32] {
+        alice_physics::PHYSICS_SEMANTICS_ID
+    }
+
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
     fn dispatch_iterations(&mut self, _iters: u32, _dt: Fix128) {}
     fn recv_island(&self, _p: &mut [[Fix128; 3]], _v: &mut [[Fix128; 3]]) {}
@@ -86,7 +90,8 @@ fn hung(limit: i64) -> PhysicsWorld {
 fn step_with_bridge_breaks_a_joint_below_its_load() {
     let mut w = hung(15);
     let mut bridge = JointReference::default();
-    w.step_with_bridge(&mut bridge, h());
+    w.step_with_bridge(&mut bridge, h())
+        .expect("the bridge computes under this build's semantics");
     assert!(
         w.joints.is_empty(),
         "16 N > 15 N: removed on the step_with_bridge path"
@@ -97,7 +102,8 @@ fn step_with_bridge_breaks_a_joint_below_its_load() {
     // judged after the bridge solve: the bridge solved it in this substep, and
     // is sent no joint from the next one on
     assert_eq!((bridge.sends, bridge.joints.len()), (1, 1));
-    w.step_with_bridge(&mut bridge, h());
+    w.step_with_bridge(&mut bridge, h())
+        .expect("the bridge computes under this build's semantics");
     assert_eq!(bridge.sends, 1, "the broken joint is not sent again");
 }
 
@@ -107,7 +113,8 @@ fn step_with_bridge_keeps_a_joint_at_or_above_its_load() {
         let mut w = hung(limit);
         let mut bridge = JointReference::default();
         for _ in 0..32 {
-            w.step_with_bridge(&mut bridge, h());
+            w.step_with_bridge(&mut bridge, h())
+                .expect("the bridge computes under this build's semantics");
         }
         assert_eq!(w.joints.len(), 1, "break_force {limit} N holds");
         assert_eq!(bridge.joints.len(), 1);
@@ -117,7 +124,8 @@ fn step_with_bridge_keeps_a_joint_at_or_above_its_load() {
 #[test]
 fn an_installed_bridge_breaks_through_plain_step() {
     let mut w = hung(15);
-    w.set_gpu_solver_bridge(Some(Box::new(JointReference::default())));
+    w.set_gpu_solver_bridge(Some(Box::new(JointReference::default())))
+        .expect("the bridge computes under this build's semantics");
     w.step(h());
     assert!(w.joints.is_empty());
     assert_eq!(w.events.joint_break_events()[0].force, Fix128::from_int(16));
