@@ -336,6 +336,12 @@ pub mod det_math {
     // (`.github/clippy-lib/clippy.toml`), and `scripts/no_private_minmax.py`
     // refuses a crate-local copy of the four
     pub(crate) use alice_det_math::{max, max64, min, min64};
+    // `f32::clamp` passes a NaN payload through and panics on a NaN or inverted bound;
+    // alice-det-math's clamp gives the canonical NaN for a NaN in any argument and lets
+    // the low bound win when the bounds are inverted (ALICE-Law G2, the clamp owner is
+    // alice-det-math). It compares: clamp(-0, +0, hi) keeps -0. `f32::clamp` is banned in
+    // library code (`.github/clippy-lib/clippy.toml`)
+    pub(crate) use alice_det_math::metric::clamp;
 
     #[cfg(test)]
     mod max_min_tests {

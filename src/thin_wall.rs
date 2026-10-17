@@ -246,10 +246,7 @@ pub fn measure_thickness_at(
             return Some(Fix128::from_f32(distance));
         }
         // Inside: |SDF| is exact distance to nearest surface, safe to advance.
-        let mut step = -d;
-        if step < config.min_step_mm {
-            step = config.min_step_mm;
-        }
+        let step = crate::det_math::max(-d, config.min_step_mm);
         let (prev_px, prev_py, prev_pz) = (px, py, pz);
         px += inward.0 * step;
         py += inward.1 * step;

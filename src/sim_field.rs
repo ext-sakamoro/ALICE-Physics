@@ -352,14 +352,13 @@ impl ScalarField3D {
     }
 
     /// Clamp all values to range
+    ///
+    /// alice-det-math's clamp: a NaN value (or a NaN bound) becomes the
+    /// canonical NaN, `-0` against a `+0` bound stays `-0`, and with `lo > hi`
+    /// the low bound wins
     pub fn clamp(&mut self, lo: f32, hi: f32) {
         for v in &mut self.data {
-            if *v < lo {
-                *v = lo;
-            }
-            if *v > hi {
-                *v = hi;
-            }
+            *v = crate::det_math::clamp(*v, lo, hi);
         }
     }
 

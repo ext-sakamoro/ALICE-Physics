@@ -353,7 +353,7 @@ impl SdfField for DestructibleSdf {
 /// `smooth_max(a, -b, k)` where k controls smoothing radius
 #[inline]
 fn smooth_subtraction(d_a: f32, d_b: f32, k: f32) -> f32 {
-    let h = (0.5 - 0.5 * (d_a + d_b) / k).clamp(0.0, 1.0);
+    let h = crate::det_math::clamp(0.5 - 0.5 * (d_a + d_b) / k, 0.0, 1.0);
     // mix(d_a, -d_b, h) + k*h*(1-h)
     (k * h).mul_add(1.0 - h, d_a.mul_add(1.0 - h, (-d_b) * h))
 }
@@ -386,7 +386,7 @@ pub fn destruction_from_impact(
     } else {
         (max_radius, min_radius)
     };
-    let radius = (speed * velocity_to_radius_scale).clamp(lo, hi);
+    let radius = crate::det_math::clamp(speed * velocity_to_radius_scale, lo, hi);
 
     DestructionShape::sphere(contact.point_b, radius)
 }

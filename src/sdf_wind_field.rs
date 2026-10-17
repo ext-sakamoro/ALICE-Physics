@@ -67,7 +67,7 @@ impl<'a, F: SdfField + ?Sized> SdfWindField<'a, F> {
                 0.0
             }
         } else {
-            (crate::det_math::max(d, 0.0) / self.decay_scale_m).clamp(0.0, 1.0)
+            crate::det_math::clamp(crate::det_math::max(d, 0.0) / self.decay_scale_m, 0.0, 1.0)
         };
         let scale = self.base_speed_m_s * shelter;
         [

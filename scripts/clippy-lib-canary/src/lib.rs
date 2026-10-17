@@ -18,6 +18,10 @@ pub fn fold_f64(v: &[f64]) -> f64 {
     v.iter().copied().fold(f64::NEG_INFINITY, f64::max)
 }
 
+pub fn clamp_f32(x: f32) -> f32 {
+    x.clamp(0.0, 1.0)
+}
+
 pub fn libm_f32(x: f32) -> f32 {
     x.sin()
 }

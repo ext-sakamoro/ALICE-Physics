@@ -101,7 +101,11 @@ impl Crack {
 
         let ba_len_sq = b_az.mul_add(b_az, b_ax.mul_add(b_ax, b_ay * b_ay));
         let h = if ba_len_sq > 1e-10 {
-            (paz.mul_add(b_az, pax.mul_add(b_ax, pay * b_ay)) / ba_len_sq).clamp(0.0, 1.0)
+            crate::det_math::clamp(
+                paz.mul_add(b_az, pax.mul_add(b_ax, pay * b_ay)) / ba_len_sq,
+                0.0,
+                1.0,
+            )
         } else {
             0.0
         };
@@ -263,9 +267,9 @@ impl FractureModifier {
             crack.length += growth;
 
             if crack.length >= max_len {
-                crack.length = max_len;
                 crack.active = false;
             }
+            crack.length = crate::det_math::min(crack.length, max_len);
 
             // Extend tip
             crack.end = (

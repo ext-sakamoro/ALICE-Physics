@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5871 |
+| 🟢 Not ignored (run by CI) | 5879 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5969** |
+| **Total** | **5977** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5871)
+## 🟢 Not ignored (5879)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -479,6 +479,7 @@ Per-file counts (the test names are in `tests/`):
 | `indep_euler_fv_riemann.rs` | 8 |
 | `indep_molecular_dynamics.rs` | 8 |
 | `indep_orbit_nbody.rs` | 8 |
+| `law_g2_tie_classes.rs` | 8 |
 | `mat3_inverse_range.rs` | 8 |
 | `mesh_conformity.rs` | 8 |
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |

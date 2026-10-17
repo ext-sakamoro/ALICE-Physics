@@ -678,7 +678,10 @@ impl SdfCharacter {
         max_walkable_slope: f32,
     ) -> CharacterStateContext {
         let (is_grounded, slope_radians) = match self.ground_contact(field) {
-            Some(c) => (true, crate::det_math::acos(c.up_alignment.clamp(-1.0, 1.0))),
+            Some(c) => (
+                true,
+                crate::det_math::acos(crate::det_math::clamp(c.up_alignment, -1.0, 1.0)),
+            ),
             None => (false, 0.0),
         };
         CharacterStateContext {
