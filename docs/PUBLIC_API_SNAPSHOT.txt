@@ -10200,6 +10200,25 @@ impl core::marker::Unpin for alice_physics::LawCheck
 impl core::marker::UnsafeUnpin for alice_physics::LawCheck
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LawCheck
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::LawCheck
+pub enum alice_physics::prelude::LegacyPolicy
+pub alice_physics::prelude::LegacyPolicy::AcceptUnpinned
+pub alice_physics::prelude::LegacyPolicy::RequirePinned
+impl core::clone::Clone for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::LegacyPolicy
+impl core::cmp::PartialEq for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::LegacyPolicy
+impl core::marker::StructuralPartialEq for alice_physics::LegacyPolicy
+impl core::marker::Freeze for alice_physics::LegacyPolicy
+impl core::marker::Send for alice_physics::LegacyPolicy
+impl core::marker::Sync for alice_physics::LegacyPolicy
+impl core::marker::Unpin for alice_physics::LegacyPolicy
+impl core::marker::UnsafeUnpin for alice_physics::LegacyPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LegacyPolicy
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::LegacyPolicy
 pub enum alice_physics::prelude::MetricType
 pub alice_physics::prelude::MetricType::Counter
 pub alice_physics::prelude::MetricType::Gauge
@@ -10442,6 +10461,7 @@ pub alice_physics::prelude::WorldSnapshotError::SemanticsMismatch::stored: [u8; 
 pub alice_physics::prelude::WorldSnapshotError::TrailingBytes
 pub alice_physics::prelude::WorldSnapshotError::TrailingBytes::extra: usize
 pub alice_physics::prelude::WorldSnapshotError::Truncated
+pub alice_physics::prelude::WorldSnapshotError::Unpinned
 pub alice_physics::prelude::WorldSnapshotError::UnsupportedVersion
 pub alice_physics::prelude::WorldSnapshotError::UnsupportedVersion::found: u16
 pub alice_physics::prelude::WorldSnapshotError::UnsupportedVersion::supported: u16
@@ -13540,7 +13560,7 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
-pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics::LegacyPolicy) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics::SnapshotIds>, alice_physics::WorldSnapshotError>
 impl alice_physics::solver::PhysicsWorld
@@ -18005,6 +18025,25 @@ impl core::marker::Unpin for alice_physics::LawCheck
 impl core::marker::UnsafeUnpin for alice_physics::LawCheck
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LawCheck
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::LawCheck
+pub enum alice_physics::solver::LegacyPolicy
+pub alice_physics::solver::LegacyPolicy::AcceptUnpinned
+pub alice_physics::solver::LegacyPolicy::RequirePinned
+impl core::clone::Clone for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::LegacyPolicy
+impl core::cmp::PartialEq for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::LegacyPolicy
+impl core::marker::StructuralPartialEq for alice_physics::LegacyPolicy
+impl core::marker::Freeze for alice_physics::LegacyPolicy
+impl core::marker::Send for alice_physics::LegacyPolicy
+impl core::marker::Sync for alice_physics::LegacyPolicy
+impl core::marker::Unpin for alice_physics::LegacyPolicy
+impl core::marker::UnsafeUnpin for alice_physics::LegacyPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LegacyPolicy
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::LegacyPolicy
 #[non_exhaustive] pub enum alice_physics::solver::SolverBackend
 pub alice_physics::solver::SolverBackend::Tgs
 pub alice_physics::solver::SolverBackend::Xpbd
@@ -18059,6 +18098,7 @@ pub alice_physics::solver::WorldSnapshotError::SemanticsMismatch::stored: [u8; 3
 pub alice_physics::solver::WorldSnapshotError::TrailingBytes
 pub alice_physics::solver::WorldSnapshotError::TrailingBytes::extra: usize
 pub alice_physics::solver::WorldSnapshotError::Truncated
+pub alice_physics::solver::WorldSnapshotError::Unpinned
 pub alice_physics::solver::WorldSnapshotError::UnsupportedVersion
 pub alice_physics::solver::WorldSnapshotError::UnsupportedVersion::found: u16
 pub alice_physics::solver::WorldSnapshotError::UnsupportedVersion::supported: u16
@@ -18301,7 +18341,7 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
-pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics::LegacyPolicy) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics::SnapshotIds>, alice_physics::WorldSnapshotError>
 impl alice_physics::solver::PhysicsWorld
@@ -21431,6 +21471,25 @@ impl core::marker::Unpin for alice_physics::LawCheck
 impl core::marker::UnsafeUnpin for alice_physics::LawCheck
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LawCheck
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::LawCheck
+pub enum alice_physics::LegacyPolicy
+pub alice_physics::LegacyPolicy::AcceptUnpinned
+pub alice_physics::LegacyPolicy::RequirePinned
+impl core::clone::Clone for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics::LegacyPolicy
+impl core::cmp::PartialEq for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics::LegacyPolicy
+pub fn alice_physics::LegacyPolicy::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics::LegacyPolicy
+impl core::marker::StructuralPartialEq for alice_physics::LegacyPolicy
+impl core::marker::Freeze for alice_physics::LegacyPolicy
+impl core::marker::Send for alice_physics::LegacyPolicy
+impl core::marker::Sync for alice_physics::LegacyPolicy
+impl core::marker::Unpin for alice_physics::LegacyPolicy
+impl core::marker::UnsafeUnpin for alice_physics::LegacyPolicy
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::LegacyPolicy
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::LegacyPolicy
 pub enum alice_physics::MetricType
 pub alice_physics::MetricType::Counter
 pub alice_physics::MetricType::Gauge
@@ -21756,6 +21815,7 @@ pub alice_physics::WorldSnapshotError::SemanticsMismatch::stored: [u8; 32]
 pub alice_physics::WorldSnapshotError::TrailingBytes
 pub alice_physics::WorldSnapshotError::TrailingBytes::extra: usize
 pub alice_physics::WorldSnapshotError::Truncated
+pub alice_physics::WorldSnapshotError::Unpinned
 pub alice_physics::WorldSnapshotError::UnsupportedVersion
 pub alice_physics::WorldSnapshotError::UnsupportedVersion::found: u16
 pub alice_physics::WorldSnapshotError::UnsupportedVersion::supported: u16
@@ -24918,7 +24978,7 @@ pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics::WorldSnapshotError>
-pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
+pub fn alice_physics::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics::LegacyPolicy) -> core::result::Result<alice_physics::LawCheck, alice_physics::WorldSnapshotError>
 pub fn alice_physics::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
 pub fn alice_physics::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics::SnapshotIds>, alice_physics::WorldSnapshotError>
 impl alice_physics::solver::PhysicsWorld

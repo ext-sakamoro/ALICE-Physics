@@ -191,8 +191,8 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 
 /// The identifier each optional Law-bearing peer exports, as this build
 /// expects it: `alice-analytics` (feature `analytics`, read by
-/// [`crate::analytics_bridge`]) and `alice-db` (feature `replay`, read by
-/// [`crate::db_bridge`] and `crate::replay`).
+/// `crate::analytics_bridge`) and `alice-db` (feature `replay`, read by
+/// `crate::db_bridge` and `crate::replay`).
 ///
 /// The values are written out, not read from the peers, so the table (and
 /// [`PHYSICS_SEMANTICS_ID`], which folds it) is the same in every feature set.

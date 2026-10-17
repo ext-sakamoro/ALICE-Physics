@@ -88,6 +88,12 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum WorldSnapshotError {
     /// The blob ends before the header or the declared payload does.
     Truncated,
+    /// A version 1 to 3 blob (it carries no identifiers) read under
+    /// [`LegacyPolicy::RequirePinned`], which [`PhysicsWorld::restore_world`]
+    /// always uses: read it with [`PhysicsWorld::restore_world_checked`] and
+    /// [`LegacyPolicy::AcceptUnpinned`] to accept it as [`LawCheck::Unpinned`]
+    /// (ALICE-Law G8).
+    Unpinned,
     /// The first 4 bytes are not [`PhysicsWorld::WORLD_SNAPSHOT_MAGIC`].
     BadMagic,
     /// The version is not one this build reads (1 to
@@ -186,6 +192,18 @@ pub enum WorldSnapshotError {
     },
 }
 
+/// Whether [`PhysicsWorld::restore_world_checked`] reads a version 1 to 3
+/// blob, which carries no identifiers (ALICE-Law G8: data without an
+/// identifier is readable only with a status the caller sees, and a policy
+/// refuses it).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LegacyPolicy {
+    /// Read it and report [`LawCheck::Unpinned`].
+    AcceptUnpinned,
+    /// Refuse it with [`WorldSnapshotError::Unpinned`].
+    RequirePinned,
+}
+
 /// What [`PhysicsWorld::restore_world_checked`] could verify about the rule
 /// identifiers of a blob it accepted.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -200,8 +218,8 @@ pub enum LawCheck {
     /// the header `law_id` was not compared with anything.
     SemanticsVerified,
     /// Version 1 to 3: the blob carries no identifiers, so neither could be
-    /// verified. The blob is accepted; a caller that requires verification
-    /// can refuse it on this value.
+    /// verified. Reported only under [`LegacyPolicy::AcceptUnpinned`];
+    /// [`LegacyPolicy::RequirePinned`] refuses the blob.
     Unpinned,
     /// Version 4 written under an earlier identifier listed in
     /// [`crate::PREVIOUS_PHYSICS_SEMANTICS_IDS`] (the stepping bits are the
@@ -238,6 +256,10 @@ impl core::fmt::Display for WorldSnapshotError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Truncated => write!(f, "world snapshot is truncated"),
+            Self::Unpinned => write!(
+                f,
+                "world snapshot of version 1 to 3 carries no identifiers: read it with restore_world_checked and LegacyPolicy::AcceptUnpinned"
+            ),
             Self::BadMagic => write!(f, "not a world snapshot (bad magic)"),
             Self::UnsupportedVersion { found, supported } => write!(
                 f,
@@ -1942,6 +1964,11 @@ impl PhysicsWorld {
     ///
     /// Rotations are restored as stored, as in [`Self::restore_world`].
     ///
+    /// A version 1 to 3 blob carries no identifiers and is refused with
+    /// [`WorldSnapshotError::Unpinned`], as by [`Self::restore_world`]: read it
+    /// into a world with [`Self::restore_world_checked`] and
+    /// [`LegacyPolicy::AcceptUnpinned`].
+    ///
     /// # Errors
     ///
     /// See [`WorldSnapshotError`] for which input gives which error.
@@ -1969,8 +1996,14 @@ impl PhysicsWorld {
     /// # Errors
     ///
     /// See [`WorldSnapshotError`] for which input gives which error. On error `self` is unchanged.
+    ///
+    /// A version 1 to 3 blob carries no identifiers and is refused with
+    /// [`WorldSnapshotError::Unpinned`] (no reader takes it without saying so,
+    /// ALICE-Law G8): read it with [`Self::restore_world_checked`] and
+    /// [`LegacyPolicy::AcceptUnpinned`].
     pub fn restore_world(&mut self, data: &[u8]) -> Result<(), WorldSnapshotError> {
-        self.restore_world_checked(data, None).map(|_| ())
+        self.restore_world_checked(data, None, LegacyPolicy::RequirePinned)
+            .map(|_| ())
     }
 
     /// [`Self::restore_world`], also comparing the blob's rule identifier
@@ -1985,7 +2018,8 @@ impl PhysicsWorld {
     /// | version 4, earlier `semantics_id` `s` | `Some(id)`, `id == self.law_id(&PHYSICS_SEMANTICS_ID)` and header `law_id == self.law_id(&s)` | [`LawCheck::VerifiedUnderPrevious`] |
     /// | version 4, earlier `semantics_id` | `Some(id)`, otherwise | [`WorldSnapshotError::LawIdMismatch`] |
     /// | version 4, earlier `semantics_id` | `None` | [`LawCheck::SemanticsPrevious`] |
-    /// | version 1 to 3 | any (not compared) | [`LawCheck::Unpinned`] |
+    /// | version 1 to 3, [`LegacyPolicy::AcceptUnpinned`] | any (not compared) | [`LawCheck::Unpinned`] |
+    /// | version 1 to 3, [`LegacyPolicy::RequirePinned`] | any | [`WorldSnapshotError::Unpinned`] |
     ///
     /// `expected_law_id` is compared with the header as written, not with
     /// [`Self::law_id`] of the restored world (see the format notes on
@@ -2027,7 +2061,7 @@ impl PhysicsWorld {
     /// // A target running the same rule: its own law id, taken before the restore
     /// let mut same = PhysicsWorld::new(PhysicsConfig::default());
     /// let expected = same.law_id(&PHYSICS_SEMANTICS_ID);
-    /// assert_eq!(same.restore_world_checked(&blob, Some(&expected)), Ok(LawCheck::Verified));
+    /// assert_eq!(same.restore_world_checked(&blob, Some(&expected), alice_physics::LegacyPolicy::RequirePinned), Ok(LawCheck::Verified));
     ///
     /// // A target running another rule refuses the blob and keeps its state
     /// let mut other = PhysicsWorld::new(PhysicsConfig {
@@ -2037,13 +2071,13 @@ impl PhysicsWorld {
     /// let expected = other.law_id(&PHYSICS_SEMANTICS_ID);
     /// let before = other.snapshot_world();
     /// assert!(matches!(
-    ///     other.restore_world_checked(&blob, Some(&expected)),
+    ///     other.restore_world_checked(&blob, Some(&expected), alice_physics::LegacyPolicy::RequirePinned),
     ///     Err(WorldSnapshotError::LawIdMismatch { .. })
     /// ));
     /// assert_eq!(other.snapshot_world(), before);
     ///
     /// // Without an expected id only the stepping semantics is checked
-    /// assert_eq!(other.restore_world_checked(&blob, None), Ok(LawCheck::SemanticsVerified));
+    /// assert_eq!(other.restore_world_checked(&blob, None, alice_physics::LegacyPolicy::RequirePinned), Ok(LawCheck::SemanticsVerified));
     /// ```
     ///
     /// # Errors
@@ -2054,9 +2088,13 @@ impl PhysicsWorld {
         &mut self,
         data: &[u8],
         expected_law_id: Option<&[u8; 32]>,
+        legacy: LegacyPolicy,
     ) -> Result<LawCheck, WorldSnapshotError> {
         let d = decode(data)?;
         let check = law_check(d.ids, expected_law_id, |s| self.law_id(s))?;
+        if check == LawCheck::Unpinned && legacy == LegacyPolicy::RequirePinned {
+            return Err(WorldSnapshotError::Unpinned);
+        }
         self.check_attachable(&d)?;
         self.check_participants(&d.participants)?;
         self.fields()
@@ -3807,13 +3845,16 @@ mod tests {
             expected: PHYSICS_SEMANTICS_ID,
         };
         assert_eq!(t.restore_world(&x), Err(foreign));
-        assert_eq!(t.restore_world_checked(&x, Some(&law)), Err(foreign));
+        assert_eq!(
+            t.restore_world_checked(&x, Some(&law), crate::solver::LegacyPolicy::AcceptUnpinned),
+            Err(foreign)
+        );
 
         let mut x = blob.clone();
         x[48 + 3] ^= 0x02;
         let x = reseal(x);
         assert_eq!(
-            t.restore_world_checked(&x, Some(&law)),
+            t.restore_world_checked(&x, Some(&law), crate::solver::LegacyPolicy::AcceptUnpinned),
             Err(WorldSnapshotError::LawIdMismatch {
                 stored: header_id(&x, 48),
                 expected: law
@@ -3837,12 +3878,16 @@ mod tests {
         assert_eq!(digest(&mut t), before);
 
         assert_eq!(
-            t.restore_world_checked(&blob, None),
+            t.restore_world_checked(&blob, None, crate::solver::LegacyPolicy::AcceptUnpinned),
             Ok(LawCheck::SemanticsVerified)
         );
         let mut t = PhysicsWorld::new(SolverConfig::default());
         assert_eq!(
-            t.restore_world_checked(&blob, Some(&law)),
+            t.restore_world_checked(
+                &blob,
+                Some(&law),
+                crate::solver::LegacyPolicy::AcceptUnpinned
+            ),
             Ok(LawCheck::Verified)
         );
     }
@@ -3860,10 +3905,46 @@ mod tests {
         let v3 = reseal(v3);
         let mut t = PhysicsWorld::new(SolverConfig::default());
         assert_eq!(
-            t.restore_world_checked(&v3, Some(&[9; 32])),
+            t.restore_world_checked(
+                &v3,
+                Some(&[9; 32]),
+                crate::solver::LegacyPolicy::AcceptUnpinned
+            ),
             Ok(LawCheck::Unpinned)
         );
         assert_eq!(t.snapshot_world(), blob);
+    }
+
+    /// The version 3 form carries no identifiers: `restore_world` and
+    /// `LegacyPolicy::RequirePinned` refuse it with `Unpinned` and leave the
+    /// target as it was (ALICE-Law G8: no reader takes it without saying so).
+    #[test]
+    fn version_3_form_is_refused_unless_accepted() {
+        use super::{LegacyPolicy, WorldSnapshotError};
+        let src = variant_world();
+        let blob = src.snapshot_world();
+        let mut v3 = blob[..16].to_vec();
+        v3[4..6].copy_from_slice(&3u16.to_le_bytes());
+        v3.extend_from_slice(&blob[80..]);
+        let v3 = reseal(v3);
+        let mut t = PhysicsWorld::new(SolverConfig::default());
+        let before = t.snapshot_world();
+        assert_eq!(t.restore_world(&v3), Err(WorldSnapshotError::Unpinned));
+        assert_eq!(
+            t.snapshot_world(),
+            before,
+            "a refused blob changed the target"
+        );
+        assert_eq!(
+            t.restore_world_checked(&v3, None, LegacyPolicy::RequirePinned),
+            Err(WorldSnapshotError::Unpinned)
+        );
+        assert_eq!(t.snapshot_world(), before);
+        // the version 4 blob it was cut from is read by both
+        assert_eq!(t.restore_world(&blob), Ok(()));
+        assert!(WorldSnapshotError::Unpinned
+            .to_string()
+            .contains("restore_world_checked"));
     }
 
     /// Ids of the impulse-cache test: distinctive byte patterns (so their

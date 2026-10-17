@@ -39,6 +39,17 @@ use alice_physics::world_participant::{
     WorldFault,
 };
 
+/// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
+/// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
+fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
+    let mut world = PhysicsWorld::new(alice_physics::solver::PhysicsConfig::default());
+    assert_eq!(
+        world.restore_world_checked(blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
+        Ok(alice_physics::LawCheck::Unpinned)
+    );
+    world
+}
+
 const KIND_PUSH: ParticipantKind = ParticipantKind::new(0x5055_5348);
 
 /// Stages `force` on `body` in every substep; records the `h` it was given.
@@ -453,7 +464,7 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
 #[test]
 fn a_version_4_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
-    let w = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
+    let w = legacy_snapshot(v1);
     let v3 = w.snapshot_world();
     assert_eq!(&v3[0..4], &v1[0..4]);
     assert_eq!(&v3[4..6], &4u16.to_le_bytes());
@@ -487,7 +498,7 @@ fn a_version_1_blob_restores_the_world_it_was_taken_from() {
         &1u16.to_le_bytes(),
         "fixture must be a version-1 blob"
     );
-    let mut restored = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
+    let mut restored = legacy_snapshot(v1);
 
     // The configuration and the bodies of the world it was taken from
     let config = &restored.config;

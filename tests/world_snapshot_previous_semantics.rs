@@ -173,7 +173,11 @@ fn the_target_own_law_id_verifies_a_previous_blob() {
     let mut target = scene();
     let expected = target.law_id(&PHYSICS_SEMANTICS_ID);
     assert_eq!(
-        target.restore_world_checked(BLOB, Some(&expected)),
+        target.restore_world_checked(
+            BLOB,
+            Some(&expected),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Ok(LawCheck::VerifiedUnderPrevious)
     );
     // the earlier identifier the blob was written under
@@ -188,7 +192,7 @@ fn the_target_own_law_id_verifies_a_previous_blob() {
 fn without_an_expected_id_only_the_semantics_is_reported() {
     let mut target = scene();
     assert_eq!(
-        target.restore_world_checked(BLOB, None),
+        target.restore_world_checked(BLOB, None, alice_physics::LegacyPolicy::AcceptUnpinned),
         Ok(LawCheck::SemanticsPrevious)
     );
 }
@@ -201,7 +205,11 @@ fn an_expected_id_other_than_the_target_own_is_refused() {
         let mut target = scene();
         let before = target.snapshot_world();
         assert_eq!(
-            target.restore_world_checked(BLOB, Some(&wrong)),
+            target.restore_world_checked(
+                BLOB,
+                Some(&wrong),
+                alice_physics::LegacyPolicy::AcceptUnpinned
+            ),
             Err(WorldSnapshotError::LawIdMismatch {
                 stored: unhex(WRITER_LAW_ID),
                 expected: wrong,
@@ -220,7 +228,11 @@ fn a_target_of_another_rule_is_refused() {
     let expected = target.law_id(&PHYSICS_SEMANTICS_ID);
     let before = target.snapshot_world();
     assert_eq!(
-        target.restore_world_checked(BLOB, Some(&expected)),
+        target.restore_world_checked(
+            BLOB,
+            Some(&expected),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: unhex(WRITER_LAW_ID),
             expected: target.law_id(&unhex(WRITER_SEMANTICS)),
@@ -238,7 +250,11 @@ fn a_header_law_id_not_under_the_earlier_semantics_is_refused() {
     let mut target = scene();
     let before = target.snapshot_world();
     assert_eq!(
-        target.restore_world_checked(&blob, Some(&current)),
+        target.restore_world_checked(
+            &blob,
+            Some(&current),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: current,
             expected: unhex(WRITER_LAW_ID),

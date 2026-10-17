@@ -96,7 +96,7 @@ fn checked(
     expected: Option<&[u8; 32]>,
 ) -> Result<LawCheck, WorldSnapshotError> {
     let before = t.snapshot_world();
-    let r = t.restore_world_checked(data, expected);
+    let r = t.restore_world_checked(data, expected, alice_physics::LegacyPolicy::AcceptUnpinned);
     if r.is_err() {
         assert_eq!(
             t.snapshot_world(),
@@ -167,7 +167,7 @@ fn version_4_round_trips_bytes_and_steps() {
     assert_eq!(b.snapshot_world(), blob);
     let mut c = PhysicsWorld::new(PhysicsConfig::default());
     assert_eq!(
-        c.restore_world_checked(&blob, None),
+        c.restore_world_checked(&blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
         Ok(LawCheck::SemanticsVerified)
     );
     for _ in 0..30 {
@@ -266,8 +266,10 @@ fn a_foreign_semantics_id_is_refused() {
     }
 }
 
-/// Version 1, 2 and 3 blobs are still read and reported as `Unpinned`,
-/// whether or not an identifier is expected (it cannot be compared).
+/// Version 1, 2 and 3 blobs carry no identifiers: under
+/// `LegacyPolicy::AcceptUnpinned` they are read and reported as `Unpinned`,
+/// whether or not an identifier is expected (it cannot be compared), and
+/// `restore_world`, which reports no status, refuses them (ALICE-Law G8).
 #[test]
 fn older_versions_are_accepted_as_unpinned() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
@@ -286,10 +288,21 @@ fn older_versions_are_accepted_as_unpinned() {
             );
         }
         let mut t = PhysicsWorld::new(PhysicsConfig::default());
-        assert_eq!(t.restore_world(blob), Ok(()), "version {version}");
+        let before = t.snapshot_world();
+        assert_eq!(
+            t.restore_world(blob),
+            Err(alice_physics::solver::WorldSnapshotError::Unpinned),
+            "version {version}"
+        );
+        assert_eq!(
+            t.snapshot_world(),
+            before,
+            "version {version}: a refused blob changed the target"
+        );
     }
     // the version 3 form holds the same world as the version 4 blob
-    let b = PhysicsWorld::from_world_snapshot(&v3).expect("v3 blob");
+    let mut b = PhysicsWorld::new(PhysicsConfig::default());
+    assert_eq!(checked(&mut b, &v3, None), Ok(LawCheck::Unpinned));
     assert_eq!(b.snapshot_world(), a.snapshot_world());
 }
 
@@ -419,7 +432,11 @@ fn header_law_id_versus_the_restored_world() {
     same.add_participant(Box::new(Tag(StepRule::FollowSubstep)))
         .expect("register");
     assert_eq!(
-        same.restore_world_checked(&blob, Some(&header)),
+        same.restore_world_checked(
+            &blob,
+            Some(&header),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Ok(LawCheck::Verified)
     );
     assert_eq!(same.law_id(&PHYSICS_SEMANTICS_ID), header);
@@ -430,7 +447,11 @@ fn header_law_id_versus_the_restored_world() {
         .add_participant(Box::new(Tag(StepRule::Subcycle)))
         .expect("register");
     assert_eq!(
-        other.restore_world_checked(&blob, Some(&header)),
+        other.restore_world_checked(
+            &blob,
+            Some(&header),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Ok(LawCheck::Verified)
     );
     assert_ne!(other.law_id(&PHYSICS_SEMANTICS_ID), header);
@@ -454,7 +475,11 @@ fn the_target_own_law_id_refuses_another_step_rule() {
     assert_ne!(expected, header);
     let before = other.snapshot_world();
     assert_eq!(
-        other.restore_world_checked(&blob, Some(&expected)),
+        other.restore_world_checked(
+            &blob,
+            Some(&expected),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: header,
             expected
@@ -469,7 +494,11 @@ fn the_target_own_law_id_refuses_another_step_rule() {
     let expected = same.law_id(&PHYSICS_SEMANTICS_ID);
     assert_eq!(expected, header);
     assert_eq!(
-        same.restore_world_checked(&blob, Some(&expected)),
+        same.restore_world_checked(
+            &blob,
+            Some(&expected),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Ok(LawCheck::Verified)
     );
     assert_eq!(same.snapshot_world(), blob);
@@ -502,7 +531,11 @@ fn a_target_differing_only_in_configuration_is_refused() {
     assert_ne!(expected, header);
     let before = target.snapshot_world();
     assert_eq!(
-        target.restore_world_checked(&blob, Some(&expected)),
+        target.restore_world_checked(
+            &blob,
+            Some(&expected),
+            alice_physics::LegacyPolicy::AcceptUnpinned
+        ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: header,
             expected

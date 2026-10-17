@@ -57,7 +57,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 51 of 199 items) | 51 / 118 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 51 of 200 items) | 51 / 119 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |

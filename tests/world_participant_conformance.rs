@@ -31,6 +31,17 @@ use alice_physics::world_participant::{
     StepRule, SubstepCtx, SubstepTime, Verdict, WorldFault,
 };
 
+/// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
+/// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
+fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
+    let mut world = PhysicsWorld::new(alice_physics::solver::PhysicsConfig::default());
+    assert_eq!(
+        world.restore_world_checked(blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
+        Ok(alice_physics::LawCheck::Unpinned)
+    );
+    world
+}
+
 // ============================================================================
 // Test participant
 // ============================================================================
@@ -2062,11 +2073,20 @@ fn version_1_blob_reads_as_zero_participants() {
         &1u16.to_le_bytes(),
         "fixture must be a version-1 blob"
     );
-    let restored = PhysicsWorld::from_world_snapshot(v1).expect("v1 blob");
+    let restored = legacy_snapshot(v1);
     assert!(world::participant_kinds(&restored).is_empty());
     let mut target = scene();
     world::add_participant(&mut target, Box::new(Tether::new(0, 1))).expect("register");
-    let err = restore_rejects(&mut target, v1);
+    // a version 1 blob is legacy data: read under AcceptUnpinned, it reaches the participant check
+    let before = target.snapshot_world();
+    let err = target
+        .restore_world_checked(v1, None, alice_physics::LegacyPolicy::AcceptUnpinned)
+        .expect_err("a version 1 blob with no participants into a world with one");
+    assert_eq!(
+        target.snapshot_world(),
+        before,
+        "a refused blob changed the target"
+    );
     assert_eq!(
         world::mismatch_of(&err),
         Some(ParticipantMismatch::Count {

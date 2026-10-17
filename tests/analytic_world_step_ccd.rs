@@ -32,6 +32,17 @@ use alice_physics::trimesh::TriMesh;
 use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldCcdConfig};
 use sha2::{Digest, Sha256};
 
+/// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
+/// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
+fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
+    let mut world = PhysicsWorld::new(alice_physics::solver::PhysicsConfig::default());
+    assert_eq!(
+        world.restore_world_checked(blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
+        Ok(alice_physics::LawCheck::Unpinned)
+    );
+    world
+}
+
 fn f(x: f64) -> Fix128 {
     Fix128::from_f64(x)
 }
@@ -971,7 +982,7 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
         ),
     ];
     for (name, blob) in fixtures {
-        let mut restored = PhysicsWorld::from_world_snapshot(blob).expect(name);
+        let mut restored = legacy_snapshot(blob);
         assert_eq!(
             restored.continuous_collision(),
             WorldCcdConfig::new(),
