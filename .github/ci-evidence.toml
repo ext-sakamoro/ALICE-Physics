@@ -16,6 +16,7 @@
 "bench-gate.yml" = "landing"
 "ci.yml" = "landing"
 "downstream.yml" = "landing"
+"eol.yml" = "landing"
 "fuzz.yml" = "landing"
 "integration-status.yml" = "landing"
 "oracle-status.yml" = "landing"

@@ -56,6 +56,7 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `bench-gate.yml` | `main, ci/**` | `.github/paths/bench-gate.txt` | - | - | yes | runs when the paths match | landing |
 | `ci.yml` | `main, ci/**` | - | `main` | yes | yes | runs | landing |
 | `downstream.yml` | `main, ci/**` | `.github/paths/downstream.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
+| `eol.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `fuzz.yml` | `main, ci/**` | `.github/paths/fuzz.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
 | `integration-status.yml` | `main, ci/**` | `.github/paths/integration-status.txt` | - | - | yes | runs when the paths match | landing |
 | `oracle-status.yml` | `main, ci/**` | `.github/paths/oracle-status.txt` | - | - | yes | runs when the paths match | landing |
@@ -192,6 +193,7 @@ only by the fast-forward-only push to `main` and the re-evidence loop above.
 | `bench-gate.yml` | landing | success |
 | `ci.yml` | landing | success; started only: Test (macos-latest), Determinism tests (release, macos-latest) |
 | `downstream.yml` | landing | success |
+| `eol.yml` | landing | success |
 | `fuzz.yml` | landing | success |
 | `integration-status.yml` | landing | success |
 | `oracle-status.yml` | landing | success |
@@ -266,6 +268,7 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
 | `bench-gate.yml` |
 | `ci.yml` |
 | `downstream.yml` |
+| `eol.yml` |
 | `fuzz.yml` |
 | `integration-status.yml` |
 | `oracle-status.yml` |
