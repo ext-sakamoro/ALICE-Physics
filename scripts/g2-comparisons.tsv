@@ -1,0 +1,256 @@
+# ALICE-Law G2: every float comparison of the library code, typed by the compiler (scripts/g2_comparisons.py)
+# file<TAB>enclosing fn<TAB>operands<TAB>count<TAB>type<TAB>class (select | predicate)<TAB>reason
+src/acoustic_wave.rs	stable_dt	dx_m > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/acoustic_wave.rs	stable_dt	wave_speed_m_s > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/anomaly.rs	anomaly_score	(value - self . cached_median) . abs () > 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	anomaly_score	(value - self . ewma) . abs () > 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	anomaly_score	self . cached_mad < 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	anomaly_score	std_dev < 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	binary_search_insert	self . sorted [mid] < value	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	binary_search_remove	(self . sorted [left - 1] - value) . abs () < f64 :: EPSILON	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/anomaly.rs	binary_search_remove	(self . sorted [left] - value) . abs () < f64 :: EPSILON	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/anomaly.rs	binary_search_remove	self . sorted [mid] < value	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	binary_search_remove	self . sorted [mid] > value	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	is_anomaly	(value - self . cached_median) . abs () > 1e-10	1	f64	predicate	a bool returned as the answer: a condition, no operand value is chosen by it
+src/anomaly.rs	is_anomaly	(value - self . ewma) . abs () > 1e-10	1	f64	predicate	a bool returned as the answer: a condition, no operand value is chosen by it
+src/anomaly.rs	is_anomaly	(value - self . mean) . abs () > 1e-10	1	f64	predicate	a bool returned as the answer: a condition, no operand value is chosen by it
+src/anomaly.rs	is_anomaly	deviation > self . threshold_k * std_dev	1	f64	predicate	a bool result returned or stored: a condition, no operand value is chosen by it
+src/anomaly.rs	is_anomaly	deviation > threshold	1	f64	predicate	a bool result returned or stored: a condition, no operand value is chosen by it
+src/anomaly.rs	is_anomaly	self . cached_mad < 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	is_anomaly	std_dev < 1e-10	2	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	is_anomaly	z_score > self . threshold_k	1	f64	predicate	a bool result returned or stored: a condition, no operand value is chosen by it
+src/anomaly.rs	non_negative	k < 0.0	1	f64	select	expr shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as equivalent: f64 threshold multiplier: -0 stays -0 and NaN stays NaN on purpose (documented), the value only scales a threshold compared with >, where -0 and +0 give the same result
+src/anomaly.rs	z_score	(value - self . mean) . abs () > 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/anomaly.rs	z_score	std_dev < 1e-10	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/binding_api.rs	non_negative	x >= 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/binding_api.rs	positive	x > 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/character.rs	check_sdf_clear	dist < self . config . radius . to_f32 ()	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/character.rs	detect_ground	dist < probe . to_f32 () + self . config . radius . to_f32 ()	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/character.rs	resolve_sdf	dist < threshold	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/character_state.rs	transition	ctx . slope_radians > ctx . max_walkable_slope	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/cloth.rs	resolve_sdf_collisions	dist < thickness	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/convex_decompose.rs	cluster_points_indexed	grid . concavity (& cluster) <= config . concavity_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	concavity	n [0] * p [0] + n [1] * p [1] + n [2] * p [2] <= d	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/convex_decompose.rs	concavity	self . get (x , y , z) <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/convex_decompose.rs	decompose_sdf	vol . to_f32 () < config . min_volume	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/convex_decompose.rs	extreme_vertices	(ab [0] * c [0] + ab [1] * c [1] + ab [2] * c [2]) . abs () > 1e-6	1	f64	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/convex_decompose.rs	extreme_vertices	ab . iter () . map (| c | c * c) . sum :: < f64 > () > 1e-12	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	extreme_vertices	len > 0.0	1	f64	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/convex_decompose.rs	is_surface	self . get (x + 1 , y , z) > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	is_surface	self . get (x , y + 1 , z) > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	is_surface	self . get (x , y , z + 1) > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	is_surface	self . get (x , y , z - 1) > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	is_surface	self . get (x , y - 1 , z) > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	is_surface	self . get (x - 1 , y , z) > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/convex_decompose.rs	is_surface	v > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/deformable.rs	resolve_sdf_collisions	dist < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/erosion.rs	compute_exposure_from_normals	dist < surface_threshold	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/erosion.rs	compute_exposure_from_normals	flow_len > 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/erosion.rs	update	exp > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/erosion.rs	update	self . config . smoothing > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fluid.rs	resolve_sdf_boundary	dist > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fracture.rs	check_fracture_seeds	(dx * dx + dy * dy + dz * dz) . sqrt () < self . config . crack_width * 10.0	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/fracture.rs	check_fracture_seeds	clen > 1e-5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fracture.rs	check_fracture_seeds	glen > 1e-5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fracture.rs	check_fracture_seeds	s > threshold	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fracture.rs	distance	ba_len_sq > 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fracture.rs	modify_distance	crack . length < 1e-5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fracture.rs	modify_distance	d < width * 2.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/fracture.rs	propagate_cracks	crack . length >= max_len	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/gpu_sdf.rs	extract_contacts	penetration > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/lib.rs	raw_clamp64	lo <= hi	1	f64	predicate	an assertion: checks an invariant, chooses no value
+src/lib.rs	raw_clamp64	y < lo	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as pending: f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
+src/lib.rs	raw_clamp64	y > hi	1	f64	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as pending: f64 comparisons of raw_clamp64, the stand-in for the 64-bit clamp of alice-det-math (a NaN x passes through, a -0 x stays -0): wait for that clamp
+src/math.rs	from_f64	f < 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/particle.rs	probe	d >= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	accumulate_offsets	liquid_flow > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	accumulate_offsets	phase_val >= 0.5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	accumulate_offsets	phase_val >= 1.5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	accumulate_offsets	source <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	accumulate_offsets	transfer > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	observe	p >= 0.5	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/phase_change.rs	phase_at	v < 0.5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	phase_at	v < 1.5	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	process_transitions	lh <= 0.0	1	f32	select	a cell that froze sets its latent heat to +0 when lh <= 0: the same bits as maximumNumber(lh, +0) for a finite lh and -0; a NaN lh keeps NaN (the comparison is false), where max would give +0
+src/phase_change.rs	process_transitions	lh <= lh_fusion	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	process_transitions	lh > 0.0	2	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/phase_change.rs	process_transitions	lh > lh_fusion	2	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/phase_change.rs	process_transitions	lh >= lh_fusion	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	process_transitions	lh >= lh_total	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/phase_change.rs	process_transitions	phase_val < 0.5	2	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/phase_change.rs	process_transitions	phase_val >= 1.5	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/phase_change.rs	process_transitions	temp < boil_t	2	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/phase_change.rs	process_transitions	temp < melt_t	3	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/phase_change.rs	process_transitions	temp > boil_t	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/phase_change.rs	process_transitions	temp > melt_t	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/piezoelectric.rs	force_from_voltage	self . area_m2 <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/piezoelectric.rs	force_from_voltage	self . thickness_m <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/piezoelectric.rs	strain_under_stress	self . youngs_modulus_pa <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/piezoelectric.rs	voltage_from_force	self . area_m2 <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/piezoelectric.rs	voltage_from_force	self . permittivity () <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/piezoelectric.rs	voltage_from_force	self . thickness_m <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/pressure.rs	modify_distance	deform > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/pressure.rs	yield_deformation	p > threshold	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/privacy.rs	estimate_proportion	p_true <= 1.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/privacy.rs	estimate_proportion	p_true > 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/privacy.rs	is_exhausted	self . total_epsilon >= self . max_epsilon	1	f64	predicate	a bool result returned or stored: a condition, no operand value is chosen by it
+src/privacy.rs	laplace_scale	epsilon > 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/privacy.rs	next_bool	self . next_f64 () < p	1	f64	predicate	a bool result returned or stored: a condition, no operand value is chosen by it
+src/privacy.rs	sample	u < 0.0	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/privacy.rs	try_spend	epsilon < 0.0	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/privacy.rs	try_spend	self . total_epsilon + epsilon <= self . max_epsilon	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/rolling_contact.rs	basquin_cycles_to_failure	basquin_coefficient > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rolling_contact.rs	basquin_cycles_to_failure	basquin_exponent > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rolling_contact.rs	basquin_cycles_to_failure	stress_pa <= endurance_limit_pa	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/rolling_contact.rs	basquin_cycles_to_failure	stress_pa >= 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rolling_contact.rs	hertzian_sphere_sphere	elastic_modulus_1_pa > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rolling_contact.rs	hertzian_sphere_sphere	elastic_modulus_2_pa > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rolling_contact.rs	hertzian_sphere_sphere	load_n > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rolling_contact.rs	hertzian_sphere_sphere	radius_1_m > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rolling_contact.rs	hertzian_sphere_sphere	radius_2_m > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/rope.rs	resolve_sdf_collisions	dist < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_adaptive.rs	determine_level	entry . distance < self . config . high_res_threshold	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_adaptive.rs	determine_level	entry . distance > self . config . cache_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_adaptive.rs	determine_level	entry . distance > self . config . high_res_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_adaptive.rs	determine_level	movement < entry . distance * 0.5	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_adaptive.rs	determine_level	movement < self . config . high_res_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_adaptive.rs	evaluate_and_cache	len > 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_adaptive.rs	evaluate_and_cache	world_dist . abs () < self . config . high_res_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_ccd.rs	ray_march_sdf	dist < config . tolerance	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_ccd.rs	sphere_trace_sdf_field	gap <= config . tolerance	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_character.rs	ground_contact	distance > self . ground_probe_epsilon	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_character.rs	is_grounded	c . up_alignment >= self . ground_up_threshold	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/sdf_character.rs	nearest	d < b	1	f32	select	argmin of the distance (`is_none_or(|..| d < b)` keeps the nearer candidate): a selection of an element, not a value; a NaN distance is never kept (d < b is false)
+src/sdf_character.rs	resolve	along > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	resolve	along >= self . ground_up_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	resolve	d > best_distance	2	f32	select	assign shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as selection: f32 argmax with a payload (best_position): the first strict maximum is kept, a NaN distance is never selected, ties keep the first (rule in alice-law-conformance.toml [G2]); moves to the alice-det-math argmax when it exists
+src/sdf_character.rs	resolve	d >= self . radius	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_character.rs	resolve	nx * up [0] + ny * up [1] + nz * up [2] < self . min_up_alignment	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_character.rs	snap_to_walkable_ground	along > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	snap_to_walkable_ground	along >= self . ground_up_threshold	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	snap_to_walkable_ground	d >= band	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	snap_to_walkable_ground	v_up <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	step_on_sphere	angle > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	step_on_sphere	r > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_character.rs	step_resolved	into < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_character.rs	step_resolved	len > self . skin_width	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_character.rs	up_unit	len > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_collider.rs	collide_point_sdf_field	world_dist >= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	collide_sphere_sdf_field	penetration <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	fd_normal	len < 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	new	s . abs () < 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	normal	self . a . distance (x , y , z) <= self . b . distance (x , y , z)	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	update_cache	s . abs () < 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_collider.rs	with_scale	s . abs () < 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_destruction.rs	destruction_from_impact	min_radius <= max_radius	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_destruction.rs	distance	destruction . smooth_factor > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	build	dist < b	1	f32	select	argmin of the snap distance (`best.is_none_or(|(b, _)| dist < b)`): a selection of an element, not a value; a NaN distance is never kept
+src/sdf_fem_mesh.rs	build	dist < snap_distance	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_fem_mesh.rs	build	s0 < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	build	s1 < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	crossing_vertex	denom . abs () < 1.0e-9	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	crossing_vertex	t <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	crossing_vertex	t >= 1.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	edge_to_split	len_sq <= limit_sq	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_fem_mesh.rs	edge_to_split	len_sq > blen	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_fem_mesh.rs	generate	cell > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/sdf_fem_mesh.rs	generate	sdf . distance (p [0] , p [1] , p [2]) <= 0.0	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/sdf_fem_mesh.rs	generate_marching_tets	cell > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/sdf_fem_mesh.rs	generate_marching_tets	d > 0.0	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
+src/sdf_fem_mesh.rs	marching_tet_emit	d < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	push_tet	signed < 0.0	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_fem_mesh.rs	try_refine_conforming	max_edge_length > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/sdf_force.rs	compute_sdf_force	dist <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_force.rs	compute_sdf_force	dist > 0.0	2	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_manifold.rs	build_tangent_frame	nx . abs () < 0.9	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_manifold.rs	generate_sdf_manifold	half > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_manifold.rs	generate_sdf_manifold	penetration > config . min_depth	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_manifold.rs	generate_sdf_manifold	radius_f32 - world_dist <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_manifold.rs	reduce_manifold	a . 1 partial_cmp b . 1	1	f32	select	argmax by depth (`max_by` with `partial_cmp`, NaN read as Equal): a selection of an element, not a value; with ties max_by keeps the last, the order of the contacts fixes it
+src/sdf_sph.rs	compute_accelerations	d < self . config . repel_range	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_sph.rs	compute_accelerations	r_sq < 1.0e-8	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_sph.rs	compute_accelerations	r_sq >= h * h	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_sph.rs	compute_accelerations_hashed	d < self . config . repel_range	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_sph.rs	compute_accelerations_hashed	r_sq < 1.0e-8	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_sph.rs	compute_accelerations_hashed	r_sq >= h_sq	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_sph.rs	compute_density_and_pressure	r_sq < h * h	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_sph.rs	compute_density_and_pressure_hashed	r_sq < h_sq	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_sph.rs	poly6	r >= h	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_sph.rs	spiky_grad	r >= h	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_sph.rs	viscosity_lap	r >= h	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_wind_field.rs	sample	d > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sdf_wind_field.rs	sample	self . decay_scale_m <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/shape.rs	mass_and_inertia	estimate < MAGNITUDE_LIMIT	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/shape_raycast.rs	ray_sdf	sdf . field . distance (lx , ly , lz) * sdf . scale_f32 < 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sim_field.rs	contains	x <= self . max . 0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sim_field.rs	contains	x >= self . min . 0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sim_field.rs	contains	y <= self . max . 1	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sim_field.rs	contains	y >= self . min . 1	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sim_field.rs	contains	z <= self . max . 2	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sim_field.rs	contains	z >= self . min . 2	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sim_field.rs	diffuse	number <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sim_field.rs	diffuse	number <= 1.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sim_field.rs	splat	dist_sq < radius_sq	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sim_field.rs	splat	radius > 1e-10	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sketch.rs	cardinality	raw_estimate <= 2.5 * m	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sketch.rs	insert	value < 0.0	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/sketch.rs	insert	value > 0.0	1	f64	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/solver.rs	add_compound_body	estimate < (1u64 << 61) as f64	1	f64	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/solver_tgs_backend.rs	tangent_basis	ax <= ay	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/solver_tgs_backend.rs	tangent_basis	ax <= az	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/solver_tgs_backend.rs	tangent_basis	ay <= az	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/spherical_terrain.rs	central_gravity	r > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/spherical_terrain.rs	new	radius > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/spherical_terrain.rs	normal	r > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/spherical_terrain.rs	normalize	l > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/spherical_terrain.rs	polar	r > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/spherical_terrain.rs	tangent_basis	n [0] . abs () <= n [1] . abs ()	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/spherical_terrain.rs	tangent_basis	n [0] . abs () <= n [2] . abs ()	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/spherical_terrain.rs	tangent_basis	n [1] . abs () <= n [2] . abs ()	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/spherical_terrain.rs	with_max_slope	max_slope >= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/spherical_terrain.rs	with_normal_step	step > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	accumulate_melt	droop > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thermal.rs	accumulate_melt	temp > melt_temp	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thermal.rs	accumulate_melt	transfer > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thermal.rs	apply_heat_sources	wx <= max . 0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	apply_heat_sources	wx >= min . 0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	apply_heat_sources	wy <= max . 1	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	apply_heat_sources	wy >= min . 1	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	apply_heat_sources	wz <= max . 2	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	apply_heat_sources	wz >= min . 2	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	modify_distance	melt > 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thermal.rs	modify_distance	self . config . expansion_coefficient > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	modify_distance	self . config . freeze_rate > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	modify_distance	temp < self . config . freeze_temperature	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thermal.rs	modify_distance	temp_delta > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	axis_steps	max < min	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thin_wall.rs	measure_thickness_at	approach + distance > max_dist_f32	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thin_wall.rs	measure_thickness_at	approach > max_dist_f32	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	measure_thickness_at	d <= config . start_offset_mm	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thin_wall.rs	measure_thickness_at	d >= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thin_wall.rs	measure_thickness_at	n_len_sq < 0.5	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	measure_thickness_at	n_len_sq > 1.5	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	sample_surface_points	d < 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	sample_surface_points	d >= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	sample_surface_points	denom . abs () > f32 :: EPSILON	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/thin_wall.rs	sample_surface_points	prev_d < 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	sample_surface_points	prev_d >= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/thin_wall.rs	sample_surface_points	step <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/transient_thermal.rs	conductivity_at	k > 0.0	1	f32	select	expr shape of the rewrite scan; reviewed in scripts/g2-rewrite-sites.tsv as equivalent: f32 `k > 0 ? k : 0` is maximumNumber(k, +0) for every k: -0, +0 and NaN all give the +0 literal
+src/transient_thermal.rs	crank_nicolson_step_1d	dt > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/transient_thermal.rs	crank_nicolson_step_1d	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/transient_thermal.rs	crank_nicolson_step_1d_nonlinear	dt > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/transient_thermal.rs	crank_nicolson_step_1d_nonlinear	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/transient_thermal.rs	crank_nicolson_step_1d_nonlinear	max_delta < tolerance	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
+src/transient_thermal.rs	diffusivity_at	denom <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/transient_thermal.rs	face_conductivity	k_a > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/transient_thermal.rs	face_conductivity	k_b > 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/transient_thermal.rs	stable_dt_1d	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/transient_thermal.rs	stable_dt_1d	max_alpha <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/transient_thermal.rs	stable_dt_3d	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/transient_thermal.rs	stable_dt_3d	max_alpha <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/transient_thermal.rs	transient_step_1d	capacity <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/transient_thermal.rs	transient_step_1d	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/transient_thermal.rs	transient_step_3d	capacity <= 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/transient_thermal.rs	transient_step_3d	dx > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
+src/world_shape_query.rs	point_sdf	d < 0.0	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it

@@ -149,6 +149,9 @@ python3 scripts/test_no_private_minmax.py
 python3 scripts/no_private_minmax.py
 python3 scripts/test_g2_rewrite_check.py
 python3 scripts/g2_rewrite_check.py
+# ci.yml の g2-comparisons job と対: 比較を全部 compiler の型で判定し、浮動小数点の比較は全部 select / predicate の行を持つ
+python3 scripts/test_g2_comparisons.py
+python3 scripts/g2_comparisons.py
 python3 scripts/test_libm_dependency_guard.py
 python3 scripts/libm_dependency_guard.py
 python3 scripts/test_allow_reason_guard.py

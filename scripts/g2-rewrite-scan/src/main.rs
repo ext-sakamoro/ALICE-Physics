@@ -41,6 +41,22 @@
 //! read or a file does not parse.
 //!
 //! usage: g2-rewrite-scan <dir>...
+//!
+//! `g2-rewrite-scan --comparisons <dir>...` instead lists every ordering comparison in the
+//! non-test code, whatever its context (the inventory scripts/g2_comparisons.py types with
+//! the compiler): a binary `<`, `>`, `<=` or `>=`; a method call `lt`, `gt`, `le`, `ge`,
+//! `partial_cmp`, `total_cmp`, `max_by` / `min_by` closures included because their bodies are
+//! visited; a path call `PartialOrd::lt(&a, &b)` (any path ending in one of those names with
+//! two arguments); and the same inside the arguments of a macro invocation that parse as
+//! expressions (`assert!`, `debug_assert!`, `format!` ...). One line per comparison:
+//! `file<TAB>enclosing fn<TAB>kind<TAB>operands<TAB>line<TAB>probe span<TAB>context`, where kind is
+//! `bin`, `method`, `path` or `macro-arg`, the operands are `a op b` in normalized token
+//! form, and the probe span `l:c-l:c` is the operand whose type the probe asks for (the left
+//! one, or the right one when the left is a literal); empty inside a `macro_rules!` body (no
+//! source position to edit). The context is the innermost construct the comparison sits in
+//! (`if condition`, `while condition`, `match guard`, `match scrutinee`, `boolean operand`,
+//! `closure body`, `let binding`, `index`, `return value`, `assertion`, `macro argument`
+//! or `expression`). A summary `scanned <files> <comparisons>` goes to stderr.
 
 use proc_macro2::{Delimiter, Group, TokenStream, TokenTree};
 use quote::ToTokens;
@@ -488,6 +504,266 @@ impl<'ast> Visit<'ast> for Scan<'_> {
     }
 }
 
+/// Every ordering comparison of the non-test code (the `--comparisons` mode)
+struct Comparisons<'a> {
+    file: &'a str,
+    current_fn: String,
+    in_macro: bool,
+    /// the construct the comparison sits in, innermost last
+    ctx: Vec<&'static str>,
+    out: Vec<String>,
+}
+
+const ORDER_METHODS: [&str; 6] = ["lt", "gt", "le", "ge", "partial_cmp", "total_cmp"];
+
+fn is_literal(e: &Expr) -> bool {
+    match strip(e) {
+        Expr::Lit(_) => true,
+        Expr::Unary(u) if matches!(u.op, UnOp::Neg(_)) => is_literal(&u.expr),
+        _ => false,
+    }
+}
+
+impl Comparisons<'_> {
+    fn emit(&mut self, kind: &str, l: &Expr, op: &str, r: &Expr, line: usize) {
+        let probe = if self.in_macro {
+            String::new()
+        } else if is_literal(l) && !is_literal(r) {
+            span_of(r)
+        } else {
+            span_of(l)
+        };
+        let ctx = self.ctx.last().copied().unwrap_or("expression");
+        self.out.push(format!(
+            "{}\t{}\t{}\t{} {} {}\t{}\t{}\t{}",
+            self.file,
+            self.current_fn,
+            kind,
+            norm(l),
+            op,
+            norm(r),
+            line,
+            probe,
+            ctx
+        ));
+    }
+
+    /// Visit `f` with `c` as the innermost context
+    fn within(&mut self, c: &'static str, f: impl FnOnce(&mut Self)) {
+        self.ctx.push(c);
+        f(self);
+        self.ctx.pop();
+    }
+
+    fn enter(&mut self, name: String, attrs: &[syn::Attribute], body: impl FnOnce(&mut Self)) {
+        if is_cfg_test(attrs) {
+            return;
+        }
+        let saved = std::mem::replace(&mut self.current_fn, name);
+        body(self);
+        self.current_fn = saved;
+    }
+
+    /// The arguments of a macro invocation that parse as comma-separated expressions; the
+    /// tokens keep their source positions, so the probe can edit them
+    fn visit_macro_args(&mut self, tokens: &TokenStream) {
+        let parser = syn::punctuated::Punctuated::<Expr, syn::Token![,]>::parse_terminated;
+        if let Ok(args) = syn::parse::Parser::parse2(parser, tokens.clone()) {
+            for a in &args {
+                self.visit_expr(a);
+            }
+        }
+    }
+}
+
+impl<'ast> Visit<'ast> for Comparisons<'_> {
+    fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
+        if !is_cfg_test(&m.attrs) {
+            visit::visit_item_mod(self, m);
+        }
+    }
+    fn visit_item_impl(&mut self, i: &'ast syn::ItemImpl) {
+        if !is_cfg_test(&i.attrs) {
+            visit::visit_item_impl(self, i);
+        }
+    }
+    fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
+        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+            visit::visit_item_fn(s, f)
+        });
+    }
+    fn visit_impl_item_fn(&mut self, f: &'ast syn::ImplItemFn) {
+        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+            visit::visit_impl_item_fn(s, f)
+        });
+    }
+    fn visit_trait_item_fn(&mut self, f: &'ast syn::TraitItemFn) {
+        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+            visit::visit_trait_item_fn(s, f)
+        });
+    }
+    fn visit_item_const(&mut self, c: &'ast syn::ItemConst) {
+        self.enter(format!("const {}", c.ident), &c.attrs, |s| {
+            visit::visit_item_const(s, c)
+        });
+    }
+    fn visit_item_static(&mut self, c: &'ast syn::ItemStatic) {
+        self.enter(format!("static {}", c.ident), &c.attrs, |s| {
+            visit::visit_item_static(s, c)
+        });
+    }
+    fn visit_item_macro(&mut self, m: &'ast syn::ItemMacro) {
+        if is_cfg_test(&m.attrs) {
+            return;
+        }
+        if m.mac.path.is_ident("macro_rules") {
+            let name = m
+                .ident
+                .as_ref()
+                .map_or_else(|| "<unnamed>".to_string(), ToString::to_string);
+            // the rule bodies, read as in the rewrite scan; their comparisons have no position
+            let tts: Vec<TokenTree> = m.mac.tokens.clone().into_iter().collect();
+            let mut i = 0;
+            while i < tts.len() {
+                if let (
+                    Some(TokenTree::Punct(eq)),
+                    Some(TokenTree::Punct(gt)),
+                    Some(TokenTree::Group(body)),
+                ) = (tts.get(i), tts.get(i + 1), tts.get(i + 2))
+                {
+                    if eq.as_char() == '=' && gt.as_char() == '>' {
+                        let flat = demeta(body.stream());
+                        let block: TokenStream =
+                            TokenTree::Group(Group::new(Delimiter::Brace, flat.clone())).into();
+                        let saved =
+                            std::mem::replace(&mut self.current_fn, format!("macro {name}"));
+                        let was = std::mem::replace(&mut self.in_macro, true);
+                        if let Ok(b) = syn::parse2::<Block>(block) {
+                            self.visit_block(&b);
+                        } else if let Ok(f) = syn::parse2::<syn::File>(flat) {
+                            self.visit_file(&f);
+                        } else {
+                            self.out.push(format!(
+                                "{}\tmacro {name}\tmacro-unparsed\t-\t{}\t",
+                                self.file,
+                                m.mac.path.segments[0].ident.span().start().line
+                            ));
+                        }
+                        self.in_macro = was;
+                        self.current_fn = saved;
+                        i += 3;
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+            return;
+        }
+        self.visit_macro_args(&m.mac.tokens);
+    }
+    fn visit_macro(&mut self, m: &'ast syn::Macro) {
+        let name = m
+            .path
+            .segments
+            .last()
+            .map(|s| s.ident.to_string())
+            .unwrap_or_default();
+        let c = if name.contains("assert") {
+            "assertion"
+        } else {
+            "macro argument"
+        };
+        self.within(c, |s| s.visit_macro_args(&m.tokens));
+    }
+    fn visit_expr_if(&mut self, e: &'ast ExprIf) {
+        self.within("if condition", |s| s.visit_expr(&e.cond));
+        self.within("expression", |s| {
+            s.visit_block(&e.then_branch);
+            if let Some((_, x)) = &e.else_branch {
+                s.visit_expr(x);
+            }
+        });
+    }
+    fn visit_expr_while(&mut self, e: &'ast syn::ExprWhile) {
+        self.within("while condition", |s| s.visit_expr(&e.cond));
+        self.within("expression", |s| s.visit_block(&e.body));
+    }
+    fn visit_arm(&mut self, a: &'ast syn::Arm) {
+        if let Some((_, g)) = &a.guard {
+            self.within("match guard", |s| s.visit_expr(g));
+        }
+        self.within("expression", |s| s.visit_expr(&a.body));
+    }
+    fn visit_expr_match(&mut self, m: &'ast ExprMatch) {
+        self.within("match scrutinee", |s| s.visit_expr(&m.expr));
+        for a in &m.arms {
+            self.visit_arm(a);
+        }
+    }
+    fn visit_expr_closure(&mut self, c: &'ast syn::ExprClosure) {
+        self.within("closure body", |s| visit::visit_expr_closure(s, c));
+    }
+    fn visit_local(&mut self, l: &'ast syn::Local) {
+        self.within("let binding", |s| visit::visit_local(s, l));
+    }
+    fn visit_expr_index(&mut self, i: &'ast syn::ExprIndex) {
+        self.visit_expr(&i.expr);
+        self.within("index", |s| s.visit_expr(&i.index));
+    }
+    fn visit_expr_return(&mut self, r: &'ast syn::ExprReturn) {
+        self.within("return value", |s| visit::visit_expr_return(s, r));
+    }
+    fn visit_expr_binary(&mut self, b: &'ast syn::ExprBinary) {
+        if matches!(b.op, BinOp::And(_) | BinOp::Or(_)) {
+            self.within("boolean operand", |s| visit::visit_expr_binary(s, b));
+            return;
+        }
+        let op = match b.op {
+            BinOp::Lt(_) => Some("<"),
+            BinOp::Gt(_) => Some(">"),
+            BinOp::Le(_) => Some("<="),
+            BinOp::Ge(_) => Some(">="),
+            _ => None,
+        };
+        if let Some(op) = op {
+            let line = span_of(&b.left)
+                .split(':')
+                .next()
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0);
+            self.emit("bin", &b.left, op, &b.right, line);
+        }
+        visit::visit_expr_binary(self, b);
+    }
+    fn visit_expr_method_call(&mut self, m: &'ast syn::ExprMethodCall) {
+        let name = m.method.to_string();
+        if m.args.len() == 1 && ORDER_METHODS.contains(&name.as_str()) {
+            let line = m.method.span().start().line;
+            self.emit("method", &m.receiver, &name, &m.args[0], line);
+        }
+        visit::visit_expr_method_call(self, m);
+    }
+    fn visit_expr_call(&mut self, c: &'ast syn::ExprCall) {
+        if let Expr::Path(p) = &*c.func {
+            let last = p
+                .path
+                .segments
+                .last()
+                .map(|s| s.ident.to_string())
+                .unwrap_or_default();
+            if c.args.len() == 2
+                && p.path.segments.len() >= 2
+                && ORDER_METHODS.contains(&last.as_str())
+            {
+                let line = p.path.segments[0].ident.span().start().line;
+                self.emit("path", &c.args[0], &last, &c.args[1], line);
+            }
+        }
+        visit::visit_expr_call(self, c);
+    }
+}
+
 fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return;
@@ -504,7 +780,12 @@ fn rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn main() {
-    let dirs: Vec<PathBuf> = std::env::args().skip(1).map(PathBuf::from).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    let comparisons = args.first().is_some_and(|a| a == "--comparisons");
+    if comparisons {
+        args.remove(0);
+    }
+    let dirs: Vec<PathBuf> = args.iter().map(PathBuf::from).collect();
     let mut files = Vec::new();
     for d in &dirs {
         rs_files(d, &mut files);
@@ -530,6 +811,21 @@ fn main() {
             }
         };
         let rel = path.to_string_lossy().replace('\\', "/");
+        if comparisons {
+            let mut c = Comparisons {
+                file: &rel,
+                current_fn: "<module>".to_string(),
+                in_macro: false,
+                ctx: Vec::new(),
+                out: Vec::new(),
+            };
+            c.visit_file(&ast);
+            findings += c.out.len();
+            for line in c.out {
+                println!("{line}");
+            }
+            continue;
+        }
         let mut s = Scan {
             file: &rel,
             current_fn: "<module>".to_string(),
