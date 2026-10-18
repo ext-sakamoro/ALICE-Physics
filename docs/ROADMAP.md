@@ -23,6 +23,10 @@ increment 他) が**追加機材の調達待ち**であるかのように読め�
 | Maxwell FDTD | `ecd8c61` | source-free Yee、⚠️ **SI は `ε₀·μ₀` が 7.7 bit で不可**、正規化単位 + `S=9/16` |
 | 多体 ABA | `1bab99b` | ⚠️ **`solve()` が `link.joint` を読まない**状態から real ABA、oracle 12 本 |
 
+### 第 69 increment (2026-10-18、ALICE-Physics の責務分割 段 1 — `multi_world` / `replay` / `db_bridge` を crate の外へ)
+
+`multi_world` / `replay` / `db_bridge` と `replay` feature、`alice-db` への依存を外した body を world の間で移す部品 (`PhysicsWorld::remove_body_with_attachments` / `add_body_with_attachments`) は公開して残し、`tests/analytic_body_attachments.rs` で移した body が移し先で作った body と bit 一致することを確かめる (設定を 1 つずつ運ばない変異 4 件が red) `PHYSICS_SEMANTICS_ID` は `alice-db` の行が外れて動いた (ステップの golden は不変) 詳細は CHANGELOG [Unreleased]
+
 ### 第 68 increment (2026-10-04、休止中の body を `step` の全段階から外す)
 
 休止中で静止した body も、起きている body と同じ費用 (broad-phase の BVH を毎 substep 全 body で組み直す、積分・速度導出・sleep 判定も全 body) を払っていた 100k body / 休止 99 % で 1 step 1.15 s、内訳は broad-phase の候補 pair 生成が 9 割

@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "43274a4732be32faa1452664f367cd778f62b1a4d0f860a4499f8c90fef47e06"
+        "7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2"
     );
 }
 
@@ -646,8 +646,8 @@ fn drive_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const DRIVE_XPBD: &str = "67c9934939bf7db7c84e760eec1faae02c160d54a35f38d07d341aeef14656bc";
-const DRIVE_TGS: &str = "499adf93ec111a7f53b6fae00006aea4dbe0e6565f5021a167e3b4300f8a5617";
+const DRIVE_XPBD: &str = "068c8e0ede7a6c18f4158a1c97c6de57bcbbad8f740d14caee9bc5b5260bcc05";
+const DRIVE_TGS: &str = "f7081044c6ebf09159b01efabce848684eb736dd2b5de52e8c29bdd95083b42e";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

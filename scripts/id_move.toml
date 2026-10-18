@@ -5,7 +5,7 @@ package = "alice-physics"
 manifest = "Cargo.toml"
 tags = ["v{version}"]
 # every feature but wasm (compile_error! with ffi; src/wasm.rs adds no [u8; 32] item)
-doc-features = ["std", "simd", "parallel", "ffi", "python", "privacy-crypto", "gpu-solver-bridge", "neural", "replay", "analytics"]
+doc-features = ["std", "simd", "parallel", "ffi", "python", "privacy-crypto", "gpu-solver-bridge", "neural", "analytics"]
 
 [exempt]
 RR_MAX_EPSILON_WHOLE = "alice-crypto's dp::RR_MAX_EPSILON_WHOLE (a u64 bound on the randomized-response epsilon), re-exported in privacy: rustdoc gives a re-export no type, it is not an identifier"

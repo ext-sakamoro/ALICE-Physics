@@ -109,7 +109,7 @@ cargo run --release --example rollback_netcode
 | **`f32` / `f64` を使うモジュール** (一覧は [英語版](README.md#determinism) を参照、`scripts/f32_modules.py` が生成) | IEEE 754 の `+ - * / sqrt` と FMA は Rust の全ターゲットで結果が一意 超越関数 (`sin`、`exp`、`ln`、`powf` など) はすべて [`alice-det-math`](https://crates.io/crates/alice-det-math) (`alice_physics::det_math` として再エクスポート) を通し、プラットフォームの `libm` は使わない `clippy.toml` の設定で `libm` の呼び出しは CI エラーになる `tests/determinism_golden_f32.rs` で固定 |
 
 2 行目のモジュール一覧は `scripts/f32_modules.py` が生成し、英語版の記述が `src/` とずれると CI が失敗する
-ほかに 9 モジュールが入出力の境界 (FFI、Python、リプレイなど) でだけ浮動小数点を扱い、シミュレーション計算には使わない
+浮動小数点を持つほかのモジュールは入出力の境界 (FFI、Python など) でだけそれを扱い、シミュレーション計算には使わない
 
 2 つの golden テストは CI 上で macOS (ARM / x86)、Linux (ARM / x86)、Windows、`wasm32-wasip1` で実行している
 <!-- claim-test: test_determinism_golden_hash -->
@@ -121,7 +121,7 @@ cargo run --release --example rollback_netcode
 **利用者が渡すコード** `ClosureSdf` は利用者のクロージャを受け取る
 ソルバー自体は決定論的だが、クロージャの中では `f32::sin` などの代わりに `alice_physics::det_math::{sin, exp, …}` を呼ぶ必要がある
 
-**法則の識別子** `alice_physics::PHYSICS_SEMANTICS_ID` はビルドの算術とステップ実装を表す 固定した golden の出力、`alice-det-math` の識別子、値をやり取りする任意の相手 (`alice-analytics`、`alice-db`) の識別子から畳み込んだ値で、そのどれかが変わった時に限って変わる それらとの bridge と GPU bridge のすべての経路は、最初に相手の識別子を確かめ、違えば両方を名指す `PeerMismatch` で拒否する
+**法則の識別子** `alice_physics::PHYSICS_SEMANTICS_ID` はビルドの算術とステップ実装を表す 固定した golden の出力、`alice-det-math` の識別子、値をやり取りする任意の相手 (`alice-analytics`) の識別子から畳み込んだ値で、そのどれかが変わった時に限って変わる その相手との bridge と GPU bridge のすべての経路は、最初に相手の識別子を確かめ、違えば両方を名指す `PeerMismatch` で拒否する
 `PhysicsWorld::law_id(&PHYSICS_SEMANTICS_ID)` はこれと、ワールドに設定した規則 (config、接触キャッシュ、連続衝突、スリープ閾値、材質、力場、participant) をまとめてハッシュする 剛体などの状態は含めない
 法則の識別子・状態・入力が同じ 2 つのワールドは同じビットに進む ただし識別子の外にあるフック、接触モディファイア、SDF コライダー、GPU ブリッジも同じ振る舞いをすることが前提
 `cargo run --example law_id_world` で両方を表示できる
@@ -192,7 +192,7 @@ API の詳細は [docs.rs](https://docs.rs/alice-physics) を参照
 | step: `PhysicsWorld` の step で実行される | 26 |
 | world API: `PhysicsWorld` の他のメソッドから使われる | 14 |
 | binding: C ABI・Python・WebAssembly のバインディングから使われる | 2 |
-| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 124 |
+| standalone: 利用者が直接呼ぶ Rust API で、`PhysicsWorld` は呼ばない | 121 |
 | unused: テスト以外に呼び出し元がない | 1 |
 
 ## 車両運動
@@ -265,7 +265,6 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 | `gpu-solver-bridge` | | 外部 GPU ソルバー用の `GpuSolverBridge` トレイト 無効時のコストはない |
 | `privacy-crypto` | | `privacy` が `alice-crypto` の差分プライバシー (`SecureRng`、`DpNoise`、`dp_int`、`randomized_response` など) を再 export し、`KeyedRappor` を足す 既定で off なので `std` だけでは entropy 源を引かない この feature では `alice-crypto` が公開依存になり、その破壊的な版は本 crate の破壊的な版になる `wasm32-unknown-unknown` では `wasm` と併せて有効にする (`--features std,wasm,privacy-crypto`、browser の entropy を与える) `std,privacy-crypto` だけでは getrandom の「"js" feature を有効にせよ」の error で compile できない |
 | `neural` | | [`alice-ml`](https://crates.io/crates/alice-ml) を使う決定論的ニューラルコントローラー |
-| `replay` | | [`alice-db`](https://crates.io/crates/alice-db) を使うリプレイの記録と再生 |
 | `analytics` | | [`alice-analytics`](https://crates.io/crates/alice-analytics) を使うシミュレーションのプロファイリング |
 
 ## バインディング
@@ -334,7 +333,7 @@ maturin build --release --features python
 
 CI でこのバージョンちょうどを使い、既定 feature、`no_std`、`std,simd,parallel,ffi,gpu-solver-bridge` のライブラリビルドを確認している
 MSRV の引き上げはマイナーバージョンの変更として扱い、パッチでは行わない
-`neural`、`replay`、`analytics` は依存先 crate の MSRV に従う
+`neural`、`analytics` は依存先 crate の MSRV に従う
 
 ## ビルドとテスト
 
@@ -378,7 +377,7 @@ AGPL は `alice-physics` をリンクするものすべてに及ぶ
 C ABI、Unity / Unreal バインディング、Python バインディング、WebAssembly ビルド経由のリンクも含む
 商用ライセンスの問い合わせ: <contact@extoria.co.jp>
 
-任意 feature の `neural` と `replay` は、追加で AGPL ライセンスの crate を取り込む
+任意 feature の `neural` は、追加で AGPL ライセンスの crate を取り込む
 `analytics` と必須依存の `alice-det-math` は `Apache-2.0` (どちらも 0.5 から)、任意 feature の
 `privacy-crypto` が取り込む `alice-crypto` は本 crate と同じライセンス
 

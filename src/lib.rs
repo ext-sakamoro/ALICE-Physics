@@ -29,7 +29,6 @@
 //! | `parallel` | Parallel constraint solving via Rayon with graph-colored batches. |
 //! | `neural` | Deterministic neural controller integration (ALICE-ML). |
 //! | `python` | `PyO3` + `NumPy` zero-copy Python bindings. |
-//! | `replay` | Replay recording/playback via ALICE-DB. |
 //! | `ffi` | C FFI for Unity/UE5/game engine integration. |
 //! | `wasm` | WebAssembly bindings via wasm-bindgen. |
 //! | `analytics` | ALICE-Analytics simulation profiling (`DDSketch`, `HyperLogLog`). |
@@ -130,7 +129,6 @@
 //! - [`mass_properties`]: Mass and inertia tensor computation for standard shapes
 //! - [`collision_mesh_gen`]: Marching cubes SDF-to-mesh with simplification
 //! - [`scene_io`]: Binary (.aphys) and JSON scene serialization (`std`)
-//! - [`multi_world`]: Multiple independent physics worlds with body transfer
 //!
 //! ## Visualization
 //! - [`heatmap`]: Stress/temperature heatmap with viridis colormap
@@ -178,8 +176,6 @@
 //! ## Feature-Gated
 //! - `neural`: Deterministic neural controller (ALICE-ML, `--features neural`)
 //! - `ffi`: C FFI for Unity/UE5 game engines (`--features ffi`)
-//! - `replay`: Replay recording/playback (`--features replay`)
-//! - `db_bridge`: Physics state persistence bridge (`--features replay`)
 //! - `analytics_bridge`: Simulation profiling bridge (`--features analytics`)
 //!
 //! # Determinism
@@ -266,8 +262,6 @@ pub mod crowd_force;
 pub mod cubic_elastic_fem;
 pub mod cylinder;
 pub mod damping_rayleigh;
-#[cfg(feature = "replay")]
-pub mod db_bridge;
 pub mod debug_render;
 pub mod deformable;
 /// Deterministic `f32` / `f64` transcendentals (cross-platform bit-exact).
@@ -687,7 +681,6 @@ pub mod metric;
 pub mod modal;
 pub mod molecular_dynamics;
 pub mod motor;
-pub mod multi_world;
 pub mod multiphase;
 pub mod nbody;
 pub mod netcode;
@@ -721,8 +714,6 @@ pub mod quadratic_elastic_fem;
 pub mod query;
 pub mod ragdoll;
 pub mod raycast;
-#[cfg(feature = "replay")]
-pub mod replay;
 pub mod rng;
 #[cfg(feature = "std")]
 pub mod rolling_contact;
@@ -905,7 +896,6 @@ pub use mass_properties::{
 pub use material::{CombineRule, CombinedMaterial, MaterialId, MaterialTable, PhysicsMaterial};
 pub use math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
 pub use motor::{JointMotor, MotorMode, PdController};
-pub use multi_world::{MultiWorld, Portal};
 pub use netcode::{
     DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
     SimulationSnapshot,
@@ -978,8 +968,8 @@ pub use solver::ContactModifier;
 #[cfg(feature = "std")]
 pub use solver::TgsCacheStats;
 pub use solver::{
-    BodyType, ContactConstraint, DistanceConstraint, LawCheck, LegacyPolicy, PhysicsConfig,
-    PhysicsWorld, RigidBody, SnapshotIds, SolverBackend, StageWork, WorldCcdConfig,
+    BodyAttachments, BodyType, ContactConstraint, DistanceConstraint, LawCheck, LegacyPolicy,
+    PhysicsConfig, PhysicsWorld, RigidBody, SnapshotIds, SolverBackend, StageWork, WorldCcdConfig,
     WorldSnapshotError,
 };
 pub use spatial::SpatialGrid;
@@ -1084,7 +1074,6 @@ pub mod prelude {
     };
     pub use crate::math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
     pub use crate::motor::{JointMotor, MotorMode, PdController};
-    pub use crate::multi_world::{MultiWorld, Portal};
     pub use crate::netcode::{
         DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
         SimulationSnapshot,

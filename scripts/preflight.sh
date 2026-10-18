@@ -268,20 +268,18 @@ step "clippy -D warnings (native feature set, all targets)"
 cargo clippy --all-targets --features "$NATIVE" -- -D warnings
 
 # CI's "Clippy (full native feature set, lib + all targets)" job adds
-# neural,replay,analytics on top of $NATIVE. These sibling-bridge features
-# pull in rkyv (via alice-db) which can add a competing trait impl (e.g.
-# PartialEq<rkyv::ArchivedBTreeSet> alongside the stdlib's) that only
-# surfaces as an ambiguity error at this exact feature combination — missed
-# here before and only caught by CI (2026-10-03, program item 16,
-# tests/analytic_multi_world_wiring.rs:339 `[0,2].into_iter().collect()`).
-step "clippy -D warnings (full native feature set incl. neural/replay/analytics/privacy-crypto, all targets)"
-cargo clippy --all-targets --features "$NATIVE,neural,replay,analytics,privacy-crypto" -- -D warnings
+# neural,analytics on top of $NATIVE. A sibling-bridge feature can pull in a
+# dependency that adds a competing trait impl, which only surfaces as an
+# ambiguity error at this exact feature combination (missed here once and
+# only caught by CI, 2026-10-03), so the combination is linted here too.
+step "clippy -D warnings (full native feature set incl. neural/analytics/privacy-crypto, all targets)"
+cargo clippy --all-targets --features "$NATIVE,neural,analytics,privacy-crypto" -- -D warnings
 
 # the library code also may not call f32 / f64 max and min (CI's "Clippy
 # (library code, ...)" step; .github/clippy-lib/clippy.toml is generated from
 # clippy.toml and the script checks it is current and fires on the canary)
 step "clippy -D warnings (library code, f32 / f64 max and min forbidden)"
-CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "$NATIVE,neural,replay,analytics,privacy-crypto" -- -D warnings
+CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "$NATIVE,neural,analytics,privacy-crypto" -- -D warnings
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "wasm" -- -D clippy::disallowed_methods -D clippy::disallowed_types
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --features "python" -- -D clippy::disallowed_methods -D clippy::disallowed_types
 CLIPPY_CONF_DIR=.github/clippy-lib cargo clippy --lib --no-default-features -- -D clippy::disallowed_methods -D clippy::disallowed_types
@@ -301,7 +299,7 @@ step "wasm32-unknown-unknown build with every browser feature (CI job js-binding
 rustup target list --installed | grep -q wasm32-unknown-unknown || rustup target add wasm32-unknown-unknown
 cargo build --lib --target wasm32-unknown-unknown
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features std
-cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,replay,analytics,gpu-solver-bridge,simd"
+cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,privacy-crypto"
 
 step "rustdoc -D warnings (default + docs.rs feature set)"
@@ -348,9 +346,9 @@ scripts/run_tests.sh float_environment=2 -- cargo test --release --test float_en
 step "semantics identifier (parallel + gpu-solver-bridge)"
 cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
 
-step "ALICE-Law G7 handshakes (replay + analytics + gpu-solver-bridge)"
-scripts/run_tests.sh physics_semantics_id=21 -- cargo test --test physics_semantics_id --features "replay,analytics"
-scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "replay,analytics,gpu-solver-bridge"
+step "ALICE-Law G7 handshakes (analytics + gpu-solver-bridge)"
+scripts/run_tests.sh physics_semantics_id=20 -- cargo test --test physics_semantics_id --features "analytics"
+scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "analytics,gpu-solver-bridge"
 
 step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
@@ -374,8 +372,8 @@ rm -rf "$py_target/python-wheels"
 "$py_venv/bin/pip" install -q --force-reinstall "$py_target"/python-wheels/*.whl
 "$py_venv/bin/python" python/tests/test_binding.py
 
-step "cargo test --lib (neural / replay / analytics via crates.io siblings)"
-cargo test --lib --features "neural,replay,analytics"
+step "cargo test --lib (neural / analytics via crates.io siblings)"
+cargo test --lib --features "neural,analytics"
 
 step "feature-gated integration tests (same script and arguments as ci.yml)"
 python3 scripts/run_feature_gated_tests.py

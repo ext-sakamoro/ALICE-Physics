@@ -104,6 +104,7 @@ const STEP_ENTRIES: &[&str] = &[
 /// step law; their result is pinned through `step_with_bridge`, which runs them.
 const NOT_STEP: &[&str] = &[
     "add_body",
+    "add_body_with_attachments",
     "add_body_with_radius",
     "add_compound_body",
     "add_contact",
@@ -136,6 +137,7 @@ const NOT_STEP: &[&str] = &[
     "joint_motor_mut",
     "rebuild_batches",
     "remove_body",
+    "remove_body_with_attachments",
     "remove_force_field",
     "remove_joint",
     "remove_sdf_collider",

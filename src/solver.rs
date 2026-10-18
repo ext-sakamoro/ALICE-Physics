@@ -1589,10 +1589,21 @@ pub struct BodyObservation {
     pub in_contact: bool,
 }
 
-/// The per-body settings of a [`PhysicsWorld`] kept outside [`RigidBody`],
-/// moved together with a body between worlds (see `MultiWorld::transfer_body`).
+/// The per-body settings of a [`PhysicsWorld`] kept outside [`RigidBody`]
+/// (material, collision radius, collider, collision filter), taken with a body
+/// by [`PhysicsWorld::remove_body_with_attachments`] and given back by
+/// [`PhysicsWorld::add_body_with_attachments`].
+///
+/// An extension point for moving a body between worlds: the body collides in
+/// the destination exactly as it did in the source. The fields are private;
+/// the value is only carried from one call to the other.
+///
+/// The material is carried as its [`crate::material::MaterialId`], an index
+/// into a world's own `material_table`: the destination names the same
+/// material only when both worlds registered the same materials in the same
+/// order.
 #[derive(Clone, Debug)]
-pub(crate) struct BodyAttachments {
+pub struct BodyAttachments {
     material: crate::material::MaterialId,
     collision_radius: Option<Fix128>,
     collider: Option<crate::body_collider::BodyCollider>,
@@ -2264,8 +2275,13 @@ impl PhysicsWorld {
     /// [`Self::remove_body`] that also returns the body's per-body settings
     /// (material, collision radius, collider, collision filter), for moving it
     /// into another world with [`Self::add_body_with_attachments`]. The stable
-    /// id stays behind: ids belong to a world.
-    pub(crate) fn remove_body_with_attachments(
+    /// id stays behind: ids belong to a world. `None` for an out-of-range index
+    /// (the world is not changed).
+    ///
+    /// With [`Self::add_body_with_attachments`], the extension point for code
+    /// that moves bodies between worlds.
+    #[must_use = "the removed body and its settings are lost when dropped"]
+    pub fn remove_body_with_attachments(
         &mut self,
         idx: usize,
     ) -> Option<(RigidBody, BodyAttachments)> {
@@ -2287,7 +2303,8 @@ impl PhysicsWorld {
 
     /// [`Self::add_body`] with the per-body settings taken by
     /// [`Self::remove_body_with_attachments`]; the body gets a new stable id.
-    pub(crate) fn add_body_with_attachments(
+    /// Returns the body's index in this world.
+    pub fn add_body_with_attachments(
         &mut self,
         body: RigidBody,
         attachments: BodyAttachments,

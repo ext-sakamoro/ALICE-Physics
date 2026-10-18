@@ -1790,7 +1790,7 @@ impl QuatFix {
     /// `q v q*` scales by `|q|^2`, so applying a non-unit quaternion resizes
     /// what it rotates (AUD-A-S4W1-004, AUD-A-S5W3-004, AUD-A-S5W3-014).
     #[must_use]
-    pub(crate) fn unit_rotation(self) -> Self {
+    pub fn unit_rotation(self) -> Self {
         let tol = Fix128::from_raw(0, 1 << 32);
         if (self.length_squared() - Fix128::ONE).abs() <= tol {
             self

@@ -37,9 +37,10 @@ use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
 /// 180-degree rotation about the world Z axis, as an exact unit quaternion
 /// (`sin(90deg) = 1`, `cos(90deg) = 0`, both exactly representable in
 /// `Fix128`). Hand-derived Hamilton product `q*v*q^-1` reduces to exactly
-/// `(-v.x, -v.y, v.z)` for any `v` -- see `tests/analytic_multi_world_wiring.rs`
-/// for the full derivation of this same identity (reused here, not
-/// rederived, since it is independent of `compound.rs`).
+/// `(-v.x, -v.y, v.z)` for any `v`: with `q = (u, w)`, `u = (0, 0, 1)`, `w = 0`,
+/// `v' = v + 2w (u × v) + 2 u × (u × v)`, `u × v = (-v.y, v.x, 0)` and
+/// `u × (u × v) = (-v.x, -v.y, 0)`, so `v' = (-v.x, -v.y, v.z)` (independent
+/// of `compound.rs`).
 const ROT_180_Z: QuatFix = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
 
 fn rot_180_z(v: Vec3Fix) -> Vec3Fix {

@@ -51,7 +51,7 @@ use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "43274a4732be32faa1452664f367cd778f62b1a4d0f860a4499f8c90fef47e06";
+const PINNED_ID_HEX: &str = "7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -609,12 +609,12 @@ fn the_det_math_entry_is_the_det_math_identifier() {
 // ── (d') the peer entries ───────────────────────────────────────────────────
 
 /// Each peer's entry in the fold is its entry in PHYSICS_PEER_IDS, and the
-/// table names alice-analytics and alice-db.
+/// table names alice-analytics.
 #[test]
 fn the_peer_entries_are_the_peer_table() {
     let t = table();
     let names: Vec<&str> = PHYSICS_PEER_IDS.iter().map(|p| p.0).collect();
-    assert_eq!(names, ["alice-analytics", "alice-db"]);
+    assert_eq!(names, ["alice-analytics"]);
     for (peer, id) in PHYSICS_PEER_IDS {
         assert_eq!(t.get(peer).map(|d| hex(d)), Some(hex(id)), "{peer}");
     }
@@ -631,32 +631,23 @@ fn the_alice_analytics_entry_is_its_exported_identifier() {
     );
 }
 
-#[cfg(feature = "replay")]
-#[test]
-fn the_alice_db_entry_is_its_exported_identifier() {
-    assert_eq!(
-        check_peer("test", "alice-db", &alice_db::SEMANTICS_ID),
-        Ok(())
-    );
-}
-
 /// A peer identifier other than the expected one is the mismatch naming both.
 #[test]
 fn another_peer_identifier_is_a_mismatch_naming_both() {
     let found = [0x5a; 32];
-    let err = check_peer("db_bridge", "alice-db", &found).unwrap_err();
+    let err = check_peer("analytics_bridge", "alice-analytics", &found).unwrap_err();
     assert_eq!(
         err,
         PeerMismatch {
-            bridge: "db_bridge",
-            peer: "alice-db",
+            bridge: "analytics_bridge",
+            peer: "alice-analytics",
             found,
-            expected: PHYSICS_PEER_IDS[1].1,
+            expected: PHYSICS_PEER_IDS[0].1,
         }
     );
     let text = err.to_string();
     assert!(
-        text.contains(&hex(&found)) && text.contains(&hex(&PHYSICS_PEER_IDS[1].1)),
+        text.contains(&hex(&found)) && text.contains(&hex(&PHYSICS_PEER_IDS[0].1)),
         "{text}"
     );
     for i in 0..32 {

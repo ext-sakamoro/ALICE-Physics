@@ -31,7 +31,7 @@
 //!   `target' = body_positions[idx] + body_rotations[idx].rotate_vec(local_offset)`.
 //!   The 180-degree-about-Z identity `rotate_vec(v) = (-v.x, -v.y, v.z)`
 //!   (hand-derived Hamilton product, reused verbatim from
-//!   `examples/compound_shapes.rs` / `tests/analytic_multi_world_wiring.rs`)
+//!   `examples/compound_shapes.rs`, which derives it)
 //!   gives a second, non-identity, independently-checkable case. A pin
 //!   with `body_index: None` must be left untouched by the call (the loop
 //!   only visits `Some` entries).

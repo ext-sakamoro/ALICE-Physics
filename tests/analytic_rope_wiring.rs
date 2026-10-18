@@ -73,8 +73,7 @@ use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
 
 /// 180-degree rotation about the world Z axis, as an exact unit quaternion.
 /// `rotate_vec(q, v) = (-v.x, -v.y, v.z)` (hand-derived Hamilton product,
-/// reused verbatim from `examples/compound_shapes.rs` /
-/// `tests/analytic_multi_world_wiring.rs`).
+/// reused verbatim from `examples/compound_shapes.rs`, which derives it).
 const ROT_180_Z: QuatFix = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
 
 fn rot_180_z(v: Vec3Fix) -> Vec3Fix {

@@ -3,7 +3,7 @@
 #
 # rust-analyzer only analyses the enabled features, so the default feature set
 # leaves out every feature-gated module (ffi, python, wasm, gpu_bridge, neural,
-# replay, db_bridge, analytics_bridge). `wasm` and `ffi` are mutually exclusive
+# analytics_bridge). `wasm` and `ffi` are mutually exclusive
 # (`compile_error!` in src/lib.rs), so the crate is indexed twice: once with
 # every feature except `wasm`, once with `std,wasm`. scip_reach.py merges both.
 #

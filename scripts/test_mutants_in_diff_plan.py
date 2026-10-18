@@ -155,9 +155,9 @@ impl Thing {
         d = "@@ -1,3 +5,4 @@\n ctx\n-gone\n+new1\n+new2\n ctx\n@@ -20 +30 @@\n-x\n+y\n"
         self.assertEqual(mp.changed_lines(d), [6, 7, 30])
 
-    def test_the_real_lib_rs_gates_replay_behind_its_feature(self):
+    def test_the_real_lib_rs_gates_analytics_bridge_behind_its_feature(self):
         gates = mp.module_gates(mp.cfg_spans(HERE.parent / "src/lib.rs"))
-        self.assertEqual(mp.features_for(gates["replay"]), (["replay"], True))
+        self.assertEqual(mp.features_for(gates["analytics_bridge"]), (["analytics"], True))
         self.assertGreater(len(gates), 5, "the real lib.rs has gated modules")
 
 

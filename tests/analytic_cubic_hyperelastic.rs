@@ -70,7 +70,7 @@
 // `cubic_elastic_fem`, `linear_elastic_fem`, `hyperelastic`, `math`,
 // `sdf_fem_mesh`, `coupled_field`, `sdf_collider`, `sim_field`, `collider`,
 // `metric`). The feature bites only the rigid-body solvers (`solver.rs`,
-// `solver_tgs*.rs`, `query.rs`, `multi_world.rs`, `laminate.rs`,
+// `solver_tgs*.rs`, `query.rs`, `laminate.rs`,
 // `eulerian_grid.rs`). ⚠️ The duplicate run costs real time and adds zero
 // coverage, so the file opts out — which also means it does **not** run under
 // `--all-features`.

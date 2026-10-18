@@ -12,7 +12,7 @@ them into
     must go through `det_math` for cross-platform bit-exactness (this is
     the README list, pinned by `tests/determinism_golden_f32.rs`), and
   * boundary modules — the float only crosses an I/O / binding boundary
-    (FFI, Python, replay, analytics, metrics ratios) and no simulation
+    (FFI, Python, analytics, metrics ratios) and no simulation
     arithmetic happens in `f32`; listed in BOUNDARY below with the reason.
 
 Usage: `python3 scripts/f32_modules.py` prints the README row fragment and
@@ -37,8 +37,6 @@ BOUNDARY = {
     "binding_api": "checks the f64 arguments of the C / WebAssembly / Python bindings and converts them to Fix128",
     "pipeline": "print pipeline I/O (mm / °C values passed through)",
     "analytics_bridge": "alice-analytics sketches take f64 samples (I/O)",
-    "db_bridge": "alice-db pass-through I/O, no arithmetic",
-    "replay": "alice-db positions read back as f32 tuples (I/O)",
     "fluid_netcode": "compression_ratio metric only",
     "character_state": "state-machine timers, no simulation arithmetic",
     "solver_tgs": "pub(crate) cache hit-rate metric only",
