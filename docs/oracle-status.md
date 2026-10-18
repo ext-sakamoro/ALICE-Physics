@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5882 |
+| 🟢 Not ignored (run by CI) | 5907 |
 | 🔴 Red by design | 71 |
 | ⏱ Gated (runtime / diagnostic / manual) | 27 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5980** |
+| **Total** | **6005** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -152,7 +152,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5882)
+## 🟢 Not ignored (5907)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -198,6 +198,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_query_wiring.rs` | 25 |
 | `audit_character.rs` | 25 |
 | `audit_linear_elastic_fem.rs` | 25 |
+| `determinism_law_outputs.rs` | 25 |
 | `analytic_compound_wiring.rs` | 24 |
 | `analytic_physics2d_pairs.rs` | 24 |
 | `analytic_transient_thermal_wiring.rs` | 24 |

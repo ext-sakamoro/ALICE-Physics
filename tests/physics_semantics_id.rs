@@ -6,8 +6,11 @@
 //! This file checks, on the source of the goldens (no value is copied here):
 //!
 //! * every entry equals the digest constant asserted by the golden test that
-//!   the `PINS` table of `tests/determinism_golden_coverage.rs` names for it;
-//! * the entry names are exactly the `PINS` combinations plus
+//!   the `PINS` table of `tests/determinism_golden_coverage.rs` (or the
+//!   `LAW_OUTPUT_PINS` table of `tests/determinism_law_outputs.rs`) names for it;
+//! * the entry names are exactly the `PINS` combinations, the Law outputs of
+//!   the `LAW_OUTPUT_PINS` table of `tests/determinism_law_outputs.rs` (one
+//!   per src file calling the Law max / min / clamp), the peers, and
 //!   `"alice-det-math"` (the known gaps are not entries);
 //! * the det-math entry equals `alice_det_math::SEMANTICS_ID`;
 //! * the fold of the table is `PHYSICS_SEMANTICS_ID`, and both equal the hex
@@ -48,9 +51,12 @@ use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c";
+const PINNED_ID_HEX: &str = "43274a4732be32faa1452664f367cd778f62b1a4d0f860a4499f8c90fef47e06";
 
 const DET_MATH: &str = "alice-det-math";
+
+/// The name prefix of the Law output entries (`LAW_OUTPUT_PINS`)
+const LAW_OUTPUT: &str = "law output: ";
 
 fn root() -> &'static Path {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -433,6 +439,48 @@ fn pins_rows() -> Vec<(String, String, String)> {
     assert!(
         !rows.is_empty(),
         "no PINS row read: the check would compare nothing"
+    );
+    let mut rows = rows;
+    rows.extend(law_output_rows());
+    rows
+}
+
+/// The rows of `LAW_OUTPUT_PINS` in tests/determinism_law_outputs.rs:
+/// (entry, that file, test). Every src file calling the Law max / min / clamp
+/// has one (checked there), so each Law output is an entry here.
+fn law_output_rows() -> Vec<(String, String, String)> {
+    let src = read("tests/determinism_law_outputs.rs");
+    let start = src
+        .find("const LAW_OUTPUT_PINS: &[(&str, &str, &str)] = &[")
+        .expect("LAW_OUTPUT_PINS table not found");
+    let end = start
+        + src[start..]
+            .find("\n];")
+            .expect("LAW_OUTPUT_PINS table not closed");
+    let lits: Vec<String> = src[start..end]
+        .split('"')
+        .skip(1)
+        .step_by(2)
+        .map(str::to_string)
+        .collect();
+    assert_eq!(
+        lits.len() % 3,
+        0,
+        "a LAW_OUTPUT_PINS row is not three strings"
+    );
+    let rows: Vec<_> = lits
+        .chunks(3)
+        .map(|r| {
+            (
+                r[0].clone(),
+                "determinism_law_outputs.rs".to_string(),
+                r[1].clone(),
+            )
+        })
+        .collect();
+    assert!(
+        !rows.is_empty(),
+        "no LAW_OUTPUT_PINS row read: the check would compare nothing"
     );
     rows
 }
@@ -831,8 +879,9 @@ fn the_identifier_is_the_row_of_the_resolved_det_math() {
 
 /// Every earlier identifier the snapshot reader accepts is, never this
 /// build's, either the identifier of another known generation or the fold of
-/// the same pins without the peer entries (before 4.0.0 they were not folded;
-/// no golden moved when they were), under a known generation.
+/// the same pins without the peer entries and the Law output entries (before
+/// 4.0.0 neither was folded; no stepping golden moved when they were), under a
+/// known generation.
 #[test]
 fn previous_identifiers_are_rows_of_other_generations() {
     assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.is_empty());
@@ -841,7 +890,9 @@ fn previous_identifiers_are_rows_of_other_generations() {
         .map(|(det_math, _)| {
             let pins: Vec<_> = pins_under(*det_math)
                 .into_iter()
-                .filter(|(n, _)| !PHYSICS_PEER_IDS.iter().any(|p| p.0 == *n))
+                .filter(|(n, _)| {
+                    !PHYSICS_PEER_IDS.iter().any(|p| p.0 == *n) && !n.starts_with(LAW_OUTPUT)
+                })
                 .collect();
             fold(&pins).expect("folds")
         })
@@ -868,7 +919,7 @@ fn previous_identifiers_are_rows_of_other_generations() {
         );
         assert!(
             before_peers.contains(&unhex32(old)),
-            "{old} is not the fold without the peers"
+            "{old} is not the fold without the peers and the Law outputs"
         );
     }
 }

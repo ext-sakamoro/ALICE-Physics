@@ -41,7 +41,7 @@ class Judge(unittest.TestCase):
 
     def test_the_terms_and_binaries_are_listed(self):
         self.assertEqual(dr.LIB_TERMS, ("max_min_tests", "windward_alignment"))
-        self.assertEqual(len(dr.TEST_BINARIES), 5)
+        self.assertEqual(len(dr.TEST_BINARIES), 6)
 
 
 if __name__ == "__main__":

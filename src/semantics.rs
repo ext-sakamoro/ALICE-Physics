@@ -10,7 +10,7 @@
 //! # Hex form (with `alice-det-math` 0.5.1; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c
+//! 43274a4732be32faa1452664f367cd778f62b1a4d0f860a4499f8c90fef47e06
 //! ```
 //!
 //! # Entries
@@ -18,6 +18,10 @@
 //! [`PHYSICS_SEMANTICS_PINS`] has one entry per row of the `PINS` table of
 //! `tests/determinism_golden_coverage.rs` (23 rows), named by the
 //! combination that row pins, with the SHA-256 golden of the test it names,
+//! plus one entry per Law output: the golden of
+//! `tests/determinism_law_outputs.rs` for each src file that calls the Law
+//! max / min / clamp (named `"law output: <file>"`, listed in its
+//! `LAW_OUTPUT_PINS` table; a file with such a call and no row fails there),
 //! plus one entry `"alice-det-math"` holding `alice_det_math::SEMANTICS_ID`,
 //! plus one entry per optional Law-bearing peer this crate exchanges values
 //! with ([`PHYSICS_PEER_IDS`]: `"alice-analytics"`, `"alice-db"`).
@@ -182,6 +186,96 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
         "installed bridge",
         hex32("d73751a75b8b95b567fc4c212638e7fd994e1506e0abbb5af49a662032c0d9fd"),
     ),
+    // the Law outputs: one golden per src file that calls the Law max / min /
+    // clamp (`LAW_OUTPUT_PINS` in tests/determinism_law_outputs.rs)
+    (
+        "law output: anomaly",
+        hex32("ba0f9ef3fde0df57aa55af0ecd88608875d326ad8b9ae88dd98ca257954375e1"),
+    ),
+    (
+        "law output: convex_decompose",
+        hex32("504fba138f56a4bc99a3141402bea5d794fd1e3b69f0224c415e50d95817350d"),
+    ),
+    (
+        "law output: erosion",
+        hex32("3d4bbcb2c3107120bb33a7b91821dbeda2c564a13dd3c640e25c30bd38042746"),
+    ),
+    (
+        "law output: fracture",
+        hex32("6547e36692326d189c321022b065b2567490da1fc3994bcd11ccc1d4bf684f5f"),
+    ),
+    (
+        "law output: heatmap",
+        hex32("32d50d9108e2fce2cc0d4b55f82987e70625d97f15173cd37142b765ab4f8be7"),
+    ),
+    (
+        "law output: phase_change",
+        hex32("298c35d5de20f49859c56389809987bcfbf3c66a8ef9ec9e3efd8e5bb623c677"),
+    ),
+    (
+        "law output: pressure",
+        hex32("ced6e512e72ddfdda18be4db0eee969765011b3b38d9e54c268b053c1177635f"),
+    ),
+    (
+        "law output: privacy",
+        hex32("9c8f5949b5346420ca73e4ac029ddd07da9c4e74d0c08ddd4a0e1d4c8c46bff8"),
+    ),
+    (
+        "law output: sdf_character",
+        hex32("b17e24f1544ea96ab55ed1b6949cb4fc2f3beabd8966f9a4981c8993c2174fa0"),
+    ),
+    (
+        "law output: sdf_collider",
+        hex32("b6feffa57022484b7a84e13fec2faa7290e264f273d895c01dac963986e4db1e"),
+    ),
+    (
+        "law output: sdf_destruction",
+        hex32("684e6d18da512f696f3620a1540adce95165550a37a97dbde8de60b30557a717"),
+    ),
+    (
+        "law output: sdf_fem_mesh",
+        hex32("641feebc7a04d2f8a0c5367d2f687db315f1bb2c37a0b24d4d01bc7b800354f3"),
+    ),
+    (
+        "law output: sdf_sph",
+        hex32("d20c7444cc5a18c5548881c46015bca1768e13e15857ce94ab791a32c473c051"),
+    ),
+    (
+        "law output: sdf_wind_field",
+        hex32("41b4e95ba70ff419c2f1c2083df0999e6e34b110e2fb430431dd578900f483a8"),
+    ),
+    (
+        "law output: shape",
+        hex32("d3a0cb188c4331c280ac3bf3678570c850c7ac03563c8c44830569560596f36a"),
+    ),
+    (
+        "law output: sim_field",
+        hex32("98ea603b87edf5f774011a75b426b7545561e06d0870e72bc2275f0cfe41768d"),
+    ),
+    (
+        "law output: sim_modifier observe",
+        hex32("28068d73ca7e51dc188a25c39562709bf56620c522ae317b7c42b013cc5022e4"),
+    ),
+    (
+        "law output: sketch",
+        hex32("83275eec34cb7e18cf3c5db2582b25047ba6cbc254fd08036db12fb4b9291b31"),
+    ),
+    (
+        "law output: tgs oriented 6dof hooks",
+        hex32("79144576c7e17440faaaa14e5e1496c501bd5e929e83ebbdaece82ad87f115ff"),
+    ),
+    (
+        "law output: thermal",
+        hex32("9c50b43dc262b5c078215b91c01c4914a18f13fbc05092a987ac2cd28a492040"),
+    ),
+    (
+        "law output: thin_wall",
+        hex32("5fd41dcdab079b2632a3e36f1f093949d451504b043eedd11230b27e1bad68f8"),
+    ),
+    (
+        "law output: transient_thermal",
+        hex32("5c8159bac8ee768397456149e0ed151cf7b5975a3f3a0f13981b32bb975175b3"),
+    ),
     ("alice-analytics", PHYSICS_PEER_IDS[0].1),
     ("alice-db", PHYSICS_PEER_IDS[1].1),
     // the resolved alice-det-math's own identifier, not a copy of it: the
@@ -303,12 +397,12 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("67b299b07d6c466f47638ddc0e08344e2cf951a415ee05e32eae511f046ab674"),
+        hex32("8afbbccc458686c398647f4f76cd79f0b84ca339bdf2bf792397c5464dcaa2ee"),
     ),
     // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c"),
+        hex32("43274a4732be32faa1452664f367cd778f62b1a4d0f860a4499f8c90fef47e06"),
     ),
 ];
 
@@ -318,7 +412,7 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.1):
-/// `d4422f8241fc09863993a09ee01514674cbf414e7b6852504e5d1572535a1a0c`.
+/// `43274a4732be32faa1452664f367cd778f62b1a4d0f860a4499f8c90fef47e06`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 
