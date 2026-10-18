@@ -295,6 +295,10 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
   `main` run and one `ci/**` run at a time, and a new run waits instead of cancelling
   the running one (GitHub keeps one waiting run per group, so a newer push replaces an
   older waiting run). `scripts/ci_load_check.py` requires exactly this shape.
+- `g2-comparisons.yml` (four `cargo check` runs) uses a group per SHA on `main` and a
+  group per ref elsewhere: a `main` run is never cancelled, and is never dropped by the
+  one-pending-run-per-group rule; a newer push to a `ci/**` branch cancels the older run
+  of that branch.
 - `quality-deep.yml` (the weekly mutation testing) does not trigger on push.
 
 ## Amendment, 2026-10-12
