@@ -106,9 +106,11 @@ reference_repo = "ALICE-Analytics"
 
 [G11]
 status = "unverified"
-evidence = []
+evidence = [
+    "scripts/shared_files.sh with .github/shared-files-pin and scripts/test_shared_files.py (byte-identical to ALICE-DetMath's, ALICE-Kinematics' and ALICE-SDF's): clause (c), the files this crate shares with the other ALICE crates are compared with ALICE-Law's table (conformance/shared-files.toml and its checker fetched at the pinned revision, each SHA-256 checked); a difference, an unlisted shared path, a wrong pin or nothing compared fails; .github/workflows/ci.yml test job (every OS of the matrix, Windows included) and scripts/preflight.sh",
+]
 since = ""
-note = "not yet audited gate by gate. The crate carries an unusually large body of checker self-tests (scripts/test_entropy_guard.py, test_determinism_release.py, test_docs_lint.py, test_clippy_lib_gate.py, test_public_text.py, test_mutants_ratchet.py and ~40 more) plus a weekly mutants ratchet and compared-nothing guards, so (a) canaries and (b) zero-compared-fails checks are present for many checkers, and (c) the shared public-text checker carries its cross-repo byte-identity via .github/public-text-pin. What is missing is a confirmation that every Law gate's own checker carries all three of (a),(b),(c); that per-gate triad audit has not been done, so this is left unverified rather than claimed pass."
+note = "not yet audited gate by gate. Clause (c) is now checked across repositories: scripts/shared_files.sh compares the committed tree with ALICE-Law's table (measured: 24 copies, 0 findings, 6 pending, 2 adopting: changed_paths.py and its test, owner ALICE-Crypto; id_move_check.py and its test, owner ALICE-DB; version_sync.py and its test, owner ALICE-SDF, whose target bytes this crate carries from this change; shared_files.sh and its test are reported as adopting until the table lists this crate). The crate carries a large body of checker self-tests (scripts/test_entropy_guard.py, test_determinism_release.py, test_docs_lint.py, test_clippy_lib_gate.py, test_public_text.py, test_mutants_ratchet.py and about 40 more) plus a weekly mutants ratchet and compared-nothing guards, so (a) canaries and (b) zero-compared-fails checks are present for many checkers. What is missing is a confirmation that every Law gate's own checker carries all three of (a), (b), (c); that per-gate triad audit has not been done, so this is left unverified rather than claimed pass."
 reference_repo = ""
 
 [G12]

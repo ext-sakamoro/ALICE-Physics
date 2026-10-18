@@ -74,6 +74,8 @@ python3 scripts/test_readme_sync.py
 python3 scripts/readme_sync.py --check
 python3 scripts/test_version_sync.py
 python3 scripts/version_sync.py --check
+python3 scripts/test_shared_files.py
+scripts/shared_files.sh
 python3 scripts/test_lib_test_gate.py
 python3 scripts/test_preflight_ci_parity.py
 python3 scripts/preflight_ci_parity.py
