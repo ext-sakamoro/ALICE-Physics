@@ -15,6 +15,10 @@ were introduced during that release window.
 
 ## [Unreleased]
 
+### Changed
+
+- CI: `scripts/clippy_lib_gate.py` の canary を path で判定するようにした (ALICE-SDF / ALICE-Physics / ALICE-LOL で同じ file、repository ごとの library 専用の禁止と canary の形は `scripts/clippy_lib_gate.toml`) これまでは canary の各行に何らかの禁止の診断があれば通したので、同じ行で別の禁止が出ると、消した禁止の行も通っていた (ALICE-SDF で `RandomState::new` の禁止を消しても green だった) 形ごとにその形の path の診断を要求し、どの形にも当たらない診断、2 回以上または 0 回現れる形の文字列、形が 0 件、clippy の exit 0、何も指さない設定の path (clippy の `does not refer to` の警告) で失敗する library 専用の禁止はどれも、それを名指す形を canary に持つ (method の path の打ち間違いは clippy が警告しないため) 表示は「形の数 / 期待した数」 (12 / 12、必ず clean の行 1 つ)
+
 ### Added
 
 - CI (ALICE-Law G9): `scripts/id_move_check.py` (ALICE の識別子を持つ crate で共有、ALICE-Zip と同じ file) と試験 `scripts/test_id_move_check.py` を clippy job と preflight に足した 設定 `scripts/id_move.toml` 最新の release tag (v3.1.0) の公開版と作業 tree で `PHYSICS_SEMANTICS_ID` を rustdoc JSON (wasm を除く全 feature) から読み、動いた時は破壊的な版か、旧値が `PREVIOUS_PHYSICS_SEMANTICS_IDS` にあり、その旧値を外した写しで `tests/world_snapshot_previous_semantics.rs::a_blob_of_the_released_3_1_0_semantics_restores` が失敗することを要求する 現在の結果: `79ca5297…` → `d4422f82…`、旧値は一覧にあり試験で確かめられる (比較 1 件、問題 0) 識別子でない `[u8; 32]` 外の再 export (`privacy::RR_MAX_EPSILON_WHOLE`、alice-crypto の u64) は理由付きで除外した
