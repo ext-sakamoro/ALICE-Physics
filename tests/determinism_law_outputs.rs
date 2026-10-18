@@ -1061,6 +1061,8 @@ fn law_calls(code: &str) -> Vec<(usize, String)> {
     .map(|s| (*s).to_string())
     .collect();
     let mut bare = false;
+    // local names a Law function is imported under (`use crate::det_math::{min as lo}`)
+    let mut renamed: BTreeSet<String> = BTreeSet::new();
     for stmt in code.split(';') {
         let s: String = stmt.split_whitespace().collect::<Vec<_>>().join(" ");
         let Some(rest) = s.find("use ").map(|k| &s[k + 4..]) else {
@@ -1078,18 +1080,47 @@ fn law_calls(code: &str) -> Vec<(usize, String)> {
                     .split(',')
                     .map(str::trim)
                     .collect();
-                if names
-                    .iter()
-                    .any(|n| *n == "*" || LAW_FNS.contains(&n.split(" as ").next().unwrap_or("")))
-                {
-                    bare = true;
+                for n in names {
+                    let (name, local) = n
+                        .split_once(" as ")
+                        .map_or((n, n), |(a, b)| (a.trim(), b.trim()));
+                    if n == "*" {
+                        bare = true;
+                    } else if LAW_FNS.contains(&name) {
+                        if local == name {
+                            bare = true;
+                        } else {
+                            renamed.insert(local.to_string());
+                        }
+                    }
                 }
             }
         }
     }
     let b = code.as_bytes();
+    // the byte ranges of the `use` items (an import is not a use of the function)
+    let mut use_items: Vec<(usize, usize)> = Vec::new();
+    let mut at = 0;
+    while let Some(n) = code[at..].find("use") {
+        let k = at + n;
+        at = k + 3;
+        let word_start = k == 0 || !is_ident(b[k - 1]);
+        let word_end = b.get(k + 3).is_some_and(|c| c.is_ascii_whitespace());
+        if word_start && word_end {
+            let end = code[k..].find(';').map_or(code.len(), |e| k + e);
+            use_items.push((k, end));
+            at = end;
+        }
+    }
     let mut calls = Vec::new();
-    for f in LAW_FNS {
+    let searched: Vec<String> = LAW_FNS
+        .iter()
+        .map(|f| (*f).to_string())
+        .chain(renamed.iter().cloned())
+        .collect();
+    for f in &searched {
+        let f = f.as_str();
+        let is_renamed = renamed.contains(f);
         let mut from = 0;
         while let Some(n) = code[from..].find(f) {
             let k = from + n;
@@ -1101,9 +1132,7 @@ fn law_calls(code: &str) -> Vec<(usize, String)> {
             // (`.reduce(det_math::max)`); a bare name only when called
             let called = code[from..].trim_start().starts_with('(');
             let before = &code[..k];
-            // a path in a `use` item is an import, not a use of the function
-            let stmt = &before[before.rfind([';', '{', '}']).map_or(0, |p| p + 1)..];
-            if stmt.split_whitespace().any(|w| w == "use") {
+            if use_items.iter().any(|&(s, e)| s <= k && k < e) {
                 continue;
             }
             let qualified = modules.iter().any(|m| {
@@ -1111,11 +1140,13 @@ fn law_calls(code: &str) -> Vec<(usize, String)> {
                     && !before[..before.len() - m.len() - 2]
                         .ends_with(|c: char| c.is_ascii_alphanumeric() || c == '_' || c == ':')
             });
-            let bare_call = bare
-                && called
+            // a renamed import counts called or passed as a value, like a path
+            let bare_call = (bare && called || is_renamed)
                 && !before.trim_end().ends_with('.')
                 && !before.ends_with("::")
-                && !before.trim_end().ends_with("fn");
+                && !before.trim_end().ends_with("fn")
+                && !before.trim_end().ends_with("let")
+                && !before.trim_end().ends_with("let mut");
             if qualified || bare_call {
                 let line = code[..k].matches('\n').count() + 1;
                 let start = before
@@ -1242,6 +1273,9 @@ fn the_caller_scan_finds_every_spelling() {
         "use alice_det_math::metric::clamp;\nfn f(a: f32) -> f32 { clamp (a, 0.0, 1.0) }",
         "fn f(a: f64) -> f64 { crate::det_math::max64(a, 0.0) }",
         "fn f(v: &[f32]) -> Option<f32> { v.iter().copied().reduce(crate::det_math::max) }",
+        "use crate::det_math::{min as lo};\npub fn f(a: f32, b: f32) -> f32 { lo(a, b) }",
+        "use crate::det_math::{sqrt, max64 as m};\nfn f(v: &[f64]) -> f64 { v.iter().copied().fold(0.0, m) }",
+        "use crate::det_math::clamp as c;\nfn f(a: f32) -> f32 { c(a, 0.0, 1.0) }",
     ] {
         assert_eq!(found(src).len(), 1, "{src}");
     }
@@ -1256,6 +1290,8 @@ fn the_caller_scan_finds_every_spelling() {
         "#[cfg(test)]\nmod tests { fn g(a: f32) -> f32 { crate::det_math::max(a, 0.0) } }",
         "fn f(a: f32) -> f32 { max(a, 0.0) }",
         "use crate::det_math::max;\nfn f(v: &[f32]) -> usize { let max = 3; max }",
+        "use crate::det_math::{sqrt as root};\nfn f(a: f32) -> f32 { root(a) }",
+        "use crate::det_math::{min as lo};\nfn g(x: &X) -> f32 { x.lo(1.0) }",
     ] {
         assert!(found(src).is_empty(), "{src}: {:?}", found(src));
     }
