@@ -13,7 +13,7 @@ mutants. This script reads the diff and prints, as JSON:
     impl / trait item, field, variant, match arm, statement) whose span holds a
     changed line, plus the `required-features` of the tests below);
   * `tests`: the integration test targets whose file name contains the name of
-    a changed module (`tests/audit_replay.rs` for `src/replay.rs`), to run
+    a changed module (`tests/audit_analytics_bridge.rs` for `src/analytics_bridge.rs`), to run
     besides `--lib`;
   * `skipped`: changed files whose module cannot be compiled on the host at
     all (it requires `not(feature = "std")`, or a wasm / python build); they

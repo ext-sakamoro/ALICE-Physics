@@ -7692,6 +7692,7 @@ pub fn alice_physics::math::QuatFix::mul(self, Self) -> Self
 pub const fn alice_physics::math::QuatFix::new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::QuatFix::normalize(self) -> Self
 pub fn alice_physics::math::QuatFix::rotate_vec(self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::math::QuatFix::unit_rotation(self) -> Self
 impl core::clone::Clone for alice_physics::math::QuatFix
 pub fn alice_physics::math::QuatFix::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::math::QuatFix
@@ -8315,49 +8316,6 @@ impl core::marker::UnsafeUnpin for alice_physics::motor::PdController3D
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::motor::PdController3D
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::motor::PdController3D
 pub fn alice_physics::motor::apply_motors(&[alice_physics::motor::JointMotor], &[alice_physics::joint::Joint], &mut [alice_physics::solver::RigidBody], alice_physics::math::Fix128)
-pub mod alice_physics::multi_world
-pub struct alice_physics::multi_world::MultiWorld
-pub alice_physics::multi_world::MultiWorld::worlds: alloc::vec::Vec<alice_physics::solver::PhysicsWorld>
-impl alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::add_world(&mut self, alice_physics::solver::PhysicsConfig) -> usize
-pub const fn alice_physics::multi_world::MultiWorld::new() -> Self
-pub fn alice_physics::multi_world::MultiWorld::step_all(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::multi_world::MultiWorld::step_all_parallel(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::multi_world::MultiWorld::total_body_count(&self) -> usize
-pub fn alice_physics::multi_world::MultiWorld::transfer_body(&mut self, usize, usize, usize, alice_physics::math::Vec3Fix) -> core::option::Option<usize>
-pub fn alice_physics::multi_world::MultiWorld::try_step_all(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
-pub fn alice_physics::multi_world::MultiWorld::try_step_all_parallel(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
-pub fn alice_physics::multi_world::MultiWorld::world_count(&self) -> usize
-impl core::default::Default for alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::default() -> Self
-impl core::fmt::Debug for alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::multi_world::MultiWorld
-impl core::marker::Send for alice_physics::multi_world::MultiWorld
-impl core::marker::Sync for alice_physics::multi_world::MultiWorld
-impl core::marker::Unpin for alice_physics::multi_world::MultiWorld
-impl core::marker::UnsafeUnpin for alice_physics::multi_world::MultiWorld
-impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::multi_world::MultiWorld
-impl !core::panic::unwind_safe::UnwindSafe for alice_physics::multi_world::MultiWorld
-pub struct alice_physics::multi_world::Portal
-pub alice_physics::multi_world::Portal::transform: (alice_physics::math::Vec3Fix, alice_physics::math::QuatFix)
-pub alice_physics::multi_world::Portal::world_a: usize
-pub alice_physics::multi_world::Portal::world_b: usize
-impl alice_physics::multi_world::Portal
-pub const fn alice_physics::multi_world::Portal::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> Self
-pub fn alice_physics::multi_world::Portal::transform_a_to_b(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
-pub fn alice_physics::multi_world::Portal::transform_b_to_a(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
-impl core::clone::Clone for alice_physics::multi_world::Portal
-pub fn alice_physics::multi_world::Portal::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::multi_world::Portal
-pub fn alice_physics::multi_world::Portal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::multi_world::Portal
-impl core::marker::Send for alice_physics::multi_world::Portal
-impl core::marker::Sync for alice_physics::multi_world::Portal
-impl core::marker::Unpin for alice_physics::multi_world::Portal
-impl core::marker::UnsafeUnpin for alice_physics::multi_world::Portal
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::multi_world::Portal
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::multi_world::Portal
 pub mod alice_physics::multiphase
 #[non_exhaustive] pub enum alice_physics::multiphase::VofScheme
 pub alice_physics::multiphase::VofScheme::SemiLagrangian
@@ -13121,29 +13079,6 @@ impl core::marker::Unpin for alice_physics::character::MoveResult
 impl core::marker::UnsafeUnpin for alice_physics::character::MoveResult
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::character::MoveResult
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::character::MoveResult
-pub struct alice_physics::prelude::MultiWorld
-pub alice_physics::prelude::MultiWorld::worlds: alloc::vec::Vec<alice_physics::solver::PhysicsWorld>
-impl alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::add_world(&mut self, alice_physics::solver::PhysicsConfig) -> usize
-pub const fn alice_physics::multi_world::MultiWorld::new() -> Self
-pub fn alice_physics::multi_world::MultiWorld::step_all(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::multi_world::MultiWorld::step_all_parallel(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::multi_world::MultiWorld::total_body_count(&self) -> usize
-pub fn alice_physics::multi_world::MultiWorld::transfer_body(&mut self, usize, usize, usize, alice_physics::math::Vec3Fix) -> core::option::Option<usize>
-pub fn alice_physics::multi_world::MultiWorld::try_step_all(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
-pub fn alice_physics::multi_world::MultiWorld::try_step_all_parallel(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
-pub fn alice_physics::multi_world::MultiWorld::world_count(&self) -> usize
-impl core::default::Default for alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::default() -> Self
-impl core::fmt::Debug for alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::multi_world::MultiWorld
-impl core::marker::Send for alice_physics::multi_world::MultiWorld
-impl core::marker::Sync for alice_physics::multi_world::MultiWorld
-impl core::marker::Unpin for alice_physics::multi_world::MultiWorld
-impl core::marker::UnsafeUnpin for alice_physics::multi_world::MultiWorld
-impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::multi_world::MultiWorld
-impl !core::panic::unwind_safe::UnwindSafe for alice_physics::multi_world::MultiWorld
 pub struct alice_physics::prelude::NetcodeConfig
 pub alice_physics::prelude::NetcodeConfig::checksum_history_len: usize
 pub alice_physics::prelude::NetcodeConfig::fixed_dt: alice_physics::math::Fix128
@@ -13469,6 +13404,7 @@ pub const alice_physics::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics::solver::RigidBody, alice_physics::solver::BodyAttachments) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics::compound::CompoundShape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::add_contact(&mut self, alice_physics::solver::ContactConstraint)
@@ -13522,6 +13458,7 @@ pub fn alice_physics::solver::PhysicsWorld::population_fingerprint(&self) -> u64
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
+pub fn alice_physics::solver::PhysicsWorld::remove_body_with_attachments(&mut self, usize) -> core::option::Option<(alice_physics::solver::RigidBody, alice_physics::solver::BodyAttachments)>
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
@@ -13650,25 +13587,6 @@ impl core::marker::Unpin for alice_physics::plane_collider::PlaneCollider
 impl core::marker::UnsafeUnpin for alice_physics::plane_collider::PlaneCollider
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::plane_collider::PlaneCollider
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::plane_collider::PlaneCollider
-pub struct alice_physics::prelude::Portal
-pub alice_physics::prelude::Portal::transform: (alice_physics::math::Vec3Fix, alice_physics::math::QuatFix)
-pub alice_physics::prelude::Portal::world_a: usize
-pub alice_physics::prelude::Portal::world_b: usize
-impl alice_physics::multi_world::Portal
-pub const fn alice_physics::multi_world::Portal::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> Self
-pub fn alice_physics::multi_world::Portal::transform_a_to_b(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
-pub fn alice_physics::multi_world::Portal::transform_b_to_a(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
-impl core::clone::Clone for alice_physics::multi_world::Portal
-pub fn alice_physics::multi_world::Portal::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::multi_world::Portal
-pub fn alice_physics::multi_world::Portal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::multi_world::Portal
-impl core::marker::Send for alice_physics::multi_world::Portal
-impl core::marker::Sync for alice_physics::multi_world::Portal
-impl core::marker::Unpin for alice_physics::multi_world::Portal
-impl core::marker::UnsafeUnpin for alice_physics::multi_world::Portal
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::multi_world::Portal
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::multi_world::Portal
 pub struct alice_physics::prelude::PressureConfig
 pub alice_physics::prelude::PressureConfig::decay_rate: f32
 pub alice_physics::prelude::PressureConfig::deformation_rate: f32
@@ -13854,6 +13772,7 @@ pub fn alice_physics::math::QuatFix::mul(self, Self) -> Self
 pub const fn alice_physics::math::QuatFix::new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::QuatFix::normalize(self) -> Self
 pub fn alice_physics::math::QuatFix::rotate_vec(self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::math::QuatFix::unit_rotation(self) -> Self
 impl core::clone::Clone for alice_physics::math::QuatFix
 pub fn alice_physics::math::QuatFix::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::math::QuatFix
@@ -18121,6 +18040,18 @@ impl core::marker::Unpin for alice_physics::WorldSnapshotError
 impl core::marker::UnsafeUnpin for alice_physics::WorldSnapshotError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::WorldSnapshotError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::WorldSnapshotError
+pub struct alice_physics::solver::BodyAttachments
+impl core::clone::Clone for alice_physics::solver::BodyAttachments
+pub fn alice_physics::solver::BodyAttachments::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::solver::BodyAttachments
+pub fn alice_physics::solver::BodyAttachments::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::solver::BodyAttachments
+impl core::marker::Send for alice_physics::solver::BodyAttachments
+impl core::marker::Sync for alice_physics::solver::BodyAttachments
+impl core::marker::Unpin for alice_physics::solver::BodyAttachments
+impl core::marker::UnsafeUnpin for alice_physics::solver::BodyAttachments
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BodyAttachments
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyAttachments
 pub struct alice_physics::solver::BodyObservation
 pub alice_physics::solver::BodyObservation::angular_velocity: alice_physics::math::Vec3Fix
 pub alice_physics::solver::BodyObservation::body_index: usize
@@ -18250,6 +18181,7 @@ pub const alice_physics::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics::solver::RigidBody, alice_physics::solver::BodyAttachments) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics::compound::CompoundShape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::add_contact(&mut self, alice_physics::solver::ContactConstraint)
@@ -18303,6 +18235,7 @@ pub fn alice_physics::solver::PhysicsWorld::population_fingerprint(&self) -> u64
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
+pub fn alice_physics::solver::PhysicsWorld::remove_body_with_attachments(&mut self, usize) -> core::option::Option<(alice_physics::solver::RigidBody, alice_physics::solver::BodyAttachments)>
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
@@ -22138,6 +22071,18 @@ impl core::marker::Unpin for alice_physics::query::BatchRayQuery
 impl core::marker::UnsafeUnpin for alice_physics::query::BatchRayQuery
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::query::BatchRayQuery
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::query::BatchRayQuery
+pub struct alice_physics::BodyAttachments
+impl core::clone::Clone for alice_physics::solver::BodyAttachments
+pub fn alice_physics::solver::BodyAttachments::clone(&self) -> Self
+impl core::fmt::Debug for alice_physics::solver::BodyAttachments
+pub fn alice_physics::solver::BodyAttachments::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Freeze for alice_physics::solver::BodyAttachments
+impl core::marker::Send for alice_physics::solver::BodyAttachments
+impl core::marker::Sync for alice_physics::solver::BodyAttachments
+impl core::marker::Unpin for alice_physics::solver::BodyAttachments
+impl core::marker::UnsafeUnpin for alice_physics::solver::BodyAttachments
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::solver::BodyAttachments
+impl core::panic::unwind_safe::UnwindSafe for alice_physics::solver::BodyAttachments
 pub struct alice_physics::BodyPairKey
 pub alice_physics::BodyPairKey::body_a: u32
 pub alice_physics::BodyPairKey::body_b: u32
@@ -24497,29 +24442,6 @@ impl core::marker::Unpin for alice_physics::character::MoveResult
 impl core::marker::UnsafeUnpin for alice_physics::character::MoveResult
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::character::MoveResult
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::character::MoveResult
-pub struct alice_physics::MultiWorld
-pub alice_physics::MultiWorld::worlds: alloc::vec::Vec<alice_physics::solver::PhysicsWorld>
-impl alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::add_world(&mut self, alice_physics::solver::PhysicsConfig) -> usize
-pub const fn alice_physics::multi_world::MultiWorld::new() -> Self
-pub fn alice_physics::multi_world::MultiWorld::step_all(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::multi_world::MultiWorld::step_all_parallel(&mut self, alice_physics::math::Fix128)
-pub fn alice_physics::multi_world::MultiWorld::total_body_count(&self) -> usize
-pub fn alice_physics::multi_world::MultiWorld::transfer_body(&mut self, usize, usize, usize, alice_physics::math::Vec3Fix) -> core::option::Option<usize>
-pub fn alice_physics::multi_world::MultiWorld::try_step_all(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
-pub fn alice_physics::multi_world::MultiWorld::try_step_all_parallel(&mut self, alice_physics::math::Fix128) -> alloc::vec::Vec<core::result::Result<(), alice_physics::world_participant::StepError>>
-pub fn alice_physics::multi_world::MultiWorld::world_count(&self) -> usize
-impl core::default::Default for alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::default() -> Self
-impl core::fmt::Debug for alice_physics::multi_world::MultiWorld
-pub fn alice_physics::multi_world::MultiWorld::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::multi_world::MultiWorld
-impl core::marker::Send for alice_physics::multi_world::MultiWorld
-impl core::marker::Sync for alice_physics::multi_world::MultiWorld
-impl core::marker::Unpin for alice_physics::multi_world::MultiWorld
-impl core::marker::UnsafeUnpin for alice_physics::multi_world::MultiWorld
-impl !core::panic::unwind_safe::RefUnwindSafe for alice_physics::multi_world::MultiWorld
-impl !core::panic::unwind_safe::UnwindSafe for alice_physics::multi_world::MultiWorld
 pub struct alice_physics::NetcodeConfig
 pub alice_physics::NetcodeConfig::checksum_history_len: usize
 pub alice_physics::NetcodeConfig::fixed_dt: alice_physics::math::Fix128
@@ -24887,6 +24809,7 @@ pub const alice_physics::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
 pub const alice_physics::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics::solver::PhysicsWorld::active_body_count(&self) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body(&mut self, alice_physics::solver::RigidBody) -> usize
+pub fn alice_physics::solver::PhysicsWorld::add_body_with_attachments(&mut self, alice_physics::solver::RigidBody, alice_physics::solver::BodyAttachments) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_body_with_radius(&mut self, alice_physics::solver::RigidBody, alice_physics::math::Fix128) -> usize
 pub fn alice_physics::solver::PhysicsWorld::add_compound_body(&mut self, &alice_physics::compound::CompoundShape, alice_physics::math::Fix128, alice_physics::math::Vec3Fix) -> core::result::Result<usize, alice_physics::shape::ShapeError>
 pub fn alice_physics::solver::PhysicsWorld::add_contact(&mut self, alice_physics::solver::ContactConstraint)
@@ -24940,6 +24863,7 @@ pub fn alice_physics::solver::PhysicsWorld::population_fingerprint(&self) -> u64
 pub fn alice_physics::solver::PhysicsWorld::raycast(&self, alice_physics::math::Vec3Fix, alice_physics::math::Vec3Fix, alice_physics::math::Fix128) -> core::option::Option<(usize, alice_physics::math::Fix128)>
 pub fn alice_physics::solver::PhysicsWorld::rebuild_batches(&mut self)
 pub fn alice_physics::solver::PhysicsWorld::remove_body(&mut self, usize) -> core::option::Option<alice_physics::solver::RigidBody>
+pub fn alice_physics::solver::PhysicsWorld::remove_body_with_attachments(&mut self, usize) -> core::option::Option<(alice_physics::solver::RigidBody, alice_physics::solver::BodyAttachments)>
 pub fn alice_physics::solver::PhysicsWorld::remove_force_field(&mut self, usize) -> core::option::Option<alice_physics::force::ForceFieldInstance>
 pub fn alice_physics::solver::PhysicsWorld::remove_joint(&mut self, usize) -> core::option::Option<alice_physics::joint::Joint>
 pub fn alice_physics::solver::PhysicsWorld::remove_sdf_collider(&mut self, usize) -> core::option::Option<alice_physics::sdf_collider::SdfCollider>
@@ -25090,25 +25014,6 @@ impl core::marker::Unpin for alice_physics::plane_collider::PlaneCollider
 impl core::marker::UnsafeUnpin for alice_physics::plane_collider::PlaneCollider
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::plane_collider::PlaneCollider
 impl core::panic::unwind_safe::UnwindSafe for alice_physics::plane_collider::PlaneCollider
-pub struct alice_physics::Portal
-pub alice_physics::Portal::transform: (alice_physics::math::Vec3Fix, alice_physics::math::QuatFix)
-pub alice_physics::Portal::world_a: usize
-pub alice_physics::Portal::world_b: usize
-impl alice_physics::multi_world::Portal
-pub const fn alice_physics::multi_world::Portal::new(usize, usize, alice_physics::math::Vec3Fix, alice_physics::math::QuatFix) -> Self
-pub fn alice_physics::multi_world::Portal::transform_a_to_b(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
-pub fn alice_physics::multi_world::Portal::transform_b_to_a(&self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
-impl core::clone::Clone for alice_physics::multi_world::Portal
-pub fn alice_physics::multi_world::Portal::clone(&self) -> Self
-impl core::fmt::Debug for alice_physics::multi_world::Portal
-pub fn alice_physics::multi_world::Portal::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
-impl core::marker::Freeze for alice_physics::multi_world::Portal
-impl core::marker::Send for alice_physics::multi_world::Portal
-impl core::marker::Sync for alice_physics::multi_world::Portal
-impl core::marker::Unpin for alice_physics::multi_world::Portal
-impl core::marker::UnsafeUnpin for alice_physics::multi_world::Portal
-impl core::panic::unwind_safe::RefUnwindSafe for alice_physics::multi_world::Portal
-impl core::panic::unwind_safe::UnwindSafe for alice_physics::multi_world::Portal
 pub struct alice_physics::PressureConfig
 pub alice_physics::PressureConfig::decay_rate: f32
 pub alice_physics::PressureConfig::deformation_rate: f32
@@ -25294,6 +25199,7 @@ pub fn alice_physics::math::QuatFix::mul(self, Self) -> Self
 pub const fn alice_physics::math::QuatFix::new(alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128, alice_physics::math::Fix128) -> Self
 pub fn alice_physics::math::QuatFix::normalize(self) -> Self
 pub fn alice_physics::math::QuatFix::rotate_vec(self, alice_physics::math::Vec3Fix) -> alice_physics::math::Vec3Fix
+pub fn alice_physics::math::QuatFix::unit_rotation(self) -> Self
 impl core::clone::Clone for alice_physics::math::QuatFix
 pub fn alice_physics::math::QuatFix::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::math::QuatFix

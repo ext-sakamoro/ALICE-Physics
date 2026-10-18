@@ -3,7 +3,7 @@
 `cargo test --features parallel` never enable, and fail if nothing ran.
 
 Background: CI ran these features only with `--lib`, so a test file under
-`#![cfg(feature = "replay")]` (or a `#[cfg(feature = "gpu-solver-bridge")]`
+`#![cfg(feature = "analytics")]` (or a `#[cfg(feature = "gpu-solver-bridge")]`
 module inside a file) compiled to zero tests and stayed green. The file list
 is derived from the source on every run, so a new gated file is picked up
 without editing this script, ci.yml or preflight.sh.
@@ -29,7 +29,7 @@ from pathlib import Path
 # Features that neither `cargo test` nor `cargo test --features parallel` enable.
 # `simd` is here for its integration tests: the SIMD step of ci.yml runs --lib only,
 # so the x86_64 + simd module of analytic_math_wiring ran in no lane.
-FEATURES = ("neural", "replay", "analytics", "gpu-solver-bridge", "simd")
+FEATURES = ("neural", "analytics", "gpu-solver-bridge", "simd")
 
 ROOT = Path(__file__).resolve().parent.parent
 FEATURE_RE = re.compile(r'feature\s*=\s*"([A-Za-z0-9_-]+)"')

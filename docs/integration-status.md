@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2640 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2598 |
 | live | reached without examples (crate-internal roots or a binding) | 604 |
-| | **total** | **3275** |
+| | **total** | **3233** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2640)
+## L1 — example-only (2598)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -151,7 +151,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/cubic_elastic_fem.rs`: `AdaptiveCubicSolution`, `CubicMesh`, `CubicMesh::corner_count`, `CubicMesh::edge_node_count`, `CubicMesh::edge_nodes`, `CubicMesh::element_count`, `CubicMesh::element_nodes`, `CubicMesh::face_node`, `CubicMesh::face_node_count`, `CubicMesh::from_tet_mesh`, `CubicMesh::interior_node_positions_are_exact`, `CubicMesh::node_count`, `CubicMesh::node_position`, `reactions`, `shape_values`, `solve_adaptive_cubic`, `solve_cubic`, `solve_cubic_hyperelastic`
 - `src/cylinder.rs`: `Cylinder::surface_area`
 - `src/damping_rayleigh.rs`: `RayleighCoefficients`, `RayleighCoefficients::damping_ratio`, `RayleighCoefficients::fit_two_modes`, `hz_to_omega`, `omega_to_hz`
-- `src/db_bridge.rs`: `BridgeError`, `PhysicsMetricsSink`, `PhysicsMetricsSink::flush`, `PhysicsMetricsSink::in_memory`, `PhysicsMetricsSink::open`, `PhysicsMetricsSink::query_bodies`, `PhysicsMetricsSink::query_contacts`, `PhysicsMetricsSink::query_energy`, `PhysicsMetricsSink::record_energy`, `PhysicsMetricsSink::record_step`, `alice_db_handshake`
 - `src/debug_render.rs`: `DebugColor`, `DebugColor::BLUE`, `DebugColor::CYAN`, `DebugColor::GRAY`, `DebugColor::GREEN`, `DebugColor::MAGENTA`, `DebugColor::ORANGE`, `DebugColor::RED`, `DebugColor::WHITE`, `DebugColor::YELLOW`, `DebugColor::new`, `DebugDrawData`, `DebugDrawData::aabb`, `DebugDrawData::arrow`, `DebugDrawData::axes`, `DebugDrawData::clear`, `DebugDrawData::line`, `DebugDrawData::new`, `DebugDrawData::point`, `DebugDrawData::primitive_count`, `DebugDrawData::sphere`, `DebugDrawFlags`, `DebugLine`, `DebugLine::new`, `DebugPoint`, `DebugPoint::new`, `PhysicsWorld::debug_draw`, `debug_draw_world`
 - `src/deformable.rs`: `DeformableBody`, `DeformableBody::center_of_mass`, `DeformableBody::new`, `DeformableBody::new_cube`, `DeformableBody::particle_count`, `DeformableBody::resolve_rigid_body_collisions`, `DeformableBody::step`, `DeformableBody::step_with_sdf`, `DeformableConfig`
 - `src/dynamic_bvh.rs`: `DynamicAabbTree::get_aabb`, `DynamicAabbTree::height`, `DynamicAabbTree::node_count`, `DynamicAabbTree::proxy_count`, `DynamicAabbTree::query`, `DynamicAabbTree::user_data`
@@ -207,7 +206,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/modal.rs`: `BeamBoundary`, `BeamBoundary::lambda_squared`, `beam_natural_frequency_hz`, `plate_natural_frequency_hz`, `single_dof_frequency_hz`, `torsional_frequency_hz`
 - `src/molecular_dynamics.rs`: `MD_OBS_KINETIC`, `MD_OBS_POTENTIAL`, `MD_OBS_TEMPERATURE`, `MD_OBS_TOTAL`, `MD_PARTICIPANT_KIND`, `MdError`, `MdParticipant`, `MdParticipant::boltzmann_constant`, `MdParticipant::new`, `MdParticipant::system`, `MdStepError`, `PairForces`, `PeriodicBox`, `PeriodicBox::cubic`, `PeriodicBox::lengths`, `PeriodicBox::minimum_image`, `PeriodicBox::new`, `PeriodicBox::wrap`, `VelocityVerlet`, `VelocityVerlet::forces`, `VelocityVerlet::instantaneous_temperature`, `VelocityVerlet::kinetic_energy`, `VelocityVerlet::masses`, `VelocityVerlet::momentum`, `VelocityVerlet::new`, `VelocityVerlet::periodic_box`, `VelocityVerlet::positions`, `VelocityVerlet::potential`, `VelocityVerlet::potential_energy`, `VelocityVerlet::step`, `VelocityVerlet::total_energy`, `VelocityVerlet::try_step`, `VelocityVerlet::velocities`, `checked_quotient`, `checked_sub`, `pair_forces_all_pairs`, `pair_forces_cell_list`
 - `src/motor.rs`: `JointMotor::new`, `PdController3D::new`, `PdController3D::set_rotation_target`, `PdController::disable`, `PdController::set_position_target`, `PdController::set_velocity_target`
-- `src/multi_world.rs`: `MultiWorld`, `MultiWorld::add_world`, `MultiWorld::new`, `MultiWorld::step_all`, `MultiWorld::step_all_parallel`, `MultiWorld::total_body_count`, `MultiWorld::transfer_body`, `MultiWorld::try_step_all`, `MultiWorld::try_step_all_parallel`, `MultiWorld::world_count`, `Portal`, `Portal::new`, `Portal::transform_a_to_b`, `Portal::transform_b_to_a`
 - `src/multiphase.rs`: `Grid3d`, `Grid3d::get`, `Grid3d::idx`, `Grid3d::new`, `Grid3d::set`, `Grid3d::total`, `VofScheme`, `advect_vof_rigid`, `advect_vof_uniform`, `advect_vof_uniform_semi_lagrangian`, `curvature_at`, `initialize_level_set_sphere`, `reinitialize_level_set`, `total_volume_vof`, `trilinear_range`, `trilinear_sample`
 - `src/nbody.rs`: `DirectSum`, `DirectSum::accelerations`, `DirectSum::gravitational_constant`, `DirectSum::kick_bodies`, `DirectSum::new`, `DirectSum::potential_energy`, `DirectSum::softening`, `DirectSum::step_world`, `NBODY_OBS_BODIES`, `NBODY_OBS_POTENTIAL`, `NBODY_PARTICIPANT_KIND`, `NBodyError`, `NBodyParticipant`, `NBodyParticipant::law`, `NBodyParticipant::new`, `VelocityVerlet`, `VelocityVerlet::new`, `VelocityVerlet::step`, `kinetic_energy`, `total_momentum`
 - `src/netcode.rs`: `DeterministicSimulation::advance_frame`, `DeterministicSimulation::dt`, `DeterministicSimulation::get_snapshot`, `DeterministicSimulation::snapshot_count`
@@ -232,7 +230,6 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/query.rs`: `BatchRayQuery`, `OverlapResult`, `ShapeCastHit`, `batch_raycast`, `batch_sphere_cast`, `capsule_cast`, `overlap_aabb`, `overlap_aabb_bvh`, `overlap_aabb_expanded`, `overlap_sphere`, `overlap_sphere_bvh`, `sphere_cast`
 - `src/ragdoll.rs`: `Bone`, `Bone::index`, `RagdollBuilder`, `RagdollBuilder::build`, `RagdollHandle`, `RagdollHandle::body`, `RagdollProportions`, `RagdollProportions::child`, `RagdollProportions::human_female`, `RagdollProportions::human_male`
 - `src/raycast.rs`: `ray_aabb`, `ray_capsule`, `raycast_aabbs`, `raycast_all_aabbs`, `raycast_all_spheres`, `raycast_any_aabbs`, `raycast_any_spheres`, `raycast_spheres`, `sweep_ray_sphere`, `sweep_sphere`
-- `src/replay.rs`: `ReplayPlayer`, `ReplayPlayer::body_count`, `ReplayPlayer::close`, `ReplayPlayer::from_bytes`, `ReplayPlayer::get_position`, `ReplayPlayer::get_velocity`, `ReplayPlayer::open`, `ReplayPlayer::scan_positions`, `ReplayRecorder`, `ReplayRecorder::close`, `ReplayRecorder::flush`, `ReplayRecorder::frame_count`, `ReplayRecorder::in_memory`, `ReplayRecorder::new`, `ReplayRecorder::record_frame`, `ReplayRecorder::record_positions`, `ReplayRecorder::to_bytes`
 - `src/rng.rs`: `DeterministicRng`, `DeterministicRng::new`, `DeterministicRng::new_with_stream`, `DeterministicRng::next_bounded`, `DeterministicRng::next_direction`, `DeterministicRng::next_fix128`, `DeterministicRng::next_fix128_range`, `DeterministicRng::next_gaussian`, `DeterministicRng::next_gaussian_pair`, `DeterministicRng::next_gaussian_with`, `DeterministicRng::next_u32`, `DeterministicRng::next_u64`
 - `src/rolling_contact.rs`: `HertzianContact`, `basquin_cycles_to_failure`, `bearing_steel_52100`, `gear_steel_8620`, `hertzian_sphere_sphere`, `rolling_contact_life_cycles`, `silicon_nitride`
 - `src/rope.rs`: `PinConstraint`, `Rope`, `Rope::add_pin`, `Rope::current_length`, `Rope::new`, `Rope::particle_count`, `Rope::pin_end`, `Rope::pin_start`, `Rope::segment_count`, `Rope::step`, `Rope::step_with_sdf`, `Rope::update_pin_targets`, `RopeConfig`

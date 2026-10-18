@@ -139,7 +139,7 @@ def _cargo_metadata_versions(root):
     """crate name -> versions from `cargo metadata --all-features`, or None if cargo fails.
 
     `--all-features`: the default resolve leaves out optional dependencies, and a
-    root cause is often in one (alice-db only enters through `replay`).
+    root cause is often in one (alice-analytics only enters through `analytics`).
     """
     import json
     import subprocess

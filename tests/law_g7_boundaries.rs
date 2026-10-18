@@ -45,20 +45,6 @@ const BOUNDARIES: &[(&str, Decision)] = &[
         },
     ),
     (
-        "src/db_bridge.rs",
-        Decision::Handshake {
-            check: "alice_db_handshake(",
-            fns: &["open", "in_memory"],
-        },
-    ),
-    (
-        "src/replay.rs",
-        Decision::Handshake {
-            check: "alice_db_handshake(",
-            fns: &["new", "in_memory", "open", "from_bytes"],
-        },
-    ),
-    (
         "src/gpu_bridge.rs",
         Decision::Handshake {
             check: "found == crate::PHYSICS_SEMANTICS_ID",
@@ -248,7 +234,7 @@ fn every_handshake_constructor_checks_first() {
             assert!(why.len() > 40, "{file}: the reason is too short to be one");
         }
     }
-    assert_eq!(checked, 8, "handshake constructors checked");
+    assert_eq!(checked, 2, "handshake constructors checked");
 }
 
 #[test]

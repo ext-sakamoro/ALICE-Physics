@@ -75,7 +75,7 @@ CLOCK_METHODS = (
     "std::time::Instant::now", "std::time::SystemTime::now",
     "std::time::Instant::elapsed", "std::time::SystemTime::elapsed",
 )
-FEATURES = "std,simd,parallel,ffi,gpu-solver-bridge,neural,replay,analytics,privacy-crypto"
+FEATURES = "std,simd,parallel,ffi,gpu-solver-bridge,neural,analytics,privacy-crypto"
 
 ATTR = re.compile(r"#\s*(!?)\s*\[")
 SILENCE = re.compile(r"\b(?:allow|expect)\(")

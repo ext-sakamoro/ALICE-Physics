@@ -67,7 +67,6 @@ this file or listed twice, or when a linked example or test does not exist.
 | `sleeping` | sleep detection and union-find islands |  |  | step |
 | `event` | begin / persist / end contact and trigger events |  | [`world_events_and_islands`](../examples/world_events_and_islands.rs) | step |
 | `interpolation` | world snapshots and quaternion blending for rendering between steps |  | [`substep_interpolation`](../examples/substep_interpolation.rs) | standalone (step 1 of 19 items) |
-| `multi_world` | several independent worlds with body transfer |  | [`multi_world_management`](../examples/multi_world_management.rs) | standalone |
 | `netcode` | lockstep frame inputs, snapshots, checksums and rollback |  | [`rollback_netcode`](../examples/rollback_netcode.rs) | binding |
 | `netcode_prediction` | client-side prediction with server reconciliation | std | [`rollback_netcode`](../examples/rollback_netcode.rs) | standalone |
 | `scene_io` | binary and JSON scene files with exact `Fix128` round trip | std | [`scene_snapshot_roundtrip`](../examples/scene_snapshot_roundtrip.rs) | standalone (binding 1 of 11 items) |
@@ -289,8 +288,6 @@ this file or listed twice, or when a linked example or test does not exist.
 |--------|---------|---------|---------|-------------|
 | `ffi` | C ABI for Unity, Unreal Engine and other hosts | ffi |  | binding |
 | `neural` | deterministic neural controller with ternary weights | neural | [`neural_ternary_controller`](../examples/neural_ternary_controller.rs) | standalone |
-| `replay` | replay recording and playback | replay | [`replay_recording`](../examples/replay_recording.rs) | standalone |
-| `db_bridge` | physics state snapshots stored in ALICE-DB | replay | [`db_bridge_roundtrip`](../examples/db_bridge_roundtrip.rs) | standalone |
 | `analytics_bridge` | simulation metrics sent to ALICE-Analytics | analytics | [`analytics_bridge_telemetry`](../examples/analytics_bridge_telemetry.rs) | standalone |
 
 ## Validation notes

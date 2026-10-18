@@ -862,7 +862,6 @@ fn golden_engineering_family() {
 
 // ---------------------------------------------------------------------------
 // 27-30. Statistics / state / netcode: anomaly / character_state / fluid_netcode
-//        (db_bridge is pass-through I/O over alice-db and has no arithmetic)
 // ---------------------------------------------------------------------------
 
 const GOLDEN_STATS_STATE: &str = "ed0629e3c73c081c875c19fe34bed6590210d9c0af2d898c5d8876daf0f13c6f";

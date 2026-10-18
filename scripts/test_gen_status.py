@@ -321,15 +321,15 @@ class OracleAuditLinks(unittest.TestCase):
                                  cwd=oracle.PROJECT_ROOT, capture_output=True, text=True)
         self.assertEqual(tracked.returncode, 0, "Cargo.lock is not tracked by git")
         from_lock = oracle.cargo_lock_versions(oracle.PROJECT_ROOT)
-        self.assertIn("alice-db", from_lock)
+        self.assertIn("alice-analytics", from_lock)
         self.assertEqual(oracle.resolved_versions(oracle.PROJECT_ROOT), from_lock)
 
     def test_cargo_metadata_includes_optional_dependencies(self):
-        # the real crate: alice-db is optional (feature `replay`); without --all-features it is missing
+        # the real crate: alice-analytics is optional (feature `analytics`); without --all-features it is missing
         v = oracle._cargo_metadata_versions(oracle.PROJECT_ROOT)
         if v is None:
             self.skipTest("cargo not available")
-        self.assertIn("alice-db", v)
+        self.assertIn("alice-analytics", v)
 
     def test_report_marks_a_version_change_for_re_check(self):
         cat = {"implemented": [], "partial": [], "pending": []}

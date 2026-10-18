@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5907 |
-| 🔴 Red by design | 71 |
-| ⏱ Gated (runtime / diagnostic / manual) | 27 |
+| 🟢 Not ignored (run by CI) | 5823 |
+| 🔴 Red by design | 69 |
+| ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **6005** |
+| **Total** | **5918** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (71)
+## 🔴 Red by design (69)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -53,7 +53,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `negative_max_force_must_not_produce_force_at_zero_error` (audit_motor.rs) — known defect: AUD-A-S5W2-001: negative max_force makes clamp(v, -max, +max) an empty interval and compute retu…
 - `negative_max_torque_must_not_reverse_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-004: negative max_torque is not rejected; `mag > max` is always true and torque * (ma…
 - `non_unit_target_quaternion_must_not_scale_the_torque` (audit_motor.rs) — known defect: AUD-A-S5W2-005: a non-unit target or current quaternion is not normalised; scaling the target qu…
-- `opening_a_player_on_a_missing_directory_does_not_create_it` (audit_replay.rs) — known defect: AUD-A-S4W2-009: ReplayPlayer::open は存在しない dir を作成し (alice-db の open が create)、存在しない replay でも Ok…
 - `optimize_does_not_restore_material_carved_by_disjoint_craters` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-009: optimize() is documented as removing shapes fully contained by newer ones, but d…
 - `origin_y_offsets_the_surface` (audit_heightfield.rs) — known defect: AUD-A-S4W3-006: origin.y is never read (sample_height / signed_distance / aabb use the stored he…
 - `out_of_range_quotient_keeps_its_sign_and_magnitude` (audit_math.rs) — known defect: AUD-A-S1W5-030: Fix128::div truncates an out-of-range integer quotient to its low 64 bits, so 1 …
@@ -61,7 +60,6 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `polar_rotation_is_idempotent_bit_for_bit_on_general_gradients` (audit_math.rs) — known defect: AUD-A-S1W5-027: polar_rotation is not idempotent for general (non-diagonal) gradients: 105 of 20…
 - `puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-005: sigma1 = 0, sigma2 = -50, tau = 75 (> S) の puck が FibreTension を返す (Hashin の fib…
 - `recommended_fillet_unreachable_target_not_silently_returned` (audit_fillet_stress.rs) — known defect: AUD-A-S1W5-005: recommended_fillet_radius_mm returns d/2 (K_t=1.2297 > target 1.2 at D/d = 2) fo…
-- `recorded_position_equals_the_engine_state_for_integers_above_2_pow_24` (audit_replay.rs) — known defect: AUD-A-S4W2-015: 記録値は Fix128 状態ではなく to_f32 の丸め (24 bit 仮数)。x = 16777217 を記録すると 16777216 で戻る (エンジン…
 - `remove_body_keeps_the_contact_history_of_the_survivors` (audit_solver.rs) — known defect: AUD-A-S1W2-004: remove_body does not remap the event pair history; the surviving pair re-reports…
 - `restore_rejects_a_snapshot_whose_buffer_no_longer_matches_its_checksum` (audit_fluid_netcode.rs) — known defect: AUD-A-S5W2-014: restore() does not check the snapshot checksum, so a snapshot whose buffer was a…
 - `result_velocity_has_no_component_into_the_wall_after_a_head_on_slide` (audit_character.rs) — known defect: AUD-A-S3W3-005: MoveResult.velocity doc says velocity after sliding but move_and_slide always re…
@@ -119,7 +117,7 @@ A known-defect reason should start with `AUD-…` so pins, external causes and
 - `distant_static_body_removed_after_unrelated_bodies_slept_permanently_diverges` (world_snapshot_history_independence.rs) — known defect: remove_body resets every body's sleep state via a full IslandManager rebuild, permanently waking…
 - `tail_add_then_remove_does_not_converge_with_dynamic_tree` (world_snapshot_history_independence.rs) — known defect: DynamicTree's remove_body frees the persistent tree node without shrinking its backing array (co…
 
-## ⏱ Gated (27)
+## ⏱ Gated (26)
 
 Correct tests that are too slow for every push, or that print a measurement table.
 Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ignored`.
@@ -149,10 +147,9 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16` (armaly_backward_step.rs) — runtime: about 30 min in release (ny = 8 and 16, both advection schemes, each to t_settle at Courant 0.75); ru…
 - `tolerance_floor_rises_as_the_mesh_refines` (analytic_fem_convergence.rs) — 4 solves (finest level 12,800 tets, about 1 s in release, measured 2026-10-03); the tolerance-floor measuremen…
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
-- `write_the_fixture_pair` (replay_alice_db_format.rs) — writes tests/fixtures/replay_alice_db_0_4.{bin,bits}; run by hand
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5907)
+## 🟢 Not ignored (5823)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -225,7 +222,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_privacy.rs` | 21 |
 | `audit_sketch.rs` | 21 |
 | `determinism_golden_paths.rs` | 21 |
-| `physics_semantics_id.rs` | 21 |
 | `analytic_buoyancy_zone_wiring.rs` | 20 |
 | `analytic_coupling_medium.rs` | 20 |
 | `analytic_fluid_netcode_wiring.rs` | 20 |
@@ -235,6 +231,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_print_pipeline_solver.rs` | 20 |
 | `audit_sdf_destruction.rs` | 20 |
 | `audit_wave_ship.rs` | 20 |
+| `physics_semantics_id.rs` | 20 |
 | `analytic_compressible_wiring.rs` | 19 |
 | `analytic_debug_render_wiring.rs` | 19 |
 | `analytic_elastoplastic_fem.rs` | 19 |
@@ -254,7 +251,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_filament_db_wiring.rs` | 18 |
 | `analytic_flip.rs` | 18 |
 | `analytic_hyperelastic_wiring.rs` | 18 |
-| `analytic_multi_world_wiring.rs` | 18 |
 | `analytic_sdf_force_wiring.rs` | 18 |
 | `analytic_spherical_terrain.rs` | 18 |
 | `analytic_thin_wall_wiring.rs` | 18 |
@@ -360,7 +356,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_broadphase_hybrid.rs` | 12 |
 | `analytic_collision_mesh_gen_wiring.rs` | 12 |
 | `analytic_contact_cache_wiring.rs` | 12 |
-| `analytic_db_bridge_wiring.rs` | 12 |
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
 | `analytic_sdf_contact_record.rs` | 12 |
@@ -370,7 +365,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_buckling.rs` | 12 |
 | `audit_fillet_stress.rs` | 12 |
 | `audit_laminate.rs` | 12 |
-| `audit_multi_world.rs` | 12 |
 | `audit_plane_collider.rs` | 12 |
 | `audit_plastic.rs` | 12 |
 | `audit_transient_thermal.rs` | 12 |
@@ -390,7 +384,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_physics2d_tethers.rs` | 11 |
 | `analytic_polar_decomposition.rs` | 11 |
 | `analytic_pressure_wiring.rs` | 11 |
-| `analytic_replay_wiring.rs` | 11 |
 | `analytic_sdf_adaptive_wiring.rs` | 11 |
 | `analytic_sdf_ccd_borrowed_field.rs` | 11 |
 | `analytic_temperature_rise.rs` | 11 |
@@ -399,7 +392,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_anisotropic_friction.rs` | 11 |
 | `audit_contact_cache.rs` | 11 |
 | `audit_creep_longterm.rs` | 11 |
-| `audit_db_bridge.rs` | 11 |
 | `audit_kinematic_loop.rs` | 11 |
 | `audit_nonunit_quaternion_entry.rs` | 11 |
 | `audit_piezoelectric.rs` | 11 |
@@ -448,7 +440,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_heatmap.rs` | 9 |
 | `audit_non_newtonian.rs` | 9 |
 | `audit_prestressed.rs` | 9 |
-| `audit_replay.rs` | 9 |
 | `determinism_golden.rs` | 9 |
 | `indep_crowd_social_force.rs` | 9 |
 | `law_g2_tie_classes.rs` | 9 |
@@ -507,7 +498,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_isotropic_inertia.rs` | 6 |
 | `analytic_mass_properties_exactness.rs` | 6 |
 | `analytic_metric_wiring.rs` | 6 |
-| `analytic_replay_in_memory.rs` | 6 |
 | `analytic_sdf_distance_query.rs` | 6 |
 | `analytic_support_volume_wiring.rs` | 6 |
 | `analytic_thermoelastic.rs` | 6 |
@@ -567,7 +557,6 @@ Per-file counts (the test names are in `tests/`):
 | `indep_shaped_sphere_rest_heights.rs` | 4 |
 | `law_g7_boundaries.rs` | 4 |
 | `locking_p1.rs` | 4 |
-| `multi_world_try_step_all.rs` | 4 |
 | `p2_oracle_design.rs` | 4 |
 | `p2_quadrature_fix128.rs` | 4 |
 | `refinement_conformity.rs` | 4 |
@@ -577,6 +566,7 @@ Per-file counts (the test names are in `tests/`):
 | `world_participant_errors.rs` | 4 |
 | `world_snapshot_history_independence.rs` | 4 |
 | `analytic_axial_support.rs` | 3 |
+| `analytic_body_attachments.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
@@ -615,7 +605,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_tgs_rotation.rs` | 2 |
 | `analytic_xpbd_angular_velocity.rs` | 2 |
 | `audit_c_fatigue.rs` | 2 |
-| `audit_c_replay.rs` | 2 |
 | `audit_neural_alloc.rs` | 2 |
 | `float_environment.rs` | 2 |
 | `indep_world_try_step_noop.rs` | 2 |
@@ -634,7 +623,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_c_plastic.rs` | 1 |
 | `determinism_cloth_step_digest.rs` | 1 |
 | `law_check_cast.rs` | 1 |
-| `replay_alice_db_format.rs` | 1 |
 
 ---
 

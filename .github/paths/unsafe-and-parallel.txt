@@ -14,7 +14,6 @@ src/solver/**
 src/solver_tgs*.rs
 src/bvh.rs
 src/contact_cache.rs
-src/multi_world.rs
 src/query.rs
 src/laminate.rs
 # compiled into the bvh module of the lib tests (#[path])

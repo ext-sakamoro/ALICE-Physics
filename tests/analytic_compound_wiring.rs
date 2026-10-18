@@ -50,8 +50,8 @@
 //!   independently-derived `child_world_aabb` closed forms above, not by
 //!   calling `overlapping_children` itself.
 //! * **180-degree-about-Z rotation closed form** (reused verbatim from
-//!   `tests/analytic_multi_world_wiring.rs`, which already hand-derives
-//!   this Hamilton product once and for all): with `q = (x=0, y=0, z=1,
+//!   `examples/compound_shapes.rs`, which hand-derives this Hamilton
+//!   product): with `q = (x=0, y=0, z=1,
 //!   w=0)`, `rotate_vec(q, v) = (-v.x, -v.y, v.z)` exactly, for any `v`.
 //!   General 180-degree-about-unit-axis identity (textbook, independent of
 //!   this crate): `rotate_vec(v) = 2*(e.v)*e - v`. For `e = UNIT_Y`:

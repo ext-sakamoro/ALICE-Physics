@@ -1009,7 +1009,7 @@ axis = "transform"
 item = "complex discrete Fourier transform, 1-D (radix-2 / mixed-radix FFT, forward and inverse)"
 source = "Cooley-Tukey 1965; Press et al., Numerical Recipes ch.12; FFTW"
 status = "missing"
-evidence = "無い (推測: fft / dft / fourier で src を検索、当たるのは src/linear_elastic_fem/consistent_tangent.rs::ElementState の行列変数名 F Fᵀ と src/replay.rs の外部 crate の圧縮方式の説明だけ) 前提の複素数の型も無い (src/math.rs::Fix128 は実数の Q64.64 のみ、複素数の行は量子力学の表)"
+evidence = "無い (推測: fft / dft / fourier で src を検索、当たるのは src/linear_elastic_fem/consistent_tangent.rs::ElementState の行列変数名 F Fᵀ だけ) 前提の複素数の型も無い (src/math.rs::Fix128 は実数の Q64.64 のみ、複素数の行は量子力学の表)"
 oracle_candidate = "O(n^2) の直接和と突合、逆変換で元に戻る (Fix128 で bit 一致か誤差上界)、Parseval、純音で単一ビン"
 limitation = ""
 
