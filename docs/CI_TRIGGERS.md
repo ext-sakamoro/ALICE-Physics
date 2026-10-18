@@ -58,6 +58,7 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `downstream.yml` | `main, ci/**` | `.github/paths/downstream.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `eol.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
 | `fuzz.yml` | `main, ci/**` | `.github/paths/fuzz.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
+| `g2-comparisons.yml` | `main, ci/**` | `.github/paths/g2-comparisons.txt` | - | - | yes | runs when the paths match | landing |
 | `integration-status.yml` | `main, ci/**` | `.github/paths/integration-status.txt` | - | - | yes | runs when the paths match | landing |
 | `oracle-status.yml` | `main, ci/**` | `.github/paths/oracle-status.txt` | - | - | yes | runs when the paths match | landing |
 | `public-text.yml` | `main, ci/**` | - | `main` | - | yes | runs | landing |
@@ -195,6 +196,7 @@ only by the fast-forward-only push to `main` and the re-evidence loop above.
 | `downstream.yml` | landing | success |
 | `eol.yml` | landing | success |
 | `fuzz.yml` | landing | success |
+| `g2-comparisons.yml` | landing | success |
 | `integration-status.yml` | landing | success |
 | `oracle-status.yml` | landing | success |
 | `public-text.yml` | landing | success |
@@ -270,6 +272,7 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
 | `downstream.yml` |
 | `eol.yml` |
 | `fuzz.yml` |
+| `g2-comparisons.yml` |
 | `integration-status.yml` |
 | `oracle-status.yml` |
 | `public-text.yml` |

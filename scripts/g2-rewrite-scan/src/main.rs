@@ -511,7 +511,77 @@ struct Comparisons<'a> {
     in_macro: bool,
     /// the construct the comparison sits in, innermost last
     ctx: Vec<&'static str>,
+    /// the variables the enclosing function assigns to (`x = ..`)
+    assigned: BTreeSet<String>,
+    /// the names bound from an assigned variable (`match best { Some((_, b)) => .. }`,
+    /// `best.is_none_or(|b| ..)`, `if let Some(b) = best`) in the scope being visited
+    incumbent: Vec<String>,
     out: Vec<String>,
+}
+
+/// The context of a comparison with an operand bound from a variable its function assigns
+/// to: the running best of an argmin / argmax, whatever condition shape the result feeds
+const INCUMBENT: &str = "incumbent (compares with a binding of an assigned best)";
+
+/// The single-name variables a block assigns to (`x = ..`, also inside closures)
+fn assigned_names(b: &Block) -> BTreeSet<String> {
+    struct V(BTreeSet<String>);
+    impl<'ast> Visit<'ast> for V {
+        fn visit_expr_assign(&mut self, a: &'ast syn::ExprAssign) {
+            if let Expr::Path(p) = strip(&a.left) {
+                if let Some(i) = p.path.get_ident() {
+                    self.0.insert(i.to_string());
+                }
+            }
+            visit::visit_expr_assign(self, a);
+        }
+    }
+    let mut v = V(BTreeSet::new());
+    v.visit_block(b);
+    v.0
+}
+
+/// The names a pattern binds
+fn pat_names(p: &syn::Pat) -> Vec<String> {
+    struct V(Vec<String>);
+    impl<'ast> Visit<'ast> for V {
+        fn visit_pat_ident(&mut self, i: &'ast syn::PatIdent) {
+            self.0.push(i.ident.to_string());
+            visit::visit_pat_ident(self, i);
+        }
+    }
+    let mut v = V(Vec::new());
+    v.visit_pat(p);
+    v.0
+}
+
+/// The single-name paths an expression reads
+fn expr_names(e: &Expr) -> BTreeSet<String> {
+    struct V(BTreeSet<String>);
+    impl<'ast> Visit<'ast> for V {
+        fn visit_expr_path(&mut self, p: &'ast syn::ExprPath) {
+            if let Some(i) = p.path.get_ident() {
+                self.0.insert(i.to_string());
+            }
+        }
+    }
+    let mut v = V(BTreeSet::new());
+    v.visit_expr(e);
+    v.0
+}
+
+/// The variable an expression names, under parentheses, references and `.as_ref()`
+fn named_var(e: &Expr) -> Option<String> {
+    match strip(e) {
+        Expr::Path(p) => p.path.get_ident().map(ToString::to_string),
+        Expr::MethodCall(m)
+            if m.args.is_empty()
+                && matches!(m.method.to_string().as_str(), "as_ref" | "as_mut") =>
+        {
+            named_var(&m.receiver)
+        }
+        _ => None,
+    }
 }
 
 const ORDER_METHODS: [&str; 6] = ["lt", "gt", "le", "ge", "partial_cmp", "total_cmp"];
@@ -533,7 +603,13 @@ impl Comparisons<'_> {
         } else {
             span_of(l)
         };
-        let ctx = self.ctx.last().copied().unwrap_or("expression");
+        let mut ctx = self.ctx.last().copied().unwrap_or("expression");
+        if !self.incumbent.is_empty() {
+            let names: BTreeSet<String> = expr_names(l).union(&expr_names(r)).cloned().collect();
+            if self.incumbent.iter().any(|n| names.contains(n)) {
+                ctx = INCUMBENT;
+            }
+        }
         self.out.push(format!(
             "{}\t{}\t{}\t{} {} {}\t{}\t{}\t{}",
             self.file,
@@ -555,13 +631,37 @@ impl Comparisons<'_> {
         self.ctx.pop();
     }
 
-    fn enter(&mut self, name: String, attrs: &[syn::Attribute], body: impl FnOnce(&mut Self)) {
+    /// Visit `f` with `names` bound from an incumbent
+    fn binding(&mut self, names: Vec<String>, f: impl FnOnce(&mut Self)) {
+        let n = names.len();
+        self.incumbent.extend(names);
+        f(self);
+        self.incumbent.truncate(self.incumbent.len() - n);
+    }
+
+    /// Whether `e` names a variable the enclosing function assigns to
+    fn is_assigned(&self, e: &Expr) -> bool {
+        named_var(e).is_some_and(|v| self.assigned.contains(&v))
+    }
+
+    fn enter(
+        &mut self,
+        name: String,
+        attrs: &[syn::Attribute],
+        block: Option<&Block>,
+        body: impl FnOnce(&mut Self),
+    ) {
         if is_cfg_test(attrs) {
             return;
         }
         let saved = std::mem::replace(&mut self.current_fn, name);
+        let assigned = block.map(assigned_names).unwrap_or_default();
+        let saved_assigned = std::mem::replace(&mut self.assigned, assigned);
+        let saved_incumbent = std::mem::take(&mut self.incumbent);
         body(self);
         self.current_fn = saved;
+        self.assigned = saved_assigned;
+        self.incumbent = saved_incumbent;
     }
 
     /// The arguments of a macro invocation that parse as comma-separated expressions; the
@@ -588,27 +688,27 @@ impl<'ast> Visit<'ast> for Comparisons<'_> {
         }
     }
     fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
-        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+        self.enter(f.sig.ident.to_string(), &f.attrs, Some(&f.block), |s| {
             visit::visit_item_fn(s, f)
         });
     }
     fn visit_impl_item_fn(&mut self, f: &'ast syn::ImplItemFn) {
-        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+        self.enter(f.sig.ident.to_string(), &f.attrs, Some(&f.block), |s| {
             visit::visit_impl_item_fn(s, f)
         });
     }
     fn visit_trait_item_fn(&mut self, f: &'ast syn::TraitItemFn) {
-        self.enter(f.sig.ident.to_string(), &f.attrs, |s| {
+        self.enter(f.sig.ident.to_string(), &f.attrs, f.default.as_ref(), |s| {
             visit::visit_trait_item_fn(s, f)
         });
     }
     fn visit_item_const(&mut self, c: &'ast syn::ItemConst) {
-        self.enter(format!("const {}", c.ident), &c.attrs, |s| {
+        self.enter(format!("const {}", c.ident), &c.attrs, None, |s| {
             visit::visit_item_const(s, c)
         });
     }
     fn visit_item_static(&mut self, c: &'ast syn::ItemStatic) {
-        self.enter(format!("static {}", c.ident), &c.attrs, |s| {
+        self.enter(format!("static {}", c.ident), &c.attrs, None, |s| {
             visit::visit_item_static(s, c)
         });
     }
@@ -677,8 +777,13 @@ impl<'ast> Visit<'ast> for Comparisons<'_> {
     }
     fn visit_expr_if(&mut self, e: &'ast ExprIf) {
         self.within("if condition", |s| s.visit_expr(&e.cond));
+        // `if let Some(b) = best { .. }`: the then branch sees names bound from the incumbent
+        let names = match &*e.cond {
+            Expr::Let(l) if self.is_assigned(&l.expr) => pat_names(&l.pat),
+            _ => Vec::new(),
+        };
         self.within("expression", |s| {
-            s.visit_block(&e.then_branch);
+            s.binding(names, |s| s.visit_block(&e.then_branch));
             if let Some((_, x)) = &e.else_branch {
                 s.visit_expr(x);
             }
@@ -696,8 +801,15 @@ impl<'ast> Visit<'ast> for Comparisons<'_> {
     }
     fn visit_expr_match(&mut self, m: &'ast ExprMatch) {
         self.within("match scrutinee", |s| s.visit_expr(&m.expr));
+        // `match best { Some((_, b)) => .. }`: each arm sees the names its pattern binds
+        let from_incumbent = self.is_assigned(&m.expr);
         for a in &m.arms {
-            self.visit_arm(a);
+            let names = if from_incumbent {
+                pat_names(&a.pat)
+            } else {
+                Vec::new()
+            };
+            self.binding(names, |s| s.visit_arm(a));
         }
     }
     fn visit_expr_closure(&mut self, c: &'ast syn::ExprClosure) {
@@ -741,6 +853,18 @@ impl<'ast> Visit<'ast> for Comparisons<'_> {
         if m.args.len() == 1 && ORDER_METHODS.contains(&name.as_str()) {
             let line = m.method.span().start().line;
             self.emit("method", &m.receiver, &name, &m.args[0], line);
+        }
+        // `best.is_none_or(|b| ..)`: the closure's parameters are bound from the incumbent
+        if self.is_assigned(&m.receiver) {
+            self.visit_expr(&m.receiver);
+            for a in &m.args {
+                let names = match strip(a) {
+                    Expr::Closure(c) => c.inputs.iter().flat_map(pat_names).collect(),
+                    _ => Vec::new(),
+                };
+                self.binding(names, |s| s.visit_expr(a));
+            }
+            return;
         }
         visit::visit_expr_method_call(self, m);
     }
@@ -817,6 +941,8 @@ fn main() {
                 current_fn: "<module>".to_string(),
                 in_macro: false,
                 ctx: Vec::new(),
+                assigned: BTreeSet::new(),
+                incumbent: Vec::new(),
                 out: Vec::new(),
             };
             c.visit_file(&ast);

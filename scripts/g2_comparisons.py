@@ -35,7 +35,11 @@ configuration typed (unprobed: a cfg no configuration compiles, a site inside a
 `macro_rules!` body), unless it has a row with the type `unprobed` and its reason; a probe run
 that did not type every wrapped comparison, or typed none (the probe was skipped or broken);
 no comparison found (compared nothing); a row with an unknown class or a reason under 12
-characters; a `predicate` row on a comparison the rewrite scan finds as a selection.
+characters; a `predicate` row on a comparison the rewrite scan finds as a selection, or on
+one whose operand is bound from a variable the enclosing function assigns to (the scan's
+context `incumbent`: `match best { Some((_, b)) => d < b }`, `best.is_none_or(|b| d < b)`,
+`if let Some(b) = best`), the running best of an argmin / argmax, whatever condition shape
+(`&&`, `||`, a `let better = ..` flag) the result then feeds.
 
 usage: g2_comparisons.py [--root DIR] [--table TSV] [--scan-bin PATH] [--write-new]
 """
@@ -64,6 +68,9 @@ CONFIGS = [
     ["--target", "wasm32-unknown-unknown", "--features", "wasm"],
 ]
 CLASSES = ("select", "predicate")
+# the scan's context of a comparison with an operand bound from a variable its function assigns
+# to (`match best { Some((_, b)) => d < b }`, `best.is_none_or(|b| d < b)`): such a row is select
+INCUMBENT = "incumbent (compares with a binding of an assigned best)"
 FLOAT = re.compile(r"^(?:&\s*(?:mut\s+)?)*(?:f32|f64|wide::f32x\d+|wide::f64x\d+|f32x\d+|f64x\d+)$")
 BOUND = re.compile(r"the trait bound `(.+): (?:[\w:]*::)?Probe` is not satisfied")
 REQUIRED = re.compile(r"required by a bound in `(?:[\w:]*::)?s(\d+)`")
@@ -271,6 +278,9 @@ def judge(sites: list[dict], types: dict[int, set[str]], rows: dict,
             problems.append(f"{k}: the row says type {rty!r}, the probe found {ty!r} (misclassified)")
         if cls == "predicate" and k in selections:
             problems.append(f"{k}: the row says predicate, the rewrite scan finds a selection between the operands")
+        if cls == "predicate" and any(s["ctx"] == INCUMBENT for s in ss):
+            problems.append(f"{k}: the row says predicate, but an operand is bound from a variable the "
+                            "function assigns to (the running best of an argmin / argmax): a selection")
     for k in rows:
         if k not in groups:
             problems.append(f"row matches no comparison (stale): {k}")
