@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 
+- CI: `.gitattributes` に `* text=auto eol=lf` を置き、text の file を保存も checkout も全 OS で LF にした (共有 file は ALICE-Law の表と byte で比べるので、Windows の CRLF の checkout ではずれになる) binary と既存の行はそのまま、`git add --renormalize` で commit 済みの中身は変わらない
 - CI: `scripts/clippy_lib_gate.py` の canary を path で判定するようにした (ALICE-SDF / ALICE-Physics / ALICE-LOL で同じ file、repository ごとの library 専用の禁止と canary の形は `scripts/clippy_lib_gate.toml`) これまでは canary の各行に何らかの禁止の診断があれば通したので、同じ行で別の禁止が出ると、消した禁止の行も通っていた (ALICE-SDF で `RandomState::new` の禁止を消しても green だった) 形ごとにその形の path の診断を要求し、どの形にも当たらない診断、2 回以上または 0 回現れる形の文字列、形が 0 件、clippy の exit 0、何も指さない設定の path (clippy の `does not refer to` の警告) で失敗する library 専用の禁止はどれも、それを名指す形を canary に持つ (method の path の打ち間違いは clippy が警告しないため) 表示は「形の数 / 期待した数」 (12 / 12、必ず clean の行 1 つ)
 
 ### Added
@@ -24,6 +25,7 @@ were introduced during that release window.
 
 - 試験 `tests/determinism_law_outputs.rs` (ALICE-Law G2 / G6 / G8): Law の max / min / clamp (`det_math::{max, min, clamp, max64, min64}`) を呼ぶ src の file ごとに、公開の入口から入る golden を 1 つ置く (22 file、Law の呼び出しに届く入力では -0 / NaN を入れ、出力の bit の SHA-256 を固定する) 各 golden は `PHYSICS_SEMANTICS_PINS` の entry (`"law output: <file>"`) で、`tests/physics_semantics_id.rs` が entry と試験の定数の一致を確かめる `law_output_pins_cover_every_law_caller` は src を読み (comment・文字列・`#[cfg(test)]` を除く)、Law の関数を呼ぶ file (完全な path・別名・`use` での取り込み・関数値としての受け渡しを含む) に行が無い時、呼び出しの無い file を指す行がある時、呼び出しが 1 件も見つからない時に失敗する file ごとに Law の max と min を入れ替え clamp を std の clamp にする変異 22 件、行を消す・行の無い src file を足す (直接の呼び出しと別名の関数値)・entry を落とす変異 4 件がすべて失敗する release の決定論 (`scripts/determinism_release.py`) にもこの試験を足した
 - CI (ALICE-Law G9): `scripts/id_move_check.py` (ALICE の識別子を持つ crate で共有、ALICE-Zip と同じ file) と試験 `scripts/test_id_move_check.py` を clippy job と preflight に足した 設定 `scripts/id_move.toml` 最新の release tag (v3.1.0) の公開版と作業 tree で `PHYSICS_SEMANTICS_ID` を rustdoc JSON (wasm を除く全 feature) から読み、動いた時は破壊的な版か、旧値が `PREVIOUS_PHYSICS_SEMANTICS_IDS` にあり、その旧値を外した写しで `tests/world_snapshot_previous_semantics.rs::a_blob_of_the_released_3_1_0_semantics_restores` が失敗することを要求する 現在の結果: `79ca5297…` → `d4422f82…`、旧値は一覧にあり試験で確かめられる (比較 1 件、問題 0) 識別子でない `[u8; 32]` 外の再 export (`privacy::RR_MAX_EPSILON_WHOLE`、alice-crypto の u64) は理由付きで除外した
+
 
 ## [4.0.0] - 2026-10-17
 
