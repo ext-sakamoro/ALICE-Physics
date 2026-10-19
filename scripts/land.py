@@ -31,8 +31,14 @@ Run from a checkout whose HEAD sits on top of an origin/main base. The script
      main gained documents only and our commits carry the same patches as the evidence
      with every other difference in the moved paths or the ledgers, and in every path main
      changed, each line main or the evidence added is still in the landed file (docs-only-moved);
-     origin's ci/<id> must still be the evidence SHA. The last line of a landing is
-     `EVIDENCE <sha|-> LANDED <sha> RULE <rule>`.
+     origin's ci/<id> must still be the evidence SHA. Before that push (and in a dry run)
+     ALICE-Law is asked whether the landing moves its conformance state (check_law_state: a
+     blob-less fetch of Law's main into a temporary directory runs its
+     scripts/land_law_state.py with the prepared SHA of land.py's own working copy as the
+     candidate): exit 0 lands; exit 1 (the state moves, so Law's state commit has to land
+     first: the message names the Law SHA, the moved counts and the command), exit 2 (not
+     computed) and a Law that cannot be read stop the landing with nothing pushed. The last
+     line of a landing is `EVIDENCE <sha|-> LANDED <sha> RULE <rule>`.
   All of it runs in a detached working copy of land.py's own (own_copy, a `git worktree`
   made at start from the checkout's HEAD, the source SHA, read once) and removed at the end: the
   checkout itself is never pushed. If the checkout's HEAD moves during the landing, the
@@ -377,6 +383,26 @@ def gh_env() -> dict[str, str]:
     return env
 
 
+def law_state_env(gh: str | None) -> dict[str, str]:
+    """the environment of ALICE-Law's land_law_state.py: gh_env() (it reads the other
+    repositories' mains through `gh api`), with `git` and `gh` on PATH resolving to the pinned git
+    and gh (the script starts both by name; the system directories of the fixed PATH come
+    before the pinned git's otherwise) and FORCED_GIT_CONFIG given as GIT_CONFIG_COUNT (the
+    script's git command lines cannot carry it)"""
+    env = gh_env()
+    first = [python_dir(), os.path.dirname(pinned_git())]
+    if gh:
+        first.append(os.path.dirname(os.path.realpath(gh)))
+    rest = [d for d in env["PATH"].split(os.pathsep) if d and d not in first]
+    env["PATH"] = os.pathsep.join(dict.fromkeys(first + rest))
+    pairs = [FORCED_GIT_CONFIG[i + 1] for i in range(0, len(FORCED_GIT_CONFIG), 2)]
+    env["GIT_CONFIG_COUNT"] = str(len(pairs))
+    for n, kv in enumerate(pairs):
+        key, _, value = kv.partition("=")
+        env[f"GIT_CONFIG_KEY_{n}"], env[f"GIT_CONFIG_VALUE_{n}"] = key, value
+    return env
+
+
 def repo_arg(slug: str) -> str:
     """the --repo value: host-qualified, so GH_HOST or a config cannot pick another host"""
     return f"{GH_HOSTNAME}/{slug}"
@@ -426,6 +452,11 @@ MAX_EVIDENCE = 3        # evidence rounds on ci/<id>: the first and two after ma
 MOVING_MESSAGE = "main is moving: wait for a quiet main or coordinate a landing slot"
 LOCK_DIR_ENV = "LAND_LOCK_DIR"  # where the per-repository landing lock lives (tests point it elsewhere)
 LOCK_WAIT_MINUTES = 30
+# ALICE-Law's conformance state: before the push to main, land.py asks Law's land_law_state.py
+# whether landing the commit moves Law's recorded state (check_law_state)
+LAW_URL = "https://github.com/ext-sakamoro/ALICE-Law"
+LAW_STATE_SCRIPT = ("scripts", "land_law_state.py")
+LAW_CANDIDATE = "ALICE-Physics"
 
 
 class LandError(Exception):
@@ -939,6 +970,9 @@ class Lander:
         # tests compare the effective remote URLs with their local bare repository instead of
         # the GitHub forms (set in code, never from the environment)
         self.expected_remote_urls: tuple[str, ...] | None = None
+        # where check_law_state clones ALICE-Law from; tests point it at a local fake (set in
+        # code, never from the environment)
+        self.law_url = LAW_URL
         self.preflight_runs = 0
         self.poll_seconds = 30
         self.gh_cmd: list[str] | None = None   # the pinned gh on first use; tests run a fake gh script here
@@ -1406,6 +1440,78 @@ class Lander:
             raise LandError(f"refusing to push to {self.branch}: commit identity of {before[:7]}..HEAD:\n  "
                             + "\n  ".join(problems))
 
+    def check_law_state(self, sha: str) -> None:
+        """Before the push to main: whether landing `sha` moves ALICE-Law's conformance state.
+        A blob-less clone of Law's main (in a temporary directory, with the pinned git) runs its
+        scripts/land_law_state.py with this repository's own working copy at `sha` as the
+        candidate. Exit 0 (the state does not move) lands; exit 1 (it moves: the Law state commit
+        has to land first) and exit 2 (not computed), a Law that cannot be cloned and a missing
+        script refuse the landing (LandError, nothing pushed)."""
+        d = tempfile.mkdtemp(prefix="land-law-")
+        law = os.path.join(d, "law")
+        nothing = f"nothing was pushed to {self.branch}"
+        def law_git(*args: str) -> str:
+            r = subprocess.run([*self.git_argv, *args], cwd=law, capture_output=True, text=True, env=self.git_env)
+            if r.returncode != 0:
+                raise LandError(f"ALICE-Law's main could not be read from {self.law_url} (git {' '.join(args[:3])}: "
+                                f"{(r.stderr or r.stdout).strip()[:300]}): the Law state cannot be checked; {nothing}")
+            return r.stdout.strip()
+
+        try:
+            # a blob-less partial clone of main, made as init + remote + fetch so the remote's
+            # effective URLs (after insteadOf / pushInsteadOf) can be checked before git reaches it
+            os.makedirs(law)
+            law_git("init", "-q")
+            law_git("remote", "add", "origin", self.law_url)
+            for label, args in (("fetch URL", ("ls-remote", "--get-url", "origin")),
+                                ("push URL", ("remote", "get-url", "--push", "origin"))):
+                url = law_git(*args)
+                if url != self.law_url:
+                    raise LandError(f"ALICE-Law's {label} resolves to {url!r}, not {self.law_url} (an insteadOf "
+                                    f"in the git config?): the Law state cannot be checked; {nothing}")
+            law_git("config", "remote.origin.promisor", "true")
+            law_git("config", "remote.origin.partialclonefilter", "blob:none")
+            law_git("fetch", "-q", "--filter=blob:none", "--no-tags", "origin", "+refs/heads/main:refs/remotes/origin/main")
+            law_git("checkout", "-q", "--detach", "refs/remotes/origin/main")
+            law_sha = law_git("rev-parse", "HEAD")
+            if not re.fullmatch(r"[0-9a-f]{40}", law_sha):
+                raise LandError(f"ALICE-Law's main has no commit: the Law state cannot be checked; {nothing}")
+            script = os.path.join(law, *LAW_STATE_SCRIPT)
+            if not os.path.isfile(script):
+                raise LandError(f"ALICE-Law {law_sha[:12]} has no {'/'.join(LAW_STATE_SCRIPT)}: "
+                                f"the Law state cannot be checked; {nothing}")
+            gh = self.gh()
+            p = subprocess.run([sys.executable, script, "--candidate", f"{LAW_CANDIDATE}={self.root}@{sha}"],
+                               cwd=law, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                               env=law_state_env(gh[0] if len(gh) == 1 else None))
+            out = "\n".join(x for x in (p.stdout.strip(), p.stderr.strip()) if x)[:3000]
+            summary = next((x for x in reversed(out.splitlines()) if x.startswith("land_law_state:")), "")
+            # the exit code counts only with the script's own verdict line: an exit 1 from a
+            # traceback is not a computed move, and an exit 0 that printed nothing is not "unmoved"
+            verdict = {ln.strip() for ln in out.splitlines()}
+            said = {0: "land_law_state: state moves: no", 1: "land_law_state: state moves: yes"}.get(p.returncode)
+            if said is not None and said not in verdict:
+                raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit "
+                                f"{p.returncode} without `{said}`, Law main {law_sha[:12]}):\n{out}\n{nothing}")
+            if p.returncode == 0:
+                self.log(f"ALICE-Law state: landing {sha[:7]} does not move it (Law main {law_sha[:12]}) {summary}")
+                self.record.append(f"Law state: unmoved (compared with ALICE-Law main {law_sha})")
+                return
+            if p.returncode == 1:
+                raise LandError(
+                    f"landing {sha[:7]} moves ALICE-Law's conformance state (compared with Law main {law_sha[:12]}):\n"
+                    f"{out}\n"
+                    f"(the move may also come from another repository's main that Law has not recorded yet; "
+                    f"the output above names the crates that move, and the same --write records them)\n"
+                    f"record the Law state first: in a clone of ALICE-Law at {law_sha[:12]} run\n"
+                    f"  python3 {'/'.join(LAW_STATE_SCRIPT)} --candidate {LAW_CANDIDATE}=<a clone of this "
+                    f"repository>@{sha} --write\n"
+                    f"land that commit on ALICE-Law's main, then run land.py again; {nothing}")
+            raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit "
+                            f"{p.returncode}, Law main {law_sha[:12]}):\n{out}\n{nothing}")
+        finally:
+            shutil.rmtree(d, ignore_errors=True)
+
     def verify_landed_identity(self, before: str, sha: str) -> None:
         """After the push (the backstop of check_push_identity): read every landed commit
         (before..sha on the fetched remote branch) with git, and the tip from the GitHub API,
@@ -1755,6 +1861,8 @@ class Lander:
                 sha = self.prepare(verify)
                 base = new
             sha = self.git("rev-parse", "HEAD")
+            # every attempt: Law's main or the candidate may have moved since the last one
+            self.check_law_state(sha)
             if self.dry_run:
                 self.log(f"dry run: would push {sha[:7]} to {self.branch}")
                 return sha
