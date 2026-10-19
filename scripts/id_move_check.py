@@ -72,6 +72,10 @@ config: scripts/id_move.toml
                                           # cannot all be on at once)
     probe-dependencies = ["alice-det-math"]   # crates a path below names besides the package (the
                                           # probe takes the version the package resolves)
+    base-package = "alice-zip"            # (optional) the package name the release tags and the
+                                          # registry carry, when the package was renamed since; the
+                                          # probe names both under the current lib name, so a path
+                                          # below resolves in the base and in the working tree
     [exempt]                              # [u8; 32] constants that are not identifiers
     SOME_KEY = "why it is not an identifier"
     [[id]]
@@ -120,6 +124,12 @@ class Config:
     exempt: tuple[tuple[str, str], ...] = ()
     doc_features: tuple[str, ...] | None = None
     probe_deps: tuple[str, ...] = ()
+    base_package: str | None = None
+
+    @property
+    def base_pkg(self) -> str:
+        """the package the release tags and the registry name (the package itself unless renamed)"""
+        return self.base_package or self.package
 
 
 MIN_REASON = 12
@@ -303,9 +313,12 @@ def load_config(root: Path) -> Config:
     probe_deps = doc.get("probe-dependencies", [])
     if not (isinstance(probe_deps, list) and all(isinstance(d, str) and re.fullmatch(r"[A-Za-z0-9_-]+", d) for d in probe_deps)):
         raise CheckError(f"{CONFIG}: probe-dependencies must be a list of crate names")
+    base_package = doc.get("base-package")
+    if base_package is not None and not (isinstance(base_package, str) and re.fullmatch(r"[A-Za-z0-9_-]+", base_package)):
+        raise CheckError(f"{CONFIG}: base-package must be a package name")
     return Config(doc["package"], doc["manifest"], tuple(doc.get("features", [])),
                   bool(doc.get("default-features", True)), tuple(tags), tuple(ids), tuple(sorted(exempt.items())),
-                  None if doc_features is None else tuple(doc_features), tuple(probe_deps))
+                  None if doc_features is None else tuple(doc_features), tuple(probe_deps), base_package)
 
 
 def parse_version(v: str) -> tuple[int, int, int]:
@@ -368,11 +381,11 @@ def release_base(root: Path, cfg: Config) -> tuple[str, str]:
         if r.returncode != 0:
             continue
         try:
-            if package_version(r.stdout, cfg.package) == v:
+            if package_version(r.stdout, cfg.base_pkg) == v:
                 return tag, v
         except (CheckError, tomllib.TOMLDecodeError):
             continue
-    raise CheckError(f"no release tag reachable from HEAD matches {list(cfg.tags)} with {cfg.package} "
+    raise CheckError(f"no release tag reachable from HEAD matches {list(cfg.tags)} with {cfg.base_pkg} "
                      f"at that version in {cfg.manifest} (nothing published to compare with; pass --base to name one)")
 
 
@@ -415,11 +428,13 @@ def unreadable_base_policy(env: dict[str, str]) -> str:
     return "fail"
 
 
-def read_ids(source: Path | str, cfg: Config, target_dir: Path, with_previous: bool = True) -> dict[str, dict | None]:
+def read_ids(source: Path | str, cfg: Config, target_dir: Path, with_previous: bool = True,
+             is_base: bool = False) -> dict[str, dict | None]:
     """{path: {"id": hex, "previous": [hex] | None} or None when the crate does not have it}, of the
     crate in the tree `source` (a Path) or of the published version `source` (a str) from the
     registry; the previous lists are read only where they are judged (the working tree): the base
-    may predate them"""
+    may predate them; `is_base`: `source` is the base (its package is `base-package`)"""
+    package = cfg.base_pkg if is_base else cfg.package
     out: dict[str, dict | None] = {}
     for i, spec in enumerate(cfg.ids):
         probe = Path(tempfile.mkdtemp(prefix="id-move-probe-"))
@@ -429,13 +444,16 @@ def read_ids(source: Path | str, cfg: Config, target_dir: Path, with_previous: b
                 dep = {"path": str((source / cfg.manifest).resolve().parent)}
             else:
                 dep = {"version": f"={source}"}
+            if cfg.base_package is not None:
+                # one dependency key (the current lib name) for both: a path resolves in either
+                dep["package"] = package
             dep["default-features"] = cfg.default_features
             if cfg.features:
                 dep["features"] = list(cfg.features)
             dep_toml = "{ " + ", ".join(f"{k} = {json.dumps(v)}" for k, v in dep.items()) + " }"
             (probe / "Cargo.toml").write_text(
                 f"[package]\nname = \"id-move-probe-{i}\"\nversion = \"0.0.0\"\nedition = \"2021\"\npublish = false\n\n"
-                f"[dependencies]\n{json.dumps(cfg.package)} = {dep_toml}\n"
+                f"[dependencies]\n{json.dumps(cfg.package if cfg.base_package is None else cfg.package.replace('-', '_'))} = {dep_toml}\n"
                 # "*" unifies with the package's own requirement, so the probe reads the same version
                 + "".join(f"{json.dumps(d)} = {{ version = \"*\", default-features = false }}\n" for d in cfg.probe_deps)
                 + "\n[workspace]\n", encoding="utf-8")
@@ -446,9 +464,9 @@ def read_ids(source: Path | str, cfg: Config, target_dir: Path, with_previous: b
                                capture_output=True, text=True, env=env)
             if r.returncode != 0 and isinstance(source, str) and re.search(
                     r"failed to select a version|no matching package named|could not find .* in registry", r.stderr):
-                raise NotPublished(f"{cfg.package} {source} is not in the registry")
+                raise NotPublished(f"{package} {source} is not in the registry")
             if r.returncode != 0 and isinstance(source, str) and UNREACHABLE_RE.search(r.stderr):
-                raise RegistryUnreachable(f"cannot read the base {cfg.package} {source} from the registry: "
+                raise RegistryUnreachable(f"cannot read the base {package} {source} from the registry: "
                                           f"{r.stderr.strip()[-400:]}")
             if r.returncode != 0:
                 # absent only when the error is the probe's path not resolving (a segment of
@@ -785,7 +803,7 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
     head_version = package_version((root / cfg.manifest).read_text(encoding="utf-8"), cfg.package)
     if base_ref is None:
         base_ref, _ = release_base(root, cfg)
-    base_version = package_version(git(root, "show", f"{base_ref}:{cfg.manifest}"), cfg.package)
+    base_version = package_version(git(root, "show", f"{base_ref}:{cfg.manifest}"), cfg.base_pkg)
     changelog_path = (root / cfg.manifest).parent / "CHANGELOG.md"
     if not changelog_path.exists():
         changelog_path = root / "CHANGELOG.md"
@@ -795,9 +813,9 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
     source = base_ref
     if base_from in ("registry", "auto"):
         try:
-            base = read_ids(base_version, cfg, target, with_previous=False)
+            base = read_ids(base_version, cfg, target, with_previous=False, is_base=True)
             head = read_ids(root, cfg, target)
-            source = f"{cfg.package} {base_version} from the registry"
+            source = f"{cfg.base_pkg} {base_version} from the registry"
         except NotPublished:
             if base_from == "registry":
                 shutil.rmtree(work, ignore_errors=True)
@@ -826,7 +844,7 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
             r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=env)
             if r.returncode != 0:
                 raise CheckError(f"git {args[0]} {base_ref}: {r.stderr.strip()}")
-        base = read_ids(wt, cfg, target, with_previous=False)
+        base = read_ids(wt, cfg, target, with_previous=False, is_base=True)
         shutil.rmtree(wt, ignore_errors=True)
         head = read_ids(root, cfg, target)
         problems, report = judge(base_version, head_version, base, head, changelog, cfg,
@@ -850,8 +868,8 @@ def main(argv: list[str] | None = None) -> int:
         if a.print_base:
             cfg = load_config(Path(a.root))
             version = release_base(Path(a.root), cfg)[1] if a.base is None else package_version(
-                git(Path(a.root), "show", f"{a.base}:{cfg.manifest}"), cfg.package)
-            print(f"{cfg.package}-{version}")
+                git(Path(a.root), "show", f"{a.base}:{cfg.manifest}"), cfg.base_pkg)
+            print(f"{cfg.base_pkg}-{version}")
             return 0
         problems, report = check(Path(a.root), a.base, a.base_from)
     except RegistryUnreachable as e:

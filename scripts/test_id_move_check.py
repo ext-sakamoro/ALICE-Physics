@@ -3,6 +3,7 @@
 throwaway crate in a throwaway git repository (built with cargo)."""
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -390,6 +391,76 @@ class EndToEnd(unittest.TestCase):
         # the build of the working tree may write its Cargo.lock; nothing else of the repository moves
         self.assertEqual(before, "".join(ln for ln in after.splitlines(True) if "Cargo.lock" not in ln))
         self.assertEqual([p.name for p in d.parent.glob(f".{d.name}.id-move-base-*")], [])
+
+    def renamed(self, byte: str, base_package: bool = True) -> Path:
+        """released as probe-crate 0.3.0, then renamed to probe-crate-core 1.0.0 (lib probe_crate_core)"""
+        d = self.repo()
+        (d / "Cargo.toml").write_text('[package]\nname = "probe-crate-core"\nversion = "1.0.0"\nedition = "2021"\n\n[workspace]\n')
+        (d / "src" / "lib.rs").write_text(LIB.format(b=byte, prev="[0x11; 32]"))
+        self.golden(d, "11")
+        (d / "tests" / "previous.rs").write_text((d / "tests" / "previous.rs").read_text().replace("probe_crate::", "probe_crate_core::"))
+        (d / "CHANGELOG.md").write_text("11111111 -> 22222222\n")
+        (d / "scripts" / "id_move.toml").write_text(
+            'package = "probe-crate-core"\n' + ('base-package = "probe-crate"\n' if base_package else "")
+            + 'manifest = "Cargo.toml"\ntags = ["v{version}"]\n'
+            '[[id]]\npath = "probe_crate_core::SEMANTICS_ID"\nprevious = "probe_crate_core::PREVIOUS_SEMANTICS_IDS"\n'
+            'previous-tests = ["tests/previous.rs::old"]\n')
+        return d
+
+    def test_a_renamed_package_reads_the_base_under_its_old_name(self):
+        # the tag of the old name is found, and one probe path resolves in the base and in the tree
+        problems, report = imc.check(self.renamed("0x11"), None, "tag")
+        self.assertEqual(problems, [])
+        self.assertIn("base v0.3.0", report[0])
+        self.assertIn("unchanged (11111111)", report[1])
+        problems, report = imc.check(self.renamed("0x22"), None, "tag")
+        self.assertEqual(problems, [], report)
+        self.assertIn("11111111", report[1])
+        self.assertIn("22222222", report[1])
+
+    def test_a_renamed_package_reads_the_registry_base_under_its_old_name(self):
+        # a registry (a directory source in a private CARGO_HOME) that holds only the old name
+        # probe-crate 0.3.0: the base has to be asked for under base-package, or it is not found
+        d = self.renamed("0x11")
+        reg = Path(tempfile.mkdtemp(prefix="id-move-registry-"))
+        crate = reg / "vendor" / "probe-crate"
+        (crate / "src").mkdir(parents=True)
+        manifest = subprocess.run(["git", "-C", str(d), "show", "v0.3.0:Cargo.toml"], check=True,
+                                  capture_output=True, text=True).stdout
+        (crate / "Cargo.toml").write_text(manifest.replace("\n[workspace]\n", "\n"))
+        lib = subprocess.run(["git", "-C", str(d), "show", "v0.3.0:src/lib.rs"], check=True,
+                             capture_output=True, text=True).stdout
+        (crate / "src" / "lib.rs").write_text(lib)
+        (crate / ".cargo-checksum.json").write_text('{"files": {}, "package": null}')
+        home = reg / "cargo-home"
+        home.mkdir()
+        (home / "config.toml").write_text('[source.crates-io]\nreplace-with = "fixture"\n\n'
+                                          f'[source.fixture]\ndirectory = {json.dumps(str(reg / "vendor"))}\n')
+        old = os.environ.get("CARGO_HOME")
+        os.environ["CARGO_HOME"] = str(home)
+        try:
+            for base_from in ("registry", "auto"):
+                problems, report = imc.check(d, None, base_from)
+                self.assertEqual(problems, [], report)
+                self.assertIn("probe-crate 0.3.0 from the registry", report[0])
+                self.assertIn("unchanged (11111111)", report[1])
+        finally:
+            if old is None:
+                os.environ.pop("CARGO_HOME", None)
+            else:
+                os.environ["CARGO_HOME"] = old
+            shutil.rmtree(reg, ignore_errors=True)
+
+    def test_a_renamed_package_without_base_package_finds_no_release(self):
+        with self.assertRaisesRegex(imc.CheckError, "no release tag"):
+            imc.check(self.renamed("0x11", base_package=False), None, "tag")
+
+    def test_base_package_must_be_a_package_name(self):
+        d = self.renamed("0x11")
+        cfg = d / "scripts" / "id_move.toml"
+        cfg.write_text(cfg.read_text().replace('base-package = "probe-crate"', 'base-package = "probe crate"'))
+        with self.assertRaisesRegex(imc.CheckError, "base-package"):
+            imc.load_config(d)
 
     def test_no_release_tag_fails(self):
         d = self.repo()
