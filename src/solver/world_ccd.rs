@@ -110,7 +110,7 @@ use alloc::vec::Vec;
 /// # Examples
 ///
 /// ```
-/// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, WorldCcdConfig};
+/// use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, WorldCcdConfig};
 ///
 /// let mut world = PhysicsWorld::new(PhysicsConfig::default());
 /// assert!(!world.continuous_collision().is_enabled());

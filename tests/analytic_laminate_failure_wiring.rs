@@ -1,5 +1,5 @@
 //! Oracles for the production entry points of
-//! `alice_physics::laminate_failure` driven by
+//! `alice_physics_core::laminate_failure` driven by
 //! `examples/laminate_failure_criteria.rs`: `LaminateStrengths::{cfrp_ud,
 //! gfrp_ud}`, `StressState::zero`, `FailureCriterion`, `FailureMode` and the
 //! `failure_index` dispatcher.
@@ -62,11 +62,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::laminate_failure::{
+use alice_physics_core::laminate_failure::{
     failure_index, hashin_failure_mode, puck_failure_mode, tsai_hill_failure_index,
     tsai_wu_failure_index, FailureCriterion, FailureMode, LaminateStrengths, StressState,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn stress(s1: f64, s2: f64, t12: f64) -> StressState {

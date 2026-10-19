@@ -14,8 +14,8 @@
 //! cargo run --release --example metric_clearance_bounds --features std
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::metric::MetricWeights;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::metric::MetricWeights;
 
 fn main() {
     let m = MetricWeights::new(Fix128::ONE, Fix128::from_int(2), Fix128::from_int(3))

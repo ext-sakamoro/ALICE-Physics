@@ -16,9 +16,9 @@
 //! own `try_four_bar_linkage` uses at theta2 = 0 gives the Freudenstein
 //! rocker angle theta4 = atan2(B - O4).
 
-use alice_physics::det_math;
-use alice_physics::kinematic_loop::four_bar_linkage;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, Vec3Fix};
+use alice_physics_core::det_math;
+use alice_physics_core::kinematic_loop::four_bar_linkage;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, Vec3Fix};
 
 fn ffx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -31,7 +31,7 @@ fn ffx(v: f64) -> Fix128 {
 /// `try_four_bar_linkage` picks at crank angle 0 (there, A is left of O4
 /// along +x and B is placed at positive y).
 ///
-/// Uses `alice_physics::det_math` rather than `f32::{sin,cos,atan2}` (not
+/// Uses `alice_physics_core::det_math` rather than `f32::{sin,cos,atan2}` (not
 /// `f64`: det_math only has deterministic transcendentals for `f32`, ample
 /// precision for this oracle's 1e-2 angular tolerance).
 fn circle_intersection_open_branch(

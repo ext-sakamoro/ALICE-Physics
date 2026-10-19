@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::anisotropic`
+//! Oracles for the production entry points of `alice_physics_core::anisotropic`
 //! driven by `examples/anisotropic_failure_analysis.rs`:
 //! `OrthotropicElasticity::{e_at_angle_lt, e_at_angle_lz}`,
 //! `OrthotropicStress::axial`, `evaluate_failure`, and its `FailureReport`.
@@ -65,7 +65,7 @@
 // (not the 0/45/90 deg special cases that reduce to plain algebra), which
 // means calling `f64::sin`/`f64::cos` for the independent oracle side.
 // `clippy.toml`'s `disallowed-methods` bans those crate-wide (every
-// transcendental must go through `alice_physics::det_math`, not the
+// transcendental must go through `alice_physics_core::det_math`, not the
 // platform libm) but the ban does not apply to a closed-form f64
 // reference value that is never written back into `Fix128` production
 // state -- same convention as `tests/analytic_laminate_wiring.rs` and
@@ -75,11 +75,11 @@
     reason = "analytic reference: f64 cos/sin feed the Jones off-axis modulus formula E(theta) for the orthotropic elasticity reference"
 )]
 
-use alice_physics::anisotropic::{
+use alice_physics_core::anisotropic::{
     evaluate_failure, AnisotropicStrength, FailureCriterion, FailureReport, OrthotropicElasticity,
     OrthotropicStress,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 /// Relative-error assertion against an independently hand-derived f64
 /// closed form (never computed by calling the function under test).

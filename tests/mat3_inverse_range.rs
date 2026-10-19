@@ -12,7 +12,7 @@
 //!
 //! 厳密な参照値は u32 limb の 256 bit 整数で計算する (src 側とは別の書き方)
 
-use alice_physics::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+use alice_physics_core::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
 
 // ---------------------------------------------------------------------------
 // 256 bit の厳密演算 (2 の補数、little endian u64 × 4)

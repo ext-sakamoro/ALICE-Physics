@@ -8,8 +8,8 @@
 //!
 //! Run: `cargo run --release --example zero_tie_bits`
 
-use alice_physics::sdf_collider::{SdfField, SdfUnion};
-use alice_physics::sim_field::ScalarField3D;
+use alice_physics_core::sdf_collider::{SdfField, SdfUnion};
+use alice_physics_core::sim_field::ScalarField3D;
 use std::hint::black_box;
 
 struct Constant(f32);

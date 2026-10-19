@@ -15,10 +15,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::Contact;
-use alice_physics::contact_cache::{BodyPairKey, ContactCache};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::collider::Contact;
+use alice_physics_core::contact_cache::{BodyPairKey, ContactCache};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 use std::panic::catch_unwind;
 
 fn fi(n: i64) -> Fix128 {

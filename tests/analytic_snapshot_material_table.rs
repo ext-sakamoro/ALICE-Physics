@@ -17,7 +17,7 @@
 //! FNV-1a 64 checksum recomputed (header layout documented on
 //! `PhysicsWorld::snapshot_world`).
 
-use alice_physics::{
+use alice_physics_core::{
     Fix128, PhysicsConfig, PhysicsError, PhysicsMaterial, PhysicsWorld, RigidBody, Vec3Fix,
     WorldSnapshotError,
 };
@@ -151,7 +151,7 @@ fn assert_rewrites_payload(w: &PhysicsWorld, blob: &[u8]) {
     assert_eq!(&again[..48], &blob[..48]);
     assert_eq!(
         &again[48..80],
-        &w.law_id(&alice_physics::PHYSICS_SEMANTICS_ID)[..]
+        &w.law_id(&alice_physics_core::PHYSICS_SEMANTICS_ID)[..]
     );
     let end = blob.len() - CHECKSUM;
     assert_eq!(&again[HEADER..end], &blob[HEADER..end]);

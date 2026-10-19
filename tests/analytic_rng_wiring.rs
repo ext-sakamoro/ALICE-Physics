@@ -9,7 +9,7 @@
 //!   an independent replay over `next_u32` of a cloned generator must agree,
 //!   and the output is uniform on `0..m`.
 
-use alice_physics::rng::DeterministicRng;
+use alice_physics_core::rng::DeterministicRng;
 
 #[test]
 fn stream_matches_the_pcg32_reference_vector() {

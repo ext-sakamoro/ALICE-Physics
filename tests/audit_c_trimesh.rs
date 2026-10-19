@@ -7,10 +7,10 @@
 //! point on the plane, edge or vertex; box depth = plane distance of the lowest
 //! face; bounds = componentwise min / max over the vertices (brute force).
 
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::raycast::Ray;
-use alice_physics::trimesh::{ray_triangle, TriMesh, Triangle};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::raycast::Ray;
+use alice_physics_core::trimesh::{ray_triangle, TriMesh, Triangle};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

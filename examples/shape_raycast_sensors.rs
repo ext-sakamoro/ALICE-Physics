@@ -8,18 +8,18 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::collider::Capsule;
-use alice_physics::compound::CompoundShape;
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rng::DeterministicRng;
-use alice_physics::sdf_ccd::SdfCcdConfig;
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sensors::{ContactSensor, GaussianNoise, Imu, Lidar};
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::{RayFilter, RayTarget, WorldRayHit};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::static_collider::StaticCollider;
+use alice_physics_core::collider::Capsule;
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::rng::DeterministicRng;
+use alice_physics_core::sdf_ccd::SdfCcdConfig;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sensors::{ContactSensor, GaussianNoise, Imu, Lidar};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget, WorldRayHit};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

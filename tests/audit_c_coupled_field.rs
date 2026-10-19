@@ -7,10 +7,10 @@
 //! channel is passed a second time, or when it arrives holding a value. The
 //! expected means are dyadic, so the comparison is exact.
 
-use alice_physics::coupled_field::{
+use alice_physics_core::coupled_field::{
     reconcile_mean, CoupledField, CoupledFieldError, CoupledScalar,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn t3(a: i64, b: i64, c: i64) -> (Fix128, Fix128, Fix128) {
     (

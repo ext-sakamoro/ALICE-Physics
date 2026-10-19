@@ -16,8 +16,8 @@
     reason = "analytic reference: f64 SPH kernels poly6, spiky gradient and viscosity Laplacian (Mueller, Charypar, Gross 2003)"
 )]
 
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_sph::{
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_sph::{
     poly6, spiky_grad, viscosity_lap, SphConfig, SphParticle, SphSolver, SphSpatialHash,
 };
 

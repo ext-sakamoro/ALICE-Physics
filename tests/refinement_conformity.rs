@@ -37,7 +37,7 @@
 
 use std::collections::HashMap;
 
-use alice_physics::sdf_fem_mesh::{RefineError, SdfTetMesh, Tetrahedron};
+use alice_physics_core::sdf_fem_mesh::{RefineError, SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // face census

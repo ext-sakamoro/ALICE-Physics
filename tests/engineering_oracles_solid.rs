@@ -20,53 +20,53 @@
     reason = "analytic reference: f64 Roark beam deflections and section second moments for solid mechanics modules"
 )]
 
-use alice_physics::anisotropic::OrthotropicElasticity;
-use alice_physics::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
-use alice_physics::bimaterial::{
+use alice_physics_core::anisotropic::OrthotropicElasticity;
+use alice_physics_core::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
+use alice_physics_core::bimaterial::{
     analyze_bimaterial, effective_modulus_reuss_mpa, effective_modulus_voigt_mpa,
     interfacial_bond_strength_mpa, thermal_residual_stress_mpa, BimaterialSide,
 };
-use alice_physics::bridging::{analyze_bridges, check_span, BridgeSpan};
-use alice_physics::buckling::{analyze_column, BucklingRegime};
-use alice_physics::creep_longterm::{predict_strain, FindleyParameters};
-use alice_physics::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
-use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
-use alice_physics::fillet_stress::{
+use alice_physics_core::bridging::{analyze_bridges, check_span, BridgeSpan};
+use alice_physics_core::buckling::{analyze_column, BucklingRegime};
+use alice_physics_core::creep_longterm::{predict_strain, FindleyParameters};
+use alice_physics_core::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
+use alice_physics_core::filament_db::{MaterialCategory, MaterialProperties};
+use alice_physics_core::fillet_stress::{
     kt_circular_hole_infinite_plate, kt_elliptical_hole, kt_shaft_shoulder_bending,
     kt_u_notch_axial, recommended_fillet_radius_mm,
 };
-use alice_physics::hyperelastic::{
+use alice_physics_core::hyperelastic::{
     small_strain_shear_modulus, strain_energy_density, uniaxial_cauchy_stress, HyperelasticModel,
     Stretch,
 };
-use alice_physics::laminate::{compute_abd, is_symmetric_stack, Ply};
-use alice_physics::laminate_failure::{
+use alice_physics_core::laminate::{compute_abd, is_symmetric_stack, Ply};
+use alice_physics_core::laminate_failure::{
     hashin_failure_mode, puck_failure_mode, tsai_hill_failure_index, tsai_wu_failure_index,
     FailureMode, LaminateStrengths, StressState,
 };
-use alice_physics::mass_properties::{
+use alice_physics_core::mass_properties::{
     box_mass_properties, capsule_mass_properties, convex_hull_mass_properties,
     cylinder_mass_properties, sphere_mass_properties, translate_inertia,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::modal::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::modal::{
     beam_natural_frequency_hz, plate_natural_frequency_hz, single_dof_frequency_hz,
     torsional_frequency_hz, BeamBoundary,
 };
-use alice_physics::plastic::{NortonCreep, PlasticModel, PlasticState};
-use alice_physics::prestressed::{
+use alice_physics_core::plastic::{NortonCreep, PlasticModel, PlasticState};
+use alice_physics_core::prestressed::{
     bolt_load_fraction, bolt_peak_tension, cable_pretension_n, preload_from_torque,
     recommended_preload_n, separation_load_n, tensioned_cable_stiffness_n_per_mm,
 };
-use alice_physics::print_orientation::{
+use alice_physics_core::print_orientation::{
     angle_to_z_axis, effective_yield_at_angle, optimize_analytical, optimize_grid, LoadDirection,
     OrientationCandidate,
 };
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::structural_solver::StructuralSolver;
-use alice_physics::thermal_stress::{analyze_thermal_stress, yield_temperature_c};
-use alice_physics::thin_wall::{measure_thickness_at, ThinWallConfig};
-use alice_physics::vibration_wall::{analyze_wall_resonance, ExcitationSource};
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::structural_solver::StructuralSolver;
+use alice_physics_core::thermal_stress::{analyze_thermal_stress, yield_temperature_c};
+use alice_physics_core::thin_wall::{measure_thickness_at, ThinWallConfig};
+use alice_physics_core::vibration_wall::{analyze_wall_resonance, ExcitationSource};
 
 use core::f64::consts::PI;
 

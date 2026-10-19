@@ -37,9 +37,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::eulerian_grid::{p2g_normalized, p2g_normalized_with, MacGrid, ParticleScatter};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::eulerian_grid::{
+    p2g_normalized, p2g_normalized_with, MacGrid, ParticleScatter,
+};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 type Particle = (Vec3Fix, Vec3Fix);

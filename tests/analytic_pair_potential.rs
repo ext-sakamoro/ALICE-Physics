@@ -36,9 +36,9 @@
     reason = "analytic reference: f64 Lennard-Jones 4 eps[(s/r)^12 - (s/r)^6], Morse and Yukawa closed forms for pair_potential"
 )]
 
-use alice_physics::electromagnetic::EmSource;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::pair_potential::{
+use alice_physics_core::electromagnetic::EmSource;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::pair_potential::{
     lorentz_berthelot, Coulomb, LennardJones, Morse, PairPotential, PairPotentialError, ShiftMode,
     Truncated, Yukawa, COULOMB_CONSTANT,
 };

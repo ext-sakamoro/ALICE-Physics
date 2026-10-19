@@ -57,21 +57,21 @@
 
 use std::rc::Rc;
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::cubic_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::cubic_elastic_fem::{
     reactions as cubic_reactions, solve_cubic, solve_cubic_hyperelastic, CubicMesh,
 };
-use alice_physics::hyperelastic::HyperelasticModel;
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::hyperelastic::HyperelasticModel;
+use alice_physics_core::linear_elastic_fem::{
     corotational_reactions, reactions, solve, solve_corotational, solve_with_eigenstrain, Axis,
     BoundaryConditions, CorotationalConfig, CorotationalSolution, ElasticMaterial, FemError,
     FemSolution, SolverConfig, StressTensor, ThermalExpansion,
 };
-use alice_physics::math::{Fix128, PolarError};
-use alice_physics::quadratic_elastic_fem::{
+use alice_physics_core::math::{Fix128, PolarError};
+use alice_physics_core::quadratic_elastic_fem::{
     reactions as quadratic_reactions, solve_quadratic, solve_quadratic_hyperelastic, QuadraticMesh,
 };
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // scene construction (same Kuhn box the other FEM oracles use)

@@ -60,9 +60,9 @@
     reason = "analytic reference: f64 PD motor velocity closed form (1 - h kp/I)^n and first-order response 1 - exp(-2kt) for joint motors"
 )]
 
-use alice_physics::joint::{BallJoint, HingeJoint, Joint};
-use alice_physics::motor::{MotorMode, PdController};
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, QuatFix, RigidBody, Vec3Fix};
+use alice_physics_core::joint::{BallJoint, HingeJoint, Joint};
+use alice_physics_core::motor::{MotorMode, PdController};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, QuatFix, RigidBody, Vec3Fix};
 
 const DT: (i64, i64) = (1, 60);
 
@@ -635,7 +635,7 @@ fn step_parallel_applies_the_velocity_motor() {
 #[test]
 fn tgs_backend_applies_the_velocity_motor_once_per_tick() {
     let cfg = PhysicsConfig {
-        solver_backend: alice_physics::SolverBackend::Tgs,
+        solver_backend: alice_physics_core::SolverBackend::Tgs,
         ..PhysicsConfig::default()
     };
     let d = frame_damping(&cfg);

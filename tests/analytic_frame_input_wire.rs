@@ -9,8 +9,8 @@
 //! lossless encoding from one that keeps the integer part (the form before
 //! 4.0.0 kept `hi` as an `i16`).
 
-use alice_physics::netcode::FrameInput;
-use alice_physics::{Fix128, Vec3Fix, WireError};
+use alice_physics_core::netcode::FrameInput;
+use alice_physics_core::{Fix128, Vec3Fix, WireError};
 
 fn fractional_input() -> FrameInput {
     FrameInput::new(2)

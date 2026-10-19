@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::bimaterial`.
+//! Audit oracles for `alice_physics_core::bimaterial`.
 //!
 //! Expected values come from the rule of mixtures (Hill 1952), from the membrane
 //! force balance of a bonded bilayer (net force zero, equal total strain) written
@@ -6,13 +6,13 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::bimaterial::{
+use alice_physics_core::bimaterial::{
     analyze_bimaterial, effective_modulus_reuss_mpa, effective_modulus_voigt_mpa,
     interfacial_bond_strength_mpa, published_cte_per_c, thermal_residual_stress_mpa,
     BimaterialSide,
 };
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

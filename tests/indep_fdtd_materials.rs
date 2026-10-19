@@ -39,8 +39,8 @@
     reason = "analytic reference: f64 complex arithmetic for the FDTD material dispersion and Fresnel reflection references"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::maxwell_fdtd::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::maxwell_fdtd::{
     Component, Material, MaterialError, MaterialMap, YeeGrid, COURANT_3D,
 };
 use std::f64::consts::PI;

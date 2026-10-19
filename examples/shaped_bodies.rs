@@ -12,9 +12,9 @@
 //! cargo run --example shaped_bodies --features std
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

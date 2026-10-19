@@ -14,9 +14,9 @@
 //! `target * (1 + exp(-zeta pi / sqrt(1 - zeta^2)))` at
 //! `t_peak = pi / (omega_n sqrt(1 - zeta^2))`.
 
-use alice_physics::det_math;
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::{
+use alice_physics_core::det_math;
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::{
     Fix128, MotorMode, PdController, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix,
 };
 

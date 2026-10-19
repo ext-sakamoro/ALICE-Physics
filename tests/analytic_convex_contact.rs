@@ -13,12 +13,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{contact, Contact, Sphere};
-use alice_physics::cylinder::Cylinder;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{contact, Contact, Sphere};
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

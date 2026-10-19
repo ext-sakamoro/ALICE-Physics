@@ -1,4 +1,4 @@
-//! Audit oracles (S2-1) for `alice_physics::vibration_wall`.
+//! Audit oracles (S2-1) for `alice_physics_core::vibration_wall`.
 //!
 //! Expected values come from the module doc's stated criterion ("within
 //! +-20 % of a significant excitation source"), a brute-force scan over the
@@ -8,9 +8,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::vibration_wall::{
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::vibration_wall::{
     analyze_wall_resonance, default_excitation_sources, ExcitationSource,
 };
 
@@ -24,7 +24,7 @@ fn wall(
     b: i64,
     sources: &[ExcitationSource],
     band: Fix128,
-) -> alice_physics::vibration_wall::WallResonanceReport {
+) -> alice_physics_core::vibration_wall::WallResonanceReport {
     analyze_wall_resonance(
         &MaterialProperties::pla(),
         nu(),

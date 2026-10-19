@@ -10,8 +10,8 @@
 //! cargo run --release --example math_util_roots_powers --features std
 //! ```
 
-use alice_physics::math::Fix128;
-use alice_physics::math_util::{cbrt_fix, clamp_fix, pow_int};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::math_util::{cbrt_fix, clamp_fix, pow_int};
 
 fn main() {
     for n in [27_i64, 1_000_000_000, 1 << 62] {

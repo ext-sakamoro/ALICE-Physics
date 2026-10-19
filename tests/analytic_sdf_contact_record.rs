@@ -11,13 +11,13 @@
 
 use std::sync::{Arc, Mutex};
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider, SdfContact};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::world_participant::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider, SdfContact};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
 };
-use alice_physics::SolverBackend;
+use alice_physics_core::SolverBackend;
 
 /// f32 field queries (the SDF boundary is `f32`) on dyadic inputs are exact;
 /// on the non-dyadic tilted / rotated scenes they carry `f32` rounding.
@@ -324,21 +324,21 @@ fn rotated_dynamic_collider() -> (PhysicsWorld, Vec<Want>) {
 
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridge {
-    use alice_physics::joint::Joint;
-    use alice_physics::math::Fix128;
+    use alice_physics_core::joint::Joint;
+    use alice_physics_core::math::Fix128;
 
     /// Hands everything back as it was sent (no GPU solve).
     #[derive(Default)]
     pub struct IdentityBridge {
         positions: Vec<[Fix128; 3]>,
         velocities: Vec<[Fix128; 3]>,
-        constraints: Vec<alice_physics::solver::ContactConstraint>,
+        constraints: Vec<alice_physics_core::solver::ContactConstraint>,
         body_positions: Vec<[Fix128; 3]>,
     }
 
-    impl alice_physics::gpu_bridge::GpuSolverBridge for IdentityBridge {
+    impl alice_physics_core::gpu_bridge::GpuSolverBridge for IdentityBridge {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, p: &[[Fix128; 3]], v: &[[Fix128; 3]]) {
@@ -352,18 +352,24 @@ mod bridge {
         }
         fn assert_bit_exact_vs_cpu(
             &self,
-            _fixture: &alice_physics::gpu_bridge::DiffFixture,
-        ) -> Result<(), alice_physics::gpu_bridge::GpuDivergence> {
+            _fixture: &alice_physics_core::gpu_bridge::DiffFixture,
+        ) -> Result<(), alice_physics_core::gpu_bridge::GpuDivergence> {
             Ok(())
         }
-        fn send_contact_constraints(&mut self, c: &[alice_physics::solver::ContactConstraint]) {
+        fn send_contact_constraints(
+            &mut self,
+            c: &[alice_physics_core::solver::ContactConstraint],
+        ) {
             self.constraints = c.to_vec();
         }
         fn send_body_state(&mut self, positions: &[[Fix128; 3]], _inv_masses: &[Fix128]) {
             self.body_positions = positions.to_vec();
         }
         fn dispatch_contact_solve_iteration(&mut self, _warm_start_factor: Fix128) {}
-        fn recv_contact_constraints(&self, c: &mut [alice_physics::solver::ContactConstraint]) {
+        fn recv_contact_constraints(
+            &self,
+            c: &mut [alice_physics_core::solver::ContactConstraint],
+        ) {
             c.clone_from_slice(&self.constraints);
         }
         fn recv_body_positions(&self, positions: &mut [[Fix128; 3]]) {

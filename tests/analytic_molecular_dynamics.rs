@@ -36,11 +36,11 @@
     reason = "analytic reference: f64 LJ dimer period 2 pi h / acos(1 - (omega h)^2/2) and r_min = 2^(1/6) sigma for velocity Verlet MD"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{
     pair_forces_all_pairs, pair_forces_cell_list, MdError, PeriodicBox, VelocityVerlet,
 };
-use alice_physics::pair_potential::{
+use alice_physics_core::pair_potential::{
     LennardJones, PairPotential, PairPotentialError, ShiftMode, Truncated,
 };
 

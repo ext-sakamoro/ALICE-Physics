@@ -29,10 +29,10 @@
 //! cargo run --example compound_shapes --features std
 //! ```
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, ConvexHull, Sphere, AABB};
-use alice_physics::compound::CompoundShape;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, ConvexHull, Sphere, AABB};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 /// 180-degree rotation about the world Z axis, as an exact unit quaternion
 /// (`sin(90deg) = 1`, `cos(90deg) = 0`, both exactly representable in

@@ -12,9 +12,9 @@
 //! cargo run --release --example csf_surface_tension_presets --features std
 //! ```
 
-use alice_physics::math::Fix128;
-use alice_physics::multiphase::{initialize_level_set_sphere, Grid3d};
-use alice_physics::surface_tension_csf::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::multiphase::{initialize_level_set_sphere, Grid3d};
+use alice_physics_core::surface_tension_csf::{
     compute_csf_field, SIGMA_MERCURY_AIR, SIGMA_PLA_AIR, SIGMA_STEEL_ARGON, SIGMA_WATER_AIR,
 };
 

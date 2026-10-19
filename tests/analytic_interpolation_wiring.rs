@@ -64,11 +64,11 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use alice_physics::interpolation::{
+use alice_physics_core::interpolation::{
     lerp_fix128, lerp_vec3, slerp, BodySnapshot, InterpolationState, WorldSnapshot,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn world_with(bodies: Vec<RigidBody>) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());

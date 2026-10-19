@@ -44,15 +44,15 @@
 //! clamped faces as well, and only that mesh knows where they are; the helper
 //! below prescribes by node *position*, so it covers them.
 
-use alice_physics::cubic_elastic_fem::{solve_adaptive_cubic, solve_cubic, CubicMesh};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::cubic_elastic_fem::{solve_adaptive_cubic, solve_cubic, CubicMesh};
+use alice_physics_core::linear_elastic_fem::{
     AdaptiveConfig, BoundaryConditions, ElasticMaterial, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::quadratic_elastic_fem::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::quadratic_elastic_fem::{
     solve_adaptive_quadratic, solve_quadratic, QuadraticMesh,
 };
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -323,7 +323,7 @@ fn patch_bc(pos: &[[f64; 3]]) -> (BoundaryConditions, Vec<(u32, f64)>) {
     for &(node, share) in &loaded {
         bc.add_load(
             node,
-            alice_physics::linear_elastic_fem::Axis::X,
+            alice_physics_core::linear_elastic_fem::Axis::X,
             fx(TRACTION * share),
         );
     }

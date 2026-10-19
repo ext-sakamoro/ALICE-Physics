@@ -35,10 +35,10 @@
 //! `tail_add_then_remove_before_any_body_sleeps_matches_never_added` avoids
 //! the whole question by removing before anything has had time to sleep.
 
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::{SleepConfig, SleepState};
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::{SleepConfig, SleepState};
 
 fn dt() -> Fix128 {
     Fix128::from_ratio(1, 60)

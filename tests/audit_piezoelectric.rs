@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::piezoelectric`.
+//! Audit oracles for `alice_physics_core::piezoelectric`.
 //!
 //! References are the textbook constitutive relations evaluated in f64 with
 //! the CODATA vacuum permittivity:
@@ -6,7 +6,7 @@
 //!   converse F_blocked = V d Y A / t, free strain = d V / t
 //!   Hooke    strain = sigma / Y
 
-use alice_physics::piezoelectric::PiezoElement;
+use alice_physics_core::piezoelectric::PiezoElement;
 
 const EPS0: f64 = 8.854_187_812_8e-12;
 

@@ -13,11 +13,11 @@
 //! cargo run --example substep_interpolation --features std
 //! ```
 
-use alice_physics::interpolation::{
+use alice_physics_core::interpolation::{
     lerp_fix128, lerp_vec3, slerp, BodySnapshot, InterpolationState, WorldSnapshot,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn linear_motion_interpolation() {
     println!("[interpolation] -- capture_and_push over a physics step, interpolate_all --");

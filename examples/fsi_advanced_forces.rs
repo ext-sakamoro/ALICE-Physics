@@ -1,6 +1,6 @@
 //! Advanced fluid-structure interaction: per-sample drag + buoyancy,
 //! aggregation into a net force/torque, and Newton-III back-reaction onto
-//! the fluid, for `alice_physics::fsi_advanced`.
+//! the fluid, for `alice_physics_core::fsi_advanced`.
 //!
 //! ⚠️ **Why this example exists.** `scripts/wiring_guard.py` reported five
 //! items as unwired: `SolidSample`, `aggregate_forces`, `buoyancy_force`,
@@ -44,10 +44,10 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::fsi_advanced::{
+    use alice_physics_core::fsi_advanced::{
         aggregate_forces, buoyancy_force, drag_force, react_back_pressure, SolidSample,
     };
-    use alice_physics::math::{Fix128, Vec3Fix};
+    use alice_physics_core::math::{Fix128, Vec3Fix};
 
     let fluid_density = Fix128::from_int(1000);
     let drag_coefficient = Fix128::ONE;

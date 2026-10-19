@@ -9,9 +9,11 @@
 //!
 //! Run with `cargo run --example participant_nbody`.
 
-use alice_physics::nbody::{DirectSum, NBodyParticipant, NBODY_OBS_BODIES, NBODY_OBS_POTENTIAL};
-use alice_physics::world_participant::Observed;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::nbody::{
+    DirectSum, NBodyParticipant, NBODY_OBS_BODIES, NBODY_OBS_POTENTIAL,
+};
+use alice_physics_core::world_participant::Observed;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let substeps = 4;

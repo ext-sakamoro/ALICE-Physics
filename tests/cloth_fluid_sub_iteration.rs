@@ -40,11 +40,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cloth_fluid::{
+use alice_physics_core::cloth_fluid::{
     apply_cloth_boundary_to_fluid, apply_cloth_boundary_to_fluid_with_residual,
     apply_fluid_forces_to_cloth, apply_fluid_forces_to_cloth_with_residual, ClothFluidCoupling,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// A submerged patch with every force term live.
 struct Scene {

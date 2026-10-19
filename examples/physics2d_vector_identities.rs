@@ -20,8 +20,8 @@
 //! cargo run --release --example physics2d_vector_identities --features std
 //! ```
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{solve_joints_2d, Joint2D, RigidBody2D, Shape2D, Vec2Fix};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{solve_joints_2d, Joint2D, RigidBody2D, Shape2D, Vec2Fix};
 
 /// Tolerance for values that go through `sqrt` / `sin_cos` (Fix128 has 64 fractional bits).
 const EPS: f64 = 1e-12;

@@ -7,7 +7,7 @@
 //!   its documented default (`version` 1, `substeps` 8, `iterations` 4, everything else 0)
 //! * every strict prefix of a valid binary file is an `Err`, never a panic and never `Ok`
 
-use alice_physics::scene_io::{
+use alice_physics_core::scene_io::{
     load_scene, load_scene_json, save_scene, save_scene_json, PhysicsConfig, PhysicsScene,
     SerializedBody, SerializedJoint, CURRENT_SCENE_VERSION,
 };

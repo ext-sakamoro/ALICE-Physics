@@ -15,6 +15,8 @@ scripts/downstream_resolve.sh
 scripts/downstream_select_tag.py
 # downstream_major_rewrite.py imports downstream_select_tag.py
 scripts/downstream_major_rewrite.py
+# downstream_path_rewrite.py points the fetched copies' path dependencies at the facade
+scripts/downstream_path_rewrite.py
 # downstream_test_counts.py imports ansi.py
 scripts/downstream_test_counts.py
 scripts/ansi.py

@@ -20,9 +20,9 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use alice_physics::buoyancy_zone::{BuoyancyZone, ZoneShape};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{BodyType, RigidBody};
+use alice_physics_core::buoyancy_zone::{BuoyancyZone, ZoneShape};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{BodyType, RigidBody};
 
 fn body_at(x: i64, y: i64, z: i64, v: Vec3Fix) -> RigidBody {
     RigidBody {

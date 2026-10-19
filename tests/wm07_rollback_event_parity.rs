@@ -12,7 +12,7 @@
 //! 期待値は実装出力でなく **「同じ状態から続けた未来は同じであるべき」** という
 //! 決定論の要求そのもの
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 /// 2 球が接触と分離を繰り返す scene (重力ゼロ)
 ///

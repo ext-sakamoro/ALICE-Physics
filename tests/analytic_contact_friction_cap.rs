@@ -32,9 +32,9 @@
     reason = "analytic reference: f64 damped sliding velocity (v0 + mu g/beta) e^(-beta t) - mu g/beta, Mueller et al. XPBD 2020 friction cap"
 )]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -143,7 +143,11 @@ fn run(
     w.bodies[ball].velocity = v3(v0, 0.0, 0.0);
     let id = w
         .material_table
-        .register(alice_physics::PhysicsMaterial::new(0, fx(mu), Fix128::ZERO));
+        .register(alice_physics_core::PhysicsMaterial::new(
+            0,
+            fx(mu),
+            Fix128::ZERO,
+        ));
     w.set_body_material(ground, id);
     w.set_body_material(ball, id);
     if let Some(m) = modifier {

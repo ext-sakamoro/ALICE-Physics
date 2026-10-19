@@ -20,8 +20,8 @@
     reason = "analytic reference: f64 friction cone half-angle atan(mu) checked against FrictionCone::half_angle"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -236,8 +236,8 @@ fn a_contact_is_at_the_surface_of_body_a() {
 /// never resolves it.
 #[test]
 fn a_hand_made_contact_of_two_immovable_bodies_has_no_force() {
-    use alice_physics::collider::Contact;
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::collider::Contact;
+    use alice_physics_core::solver::ContactConstraint;
     let mut w = PhysicsWorld::new(SolverConfig::default());
     let a = w.add_body_with_radius(RigidBody::new_static(v3(0.0, 0.0, 0.0)), fx(0.5));
     let b = w.add_body_with_radius(RigidBody::new_static(v3(0.0, 0.9, 0.0)), fx(0.5));
@@ -263,8 +263,8 @@ fn a_hand_made_contact_of_two_immovable_bodies_has_no_force() {
 /// a known multiplier gives `λ / (w·dt²)`.
 #[test]
 fn the_force_is_the_multiplier_over_w_times_the_substep_squared() {
-    use alice_physics::collider::Contact;
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::collider::Contact;
+    use alice_physics_core::solver::ContactConstraint;
     for (substeps, h) in [(0usize, 1.0 / 60.0), (1, 1.0 / 60.0), (4, 1.0 / 240.0)] {
         let mut w = PhysicsWorld::new(SolverConfig {
             substeps,

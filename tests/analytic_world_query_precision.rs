@@ -19,15 +19,15 @@
     reason = "analytic reference: f64 step height 2^-k and gap sqrt((11-t)^2 + (r-h)^2) - r for cast precision at 2^-32 tolerance"
 )]
 
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::TriMesh;
-use alice_physics::world_shape_query::WorldShapeHit;
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::TriMesh;
+use alice_physics_core::world_shape_query::WorldShapeHit;
 
 /// The conservative-advancement tolerance, `2⁻³²`.
 const TOL: f64 = 1.0 / 4_294_967_296.0;
@@ -575,7 +575,7 @@ fn small_sphere_on_an_ellipsoid_stops_at_the_surface() {
         assert!(w.set_body_shape(i, &Shape::Ellipsoid { radii: p3(e) }));
         if tilted {
             let k = (0.36f64 + 0.49 + 0.04).sqrt();
-            w.bodies[i].rotation = alice_physics::math::QuatFix::from_axis_angle(
+            w.bodies[i].rotation = alice_physics_core::math::QuatFix::from_axis_angle(
                 v3(0.6 / k, 0.7 / k, -0.2 / k),
                 fx(0.9),
             );

@@ -17,11 +17,11 @@
     reason = "analytic reference: f64 3D distance d for the linear-falloff stress sum force (1 - d/2) on heatmap pixels"
 )]
 
-use alice_physics::heatmap::{
+use alice_physics_core::heatmap::{
     generate_stress_heatmap, generate_temperature_heatmap, heatmap_to_rgba, Heatmap, HeatmapConfig,
     SliceAxis,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::cell::RefCell;
 
 fn fx(v: f64) -> Fix128 {

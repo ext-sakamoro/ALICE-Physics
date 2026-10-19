@@ -7,8 +7,8 @@
 //! references. This suite pins the observable consequences through the
 //! public API (`rebuild_batches` / `num_batches` / `step`).
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig};
 
 fn hub_world(hub: RigidBody, spokes: usize) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(SolverConfig {

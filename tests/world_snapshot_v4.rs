@@ -9,13 +9,13 @@
 //! under test is the one that fires, and with the target world compared
 //! before and after.
 
-use alice_physics::force::{ForceField, ForceFieldInstance};
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::world_participant::{
+use alice_physics_core::force::{ForceField, ForceFieldInstance};
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, StepRule,
     SubstepCtx,
 };
-use alice_physics::{
+use alice_physics_core::{
     Fix128, LawCheck, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix,
     WorldCcdConfig, WorldSnapshotError, PHYSICS_SEMANTICS_ID,
 };
@@ -96,7 +96,11 @@ fn checked(
     expected: Option<&[u8; 32]>,
 ) -> Result<LawCheck, WorldSnapshotError> {
     let before = t.snapshot_world();
-    let r = t.restore_world_checked(data, expected, alice_physics::LegacyPolicy::AcceptUnpinned);
+    let r = t.restore_world_checked(
+        data,
+        expected,
+        alice_physics_core::LegacyPolicy::AcceptUnpinned,
+    );
     if r.is_err() {
         assert_eq!(
             t.snapshot_world(),
@@ -167,7 +171,11 @@ fn version_4_round_trips_bytes_and_steps() {
     assert_eq!(b.snapshot_world(), blob);
     let mut c = PhysicsWorld::new(PhysicsConfig::default());
     assert_eq!(
-        c.restore_world_checked(&blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
+        c.restore_world_checked(
+            &blob,
+            None,
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
+        ),
         Ok(LawCheck::SemanticsVerified)
     );
     for _ in 0..30 {
@@ -291,7 +299,7 @@ fn older_versions_are_accepted_as_unpinned() {
         let before = t.snapshot_world();
         assert_eq!(
             t.restore_world(blob),
-            Err(alice_physics::solver::WorldSnapshotError::Unpinned),
+            Err(alice_physics_core::solver::WorldSnapshotError::Unpinned),
             "version {version}"
         );
         assert_eq!(
@@ -435,7 +443,7 @@ fn header_law_id_versus_the_restored_world() {
         same.restore_world_checked(
             &blob,
             Some(&header),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Ok(LawCheck::Verified)
     );
@@ -450,7 +458,7 @@ fn header_law_id_versus_the_restored_world() {
         other.restore_world_checked(
             &blob,
             Some(&header),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Ok(LawCheck::Verified)
     );
@@ -478,7 +486,7 @@ fn the_target_own_law_id_refuses_another_step_rule() {
         other.restore_world_checked(
             &blob,
             Some(&expected),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: header,
@@ -497,7 +505,7 @@ fn the_target_own_law_id_refuses_another_step_rule() {
         same.restore_world_checked(
             &blob,
             Some(&expected),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Ok(LawCheck::Verified)
     );
@@ -534,7 +542,7 @@ fn a_target_differing_only_in_configuration_is_refused() {
         target.restore_world_checked(
             &blob,
             Some(&expected),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: header,

@@ -13,11 +13,11 @@
 fn main() {}
 
 #[cfg(target_os = "linux")]
-use alice_physics::bvh::BvhPrimitive;
+use alice_physics_core::bvh::BvhPrimitive;
 #[cfg(target_os = "linux")]
-use alice_physics::collider::AABB;
+use alice_physics_core::collider::AABB;
 #[cfg(target_os = "linux")]
-use alice_physics::{Fix128, LinearBvh, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::{Fix128, LinearBvh, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 #[cfg(target_os = "linux")]
 use gungraun::prelude::*;
 #[cfg(target_os = "linux")]

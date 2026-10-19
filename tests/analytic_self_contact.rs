@@ -132,8 +132,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cloth::Cloth;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cloth::Cloth;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 // ---------------------------------------------------------------------------
 // 厳密性の前提 (方針 (iii): 係数を厳密に構成し、溢れたら明示的に落とす)

@@ -1,5 +1,5 @@
 [package]
-name = "alice-physics"
+name = "alice-physics-core"
 version = "4.0.0"
 edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+); paired with the CI `msrv` job
@@ -10,7 +10,7 @@ description = "Deterministic physics engine: 128-bit fixed-point rigid bodies wi
 license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
 repository = "https://github.com/ext-sakamoro/ALICE-Physics"
 homepage = "https://github.com/ext-sakamoro/ALICE-Physics"
-documentation = "https://docs.rs/alice-physics"
+documentation = "https://docs.rs/alice-physics-core"
 keywords = ["physics", "deterministic", "fixed-point", "xpbd", "simulation"]
 categories = ["game-development", "simulation", "science"]
 # 1.85: `f32::abs` / `f64::abs` are `core` (no_std build) since 1.85; the lockfile
@@ -61,14 +61,15 @@ rustdoc-args = ["--cfg", "docsrs"]
 ignored = ["js-sys", "getrandom"]
 
 [lib]
-name = "alice_physics"
+name = "alice_physics_core"
 path = "src/lib.rs"
 # rlib only. A crate that depends on this one builds every crate type listed
 # here, so a cdylib / staticlib in this list was built in no_std mode too and
 # failed for want of an allocator and a panic handler (3.0.0). The C ABI
-# libraries (Unity C# P/Invoke, unreal-plugin/, include/) are built on request:
-#   cargo rustc --lib --release --features ffi --crate-type cdylib
-#   cargo rustc --lib --release --features ffi --crate-type staticlib
+# libraries (Unity C# P/Invoke, unreal-plugin/, include/) are built on request, from the
+# facade crate so that their names stay alice_physics:
+#   cargo rustc -p alice-physics --lib --release --features ffi --crate-type cdylib
+#   cargo rustc -p alice-physics --lib --release --features ffi --crate-type staticlib
 # (release.yml builds the published binaries this way;
 # scripts/no_std_consumer.py checks the no_std dependent build)
 crate-type = ["rlib"]
@@ -702,3 +703,8 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
 # attribute itself, so no spelling of it (cfg_attr, a spaced path, a lint group,
 # an inner attribute) escapes; scripts/allow_reason_guard.py judges the reasons
 allow_attributes_without_reason = "deny"
+
+# the repository is a workspace: this package (the engine, alice-physics-core) and the
+# alice-physics facade that re-exports it under the paths downstream crates use
+[workspace]
+members = [".", "crates/alice-physics"]

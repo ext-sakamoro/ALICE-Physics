@@ -5,7 +5,7 @@
 //! # Usage
 //!
 //! ```
-//! use alice_physics::filter::CollisionFilter;
+//! use alice_physics_core::filter::CollisionFilter;
 //!
 //! // Layer 0 = player, Layer 1 = enemy, Layer 2 = projectile
 //! let player = CollisionFilter::new(1 << 0, (1 << 1) | (1 << 2)); // collides with enemy + projectile
@@ -96,7 +96,7 @@ impl Default for CollisionFilter {
 /// to build [`CollisionFilter`] layer and mask fields:
 ///
 /// ```
-/// use alice_physics::filter::{CollisionFilter, layers};
+/// use alice_physics_core::filter::{CollisionFilter, layers};
 ///
 /// let player_filter = CollisionFilter::new(
 ///     layers::PLAYER,

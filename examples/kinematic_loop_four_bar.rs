@@ -1,5 +1,5 @@
 //! Classical four-bar linkage production entry point for
-//! `alice_physics::kinematic_loop`: `FourBarLinkage`,
+//! `alice_physics_core::kinematic_loop`: `FourBarLinkage`,
 //! `LoopClosureConstraint::centre_to_centre`, `four_bar_linkage`, and
 //! `try_four_bar_linkage`.
 //!
@@ -39,12 +39,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::det_math::acos64;
-use alice_physics::kinematic_loop::{
+use alice_physics_core::det_math::acos64;
+use alice_physics_core::kinematic_loop::{
     four_bar_linkage, try_four_bar_linkage, LoopClosureConstraint,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 /// Relative-error check against an independently hand-derived f64 closed
 /// form (never computed by calling the function under test). Mirrors

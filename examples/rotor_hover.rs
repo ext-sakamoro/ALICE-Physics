@@ -21,12 +21,12 @@
     reason = "analytic reference: hover speed n = sqrt(m g / (CT rho D^4)), asserted against speed_for_thrust"
 )]
 
-use alice_physics::atmosphere::Isa1976;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::rotor::{
+use alice_physics_core::atmosphere::Isa1976;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::rotor::{
     hover_induced_velocity_m_s, ideal_hover_power_w, Rotor, RotorParams, RotorSpin,
 };
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn main() {
     let rho = Isa1976::at_geopotential_altitude(Fix128::ZERO)

@@ -542,6 +542,11 @@ def workspace_src_dirs(root: Path) -> list[Path]:
             for pat in strs("members"):
                 if not safe(pat):
                     continue
+                if Path(pat).parts in ((), (".",)):
+                    # `members = [".", ...]`: the root package itself (Path.glob refuses ".")
+                    if (root / "src").is_dir() and (root / "src") not in dirs:
+                        dirs.append(root / "src")
+                    continue
                 for d in sorted(root.glob(pat.rstrip("/"))):
                     if not d.is_dir():
                         continue

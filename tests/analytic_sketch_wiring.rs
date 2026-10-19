@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::sketch`
+//! Oracles for the production entry points of `alice_physics_core::sketch`
 //! (`examples/sketch_streams.rs`): `FnvHasher::{hash_u64, hash_u128}`,
 //! `CountMinSketch::{WIDTH, DEPTH, insert_bytes, estimate, estimate_bytes,
 //! error_bound, confidence}`, `HeavyHitters::{K, top, cms}`,
@@ -73,8 +73,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::det_math::ln64;
-use alice_physics::sketch::{
+use alice_physics_core::det_math::ln64;
+use alice_physics_core::sketch::{
     CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HeavyHitters5, HyperLogLog, HyperLogLog10,
     Mergeable,
 };

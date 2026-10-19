@@ -55,8 +55,8 @@
     reason = "HashMap/HashSet only count or look up boundary faces in this test; no assertion depends on hash iteration order"
 )]
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sdf_fem_mesh::{generate, SdfTetMesh};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sdf_fem_mesh::{generate, SdfTetMesh};
 use std::collections::{HashMap, HashSet};
 
 fn ball_sdf(radius: f32) -> ClosureSdf {
@@ -266,9 +266,10 @@ fn a_non_manifold_mesh_is_rejected() {
         tets: Vec::new(),
     };
     for fourth in [3_u32, 4, 5] {
-        mesh.tets.push(alice_physics::sdf_fem_mesh::Tetrahedron {
-            vertices: [0, 1, 2, fourth],
-        });
+        mesh.tets
+            .push(alice_physics_core::sdf_fem_mesh::Tetrahedron {
+                vertices: [0, 1, 2, fourth],
+            });
     }
     assert!(
         mesh.boundary_faces().is_err(),

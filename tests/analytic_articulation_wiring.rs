@@ -20,9 +20,9 @@
 //!   itself is exact: `q*v*q⁻¹` with `q=(x=0,y=0,z=1,w=0)`,
 //!   `v=(0,2,0,0)` gives `q*v=(-2,0,0,0)` and `(q*v)*q⁻¹=(0,-2,0,0)` — i.e.
 //!   `(x,y,0)` maps to `(-x,-y,0)`, independently of
-//!   [`alice_physics::math::QuatFix::rotate_vec`] (this file performs the
+//!   [`alice_physics_core::math::QuatFix::rotate_vec`] (this file performs the
 //!   quaternion multiplication itself).
-//! * **`apply_motors`' wraparound**: [`alice_physics::math::Fix128::Mul`] is
+//! * **`apply_motors`' wraparound**: [`alice_physics_core::math::Fix128::Mul`] is
 //!   documented (WM-01 / doctrine B-12, `src/math.rs`) as computing the
 //!   128x128->256 product and keeping only the middle 128 bits with plain
 //!   (wrapping) arithmetic. For two integer operands `a`, `b` with `a*b` an
@@ -70,11 +70,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::articulation::{ArticulatedBody, FeatherstoneSolver};
-use alice_physics::joint::{BallJoint, FixedJoint, HingeJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::motor::PdController;
-use alice_physics::solver::RigidBody;
+use alice_physics_core::articulation::{ArticulatedBody, FeatherstoneSolver};
+use alice_physics_core::joint::{BallJoint, FixedJoint, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::motor::PdController;
+use alice_physics_core::solver::RigidBody;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn gravity() -> Vec3Fix {
@@ -537,7 +537,7 @@ fn solve_with_mass_splitting_two_half_steps_differ_from_one_full_step_by_exactly
 
 #[test]
 fn build_ragdoll_matches_its_documented_hierarchy() {
-    let (artic, bodies) = alice_physics::articulation::build_ragdoll(Vec3Fix::ZERO, 0);
+    let (artic, bodies) = alice_physics_core::articulation::build_ragdoll(Vec3Fix::ZERO, 0);
 
     assert_eq!(bodies.len(), 12);
     assert_eq!(artic.link_count(), 12);
@@ -593,7 +593,7 @@ fn build_ragdoll_matches_its_documented_hierarchy() {
 #[test]
 fn build_ragdoll_body_start_index_offsets_every_body() {
     let start = 1000;
-    let (artic, bodies) = alice_physics::articulation::build_ragdoll(Vec3Fix::ZERO, start);
+    let (artic, bodies) = alice_physics_core::articulation::build_ragdoll(Vec3Fix::ZERO, start);
 
     assert_eq!(bodies.len(), 12);
     let indices = artic.body_indices();

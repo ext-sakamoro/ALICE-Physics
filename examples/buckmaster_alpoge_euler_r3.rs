@@ -59,9 +59,9 @@
 //! horizon (several minutes: 4 scenarios x 400 steps of a 40^3 grid with 60
 //! Jacobi iterations each). The checks below run in both modes.
 
-use alice_physics::cfd_solver::{AdvectionScheme, CfdSolver};
-use alice_physics::det_math;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::{AdvectionScheme, CfdSolver};
+use alice_physics_core::det_math;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 const N: usize = 40;
 const DX_F32: f32 = 0.05; // physical domain [-1.0, 1.0]^3 → 2m / 40 = 0.05m per cell

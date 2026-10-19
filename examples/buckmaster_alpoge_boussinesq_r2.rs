@@ -62,10 +62,10 @@
 //! 500-step horizon (about two minutes). Every diagnostic is checked to be
 //! finite in both modes.
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::det_math;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::Grid3d;
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::det_math;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::Grid3d;
 
 const NX: usize = 64;
 const NY: usize = 64;

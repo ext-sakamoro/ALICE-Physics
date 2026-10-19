@@ -23,9 +23,9 @@
 //! `λ = m g h²`, `C = −(α/h²)·λ`); without accumulating the multiplier across iterations
 //! each extra iteration removes a further fraction of `C` and the joint stiffens.
 
-use alice_physics::det_math::{exp64, powf64};
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{
+use alice_physics_core::det_math::{exp64, powf64};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{
     Joint2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
 };
 

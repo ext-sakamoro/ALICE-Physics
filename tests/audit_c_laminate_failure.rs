@@ -7,10 +7,10 @@
 //! cancellation gives one at `-Xc`, `Yt`, `-Yc` and `|tau_12| = S`. A material
 //! with `Xt != Xc` and `Yt != Yc` is used so the linear terms do not vanish.
 
-use alice_physics::laminate_failure::{
+use alice_physics_core::laminate_failure::{
     failure_index, tsai_wu_failure_index, FailureCriterion, LaminateStrengths, StressState,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn stress(s1: i64, s2: i64, t12: i64) -> StressState {
     StressState {

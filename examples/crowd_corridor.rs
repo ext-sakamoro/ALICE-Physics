@@ -23,11 +23,11 @@
     reason = "analytic reference: Helbing social force A exp((r-d)/B), wall force and stopping distance with ln, asserted vs the model"
 )]
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdForceError, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
 };
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::Vec2Fix;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::Vec2Fix;
 
 // Representative values of Helbing, Farkas, Vicsek, Nature 407, 487 (2000),
 // and a view weight of the order fitted by Johansson, Helbing, Shukla (2007).

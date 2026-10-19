@@ -68,23 +68,30 @@ jobs:
   wheel:
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    name: Build, install and test the wheel
-    runs-on: ubuntu-latest
+    name: Build, install and test the wheel (${{ matrix.os }})
+    # the wheel is built from the facade (crates/alice-physics, module alice_physics) and
+    # imported on every OS the release workflow ships a wheel for
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: python-binding
+          shared-key: python-binding-${{ matrix.os }}
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Build the wheel
         run: |
           python -m pip install maturin
-          maturin build --features python --out dist/
+          maturin build -m crates/alice-physics/Cargo.toml --features python --out dist/
       - name: Install the wheel and run the binding tests
+        shell: bash
         run: |
           python -m pip install numpy dist/*.whl
           python python/tests/test_binding.py

@@ -48,10 +48,10 @@
 #![cfg(feature = "std")]
 // The f64 values here are the oracle (closed-form references), not
 
-use alice_physics::force::{ForceField, ForceFieldInstance};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::force::{ForceField, ForceFieldInstance};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 /// Gravity magnitude (m/s²), the default of `PhysicsConfig`.
 const G: f64 = 10.0;

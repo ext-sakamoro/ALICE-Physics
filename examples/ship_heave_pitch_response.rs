@@ -21,8 +21,8 @@
 //!
 //! Run with: `cargo run --example ship_heave_pitch_response`
 
-use alice_physics::math::Fix128;
-use alice_physics::wave_ship::ShipResponse;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::wave_ship::ShipResponse;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

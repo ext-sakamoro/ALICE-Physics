@@ -4,11 +4,11 @@
 //! (`cycles_to_failure` / `stress_at_cycles` / `analyze_spectrum` / 金属 preset は pub(crate))
 //! 期待値は Basquin N = N_e (S_e / S)^m と Miner D = Σ n_i / N_i を f64 で独立に評価したもの
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::fatigue::{miner_damage, SnCurve};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::fatigue::{miner_damage, SnCurve};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::structural_solver::StructuralSolver;
 
 fn curve(se: i64, ne: u64, m: u32, uts: i64) -> SnCurve {
     SnCurve {

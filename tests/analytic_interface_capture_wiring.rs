@@ -19,9 +19,11 @@
     reason = "analytic reference: f64 PLIC corner-tetrahedron cut length (6 f)^(1/3) for truncated_cube_volume in interface_capture"
 )]
 
-use alice_physics::interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::Grid3d;
+use alice_physics_core::interface_capture::{
+    plic_normal, plic_plane_offset, truncated_cube_volume,
+};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::Grid3d;
 
 fn unit(x: f64, y: f64, z: f64) -> Vec3Fix {
     let l = (x * x + y * y + z * z).sqrt();

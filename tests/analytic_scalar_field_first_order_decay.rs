@@ -10,8 +10,8 @@
 //! asks for, so `ScalarField3D::decay` rather than `smoke_fire.rs` is the
 //! matching implementation).
 
-use alice_physics::det_math;
-use alice_physics::ScalarField3D;
+use alice_physics_core::det_math;
+use alice_physics_core::ScalarField3D;
 
 fn make_field(c0: f32) -> ScalarField3D {
     let mut field = ScalarField3D::new(2, 2, 2, (0.0, 0.0, 0.0), (1.0, 1.0, 1.0));

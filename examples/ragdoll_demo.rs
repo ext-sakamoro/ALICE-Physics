@@ -7,9 +7,9 @@
 //! cargo run --example ragdoll_demo --features std
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::ragdoll::{Bone, RagdollBuilder, RagdollProportions};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::ragdoll::{Bone, RagdollBuilder, RagdollProportions};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
 
 fn main() {
     let mut world = PhysicsWorld::new(PhysicsConfig {

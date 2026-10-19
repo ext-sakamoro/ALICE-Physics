@@ -16,7 +16,7 @@
 //! // ignored: requires the external `alice_sdf` crate and the `physics_bridge`
 //! // feature, which are not available in this crate's doc-test environment.
 //! use alice_sdf::CompiledSdf;
-//! use alice_physics::sdf_collider::{SdfCollider, SdfField};
+//! use alice_physics_core::sdf_collider::{SdfCollider, SdfField};
 //!
 //! // CompiledSdf implements SdfField via the physics_bridge feature
 //! let sdf = CompiledSdf::compile(&node);
@@ -136,7 +136,7 @@ type NormalFn = Box<dyn Fn(f32, f32, f32) -> (f32, f32, f32) + Send + Sync>;
 /// Allows connecting any SDF evaluation function without trait implementation.
 ///
 /// ```
-/// use alice_physics::sdf_collider::ClosureSdf;
+/// use alice_physics_core::sdf_collider::ClosureSdf;
 ///
 /// let sdf = ClosureSdf::new(
 ///     |x, y, z| ((x*x + y*y + z*z).sqrt() - 1.0), // sphere r=1
@@ -217,7 +217,7 @@ impl<T: SdfField + ?Sized> SdfQuery for T {
 /// `Sync`: they may borrow local data for the length of a query.
 ///
 /// ```
-/// use alice_physics::sdf_collider::{ClosureSdfQuery, SdfQuery};
+/// use alice_physics_core::sdf_collider::{ClosureSdfQuery, SdfQuery};
 ///
 /// let radius = 2.0_f32; // a local, borrowed by the closure
 /// let sdf = ClosureSdfQuery::new(
@@ -289,7 +289,7 @@ where
 /// Requires the `std` feature (the normal needs `f32::sqrt`).
 ///
 /// ```
-/// use alice_physics::sdf_collider::{DistanceSdfQuery, SdfQuery};
+/// use alice_physics_core::sdf_collider::{DistanceSdfQuery, SdfQuery};
 ///
 /// let radius = 2.0_f32; // a local, borrowed by the closure
 /// let sdf = DistanceSdfQuery::new(|x: f32, y: f32, z: f32| {

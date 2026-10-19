@@ -5,7 +5,7 @@
 //! so that derived state must not survive it: stepping a restored world has to give
 //! exactly what stepping a world built from the same blob gives.
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepState, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepState, Vec3Fix};
 
 fn dt() -> Fix128 {
     Fix128::from_ratio(1, 60)

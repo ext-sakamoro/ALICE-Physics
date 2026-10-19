@@ -1,4 +1,4 @@
-//! Oracles for the production entry point of `alice_physics::bvh::BvhNode`
+//! Oracles for the production entry point of `alice_physics_core::bvh::BvhNode`
 //! driven by `examples/bvh_leaf_aabb_roundtrip.rs`: `get_aabb`.
 //!
 //! # What this file is and is not
@@ -40,9 +40,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::bvh::{BvhNode, BvhPrimitive, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::bvh::{BvhNode, BvhPrimitive, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn unit_box(x: i64, y: i64, z: i64) -> AABB {
     AABB::new(

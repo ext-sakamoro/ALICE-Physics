@@ -7,8 +7,8 @@
 //! cargo run --example cloth_simulation --features std
 //! ```
 
-use alice_physics::cloth::{Cloth, ClothConfig};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cloth::{Cloth, ClothConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn main() {
     // Create a 2m x 2m cloth grid with 10x10 particles

@@ -15,9 +15,9 @@
     reason = "the example indexes the parallel xs array and evaluator slots by the same body index i in several loops"
 )]
 
-use alice_physics::math::{QuatFix, Vec3Fix};
-use alice_physics::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::math::{QuatFix, Vec3Fix};
+use alice_physics_core::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
 fn sphere_at(x: i64) -> SdfCollider {
     let f = ClosureSdf::new(

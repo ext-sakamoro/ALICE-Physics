@@ -8,9 +8,9 @@
 //! one cycle is `1 / 31250`.
 #![cfg(feature = "std")]
 
-use alice_physics::fatigue::{miner_damage, SnCurve};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::fatigue::{miner_damage, SnCurve};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 
 fn presets() -> [MaterialProperties; 8] {
     [

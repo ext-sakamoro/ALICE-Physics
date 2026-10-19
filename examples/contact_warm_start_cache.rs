@@ -50,10 +50,10 @@
 //! cargo run --example contact_warm_start_cache --features std
 //! ```
 
-use alice_physics::collider::Contact;
-use alice_physics::contact_cache::{BodyPairKey, ContactCache};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::collider::Contact;
+use alice_physics_core::contact_cache::{BodyPairKey, ContactCache};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn fi(n: i64) -> Fix128 {
     Fix128::from_int(n)

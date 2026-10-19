@@ -1,15 +1,15 @@
-//! Audit oracles for `alice_physics::interpolation`.
+//! Audit oracles for `alice_physics_core::interpolation`.
 //! Expected values are closed forms in f64 (affine blend, NLERP/SLERP angle formulas).
 #![allow(
     clippy::disallowed_methods,
     reason = "analytic reference: f64 quaternion about y and NLERP/SLERP angle 2 atan2(|v|, w) for interpolation"
 )]
 
-use alice_physics::interpolation::{
+use alice_physics_core::interpolation::{
     lerp_fix128, lerp_vec3, slerp, BodySnapshot, InterpolationState, WorldSnapshot,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -248,7 +248,7 @@ fn snapshot_velocity_does_not_influence_interpolated_pose() {
 /// capture() copies pose and velocity per body in index order; `from_body` is a pure copy.
 #[test]
 fn capture_preserves_order_and_all_three_fields() {
-    use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
+    use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
     let mut w = PhysicsWorld::new(PhysicsConfig::default());
     let mut b0 = RigidBody::new_dynamic(Vec3Fix::from_int(1, 2, 3), Fix128::ONE);
     b0.velocity = Vec3Fix::from_int(4, 5, 6);

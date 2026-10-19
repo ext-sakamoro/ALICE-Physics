@@ -23,12 +23,12 @@
     reason = "analytic reference: f64 log-law u+ = ln(y+)/0.41 + 5.5 for the cfd_solver wall summary envelope"
 )]
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     AdvectionScheme, CfdSolver, PressureSolver, StepError, StepOptions, WallModel,
 };
-use alice_physics::eulerian_grid::FaceBc;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::{initialize_level_set_sphere, Grid3d};
+use alice_physics_core::eulerian_grid::FaceBc;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::{initialize_level_set_sphere, Grid3d};
 
 fn q(a: i64, b: i64) -> Fix128 {
     Fix128::from_ratio(a, b)

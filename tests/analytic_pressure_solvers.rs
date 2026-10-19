@@ -56,9 +56,9 @@
     reason = "analytic reference: f64 residual floor 2^-24 in the expected divergence bound for CfdSolver pressure solvers"
 )]
 
-use alice_physics::cfd_solver::{CfdSolver, PressureSolver, PressureSolverError};
-use alice_physics::eulerian_grid::MacGrid;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::{CfdSolver, PressureSolver, PressureSolverError};
+use alice_physics_core::eulerian_grid::MacGrid;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 const N: usize = 8;
 
@@ -482,7 +482,7 @@ fn degenerate_inputs_are_refused_and_leave_the_solver_untouched() {
 /// nothing would make a logged refusal unreadable).
 #[test]
 fn every_refusal_displays_itself() {
-    use alice_physics::cfd_solver::PressureSolverError as E;
+    use alice_physics_core::cfd_solver::PressureSolverError as E;
     for e in [
         E::ZeroTimeStep,
         E::ZeroDensity,

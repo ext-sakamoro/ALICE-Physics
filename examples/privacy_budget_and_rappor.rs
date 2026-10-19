@@ -18,8 +18,8 @@
 //! cargo run --example privacy_budget_and_rappor --features std
 //! ```
 
-use alice_physics::det_math::exp64;
-use alice_physics::privacy::{
+use alice_physics_core::det_math::exp64;
+use alice_physics_core::privacy::{
     dp_int, randomized_response, DpNoise, KeyedRappor, PrivacyBudget, PrivateAggregator, SecureRng,
     RAPPOR_BITS,
 };

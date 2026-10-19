@@ -18,9 +18,11 @@
 //! cargo run --example vof_level_set_transport --features std
 //! ```
 
-use alice_physics::cfd_solver::{CfdSolver, LevelSetReinit, PressureSolver, StepOptions};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::{advect_vof_rigid, initialize_level_set_sphere, Grid3d, VofScheme};
+use alice_physics_core::cfd_solver::{CfdSolver, LevelSetReinit, PressureSolver, StepOptions};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::{
+    advect_vof_rigid, initialize_level_set_sphere, Grid3d, VofScheme,
+};
 
 /// An `n`-cell line along `x` with the fraction `1` in `[lo, hi)`.
 fn slab(n: usize, dx: Fix128, lo: usize, hi: usize) -> Grid3d {

@@ -1,5 +1,5 @@
 //! Material presets and failure-criterion evaluation of
-//! `alice_physics::laminate_failure`.
+//! `alice_physics_core::laminate_failure`.
 //!
 //! Drives the two strength presets (`LaminateStrengths::cfrp_ud` /
 //! `gfrp_ud`) through all four in-plane failure criteria
@@ -41,11 +41,11 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::laminate_failure::{
+    use alice_physics_core::laminate_failure::{
         failure_index, hashin_failure_mode, puck_failure_mode, tsai_hill_failure_index,
         tsai_wu_failure_index, FailureCriterion, FailureMode, LaminateStrengths, StressState,
     };
-    use alice_physics::math::Fix128;
+    use alice_physics_core::math::Fix128;
 
     // `try_new` accepts strictly positive strengths and rejects the rest.
     let cfrp = LaminateStrengths::cfrp_ud();

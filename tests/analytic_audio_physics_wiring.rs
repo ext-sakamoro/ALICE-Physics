@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::audio_physics`
+//! Oracles for the production entry points of `alice_physics_core::audio_physics`
 //! driven by `examples/audio_physics_events.rs`: `AudioMaterial::{METAL,
 //! RUBBER, STONE}` and `AudioGenerator::{set_material, process_contact,
 //! get_events}`.
@@ -66,11 +66,11 @@
 //!   below exercises the gate with a non-default config to prove it has
 //!   teeth at all.
 
-use alice_physics::audio_physics::{
+use alice_physics_core::audio_physics::{
     AudioConfig, AudioEventType, AudioGenerator, AudioMaterial, MaterialType,
 };
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn fi(n: i64) -> Fix128 {

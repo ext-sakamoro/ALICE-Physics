@@ -26,12 +26,12 @@
     reason = "analytic reference: f64 Basquin life Ne (Se/S)^m and Euler column buckling pi^2 E I/(KL)^2 for structural_solver"
 )]
 
-use alice_physics::beam_stress::{ColumnEndCondition, CrossSection, LoadCase};
-use alice_physics::buckling::SnapThroughError;
-use alice_physics::fatigue::{FatigueRangeError, SnCurve};
-use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
-use alice_physics::math::Fix128;
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{ColumnEndCondition, CrossSection, LoadCase};
+use alice_physics_core::buckling::SnapThroughError;
+use alice_physics_core::fatigue::{FatigueRangeError, SnCurve};
+use alice_physics_core::filament_db::{MaterialCategory, MaterialProperties};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::structural_solver::StructuralSolver;
 
 fn int(n: i64) -> Fix128 {
     Fix128::from_int(n)

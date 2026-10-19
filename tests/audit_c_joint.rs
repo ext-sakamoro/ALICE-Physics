@@ -8,9 +8,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::joint::{solve_joints, BallJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::joint::{solve_joints, BallJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 /// `dt = 1/64`, 8 substeps: `h = 1/512` (exact).
 fn dt() -> Fix128 {
@@ -140,13 +140,13 @@ fn self_joints_of_every_kind_are_skipped_and_never_break() {
         deprecated,
         reason = "imports the deprecated separation-based solve_joints_breakable so the tests below can pin it until removal"
     )]
-    use alice_physics::joint::solve_joints_breakable;
-    use alice_physics::joint::{
+    use alice_physics_core::joint::solve_joints_breakable;
+    use alice_physics_core::joint::{
         solve_joints, BallJoint, ConeTwistJoint, D6Joint, FixedJoint, HingeJoint, Joint,
         SliderJoint, SpringJoint,
     };
-    use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-    use alice_physics::solver::RigidBody;
+    use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+    use alice_physics_core::solver::RigidBody;
     let la = Vec3Fix::from_int(1, 0, 0);
     let lb = Vec3Fix::from_int(-1, 0, 0);
     let joints = [

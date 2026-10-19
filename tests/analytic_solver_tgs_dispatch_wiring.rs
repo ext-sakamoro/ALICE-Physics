@@ -31,9 +31,9 @@
 //! `src/solver_tgs_hooks_6dof_oriented.rs`), never by calling `sweep`,
 //! `stats`, or `step` itself to produce the expected side.
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -137,7 +137,7 @@ fn sweep_evicts_a_contact_that_stops_recurring() {
 /// not depend on how the counts were produced).
 #[test]
 fn tgs_cache_stats_hit_rate_matches_hand_derived_ratio() {
-    use alice_physics::TgsCacheStats;
+    use alice_physics_core::TgsCacheStats;
 
     let empty = TgsCacheStats::default();
     assert_eq!((empty.hits, empty.misses), (0, 0));

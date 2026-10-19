@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::hyperelastic`
+//! Oracles for the production entry points of `alice_physics_core::hyperelastic`
 //! driven by `examples/hyperelastic_material_presets.rs`: `Stretch::{UNITY,
 //! uniaxial, equibiaxial, i1, i2, volume_ratio}`, `HyperelasticModel::{
 //! tpu_soft, silicone_soft, natural_rubber}`, `strain_energy_density`,
@@ -72,11 +72,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::hyperelastic::{
+use alice_physics_core::hyperelastic::{
     small_strain_shear_modulus, strain_energy_density, uniaxial_cauchy_stress, HyperelasticModel,
     Stretch,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn fx(v: f64) -> Fix128 {

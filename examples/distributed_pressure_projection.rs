@@ -18,12 +18,12 @@
 //!
 //! Run with `cargo run --release --example distributed_pressure_projection`.
 
-use alice_physics::cfd_solver::PressureSolver;
-use alice_physics::eulerian_grid::{
+use alice_physics_core::cfd_solver::PressureSolver;
+use alice_physics_core::eulerian_grid::{
     project_pressure, project_pressure_distributed, project_pressure_distributed_with_report,
     project_pressure_multigrid, MacGrid,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 /// A closed 16³ box with a deterministic, structureless velocity field.
 fn seeded(n: usize) -> MacGrid {

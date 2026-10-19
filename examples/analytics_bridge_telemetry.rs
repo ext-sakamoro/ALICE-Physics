@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::analytics_bridge::PhysicsTelemetry`
+//! Production entry point for `alice_physics_core::analytics_bridge::PhysicsTelemetry`
 //! (the `analytics` feature's `ALICE-Analytics` profiling bridge).
 //!
 //! A hand-built 200-step run is fed through every recorder
@@ -28,7 +28,7 @@
 //! cargo run --example analytics_bridge_telemetry --features std,analytics
 //! ```
 
-use alice_physics::analytics_bridge::PhysicsTelemetry;
+use alice_physics_core::analytics_bridge::PhysicsTelemetry;
 
 const ALPHA: f64 = PhysicsTelemetry::ALPHA;
 

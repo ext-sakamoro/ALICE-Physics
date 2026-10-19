@@ -1,12 +1,12 @@
-//! Audit S1-5 oracles for `alice_physics::compressible` (closed forms: Anderson,
+//! Audit S1-5 oracles for `alice_physics_core::compressible` (closed forms: Anderson,
 //! Modern Compressible Flow; normal-shock tables for gamma = 1.4).
 #![allow(
     clippy::disallowed_methods,
     reason = "analytic reference: f64 isentropic stagnation ratios (1 + (g-1)/2 M^2)^(g/(g-1)) (Anderson) for compressible flow"
 )]
 
-use alice_physics::compressible::*;
-use alice_physics::math::Fix128;
+use alice_physics_core::compressible::*;
+use alice_physics_core::math::Fix128;
 
 fn f(x: f64) -> Fix128 {
     Fix128::from_f64(x)

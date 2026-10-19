@@ -13,9 +13,9 @@
 //! cargo run --example sealed_box_adaptive_dt --features std
 //! ```
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::eulerian_grid::FaceBc;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::eulerian_grid::FaceBc;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn main() {
     let n = 8usize;

@@ -34,8 +34,8 @@
     reason = "analytic reference: f64 forward-Euler factor (1 - nu mu dt)^n and discrete eigenvalue of the cosine shear-diffusion mode for CfdSolver"
 )]
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use core::f64::consts::PI;
 
 const NX: usize = 64;

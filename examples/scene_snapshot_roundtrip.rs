@@ -12,12 +12,12 @@
 //! cargo run --release --example scene_snapshot_roundtrip --features std
 //! ```
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::scene_io::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::scene_io::{
     load_scene_json, save_scene_json, PhysicsConfig, PhysicsScene, SerializedBody,
     CURRENT_SCENE_VERSION,
 };
-use alice_physics::solver::{PhysicsConfig as WorldConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::solver::{PhysicsConfig as WorldConfig, PhysicsWorld, RigidBody};
 
 fn limbs3(v: Vec3Fix) -> [i64; 6] {
     [

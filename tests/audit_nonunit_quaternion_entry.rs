@@ -30,15 +30,15 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::debug_render::{debug_draw_world, DebugDrawData, DebugDrawFlags};
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sensors::{Imu, Lidar};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::world_participant::{
+use alice_physics_core::debug_render::{debug_draw_world, DebugDrawData, DebugDrawFlags};
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sensors::{Imu, Lidar};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
 };
 
@@ -426,7 +426,7 @@ fn kinematic_target_rotation_is_unit() {
         for direct in [false, true] {
             let mut w = PhysicsWorld::new(zero_gravity());
             let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
-            body.body_type = alice_physics::solver::BodyType::Kinematic;
+            body.body_type = alice_physics_core::solver::BodyType::Kinematic;
             let i = w.add_body(body);
             if direct {
                 w.bodies[i].kinematic_target = Some((v3(1.0, 0.0, 0.0), qs));
@@ -452,7 +452,7 @@ fn kinematic_target_rotation_is_unit() {
 /// length: `step` with either backend, and `step_parallel`.
 #[test]
 fn every_step_path_makes_a_field_rotation_unit() {
-    use alice_physics::solver::SolverBackend;
+    use alice_physics_core::solver::SolverBackend;
     let q = turn();
     for s in SCALES {
         let qs = scaled(q, fx(s));
@@ -480,14 +480,14 @@ fn every_step_path_makes_a_field_rotation_unit() {
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridge {
     use super::*;
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::solver::ContactConstraint;
 
     pub(super) struct PassThrough;
 
     impl GpuSolverBridge for PassThrough {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -566,7 +566,7 @@ impl Participant for Recorder {
 /// one and the bridge one) that is already the unit rotation.
 #[test]
 fn participants_see_the_unit_rotation_on_every_step_path() {
-    use alice_physics::solver::SolverBackend;
+    use alice_physics_core::solver::SolverBackend;
     let q = turn();
     for s in SCALES {
         let qs = scaled(q, fx(s));

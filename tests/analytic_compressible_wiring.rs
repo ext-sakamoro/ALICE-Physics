@@ -75,12 +75,12 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use alice_physics::compressible::{
+use alice_physics_core::compressible::{
     normal_shock_jump, riemann_invariants, stagnation_pressure_ratio, stagnation_temp_ratio,
     IdealGas, ShockJump,
 };
-use alice_physics::det_math::{powf64, sqrt64};
-use alice_physics::math::Fix128;
+use alice_physics_core::det_math::{powf64, sqrt64};
+use alice_physics_core::math::Fix128;
 
 fn rel_err(got: f64, want: f64) -> f64 {
     if want == 0.0 {

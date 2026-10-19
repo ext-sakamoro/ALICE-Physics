@@ -1,5 +1,5 @@
 //! Anisotropic material off-axis modulus and failure-analysis production
-//! entry point for `alice_physics::anisotropic`: `OrthotropicElasticity::
+//! entry point for `alice_physics_core::anisotropic`: `OrthotropicElasticity::
 //! {e_at_angle_lt, e_at_angle_lz}`, `OrthotropicStress::axial`,
 //! `evaluate_failure`, and its `FailureReport` output.
 //!
@@ -30,11 +30,11 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::anisotropic::{
+use alice_physics_core::anisotropic::{
     evaluate_failure, AnisotropicStrength, FailureCriterion, FailureReport, OrthotropicElasticity,
     OrthotropicStress,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 /// Relative-error check against an independently hand-derived f64 closed
 /// form. The expected value (`want`) is computed by a formula written
@@ -99,7 +99,7 @@ fn cfrp_strength() -> AnisotropicStrength {
 /// them here) so this function never calls a trigonometric method itself
 /// -- `clippy.toml`'s `disallowed-methods` bans `f64::sin`/`f64::cos`
 /// crate-wide (determinism gate: every transcendental must go through
-/// `alice_physics::det_math`, not the platform libm) and that ban applies
+/// `alice_physics_core::det_math`, not the platform libm) and that ban applies
 /// to `--all-targets`, including this example.
 fn jones_e_ref(e_a: f64, e_b: f64, g_ab: f64, nu_ab: f64, c: f64, s: f64) -> f64 {
     let c2 = c * c;

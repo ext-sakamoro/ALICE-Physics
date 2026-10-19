@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::animation_blend`.
+//! Audit oracles for `alice_physics_core::animation_blend`.
 //! Reference values: linear interpolation of keyframes, constant-angular-velocity SLERP about a
 //! fixed axis (closed form: rotation by `t * arc`), loop/clamp time arithmetic, and the stated
 //! transition speed (weight units per second).
@@ -7,10 +7,10 @@
     reason = "analytic reference: f64 constant-angular-velocity SLERP rotation and angle 2 atan2(|v|, w) for animation_blend"
 )]
 
-use alice_physics::animation_blend::{
+use alice_physics_core::animation_blend::{
     AnimationBlender, AnimationClip, BlendMode, BonePose, Keyframe, SkeletonPose,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

@@ -27,11 +27,11 @@
     deprecated,
     reason = "imports the deprecated separation-based solve_joints_breakable so the tests below can pin it until removal"
 )]
-use alice_physics::joint::solve_joints_breakable;
-use alice_physics::joint::{solve_joints, BallJoint, FixedJoint, HingeJoint, Joint};
-use alice_physics::joint_extra::{solve_extra_joints, ExtraJoint, WeldJoint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::joint::solve_joints_breakable;
+use alice_physics_core::joint::{solve_joints, BallJoint, FixedJoint, HingeJoint, Joint};
+use alice_physics_core::joint_extra::{solve_extra_joints, ExtraJoint, WeldJoint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 const G: f64 = 10.0;
 const ALPHA: f64 = 1e-3;

@@ -21,7 +21,7 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 const FRAMES: usize = 30;
 

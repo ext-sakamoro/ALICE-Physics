@@ -17,10 +17,10 @@
     reason = "analytic reference: f64 quaternion and cylinder SDF for sharp/smooth subtraction in sdf_destruction"
 )]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sdf_destruction::{
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sdf_destruction::{
     destruction_from_explosion, destruction_from_impact, destruction_from_projectile,
     DestructibleSdf, DestructionShape, DestructionType,
 };

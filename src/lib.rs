@@ -38,7 +38,7 @@
 //! # Example
 //!
 //! ```rust
-//! use alice_physics::{PhysicsWorld, PhysicsConfig, RigidBody, Fix128, Vec3Fix};
+//! use alice_physics_core::{PhysicsWorld, PhysicsConfig, RigidBody, Fix128, Vec3Fix};
 //!
 //! // Create physics world
 //! let config = PhysicsConfig::default();
@@ -212,10 +212,10 @@ compile_error!("Feature `wasm` requires `std`.");
 extern crate alloc;
 
 // Test builds only: lets a module compile an integration test file (which
-// names the crate `alice_physics`) as part of the lib tests, so its lines count
+// names the crate `alice_physics_core`) as part of the lib tests, so its lines count
 // in the `--lib` coverage.
 #[cfg(test)]
-extern crate self as alice_physics;
+extern crate self as alice_physics_core;
 
 pub mod acoustic_wave;
 pub mod aeroelasticity;
@@ -268,7 +268,7 @@ pub mod deformable;
 ///
 /// Since 1.3.0 the implementation lives in the [`alice_det_math`] crate;
 /// every function here is an `#[inline]` delegation to it, so
-/// `alice_physics::det_math::sin` and `alice_det_math::sin` are the same law
+/// `alice_physics_core::det_math::sin` and `alice_det_math::sin` are the same law
 /// — ALICE-SDF's evaluator uses the same crate, which is what makes the
 /// `SdfField` boundary bit-exact across the two. Available without `std`
 /// (software `sqrt`; same bits).

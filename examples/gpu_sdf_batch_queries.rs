@@ -16,12 +16,12 @@
 //! cargo run --example gpu_sdf_batch_queries --features std
 //! ```
 
-use alice_physics::gpu_sdf::{
+use alice_physics_core::gpu_sdf::{
     batch_size, execute_batch_cpu, GpuDispatchConfig, GpuSdfBatch, GpuSdfContact,
     GpuSdfMultiDispatch, GpuSdfQuery, SDF_EVAL_WGSL,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_collider::ClosureSdf;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_collider::ClosureSdf;
 
 /// Unit sphere centred at the origin — matches `SDF_EVAL_WGSL`'s placeholder
 /// `sdf_distance` formula (`length(vec3(x, y, z)) - 1.0`) exactly.

@@ -10,9 +10,9 @@
 //! integration `A = sum Q-bar t`, `D = sum Q-bar (z_top^3 - z_bot^3) / 3` is
 //! done in `f64` from the mid-plane.
 
-use alice_physics::anisotropic::OrthotropicElasticity;
-use alice_physics::laminate::{compute_abd, is_symmetric_stack, AbdMatrix, Ply, Sym3};
-use alice_physics::math::Fix128;
+use alice_physics_core::anisotropic::OrthotropicElasticity;
+use alice_physics_core::laminate::{compute_abd, is_symmetric_stack, AbdMatrix, Ply, Sym3};
+use alice_physics_core::math::Fix128;
 
 const E_L: f64 = 140_000.0;
 const E_T: f64 = 10_000.0;

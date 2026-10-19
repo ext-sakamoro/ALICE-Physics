@@ -57,8 +57,12 @@ python3 scripts/check_eol.py
 python3 scripts/test_workflow_timeouts.py
 python3 scripts/workflow_timeouts.py
 
-step "cargo fmt --check"
-cargo fmt -- --check
+step "cargo fmt --check (every workspace member)"
+cargo fmt --all -- --check
+
+step "facade check (features both ways, glob-only lib, generated path test)"
+python3 scripts/test_facade_check.py
+python3 scripts/facade_check.py
 
 # every generated file and generated table at once (each later check stops the run at
 # the first stale one; this lists all of them before the slow steps)
@@ -86,6 +90,7 @@ python3 scripts/preflight_ci_parity.py
 python3 scripts/test_fuzz_targets.py
 python3 scripts/fuzz_targets.py --check
 python3 scripts/test_semver_checked.py
+python3 scripts/test_semver_baseline_has.py
 python3 scripts/test_ansi.py
 python3 scripts/test_changed_paths.py
 python3 scripts/changed_paths.py sync
@@ -176,6 +181,7 @@ python3 scripts/test_ci_load_check.py
 python3 scripts/ci_load_check.py
 python3 scripts/test_downstream_select_tag.py
 python3 scripts/test_downstream_major_rewrite.py
+python3 scripts/test_downstream_path_rewrite.py
 python3 scripts/test_downstream_test_counts.py
 python3 scripts/test_downstream_trt_probe.py
 python3 scripts/test_downstream_resolve.py
@@ -270,6 +276,10 @@ cargo clippy --all-targets -- -D warnings
 step "clippy -D warnings (native feature set, all targets)"
 cargo clippy --all-targets --features "$NATIVE" -- -D warnings
 
+step "clippy -D warnings (the facade, native feature set, all targets) + each forwarded feature builds"
+cargo clippy -p alice-physics --all-targets --features "$NATIVE" -- -D warnings
+python3 scripts/facade_check.py --build-features
+
 # CI's "Clippy (full native feature set, lib + all targets)" job adds
 # neural,analytics on top of $NATIVE. A sibling-bridge feature can pull in a
 # dependency that adds a competing trait impl, which only surfaces as an
@@ -343,6 +353,9 @@ cargo test --lib --features "simd"
 step "float environment (G14, debug and release, both tests must pass)"
 scripts/run_tests.sh float_environment=2 -- cargo test --test float_environment
 scripts/run_tests.sh float_environment=2 -- cargo test --release --test float_environment
+scripts/run_tests.sh facade_paths=1 -- cargo test -p alice-physics --features "std,simd,parallel,ffi,gpu-solver-bridge" --test facade_paths
+scripts/run_tests.sh facade_identity=3 -- cargo test -p alice-physics --features "std,simd,parallel,ffi,gpu-solver-bridge" --test facade_identity
+cargo test -p alice-physics --doc
 
 # same command as ci.yml: the semantics identifier with the gated stepping
 # paths' features (`cargo test` above runs the file with default features)
@@ -364,6 +377,10 @@ step "WebAssembly binding from JavaScript (cargo rustc + wasm-bindgen CLI + node
 command -v wasm-bindgen >/dev/null && command -v node >/dev/null \
   || { echo "the wasm-bindgen CLI (Cargo.lock's version) and node are needed (cargo install wasm-bindgen-cli --version <ver> --locked; node 18+)" >&2; exit 1; }
 bash scripts/run_js_binding_tests.sh
+python3 scripts/facade_wasm_check.py
+
+step "C ABI libraries: the facade's cdylib / staticlib export the engine's symbols (release; CI job facade-artifacts)"
+python3 scripts/facade_artifacts.py
 
 step "Python binding (maturin wheel + python/tests/test_binding.py; CI python-binding.yml)"
 # a venv under the target dir with maturin and numpy, made once
@@ -371,7 +388,7 @@ py_target="${CARGO_TARGET_DIR:-target}"
 py_venv="$py_target/python-binding-venv"
 [ -x "$py_venv/bin/maturin" ] || { python3 -m venv "$py_venv" && "$py_venv/bin/pip" install -q maturin numpy; }
 rm -rf "$py_target/python-wheels"
-"$py_venv/bin/maturin" build --features python --out "$py_target/python-wheels"
+"$py_venv/bin/maturin" build -m crates/alice-physics/Cargo.toml --features python --out "$py_target/python-wheels"
 "$py_venv/bin/pip" install -q --force-reinstall "$py_target"/python-wheels/*.whl
 "$py_venv/bin/python" python/tests/test_binding.py
 

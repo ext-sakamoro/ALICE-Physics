@@ -10,9 +10,9 @@
 //! cargo run --release --example print_orientation_axes --features std
 //! ```
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::print_orientation::{optimize_grid, LoadDirection};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::print_orientation::{optimize_grid, LoadDirection};
 
 fn main() {
     let pla = MaterialProperties::pla();

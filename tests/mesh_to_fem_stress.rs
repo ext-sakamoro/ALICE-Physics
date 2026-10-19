@@ -2,7 +2,7 @@
 //!
 //! `mesh_conformity.rs` says the elements fit together and `mesh_quality.rs`
 //! says they are not slivers. Neither says the mesh can be handed to
-//! [`alice_physics::linear_elastic_fem`] and produce a stress field worth
+//! [`alice_physics_core::linear_elastic_fem`] and produce a stress field worth
 //! reading, and that is the only reason the mesher exists. This file measures
 //! it end to end, on both generators, and the two answers are different enough
 //! that the difference is the point.
@@ -89,12 +89,12 @@
 
 use std::collections::HashMap;
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve, Axis, BoundaryConditions, ElasticMaterial, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
 
 /// A bar, deliberately not aligned with the lattice.
 ///

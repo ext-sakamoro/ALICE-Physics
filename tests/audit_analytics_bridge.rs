@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::analytics_bridge::PhysicsTelemetry`.
+//! Audit oracles for `alice_physics_core::analytics_bridge::PhysicsTelemetry`.
 //!
 //! Percentile expectations are nearest-rank values of known sample sets
 //! with the documented relative accuracy `alpha`; cardinality expectations
@@ -11,7 +11,7 @@
     reason = "test input: powi builds the step-time ladder 1e-2 to 1e8; the expected percentiles are literals"
 )]
 
-use alice_physics::analytics_bridge::PhysicsTelemetry;
+use alice_physics_core::analytics_bridge::PhysicsTelemetry;
 
 /// Relative accuracy documented for the sketches (5 %), written as a
 /// literal so the oracle does not move with the constant under test.

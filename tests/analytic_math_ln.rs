@@ -25,7 +25,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::Fix128;
+use alice_physics_core::Fix128;
 
 fn close(actual: f64, expected: f64, rel_tol: f64) -> bool {
     let diff = (actual - expected).abs();

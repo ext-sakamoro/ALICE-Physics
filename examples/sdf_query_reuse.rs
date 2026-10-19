@@ -22,11 +22,11 @@
 //!
 //! Run with: `cargo run --example sdf_query_reuse`
 
-use alice_physics::gpu_sdf::{execute_batch_cpu, GpuDispatchConfig, GpuSdfBatch};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
+use alice_physics_core::gpu_sdf::{execute_batch_cpu, GpuDispatchConfig, GpuSdfBatch};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
 
 fn unit_sphere() -> ClosureSdf {
     ClosureSdf::new(

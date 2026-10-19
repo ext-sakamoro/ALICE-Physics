@@ -1,4 +1,4 @@
-//! Round-trip and boundary oracles for the wiring of `alice_physics::fluid_netcode`:
+//! Round-trip and boundary oracles for the wiring of `alice_physics_core::fluid_netcode`:
 //! `FluidDelta::changed_count`, `FluidDelta::compression_ratio`,
 //! `FluidSnapshot::size_bytes`, `FluidSnapshot::restore`, `FluidSnapshot::verify`
 //! (`examples/fluid_netcode_roundtrip.rs`).
@@ -15,8 +15,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::fluid_netcode::{FluidDelta, FluidSnapshot};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::fluid_netcode::{FluidDelta, FluidSnapshot};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn line_positions(n: usize) -> Vec<Vec3Fix> {
     (0..n).map(|i| Vec3Fix::from_int(i as i64, 0, 0)).collect()

@@ -12,15 +12,15 @@
 //! cargo run --release --example cloth_self_contact_crumple --features std
 //! ```
 
-use alice_physics::cloth::Cloth;
-use alice_physics::math::Fix128;
+use alice_physics_core::cloth::Cloth;
+use alice_physics_core::math::Fix128;
 
 const RES: usize = 9;
 const STEPS: usize = 120;
 
 fn crossings(self_collision: bool) -> usize {
     let mut cloth = Cloth::new_grid(
-        alice_physics::math::Vec3Fix::ZERO,
+        alice_physics_core::math::Vec3Fix::ZERO,
         Fix128::from_int(8),
         Fix128::from_int(8),
         RES,

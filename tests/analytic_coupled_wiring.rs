@@ -32,15 +32,15 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_field::{
+use alice_physics_core::coupled_field::{
     reconcile_mean, reconcile_weighted, CoupledField, CoupledFieldError, CoupledScalar,
 };
-use alice_physics::coupled_iteration::{ConfigFault, EquilibrationScale};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_iteration::{ConfigFault, EquilibrationScale};
+use alice_physics_core::linear_elastic_fem::{
     solve, Axis, BoundaryConditions, ElasticMaterial, FemError, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

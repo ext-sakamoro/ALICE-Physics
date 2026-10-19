@@ -8,8 +8,8 @@
 //! shift) and hashes, every frame, the chassis state and every field of the
 //! vehicle state.
 
-use alice_physics::vehicle::{Vehicle, VehicleConfig};
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::vehicle::{Vehicle, VehicleConfig};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 use sha2::{Digest, Sha256};
 
 fn put(h: &mut Sha256, f: Fix128) {

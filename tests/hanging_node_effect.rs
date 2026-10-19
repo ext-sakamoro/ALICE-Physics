@@ -86,9 +86,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::linear_elastic_fem::{solve, BoundaryConditions, ElasticMaterial, SolverConfig};
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::linear_elastic_fem::{
+    solve, BoundaryConditions, ElasticMaterial, SolverConfig,
+};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -569,7 +571,7 @@ fn constraining_the_hanging_node_to_its_parent_edge_closes_the_tear() {
 /// - **Effect**: measured, without implementing it, in
 ///   [`constraining_the_hanging_node_to_its_parent_edge_closes_the_tear`]: the
 ///   tear closes to 2.6e-17 and the linear patch test is restored exactly.
-/// - **Cost**: touches [`alice_physics::linear_elastic_fem`] — the matrix-free
+/// - **Cost**: touches [`alice_physics_core::linear_elastic_fem`] — the matrix-free
 ///   product has to apply the constraint on the way in and its transpose on the
 ///   way out. That is the component with the delicate numerics, which argues
 ///   against going first.

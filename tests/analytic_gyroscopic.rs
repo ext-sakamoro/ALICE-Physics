@@ -33,10 +33,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::det_math::atan2_64;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::det_math::atan2_64;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 const FRAME_DT: f64 = 1.0 / 60.0;
 const SUBSTEPS: usize = 8;
@@ -697,7 +697,7 @@ fn f_tgs_contact_change_of_omega_reaches_the_orientation() {
 /// `60 · ½ dt² · 16 ≈ 0.13` rad; the swing itself is `> 1` rad.
 #[test]
 fn f_joint_change_of_omega_reaches_the_angular_velocity() {
-    use alice_physics::joint::{BallJoint, Joint};
+    use alice_physics_core::joint::{BallJoint, Joint};
     for (backend, e) in entries()
         .into_iter()
         .filter(|(b, _)| *b == SolverBackend::Xpbd)

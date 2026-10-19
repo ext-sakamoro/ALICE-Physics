@@ -21,9 +21,9 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_ccd::{sphere_trace_sdf, sphere_trace_sdf_field, SdfCcdConfig};
-use alice_physics::sdf_collider::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_ccd::{sphere_trace_sdf, sphere_trace_sdf_field, SdfCcdConfig};
+use alice_physics_core::sdf_collider::{
     collide_point_sdf, collide_point_sdf_field, collide_sphere_sdf, collide_sphere_sdf_field,
     ClosureSdf, ClosureSdfQuery, SdfCollider, SdfFrame,
 };

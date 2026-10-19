@@ -11,8 +11,8 @@
 //! cargo run --release --example fracture_impact --features std
 //! ```
 
-use alice_physics::fracture::{FractureConfig, FractureModifier};
-use alice_physics::sim_modifier::PhysicsModifier;
+use alice_physics_core::fracture::{FractureConfig, FractureModifier};
+use alice_physics_core::sim_modifier::PhysicsModifier;
 
 fn main() {
     let config = FractureConfig {

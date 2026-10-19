@@ -62,7 +62,7 @@
 //!   the result **to exactly zero** whenever the combined magnitude shift is
 //!   a multiple of 2⁶⁴ (this file re-derives the same fact independently
 //!   from the documented 128×128→128 formula, without calling
-//!   [`alice_physics::math::Fix128::mul`]). `Joint::compute_force` and
+//!   [`alice_physics_core::math::Fix128::mul`]). `Joint::compute_force` and
 //!   `solve_joints_breakable` use plain `Mul`, not `checked_mul`, so a joint
 //!   whose bodies are placed at such a separation reports `compute_force ==
 //!   0` and **never breaks**, regardless of `break_force` — this file pins
@@ -78,13 +78,13 @@
     deprecated,
     reason = "imports the deprecated separation-based solve_joints_breakable so the tests below can pin it until removal"
 )]
-use alice_physics::joint::solve_joints_breakable;
-use alice_physics::joint::{
+use alice_physics_core::joint::solve_joints_breakable;
+use alice_physics_core::joint::{
     solve_joints, BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint,
     JointType, SliderJoint, SpringJoint,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 /// The reaction force of one joint in one solve from this pose (measured through
 /// `solve_joints_with_reaction_forces` on a copy of the bodies).
@@ -94,8 +94,11 @@ trait ReactionOfOneSolve {
 
 impl ReactionOfOneSolve for Joint {
     fn reaction_force(&self, bodies: &[RigidBody], dt: Fix128) -> Fix128 {
-        alice_physics::joint::solve_joints_with_reaction_forces(&[*self], &mut bodies.to_vec(), dt)
-            [0]
+        alice_physics_core::joint::solve_joints_with_reaction_forces(
+            &[*self],
+            &mut bodies.to_vec(),
+            dt,
+        )[0]
     }
 }
 
@@ -533,7 +536,7 @@ fn cone_twist_zero_limits_always_correct_toward_the_axis() {
 // C.3 extreme separations: compute_force / solve_joints_breakable wrap, not panic
 // ===========================================================================
 
-/// Re-derives, independently of [`alice_physics::math::Fix128::mul`], whether
+/// Re-derives, independently of [`alice_physics_core::math::Fix128::mul`], whether
 /// squaring a pure-integer `Fix128` value `2^shift` (fractional part zero)
 /// wraps to a value whose `hi` (and hence its square root) is exactly zero.
 /// Mirrors the documented 128×128→128 middle-bits formula (see the crate's
@@ -635,7 +638,8 @@ fn solve_joints_breaking_on_force_ramp_breaks_exactly_at_k_star() {
             Fix128::from_int(k),
             "F_k = k N exactly"
         );
-        let broken = alice_physics::joint::solve_joints_breaking_on_force(&ramp, &mut bodies, DT);
+        let broken =
+            alice_physics_core::joint::solve_joints_breaking_on_force(&ramp, &mut bodies, DT);
         if k <= 5 {
             assert!(
                 broken.is_empty(),

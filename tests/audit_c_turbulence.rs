@@ -19,10 +19,10 @@
 //! procedure; AUD-A-S1W6-014 questions the direction of that mapping, and a
 //! change of the documented form would change these expected values.
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     CfdSolver, PressureSolver, RansState, StepOptions, TurbulenceModel,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 const CS: f64 = 0.17;
 
@@ -54,7 +54,7 @@ fn expected_cs(strain: &[f64], i: usize) -> f64 {
     (CS * ratio).clamp(0.05, 0.25)
 }
 
-fn run(faces: &[i64]) -> (Vec<f64>, alice_physics::cfd_solver::RansReport) {
+fn run(faces: &[i64]) -> (Vec<f64>, alice_physics_core::cfd_solver::RansReport) {
     let mut s = solver_with_faces(faces);
     let nx = faces.len() - 1;
     let strain: Vec<f64> = (0..nx)

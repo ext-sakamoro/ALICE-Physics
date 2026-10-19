@@ -1,6 +1,6 @@
 //! Streaming anomaly detectors on streams whose closed forms are known
 //!
-//! Runs every detector of `alice_physics::anomaly` (windowed median, MAD,
+//! Runs every detector of `alice_physics_core::anomaly` (windowed median, MAD,
 //! EWMA, Welford Z-score, the composite of the three, and the composite's
 //! callback entry) on hand-built streams and prints each reading next to the
 //! value the arithmetic predicts, so a drift in any one of them is visible in
@@ -10,11 +10,11 @@
 //! cargo run --example anomaly_detectors --features std
 //! ```
 
-use alice_physics::anomaly::{
+use alice_physics_core::anomaly::{
     AnomalyCallback, AnomalyEvent, CompositeDetector, EwmaDetector, MadDetector, StreamingMedian,
     ZScoreDetector,
 };
-use alice_physics::det_math::sqrt64;
+use alice_physics_core::det_math::sqrt64;
 
 /// Collects the index and the event of every sample the composite flags.
 struct IndexRecorder {

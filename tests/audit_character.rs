@@ -14,10 +14,10 @@
     reason = "analytic reference: f64 tilted SDF plane normal and feet height 0.35/cos(theta) for slope limit in move_and_slide"
 )]
 
-use alice_physics::character::{CharacterConfig, CharacterController};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::character::{CharacterConfig, CharacterController};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

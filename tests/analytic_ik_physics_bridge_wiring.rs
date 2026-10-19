@@ -8,10 +8,10 @@
     reason = "analytic reference: f64 geometric convergence 10 - 8 * 0.5^n of repeated ik_physics_bridge stabilisation passes"
 )]
 
-use alice_physics::ik_physics_bridge::{IkTarget, IkTargetSet};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::ragdoll::{Bone, RagdollBuilder, RagdollProportions};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::ik_physics_bridge::{IkTarget, IkTargetSet};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::ragdoll::{Bone, RagdollBuilder, RagdollProportions};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn world_with(x: i64) -> (PhysicsWorld, usize) {
     let mut w = PhysicsWorld::new(PhysicsConfig::default());

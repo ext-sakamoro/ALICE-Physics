@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::flow_viz`
+//! Oracles for the production entry points of `alice_physics_core::flow_viz`
 //! driven by `examples/flow_visualization.rs`: `FlowArrow`,
 //! `FlowVizConfig`, `generate_flow_arrows`, and `generate_streamlines`.
 //!
@@ -33,10 +33,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::flow_viz::{
+use alice_physics_core::flow_viz::{
     generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn basic_config() -> FlowVizConfig {
     FlowVizConfig {

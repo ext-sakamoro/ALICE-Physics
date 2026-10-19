@@ -10,10 +10,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::joint::Joint;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::ragdoll::{Bone, RagdollBuilder, RagdollHandle, RagdollProportions};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::joint::Joint;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::ragdoll::{Bone, RagdollBuilder, RagdollHandle, RagdollProportions};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
 
 fn f(x: Fix128) -> f64 {
     x.to_f64()

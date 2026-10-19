@@ -23,12 +23,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{
     collide_point_sdf, collide_sphere_sdf, detect_sdf_contacts, sync_dynamic_sdf_colliders,
     ClosureSdf, SdfCollider, SdfField, SdfFrame, SDF_STATIC,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

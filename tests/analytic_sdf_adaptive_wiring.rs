@@ -7,9 +7,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
 fn sphere() -> ClosureSdf {
     ClosureSdf::new(

@@ -11,11 +11,11 @@
 //! cargo run --example world_sweeps
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(
@@ -82,9 +82,9 @@ fn time_of_impact() {
 
 #[cfg(feature = "std")]
 fn sdf_character() {
-    use alice_physics::math::QuatFix;
-    use alice_physics::sdf_character::SdfCharacter;
-    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+    use alice_physics_core::math::QuatFix;
+    use alice_physics_core::sdf_character::SdfCharacter;
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
     let mut world = PhysicsWorld::new(PhysicsConfig::default());
     // Solid below y = 0 and beyond x = 5.

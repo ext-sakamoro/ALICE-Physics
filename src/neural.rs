@@ -14,8 +14,8 @@
 //! # Example
 //!
 //! ```rust,ignore
-//! use alice_physics::neural::*;
-//! use alice_physics::{Fix128, Vec3Fix, RigidBody};
+//! use alice_physics_core::neural::*;
+//! use alice_physics_core::{Fix128, Vec3Fix, RigidBody};
 //! use alice_ml::TernaryWeight;
 //!
 //! // Build network from ternary weights

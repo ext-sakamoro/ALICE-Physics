@@ -79,7 +79,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use alice_physics::transient_thermal::{
+use alice_physics_core::transient_thermal::{
     crank_nicolson_step_1d, crank_nicolson_step_1d_nonlinear, stable_dt_1d, stable_dt_3d,
     transient_step_1d, transient_step_3d, TemperatureDependence, ThermalMaterial,
 };

@@ -1,4 +1,4 @@
-//! Audit oracles (S2-1) for `alice_physics::plastic`.
+//! Audit oracles (S2-1) for `alice_physics_core::plastic`.
 //!
 //! Only `PlasticModel`, `PlasticState`, `HardeningType`, `NortonCreep`,
 //! `PlasticModel::from_fdm_material`, `NortonCreep::pla_room_temp` and
@@ -25,11 +25,11 @@
     reason = "analytic reference: f64 radial return plastic strain f0/h (1 - r^n) and Norton creep A sigma^n dt for plastic"
 )]
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::plastic::{HardeningType, NortonCreep, PlasticModel, PlasticState};
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::plastic::{HardeningType, NortonCreep, PlasticModel, PlasticState};
+use alice_physics_core::structural_solver::StructuralSolver;
 
 fn int(n: i64) -> Fix128 {
     Fix128::from_int(n)

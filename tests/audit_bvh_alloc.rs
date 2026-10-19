@@ -9,9 +9,9 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use alice_physics::bvh::{BvhPrimitive, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::math::Vec3Fix;
+use alice_physics_core::bvh::{BvhPrimitive, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::Vec3Fix;
 
 struct Counting;
 

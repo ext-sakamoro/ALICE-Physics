@@ -9,11 +9,11 @@
 //!
 //! `EXPECTED_SHA256` is the same final state as `EXPECTED`, hashed with SHA-256
 //! (`step_state_sha256_is_unchanged`). It is the 32-byte digest the content hash of
-//! the stepping semantics (`alice_physics::PHYSICS_SEMANTICS_ID`) folds for `physics2d`;
+//! the stepping semantics (`alice_physics_core::PHYSICS_SEMANTICS_ID`) folds for `physics2d`;
 //! `EXPECTED` stays the pin the golden coverage table names.
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{
     Joint2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
 };
 use sha2::{Digest, Sha256};
@@ -190,7 +190,7 @@ fn step_digest_is_unchanged() {
 }
 
 /// SHA-256 of the state `digest` reads, for the content hash of the stepping
-/// semantics (`alice_physics::PHYSICS_SEMANTICS_ID` takes 32-byte digests).
+/// semantics (`alice_physics_core::PHYSICS_SEMANTICS_ID` takes 32-byte digests).
 ///
 /// Byte layout: for every body in `w.bodies` order, the nine fields `digest`
 /// mixes, in the same order (position x, y, angle, velocity x, y, angular
@@ -240,7 +240,7 @@ fn step_state_sha256_is_unchanged() {
 
 #[test]
 fn step_with_an_empty_tether_set_is_step_frame_by_frame() {
-    use alice_physics::physics2d::Tethers2D;
+    use alice_physics_core::physics2d::Tethers2D;
     let mut a = scene();
     let mut b = scene();
     let empty = Tethers2D::new();
@@ -255,7 +255,7 @@ fn step_with_an_empty_tether_set_is_step_frame_by_frame() {
 /// Removed entries leave the set behaving as empty.
 #[test]
 fn step_with_a_set_whose_entries_were_removed_is_step() {
-    use alice_physics::physics2d::{AngularTether2D, KinematicDrive2D, Tethers2D};
+    use alice_physics_core::physics2d::{AngularTether2D, KinematicDrive2D, Tethers2D};
     let mut a = scene();
     let mut b = scene();
     let mut set = Tethers2D::new();

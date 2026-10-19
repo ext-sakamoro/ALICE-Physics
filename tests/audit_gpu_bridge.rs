@@ -1,10 +1,10 @@
-//! Audit oracles for `alice_physics::gpu_bridge` (trait defaults and host routing).
+//! Audit oracles for `alice_physics_core::gpu_bridge` (trait defaults and host routing).
 #![cfg(feature = "gpu-solver-bridge")]
 
-use alice_physics::collider::Contact;
-use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Mutex};
 
@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 struct Minimal;
 impl GpuSolverBridge for Minimal {
     fn semantics_id(&self) -> [u8; 32] {
-        alice_physics::PHYSICS_SEMANTICS_ID
+        alice_physics_core::PHYSICS_SEMANTICS_ID
     }
 
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -98,7 +98,7 @@ fn b_send_cc() {
 struct Diverging;
 impl GpuSolverBridge for Diverging {
     fn semantics_id(&self) -> [u8; 32] {
-        alice_physics::PHYSICS_SEMANTICS_ID
+        alice_physics_core::PHYSICS_SEMANTICS_ID
     }
 
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -146,7 +146,7 @@ struct Recorder {
 }
 impl GpuSolverBridge for Recorder {
     fn semantics_id(&self) -> [u8; 32] {
-        alice_physics::PHYSICS_SEMANTICS_ID
+        alice_physics_core::PHYSICS_SEMANTICS_ID
     }
 
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -223,7 +223,7 @@ fn filtered_upload_writes_lambda_back_to_the_original_slot() {
     struct Lam;
     impl GpuSolverBridge for Lam {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}

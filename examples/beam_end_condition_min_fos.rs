@@ -22,9 +22,9 @@
     reason = "analytic reference: Euler buckling load pi^2 E I / L^2 scaled by 1/K^2 per end condition, asserted against BeamAnalysis"
 )]
 
-use alice_physics::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 
 fn main() {
     let section = CrossSection::Rectangular {

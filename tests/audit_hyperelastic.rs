@@ -7,11 +7,11 @@
     reason = "analytic reference: f64 principal stretch squares l_i^2 for hyperelastic invariants I1, I2"
 )]
 
-use alice_physics::hyperelastic::{
+use alice_physics_core::hyperelastic::{
     cauchy_stress, small_strain_moduli, small_strain_shear_modulus, strain_energy_density,
     uniaxial_cauchy_stress, volumetric_modulus, HyperelasticModel, Stretch,
 };
-use alice_physics::math::{Fix128, Mat3Fix, Vec3Fix};
+use alice_physics_core::math::{Fix128, Mat3Fix, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

@@ -12,10 +12,10 @@
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
-use alice_physics::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+use alice_physics_core::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 /// The floor `y = height` whose height can be moved; `generation` is bumped
 /// by the test when it wants the move announced.
@@ -305,7 +305,7 @@ fn a_constant_generation_changes_nothing() {
 /// `SdfUnion` with a far plane still wakes the ball when it announces a drop.
 #[test]
 fn a_union_reports_the_change_of_a_part() {
-    use alice_physics::sdf_collider::SdfUnion;
+    use alice_physics_core::sdf_collider::SdfUnion;
     let config = PhysicsConfig {
         substeps: SUBSTEPS,
         gravity: Vec3Fix::from_int(0, G as i64, 0),
@@ -338,7 +338,9 @@ fn a_union_reports_the_change_of_a_part() {
 }
 
 /// A `DestructibleSdf` the test keeps a handle to while the world holds it.
-struct SharedDestructible(Arc<std::sync::Mutex<alice_physics::sdf_destruction::DestructibleSdf>>);
+struct SharedDestructible(
+    Arc<std::sync::Mutex<alice_physics_core::sdf_destruction::DestructibleSdf>>,
+);
 
 impl SdfField for SharedDestructible {
     fn distance(&self, x: f32, y: f32, z: f32) -> f32 {
@@ -359,7 +361,7 @@ impl SdfField for SharedDestructible {
 /// one whose floor is a plain `ClosureSdf`.
 #[test]
 fn carving_a_destructible_floor_wakes_the_sleeping_ball() {
-    use alice_physics::sdf_destruction::{DestructibleSdf, DestructionShape};
+    use alice_physics_core::sdf_destruction::{DestructibleSdf, DestructionShape};
     fn build() -> (PhysicsWorld, Arc<std::sync::Mutex<DestructibleSdf>>) {
         let config = PhysicsConfig {
             substeps: SUBSTEPS,

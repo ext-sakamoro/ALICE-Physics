@@ -33,18 +33,18 @@
     reason = "axis loops index the half extents, axis and rotation rows by the same i on purpose"
 )]
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{contact, gjk, Capsule, Sphere, Support, AABB};
-use alice_physics::compound::{CompoundShape, ShapeRef, TransformedCompound};
-use alice_physics::cone::Cone;
-use alice_physics::cylinder::Cylinder;
-use alice_physics::ellipsoid::Ellipsoid;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::{PosedShape, Shape};
-use alice_physics::shape_raycast::{RayFilter, RayTarget};
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
-use alice_physics::torus::Torus;
-use alice_physics::wedge::Wedge;
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{contact, gjk, Capsule, Sphere, Support, AABB};
+use alice_physics_core::compound::{CompoundShape, ShapeRef, TransformedCompound};
+use alice_physics_core::cone::Cone;
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::ellipsoid::Ellipsoid;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::{PosedShape, Shape};
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget};
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::torus::Torus;
+use alice_physics_core::wedge::Wedge;
 
 type V = [f64; 3];
 type M = [[f64; 3]; 3];
@@ -985,7 +985,7 @@ fn support_boxes(scene: &Scene) -> Vec<(V, V)> {
 /// `step_parallel`, finds exactly the brute-force contacts.
 #[test]
 fn the_world_broadphase_uses_the_collider_boxes() {
-    use alice_physics::solver::Broadphase;
+    use alice_physics_core::solver::Broadphase;
     let scene = mixed_scene();
     let boxes = support_boxes(&scene);
     let (mut tight, mut nearest) = (0u64, f64::INFINITY);

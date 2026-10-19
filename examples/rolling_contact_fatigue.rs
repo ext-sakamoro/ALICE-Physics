@@ -1,5 +1,5 @@
 //! Hertzian rolling-contact stress + Basquin fatigue life of
-//! `alice_physics::rolling_contact`.
+//! `alice_physics_core::rolling_contact`.
 //!
 //! Drives the three material presets (`materials::bearing_steel_52100`,
 //! `materials::gear_steel_8620`, `materials::silicon_nitride`) through
@@ -38,7 +38,7 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::rolling_contact::{
+    use alice_physics_core::rolling_contact::{
         basquin_cycles_to_failure, hertzian_sphere_sphere, materials, rolling_contact_life_cycles,
         HertzianContact,
     };

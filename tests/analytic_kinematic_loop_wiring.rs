@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::kinematic_loop`
+//! Oracles for the production entry points of `alice_physics_core::kinematic_loop`
 //! driven by `examples/kinematic_loop_four_bar.rs`: `FourBarLinkage` (via
 //! `try_four_bar_linkage`), `four_bar_linkage`, and
 //! `LoopClosureConstraint::centre_to_centre`.
@@ -56,12 +56,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::error::PhysicsError;
-use alice_physics::kinematic_loop::{
+use alice_physics_core::error::PhysicsError;
+use alice_physics_core::kinematic_loop::{
     four_bar_linkage, try_four_bar_linkage, LoopClosureConstraint,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
 
 const FIX_TOL: f64 = 1e-9;
 
@@ -481,7 +481,7 @@ fn centre_to_centre_produces_coincident_zero_compliance_closure_exactly() {
 /// 2/5`; starting at `x=0` and `x=10`, both bodies land on `x = 6.0`.
 #[test]
 fn centre_to_centre_apply_converges_to_inverse_mass_weighted_point() {
-    use alice_physics::solver::RigidBody;
+    use alice_physics_core::solver::RigidBody;
     let mut w = world();
     let a = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::from_int(2)));
     let b = w.add_body(RigidBody::new(

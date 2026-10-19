@@ -1639,7 +1639,7 @@ impl PhysicsWorld {
     /// # Examples
     ///
     /// ```
-    /// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+    /// use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
     ///
     /// let mut world = PhysicsWorld::new(PhysicsConfig::default());
     /// world.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE));
@@ -2064,7 +2064,7 @@ impl PhysicsWorld {
     /// # Examples
     ///
     /// ```
-    /// use alice_physics::{
+    /// use alice_physics_core::{
     ///     Fix128, LawCheck, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix,
     ///     WorldSnapshotError, PHYSICS_SEMANTICS_ID,
     /// };
@@ -2076,7 +2076,7 @@ impl PhysicsWorld {
     /// // A target running the same rule: its own law id, taken before the restore
     /// let mut same = PhysicsWorld::new(PhysicsConfig::default());
     /// let expected = same.law_id(&PHYSICS_SEMANTICS_ID);
-    /// assert_eq!(same.restore_world_checked(&blob, Some(&expected), alice_physics::LegacyPolicy::RequirePinned), Ok(LawCheck::Verified));
+    /// assert_eq!(same.restore_world_checked(&blob, Some(&expected), alice_physics_core::LegacyPolicy::RequirePinned), Ok(LawCheck::Verified));
     ///
     /// // A target running another rule refuses the blob and keeps its state
     /// let mut other = PhysicsWorld::new(PhysicsConfig {
@@ -2086,13 +2086,13 @@ impl PhysicsWorld {
     /// let expected = other.law_id(&PHYSICS_SEMANTICS_ID);
     /// let before = other.snapshot_world();
     /// assert!(matches!(
-    ///     other.restore_world_checked(&blob, Some(&expected), alice_physics::LegacyPolicy::RequirePinned),
+    ///     other.restore_world_checked(&blob, Some(&expected), alice_physics_core::LegacyPolicy::RequirePinned),
     ///     Err(WorldSnapshotError::LawIdMismatch { .. })
     /// ));
     /// assert_eq!(other.snapshot_world(), before);
     ///
     /// // Without an expected id only the stepping semantics is checked
-    /// assert_eq!(other.restore_world_checked(&blob, None, alice_physics::LegacyPolicy::RequirePinned), Ok(LawCheck::SemanticsVerified));
+    /// assert_eq!(other.restore_world_checked(&blob, None, alice_physics_core::LegacyPolicy::RequirePinned), Ok(LawCheck::SemanticsVerified));
     /// ```
     ///
     /// # Errors

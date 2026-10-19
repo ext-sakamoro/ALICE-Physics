@@ -8,7 +8,7 @@
 //! the degenerate inputs that the existing file *pins as measured behaviour*
 //! (those are the `#[ignore]`d defect oracles below).
 
-use alice_physics::sketch::{
+use alice_physics_core::sketch::{
     CountMinSketch, DDSketch, DDSketch128, FnvHasher, HyperLogLog10, HyperLogLog12, HyperLogLog14,
     HyperLogLog16, Mergeable,
 };
@@ -392,7 +392,7 @@ fn ddsketch_top_bucket_values_are_binned() {
 /// smallest tracked entry is not inserted.
 #[test]
 fn heavy_hitters_do_not_evict_on_a_tie() {
-    use alice_physics::sketch::HeavyHitters5;
+    use alice_physics_core::sketch::HeavyHitters5;
     let mut hh = HeavyHitters5::new();
     for h in 1..=5u64 {
         hh.insert_hash(h);

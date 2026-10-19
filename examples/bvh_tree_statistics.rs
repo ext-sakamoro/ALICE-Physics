@@ -22,10 +22,10 @@
 //!
 //! Run with: `cargo run --example bvh_tree_statistics`
 
-use alice_physics::bvh::{BvhPrimitive, BvhStats, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::dynamic_bvh::DynamicAabbTree;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::bvh::{BvhPrimitive, BvhStats, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::dynamic_bvh::DynamicAabbTree;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// The unit box `[x, x + 1] × [0, 1] × [0, 1]`.
 fn unit_box(x: i64) -> AABB {

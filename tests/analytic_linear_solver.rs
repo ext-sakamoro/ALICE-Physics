@@ -15,19 +15,19 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_iteration::{ConfigFault, L2_TERM_FLOOR};
-use alice_physics::det_math::exp64;
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_iteration::{ConfigFault, L2_TERM_FLOOR};
+use alice_physics_core::det_math::exp64;
+use alice_physics_core::linear_elastic_fem::{
     reactions, solve, Axis, BoundaryConditions, ElasticMaterial, FemSolution, SolverConfig,
 };
-use alice_physics::linear_solver::{
+use alice_physics_core::linear_solver::{
     bicgstab, gmres, solve_equilibrated, BlockEquilibration, BlockJacobiPreconditioner, BlockScale,
     BreakdownKind, DenseMatrix, FnOperator, IdentityPreconditioner, JacobiPreconditioner,
     KrylovConfig, KrylovConfigFault, KrylovMethod, KrylovSolution, LinearOperator,
     LinearSolverError, BREAKDOWN_RELATIVE,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ----------------------------------------------------------------------------
 // helpers (all independent of the solver under test)

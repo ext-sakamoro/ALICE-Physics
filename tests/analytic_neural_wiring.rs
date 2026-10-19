@@ -89,13 +89,13 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use alice_ml::TernaryWeight;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::neural::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::neural::{
     fix128_hard_tanh, fix128_leaky_relu, fix128_relu, fix128_tanh_approx, fix128_ternary_matvec,
     Activation, ControllerConfig, ControllerOutput, DeterministicNetwork, FixedTernaryWeight,
     RagdollController,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 // ---------------------------------------------------------------------------
 // Activation kernels
@@ -520,7 +520,7 @@ fn build_controller_with_max_torque(max_torque: Fix128) -> RagdollController {
         max_torque,
         num_joints: 1,
         num_bodies: 1,
-        features_per_body: alice_physics::neural::FEATURES_PER_BODY,
+        features_per_body: alice_physics_core::neural::FEATURES_PER_BODY,
     };
     RagdollController::new(network, config)
 }
@@ -612,7 +612,7 @@ fn ragdoll_controller_zero_joints_yields_empty_controller_output() {
         max_torque: Fix128::ONE,
         num_joints: 0,
         num_bodies: 1,
-        features_per_body: alice_physics::neural::FEATURES_PER_BODY,
+        features_per_body: alice_physics_core::neural::FEATURES_PER_BODY,
     };
     let mut controller = RagdollController::new(network, config);
 

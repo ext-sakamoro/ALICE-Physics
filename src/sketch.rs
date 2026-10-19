@@ -7,7 +7,7 @@
 //! # Examples
 //!
 //! ```
-//! use alice_physics::sketch::{HyperLogLog, DDSketch, CountMinSketch, Mergeable};
+//! use alice_physics_core::sketch::{HyperLogLog, DDSketch, CountMinSketch, Mergeable};
 //!
 //! // Cardinality estimation (default: 14-bit precision)
 //! let mut hll = HyperLogLog::new();
@@ -228,7 +228,7 @@ impl Hasher for FnvHasher {
 /// [`HyperLogLog16`] and the default [`HyperLogLog`] are aliases of this type.
 ///
 /// ```
-/// use alice_physics::sketch::{HyperLogLog12, HyperLogLogN};
+/// use alice_physics_core::sketch::{HyperLogLog12, HyperLogLogN};
 ///
 /// let mut hll: HyperLogLogN<4096> = HyperLogLog12::new();
 /// hll.insert(&7u64);
@@ -238,7 +238,7 @@ impl Hasher for FnvHasher {
 /// A register count that is not a power of two does not compile:
 ///
 /// ```compile_fail,E0080
-/// let _ = alice_physics::sketch::HyperLogLogN::<1000>::new();
+/// let _ = alice_physics_core::sketch::HyperLogLogN::<1000>::new();
 /// ```
 #[derive(Clone, Debug)]
 pub struct HyperLogLogN<const M: usize> {
@@ -396,7 +396,7 @@ pub type HyperLogLog = HyperLogLog14;
 ///
 /// # Example
 /// ```
-/// use alice_physics::sketch::DDSketch256;
+/// use alice_physics_core::sketch::DDSketch256;
 ///
 /// let mut sketch = DDSketch256::new(0.01); // 1% relative error
 ///

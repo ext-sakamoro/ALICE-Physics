@@ -30,15 +30,15 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::audio_physics::{AudioConfig, AudioEventType, AudioGenerator};
-use alice_physics::collider::Contact;
-use alice_physics::debug_render::{debug_draw_world, DebugDrawData, DebugDrawFlags};
-use alice_physics::event::ContactEventType;
-use alice_physics::heatmap::{generate_stress_heatmap, Heatmap, HeatmapConfig, SliceAxis};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sensors::{ContactSensor, GaussianNoise, Imu, Lidar};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::audio_physics::{AudioConfig, AudioEventType, AudioGenerator};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::debug_render::{debug_draw_world, DebugDrawData, DebugDrawFlags};
+use alice_physics_core::event::ContactEventType;
+use alice_physics_core::heatmap::{generate_stress_heatmap, Heatmap, HeatmapConfig, SliceAxis};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sensors::{ContactSensor, GaussianNoise, Imu, Lidar};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 const G: f64 = 9.81;
 
@@ -144,7 +144,7 @@ fn lidar_scan_to_a_sphere_is_distance_minus_radius() {
     let hit = scan.hits[0].expect("hit");
     assert_eq!(
         hit.target,
-        alice_physics::shape_raycast::RayTarget::Body(target)
+        alice_physics_core::shape_raycast::RayTarget::Body(target)
     );
 }
 
@@ -335,7 +335,7 @@ fn debug_draw_in_an_empty_world_clears_the_data() {
     data.line(
         Vec3Fix::ZERO,
         Vec3Fix::UNIT_X,
-        alice_physics::DebugColor::RED,
+        alice_physics_core::DebugColor::RED,
     );
     w.debug_draw(&DebugDrawFlags::default(), &mut data);
     assert_eq!(data.primitive_count(), 0);

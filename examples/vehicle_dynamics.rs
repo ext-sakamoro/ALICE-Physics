@@ -37,19 +37,19 @@
     reason = "analytic reference: slope tan theta = 0.5 gives the plane normal and the drift bound g sin theta dt^2 asserted for the parked car"
 )]
 
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::trimesh::{TriMesh, Triangle};
-use alice_physics::vehicle::EngineConfig;
-use alice_physics::vehicle_dynamics::powertrain::Powertrain;
-use alice_physics::vehicle_dynamics::surface::{
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::trimesh::{TriMesh, Triangle};
+use alice_physics_core::vehicle::EngineConfig;
+use alice_physics_core::vehicle_dynamics::powertrain::Powertrain;
+use alice_physics_core::vehicle_dynamics::surface::{
     FlatGround, HeightFieldRoad, InclinedPlane, RoadCondition, RoadSurface, SdfRoad, TriMeshRoad,
     Weather,
 };
-use alice_physics::vehicle_dynamics::tire::{MagicFormulaTire, TireInput, TireModel};
-use alice_physics::vehicle_dynamics::{
+use alice_physics_core::vehicle_dynamics::tire::{MagicFormulaTire, TireInput, TireModel};
+use alice_physics_core::vehicle_dynamics::{
     AbsConfig, DynamicVehicle, DynamicVehicleConfig, Environment,
 };
 

@@ -11,9 +11,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -90,7 +90,11 @@ fn collision(iterations: usize, mu: f64, modifier: Option<ScaleFriction>) -> (Ve
     );
     let id = w
         .material_table
-        .register(alice_physics::PhysicsMaterial::new(0, fx(mu), Fix128::ONE));
+        .register(alice_physics_core::PhysicsMaterial::new(
+            0,
+            fx(mu),
+            Fix128::ONE,
+        ));
     w.set_body_material(a, id);
     w.set_body_material(b, id);
     if let Some(m) = modifier {
@@ -193,8 +197,8 @@ fn an_absolute_friction_assignment_still_applies() {
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridge {
     use super::*;
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::solver::ContactConstraint;
 
     /// Leaves every buffer untouched and records the friction of each
     /// constraint it is sent, one entry per dispatch.
@@ -205,7 +209,7 @@ mod bridge {
 
     impl GpuSolverBridge for Recording {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -237,7 +241,11 @@ mod bridge {
         );
         let id = w
             .material_table
-            .register(alice_physics::PhysicsMaterial::new(0, fx(0.2), Fix128::ONE));
+            .register(alice_physics_core::PhysicsMaterial::new(
+                0,
+                fx(0.2),
+                Fix128::ONE,
+            ));
         w.set_body_material(a, id);
         w.set_body_material(b, id);
         w

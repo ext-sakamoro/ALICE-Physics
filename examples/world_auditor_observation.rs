@@ -9,8 +9,8 @@
 //! cargo run --example world_auditor_observation --features std
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn main() {
     // Gravity zero so the two bodies stay in contact frame over frame

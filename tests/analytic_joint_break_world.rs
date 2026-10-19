@@ -22,8 +22,8 @@
 //! solve that measured it (its correction for that substep is applied) and
 //! reported as a `JointBreakEvent`; the body then falls freely.
 
-use alice_physics::solver::SolverBackend;
-use alice_physics::{
+use alice_physics_core::solver::SolverBackend;
+use alice_physics_core::{
     BallJoint, Fix128, Joint, JointBreakEvent, PhysicsConfig as SolverConfig, PhysicsWorld,
     RigidBody, Vec3Fix,
 };
@@ -161,7 +161,7 @@ fn every_overloaded_joint_breaks_in_the_same_substep_and_the_motor_goes_with_it(
     w.add_joint(weak(3, 2)); // 16 N > 1 N
     let motor = w.add_joint_motor(
         2,
-        alice_physics::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE),
+        alice_physics_core::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE),
     );
     w.step(h());
     // both weak joints go, from the highest index down; the unbreakable one stays
@@ -234,7 +234,7 @@ fn a_joint_breaking_in_the_middle_swaps_the_last_joint_into_its_index() {
     w.add_joint(joint(4, strong));
     let motor_on_last = w.add_joint_motor(
         3,
-        alice_physics::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE),
+        alice_physics_core::motor::PdController::new(Fix128::ONE, Fix128::ZERO, Fix128::ONE),
     );
     w.step(h());
     let events = w.events.joint_break_events();
@@ -266,9 +266,9 @@ fn chain(
         ..SolverConfig::default()
     });
     if !sleep {
-        w.set_sleep_config(alice_physics::sleeping::SleepConfig {
+        w.set_sleep_config(alice_physics_core::sleeping::SleepConfig {
             frames_to_sleep: u32::MAX,
-            ..alice_physics::sleeping::SleepConfig::default()
+            ..alice_physics_core::sleeping::SleepConfig::default()
         });
     }
     w.add_body(RigidBody::new_static(Vec3Fix::ZERO));

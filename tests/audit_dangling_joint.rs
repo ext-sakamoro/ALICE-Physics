@@ -7,7 +7,9 @@
 //! (`joint::solve_one` returns before indexing) and by the island rebuild that
 //! follows a joint break, so the world steps as if it were not there.
 
-use alice_physics::{BallJoint, Fix128, Joint, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::{
+    BallJoint, Fix128, Joint, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix,
+};
 
 fn world() -> PhysicsWorld {
     let config = PhysicsConfig {

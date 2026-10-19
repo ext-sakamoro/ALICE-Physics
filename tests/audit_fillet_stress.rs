@@ -1,11 +1,11 @@
-//! Audit S1-5 oracles for `alice_physics::fillet_stress`.
+//! Audit S1-5 oracles for `alice_physics_core::fillet_stress`.
 //! Expected values are derived from the documented formulas, not from the
 //! implementation: the shoulder fillet is checked against `pilkey`, an f64
 //! transcription of the published Peterson curve fit (Pilkey, Formulas for
 //! Stress, Strain, and Structural Matrices 2nd ed.), written here separately.
 
-use alice_physics::fillet_stress::*;
-use alice_physics::math::Fix128;
+use alice_physics_core::fillet_stress::*;
+use alice_physics_core::math::Fix128;
 
 fn fx(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

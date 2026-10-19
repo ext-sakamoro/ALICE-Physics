@@ -33,9 +33,9 @@
 //!   regime every scene below sits in. This test rebuilds the 4096-register
 //!   array independently (`ref_registers`) from the `pair_hash` values it
 //!   feeds the module, mixed with its own `splitmix64`, the same way
-//!   `tests/analytic_sketch_wiring.rs` holds `alice_physics::sketch`'s own
+//!   `tests/analytic_sketch_wiring.rs` holds `alice_physics_core::sketch`'s own
 //!   `HyperLogLog` to its reference registers, and evaluates the published
-//!   formula with `alice_physics::det_math::ln64` (never `f64::ln`, and
+//!   formula with `alice_physics_core::det_math::ln64` (never `f64::ln`, and
 //!   never the module's own `unique_collision_pairs()` output).
 //!
 //! # Degenerate input (each result is pinned, panics are measured)
@@ -67,8 +67,8 @@
 
 #![cfg(all(feature = "std", feature = "analytics"))]
 
-use alice_physics::analytics_bridge::PhysicsTelemetry;
-use alice_physics::det_math::ln64;
+use alice_physics_core::analytics_bridge::PhysicsTelemetry;
+use alice_physics_core::det_math::ln64;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 const ALPHA: f64 = PhysicsTelemetry::ALPHA;
@@ -131,7 +131,7 @@ fn ref_registers(hashes: &[u64]) -> [u8; 4096] {
 }
 
 /// Published HyperLogLog++ estimator with the documented small-range switch
-/// to linear counting. Uses `alice_physics::det_math::ln64`, never `f64::ln`.
+/// to linear counting. Uses `alice_physics_core::det_math::ln64`, never `f64::ln`.
 fn ref_cardinality(regs: &[u8; 4096]) -> f64 {
     let m = 4096.0f64;
     let alpha_bias = 0.7213 / (1.0 + 1.079 / m);

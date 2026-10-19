@@ -25,11 +25,11 @@
     reason = "analytic reference: f64 Poisson 2D eigenvalues 4 - 2 cos(i pi/7) - 2 cos(j pi/7) counted for GMRES termination"
 )]
 
-use alice_physics::linear_solver::{
+use alice_physics_core::linear_solver::{
     bicgstab, gmres, BreakdownKind, DenseMatrix, FnOperator, IdentityPreconditioner,
     JacobiPreconditioner, KrylovConfig, KrylovSolution, LinearSolverError,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 // ----------------------------------------------------------------------------
 // helpers

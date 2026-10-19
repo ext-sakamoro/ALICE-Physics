@@ -16,9 +16,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -652,7 +652,7 @@ fn switching_backend_mid_simulation_keeps_the_body_falling() {
 /// `step`/`step_tgs`.
 #[test]
 fn kinematic_target_is_reached_under_tgs() {
-    use alice_physics::math::QuatFix;
+    use alice_physics_core::math::QuatFix;
 
     let dt = r(1, 60);
     let mut w = PhysicsWorld::new(tgs_cfg(0, 4));
@@ -687,7 +687,7 @@ fn kinematic_target_is_reached_under_tgs() {
 /// straight through it).
 #[test]
 fn kinematic_target_pushes_a_dynamic_body_under_tgs() {
-    use alice_physics::math::QuatFix;
+    use alice_physics_core::math::QuatFix;
 
     let dt = r(1, 60);
     let mut w = PhysicsWorld::new(tgs_cfg(0, 4));
@@ -732,8 +732,8 @@ fn kinematic_target_pushes_a_dynamic_body_under_tgs() {
 /// a loose bound (`y > -1.0`) rather than an exact value.
 #[test]
 fn tgs_body_falling_onto_sdf_ground_is_stopped_near_the_surface() {
-    use alice_physics::math::QuatFix;
-    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+    use alice_physics_core::math::QuatFix;
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
     let dt = r(1, 60);
     let mut w = PhysicsWorld::new(PhysicsConfig {

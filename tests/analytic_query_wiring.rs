@@ -15,15 +15,15 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::bvh::{BvhPrimitive, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::query::{
+use alice_physics_core::bvh::{BvhPrimitive, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::query::{
     batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_aabb_bvh,
     overlap_aabb_expanded, overlap_sphere, overlap_sphere_bvh, sphere_cast, BatchRayQuery,
     OverlapResult, ShapeCastHit,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn body_at(x: i64, y: i64, z: i64) -> RigidBody {

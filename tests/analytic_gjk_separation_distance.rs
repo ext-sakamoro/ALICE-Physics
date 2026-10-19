@@ -19,8 +19,8 @@
 //! measured gap as a known source-side limitation, not fixed here (out of
 //! scope for this oracle-only pass; reported separately).
 
-use alice_physics::collider::{gjk, Sphere};
-use alice_physics::{Fix128, Vec3Fix};
+use alice_physics_core::collider::{gjk, Sphere};
+use alice_physics_core::{Fix128, Vec3Fix};
 
 fn fx(n: i64) -> Fix128 {
     Fix128::from_int(n)

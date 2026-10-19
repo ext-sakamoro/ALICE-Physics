@@ -7,8 +7,8 @@
     reason = "analytic reference: f64 rotated strain invariance and log-law u+ = ln(y+)/kappa + B for turbulence"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::turbulence::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::turbulence::{
     friction_velocity, smagorinsky_eddy_viscosity, strain_rate_magnitude, WallFunctionError,
     FRICTION_VELOCITY_BISECTIONS, SMAGORINSKY_CS,
 };

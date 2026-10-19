@@ -85,16 +85,16 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::coupled_iteration::{CoupledIterationError, SubIterationConfig};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::coupled_iteration::{CoupledIterationError, SubIterationConfig};
+use alice_physics_core::linear_elastic_fem::{
     deposit_increment_heat, step_thermoplastic, Axis, BoundaryConditions, ElasticMaterial,
     ElastoplasticConfig, ElastoplasticIncrementRequest, ElastoplasticProblem, ElastoplasticState,
     FemError, PlasticHeating, SolverConfig, ThermalExpansion, ThermalSoftening,
     ThermoplasticCoupling,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // Scene

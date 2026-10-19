@@ -1,4 +1,4 @@
-//! Element quality invariants for `alice_physics::sdf_fem_mesh`.
+//! Element quality invariants for `alice_physics_core::sdf_fem_mesh`.
 //!
 //! Conformity (`mesh_conformity.rs`) says the elements fit together. It says
 //! nothing about their *shape*, and a mesh can be perfectly conforming and still
@@ -81,8 +81,8 @@
     reason = "analytic reference: f64 dihedral angles acos, convergence order ln ratio and exact cavity volume for mesh quality"
 )]
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
 
 /// Where the gate sits, in degrees — between the measured good and bad
 /// populations, not on the engineering convention.

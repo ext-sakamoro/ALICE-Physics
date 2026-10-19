@@ -4,7 +4,7 @@
 //! Four of these tests were `#[ignore]`d and red until `linear_elastic_fem`
 //! gained an eigenstrain term. That is why they can be trusted: they fixed the
 //! acceptance criterion for wiring a temperature field into
-//! [`alice_physics::linear_elastic_fem`] while the residual still had no such
+//! [`alice_physics_core::linear_elastic_fem`] while the residual still had no such
 //! term, so the criterion could not be written to match whatever the
 //! implementation happened to produce.
 //!
@@ -304,13 +304,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::linear_elastic_fem::{
     solve_with_eigenstrain, Axis, BoundaryConditions, ElasticMaterial, FemError, FemSolution,
     SolverConfig, StressTensor, ThermalExpansion,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // material and scene

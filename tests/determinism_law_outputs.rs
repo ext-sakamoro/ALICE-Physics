@@ -25,33 +25,33 @@ use std::hint::black_box;
 use std::path::Path;
 use std::sync::Arc;
 
-use alice_physics::anomaly::CompositeDetector;
-use alice_physics::collider::Contact;
-use alice_physics::convex_decompose::{decompose_sdf, DecomposeConfig};
-use alice_physics::erosion::{ErosionConfig, ErosionModifier};
-use alice_physics::fracture::{Crack, FractureConfig, FractureModifier};
-use alice_physics::heatmap::{heatmap_to_rgba, Heatmap};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::pressure::{PressureConfig, PressureModifier};
-use alice_physics::privacy::PrivacyBudget;
-use alice_physics::sdf_character::SdfCharacter;
-use alice_physics::sdf_collider::{ClosureSdf, SdfField, SdfUnion};
-use alice_physics::sdf_destruction::{
+use alice_physics_core::anomaly::CompositeDetector;
+use alice_physics_core::collider::Contact;
+use alice_physics_core::convex_decompose::{decompose_sdf, DecomposeConfig};
+use alice_physics_core::erosion::{ErosionConfig, ErosionModifier};
+use alice_physics_core::fracture::{Crack, FractureConfig, FractureModifier};
+use alice_physics_core::heatmap::{heatmap_to_rgba, Heatmap};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::privacy::PrivacyBudget;
+use alice_physics_core::sdf_character::SdfCharacter;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField, SdfUnion};
+use alice_physics_core::sdf_destruction::{
     destruction_from_impact, DestructibleSdf, DestructionShape, DestructionType,
 };
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
-use alice_physics::sdf_sph::{SphConfig, SphParticle, SphSolver, SphSpatialHash};
-use alice_physics::sdf_wind_field::SdfWindField;
-use alice_physics::shape::Shape;
-use alice_physics::sim_field::ScalarField3D;
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::sketch::{DDSketch, Mergeable};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverBackend, SolverConfig};
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
-use alice_physics::thin_wall::{measure_thickness_at, ThinWallConfig};
-use alice_physics::transient_thermal::{crank_nicolson_step_1d_nonlinear, ThermalMaterial};
-use alice_physics::world_participant::{ObservationSink, Participant};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::sdf_sph::{SphConfig, SphParticle, SphSolver, SphSpatialHash};
+use alice_physics_core::sdf_wind_field::SdfWindField;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::sim_field::ScalarField3D;
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::sketch::{DDSketch, Mergeable};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverBackend, SolverConfig};
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::thin_wall::{measure_thickness_at, ThinWallConfig};
+use alice_physics_core::transient_thermal::{crank_nicolson_step_1d_nonlinear, ThermalMaterial};
+use alice_physics_core::world_participant::{ObservationSink, Participant};
 use sha2::{Digest, Sha256};
 
 /// A golden of the Law outputs: (entry of `PHYSICS_SEMANTICS_PINS`, test fn

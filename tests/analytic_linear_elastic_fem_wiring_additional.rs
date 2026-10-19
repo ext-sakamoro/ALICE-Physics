@@ -30,14 +30,14 @@
 
 use std::panic;
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::filament_db::{MaterialCategory, MaterialProperties};
+use alice_physics_core::linear_elastic_fem::{
     stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, FemError, Preconditioner,
     SolverConfig, StressTensor, ThermalExpansion,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

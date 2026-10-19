@@ -10,12 +10,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::{RayFilter, RayTarget};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
-use alice_physics::world_shape_query::WorldShapeHit;
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::world_shape_query::WorldShapeHit;
 
 const ITER: f64 = 1e-9;
 

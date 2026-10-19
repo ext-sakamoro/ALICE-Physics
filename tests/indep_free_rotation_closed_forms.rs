@@ -31,9 +31,9 @@
     reason = "analytic reference: f64 rotation angle 2 atan2(s, w) about an axis for Euler-equation free rotation closed forms"
 )]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 const FRAME_DT: f64 = 1.0 / 60.0;
 

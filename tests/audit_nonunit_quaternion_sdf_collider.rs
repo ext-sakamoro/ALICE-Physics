@@ -41,15 +41,15 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_ccd::sphere_trace_sdf_field;
-use alice_physics::sdf_collider::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_ccd::sphere_trace_sdf_field;
+use alice_physics_core::sdf_collider::{
     collide_point_sdf_field, collide_sphere_sdf, collide_sphere_sdf_field, ClosureSdf, SdfCollider,
     SdfFrame,
 };
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::SdfCcdConfig;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::SdfCcdConfig;
 
 const NEAR_F32: f64 = 1e-4;
 

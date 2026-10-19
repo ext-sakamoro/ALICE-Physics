@@ -759,10 +759,10 @@ fn newmark_corrector(
 /// # Example
 ///
 /// ```no_run
-/// use alice_physics::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
-/// use alice_physics::linear_elastic_fem::{BoundaryConditions, ElasticMaterial, FemError, SolverConfig};
-/// use alice_physics::sdf_fem_mesh::SdfTetMesh;
-/// use alice_physics::Fix128;
+/// use alice_physics_core::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
+/// use alice_physics_core::linear_elastic_fem::{BoundaryConditions, ElasticMaterial, FemError, SolverConfig};
+/// use alice_physics_core::sdf_fem_mesh::SdfTetMesh;
+/// use alice_physics_core::Fix128;
 ///
 /// # fn run(mesh: &SdfTetMesh) -> Result<(), FemError> {
 /// let material = ElasticMaterial::new(Fix128::from_int(3500), Fix128::from_f64(0.35))?;

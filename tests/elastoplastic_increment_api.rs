@@ -4,7 +4,7 @@
 //!
 //! The folds below are a **change detector**, not a closed form: they were read
 //! off the implementation before the load loop was extracted into
-//! [`alice_physics::linear_elastic_fem::ElastoplasticProblem`], and their only
+//! [`alice_physics_core::linear_elastic_fem::ElastoplasticProblem`], and their only
 //! claim is that moving the loop changed nothing. The closed-form oracles for
 //! the physics live in `tests/analytic_elastoplastic_fem.rs` (19) and
 //! `tests/analytic_plastic_dissipation.rs` (25); this file sits beside them to
@@ -39,12 +39,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve_elastoplastic, Axis, BoundaryConditions, ElasticMaterial, ElastoplasticConfig,
     ElastoplasticIncrementRequest, ElastoplasticProblem, ElastoplasticSolution, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // Folds

@@ -11,12 +11,12 @@
 //! cargo run --example compound_bodies --features std
 //! ```
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, ConvexHull, Sphere};
-use alice_physics::compound::CompoundShape;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, ConvexHull, Sphere};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

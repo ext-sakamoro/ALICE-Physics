@@ -18,9 +18,9 @@
 //! cargo run --release --example buoyancy_zone_pool --features std
 //! ```
 
-use alice_physics::buoyancy_zone::{BuoyancyZone, ZoneShape};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{BodyType, RigidBody};
+use alice_physics_core::buoyancy_zone::{BuoyancyZone, ZoneShape};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{BodyType, RigidBody};
 
 fn body_at(y: Fix128) -> RigidBody {
     let pos = Vec3Fix::new(Fix128::ZERO, y, Fix128::ZERO);

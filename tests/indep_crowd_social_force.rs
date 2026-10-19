@@ -30,11 +30,11 @@
     reason = "analytic reference: f64 social force repulsion A exp(gap/B) energy and ln of the force for crowd_force decay checks"
 )]
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdForceError, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
 };
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::Vec2Fix;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::Vec2Fix;
 
 const A: f64 = 900.0;
 const B: f64 = 0.1;

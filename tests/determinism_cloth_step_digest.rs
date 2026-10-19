@@ -3,8 +3,8 @@
 //! `EXPECTED_*` were recorded before the rest tether existed (main at `87b98703`). A cloth
 //! that never enables the tether must keep producing the same states.
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::Cloth;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::Cloth;
 
 fn mix(h: &mut u64, f: Fix128) {
     for word in [f.hi as u64, f.lo] {

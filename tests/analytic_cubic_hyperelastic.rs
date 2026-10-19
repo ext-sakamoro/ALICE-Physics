@@ -76,13 +76,13 @@
 // `--all-features`.
 #![cfg(not(feature = "parallel"))]
 
-use alice_physics::cubic_elastic_fem::{solve_cubic, solve_cubic_hyperelastic, CubicMesh};
-use alice_physics::hyperelastic::HyperelasticModel;
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::cubic_elastic_fem::{solve_cubic, solve_cubic_hyperelastic, CubicMesh};
+use alice_physics_core::hyperelastic::HyperelasticModel;
+use alice_physics_core::linear_elastic_fem::{
     Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Cube side (mm).
 const SIDE: f64 = 4.0;
@@ -384,7 +384,7 @@ fn the_lattice_the_oracles_run_on_is_actually_perturbed() {
 /// identity would be caught.
 #[test]
 fn the_cubic_gradient_of_an_affine_field_is_exact() {
-    use alice_physics::math::{Mat3Fix, Vec3Fix};
+    use alice_physics_core::math::{Mat3Fix, Vec3Fix};
 
     let n = 2usize;
     let h = SIDE / n as f64;
@@ -420,10 +420,10 @@ fn the_cubic_gradient_of_an_affine_field_is_exact() {
         Vec3Fix::new(fx(a[0][2]), fx(a[1][2]), fx(1.0 + a[2][2])),
     );
     let (lambda, _) = lame_f64();
-    let kappa =
-        alice_physics::hyperelastic::volumetric_modulus(&model, fx(lambda)).expect("kappa >= 0");
+    let kappa = alice_physics_core::hyperelastic::volumetric_modulus(&model, fx(lambda))
+        .expect("kappa >= 0");
     let expected =
-        alice_physics::hyperelastic::cauchy_stress(&model, kappa, f).expect("positive det F");
+        alice_physics_core::hyperelastic::cauchy_stress(&model, kappa, f).expect("positive det F");
 
     let mut worst = 0.0f64;
     for s in &solution.field.element_stress {
@@ -963,7 +963,7 @@ fn uniaxial_tension_under_a_superposed_rotation_is_the_rotated_closed_form() {
 /// sensitive property, and a P3 solve is the most expensive thing in this file.
 #[test]
 fn p2_and_p3_agree_on_the_same_hyperelastic_scene() {
-    use alice_physics::quadratic_elastic_fem::{solve_quadratic_hyperelastic, QuadraticMesh};
+    use alice_physics_core::quadratic_elastic_fem::{solve_quadratic_hyperelastic, QuadraticMesh};
 
     let (_, mu) = lame_f64();
     let model = HyperelasticModel::NeoHookean { mu_mpa: fx(mu) };
@@ -1044,7 +1044,7 @@ fn p2_and_p3_agree_on_the_same_hyperelastic_scene() {
 /// this closes the same hole at the API.
 #[test]
 fn a_configuration_without_a_law_is_refused() {
-    use alice_physics::linear_elastic_fem::FemError;
+    use alice_physics_core::linear_elastic_fem::FemError;
 
     let n = 1usize;
     let h = SIDE / n as f64;
@@ -1082,9 +1082,7 @@ fn a_negative_volumetric_modulus_is_refused() {
     assert!(
         matches!(
             refused,
-            Err(alice_physics::linear_elastic_fem::FemError::InvalidConfig(
-                _
-            ))
+            Err(alice_physics_core::linear_elastic_fem::FemError::InvalidConfig(_))
         ),
         "kappa < 0 must be refused: {refused:?}"
     );

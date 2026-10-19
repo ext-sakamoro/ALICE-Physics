@@ -30,18 +30,18 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, ConvexHull, Sphere};
-use alice_physics::compound::CompoundShape;
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::{RayFilter, RayTarget, WorldRayHit};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::TriMesh;
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, ConvexHull, Sphere};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget, WorldRayHit};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::TriMesh;
 
 const EXACT: f64 = 1e-12;
 const TURNED: f64 = 1e-9;
@@ -1125,7 +1125,7 @@ fn filter_removes_what_it_names() {
     );
     w.set_body_filter(
         near,
-        alice_physics::filter::CollisionFilter::new(1 << 3, u32::MAX),
+        alice_physics_core::filter::CollisionFilter::new(1 << 3, u32::MAX),
     );
     let o = v3(-10.0, 0.0, 0.0);
     let d = Vec3Fix::UNIT_X;

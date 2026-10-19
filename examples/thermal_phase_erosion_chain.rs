@@ -13,11 +13,11 @@
 //! cargo run --release --example thermal_phase_erosion_chain --features std
 //! ```
 
-use alice_physics::erosion::{ErosionConfig, ErosionModifier, ErosionType};
-use alice_physics::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::erosion::{ErosionConfig, ErosionModifier, ErosionType};
+use alice_physics_core::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
 
 fn main() {
     // --- thermal: one point source, diffusion and cooling off

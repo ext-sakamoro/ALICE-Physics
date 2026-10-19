@@ -20,8 +20,8 @@
 //! * **Cable pretension**: `T ≈ w · L² / (8 · s)` (parabolic approximation).
 //! * **Tensioned cable stiffness**: `k = 8 · T / L`.
 
-use alice_physics::math::Fix128;
-use alice_physics::prestressed::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::prestressed::{
     bolt_load_fraction, bolt_peak_tension, cable_pretension_n, preload_from_torque,
     recommended_preload_n, separation_load_n, tensioned_cable_stiffness_n_per_mm,
 };

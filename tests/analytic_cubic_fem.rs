@@ -1,4 +1,4 @@
-//! Oracles for `alice_physics::cubic_elastic_fem` — the twenty-node P3
+//! Oracles for `alice_physics_core::cubic_elastic_fem` — the twenty-node P3
 //! tetrahedron.
 //!
 //! The headline property, and the one that separates this element from the P2
@@ -48,11 +48,13 @@
 
 use std::collections::BTreeSet;
 
-use alice_physics::cubic_elastic_fem::{shape_values, solve_cubic, CubicMesh};
-use alice_physics::linear_elastic_fem::{solve, BoundaryConditions, ElasticMaterial, SolverConfig};
-use alice_physics::math::Fix128;
-use alice_physics::quadratic_elastic_fem::{solve_quadratic, QuadraticMesh};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::cubic_elastic_fem::{shape_values, solve_cubic, CubicMesh};
+use alice_physics_core::linear_elastic_fem::{
+    solve, BoundaryConditions, ElasticMaterial, SolverConfig,
+};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::quadratic_elastic_fem::{solve_quadratic, QuadraticMesh};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 const E_MPA: f64 = 3500.0;
 const NU: f64 = 0.35;

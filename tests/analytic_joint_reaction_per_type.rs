@@ -23,11 +23,11 @@
 //! equivalent: tests/analytic_slider_reaction_limit.rs pins them. The
 //! magnitude below is what the rows' scaling must reproduce.
 
-use alice_physics::joint::{
+use alice_physics_core::joint::{
     solve_joints_with_reaction_forces, BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint,
     HingeJoint, Joint, SliderJoint, SpringJoint,
 };
-use alice_physics::{Fix128, QuatFix, RigidBody, Vec3Fix};
+use alice_physics_core::{Fix128, QuatFix, RigidBody, Vec3Fix};
 
 fn h() -> Fix128 {
     Fix128::from_ratio(1, 64)

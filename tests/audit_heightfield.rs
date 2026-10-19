@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::heightfield`.
+//! Audit oracles for `alice_physics_core::heightfield`.
 //!
 //! Expected values come from an independent `f64` bilinear reference, from planes
 //! and the bilinear saddle `h = x·z` (whose central difference is exact), and from
@@ -6,8 +6,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn fx(v: f64) -> Fix128 {

@@ -23,7 +23,7 @@
     reason = "pins the deprecated non-DP privacy types (LaplaceNoise, XorShift64, ...) until the breaking release removes them"
 )]
 
-use alice_physics::privacy::{LaplaceNoise, XorShift64};
+use alice_physics_core::privacy::{LaplaceNoise, XorShift64};
 
 /// Marsaglia の xorshift64 step (実装を呼ばず定義から書く)
 fn step(mut x: u64) -> u64 {

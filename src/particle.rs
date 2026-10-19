@@ -291,10 +291,10 @@ impl ParticleSystem {
     /// # Example
     ///
     /// ```
-    /// use alice_physics::math::{Fix128, Vec3Fix};
-    /// use alice_physics::particle::{LandingTarget, ParticleEmitter, ParticleSystem};
-    /// use alice_physics::rng::DeterministicRng;
-    /// use alice_physics::sdf_collider::ClosureSdf;
+    /// use alice_physics_core::math::{Fix128, Vec3Fix};
+    /// use alice_physics_core::particle::{LandingTarget, ParticleEmitter, ParticleSystem};
+    /// use alice_physics_core::rng::DeterministicRng;
+    /// use alice_physics_core::sdf_collider::ClosureSdf;
     ///
     /// // floor y = 0
     /// let floor = ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0));

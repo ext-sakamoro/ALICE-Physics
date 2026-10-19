@@ -38,7 +38,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 // ---------------------------------------------------------------------------
 // deterministic sample generation (no dependency, fixed seed)

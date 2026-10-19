@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::sdf_fem_mesh`.
+//! Audit oracles for `alice_physics_core::sdf_fem_mesh`.
 //! Reference values: exact volumes of half-space / box regions (polytope formulas), the
 //! topological identities of a closed surface (Euler characteristic), and brute-force
 //! recomputation of the generators' own occupancy rule. Nothing is read back from the mesh
@@ -14,8 +14,8 @@
     reason = "HashMap/HashSet only count or look up tetrahedron faces in this test; no assertion depends on hash iteration order"
 )]
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, RefineError, SdfTetMesh};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sdf_fem_mesh::{generate, generate_marching_tets, RefineError, SdfTetMesh};
 use std::collections::{HashMap, HashSet};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -641,7 +641,7 @@ fn marked_refinement_minimal_budget_equals_returned_passes() {
 /// `max_edge_length` sees edges along every axis (here a 3-long edge along z only).
 #[test]
 fn max_edge_length_covers_each_axis() {
-    use alice_physics::sdf_fem_mesh::Tetrahedron;
+    use alice_physics_core::sdf_fem_mesh::Tetrahedron;
     for (i, want) in [(0usize, 3.0f32), (1, 3.0), (2, 3.0)] {
         let mut tip = [0.0f32; 3];
         tip[i] = 3.0;

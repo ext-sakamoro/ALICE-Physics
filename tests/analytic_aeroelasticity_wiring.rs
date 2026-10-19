@@ -25,7 +25,7 @@
     reason = "analytic reference: f64 exp envelope of structural damping decay exp(-zeta wn t) in the Facchinetti wake-oscillator VIV test"
 )]
 
-use alice_physics::aeroelasticity::{viv_step, VivParameters, VivState};
+use alice_physics_core::aeroelasticity::{viv_step, VivParameters, VivState};
 use core::f64::consts::PI;
 
 /// `f64` mirror of the parameters (read off the struct, not recomputed).

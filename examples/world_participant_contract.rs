@@ -1,5 +1,5 @@
 //! A law written against the participant contract
-//! ([`alice_physics::world_participant`]) and driven by hand through the
+//! ([`alice_physics_core::world_participant`]) and driven by hand through the
 //! substep context, the way the world will drive it: a point oscillator that
 //! pulls a body along y, its snapshot payload, a failing call that leaves it
 //! unchanged, the checks a restore makes on the participant list, the
@@ -10,10 +10,10 @@
 //!
 //! Run: `cargo run --example world_participant_contract`
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::solver::RigidBody;
-use alice_physics::world_participant::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::world_participant::{
     check_field_ports, deposit_bodies, execution_order, remap_conserving, run_substep,
     wakes_parked_body, AccumulateError, ExchangeError, FieldAccessError, FieldBoard, FieldError,
     FieldLayout, FieldMode, FieldPortError, FieldStage, ForceAccumulator, ObservationSink,

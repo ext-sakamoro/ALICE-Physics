@@ -48,12 +48,12 @@
     reason = "analytic reference: f64 log-law u+ = ln(y+)/kappa + B and viscous sublayer edge for the turbulence wall model"
 )]
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     CfdSolver, PressureSolver, PressureSolverError, StepError, StepOptions, WallModel,
 };
-use alice_physics::eulerian_grid::FaceBc;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::turbulence::{
+use alice_physics_core::eulerian_grid::FaceBc;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::turbulence::{
     friction_velocity, WallFunctionError, FRICTION_VELOCITY_BISECTIONS,
 };
 

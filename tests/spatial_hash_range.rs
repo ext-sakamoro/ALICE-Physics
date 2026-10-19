@@ -20,8 +20,8 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::spatial::SpatialGrid;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::spatial::SpatialGrid;
 
 /// The cell formula before the range fix (valid only while `x * inv` and
 /// `hi + half` do not overflow, which the callers below guarantee).

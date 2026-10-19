@@ -11,8 +11,8 @@
     reason = "analytic reference: f64 sphere sweep directions (sin th cos ph, ...) brute-forcing MetricWeights lipschitz and minimum"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::metric::{MetricError, MetricWeights};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::metric::{MetricError, MetricWeights};
 
 fn fx(x: f64) -> Fix128 {
     Fix128::from_f64(x)

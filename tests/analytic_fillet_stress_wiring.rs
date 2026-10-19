@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::fillet_stress`
+//! Oracles for the production entry points of `alice_physics_core::fillet_stress`
 //! driven by `examples/fillet_stress_concentration.rs`:
 //! `kt_circular_hole_infinite_plate`, `kt_elliptical_hole`,
 //! `kt_u_notch_axial`, and `recommended_fillet_radius_mm`.
@@ -48,11 +48,11 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::fillet_stress::{
+use alice_physics_core::fillet_stress::{
     kt_circular_hole_infinite_plate, kt_elliptical_hole, kt_u_notch_axial,
     recommended_fillet_radius_mm,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 /// Relative-error assertion against an independently hand-derived f64
 /// closed form (never computed by calling the function under test).

@@ -24,9 +24,9 @@
 //! cargo run --example layer_adhesion_fos --features std
 //! ```
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::layer_adhesion::{EffectiveStrength, PrintOrientation};
-use alice_physics::math::Fix128;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::layer_adhesion::{EffectiveStrength, PrintOrientation};
+use alice_physics_core::math::Fix128;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// `i64::MAX >> 8`, the sentinel `component_fos` returns for zero applied

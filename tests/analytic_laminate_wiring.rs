@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::laminate`
+//! Oracles for the production entry points of `alice_physics_core::laminate`
 //! driven by `examples/laminate_abd_matrix.rs`: `Ply::{q_matrix, q_bar}`,
 //! `compute_abd`, `is_symmetric_stack`, and `AbdMatrix::is_symmetric`.
 //!
@@ -78,7 +78,7 @@
 // reduce to plain algebra), which means calling `f64::sin`/`f64::cos` for
 // the independent oracle side. `clippy.toml`'s `disallowed-methods` bans
 // those crate-wide (every transcendental must go through
-// `alice_physics::det_math`, not the platform libm) but the ban does not
+// `alice_physics_core::det_math`, not the platform libm) but the ban does not
 // apply to a closed-form f64 reference value that is never written back
 // into `Fix128` production state -- same convention as
 // `tests/engineering_oracles_solid.rs` and
@@ -88,9 +88,9 @@
     reason = "analytic reference: f64 cos/sin feed the Jones Q-bar ply rotation formula for laminate ABD matrix references"
 )]
 
-use alice_physics::anisotropic::OrthotropicElasticity;
-use alice_physics::laminate::{compute_abd, is_symmetric_stack, AbdMatrix, Ply, Sym3};
-use alice_physics::math::Fix128;
+use alice_physics_core::anisotropic::OrthotropicElasticity;
+use alice_physics_core::laminate::{compute_abd, is_symmetric_stack, AbdMatrix, Ply, Sym3};
+use alice_physics_core::math::Fix128;
 
 /// Relative-error assertion against an independently hand-derived f64
 /// closed form (never computed by calling the function under test).

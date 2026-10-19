@@ -7,15 +7,15 @@
 //! cargo run --release --example vehicle_scenario
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::vehicle_dynamics::scenario::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::vehicle_dynamics::scenario::{
     longitudinal_state, time_headway, time_to_collision, up_from_gravity, Recording, ReplayError,
     Scenario, ScenarioVehicle, StoppingDistanceMeter, VehicleSnapshot, RECORDING_MAGIC,
     RECORDING_VERSION,
 };
-use alice_physics::vehicle_dynamics::surface::{FlatGround, RoadCondition};
-use alice_physics::vehicle_dynamics::{DriverInput, DynamicVehicle, DynamicVehicleConfig};
+use alice_physics_core::vehicle_dynamics::surface::{FlatGround, RoadCondition};
+use alice_physics_core::vehicle_dynamics::{DriverInput, DynamicVehicle, DynamicVehicleConfig};
 
 const CAR_LENGTH: f64 = 4.5;
 

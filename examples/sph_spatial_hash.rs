@@ -14,7 +14,7 @@
     reason = "independent reference: brute-force squared distance to every particle checks all inside kernel radius h were visited by the hash"
 )]
 
-use alice_physics::sdf_sph::{SphParticle, SphSpatialHash};
+use alice_physics_core::sdf_sph::{SphParticle, SphSpatialHash};
 
 fn main() {
     let h = 0.1_f32;

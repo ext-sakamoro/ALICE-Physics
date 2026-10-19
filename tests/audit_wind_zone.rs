@@ -20,10 +20,10 @@
     reason = "analytic reference: f64 wind(t) = base + turb sin(2 pi f t) closed form from the wind_zone module doc"
 )]
 
-use alice_physics::buoyancy_zone::ZoneShape;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
-use alice_physics::wind_zone::WindZone;
+use alice_physics_core::buoyancy_zone::ZoneShape;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::wind_zone::WindZone;
 
 const TOL: f64 = 1e-9;
 

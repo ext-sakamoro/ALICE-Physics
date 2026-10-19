@@ -68,10 +68,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::animation_blend::{
+use alice_physics_core::animation_blend::{
     AnimationBlender, AnimationClip, BlendMode, BonePose, Keyframe, SkeletonPose,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use std::panic::catch_unwind;
 
 fn r(num: i64, denom: i64) -> Fix128 {

@@ -43,15 +43,15 @@
 //! medium's own roundings of `u`, `F`, `dv` in the two runs), i.e. at most
 //! `n q / √m_min` on any one velocity component.
 
-use alice_physics::coupling_medium::{
+use alice_physics_core::coupling_medium::{
     DragMedium, DragMediumError, DRAG_MEDIUM_KIND, MEDIUM_OBS_MOMENTUM, MEDIUM_OBS_VELOCITY,
 };
-use alice_physics::det_math::exp64;
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::world_participant::{
+use alice_physics_core::det_math::exp64;
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::world_participant::{
     Observed, Participant, ParticipantFault, StateError, StepError, WorldFault,
 };
-use alice_physics::{
+use alice_physics_core::{
     Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix, WorldSnapshotError,
 };
 
@@ -449,7 +449,7 @@ fn a_ball_on_a_frictionless_floor_reaches_the_common_velocity() {
         w.bodies[ball].inv_inertia = Vec3Fix::ZERO;
         let id = w
             .material_table
-            .register(alice_physics::PhysicsMaterial::new(
+            .register(alice_physics_core::PhysicsMaterial::new(
                 0,
                 Fix128::ZERO,
                 Fix128::ZERO,

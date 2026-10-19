@@ -19,12 +19,12 @@
 //! cargo run --example thermoelastic_rise --features std
 //! ```
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::linear_elastic_fem::{
     solve_with_eigenstrain, BoundaryConditions, ElasticMaterial, SolverConfig, ThermalExpansion,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Young's modulus, MPa (PLA).
 const E_MPA: f64 = 3500.0;

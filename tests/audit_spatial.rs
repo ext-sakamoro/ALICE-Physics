@@ -5,8 +5,8 @@
 //! CSR order) re-derived here with `f64` floor / brute force, never by calling
 //! the grid under test to produce the expectation.
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::spatial::SpatialGrid;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::spatial::SpatialGrid;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

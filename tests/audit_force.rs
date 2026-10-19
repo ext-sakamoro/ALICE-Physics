@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::force`.
+//! Audit oracles for `alice_physics_core::force`.
 //!
 //! Expected values come from the closed forms of each field (inverse-square,
 //! linear drag, `(1 - d/R)^n`, `s / r^3 * cos`, `axis x radial`), computed in
@@ -13,10 +13,12 @@
     reason = "analytic reference: f64 explosion falloff 100 * (1 - d/R)^n with fractional n for force fields"
 )]
 
-use alice_physics::force::{apply_force_fields, compute_force, ForceField, ForceFieldInstance};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::particle::{Particle, ParticleSystem};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::force::{
+    apply_force_fields, compute_force, ForceField, ForceFieldInstance,
+};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::particle::{Particle, ParticleSystem};
+use alice_physics_core::solver::RigidBody;
 use std::sync::mpsc;
 use std::time::Duration;
 

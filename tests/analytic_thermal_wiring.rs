@@ -20,8 +20,8 @@
     reason = "analytic reference: f64 Newton cooling 20 + 100 exp(-2 * 0.25) and splat distance for ThermalModifier"
 )]
 
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::thermal::{HeatSource, ThermalConfig, ThermalModifier};
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::thermal::{HeatSource, ThermalConfig, ThermalModifier};
 
 fn config() -> ThermalConfig {
     ThermalConfig {

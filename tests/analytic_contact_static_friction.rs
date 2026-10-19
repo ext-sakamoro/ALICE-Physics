@@ -30,9 +30,9 @@
     reason = "analytic reference: f64 damped displacement and slope gravity g sin/cos(atan mu) for XPBD static friction (Mueller et al. 2020)"
 )]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
 
 const DT: f64 = 1.0 / 60.0;
 const FRAMES: usize = 60;
@@ -117,7 +117,11 @@ fn run(mu: f64, a_t: f64, g_n: f64, filter: Filter, path: Path) -> (Vec3Fix, Vec
     w.bodies[ball].inv_inertia = Vec3Fix::ZERO;
     let id = w
         .material_table
-        .register(alice_physics::PhysicsMaterial::new(0, fx(mu), Fix128::ZERO));
+        .register(alice_physics_core::PhysicsMaterial::new(
+            0,
+            fx(mu),
+            Fix128::ZERO,
+        ));
     w.set_body_material(ground, id);
     w.set_body_material(ball, id);
     match filter {
@@ -251,8 +255,8 @@ fn a_vetoed_contact_gets_no_static_friction() {
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridge {
     use super::*;
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::solver::ContactConstraint;
 
     #[derive(Default)]
     struct NormalProjection {
@@ -263,7 +267,7 @@ mod bridge {
 
     impl GpuSolverBridge for NormalProjection {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -325,7 +329,7 @@ mod bridge {
         w.bodies[ball].inv_inertia = Vec3Fix::ZERO;
         let id = w
             .material_table
-            .register(alice_physics::PhysicsMaterial::new(
+            .register(alice_physics_core::PhysicsMaterial::new(
                 0,
                 fx(0.5),
                 Fix128::ZERO,

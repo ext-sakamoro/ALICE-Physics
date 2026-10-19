@@ -20,8 +20,8 @@
 //!
 //! Run with: `cargo run --example streaming_window_counts`
 
-use alice_physics::anomaly::{MadDetector, StreamingMedian};
-use alice_physics::pipeline::{MetricRegistry, MetricType, RingBuffer};
+use alice_physics_core::anomaly::{MadDetector, StreamingMedian};
+use alice_physics_core::pipeline::{MetricRegistry, MetricType, RingBuffer};
 
 const WINDOW: usize = 100;
 

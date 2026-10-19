@@ -12,9 +12,9 @@
 //! cargo run --example temperature_reconciliation --features std
 //! ```
 
-use alice_physics::coupled_field::{reconcile_mean, reconcile_weighted, CoupledScalar};
-use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::coupled_field::{reconcile_mean, reconcile_weighted, CoupledScalar};
+use alice_physics_core::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
 
 fn owners() -> (ThermalModifier, PhaseChangeModifier) {
     let thermal = ThermalModifier::new(
@@ -67,10 +67,10 @@ fn main() {
         thermal.temperature_at(0.5, 0.5, 0.5),
         phase.temperature_at(0.5, 0.5, 0.5),
         channel
-            .sample(alice_physics::math::Vec3Fix::new(
-                alice_physics::math::Fix128::from_ratio(1, 2),
-                alice_physics::math::Fix128::from_ratio(1, 2),
-                alice_physics::math::Fix128::from_ratio(1, 2),
+            .sample(alice_physics_core::math::Vec3Fix::new(
+                alice_physics_core::math::Fix128::from_ratio(1, 2),
+                alice_physics_core::math::Fix128::from_ratio(1, 2),
+                alice_physics_core::math::Fix128::from_ratio(1, 2),
             ))
             .to_f64()
     );

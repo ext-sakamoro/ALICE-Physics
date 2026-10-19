@@ -25,10 +25,10 @@
 //!
 //! Run with: `cargo run --example material_database_lookups`
 
-use alice_physics::anisotropic::{AnisotropicStrength, OrthotropicElasticity};
-use alice_physics::filament_db::{FilamentDb, MaterialProperties};
-use alice_physics::material::{MaterialTable, PhysicsMaterial};
-use alice_physics::math::Fix128;
+use alice_physics_core::anisotropic::{AnisotropicStrength, OrthotropicElasticity};
+use alice_physics_core::filament_db::{FilamentDb, MaterialProperties};
+use alice_physics_core::material::{MaterialTable, PhysicsMaterial};
+use alice_physics_core::math::Fix128;
 
 fn close(got: Fix128, want: f64, what: &str) {
     let g = got.to_f64();

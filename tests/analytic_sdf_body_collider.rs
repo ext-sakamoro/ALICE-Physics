@@ -18,13 +18,13 @@
     reason = "analytic reference: f64 rotated box and parametric ellipsoid surface points for shape-vs-SDF collider contact references"
 )]
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, ConvexHull, Sphere};
-use alice_physics::compound::CompoundShape;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, ConvexHull, Sphere};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -480,7 +480,7 @@ fn a_scaled_sdf_moves_the_surface_by_the_scale() {
 /// sensors and an SDF attached to the body itself are skipped.
 #[test]
 fn plain_bodies_static_bodies_and_sensors_keep_their_old_behaviour() {
-    use alice_physics::solver::RigidBody;
+    use alice_physics_core::solver::RigidBody;
     let mut w = world_with(plane(0.0));
     w.set_sdf_collision_radius(fx(0.5));
     // A plain body 0.3 above the floor: its sphere of radius 0.5 reaches 0.2 in.

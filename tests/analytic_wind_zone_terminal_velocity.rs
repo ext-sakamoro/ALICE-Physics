@@ -10,9 +10,9 @@
 //! With zero wind (so relative velocity is just the body's own velocity)
 //! the closed-form approach to that limit is `v(t) = v_t * tanh(g t / v_t)`.
 
-use alice_physics::buoyancy_zone::ZoneShape;
-use alice_physics::wind_zone::WindZone;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::buoyancy_zone::ZoneShape;
+use alice_physics_core::wind_zone::WindZone;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 #[test]
 fn falling_body_in_a_wind_zone_approaches_the_closed_form_terminal_velocity() {

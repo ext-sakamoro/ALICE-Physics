@@ -4,9 +4,9 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use alice_physics::bvh::BvhPrimitive;
-use alice_physics::collider::AABB;
-use alice_physics::{Fix128, LinearBvh, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::bvh::BvhPrimitive;
+use alice_physics_core::collider::AABB;
+use alice_physics_core::{Fix128, LinearBvh, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 // ============================================================================
 // Physics step benchmarks

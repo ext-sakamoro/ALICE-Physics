@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::transient_thermal` (S2-2 audit).
+//! Audit oracles for `alice_physics_core::transient_thermal` (S2-2 audit).
 //!
 //! Expected values come from the semi-discrete cosine eigenmode (exact decay
 //! rate of the finite-volume Neumann Laplacian), from a conservation integral
@@ -9,7 +9,7 @@
     reason = "analytic reference: f64 cosine eigenmode decay exp(-lambda t) of the finite-volume Neumann Laplacian for transient_thermal"
 )]
 
-use alice_physics::transient_thermal::{
+use alice_physics_core::transient_thermal::{
     crank_nicolson_step_1d, crank_nicolson_step_1d_nonlinear, stable_dt_1d, stable_dt_3d,
     transient_step_1d, transient_step_3d, TemperatureDependence, ThermalMaterial,
 };

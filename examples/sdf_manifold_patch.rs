@@ -14,9 +14,9 @@
     reason = "measured quantity: atan2 orders the simulated contact points to measure the patch area, asserted against 1.0"
 )]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
 
 fn main() {
     let ground = SdfCollider::new_static(

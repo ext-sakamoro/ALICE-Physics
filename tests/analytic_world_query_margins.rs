@@ -17,14 +17,14 @@
     reason = "analytic reference: f64 sphere SDF distances of two bumps for the nearest-hit capsule cast margin check"
 )]
 
-use alice_physics::character::{CharacterConfig, CharacterController};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::{RayFilter, RayTarget};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::world_shape_query::WorldShapeHit;
+use alice_physics_core::character::{CharacterConfig, CharacterController};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::world_shape_query::WorldShapeHit;
 
 const EXACT: f64 = 1e-12;
 const MOVE_TOL: f64 = 1e-8;
@@ -101,7 +101,7 @@ fn a_capsule_overlapping_a_plane_by_one_end_starts_overlapping() {
 #[cfg(feature = "std")]
 #[test]
 fn an_sdf_on_an_excluded_body_is_not_seen() {
-    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
     let mut w = world();
     let body = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
     w.sdf_colliders.push(SdfCollider::new_dynamic(
@@ -326,8 +326,8 @@ fn the_controller_velocity_is_the_requested_displacement() {
 #[cfg(feature = "std")]
 #[test]
 fn a_capsule_cast_finds_the_nearest_of_two_sdf_bumps() {
-    use alice_physics::math::QuatFix;
-    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+    use alice_physics_core::math::QuatFix;
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
     // two spheres: A at (−8.75, 0, 0) radius 1 (top y = 1) and B at (0, 1, 0)
     // radius 0.1 (top y = 1.1), as one field (the minimum of the two)
     let dist_a = |x: f32, y: f32, z: f32| ((x + 8.75).powi(2) + y * y + z * z).sqrt() - 1.0;
@@ -434,8 +434,8 @@ fn sdf_world_of(
     f: impl Fn(f32, f32, f32) -> f32 + Send + Sync + 'static,
     n: impl Fn(f32, f32, f32) -> (f32, f32, f32) + Send + Sync + 'static,
 ) -> PhysicsWorld {
-    use alice_physics::math::QuatFix;
-    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+    use alice_physics_core::math::QuatFix;
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
     let mut w = world();
     w.sdf_colliders.push(SdfCollider::new_static(
         Box::new(ClosureSdf::new(f, n)),

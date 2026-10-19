@@ -1,4 +1,4 @@
-//! Audit oracles (S2-1) for `alice_physics::thin_wall`.
+//! Audit oracles (S2-1) for `alice_physics_core::thin_wall`.
 //!
 //! Expected values are hand-derived from hand-built signed distance fields
 //! (slabs, spheres, boxes) and the module's stated definition of wall
@@ -15,9 +15,9 @@
     reason = "analytic reference: f64 box SDF |max(q, 0)| built by hand for the thin_wall wall-thickness definition"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::thin_wall::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::thin_wall::{
     analyze_thickness, analyze_thickness_grid, measure_thickness_at, sample_surface_points,
     ThinWallConfig, ThinWallReport,
 };

@@ -41,9 +41,9 @@
 //! it to (0.99984, 0.0), confirming the sleep system, not the Lorentz-force
 //! integration, was the cause.
 
-use alice_physics::electromagnetic::{lorentz_force, ChargedBody, EmSource};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::electromagnetic::{lorentz_force, ChargedBody, EmSource};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn ffx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

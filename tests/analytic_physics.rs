@@ -24,9 +24,11 @@
     reason = "analytic reference: f64 small-angle pendulum initial pose and rotation angle 2 atan2(sin, w) equal to omega t"
 )]
 
-use alice_physics::joint::{solve_joints, HingeJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{BodyType, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::joint::{solve_joints, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{
+    BodyType, DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody,
+};
 
 const DT60: f64 = 1.0 / 60.0;
 

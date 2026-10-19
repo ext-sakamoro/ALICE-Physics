@@ -31,7 +31,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::profiling::{
+use alice_physics_core::profiling::{
     PhysicsProfiler, ProfileEntry, StepStats, TickCounter, STAGE_BROADPHASE, STAGE_CCD,
     STAGE_CONTACT_CACHE, STAGE_INTEGRATION, STAGE_NARROWPHASE, STAGE_SOLVER, STAGE_TOTAL_STEP,
 };

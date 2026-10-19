@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::soft_body_cut`
+//! Oracles for the production entry points of `alice_physics_core::soft_body_cut`
 //! driven by `examples/soft_body_cutting.rs`: `CutPlane`, `CutResult`,
 //! `cut_cloth`, and `cut_deformable`.
 //!
@@ -43,8 +43,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
 
 fn horizontal_plane(y: Fix128) -> CutPlane {
     CutPlane {

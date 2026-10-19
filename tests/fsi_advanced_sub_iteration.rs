@@ -83,11 +83,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_iteration::{
+use alice_physics_core::coupled_iteration::{
     residual_norm_inf, run_sub_iteration, CoupledIterationError, SubIterationConfig,
 };
-use alice_physics::fsi_advanced::{drag_force, react_back_pressure, SolidSample};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::fsi_advanced::{drag_force, react_back_pressure, SolidSample};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 const UNIT: Fix128 = Fix128::ONE;
 
@@ -138,7 +138,7 @@ fn sweep(gain: Fix128, fluid_velocity: Fix128) -> (Fix128, Fix128) {
 fn run(
     gain: Fix128,
     config: SubIterationConfig,
-) -> Result<alice_physics::coupled_iteration::SubIterationReport, CoupledIterationError> {
+) -> Result<alice_physics_core::coupled_iteration::SubIterationReport, CoupledIterationError> {
     let mut fluid = Fix128::ZERO;
     let mut previous_force: Option<Fix128> = None;
     run_sub_iteration(config, |_| {

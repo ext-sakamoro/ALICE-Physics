@@ -16,12 +16,12 @@
     reason = "independent reference: f64 Newton Kepler solver and vis-viva / orbit radius a(1-e^2)/(1+e cos nu) (Vallado, Meeus) for kepler"
 )]
 
-use alice_physics::kepler::{
+use alice_physics_core::kepler::{
     j2_arg_periapsis_rate, j2_raan_rate, mean_from_true_anomaly, mean_motion, orbital_period,
     solve_kepler, specific_angular_momentum, specific_orbital_energy, true_from_mean_anomaly,
     vis_viva_speed, KeplerError, OrbitalElements, StateVector, DEGENERACY_TOLERANCE,
 };
-use alice_physics::{Fix128, Vec3Fix};
+use alice_physics_core::{Fix128, Vec3Fix};
 use core::f64::consts::PI;
 
 const MU: f64 = 398_600.441_8;

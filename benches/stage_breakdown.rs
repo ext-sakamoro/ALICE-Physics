@@ -18,8 +18,10 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::{DistanceConstraint, Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::{
+    DistanceConstraint, Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix,
+};
 
 fn fast_sleep_config() -> SleepConfig {
     SleepConfig {

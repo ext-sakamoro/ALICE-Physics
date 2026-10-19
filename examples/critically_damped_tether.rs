@@ -25,10 +25,10 @@
 //! cargo run --example critically_damped_tether --features std
 //! ```
 
-use alice_physics::det_math::exp64;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::solver::{DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::det_math::exp64;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::solver::{DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig};
 
 /// Discrete critical damping factor for one step of length `dt` and angular frequency `omega`.
 fn critical_retention(omega: Fix128, dt: Fix128) -> Fix128 {

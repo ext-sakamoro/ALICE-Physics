@@ -1,14 +1,14 @@
-//! Audit oracles for `alice_physics::cloth_fluid` (S2-2 audit).
+//! Audit oracles for `alice_physics_core::cloth_fluid` (S2-2 audit).
 //!
 //! Expected values are written from the module's documented formulas and from
 //! first principles (drag as linear relaxation, Euler boundary closed form),
 //! not copied from the implementation.
 
-use alice_physics::cloth_fluid::{
+use alice_physics_core::cloth_fluid::{
     apply_cloth_boundary_to_fluid, apply_cloth_boundary_to_fluid_with_residual,
     apply_fluid_forces_to_cloth, apply_fluid_forces_to_cloth_with_residual, ClothFluidCoupling,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn fx(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

@@ -10,11 +10,11 @@
 //! * break test is `lambda / dt^2 > break_force` (strict).
 //! * anchor world point = `body.position + rotate(body.rotation, local_anchor)`.
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rope_attach::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::rope_attach::{
     solve_rope_attachments, solve_rope_attachments_two_way, RopeAttachment,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 fn close(a: Vec3Fix, x: f64, y: f64, z: f64) -> bool {
     let e = 1e-12;

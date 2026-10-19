@@ -28,12 +28,12 @@
 
 use std::sync::{Arc, Mutex};
 
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{
     PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, WorldSnapshotError,
 };
-use alice_physics::world_participant::{
+use alice_physics_core::world_participant::{
     FieldLayout, FieldMode, ObservationSink, Observed, Participant, ParticipantFault,
     ParticipantKind, Port, PortId, RegisterError, StateError, StepError, StepRule, SubstepCtx,
     WorldFault,
@@ -42,10 +42,10 @@ use alice_physics::world_participant::{
 /// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
 /// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
 fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
-    let mut world = PhysicsWorld::new(alice_physics::solver::PhysicsConfig::default());
+    let mut world = PhysicsWorld::new(alice_physics_core::solver::PhysicsConfig::default());
     assert_eq!(
-        world.restore_world_checked(blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
-        Ok(alice_physics::LawCheck::Unpinned)
+        world.restore_world_checked(blob, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
+        Ok(alice_physics_core::LawCheck::Unpinned)
     );
     world
 }
@@ -251,15 +251,15 @@ fn the_parallel_path_follows_the_same_closed_form() {
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridge {
     use super::*;
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::solver::ContactConstraint;
 
     /// A bridge that solves nothing (the scene has no contact).
     pub(super) struct Idle;
 
     impl GpuSolverBridge for Idle {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -944,7 +944,7 @@ fn a_field_that_breaks_registered_ports_is_refused() {
         .expect_err("two writers of a replace field");
     assert!(matches!(
         err,
-        alice_physics::solver::DeclareFieldError::Ports(RegisterError::Field(_))
+        alice_physics_core::solver::DeclareFieldError::Ports(RegisterError::Field(_))
     ));
     assert!(w.fields().ids().is_empty());
     w.declare_field(a, FieldLayout::PerBody { bodies: 1 }, FieldMode::Sum)
@@ -1199,7 +1199,7 @@ fn an_out_of_range_inv_inertia_torque_is_a_fault_and_leaves_the_body_alone() {
 /// under a torque or a force of `2⁶²`: `I⁻¹·τ` and `F·inv_mass` are `2⁶⁴`,
 /// past the range of [`Fix128`]; a wrapping product would be exactly 0 and
 /// leave the body parked. A change too large to represent wakes the body
-/// ([`alice_physics::world_participant::wakes_parked_body`]) and applying it
+/// ([`alice_physics_core::world_participant::wakes_parked_body`]) and applying it
 /// is then the fault of the awake case, with the body unchanged.
 fn parked_light_body() -> PhysicsWorld {
     let mut w = PhysicsWorld::new(free_config(SolverBackend::Xpbd));
@@ -1313,7 +1313,7 @@ fn a_change_near_the_range_edge_wakes_a_parked_body_whatever_the_threshold() {
         w.step(Fix128::from_ratio(1, 256));
     }
     assert!(w.is_sleeping(0), "fixture: the body must be asleep");
-    w.set_sleep_config(alice_physics::sleeping::SleepConfig {
+    w.set_sleep_config(alice_physics_core::sleeping::SleepConfig {
         angular_threshold: Fix128::from_ratio(12_148_001_999, 4),
         ..Default::default()
     });

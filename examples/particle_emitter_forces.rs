@@ -9,10 +9,10 @@
 //! cargo run --release --example particle_emitter_forces --features std
 //! ```
 
-use alice_physics::force::ForceField;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::particle::{ParticleEmitter, ParticleSystem};
-use alice_physics::rng::DeterministicRng;
+use alice_physics_core::force::ForceField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::particle::{ParticleEmitter, ParticleSystem};
+use alice_physics_core::rng::DeterministicRng;
 
 fn main() {
     let mut ps = ParticleSystem::new(1000, Vec3Fix::from_int(0, -10, 0));

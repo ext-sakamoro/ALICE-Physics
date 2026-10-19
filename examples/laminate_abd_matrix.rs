@@ -1,5 +1,5 @@
 //! Classical Laminate Theory (CLT) production entry point for
-//! `alice_physics::laminate`: `Ply::q_matrix`, `Ply::q_bar`, `compute_abd`,
+//! `alice_physics_core::laminate`: `Ply::q_matrix`, `Ply::q_bar`, `compute_abd`,
 //! `is_symmetric_stack`, and `AbdMatrix::is_symmetric`.
 //!
 //! Wiring: `scripts/wiring-baseline.txt` lists all five as `unwired`.
@@ -24,9 +24,9 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::anisotropic::OrthotropicElasticity;
-use alice_physics::laminate::{compute_abd, is_symmetric_stack, AbdMatrix, Ply, Sym3};
-use alice_physics::math::Fix128;
+use alice_physics_core::anisotropic::OrthotropicElasticity;
+use alice_physics_core::laminate::{compute_abd, is_symmetric_stack, AbdMatrix, Ply, Sym3};
+use alice_physics_core::math::Fix128;
 
 /// Relative-error check against an independently hand-derived f64 closed
 /// form. The expected value (`want`) is computed by a formula written out
@@ -79,7 +79,7 @@ fn q_ref_f64(e1: f64, e2: f64, nu12: f64, g12: f64) -> (f64, f64, f64, f64) {
 /// than computing them here) so this function never calls a trigonometric
 /// method itself -- `clippy.toml`'s `disallowed-methods` bans `f64::sin` /
 /// `f64::cos` crate-wide (determinism gate: every transcendental must go
-/// through `alice_physics::det_math`, not the platform libm) and that ban
+/// through `alice_physics_core::det_math`, not the platform libm) and that ban
 /// applies to `--all-targets`, including this example.
 fn q_bar_ref_f64(
     q11: f64,

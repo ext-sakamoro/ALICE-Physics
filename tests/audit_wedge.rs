@@ -11,9 +11,9 @@
     reason = "analytic reference: f64 Rodrigues rotation for oriented Wedge vertex and inertia references"
 )]
 
-use alice_physics::collider::Support;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::wedge::Wedge;
+use alice_physics_core::collider::Support;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::wedge::Wedge;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

@@ -14,8 +14,8 @@
     reason = "analytic reference: f64 smoothstep splat distance and stress decay exp(-0.2) of the FractureModifier crack field"
 )]
 
-use alice_physics::fracture::{Crack, FractureConfig, FractureModifier};
-use alice_physics::sim_modifier::PhysicsModifier;
+use alice_physics_core::fracture::{Crack, FractureConfig, FractureModifier};
+use alice_physics_core::sim_modifier::PhysicsModifier;
 
 fn modifier(config: FractureConfig) -> FractureModifier {
     FractureModifier::new(config, 5, (0.0, 0.0, 0.0), (4.0, 4.0, 4.0))

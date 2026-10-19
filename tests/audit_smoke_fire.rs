@@ -23,8 +23,8 @@
     reason = "analytic reference: f64 Arrhenius rate A exp(-Ea/(R T)) (Turns ch. 4) and Fix128 resolution 2^-64 for smoke_fire"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::smoke_fire::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::smoke_fire::{
     boussinesq_buoyancy_n_per_m3, heat_release_j_per_m3_s, reaction_rate_kg_per_m3_s,
     soot_generation_kg_per_m3_s, ArrheniusReaction,
 };

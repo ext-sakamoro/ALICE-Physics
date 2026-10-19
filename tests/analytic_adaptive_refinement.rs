@@ -58,12 +58,12 @@
     reason = "HashMap/HashSet only count or look up face uses of refined meshes in this test; no assertion depends on hash iteration order"
 )]
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     error_indicators_squared, mark_bulk, solve, solve_adaptive, AdaptiveConfig, Axis,
     BoundaryConditions, ElasticMaterial, FemError, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -548,7 +548,7 @@ fn degenerate_marked_refinement_is_refused() {
 /// A functional of the solution with a definite limit, computed without the
 /// error estimator, so using it to judge adaptivity is not circular.
 fn strain_energy(
-    sol: &alice_physics::linear_elastic_fem::FemSolution,
+    sol: &alice_physics_core::linear_elastic_fem::FemSolution,
     nx: usize,
     ny: usize,
 ) -> Fix128 {
@@ -785,7 +785,7 @@ fn the_energy_norm_matches_its_closed_forms() {
     let s = Fix128::from_int(8);
     let e = fx(E_MPA);
 
-    let uniaxial = alice_physics::linear_elastic_fem::StressTensor {
+    let uniaxial = alice_physics_core::linear_elastic_fem::StressTensor {
         xx: s,
         ..Default::default()
     };
@@ -795,7 +795,7 @@ fn the_energy_norm_matches_its_closed_forms() {
         "uniaxial: σ:C⁻¹:σ = s²/E"
     );
 
-    let shear = alice_physics::linear_elastic_fem::StressTensor {
+    let shear = alice_physics_core::linear_elastic_fem::StressTensor {
         xy: s,
         ..Default::default()
     };
@@ -805,7 +805,7 @@ fn the_energy_norm_matches_its_closed_forms() {
         "pure shear: σ:C⁻¹:σ = 2(1+ν)s²/E — this is the case that sees the factor of two"
     );
 
-    let hydrostatic = alice_physics::linear_elastic_fem::StressTensor {
+    let hydrostatic = alice_physics_core::linear_elastic_fem::StressTensor {
         xx: s,
         yy: s,
         zz: s,
@@ -818,7 +818,8 @@ fn the_energy_norm_matches_its_closed_forms() {
     );
 
     assert_eq!(
-        alice_physics::linear_elastic_fem::StressTensor::default().complementary_energy_density(&m),
+        alice_physics_core::linear_elastic_fem::StressTensor::default()
+            .complementary_energy_density(&m),
         Fix128::ZERO,
         "no stress, no energy"
     );

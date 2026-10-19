@@ -60,6 +60,13 @@ checksum = "2bda5d70d84e0c64ddcdd95bd34c90010ea080b8a7772bffc61cb08f23040836"
 name = "alice-physics"
 version = "4.0.0"
 dependencies = [
+ "alice-physics-core",
+]
+
+[[package]]
+name = "alice-physics-core"
+version = "4.0.0"
+dependencies = [
  "alice-analytics",
  "alice-crypto",
  "alice-det-math",

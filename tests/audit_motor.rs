@@ -11,10 +11,12 @@
     reason = "analytic reference: f64 rotation matrix and rotation-vector extraction acos((tr - 1)/2) for PD motor error"
 )]
 
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::motor::{apply_motors, JointMotor, MotorMode, PdController, PdController3D};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::motor::{
+    apply_motors, JointMotor, MotorMode, PdController, PdController3D,
+};
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

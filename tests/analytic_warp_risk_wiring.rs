@@ -6,9 +6,11 @@
 //! `score = clamp(raw, 0, 1)`, category by `score < 0.25 / 0.5 / 0.75`,
 //! `F/mm = E[GPa] * 1000 * alpha * dT`.
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::warp_risk::{analyze_warp_risk, EnvConditions, Footprint, WarpRiskCategory};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::warp_risk::{
+    analyze_warp_risk, EnvConditions, Footprint, WarpRiskCategory,
+};
 
 fn fx(n: i64) -> Fix128 {
     Fix128::from_int(n)

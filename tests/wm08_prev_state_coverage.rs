@@ -26,7 +26,7 @@
 //! ⚠️ **教訓**: 対照実験を先に置いたおかげで、**無駄な format 拡張を回避できた**
 //! 本命 test だけ書いていたら green を「穴が無い」と読んでしまう
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepConfig, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepConfig, Vec3Fix};
 
 const DT: (i64, i64) = (1, 64);
 

@@ -34,7 +34,7 @@
 //! cargo run --example piezoelectric_materials --features std
 //! ```
 
-use alice_physics::piezoelectric::PiezoElement;
+use alice_physics_core::piezoelectric::PiezoElement;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// CODATA vacuum permittivity, truncated to the same precision as the

@@ -6,8 +6,8 @@
     reason = "analytic reference: f64 catenary sag a (cosh(L/2a) - 1) limit for prestressed cable pretension"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::prestressed::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::prestressed::{
     bolt_load_fraction, bolt_peak_tension, cable_pretension_n, preload_from_torque,
     recommended_preload_n, separation_load_n, tensioned_cable_stiffness_n_per_mm,
 };

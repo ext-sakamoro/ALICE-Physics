@@ -16,9 +16,9 @@
     reason = "measured quantity: radius of the simulated walker via powi, asserted against the closed-form landing radius"
 )]
 
-use alice_physics::sdf_character::SdfCharacter;
-use alice_physics::sdf_collider::{SdfField, SdfUnion};
-use alice_physics::spherical_terrain::{central_gravity, SphericalHeightField, SurfaceHeight};
+use alice_physics_core::sdf_character::SdfCharacter;
+use alice_physics_core::sdf_collider::{SdfField, SdfUnion};
+use alice_physics_core::spherical_terrain::{central_gravity, SphericalHeightField, SurfaceHeight};
 
 const R: f32 = 100.0;
 const WATER: f32 = -1.0;

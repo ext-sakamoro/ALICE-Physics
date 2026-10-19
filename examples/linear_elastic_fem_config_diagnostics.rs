@@ -23,14 +23,14 @@
 //! cargo run --example linear_elastic_fem_config_diagnostics --features std
 //! ```
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::linear_elastic_fem::{
     solve_with_eigenstrain, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial,
     Preconditioner, SolverConfig, StressTensor, ThermalExpansion,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Node index within an `(n+1)³` lattice.
 fn node(n: usize, i: usize, j: usize, k: usize) -> u32 {

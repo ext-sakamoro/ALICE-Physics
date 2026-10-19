@@ -16,10 +16,10 @@
     reason = "analytic reference: f64 speed scale 10^e of inputs and expected magnitude |v| * scale for flow_viz arrows"
 )]
 
-use alice_physics::flow_viz::{
+use alice_physics_core::flow_viz::{
     generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig, Streamlines,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

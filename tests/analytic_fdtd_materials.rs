@@ -98,8 +98,8 @@
     reason = "analytic reference: f64 Yee FDTD three-term recurrence, Taflove coefficients and Gaussian-sine source for material distributions"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::maxwell_fdtd::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::maxwell_fdtd::{
     Absorber, Component, Material, MaterialError, MaterialMap, YeeGrid, COURANT_3D,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};

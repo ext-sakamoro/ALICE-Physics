@@ -1,6 +1,6 @@
 //! `PHYSICS_SEMANTICS_ID` and its table, checked against the goldens.
 //!
-//! `alice_physics::PHYSICS_SEMANTICS_PINS` holds one SHA-256 digest per
+//! `alice_physics_core::PHYSICS_SEMANTICS_PINS` holds one SHA-256 digest per
 //! stepping combination the determinism goldens pin, plus the semantics
 //! identifier of `alice-det-math`; `PHYSICS_SEMANTICS_ID` is their fold.
 //! This file checks, on the source of the goldens (no value is copied here):
@@ -43,7 +43,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use alice_physics::{
+use alice_physics_core::{
     check_peer, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS, PHYSICS_SEMANTICS_BY_DET_MATH,
     PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };

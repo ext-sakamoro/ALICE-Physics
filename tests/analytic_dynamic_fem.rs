@@ -1,5 +1,5 @@
 //! Closed-form oracles for the transient FEM solver
-//! ([`alice_physics::dynamic_fem`]).
+//! ([`alice_physics_core::dynamic_fem`]).
 //!
 //! Three layers, because a single one of them cannot fail for the right reason:
 //!
@@ -26,12 +26,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
+use alice_physics_core::linear_elastic_fem::{
     self, Axis, BoundaryConditions, ElasticMaterial, FemError, Preconditioner, SolverConfig,
 };
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
-use alice_physics::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::Fix128;
 
 // ---------------------------------------------------------------------------
 // scenes

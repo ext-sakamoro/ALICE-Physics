@@ -1,11 +1,11 @@
-//! Audit oracles for `alice_physics::damping_rayleigh` (S2-2 audit, axis A and C).
+//! Audit oracles for `alice_physics_core::damping_rayleigh` (S2-2 audit, axis A and C).
 //!
 //! Expected values come from the closed forms in Chopra 5th ed. section 11.4
 //! (zeta_n = alpha/(2 omega_n) + beta omega_n / 2) re-derived in plain f64,
 //! never by calling the function under test.
 
-use alice_physics::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
-use alice_physics::math::Fix128;
+use alice_physics_core::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
+use alice_physics_core::math::Fix128;
 
 fn rel(got: Fix128, want: f64, tol: f64, what: &str) {
     let g = got.to_f64();

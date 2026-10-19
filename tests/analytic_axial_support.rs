@@ -23,10 +23,10 @@
     reason = "analytic reference: f64 cylinder/cone support value r sin(theta) + h cos(theta) for directions 2^-e off the axis"
 )]
 
-use alice_physics::collider::Support;
-use alice_physics::cone::Cone;
-use alice_physics::cylinder::Cylinder;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::collider::Support;
+use alice_physics_core::cone::Cone;
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

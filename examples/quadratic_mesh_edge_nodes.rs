@@ -9,8 +9,8 @@
 //! cargo run --release --example quadratic_mesh_edge_nodes --features std
 //! ```
 
-use alice_physics::quadratic_elastic_fem::QuadraticMesh;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::quadratic_elastic_fem::QuadraticMesh;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn main() {
     let mut mesh = SdfTetMesh::default();

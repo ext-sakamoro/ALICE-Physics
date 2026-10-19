@@ -1,5 +1,5 @@
 //! Stress-concentration factor (Peterson) production entry point for
-//! `alice_physics::fillet_stress`: `kt_circular_hole_infinite_plate`,
+//! `alice_physics_core::fillet_stress`: `kt_circular_hole_infinite_plate`,
 //! `kt_elliptical_hole`, `kt_u_notch_axial`, and
 //! `recommended_fillet_radius_mm`.
 //!
@@ -18,7 +18,7 @@
 //!
 //! Every expected value below is derived by hand from the textbook
 //! closed form quoted in each section's comment -- never by calling the
-//! `alice_physics::fillet_stress` function under test.
+//! `alice_physics_core::fillet_stress` function under test.
 //!
 //! ```bash
 //! cargo run --example fillet_stress_concentration --features std
@@ -26,11 +26,11 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::fillet_stress::{
+use alice_physics_core::fillet_stress::{
     kt_circular_hole_infinite_plate, kt_elliptical_hole, kt_shaft_shoulder_bending,
     kt_u_notch_axial, recommended_fillet_radius_mm,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 /// Relative-error check against an independently hand-derived f64 closed
 /// form. The expected value (`want`) is computed by a formula written

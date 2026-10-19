@@ -15,14 +15,14 @@
     reason = "analytic reference: f64 Euclidean distance for brute-force overlap_sphere set and depth"
 )]
 
-use alice_physics::bvh::{BvhPrimitive, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::query::{
+use alice_physics_core::bvh::{BvhPrimitive, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::query::{
     batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_aabb_bvh,
     overlap_aabb_expanded, overlap_sphere, overlap_sphere_bvh, sphere_cast, BatchRayQuery,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

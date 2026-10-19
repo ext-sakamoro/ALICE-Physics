@@ -11,13 +11,13 @@
     deprecated,
     reason = "imports the deprecated separation-based solve_joints_breakable so the tests below can pin it until removal"
 )]
-use alice_physics::joint::solve_joints_breakable;
-use alice_physics::joint::{
+use alice_physics_core::joint::solve_joints_breakable;
+use alice_physics_core::joint::{
     solve_joints, solve_joints_breaking_on_force, BallJoint, ConeTwistJoint, D6Joint, D6Motion,
     FixedJoint, HingeJoint, Joint, JointType, SliderJoint, SpringJoint,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 /// The reaction force of one joint in one solve from this pose (measured through
 /// `solve_joints_with_reaction_forces` on a copy of the bodies).
@@ -27,8 +27,11 @@ trait ReactionOfOneSolve {
 
 impl ReactionOfOneSolve for Joint {
     fn reaction_force(&self, bodies: &[RigidBody], dt: Fix128) -> Fix128 {
-        alice_physics::joint::solve_joints_with_reaction_forces(&[*self], &mut bodies.to_vec(), dt)
-            [0]
+        alice_physics_core::joint::solve_joints_with_reaction_forces(
+            &[*self],
+            &mut bodies.to_vec(),
+            dt,
+        )[0]
     }
 }
 

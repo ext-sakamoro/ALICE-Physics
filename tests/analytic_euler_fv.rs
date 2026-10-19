@@ -48,12 +48,12 @@
     reason = "independent reference: f64 port of the Toro exact Riemann solver (PREFUN/GUESSP pressure functions) for euler_fv references"
 )]
 
-use alice_physics::compressible::{normal_shock_jump, IdealGas};
-use alice_physics::euler_fv::{
+use alice_physics_core::compressible::{normal_shock_jump, IdealGas};
+use alice_physics_core::euler_fv::{
     exact_riemann, numerical_flux, physical_flux, Boundary, Conserved, EulerConfig, EulerError,
     EulerFv1d, Limiter, Primitive, Reconstruction, RiemannSolver, TimeIntegrator,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 const GAMMA: f64 = 1.4;
 

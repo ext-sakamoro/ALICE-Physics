@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::rolling_contact`
+//! Oracles for the production entry points of `alice_physics_core::rolling_contact`
 //! driven by `examples/rolling_contact_fatigue.rs`: `HertzianContact`,
 //! `basquin_cycles_to_failure`, `materials::{bearing_steel_52100,
 //! gear_steel_8620, silicon_nitride}`, `hertzian_sphere_sphere`, and
@@ -69,7 +69,7 @@
     reason = "analytic reference: f64 Hertz contact radius cubed a^3 = 3PR/(4E*) for the flat-rail rolling_contact case"
 )]
 
-use alice_physics::rolling_contact::{
+use alice_physics_core::rolling_contact::{
     basquin_cycles_to_failure, hertzian_sphere_sphere, materials, rolling_contact_life_cycles,
     HertzianContact,
 };

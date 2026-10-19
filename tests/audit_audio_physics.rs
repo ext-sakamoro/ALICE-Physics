@@ -12,10 +12,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
-use alice_physics::audio_physics::{
+use alice_physics_core::audio_physics::{
     AudioConfig, AudioEvent, AudioEventType, AudioGenerator, AudioMaterial,
 };
 

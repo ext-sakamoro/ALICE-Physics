@@ -11,9 +11,9 @@
     reason = "analytic reference: f64 sin/cos of the tilt angle give the tilted-plane normal and expected up_alignment = cos(theta) for character_state"
 )]
 
-use alice_physics::character_state::{transition, CharacterState, CharacterStateContext};
-use alice_physics::sdf_character::SdfCharacter;
-use alice_physics::sdf_collider::ClosureSdf;
+use alice_physics_core::character_state::{transition, CharacterState, CharacterStateContext};
+use alice_physics_core::sdf_character::SdfCharacter;
+use alice_physics_core::sdf_collider::ClosureSdf;
 
 const ALL: [CharacterState; 5] = [
     CharacterState::Grounded,

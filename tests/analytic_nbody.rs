@@ -17,8 +17,10 @@
     reason = "analytic reference: f64 Newton inverse-square / Plummer force (d^2 + eps^2)^(3/2) and two-body series for nbody"
 )]
 
-use alice_physics::nbody::{kinetic_energy, total_momentum, DirectSum, NBodyError, VelocityVerlet};
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::nbody::{
+    kinetic_energy, total_momentum, DirectSum, NBodyError, VelocityVerlet,
+};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 use core::f64::consts::PI;
 
 fn fx(x: f64) -> Fix128 {

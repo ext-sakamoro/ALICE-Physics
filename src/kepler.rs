@@ -222,8 +222,8 @@ fn turns_to_pi_range(x: Fix128) -> Fix128 {
 /// # Examples
 ///
 /// ```
-/// use alice_physics::kepler::solve_kepler;
-/// use alice_physics::Fix128;
+/// use alice_physics_core::kepler::solve_kepler;
+/// use alice_physics_core::Fix128;
 ///
 /// // Vallado Example 2-1: M = 235.4°, e = 0.4 → E = 220.512 074 767 522°
 /// let m = Fix128::from_f64(235.4_f64.to_radians());

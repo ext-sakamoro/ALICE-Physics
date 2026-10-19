@@ -19,9 +19,9 @@
 //! `e(t) = (e0 + (v0 + ω e0) t)·e^(−ωt)` for every substep count; the only error is
 //! `Fix128` rounding (and `e^(−ωh)` to a few units of 2⁻⁶⁴), asserted below 1e-12.
 
-use alice_physics::det_math::{exp64, powf64};
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{
+use alice_physics_core::det_math::{exp64, powf64};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{
     AngularTether2D, BodyType2D, Joint2D, KinematicDrive2D, PhysicsConfig2D, PhysicsWorld2D,
     RigidBody2D, Shape2D, Tethers2D, Vec2Fix,
 };

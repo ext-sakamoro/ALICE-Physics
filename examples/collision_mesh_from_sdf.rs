@@ -12,12 +12,12 @@
 
 use std::collections::BTreeSet;
 
-use alice_physics::collision_mesh_gen::{
+use alice_physics_core::collision_mesh_gen::{
     compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
     CollisionMeshConfig,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

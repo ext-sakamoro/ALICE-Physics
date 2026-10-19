@@ -1,4 +1,4 @@
-//! Conformance tests of the participant contract ([`alice_physics::world_participant`]).
+//! Conformance tests of the participant contract ([`alice_physics_core::world_participant`]).
 //!
 //! Two layers:
 //!
@@ -19,10 +19,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::world_participant::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::world_participant::{
     check_field_ports, deposit_bodies, execution_order, remap_conserving, run_substep,
     wakes_parked_body, AccumulateError, ExchangeError, FieldAccessError, FieldBoard, FieldError,
     FieldLayout, FieldMode, FieldPortError, FieldStage, ForceAccumulator, ObservationSink,
@@ -34,10 +34,10 @@ use alice_physics::world_participant::{
 /// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
 /// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
 fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
-    let mut world = PhysicsWorld::new(alice_physics::solver::PhysicsConfig::default());
+    let mut world = PhysicsWorld::new(alice_physics_core::solver::PhysicsConfig::default());
     assert_eq!(
-        world.restore_world_checked(blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
-        Ok(alice_physics::LawCheck::Unpinned)
+        world.restore_world_checked(blob, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
+        Ok(alice_physics_core::LawCheck::Unpinned)
     );
     world
 }
@@ -1642,7 +1642,7 @@ fn a_parked_body_wakes_on_any_non_zero_applied_change() {
 /// use.
 mod world {
     use super::*;
-    use alice_physics::solver::WorldSnapshotError;
+    use alice_physics_core::solver::WorldSnapshotError;
 
     pub fn add_participant(
         world: &mut PhysicsWorld,
@@ -1688,7 +1688,7 @@ mod world {
     pub fn observe_body_checked(
         world: &PhysicsWorld,
         index: usize,
-    ) -> Option<Observed<alice_physics::solver::BodyObservation>> {
+    ) -> Option<Observed<alice_physics_core::solver::BodyObservation>> {
         world.observe_body_checked(index)
     }
 
@@ -1700,7 +1700,7 @@ mod world {
     ) -> Result<(), FieldError> {
         match world.declare_field(id, layout, mode) {
             Ok(()) => Ok(()),
-            Err(alice_physics::solver::DeclareFieldError::Field(e)) => Err(e),
+            Err(alice_physics_core::solver::DeclareFieldError::Field(e)) => Err(e),
             Err(e) => panic!("declaring a field refused by the ports: {e:?}"),
         }
     }
@@ -1892,7 +1892,7 @@ fn snapshot_restore_is_bit_identical_with_participants_in_parallel() {
 fn restore_rejects(
     target: &mut PhysicsWorld,
     blob: &[u8],
-) -> alice_physics::solver::WorldSnapshotError {
+) -> alice_physics_core::solver::WorldSnapshotError {
     let before = target.snapshot_world();
     let err = target
         .restore_world(blob)
@@ -2080,7 +2080,7 @@ fn version_1_blob_reads_as_zero_participants() {
     // a version 1 blob is legacy data: read under AcceptUnpinned, it reaches the participant check
     let before = target.snapshot_world();
     let err = target
-        .restore_world_checked(v1, None, alice_physics::LegacyPolicy::AcceptUnpinned)
+        .restore_world_checked(v1, None, alice_physics_core::LegacyPolicy::AcceptUnpinned)
         .expect_err("a version 1 blob with no participants into a world with one");
     assert_eq!(
         target.snapshot_world(),

@@ -13,8 +13,8 @@
 //!
 //! Run with: `cargo run --example sdf_wind_shelter`
 
-use alice_physics::sdf_collider::SdfField;
-use alice_physics::sdf_wind_field::SdfWindField;
+use alice_physics_core::sdf_collider::SdfField;
+use alice_physics_core::sdf_wind_field::SdfWindField;
 
 /// The ground plane `y = 0`.
 struct Ground;

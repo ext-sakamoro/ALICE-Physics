@@ -13,9 +13,9 @@
     reason = "analytic reference: f64 Findley e0 + m t/aT with WLF shift 10^(-C1 dT/(C2 + dT)) for creep_longterm far above Tg"
 )]
 
-use alice_physics::creep_longterm::{predict_strain, FindleyParameters};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::creep_longterm::{predict_strain, FindleyParameters};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 
 const C1: f64 = 17.44;
 const C2: f64 = 51.6;

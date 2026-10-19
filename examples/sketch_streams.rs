@@ -1,4 +1,4 @@
-//! The four sketches of `alice_physics::sketch` fed from one hand-built stream
+//! The four sketches of `alice_physics_core::sketch` fed from one hand-built stream
 //!
 //! A stream of eight keys with known frequencies (50, 30, 20, 10, 5, 3, 2, 1)
 //! is pushed through the default `CountMinSketch` (1024 × 5), the default
@@ -27,7 +27,7 @@
 //! cargo run --example sketch_streams --features std
 //! ```
 
-use alice_physics::sketch::{
+use alice_physics_core::sketch::{
     CountMinSketch, DDSketch, FnvHasher, HeavyHitters, HyperLogLog, Mergeable,
 };
 

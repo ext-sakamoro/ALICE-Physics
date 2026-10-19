@@ -14,10 +14,10 @@
 //! cargo run --example animation_blend_state_machine --features std
 //! ```
 
-use alice_physics::animation_blend::{
+use alice_physics_core::animation_blend::{
     AnimationBlender, AnimationClip, BlendMode, Keyframe, SkeletonPose,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 const TAG: &str = "[animation_blend]";
 
@@ -49,7 +49,7 @@ fn main() {
         0,
         Keyframe {
             time: Fix128::ZERO,
-            pose: alice_physics::animation_blend::BonePose {
+            pose: alice_physics_core::animation_blend::BonePose {
                 position: Vec3Fix::ZERO,
                 rotation: QuatFix::IDENTITY,
             },
@@ -59,7 +59,7 @@ fn main() {
         0,
         Keyframe {
             time: duration,
-            pose: alice_physics::animation_blend::BonePose {
+            pose: alice_physics_core::animation_blend::BonePose {
                 position: Vec3Fix::from_int(8, 0, 0),
                 rotation: QuatFix::IDENTITY,
             },
@@ -70,7 +70,7 @@ fn main() {
         1,
         Keyframe {
             time: Fix128::ZERO,
-            pose: alice_physics::animation_blend::BonePose {
+            pose: alice_physics_core::animation_blend::BonePose {
                 position: Vec3Fix::ZERO,
                 rotation: QuatFix::IDENTITY,
             },
@@ -80,7 +80,7 @@ fn main() {
         1,
         Keyframe {
             time: duration,
-            pose: alice_physics::animation_blend::BonePose {
+            pose: alice_physics_core::animation_blend::BonePose {
                 position: Vec3Fix::ZERO,
                 rotation: QuatFix::new(
                     q(1, 1024),
@@ -117,11 +117,11 @@ fn main() {
     // bone 1 unrotated (identity).
     let physics_pose = SkeletonPose {
         bones: vec![
-            alice_physics::animation_blend::BonePose {
+            alice_physics_core::animation_blend::BonePose {
                 position: Vec3Fix::from_int(12, 0, 0),
                 rotation: QuatFix::IDENTITY,
             },
-            alice_physics::animation_blend::BonePose::default(),
+            alice_physics_core::animation_blend::BonePose::default(),
         ],
     };
 

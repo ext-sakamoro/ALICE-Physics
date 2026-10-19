@@ -23,7 +23,7 @@
 //! cargo run --example profiling_stages --features std
 //! ```
 
-use alice_physics::profiling::{
+use alice_physics_core::profiling::{
     PhysicsProfiler, ProfileEntry, TickCounter, STAGE_BROADPHASE, STAGE_CCD, STAGE_CONTACT_CACHE,
     STAGE_INTEGRATION, STAGE_NARROWPHASE, STAGE_SOLVER, STAGE_TOTAL_STEP,
 };

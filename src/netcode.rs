@@ -19,8 +19,8 @@
 //! # Usage
 //!
 //! ```
-//! use alice_physics::netcode::{DeterministicSimulation, FrameInput, NetcodeConfig};
-//! use alice_physics::Vec3Fix;
+//! use alice_physics_core::netcode::{DeterministicSimulation, FrameInput, NetcodeConfig};
+//! use alice_physics_core::Vec3Fix;
 //!
 //! // Both clients create identical simulation
 //! let mut sim = DeterministicSimulation::new(NetcodeConfig::default());

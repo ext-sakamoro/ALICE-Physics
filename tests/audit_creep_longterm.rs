@@ -1,4 +1,4 @@
-//! Audit oracles (S2-1) for `alice_physics::creep_longterm`.
+//! Audit oracles (S2-1) for `alice_physics_core::creep_longterm`.
 //!
 //! Expected values are closed forms evaluated in f64 from the module doc
 //! (Findley `e(t) = e0 + m t^n`, WLF `log10 a_T = -C1 dT / (C2 + dT)` with
@@ -15,9 +15,9 @@
     reason = "analytic reference: f64 Findley power law 0.002 + 1e-6 t^n and quarter-power literature fit for creep_longterm"
 )]
 
-use alice_physics::creep_longterm::{predict_strain, FindleyParameters};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::creep_longterm::{predict_strain, FindleyParameters};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 
 fn p(e0: f64, m: f64, n: u32) -> FindleyParameters {
     // exact binary-friendly construction is not needed: tolerances below

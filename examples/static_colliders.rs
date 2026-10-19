@@ -16,13 +16,13 @@
 //! cargo run --example static_colliders --features std
 //! ```
 
-use alice_physics::collider::AABB;
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::{TriMesh, Triangle};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::{TriMesh, Triangle};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

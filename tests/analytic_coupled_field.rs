@@ -23,12 +23,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::coupled_field::{reconcile_mean, CoupledField, CoupledScalar};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::sim_field::ScalarField3D;
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::coupled_field::{reconcile_mean, CoupledField, CoupledScalar};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::sim_field::ScalarField3D;
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
 
 // ============================================================================
 // Helpers
@@ -440,7 +440,7 @@ fn discrete_decay(l: &Level) -> f64 {
 fn analytic_decay(total_time: f64) -> f64 {
     let k = core::f64::consts::PI;
     let nu = NU.0 as f64 / NU.1 as f64;
-    alice_physics::det_math::exp64(-nu * k * k * total_time)
+    alice_physics_core::det_math::exp64(-nu * k * k * total_time)
 }
 
 fn run_row(l: &Level) -> CoupledField {

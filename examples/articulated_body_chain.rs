@@ -17,11 +17,11 @@
 //! cargo run --example articulated_body_chain --features std
 //! ```
 
-use alice_physics::articulation::{build_ragdoll, ArticulatedBody, FeatherstoneSolver};
-use alice_physics::joint::{BallJoint, HingeJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::motor::PdController;
-use alice_physics::solver::RigidBody;
+use alice_physics_core::articulation::{build_ragdoll, ArticulatedBody, FeatherstoneSolver};
+use alice_physics_core::joint::{BallJoint, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::motor::PdController;
+use alice_physics_core::solver::RigidBody;
 
 /// Assert `got` is within `tol` of `expected`, printing both on failure.
 fn assert_close(label: &str, got: Fix128, expected: Fix128, tol: Fix128) {

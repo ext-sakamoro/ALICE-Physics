@@ -10,8 +10,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cloth::Cloth;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cloth::Cloth;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn sheet() -> Cloth {
     // 5 x 5 particles on the plane y = 0 spanning [0, 4]^2, spacing 1

@@ -58,14 +58,14 @@
     reason = "analytic reference: f64 dual-cell weight 2^-b of the conserved sum for plastic dissipation heat diffusion"
 )]
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::linear_elastic_fem::{
     deposit_plastic_heat, plastic_temperature_rise, solve_elastoplastic, solve_with_eigenstrain,
     Axis, BoundaryConditions, ElasticMaterial, ElastoplasticConfig, ElastoplasticSolution,
     FemError, PlasticHeating, SolverConfig, ThermalExpansion,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // Scene, shared with `analytic_elastoplastic_fem.rs`

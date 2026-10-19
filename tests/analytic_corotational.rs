@@ -18,7 +18,7 @@
 //!   (what the implementation does), or
 //! - **freeze `R`** at the initial iterate.
 //!
-//! Because [`alice_physics::linear_elastic_fem::solve`] is a *static* solver —
+//! Because [`alice_physics_core::linear_elastic_fem::solve`] is a *static* solver —
 //! `K u = f`, no time stepping — "freeze at the start of the step" means freeze at
 //! `u = 0`, which is `R = I`, which is the small-strain solver. So the frozen
 //! policy is not a variant that needs writing to be tested: **the existing linear
@@ -97,15 +97,15 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::hyperelastic::{
+use alice_physics_core::hyperelastic::{
     strain_energy_density, uniaxial_cauchy_stress, HyperelasticModel, Stretch,
 };
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve, solve_corotational, Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial,
     FemError, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // scene
@@ -275,7 +275,7 @@ fn corotational_config_with_newton_budget(
 }
 
 /// Largest stress component over the mesh, MPa.
-fn worst_stress(stresses: &[alice_physics::linear_elastic_fem::StressTensor]) -> f64 {
+fn worst_stress(stresses: &[alice_physics_core::linear_elastic_fem::StressTensor]) -> f64 {
     let mut worst = 0.0_f64;
     for s in stresses {
         for c in [s.xx, s.yy, s.zz, s.xy, s.yz, s.zx] {
@@ -883,7 +883,7 @@ fn boundary_rotated_stretch(
 /// that the rotation above is the right way round.
 fn deviator_in_the_stretch_frame(
     turn: Turn,
-    s: &alice_physics::linear_elastic_fem::StressTensor,
+    s: &alice_physics_core::linear_elastic_fem::StressTensor,
 ) -> [f64; 4] {
     let (c, sn) = (turn.cos, turn.sin);
     let (sxx, syy, szz, sxy) = (s.xx.to_f64(), s.yy.to_f64(), s.zz.to_f64(), s.xy.to_f64());
@@ -1710,8 +1710,8 @@ fn solve_cube(
     model: HyperelasticModel,
     consistent: bool,
 ) -> Result<
-    alice_physics::linear_elastic_fem::CorotationalSolution,
-    alice_physics::linear_elastic_fem::FemError,
+    alice_physics_core::linear_elastic_fem::CorotationalSolution,
+    alice_physics_core::linear_elastic_fem::FemError,
 > {
     let (mesh, loaded) = centre_loaded_cube(load);
     let mut config =
@@ -1802,9 +1802,7 @@ fn the_consistent_tangent_without_a_hyperelastic_law_is_refused() {
     let config = corotational_config_with_newton_budget(1, 64).with_consistent_tangent();
     assert!(matches!(
         solve_corotational(&mesh, &pla(), &loaded, &config),
-        Err(alice_physics::linear_elastic_fem::FemError::InvalidConfig(
-            _
-        ))
+        Err(alice_physics_core::linear_elastic_fem::FemError::InvalidConfig(_))
     ));
 }
 
@@ -1943,7 +1941,7 @@ fn the_consistent_tangent_adds_no_failure_path_on_degenerate_input() {
     assert!(
         matches!(
             reflected,
-            Err(alice_physics::linear_elastic_fem::FemError::RotationFailed { .. })
+            Err(alice_physics_core::linear_elastic_fem::FemError::RotationFailed { .. })
         ),
         "a reflected boundary has no valid deformation gradient: {reflected:?}"
     );
@@ -1965,7 +1963,7 @@ fn the_consistent_tangent_reports_a_budget_it_cannot_meet() {
     for budget in [1u32, 2] {
         let result = solve_cube(200.0, 1, budget, neo_hookean_model(), true);
         assert!(
-            matches!(result, Err(alice_physics::linear_elastic_fem::FemError::NotConverged { iterations, .. }) if iterations == budget),
+            matches!(result, Err(alice_physics_core::linear_elastic_fem::FemError::NotConverged { iterations, .. }) if iterations == budget),
             "budget {budget}: {result:?}"
         );
     }

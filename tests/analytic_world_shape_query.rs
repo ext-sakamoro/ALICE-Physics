@@ -26,25 +26,25 @@
 //!
 //! # Against the bounding-sphere API
 //!
-//! `alice_physics::query::{sphere_cast, overlap_sphere, overlap_aabb}` test each
+//! `alice_physics_core::query::{sphere_cast, overlap_sphere, overlap_aabb}` test each
 //! body's bounding sphere or position. The corner-gap scenes below show a case the
 //! old functions get wrong and assert the world query answers correctly.
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, Sphere, AABB};
-use alice_physics::compound::CompoundShape;
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::{RayFilter, RayTarget};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::TriMesh;
-use alice_physics::world_shape_query::WorldShapeHit;
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, Sphere, AABB};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::TriMesh;
+use alice_physics_core::world_shape_query::WorldShapeHit;
 
 const EXACT: f64 = 1e-12;
 const ITER: f64 = 1e-9;
@@ -243,7 +243,7 @@ fn sphere_cast_through_box_corner_gap_misses() {
     let mut w = world();
     unit_box(&mut w);
     let r = unit_box_shape().bounding_radius();
-    let old = alice_physics::query::sphere_cast(
+    let old = alice_physics_core::query::sphere_cast(
         v3(-10.0, 1.4, 1.4),
         fx(0.5),
         v3(1.0, 0.0, 0.0),
@@ -779,7 +779,7 @@ fn overlap_sphere_against_box_edge_gap() {
     let b = unit_box(&mut w);
     let r = unit_box_shape().bounding_radius();
     // The bounding-sphere overlap: |(1.4, 1.4, 0)| = 1.98 < √3 + 0.5.
-    let old = alice_physics::query::overlap_sphere(v3(1.4, 1.4, 0.0), fx(0.5), &w.bodies, r);
+    let old = alice_physics_core::query::overlap_sphere(v3(1.4, 1.4, 0.0), fx(0.5), &w.bodies, r);
     assert_eq!(old.len(), 1, "the bounding-sphere overlap reports the gap");
     // oracle: distance from (1.4, 1.4, 0) to the box edge (1, 1, z) is 0.4·√2 =
     // 0.566 > 0.5: no overlap; with radius 0.6 > 0.566 it overlaps.
@@ -797,7 +797,7 @@ fn overlap_sphere_against_box_edge_gap() {
     };
     let b = shaped(&mut w, long, Vec3Fix::ZERO, QuatFix::IDENTITY);
     let r = long.bounding_radius();
-    let old = alice_physics::query::overlap_sphere(v3(3.4, 1.4, 1.4), fx(0.65), &w.bodies, r);
+    let old = alice_physics_core::query::overlap_sphere(v3(3.4, 1.4, 1.4), fx(0.65), &w.bodies, r);
     assert_eq!(old.len(), 1);
     assert_eq!(overlap_s(&w, [3.4, 1.4, 1.4], 0.65), vec![]);
     assert_eq!(
@@ -814,7 +814,7 @@ fn overlap_aabb_against_box_edge_gap() {
     // The bounding-sphere overlap: the box [1.2, 2]² × [−0.5, 0.5] is
     // |(1.2, 1.2, 0)| = 1.70 < √3 from the centre.
     let q = AABB::new(v3(1.2, 1.2, -0.5), v3(2.0, 2.0, 0.5));
-    let old = alice_physics::query::overlap_aabb_expanded(&q, &w.bodies, r);
+    let old = alice_physics_core::query::overlap_aabb_expanded(&q, &w.bodies, r);
     assert_eq!(old.len(), 1, "the bounding-sphere overlap reports the gap");
     // oracle: box-box separating axis X: 1.2 > 1.
     assert_eq!(overlap_b(&w, [1.2, 1.2, -0.5], [2.0, 2.0, 0.5]), vec![]);

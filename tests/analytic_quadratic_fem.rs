@@ -1,4 +1,4 @@
-//! Oracles for `alice_physics::quadratic_elastic_fem` — the ten-node P2
+//! Oracles for `alice_physics_core::quadratic_elastic_fem` — the ten-node P2
 //! tetrahedron.
 //!
 //! The headline property, and the one that separates this element from the P1
@@ -36,10 +36,12 @@
     reason = "HashMap/HashSet only count or look up quadratic tetrahedron faces in this test; no assertion depends on hash iteration order"
 )]
 
-use alice_physics::linear_elastic_fem::{solve, BoundaryConditions, ElasticMaterial, SolverConfig};
-use alice_physics::math::Fix128;
-use alice_physics::quadratic_elastic_fem::{solve_quadratic, QuadraticMesh};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::linear_elastic_fem::{
+    solve, BoundaryConditions, ElasticMaterial, SolverConfig,
+};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::quadratic_elastic_fem::{solve_quadratic, QuadraticMesh};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 const E_MPA: f64 = 3500.0;
 const NU: f64 = 0.35;
@@ -508,9 +510,9 @@ fn constraining_corners_only_is_a_different_problem() {
 /// `p2_traction_puts_nothing_on_the_corners` pins the split.
 mod cantilever {
     use super::*;
-    use alice_physics::linear_elastic_fem::{Axis, FemSolution};
-    use alice_physics::sdf_collider::ClosureSdf;
-    use alice_physics::sdf_fem_mesh::generate;
+    use alice_physics_core::linear_elastic_fem::{Axis, FemSolution};
+    use alice_physics_core::sdf_collider::ClosureSdf;
+    use alice_physics_core::sdf_fem_mesh::generate;
     use std::collections::HashMap;
 
     pub const WIDTH: f64 = 2.0;
@@ -726,7 +728,7 @@ fn sweep_config() -> SolverConfig {
         .expect("valid")
         .with_stagnation(20_000, Fix128::from_raw(0, 1 << 54))
         .expect("valid")
-        .with_preconditioner(alice_physics::linear_elastic_fem::Preconditioner::JacobiScaled)
+        .with_preconditioner(alice_physics_core::linear_elastic_fem::Preconditioner::JacobiScaled)
 }
 
 /// The consistent traction split, before any stiffness conclusion rests on it.

@@ -10,12 +10,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::audio_physics::{AudioConfig, AudioGenerator, AudioMaterial};
-use alice_physics::debug_render::{DebugDrawData, DebugDrawFlags};
-use alice_physics::heatmap::{HeatmapConfig, SliceAxis};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sensors::{ContactSensor, Imu, Lidar};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::audio_physics::{AudioConfig, AudioGenerator, AudioMaterial};
+use alice_physics_core::debug_render::{DebugDrawData, DebugDrawFlags};
+use alice_physics_core::heatmap::{HeatmapConfig, SliceAxis};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sensors::{ContactSensor, Imu, Lidar};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(
@@ -76,7 +76,10 @@ fn main() {
         (Fix128::ZERO, Fix128::ZERO, 1),
         Fix128::from_int(20),
     )
-    .with_pose(v3(-5.0, 0.0, 0.0), alice_physics::math::QuatFix::IDENTITY);
+    .with_pose(
+        v3(-5.0, 0.0, 0.0),
+        alice_physics_core::math::QuatFix::IDENTITY,
+    );
     let scan = world.lidar_scan(&mut lidar);
     println!(
         "lidar from x = -5 along +X: range {:?}",

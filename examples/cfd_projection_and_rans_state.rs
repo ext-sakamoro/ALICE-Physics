@@ -22,8 +22,8 @@
 //!
 //! Run with: `cargo run --example cfd_projection_and_rans_state`
 
-use alice_physics::cfd_solver::{CfdSolver, PressureSolver, RansState, TurbulenceModel};
-use alice_physics::math::Fix128;
+use alice_physics_core::cfd_solver::{CfdSolver, PressureSolver, RansState, TurbulenceModel};
+use alice_physics_core::math::Fix128;
 
 type Fields = (Vec<Fix128>, Vec<Fix128>, Vec<Fix128>, Vec<Fix128>);
 

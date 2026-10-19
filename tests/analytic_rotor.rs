@@ -27,11 +27,11 @@
 
 use std::f64::consts::PI;
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rotor::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::rotor::{
     hover_induced_velocity_m_s, ideal_hover_power_w, Rotor, RotorError, RotorParams, RotorSpin,
 };
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 const TOL: f64 = 1e-9;
 const RHO: f64 = 1.225;

@@ -33,9 +33,9 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -292,9 +292,9 @@ fn a_sleeping_sphere_is_lifted_in_the_first_step_of_the_lift() {
     let run = |sleep_skip: bool| {
         let mut w = world(Runner::Step);
         w.set_sleep_skip(sleep_skip);
-        w.set_sleep_config(alice_physics::SleepConfig {
+        w.set_sleep_config(alice_physics_core::SleepConfig {
             frames_to_sleep: 2,
-            ..alice_physics::SleepConfig::default()
+            ..alice_physics_core::SleepConfig::default()
         });
         let p = w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));
         let s = w.add_body(RigidBody::new_dynamic(v3(0.0, 0.5, 0.0), Fix128::ONE));

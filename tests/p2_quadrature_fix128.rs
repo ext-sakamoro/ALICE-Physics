@@ -59,7 +59,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 /// Raw two's-complement 128-bit integer behind a `Fix128`, as a signed integer.
 ///

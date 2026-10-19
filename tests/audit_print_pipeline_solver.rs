@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::print_pipeline_solver`.
+//! Audit oracles for `alice_physics_core::print_pipeline_solver`.
 //!
 //! The pipeline aggregates sub-analyses, so each oracle fixes the inputs of
 //! one sub-analysis independently (explicit temperatures, thickness order,
@@ -8,18 +8,20 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::beam_stress::{BeamAnalysis, CrossSection, LoadCase};
-use alice_physics::bimaterial::{analyze_bimaterial, BimaterialSide};
-use alice_physics::bridging::BridgeSpan;
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::fillet_stress::kt_shaft_shoulder_bending;
-use alice_physics::layer_adhesion::{EffectiveStrength, PrintOrientation};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::print_orientation::LoadDirection;
-use alice_physics::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
-use alice_physics::support_volume::{estimate_support_volume, OverhangRegion, SupportConfig};
-use alice_physics::thermal_stress::analyze_thermal_stress;
-use alice_physics::warp_risk::{analyze_warp_risk, EnvConditions, Footprint, WarpRiskCategory};
+use alice_physics_core::beam_stress::{BeamAnalysis, CrossSection, LoadCase};
+use alice_physics_core::bimaterial::{analyze_bimaterial, BimaterialSide};
+use alice_physics_core::bridging::BridgeSpan;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::fillet_stress::kt_shaft_shoulder_bending;
+use alice_physics_core::layer_adhesion::{EffectiveStrength, PrintOrientation};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::print_orientation::LoadDirection;
+use alice_physics_core::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
+use alice_physics_core::support_volume::{estimate_support_volume, OverhangRegion, SupportConfig};
+use alice_physics_core::thermal_stress::analyze_thermal_stress;
+use alice_physics_core::warp_risk::{
+    analyze_warp_risk, EnvConditions, Footprint, WarpRiskCategory,
+};
 
 fn r(n: i64) -> Fix128 {
     Fix128::from_int(n)
@@ -305,7 +307,7 @@ fn orientation_matches_sub_analysis() {
         ..Default::default()
     };
     let rep = analyze_print_pipeline(small(), "PLA", &inputs);
-    let want = alice_physics::print_orientation::optimize_analytical(&dir, &pla);
+    let want = alice_physics_core::print_orientation::optimize_analytical(&dir, &pla);
     let got = rep.orientation.unwrap();
     assert_eq!(got.angle_to_z_axis, want.angle_to_z_axis);
     assert_eq!(got.effective_yield_mpa, want.effective_yield_mpa);

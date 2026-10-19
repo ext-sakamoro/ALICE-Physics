@@ -46,11 +46,11 @@
     reason = "analytic reference: f64 Helbing social force relaxation v0 + (v - v0) e^(-t/tau) and its discrete (1 - dt/tau)^n form"
 )]
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdForceError, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
 };
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::Vec2Fix;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::Vec2Fix;
 
 // Representative values of HFV 2000 (Nature 407, 487, methods).
 const A: f64 = 2000.0; // N

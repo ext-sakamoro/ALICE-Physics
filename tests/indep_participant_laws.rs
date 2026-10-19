@@ -26,25 +26,25 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdParticipant, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
     CROWD_PARTICIPANT_KIND,
 };
-use alice_physics::erosion::{ErosionConfig, ErosionModifier, ErosionType};
-use alice_physics::fracture::{Crack, FractureConfig, FractureModifier};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{
+use alice_physics_core::erosion::{ErosionConfig, ErosionModifier, ErosionType};
+use alice_physics_core::fracture::{Crack, FractureConfig, FractureModifier};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{
     MdParticipant, PeriodicBox, VelocityVerlet, MD_PARTICIPANT_KIND,
 };
-use alice_physics::pair_potential::{Morse, ShiftMode, Truncated, Yukawa};
-use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::physics2d::Vec2Fix;
-use alice_physics::pressure::{PressureConfig, PressureModifier};
-use alice_physics::sim_field::ScalarField3D;
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::solver::RigidBody;
-use alice_physics::thermal::{HeatSource, ThermalConfig, ThermalModifier};
-use alice_physics::world_participant::{
+use alice_physics_core::pair_potential::{Morse, ShiftMode, Truncated, Yukawa};
+use alice_physics_core::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::physics2d::Vec2Fix;
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::sim_field::ScalarField3D;
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::thermal::{HeatSource, ThermalConfig, ThermalModifier};
+use alice_physics_core::world_participant::{
     run_substep, FieldBoard, ForceAccumulator, Participant, ParticipantFault, ParticipantKind,
     ParticipantPlan, SubstepTime, WorldFault,
 };
@@ -708,7 +708,7 @@ fn observations_after_a_restore_equal_those_of_the_uninterrupted_run() {
     let observed = |r: &Rig| -> Vec<Vec<(u32, Fix128)>> {
         r.ps.iter()
             .map(|p| {
-                let mut s = alice_physics::world_participant::ObservationSink::new();
+                let mut s = alice_physics_core::world_participant::ObservationSink::new();
                 p.observe(&mut s);
                 s.values().to_vec()
             })

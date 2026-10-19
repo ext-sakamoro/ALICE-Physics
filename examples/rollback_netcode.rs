@@ -15,12 +15,12 @@
 //! cargo run --example rollback_netcode --features std
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::netcode::{DeterministicSimulation, FrameInput, NetcodeConfig};
-use alice_physics::netcode_prediction::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::netcode::{DeterministicSimulation, FrameInput, NetcodeConfig};
+use alice_physics_core::netcode_prediction::{
     reconcile_checked, PredictedInput, PredictionBuffer, ReconcileError, Snapshot,
 };
-use alice_physics::solver::{RigidBody, SolverConfig};
+use alice_physics_core::solver::{RigidBody, SolverConfig};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

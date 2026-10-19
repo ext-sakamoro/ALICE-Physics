@@ -10,10 +10,10 @@
 //! cargo run --example convex_contacts --features std
 //! ```
 
-use alice_physics::collider::contact;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape::{PosedShape, Shape};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::collider::contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape::{PosedShape, Shape};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(
@@ -46,7 +46,7 @@ fn main() {
     let posed = |p: Vec3Fix| PosedShape {
         shape: unit_box,
         position: p,
-        rotation: alice_physics::math::QuatFix::IDENTITY,
+        rotation: alice_physics_core::math::QuatFix::IDENTITY,
     };
     if let Some(hit) = contact(&posed(v3(0.5, 1.7, 0.0)), &posed(Vec3Fix::ZERO)) {
         println!(

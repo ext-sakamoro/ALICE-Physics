@@ -61,7 +61,7 @@
 //!
 //!
 //! It does not break the period-two cycle either. Relaxation is the remedy
-//! for the added-mass form [`alice_physics::coupled_iteration`] documents,
+//! for the added-mass form [`alice_physics_core::coupled_iteration`] documents,
 //! where the dominant eigenvalue is negative; this splitting is the other kind.
 //!
 //! ```bash
@@ -70,15 +70,15 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::coupled_field::CoupledField;
-use alice_physics::coupled_iteration::SubIterationConfig;
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::CoupledField;
+use alice_physics_core::coupled_iteration::SubIterationConfig;
+use alice_physics_core::linear_elastic_fem::{
     step_thermoplastic, Axis, BoundaryConditions, ElasticMaterial, ElastoplasticConfig,
     ElastoplasticProblem, FemError, PlasticHeating, SolverConfig, ThermalSoftening,
     ThermoplasticCoupling,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Young's modulus, MPa. Dyadic, so the yield strain is exact.
 const E_MPA: f64 = 1024.0;
@@ -188,7 +188,7 @@ fn coupling(
     heat_capacity: f64,
     relaxation: f64,
     max_sweeps: u32,
-) -> Result<ThermoplasticCoupling, alice_physics::linear_elastic_fem::FemError> {
+) -> Result<ThermoplasticCoupling, alice_physics_core::linear_elastic_fem::FemError> {
     ThermoplasticCoupling::try_new(
         PlasticHeating::try_new(fx(BETA), fx(heat_capacity))?,
         fx(ALPHA_PER_K),
@@ -280,7 +280,9 @@ fn main() {
     let isothermal = problem
         .step(
             &state,
-            &alice_physics::linear_elastic_fem::ElastoplasticIncrementRequest::new(Fix128::ONE),
+            &alice_physics_core::linear_elastic_fem::ElastoplasticIncrementRequest::new(
+                Fix128::ONE,
+            ),
         )
         .expect("the isothermal increment solves");
     println!(

@@ -18,7 +18,7 @@
 //! の 2 段で書いてある 1 を省くと、2 が「失っても害が無い状態」を
 //! pin しているのか区別できない
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepConfig, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepConfig, Vec3Fix};
 
 /// 微小運動が残る scene + 緩い sleep 閾値
 ///

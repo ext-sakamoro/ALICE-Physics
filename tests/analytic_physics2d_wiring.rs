@@ -8,8 +8,8 @@
 //! * non-dynamic bodies ignore both
 //! * `distance_to = |b - a|`, symmetric, zero on itself
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{BodyType2D, RigidBody2D, Shape2D, Vec2Fix};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{BodyType2D, RigidBody2D, Shape2D, Vec2Fix};
 
 fn fv(x: f64, y: f64) -> Vec2Fix {
     Vec2Fix::new(Fix128::from_f64(x), Fix128::from_f64(y))

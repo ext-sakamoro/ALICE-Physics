@@ -23,11 +23,11 @@
     reason = "analytic reference: f64 ball volume 4/3 pi r^3 and torus volume 2 pi^2 R r^2 for SDF-generated collision meshes"
 )]
 
-use alice_physics::collision_mesh_gen::{
+use alice_physics_core::collision_mesh_gen::{
     compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
     CollisionMeshConfig,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::collections::BTreeMap;
 
 fn fx(v: f64) -> Fix128 {
@@ -392,7 +392,7 @@ fn simplifying_never_breaks_the_mesh() {
 // As a static collider
 // ---------------------------------------------------------------------------
 
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 /// A sphere body above the top of a ball's mesh is lifted to one radius from the
 /// surface. The mesh is inscribed in the ball (its vertices are within `3h²/(8R)`
@@ -565,7 +565,7 @@ fn simplifying_an_open_mesh_keeps_its_border() {
 /// The static collider has every triangle of the mesh.
 #[test]
 fn the_static_collider_holds_every_triangle() {
-    use alice_physics::static_collider::StaticCollider;
+    use alice_physics_core::static_collider::StaticCollider;
     let m = generate_collision_mesh(ball(1.0), &config(10, 1.5));
     match m.to_static_collider() {
         StaticCollider::TriMesh(t) => assert_eq!(t.triangle_count(), m.triangles.len()),

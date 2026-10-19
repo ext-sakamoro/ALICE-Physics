@@ -7,7 +7,7 @@
 //! に誤った状態を書き込んで silent に通ってしまう 本 file はその穴が
 //! fingerprint 検査で塞がれていることを確認する
 
-use alice_physics::{
+use alice_physics_core::{
     Fix128, FixedJoint, Joint, PhysicsConfig, PhysicsWorld, QuatFix, RigidBody, SleepConfig,
     Vec3Fix,
 };

@@ -33,8 +33,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 const DT: f64 = 1.0 / 60.0;
 const R: f64 = 0.5;
@@ -105,7 +105,7 @@ fn run(p: Pair, k: usize, path: Path) -> (f64, f64) {
     let b = w.add_body_with_radius(b_body, fx(R));
     let id = w
         .material_table
-        .register(alice_physics::PhysicsMaterial::new(
+        .register(alice_physics_core::PhysicsMaterial::new(
             0,
             Fix128::ZERO,
             fx(p.e),

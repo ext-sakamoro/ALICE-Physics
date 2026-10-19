@@ -18,8 +18,8 @@
 
 use std::time::Instant;
 
-use alice_physics::solver::Broadphase;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::solver::Broadphase;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn build_world(substeps: usize) -> PhysicsWorld {
     let config = PhysicsConfig {

@@ -10,14 +10,14 @@
 //! cargo run --example support_reactions --features std
 //! ```
 
-use alice_physics::cubic_elastic_fem::{self, CubicMesh};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::cubic_elastic_fem::{self, CubicMesh};
+use alice_physics_core::linear_elastic_fem::{
     corotational_reactions, reactions, solve, solve_corotational, BoundaryConditions,
     CorotationalConfig, ElasticMaterial, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::quadratic_elastic_fem::{self, QuadraticMesh};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::quadratic_elastic_fem::{self, QuadraticMesh};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Node index within an `(n+1)³` lattice.
 fn node(n: usize, i: usize, j: usize, k: usize) -> u32 {

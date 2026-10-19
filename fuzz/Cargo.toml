@@ -12,7 +12,8 @@ libfuzzer-sys = "0.4"
 arbitrary = { version = "1", features = ["derive"] }
 
 [dependencies.alice-physics]
-path = ".."
+# the facade (the alice_physics paths the fuzz targets use)
+path = "../crates/alice-physics"
 features = ["std", "parallel"]
 
 [features]

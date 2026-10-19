@@ -1,5 +1,5 @@
 //! Rayleigh (Proportional) Damping Model production entry point for
-//! `alice_physics::damping_rayleigh`: `hz_to_omega`, `omega_to_hz`,
+//! `alice_physics_core::damping_rayleigh`: `hz_to_omega`, `omega_to_hz`,
 //! `RayleighCoefficients::fit_two_modes`, and
 //! `RayleighCoefficients::damping_ratio`.
 //!
@@ -40,8 +40,8 @@
 //! cargo run --example damping_rayleigh_fit --features std
 //! ```
 
-use alice_physics::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
-use alice_physics::math::Fix128;
+use alice_physics_core::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
+use alice_physics_core::math::Fix128;
 use core::f64::consts::PI;
 
 /// Relative-error check against an independently hand-derived f64 closed

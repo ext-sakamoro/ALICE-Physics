@@ -13,10 +13,10 @@
 //! `1e-3` to `1e5`, whose rounding is below `1e-17` relative.
 #![cfg(feature = "std")]
 
-use alice_physics::beam_stress::{ColumnEndCondition, CrossSection};
-use alice_physics::buckling::{analyze_column, BucklingRegime, ColumnBucklingReport};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::beam_stress::{ColumnEndCondition, CrossSection};
+use alice_physics_core::buckling::{analyze_column, BucklingRegime, ColumnBucklingReport};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 
 const PI: f64 = core::f64::consts::PI;
 const TOL: f64 = 1e-12;

@@ -9,9 +9,9 @@
 //! cargo run --example bfecc_advection_demo --features std --release
 //! ```
 
-use alice_physics::cfd_solver::{AdvectionScheme, CfdSolver};
-use alice_physics::math::Fix128;
-use alice_physics::multiphase::Grid3d;
+use alice_physics_core::cfd_solver::{AdvectionScheme, CfdSolver};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::multiphase::Grid3d;
 
 const NX: usize = 16;
 const NY: usize = 8;
@@ -22,7 +22,8 @@ const NZ: usize = 8;
 fn build_solver(scheme: AdvectionScheme) -> CfdSolver {
     let mut solver = CfdSolver::new(NX, NY, NZ, Fix128::ONE);
     solver.advection_scheme = scheme;
-    solver.gravity = alice_physics::math::Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
+    solver.gravity =
+        alice_physics_core::math::Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO);
 
     // Uniform +X flow on every X-face: u = 1.0 m/s.
     // MAC-grid u layout: `[(nx+1) · ny · nz]` in `i + (nx+1)·(j + ny·k)` order.

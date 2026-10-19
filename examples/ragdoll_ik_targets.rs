@@ -14,10 +14,10 @@
     reason = "analytic reference: blended IK halves the gap each pass, x = goal - 8 * 0.5^pass, asserted per pass"
 )]
 
-use alice_physics::ik_physics_bridge::{IkTarget, IkTargetSet};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::ragdoll::{Bone, RagdollBuilder, RagdollProportions};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::ik_physics_bridge::{IkTarget, IkTargetSet};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::ragdoll::{Bone, RagdollBuilder, RagdollProportions};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
 
 fn main() {
     for (name, p, height) in [

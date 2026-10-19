@@ -31,14 +31,14 @@
 //! cargo run --example plastic_heating --features std
 //! ```
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::linear_elastic_fem::{
     deposit_plastic_heat, plastic_temperature_rise, solve_elastoplastic, solve_with_eigenstrain,
     Axis, BoundaryConditions, ElasticMaterial, ElastoplasticConfig, PlasticHeating, SolverConfig,
     ThermalExpansion,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Young's modulus, MPa (mild steel, rounded to a power of two).
 const E_MPA: f64 = 204_800.0;

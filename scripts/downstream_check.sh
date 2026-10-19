@@ -119,6 +119,10 @@ case "${1:-}" in
 esac
 
 PHYSICS_DIR=$(cd "$(dirname "$0")/.." && pwd -P)
+# the engine (alice-physics-core) is the root package; the downstream crates depend on the
+# facade (alice-physics), which re-exports it
+FACADE_DIR="$PHYSICS_DIR/crates/alice-physics"
+PHYSICS_PACKAGE_DIR="$FACADE_DIR"
 ROOT=${DOWNSTREAM_ROOT:-$(mktemp -d)}
 mkdir -p "$ROOT/logs"
 ROOT=$(cd "$ROOT" && pwd -P)
@@ -195,7 +199,7 @@ if [ "$mode" = fetch ]; then
     exit 0
 fi
 
-PATCH="patch.crates-io.alice-physics.path=\"$LINK\""
+PATCH="patch.crates-io.alice-physics.path=\"$LINK/crates/alice-physics\""
 failed=()
 summary=()
 # downstream crates whose steps ran; fewer than the 3 at the end fails (a crate
@@ -206,8 +210,16 @@ compared=0
 # published release to this version in the fetched copies (no change otherwise)
 trees=()
 for name in "${REPOS[@]}"; do trees+=(--tree "$ROOT/$name"); done
+# a downstream path dependency written for the layout before the facade
+# (`path = "../ALICE-Physics"`, now the engine's directory) points at the facade
+# in the fetched copies, the edit each downstream repository makes itself
+echo "==> path dependencies on alice-physics that name this checkout's root"
+if ! python3 "$PHYSICS_DIR/scripts/downstream_path_rewrite.py" --provider "$LINK" "${trees[@]}"; then
+    echo "error: the path rewrite of the downstream dependencies failed" >&2
+    exit 1
+fi
 echo "==> requirements on alice-physics against the published release"
-if ! python3 "$PHYSICS_DIR/scripts/downstream_major_rewrite.py" --provider "$PHYSICS_DIR" "${trees[@]}"; then
+if ! python3 "$PHYSICS_DIR/scripts/downstream_major_rewrite.py" --provider "$FACADE_DIR" "${trees[@]}"; then
     echo "error: the major-bump rewrite of the downstream requirements failed" >&2
     exit 1
 fi
@@ -255,7 +267,7 @@ unset CARGO_TARGET_DIR
 requirements_ok() {
     local label=$1 dir=$2
     echo "==> $label: requirements on alice-physics"
-    if python3 "$PHYSICS_DIR/scripts/downstream_select_tag.py" --check "$dir" --provider "$PHYSICS_DIR"; then
+    if python3 "$PHYSICS_DIR/scripts/downstream_select_tag.py" --check "$dir" --provider "$PHYSICS_DIR" --provider "$FACADE_DIR"; then
         return 0
     fi
     failed+=("$label (requires another alice-physics version, steps skipped)")

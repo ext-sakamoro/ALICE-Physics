@@ -15,21 +15,21 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::anisotropic_friction::AnisotropicFriction;
-use alice_physics::buoyancy_zone::ZoneShape;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::vehicle_dynamics::powertrain::{Differential, Powertrain, TorqueCurve};
-use alice_physics::vehicle_dynamics::scenario::{
+use alice_physics_core::anisotropic_friction::AnisotropicFriction;
+use alice_physics_core::buoyancy_zone::ZoneShape;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::vehicle_dynamics::powertrain::{Differential, Powertrain, TorqueCurve};
+use alice_physics_core::vehicle_dynamics::scenario::{
     longitudinal_state, time_headway, time_to_collision, up_from_gravity, Recording, ReplayError,
     Scenario, StoppingDistanceMeter, RECORDING_MAGIC, RECORDING_VERSION,
 };
-use alice_physics::vehicle_dynamics::surface::{FlatGround, RoadCondition, Weather};
-use alice_physics::vehicle_dynamics::tire::{BrushTire, TireModel};
-use alice_physics::vehicle_dynamics::{
+use alice_physics_core::vehicle_dynamics::surface::{FlatGround, RoadCondition, Weather};
+use alice_physics_core::vehicle_dynamics::tire::{BrushTire, TireModel};
+use alice_physics_core::vehicle_dynamics::{
     AeroConfig, BrakeSystem, DriverInput, DynamicVehicle, DynamicVehicleConfig,
 };
-use alice_physics::wind_zone::WindZone;
+use alice_physics_core::wind_zone::WindZone;
 
 const M: f64 = 1000.0;
 const DT: f64 = 1.0 / 60.0;
@@ -191,7 +191,7 @@ struct CarState {
     velocity: Vec3Fix,
     rotation: QuatFix,
     angular_velocity: Vec3Fix,
-    wheels: Vec<alice_physics::vehicle_dynamics::WheelDynamicsState>,
+    wheels: Vec<alice_physics_core::vehicle_dynamics::WheelDynamicsState>,
     engine_rpm: Fix128,
     gear: usize,
 }

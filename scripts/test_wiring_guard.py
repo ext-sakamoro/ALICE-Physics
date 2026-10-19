@@ -871,6 +871,15 @@ class Workspace(unittest.TestCase):
         })
         self.assertEqual(keys(wg.check(r)), {"src/lib.rs::root_lonely", "alpha/src/lib.rs::alpha_lonely"})
 
+    def test_a_root_package_listed_as_the_member_dot(self):
+        # `members = [".", "crates/x"]`: "." is the root package (Path.glob refuses the pattern)
+        r = crate({
+            "Cargo.toml": '[package]\nname = "root"\n[workspace]\nmembers = [".", "crates/facade"]\n',
+            "src/lib.rs": "pub fn root_lonely() {}\n",
+            "crates/facade/src/lib.rs": "pub fn facade_lonely() {}\n",
+        })
+        self.assertEqual(keys(wg.check(r)), {"src/lib.rs::root_lonely", "crates/facade/src/lib.rs::facade_lonely"})
+
     def test_a_transitive_chain_across_members(self):
         r = crate({
             "Cargo.toml": self.WS,

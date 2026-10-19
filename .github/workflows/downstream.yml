@@ -27,6 +27,7 @@ on:
       - 'scripts/downstream_resolve.sh'
       - 'scripts/downstream_select_tag.py'
       - 'scripts/downstream_major_rewrite.py'
+      - 'scripts/downstream_path_rewrite.py'
       - 'scripts/downstream_test_counts.py'
       - 'scripts/ansi.py'
       - 'scripts/changed_paths.py'

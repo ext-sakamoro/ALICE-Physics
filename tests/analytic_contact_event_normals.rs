@@ -12,12 +12,12 @@
 //!
 //! Expected values are analytic: two spheres on the x axis, a plane `y = 0`.
 
-use alice_physics::collider::{self, Sphere, AABB};
-use alice_physics::event::{ContactEventType, EventCollector};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
+use alice_physics_core::collider::{self, Sphere, AABB};
+use alice_physics_core::event::{ContactEventType, EventCollector};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
 
 const TOL: f64 = 1e-12;
 
@@ -43,7 +43,7 @@ fn assert_dir(got: Vec3Fix, want: [f64; 3], what: &str) {
 /// toward each other at 1 m/s. `lower_index_on_left` picks which body gets
 /// index 0. Returns the Begin event and the analytic B→A direction for the
 /// event's (body_a, body_b).
-fn world_event(lower_index_on_left: bool) -> (alice_physics::event::ContactEvent, [f64; 3]) {
+fn world_event(lower_index_on_left: bool) -> (alice_physics_core::event::ContactEvent, [f64; 3]) {
     let cfg = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
         ..Default::default()

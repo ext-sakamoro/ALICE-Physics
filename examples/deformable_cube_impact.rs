@@ -11,9 +11,9 @@
 //! cargo run --release --example deformable_cube_impact --features std
 //! ```
 
-use alice_physics::deformable::DeformableBody;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::deformable::DeformableBody;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn main() {
     let mut cube = DeformableBody::new_cube(

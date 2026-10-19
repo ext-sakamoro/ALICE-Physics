@@ -1,11 +1,11 @@
-//! Audit S1-5 oracles for `alice_physics::filament_db`.
+//! Audit S1-5 oracles for `alice_physics_core::filament_db`.
 #![allow(
     clippy::disallowed_methods,
     reason = "analytic reference: f64 Reuss lower bound 1/(cos^2/E + sin^2/Ez) for filament_db Young modulus at angle"
 )]
 
-use alice_physics::filament_db::*;
-use alice_physics::math::Fix128;
+use alice_physics_core::filament_db::*;
+use alice_physics_core::math::Fix128;
 
 fn f(x: f64) -> Fix128 {
     Fix128::from_f64(x)
@@ -306,7 +306,7 @@ fn filament_db_try_register_refuses_past_the_u16_id_range() {
     last.name = "LAST";
     assert_eq!(
         db.try_register(last),
-        Err(alice_physics::PhysicsError::CapacityExceeded {
+        Err(alice_physics_core::PhysicsError::CapacityExceeded {
             resource: "filament materials",
             limit: FILAMENT_ID_COUNT,
         })

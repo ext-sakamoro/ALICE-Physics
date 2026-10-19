@@ -15,9 +15,11 @@
     reason = "measured quantity: |F| of the simulated Lorentz force via powi, asserted against Coulomb k q1 q2 / r^2"
 )]
 
-use alice_physics::electromagnetic::{lorentz_force, lorentz_force_sum, ChargedBody, EmSource};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::electromagnetic::{
+    lorentz_force, lorentz_force_sum, ChargedBody, EmSource,
+};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn main() {
     // 1. cyclotron orbit

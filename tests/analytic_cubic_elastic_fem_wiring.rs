@@ -20,9 +20,9 @@
 
 use std::collections::BTreeSet;
 
-use alice_physics::cubic_elastic_fem::{shape_values, CubicMesh};
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::cubic_elastic_fem::{shape_values, CubicMesh};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

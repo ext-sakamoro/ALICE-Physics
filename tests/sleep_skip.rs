@@ -22,11 +22,11 @@
 //!    sleeping body does *not* wake it (its velocity is reset at the next step)
 //!    unless `wake_body` is called; `wake_body` wakes it.
 
-use alice_physics::force::{ForceField, ForceFieldInstance};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sleeping::{SleepConfig, SleepState};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::{
+use alice_physics_core::force::{ForceField, ForceFieldInstance};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sleeping::{SleepConfig, SleepState};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::{
     BallJoint, Fix128, Joint, PhysicsConfig, PhysicsWorld, PlaneCollider, QuatFix, RigidBody,
     StageWork, Vec3Fix,
 };

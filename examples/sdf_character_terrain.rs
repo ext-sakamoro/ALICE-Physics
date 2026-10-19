@@ -17,8 +17,8 @@
 //!
 //! Run with: `cargo run --example sdf_character_terrain`
 
-use alice_physics::sdf_character::{MoveOutcome, SdfCharacter};
-use alice_physics::sdf_collider::SdfField;
+use alice_physics_core::sdf_character::{MoveOutcome, SdfCharacter};
+use alice_physics_core::sdf_collider::SdfField;
 
 /// The ground plane `y = 0`: exact distance field, normal `+y`.
 struct Ground;

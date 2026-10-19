@@ -1,17 +1,17 @@
-//! Audit oracles for `alice_physics::ccd` (S2-2 audit).
+//! Audit oracles for `alice_physics_core::ccd` (S2-2 audit).
 //!
 //! Time-of-impact answers are checked against brute-force time sampling of the
 //! trajectory (independent of the closed forms in `src/ccd.rs`) and against
 //! first-principles geometry. Scenes come from a fixed LCG so runs are
 //! reproducible.
 
-use alice_physics::ccd::{
+use alice_physics_core::ccd::{
     aabb_plane_toi, adaptive_toi_substeps, capsule_plane_toi, conservative_advancement, needs_ccd,
     speculative_contact, sphere_capsule_toi, sphere_plane_toi, sphere_sphere_toi, swept_aabb,
     CcdConfig,
 };
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 struct Lcg(u64);
 impl Lcg {

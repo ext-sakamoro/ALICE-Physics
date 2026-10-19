@@ -16,8 +16,8 @@
 //! cargo run --example sdf_fem_mesh_generation --features std
 //! ```
 
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_fem_mesh::{
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_fem_mesh::{
     generate, generate_marching_tets, BoundaryFaceError, SdfTetMesh,
 };
 

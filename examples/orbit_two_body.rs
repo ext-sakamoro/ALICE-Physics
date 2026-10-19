@@ -11,12 +11,12 @@
 //! cargo run --release --example orbit_two_body
 //! ```
 
-use alice_physics::kepler::{
+use alice_physics_core::kepler::{
     eccentric_from_true_anomaly, j2_arg_periapsis_rate, j2_raan_rate, mean_from_true_anomaly,
     mean_motion, orbital_period, solve_kepler, specific_angular_momentum, specific_orbital_energy,
     true_from_eccentric_anomaly, true_from_mean_anomaly, vis_viva_speed, OrbitalElements,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn deg(x: f64) -> Fix128 {
     Fix128::from_f64(x.to_radians())

@@ -13,13 +13,13 @@
 //! ```
 
 use alice_ml::TernaryWeight;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::neural::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::neural::{
     fix128_hard_tanh, fix128_leaky_relu, fix128_relu, fix128_tanh_approx, fix128_ternary_matvec,
     Activation, ControllerConfig, ControllerOutput, DeterministicNetwork, FixedTernaryWeight,
     RagdollController, FEATURES_PER_BODY,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 fn main() {
     println!("[neural] -- direct kernel wiring --");

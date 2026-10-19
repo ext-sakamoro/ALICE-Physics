@@ -21,12 +21,12 @@
     reason = "analytic reference: f64 log-law friction velocity root u_tau (ln(u_tau y/nu)/0.41 + 5.5) = u for RANS reports"
 )]
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     CfdSolver, PressureSolver, RansState, StepError, StepOptions, TurbulenceModel, WallModel,
 };
-use alice_physics::eulerian_grid::FaceBc;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::Grid3d;
+use alice_physics_core::eulerian_grid::FaceBc;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::Grid3d;
 
 fn q(a: i64, b: i64) -> Fix128 {
     Fix128::from_ratio(a, b)

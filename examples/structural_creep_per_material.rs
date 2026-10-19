@@ -22,12 +22,12 @@
     reason = "analytic reference: Findley creep 0.003 + 8.3e-14 t^3 vs Norton strain, max asserted against modelled PLA creep"
 )]
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::creep_longterm::FindleyParameters;
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::plastic::NortonCreep;
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::creep_longterm::FindleyParameters;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::plastic::NortonCreep;
+use alice_physics_core::structural_solver::StructuralSolver;
 
 fn solver(material: MaterialProperties) -> StructuralSolver {
     let section = CrossSection::Rectangular {

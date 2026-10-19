@@ -1,4 +1,4 @@
-//! Locking measurement for the P1 tetrahedra in `alice_physics::linear_elastic_fem`.
+//! Locking measurement for the P1 tetrahedra in `alice_physics_core::linear_elastic_fem`.
 //!
 //! "P1 tetrahedra are too stiff in bending" is already measured by
 //! `analytic_fem_convergence.rs`, but that study varies only the cell size, so
@@ -53,13 +53,13 @@
     reason = "analytic reference: f64 Euler-Bernoulli tip deflection PL^3/(3EI) for the P1 locking measurement"
 )]
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, FemSolution,
     Preconditioner, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_fem_mesh::{generate, SdfTetMesh};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_fem_mesh::{generate, SdfTetMesh};
 use std::collections::HashMap;
 
 /// Young's modulus (MPa). Shared by every row so the ratios are comparable.
@@ -686,7 +686,7 @@ fn stagnated_covers_three_mechanisms_that_the_return_value_cannot_separate() {
                 );
                 None
             }
-            Err(alice_physics::linear_elastic_fem::FemError::Stagnated {
+            Err(alice_physics_core::linear_elastic_fem::FemError::Stagnated {
                 iterations,
                 relative_residual,
                 without_improvement,

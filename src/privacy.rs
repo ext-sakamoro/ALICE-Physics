@@ -32,7 +32,7 @@
 //! ```
 //! # #[cfg(feature = "privacy-crypto")]
 //! # fn main() {
-//! use alice_physics::privacy::{dp_int, KeyedRappor, PrivacyBudget, SecureRng};
+//! use alice_physics_core::privacy::{dp_int, KeyedRappor, PrivacyBudget, SecureRng};
 //!
 //! // integer value with sensitivity 1, ε = 1, from a 32-byte secret key
 //! let mut rng = SecureRng::from_key([7u8; 32]);

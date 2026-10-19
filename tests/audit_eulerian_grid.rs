@@ -11,8 +11,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::eulerian_grid::{g2p_velocity, FaceBc, MacGrid};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::eulerian_grid::{g2p_velocity, FaceBc, MacGrid};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn q(num: i64, den: i64) -> Fix128 {
     Fix128::from_ratio(num, den)
@@ -910,7 +910,7 @@ fn project_pressure_removes_a_gradient_field_and_recovers_its_potential() {
         set_val_at(&mut g, 2, f, coeff * (at(i, j, k) - at(i, j, k - 1)));
     }
     let tol = q(1, 1_000_000);
-    alice_physics::eulerian_grid::project_pressure(&mut g, dt, rho, 600);
+    alice_physics_core::eulerian_grid::project_pressure(&mut g, dt, rho, 600);
     for comp in 0..3 {
         for f in all_faces(&g, comp) {
             let x = val_at(&g, comp, f).abs();
@@ -979,7 +979,7 @@ fn multigrid_refuses_each_axis_that_is_not_a_power_of_two() {
     ] {
         let mut g = seeded(nx, ny, nz);
         let before = g.clone();
-        alice_physics::eulerian_grid::project_pressure_multigrid(
+        alice_physics_core::eulerian_grid::project_pressure_multigrid(
             &mut g,
             q(1, 4),
             Fix128::from_int(2),
@@ -992,7 +992,7 @@ fn multigrid_refuses_each_axis_that_is_not_a_power_of_two() {
     }
     let mut control = seeded(4, 4, 4);
     let before = control.clone();
-    alice_physics::eulerian_grid::project_pressure_multigrid(
+    alice_physics_core::eulerian_grid::project_pressure_multigrid(
         &mut control,
         q(1, 4),
         Fix128::from_int(2),
@@ -1040,7 +1040,7 @@ fn a_uniform_inflow_duct_projects_to_the_uniform_flow_on_every_axis() {
                 set_bc_at(&mut g, axis, f, FaceBc::Outflow);
             }
         }
-        alice_physics::eulerian_grid::project_pressure(&mut g, dt, rho, 1500);
+        alice_physics_core::eulerian_grid::project_pressure(&mut g, dt, rho, 1500);
         let tol = q(1, 100_000);
         for comp in 0..3 {
             for f in all_faces(&g, comp) {
@@ -1067,7 +1067,7 @@ fn a_uniform_inflow_duct_projects_to_the_uniform_flow_on_every_axis() {
 // BiCGStab residual history against the textbook algorithm
 // ---------------------------------------------------------------------------
 
-use alice_physics::cfd_solver::{CfdSolver, PressureSolver};
+use alice_physics_core::cfd_solver::{CfdSolver, PressureSolver};
 
 const BN: usize = 4;
 

@@ -1,5 +1,5 @@
 //! Closed-form / invariant oracles for the wiring of
-//! `alice_physics::sim_modifier::ModifiedSdf`'s builder/management API
+//! `alice_physics_core::sim_modifier::ModifiedSdf`'s builder/management API
 //! (`examples/sim_modifier_management.rs`): `add_modifier`,
 //! `clear_modifiers`, `modifier_count`, `modifier_mut`, `with_modifier`.
 //!
@@ -20,8 +20,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sim_modifier::{ModifiedSdf, PhysicsModifier};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sim_modifier::{ModifiedSdf, PhysicsModifier};
 
 /// A modifier with a known, mutable effect: `modify_distance` subtracts
 /// `amount`, and `update(dt)` grows `amount` by `dt`. Pure arithmetic, no

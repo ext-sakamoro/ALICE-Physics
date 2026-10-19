@@ -29,10 +29,10 @@
     reason = "analytic reference: f64 cone/cylinder signed distance and cast directions for curved sphere/capsule casts"
 )]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 /// `2⁻³²`.
 const TOL: f64 = 1.0 / 4_294_967_296.0;

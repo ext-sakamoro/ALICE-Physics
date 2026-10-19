@@ -15,7 +15,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::netcode_prediction::{
+use alice_physics_core::netcode_prediction::{
     reconcile, reconcile_checked, PredictedInput, PredictionBuffer, ReconcileError, Snapshot,
 };
 

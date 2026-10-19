@@ -29,10 +29,10 @@
     reason = "analytic reference: f64 exp of the ISA 1976 isothermal stratosphere scale-height pressure ratio exp(-k dh)"
 )]
 
-use alice_physics::atmosphere::{AtmosphereState, Isa1976, IsaError};
-use alice_physics::buoyancy_zone::ZoneShape;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::wind_zone::WindZone;
+use alice_physics_core::atmosphere::{AtmosphereState, Isa1976, IsaError};
+use alice_physics_core::buoyancy_zone::ZoneShape;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::wind_zone::WindZone;
 
 /// One table row: geometric altitude (m), then (value, one unit in the last
 /// printed digit) for T (K), p (Pa), ρ (kg/m³).

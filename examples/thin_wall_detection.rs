@@ -4,7 +4,7 @@
 //! / `analyze_thickness_grid` on a sphere sampled on a coarse grid.
 //!
 //! ⚠️ **Why this example exists.** `scripts/wiring_guard.py` reported all
-//! seven `pub` items of `alice_physics::thin_wall` — `for_nozzle`,
+//! seven `pub` items of `alice_physics_core::thin_wall` — `for_nozzle`,
 //! `measure_thickness_at`, `analyze_thickness`, `analyze_thickness_grid`,
 //! `sample_surface_points`, `ThinWallReport::has_thin_walls` and
 //! `ThinWallReport::thin_fraction` — as having no caller outside the
@@ -27,9 +27,9 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::math::{Fix128, Vec3Fix};
-    use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-    use alice_physics::thin_wall::{
+    use alice_physics_core::math::{Fix128, Vec3Fix};
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+    use alice_physics_core::thin_wall::{
         analyze_thickness, analyze_thickness_grid, measure_thickness_at, sample_surface_points,
         ThinWallConfig,
     };

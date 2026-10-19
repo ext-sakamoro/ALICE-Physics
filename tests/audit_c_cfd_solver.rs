@@ -7,12 +7,12 @@
 //! after one call, and "some v face is negative" after a step under gravity.
 //! Each is replaced here by a value fixed outside the implementation.
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     CfdSolver, PressureSolver, PressureSolverError, RansState, StepError, StepOptions,
     TurbulenceModel,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::turbulence::WallFunctionError;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::turbulence::WallFunctionError;
 
 fn q(a: i64, b: i64) -> Fix128 {
     Fix128::from_ratio(a, b)

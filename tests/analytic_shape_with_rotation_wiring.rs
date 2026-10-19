@@ -8,12 +8,12 @@
 //! that cycles the axes. Every component is exact in `Fix128`, and none of the
 //! three solids is symmetric under it, so a dropped rotation shows.
 
-use alice_physics::collider::Support;
-use alice_physics::cylinder::Cylinder;
-use alice_physics::ellipsoid::Ellipsoid;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::{PosedShape, Shape};
-use alice_physics::torus::Torus;
+use alice_physics_core::collider::Support;
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::ellipsoid::Ellipsoid;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::{PosedShape, Shape};
+use alice_physics_core::torus::Torus;
 
 fn half() -> Fix128 {
     Fix128::from_ratio(1, 2)

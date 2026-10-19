@@ -26,20 +26,22 @@
     reason = "analytic reference: f64 free-fall bound 2 + g t^2/2 for the default FluidConfig block falling as a whole"
 )]
 
-use alice_physics::audio_physics::{AudioConfig, AudioEventType, AudioGenerator, AudioMaterial};
-use alice_physics::character::{CharacterConfig, CharacterController};
-use alice_physics::cloth::{Cloth, ClothConfig};
-use alice_physics::collider::Contact;
-use alice_physics::deformable::{DeformableBody, DeformableConfig};
-use alice_physics::fluid::{Fluid, FluidConfig};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::netcode::{DeterministicSimulation, FrameInput, NetcodeConfig};
-use alice_physics::rope::{Rope, RopeConfig};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::support_volume::{estimate_support_volume, OverhangRegion, SupportConfig};
-use alice_physics::vehicle::{EngineConfig, Vehicle, VehicleConfig, WheelConfig};
+use alice_physics_core::audio_physics::{
+    AudioConfig, AudioEventType, AudioGenerator, AudioMaterial,
+};
+use alice_physics_core::character::{CharacterConfig, CharacterController};
+use alice_physics_core::cloth::{Cloth, ClothConfig};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::deformable::{DeformableBody, DeformableConfig};
+use alice_physics_core::fluid::{Fluid, FluidConfig};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::netcode::{DeterministicSimulation, FrameInput, NetcodeConfig};
+use alice_physics_core::rope::{Rope, RopeConfig};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::support_volume::{estimate_support_volume, OverhangRegion, SupportConfig};
+use alice_physics_core::vehicle::{EngineConfig, Vehicle, VehicleConfig, WheelConfig};
 
 const DT60: f64 = 1.0 / 60.0;
 
@@ -1089,7 +1091,7 @@ fn audio_config_default_impact_parameters_match_closed_form() {
 #[test]
 fn controller_config_default_velocity_passthrough_network_is_exact_and_clamped() {
     use alice_ml::TernaryWeight;
-    use alice_physics::neural::{
+    use alice_physics_core::neural::{
         Activation, ControllerConfig, DeterministicNetwork, FixedTernaryWeight, RagdollController,
         FEATURES_PER_BODY,
     };

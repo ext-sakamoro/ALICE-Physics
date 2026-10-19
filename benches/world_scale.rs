@@ -14,8 +14,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
-use alice_physics::sleeping::SleepState;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::sleeping::SleepState;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn dt() -> Fix128 {
     Fix128::from_ratio(1, 60)

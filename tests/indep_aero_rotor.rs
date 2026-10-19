@@ -26,12 +26,12 @@
 
 use std::f64::consts::PI;
 
-use alice_physics::atmosphere::Isa1976;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rotor::{
+use alice_physics_core::atmosphere::Isa1976;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::rotor::{
     hover_induced_velocity_m_s, ideal_hover_power_w, Rotor, RotorParams, RotorSpin,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 const D: f64 = 0.254;
 const CT: f64 = 0.12;

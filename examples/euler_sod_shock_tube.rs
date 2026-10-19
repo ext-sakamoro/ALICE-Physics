@@ -15,12 +15,12 @@
 //! cargo run --release --example euler_sod_shock_tube
 //! ```
 
-use alice_physics::compressible::IdealGas;
-use alice_physics::euler_fv::{
+use alice_physics_core::compressible::IdealGas;
+use alice_physics_core::euler_fv::{
     exact_riemann, numerical_flux, EulerConfig, EulerError, EulerFv1d, Limiter, Primitive,
     RiemannSolver,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 const N: usize = 200;
 

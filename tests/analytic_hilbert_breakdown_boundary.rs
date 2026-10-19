@@ -19,8 +19,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::linear_solver::{gmres, DenseMatrix, IdentityPreconditioner, KrylovConfig};
-use alice_physics::math::Fix128;
+use alice_physics_core::linear_solver::{gmres, DenseMatrix, IdentityPreconditioner, KrylovConfig};
+use alice_physics_core::math::Fix128;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -61,15 +61,15 @@ fn solve(
     n: usize,
 ) -> (
     Result<
-        alice_physics::linear_solver::KrylovSolution,
-        alice_physics::linear_solver::LinearSolverError,
+        alice_physics_core::linear_solver::KrylovSolution,
+        alice_physics_core::linear_solver::LinearSolverError,
     >,
     Vec<Fix128>,
 ) {
     let a = hilbert(n);
     let x_true = adversarial_x_true(n);
     let mut b = vec![Fix128::ZERO; n];
-    alice_physics::linear_solver::LinearOperator::apply(&a, &x_true, &mut b);
+    alice_physics_core::linear_solver::LinearOperator::apply(&a, &x_true, &mut b);
     let identity = IdentityPreconditioner::new(n);
     (gmres(&a, &identity, &b, &config(2000)), x_true)
 }
@@ -122,7 +122,7 @@ fn hilbert_nine_is_below_the_breakdown_threshold_and_solves_accurately() {
 fn hilbert_ten_is_past_the_breakdown_threshold_and_should_report_breakdown() {
     let (result, _x_true) = solve(10);
     match result {
-        Err(alice_physics::linear_solver::LinearSolverError::Breakdown { .. }) => {}
+        Err(alice_physics_core::linear_solver::LinearSolverError::Breakdown { .. }) => {}
         other => panic!(
             "n=10 (cond(H_10)~1.6e13, past 2^40) should be Err(Breakdown {{ .. }}), got {other:?}"
         ),

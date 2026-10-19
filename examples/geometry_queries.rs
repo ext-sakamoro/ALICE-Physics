@@ -8,12 +8,12 @@
 //! cargo run --example geometry_queries --features std
 //! ```
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::AABB;
-use alice_physics::compound::CompoundShape;
-use alice_physics::cone::Cone;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::metric::MetricWeights;
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::AABB;
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::cone::Cone;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::metric::MetricWeights;
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

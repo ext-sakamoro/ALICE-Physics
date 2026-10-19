@@ -34,13 +34,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupling_medium::{DragMedium, MEDIUM_OBS_MOMENTUM};
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::coupling_medium::{DragMedium, MEDIUM_OBS_MOMENTUM};
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 #[cfg(feature = "parallel")]
-use alice_physics::solver::DistanceConstraint;
-use alice_physics::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{SleepConfig, SolverBackend, WorldCcdConfig};
+use alice_physics_core::solver::DistanceConstraint;
+use alice_physics_core::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{SleepConfig, SolverBackend, WorldCcdConfig};
 use sha2::{Digest, Sha256};
 
 const FRAMES: usize = 90;
@@ -215,14 +215,14 @@ fn run_try_step_parallel(mut w: PhysicsWorld) -> PhysicsWorld {
 struct IdentityBridge {
     positions: Vec<[Fix128; 3]>,
     velocities: Vec<[Fix128; 3]>,
-    constraints: Vec<alice_physics::solver::ContactConstraint>,
+    constraints: Vec<alice_physics_core::solver::ContactConstraint>,
     body_positions: Vec<[Fix128; 3]>,
 }
 
 #[cfg(feature = "gpu-solver-bridge")]
-impl alice_physics::gpu_bridge::GpuSolverBridge for IdentityBridge {
+impl alice_physics_core::gpu_bridge::GpuSolverBridge for IdentityBridge {
     fn semantics_id(&self) -> [u8; 32] {
-        alice_physics::PHYSICS_SEMANTICS_ID
+        alice_physics_core::PHYSICS_SEMANTICS_ID
     }
 
     fn send_island(&mut self, p: &[[Fix128; 3]], v: &[[Fix128; 3]]) {
@@ -236,18 +236,18 @@ impl alice_physics::gpu_bridge::GpuSolverBridge for IdentityBridge {
     }
     fn assert_bit_exact_vs_cpu(
         &self,
-        _fixture: &alice_physics::gpu_bridge::DiffFixture,
-    ) -> Result<(), alice_physics::gpu_bridge::GpuDivergence> {
+        _fixture: &alice_physics_core::gpu_bridge::DiffFixture,
+    ) -> Result<(), alice_physics_core::gpu_bridge::GpuDivergence> {
         Ok(())
     }
-    fn send_contact_constraints(&mut self, c: &[alice_physics::solver::ContactConstraint]) {
+    fn send_contact_constraints(&mut self, c: &[alice_physics_core::solver::ContactConstraint]) {
         self.constraints = c.to_vec();
     }
     fn send_body_state(&mut self, positions: &[[Fix128; 3]], _inv_masses: &[Fix128]) {
         self.body_positions = positions.to_vec();
     }
     fn dispatch_contact_solve_iteration(&mut self, _warm_start_factor: Fix128) {}
-    fn recv_contact_constraints(&self, c: &mut [alice_physics::solver::ContactConstraint]) {
+    fn recv_contact_constraints(&self, c: &mut [alice_physics_core::solver::ContactConstraint]) {
         c.clone_from_slice(&self.constraints);
     }
     fn recv_body_positions(&self, positions: &mut [[Fix128; 3]]) {
@@ -512,8 +512,8 @@ const GOLDEN_CONTINUOUS_COLLISION: &str =
 
 #[test]
 fn golden_continuous_collision() {
-    use alice_physics::material::PhysicsMaterial;
-    use alice_physics::shape::Shape;
+    use alice_physics_core::material::PhysicsMaterial;
+    use alice_physics_core::shape::Shape;
     let mut w = PhysicsWorld::new(PhysicsConfig {
         substeps: 1,
         gravity: Vec3Fix::ZERO,
@@ -621,7 +621,7 @@ fn golden_participant() {
     for _ in 0..FRAMES {
         w.try_step(dt()).expect("step");
     }
-    let Some(alice_physics::world_participant::Observed::Exact(sink)) =
+    let Some(alice_physics_core::world_participant::Observed::Exact(sink)) =
         w.observe_participant(index)
     else {
         panic!("medium observation missing");

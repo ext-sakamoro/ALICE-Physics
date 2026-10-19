@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::cone`.
+//! Audit oracles for `alice_physics_core::cone`.
 //!
 //! Expected values come from closed forms (volume, surface area), from numerical
 //! integration of the solid in `f64` (centroid, inertia) and from a brute-force
@@ -12,9 +12,9 @@
     reason = "analytic reference: f64 Rodrigues rotation and boundary sampling r (cos a, sin a) for cone support and AABB"
 )]
 
-use alice_physics::collider::Support;
-use alice_physics::cone::Cone;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::collider::Support;
+use alice_physics_core::cone::Cone;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

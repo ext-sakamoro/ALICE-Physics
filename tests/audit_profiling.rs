@@ -13,7 +13,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::profiling::{
+use alice_physics_core::profiling::{
     PhysicsProfiler, ProfileEntry, StepStats, TickCounter, STAGE_BROADPHASE, STAGE_SOLVER,
 };
 use std::panic::{catch_unwind, AssertUnwindSafe};

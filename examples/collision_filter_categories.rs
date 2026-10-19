@@ -15,9 +15,9 @@
 //! cargo run --example collision_filter_categories --features std
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{layers, CollisionFilter};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{layers, CollisionFilter};
 
 /// Zero gravity (so the only thing that can change whether a pair reports a
 /// contact is the filter) and a single substep. `step()` clears and

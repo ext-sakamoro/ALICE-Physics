@@ -21,14 +21,14 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupling_medium::{DragMedium, DRAG_MEDIUM_KIND};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::world_participant::{
+use alice_physics_core::coupling_medium::{DragMedium, DRAG_MEDIUM_KIND};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::world_participant::{
     FieldLayout, FieldMode, ObservationSink, Observed, Participant, ParticipantFault,
     ParticipantKind, PortId, RegisterError, StateError, StepError, StepRule, SubstepCtx,
     WorldFault,
 };
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
 
 fn fx(x: f64) -> Fix128 {
     Fix128::from_f64(x)

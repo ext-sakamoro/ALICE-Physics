@@ -14,8 +14,8 @@
 //!
 //! Run with: `cargo run --example scaled_shape_support`
 
-use alice_physics::collider::{gjk, ScaledShape, Sphere, Support, AABB};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::collider::{gjk, ScaledShape, Sphere, Support, AABB};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn v3(x: i64, y: i64, z: i64) -> Vec3Fix {
     Vec3Fix::from_int(x, y, z)

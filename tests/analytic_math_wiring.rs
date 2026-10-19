@@ -47,7 +47,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::{Fix128, Vec3Fix};
+use alice_physics_core::{Fix128, Vec3Fix};
 
 fn close(actual: f64, expected: f64, tol: f64) -> bool {
     (actual - expected).abs() < tol

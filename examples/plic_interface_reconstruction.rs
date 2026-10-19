@@ -13,9 +13,11 @@
 //! cargo run --release --example plic_interface_reconstruction --features std
 //! ```
 
-use alice_physics::interface_capture::{plic_normal, plic_plane_offset, truncated_cube_volume};
-use alice_physics::math::Fix128;
-use alice_physics::multiphase::Grid3d;
+use alice_physics_core::interface_capture::{
+    plic_normal, plic_plane_offset, truncated_cube_volume,
+};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::multiphase::Grid3d;
 
 fn main() {
     let n = 21usize;

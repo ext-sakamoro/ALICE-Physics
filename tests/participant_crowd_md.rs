@@ -23,19 +23,19 @@
     reason = "analytic reference: f64 pedestrian relaxation v0 + (v - v0) e^(-n x) and LJ r_min = 2^(1/6) for crowd and MD participants"
 )]
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdParticipant, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
     CROWD_OBS_COUNT, CROWD_OBS_MEAN_SPEED, CROWD_PARTICIPANT_KIND,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{
     MdParticipant, PeriodicBox, VelocityVerlet, MD_OBS_KINETIC, MD_OBS_POTENTIAL,
     MD_OBS_TEMPERATURE, MD_OBS_TOTAL, MD_PARTICIPANT_KIND,
 };
-use alice_physics::pair_potential::{LennardJones, ShiftMode, Truncated};
-use alice_physics::physics2d::Vec2Fix;
-use alice_physics::solver::RigidBody;
-use alice_physics::world_participant::{
+use alice_physics_core::pair_potential::{LennardJones, ShiftMode, Truncated};
+use alice_physics_core::physics2d::Vec2Fix;
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::world_participant::{
     run_substep, FieldBoard, ForceAccumulator, ObservationSink, Participant, ParticipantFault,
     ParticipantKind, ParticipantPlan, StateError, SubstepCtx, SubstepTime, WorldFault,
 };

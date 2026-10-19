@@ -15,10 +15,12 @@
 //! cargo run --example debug_render_primitives --features std
 //! ```
 
-use alice_physics::collider::Contact;
-use alice_physics::debug_render::{debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{
+use alice_physics_core::collider::Contact;
+use alice_physics_core::debug_render::{
+    debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags,
+};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{
     ContactConstraint, DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig,
 };
 

@@ -75,13 +75,13 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::math::Fix128;
-use alice_physics::multiphase::Grid3d;
-use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sim_modifier::ModifiedSdf;
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::multiphase::Grid3d;
+use alice_physics_core::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sim_modifier::ModifiedSdf;
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
 
 // ============================================================================
 // Shared scene construction
@@ -349,7 +349,7 @@ fn fluid_temperature_moves_the_fluid_and_not_the_thermal_field() {
         let dt_fix = Fix128::from_ratio(16, 1000);
         for _ in 0..STEPS {
             solver.step(dt_fix);
-            alice_physics::sim_modifier::PhysicsModifier::update(&mut thermal, DT);
+            alice_physics_core::sim_modifier::PhysicsModifier::update(&mut thermal, DT);
         }
         (
             cfd_state(&solver),
@@ -654,8 +654,8 @@ fn a_point_has_two_temperatures_and_stepping_does_not_close_the_gap() {
 /// `update` does not make on anyone's behalf.
 #[test]
 fn reconcile_mean_is_the_path_that_does_join_the_two_temperature_owners() {
-    use alice_physics::coupled_field::{reconcile_mean, CoupledScalar};
-    use alice_physics::sim_modifier::PhysicsModifier;
+    use alice_physics_core::coupled_field::{reconcile_mean, CoupledScalar};
+    use alice_physics_core::sim_modifier::PhysicsModifier;
 
     let probe = (0.0_f32, 0.0_f32, 0.0_f32);
     let mut thermal = ThermalModifier::new(
@@ -756,10 +756,10 @@ fn reconcile_mean_is_the_path_that_does_join_the_two_temperature_owners() {
 /// ceasing to read) the channel is a failure and not a silent change.
 #[test]
 fn the_composed_distance_is_read_by_exactly_one_implementor() {
-    use alice_physics::erosion::{ErosionConfig, ErosionModifier};
-    use alice_physics::fracture::{FractureConfig, FractureModifier};
-    use alice_physics::pressure::{PressureConfig, PressureModifier};
-    use alice_physics::sim_modifier::PhysicsModifier;
+    use alice_physics_core::erosion::{ErosionConfig, ErosionModifier};
+    use alice_physics_core::fracture::{FractureConfig, FractureModifier};
+    use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+    use alice_physics_core::sim_modifier::PhysicsModifier;
 
     let probe = (0.0_f32, 0.0_f32, 0.0_f32);
     // Distances spanning well inside, at, and well outside the surface.
@@ -873,7 +873,7 @@ fn the_composed_distance_is_read_by_exactly_one_implementor() {
 /// of magnitude more.
 #[test]
 fn chain_order_matters_materially_only_because_of_fracture() {
-    use alice_physics::fracture::{FractureConfig, FractureModifier};
+    use alice_physics_core::fracture::{FractureConfig, FractureModifier};
 
     let probe = (0.4_f32, 0.1_f32, -0.2_f32);
 

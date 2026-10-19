@@ -9,9 +9,9 @@
 //! * one XPBD iteration of one distance constraint:
 //!   `lambda = e / (w0 + w1 + alpha/dt^2)`, `p0 += w0 lambda u`, `p1 -= w1 lambda u`
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rope::Rope;
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::rope::Rope;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

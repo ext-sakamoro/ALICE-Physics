@@ -21,13 +21,13 @@
     reason = "analytic reference: f64 Euclidean distance for brute-force bilinear height-field bounds in twisted cells"
 )]
 
-use alice_physics::character::{CharacterConfig, CharacterController};
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape_raycast::{RayFilter, RayTarget};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::world_shape_query::WorldShapeHit;
+use alice_physics_core::character::{CharacterConfig, CharacterController};
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::world_shape_query::WorldShapeHit;
 
 const ITER: f64 = 1e-9;
 const R: f64 = 0.3;

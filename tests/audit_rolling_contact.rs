@@ -8,7 +8,7 @@
     reason = "analytic reference: f64 Hertz contact radius (3PR*/(4E*))^(1/3) and peak pressure (Johnson ch. 4) for rolling_contact"
 )]
 
-use alice_physics::rolling_contact::{
+use alice_physics_core::rolling_contact::{
     basquin_cycles_to_failure, hertzian_sphere_sphere, materials, rolling_contact_life_cycles,
 };
 

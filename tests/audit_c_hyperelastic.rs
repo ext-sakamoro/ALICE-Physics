@@ -12,12 +12,12 @@
 //! a tangent that is off by a constant converges linearly and takes more.
 #![cfg(feature = "std")]
 
-use alice_physics::hyperelastic::{cauchy_stress, volumetric_modulus, HyperelasticModel};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::hyperelastic::{cauchy_stress, volumetric_modulus, HyperelasticModel};
+use alice_physics_core::linear_elastic_fem::{
     solve_corotational, Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial, SolverConfig,
 };
-use alice_physics::math::{Fix128, Mat3Fix, Vec3Fix};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::{Fix128, Mat3Fix, Vec3Fix};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn corner_tet() -> SdfTetMesh {
     SdfTetMesh {

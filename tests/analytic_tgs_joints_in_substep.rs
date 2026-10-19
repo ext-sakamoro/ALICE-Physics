@@ -33,17 +33,17 @@
     reason = "analytic reference: f64 damped displacement and pendulum pose sin/cos(theta0) for TGS joints in substep"
 )]
 
-use alice_physics::heightfield::HeightField;
-use alice_physics::joint::{
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::joint::{
     BallJoint, ConeTwistJoint, D6Joint, D6Motion, FixedJoint, HingeJoint, Joint, SliderJoint,
     SpringJoint,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::{TriMesh, Triangle};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::{TriMesh, Triangle};
+use alice_physics_core::SolverBackend;
 
 const DT: f64 = 1.0 / 60.0;
 

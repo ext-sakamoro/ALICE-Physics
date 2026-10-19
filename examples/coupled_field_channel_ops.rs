@@ -19,8 +19,8 @@
 //!
 //! Run with: `cargo run --example coupled_field_channel_ops`
 
-use alice_physics::coupled_field::CoupledField;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::coupled_field::CoupledField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn fx(n: i64) -> Fix128 {
     Fix128::from_int(n)

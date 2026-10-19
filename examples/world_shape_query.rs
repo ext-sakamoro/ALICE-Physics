@@ -1,7 +1,7 @@
 //! World shape queries: `PhysicsWorld::cast_sphere`, `cast_capsule`,
 //! `overlap_sphere` and `overlap_aabb` against the geometry the world collides
 //! with (a box body, a ground plane), next to the bounding-sphere answer of
-//! `alice_physics::query::overlap_sphere`.
+//! `alice_physics_core::query::overlap_sphere`.
 //!
 //! Scene: a unit box (half extents 1) at the origin and the plane `y = 0` under
 //! it, shifted so the box rests on it (centre at `y = 1`).
@@ -20,13 +20,13 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::{RayFilter, RayTarget};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
-use alice_physics::static_collider::StaticCollider;
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::static_collider::StaticCollider;
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(
@@ -91,7 +91,7 @@ fn main() {
     let center = v3(1.4, 2.4, 0.0);
     let radius = Fix128::from_f64(0.5);
     let found = world.overlap_sphere(center, radius, &filter);
-    let old = alice_physics::query::overlap_sphere(
+    let old = alice_physics_core::query::overlap_sphere(
         center,
         radius,
         &world.bodies,

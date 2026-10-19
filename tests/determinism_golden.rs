@@ -31,13 +31,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::cloth::Cloth;
-use alice_physics::eulerian_grid::MacGrid;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::trimesh::TriMesh;
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::cloth::Cloth;
+use alice_physics_core::eulerian_grid::MacGrid;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::trimesh::TriMesh;
 use sha2::{Digest, Sha256};
 
 /// Serialise a single body's kinematic state to a stable byte layout.

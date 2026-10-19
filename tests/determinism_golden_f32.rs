@@ -4,7 +4,7 @@
 //! whose arithmetic runs in IEEE `f32` / `f64`: their outputs are only
 //! bit-exact across platforms because (a) `+ - * / sqrt` are IEEE-exact on
 //! every target Rust supports and (b) all transcendentals go through
-//! `alice_physics::det_math` (enforced by `clippy.toml` `disallowed-methods`).
+//! `alice_physics_core::det_math` (enforced by `clippy.toml` `disallowed-methods`).
 //!
 //! Each scenario feeds fixed inputs through a module's public entry point,
 //! serialises the outputs bit-for-bit and compares the SHA-256 against a
@@ -22,9 +22,9 @@
     reason = "pins the deprecated non-DP privacy types (LaplaceNoise, XorShift64, ...) until the breaking release removes them"
 )]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
 use sha2::{Digest, Sha256};
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ const GOLDEN_SIM_FIELD: &str = "4b1bf9a7eb709e37caf7bc0aa4499435bea0a6be693b29e6
 
 #[test]
 fn golden_sim_field() {
-    use alice_physics::sim_field::{ScalarField3D, VectorField3D};
+    use alice_physics_core::sim_field::{ScalarField3D, VectorField3D};
     let mut f = ScalarField3D::new(8, 8, 8, (-1.0, -1.0, -1.0), (1.0, 1.0, 1.0));
     for i in 0..12u32 {
         let p = (
@@ -160,8 +160,8 @@ const GOLDEN_FRACTURE: &str = "3a45ff9e27d7a88bce3a46a87a1b3d79beebb368c29ac2bd4
 
 #[test]
 fn golden_fracture() {
-    use alice_physics::fracture::{FractureConfig, FractureModifier};
-    use alice_physics::sim_modifier::PhysicsModifier;
+    use alice_physics_core::fracture::{FractureConfig, FractureModifier};
+    use alice_physics_core::sim_modifier::PhysicsModifier;
     let cfg = FractureConfig {
         fracture_toughness: 0.5,
         ..FractureConfig::default()
@@ -207,7 +207,7 @@ const GOLDEN_ROLLING_CONTACT: &str =
 
 #[test]
 fn golden_rolling_contact() {
-    use alice_physics::rolling_contact::{
+    use alice_physics_core::rolling_contact::{
         basquin_cycles_to_failure, hertzian_sphere_sphere, rolling_contact_life_cycles,
     };
     let mut s = Sink::default();
@@ -239,7 +239,7 @@ const GOLDEN_SDF_DESTRUCTION: &str =
 
 #[test]
 fn golden_sdf_destruction() {
-    use alice_physics::sdf_destruction::{
+    use alice_physics_core::sdf_destruction::{
         destruction_from_impact, destruction_from_projectile, DestructibleSdf, DestructionShape,
         DestructionType,
     };
@@ -302,7 +302,7 @@ const GOLDEN_PRIVACY: &str = "3d55a1ff0dc76b1d26dc6ed5fa3a86277361dee009ef8e7ba4
 
 #[test]
 fn golden_privacy() {
-    use alice_physics::privacy::{LaplaceNoise, RandomizedResponse, XorShift64};
+    use alice_physics_core::privacy::{LaplaceNoise, RandomizedResponse, XorShift64};
     let mut s = Sink::default();
     let mut lap = LaplaceNoise::with_seed(1.0, 0.5, 0x1234_5678_9abc_def0);
     for i in 0..64 {
@@ -334,7 +334,7 @@ const GOLDEN_SKETCH: &str = "2339dc43634fa99c1d25d6242d1590370f90b321ab35c0a30ec
 
 #[test]
 fn golden_sketch() {
-    use alice_physics::sketch::{CountMinSketch1024x5, DDSketch512, HyperLogLog12};
+    use alice_physics_core::sketch::{CountMinSketch1024x5, DDSketch512, HyperLogLog12};
     let mut s = Sink::default();
     let mut hll = HyperLogLog12::new();
     for i in 0..5000u64 {
@@ -368,7 +368,7 @@ const GOLDEN_SDF_SPH: &str = "2cb82127d65107e5d9e9df92590a303507064b680214d458da
 
 #[test]
 fn golden_sdf_sph() {
-    use alice_physics::sdf_sph::{
+    use alice_physics_core::sdf_sph::{
         poly6, spiky_grad, viscosity_lap, SphConfig, SphParticle, SphSolver,
     };
     let mut s = Sink::default();
@@ -419,7 +419,7 @@ const GOLDEN_THIN_WALL: &str = "9db6bf248b3957d64398ecc2707682cc2ea7184756738a48
 
 #[test]
 fn golden_thin_wall() {
-    use alice_physics::thin_wall::{analyze_thickness, sample_surface_points, ThinWallConfig};
+    use alice_physics_core::thin_wall::{analyze_thickness, sample_surface_points, ThinWallConfig};
     // Thin shell: |r - 1| - 0.02 → 40 mm wall if units are mm... keep unitless
     let shell = ClosureSdf::new(
         |x, y, z| ((x * x + y * y + z * z).sqrt() - 1.0).abs() - 0.02,
@@ -463,12 +463,12 @@ const GOLDEN_SDF_COLLISION: &str =
 
 #[test]
 fn golden_sdf_collision_family() {
-    use alice_physics::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
-    use alice_physics::sdf_ccd::{sphere_trace_sdf, SdfCcdConfig};
-    use alice_physics::sdf_collider::{
+    use alice_physics_core::sdf_adaptive::{AdaptiveConfig, AdaptiveSdfEvaluator};
+    use alice_physics_core::sdf_ccd::{sphere_trace_sdf, SdfCcdConfig};
+    use alice_physics_core::sdf_collider::{
         collide_aabb_sdf, collide_capsule_sdf, collide_point_sdf, collide_sphere_sdf,
     };
-    use alice_physics::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
+    use alice_physics_core::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
     let collider = SdfCollider::new_static(
         Box::new(unit_sphere()),
         Vec3Fix::from_f32(0.1, -0.2, 0.05),
@@ -587,10 +587,10 @@ const GOLDEN_SDF_SOFT: &str = "20a8eabfcdf8e3399784593b9fbf4ba7b6a91059e154fe5c3
 
 #[test]
 fn golden_sdf_soft_family() {
-    use alice_physics::gpu_sdf::{GpuDispatchConfig, GpuSdfBatch};
-    use alice_physics::sdf_character::SdfCharacter;
-    use alice_physics::sdf_fem_mesh::generate;
-    use alice_physics::sdf_wind_field::SdfWindField;
+    use alice_physics_core::gpu_sdf::{GpuDispatchConfig, GpuSdfBatch};
+    use alice_physics_core::sdf_character::SdfCharacter;
+    use alice_physics_core::sdf_fem_mesh::generate;
+    use alice_physics_core::sdf_wind_field::SdfWindField;
     let sphere = unit_sphere();
     let mut s = Sink::default();
 
@@ -603,7 +603,8 @@ fn golden_sdf_soft_family() {
     // the scenario's job is to pin the arithmetic and a budget change would move
     // more of the hash than the refiner change itself.
     let passes = match mesh.try_refine_conforming(0.6, 2) {
-        Ok(p) | Err(alice_physics::sdf_fem_mesh::RefineError::Unfinished { passes: p, .. }) => p,
+        Ok(p)
+        | Err(alice_physics_core::sdf_fem_mesh::RefineError::Unfinished { passes: p, .. }) => p,
         // `RefineError` is `#[non_exhaustive]`, so this arm is required. A new
         // variant would mean the refiner can fail in a way this scenario has
         // never seen, and hashing some substitute number would bury that.
@@ -688,12 +689,12 @@ const GOLDEN_MODIFIERS: &str = "29b6e16660be28eaa83091a3a1d7bc246b9c1be880e3375d
 
 #[test]
 fn golden_modifier_family() {
-    use alice_physics::erosion::{ErosionConfig, ErosionModifier};
-    use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
-    use alice_physics::pressure::{PressureConfig, PressureModifier};
-    use alice_physics::sim_modifier::{ModifiedSdf, PhysicsModifier};
-    use alice_physics::thermal::{ThermalConfig, ThermalModifier};
-    use alice_physics::transient_thermal::{
+    use alice_physics_core::erosion::{ErosionConfig, ErosionModifier};
+    use alice_physics_core::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+    use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+    use alice_physics_core::sim_modifier::{ModifiedSdf, PhysicsModifier};
+    use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
+    use alice_physics_core::transient_thermal::{
         crank_nicolson_step_1d, stable_dt_1d, transient_step_1d, ThermalMaterial,
     };
     let bounds = ((-1.0, -1.0, -1.0), (1.0, 1.0, 1.0));
@@ -790,10 +791,10 @@ const GOLDEN_ENGINEERING: &str = "a51687cd3de021f8829495d9ae410bca4dbe823a052519
 
 #[test]
 fn golden_engineering_family() {
-    use alice_physics::acoustic_wave::{leapfrog_step, stable_dt};
-    use alice_physics::aeroelasticity::{viv_step, VivParameters, VivState};
-    use alice_physics::convex_decompose::{decompose_sdf, DecomposeConfig};
-    use alice_physics::piezoelectric::PiezoElement;
+    use alice_physics_core::acoustic_wave::{leapfrog_step, stable_dt};
+    use alice_physics_core::aeroelasticity::{viv_step, VivParameters, VivState};
+    use alice_physics_core::convex_decompose::{decompose_sdf, DecomposeConfig};
+    use alice_physics_core::piezoelectric::PiezoElement;
     let mut s = Sink::default();
 
     let mut st = VivState {
@@ -868,9 +869,9 @@ const GOLDEN_STATS_STATE: &str = "ed0629e3c73c081c875c19fe34bed6590210d9c0af2d89
 
 #[test]
 fn golden_stats_state_family() {
-    use alice_physics::anomaly::{MadDetector, StreamingMedian};
-    use alice_physics::character_state::{transition, CharacterState, CharacterStateContext};
-    use alice_physics::fluid_netcode::{FluidDelta, FluidSnapshot};
+    use alice_physics_core::anomaly::{MadDetector, StreamingMedian};
+    use alice_physics_core::character_state::{transition, CharacterState, CharacterStateContext};
+    use alice_physics_core::fluid_netcode::{FluidDelta, FluidSnapshot};
     let mut s = Sink::default();
 
     let mut med = StreamingMedian::new();

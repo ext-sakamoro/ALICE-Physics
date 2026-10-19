@@ -24,21 +24,21 @@
 
 use std::sync::{Arc, Mutex};
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdParticipant, InteractionParams, NeighborSearch, Pedestrian, SocialForce,
 };
-use alice_physics::erosion::{ErosionConfig, ErosionModifier};
-use alice_physics::fracture::{FractureConfig, FractureModifier};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{MdParticipant, PeriodicBox, VelocityVerlet};
-use alice_physics::pair_potential::{LennardJones, ShiftMode, Truncated};
-use alice_physics::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::physics2d::Vec2Fix;
-use alice_physics::pressure::{PressureConfig, PressureModifier};
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::solver::RigidBody;
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
-use alice_physics::world_participant::{
+use alice_physics_core::erosion::{ErosionConfig, ErosionModifier};
+use alice_physics_core::fracture::{FractureConfig, FractureModifier};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{MdParticipant, PeriodicBox, VelocityVerlet};
+use alice_physics_core::pair_potential::{LennardJones, ShiftMode, Truncated};
+use alice_physics_core::phase_change::{PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::physics2d::Vec2Fix;
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::world_participant::{
     execution_order, run_substep, FieldBoard, FieldLayout, FieldMode, FieldPortError,
     ForceAccumulator, ObservationSink, OrderError, Participant, ParticipantFault, ParticipantKind,
     ParticipantPlan, Port, PortId, RegisterError, StateError, SubstepCtx, SubstepTime, WorldFault,

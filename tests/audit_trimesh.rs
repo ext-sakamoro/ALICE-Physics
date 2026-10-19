@@ -10,10 +10,10 @@
     reason = "analytic reference: f64 distance from the ray hit to the micro-triangle centroid for trimesh miss checks"
 )]
 
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::raycast::Ray;
-use alice_physics::trimesh::{ray_triangle, TriMesh, Triangle};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::raycast::Ray;
+use alice_physics_core::trimesh::{ray_triangle, TriMesh, Triangle};
 
 // ---------------------------------------------------------------- 補助
 

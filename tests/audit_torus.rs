@@ -18,9 +18,9 @@
     reason = "analytic reference: f64 torus surface sampling (R + r cos v) cos u and quaternion for torus support maximiser"
 )]
 
-use alice_physics::collider::Support;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::torus::Torus;
+use alice_physics_core::collider::Support;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::torus::Torus;
 use std::f64::consts::PI;
 
 fn fx(v: f64) -> Fix128 {

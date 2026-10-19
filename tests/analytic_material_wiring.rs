@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::material`
+//! Oracles for the production entry points of `alice_physics_core::material`
 //! driven by `examples/material_registry_presets.rs`: `MaterialTable::{
 //! register_concrete, register_ice, register_metal, register_rubber,
 //! register_wood, set_pair_override}` and the `PhysicsMaterial` builder
@@ -77,8 +77,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::material::{CombineRule, MaterialTable, PhysicsMaterial, DEFAULT_MATERIAL};
-use alice_physics::math::Fix128;
+use alice_physics_core::material::{CombineRule, MaterialTable, PhysicsMaterial, DEFAULT_MATERIAL};
+use alice_physics_core::math::Fix128;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn r(num: i64, denom: i64) -> Fix128 {

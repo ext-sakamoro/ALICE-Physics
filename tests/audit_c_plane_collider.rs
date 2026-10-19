@@ -6,9 +6,9 @@
 //! minus the smallest signed corner distance (brute force over the 8 corners).
 //! Axis-aligned cases use dyadic inputs, so the expected values are exact.
 
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

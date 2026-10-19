@@ -16,8 +16,8 @@
 //! The bits were read from this implementation; the closed form above is the
 //! independent check of the value.
 
-use alice_physics::joint::{solve_joints_with_reaction_forces, Joint, SliderJoint};
-use alice_physics::{Fix128, RigidBody, Vec3Fix};
+use alice_physics_core::joint::{solve_joints_with_reaction_forces, Joint, SliderJoint};
+use alice_physics_core::{Fix128, RigidBody, Vec3Fix};
 
 fn h() -> Fix128 {
     Fix128::from_ratio(1, 64)

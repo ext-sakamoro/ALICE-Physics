@@ -10,8 +10,8 @@
 //! cargo run --release --example fluid_block_column --features std
 //! ```
 
-use alice_physics::fluid::{Fluid, FluidConfig};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::fluid::{Fluid, FluidConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn main() {
     let spacing = Fix128::from_ratio(1, 10);

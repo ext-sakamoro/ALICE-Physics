@@ -15,9 +15,9 @@
     reason = "analytic reference: f64 Carslaw-Jaeger cosine mode decay exp(-alpha pi^2 t/L^2) and Basquin life for engineering modules"
 )]
 
-use alice_physics::fatigue::{miner_damage, SnCurve};
-use alice_physics::math::Fix128;
-use alice_physics::transient_thermal::{
+use alice_physics_core::fatigue::{miner_damage, SnCurve};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::transient_thermal::{
     crank_nicolson_step_1d, transient_step_1d, TemperatureDependence, ThermalMaterial,
 };
 

@@ -25,12 +25,12 @@
 //! cargo run --example adaptive_refinement --features std
 //! ```
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     error_indicators_squared, mark_bulk, solve, solve_adaptive, AdaptiveConfig, AdaptiveSolution,
     Axis, BoundaryConditions, ElasticMaterial, FemSolution, SolverConfig, StressTensor,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Young's modulus, MPa (mild steel, rounded to a power of two).
 const E_MPA: f64 = 204_800.0;

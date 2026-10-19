@@ -18,12 +18,12 @@
 //! Author: Moroya Sakamoto
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody, WorldSnapshotError};
-use alice_physics::world_participant::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody, WorldSnapshotError};
+use alice_physics_core::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
 };
-use alice_physics::{LegacyPolicy, PHYSICS_SEMANTICS_ID};
+use alice_physics_core::{LegacyPolicy, PHYSICS_SEMANTICS_ID};
 
 const KIND_TAGGED: ParticipantKind = ParticipantKind::new(0x5441_4747);
 

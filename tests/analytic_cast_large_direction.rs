@@ -9,9 +9,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn plate_world() -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig::default());

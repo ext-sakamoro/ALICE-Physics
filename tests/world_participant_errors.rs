@@ -9,12 +9,12 @@
 
 use std::error::Error;
 
-use alice_physics::world_participant::FieldPortError;
-use alice_physics::world_participant::{
+use alice_physics_core::world_participant::FieldPortError;
+use alice_physics_core::world_participant::{
     ObservationSink, OrderError, Participant, ParticipantFault, ParticipantKind, PortId,
     RegisterError, StateError, StepError, StepRule, SubstepCtx, WorldFault,
 };
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 /// A participant with no state: a fixed step and an optional failure.
 struct Probe {

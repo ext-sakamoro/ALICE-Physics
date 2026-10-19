@@ -17,16 +17,16 @@
 //! cargo run --example spatial_queries --features std
 //! ```
 
-use alice_physics::bvh::{BvhPrimitive, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::query::{
+use alice_physics_core::bvh::{BvhPrimitive, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::query::{
     batch_raycast, batch_sphere_cast, capsule_cast, overlap_aabb, overlap_aabb_bvh,
     overlap_aabb_expanded, overlap_sphere, overlap_sphere_bvh, sphere_cast, BatchRayQuery,
     OverlapResult, ShapeCastHit,
 };
-use alice_physics::raycast::{ray_sphere, Ray};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::raycast::{ray_sphere, Ray};
+use alice_physics_core::solver::RigidBody;
 
 /// Four static bodies used for the overlap tests:
 /// B0 (0,0,0), B1 (6,0,0), B2 (0,6,0), B3 (-4,0,0).
@@ -229,7 +229,7 @@ fn main() {
     let ray = Ray::new(Vec3Fix::ZERO, Vec3Fix::UNIT_X);
     let plain_ray_hit = ray_sphere(
         &ray,
-        &alice_physics::collider::Sphere::new(cast_bodies[0].position, cast_body_radius),
+        &alice_physics_core::collider::Sphere::new(cast_bodies[0].position, cast_body_radius),
         Fix128::from_int(100),
     )
     .expect("plain ray_sphere should also hit body0");

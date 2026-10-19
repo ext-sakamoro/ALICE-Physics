@@ -44,7 +44,7 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::acoustic_wave::{leapfrog_step, speeds, stable_dt};
+use alice_physics_core::acoustic_wave::{leapfrog_step, speeds, stable_dt};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn rel_err(actual: f64, expected: f64) -> f64 {

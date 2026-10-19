@@ -3,15 +3,15 @@
 //!
 //! Run with `cargo run --example participant_crowd_md`.
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdParticipant, InteractionParams, NeighborSearch, Pedestrian, SocialForce, WallSegment,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{MdParticipant, PeriodicBox, VelocityVerlet};
-use alice_physics::pair_potential::{LennardJones, ShiftMode, Truncated};
-use alice_physics::physics2d::Vec2Fix;
-use alice_physics::solver::RigidBody;
-use alice_physics::world_participant::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{MdParticipant, PeriodicBox, VelocityVerlet};
+use alice_physics_core::pair_potential::{LennardJones, ShiftMode, Truncated};
+use alice_physics_core::physics2d::Vec2Fix;
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::world_participant::{
     run_substep, FieldBoard, ForceAccumulator, ObservationSink, Participant, ParticipantPlan,
     SubstepTime,
 };

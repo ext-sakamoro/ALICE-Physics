@@ -173,10 +173,10 @@
 //!
 //! Nothing in this file touches `src/`.
 
-use alice_physics::articulation::{ArticulatedBody, FeatherstoneSolver};
-use alice_physics::joint::{BallJoint, FixedJoint, HingeJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::articulation::{ArticulatedBody, FeatherstoneSolver};
+use alice_physics_core::joint::{BallJoint, FixedJoint, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 /// Gravity used by every scene: 10 m/s^2 downward, exactly representable.
 fn gravity() -> Vec3Fix {

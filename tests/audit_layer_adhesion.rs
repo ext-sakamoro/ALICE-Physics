@@ -3,9 +3,9 @@
 //! 期待値は (σ_y, z) の整数比から手計算した有理数で、実装を呼んで写していない
 //! 注: `Fix128` の非 dyadic 比は数千 ulp の誤差を持つので 2^-48 を許容にする
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::layer_adhesion::{EffectiveStrength, PrintOrientation};
-use alice_physics::math::Fix128;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::layer_adhesion::{EffectiveStrength, PrintOrientation};
+use alice_physics_core::math::Fix128;
 
 fn close(a: Fix128, b: Fix128) -> bool {
     (a - b).abs() <= Fix128::from_raw(0, 1 << 16)

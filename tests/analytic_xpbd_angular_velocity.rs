@@ -24,9 +24,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::SolverBackend;
 
 const FRAMES: usize = 240;
 const SUBSTEPS: [usize; 4] = [1, 3, 4, 8];

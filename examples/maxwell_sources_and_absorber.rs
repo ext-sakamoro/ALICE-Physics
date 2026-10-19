@@ -36,9 +36,9 @@
 //! cargo run --example maxwell_sources_and_absorber --features std
 //! ```
 
-use alice_physics::det_math::{exp64, sqrt64};
-use alice_physics::math::Fix128;
-use alice_physics::maxwell_fdtd::{
+use alice_physics_core::det_math::{exp64, sqrt64};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::maxwell_fdtd::{
     cfl_limit_3d, loss_coefficients, theoretical_pml_reflection, Absorber, Component, YeeGrid,
     COURANT_3D,
 };

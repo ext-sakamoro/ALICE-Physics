@@ -13,9 +13,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::electromagnetic::{lorentz_force, lorentz_force_sum, ChargedBody, EmSource};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::electromagnetic::{
+    lorentz_force, lorentz_force_sum, ChargedBody, EmSource,
+};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn rel(a: f64, b: f64) -> f64 {
     (a - b).abs() / b.abs().max(1e-300)

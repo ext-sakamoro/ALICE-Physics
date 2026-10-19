@@ -8,9 +8,11 @@
 //! `ForceField::Magnetic` code comment, toward the dipole on the axis); explosion `F = strength (1 - d/R)^n` away
 //! from the centre; `dv = F / m * dt`.
 
-use alice_physics::force::{apply_force_fields, compute_force, ForceField, ForceFieldInstance};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::force::{
+    apply_force_fields, compute_force, ForceField, ForceFieldInstance,
+};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

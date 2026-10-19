@@ -1,12 +1,12 @@
-//! Audit oracles for `alice_physics::non_newtonian` (S2-2 audit).
+//! Audit oracles for `alice_physics_core::non_newtonian` (S2-2 audit).
 //!
 //! Expected values are the textbook closed forms (Bird-Stewart-Lightfoot ch. 8,
 //! Chhabra-Richardson) evaluated in plain f64 with multiplication only (the
 //! crate's clippy config forbids platform powf in tests), never the function
 //! under test.
 
-use alice_physics::math::Fix128;
-use alice_physics::non_newtonian::{Bingham, Carreau, HerschelBulkley, PowerLaw};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::non_newtonian::{Bingham, Carreau, HerschelBulkley, PowerLaw};
 
 fn rel(got: Fix128, want: f64, tol: f64, what: &str) {
     let g = got.to_f64();

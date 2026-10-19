@@ -1,4 +1,4 @@
-//! Audit S1-5 oracles for `alice_physics::math` (Fix128 / Vec3Fix / QuatFix / Mat3Fix).
+//! Audit S1-5 oracles for `alice_physics_core::math` (Fix128 / Vec3Fix / QuatFix / Mat3Fix).
 //!
 //! References are independent of the implementation: i128 / 256-bit integer arithmetic for the
 //! fixed-point operators, f64 libm for transcendental functions (accuracy ~1e-16, far below the
@@ -8,7 +8,7 @@
     reason = "independent reference: f64 libm sin/cos/exp/ln/atan against Fix128 transcendentals in the math audit"
 )]
 
-use alice_physics::math::{Fix128, Mat3Fix, PolarError, QuatFix, Vec3Fix};
+use alice_physics_core::math::{Fix128, Mat3Fix, PolarError, QuatFix, Vec3Fix};
 
 // ---------------------------------------------------------------------------------------
 // helpers
@@ -1295,7 +1295,7 @@ fn polar_rotation_is_idempotent_bit_for_bit_on_general_gradients() {
 
 #[test]
 fn simd_width_is_consistent_with_the_documented_table() {
-    use alice_physics::math::{simd_width, SIMD_WIDTH};
+    use alice_physics_core::math::{simd_width, SIMD_WIDTH};
     assert_eq!(simd_width(), SIMD_WIDTH);
     assert!([1, 4, 8].contains(&SIMD_WIDTH));
     #[cfg(not(feature = "simd"))]

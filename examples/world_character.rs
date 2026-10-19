@@ -9,13 +9,13 @@
 //! cargo run --example world_character
 //! ```
 
-use alice_physics::character::CharacterController;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
+use alice_physics_core::character::CharacterController;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

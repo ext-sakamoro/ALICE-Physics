@@ -5,11 +5,13 @@
 //! ragdoll geometry, motor closed forms, mass-splitting boundary and flag
 //! behaviour, and the defect oracles for what those files do not ask.
 
-use alice_physics::articulation::{build_ragdoll, ArticulatedBody, FeatherstoneSolver, LINK_ROOT};
-use alice_physics::joint::{BallJoint, HingeJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::motor::PdController;
-use alice_physics::solver::RigidBody;
+use alice_physics_core::articulation::{
+    build_ragdoll, ArticulatedBody, FeatherstoneSolver, LINK_ROOT,
+};
+use alice_physics_core::joint::{BallJoint, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::motor::PdController;
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -482,7 +484,7 @@ fn static_child_links_are_not_integrated() {
 /// cone-twist 3, and a D6 counts its axes that are not locked (two locked: 4).
 #[test]
 fn dof_count_weights_every_joint_kind() {
-    use alice_physics::joint::{ConeTwistJoint, D6Joint, D6Motion, SliderJoint, SpringJoint};
+    use alice_physics_core::joint::{ConeTwistJoint, D6Joint, D6Motion, SliderJoint, SpringJoint};
     let z = Vec3Fix::ZERO;
     let one = |j: Joint| {
         let mut a = ArticulatedBody::new(0, true);

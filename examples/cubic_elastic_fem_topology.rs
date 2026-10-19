@@ -6,16 +6,16 @@
 //! cubic shape functions evaluate to at a barycentric point — without ever
 //! running a solve. Every check below has a closed-form expectation derived
 //! from the mesh's own topology or from the formulas in the
-//! [`cubic_elastic_fem`](alice_physics::cubic_elastic_fem) module header, not
+//! [`cubic_elastic_fem`](alice_physics_core::cubic_elastic_fem) module header, not
 //! from calling the function under test to produce its own answer.
 //!
 //! ```bash
 //! cargo run --example cubic_elastic_fem_topology --features std
 //! ```
 
-use alice_physics::cubic_elastic_fem::{shape_values, CubicMesh};
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::cubic_elastic_fem::{shape_values, CubicMesh};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -29,7 +29,7 @@ fn raw(x: Fix128) -> i128 {
 
 /// One tetrahedron, corners `(0,0,0)`, `(s,0,0)`, `(0,s,0)`, `(0,0,s)` mm.
 ///
-/// With this corner order the six [`cubic_elastic_fem`](alice_physics::cubic_elastic_fem)
+/// With this corner order the six [`cubic_elastic_fem`](alice_physics_core::cubic_elastic_fem)
 /// `EDGES` pairs and four `FACES` triples are read off the global corner
 /// numbers directly (`tet.vertices` is the identity permutation), which is
 /// what makes the node-index layout below a closed form instead of a

@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::cylinder::Cylinder`.
+//! Audit oracles for `alice_physics_core::cylinder::Cylinder`.
 //!
 //! References are independent of the implementation: the support function is
 //! compared with the closed form `c.d + hh |d.a| + r sqrt(|d|^2 - (d.a)^2)`
@@ -11,9 +11,9 @@
     reason = "analytic reference: f64 rim points r (cos th, sin th) for brute-force maximum of the Cylinder support function"
 )]
 
-use alice_physics::collider::Support;
-use alice_physics::cylinder::Cylinder;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::collider::Support;
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 const PI: f64 = std::f64::consts::PI;
 

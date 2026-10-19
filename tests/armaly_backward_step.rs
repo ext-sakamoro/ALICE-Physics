@@ -524,9 +524,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::eulerian_grid::{FaceBc, MacGrid};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::eulerian_grid::{FaceBc, MacGrid};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// A still no-slip wall.
 const WALL: FaceBc = FaceBc::Wall {
@@ -2083,7 +2083,7 @@ fn the_upper_wall_readout_finds_the_bubble_of_the_reflected_step() {
 #[test]
 #[ignore = "src gap: measured 2026-10-02 on this scene (ny = 8, default SemiLagrangian, L = 16 so nx = 128 is a power of two and `step` projects with multigrid, Courant 0.75, settled at t = 288): x_1 = 4.392102491 against Gartling's 6.10 (28 % short, 13.7 cells) and no upper-wall bubble. Retired attributions, each by measurement: the outflow plane (ny = 16 MacCormack at L = 16 and L = 32 agree to 3.2e-8 at every logged time up to t = 512, with the bubble present), the mesh alone (settled MacCormack reads 7.245648337 / 6.284723960 / 5.928761232 at ny = 8 / 16 / 32, increment ratio 0.37, Richardson extrapolation about 5.72 — an extrapolation, ny = 64 unmeasured — so 6 % below 6.10 survives refinement), the projection residual (GS and multigrid agree to 7 digits), and the setup (every definition matches Gartling in the code). Live: the advection scheme's numerical viscosity — at one ny the schemes read 4.39 / 7.25 / 7.27 — and the first-order wall and corner treatment. The two schemes bracket the limit from both sides with a shrinking band (refinement oracles below). The pinned twin keeps its own scene (L = 12, 30 GS sweeps, t = 256) and its own value. Distinct from the runtime ignore on its twin: this one fails"]
 fn the_reattachment_length_matches_gartling() {
-    use alice_physics::cfd_solver::AdvectionScheme;
+    use alice_physics_core::cfd_solver::AdvectionScheme;
     let ny = 2 * LIT_S_CELLS;
     let dx = 1.0 / ny as f64;
     // The scene the literature is compared on: the production default scheme,
@@ -2554,7 +2554,7 @@ fn the_reattachment_length_is_pinned_at_the_resolution_ci_can_afford() {
 struct TraceSetting {
     /// Cells across the channel (even).
     ny: usize,
-    scheme: alice_physics::cfd_solver::AdvectionScheme,
+    scheme: alice_physics_core::cfd_solver::AdvectionScheme,
     scheme_name: &'static str,
     /// Downstream length in `H`. ⚠️ `nx = length · ny` has to be a power of
     /// two for `step` to project with multigrid; otherwise it falls back to
@@ -2579,7 +2579,7 @@ impl TraceSetting {
     /// this file is taken at.
     fn at_courant_075(
         ny: usize,
-        scheme: alice_physics::cfd_solver::AdvectionScheme,
+        scheme: alice_physics_core::cfd_solver::AdvectionScheme,
         scheme_name: &'static str,
         length: f64,
         t_end: f64,
@@ -2692,7 +2692,7 @@ fn trace_x_1(setting: &TraceSetting) -> Trace {
     )]
     let start = std::time::Instant::now();
     let mut last: Option<f64> = None;
-    let faces = |g: &alice_physics::eulerian_grid::MacGrid| -> Vec<f64> {
+    let faces = |g: &alice_physics_core::eulerian_grid::MacGrid| -> Vec<f64> {
         let mut out = Vec::with_capacity((nx + 1) * ny * 2);
         for j in 0..ny {
             for i in 0..=nx {
@@ -2803,7 +2803,7 @@ fn trace_x_1(setting: &TraceSetting) -> Trace {
 #[test]
 #[ignore = "diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM_T_END / ARM_LOG_EVERY / ARM_LENGTH (the defaults take seconds)"]
 fn x_1_time_trace() {
-    use alice_physics::cfd_solver::AdvectionScheme;
+    use alice_physics_core::cfd_solver::AdvectionScheme;
 
     let setting =
         |key: &str, default: &str| std::env::var(key).unwrap_or_else(|_| default.to_string());
@@ -3132,7 +3132,7 @@ fn the_judge_refuses_a_pre_asymptotic_point_and_mismatched_columns() {
 /// Settle one scheme at each `ny`, refusing to report a point that did not
 /// settle (an unsettled `x_1` is a bound, and a bound is not a column entry).
 fn settled_column(
-    scheme: alice_physics::cfd_solver::AdvectionScheme,
+    scheme: alice_physics_core::cfd_solver::AdvectionScheme,
     scheme_name: &'static str,
     resolutions: &[usize],
     t_end: f64,
@@ -3194,7 +3194,7 @@ fn report_verdict(mc: &[RefinementPoint], sl: &[RefinementPoint], v: &Refinement
 #[test]
 #[ignore = "runtime: about 30 min in release (ny = 8 and 16, both advection schemes, each to t_settle at Courant 0.75); run by run_ignored.py"]
 fn the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16() {
-    use alice_physics::cfd_solver::AdvectionScheme;
+    use alice_physics_core::cfd_solver::AdvectionScheme;
     let resolutions = [8usize, 16];
     let mc = settled_column(AdvectionScheme::MacCormack, "mc", &resolutions, 2048.0);
     let sl = settled_column(AdvectionScheme::SemiLagrangian, "sl", &resolutions, 2048.0);
@@ -3225,7 +3225,7 @@ fn the_two_schemes_bracket_the_reattachment_length_at_ny_8_and_16() {
 #[test]
 #[ignore = "manual: about 4 h in release (ny = 8 / 16 / 32, both schemes, each to t_settle), longer than the 180-min ignored-tests job; run by hand with --exact and it must pass"]
 fn maccormack_converges_and_the_schemes_bracket_the_limit_at_ny_8_16_32() {
-    use alice_physics::cfd_solver::AdvectionScheme;
+    use alice_physics_core::cfd_solver::AdvectionScheme;
     let resolutions = [8usize, 16, 32];
     let mc = settled_column(AdvectionScheme::MacCormack, "mc", &resolutions, 2048.0);
     let sl = settled_column(AdvectionScheme::SemiLagrangian, "sl", &resolutions, 2048.0);

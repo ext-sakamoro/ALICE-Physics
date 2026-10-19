@@ -12,7 +12,7 @@
 //! dt = 1/60/8), to see how much of the bench's 1000 bodies actually
 //! trigger `fatten` per substep.
 
-use alice_physics::{DynamicAabbTree, Fix128, Vec3Fix, AABB};
+use alice_physics_core::{DynamicAabbTree, Fix128, Vec3Fix, AABB};
 
 fn sphere_aabb(center: Vec3Fix, radius: Fix128) -> AABB {
     let r = Vec3Fix::new(radius, radius, radius);

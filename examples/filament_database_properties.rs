@@ -23,10 +23,10 @@
 //! cargo run --example filament_database_properties --features std
 //! ```
 
-use alice_physics::filament_db::{
+use alice_physics_core::filament_db::{
     FilamentDb, MaterialCategory, MaterialProperties, GPA_TO_PA, G_CM3_TO_KG_M3, MPA_TO_PA,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn main() {
     let db = FilamentDb::with_defaults();

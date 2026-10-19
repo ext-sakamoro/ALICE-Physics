@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::debug_render`.
+//! Audit oracles for `alice_physics_core::debug_render`.
 //!
 //! Expected geometry is written from the shapes themselves (box corners and edge
 //! lengths, circle vertices at `r (cos, sin)`, rotated axes), not read back from
@@ -12,13 +12,13 @@
     reason = "analytic reference: f64 circle vertices r (cos a, sin a) and chord 2 r sin(pi/16) for debug_render sphere rings"
 )]
 
-use alice_physics::collider::{Contact, AABB};
-use alice_physics::debug_render::{
+use alice_physics_core::collider::{Contact, AABB};
+use alice_physics_core::debug_render::{
     debug_draw_world, DebugColor, DebugDrawData, DebugDrawFlags, DebugLine,
 };
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{
     ContactConstraint, DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig,
 };
 

@@ -17,7 +17,7 @@
 //! ⚠️ 対照実験を先に置く — 「この scene で実際に洗浄が起きる」ことを確かめてから
 //! 検出器の test を書く 順序を逆にすると偽 green を pin する
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn dt() -> Fix128 {
     Fix128::from_ratio(1, 64)

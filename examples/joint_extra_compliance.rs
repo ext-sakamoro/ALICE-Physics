@@ -22,12 +22,12 @@
 //!
 //! Run with: `cargo run --example joint_extra_compliance`
 
-use alice_physics::joint_extra::{
+use alice_physics_core::joint_extra::{
     solve_extra_joints, solve_pulley_to_length, ExtraJoint, GearJoint, PulleyJoint,
     RackAndPinionJoint, WeldJoint,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

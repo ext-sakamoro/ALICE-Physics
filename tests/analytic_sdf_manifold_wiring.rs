@@ -14,9 +14,9 @@
     reason = "analytic reference: f64 radial distance on the curved SDF surface for the deepest sdf_manifold contact"
 )]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sdf_manifold::{generate_sdf_manifold, ManifoldConfig};
 
 fn ground() -> SdfCollider {
     SdfCollider::new_static(

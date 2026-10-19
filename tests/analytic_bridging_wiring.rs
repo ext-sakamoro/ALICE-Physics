@@ -19,11 +19,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::bridging::{analyze_bridges, check_span, BridgeSpan, BridgingReport};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
-use alice_physics::warp_risk::Footprint;
+use alice_physics_core::bridging::{analyze_bridges, check_span, BridgeSpan, BridgingReport};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
+use alice_physics_core::warp_risk::Footprint;
 
 fn p(x: i64, y: i64, z: i64) -> Vec3Fix {
     Vec3Fix::new(

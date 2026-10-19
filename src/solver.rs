@@ -249,7 +249,7 @@ impl RigidBody {
     /// # Examples
     ///
     /// ```
-    /// use alice_physics::{Fix128, RigidBody, Vec3Fix};
+    /// use alice_physics_core::{Fix128, RigidBody, Vec3Fix};
     ///
     /// let body = RigidBody::new(Vec3Fix::from_int(0, 10, 0), Fix128::ONE);
     /// // inv_mass should be 1 / 1 = 1
@@ -1864,7 +1864,7 @@ impl PhysicsWorld {
     /// # Examples
     ///
     /// ```
-    /// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+    /// use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
     ///
     /// let config = PhysicsConfig::default();
     /// let mut world = PhysicsWorld::new(config);
@@ -1966,7 +1966,7 @@ impl PhysicsWorld {
     /// # Examples
     ///
     /// ```
-    /// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+    /// use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
     ///
     /// let config = PhysicsConfig::default();
     /// let mut world = PhysicsWorld::new(config);
@@ -3487,7 +3487,7 @@ impl PhysicsWorld {
     /// # Examples
     ///
     /// ```
-    /// use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+    /// use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
     ///
     /// let mut a = PhysicsWorld::new(PhysicsConfig::default());
     /// a.add_body(RigidBody::new_dynamic(Vec3Fix::from_int(0, 5, 0), Fix128::ONE));

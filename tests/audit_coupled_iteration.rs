@@ -10,12 +10,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_iteration::{
+use alice_physics_core::coupled_iteration::{
     residual_norm_inf, residual_norm_l2_checked, run_sub_iteration, ConfigFault,
     ContractionMonitor, CoupledIterationError, EquilibrationScale, MonitorVerdict,
     SubIterationConfig, L2_TERM_FLOOR,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

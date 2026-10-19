@@ -27,9 +27,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::layer_adhesion::{EffectiveStrength, PrintOrientation};
-use alice_physics::math::Fix128;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::layer_adhesion::{EffectiveStrength, PrintOrientation};
+use alice_physics_core::math::Fix128;
 
 /// `|a - b| <= 2^-48`: agreement within the truncation noise of the I64F64
 /// format (products/quotients of non-dyadic ratios carry a few thousand ulp

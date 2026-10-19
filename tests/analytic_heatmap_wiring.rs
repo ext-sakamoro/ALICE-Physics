@@ -17,11 +17,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::heatmap::{
+use alice_physics_core::heatmap::{
     generate_stress_heatmap, generate_temperature_heatmap, heatmap_to_rgba, Heatmap, HeatmapConfig,
     SliceAxis,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// STOPS table copied verbatim from `viridis_color`'s doc comment

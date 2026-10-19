@@ -13,7 +13,7 @@
 //! cargo run --example pipeline_events --features std
 //! ```
 
-use alice_physics::pipeline::{
+use alice_physics_core::pipeline::{
     MetricEvent, MetricPipeline, MetricRegistry, MetricSnapshot, MetricType, RingBuffer,
 };
 

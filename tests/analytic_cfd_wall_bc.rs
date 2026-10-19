@@ -28,9 +28,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::eulerian_grid::{project_pressure, FaceBc, MacGrid};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::eulerian_grid::{project_pressure, FaceBc, MacGrid};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// Ghia (1982) Table I, Re = 100: `(y, u)` on the vertical centreline of a
 /// unit cavity with a lid moving at `u = 1`. See the module header for how

@@ -18,11 +18,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::Sphere;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::query::sphere_cast;
-use alice_physics::raycast::sweep_sphere;
-use alice_physics::solver::RigidBody;
+use alice_physics_core::collider::Sphere;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::query::sphere_cast;
+use alice_physics_core::raycast::sweep_sphere;
+use alice_physics_core::solver::RigidBody;
 
 fn r(n: i64) -> Fix128 {
     Fix128::from_int(n)

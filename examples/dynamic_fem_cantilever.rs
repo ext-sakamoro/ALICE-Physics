@@ -11,10 +11,12 @@
 //! cargo run --example dynamic_fem_cantilever --features std
 //! ```
 
-use alice_physics::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
-use alice_physics::linear_elastic_fem::{Axis, BoundaryConditions, ElasticMaterial, SolverConfig};
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
+use alice_physics_core::linear_elastic_fem::{
+    Axis, BoundaryConditions, ElasticMaterial, SolverConfig,
+};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 /// Node index within an `(nx+1) × 2 × 2` lattice.
 fn node(nx: usize, i: usize, j: usize, k: usize) -> u32 {
@@ -55,7 +57,7 @@ fn bar(nx: usize, h: f32) -> SdfTetMesh {
     mesh
 }
 
-fn main() -> Result<(), alice_physics::linear_elastic_fem::FemError> {
+fn main() -> Result<(), alice_physics_core::linear_elastic_fem::FemError> {
     let (nx, h) = (8usize, 1.0_f32);
     let mesh = bar(nx, h);
 

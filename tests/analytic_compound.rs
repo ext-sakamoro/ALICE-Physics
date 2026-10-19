@@ -27,13 +27,13 @@
     reason = "matrix and axis oracles index rows, columns and axes on purpose so t[a][b] reads as the maths does"
 )]
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, ConvexHull, Sphere, Support, AABB};
-use alice_physics::compound::{CompoundShape, TransformedCompound};
-use alice_physics::mass_properties::{principal_axes, MassProperties};
-use alice_physics::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, ConvexHull, Sphere, Support, AABB};
+use alice_physics_core::compound::{CompoundShape, TransformedCompound};
+use alice_physics_core::mass_properties::{principal_axes, MassProperties};
+use alice_physics_core::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -777,7 +777,7 @@ fn the_centre_of_mass_follows_a_rotated_child_with_an_offset_centre() {
 /// Refusals: an empty compound, a non-positive density.
 #[test]
 fn a_compound_without_volume_or_density_is_refused() {
-    use alice_physics::shape::ShapeError;
+    use alice_physics_core::shape::ShapeError;
     let mut w = PhysicsWorld::new(config());
     let empty = CompoundShape::new();
     assert_eq!(

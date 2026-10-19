@@ -34,11 +34,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape::Shape;
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::TriMesh;
-use alice_physics::{
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::TriMesh;
+use alice_physics_core::{
     Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix, WorldCcdConfig,
 };
 

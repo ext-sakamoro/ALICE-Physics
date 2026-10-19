@@ -1,4 +1,4 @@
-//! Oracles for `alice_physics::joint_extra`'s `ExtraJoint`, `MouseJoint::set_target`,
+//! Oracles for `alice_physics_core::joint_extra`'s `ExtraJoint`, `MouseJoint::set_target`,
 //! `solve_extra_joints`, `PulleyJoint::total_length`, and `WeldJoint::with_break_torque`
 //! (and, for the name-collision backstory documented below, `WeldJoint::with_break_force`).
 //! Production entry point: `examples/joint_extra_wiring.rs`.
@@ -58,11 +58,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::joint_extra::{
+use alice_physics_core::joint_extra::{
     solve_extra_joints, ExtraJoint, MouseJoint, PulleyJoint, WeldJoint,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -99,7 +99,7 @@ fn extra_joint_variants_round_trip_through_a_match() {
             "Pulley",
         ),
         (
-            ExtraJoint::Gear(alice_physics::joint_extra::GearJoint::new(
+            ExtraJoint::Gear(alice_physics_core::joint_extra::GearJoint::new(
                 0,
                 1,
                 0,
@@ -113,7 +113,7 @@ fn extra_joint_variants_round_trip_through_a_match() {
             "Weld",
         ),
         (
-            ExtraJoint::RackAndPinion(alice_physics::joint_extra::RackAndPinionJoint::new(
+            ExtraJoint::RackAndPinion(alice_physics_core::joint_extra::RackAndPinionJoint::new(
                 0,
                 1,
                 Vec3Fix::UNIT_X,
@@ -541,7 +541,7 @@ fn solve_extra_joints_dispatches_every_variant_without_panicking() {
             Vec3Fix::from_int(0, 5, 0),
             Fix128::ONE,
         )),
-        ExtraJoint::Gear(alice_physics::joint_extra::GearJoint::new(
+        ExtraJoint::Gear(alice_physics_core::joint_extra::GearJoint::new(
             1,
             2,
             0,
@@ -549,7 +549,7 @@ fn solve_extra_joints_dispatches_every_variant_without_panicking() {
             Fix128::ONE,
         )),
         ExtraJoint::Weld(WeldJoint::new(0, 3, o, o, QuatFix::IDENTITY)),
-        ExtraJoint::RackAndPinion(alice_physics::joint_extra::RackAndPinionJoint::new(
+        ExtraJoint::RackAndPinion(alice_physics_core::joint_extra::RackAndPinionJoint::new(
             1,
             2,
             Vec3Fix::UNIT_X,

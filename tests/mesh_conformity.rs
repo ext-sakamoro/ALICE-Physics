@@ -1,4 +1,4 @@
-//! Conformity invariants for `alice_physics::sdf_fem_mesh`.
+//! Conformity invariants for `alice_physics_core::sdf_fem_mesh`.
 //!
 //! A tetrahedral mesh is **conforming** when any two elements meet along a
 //! shared face, edge or vertex and nothing else. Break that and the FEM
@@ -39,8 +39,8 @@
     reason = "HashMap/HashSet only count or look up mesh faces in this test; no assertion depends on hash iteration order"
 )]
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sdf_fem_mesh::{generate, generate_marching_tets, SdfTetMesh};
 use std::collections::{HashMap, HashSet};
 
 fn box_sdf(half: f32) -> ClosureSdf {

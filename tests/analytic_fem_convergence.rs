@@ -1,4 +1,4 @@
-//! Mesh convergence study for `alice_physics::linear_elastic_fem`: a cantilever
+//! Mesh convergence study for `alice_physics_core::linear_elastic_fem`: a cantilever
 //! beam under a uniform end traction.
 //!
 //! The companion file `analytic_linear_elastic_fem.rs` holds the oracles that
@@ -77,13 +77,13 @@
     reason = "analytic reference: f64 Euler-Bernoulli tip deflection PL^3/(3EI), Richardson extrapolation and observed order for the FEM cantilever"
 )]
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, FemSolution,
     Preconditioner, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_fem_mesh::{generate, SdfTetMesh};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_fem_mesh::{generate, SdfTetMesh};
 use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
@@ -645,7 +645,7 @@ fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64, (
             out.relative_residual.to_f64(),
             (out.relative_residual.hi, out.relative_residual.lo),
         ),
-        Err(alice_physics::linear_elastic_fem::FemError::Stagnated {
+        Err(alice_physics_core::linear_elastic_fem::FemError::Stagnated {
             iterations,
             relative_residual,
             without_improvement,
@@ -655,7 +655,7 @@ fn run_level_reporting(cell: f64, config: &SolverConfig) -> (String, u32, f64, (
             relative_residual.to_f64(),
             (relative_residual.hi, relative_residual.lo),
         ),
-        Err(alice_physics::linear_elastic_fem::FemError::NotConverged {
+        Err(alice_physics_core::linear_elastic_fem::FemError::NotConverged {
             iterations,
             relative_residual,
         }) => (

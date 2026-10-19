@@ -9,9 +9,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::character::{CharacterConfig, CharacterController, PushImpulse};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::character::{CharacterConfig, CharacterController, PushImpulse};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 const TOL: f64 = 1e-9;
 

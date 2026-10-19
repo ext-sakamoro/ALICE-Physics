@@ -30,8 +30,8 @@
     reason = "analytic reference: f64 JONSWAP spectrum (DNV-RP-C205) and wave elevation closed forms for wave_ship wiring"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::wave_ship::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::wave_ship::{
     free_surface_elevation, froude_krylov_vertical_n, Jonswap, WaveComponent,
 };
 

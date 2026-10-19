@@ -24,17 +24,17 @@
     reason = "analytic reference: f64 throttle velocity v* tanh(t sqrt(F c)/m) closed form for VehicleParticipant drive"
 )]
 
-use alice_physics::solver::DeclareFieldError;
-use alice_physics::vehicle::{
+use alice_physics_core::solver::DeclareFieldError;
+use alice_physics_core::vehicle::{
     Vehicle, VehicleConfig, VehicleParticipant, WheelConfig, VEHICLE_INPUTS, VEHICLE_INPUT_BRAKE,
     VEHICLE_INPUT_STEERING, VEHICLE_INPUT_THROTTLE, VEHICLE_OBS_SPEED_KMH, VEHICLE_OBS_THROTTLE,
     VEHICLE_PARTICIPANT_KIND,
 };
-use alice_physics::world_participant::{
+use alice_physics_core::world_participant::{
     FieldError, FieldLayout, FieldMode, FieldPortError, Observed, ParticipantFault, PortId,
     RegisterError, StepError, WorldFault,
 };
-use alice_physics::{
+use alice_physics_core::{
     Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix, WorldSnapshotError,
     PHYSICS_SEMANTICS_ID,
 };

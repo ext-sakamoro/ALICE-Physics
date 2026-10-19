@@ -29,8 +29,8 @@
 //! narrow-phase values are closed forms of exactly representable inputs (rotations by
 //! `pi/2` / `pi/4` are the only inexact step), checked to `1e-12`.
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{
     Contact2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
 };
 

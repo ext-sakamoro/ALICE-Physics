@@ -22,10 +22,10 @@
 //! `f32`; the tests below re-check the `Fix128` port against that crate so
 //! the two cannot drift.
 
-use alice_physics::collider::AABB;
-use alice_physics::dynamic_bvh::DynamicAabbTree;
-use alice_physics::metric::{MetricError, MetricWeights};
-use alice_physics::{Fix128, Vec3Fix};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::dynamic_bvh::DynamicAabbTree;
+use alice_physics_core::metric::{MetricError, MetricWeights};
+use alice_physics_core::{Fix128, Vec3Fix};
 
 use alice_det_math::metric::MetricWeights as RefWeights;
 

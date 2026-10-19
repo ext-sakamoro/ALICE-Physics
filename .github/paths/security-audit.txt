@@ -26,6 +26,9 @@ README.md
 docs/PUBLIC_API_SNAPSHOT.txt
 # semver-checks reads its log with semver_checked.py, which imports ansi.py
 scripts/semver_checked.py
+# and decides which packages have a baseline with semver_baseline_has.py
+scripts/semver_baseline_has.py
+scripts/test_semver_baseline_has.py
 scripts/ansi.py
 # the coverage job: the ratchet and its baseline
 scripts/line_coverage_ratchet.py

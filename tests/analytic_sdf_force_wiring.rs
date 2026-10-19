@@ -29,10 +29,10 @@
 //! sign, swapped branch, dropped clamp, wrong operand order, ...).
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::sdf_force::{apply_sdf_force_fields, compute_sdf_force};
-use alice_physics::{RigidBody, SdfForceField, SdfForceType};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::sdf_force::{apply_sdf_force_fields, compute_sdf_force};
+use alice_physics_core::{RigidBody, SdfForceField, SdfForceType};
 use std::panic::{self, AssertUnwindSafe};
 
 fn unit_sphere() -> ClosureSdf {

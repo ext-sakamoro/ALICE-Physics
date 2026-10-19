@@ -54,6 +54,10 @@ Without the standard library (requires `alloc`):
 cargo add alice-physics --no-default-features
 ```
 
+`alice-physics` re-exports the engine, `alice-physics-core` (this repository's root), under
+the `alice_physics` paths and forwards every feature under the same name; either package
+gives the same types and the same `PHYSICS_SEMANTICS_ID`.
+
 ## Example
 
 A body falling under gravity for one second. The same code is the crate-level
@@ -369,12 +373,12 @@ it does not wrap are listed with the reason in
 <!-- binding-build-commands: run by scripts/binding_build_commands.py -->
 ```sh
 # C ABI (C / C++, Unity, Unreal Engine): the shared and the static library in target/release
-cargo rustc --lib --release --features ffi --crate-type cdylib
-cargo rustc --lib --release --features ffi --crate-type staticlib
+cargo rustc -p alice-physics --lib --release --features ffi --crate-type cdylib
+cargo rustc -p alice-physics --lib --release --features ffi --crate-type staticlib
 # WebAssembly package for the browser (web/pkg); needs the wasm-bindgen CLI of the version in Cargo.lock
 bash scripts/build_wasm_pkg.sh web web/pkg
 # Python wheel (target/wheels)
-maturin build --release --features python
+maturin build --release -m crates/alice-physics/Cargo.toml --features python
 ```
 <!-- /binding-build-commands -->
 

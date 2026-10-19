@@ -6,7 +6,7 @@
 //! # Examples
 //!
 //! ```
-//! use alice_physics::anomaly::{MadDetector, EwmaDetector};
+//! use alice_physics_core::anomaly::{MadDetector, EwmaDetector};
 //!
 //! // MAD-based outlier detection
 //! let mut mad = MadDetector::new(3.0);
@@ -231,7 +231,7 @@ impl Default for StreamingMedian {
 ///
 /// # Example
 /// ```
-/// use alice_physics::anomaly::MadDetector;
+/// use alice_physics_core::anomaly::MadDetector;
 ///
 /// let mut detector = MadDetector::new(3.0);
 ///
@@ -432,7 +432,7 @@ impl MadDetector {
 ///
 /// # Example
 /// ```
-/// use alice_physics::anomaly::EwmaDetector;
+/// use alice_physics_core::anomaly::EwmaDetector;
 ///
 /// let mut detector = EwmaDetector::new(0.1, 3.0);
 ///

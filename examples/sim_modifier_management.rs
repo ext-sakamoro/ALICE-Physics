@@ -28,9 +28,9 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sim_modifier::{ModifiedSdf, PhysicsModifier};
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sim_modifier::{ModifiedSdf, PhysicsModifier};
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
 
 /// A modifier whose effect is a single known number, and whose `update`
 /// grows that number by a known amount. Unlike the crate's physical

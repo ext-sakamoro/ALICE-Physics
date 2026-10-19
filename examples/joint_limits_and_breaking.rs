@@ -40,12 +40,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::joint::{
+use alice_physics_core::joint::{
     solve_joints, solve_joints_breaking_on_force, BallJoint, ConeTwistJoint, D6Joint, D6Motion,
     FixedJoint, HingeJoint, Joint, JointType, SliderJoint, SpringJoint,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
@@ -181,7 +181,7 @@ fn main() {
     // a 2 kg body hung by a rigid ball joint from a static anchor: after one
     // gravity substep (h = 1/64, g = 8) the joint's reaction force is m·g = 16 N
     {
-        use alice_physics::{PhysicsConfig, PhysicsWorld};
+        use alice_physics_core::{PhysicsConfig, PhysicsWorld};
         for limit in [15, 17] {
             let mut world = PhysicsWorld::new(PhysicsConfig {
                 substeps: 1,
@@ -220,7 +220,7 @@ fn main() {
         println!(
             "[joint] migration: separation {} m (compute_force), reaction force {} N (solve_joints_with_reaction_forces); expect 0.1875 m and 6 N",
             probe.compute_force(&bodies).to_f64(),
-            alice_physics::joint::solve_joints_with_reaction_forces(&[probe], &mut bodies.clone(), dt)[0].to_f64(),
+            alice_physics_core::joint::solve_joints_with_reaction_forces(&[probe], &mut bodies.clone(), dt)[0].to_f64(),
         );
         // the old threshold for the same 5 N limit was the separation 5/32 m
         let old = [Joint::Ball(
@@ -230,7 +230,7 @@ fn main() {
             deprecated,
             reason = "the example shows the deprecated separation check beside the force-based one so callers can migrate"
         )]
-        let broken = alice_physics::joint::solve_joints_breakable(&old, &mut bodies, dt);
+        let broken = alice_physics_core::joint::solve_joints_breakable(&old, &mut bodies, dt);
         println!("[joint] migration: deprecated separation check with 5/32 m breaks too: {broken:?} (expect [0])");
     }
 

@@ -10,8 +10,8 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
 use alice_ml::TernaryWeight;
-use alice_physics::math::Fix128;
-use alice_physics::neural::{Activation, DeterministicNetwork, FixedTernaryWeight};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::neural::{Activation, DeterministicNetwork, FixedTernaryWeight};
 
 struct Counting;
 

@@ -27,12 +27,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::Contact;
-use alice_physics::joint::BallJoint;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{
+use alice_physics_core::collider::Contact;
+use alice_physics_core::joint::BallJoint;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{
     CollisionFilter, ContactEventType, DistanceConstraint, ForceField, ForceFieldInstance, Joint,
     PhysicsMaterial,
 };
@@ -1155,9 +1155,9 @@ fn huge_force_overflows_the_integrator_and_sets_the_sticky_flag() {
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridge {
     use super::{dt, overlapping_pair, separated_x, substeps, weightless};
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::math::{Fix128, Vec3Fix};
-    use alice_physics::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld};
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::math::{Fix128, Vec3Fix};
+    use alice_physics_core::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -1171,7 +1171,7 @@ mod bridge {
 
     impl GpuSolverBridge for CountingBridge {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}

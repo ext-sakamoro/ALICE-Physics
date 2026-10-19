@@ -27,10 +27,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cloth::Cloth;
-use alice_physics::eulerian_grid::MacGrid;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::cloth::Cloth;
+use alice_physics_core::eulerian_grid::MacGrid;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 // ============================================================================
 // Helpers

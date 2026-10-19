@@ -1,5 +1,5 @@
 //! Contact-force deformation production entry point for
-//! `alice_physics::pressure`: `PressureModifier::{apply_pressure_at,
+//! `alice_physics_core::pressure`: `PressureModifier::{apply_pressure_at,
 //! apply_impact, pressure_at, deformation_at}`.
 //!
 //! Wiring: `scripts/wiring-baseline.txt` lists all four as `unwired`.
@@ -12,7 +12,7 @@
 //! # What this module actually computes
 //!
 //! `src/pressure.rs` is **not** the CFD pressure-projection solver
-//! (`alice_physics::cfd_solver::CfdSolver::step_with_pressure_solver`,
+//! (`alice_physics_core::cfd_solver::CfdSolver::step_with_pressure_solver`,
 //! wired by `examples/pressure_solvers.rs`) and not an ideal-gas /
 //! hydrostatic pressure law. It is a contact-force surface-deformation
 //! modifier: `apply_pressure_at` splats a transient "contact pressure"
@@ -63,7 +63,7 @@
 //! cargo run --example pressure_contact_deformation --features std
 //! ```
 
-use alice_physics::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
 
 /// Exact-match assertion (every value in this file is representable in
 /// `f32` without rounding, per the grid-node argument in the module doc

@@ -1,9 +1,9 @@
-//! Audit oracles for `alice_physics::anisotropic_friction`.
+//! Audit oracles for `alice_physics_core::anisotropic_friction`.
 //! Expected values come from the friction-ellipse closed form
 //! F = -N * diag(mu) * v_hat (hand derived), not from the implementation.
 
-use alice_physics::anisotropic_friction::AnisotropicFriction;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::anisotropic_friction::AnisotropicFriction;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::pressure`
+//! Oracles for the production entry points of `alice_physics_core::pressure`
 //! driven by `examples/pressure_contact_deformation.rs`:
 //! `PressureModifier::{apply_pressure_at, apply_impact, pressure_at,
 //! deformation_at}`.
@@ -53,7 +53,7 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
 
 /// `5^3` grid over `[-2,2]^3`: `cell_size == (4.0)/(5-1) == 1.0` on every
 /// axis, so world-space `(0,0,0)` is exactly grid node `(2,2,2)` and every

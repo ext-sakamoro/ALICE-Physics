@@ -46,12 +46,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve, solve_elastoplastic, Axis, BoundaryConditions, ElasticMaterial, ElastoplasticConfig,
     ElastoplasticSolution, FemError, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // scene construction

@@ -16,10 +16,10 @@
     reason = "analytic reference: f64 hollow section second moment pi/64 (od^4 - id^4) and plate rigidity for modal frequencies (Rao, Blevins)"
 )]
 
-use alice_physics::beam_stress::CrossSection;
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::modal::{
+use alice_physics_core::beam_stress::CrossSection;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::modal::{
     beam_natural_frequency_hz, plate_natural_frequency_hz, single_dof_frequency_hz,
     torsional_frequency_hz, BeamBoundary,
 };

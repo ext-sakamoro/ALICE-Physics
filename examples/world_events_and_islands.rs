@@ -14,10 +14,10 @@
 //! * bodies {0,1} and {2,3} joined by ball joints, body 4 alone and static:
 //!   three islands `[0,1]`, `[2,3]`, `[4]`, and only `[4]` is all-sleeping
 
-use alice_physics::event::ContactEventType;
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::event::ContactEventType;
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn main() {
     let cfg = PhysicsConfig {

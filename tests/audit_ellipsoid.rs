@@ -11,9 +11,9 @@
     reason = "analytic reference: f64 Rodrigues rotation, parametric surface samples and implicit membership for Ellipsoid"
 )]
 
-use alice_physics::collider::Support;
-use alice_physics::ellipsoid::Ellipsoid;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::collider::Support;
+use alice_physics_core::ellipsoid::Ellipsoid;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

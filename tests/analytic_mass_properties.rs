@@ -24,12 +24,12 @@
     reason = "inertia oracles index rows and columns on purpose so s[a][b] reads as the maths does"
 )]
 
-use alice_physics::convex_mesh_builder::build_hull_mesh;
-use alice_physics::mass_properties::{
+use alice_physics_core::convex_mesh_builder::build_hull_mesh;
+use alice_physics_core::mass_properties::{
     box_mass_properties, capsule_mass_properties, convex_hull_mass_properties,
     cylinder_mass_properties, sphere_mass_properties, translate_inertia, MassProperties,
 };
-use alice_physics::math::{Fix128, Mat3Fix, Vec3Fix};
+use alice_physics_core::math::{Fix128, Mat3Fix, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

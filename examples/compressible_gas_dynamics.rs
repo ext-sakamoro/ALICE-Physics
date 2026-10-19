@@ -35,11 +35,11 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::compressible::{
+use alice_physics_core::compressible::{
     normal_shock_jump, riemann_invariants, stagnation_pressure_ratio, stagnation_temp_ratio,
     IdealGas, ShockJump,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 /// Build the pressure that the ideal-gas law predicts for a given `(ρ, T)`
 /// pair, independently of [`IdealGas::pressure`] (direct arithmetic), so the

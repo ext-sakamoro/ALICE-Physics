@@ -8,10 +8,10 @@
 //!
 //! Run with `cargo run --example law_id_world`.
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::semantics::PHYSICS_SEMANTICS_ID;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::semantics::PHYSICS_SEMANTICS_ID;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()

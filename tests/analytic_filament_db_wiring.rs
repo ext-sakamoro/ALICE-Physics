@@ -28,7 +28,7 @@
 //!   `yield_z` (`cos=0, sin=1`) — both boundary values are closed forms that
 //!   do not require evaluating `sin_cos` at all. For a midpoint (`pi/4`) this
 //!   file computes an **independent** reference using
-//!   `alice_physics::det_math::{sin, cos}` (`f32`, a different code path
+//!   `alice_physics_core::det_math::{sin, cos}` (`f32`, a different code path
 //!   from `Fix128::sin_cos`'s CORDIC — see `src/lib.rs`'s `det_math` module
 //!   doc, which delegates to the `alice-det-math` crate rather than the
 //!   engine's own CORDIC) and cross-checks the production `Fix128` result
@@ -77,11 +77,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::det_math;
-use alice_physics::filament_db::{
+use alice_physics_core::det_math;
+use alice_physics_core::filament_db::{
     FilamentDb, MaterialCategory, MaterialProperties, GPA_TO_PA, G_CM3_TO_KG_M3, MPA_TO_PA,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn near(a: Fix128, b: Fix128, tol: Fix128) -> bool {
     (a - b).abs() < tol

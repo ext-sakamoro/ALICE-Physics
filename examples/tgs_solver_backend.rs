@@ -12,10 +12,10 @@
 //! skipped) — the joint scene below exists specifically to make that first
 //! gap visible side by side with XPBD, not to hide it.
 
-use alice_physics::ccd::adaptive_toi_substeps;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{SolverBackend, TgsCacheStats};
+use alice_physics_core::ccd::adaptive_toi_substeps;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{SolverBackend, TgsCacheStats};
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

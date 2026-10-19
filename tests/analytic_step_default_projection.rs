@@ -14,9 +14,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::eulerian_grid::{project_pressure, project_pressure_multigrid, MacGrid};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::eulerian_grid::{project_pressure, project_pressure_multigrid, MacGrid};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// Cycles of the default projection. Measured (`probe`: a 4-cycle-stride sweep
 /// on 8^3 / 16^3 / 32^3) as the smallest count whose post-step `max|div|` is at

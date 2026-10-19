@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::privacy`.
+//! Audit oracles for `alice_physics_core::privacy`.
 //!
 //! Expected values come from the closed forms of the mechanisms (Laplace CDF and
 //! moments, randomized-response likelihood ratios, the composition rule of the
@@ -18,11 +18,11 @@
     reason = "pins the deprecated non-DP privacy types (LaplaceNoise, XorShift64, ...) until the breaking release removes them"
 )]
 
-use alice_physics::privacy::{
+use alice_physics_core::privacy::{
     LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
     RAPPOR_BITS,
 };
-use alice_physics::sketch::FnvHasher;
+use alice_physics_core::sketch::FnvHasher;
 
 /// Marsaglia xorshift64 (13, 7, 17), written out independently.
 fn step(mut x: u64) -> u64 {

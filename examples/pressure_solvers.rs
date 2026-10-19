@@ -10,9 +10,9 @@
 //! cargo run --example pressure_solvers --features std
 //! ```
 
-use alice_physics::cfd_solver::{CfdSolver, PressureSolver};
-use alice_physics::eulerian_grid::MacGrid;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::{CfdSolver, PressureSolver};
+use alice_physics_core::eulerian_grid::MacGrid;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// `u(i, j, k) = i · dx`, which has unit divergence in every cell.
 fn seed(grid: &mut MacGrid) {

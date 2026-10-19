@@ -27,9 +27,9 @@
     reason = "test input: cbrt sizes the crowd floor so the body density stays constant as the count grows"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

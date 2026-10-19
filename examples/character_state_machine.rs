@@ -14,9 +14,9 @@
     reason = "analytic reference: cos(slope angle) as expected ground up_alignment; sin / cos also build the inclined plane SDF input"
 )]
 
-use alice_physics::character_state::{transition, CharacterState, CharacterStateContext};
-use alice_physics::sdf_character::SdfCharacter;
-use alice_physics::sdf_collider::ClosureSdf;
+use alice_physics_core::character_state::{transition, CharacterState, CharacterStateContext};
+use alice_physics_core::sdf_character::SdfCharacter;
+use alice_physics_core::sdf_collider::ClosureSdf;
 
 fn plane(theta: f32) -> ClosureSdf {
     let (s, c) = (theta.sin(), theta.cos());

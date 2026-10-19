@@ -17,9 +17,9 @@
 //! - walkable slope: on a plane tilted below `ground_up_threshold` gravity
 //!   along `-up` does not make the character creep downhill; above it, it slides
 
-use alice_physics::sdf_character::SdfCharacter;
-use alice_physics::sdf_collider::{SdfField, SdfUnion};
-use alice_physics::spherical_terrain::{central_gravity, SphericalHeightField};
+use alice_physics_core::sdf_character::SdfCharacter;
+use alice_physics_core::sdf_collider::{SdfField, SdfUnion};
+use alice_physics_core::spherical_terrain::{central_gravity, SphericalHeightField};
 
 const R: f32 = 50.0;
 
@@ -207,7 +207,8 @@ fn union_takes_the_nearer_surface_and_its_normal() {
     // normal of the winning operand
     let a = SphericalHeightField::new([0.0; 3], R, |_d: [f32; 3]| 0.0);
     // half-space x < 60 is solid: distance 60 - x, outward normal -x
-    let plane = alice_physics::ClosureSdf::new(|x, _y, _z| 60.0 - x, |_x, _y, _z| (-1.0, 0.0, 0.0));
+    let plane =
+        alice_physics_core::ClosureSdf::new(|x, _y, _z| 60.0 - x, |_x, _y, _z| (-1.0, 0.0, 0.0));
     let u = SdfUnion::new(a, plane);
     let (nx, ny, nz) = u.normal(0.0, R + 3.0, 0.0); // sphere 3 < plane 60
     assert!(nx.abs() < 1e-4 && (ny - 1.0).abs() < 1e-4 && nz.abs() < 1e-4);
@@ -245,8 +246,8 @@ fn apply_central_gravity_integrates_toward_the_centre() {
 // ── arc locomotion ──
 
 /// A field with no surface anywhere near.
-fn empty() -> alice_physics::ClosureSdf {
-    alice_physics::ClosureSdf::new(|_x, _y, _z| 1.0e6, |_x, _y, _z| (0.0, 1.0, 0.0))
+fn empty() -> alice_physics_core::ClosureSdf {
+    alice_physics_core::ClosureSdf::new(|_x, _y, _z| 1.0e6, |_x, _y, _z| (0.0, 1.0, 0.0))
 }
 
 #[test]
@@ -281,7 +282,8 @@ fn arc_step_travels_speed_times_time_along_the_great_circle() {
             ch.step_on_sphere(&field, [0.0; 3], dt, scale(heading, speed));
         }
         let angle_want = speed * dt * steps as f32 / r;
-        let angle_got = alice_physics::det_math::acos(dot(unit(ch.position), d).clamp(-1.0, 1.0));
+        let angle_got =
+            alice_physics_core::det_math::acos(dot(unit(ch.position), d).clamp(-1.0, 1.0));
         assert!(
             (angle_got - angle_want).abs() < 1e-4,
             "dir {d:?}: angle {angle_got} vs arc law {angle_want}"
@@ -379,10 +381,13 @@ fn central_gravity_settles_on_the_sphere_at_every_latitude() {
 
 // ── walkable slope ──
 
-fn tilted_plane(slope_deg: f32) -> alice_physics::ClosureSdf {
-    let (s, c) = alice_physics::det_math::sin_cos(slope_deg.to_radians());
+fn tilted_plane(slope_deg: f32) -> alice_physics_core::ClosureSdf {
+    let (s, c) = alice_physics_core::det_math::sin_cos(slope_deg.to_radians());
     // plane through the origin with normal (s, c, 0): rises toward -x
-    alice_physics::ClosureSdf::new(move |x, y, _z| s * x + c * y, move |_x, _y, _z| (s, c, 0.0))
+    alice_physics_core::ClosureSdf::new(
+        move |x, y, _z| s * x + c * y,
+        move |_x, _y, _z| (s, c, 0.0),
+    )
 }
 
 #[test]

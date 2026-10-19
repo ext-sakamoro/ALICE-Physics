@@ -8,6 +8,9 @@ file = "web/package.json"
 [[follow]]
 file = "unreal-plugin/AlicePhysics.uplugin"
 
+[[follow]]
+file = "crates/alice-physics/Cargo.toml"
+
 [[independent]]
 file = "fuzz/Cargo.toml"
 reason = "cargo-fuzz harness, not published (version 0.0.0)"

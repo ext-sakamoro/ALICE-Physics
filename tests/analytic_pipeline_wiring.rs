@@ -40,10 +40,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::pipeline::{
+use alice_physics_core::pipeline::{
     MetricEntry, MetricEvent, MetricPipeline, MetricRegistry, MetricSlot, MetricType, RingBuffer,
 };
-use alice_physics::sketch::FnvHasher;
+use alice_physics_core::sketch::FnvHasher;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// `ln(m / (m − k))` for the HLL linear-counting oracle, as the series

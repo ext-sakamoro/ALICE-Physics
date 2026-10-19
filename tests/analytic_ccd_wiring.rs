@@ -96,12 +96,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::ccd::{
+use alice_physics_core::ccd::{
     aabb_plane_toi, capsule_plane_toi, conservative_advancement, needs_ccd, speculative_contact,
     sphere_capsule_toi, swept_aabb, CcdConfig,
 };
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn fi(n: i64) -> Fix128 {
     Fix128::from_int(n)

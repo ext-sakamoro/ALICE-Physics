@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::pressure`.
+//! Audit oracles for `alice_physics_core::pressure`.
 //!
 //! Grid: 5^3 nodes over [-2, 2]^3, so the cell size is exactly 1.0 and the
 //! world origin is grid node (2, 2, 2) with six interior face neighbours.
@@ -11,8 +11,8 @@
     reason = "analytic reference: f64 pressure decay exp(-k dt) and yield law for one explicit diffusion step of pressure"
 )]
 
-use alice_physics::pressure::{PressureConfig, PressureModifier};
-use alice_physics::sim_modifier::PhysicsModifier;
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::sim_modifier::PhysicsModifier;
 
 fn modifier(config: PressureConfig) -> PressureModifier {
     PressureModifier::new(config, 5, (-2.0, -2.0, -2.0), (2.0, 2.0, 2.0))

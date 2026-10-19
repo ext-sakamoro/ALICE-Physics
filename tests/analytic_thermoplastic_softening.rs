@@ -41,13 +41,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::linear_elastic_fem::{
     Axis, BoundaryConditions, ElasticMaterial, ElastoplasticConfig, ElastoplasticIncrementRequest,
     ElastoplasticProblem, SolverConfig, ThermalExpansion, ThermalSoftening,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // Scene
@@ -171,7 +171,7 @@ fn uniform_rise(delta_t: f64) -> TemperatureRise {
 fn solve_bar(
     eps: f64,
     thermal: Option<(&TemperatureRise, Option<ThermalSoftening>)>,
-) -> alice_physics::linear_elastic_fem::ElastoplasticIncrement {
+) -> alice_physics_core::linear_elastic_fem::ElastoplasticIncrement {
     let mesh = bar_mesh();
     let problem = ElastoplasticProblem::try_new(&mesh, &material(), &bar_bc(eps), &config())
         .expect("the bar prepares");

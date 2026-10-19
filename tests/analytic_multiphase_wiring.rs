@@ -50,11 +50,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     CfdSolver, LevelSetReinit, PressureSolver, RansState, StepError, StepOptions, TurbulenceModel,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::{advect_vof_rigid, initialize_level_set_sphere, Grid3d, VofScheme};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::{
+    advect_vof_rigid, initialize_level_set_sphere, Grid3d, VofScheme,
+};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn q(n: i64, d: i64) -> Fix128 {

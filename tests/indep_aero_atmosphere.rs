@@ -29,8 +29,8 @@
     reason = "analytic reference: f64 hydrostatic pressure P0 exp(-g0 M/R int dh/T) and troposphere density power law for Isa1976"
 )]
 
-use alice_physics::atmosphere::{AtmosphereState, Isa1976, IsaError};
-use alice_physics::math::Fix128;
+use alice_physics_core::atmosphere::{AtmosphereState, Isa1976, IsaError};
+use alice_physics_core::math::Fix128;
 
 const T0: f64 = 288.15;
 const P0: f64 = 101_325.0;

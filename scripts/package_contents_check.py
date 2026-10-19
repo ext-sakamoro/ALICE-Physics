@@ -13,8 +13,11 @@ Cargo.toml ships an `include` allowlist; this check fails when the list
   - lacks a `tests/fixtures/...` file that a packaged source names in a string
     literal, or any git-tracked file under a `tests/fixtures/...` directory it names
 
-run: python3 scripts/package_contents_check.py            (runs cargo package --list)
-     python3 scripts/package_contents_check.py --list F   (reads a saved list)
+Both published packages are checked: the engine (alice-physics-core, the repository root)
+and the facade (alice-physics, crates/alice-physics).
+
+run: python3 scripts/package_contents_check.py                      (cargo package --list, both)
+     python3 scripts/package_contents_check.py --package P --list F (reads a saved list of P)
 """
 from __future__ import annotations
 
@@ -27,6 +30,8 @@ import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# the published packages and their directories (relative to ROOT)
+PACKAGES = {"alice-physics-core": ".", "alice-physics": "crates/alice-physics"}
 
 # first path component that must not be shipped
 FORBIDDEN_DIRS = (
@@ -118,57 +123,65 @@ def check(
     return errors, counts
 
 
-def cargo_list() -> list[str]:
+def cargo_list(package: str) -> list[str]:
     out = subprocess.run(
-        ["cargo", "package", "--list", "--locked", "--allow-dirty"],
+        ["cargo", "package", "--list", "--locked", "--allow-dirty", "-p", package],
         cwd=ROOT, check=True, capture_output=True, text=True,
     )
     return [line.replace("\\", "/") for line in out.stdout.splitlines()]
 
 
-def cargo_targets() -> list[str]:
+def cargo_targets(package: str) -> list[str]:
     out = subprocess.run(
         ["cargo", "metadata", "--no-deps", "--format-version", "1", "--locked"],
         cwd=ROOT, check=True, capture_output=True, text=True,
     ).stdout
-    pkg = next(p for p in json.loads(out)["packages"] if p["name"] == "alice-physics")
+    pkg = next(p for p in json.loads(out)["packages"] if p["name"] == package)
     base = os.path.dirname(pkg["manifest_path"])
     return sorted(
         os.path.relpath(t["src_path"], base).replace(os.sep, "/") for t in pkg["targets"]
     )
 
 
-def git_tracked() -> list[str]:
+def git_tracked(directory: str) -> list[str]:
+    """tracked files, relative to the package directory"""
     return subprocess.run(
-        ["git", "ls-files"], cwd=ROOT, check=True, capture_output=True, text=True
+        ["git", "ls-files"], cwd=os.path.join(ROOT, directory), check=True, capture_output=True, text=True
     ).stdout.splitlines()
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--list", help="file holding `cargo package --list` output")
+    ap.add_argument("--list", help="file holding `cargo package --list` output (needs --package)")
+    ap.add_argument("--package", choices=sorted(PACKAGES), help="check this package only")
     args = ap.parse_args()
-    if args.list:
-        with open(args.list, encoding="utf-8") as f:
-            paths = f.read().splitlines()
-    else:
-        paths = cargo_list()
-    sources = {}
-    for rel in (p.strip() for p in paths):
-        if rel.endswith(".rs"):
-            with open(os.path.join(ROOT, rel), encoding="utf-8") as f:
-                sources[rel] = f.read()
-    errors, counts = check(paths, cargo_targets(), sources, git_tracked())
-    for e in errors:
-        print(f"ERROR: {e}", file=sys.stderr)
-    if errors:
-        return 1
-    print(
-        f"package contents: {counts['files']} files, none forbidden; "
-        f"{counts['targets']} Cargo targets present; {counts['sources']} sources scanned, "
-        f"{counts['embeds']} embedded paths and {counts['fixtures']} fixture paths present"
-    )
-    return 0
+    if args.list and not args.package:
+        ap.error("--list needs --package")
+    failed = False
+    for package in [args.package] if args.package else list(PACKAGES):
+        directory = PACKAGES[package]
+        if args.list:
+            with open(args.list, encoding="utf-8") as f:
+                paths = f.read().splitlines()
+        else:
+            paths = cargo_list(package)
+        sources = {}
+        for rel in (p.strip() for p in paths):
+            if rel.endswith(".rs"):
+                with open(os.path.join(ROOT, directory, rel), encoding="utf-8") as f:
+                    sources[rel] = f.read()
+        errors, counts = check(paths, cargo_targets(package), sources, git_tracked(directory))
+        for e in errors:
+            print(f"ERROR: {package}: {e}", file=sys.stderr)
+        if errors:
+            failed = True
+            continue
+        print(
+            f"package contents ({package}): {counts['files']} files, none forbidden; "
+            f"{counts['targets']} Cargo targets present; {counts['sources']} sources scanned, "
+            f"{counts['embeds']} embedded paths and {counts['fixtures']} fixture paths present"
+        )
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

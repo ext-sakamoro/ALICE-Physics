@@ -45,10 +45,10 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use alice_physics::buoyancy_zone::ZoneShape;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
-use alice_physics::wind_zone::WindZone;
+use alice_physics_core::buoyancy_zone::ZoneShape;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::wind_zone::WindZone;
 
 /// Relative error, falling back to absolute error near zero (matches the
 /// crate's own `transcendental_sweep_matches_f64_reference` convention).

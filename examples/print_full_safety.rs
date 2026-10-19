@@ -4,12 +4,12 @@
 //! representative 300 × 300 × 5 mm PLA plate with a load direction, one
 //! overhang region, and a fillet detail — printing the aggregated report.
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::math::Fix128;
-use alice_physics::print_orientation::LoadDirection;
-use alice_physics::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
-use alice_physics::support_volume::OverhangRegion;
-use alice_physics::warp_risk::Footprint;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::print_orientation::LoadDirection;
+use alice_physics_core::print_pipeline_solver::{analyze_print_pipeline, PrintPipelineInputs};
+use alice_physics_core::support_volume::OverhangRegion;
+use alice_physics_core::warp_risk::Footprint;
 
 fn main() {
     println!("=== Print Full Safety Pipeline Demo ===");

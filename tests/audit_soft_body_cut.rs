@@ -1,11 +1,11 @@
-//! Audit oracles for `alice_physics::soft_body_cut`.
+//! Audit oracles for `alice_physics_core::soft_body_cut`.
 //!
 //! Expected values are hand-computed edge/plane intersections (linear
 //! interpolation of the signed distances), independent of the
 //! implementation's arithmetic order.
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::soft_body_cut::{cut_cloth, cut_deformable, CutPlane};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::soft_body_cut::{cut_cloth, cut_deformable, CutPlane};
 
 fn fx(f: f64) -> Fix128 {
     Fix128::from_f64(f)

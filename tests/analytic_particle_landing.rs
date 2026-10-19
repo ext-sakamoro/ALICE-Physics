@@ -10,12 +10,12 @@
 //! - with no targets the call is bit-identical to `step`
 //! - degenerate inputs: `max_travel <= 0`, bad emitter index, `dt = 0`, sample cap
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::particle::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::particle::{
     LandingEvent, LandingTarget, Particle, ParticleEmitter, ParticleSystem,
 };
-use alice_physics::rng::DeterministicRng;
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::rng::DeterministicRng;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
 fn floor_sdf() -> ClosureSdf {
     ClosureSdf::new(|_, y, _| y, |_, _, _| (0.0, 1.0, 0.0))

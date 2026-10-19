@@ -7,7 +7,7 @@
 //! `SemanticsVerified` 1, `Unpinned` 2) do not move, and the variants added
 //! later follow them in declaration order.
 
-use alice_physics::LawCheck;
+use alice_physics_core::LawCheck;
 
 #[test]
 fn every_variant_casts_to_its_discriminant() {

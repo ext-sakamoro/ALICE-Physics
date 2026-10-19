@@ -15,9 +15,9 @@
     reason = "analytic reference: f64 cube volume (2h)^3 checked against the five tetrahedra of DeformableBody::new_cube"
 )]
 
-use alice_physics::deformable::DeformableBody;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::deformable::DeformableBody;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 use std::collections::BTreeMap;
 
 fn f(x: f64) -> Fix128 {

@@ -14,8 +14,8 @@
 //! from vis-viva, `v1^2 = mu (2/r0 - 1/a)`, and the other apsis from
 //! `r_peri + r_apo = 2a`.
 
-use alice_physics::kepler::{vis_viva_speed, OrbitalElements, StateVector};
-use alice_physics::{Fix128, Vec3Fix};
+use alice_physics_core::kepler::{vis_viva_speed, OrbitalElements, StateVector};
+use alice_physics_core::{Fix128, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

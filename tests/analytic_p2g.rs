@@ -23,8 +23,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::eulerian_grid::{g2p_velocity, p2g_normalized, MacGrid};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::eulerian_grid::{g2p_velocity, p2g_normalized, MacGrid};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn q(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

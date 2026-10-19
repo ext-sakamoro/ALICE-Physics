@@ -259,10 +259,10 @@ fn the_scan_sees_a_peer_in_code_but_not_in_comments_or_strings() {
 
 #[cfg(feature = "gpu-solver-bridge")]
 mod gpu {
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::math::{Fix128, Vec3Fix};
-    use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-    use alice_physics::{PeerMismatch, PHYSICS_SEMANTICS_ID};
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::math::{Fix128, Vec3Fix};
+    use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+    use alice_physics_core::{PeerMismatch, PHYSICS_SEMANTICS_ID};
 
     struct Other([u8; 32]);
     impl GpuSolverBridge for Other {

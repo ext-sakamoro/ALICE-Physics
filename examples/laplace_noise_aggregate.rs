@@ -20,8 +20,8 @@
 //!
 //! Run with: `cargo run --example laplace_noise_aggregate`
 
-use alice_physics::privacy::DpNoise;
-use alice_physics::PrivateAggregator;
+use alice_physics_core::privacy::DpNoise;
+use alice_physics_core::PrivateAggregator;
 
 fn main() {
     let sensitivity = 2.0_f64;

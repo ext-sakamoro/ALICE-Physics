@@ -1,5 +1,5 @@
 //! Oracles for the production entry points of
-//! `alice_physics::collision_mesh_gen` driven by
+//! `alice_physics_core::collision_mesh_gen` driven by
 //! `examples/collision_mesh_generation.rs`: `CollisionMesh`,
 //! `CollisionMeshConfig`, `compute_mesh_aabb`, `generate_collision_mesh`,
 //! and `simplify_collision_mesh`.
@@ -48,11 +48,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collision_mesh_gen::{
+use alice_physics_core::collision_mesh_gen::{
     compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
     CollisionMeshConfig,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 // ============================================================================
 // CollisionMeshConfig / CollisionMesh -- struct literal round-trip

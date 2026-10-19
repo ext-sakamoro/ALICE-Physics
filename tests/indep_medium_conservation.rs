@@ -34,10 +34,10 @@
 //!   `Σ c_i h / M ≤ 1`), so `V` is the largest initial speed component plus
 //!   one.
 
-use alice_physics::coupling_medium::{DragMedium, MEDIUM_OBS_MOMENTUM, MEDIUM_OBS_VELOCITY};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::world_participant::{Observed, Participant};
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
+use alice_physics_core::coupling_medium::{DragMedium, MEDIUM_OBS_MOMENTUM, MEDIUM_OBS_VELOCITY};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::world_participant::{Observed, Participant};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
 
 const RAW: f64 = 1.0 / 18_446_744_073_709_551_616.0; // 2⁻⁶⁴
 

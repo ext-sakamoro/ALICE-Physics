@@ -24,11 +24,11 @@
     reason = "independent reference: f64 bisection and Bessel-series Kepler solvers and orbital elements for kepler second oracle set"
 )]
 
-use alice_physics::kepler::{
+use alice_physics_core::kepler::{
     j2_arg_periapsis_rate, j2_raan_rate, orbital_period, solve_kepler, vis_viva_speed, KeplerError,
     OrbitalElements, StateVector, DEGENERACY_TOLERANCE,
 };
-use alice_physics::{Fix128, Vec3Fix};
+use alice_physics_core::{Fix128, Vec3Fix};
 use core::f64::consts::PI;
 
 type V = [f64; 3];

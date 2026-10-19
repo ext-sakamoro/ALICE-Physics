@@ -29,8 +29,8 @@
 //! cargo run --release --example physics2d_world_closed_forms --features std
 //! ```
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{
     Contact2D, Joint2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
 };
 use std::f64::consts::PI;

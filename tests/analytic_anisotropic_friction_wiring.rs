@@ -1,5 +1,5 @@
 //! Oracles for the production entry points of
-//! `alice_physics::anisotropic_friction` driven by
+//! `alice_physics_core::anisotropic_friction` driven by
 //! `examples/anisotropic_friction_presets.rs`:
 //! `AnisotropicFriction::{tyre_asphalt, ski_snow, skate_ice}` and
 //! `AnisotropicFriction::friction_force`.
@@ -44,8 +44,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::anisotropic_friction::AnisotropicFriction;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::anisotropic_friction::AnisotropicFriction;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// Relative-error assertion against an independently hand-derived f64
 /// closed form (never computed by calling `friction_force` itself).

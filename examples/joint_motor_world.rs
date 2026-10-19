@@ -10,10 +10,10 @@
 //! cargo run --example joint_motor_world
 //! ```
 
-use alice_physics::joint::{BallJoint, HingeJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::motor::PdController;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::joint::{BallJoint, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::motor::PdController;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn main() {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());

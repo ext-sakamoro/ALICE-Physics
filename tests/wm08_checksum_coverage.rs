@@ -18,7 +18,9 @@
 //! ⚠️ 陽性対照を 2 本入れてある (同一世界 / position の小数語) — 入れないと
 //! 「常に不一致を返す」実装でも全部 green になる
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SimulationChecksum, Vec3Fix};
+use alice_physics_core::{
+    Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SimulationChecksum, Vec3Fix,
+};
 
 /// 1 body の世界を作る (position / velocity / rotation / angular_velocity を
 /// 呼び出し側が自由に潰せる状態で返す)

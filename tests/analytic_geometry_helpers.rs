@@ -18,11 +18,11 @@
     reason = "axis loops index the corner, min and max arrays by the same k on purpose"
 )]
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Support, AABB};
-use alice_physics::cone::Cone;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::metric::MetricWeights;
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Support, AABB};
+use alice_physics_core::cone::Cone;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::metric::MetricWeights;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

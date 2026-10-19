@@ -27,9 +27,9 @@
 
 use std::f64::consts::PI;
 
-use alice_physics::lift_drag::{LiftDragParams, LiftDragSurface};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::lift_drag::{LiftDragParams, LiftDragSurface};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 const S: f64 = 1.7;
 const AR: f64 = 5.5;

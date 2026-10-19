@@ -80,10 +80,10 @@
 //!   (union of overlapping boxes is still exactly the component-wise
 //!   min/max, no double-counting possible for an AABB union).
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, ConvexHull, Sphere, AABB};
-use alice_physics::compound::CompoundShape;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, ConvexHull, Sphere, AABB};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 
 /// 180-degree rotation about world Z, exact unit quaternion.
 const ROT_180_Z: QuatFix = QuatFix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE, Fix128::ZERO);

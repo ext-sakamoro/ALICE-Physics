@@ -23,11 +23,11 @@
 //!
 //! Run with: `cargo run --example shape_bounds_and_mass`
 
-use alice_physics::convex_mesh_builder::build_convex_hull;
-use alice_physics::heightfield::HeightField;
-use alice_physics::mass_properties::cylinder_mass_properties;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
+use alice_physics_core::convex_mesh_builder::build_convex_hull;
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::mass_properties::cylinder_mass_properties;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
 
 fn close(got: f64, want: f64, tol: f64, what: &str) {
     assert!(

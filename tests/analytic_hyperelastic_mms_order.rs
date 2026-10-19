@@ -67,14 +67,14 @@
     clippy::type_complexity,
     reason = "quadrature and finite-difference loops index parallel arrays; solver closures need nested Box<dyn Fn> types"
 )]
-use alice_physics::cubic_elastic_fem::{solve_cubic_hyperelastic, CubicMesh};
-use alice_physics::hyperelastic::HyperelasticModel;
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::cubic_elastic_fem::{solve_cubic_hyperelastic, CubicMesh};
+use alice_physics_core::hyperelastic::HyperelasticModel;
+use alice_physics_core::linear_elastic_fem::{
     Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial, FemError, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::quadratic_elastic_fem::{solve_quadratic_hyperelastic, QuadraticMesh};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::quadratic_elastic_fem::{solve_quadratic_hyperelastic, QuadraticMesh};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 const E_MPA: f64 = 3500.0;
 const NU: f64 = 0.45;

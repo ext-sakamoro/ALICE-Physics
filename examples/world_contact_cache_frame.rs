@@ -25,10 +25,10 @@
 //!
 //! Run with: `cargo run --example world_contact_cache_frame`
 
-use alice_physics::collider::Contact;
-use alice_physics::contact_cache::BodyPairKey;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::contact_cache::BodyPairKey;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn contact_at(x: i64) -> Contact {
     let p = Vec3Fix::from_int(x, 0, 0);

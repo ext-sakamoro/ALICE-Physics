@@ -57,11 +57,11 @@
 //! # Example
 //!
 //! ```
-//! use alice_physics::sdf_collider::ClosureSdf;
-//! use alice_physics::sim_modifier::ModifiedSdf;
-//! use alice_physics::thermal::{ThermalModifier, ThermalConfig};
-//! use alice_physics::pressure::{PressureModifier, PressureConfig};
-//! use alice_physics::sdf_collider::SdfField;
+//! use alice_physics_core::sdf_collider::ClosureSdf;
+//! use alice_physics_core::sim_modifier::ModifiedSdf;
+//! use alice_physics_core::thermal::{ThermalModifier, ThermalConfig};
+//! use alice_physics_core::pressure::{PressureModifier, PressureConfig};
+//! use alice_physics_core::sdf_collider::SdfField;
 //!
 //! let sphere_sdf = ClosureSdf::new(
 //!     |x, y, z| (x*x + y*y + z*z).sqrt() - 1.0,

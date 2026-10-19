@@ -1,11 +1,11 @@
-//! Audit oracles for `alice_physics::error::PhysicsError`.
+//! Audit oracles for `alice_physics_core::error::PhysicsError`.
 //!
 //! The Display text is the only specification of each message, so the exact
 //! strings are written out here, field by field, and the match below has no
 //! wildcard arm: adding a variant breaks compilation of this file until the
 //! new variant gets a message oracle.
 
-use alice_physics::error::PhysicsError;
+use alice_physics_core::error::PhysicsError;
 
 fn expected_message(e: &PhysicsError) -> String {
     match e {
@@ -162,7 +162,7 @@ fn debug_names_the_variant_and_shows_field_values() {
 /// this test must be revisited.
 #[test]
 fn deserialize_state_still_reports_failure_as_a_bool() {
-    use alice_physics::{PhysicsConfig, PhysicsWorld};
+    use alice_physics_core::{PhysicsConfig, PhysicsWorld};
     let mut w = PhysicsWorld::new(PhysicsConfig::default());
     let r: bool = w.deserialize_state(&[0u8; 3]);
     assert!(!r);

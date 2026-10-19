@@ -6,8 +6,8 @@
 //! is `delta` along `-s e_k`, so `normal = -s e_k`, `depth = delta`; the deepest
 //! point of A lies on its `s e_k` face and that of B on its `-s e_k` face.
 
-use alice_physics::collider::{epa, gjk, Sphere, Support, AABB};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::collider::{epa, gjk, Sphere, Support, AABB};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

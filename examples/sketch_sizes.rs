@@ -1,4 +1,4 @@
-//! Every named size of the `alice_physics::sketch` types, each held to its
+//! Every named size of the `alice_physics_core::sketch` types, each held to its
 //! closed form
 //!
 //! The named sizes (`HyperLogLog10` … `HeavyHitters20`) are aliases of four
@@ -21,7 +21,7 @@
 //! cargo run --example sketch_sizes --features std
 //! ```
 
-use alice_physics::sketch::{
+use alice_physics_core::sketch::{
     CountMinSketch1024x5, CountMinSketch2048x7, CountMinSketch4096x5, CountMinSketchN,
     DDSketch1024, DDSketch128, DDSketch2048, DDSketch256, DDSketch512, DDSketchN, FnvHasher,
     HeavyHitters10, HeavyHitters20, HeavyHitters5, HeavyHittersN, HyperLogLog10, HyperLogLog12,

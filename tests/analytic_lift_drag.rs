@@ -39,11 +39,11 @@
 
 use std::f64::consts::PI;
 
-use alice_physics::lift_drag::{
+use alice_physics_core::lift_drag::{
     AeroLoad, LiftDragError, LiftDragParams, LiftDragSurface, THIN_AIRFOIL_LIFT_SLOPE,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 const TOL: f64 = 1e-9;
 

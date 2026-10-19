@@ -10,10 +10,10 @@
 //! cargo run --example wall_model --features std
 //! ```
 
-use alice_physics::cfd_solver::{CfdSolver, PressureSolver, StepOptions, WallModel};
-use alice_physics::eulerian_grid::FaceBc;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::turbulence::friction_velocity;
+use alice_physics_core::cfd_solver::{CfdSolver, PressureSolver, StepOptions, WallModel};
+use alice_physics_core::eulerian_grid::FaceBc;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::turbulence::friction_velocity;
 
 fn main() {
     let (nx, ny) = (4usize, 8usize);

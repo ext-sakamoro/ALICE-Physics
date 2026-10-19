@@ -24,8 +24,8 @@
 //! oracles allow `1e-9` m and `1e-9` m/s, four orders of magnitude below one substep's sink:
 //! a solver that leaves any measurable fraction of the sink, or pushes the wrong way, fails.
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{
     Contact2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
 };
 

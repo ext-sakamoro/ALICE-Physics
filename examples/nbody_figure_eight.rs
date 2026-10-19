@@ -11,9 +11,9 @@
 //! cargo run --release --example nbody_figure_eight
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::nbody::{kinetic_energy, total_momentum, DirectSum, VelocityVerlet};
-use alice_physics::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::nbody::{kinetic_energy, total_momentum, DirectSum, VelocityVerlet};
+use alice_physics_core::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn v(x: f64, y: f64) -> Vec3Fix {
     Vec3Fix::new(Fix128::from_f64(x), Fix128::from_f64(y), Fix128::ZERO)

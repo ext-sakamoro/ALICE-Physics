@@ -20,50 +20,52 @@
     reason = "analytic reference: f64 viscous shear-mode decay exp(-nu pi^2 t/L^2) and SPH spiky gradient for fluid modules"
 )]
 
-use alice_physics::acoustic_wave::{leapfrog_step, speeds, stable_dt};
-use alice_physics::aeroelasticity::{viv_step, VivParameters, VivState};
-use alice_physics::buoyancy_zone::{BuoyancyZone, ZoneShape};
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::cloth_fluid::{apply_fluid_forces_to_cloth, ClothFluidCoupling};
-use alice_physics::compressible::{
+use alice_physics_core::acoustic_wave::{leapfrog_step, speeds, stable_dt};
+use alice_physics_core::aeroelasticity::{viv_step, VivParameters, VivState};
+use alice_physics_core::buoyancy_zone::{BuoyancyZone, ZoneShape};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::cloth_fluid::{apply_fluid_forces_to_cloth, ClothFluidCoupling};
+use alice_physics_core::compressible::{
     normal_shock_jump, riemann_invariants, stagnation_pressure_ratio, stagnation_temp_ratio,
     IdealGas,
 };
-use alice_physics::electromagnetic::{lorentz_force, lorentz_force_sum, ChargedBody, EmSource};
-use alice_physics::erosion::{ErosionConfig, ErosionModifier, ErosionType};
-use alice_physics::eulerian_grid::{project_pressure, MacGrid};
-use alice_physics::fsi_advanced::{
+use alice_physics_core::electromagnetic::{
+    lorentz_force, lorentz_force_sum, ChargedBody, EmSource,
+};
+use alice_physics_core::erosion::{ErosionConfig, ErosionModifier, ErosionType};
+use alice_physics_core::eulerian_grid::{project_pressure, MacGrid};
+use alice_physics_core::fsi_advanced::{
     aggregate_forces, buoyancy_force, drag_force, react_back_pressure, SolidSample,
 };
-use alice_physics::interface_capture::fast_sweeping_reinit;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::{
+use alice_physics_core::interface_capture::fast_sweeping_reinit;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::{
     curvature_at, initialize_level_set_sphere, trilinear_sample, Grid3d,
 };
-use alice_physics::non_newtonian::{Bingham, Carreau, HerschelBulkley, PowerLaw};
-use alice_physics::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::piezoelectric::PiezoElement;
-use alice_physics::pressure::{PressureConfig, PressureModifier};
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_sph::{poly6, spiky_grad, SphConfig, SphParticle, SphSolver};
-use alice_physics::sdf_wind_field::SdfWindField;
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::smoke_fire::{
+use alice_physics_core::non_newtonian::{Bingham, Carreau, HerschelBulkley, PowerLaw};
+use alice_physics_core::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::piezoelectric::PiezoElement;
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_sph::{poly6, spiky_grad, SphConfig, SphParticle, SphSolver};
+use alice_physics_core::sdf_wind_field::SdfWindField;
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::smoke_fire::{
     boussinesq_buoyancy_n_per_m3, heat_release_j_per_m3_s, reaction_rate_kg_per_m3_s,
     soot_generation_kg_per_m3_s, ArrheniusReaction,
 };
-use alice_physics::solver::RigidBody;
-use alice_physics::surface_tension_csf::{
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::surface_tension_csf::{
     csf_body_force, interface_normal, smeared_delta, SIGMA_WATER_AIR,
 };
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
-use alice_physics::turbulence::{
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::turbulence::{
     smagorinsky_eddy_viscosity, strain_rate_magnitude, SMAGORINSKY_CS,
 };
-use alice_physics::wave_ship::{
+use alice_physics_core::wave_ship::{
     free_surface_elevation, froude_krylov_vertical_n, Jonswap, ShipResponse, WaveComponent,
 };
-use alice_physics::wind_zone::WindZone;
+use alice_physics_core::wind_zone::WindZone;
 
 use core::f64::consts::PI;
 

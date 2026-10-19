@@ -29,13 +29,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     CfdSolver, PressureSolver, PressureSolverError, RansState, StepError, StepOptions,
     TurbulenceModel, WallModel,
 };
-use alice_physics::det_math::ln64;
-use alice_physics::eulerian_grid::FaceBc;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::det_math::ln64;
+use alice_physics_core::eulerian_grid::FaceBc;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 const C_MU: f64 = 0.09;
 const KAPPA: f64 = 0.41;

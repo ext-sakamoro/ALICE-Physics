@@ -59,13 +59,13 @@ jobs:
       - name: Build release (dynamic library)
         shell: bash
         run: |
-          cargo rustc --release --features "ffi" --target ${{ matrix.target }} \
+          cargo rustc -p alice-physics --lib --release --features "ffi" --target ${{ matrix.target }} \
             --crate-type cdylib
 
       - name: Build release (static library)
         shell: bash
         run: |
-          cargo rustc --release --features "ffi" --target ${{ matrix.target }} \
+          cargo rustc -p alice-physics --lib --release --features "ffi" --target ${{ matrix.target }} \
             --crate-type staticlib
 
       - name: Package UE5 Plugin
@@ -163,7 +163,7 @@ jobs:
         run: pip install maturin
 
       - name: Build wheel
-        run: maturin build --release --features python --out dist/
+        run: maturin build --release -m crates/alice-physics/Cargo.toml --features python --out dist/
 
       # the wheel itself is installed and exercised, not only built: a wheel that
       # builds but fails to import or returns wrong values must not be released

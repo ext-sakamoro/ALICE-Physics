@@ -19,11 +19,11 @@
 //!
 //! Run with: `cargo run --example soft_bodies_on_sdf`
 
-use alice_physics::cloth::Cloth;
-use alice_physics::deformable::DeformableBody;
-use alice_physics::fluid::{Fluid, FluidConfig};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::cloth::Cloth;
+use alice_physics_core::deformable::DeformableBody;
+use alice_physics_core::fluid::{Fluid, FluidConfig};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
 /// The plane `y = h`, normal `+y` (negative below the plane).
 fn plane_at(h: f32) -> SdfCollider {

@@ -9,8 +9,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::mass_properties::{box_mass_properties, cylinder_mass_properties};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::mass_properties::{box_mass_properties, cylinder_mass_properties};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn int(v: i64) -> Fix128 {
     Fix128::from_int(v)
@@ -47,7 +47,7 @@ fn a_cube_of_mass_twelve_has_inertia_eight() {
     }
 }
 
-use alice_physics::mass_properties::{capsule_mass_properties, sphere_mass_properties};
+use alice_physics_core::mass_properties::{capsule_mass_properties, sphere_mass_properties};
 
 /// A cylinder (radius r, half-height h) has `Ixx = m/12·(3r² + (2h)²)`. Radius 2 and
 /// half-height 1.5 give `3·4 + 9 = 21`; a mass of 12 would need `π`, so the check is
@@ -91,7 +91,7 @@ fn a_capsule_with_no_cylinder_is_a_sphere() {
 /// built from the reported capsule mass.
 #[test]
 fn a_long_capsule_has_the_exact_cylinder_transverse_inertia() {
-    use alice_physics::mass_properties::capsule_mass_properties;
+    use alice_physics_core::mass_properties::capsule_mass_properties;
     let (r, hh) = (int(1), int(3));
     let c = capsule_mass_properties(r, hh, Fix128::ONE);
     // cylinder mass = π r² (2 hh) ; sphere mass = 4/3 π r³ ; total mass is reported

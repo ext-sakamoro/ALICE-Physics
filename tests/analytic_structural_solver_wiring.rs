@@ -23,10 +23,10 @@
     reason = "analytic reference: f64 Norton creep strain and WLF shift factor 10^log(aT) for structural_solver run history"
 )]
 
-use alice_physics::beam_stress::{ColumnEndCondition, CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::structural_solver::{StructuralHistory, StructuralSolver};
+use alice_physics_core::beam_stress::{ColumnEndCondition, CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::structural_solver::{StructuralHistory, StructuralSolver};
 use core::f64::consts::PI;
 
 fn int(n: i64) -> Fix128 {
@@ -421,7 +421,7 @@ fn fatigue_failure_threshold_is_inclusive() {
 /// `FoS = 1` and does not trip; one ulp more does.
 #[test]
 fn buckling_trip_is_strict() {
-    use alice_physics::buckling::analyze_column;
+    use alice_physics_core::buckling::analyze_column;
     let section = rect(10, 10);
     let p_cr = analyze_column(
         &section,

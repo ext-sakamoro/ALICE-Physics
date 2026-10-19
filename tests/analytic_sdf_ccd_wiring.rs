@@ -7,12 +7,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_ccd::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_ccd::{
     batch_sphere_trace_sdf, ray_march_sdf, sphere_trace_sdf, SdfCcdConfig,
 };
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn plane() -> ClosureSdf {
     ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0))

@@ -6,10 +6,10 @@
 //! # Usage
 //!
 //! ```
-//! use alice_physics::compound::CompoundShape;
-//! use alice_physics::{Vec3Fix, Fix128};
-//! use alice_physics::collider::Sphere;
-//! use alice_physics::math::QuatFix;
+//! use alice_physics_core::compound::CompoundShape;
+//! use alice_physics_core::{Vec3Fix, Fix128};
+//! use alice_physics_core::collider::Sphere;
+//! use alice_physics_core::math::QuatFix;
 //!
 //! let mut compound = CompoundShape::new();
 //! compound.add_sphere(Sphere::new(Vec3Fix::ZERO, Fix128::ONE), Vec3Fix::ZERO, QuatFix::IDENTITY);

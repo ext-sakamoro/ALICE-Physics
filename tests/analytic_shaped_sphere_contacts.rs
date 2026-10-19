@@ -25,10 +25,10 @@
     reason = "test input: cbrt sizes the crowd floor so the body density stays constant as the count grows"
 )]
 
-use alice_physics::collider::{contact, Sphere};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::{PosedShape, Shape};
-use alice_physics::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::collider::{contact, Sphere};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::{PosedShape, Shape};
+use alice_physics_core::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
 
 type V = [f64; 3];
 
@@ -135,7 +135,7 @@ fn brute_contacts(bodies: &[Body]) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     for a in 0..bodies.len() {
         for b in a + 1..bodies.len() {
-            let deep = |c: Option<alice_physics::collider::Contact>| {
+            let deep = |c: Option<alice_physics_core::collider::Contact>| {
                 c.is_some_and(|c| c.depth > Fix128::ZERO)
             };
             let hit = match (bodies[a], bodies[b]) {

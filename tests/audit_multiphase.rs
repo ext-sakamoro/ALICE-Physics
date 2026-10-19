@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::multiphase`.
+//! Audit oracles for `alice_physics_core::multiphase`.
 //! Expected values: hand-derived closed forms (translation of a slab, affine reproduction by
 //! trilinear interpolation, Laplacian of a signed-distance sphere = 2/rho).
 #![allow(
@@ -6,8 +6,8 @@
     reason = "analytic reference: f64 mean curvature -12/13^1.5 of the analytic level set for multiphase curvature"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::{
     advect_vof_rigid, curvature_at, initialize_level_set_sphere, trilinear_range, trilinear_sample,
     Grid3d, VofScheme,
 };

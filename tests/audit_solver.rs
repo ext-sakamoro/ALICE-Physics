@@ -10,10 +10,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{CollisionFilter, ContactEventType, SleepConfig};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{CollisionFilter, ContactEventType, SleepConfig};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn fx(v: f64) -> Fix128 {
@@ -577,7 +577,7 @@ fn collision(friction: f64, restitution: f64, modifier: Option<SetMaterial>) -> 
     );
     let id = w
         .material_table
-        .register(alice_physics::PhysicsMaterial::new(
+        .register(alice_physics_core::PhysicsMaterial::new(
             0,
             fx(friction),
             fx(restitution),
@@ -659,8 +659,8 @@ fn a_contact_modifier_can_change_the_friction() {
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridge {
     use super::*;
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::solver::ContactConstraint;
     use std::cell::RefCell;
 
     /// Records what `solve_contact_constraints_with_bridge` uploads, then writes back a
@@ -676,7 +676,7 @@ mod bridge {
 
     impl GpuSolverBridge for Recorder {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -794,13 +794,13 @@ mod bridge {
     /// the only thing the trait can return.
     #[derive(Default)]
     struct JointReference {
-        joints: Vec<alice_physics::joint::Joint>,
+        joints: Vec<alice_physics_core::joint::Joint>,
         bodies: Vec<RigidBody>,
     }
 
     impl GpuSolverBridge for JointReference {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -809,7 +809,7 @@ mod bridge {
         fn assert_bit_exact_vs_cpu(&self, _f: &DiffFixture) -> Result<(), GpuDivergence> {
             Ok(())
         }
-        fn send_joints(&mut self, j: &[alice_physics::joint::Joint]) {
+        fn send_joints(&mut self, j: &[alice_physics_core::joint::Joint]) {
             self.joints = j.to_vec();
         }
         fn send_body_state(&mut self, p: &[[Fix128; 3]], inv_masses: &[Fix128]) {
@@ -830,7 +830,7 @@ mod bridge {
             }
         }
         fn dispatch_joint_solve_iteration(&mut self, dt: Fix128) {
-            alice_physics::joint::solve_joints(&self.joints, &mut self.bodies, dt);
+            alice_physics_core::joint::solve_joints(&self.joints, &mut self.bodies, dt);
         }
         fn recv_body_positions(&self, p: &mut [[Fix128; 3]]) {
             for (out, b) in p.iter_mut().zip(&self.bodies) {
@@ -840,7 +840,7 @@ mod bridge {
     }
 
     fn limited_hinge_world() -> PhysicsWorld {
-        use alice_physics::joint::{HingeJoint, Joint};
+        use alice_physics_core::joint::{HingeJoint, Joint};
         let mut w = PhysicsWorld::new(weightless());
         w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
         let b = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
@@ -867,7 +867,7 @@ mod bridge {
     fn cpu_joint_solve_corrects_a_hinge_limit_by_rotating_the_bodies() {
         let mut w = limited_hinge_world();
         let before = w.bodies[1].rotation;
-        alice_physics::joint::solve_joints(&w.joints.clone(), &mut w.bodies, dt());
+        alice_physics_core::joint::solve_joints(&w.joints.clone(), &mut w.bodies, dt());
         assert_ne!(w.bodies[0].rotation, QuatFix::IDENTITY, "body A rotated");
         assert_ne!(w.bodies[1].rotation, before, "body B rotated");
     }
@@ -880,7 +880,7 @@ mod bridge {
     #[ignore = "known defect: AUD-A-S1W2-006: solve_joints_with_bridge writes back positions only; the rotation corrections of the CPU joint solve (joint.rs apply_angular_correction) cannot come back through GpuSolverBridge, so a hinge limit is not enforced under a bridge"]
     fn joint_solve_through_a_reference_bridge_matches_the_cpu_solve() {
         let mut cpu = limited_hinge_world();
-        alice_physics::joint::solve_joints(&cpu.joints.clone(), &mut cpu.bodies, dt());
+        alice_physics_core::joint::solve_joints(&cpu.joints.clone(), &mut cpu.bodies, dt());
 
         let mut routed = limited_hinge_world();
         let mut bridge = JointReference::default();
@@ -899,7 +899,7 @@ mod bridge {
 /// alone is enough, and a valid pair is accepted.
 #[test]
 fn add_joint_panics_when_either_index_is_out_of_bounds() {
-    use alice_physics::joint::{BallJoint, Joint};
+    use alice_physics_core::joint::{BallJoint, Joint};
     let ball = |a: usize, b: usize| Joint::Ball(BallJoint::new(a, b, Vec3Fix::ZERO, Vec3Fix::ZERO));
     let mut w = PhysicsWorld::new(weightless());
     w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));

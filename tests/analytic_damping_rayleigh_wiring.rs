@@ -1,5 +1,5 @@
 //! Oracles for the production entry points of
-//! `alice_physics::damping_rayleigh` driven by
+//! `alice_physics_core::damping_rayleigh` driven by
 //! `examples/damping_rayleigh_fit.rs`: `hz_to_omega`, `omega_to_hz`,
 //! `RayleighCoefficients::fit_two_modes`, and
 //! `RayleighCoefficients::damping_ratio`.
@@ -53,8 +53,8 @@
 //! applies to them exactly as it does to every other `Fix128` function
 //! here; they are not exempt as a host-side utility.
 
-use alice_physics::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
-use alice_physics::math::Fix128;
+use alice_physics_core::damping_rayleigh::{hz_to_omega, omega_to_hz, RayleighCoefficients};
+use alice_physics_core::math::Fix128;
 use core::f64::consts::PI;
 
 /// Relative-error assertion against an independently hand-derived f64

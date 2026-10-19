@@ -36,7 +36,7 @@
 //!   that only looks at the first batch cannot survive, and the
 //!   `GpuSdfInstancedBatch::query_count` field is checked against the same
 //!   per-batch sizes (it mirrors `queries.len()` per the doc comment).
-//! * **`batch_size()`**: equals `alice_physics::math::SIMD_WIDTH` by
+//! * **`batch_size()`**: equals `alice_physics_core::math::SIMD_WIDTH` by
 //!   definition; under the default feature set (no `simd` feature) that is
 //!   the documented scalar fallback, `1`.
 //!
@@ -62,11 +62,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::gpu_sdf::{
+use alice_physics_core::gpu_sdf::{
     batch_size, execute_batch_cpu, GpuDispatchConfig, GpuSdfBatch, GpuSdfContact,
     GpuSdfMultiDispatch, GpuSdfQuery, GpuSdfResult, SDF_EVAL_WGSL,
 };
-use alice_physics::math::{Fix128, Vec3Fix, SIMD_WIDTH};
+use alice_physics_core::math::{Fix128, Vec3Fix, SIMD_WIDTH};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Closed-form unit-sphere SDF distance, independent of the crate's
@@ -88,12 +88,12 @@ fn sphere_normal(x: f32, y: f32, z: f32) -> (f32, f32, f32) {
 }
 
 /// A minimal `SdfField` wrapping [`sphere_distance`] / [`sphere_normal`],
-/// built without going through `alice_physics::sdf_collider::ClosureSdf` so
+/// built without going through `alice_physics_core::sdf_collider::ClosureSdf` so
 /// that `execute_batch_cpu`'s dynamic dispatch is exercised against a
 /// locally-owned, independently-written reference.
 struct UnitSphere;
 
-impl alice_physics::sdf_collider::SdfField for UnitSphere {
+impl alice_physics_core::sdf_collider::SdfField for UnitSphere {
     fn distance(&self, x: f32, y: f32, z: f32) -> f32 {
         sphere_distance(x, y, z)
     }

@@ -9,9 +9,9 @@
 //! * the node of an edge sits at the exact midpoint of its two corners (`1/2` is exact in binary)
 //! * `edge_node` is symmetric and `None` for pairs that are not an edge of any tet
 
-use alice_physics::math::Fix128;
-use alice_physics::quadratic_elastic_fem::QuadraticMesh;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::quadratic_elastic_fem::QuadraticMesh;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 use std::collections::BTreeMap;
 
 fn mesh(vertices: &[[f32; 3]], tets: &[[u32; 4]]) -> SdfTetMesh {

@@ -1,5 +1,5 @@
 //! Material presets and closed-form deformation modes of
-//! `alice_physics::hyperelastic`.
+//! `alice_physics_core::hyperelastic`.
 //!
 //! Drives the three presets (`tpu_soft` / `silicone_soft` / `natural_rubber`)
 //! through the two incompressible deformation modes (`Stretch::uniaxial` /
@@ -37,11 +37,11 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::hyperelastic::{
+    use alice_physics_core::hyperelastic::{
         small_strain_shear_modulus, strain_energy_density, uniaxial_cauchy_stress,
         HyperelasticModel, Stretch,
     };
-    use alice_physics::math::Fix128;
+    use alice_physics_core::math::Fix128;
 
     let fx = Fix128::from_f64;
 

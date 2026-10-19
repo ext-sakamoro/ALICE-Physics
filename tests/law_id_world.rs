@@ -16,18 +16,18 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupling_medium::DragMedium;
-use alice_physics::force::{ForceField, ForceFieldInstance};
-use alice_physics::law_id::{LAW_ID_DOMAIN, WORLD_LAW_KIND};
-use alice_physics::material::{CombineRule, MaterialId, PhysicsMaterial};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::semantics::PHYSICS_SEMANTICS_ID;
-use alice_physics::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::world_participant::{
+use alice_physics_core::coupling_medium::DragMedium;
+use alice_physics_core::force::{ForceField, ForceFieldInstance};
+use alice_physics_core::law_id::{LAW_ID_DOMAIN, WORLD_LAW_KIND};
+use alice_physics_core::material::{CombineRule, MaterialId, PhysicsMaterial};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::semantics::PHYSICS_SEMANTICS_ID;
+use alice_physics_core::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, PortAccess, StateError,
     StepRule, SubstepCtx,
 };
-use alice_physics::{SleepConfig, SolverBackend, WorldCcdConfig};
+use alice_physics_core::{SleepConfig, SolverBackend, WorldCcdConfig};
 use sha2::{Digest, Sha256};
 
 fn world() -> PhysicsWorld {
@@ -595,7 +595,7 @@ fn rows_1_to_16_end_at_a_fixed_point_and_row_17_follows() {
         spec(&laws, &PHYSICS_SEMANTICS_ID)
     );
     assert_eq!(
-        alice_physics::law_id::PARTICIPANT_SEMANTICS_ROW,
+        alice_physics_core::law_id::PARTICIPANT_SEMANTICS_ROW,
         b"participant-semantics"
     );
 }

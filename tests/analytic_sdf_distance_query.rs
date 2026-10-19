@@ -32,14 +32,14 @@
 use std::cell::Cell;
 use std::rc::Rc;
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_ccd::{sphere_trace_sdf_field, SdfCcdConfig};
-use alice_physics::sdf_collider::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_ccd::{sphere_trace_sdf_field, SdfCcdConfig};
+use alice_physics_core::sdf_collider::{
     collide_point_sdf_field, collide_sphere_sdf_field, ClosureSdf, ClosureSdfQuery,
     DistanceSdfQuery, SdfField, SdfFrame, SdfQuery, FD_NORMAL_BASE_EPS,
 };
-use alice_physics::sdf_destruction::{DestructibleSdf, DestructionShape};
-use alice_physics::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
+use alice_physics_core::sdf_destruction::{DestructibleSdf, DestructionShape};
+use alice_physics_core::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
 
 const RADIUS: f32 = 1.0;
 

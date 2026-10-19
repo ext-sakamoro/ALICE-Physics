@@ -21,15 +21,15 @@
 //!   is a fault that leaves the participant unchanged, the law identifier
 //!   names the participant, and a digest of the stepped world is pinned.
 
-use alice_physics::nbody::{
+use alice_physics_core::nbody::{
     kinetic_energy, total_momentum, DirectSum, NBodyParticipant, NBODY_OBS_BODIES,
     NBODY_OBS_POTENTIAL, NBODY_PARTICIPANT_KIND,
 };
-use alice_physics::world_participant::{
+use alice_physics_core::world_participant::{
     ForceAccumulator, ObservationSink, Observed, Participant, ParticipantFault, StateError,
     SubstepCtx, WorldFault,
 };
-use alice_physics::{
+use alice_physics_core::{
     BodyType, Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix,
     WorldSnapshotError, PHYSICS_SEMANTICS_ID,
 };

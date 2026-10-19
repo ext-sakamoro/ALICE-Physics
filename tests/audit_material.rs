@@ -6,8 +6,8 @@
     reason = "the combine-rule case table is a tuple of id, two rational pairs and the expected rule"
 )]
 
-use alice_physics::material::{CombineRule, MaterialTable, PhysicsMaterial, DEFAULT_MATERIAL};
-use alice_physics::math::Fix128;
+use alice_physics_core::material::{CombineRule, MaterialTable, PhysicsMaterial, DEFAULT_MATERIAL};
+use alice_physics_core::math::Fix128;
 
 /// `f` is the Q64.64 floor of n/d (n,d > 0): checked with integer arithmetic only.
 fn is_floor_ratio(f: Fix128, n: u128, d: u128) -> bool {
@@ -118,7 +118,7 @@ fn material_table_try_register_refuses_past_the_u16_id_range() {
     let overflow = t.try_register(PhysicsMaterial::new(0, Fix128::from_int(-1), Fix128::ZERO));
     assert_eq!(
         overflow,
-        Err(alice_physics::PhysicsError::CapacityExceeded {
+        Err(alice_physics_core::PhysicsError::CapacityExceeded {
             resource: "materials",
             limit: MATERIAL_ID_COUNT,
         })

@@ -26,11 +26,11 @@
 //!
 //! Run with: `cargo run --example plastic_hardening_bauschinger`
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::plastic::{HardeningType, PlasticModel};
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::plastic::{HardeningType, PlasticModel};
+use alice_physics_core::structural_solver::StructuralSolver;
 
 const TOL: f64 = 1e-12;
 

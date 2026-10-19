@@ -2,11 +2,11 @@
 //!
 //! 期待値は doc の式 (Tsai-Wu 1971 / Azzi-Tsai-Hill / Hashin 1980) を f64 で手書きしたもの
 
-use alice_physics::laminate_failure::{
+use alice_physics_core::laminate_failure::{
     failure_index, hashin_failure_mode, puck_failure_mode, tsai_hill_failure_index,
     tsai_wu_failure_index, FailureCriterion, FailureMode, LaminateStrengths, StressState,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn st(a: f64, b: f64, c: f64) -> StressState {
     StressState {

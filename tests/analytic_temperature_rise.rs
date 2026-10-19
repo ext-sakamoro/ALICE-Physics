@@ -66,13 +66,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupled_field::{CoupledField, TemperatureRise};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::coupled_field::{CoupledField, TemperatureRise};
+use alice_physics_core::linear_elastic_fem::{
     solve, solve_with_eigenstrain, BoundaryConditions, ElasticMaterial, FemError, FemSolution,
     SolverConfig, StressTensor, ThermalExpansion,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // material, scene and the temperatures in play
@@ -744,7 +744,7 @@ fn an_empty_grid_is_refused_before_a_rise_can_exist() {
     assert!(
         matches!(
             err,
-            alice_physics::coupled_field::CoupledFieldError::EmptyGrid { .. }
+            alice_physics_core::coupled_field::CoupledFieldError::EmptyGrid { .. }
         ),
         "a zero dimension must be reported as EmptyGrid, not {err:?}"
     );

@@ -16,9 +16,9 @@
 //! (the tree section actually holds content) — i.e. the tree's shape, not
 //! just the choice of kind, is what shows up in the bytes.
 
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{Broadphase, PhysicsWorld, RigidBody, SolverConfig};
 
 /// Same three bodies and ball joint as `world_snapshot_order_sensitivity.rs`,
 /// always added in the same order; only `kind` varies between calls. Steps

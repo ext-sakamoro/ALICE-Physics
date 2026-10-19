@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::soft_body_cut`: `CutPlane`,
+//! Production entry point for `alice_physics_core::soft_body_cut`: `CutPlane`,
 //! `CutResult`, `cut_cloth`, and `cut_deformable`.
 //!
 //! Wiring: `scripts/wiring-baseline.txt` lists all four as `unwired` -- the
@@ -17,8 +17,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::soft_body_cut::{cut_cloth, cut_deformable, CutPlane, CutResult};
 
 fn main() {
     // ------------------------------------------------------------------

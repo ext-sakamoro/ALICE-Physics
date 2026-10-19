@@ -36,13 +36,13 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::ccd::{sphere_sphere_toi, TOI};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
+use alice_physics_core::ccd::{sphere_sphere_toi, TOI};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
 
 const EXACT: f64 = 1e-12;
 
@@ -329,9 +329,9 @@ fn degenerate_inputs_give_none() {
 #[cfg(feature = "std")]
 mod sdf {
     use super::*;
-    use alice_physics::math::QuatFix;
-    use alice_physics::sdf_character::SdfCharacter;
-    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+    use alice_physics_core::math::QuatFix;
+    use alice_physics_core::sdf_character::SdfCharacter;
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
 
     const F32: f32 = 1e-6;
 

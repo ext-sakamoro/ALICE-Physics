@@ -11,8 +11,8 @@
     reason = "perturbation loop clones the particle list and bumps q[i] for each index and component"
 )]
 
-use alice_physics::fluid_netcode::{FluidDelta, FluidSnapshot};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::fluid_netcode::{FluidDelta, FluidSnapshot};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn fx(v: f64) -> Fix128 {

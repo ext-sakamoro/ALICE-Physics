@@ -15,9 +15,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::{initialize_level_set_sphere, Grid3d};
-use alice_physics::surface_tension_csf::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::{initialize_level_set_sphere, Grid3d};
+use alice_physics_core::surface_tension_csf::{
     compute_csf_field, csf_body_force, interface_normal, smeared_delta, SIGMA_MERCURY_AIR,
     SIGMA_PLA_AIR, SIGMA_STEEL_ARGON, SIGMA_WATER_AIR,
 };

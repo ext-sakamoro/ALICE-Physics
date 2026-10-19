@@ -5,7 +5,7 @@
 //! non-zero group never collides" by per-bit enumeration (a different
 //! evaluation order from the bit-AND in the crate).
 
-use alice_physics::{layers, CollisionFilter};
+use alice_physics_core::{layers, CollisionFilter};
 
 /// Per-bit reference: exists bit i with a.layer[i] and b.mask[i].
 fn any_common_bit(x: u32, y: u32) -> bool {

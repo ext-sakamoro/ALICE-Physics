@@ -5,11 +5,11 @@
 //! Both went through `ray_triangle`, whose parallel test used to drop every
 //! ray within a sine of 2^-24 of the triangle's plane.
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::TriMesh;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::TriMesh;
 
 fn v3(x: Fix128, y: Fix128, z: Fix128) -> Vec3Fix {
     Vec3Fix::new(x, y, z)

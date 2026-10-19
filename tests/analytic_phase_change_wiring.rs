@@ -17,8 +17,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::sim_modifier::PhysicsModifier;
+use alice_physics_core::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::sim_modifier::PhysicsModifier;
 
 const TM: f32 = 100.0;
 const TB: f32 = 300.0;

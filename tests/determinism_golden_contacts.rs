@@ -42,10 +42,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{PhysicsMaterial, SleepConfig};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{PhysicsMaterial, SleepConfig};
 use sha2::{Digest, Sha256};
 
 /// Ground sphere radius (m).
@@ -102,7 +102,7 @@ fn world_with_ground(
     g: Vec3Fix,
     mu: Fix128,
     e: Fix128,
-) -> (PhysicsWorld, alice_physics::MaterialId) {
+) -> (PhysicsWorld, alice_physics_core::MaterialId) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: g,
         damping: Fix128::ONE,
@@ -123,7 +123,7 @@ fn world_with_ground(
 /// Adds a ball of radius 1/2 and mass 1 at `pos` with velocity `vel`.
 fn add_ball(
     w: &mut PhysicsWorld,
-    id: alice_physics::MaterialId,
+    id: alice_physics_core::MaterialId,
     pos: Vec3Fix,
     vel: Vec3Fix,
 ) -> usize {

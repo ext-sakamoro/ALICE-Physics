@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::fluid_netcode`: `FluidDelta::changed_count`,
+//! Production entry point for `alice_physics_core::fluid_netcode`: `FluidDelta::changed_count`,
 //! `FluidDelta::compression_ratio`, `FluidSnapshot::size_bytes`, `FluidSnapshot::restore`,
 //! `FluidSnapshot::verify` (`std` feature -- `wiring_guard`: `src/fluid_netcode.rs` had zero
 //! production callers for these five -- only `#[cfg(test)]` unit tests in the same file
@@ -28,8 +28,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::fluid_netcode::{FluidDelta, FluidSnapshot};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::fluid_netcode::{FluidDelta, FluidSnapshot};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 const PARTICLE_COUNT: usize = 6;
 

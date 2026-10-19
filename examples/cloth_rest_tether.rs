@@ -6,8 +6,8 @@
 //!
 //! Run: `cargo run --example cloth_rest_tether --features std`
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::Cloth;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::Cloth;
 
 fn main() {
     let (res, mass) = (7_usize, Fix128::from_ratio(1, 49));

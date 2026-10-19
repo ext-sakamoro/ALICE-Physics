@@ -15,10 +15,10 @@
 //! constant approaches 0.42 from below as `a → 0` (0.398 at a = 0.13, 0.4175 at a = 0.017),
 //! so the assertion uses 0.43.
 
-use alice_physics::det_math::{exp64, powf64};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::solver::{DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::det_math::{exp64, powf64};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::solver::{DistanceConstraint, PhysicsWorld, RigidBody, SolverConfig};
 
 fn critical_retention(omega: Fix128, dt: Fix128) -> Fix128 {
     let a = omega * dt;

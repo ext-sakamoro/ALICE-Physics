@@ -20,10 +20,10 @@
     reason = "analytic reference: f64 SDF sphere distance and sphere volume 4/3 pi r^3 bounds for convex hulls from decompose_sdf"
 )]
 
-use alice_physics::convex_decompose::{decompose_sdf, DecomposeConfig, DecompositionResult};
-use alice_physics::mass_properties::convex_hull_mass_properties;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::convex_decompose::{decompose_sdf, DecomposeConfig, DecompositionResult};
+use alice_physics_core::mass_properties::convex_hull_mass_properties;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
 
 fn v3(x: f32, y: f32, z: f32) -> Vec3Fix {
     Vec3Fix::from_f32(x, y, z)
@@ -310,9 +310,9 @@ fn an_sdf_outside_the_bounds_has_no_hulls() {
 // The compound of the pieces, and the body it makes
 // ---------------------------------------------------------------------------
 
-use alice_physics::compound::CompoundShape;
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
 
 /// The L's two hulls as a compound: mass and centre of mass are the sums over the
 /// two shrunk bars (whose centres are at the middle of each bar).

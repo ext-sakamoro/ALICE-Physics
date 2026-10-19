@@ -10,10 +10,10 @@
 
 #![cfg(feature = "gpu-solver-bridge")]
 
-use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{ContactConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
 
 #[derive(Default)]
 struct JointReference {
@@ -24,7 +24,7 @@ struct JointReference {
 
 impl GpuSolverBridge for JointReference {
     fn semantics_id(&self) -> [u8; 32] {
-        alice_physics::PHYSICS_SEMANTICS_ID
+        alice_physics_core::PHYSICS_SEMANTICS_ID
     }
 
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -57,7 +57,7 @@ impl GpuSolverBridge for JointReference {
         }
     }
     fn dispatch_joint_solve_iteration(&mut self, dt: Fix128) {
-        alice_physics::joint::solve_joints(&self.joints, &mut self.bodies, dt);
+        alice_physics_core::joint::solve_joints(&self.joints, &mut self.bodies, dt);
     }
     fn recv_body_positions(&self, p: &mut [[Fix128; 3]]) {
         for (out, b) in p.iter_mut().zip(&self.bodies) {

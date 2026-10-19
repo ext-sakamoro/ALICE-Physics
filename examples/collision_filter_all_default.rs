@@ -13,9 +13,9 @@
 //!
 //! Run with: `cargo run --example collision_filter_all_default`
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{layers, CollisionFilter};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{layers, CollisionFilter};
 
 /// Zero gravity and one substep, so `contact_events` reflects a single
 /// detection pass (same set-up as `examples/collision_filter_categories.rs`).

@@ -10,11 +10,11 @@
 //! * the quantile estimate of a `DDSketch` with accuracy `alpha` is within a
 //!   relative `alpha` of the exact value.
 
-use alice_physics::pipeline::{
+use alice_physics_core::pipeline::{
     MetricEntry, MetricEvent, MetricPipeline, MetricRegistry, MetricSlot, MetricSnapshot,
     MetricType, RingBuffer,
 };
-use alice_physics::sketch::{FnvHasher, Mergeable};
+use alice_physics_core::sketch::{FnvHasher, Mergeable};
 use std::collections::VecDeque;
 
 /// splitmix64 output for `x` (golden-gamma add + finaliser), the mixing
@@ -281,7 +281,7 @@ fn pipeline_colliding_metric_names_do_not_corrupt_each_other() {
 #[test]
 fn pipeline_unique_events_count_distinct_64_bit_hashes() {
     let n = 4000u64;
-    let mut direct = alice_physics::sketch::HyperLogLog10::new();
+    let mut direct = alice_physics_core::sketch::HyperLogLog10::new();
     let mut p = MetricPipeline::<8, 16>::new(0.05);
     let name = hash("users");
     for i in 0..n {
@@ -417,7 +417,7 @@ fn slot_merge_unions_the_unique_sets() {
     // Distinct small item hashes: slot a sees 0..600, slot b sees 400..1000.
     let mut a = MetricSlot::new(1, 0.05);
     let mut b = MetricSlot::new(1, 0.05);
-    let mut want = alice_physics::sketch::HyperLogLog10::new();
+    let mut want = alice_physics_core::sketch::HyperLogLog10::new();
     for i in 0..600u64 {
         a.process(&MetricEvent::unique(1, i));
     }
@@ -437,7 +437,7 @@ fn slot_merge_unions_the_unique_sets() {
 fn snapshot_cardinality_comes_from_the_unique_set() {
     let mut slot = MetricSlot::new(1, 0.05);
     slot.process(&MetricEvent::counter(1, 7.0));
-    let mut want = alice_physics::sketch::HyperLogLog10::new();
+    let mut want = alice_physics_core::sketch::HyperLogLog10::new();
     for i in 0..300u64 {
         slot.process(&MetricEvent::unique(1, i));
         want.insert_hash(splitmix64(i));

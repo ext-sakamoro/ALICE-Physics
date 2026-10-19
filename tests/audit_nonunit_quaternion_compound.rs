@@ -19,13 +19,13 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{Capsule, ConvexHull, Sphere, AABB};
-use alice_physics::compound::CompoundShape;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::{RayFilter, RayTarget};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld};
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{Capsule, ConvexHull, Sphere, AABB};
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::{RayFilter, RayTarget};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld};
 
 const NEAR: f64 = 1e-12;
 const ITER: f64 = 1e-8;

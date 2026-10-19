@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::wave_ship`.
+//! Audit oracles for `alice_physics_core::wave_ship`.
 //! Expected values are hand-evaluated closed forms in f64 (DNV-RP-C205 JONSWAP, linear
 //! superposition, Archimedes, damped SDOF), not values produced by the implementation.
 #![allow(
@@ -6,8 +6,8 @@
     reason = "analytic reference: f64 JONSWAP spectrum (DNV-RP-C205) peak value and shape for wave_ship audit"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::wave_ship::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::wave_ship::{
     free_surface_elevation, froude_krylov_vertical_n, Jonswap, ShipResponse, WaveComponent,
 };
 

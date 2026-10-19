@@ -6,8 +6,8 @@
 //! # Examples
 //!
 //! ```
-//! use alice_physics::pipeline::{MetricPipeline, MetricEvent};
-//! use alice_physics::sketch::FnvHasher;
+//! use alice_physics_core::pipeline::{MetricPipeline, MetricEvent};
+//! use alice_physics_core::sketch::FnvHasher;
 //!
 //! // Create pipeline with 64 slots, 1024-event queue
 //! let mut pipeline = MetricPipeline::<64, 1024>::new(0.05);
@@ -324,7 +324,7 @@ impl Mergeable for MetricSlot {
 ///
 /// # Example
 /// ```
-/// use alice_physics::pipeline::{MetricPipeline, MetricEvent};
+/// use alice_physics_core::pipeline::{MetricPipeline, MetricEvent};
 ///
 /// // Create pipeline with 64 metric slots
 /// let mut pipeline = MetricPipeline::<64, 1024>::new(0.05);
@@ -337,7 +337,7 @@ impl Mergeable for MetricSlot {
 /// pipeline.flush();
 ///
 /// fn hash(s: &str) -> u64 {
-///     use alice_physics::sketch::FnvHasher;
+///     use alice_physics_core::sketch::FnvHasher;
 ///     FnvHasher::hash_bytes(s.as_bytes())
 /// }
 /// ```

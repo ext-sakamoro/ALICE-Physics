@@ -1,4 +1,4 @@
-//! Audit oracles (S2-1) for `alice_physics::cubic_elastic_fem` (P3, twenty-node
+//! Audit oracles (S2-1) for `alice_physics_core::cubic_elastic_fem` (P3, twenty-node
 //! cubic tetrahedra).
 //!
 //! Expected values come from closed forms (Euler-style node counts, the doc's
@@ -18,15 +18,15 @@
     reason = "analytic reference: f64 documented relative tolerance floor 2^-30 for the cubic FEM linear patch test"
 )]
 
-use alice_physics::cubic_elastic_fem::{
+use alice_physics_core::cubic_elastic_fem::{
     reactions, shape_values, solve_cubic, solve_cubic_hyperelastic, CubicMesh,
 };
-use alice_physics::hyperelastic::HyperelasticModel;
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::hyperelastic::HyperelasticModel;
+use alice_physics_core::linear_elastic_fem::{
     Axis, BoundaryConditions, CorotationalConfig, ElasticMaterial, FemError, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 const E_MPA: f64 = 3500.0;
 const NU: f64 = 0.35;

@@ -67,9 +67,9 @@
 //! particular plane SDF is, by construction, insensitive to, since its
 //! distance function only reads `y`).
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rope::{PinConstraint, Rope};
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::rope::{PinConstraint, Rope};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
 /// 180-degree rotation about the world Z axis, as an exact unit quaternion.
 /// `rotate_vec(q, v) = (-v.x, -v.y, v.z)` (hand-derived Hamilton product,

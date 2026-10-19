@@ -19,26 +19,26 @@
 //! `PhysicsWorld::time_of_impact`. The cast conventions assumed for the
 //! boundary cases (a cast that starts touching hits only when it moves into
 //! the surface, a grazing path must enter it to hit) are the ones of
-//! [`alice_physics::world_shape_query`].
+//! [`alice_physics_core::world_shape_query`].
 
 #![cfg(feature = "std")]
 
-use alice_physics::event::ContactEvent;
-use alice_physics::material::PhysicsMaterial;
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::shape::Shape;
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::TriMesh;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldCcdConfig};
+use alice_physics_core::event::ContactEvent;
+use alice_physics_core::material::PhysicsMaterial;
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::TriMesh;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldCcdConfig};
 use sha2::{Digest, Sha256};
 
 /// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
 /// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
 fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
-    let mut world = PhysicsWorld::new(alice_physics::solver::PhysicsConfig::default());
+    let mut world = PhysicsWorld::new(alice_physics_core::solver::PhysicsConfig::default());
     assert_eq!(
-        world.restore_world_checked(blob, None, alice_physics::LegacyPolicy::AcceptUnpinned),
-        Ok(alice_physics::LawCheck::Unpinned)
+        world.restore_world_checked(blob, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
+        Ok(alice_physics_core::LawCheck::Unpinned)
     );
     world
 }

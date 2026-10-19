@@ -15,9 +15,9 @@
     reason = "analytic reference: f64 steering force components 2 F sin(delta), F (cos(delta) - 1) of the coded lateral friction model"
 )]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
-use alice_physics::vehicle::{EngineConfig, Vehicle, VehicleConfig, WheelConfig};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::vehicle::{EngineConfig, Vehicle, VehicleConfig, WheelConfig};
 
 const M: f64 = 1000.0;
 const DT: f64 = 1.0 / 60.0;

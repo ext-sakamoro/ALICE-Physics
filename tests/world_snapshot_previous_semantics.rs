@@ -25,7 +25,7 @@
 //! writing build printed, not with anything this build derives from the
 //! blob.
 
-use alice_physics::{
+use alice_physics_core::{
     Fix128, LawCheck, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldSnapshotError,
     PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
@@ -189,7 +189,7 @@ fn a_blob_of_the_released_3_1_0_semantics_restores() {
         checked.restore_world_checked(
             BLOB_3_1_0,
             Some(&expected),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Ok(LawCheck::VerifiedUnderPrevious)
     );
@@ -231,7 +231,7 @@ fn the_target_own_law_id_verifies_a_previous_blob() {
         target.restore_world_checked(
             BLOB,
             Some(&expected),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Ok(LawCheck::VerifiedUnderPrevious)
     );
@@ -247,7 +247,7 @@ fn the_target_own_law_id_verifies_a_previous_blob() {
 fn without_an_expected_id_only_the_semantics_is_reported() {
     let mut target = scene();
     assert_eq!(
-        target.restore_world_checked(BLOB, None, alice_physics::LegacyPolicy::AcceptUnpinned),
+        target.restore_world_checked(BLOB, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
         Ok(LawCheck::SemanticsPrevious)
     );
 }
@@ -263,7 +263,7 @@ fn an_expected_id_other_than_the_target_own_is_refused() {
             target.restore_world_checked(
                 BLOB,
                 Some(&wrong),
-                alice_physics::LegacyPolicy::AcceptUnpinned
+                alice_physics_core::LegacyPolicy::AcceptUnpinned
             ),
             Err(WorldSnapshotError::LawIdMismatch {
                 stored: unhex(WRITER_LAW_ID),
@@ -286,7 +286,7 @@ fn a_target_of_another_rule_is_refused() {
         target.restore_world_checked(
             BLOB,
             Some(&expected),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: unhex(WRITER_LAW_ID),
@@ -308,7 +308,7 @@ fn a_header_law_id_not_under_the_earlier_semantics_is_refused() {
         target.restore_world_checked(
             &blob,
             Some(&current),
-            alice_physics::LegacyPolicy::AcceptUnpinned
+            alice_physics_core::LegacyPolicy::AcceptUnpinned
         ),
         Err(WorldSnapshotError::LawIdMismatch {
             stored: current,

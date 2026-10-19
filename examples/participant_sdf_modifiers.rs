@@ -1,16 +1,16 @@
 //! An SDF modifier as a world participant: a thermal modifier with a point
 //! heat source advances once per substep through
-//! [`alice_physics::world_participant::run_substep`], reports its
+//! [`alice_physics_core::world_participant::run_substep`], reports its
 //! observations, is snapshotted half way and restored into a participant
 //! built with another resolution, and the restored copy finishes the run
 //! with the same bytes as the original.
 //!
 //! Run: `cargo run --example participant_sdf_modifiers`
 
-use alice_physics::math::Fix128;
-use alice_physics::solver::RigidBody;
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
-use alice_physics::world_participant::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::world_participant::{
     run_substep, FieldBoard, ForceAccumulator, ObservationSink, Participant, ParticipantPlan,
     SubstepTime,
 };

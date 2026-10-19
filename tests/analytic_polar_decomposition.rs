@@ -47,7 +47,7 @@
     reason = "measurement table: powi only appears in an eprintln of |det F|/max|F|^3 flatness for the polar-decomposition degeneracy sweep"
 )]
 
-use alice_physics::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
+use alice_physics_core::math::{Fix128, Mat3Fix, PolarError, Vec3Fix};
 
 // ---------------------------------------------------------------------------
 // helpers

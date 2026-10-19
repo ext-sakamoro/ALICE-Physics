@@ -36,8 +36,10 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::material::{CombineRule, MaterialTable, PhysicsMaterial, DEFAULT_MATERIAL};
-    use alice_physics::math::Fix128;
+    use alice_physics_core::material::{
+        CombineRule, MaterialTable, PhysicsMaterial, DEFAULT_MATERIAL,
+    };
+    use alice_physics_core::math::Fix128;
 
     let r = Fix128::from_ratio;
     // Fix128::Average::apply is exact (sum + bit-shift), so the only slop is

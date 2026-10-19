@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::vibration_wall`:
+//! Production entry point for `alice_physics_core::vibration_wall`:
 //! `ExcitationSource`, `WallResonanceReport`, `analyze_wall_resonance`, and
 //! `default_excitation_sources`.
 //!
@@ -54,9 +54,9 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::vibration_wall::{
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::vibration_wall::{
     analyze_wall_resonance, default_excitation_sources, ExcitationSource, WallResonanceReport,
 };
 use std::f64::consts::PI;

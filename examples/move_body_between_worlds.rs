@@ -6,10 +6,10 @@
 //!
 //! Run: `cargo run --example move_body_between_worlds`
 
-use alice_physics::filter::CollisionFilter;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::filter::CollisionFilter;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn main() {
     let half = Fix128::from_ratio(1, 2);

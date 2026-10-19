@@ -8,12 +8,12 @@
     reason = "analytic reference: f64 Jones 2.85 off-axis modulus 1/(c^4/EL + s^4/ET + ...) for anisotropic failure audit"
 )]
 
-use alice_physics::anisotropic::{
+use alice_physics_core::anisotropic::{
     evaluate_failure, AnisotropicStrength, FailureCriterion, OrthotropicElasticity,
     OrthotropicStress,
 };
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

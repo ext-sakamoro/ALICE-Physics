@@ -73,11 +73,11 @@
 // so the determinism gate on f64 arithmetic does not apply. Note that f64
 // cannot resolve differences below 2⁻⁵³, so no claim finer than that is made
 
-use alice_physics::coupled_iteration::{
+use alice_physics_core::coupled_iteration::{
     residual_norm_inf, residual_norm_l2_checked, ConfigFault, ContractionMonitor,
     CoupledIterationError, MonitorVerdict, SubIterationConfig, SubIterationReport,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 // ---------------------------------------------------------------------------
 // Scene
@@ -151,7 +151,7 @@ fn run_scene(
 ) -> Result<SubIterationReport, CoupledIterationError> {
     let target = step.monolithic_acceleration(mass_ratio);
     let mut a = Fix128::ZERO;
-    alice_physics::coupled_iteration::run_sub_iteration(config, |_| {
+    alice_physics_core::coupled_iteration::run_sub_iteration(config, |_| {
         a = step.staggered_sweep(mass_ratio, a);
         residual_norm_inf(&[a - target])
     })

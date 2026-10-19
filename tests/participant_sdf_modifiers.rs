@@ -1,5 +1,5 @@
 //! The five SDF modifiers (`thermal`, `phase_change`, `pressure`, `fracture`,
-//! `erosion`) as world participants ([`alice_physics::world_participant`]).
+//! `erosion`) as world participants ([`alice_physics_core::world_participant`]).
 //!
 //! What is checked:
 //!
@@ -26,15 +26,15 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::erosion::{ErosionConfig, ErosionModifier, ErosionType};
-use alice_physics::fracture::{Crack, FractureConfig, FractureModifier};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
-use alice_physics::pressure::{PressureConfig, PressureModifier};
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::solver::RigidBody;
-use alice_physics::thermal::{ThermalConfig, ThermalModifier};
-use alice_physics::world_participant::{
+use alice_physics_core::erosion::{ErosionConfig, ErosionModifier, ErosionType};
+use alice_physics_core::fracture::{Crack, FractureConfig, FractureModifier};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::phase_change::{Phase, PhaseChangeConfig, PhaseChangeModifier};
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::thermal::{ThermalConfig, ThermalModifier};
+use alice_physics_core::world_participant::{
     run_substep, FieldBoard, ForceAccumulator, ObservationSink, Participant, ParticipantKind,
     ParticipantPlan, RegisterError, StateError, StepRule, SubstepCtx, SubstepTime,
 };
@@ -127,7 +127,7 @@ fn thermal() -> ThermalModifier {
     let mut m = ThermalModifier::new(cfg, 5, LO, HI);
     m.add_heat_point(0.0, 0.0, 0.0, 4000.0, 1.5);
     m.heat_sources
-        .push(alice_physics::thermal::HeatSource::Volume {
+        .push(alice_physics_core::thermal::HeatSource::Volume {
             min: (-2.0, -2.0, -2.0),
             max: (0.0, 0.0, 0.0),
             power: 300.0,
@@ -831,7 +831,7 @@ fn check_state_refuses_invalid_values() {
     // one by rewriting the count to 0 and checking the length it then asks for
     let mut lone = ThermalModifier::new(ThermalConfig::default(), 1, LO, HI);
     lone.heat_sources
-        .push(alice_physics::thermal::HeatSource::Point {
+        .push(alice_physics_core::thermal::HeatSource::Point {
             x: 0.0,
             y: 0.0,
             z: 0.0,
@@ -942,15 +942,15 @@ fn in_crate_kinds() -> Vec<(&'static str, ParticipantKind)> {
         ("ErosionModifier", ErosionModifier::PARTICIPANT_KIND),
         (
             "CrowdParticipant",
-            alice_physics::crowd_force::CROWD_PARTICIPANT_KIND,
+            alice_physics_core::crowd_force::CROWD_PARTICIPANT_KIND,
         ),
         (
             "MdParticipant",
-            alice_physics::molecular_dynamics::MD_PARTICIPANT_KIND,
+            alice_physics_core::molecular_dynamics::MD_PARTICIPANT_KIND,
         ),
         (
             "DragMedium",
-            alice_physics::coupling_medium::DRAG_MEDIUM_KIND,
+            alice_physics_core::coupling_medium::DRAG_MEDIUM_KIND,
         ),
     ]
 }

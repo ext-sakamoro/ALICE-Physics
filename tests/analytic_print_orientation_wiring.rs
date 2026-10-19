@@ -11,9 +11,9 @@
     reason = "analytic reference: f64 rotation of the load axis and effective yield sigma_z cos^2 + sigma_xy sin^2 for print_orientation"
 )]
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::print_orientation::{
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::print_orientation::{
     angle_to_z_axis, effective_yield_at_angle, optimize_analytical, optimize_grid, LoadDirection,
     OrientationCandidate,
 };

@@ -16,12 +16,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::SolverBackend;
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::SolverBackend;
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

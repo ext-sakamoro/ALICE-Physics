@@ -18,9 +18,9 @@
 //! absolute mass (only uniformity along the chain, which this still is),
 //! so that defect does not affect this oracle.
 
-use alice_physics::det_math;
-use alice_physics::rope::PinConstraint;
-use alice_physics::{Fix128, Rope, Vec3Fix};
+use alice_physics_core::det_math;
+use alice_physics_core::rope::PinConstraint;
+use alice_physics_core::{Fix128, Rope, Vec3Fix};
 
 fn ffx(v: f32) -> Fix128 {
     Fix128::from_f64(v as f64)

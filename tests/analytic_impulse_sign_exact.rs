@@ -11,7 +11,7 @@
 //! The vectors come from a fixed linear congruential sequence, components from
 //! about 1e-9 to 1e3 of either sign.
 
-use alice_physics::{Fix128, Vec3Fix};
+use alice_physics_core::{Fix128, Vec3Fix};
 
 struct Seq(u64);
 

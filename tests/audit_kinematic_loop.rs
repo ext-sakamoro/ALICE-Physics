@@ -9,9 +9,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::kinematic_loop::{four_bar_linkage, LoopClosureConstraint};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::kinematic_loop::{four_bar_linkage, LoopClosureConstraint};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 const TOL: f64 = 1e-9;
 
@@ -203,7 +203,7 @@ fn four_bar_joints_index_the_three_link_constraints_with_their_lengths() {
     // pre-existing constraint so that `joints` is not trivially 0,1,2
     let a0 = w.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));
     let b0 = w.add_body(RigidBody::new(Vec3Fix::from_int(1, 0, 0), Fix128::ONE));
-    w.add_distance_constraint(alice_physics::solver::DistanceConstraint::new(
+    w.add_distance_constraint(alice_physics_core::solver::DistanceConstraint::new(
         a0,
         b0,
         Vec3Fix::ZERO,

@@ -12,11 +12,11 @@
 //! its settings (`remove_body` + `add_body`) lands elsewhere, which the last
 //! test asserts, so the twin comparison has teeth.
 
-use alice_physics::filter::CollisionFilter;
-use alice_physics::material::MaterialId;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::filter::CollisionFilter;
+use alice_physics_core::material::MaterialId;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn v3(x: i64, y: i64, z: i64) -> Vec3Fix {
     Vec3Fix::from_int(x, y, z)

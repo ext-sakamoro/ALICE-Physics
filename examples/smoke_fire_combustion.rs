@@ -47,8 +47,8 @@
     reason = "analytic reference: Arrhenius rate A exp(-Ea/(R T)) rhoF rhoO in f64, asserted against the methane and PLA reaction presets"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::smoke_fire::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::smoke_fire::{
     boussinesq_buoyancy_n_per_m3, heat_release_j_per_m3_s, reaction_rate_kg_per_m3_s,
     soot_generation_kg_per_m3_s, ArrheniusReaction,
 };

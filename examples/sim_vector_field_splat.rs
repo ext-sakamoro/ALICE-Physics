@@ -15,7 +15,7 @@
 //!
 //! Run with: `cargo run --example sim_vector_field_splat`
 
-use alice_physics::{ScalarField3D, VectorField3D};
+use alice_physics_core::{ScalarField3D, VectorField3D};
 
 fn close3(got: (f32, f32, f32), want: (f64, f64, f64), what: &str) {
     for (g, w) in [(got.0, want.0), (got.1, want.1), (got.2, want.2)] {

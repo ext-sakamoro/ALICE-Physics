@@ -44,12 +44,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::{PressureSolver, PressureSolverError};
-use alice_physics::eulerian_grid::{
+use alice_physics_core::cfd_solver::{PressureSolver, PressureSolverError};
+use alice_physics_core::eulerian_grid::{
     project_pressure, project_pressure_distributed, project_pressure_distributed_with_report,
     project_pressure_multigrid, FaceBc, MacGrid,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn dt() -> Fix128 {
     Fix128::from_ratio(1, 100)
@@ -696,7 +696,7 @@ fn even_bounds(nz: usize, ranks: usize, rank: usize) -> (usize, usize) {
 fn report(
     base: &MacGrid,
     solver: PressureSolver,
-) -> alice_physics::eulerian_grid::DistributedProjectionReport {
+) -> alice_physics_core::eulerian_grid::DistributedProjectionReport {
     let mut g = base.clone();
     let got = project_pressure_distributed_with_report(&mut g, dt(), rho(), solver)
         .expect("a valid request");

@@ -9,7 +9,7 @@
 //! cargo run --release --example rng_streams_and_bounded --features std
 //! ```
 
-use alice_physics::rng::DeterministicRng;
+use alice_physics_core::rng::DeterministicRng;
 
 fn main() {
     let mut r = DeterministicRng::new_with_stream(42, 54);

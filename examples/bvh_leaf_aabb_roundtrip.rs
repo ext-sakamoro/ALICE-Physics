@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::bvh::BvhNode::get_aabb`.
+//! Production entry point for `alice_physics_core::bvh::BvhNode::get_aabb`.
 //!
 //! # Wiring status (read before extending this file)
 //!
@@ -19,7 +19,7 @@
 //! `examples/` (like `tests/` and `src/bin/`) compile as a *separate*
 //! crate that merely depends on `alice-physics`'s public API, so they
 //! sit outside that boundary. Confirmed empirically: a one-line probe
-//! (`use alice_physics::bvh::BroadphaseHybrid;`) fails to compile with
+//! (`use alice_physics_core::bvh::BroadphaseHybrid;`) fails to compile with
 //!
 //! ```text
 //! error[E0603]: struct `BroadphaseHybrid` is private
@@ -55,9 +55,9 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::bvh::{BvhNode, BvhPrimitive, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::bvh::{BvhNode, BvhPrimitive, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn unit_box(x: i64, y: i64, z: i64, size: i64) -> AABB {
     AABB::new(

@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::buckling` (S2-2 audit).
+//! Audit oracles for `alice_physics_core::buckling` (S2-2 audit).
 //!
 //! The module's `pub(crate)` helpers (`radius_of_gyration_mm`,
 //! `slenderness_ratio`, `transition_slenderness`, `critical_stress_mpa`,
@@ -14,23 +14,23 @@
 )]
 
 mod beam_stress {
-    pub use alice_physics::beam_stress::*;
+    pub use alice_physics_core::beam_stress::*;
 }
 mod det_math {
-    pub use alice_physics::det_math::*;
+    pub use alice_physics_core::det_math::*;
 }
 mod filament_db {
-    pub use alice_physics::filament_db::*;
+    pub use alice_physics_core::filament_db::*;
 }
 mod math {
-    pub use alice_physics::math::*;
+    pub use alice_physics_core::math::*;
 }
 #[path = "../src/buckling.rs"]
 mod buckling;
 
-use alice_physics::beam_stress::{ColumnEndCondition, CrossSection};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::beam_stress::{ColumnEndCondition, CrossSection};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 use buckling::*;
 
 const PI: f64 = core::f64::consts::PI;

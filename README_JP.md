@@ -49,6 +49,9 @@ cargo add alice-physics
 cargo add alice-physics --no-default-features
 ```
 
+`alice-physics` は engine である `alice-physics-core` (この repository の直下) を `alice_physics` の
+path で再公開し、feature を同じ名前で転送する どちらの package でも型と `PHYSICS_SEMANTICS_ID` は同じ
+
 ## 使用例
 
 重力で 1 秒間落下する物体の例
@@ -282,12 +285,12 @@ golden ハッシュは変化を検出するだけなので、これらとは別�
 <!-- binding-build-commands: scripts/binding_build_commands.py が実行する -->
 ```sh
 # C ABI (C / C++・Unity・Unreal Engine): 共有ライブラリと静的ライブラリを target/release に作る
-cargo rustc --lib --release --features ffi --crate-type cdylib
-cargo rustc --lib --release --features ffi --crate-type staticlib
+cargo rustc -p alice-physics --lib --release --features ffi --crate-type cdylib
+cargo rustc -p alice-physics --lib --release --features ffi --crate-type staticlib
 # ブラウザ向け WebAssembly パッケージ (web/pkg) Cargo.lock と同じ版の wasm-bindgen CLI が要る
 bash scripts/build_wasm_pkg.sh web web/pkg
 # Python の wheel (target/wheels)
-maturin build --release --features python
+maturin build --release -m crates/alice-physics/Cargo.toml --features python
 ```
 <!-- /binding-build-commands -->
 

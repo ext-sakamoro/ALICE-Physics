@@ -15,9 +15,9 @@
     reason = "HashSet only checks pair uniqueness in the test; iteration order is never used"
 )]
 
-use alice_physics::bvh::{point_to_morton, BvhNode, BvhPrimitive, LinearBvh};
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::bvh::{point_to_morton, BvhNode, BvhPrimitive, LinearBvh};
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 // ---------------------------------------------------------------------------
 // helpers

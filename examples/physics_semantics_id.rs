@@ -12,7 +12,7 @@
 //! cargo run --release --example physics_semantics_id -- <64 hex digits>
 //! ```
 
-use alice_physics::{PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS};
+use alice_physics_core::{PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS};
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()

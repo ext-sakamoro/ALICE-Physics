@@ -8,7 +8,7 @@
 //! 探索は「この枝は undecided」を巻き戻しを跨いで保持しなければならない
 //! (保持できないと、未決定だった枝を後で決定済と誤認する)
 
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 fn healthy_dt() -> Fix128 {
     Fix128::from_ratio(1, 64)

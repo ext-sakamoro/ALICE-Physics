@@ -228,7 +228,7 @@ pub struct GpuSdfInstancedBatch {
 /// # Usage
 ///
 /// ```
-/// use alice_physics::gpu_sdf::{GpuSdfMultiDispatch, GpuSdfQuery};
+/// use alice_physics_core::gpu_sdf::{GpuSdfMultiDispatch, GpuSdfQuery};
 ///
 /// let mut dispatch = GpuSdfMultiDispatch::new();
 /// let sphere_queries = vec![GpuSdfQuery { x: 0.0, y: 0.0, z: 0.0, radius: 0.5 }];
@@ -305,7 +305,7 @@ impl Default for GpuSdfMultiDispatch {
 /// Use this when chunking queries before uploading to the GPU:
 ///
 /// ```
-/// use alice_physics::gpu_sdf::batch_size;
+/// use alice_physics_core::gpu_sdf::batch_size;
 ///
 /// let queries = vec![1.0f32; 64];
 /// for chunk in queries.chunks(batch_size()) {

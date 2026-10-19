@@ -58,11 +58,11 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use alice_physics::anomaly::{
+use alice_physics_core::anomaly::{
     AnomalyCallback, AnomalyEvent, CompositeDetector, EwmaDetector, MadDetector, StreamingMedian,
     ZScoreDetector,
 };
-use alice_physics::det_math::sqrt64;
+use alice_physics_core::det_math::sqrt64;
 
 const MAD_SCALE: f64 = 1.4826;
 

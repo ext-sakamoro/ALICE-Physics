@@ -14,7 +14,9 @@ docs do not follow fails CI instead of drifting:
   * version   any `alice-physics = "X"` / `version = "X"` dependency line is
               caret-compatible with the package version
   * example   the first ```rust block of each README is the crate-level
-              doctest in src/lib.rs, so the README example is compiled
+              doctest of the facade, crates/alice-physics/src/lib.rs (the README
+              shows the `alice_physics` paths; `cargo test -p alice-physics --doc`
+              compiles it), or of src/lib.rs in a tree without the facade
   * modules   docs/MODULES.md lists every `pub mod` of src/lib.rs exactly once
               and nothing else
   * links     every relative link in the three files points at a file that
@@ -186,7 +188,9 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
 
     # example
     n = 0
-    doc = lib_doc(lib)
+    facade = os.path.join(root, "crates", "alice-physics", "src", "lib.rs")
+    example_src = "crates/alice-physics/src/lib.rs" if os.path.exists(facade) else "src/lib.rs"
+    doc = lib_doc(read(root, example_src))
     for rel in READMES:
         block = first_rust_block(docs.get(rel, ""))
         if block is None:
@@ -194,7 +198,7 @@ def check(root: str) -> tuple[list[str], dict[str, int]]:
             continue
         n += 1
         if block not in doc:
-            errors.append(f"{rel}: first ```rust block is not the crate-level doctest in src/lib.rs")
+            errors.append(f"{rel}: first ```rust block is not the crate-level doctest in {example_src}")
     counts["example"] = n
 
     # modules

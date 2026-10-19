@@ -30,6 +30,8 @@ on:
       - 'README.md'
       - 'docs/PUBLIC_API_SNAPSHOT.txt'
       - 'scripts/semver_checked.py'
+      - 'scripts/semver_baseline_has.py'
+      - 'scripts/test_semver_baseline_has.py'
       - 'scripts/ansi.py'
       - 'scripts/line_coverage_ratchet.py'
       - 'scripts/line-coverage-baseline.txt'
@@ -415,26 +417,50 @@ jobs:
         env:
           CARGO_TERM_COLOR: never
         run: |
-          set +e
-          cargo semver-checks check-release \
-            --package alice-physics \
-            --baseline-rev "HEAD~1" \
-            --only-explicit-features \
-            --features "std,simd,parallel,ffi,gpu-solver-bridge" 2>&1 | tee semver.txt
-          rc=${PIPESTATUS[0]}
-          checked=$(python3 scripts/semver_checked.py semver.txt --exit-code "$rc")
-          ok=$?
-          set -e
-          if [ "$ok" -ne 0 ]; then
-            echo "$checked"
+          # both published packages: the facade (alice-physics) and the engine
+          # (alice-physics-core); a package the baseline does not have yet (the commit
+          # that introduces it) is reported, and at least one package must be compared
+          compared=0
+          for pkg in alice-physics alice-physics-core; do
+            set +e
+            python3 scripts/semver_baseline_has.py HEAD~1 "$pkg"
+            has=$?
+            set -e
+            if [ "$has" -eq 2 ]; then
+              echo "::error::the baseline HEAD~1 could not be read"
+              exit 1
+            fi
+            if [ "$has" -eq 1 ]; then
+              echo "::notice::$pkg is not a package at HEAD~1 (introduced by this commit): nothing to compare it with"
+              echo "### cargo semver-checks: $pkg is new at this commit (no baseline)" >> "$GITHUB_STEP_SUMMARY"
+              continue
+            fi
+            set +e
+            cargo semver-checks check-release \
+              --package "$pkg" \
+              --baseline-rev "HEAD~1" \
+              --only-explicit-features \
+              --features "std,simd,parallel,ffi,gpu-solver-bridge" 2>&1 | tee "semver-$pkg.txt"
+            rc=${PIPESTATUS[0]}
+            checked=$(python3 scripts/semver_checked.py "semver-$pkg.txt" --exit-code "$rc")
+            ok=$?
+            set -e
+            if [ "$ok" -ne 0 ]; then
+              echo "$checked"
+              exit 1
+            fi
+            compared=$((compared + 1))
+            {
+              echo "### cargo semver-checks ($pkg): $checked checks against HEAD~1 (exit $rc)"
+              grep -E 'Summary|FAIL|requires new' "semver-$pkg.txt" || true
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [ "$rc" -ne 0 ]; then
+              echo "::warning::cargo semver-checks reports semver findings for $pkg (informational); see the job summary"
+            fi
+          done
+          if [ "$compared" -eq 0 ]; then
+            echo "::error::cargo semver-checks compared no package (neither is a package at HEAD~1)"
             exit 1
-          fi
-          {
-            echo "### cargo semver-checks: $checked checks against HEAD~1 (exit $rc)"
-            grep -E 'Summary|FAIL|requires new' semver.txt || true
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$rc" -ne 0 ]; then
-            echo "::warning::cargo semver-checks reports semver findings (informational); see the job summary"
           fi
 
   # one result for the workflow: run=true needs every job above to succeed, run=false needs

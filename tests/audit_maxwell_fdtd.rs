@@ -8,8 +8,8 @@
     reason = "analytic reference: f64 PML theoretical reflection exp(-2 sum sigma) closed form for maxwell_fdtd"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::maxwell_fdtd::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::maxwell_fdtd::{
     cfl_limit_3d, loss_coefficients, theoretical_pml_reflection, Absorber, Component, YeeGrid,
     COURANT_3D,
 };

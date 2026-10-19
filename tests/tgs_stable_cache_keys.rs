@@ -13,9 +13,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

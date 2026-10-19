@@ -22,7 +22,7 @@
     reason = "analytic reference: f64 EWMA step response c - (c - x0)(1 - a)^n and its variance for anomaly detectors"
 )]
 
-use alice_physics::anomaly::{
+use alice_physics_core::anomaly::{
     AnomalyCallback, AnomalyEvent, CompositeDetector, EwmaDetector, MadDetector, StreamingMedian,
     ZScoreDetector,
 };

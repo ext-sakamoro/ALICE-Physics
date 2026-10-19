@@ -16,17 +16,17 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::{gjk, Capsule, Sphere, Support};
-use alice_physics::compound::{CompoundShape, ShapeRef, TransformedCompound};
-use alice_physics::cone::Cone;
-use alice_physics::cylinder::Cylinder;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::shape_raycast::RayFilter;
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
-use alice_physics::torus::Torus;
-use alice_physics::wedge::Wedge;
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::{gjk, Capsule, Sphere, Support};
+use alice_physics_core::compound::{CompoundShape, ShapeRef, TransformedCompound};
+use alice_physics_core::cone::Cone;
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::shape_raycast::RayFilter;
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::torus::Torus;
+use alice_physics_core::wedge::Wedge;
 
 use std::f64::consts::PI;
 

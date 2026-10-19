@@ -68,12 +68,12 @@
     reason = "pins the deprecated non-DP privacy types (LaplaceNoise, XorShift64, ...) until the breaking release removes them"
 )]
 
-use alice_physics::det_math::{exp64, ln64};
-use alice_physics::privacy::{
+use alice_physics_core::det_math::{exp64, ln64};
+use alice_physics_core::privacy::{
     LaplaceNoise, PrivacyBudget, PrivateAggregator, RandomizedResponse, Rappor, XorShift64,
     RAPPOR_BITS,
 };
-use alice_physics::sketch::FnvHasher;
+use alice_physics_core::sketch::FnvHasher;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 // ---------------------------------------------------------------------------

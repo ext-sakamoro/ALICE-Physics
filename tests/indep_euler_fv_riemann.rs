@@ -34,11 +34,11 @@
     reason = "independent reference: f64 independent exact Riemann solver (Toro fan and star states) for euler_fv references"
 )]
 
-use alice_physics::euler_fv::{
+use alice_physics_core::euler_fv::{
     exact_riemann, numerical_flux, Boundary, EulerConfig, EulerError, EulerFv1d, Limiter,
     Primitive, Reconstruction, RiemannSolver, TimeIntegrator,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

@@ -1,4 +1,4 @@
-//! Audit S1-5 oracles for `alice_physics::coupled_field`.
+//! Audit S1-5 oracles for `alice_physics_core::coupled_field`.
 //! Expectations come from closed forms (trilinear interpolation, discrete heat equation,
 //! exponential relaxation, arithmetic / weighted means), not from the implementation.
 #![cfg(feature = "std")]
@@ -7,9 +7,9 @@
     reason = "analytic reference: f64 diffusion growth factors 0.96^40 / 1.04^40 and decay exp(-1) for coupled_field"
 )]
 
-use alice_physics::coupled_field::*;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sim_field::ScalarField3D;
+use alice_physics_core::coupled_field::*;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sim_field::ScalarField3D;
 
 fn f(x: f64) -> Fix128 {
     Fix128::from_f64(x)

@@ -15,9 +15,9 @@
 //! (still unwired here, being wired in a separate parallel task on this
 //! repo) -- noted, not silently resolved; see the wiring report.
 
-use alice_physics::collider::{Capsule, Sphere, AABB};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::raycast::{
+use alice_physics_core::collider::{Capsule, Sphere, AABB};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::raycast::{
     ray_aabb, ray_capsule, raycast_aabbs, raycast_all_aabbs, raycast_all_spheres,
     raycast_any_aabbs, raycast_any_spheres, raycast_spheres, sweep_sphere, Ray, RayHit,
 };

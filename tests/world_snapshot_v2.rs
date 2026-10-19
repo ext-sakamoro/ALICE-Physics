@@ -6,9 +6,9 @@
 //! step; the per-field comparison that does not go through the encoder lives
 //! in `src/solver/world_snapshot/tests.rs`.
 
-use alice_physics::force::{ForceField, ForceFieldInstance};
-use alice_physics::joint::{BallJoint, HingeJoint, Joint};
-use alice_physics::{
+use alice_physics_core::force::{ForceField, ForceFieldInstance};
+use alice_physics_core::joint::{BallJoint, HingeJoint, Joint};
+use alice_physics_core::{
     Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SleepConfig, Vec3Fix, WorldSnapshotError,
 };
 

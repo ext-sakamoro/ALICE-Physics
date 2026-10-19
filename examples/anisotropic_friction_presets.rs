@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::anisotropic_friction`:
+//! Production entry point for `alice_physics_core::anisotropic_friction`:
 //! `AnisotropicFriction::{tyre_asphalt, ski_snow, skate_ice}` (the three
 //! presets) and `AnisotropicFriction::friction_force`.
 //!
@@ -42,8 +42,8 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::anisotropic_friction::AnisotropicFriction;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::anisotropic_friction::AnisotropicFriction;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// Relative-error check against an independently hand-derived f64 closed
 /// form (never computed by calling `friction_force` itself), falling back

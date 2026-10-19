@@ -138,8 +138,8 @@
 //! reach one mutably:
 //!
 //! ```compile_fail
-//! use alice_physics::world_participant::{ForceAccumulator, SubstepCtx};
-//! use alice_physics::{Fix128, RigidBody, Vec3Fix};
+//! use alice_physics_core::world_participant::{ForceAccumulator, SubstepCtx};
+//! use alice_physics_core::{Fix128, RigidBody, Vec3Fix};
 //!
 //! let bodies = [RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE)];
 //! let mut forces = ForceAccumulator::new(1);

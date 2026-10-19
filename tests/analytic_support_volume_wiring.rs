@@ -8,8 +8,8 @@
 //! `bulk = A * (H - dense) * bulk_density`; filament length `= V / (pi (d/2)^2)`; time `= V / throughput`.
 //! The quality preset is `bulk 0.10, 4 interface layers, layer 0.1 mm, 600 mm^3/min` on top of the defaults.
 
-use alice_physics::math::Fix128;
-use alice_physics::support_volume::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::support_volume::{
     estimate_region_volume, estimate_support_volume, OverhangRegion, SupportConfig,
     SupportVolumeReport,
 };

@@ -31,9 +31,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::{PhysicsMaterial, SleepConfig, SolverBackend};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::{PhysicsMaterial, SleepConfig, SolverBackend};
 use sha2::{Digest, Sha256};
 
 fn fr(n: i64, d: i64) -> Fix128 {

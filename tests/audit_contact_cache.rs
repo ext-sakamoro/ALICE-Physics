@@ -1,4 +1,4 @@
-//! Audit S1-5 oracles for `alice_physics::contact_cache`.
+//! Audit S1-5 oracles for `alice_physics_core::contact_cache`.
 #![cfg(feature = "std")]
 // test bookkeeping (counts, lookups, timing a deadline): no result depends on hash order or time
 #![allow(
@@ -6,10 +6,10 @@
     reason = "HashSet only checks key uniqueness in the test; iteration order is never used"
 )]
 
-use alice_physics::collider::Contact;
-use alice_physics::contact_cache::{BodyPairKey, ContactCache, ContactManifold};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::collider::Contact;
+use alice_physics_core::contact_cache::{BodyPairKey, ContactCache, ContactManifold};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn f(x: f64) -> Fix128 {
     Fix128::from_f64(x)

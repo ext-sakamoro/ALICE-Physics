@@ -13,10 +13,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::fsi_advanced::{
+use alice_physics_core::fsi_advanced::{
     aggregate_forces, buoyancy_force, drag_force, react_back_pressure, SolidSample,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

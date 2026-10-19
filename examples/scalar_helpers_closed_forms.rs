@@ -19,9 +19,9 @@
 //!
 //! Run with: `cargo run --example scalar_helpers_closed_forms`
 
-use alice_physics::compressible::IdealGas;
-use alice_physics::math::Fix128;
-use alice_physics::print_orientation::LoadDirection;
+use alice_physics_core::compressible::IdealGas;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::print_orientation::LoadDirection;
 
 fn ceil_rounding() {
     let cases: [(Fix128, Fix128, &str); 7] = [

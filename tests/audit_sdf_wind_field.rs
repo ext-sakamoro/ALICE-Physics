@@ -1,11 +1,11 @@
-//! Audit oracles for `alice_physics::sdf_wind_field`.
+//! Audit oracles for `alice_physics_core::sdf_wind_field`.
 //!
 //! Expected values come from the module's documented model
 //! `wind = direction * speed * clamp(d / decay_scale, 0, 1)` evaluated by
 //! hand for planar and spherical SDFs, never from the sampler itself.
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sdf_wind_field::SdfWindField;
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sdf_wind_field::SdfWindField;
 
 /// Signed distance to the plane x = 0 (inside for x < 0).
 fn wall() -> ClosureSdf {

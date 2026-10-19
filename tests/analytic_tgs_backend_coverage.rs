@@ -27,10 +27,10 @@
     reason = "analytic reference: f64 damped sliding (v0 + mu g/beta) e^(-beta) - mu g/beta with beta = -ln(d)/dt for TGS contact filters"
 )]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::{ContactModifier, SolverBackend};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::{ContactModifier, SolverBackend};
 
 const DT: f64 = 1.0 / 60.0;
 

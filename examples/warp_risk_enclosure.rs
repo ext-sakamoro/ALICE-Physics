@@ -12,9 +12,9 @@
 //! cargo run --release --example warp_risk_enclosure --features std
 //! ```
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::warp_risk::{analyze_warp_risk, EnvConditions, Footprint};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::warp_risk::{analyze_warp_risk, EnvConditions, Footprint};
 
 fn main() {
     let part = Footprint::rectangle(Fix128::from_int(100), Fix128::from_int(100));

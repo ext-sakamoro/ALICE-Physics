@@ -27,12 +27,12 @@
     reason = "analytic reference: f64 Norton creep A sigma^n dt and Findley e0 + m t^n per material for structural_solver creep"
 )]
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::creep_longterm::FindleyParameters;
-use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
-use alice_physics::math::Fix128;
-use alice_physics::plastic::NortonCreep;
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::creep_longterm::FindleyParameters;
+use alice_physics_core::filament_db::{MaterialCategory, MaterialProperties};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::plastic::NortonCreep;
+use alice_physics_core::structural_solver::StructuralSolver;
 
 /// 1000 h per step (seconds).
 const DT_S: i64 = 3_600_000;

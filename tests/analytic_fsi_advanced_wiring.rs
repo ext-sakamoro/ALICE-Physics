@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::fsi_advanced`
+//! Oracles for the production entry points of `alice_physics_core::fsi_advanced`
 //! driven by `examples/fsi_advanced_forces.rs`: `SolidSample`,
 //! `aggregate_forces`, `buoyancy_force`, `drag_force`, `react_back_pressure`.
 //!
@@ -76,10 +76,10 @@
 #![cfg(feature = "std")]
 // The expected-value computations below are closed-form hand derivations,
 
-use alice_physics::fsi_advanced::{
+use alice_physics_core::fsi_advanced::{
     aggregate_forces, buoyancy_force, drag_force, react_back_pressure, SolidSample,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 fn v(x: i64, y: i64, z: i64) -> Vec3Fix {

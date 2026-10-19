@@ -7,11 +7,11 @@
 //!   in order of their smallest body index, bodies ascending inside each;
 //!   `all_sleeping` is the AND of per-body sleeping flags.
 
-use alice_physics::event::{ContactEventType, EventCollector};
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sleeping::{IslandManager, SleepConfig};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::event::{ContactEventType, EventCollector};
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sleeping::{IslandManager, SleepConfig};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 fn report(e: &mut EventCollector, a: usize, b: usize) {
     e.report_contact(
@@ -128,9 +128,9 @@ fn island_all_sleeping_is_and_of_members() {
     let mut m = IslandManager::new(4, SleepConfig::default());
     m.union(0, 1);
     m.union(2, 3);
-    m.sleep_data[0].state = alice_physics::sleeping::SleepState::Sleeping;
-    m.sleep_data[1].state = alice_physics::sleeping::SleepState::Sleeping;
-    m.sleep_data[2].state = alice_physics::sleeping::SleepState::Sleeping;
+    m.sleep_data[0].state = alice_physics_core::sleeping::SleepState::Sleeping;
+    m.sleep_data[1].state = alice_physics_core::sleeping::SleepState::Sleeping;
+    m.sleep_data[2].state = alice_physics_core::sleeping::SleepState::Sleeping;
     let isl = m.build_islands();
     assert_eq!(isl.len(), 2);
     assert!(isl[0].all_sleeping, "{{0,1}} both asleep");

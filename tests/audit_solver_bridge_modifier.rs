@@ -20,10 +20,10 @@
 
 #![cfg(feature = "gpu-solver-bridge")]
 
-use alice_physics::collider::Contact;
-use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{
+use alice_physics_core::collider::Contact;
+use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{
     ContactConstraint, ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody,
 };
 
@@ -46,7 +46,7 @@ struct PassThrough {
 
 impl GpuSolverBridge for PassThrough {
     fn semantics_id(&self) -> [u8; 32] {
-        alice_physics::PHYSICS_SEMANTICS_ID
+        alice_physics_core::PHYSICS_SEMANTICS_ID
     }
 
     fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}
@@ -180,7 +180,7 @@ fn bridged_collision(
     );
     let id = w
         .material_table
-        .register(alice_physics::PhysicsMaterial::new(
+        .register(alice_physics_core::PhysicsMaterial::new(
             0,
             fx(friction),
             fx(restitution),

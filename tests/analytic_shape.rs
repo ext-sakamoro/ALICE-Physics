@@ -21,12 +21,12 @@
     reason = "analytic reference: f64 ellipsoid and torus implicit membership for quadrature of textbook volume and inertia"
 )]
 
-use alice_physics::cone::Cone;
-use alice_physics::cylinder::Cylinder;
-use alice_physics::ellipsoid::Ellipsoid;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::torus::Torus;
-use alice_physics::wedge::Wedge;
+use alice_physics_core::cone::Cone;
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::ellipsoid::Ellipsoid;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::torus::Torus;
+use alice_physics_core::wedge::Wedge;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -331,8 +331,8 @@ fn the_wedge_inertia_matches_a_quadrature_of_the_solid() {
 // `Shape` and `PhysicsWorld::add_shaped_body`
 // ===========================================================================
 
-use alice_physics::shape::{Shape, ShapeError};
-use alice_physics::solver::{PhysicsWorld, SolverConfig};
+use alice_physics_core::shape::{Shape, ShapeError};
+use alice_physics_core::solver::{PhysicsWorld, SolverConfig};
 
 /// The six shapes, with dimensions chosen so no two of them coincide
 /// (`r ≠ h`, three different semi-axes), and the `inside` predicate and bounding

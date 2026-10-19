@@ -12,11 +12,11 @@
 //! Where an entry point fixes one operand (`max(x, +0)`, `max(x, eps)`), only
 //! the order it computes exists, and the test states which pair it feeds.
 
-use alice_physics::pressure::{PressureConfig, PressureModifier};
-use alice_physics::privacy::PrivacyBudget;
-use alice_physics::sdf_collider::{SdfField, SdfUnion};
-use alice_physics::sdf_sph::SphSpatialHash;
-use alice_physics::sim_field::ScalarField3D;
+use alice_physics_core::pressure::{PressureConfig, PressureModifier};
+use alice_physics_core::privacy::PrivacyBudget;
+use alice_physics_core::sdf_collider::{SdfField, SdfUnion};
+use alice_physics_core::sdf_sph::SphSpatialHash;
+use alice_physics_core::sim_field::ScalarField3D;
 use std::hint::black_box;
 
 const POS: u32 = 0x0000_0000;
@@ -225,7 +225,7 @@ fn class7_clamp_with_a_zero_bound_follows_det_math_0_5_clamp() {
     reason = "RandomizedResponse::with_probability is the public entry point of this f64 clamp site"
 )]
 fn class7_f64_clamp_agrees_with_det_math_0_5_rule_where_it_can() {
-    use alice_physics::privacy::RandomizedResponse;
+    use alice_physics_core::privacy::RandomizedResponse;
     let p = |x: f64| {
         RandomizedResponse::with_probability(black_box(x), 1)
             .p_true()
@@ -259,7 +259,7 @@ impl SdfField for Scripted {
 /// bits and the `y` of the selected position: sample `k` is taken at `y = k`
 /// (each step is capped at 1 and the radius 10 is never reached)
 fn select(distances: &[f32]) -> (u32, f32) {
-    use alice_physics::sdf_character::SdfCharacter;
+    use alice_physics_core::sdf_character::SdfCharacter;
     let mut c = SdfCharacter::new([0.0, 0.0, 0.0], 10.0, 2.0);
     c.max_iterations = distances.len() - 1;
     c.skin_width = 0.0;

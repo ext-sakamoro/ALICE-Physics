@@ -14,10 +14,10 @@
     reason = "measured quantity: acos turns the emitted velocity into an angle, asserted within the cone half-angle spread/2"
 )]
 
-use alice_physics::force::ForceField;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::particle::{Particle, ParticleEmitter, ParticleSystem};
-use alice_physics::rng::DeterministicRng;
+use alice_physics_core::force::ForceField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::particle::{Particle, ParticleEmitter, ParticleSystem};
+use alice_physics_core::rng::DeterministicRng;
 
 fn rel(a: f64, b: f64) -> f64 {
     (a - b).abs() / b.abs().max(1e-300)

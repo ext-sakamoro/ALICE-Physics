@@ -11,7 +11,7 @@
 //!
 //! Every value below is exact, so each line is compared with `assert_eq!`.
 
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn main() {
     // Inside the square range the checked versions agree bit for bit with the

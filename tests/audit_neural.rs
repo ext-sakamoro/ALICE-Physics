@@ -24,13 +24,13 @@
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use alice_ml::TernaryWeight;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::neural::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::neural::{
     fix128_hard_tanh, fix128_relu, fix128_tanh_approx, fix128_ternary_matvec, Activation,
     ControllerConfig, DeterministicNetwork, FixedTernaryWeight, RagdollController,
     FEATURES_PER_BODY,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 fn tanh_approx_at(x: Fix128) -> f64 {
     let mut v = [x];

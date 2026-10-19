@@ -12,12 +12,12 @@
     reason = "analytic reference: f64 z-rotation and weld torque sin(phi/2) for pulley / gear / weld joint_extra solves"
 )]
 
-use alice_physics::joint_extra::{
+use alice_physics_core::joint_extra::{
     solve_extra_joints, solve_pulley_to_length, ExtraJoint, GearJoint, MouseJoint, PulleyJoint,
     RackAndPinionJoint, WeldJoint,
 };
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

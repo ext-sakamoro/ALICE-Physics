@@ -10,12 +10,12 @@
 //! cargo run --release --example rope_body_attachment --features std
 //! ```
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::rope::Rope;
-use alice_physics::rope_attach::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::rope::Rope;
+use alice_physics_core::rope_attach::{
     solve_rope_attachments, solve_rope_attachments_two_way, RopeAttachment,
 };
-use alice_physics::solver::RigidBody;
+use alice_physics_core::solver::RigidBody;
 
 fn main() {
     let dt = Fix128::from_ratio(1, 60);

@@ -22,9 +22,9 @@
 //! cosine and the crate's deterministic `exp64`); the implementation is never called to
 //! produce them.
 
-use alice_physics::det_math::exp64;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::Cloth;
+use alice_physics_core::det_math::exp64;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::Cloth;
 
 /// `n` independent particles (a single row has no triangles, hence no edge or bending
 /// constraints), mass `mass`, no gravity, no frame damping.

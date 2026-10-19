@@ -36,11 +36,11 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::audio_physics::{
+    use alice_physics_core::audio_physics::{
         AudioConfig, AudioEventType, AudioGenerator, AudioMaterial, MaterialType,
     };
-    use alice_physics::collider::Contact;
-    use alice_physics::math::{Fix128, Vec3Fix};
+    use alice_physics_core::collider::Contact;
+    use alice_physics_core::math::{Fix128, Vec3Fix};
 
     let fi = Fix128::from_int;
     let r = Fix128::from_ratio;

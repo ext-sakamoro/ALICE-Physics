@@ -17,11 +17,11 @@
 //! field and is set independently of the material.
 #![cfg(feature = "std")]
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::plastic::HardeningType;
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::plastic::HardeningType;
+use alice_physics_core::structural_solver::StructuralSolver;
 
 fn base_solver(hardening: HardeningType) -> StructuralSolver {
     let mut material = MaterialProperties::pla();

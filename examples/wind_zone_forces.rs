@@ -45,10 +45,10 @@
     reason = "analytic reference: gust wind base + amplitude sin(2 pi f t) at t = 0.5, 1.5, 0.25 s, asserted against the wind zone vector"
 )]
 
-use alice_physics::buoyancy_zone::ZoneShape;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
-use alice_physics::wind_zone::WindZone;
+use alice_physics_core::buoyancy_zone::ZoneShape;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
+use alice_physics_core::wind_zone::WindZone;
 
 /// Relative error, falling back to absolute error near zero.
 fn rel_err(actual: f64, expected: f64) -> f64 {

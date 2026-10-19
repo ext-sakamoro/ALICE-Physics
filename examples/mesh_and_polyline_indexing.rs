@@ -17,10 +17,10 @@
 //!
 //! Run with: `cargo run --example mesh_and_polyline_indexing`
 
-use alice_physics::flow_viz::generate_streamlines;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::quadratic_elastic_fem::QuadraticMesh;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::flow_viz::generate_streamlines;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::quadratic_elastic_fem::QuadraticMesh;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 fn quadratic_element_nodes() {
     let mut mesh = SdfTetMesh::default();

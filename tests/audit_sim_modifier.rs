@@ -13,8 +13,8 @@
     reason = "the recorder field is an Arc<Mutex<Vec<(f32, f32, f32, f32)>>> shared with the modifier under test"
 )]
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sim_modifier::{ModifiedSdf, PhysicsModifier, SingleModifiedSdf};
 use std::sync::{Arc, Mutex};
 
 fn ground() -> ClosureSdf {

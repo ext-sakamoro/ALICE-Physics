@@ -53,12 +53,12 @@
     reason = "analytic reference: f64 cos/sin of a quarter-turn build the rigid rotation that must give zero stress in large-rotation FEM"
 )]
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve, solve_corotational, BoundaryConditions, CorotationalConfig, ElasticMaterial,
     SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // scene construction (Kuhn 6-tet box, conforming for any nx/ny/nz)
@@ -202,7 +202,7 @@ fn prescribe_rigid_rotation(mesh: &SdfTetMesh, turn: Turn) -> BoundaryConditions
 
 /// Largest absolute stress component over the whole mesh, and where it sits.
 fn worst_component(
-    stresses: &[alice_physics::linear_elastic_fem::StressTensor],
+    stresses: &[alice_physics_core::linear_elastic_fem::StressTensor],
 ) -> (f64, &'static str, usize) {
     let mut worst = 0.0_f64;
     let mut name = "xx";

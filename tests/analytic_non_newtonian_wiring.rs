@@ -20,8 +20,8 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::Fix128;
-use alice_physics::non_newtonian::{Bingham, Carreau, HerschelBulkley, PowerLaw};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::non_newtonian::{Bingham, Carreau, HerschelBulkley, PowerLaw};
 use std::panic;
 
 fn fix_close(a: Fix128, b: Fix128) -> bool {

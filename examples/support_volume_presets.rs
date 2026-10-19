@@ -14,8 +14,8 @@
 //! cargo run --release --example support_volume_presets --features std
 //! ```
 
-use alice_physics::math::Fix128;
-use alice_physics::support_volume::{estimate_support_volume, OverhangRegion, SupportConfig};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::support_volume::{estimate_support_volume, OverhangRegion, SupportConfig};
 
 /// `(base, interface, bulk, throughput)` from the documented model
 /// `area * slab * density` with the base / interface slabs `layers * layer_h`.

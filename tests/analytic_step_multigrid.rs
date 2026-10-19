@@ -24,9 +24,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::eulerian_grid::{project_pressure_multigrid, MacGrid};
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::eulerian_grid::{project_pressure_multigrid, MacGrid};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 /// Largest relative difference between a 24-cycle `step_multigrid` and a

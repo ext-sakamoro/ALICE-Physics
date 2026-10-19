@@ -8,10 +8,10 @@
 //!
 //! Run: `cargo run --example coupling_medium`
 
-use alice_physics::coupling_medium::{DragMedium, MEDIUM_OBS_MOMENTUM, MEDIUM_OBS_VELOCITY};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::world_participant::Observed;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
+use alice_physics_core::coupling_medium::{DragMedium, MEDIUM_OBS_MOMENTUM, MEDIUM_OBS_VELOCITY};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::world_participant::Observed;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
 
 const MASSES: [i64; 3] = [1, 2, 4];
 

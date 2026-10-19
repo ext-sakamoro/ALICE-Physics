@@ -28,12 +28,12 @@
     reason = "analytic reference: f64 damped pendulum period with beta = -ln(d)/dt and mean decay for TGS pendulum on a plane"
 )]
 
-use alice_physics::joint::{BallJoint, HingeJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::SolverBackend;
+use alice_physics_core::joint::{BallJoint, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::SolverBackend;
 
 const DT: f64 = 1.0 / 60.0;
 const I_BOB: f64 = 0.4;

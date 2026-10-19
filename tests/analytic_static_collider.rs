@@ -17,12 +17,12 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::heightfield::HeightField;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::static_collider::StaticCollider;
-use alice_physics::trimesh::{TriMesh, Triangle};
+use alice_physics_core::heightfield::HeightField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::static_collider::StaticCollider;
+use alice_physics_core::trimesh::{TriMesh, Triangle};
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)
@@ -397,7 +397,7 @@ fn reset_world_clears_the_static_colliders() {
 // The primitives' own queries, against closed forms
 // ===========================================================================
 
-use alice_physics::collider::AABB;
+use alice_physics_core::collider::AABB;
 
 /// `from_point_normal` normalises the normal and sets `offset = n·p`; the signed
 /// distance, projection, side test and `flip` follow.
@@ -536,14 +536,14 @@ fn a_triangle_mesh_reports_the_capsule_and_box_penetration_of_a_floor() {
 #[cfg(feature = "gpu-solver-bridge")]
 mod bridged {
     use super::*;
-    use alice_physics::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
-    use alice_physics::solver::ContactConstraint;
+    use alice_physics_core::gpu_bridge::{DiffFixture, GpuDivergence, GpuSolverBridge};
+    use alice_physics_core::solver::ContactConstraint;
 
     struct NoOpBridge;
 
     impl GpuSolverBridge for NoOpBridge {
         fn semantics_id(&self) -> [u8; 32] {
-            alice_physics::PHYSICS_SEMANTICS_ID
+            alice_physics_core::PHYSICS_SEMANTICS_ID
         }
 
         fn send_island(&mut self, _p: &[[Fix128; 3]], _v: &[[Fix128; 3]]) {}

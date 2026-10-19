@@ -18,12 +18,12 @@
     reason = "analytic reference: f64 Fix128 resolution 2^-64 tolerance for the free-fall closed form in degenerate vehicle inputs"
 )]
 
-use alice_physics::anisotropic_friction::AnisotropicFriction;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::vehicle_dynamics::powertrain::{Differential, Powertrain, TorqueCurve};
-use alice_physics::vehicle_dynamics::surface::{FlatGround, RoadCondition, Weather};
-use alice_physics::vehicle_dynamics::{
+use alice_physics_core::anisotropic_friction::AnisotropicFriction;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::vehicle_dynamics::powertrain::{Differential, Powertrain, TorqueCurve};
+use alice_physics_core::vehicle_dynamics::surface::{FlatGround, RoadCondition, Weather};
+use alice_physics_core::vehicle_dynamics::{
     AeroConfig, DriverInput, DynamicVehicle, DynamicVehicleConfig, Environment,
 };
 
@@ -409,7 +409,7 @@ fn run_with(
     input: DriverInput,
 ) -> (
     RigidBody,
-    Vec<alice_physics::vehicle_dynamics::WheelDynamicsState>,
+    Vec<alice_physics_core::vehicle_dynamics::WheelDynamicsState>,
 ) {
     let mut sim = rolling_sim();
     sim.veh.input = input;

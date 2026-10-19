@@ -1,9 +1,9 @@
-//! Audit S1-5 oracles for `alice_physics::laminate` (Jones, Mechanics of Composite
+//! Audit S1-5 oracles for `alice_physics_core::laminate` (Jones, Mechanics of Composite
 //! Materials ch. 2 and 4: closed-form Q-bar rotation and ABD for simple stacks).
 
-use alice_physics::anisotropic::OrthotropicElasticity;
-use alice_physics::laminate::*;
-use alice_physics::math::Fix128;
+use alice_physics_core::anisotropic::OrthotropicElasticity;
+use alice_physics_core::laminate::*;
+use alice_physics_core::math::Fix128;
 
 fn f(x: f64) -> Fix128 {
     Fix128::from_f64(x)

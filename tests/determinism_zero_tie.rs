@@ -11,10 +11,10 @@
 //! CI runs this file on every test leg (x86_64 and aarch64), and
 //! `examples/zero_tie_bits.rs` repeats the same checks in release
 
-use alice_physics::erosion::{ErosionConfig, ErosionModifier};
-use alice_physics::sdf_collider::{SdfField, SdfUnion};
-use alice_physics::sim_field::ScalarField3D;
-use alice_physics::world_participant::Participant;
+use alice_physics_core::erosion::{ErosionConfig, ErosionModifier};
+use alice_physics_core::sdf_collider::{SdfField, SdfUnion};
+use alice_physics_core::sim_field::ScalarField3D;
+use alice_physics_core::world_participant::Participant;
 use std::hint::black_box;
 
 const POS: u32 = 0x0000_0000;

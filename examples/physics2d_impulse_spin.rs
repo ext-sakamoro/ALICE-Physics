@@ -10,8 +10,8 @@
 //! cargo run --release --example physics2d_impulse_spin --features std
 //! ```
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{RigidBody2D, Shape2D, Vec2Fix};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{RigidBody2D, Shape2D, Vec2Fix};
 
 fn v(x: i64, y: i64) -> Vec2Fix {
     Vec2Fix::new(Fix128::from_int(x), Fix128::from_int(y))

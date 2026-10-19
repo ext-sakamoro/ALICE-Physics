@@ -32,9 +32,9 @@
     reason = "analytic reference: f64 LJ dimer stiffness 72 eps/(2^(1/3) sigma^2) and r_eq = 2^(1/6) sigma for molecular_dynamics"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{MdError, PeriodicBox, VelocityVerlet};
-use alice_physics::pair_potential::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{MdError, PeriodicBox, VelocityVerlet};
+use alice_physics_core::pair_potential::{
     LennardJones, Morse, PairPotential, PairPotentialError, ShiftMode, Truncated,
 };
 

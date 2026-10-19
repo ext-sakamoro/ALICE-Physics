@@ -17,16 +17,16 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::crowd_force::{
+use alice_physics_core::crowd_force::{
     CrowdForceError, CrowdStepError, InteractionParams, NeighborSearch, Pedestrian, SocialForce,
     WallSegment,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{MdError, MdStepError, PeriodicBox, VelocityVerlet};
-use alice_physics::pair_potential::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{MdError, MdStepError, PeriodicBox, VelocityVerlet};
+use alice_physics_core::pair_potential::{
     LennardJones, Morse, PairPotential, PairPotentialError, ShiftMode, Truncated,
 };
-use alice_physics::physics2d::Vec2Fix;
+use alice_physics_core::physics2d::Vec2Fix;
 
 fn fx(x: f64) -> Fix128 {
     Fix128::from_f64(x)

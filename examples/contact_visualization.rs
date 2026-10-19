@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::contact_viz`:
+//! Production entry point for `alice_physics_core::contact_viz`:
 //! `ContactArrow`, `FrictionCone`, `generate_contact_arrows`,
 //! `generate_friction_arrows`, and `generate_friction_cones`.
 //!
@@ -33,11 +33,11 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::contact_viz::{
+use alice_physics_core::contact_viz::{
     generate_contact_arrows, generate_friction_arrows, generate_friction_cones, ContactArrow,
     FrictionCone,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// Absolute-error assertion against an independently hand-derived f64
 /// closed form.

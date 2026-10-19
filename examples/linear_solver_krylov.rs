@@ -18,13 +18,13 @@
 //!
 //! Run with `cargo run --example linear_solver_krylov`.
 
-use alice_physics::linear_solver::{
+use alice_physics_core::linear_solver::{
     bicgstab, gmres, solve_equilibrated, BlockEquilibration, BlockJacobiPreconditioner, BlockScale,
     BreakdownKind, DenseMatrix, FnOperator, IdentityPreconditioner, JacobiPreconditioner,
     KrylovConfig, KrylovConfigFault, KrylovMethod, KrylovSolution, LinearOperator,
     LinearSolverError, BREAKDOWN_RELATIVE,
 };
-use alice_physics::math::Fix128;
+use alice_physics_core::math::Fix128;
 
 const CELLS: usize = 32;
 

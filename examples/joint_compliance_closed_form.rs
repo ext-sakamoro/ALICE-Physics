@@ -23,9 +23,9 @@
 //!
 //! Run with: `cargo run --example joint_compliance_closed_form`
 
-use alice_physics::joint::{solve_joints, BallJoint, HingeJoint, Joint};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::RigidBody;
+use alice_physics_core::joint::{solve_joints, BallJoint, HingeJoint, Joint};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::RigidBody;
 
 fn pair() -> Vec<RigidBody> {
     vec![

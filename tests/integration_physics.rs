@@ -4,9 +4,9 @@
 //! public API re-exported from the crate root. All tests run deterministically
 //! — no floating-point, no randomness.
 
-use alice_physics::collider::AABB;
-use alice_physics::joint::BallJoint;
-use alice_physics::{
+use alice_physics_core::collider::AABB;
+use alice_physics_core::joint::BallJoint;
+use alice_physics_core::{
     bvh::BvhPrimitive, Cloth, CollisionFilter, ContactEventType, DistanceConstraint, Fix128,
     ForceField, ForceFieldInstance, Joint, LinearBvh, PhysicsConfig, PhysicsWorld, QuatFix,
     RigidBody, Rope, SleepConfig, Vec3Fix, Vehicle, VehicleConfig,
@@ -1290,7 +1290,7 @@ fn test_step_zero_and_negative_dt() {
 /// A kinematic body `set_kinematic_target` through a dynamic body should push it.
 #[test]
 fn test_kinematic_pushes_dynamic() {
-    use alice_physics::QuatFix;
+    use alice_physics_core::QuatFix;
 
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
@@ -1405,7 +1405,7 @@ fn test_get_body_accessors() {
 /// Verify that `filter::layers` constants are accessible from crate root.
 #[test]
 fn test_layers_reexport() {
-    use alice_physics::layers;
+    use alice_physics_core::layers;
 
     let player = CollisionFilter::new(layers::PLAYER, layers::ENEMY | layers::STATIC);
     let enemy = CollisionFilter::new(layers::ENEMY, layers::PLAYER | layers::STATIC);
@@ -1627,7 +1627,7 @@ fn test_step_parallel_self_determinism() {
 /// Verify `batch_raycast` returns correct results for multiple rays.
 #[test]
 fn test_batch_raycast_results() {
-    use alice_physics::query::{batch_raycast, BatchRayQuery};
+    use alice_physics_core::query::{batch_raycast, BatchRayQuery};
 
     let bodies = [
         RigidBody::new_static(Vec3Fix::from_int(5, 0, 0)),
@@ -1659,7 +1659,7 @@ fn test_batch_raycast_results() {
 /// Verify `batch_sphere_cast` returns correct hit count.
 #[test]
 fn test_batch_sphere_cast_results() {
-    use alice_physics::query::batch_sphere_cast;
+    use alice_physics_core::query::batch_sphere_cast;
 
     let bodies = [RigidBody::new_static(Vec3Fix::from_int(5, 0, 0))];
 
@@ -2240,7 +2240,7 @@ fn test_raycast_inside_sphere() {
 
 #[test]
 fn test_remove_sdf_collider() {
-    use alice_physics::sdf_collider::{ClosureSdf, SdfCollider};
+    use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
 
     let config = PhysicsConfig::default();
     let mut world = PhysicsWorld::new(config);
@@ -2485,7 +2485,7 @@ fn test_rigid_body_default() {
 
 #[test]
 fn test_new_ccd_functions() {
-    use alice_physics::ccd::{aabb_plane_toi, capsule_plane_toi, sphere_capsule_toi};
+    use alice_physics_core::ccd::{aabb_plane_toi, capsule_plane_toi, sphere_capsule_toi};
 
     // Capsule falling toward ground
     let toi = capsule_plane_toi(
@@ -2526,7 +2526,7 @@ fn test_new_ccd_functions() {
 
 #[test]
 fn test_error_new_variants() {
-    use alice_physics::PhysicsError;
+    use alice_physics_core::PhysicsError;
 
     let e1 = PhysicsError::CapacityExceeded {
         resource: "bodies",
@@ -2546,7 +2546,7 @@ fn test_error_new_variants() {
 
 #[test]
 fn test_heightfield_derives() {
-    use alice_physics::HeightField;
+    use alice_physics_core::HeightField;
 
     let hf = HeightField::flat(4, 4, Fix128::ONE, Vec3Fix::ZERO, Fix128::ZERO);
     let hf2 = hf.clone();

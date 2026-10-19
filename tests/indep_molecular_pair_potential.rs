@@ -28,8 +28,8 @@
     reason = "analytic reference: f64 LJ minimum 2^(1/6) sigma, curvature and exact 2^-12 / 2^-6 ratios for pair_potential"
 )]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::pair_potential::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::pair_potential::{
     lorentz_berthelot, Coulomb, LennardJones, Morse, PairPotential, PairPotentialError, ShiftMode,
     Truncated, Yukawa,
 };

@@ -49,8 +49,8 @@
     reason = "analytic reference: JONSWAP spectrum with DNV normalisation and Airy superposition sum of a cos(kx - wt + phase), asserted"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::wave_ship::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::wave_ship::{
     free_surface_elevation, froude_krylov_vertical_n, Jonswap, WaveComponent,
 };
 

@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::flow_viz`: `FlowArrow`,
+//! Production entry point for `alice_physics_core::flow_viz`: `FlowArrow`,
 //! `FlowVizConfig`, `generate_flow_arrows`, and `generate_streamlines`.
 //!
 //! Wiring: `scripts/wiring-baseline.txt` lists all four as `unwired` --
@@ -41,10 +41,10 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::flow_viz::{
+use alice_physics_core::flow_viz::{
     generate_flow_arrows, generate_streamlines, FlowArrow, FlowVizConfig,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// Rigid-body rotation about the z axis: `v(p) = omega * (-p.y, p.x, 0)`.
 ///

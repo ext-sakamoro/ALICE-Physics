@@ -15,8 +15,8 @@
 //!
 //! Run with: `cargo run --example modified_sdf_frame_update`
 
-use alice_physics::sdf_collider::SdfField;
-use alice_physics::sim_modifier::{ModifiedSdf, PhysicsModifier};
+use alice_physics_core::sdf_collider::SdfField;
+use alice_physics_core::sim_modifier::{ModifiedSdf, PhysicsModifier};
 
 /// The plane `y = 0`.
 struct Ground;

@@ -23,27 +23,27 @@
     reason = "analytic reference: f64 Hertz contact radius cbrt(3PR*/(4E*)) (Johnson) and Basquin power law for misc engineering modules"
 )]
 
-use alice_physics::anisotropic_friction::AnisotropicFriction;
-use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
-use alice_physics::fluid_netcode::{FluidDelta, FluidSnapshot};
-use alice_physics::fracture::{Crack, FractureConfig, FractureModifier};
-use alice_physics::kinematic_loop::{four_bar_linkage, LoopClosureConstraint};
-use alice_physics::layer_adhesion::{EffectiveStrength, PrintOrientation};
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::physics2d::{
+use alice_physics_core::anisotropic_friction::AnisotropicFriction;
+use alice_physics_core::filament_db::{MaterialCategory, MaterialProperties};
+use alice_physics_core::fluid_netcode::{FluidDelta, FluidSnapshot};
+use alice_physics_core::fracture::{Crack, FractureConfig, FractureModifier};
+use alice_physics_core::kinematic_loop::{four_bar_linkage, LoopClosureConstraint};
+use alice_physics_core::layer_adhesion::{EffectiveStrength, PrintOrientation};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::physics2d::{
     BodyType2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D, Shape2D, Vec2Fix,
 };
-use alice_physics::rolling_contact::{
+use alice_physics_core::rolling_contact::{
     basquin_cycles_to_failure, hertzian_sphere_sphere, materials, rolling_contact_life_cycles,
 };
-use alice_physics::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
-use alice_physics::sdf_destruction::{
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider, SdfField};
+use alice_physics_core::sdf_destruction::{
     destruction_from_explosion, destruction_from_projectile, DestructibleSdf, DestructionShape,
 };
-use alice_physics::sdf_force::{compute_sdf_force, SdfForceType};
-use alice_physics::sim_modifier::PhysicsModifier;
-use alice_physics::soft_body_cut::{cut_cloth, cut_deformable, CutPlane};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::sdf_force::{compute_sdf_force, SdfForceType};
+use alice_physics_core::sim_modifier::PhysicsModifier;
+use alice_physics_core::soft_body_cut::{cut_cloth, cut_deformable, CutPlane};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 use core::f64::consts::PI;
 

@@ -31,8 +31,8 @@
 //! `pub(crate)` and unreachable from this external test crate anyway) to
 //! produce its own expected value.
 
-use alice_physics::ccd::adaptive_toi_substeps;
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::ccd::adaptive_toi_substeps;
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)

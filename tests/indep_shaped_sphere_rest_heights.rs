@@ -27,16 +27,16 @@
     reason = "analytic reference: f64 circle and ellipsoid surface sampling for tight boxes of turned shapes and sphere rest heights"
 )]
 
-use alice_physics::box_collider::OrientedBox;
-use alice_physics::collider::AABB;
-use alice_physics::compound::CompoundShape;
-use alice_physics::cone::Cone;
-use alice_physics::cylinder::Cylinder;
-use alice_physics::ellipsoid::Ellipsoid;
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
-use alice_physics::torus::Torus;
+use alice_physics_core::box_collider::OrientedBox;
+use alice_physics_core::collider::AABB;
+use alice_physics_core::compound::CompoundShape;
+use alice_physics_core::cone::Cone;
+use alice_physics_core::cylinder::Cylinder;
+use alice_physics_core::ellipsoid::Ellipsoid;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::torus::Torus;
 
 type V = [f64; 3];
 

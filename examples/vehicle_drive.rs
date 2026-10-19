@@ -16,9 +16,9 @@
 //! cargo run --release --example vehicle_drive --features std
 //! ```
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::vehicle::{Vehicle, VehicleConfig, WheelState};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::vehicle::{Vehicle, VehicleConfig, WheelState};
 
 fn main() {
     let mass = 1000.0_f64;

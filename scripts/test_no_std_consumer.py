@@ -9,7 +9,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import no_std_consumer as nc  # noqa: E402
 
-LIB_ID = "path+file:///w/ALICE-Physics#alice-physics@3.0.1"
+LIB_ID = "path+file:///w/ALICE-Physics/crates/alice-physics#alice-physics@4.0.0"
+CORE_ID = "path+file:///w/ALICE-Physics#alice-physics-core@4.0.0"
 CONSUMER_ID = "path+file:///w/ALICE-Physics/consumers/no_std#alice-physics-no-std-consumer@0.0.0"
 
 
@@ -17,9 +18,11 @@ def art(pid: str, kinds: list[str], files: list[str]) -> dict:
     return {"reason": "compiler-artifact", "package_id": pid, "target": {"crate_types": kinds}, "filenames": files}
 
 
+CORE = art(CORE_ID, ["rlib"], ["/t/libalice_physics_core-1.rlib", "/t/libalice_physics_core-1.rmeta"])
 GOOD = [
     art(LIB_ID, ["rlib"], ["/t/libalice_physics-1.rlib", "/t/libalice_physics-1.rmeta"]),
     art(CONSUMER_ID, ["lib"], ["/t/libconsumer.rlib"]),
+    CORE,
 ]
 
 
@@ -28,7 +31,7 @@ class Judge(unittest.TestCase):
         self.assertEqual(nc.judge(GOOD, 0), ([], 1))
 
     def test_a_cdylib_in_the_crate_types_fails(self):
-        msgs = [art(LIB_ID, ["rlib", "cdylib"], ["/t/libalice_physics.rlib", "/t/libalice_physics.dylib"]), GOOD[1]]
+        msgs = [art(LIB_ID, ["rlib", "cdylib"], ["/t/libalice_physics.rlib", "/t/libalice_physics.dylib"]), GOOD[1], CORE]
         errors, n = nc.judge(msgs, 0)
         self.assertEqual(n, 1)
         self.assertTrue(any("cdylib" in e for e in errors), errors)
@@ -39,11 +42,28 @@ class Judge(unittest.TestCase):
         self.assertTrue(any("exit 101" in e for e in errors), errors)
 
     def test_no_rlib_file_fails(self):
-        msgs = [art(LIB_ID, ["rlib"], ["/t/libalice_physics.rmeta"]), GOOD[1]]
+        msgs = [art(LIB_ID, ["rlib"], ["/t/libalice_physics.rmeta"]), GOOD[1], CORE]
         self.assertTrue(nc.judge(msgs, 0)[0])
 
+    def test_an_engine_built_as_a_cdylib_fails(self):
+        msgs = [GOOD[0], GOOD[1], art(CORE_ID, ["rlib", "staticlib"], ["/t/libalice_physics_core.rlib", "/t/libalice_physics_core.a"])]
+        errors, _ = nc.judge(msgs, 0)
+        self.assertTrue(any("alice-physics-core was built as" in e for e in errors), errors)
+
+    def test_an_unread_engine_compares_nothing(self):
+        errors, n = nc.judge(GOOD[:2], 0)
+        self.assertEqual(n, 0)
+        self.assertEqual(nc.exit_code(errors, n, 0), 2)
+
     def test_consumer_not_built_fails(self):
-        self.assertTrue(nc.judge(GOOD[:1], 0)[0])
+        self.assertTrue(nc.judge([GOOD[0], CORE], 0)[0])
+
+    def test_a_directory_named_as_the_package_is_read(self):
+        # cargo writes `…/crates/alice-physics#4.0.0` when the directory is the package's name
+        lib = art("path+file:///w/ALICE-Physics/crates/alice-physics#4.0.0", ["rlib"], ["/t/libalice_physics-1.rlib"])
+        self.assertEqual(nc.judge([lib, GOOD[1], CORE], 0), ([], 1))
+        self.assertEqual(nc.package_name("path+file:///w/x/alice-physics/#4.0.0"), "alice-physics")
+        self.assertEqual(nc.package_name("path+file:///w/ALICE-Physics#alice-physics-core@4.0.0"), "alice-physics-core")
 
     def test_old_package_id_form_is_read(self):
         old = art("alice-physics 3.0.1 (path+file:///w/ALICE-Physics)", ["rlib"], ["/t/x.rlib"])

@@ -30,7 +30,7 @@ use crate::solver::ContactConstraint;
 /// between the CPU-side solver and an external GPU backend. Consumers
 /// typically wire this against the golden pairs stored alongside the
 /// FFI byte-for-byte replay contract (see
-/// `alice_physics::ffi::AliceVec3Fix128Raw`).
+/// `alice_physics_core::ffi::AliceVec3Fix128Raw`).
 #[derive(Debug, Clone)]
 pub struct DiffFixture {
     /// Human-readable label carried through in error reports.
@@ -110,7 +110,7 @@ pub trait GpuSolverBridge {
     /// so it states which. Every `*_with_bridge` path and
     /// [`crate::PhysicsWorld::set_gpu_solver_bridge`] refuse a backend whose
     /// identifier is not this build's ([`check_bridge`]). A backend built
-    /// against this crate returns `alice_physics::PHYSICS_SEMANTICS_ID`.
+    /// against this crate returns `alice_physics_core::PHYSICS_SEMANTICS_ID`.
     fn semantics_id(&self) -> [u8; 32];
 
     /// Upload an island (positions + velocities as

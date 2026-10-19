@@ -4,9 +4,9 @@
 //! penetration `r - |dist|`; box penetration = deepest of the 8 corners (brute
 //! force over corners, independent of the p/n-vertex shortcut in the code).
 
-use alice_physics::collider::AABB;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::plane_collider::PlaneCollider;
+use alice_physics_core::collider::AABB;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::plane_collider::PlaneCollider;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

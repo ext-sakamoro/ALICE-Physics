@@ -10,8 +10,8 @@
 //! cargo run --example sph_boundary_demo --features std --release
 //! ```
 
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_sph::{SphConfig, SphParticle, SphSolver};
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_sph::{SphConfig, SphParticle, SphSolver};
 use std::time::Instant;
 
 const GRID: usize = 8; // 8³ = 512 particles

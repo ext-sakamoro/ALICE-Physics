@@ -11,7 +11,7 @@
 //! matrix is invertible, which is what separates this refusal from
 //! `Degenerate`.
 
-use alice_physics::math::{Fix128, Mat3Fix, PolarError};
+use alice_physics_core::math::{Fix128, Mat3Fix, PolarError};
 
 fn pow2(e: i32) -> Fix128 {
     if e >= 0 {

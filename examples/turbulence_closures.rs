@@ -13,12 +13,12 @@
 //! cargo run --example turbulence_closures --features std
 //! ```
 
-use alice_physics::cfd_solver::{
+use alice_physics_core::cfd_solver::{
     CfdSolver, PressureSolver, RansState, StepOptions, TurbulenceModel,
 };
-use alice_physics::eulerian_grid::FaceBc;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::multiphase::Grid3d;
+use alice_physics_core::eulerian_grid::FaceBc;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::multiphase::Grid3d;
 
 fn cavity(n: usize) -> CfdSolver {
     let mut s = CfdSolver::new(n, n, 1, Fix128::from_ratio(1, n as i64));

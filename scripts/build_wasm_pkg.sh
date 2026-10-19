@@ -34,7 +34,7 @@ if [ "$have" != "$want" ]; then
 fi
 
 target_dir=${CARGO_TARGET_DIR:-target}
-cargo rustc --lib --target wasm32-unknown-unknown ${cargo_profile[@]+"${cargo_profile[@]}"} --features wasm --crate-type cdylib
+cargo rustc -p alice-physics --lib --target wasm32-unknown-unknown ${cargo_profile[@]+"${cargo_profile[@]}"} --features wasm --crate-type cdylib
 wasm="$target_dir/wasm32-unknown-unknown/$profile/alice_physics.wasm"
 [ -f "$wasm" ] || { echo "error: $wasm was not produced" >&2; exit 1; }
 

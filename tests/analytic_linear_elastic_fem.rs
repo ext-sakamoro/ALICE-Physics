@@ -1,4 +1,4 @@
-//! Closed-form oracles for `alice_physics::linear_elastic_fem`.
+//! Closed-form oracles for `alice_physics_core::linear_elastic_fem`.
 //!
 //! Every expected value here comes from the equations of linear elasticity, not
 //! from running the solver. Where a tolerance appears, the comment says what it
@@ -45,13 +45,13 @@
     reason = "analytic reference: f64 von Mises stress closed form sqrt(0.5 * sum of squared principal differences) for linear elastic FEM"
 )]
 
-use alice_physics::filament_db::{MaterialCategory, MaterialProperties};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::filament_db::{MaterialCategory, MaterialProperties};
+use alice_physics_core::linear_elastic_fem::{
     solve, stiffness_diagonal_stats, Axis, BoundaryConditions, ElasticMaterial, Preconditioner,
     SolverConfig, StressTensor,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // scene construction
@@ -661,8 +661,8 @@ fn unconstrained_mesh_is_rejected() {
     assert!(
         matches!(
             err,
-            alice_physics::linear_elastic_fem::FemError::UnderConstrained
-                | alice_physics::linear_elastic_fem::FemError::NotConverged { .. }
+            alice_physics_core::linear_elastic_fem::FemError::UnderConstrained
+                | alice_physics_core::linear_elastic_fem::FemError::NotConverged { .. }
         ),
         "expected a rigid-body-mode diagnosis, got {err:?}"
     );
@@ -679,7 +679,10 @@ fn out_of_range_vertex_is_rejected() {
     assert!(
         matches!(
             err,
-            alice_physics::linear_elastic_fem::FemError::VertexOutOfRange { vertex: 9_999, .. }
+            alice_physics_core::linear_elastic_fem::FemError::VertexOutOfRange {
+                vertex: 9_999,
+                ..
+            }
         ),
         "expected VertexOutOfRange, got {err:?}"
     );
@@ -741,7 +744,7 @@ fn tolerance_below_the_floor_is_clamped_and_reported() {
 /// one iteration. This checks the mechanism and its payload, not the physics.
 #[test]
 fn stagnation_reports_its_residual_and_count() {
-    use alice_physics::linear_elastic_fem::FemError;
+    use alice_physics_core::linear_elastic_fem::FemError;
     let (mesh, bc) = traction_bar();
     let cfg = SolverConfig::try_new(50_000, Fix128::from_raw(0, 1 << 4))
         .expect("valid")
@@ -910,5 +913,8 @@ fn empty_mesh_is_rejected() {
     let mesh = SdfTetMesh::default();
     let bc = BoundaryConditions::new();
     let err = solve(&mesh, &pla(), &bc, &SolverConfig::default()).unwrap_err();
-    assert_eq!(err, alice_physics::linear_elastic_fem::FemError::EmptyMesh);
+    assert_eq!(
+        err,
+        alice_physics_core::linear_elastic_fem::FemError::EmptyMesh
+    );
 }

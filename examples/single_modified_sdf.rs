@@ -16,8 +16,8 @@
 //!
 //! Run with: `cargo run --example single_modified_sdf`
 
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::sim_modifier::{PhysicsModifier, SingleModifiedSdf};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::sim_modifier::{PhysicsModifier, SingleModifiedSdf};
 
 /// Material removed at a constant rate while enabled.
 struct Erosion {

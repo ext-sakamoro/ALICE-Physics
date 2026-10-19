@@ -29,36 +29,47 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 CONSUMER = ROOT / "consumers" / "no_std" / "Cargo.toml"
 LIB = "alice-physics"
+# the consumer depends on the facade, which builds the engine; both must be rlib only
+LIBS = ("alice-physics-core", LIB)
 
 
 def artifacts(messages: list[dict], package: str) -> list[dict]:
     """compiler-artifact messages of `package` (by the name in its package id)"""
-    out = []
-    for m in messages:
-        if m.get("reason") != "compiler-artifact":
-            continue
-        pid = m.get("package_id", "")
-        # `path+file:///…/ALICE-Physics#alice-physics@3.0.1` or `alice-physics 3.0.1 (path+…)`
-        name = pid.split("#", 1)[1].split("@", 1)[0] if "#" in pid else pid.split(" ", 1)[0]
-        if name == package:
-            out.append(m)
-    return out
+    return [m for m in messages if m.get("reason") == "compiler-artifact" and package_name(m.get("package_id", "")) == package]
+
+
+def package_name(pid: str) -> str:
+    """the package name in a cargo package id
+
+    `path+file:///…/ALICE-Physics#alice-physics@3.0.1`, or `path+file:///…/crates/alice-physics#4.0.0`
+    when the directory carries the package's name (cargo then writes only the version, and the
+    name is the last path segment), or the old `alice-physics 3.0.1 (path+…)`"""
+    if "#" not in pid:
+        return pid.split(" ", 1)[0]
+    url, fragment = pid.split("#", 1)
+    if "@" in fragment:
+        return fragment.split("@", 1)[0]
+    return url.rstrip("/").rsplit("/", 1)[-1]
 
 
 def judge(messages: list[dict], rc: int) -> tuple[list[str], int]:
-    """errors, and the number of alice-physics artifacts read"""
+    """errors, and the number of artifacts read of the package with the fewest (the engine and
+    the facade each have to be read)"""
     errors: list[str] = []
-    lib = artifacts(messages, LIB)
-    kinds = sorted({k for m in lib for k in m.get("target", {}).get("crate_types", [])})
     if rc != 0:
         errors.append(f"the no_std consumer build failed (exit {rc})")
-    if lib and kinds != ["rlib"]:
-        errors.append(f"{LIB} was built as {kinds}, a no_std dependent can only use an rlib")
-    if lib and not any(f.endswith(".rlib") for m in lib for f in m.get("filenames", [])):
-        errors.append(f"no {LIB} .rlib was produced")
+    counts = []
+    for name in LIBS:
+        lib = artifacts(messages, name)
+        counts.append(len(lib))
+        kinds = sorted({k for m in lib for k in m.get("target", {}).get("crate_types", [])})
+        if lib and kinds != ["rlib"]:
+            errors.append(f"{name} was built as {kinds}, a no_std dependent can only use an rlib")
+        if lib and not any(f.endswith(".rlib") for m in lib for f in m.get("filenames", [])):
+            errors.append(f"no {name} .rlib was produced")
     if rc == 0 and not artifacts(messages, "alice-physics-no-std-consumer"):
         errors.append("the consumer crate itself was not built")
-    return errors, len(lib)
+    return errors, min(counts)
 
 
 def main(argv: list[str]) -> int:
@@ -85,12 +96,12 @@ def main(argv: list[str]) -> int:
                 sys.stderr.write(rendered)
     sys.stderr.write(proc.stderr[-4000:])
     errors, n = judge(messages, proc.returncode)
-    print(f"no_std consumer: {LIB} artifacts {n}, errors {len(errors)}")
+    print(f"no_std consumer: {' / '.join(LIBS)} artifacts (fewest) {n}, errors {len(errors)}")
     for e in errors:
         print(f"error: {e}", file=sys.stderr)
     code = exit_code(errors, n, proc.returncode)
     if code == 2:
-        print(f"error: no {LIB} artifact was read (compared nothing)", file=sys.stderr)
+        print(f"error: no artifact of one of {LIBS} was read (compared nothing)", file=sys.stderr)
     return code
 
 

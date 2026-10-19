@@ -17,11 +17,11 @@
 //!
 //! Run with: `cargo run --example sdf_dynamic_collider_pose`
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sdf_collider::{
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sdf_collider::{
     collide_point_sdf, sync_dynamic_sdf_colliders, ClosureSdf, SdfCollider, SdfFrame,
 };
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(

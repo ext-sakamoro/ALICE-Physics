@@ -15,9 +15,9 @@
     reason = "analytic reference: f64 Roark beam closed forms: I = b h^3/12 and tip deflections PL^3/(3EI), wL^4/(8EI), PL^3/(48EI)"
 )]
 
-use alice_physics::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
+use alice_physics_core::beam_stress::{BeamAnalysis, ColumnEndCondition, CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
 use core::f64::consts::PI;
 
 const E_MPA: f64 = 3500.0;

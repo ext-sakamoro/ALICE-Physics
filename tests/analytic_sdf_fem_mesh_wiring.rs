@@ -25,13 +25,13 @@
 
 #![cfg(feature = "std")]
 // The reference computations below work in plain f32/f64 geometry; the
-// crate's own determinism gate (`Fix128` + `alice_physics::det_math`) is not
+// crate's own determinism gate (`Fix128` + `alice_physics_core::det_math`) is not
 
 use std::panic::{self, AssertUnwindSafe};
 
-use alice_physics::det_math::sqrt64;
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sdf_fem_mesh::{
+use alice_physics_core::det_math::sqrt64;
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_fem_mesh::{
     generate, generate_marching_tets, BoundaryFaceError, SdfTetMesh,
 };
 
@@ -367,9 +367,10 @@ fn boundary_faces_reports_which_face_and_how_many_tets_claimed_it() {
         tets: Vec::new(),
     };
     for fourth in [3_u32, 4, 5] {
-        mesh.tets.push(alice_physics::sdf_fem_mesh::Tetrahedron {
-            vertices: [0, 1, 2, fourth],
-        });
+        mesh.tets
+            .push(alice_physics_core::sdf_fem_mesh::Tetrahedron {
+                vertices: [0, 1, 2, fourth],
+            });
     }
     match mesh.boundary_faces() {
         Err(BoundaryFaceError::NonManifoldFace { face, uses }) => {
@@ -387,7 +388,7 @@ fn boundary_faces_reports_which_face_and_how_many_tets_claimed_it() {
 fn boundary_faces_reports_the_smallest_of_several_non_manifold_faces() {
     let vertices: Vec<[f32; 3]> = (0..12u8).map(|i| [f32::from(i), 0.0, 0.0]).collect();
     let tets = |base: u32, fourths: [u32; 3]| {
-        fourths.map(|d| alice_physics::sdf_fem_mesh::Tetrahedron {
+        fourths.map(|d| alice_physics_core::sdf_fem_mesh::Tetrahedron {
             vertices: [base, base + 1, base + 2, d],
         })
     };
@@ -421,7 +422,7 @@ fn one_tet_mesh(side: f32) -> SdfTetMesh {
             [0.0, side, 0.0],
             [0.0, 0.0, side],
         ],
-        tets: vec![alice_physics::sdf_fem_mesh::Tetrahedron {
+        tets: vec![alice_physics_core::sdf_fem_mesh::Tetrahedron {
             vertices: [0, 1, 2, 3],
         }],
     }
@@ -471,7 +472,7 @@ fn deprecated_refine_reports_max_passes_on_an_exhausted_budget_old_signature_beh
     assert!(
         matches!(
             result,
-            Err(alice_physics::sdf_fem_mesh::RefineError::Unfinished { passes: 4, .. })
+            Err(alice_physics_core::sdf_fem_mesh::RefineError::Unfinished { passes: 4, .. })
         ),
         "oracle: four passes is not enough here: {result:?}"
     );

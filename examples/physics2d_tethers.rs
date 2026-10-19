@@ -7,8 +7,8 @@
 //!
 //! Run: `cargo run --example physics2d_tethers --features std`
 
-use alice_physics::math::Fix128;
-use alice_physics::physics2d::{
+use alice_physics_core::math::Fix128;
+use alice_physics_core::physics2d::{
     AngularTether2D, Joint2D, KinematicDrive2D, PhysicsConfig2D, PhysicsWorld2D, RigidBody2D,
     Shape2D, Tethers2D, Vec2Fix,
 };

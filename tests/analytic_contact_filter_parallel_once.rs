@@ -25,9 +25,9 @@
     reason = "analytic reference: f64 damped free motion x_n, v_n = V0 d^n of the contact-filter scene, once per substep"
 )]
 
-use alice_physics::collider::Contact;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::collider::Contact;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -232,7 +232,11 @@ fn slide(
     w.bodies[ball].velocity = v3(3.0, 0.0, 0.0);
     let id = w
         .material_table
-        .register(alice_physics::PhysicsMaterial::new(0, fx(mu), Fix128::ZERO));
+        .register(alice_physics_core::PhysicsMaterial::new(
+            0,
+            fx(mu),
+            Fix128::ZERO,
+        ));
     w.set_body_material(ground, id);
     w.set_body_material(ball, id);
     if let Some(m) = modifier {

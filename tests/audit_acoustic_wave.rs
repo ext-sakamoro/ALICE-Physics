@@ -1,4 +1,4 @@
-//! Audit oracles for `alice_physics::acoustic_wave`.
+//! Audit oracles for `alice_physics_core::acoustic_wave`.
 //!
 //! Expected values come from the exact discrete dispersion relation of the
 //! leap-frog scheme, von Neumann stability analysis, and Neumann wall
@@ -10,7 +10,7 @@
     reason = "analytic reference: f64 exact leap-frog discrete dispersion w = 2 asin(C sin(k/2)) for acoustic_wave plane waves"
 )]
 
-use alice_physics::acoustic_wave::{leapfrog_step, speeds, stable_dt};
+use alice_physics_core::acoustic_wave::{leapfrog_step, speeds, stable_dt};
 
 /// Exact discrete plane wave: `u_i^n = cos(k i - w n)` with
 /// `sin(w/2) = C sin(k/2)` solves the scheme in the interior, so one step

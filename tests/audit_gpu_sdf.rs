@@ -7,12 +7,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::gpu_sdf::{
+use alice_physics_core::gpu_sdf::{
     batch_size, execute_batch_cpu, GpuDispatchConfig, GpuSdfBatch, GpuSdfContact,
     GpuSdfMultiDispatch, GpuSdfQuery, GpuSdfResult, SDF_EVAL_WGSL,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_collider::SdfField;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_collider::SdfField;
 
 struct UnitSphere;
 
@@ -246,7 +246,7 @@ fn multi_dispatch_keeps_insertion_order_and_mirrors_query_count() {
 
 #[test]
 fn batch_size_is_the_simd_width_and_positive_power_of_two() {
-    assert_eq!(batch_size(), alice_physics::math::SIMD_WIDTH);
+    assert_eq!(batch_size(), alice_physics_core::math::SIMD_WIDTH);
     assert!(batch_size() >= 1 && batch_size().is_power_of_two());
 }
 

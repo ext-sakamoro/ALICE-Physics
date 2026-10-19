@@ -9,14 +9,14 @@
 //!
 //! Run with `cargo run --example participant_vehicle`.
 
-use alice_physics::vehicle::{
+use alice_physics_core::vehicle::{
     Vehicle, VehicleConfig, VehicleParticipant, VEHICLE_INPUTS, VEHICLE_INPUT_BRAKE,
     VEHICLE_INPUT_STEERING, VEHICLE_INPUT_THROTTLE, VEHICLE_OBS_BRAKE, VEHICLE_OBS_ENGINE_RPM,
     VEHICLE_OBS_GEAR, VEHICLE_OBS_GROUNDED, VEHICLE_OBS_SPEED_KMH, VEHICLE_OBS_STEERING,
     VEHICLE_OBS_THROTTLE,
 };
-use alice_physics::world_participant::{FieldLayout, FieldMode, Observed, PortId};
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
+use alice_physics_core::world_participant::{FieldLayout, FieldMode, Observed, PortId};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
 
 const ACTIONS: PortId = PortId::new(1);
 

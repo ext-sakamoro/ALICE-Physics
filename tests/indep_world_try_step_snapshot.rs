@@ -18,13 +18,13 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::coupling_medium::DragMedium;
-use alice_physics::joint::{BallJoint, Joint};
-use alice_physics::world_participant::{
+use alice_physics_core::coupling_medium::DragMedium;
+use alice_physics_core::joint::{BallJoint, Joint};
+use alice_physics_core::world_participant::{
     FieldLayout, FieldMode, ObservationSink, Participant, ParticipantFault, ParticipantKind, Port,
     PortId, StateError, SubstepCtx,
 };
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix};
 
 const N: usize = 53;
 const M: usize = 71;

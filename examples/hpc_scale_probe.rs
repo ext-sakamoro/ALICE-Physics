@@ -27,9 +27,9 @@
 //! belong in the wall record, not in a golden file, because they are
 //! machine-specific by construction.
 
-use alice_physics::eulerian_grid::{project_pressure, MacGrid};
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsWorld, RigidBody, SolverConfig};
+use alice_physics_core::eulerian_grid::{project_pressure, MacGrid};
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 use std::time::Instant;
 
 /// Elements in the stated target ("hundreds of millions").

@@ -15,10 +15,10 @@
 //! cargo run --example structural_run_history --features std
 //! ```
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::structural_solver::StructuralSolver;
 
 fn main() {
     let section = CrossSection::Rectangular {

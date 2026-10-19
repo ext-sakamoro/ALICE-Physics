@@ -104,7 +104,7 @@
 //! # What is not measured here
 //!
 //! - Nothing in `src/` is exercised beyond [`Fix128`] and
-//!   [`alice_physics::coupled_iteration`]. These are scene-level fixed-point
+//!   [`alice_physics_core::coupled_iteration`]. These are scene-level fixed-point
 //!   maps, not the crate's coupling call sites.
 //! - The scenes are one- and few-degree-of-freedom model problems with
 //!   closed-form error maps. They say nothing about a discretised field.
@@ -120,8 +120,8 @@
     reason = "independent reference: f64 Newton root of u = Lambda e^u (Joule map) as reference for the Fix128 coupling iteration"
 )]
 
-use alice_physics::coupled_iteration::{residual_norm_inf, SubIterationConfig};
-use alice_physics::math::Fix128;
+use alice_physics_core::coupled_iteration::{residual_norm_inf, SubIterationConfig};
+use alice_physics_core::math::Fix128;
 
 // ---------------------------------------------------------------------------
 // Instruments
@@ -520,7 +520,7 @@ fn the_monitor_refuses_at_every_lattice_point_rather_than_reporting_success() {
     ] {
         let star = fixed_point_fix(r);
         let mut a = Fix128::ZERO;
-        let outcome = alice_physics::coupled_iteration::run_sub_iteration(
+        let outcome = alice_physics_core::coupled_iteration::run_sub_iteration(
             SubIterationConfig::default(),
             |_| {
                 a = sweep_fix(r, a);
@@ -539,15 +539,17 @@ fn the_monitor_refuses_at_every_lattice_point_rather_than_reporting_success() {
     let r = Fix128::from_int(2);
     let star = fixed_point_fix(r);
     let mut a = Fix128::ZERO;
-    let outcome =
-        alice_physics::coupled_iteration::run_sub_iteration(SubIterationConfig::default(), |_| {
+    let outcome = alice_physics_core::coupled_iteration::run_sub_iteration(
+        SubIterationConfig::default(),
+        |_| {
             a = sweep_fix(r, a);
             residual_norm_inf(&[a - star])
-        });
+        },
+    );
     assert!(
         matches!(
             outcome,
-            Err(alice_physics::coupled_iteration::CoupledIterationError::Diverging { .. })
+            Err(alice_physics_core::coupled_iteration::CoupledIterationError::Diverging { .. })
         ),
         "m_f/m = 2 must be reported as Diverging, got {outcome:?}"
     );
@@ -754,7 +756,7 @@ fn skew_coupling_contracts_under_fix128_exactly_as_the_closed_form_says() {
 /// ⚠️ The two floors are different and the squaring one binds first. A
 /// component survives down to `2⁻⁶⁴`, but its *square* vanishes below
 /// `√(2⁻⁶⁴) = 2⁻³² = 2.33e-10`, which is exactly
-/// [`L2_TERM_FLOOR`](alice_physics::coupled_iteration::L2_TERM_FLOOR). So
+/// [`L2_TERM_FLOOR`](alice_physics_core::coupled_iteration::L2_TERM_FLOOR). So
 /// `residual_norm_l2_checked` returns `Ok(0)` here rather than refusing — by
 /// its documented contract, since nothing wrapped — and a magnitude-based
 /// convergence test reads that `0` as success.
@@ -764,7 +766,7 @@ fn skew_coupling_contracts_under_fix128_exactly_as_the_closed_form_says() {
 /// same span.
 #[test]
 fn the_skew_iterate_reaches_the_rounding_floor_before_the_ratio_can_be_read_twice() {
-    use alice_physics::coupled_iteration::{residual_norm_l2_checked, L2_TERM_FLOOR};
+    use alice_physics_core::coupled_iteration::{residual_norm_l2_checked, L2_TERM_FLOOR};
 
     let one = Fix128::ONE;
     for (a_int, expected_by) in [(5i64, 14u32), (20, 8), (100, 5)] {

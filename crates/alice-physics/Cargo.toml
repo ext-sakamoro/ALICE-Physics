@@ -1,0 +1,49 @@
+[package]
+name = "alice-physics"
+version = "4.0.0"
+edition = "2021"
+resolver = "3"
+authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+description = "Deterministic physics engine: 128-bit fixed-point rigid bodies with bit-exact, replayable results, typed observation and rollback for search and planning, plus FEM, CFD and 3D-print analysis modules (the API of alice-physics-core under its alice_physics paths)"
+license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
+repository = "https://github.com/ext-sakamoro/ALICE-Physics"
+homepage = "https://github.com/ext-sakamoro/ALICE-Physics"
+documentation = "https://docs.rs/alice-physics"
+keywords = ["physics", "deterministic", "fixed-point", "xpbd", "simulation"]
+categories = ["game-development", "simulation", "science"]
+rust-version = "1.85"
+readme = "README.md"
+include = ["/src/**/*.rs", "/tests/**/*.rs", "/README.md", "/LICENSE-AGPL", "/LICENSE-COMMERCIAL.md"]
+
+[lib]
+name = "alice_physics"
+path = "src/lib.rs"
+# rlib only, as the engine; the C ABI libraries, the Python extension and the wasm package
+# are built from this crate on request so their file and module names stay `alice_physics`:
+#   cargo rustc -p alice-physics --lib --release --features ffi --crate-type cdylib
+crate-type = ["rlib"]
+
+# every feature of alice-physics-core under the same name (scripts/facade_check.py compares
+# the two sets both ways)
+[features]
+default = ["std"]
+std = ["alice_physics_core/std"]
+simd = ["alice_physics_core/simd"]
+parallel = ["alice_physics_core/parallel"]
+python = ["alice_physics_core/python"]
+ffi = ["alice_physics_core/ffi"]
+wasm = ["alice_physics_core/wasm"]
+privacy-crypto = ["alice_physics_core/privacy-crypto"]
+gpu-solver-bridge = ["alice_physics_core/gpu-solver-bridge"]
+neural = ["alice_physics_core/neural"]
+analytics = ["alice_physics_core/analytics"]
+
+[dependencies]
+alice_physics_core = { package = "alice-physics-core", path = "../..", version = "=4.0.0", default-features = false }
+
+[package.metadata.docs.rs]
+features = ["std", "simd", "parallel", "ffi", "gpu-solver-bridge"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lints.clippy]
+allow_attributes_without_reason = "deny"

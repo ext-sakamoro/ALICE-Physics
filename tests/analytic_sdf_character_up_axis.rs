@@ -54,8 +54,8 @@
 //! geometry**, which is why the oracle below tests the pocket rather
 //! than the flag.
 
-use alice_physics::sdf_character::SdfCharacter;
-use alice_physics::sdf_collider::ClosureSdf;
+use alice_physics_core::sdf_character::SdfCharacter;
+use alice_physics_core::sdf_collider::ClosureSdf;
 
 // ─────────────────────────── sphere world ───────────────────────────
 

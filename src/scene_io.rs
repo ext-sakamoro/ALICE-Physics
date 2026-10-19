@@ -61,7 +61,7 @@ impl PhysicsScene {
     /// `version` unless you are deliberately writing an older format.
     ///
     /// ```
-    /// use alice_physics::scene_io::{PhysicsConfig, PhysicsScene, CURRENT_SCENE_VERSION};
+    /// use alice_physics_core::scene_io::{PhysicsConfig, PhysicsScene, CURRENT_SCENE_VERSION};
     ///
     /// let scene = PhysicsScene::new(Vec::new(), Vec::new(), PhysicsConfig::default(), CURRENT_SCENE_VERSION);
     /// assert_eq!(scene.version, CURRENT_SCENE_VERSION);

@@ -24,12 +24,12 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::dynamic_fem::{DynamicsConfig, MassLumping, TransientSolver};
+use alice_physics_core::linear_elastic_fem::{
     Axis, BoundaryConditions, ElasticMaterial, FemError, Preconditioner, SolverConfig,
 };
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
-use alice_physics::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::Fix128;
 
 fn two_pow_neg(shift: u32) -> Fix128 {
     Fix128::from_raw(0, 1u64 << (64 - shift))

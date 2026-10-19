@@ -24,9 +24,9 @@
 //! cargo run --example maxwell_dielectric_slab --features std
 //! ```
 
-use alice_physics::det_math::exp64;
-use alice_physics::math::Fix128;
-use alice_physics::maxwell_fdtd::{
+use alice_physics_core::det_math::exp64;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::maxwell_fdtd::{
     Component, Material, MaterialError, MaterialMap, YeeGrid, COURANT_3D,
 };
 

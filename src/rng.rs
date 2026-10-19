@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```
-//! use alice_physics::rng::DeterministicRng;
+//! use alice_physics_core::rng::DeterministicRng;
 //!
 //! let mut rng = DeterministicRng::new(42);
 //! let val = rng.next_fix128(); // [0, 1) deterministic

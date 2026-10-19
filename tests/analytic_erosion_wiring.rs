@@ -17,11 +17,11 @@
     reason = "analytic reference: f64 exposure decay exp(-5 dt) and accumulated depth of the documented erosion rate law"
 )]
 
-use alice_physics::erosion::{
+use alice_physics_core::erosion::{
     ErosionConfig, ErosionModifier, ErosionType, EXPOSURE_DECAY_PER_S, WATER_PREFACTOR,
 };
-use alice_physics::sdf_collider::ClosureSdf;
-use alice_physics::sim_modifier::PhysicsModifier;
+use alice_physics_core::sdf_collider::ClosureSdf;
+use alice_physics_core::sim_modifier::PhysicsModifier;
 
 fn config(kind: ErosionType) -> ErosionConfig {
     ErosionConfig {

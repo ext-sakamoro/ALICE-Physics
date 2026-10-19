@@ -4,10 +4,10 @@
 //! ambient temperature (55 °C — close to Tg to accelerate creep) and prints
 //! the progressive damage / creep strain over simulated time.
 
-use alice_physics::beam_stress::{CrossSection, LoadCase};
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::structural_solver::StructuralSolver;
+use alice_physics_core::beam_stress::{CrossSection, LoadCase};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::structural_solver::StructuralSolver;
 
 fn main() {
     let section = CrossSection::Rectangular {

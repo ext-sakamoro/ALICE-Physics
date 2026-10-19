@@ -10,8 +10,8 @@
 //! here — this demo intentionally sticks to gravity + projection to keep
 //! the numerics well-behaved on a coarse grid.
 
-use alice_physics::cfd_solver::CfdSolver;
-use alice_physics::math::Fix128;
+use alice_physics_core::cfd_solver::CfdSolver;
+use alice_physics_core::math::Fix128;
 
 fn main() {
     let n = 12usize;

@@ -70,11 +70,11 @@
     reason = "analytic reference: f64 observed convergence order log2 of error ratios for the manufactured-solution FEM study"
 )]
 
-use alice_physics::linear_elastic_fem::{
+use alice_physics_core::linear_elastic_fem::{
     solve, Axis, BoundaryConditions, ElasticMaterial, SolverConfig,
 };
-use alice_physics::math::Fix128;
-use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
 // ---------------------------------------------------------------------------
 // mesh

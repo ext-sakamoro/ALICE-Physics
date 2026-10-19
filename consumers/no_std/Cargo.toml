@@ -7,6 +7,6 @@ edition = "2021"
 publish = false
 
 [dependencies]
-alice-physics = { path = "../..", default-features = false }
+alice-physics = { path = "../../crates/alice-physics", default-features = false }
 
 [workspace]

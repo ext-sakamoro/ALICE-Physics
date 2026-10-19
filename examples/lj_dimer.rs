@@ -20,12 +20,12 @@
     reason = "analytic reference: LJ minimum r = 2^(1/6), Verlet discrete period via acos, Yukawa e^(-1/0.7); period asserted, rest printed"
 )]
 
-use alice_physics::electromagnetic::EmSource;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::molecular_dynamics::{
+use alice_physics_core::electromagnetic::EmSource;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::molecular_dynamics::{
     pair_forces_all_pairs, pair_forces_cell_list, MdError, PeriodicBox, VelocityVerlet,
 };
-use alice_physics::pair_potential::{
+use alice_physics_core::pair_potential::{
     lorentz_berthelot, Coulomb, LennardJones, Morse, PairPotential, PairPotentialError, ShiftMode,
     Truncated, Yukawa, COULOMB_CONSTANT,
 };

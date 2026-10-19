@@ -13,11 +13,11 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::collider::{
+use alice_physics_core::collider::{
     contact, epa, gjk, Capsule, ConvexHull, ScaledShape, Sphere, Support, AABB,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::metric::MetricWeights;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::metric::MetricWeights;
 
 fn fx(v: f64) -> Fix128 {
     Fix128::from_f64(v)

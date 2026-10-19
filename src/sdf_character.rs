@@ -87,8 +87,8 @@
 //! its landing live here rather than in each consumer:
 //!
 //! ```
-//! # use alice_physics::sdf_character::SdfCharacter;
-//! # use alice_physics::sdf_collider::ClosureSdf;
+//! # use alice_physics_core::sdf_character::SdfCharacter;
+//! # use alice_physics_core::sdf_collider::ClosureSdf;
 //! # let field = ClosureSdf::new(|_x, y, _z| y, |_x, _y, _z| (0.0, 1.0, 0.0));
 //! let mut ch = SdfCharacter::new([0.0, 4.0, 0.0], 0.35, 1.8);
 //! let dt = 1.0 / 60.0;

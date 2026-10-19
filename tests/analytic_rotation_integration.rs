@@ -49,9 +49,9 @@
     reason = "analytic reference: f64 rotation angle 2 atan2 and chord model 2/h sin(w h/2) for constant-torque rotation integration"
 )]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::sleeping::SleepConfig;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
 
 /// Frame length `dt = 1/64 s` (dyadic).
 const DT_DEN: i64 = 64;

@@ -31,10 +31,10 @@
     reason = "analytic reference: f64 incline normal and sliding distance g (sin theta - mu cos theta) t^2/2 for contact friction"
 )]
 
-use alice_physics::math::{Fix128, QuatFix, Vec3Fix};
-use alice_physics::shape::Shape;
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::PhysicsMaterial;
+use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::shape::Shape;
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::PhysicsMaterial;
 
 const DT: f64 = 1.0 / 60.0;
 const R: f64 = 0.5;

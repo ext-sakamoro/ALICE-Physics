@@ -3,7 +3,9 @@
 
 `[lib] crate-type` is rlib only (3.0.1), so `cargo build --features ffi` builds no C
 library at all, silently: a README that still says it would send a reader to a command
-that produces nothing. The README (and README_JP, with the same commands) keeps the
+that produces nothing. The libraries, the extension and the package are built from the facade
+crate (`-p alice-physics` / `-m crates/alice-physics/Cargo.toml`), so their file and module names
+are `alice_physics` (the engine's own lib is `alice_physics_core`). The README (and README_JP, with the same commands) keeps the
 commands in one marked block:
 
     <!-- binding-build-commands ... -->
@@ -17,7 +19,8 @@ This script reads that block and
   --check   the two READMEs list the same commands (comments aside), at least one; the
             WebAssembly command is what `web/package.json` runs for `build:wasm`; the
             Python command is a `maturin build` with the `python` feature, and the Python
-            workflow runs `maturin build` with that feature too
+            workflow runs `maturin build` with that feature too; every one of them, and the
+            release workflow's `cargo rustc` / `maturin build`, builds the facade
   --run c   runs the README's C ABI commands (the `cargo rustc ... --crate-type` lines)
             and fails unless the shared and the static library both exist afterwards
 
@@ -38,6 +41,8 @@ ROOT = Path(__file__).resolve().parent.parent
 BLOCK_RE = re.compile(r"<!-- binding-build-commands\b[^>]*-->\s*```sh\n(.*?)```\s*<!-- /binding-build-commands -->", re.S)
 SHARED = ("libalice_physics.so", "libalice_physics.dylib", "alice_physics.dll")
 STATIC = ("libalice_physics.a", "alice_physics.lib")
+FACADE_P = "-p alice-physics"
+FACADE_M = "-m crates/alice-physics/Cargo.toml"
 
 
 def commands(text: str) -> list[str]:
@@ -68,6 +73,26 @@ def check(root: Path) -> tuple[list[str], int]:
     workflow = (root / ".github" / "workflows" / "python-binding.yml").read_text(encoding="utf-8")
     if not re.search(r"maturin build\b[^\n]*--features python", workflow):
         errors.append("python-binding.yml does not run `maturin build` with --features python")
+    for x in c:
+        if not re.search(r"(?<!\S)-p alice-physics(?!\S)", x):
+            errors.append(f"the README's C ABI command does not build the facade ({FACADE_P}): {x}")
+    for x in py:
+        if FACADE_M not in x:
+            errors.append(f"the README's Python command does not build the facade ({FACADE_M}): {x}")
+    release = (root / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    for name, text in (("python-binding.yml", workflow), ("release.yml", release)):
+        for m in re.finditer(r"maturin build\b[^\n]*", text):
+            if FACADE_M not in m.group(0):
+                errors.append(f"{name}: `{m.group(0).strip()}` does not build the facade ({FACADE_M})")
+    rustc = re.findall(r"cargo rustc\b(?:[^\n]*\\\n)*[^\n]*", release)
+    if not rustc:
+        errors.append("release.yml runs no `cargo rustc` (compared nothing)")
+    for x in rustc:
+        if not re.search(r"(?<!\S)-p alice-physics(?!\S)", x):
+            errors.append(f"release.yml: `{' '.join(x.split())}` does not build the facade ({FACADE_P})")
+    wasm_script = (root / "scripts" / "build_wasm_pkg.sh").read_text(encoding="utf-8")
+    if not re.search(r"cargo rustc -p alice-physics --lib --target wasm32-unknown-unknown", wasm_script):
+        errors.append(f"scripts/build_wasm_pkg.sh does not build the facade ({FACADE_P})")
     return errors, len(en)
 
 

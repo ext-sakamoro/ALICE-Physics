@@ -15,9 +15,9 @@
 //! cargo run --release --example thermal_stress_envelope --features std
 //! ```
 
-use alice_physics::filament_db::MaterialProperties;
-use alice_physics::math::Fix128;
-use alice_physics::thermal_stress::{analyze_thermal_stress, yield_temperature_c};
+use alice_physics_core::filament_db::MaterialProperties;
+use alice_physics_core::math::Fix128;
+use alice_physics_core::thermal_stress::{analyze_thermal_stress, yield_temperature_c};
 
 fn main() {
     let materials = [

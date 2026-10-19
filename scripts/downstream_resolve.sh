@@ -11,11 +11,12 @@
 # changes. A failed update is reported as "<label> (lock)".
 #
 # check_resolved then requires the resolved alice-physics to be a path package at
-# this checkout: a patch still unused after the update (or one cargo cannot
-# apply, which falls back to crates.io with only a warning) is reported as
-# "<label> (resolve)".
+# this checkout's facade (PHYSICS_PACKAGE_DIR, default PHYSICS_DIR): a patch still
+# unused after the update (or one cargo cannot apply, which falls back to crates.io
+# with only a warning) is reported as "<label> (resolve)".
 #
-# Needs from the caller: PHYSICS_DIR and the array failed (PYTHON, default
+# Needs from the caller: PHYSICS_DIR (and PHYSICS_PACKAGE_DIR when the package is not
+# at the root) and the array failed (PYTHON, default
 # python3, runs the directory comparison).
 relock() {
     local label=$1 dir=$2
@@ -55,7 +56,7 @@ check_resolved() {
     # registry package has no parentheses and a git one a URL, neither a directory
     # (an empty or non-directory path is refused by same_dir)
     path=$(printf '%s\n' "$line" | tr -d '\r' | sed -n '1s/^alice-physics v[^ ]* (\(.*\))$/\1/p')
-    if same_dir "$path" "$PHYSICS_DIR"; then
+    if same_dir "$path" "${PHYSICS_PACKAGE_DIR:-$PHYSICS_DIR}"; then
         echo "$label: $line"
     else
         echo "error: $label: alice-physics does not resolve to this checkout: $line" >&2

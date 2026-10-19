@@ -32,7 +32,7 @@
     reason = "analytic reference: forced oscillator transfer F / sqrt((wn^2-w^2)^2 + (2 zeta wn w)^2), asserted vs body/wake amplitude ratio"
 )]
 
-use alice_physics::aeroelasticity::{viv_step, VivParameters, VivState};
+use alice_physics_core::aeroelasticity::{viv_step, VivParameters, VivState};
 use core::f64::consts::PI;
 
 struct Measured {

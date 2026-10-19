@@ -1,4 +1,4 @@
-//! Production entry point for `alice_physics::collision_mesh_gen`:
+//! Production entry point for `alice_physics_core::collision_mesh_gen`:
 //! `CollisionMesh`, `CollisionMeshConfig`, `compute_mesh_aabb`,
 //! `generate_collision_mesh`, and `simplify_collision_mesh`.
 //!
@@ -18,11 +18,11 @@
 //!
 //! Author: Moroya Sakamoto
 
-use alice_physics::collision_mesh_gen::{
+use alice_physics_core::collision_mesh_gen::{
     compute_mesh_aabb, generate_collision_mesh, simplify_collision_mesh, CollisionMesh,
     CollisionMeshConfig,
 };
-use alice_physics::math::{Fix128, Vec3Fix};
+use alice_physics_core::math::{Fix128, Vec3Fix};
 
 /// A sphere's signed-distance function: negative inside, zero on the
 /// surface, positive outside. `generate_collision_mesh` treats negative

@@ -12,9 +12,9 @@
 //! cargo run --release --example world_step_ccd
 //! ```
 
-use alice_physics::material::PhysicsMaterial;
-use alice_physics::shape::Shape;
-use alice_physics::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldCcdConfig};
+use alice_physics_core::material::PhysicsMaterial;
+use alice_physics_core::shape::Shape;
+use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldCcdConfig};
 
 fn run(ccd: WorldCcdConfig) -> (f64, f64) {
     let config = PhysicsConfig {

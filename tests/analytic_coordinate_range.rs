@@ -48,9 +48,9 @@
     reason = "independent reference: f64 libm sin/exp/ln/atan values compared with Fix128 transcendentals at boundary inputs 2^30..2^62"
 )]
 
-use alice_physics::sdf_collider::collide_sphere_sdf;
-use alice_physics::solver::Broadphase;
-use alice_physics::{
+use alice_physics_core::sdf_collider::collide_sphere_sdf;
+use alice_physics_core::solver::Broadphase;
+use alice_physics_core::{
     ClosureSdf, Fix128, ForceField, Mat3Fix, PhysicsConfig, PhysicsWorld, QuatFix, RigidBody,
     SdfCollider, Shape, ShapeError, SolverBackend, SpatialGrid, Vec3Fix,
 };
@@ -592,20 +592,23 @@ fn xpbd_keeps_the_predicted_velocity_when_the_position_add_overflows() {
 struct Quiet;
 
 #[cfg(feature = "std")]
-impl alice_physics::world_participant::Participant for Quiet {
-    fn kind(&self) -> alice_physics::world_participant::ParticipantKind {
-        alice_physics::world_participant::ParticipantKind::new(1)
+impl alice_physics_core::world_participant::Participant for Quiet {
+    fn kind(&self) -> alice_physics_core::world_participant::ParticipantKind {
+        alice_physics_core::world_participant::ParticipantKind::new(1)
     }
     fn substep(
         &mut self,
-        _: &mut alice_physics::world_participant::SubstepCtx<'_>,
+        _: &mut alice_physics_core::world_participant::SubstepCtx<'_>,
         _: Fix128,
-    ) -> Result<(), alice_physics::world_participant::ParticipantFault> {
+    ) -> Result<(), alice_physics_core::world_participant::ParticipantFault> {
         Ok(())
     }
-    fn observe(&self, _: &mut alice_physics::world_participant::ObservationSink) {}
+    fn observe(&self, _: &mut alice_physics_core::world_participant::ObservationSink) {}
     fn write_state(&self, _: &mut Vec<u8>) {}
-    fn check_state(&self, _: &[u8]) -> Result<(), alice_physics::world_participant::StateError> {
+    fn check_state(
+        &self,
+        _: &[u8],
+    ) -> Result<(), alice_physics_core::world_participant::StateError> {
         Ok(())
     }
     fn read_state(&mut self, _: &[u8]) {}
@@ -617,7 +620,7 @@ impl alice_physics::world_participant::Participant for Quiet {
 #[cfg(feature = "std")]
 #[test]
 fn tgs_overflow_with_a_participant_is_recorded_as_a_fault() {
-    use alice_physics::world_participant::WorldFault;
+    use alice_physics_core::world_participant::WorldFault;
     for backend in [SolverBackend::default(), SolverBackend::Tgs] {
         let mut w = washing_world(backend);
         w.add_participant(Box::new(Quiet)).expect("登録できる");
@@ -871,7 +874,7 @@ fn point_force(pos: Vec3Fix, strength: Fix128) -> Vec3Fix {
         repulsive: false,
         max_force: Fix128::from_raw(i64::MAX, 0),
     };
-    alice_physics::force::compute_force(&field, &RigidBody::new(pos, Fix128::ONE))
+    alice_physics_core::force::compute_force(&field, &RigidBody::new(pos, Fix128::ONE))
 }
 
 /// 点力場の参照値 (f64): 中心向き (引力) に `strength / r²`、上限 `max_force`
@@ -936,7 +939,7 @@ fn point_field_matches_the_inverse_square_across_the_square_range_edge() {
         repulsive: true,
         max_force: Fix128::from_raw(i64::MAX, 0),
     };
-    let f = alice_physics::force::compute_force(&field, &RigidBody::new(pos, Fix128::ONE));
+    let f = alice_physics_core::force::compute_force(&field, &RigidBody::new(pos, Fix128::ONE));
     let g = point_force(pos, pow2(62));
     // `Mul` は −∞ 向きの切り捨てなので、符号の反転は 1 raw 単位までずれる
     for (a, b) in [(f.x, g.x), (f.y, g.y), (f.z, g.z)] {
@@ -950,7 +953,7 @@ fn point_field_matches_the_inverse_square_across_the_square_range_edge() {
         repulsive: false,
         max_force: Fix128::from_ratio(1, 8),
     };
-    let f = alice_physics::force::compute_force(
+    let f = alice_physics_core::force::compute_force(
         &field,
         &RigidBody::new(Vec3Fix::new(pow2(32), z, z), Fix128::ONE),
     );
@@ -1071,8 +1074,10 @@ fn point_field_in_range_is_bit_identical_to_the_previous_formula() {
                 repulsive,
                 max_force,
             };
-            let got =
-                alice_physics::force::compute_force(&field, &RigidBody::new(position, Fix128::ONE));
+            let got = alice_physics_core::force::compute_force(
+                &field,
+                &RigidBody::new(position, Fix128::ONE),
+            );
             let want = point_force_previous(center, strength, repulsive, max_force, position);
             assert_eq!(got, want, "delta {delta} strength {strength}");
             checked += 1;
@@ -1091,7 +1096,8 @@ fn point_field_in_range_is_bit_identical_to_the_previous_formula() {
             repulsive: false,
             max_force: Fix128::from_raw(i64::MAX, 0),
         };
-        let got = alice_physics::force::compute_force(&field, &RigidBody::new(-delta, Fix128::ONE));
+        let got =
+            alice_physics_core::force::compute_force(&field, &RigidBody::new(-delta, Fix128::ONE));
         let want = point_force_previous(
             Vec3Fix::ZERO,
             pow2(62),
@@ -1608,22 +1614,26 @@ fn in_range_scene(id: u32, backend: SolverBackend) -> PhysicsWorld {
             let mut bb = RigidBody::new_dynamic(Vec3Fix::from_int(2, 5, 0), one);
             bb.angular_velocity = Vec3Fix::from_int(0, 0, 1);
             let b = w.add_body_with_radius(bb, Fix128::from_ratio(1, 2));
-            w.add_joint(alice_physics::Joint::Ball(alice_physics::BallJoint::new(
-                a,
-                b,
-                Vec3Fix::ZERO,
-                Vec3Fix::from_int(-2, 0, 0),
-            )));
+            w.add_joint(alice_physics_core::Joint::Ball(
+                alice_physics_core::BallJoint::new(
+                    a,
+                    b,
+                    Vec3Fix::ZERO,
+                    Vec3Fix::from_int(-2, 0, 0),
+                ),
+            ));
             let c = w.add_body_with_radius(
                 RigidBody::new_dynamic(Vec3Fix::from_int(4, 5, 1), one),
                 Fix128::from_ratio(1, 2),
             );
-            w.add_joint(alice_physics::Joint::Ball(alice_physics::BallJoint::new(
-                b,
-                c,
-                Vec3Fix::from_int(1, 0, 0),
-                Vec3Fix::new(-one, Fix128::ZERO, -one),
-            )));
+            w.add_joint(alice_physics_core::Joint::Ball(
+                alice_physics_core::BallJoint::new(
+                    b,
+                    c,
+                    Vec3Fix::from_int(1, 0, 0),
+                    Vec3Fix::new(-one, Fix128::ZERO, -one),
+                ),
+            ));
         }
         // 既存の検出経路 (積 v·dt が範囲外、XPBD は修正前から flag を立てる)
         _ => {

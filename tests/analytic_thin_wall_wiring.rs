@@ -1,4 +1,4 @@
-//! Oracles for the production entry points of `alice_physics::thin_wall`,
+//! Oracles for the production entry points of `alice_physics_core::thin_wall`,
 //! driven by `examples/thin_wall_detection.rs`: `ThinWallConfig::for_nozzle`,
 //! `measure_thickness_at`, `analyze_thickness`, `analyze_thickness_grid`,
 //! `sample_surface_points`, `ThinWallReport::has_thin_walls` and
@@ -97,9 +97,9 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::sdf_collider::{ClosureSdf, SdfField};
-use alice_physics::thin_wall::{
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::sdf_collider::{ClosureSdf, SdfField};
+use alice_physics_core::thin_wall::{
     analyze_thickness, analyze_thickness_grid, measure_thickness_at, sample_surface_points,
     ThinWallConfig, ThinWallReport,
 };

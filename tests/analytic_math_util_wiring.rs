@@ -11,8 +11,8 @@
     reason = "independent reference: f64 libm cbrt and 2^(62/3), 2^(-64/3) references for math_util::cbrt_fix at the documented range ends"
 )]
 
-use alice_physics::math::Fix128;
-use alice_physics::math_util::{cbrt_fix, clamp_fix, pow_int};
+use alice_physics_core::math::Fix128;
+use alice_physics_core::math_util::{cbrt_fix, clamp_fix, pow_int};
 
 fn fx(n: i64) -> Fix128 {
     Fix128::from_int(n)

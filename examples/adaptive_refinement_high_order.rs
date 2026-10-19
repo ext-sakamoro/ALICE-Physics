@@ -29,13 +29,13 @@ fn main() {
 
 #[cfg(feature = "std")]
 fn main() {
-    use alice_physics::cubic_elastic_fem::solve_adaptive_cubic;
-    use alice_physics::linear_elastic_fem::{
+    use alice_physics_core::cubic_elastic_fem::solve_adaptive_cubic;
+    use alice_physics_core::linear_elastic_fem::{
         AdaptiveConfig, BoundaryConditions, ElasticMaterial, SolverConfig,
     };
-    use alice_physics::math::Fix128;
-    use alice_physics::quadratic_elastic_fem::solve_adaptive_quadratic;
-    use alice_physics::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
+    use alice_physics_core::math::Fix128;
+    use alice_physics_core::quadratic_elastic_fem::solve_adaptive_quadratic;
+    use alice_physics_core::sdf_fem_mesh::{SdfTetMesh, Tetrahedron};
 
     const N: usize = 2;
     let node = |i: usize, j: usize, k: usize| {

@@ -18,10 +18,10 @@
 
 #![cfg(feature = "std")]
 
-use alice_physics::det_math::atan2_64;
-use alice_physics::math::{Fix128, Vec3Fix};
-use alice_physics::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::SolverBackend;
+use alice_physics_core::det_math::atan2_64;
+use alice_physics_core::math::{Fix128, Vec3Fix};
+use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody};
+use alice_physics_core::SolverBackend;
 
 const FRAME_DT: f64 = 1.0 / 60.0;
 const FRAMES: usize = 600;
@@ -59,7 +59,10 @@ fn isotropic_body() -> RigidBody {
 }
 
 /// Turn angle of the rotation taking `prev` to `next` (`next · prev⁻¹`).
-fn turn_angle(prev: alice_physics::math::QuatFix, next: alice_physics::math::QuatFix) -> f64 {
+fn turn_angle(
+    prev: alice_physics_core::math::QuatFix,
+    next: alice_physics_core::math::QuatFix,
+) -> f64 {
     let d = next.mul(prev.conjugate());
     let v = [d.x.to_f64(), d.y.to_f64(), d.z.to_f64()];
     let s = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt();
