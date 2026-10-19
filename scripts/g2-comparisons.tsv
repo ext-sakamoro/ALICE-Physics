@@ -152,7 +152,7 @@ src/sdf_fem_mesh.rs	crossing_vertex	denom . abs () < 1.0e-9	1	f32	predicate	an i
 src/sdf_fem_mesh.rs	crossing_vertex	t <= 0.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_fem_mesh.rs	crossing_vertex	t >= 1.0	1	f32	predicate	an if condition: the result picks a branch, no operand value is chosen by the comparison
 src/sdf_fem_mesh.rs	edge_to_split	len_sq <= limit_sq	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
-src/sdf_fem_mesh.rs	edge_to_split	len_sq > blen	1	f32	predicate	an operand of && / ||: the result is part of a condition, no operand value is chosen by it
+src/sdf_fem_mesh.rs	edge_to_split	len_sq > blen	1	f32	select	argmax of the squared edge length (`better = len_sq > blen || (len_sq == blen && key < bkey)`, then `best = Some(..)`): a selection of an edge; len_sq is a fused sum of squares (+0 or more, no signed-zero tie), an equal length goes to the smaller edge key (a total order), and a NaN length never replaces the incumbent
 src/sdf_fem_mesh.rs	generate	cell > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value
 src/sdf_fem_mesh.rs	generate	sdf . distance (p [0] , p [1] , p [2]) <= 0.0	1	f32	predicate	the predicate of an iterator / Option adapter (all / any / filter / then / is_some_and): a condition, no operand value is chosen
 src/sdf_fem_mesh.rs	generate_marching_tets	cell > 0.0	1	f32	predicate	an assertion: checks an invariant, chooses no value

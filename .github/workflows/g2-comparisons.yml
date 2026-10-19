@@ -1,0 +1,93 @@
+name: G2 float comparisons
+
+# ALICE-Law G2, by type: every ordering comparison of the library code is typed by the
+# compiler (a scratch copy wraps one operand of each in a probe call whose trait has no
+# impls, and `cargo check --lib` names the type in each E0277), in four configurations
+# (every feature but wasm, no default features, x86_64 with the SIMD code, wasm32); every
+# float one is reviewed as select or predicate in scripts/g2-comparisons.tsv. Fails on an
+# unreviewed or misclassified float comparison, a stale row, a configuration the probe
+# typed nothing in, and 0 comparisons. Four cargo checks: it runs when the library code,
+# the manifests, the toolchain or the check itself change (.github/paths/g2-comparisons.txt),
+# not on a push that changes only documents.
+on:
+  push:
+    # no paths here: a branch created at a SHA another ref already has gets an empty
+    # diff from GitHub's filter and the run is skipped; the changes job below compares
+    # with merge-base(origin/main) instead (patterns: .github/paths/g2-comparisons.txt)
+    # ci/**: the same check on the ci/<id> branch before main is fast-forwarded to it
+    branches: [main, 'ci/**']
+  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # on main one group per SHA (a main run is never cancelled or dropped by a later push);
+  # on any other ref one group per ref, and a newer push cancels the older run of its branch
+  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # which files changed: a new or force-pushed branch is compared with merge-base(origin/main),
+  # another push with before..after, a pull request with base...head; schedule and manual
+  # runs always run; any error runs (fail-closed) — scripts/changed_paths.py
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after || github.sha }}
+          CREATED: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/changed_paths.py decide --event "$EVENT"
+          --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
+          --base "$PR_BASE" --head "$PR_HEAD"
+          --patterns-file .github/paths/g2-comparisons.txt
+
+  g2-comparisons:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    name: G2 float comparisons (typed by the compiler)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # the pinned toolchain (rust-toolchain.toml) needs the probe's two extra targets
+      - name: Targets of the probe configurations
+        run: rustup target add wasm32-unknown-unknown x86_64-unknown-linux-gnu
+      - name: G2 float comparisons (test first)
+        run: python3 scripts/test_g2_comparisons.py
+      - name: G2 float comparisons (every ordering comparison typed, every float one reviewed)
+        run: python3 scripts/g2_comparisons.py
+
+  # one result for the workflow: run=true needs every job above to succeed, run=false needs
+  # them skipped (a skipped, cancelled or failed job after run=true is red)
+  gate:
+    name: Gate
+    if: always()
+    needs: [changes, g2-comparisons]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: gate
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"

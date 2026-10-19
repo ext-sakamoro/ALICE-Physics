@@ -18,6 +18,7 @@
 "downstream.yml" = "landing"
 "eol.yml" = "landing"
 "fuzz.yml" = "landing"
+"g2-comparisons.yml" = "landing"
 "integration-status.yml" = "landing"
 "oracle-status.yml" = "landing"
 "public-text.yml" = "landing"

@@ -24,10 +24,13 @@ def build_scan() -> str:
     env = os.environ.get("G2_SCAN_BIN")
     if env:
         return env
-    subprocess.run(["cargo", "build", "-q", "--release", "--locked",
+    # an explicit target directory: a CARGO_TARGET_DIR of the caller (one per checkout)
+    # would put the binary somewhere else than the path returned below
+    target = HERE / "g2-rewrite-scan" / "target"
+    subprocess.run(["cargo", "build", "-q", "--release", "--locked", "--target-dir", str(target),
                     "--manifest-path", str(HERE / "g2-rewrite-scan" / "Cargo.toml")], check=True)
     exe = "g2-rewrite-scan.exe" if os.name == "nt" else "g2-rewrite-scan"
-    return str(HERE / "g2-rewrite-scan" / "target" / "release" / exe)
+    return str(target / "release" / exe)
 
 
 SCAN = build_scan()
@@ -72,6 +75,57 @@ class Inventory(unittest.TestCase):
         self.assertIn(("bin", "a >= b", "while condition"), got)
         self.assertIn(("bin", "n > 0", "boolean operand"), got)
         self.assertEqual(len(rows), 8, rows)  # the test module is not counted
+
+    def test_a_comparison_with_the_running_best_is_an_incumbent(self):
+        src = """pub fn m(v: &[(u32, f32)]) -> Option<u32> {
+    let mut best: Option<(u32, f32)> = None;
+    for &(k, len) in v {
+        let better = match best {
+            None => true,
+            Some((_, blen)) => len > blen || len < 0.0,
+        };
+        if better {
+            best = Some((k, len));
+        }
+    }
+    best.map(|(k, _)| k)
+}
+pub fn c(v: &[f32]) -> Option<f32> {
+    let mut best: Option<f32> = None;
+    for &d in v {
+        if d > 0.0 && best.is_none_or(|b| d < b) {
+            best = Some(d);
+        }
+    }
+    best
+}
+pub fn l(v: &[f32], mut best: Option<f32>) -> Option<f32> {
+    for &d in v {
+        if let Some(b) = best {
+            if d < b {
+                best = Some(d);
+            }
+        } else {
+            best = Some(d);
+        }
+    }
+    best
+}
+pub fn n(v: &[f32], best: Option<f32>) -> bool {
+    match best {
+        Some(b) => v[0] < b,
+        None => false,
+    }
+}
+"""
+        rows = [r.split("\t") for r in scan_text(src, "--comparisons").splitlines()]
+        got = {(r[1], r[3]): r[6] for r in rows}
+        self.assertEqual(got[("m", "len > blen")], g.INCUMBENT)
+        self.assertEqual(got[("m", "len < 0.0")], "boolean operand")  # no binding of the best
+        self.assertEqual(got[("c", "d < b")], g.INCUMBENT)
+        self.assertEqual(got[("c", "d > 0.0")], "boolean operand")
+        self.assertEqual(got[("l", "d < b")], g.INCUMBENT)
+        self.assertEqual(got[("n", "v [0] < b")], "expression")  # `best` is never assigned in n
 
     def test_the_probe_span_skips_a_literal_left_operand(self):
         rows = [l.split("\t") for l in scan_text("pub fn f(x: f32) -> bool { 0.5 < x }\n", "--comparisons").splitlines()]
@@ -180,6 +234,14 @@ class Judge(unittest.TestCase):
     def test_a_predicate_on_a_selection(self):
         p = self.judge(selections={("src/a.rs", "f", "x < y")})
         self.assertTrue(any("finds a selection" in x for x in p), p)
+
+    def test_a_predicate_on_an_incumbent(self):
+        sites = [dict(s, ctx=g.INCUMBENT) if s["id"] == 1 else s for s in self.SITES]
+        p = self.judge(sites=sites)
+        self.assertTrue(any("running best" in x for x in p), p)
+        rows = {k: (c, ty, "select", "argmax of the length: a NaN never replaces")
+                for k, (c, ty, _, _) in self.ROWS.items()}
+        self.assertEqual(self.judge(sites=sites, rows=rows), [])
 
     def test_a_row_on_a_non_float_comparison(self):
         rows = dict(self.ROWS)

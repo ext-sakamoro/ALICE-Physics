@@ -1,0 +1,20 @@
+# the paths that run .github/workflows/g2-comparisons.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+# the comparisons are scanned and typed in the library code
+src/**
+# `cargo check --lib` reads the manifest, the lock and the pinned toolchain
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+# the check, its tests, the reviewed table and the scan
+scripts/g2_comparisons.py
+scripts/test_g2_comparisons.py
+scripts/g2-comparisons.tsv
+scripts/g2-rewrite-scan/**
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/g2-comparisons.yml
+.github/paths/g2-comparisons.txt
