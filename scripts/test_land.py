@@ -1611,7 +1611,11 @@ st["calls"].append(a)
 st.setdefault("envs", []).append({k: v for k, v in os.environ.items()
                                   if k.startswith(("GH_", "GITHUB_")) or "PROXY" in k.upper() or k.startswith("SSL_")})
 rc = 0
-if a[:2] == ["auth", "status"]:
+if st.get("fail"):
+    # a failure gh reports (its stderr), one per call while the list lasts
+    print(st["fail"].pop(0), file=sys.stderr)
+    rc = 1
+elif a[:2] == ["auth", "status"]:
     ok = st.get("auth", True)
     print("github.com\n  Logged in to github.com account someone" if ok else "github.com\n  X Failed to log in",
           file=sys.stderr)
@@ -1937,6 +1941,73 @@ class WaitEvidence(Isolated):
         lnd.poll_seconds = 0
         with self.assertRaisesRegex(land.LandError, "gh run list --repo github.com/o/r failed"):
             lnd.wait_evidence("ci/T", SHA)
+
+
+class GhRetry(Isolated):
+    """gh_json asks a read again after a transient GitHub failure, and only then (fake `gh`, no network)."""
+
+    def setUp(self):
+        super().setUp()
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, True)
+        (d / "gh.py").write_text(FAKE_GH, encoding="utf-8")
+        self.state = d / "state.json"
+        os.environ["FAKE_GH_STATE"] = str(self.state)
+        self.addCleanup(os.environ.pop, "FAKE_GH_STATE", None)
+        self.logged: list[str] = []
+        self.lnd = land.Lander(self.r.work, "T", log=self.logged.append)
+        self.lnd.gh_cmd = [sys.executable, str(d / "gh.py")]
+        self.lnd.gh_retry_seconds = (1.0, 2.0, 3.0)
+        self.slept: list[float] = []
+        real_sleep = land.time.sleep
+        land.time.sleep = self.slept.append
+        self.addCleanup(setattr, land.time, "sleep", real_sleep)
+
+    def jobs(self, fail: list[str]):
+        jobs = [{"name": "Test", "status": "completed", "conclusion": "success"}]
+        self.state.write_text(json.dumps({"calls": [], "fail": fail, "jobs": {"7": jobs}}))
+        return jobs
+
+    def calls(self) -> int:
+        return len(json.loads(self.state.read_text())["calls"])
+
+    def test_a_server_error_is_asked_again_and_then_read(self):
+        bad = "HTTP 502: Server Error (https://api.github.com/repos/o/r/actions/runs/7/jobs?per_page=100)"
+        jobs = self.jobs([bad, "HTTP 503: Service Unavailable"])
+        self.assertEqual(self.lnd.run_jobs("o/r", 7), jobs)
+        self.assertEqual((self.calls(), self.slept), (3, [1.0, 2.0]))
+        retries = [l for l in self.logged if "asking again" in l]
+        self.assertEqual(len(retries), 2, self.logged)
+        self.assertRegex(retries[0], r"^gh run view 7 --repo: HTTP 502 \(attempt 1/4\), asking again in 1 s: HTTP 502: Server")
+        self.assertRegex(retries[1], r"^gh run view 7 --repo: HTTP 503 \(attempt 2/4\), asking again in 2 s: ")
+
+    def test_a_dropped_connection_is_asked_again(self):
+        jobs = self.jobs(["Get \"https://api.github.com/x\": read tcp: connection reset by peer"])
+        self.assertEqual(self.lnd.run_jobs("o/r", 7), jobs)
+        self.assertEqual((self.calls(), self.slept), (2, [1.0]))
+        self.assertEqual([l.split(": ", 1)[1].split(" (")[0] for l in self.logged if "asking again" in l],
+                         ["connection reset"], self.logged)
+
+    def test_a_server_error_that_persists_stops_the_landing(self):
+        self.jobs(["HTTP 502: Server Error"] * 5)
+        with self.assertRaisesRegex(land.LandError, r"gh run view 7 --repo failed \(after 4 attempts\): HTTP 502"):
+            self.lnd.run_jobs("o/r", 7)
+        self.assertEqual((self.calls(), self.slept), (4, [1.0, 2.0, 3.0]))
+
+    def test_a_client_or_auth_error_is_not_asked_again(self):
+        for err in ("HTTP 404: Not Found (https://api.github.com/repos/o/r/actions/runs/7)",
+                    "HTTP 401: Bad credentials", "HTTP 403: Resource not accessible by integration",
+                    "To get started with GitHub CLI, please run:  gh auth login"):
+            self.slept.clear()
+            self.jobs([err, err])
+            with self.assertRaisesRegex(land.LandError, r"gh run view 7 --repo failed: "):
+                self.lnd.run_jobs("o/r", 7)
+            self.assertEqual((self.calls(), self.slept), (1, []), err)
+        self.assertEqual([l for l in self.logged if "asking again" in l], [])
+
+    def test_the_default_delays_are_bounded(self):
+        delays = land.Lander(self.r.work, "T", log=lambda *_: None).gh_retry_seconds
+        self.assertTrue(0 < len(delays) <= 5 and all(0 < s <= 300 for s in delays), delays)
 
 
 class WaitAfter(Isolated):

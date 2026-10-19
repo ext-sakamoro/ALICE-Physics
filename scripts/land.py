@@ -359,6 +359,10 @@ def clean_env(cargo: bool = False, with_git: bool = True) -> dict[str, str]:
 # point at a config with another host or an `http_unix_socket`). Proxies are kept (networks
 # need them; TLS to github.com is still verified because the CA overrides are dropped).
 GH_HOSTNAME = "github.com"
+# a gh failure GitHub reports as its own, on a read that can be asked again: a server error
+# (HTTP 5xx) or the connection dropping / timing out; a 4xx or an auth failure is not one
+GH_TRANSIENT = re.compile(r"HTTP 5\d\d\b|connection reset|connection refused|i/o timeout|TLS handshake timeout"
+                          r"|unexpected EOF|error connecting to", re.IGNORECASE)
 GH_KEPT = ("GH_TOKEN", "GITHUB_TOKEN")
 GH_SCRUBBED_RE = re.compile(r"^(GH_.*|GITHUB_ENTERPRISE_TOKEN|GITHUB_.*_TOKEN)$")
 
@@ -976,6 +980,8 @@ class Lander:
         self.preflight_runs = 0
         self.poll_seconds = 30
         self.gh_cmd: list[str] | None = None   # the pinned gh on first use; tests run a fake gh script here
+        # the delays before asking a read again after a transient GitHub failure (GH_TRANSIENT)
+        self.gh_retry_seconds: tuple[float, ...] = (10.0, 30.0, 90.0)
         self.max_polls = 240  # 2 hours at 30 s: the 4-OS CI run and the queued heavy runs
         self.after_max_polls = 360  # 3 hours at 30 s: the Mac Intel leg and Miri on main
         self.lock_wait_seconds = LOCK_WAIT_MINUTES * 60
@@ -1105,11 +1111,27 @@ class Lander:
         return self.gh_cmd
 
     def gh_json(self, *args: str):
-        """`gh <args>` parsed as JSON; LandError when gh fails (never read as an empty list)."""
-        out = subprocess.run([*self.gh(), *args], capture_output=True, text=True, env=gh_env(), encoding="utf-8",
-                             errors="replace")
+        """`gh <args>` parsed as JSON; LandError when gh fails (never read as an empty list).
+
+        Every caller reads (run list / run view / api GET), so a failure GitHub reports as its own
+        (an HTTP 5xx, a dropped connection or a timeout) is asked again after each delay of
+        gh_retry_seconds; any other failure (4xx, auth, a bad argument) and the last transient one
+        stop the landing, naming the attempts. Each retry is logged with the failure GitHub reported
+        and the attempt number, so a flaky API shows in the landing record."""
+        attempts = len(self.gh_retry_seconds) + 1
+        for attempt in range(1, attempts + 1):
+            out = subprocess.run([*self.gh(), *args], capture_output=True, text=True, env=gh_env(),
+                                 encoding="utf-8", errors="replace")
+            transient = GH_TRANSIENT.search(out.stderr) if out.returncode != 0 else None
+            if transient is None or attempt == attempts:
+                break
+            delay = self.gh_retry_seconds[attempt - 1]
+            self.log(f"gh {' '.join(args[:4])}: {transient.group(0)} (attempt {attempt}/{attempts}), "
+                     f"asking again in {delay:g} s: {out.stderr.strip()[:120]}")
+            time.sleep(delay)
         if out.returncode != 0:
-            raise LandError(f"gh {' '.join(args[:4])} failed: {out.stderr.strip()[:300]}")
+            tried = f" (after {attempt} attempts)" if attempt > 1 else ""
+            raise LandError(f"gh {' '.join(args[:4])} failed{tried}: {out.stderr.strip()[:300]}")
         try:
             return json.loads(out.stdout or "null")
         except ValueError as e:
