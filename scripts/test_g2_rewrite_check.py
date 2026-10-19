@@ -21,10 +21,13 @@ def build_scan() -> str:
     env = os.environ.get("G2_SCAN_BIN")
     if env:
         return env
-    subprocess.run(["cargo", "build", "-q", "--release", "--locked",
+    # an explicit target directory: a CARGO_TARGET_DIR of the caller (one per checkout)
+    # would put the binary somewhere else than the path returned below
+    target = HERE / "g2-rewrite-scan" / "target"
+    subprocess.run(["cargo", "build", "-q", "--release", "--locked", "--target-dir", str(target),
                     "--manifest-path", str(HERE / "g2-rewrite-scan" / "Cargo.toml")], check=True)
     exe = "g2-rewrite-scan.exe" if os.name == "nt" else "g2-rewrite-scan"
-    return str(HERE / "g2-rewrite-scan" / "target" / "release" / exe)
+    return str(target / "release" / exe)
 
 
 SCAN = build_scan()
