@@ -8,6 +8,7 @@ comparison without a row, a stale row, a count change, a misclassified type, a `
 on a selection, a row on a non-float comparison and an unprobed comparison, and passes a
 reviewed tree; a bad table row is refused."""
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -142,6 +143,21 @@ class Wrap(unittest.TestCase):
     def test_two_spans_on_one_line(self):
         out = g.wrap("a < b && c < d", [(0, (1, 0, 1, 1)), (1, (1, 9, 1, 10))])
         self.assertEqual(out, "crate::__cmp_probe::s0(a) < b && crate::__cmp_probe::s1(c) < d")
+
+
+class Configs(unittest.TestCase):
+    def test_the_full_configuration_is_the_documented_feature_set(self):
+        text = (HERE / "id_move.toml").read_text(encoding="utf-8")
+        listed = re.search(r"^doc-features\s*=\s*\[([^\]]*)\]", text, re.M)
+        self.assertIsNotNone(listed)
+        self.assertEqual(g.CONFIGS[0], ["--features", ",".join(re.findall(r'"([^"]+)"', listed.group(1)))])
+
+    def test_a_missing_list_stops_the_check(self):
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "scripts").mkdir()
+            (Path(d) / "scripts" / "id_move.toml").write_text('package = "x"\n', encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                g.doc_features(Path(d))
 
 
 class Types(unittest.TestCase):

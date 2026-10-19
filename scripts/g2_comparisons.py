@@ -59,10 +59,23 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 PROBE = "__cmp_probe"
-# the configurations the probe type checks: every feature but wasm (the documentation set of
+
+
+def doc_features(root: Path) -> str:
+    """`doc-features` of scripts/id_move.toml (every feature but wasm), read rather than copied so
+    a feature added to or removed from the crate cannot leave the probe on a stale list"""
+    path = root / "scripts" / "id_move.toml"
+    m = re.search(r"^doc-features\s*=\s*\[([^\]]*)\]", path.read_text(encoding="utf-8"), re.M)
+    names = re.findall(r'"([^"]+)"', m.group(1)) if m else []
+    if not names:
+        sys.exit(f"g2_comparisons: no doc-features list in {path}")
+    return ",".join(names)
+
+
+# the configurations the probe type checks: every feature but wasm (`doc-features` of
 # scripts/id_move.toml), no default features, x86_64 (the SIMD code), and wasm32
 CONFIGS = [
-    ["--features", "std,simd,parallel,ffi,python,privacy-crypto,gpu-solver-bridge,neural,replay,analytics"],
+    ["--features", doc_features(ROOT)],
     ["--no-default-features"],
     ["--target", "x86_64-unknown-linux-gnu", "--features", "std,simd,parallel"],
     ["--target", "wasm32-unknown-unknown", "--features", "wasm"],

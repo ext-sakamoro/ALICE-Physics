@@ -14,6 +14,8 @@ scripts/g2_comparisons.py
 scripts/test_g2_comparisons.py
 scripts/g2-comparisons.tsv
 scripts/g2-rewrite-scan/**
+# the probe's full configuration is the doc-features list there
+scripts/id_move.toml
 # the changes and gate jobs
 scripts/changed_paths.py
 .github/workflows/g2-comparisons.yml
