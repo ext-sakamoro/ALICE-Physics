@@ -252,6 +252,61 @@ def commit(root: Path, files: dict[str, str], msg: str, author: str = f"{NAME} <
     return git(root, "rev-parse", "HEAD")
 
 
+# --- a stand-in for ALICE-Law (check_law_state clones it and runs its land_law_state.py) ------
+# The fake script exits with the code in its own `rc` file and appends what it was started with
+# (its argv, the git and gh its PATH resolves, the forced config it received) to `record`.
+FAKE_LAW_STATE = r"""import json, os, shutil, sys
+here = os.path.dirname(os.path.abspath(__file__))
+rc = int(open(os.path.join(here, "rc"), encoding="utf-8").read())
+record = open(os.path.join(here, "record"), encoding="utf-8").read().strip()
+if record:
+    n = int(os.environ.get("GIT_CONFIG_COUNT", "0"))
+    with open(record, "a", encoding="utf-8") as fh:
+        fh.write(json.dumps({"argv": sys.argv[1:], "cwd": os.getcwd(),
+                             "git": os.path.realpath(shutil.which("git") or ""),
+                             "config": [[os.environ.get(f"GIT_CONFIG_KEY_{i}"), os.environ.get(f"GIT_CONFIG_VALUE_{i}")]
+                                        for i in range(n)]}) + "\n")
+if rc == 1:
+    print("land_law_state: state moves: yes")
+    print("  ALICE-Physics: pass 9 -> 10, unverified 3 -> 2")
+elif rc == 2:
+    print("land_law_state: state not computed (1 finding(s) in the manifests)", file=sys.stderr)
+else:
+    print("land_law_state: state moves: no")
+print("land_law_state: 16 manifests read for 18 crates, 224 gates compared (candidates: ALICE-Physics)")
+sys.exit(rc)
+"""
+
+
+def fake_law(rc: int, record: Path | None = None, script: bool = True) -> str:
+    """a throwaway ALICE-Law repository (main) whose scripts/land_law_state.py exits `rc`"""
+    d = Path(tempfile.mkdtemp(prefix="fake-law-"))
+    atexit.register(shutil.rmtree, d, True)
+    # built without the ambient git variables: at import (AmbientEnv's child process) they
+    # point git at another repository, and the fixture is not what is under test
+    saved = {k: os.environ.pop(k) for k in [k for k in os.environ if AMBIENT_ENV_RE.match(k)]}
+    try:
+        subprocess.run(["git", "init", "-q", "-b", "main", str(d)], check=True)
+        git(d, "config", "maintenance.auto", "false")
+        files = {"README.md": "fake ALICE-Law\n"}
+        if script:
+            files.update({"scripts/land_law_state.py": FAKE_LAW_STATE, "scripts/rc": f"{rc}\n",
+                          "scripts/record": f"{record or ''}\n"})
+        commit(d, files, "fake law")
+    finally:
+        os.environ.update(saved)
+    return str(d)
+
+
+# made once at import, in the ambient environment (a test may later put a hostile git first on PATH)
+_LAW_OK = fake_law(0)
+
+
+def law_ok() -> str:
+    """the fake ALICE-Law whose state never moves (every landing test that does not test the gate)"""
+    return _LAW_OK
+
+
 class FakeLander(land.Lander):
     """Heavy steps recorded; regeneration writes a ledger derived from src/."""
 
@@ -272,6 +327,8 @@ class FakeLander(land.Lander):
         self.lock_poll_seconds = 0.05
         # the test origin is a local bare repository: its own URL is the expected remote
         self.expected_remote_urls = (self.git("config", "--get", "remote.origin.url"),)
+        # the Law state gate reads a local fake (the GitHub URL would trip the network tripwire)
+        self.law_url = law_ok()
 
     def run_preflight(self):
         self.preflight_runs += 1
@@ -2059,14 +2116,14 @@ SUBPROCESS_FUNCS = {"run", "Popen", "check_output", "call", "check_call", "getou
 def call_sites(source: str) -> tuple[int, list[str]]:
     """(call sites, unwrapped): every subprocess.* / os.system / os.popen / os.exec* / os.spawn*
     call in `source`; a site is wrapped when it passes env= built by clean_env(): `clean_env()`,
-    `self.git_env`, or a dict that spreads `**clean_env()`. os.system and os.popen cannot take
+    `self.git_env`, gh_env() / law_state_env() (both start from clean_env()), or a dict that spreads `**clean_env()`. os.system and os.popen cannot take
     an env, so they are always unwrapped"""
     import ast
     tree = ast.parse(source)
     sites, bad = 0, []
 
     def built_by_clean_env(v) -> bool:
-        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id in ("clean_env", "gh_env"):
+        if isinstance(v, ast.Call) and isinstance(v.func, ast.Name) and v.func.id in ("clean_env", "gh_env", "law_state_env"):
             return True
         # Lander.child_env() returns {**clean_env(cargo=True), ...} (checked in test_every_call_site_is_wrapped)
         if isinstance(v, ast.Call) and isinstance(v.func, ast.Attribute) and v.func.attr == "child_env" \
@@ -2994,7 +3051,9 @@ class AmbientEnv(Isolated):
            "Landing.test_wrong_author_is_refused",
            "Identity.test_the_override_is_refused",
            "WaitEvidence.test_all_green_passes",
-           "WaitAfter.test_all_green"]
+           "WaitAfter.test_all_green",
+           "LawState.test_an_unmoved_state_lands_and_the_script_saw_the_candidate_at_the_landed_sha",
+           "LawState.test_a_moving_state_refuses_and_names_the_law_sha_the_counts_and_the_record_command"]
 
     def test_the_key_cases_pass_under_a_hostile_environment(self):
         elsewhere = Path(tempfile.mkdtemp())
@@ -3053,6 +3112,128 @@ class Verdict(Isolated):
         self.assertEqual(self.v(self.A, **run, jobs=[ch]), "waiting")
         self.assertEqual(self.v(self.A, **run, jobs=[j("H", "in_progress")]), "waiting")
         self.assertEqual(self.v(self.A, concl="cancelled"), "dropped")
+
+
+class LawState(Isolated):
+    """check_law_state: before the push to main, ALICE-Law's land_law_state.py is asked whether
+    landing the commit moves Law's conformance state; exit 0 lands, exit 1 / exit 2 / a Law that
+    cannot be read refuse with nothing pushed."""
+
+    def landing(self) -> str:
+        commit(self.r.work, {"src/b.rs": "fn b() {}\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"},
+               "feat: b")
+        return self.r.origin_head()
+
+    def test_an_unmoved_state_lands_and_the_script_saw_the_candidate_at_the_landed_sha(self):
+        record = Path(tempfile.mkdtemp(prefix="law-record-")) / "calls.jsonl"
+        self.addCleanup(shutil.rmtree, record.parent, True)
+        self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(0, record)
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertTrue(any(l.startswith("Law state: unmoved (compared with ALICE-Law main ") for l in lander.record),
+                        lander.record)
+        calls = [json.loads(l) for l in record.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(len(calls), 1)
+        argv = calls[0]["argv"]
+        self.assertEqual(argv[0], "--candidate")
+        name, _, rest = argv[1].partition("=")
+        where, _, rev = rest.rpartition("@")
+        self.assertEqual((name, rev), ("ALICE-Physics", sha))
+        self.assertTrue(os.path.isabs(where), where)
+
+    def test_the_script_gets_the_pinned_git_and_the_forced_config(self):
+        record = Path(tempfile.mkdtemp(prefix="law-record-")) / "calls.jsonl"
+        self.addCleanup(shutil.rmtree, record.parent, True)
+        self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(0, record)
+        lander.land()
+        call = json.loads(record.read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(call["git"], os.path.realpath(land.pinned_git()))
+        forced = [land.FORCED_GIT_CONFIG[i + 1].partition("=") for i in range(0, len(land.FORCED_GIT_CONFIG), 2)]
+        self.assertEqual(call["config"], [[k, v] for k, _, v in forced])
+        self.assertTrue(os.path.basename(call["cwd"]) == "law", call["cwd"])
+
+    def test_a_moving_state_refuses_and_names_the_law_sha_the_counts_and_the_record_command(self):
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(1)
+        law_sha = git(Path(lander.law_url), "rev-parse", "HEAD")
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        text = str(cm.exception)
+        self.assertIn("moves ALICE-Law's conformance state", text)
+        self.assertIn(f"Law main {law_sha[:12]}", text)
+        self.assertIn("ALICE-Physics: pass 9 -> 10, unverified 3 -> 2", text)
+        self.assertIn("scripts/land_law_state.py --candidate ALICE-Physics=", text)
+        self.assertIn("--write", text)
+        self.assertIn("nothing was pushed to main", text)
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_state_that_cannot_be_computed_refuses(self):
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(2)
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        self.assertIn("could not be computed (land_law_state exit 2", str(cm.exception))
+        self.assertIn("1 finding(s)", str(cm.exception))
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_law_that_cannot_be_cloned_refuses(self):
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = str(self.r.dir / "no-such-law")
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        self.assertIn("ALICE-Law's main could not be read from", str(cm.exception))
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_law_without_the_script_refuses(self):
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(0, script=False)
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        self.assertIn("has no scripts/land_law_state.py", str(cm.exception))
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_a_dry_run_asks_too(self):
+        before = self.landing()
+        lander = self.r.lander(dry_run=True)
+        lander.law_url = fake_law(1)
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        self.assertIn("moves ALICE-Law's conformance state", str(cm.exception))
+        self.assertEqual(self.r.origin_head(), before)
+
+    def test_the_script_environment_starts_from_the_clean_one(self):
+        # what clean_env() drops stays dropped, and the injected config is replaced, not added to
+        old = {k: os.environ.get(k) for k in ("GIT_DIR", "GIT_TRACE", "GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0")}
+        os.environ.update({"GIT_DIR": "/elsewhere", "GIT_TRACE": "1", "GIT_CONFIG_COUNT": "1",
+                           "GIT_CONFIG_KEY_0": "core.hooksPath"})
+
+        def restore():
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self.addCleanup(restore)
+        env = land.law_state_env(None)
+        self.assertNotIn("GIT_DIR", env)
+        self.assertNotIn("GIT_TRACE", env)
+        self.assertEqual(env["GIT_CONFIG_COUNT"], str(len(land.FORCED_GIT_CONFIG) // 2))
+        self.assertEqual(env["GIT_CONFIG_KEY_0"], "core.hooksPath")
+        self.assertEqual(env["GIT_CONFIG_VALUE_0"], "/dev/null")
+        first = env["PATH"].split(os.pathsep)
+        self.assertEqual(first[:2], [land.python_dir(), os.path.dirname(land.pinned_git())])
+
+    def test_the_default_law_url_is_github(self):
+        self.assertEqual(land.Lander(self.r.work, "T", log=lambda *_: None).law_url,
+                         "https://github.com/ext-sakamoro/ALICE-Law")
 
 
 if __name__ == "__main__":
