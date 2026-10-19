@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI: 共有の `scripts/id_move_check.py` (ALICE-Law G9) の設定に任意の `base-package` を足した package の名前を変えた後も、release tag と crates.io の版はその名前で読み、probe は今の lib の名前で両方を指す (設定が無ければ挙動は変わらない) 試験 `scripts/test_id_move_check.py` に名前を変えた crate の 3 件 (旧い名前の tag を読む、key が無ければ release が見つからない、名前の形の検査)
 
 - **Breaking:** `PHYSICS_SEMANTICS_ID` が畳む相手の識別子 (`PHYSICS_PEER_IDS`) から `alice-db` の行を外した (下の Removed、ALICE-Physics の責務分割) 識別子は alice-det-math 0.5.1 で `43274a4732be32faa1452664f367cd778f62b1a4d0f860a4499f8c90fef47e06` から `7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2`、0.5.0 で `8afbbccc458686c398647f4f76cd79f0b84ca339bdf2bf792397c5464dcaa2ee` から `a19e22d46dfd87d84d36b1e083332d03f43c2360253d294876fef83de1945b27` に動く ステップの golden は動いていない (world snapshot の header の識別子・`law_id`・checksum だけが変わり、body の状態の byte は同じ) 公開した 3.x の識別子 `79ca5297…` と `cd9aa3b8…` は引き続き `PREVIOUS_PHYSICS_SEMANTICS_IDS` にある
 - CI: `.gitattributes` に `* text=auto eol=lf` を置き、text の file を保存も checkout も全 OS で LF にした (共有 file は ALICE-Law の表と byte で比べるので、Windows の CRLF の checkout ではずれになる) binary と既存の行はそのまま、`git add --renormalize` で commit 済みの中身は変わらない
