@@ -133,14 +133,18 @@ pub enum alice_physics_core::Shape
 pub use alice_physics_core::det_math::sqrt
 pub mod alice_physics_core::det_math
 pub alice_physics_core::Shape::Sphere
+#[non_exhaustive] pub enum alice_physics_core::thermal::GridError
+#[repr(C)] #[non_exhaustive] pub struct alice_physics_core::Pod
+#[no_mangle] pub unsafe extern "C" fn alice_physics_core::ffi_world_free(w: *mut u8)
+#[non_exhaustive] pub alice_physics_core::thermal::GridError::Empty
 """
 
 
 class Importable(unittest.TestCase):
     def test_modules_and_module_level_items_only(self):
         self.assertEqual(fc.importable(SNAPSHOT), [
-            "PHYSICS_SEMANTICS_ID", "Shape", "det_math", "det_math::sqrt", "ffi_world_new", "thermal", "thermal::Grid",
-            "thermal::inner", "thermal::inner::Law", "thermal::step"])
+            "PHYSICS_SEMANTICS_ID", "Pod", "Shape", "det_math", "det_math::sqrt", "ffi_world_free", "ffi_world_new", "thermal",
+            "thermal::Grid", "thermal::GridError", "thermal::inner", "thermal::inner::Law", "thermal::step"])
 
     def test_the_crate_root_alone_is_not_a_path(self):
         self.assertEqual(fc.importable("pub mod alice_physics_core\n"), [])

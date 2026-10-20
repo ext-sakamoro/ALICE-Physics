@@ -117,6 +117,20 @@ step "tracked binaries (no built library or executable is tracked)"
 python3 scripts/test_tracked_binaries.py
 python3 scripts/tracked_binaries.py
 
+# security-audit.yml job deny, the same two commands (a package renamed without its
+# licence exception passed every other local gate and failed only there).
+# Without cargo-deny, --quick / --fast warn and skip; the full run fails.
+step "cargo-deny (license + advisories + bans + sources, security-audit.yml job deny)"
+if command -v cargo-deny >/dev/null; then
+  cargo deny --all-features check all
+  cargo deny --manifest-path scripts/cfg-items/Cargo.toml --config deny.toml check all
+elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
+  echo "skip: cargo-deny not installed (cargo install --locked cargo-deny); CI runs this check" >&2
+else
+  echo "cargo-deny not installed: cargo install --locked cargo-deny" >&2
+  exit 1
+fi
+
 step "SCIP reach analysis oracle (docs/integration-status.md の解析器)"
 python3 scripts/test_scip_reach.py
 python3 scripts/test_audit_refs.py

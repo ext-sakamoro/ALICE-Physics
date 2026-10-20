@@ -73,6 +73,11 @@ license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 name = "alice-physics"
 allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
 
+# the engine package (the repository root) under the facade's licence
+[[licenses.exceptions]]
+name = "alice-physics-core"
+allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
+
 # scripts/cfg-items: the repository's own source parser for the scripts
 # (a separate workspace, never published), same licence as the crate
 [[licenses.exceptions]]
