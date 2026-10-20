@@ -103,9 +103,9 @@ impl VoxelGrid {
         for z in 0..res {
             for y in 0..res {
                 for x in 0..res {
-                    let fx = (x as f32 + 0.5).mul_add(cell_size.to_f32(), min.x.to_f32());
-                    let fy = (y as f32 + 0.5).mul_add(cell_size.to_f32(), min.y.to_f32());
-                    let fz = (z as f32 + 0.5).mul_add(cell_size.to_f32(), min.z.to_f32());
+                    let fx = (x as f32 + 0.5) * cell_size.to_f32() + min.x.to_f32();
+                    let fy = (y as f32 + 0.5) * cell_size.to_f32() + min.y.to_f32();
+                    let fz = (z as f32 + 0.5) * cell_size.to_f32() + min.z.to_f32();
                     values[x + y * res + z * res * res] = sdf.distance(fx, fy, fz);
                 }
             }

@@ -99,10 +99,10 @@ impl Crack {
         let b_ay = by - ay;
         let b_az = bz - az;
 
-        let ba_len_sq = b_az.mul_add(b_az, b_ax.mul_add(b_ax, b_ay * b_ay));
+        let ba_len_sq = b_az * b_az + (b_ax * b_ax + b_ay * b_ay);
         let h = if ba_len_sq > 1e-10 {
             crate::det_math::clamp(
-                paz.mul_add(b_az, pax.mul_add(b_ax, pay * b_ay)) / ba_len_sq,
+                (paz * b_az + (pax * b_ax + pay * b_ay)) / ba_len_sq,
                 0.0,
                 1.0,
             )
@@ -110,9 +110,9 @@ impl Crack {
             0.0
         };
 
-        let dx = b_ax.mul_add(-h, pax);
-        let dy = b_ay.mul_add(-h, pay);
-        let dz = b_az.mul_add(-h, paz);
+        let dx = b_ax * -h + pax;
+        let dy = b_ay * -h + pay;
+        let dz = b_az * -h + paz;
 
         (dx * dx + dy * dy + dz * dz).sqrt() - width
     }
@@ -209,15 +209,15 @@ impl FractureModifier {
                         if !too_close {
                             // Crack direction: along stress gradient (perpendicular to max stress)
                             let (gx, gy, gz) = self.stress.gradient(wx, wy, wz);
-                            let glen = gz.mul_add(gz, gx.mul_add(gx, gy * gy)).sqrt();
+                            let glen = (gz * gz + (gx * gx + gy * gy)).sqrt();
 
                             // Perpendicular to gradient (crack runs along stress contour)
                             let (dx, dy, dz) = if glen > 1e-5 {
                                 // LIMITATION(COV-FRACT-057): Cross with up vector for horizontal crack tendency
                                 // Cross with up vector for horizontal crack tendency
-                                let cx = gy.mul_add(0.0, -(gz * 1.0));
-                                let cy = gz.mul_add(0.0, -(gx * 0.0));
-                                let cz = gx.mul_add(1.0, -(gy * 0.0));
+                                let cx = gy * 0.0 + -(gz * 1.0);
+                                let cy = gz * 0.0 + -(gx * 0.0);
+                                let cz = gx * 1.0 + -(gy * 0.0);
                                 let clen = (cx * cx + cy * cy + cz * cz).sqrt();
                                 if clen > 1e-5 {
                                     (cx / clen, cy / clen, cz / clen)
@@ -273,9 +273,9 @@ impl FractureModifier {
 
             // Extend tip
             crack.end = (
-                crack.direction.0.mul_add(crack.length, crack.start.0),
-                crack.direction.1.mul_add(crack.length, crack.start.1),
-                crack.direction.2.mul_add(crack.length, crack.start.2),
+                crack.direction.0 * crack.length + crack.start.0,
+                crack.direction.1 * crack.length + crack.start.1,
+                crack.direction.2 * crack.length + crack.start.2,
             );
         }
     }

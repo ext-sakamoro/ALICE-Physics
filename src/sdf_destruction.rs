@@ -182,23 +182,18 @@ impl DestructionShape {
         let (lx, ly, lz) = local.to_f32();
 
         match &self.shape {
-            DestructionType::Sphere { radius } => {
-                lz.mul_add(lz, lx.mul_add(lx, ly * ly)).sqrt() - radius
-            }
+            DestructionType::Sphere { radius } => (lz * lz + (lx * lx + ly * ly)).sqrt() - radius,
             DestructionType::Box { half_extents } => {
                 let (hx, hy, hz) = *half_extents;
                 let qx = lx.abs() - hx;
                 let qy = ly.abs() - hy;
                 let qz = lz.abs() - hz;
-                let outside = crate::det_math::max(qz, 0.0)
-                    .mul_add(
-                        crate::det_math::max(qz, 0.0),
-                        crate::det_math::max(qx, 0.0).mul_add(
-                            crate::det_math::max(qx, 0.0),
-                            crate::det_math::max(qy, 0.0) * crate::det_math::max(qy, 0.0),
-                        ),
-                    )
-                    .sqrt();
+                let (mx, my, mz) = (
+                    crate::det_math::max(qx, 0.0),
+                    crate::det_math::max(qy, 0.0),
+                    crate::det_math::max(qz, 0.0),
+                );
+                let outside = (mz * mz + (mx * mx + my * my)).sqrt();
                 let inside = crate::det_math::min(
                     crate::det_math::max(crate::det_math::max(qx, qy), qz),
                     0.0,
@@ -211,12 +206,11 @@ impl DestructionShape {
             } => {
                 let d_radial = crate::det_math::hypot(lx, lz) - radius;
                 let d_axial = ly.abs() - half_height;
-                let outside = crate::det_math::max(d_radial, 0.0)
-                    .mul_add(
-                        crate::det_math::max(d_radial, 0.0),
-                        crate::det_math::max(d_axial, 0.0) * crate::det_math::max(d_axial, 0.0),
-                    )
-                    .sqrt();
+                let (mr, ma) = (
+                    crate::det_math::max(d_radial, 0.0),
+                    crate::det_math::max(d_axial, 0.0),
+                );
+                let outside = (mr * mr + ma * ma).sqrt();
                 let inside = crate::det_math::min(crate::det_math::max(d_radial, d_axial), 0.0);
                 outside + inside
             }
@@ -352,7 +346,7 @@ impl SdfField for DestructibleSdf {
 fn smooth_subtraction(d_a: f32, d_b: f32, k: f32) -> f32 {
     let h = crate::det_math::clamp(0.5 - 0.5 * (d_a + d_b) / k, 0.0, 1.0);
     // mix(d_a, -d_b, h) + k*h*(1-h)
-    (k * h).mul_add(1.0 - h, d_a.mul_add(1.0 - h, (-d_b) * h))
+    (k * h) * (1.0 - h) + (d_a * (1.0 - h) + (-d_b) * h)
 }
 
 // ============================================================================
