@@ -280,13 +280,13 @@ impl PhaseChangeModifier {
             if phase_val >= 1.5 {
                 // Gas: expand and dissipate (increase SDF = material removed)
                 self.sdf_offset.data[i] = crate::det_math::min(
-                    (gas_expand + gas_dissipate).mul_add(dt, self.sdf_offset.data[i]),
+                    (gas_expand + gas_dissipate) * dt + self.sdf_offset.data[i],
                     max_offset,
                 );
             } else if phase_val >= 0.5 {
                 // Liquid: slight material softening
                 self.sdf_offset.data[i] = crate::det_math::min(
-                    (liquid_flow * 0.1).mul_add(dt, self.sdf_offset.data[i]),
+                    (liquid_flow * 0.1) * dt + self.sdf_offset.data[i],
                     max_offset,
                 );
             }

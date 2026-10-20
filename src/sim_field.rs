@@ -186,15 +186,15 @@ impl ScalarField3D {
         let i011 = iz1 * ny_nx + iy1 * nx + ix0;
         let i111 = iz1 * ny_nx + iy1 * nx + ix1;
 
-        let c00 = (d[i100] - d[i000]).mul_add(fx, d[i000]);
-        let c10 = (d[i110] - d[i010]).mul_add(fx, d[i010]);
-        let c01 = (d[i101] - d[i001]).mul_add(fx, d[i001]);
-        let c11 = (d[i111] - d[i011]).mul_add(fx, d[i011]);
+        let c00 = (d[i100] - d[i000]) * fx + d[i000];
+        let c10 = (d[i110] - d[i010]) * fx + d[i010];
+        let c01 = (d[i101] - d[i001]) * fx + d[i001];
+        let c11 = (d[i111] - d[i011]) * fx + d[i011];
 
-        let c0 = (c10 - c00).mul_add(fy, c00);
-        let c1 = (c11 - c01).mul_add(fy, c01);
+        let c0 = (c10 - c00) * fy + c00;
+        let c1 = (c11 - c01) * fy + c01;
 
-        (c1 - c0).mul_add(fz, c0)
+        (c1 - c0) * fz + c0
     }
 
     /// Central-difference gradient at world-space position
@@ -238,21 +238,21 @@ impl ScalarField3D {
         for iz in iz_min..=iz_max {
             for iy in iy_min..=iy_max {
                 for ix in ix_min..=ix_max {
-                    let wx = (ix as f32).mul_add(self.cell_size.0, self.min.0);
-                    let wy = (iy as f32).mul_add(self.cell_size.1, self.min.1);
-                    let wz = (iz as f32).mul_add(self.cell_size.2, self.min.2);
+                    let wx = (ix as f32) * self.cell_size.0 + self.min.0;
+                    let wy = (iy as f32) * self.cell_size.1 + self.min.1;
+                    let wz = (iz as f32) * self.cell_size.2 + self.min.2;
 
                     let dx = wx - x;
                     let dy = wy - y;
                     let dz = wz - z;
-                    let dist_sq = dz.mul_add(dz, dx.mul_add(dx, dy * dy));
+                    let dist_sq = dz * dz + (dx * dx + dy * dy);
 
                     // Early reject with squared distance (no sqrt)
                     if dist_sq < radius_sq {
                         let dist = dist_sq.sqrt();
                         // Smooth falloff (cubic)
-                        let t = dist.mul_add(-inv_r, 1.0);
-                        let weight = t * t * 2.0f32.mul_add(-t, 3.0); // smoothstep
+                        let t = dist * -inv_r + 1.0;
+                        let weight = t * t * (2.0f32 * -t + 3.0); // smoothstep
                         let idx = self.index(ix, iy, iz);
                         self.data[idx] += value * weight;
                     }
@@ -320,14 +320,11 @@ impl ScalarField3D {
                         c
                     };
 
-                    let laplacian = 2.0f32.mul_add(-c, zm + zp).mul_add(
-                        inv_dz2,
-                        2.0f32
-                            .mul_add(-c, xm + xp)
-                            .mul_add(inv_dx2, 2.0f32.mul_add(-c, ym + yp) * inv_dy2),
-                    );
+                    let laplacian = (2.0f32 * -c + (zm + zp)) * inv_dz2
+                        + ((2.0f32 * -c + (xm + xp)) * inv_dx2
+                            + (2.0f32 * -c + (ym + yp)) * inv_dy2);
 
-                    self.scratch[idx] = rate_dt.mul_add(laplacian, c);
+                    self.scratch[idx] = rate_dt * laplacian + c;
                 }
             }
         }
@@ -347,7 +344,7 @@ impl ScalarField3D {
     pub fn decay_toward(&mut self, target: f32, rate: f32, dt: f32) {
         let factor = crate::det_math::exp(-rate * dt);
         for v in &mut self.data {
-            *v = (*v - target).mul_add(factor, target);
+            *v = (*v - target) * factor + target;
         }
     }
 
