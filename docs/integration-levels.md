@@ -51,13 +51,13 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
 | `ellipsoid` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `heatmap` | world API | 0 / 5 / 0 / 2 / 0 | — |
-| `law_id` | world API | 0 / 3 / 0 / 0 / 0 | — |
+| `law_id` | world API | 0 / 4 / 0 / 0 / 0 | — |
 | `mass_properties` | world API | 0 / 8 / 0 / 1 / 0 | — |
 | `rng` | world API | 0 / 6 / 0 / 6 / 0 | — |
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 51 of 200 items) | 51 / 119 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 51 of 201 items) | 51 / 120 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |

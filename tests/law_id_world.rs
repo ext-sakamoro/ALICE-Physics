@@ -7,8 +7,12 @@
 //! checked against the default world and against a world that sets every
 //! covered field to a value other than its default (all seven force field
 //! kinds, a limited and a disabled field, pair overrides, a material whose
-//! frictions differ, continuous collision, a participant). One golden value,
-//! taken with an all-zero semantics identifier, pins the encoding by itself.
+//! frictions differ, continuous collision, a participant, a participant that
+//! declares a semantics identifier). One golden value, taken with an all-zero
+//! semantics identifier, pins the encoding by itself. A decoder written from the
+//! same table (`rows_1_to_16_end`) shows that rows 1 to 16 end at a point their
+//! own lengths and counts fix, so row 17 (written only when a participant
+//! declares an identifier) cannot be confused with them.
 
 #![cfg(feature = "std")]
 
@@ -19,7 +23,10 @@ use alice_physics::material::{CombineRule, MaterialId, PhysicsMaterial};
 use alice_physics::math::{Fix128, Vec3Fix};
 use alice_physics::semantics::PHYSICS_SEMANTICS_ID;
 use alice_physics::solver::{Broadphase, PhysicsConfig, PhysicsWorld, RigidBody};
-use alice_physics::world_participant::{Participant, PortAccess, StepRule};
+use alice_physics::world_participant::{
+    ObservationSink, Participant, ParticipantFault, ParticipantKind, PortAccess, StateError,
+    StepRule, SubstepCtx,
+};
 use alice_physics::{SleepConfig, SolverBackend, WorldCcdConfig};
 use sha2::{Digest, Sha256};
 
@@ -61,6 +68,32 @@ struct Laws {
     pair_overrides: Vec<(MaterialId, MaterialId, Fix128, Fix128)>,
     force_fields: Vec<ForceFieldInstance>,
     drag_participants: Vec<Fix128>,
+    /// Participants registered after the drag media, each declaring this
+    /// semantics identifier.
+    declaring_participants: Vec<[u8; 32]>,
+}
+
+const KIND_DECLARES: ParticipantKind = ParticipantKind::new(0x4445_434c);
+
+/// A participant with no state that declares a semantics identifier.
+struct Declares([u8; 32]);
+
+impl Participant for Declares {
+    fn kind(&self) -> ParticipantKind {
+        KIND_DECLARES
+    }
+    fn semantics_id(&self) -> Option<[u8; 32]> {
+        Some(self.0)
+    }
+    fn substep(&mut self, _: &mut SubstepCtx<'_>, _: Fix128) -> Result<(), ParticipantFault> {
+        Ok(())
+    }
+    fn observe(&self, _: &mut ObservationSink) {}
+    fn write_state(&self, _: &mut Vec<u8>) {}
+    fn check_state(&self, _: &[u8]) -> Result<(), StateError> {
+        Ok(())
+    }
+    fn read_state(&mut self, _: &[u8]) {}
 }
 
 impl Laws {
@@ -78,6 +111,7 @@ impl Laws {
             pair_overrides: Vec::new(),
             force_fields: Vec::new(),
             drag_participants: Vec::new(),
+            declaring_participants: Vec::new(),
         }
     }
 
@@ -171,6 +205,7 @@ impl Laws {
                 disabled,
             ],
             drag_participants: vec![fx(1, 2)],
+            declaring_participants: vec![[0x5d; 32]],
         }
     }
 
@@ -198,6 +233,9 @@ impl Laws {
         for &c in &self.drag_participants {
             let m = DragMedium::new(c, Vec3Fix::ZERO).expect("medium");
             w.add_participant(Box::new(m)).expect("register");
+        }
+        for &id in &self.declaring_participants {
+            w.add_participant(Box::new(Declares(id))).expect("register");
         }
         w
     }
@@ -251,8 +289,13 @@ impl Spec {
     }
 }
 
-/// The documented encoding of `laws`.
+/// The documented encoding of `laws`, hashed.
 fn spec(laws: &Laws, semantics: &[u8; 32]) -> [u8; 32] {
+    Sha256::digest(spec_bytes(laws, semantics)).into()
+}
+
+/// The documented encoding of `laws`, before hashing.
+fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
     let c = &laws.config;
     let mut s = Spec(Vec::new());
     s.bytes(LAW_ID_DOMAIN);
@@ -390,7 +433,7 @@ fn spec(laws: &Laws, semantics: &[u8; 32]) -> [u8; 32] {
     }
 
     // participants: kind, step rule and ports as the participant declares them
-    s.len(laws.drag_participants.len());
+    s.len(laws.drag_participants.len() + laws.declaring_participants.len());
     for &coefficient in &laws.drag_participants {
         let p = DragMedium::new(coefficient, Vec3Fix::ZERO).expect("medium");
         s.u32(p.kind().get());
@@ -414,7 +457,147 @@ fn spec(laws: &Laws, semantics: &[u8; 32]) -> [u8; 32] {
             });
         }
     }
-    Sha256::digest(&s.0).into()
+    // a declaring participant: its kind, follow-substep, no ports
+    for _ in &laws.declaring_participants {
+        s.u32(KIND_DECLARES.get());
+        s.bytes(b"follow-substep");
+        s.len(0);
+    }
+    // row 17: only when a participant declares a semantics identifier
+    if !laws.declaring_participants.is_empty() {
+        s.bytes(b"participant-semantics");
+        s.len(laws.declaring_participants.len());
+        for (i, id) in laws.declaring_participants.iter().enumerate() {
+            s.u64((laws.drag_participants.len() + i) as u64);
+            s.0.extend_from_slice(id);
+        }
+    }
+    s.0
+}
+
+// ── Decoding the documented rows ────────────────────────────────────────────
+
+/// A cursor over an encoding, reading the primitives of the documented table.
+struct Rows<'a>(&'a [u8], usize);
+
+impl Rows<'_> {
+    fn take(&mut self, n: usize) -> &[u8] {
+        let out = &self.0[self.1..self.1 + n];
+        self.1 += n;
+        out
+    }
+    fn u64(&mut self) -> u64 {
+        u64::from_be_bytes(self.take(8).try_into().expect("8 bytes"))
+    }
+    fn len(&mut self) -> usize {
+        usize::try_from(self.u64()).expect("length")
+    }
+    fn bytes(&mut self) -> Vec<u8> {
+        let n = self.len();
+        self.take(n).to_vec()
+    }
+    fn skip(&mut self, n: usize) {
+        self.take(n);
+    }
+}
+
+const FIX: usize = 16;
+const VEC3: usize = 3 * FIX;
+
+/// The offset where row 16 ends, read from the documented table alone: every
+/// row's length follows from its own lengths, counts and tags.
+fn rows_1_to_16_end(b: &[u8]) -> usize {
+    let mut r = Rows(b, 0);
+    r.bytes(); // 1 domain
+    r.bytes(); // 2 kind
+    r.skip(32); // 3 semantics
+    r.skip(8 + 8); // 4 substeps, iterations
+    r.skip(VEC3 + FIX); // 5 gravity, damping
+    r.bytes(); // 6 backend
+    r.skip(FIX); // 7 warm start
+    r.skip(FIX + 4); // 8 contact cache
+    r.skip(FIX); // 9 sdf radius
+    r.skip(1 + FIX); // 10 continuous collision
+    r.skip(FIX + FIX + 4); // 11 sleep
+    r.bytes(); // 12 friction combine
+    r.bytes(); //    restitution combine
+    for _ in 0..r.len() {
+        // 13 material: id, three Fix128, two tags
+        r.skip(8 + 3 * FIX);
+        r.bytes();
+        r.bytes();
+    }
+    for _ in 0..r.len() {
+        r.skip(8 + 8 + FIX + FIX); // 14 pair override
+    }
+    for _ in 0..r.len() {
+        // 15 force field: enabled, optional body list, tag, parameters
+        r.skip(1);
+        if r.take(1)[0] == 1 {
+            let n = r.len();
+            r.skip(8 * n);
+        }
+        let params = match r.bytes().as_slice() {
+            b"directional" => VEC3 + FIX,
+            b"point" => VEC3 + FIX + 1 + FIX,
+            b"drag" => FIX,
+            b"buoyancy" => 3 * FIX,
+            b"vortex" => 2 * VEC3 + 2 * FIX,
+            b"explosion" => VEC3 + 3 * FIX,
+            b"magnetic" => 2 * VEC3 + FIX,
+            other => panic!("no documented field tag {other:?}"),
+        };
+        r.skip(params);
+    }
+    for _ in 0..r.len() {
+        // 16 participant: kind, step rule, ports
+        r.skip(4);
+        if r.bytes().as_slice() == b"fixed" {
+            r.skip(FIX);
+        }
+        for _ in 0..r.len() {
+            r.skip(4);
+            r.bytes();
+        }
+    }
+    r.1
+}
+
+/// Rows 1 to 16 end at a point fixed by their own contents: the encoding ends there when no
+/// participant declares a semantics identifier, and row 17 follows otherwise and reads to the
+/// end, so an encoding with row 17 is never an encoding without it
+#[test]
+fn rows_1_to_16_end_at_a_fixed_point_and_row_17_follows() {
+    let mut without = Laws::everything();
+    without.declaring_participants.clear();
+    for (name, laws) in [
+        ("defaults", Laws::defaults()),
+        ("everything without row 17", without),
+    ] {
+        let b = spec_bytes(&laws, &PHYSICS_SEMANTICS_ID);
+        assert_eq!(rows_1_to_16_end(&b), b.len(), "{name}");
+    }
+
+    let mut laws = Laws::everything();
+    laws.declaring_participants.push([0x6e; 32]);
+    let b = spec_bytes(&laws, &PHYSICS_SEMANTICS_ID);
+    let mut r = Rows(&b, rows_1_to_16_end(&b));
+    assert_eq!(r.bytes(), b"participant-semantics");
+    assert_eq!(r.len(), 2);
+    let drags = laws.drag_participants.len() as u64;
+    for (i, id) in laws.declaring_participants.iter().enumerate() {
+        assert_eq!(r.u64(), drags + i as u64);
+        assert_eq!(r.take(32), id);
+    }
+    assert_eq!(r.1, b.len(), "row 17 reads to the end");
+    assert_eq!(
+        laws.build().law_id(&PHYSICS_SEMANTICS_ID),
+        spec(&laws, &PHYSICS_SEMANTICS_ID)
+    );
+    assert_eq!(
+        alice_physics::law_id::PARTICIPANT_SEMANTICS_ROW,
+        b"participant-semantics"
+    );
 }
 
 #[test]

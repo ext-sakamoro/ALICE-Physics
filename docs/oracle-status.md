@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5823 |
+| 🟢 Not ignored (run by CI) | 5827 |
 | 🔴 Red by design | 69 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5918** |
+| **Total** | **5922** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -149,7 +149,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5823)
+## 🟢 Not ignored (5827)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -400,6 +400,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_vibration_wall.rs` | 11 |
 | `indep_linear_solver_krylov.rs` | 11 |
 | `indep_participant_order.rs` | 11 |
+| `law_id_world.rs` | 11 |
 | `analytic_atmosphere_isa1976.rs` | 10 |
 | `analytic_bridging_wiring.rs` | 10 |
 | `analytic_cfd_flow_bc.rs` | 10 |
@@ -419,7 +420,6 @@ Per-file counts (the test names are in `tests/`):
 | `coupling_channel_inventory.rs` | 10 |
 | `fix128_vs_f64_coupling_hypotheses.rs` | 10 |
 | `indep_aero_atmosphere.rs` | 10 |
-| `law_id_world.rs` | 10 |
 | `analytic_adaptive_dt.rs` | 9 |
 | `analytic_anisotropic_friction_wiring.rs` | 9 |
 | `analytic_character_state_wiring.rs` | 9 |
@@ -589,6 +589,7 @@ Per-file counts (the test names are in `tests/`):
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `indep_world_try_step_snapshot.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
+| `participant_semantics_id.rs` | 3 |
 | `sleep_skip_snapshot.rs` | 3 |
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |

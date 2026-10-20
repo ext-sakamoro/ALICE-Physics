@@ -177,6 +177,16 @@ impl PhysicsWorld {
             .collect()
     }
 
+    /// The semantics identifier each registered participant declares
+    /// ([`Participant::semantics_id`]), in registration order.
+    #[cfg(feature = "std")]
+    pub(crate) fn participant_semantics_ids(&self) -> Vec<Option<[u8; 32]>> {
+        self.lock_participants()
+            .iter()
+            .map(|p| p.semantics_id())
+            .collect()
+    }
+
     /// The kinds of the registered participants, in registration order.
     #[cfg(feature = "std")]
     #[must_use]

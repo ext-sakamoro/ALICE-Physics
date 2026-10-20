@@ -296,6 +296,15 @@ impl core::fmt::Display for WorldSnapshotError {
                 f,
                 "world snapshot participants differ from the target world's: {m:?}"
             ),
+            Self::ParticipantState {
+                index,
+                error: crate::world_participant::StateError::SemanticsMismatch { stored, expected },
+            } => write!(
+                f,
+                "participant {index} of the target world refused its snapshot payload: it was written under semantics {} and the participant runs under {}",
+                Hex(stored),
+                Hex(expected)
+            ),
             Self::ParticipantState { index, error } => write!(
                 f,
                 "participant {index} of the target world refused its snapshot payload: {error:?}"
@@ -2001,6 +2010,12 @@ impl PhysicsWorld {
     /// [`WorldSnapshotError::Unpinned`] (no reader takes it without saying so,
     /// ALICE-Law G8): read it with [`Self::restore_world_checked`] and
     /// [`LegacyPolicy::AcceptUnpinned`].
+    ///
+    /// The header's `semantics_id` covers this crate's arithmetic. A
+    /// participant's payload written under another arithmetic is refused only
+    /// when that participant's [`crate::world_participant::Participant::check_state`] compares its
+    /// declared identifier ([`crate::world_participant::Participant::semantics_id`]); the default
+    /// declares none.
     pub fn restore_world(&mut self, data: &[u8]) -> Result<(), WorldSnapshotError> {
         self.restore_world_checked(data, None, LegacyPolicy::RequirePinned)
             .map(|_| ())

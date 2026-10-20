@@ -660,6 +660,16 @@ pub enum StateError {
     },
     /// A value in the payload is not valid for the participant.
     InvalidValue,
+    /// The payload was computed under another arithmetic than the one this
+    /// participant runs under ([`Participant::semantics_id`]): it is well
+    /// formed, but its values would not be the ones this participant computes.
+    /// Told apart from [`Self::InvalidValue`], which is a corrupt payload.
+    SemanticsMismatch {
+        /// Semantics identifier the payload was written under.
+        stored: [u8; 32],
+        /// Semantics identifier of this participant.
+        expected: [u8; 32],
+    },
 }
 
 /// Why a restore refused the participants of the target world.
@@ -1113,6 +1123,23 @@ pub trait Participant: Send {
     /// registered.
     fn ports(&self) -> &[Port] {
         &[]
+    }
+
+    /// The semantics identifier of the arithmetic this participant's own law
+    /// runs under, when it is not this crate's (for example a field evaluated
+    /// by another crate), or `None` (the default). A declared identifier is
+    /// part of the world's [`crate::PhysicsWorld::law_id`], so two worlds
+    /// whose participants run under different arithmetic have different law
+    /// identifiers. A participant that declares one should refuse, with
+    /// [`StateError::SemanticsMismatch`], a payload written under an
+    /// identifier that is neither its own nor an earlier one it verifies to
+    /// give the same bits. [`crate::PhysicsWorld::restore_world_checked`]
+    /// compares the world's law identifier, row 17 included, by equality, so
+    /// a payload under such an earlier identifier is refused there unless the
+    /// caller passes `None`. It must not change while the participant is
+    /// registered.
+    fn semantics_id(&self) -> Option<[u8; 32]> {
+        None
     }
 
     /// Advance by one world substep of width `h` (`ctx.h()`). Read bodies

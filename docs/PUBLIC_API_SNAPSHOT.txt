@@ -2887,6 +2887,7 @@ pub fn alice_physics::coupling_medium::DragMedium::kind(&self) -> alice_physics:
 pub fn alice_physics::coupling_medium::DragMedium::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::coupling_medium::DragMedium::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::coupling_medium::DragMedium::read_state(&mut self, &[u8])
+pub fn alice_physics::coupling_medium::DragMedium::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::coupling_medium::DragMedium::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::coupling_medium::DragMedium::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::coupling_medium::DragMedium::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -3021,6 +3022,7 @@ pub fn alice_physics::crowd_force::CrowdParticipant::kind(&self) -> alice_physic
 pub fn alice_physics::crowd_force::CrowdParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::crowd_force::CrowdParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::crowd_force::CrowdParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::crowd_force::CrowdParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::crowd_force::CrowdParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::crowd_force::CrowdParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::crowd_force::CrowdParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -3672,6 +3674,7 @@ pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -4997,6 +5000,7 @@ pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -6297,6 +6301,7 @@ pub fn alice_physics::laminate_failure::tsai_hill_failure_index(alice_physics::l
 pub fn alice_physics::laminate_failure::tsai_wu_failure_index(alice_physics::laminate_failure::LaminateStrengths, alice_physics::laminate_failure::StressState) -> alice_physics::math::Fix128
 pub mod alice_physics::law_id
 pub const alice_physics::law_id::LAW_ID_DOMAIN: &[u8]
+pub const alice_physics::law_id::PARTICIPANT_SEMANTICS_ROW: &[u8]
 pub const alice_physics::law_id::WORLD_LAW_KIND: &[u8]
 pub mod alice_physics::layer_adhesion
 pub enum alice_physics::layer_adhesion::PrintOrientation
@@ -8126,6 +8131,7 @@ pub fn alice_physics::molecular_dynamics::MdParticipant<P>::kind(&self) -> alice
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::read_state(&mut self, &[u8])
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -8426,6 +8432,7 @@ pub fn alice_physics::nbody::NBodyParticipant::kind(&self) -> alice_physics::wor
 pub fn alice_physics::nbody::NBodyParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::nbody::NBodyParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::nbody::NBodyParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::nbody::NBodyParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::nbody::NBodyParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::nbody::NBodyParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::nbody::NBodyParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -9142,6 +9149,7 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_ph
 pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -11920,6 +11928,7 @@ pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -12339,6 +12348,7 @@ pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -13302,6 +13312,7 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_ph
 pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -13636,6 +13647,7 @@ pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -14689,6 +14701,7 @@ pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -15304,6 +15317,7 @@ pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -18830,6 +18844,7 @@ pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -19188,6 +19203,7 @@ pub fn alice_physics::vehicle::VehicleParticipant::kind(&self) -> alice_physics:
 pub fn alice_physics::vehicle::VehicleParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::vehicle::VehicleParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::vehicle::VehicleParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::vehicle::VehicleParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::vehicle::VehicleParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::vehicle::VehicleParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::vehicle::VehicleParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20553,6 +20569,9 @@ pub alice_physics::world_participant::StateError::InvalidValue
 pub alice_physics::world_participant::StateError::Length
 pub alice_physics::world_participant::StateError::Length::expected: usize
 pub alice_physics::world_participant::StateError::Length::found: usize
+pub alice_physics::world_participant::StateError::SemanticsMismatch
+pub alice_physics::world_participant::StateError::SemanticsMismatch::expected: [u8; 32]
+pub alice_physics::world_participant::StateError::SemanticsMismatch::stored: [u8; 32]
 impl core::clone::Clone for alice_physics::world_participant::StateError
 pub fn alice_physics::world_participant::StateError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics::world_participant::StateError
@@ -20913,6 +20932,7 @@ pub fn alice_physics::world_participant::Participant::kind(&self) -> alice_physi
 pub fn alice_physics::world_participant::Participant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::world_participant::Participant::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::world_participant::Participant::read_state(&mut self, &[u8])
+pub fn alice_physics::world_participant::Participant::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::world_participant::Participant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::world_participant::Participant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::world_participant::Participant::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20922,6 +20942,7 @@ pub fn alice_physics::coupling_medium::DragMedium::kind(&self) -> alice_physics:
 pub fn alice_physics::coupling_medium::DragMedium::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::coupling_medium::DragMedium::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::coupling_medium::DragMedium::read_state(&mut self, &[u8])
+pub fn alice_physics::coupling_medium::DragMedium::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::coupling_medium::DragMedium::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::coupling_medium::DragMedium::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::coupling_medium::DragMedium::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20931,6 +20952,7 @@ pub fn alice_physics::crowd_force::CrowdParticipant::kind(&self) -> alice_physic
 pub fn alice_physics::crowd_force::CrowdParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::crowd_force::CrowdParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::crowd_force::CrowdParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::crowd_force::CrowdParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::crowd_force::CrowdParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::crowd_force::CrowdParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::crowd_force::CrowdParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20940,6 +20962,7 @@ pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20949,6 +20972,7 @@ pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20958,6 +20982,7 @@ pub fn alice_physics::nbody::NBodyParticipant::kind(&self) -> alice_physics::wor
 pub fn alice_physics::nbody::NBodyParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::nbody::NBodyParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::nbody::NBodyParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::nbody::NBodyParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::nbody::NBodyParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::nbody::NBodyParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::nbody::NBodyParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20967,6 +20992,7 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_ph
 pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20976,6 +21002,7 @@ pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20985,6 +21012,7 @@ pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -20994,6 +21022,7 @@ pub fn alice_physics::vehicle::VehicleParticipant::kind(&self) -> alice_physics:
 pub fn alice_physics::vehicle::VehicleParticipant::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::vehicle::VehicleParticipant::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::vehicle::VehicleParticipant::read_state(&mut self, &[u8])
+pub fn alice_physics::vehicle::VehicleParticipant::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::vehicle::VehicleParticipant::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::vehicle::VehicleParticipant::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::vehicle::VehicleParticipant::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -21003,6 +21032,7 @@ pub fn alice_physics::molecular_dynamics::MdParticipant<P>::kind(&self) -> alice
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::read_state(&mut self, &[u8])
+pub fn alice_physics::molecular_dynamics::MdParticipant<P>::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::molecular_dynamics::MdParticipant<P>::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -23283,6 +23313,7 @@ pub fn alice_physics::erosion::ErosionModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::erosion::ErosionModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::erosion::ErosionModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::erosion::ErosionModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::erosion::ErosionModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::erosion::ErosionModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::erosion::ErosionModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::erosion::ErosionModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -23702,6 +23733,7 @@ pub fn alice_physics::fracture::FractureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::fracture::FractureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::fracture::FractureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::fracture::FractureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::fracture::FractureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::fracture::FractureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::fracture::FractureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::fracture::FractureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -24689,6 +24721,7 @@ pub fn alice_physics::phase_change::PhaseChangeModifier::kind(&self) -> alice_ph
 pub fn alice_physics::phase_change::PhaseChangeModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::phase_change::PhaseChangeModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::phase_change::PhaseChangeModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::phase_change::PhaseChangeModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::phase_change::PhaseChangeModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::phase_change::PhaseChangeModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::phase_change::PhaseChangeModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -25063,6 +25096,7 @@ pub fn alice_physics::pressure::PressureModifier::kind(&self) -> alice_physics::
 pub fn alice_physics::pressure::PressureModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::pressure::PressureModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::pressure::PressureModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::pressure::PressureModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::pressure::PressureModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::pressure::PressureModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::pressure::PressureModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
@@ -26149,6 +26183,7 @@ pub fn alice_physics::thermal::ThermalModifier::kind(&self) -> alice_physics::wo
 pub fn alice_physics::thermal::ThermalModifier::observe(&self, &mut alice_physics::world_participant::ObservationSink)
 pub fn alice_physics::thermal::ThermalModifier::ports(&self) -> &[alice_physics::world_participant::Port]
 pub fn alice_physics::thermal::ThermalModifier::read_state(&mut self, &[u8])
+pub fn alice_physics::thermal::ThermalModifier::semantics_id(&self) -> core::option::Option<[u8; 32]>
 pub fn alice_physics::thermal::ThermalModifier::step_rule(&self) -> alice_physics::world_participant::StepRule
 pub fn alice_physics::thermal::ThermalModifier::substep(&mut self, &mut alice_physics::world_participant::SubstepCtx<'_>, alice_physics::math::Fix128) -> core::result::Result<(), alice_physics::world_participant::ParticipantFault>
 pub fn alice_physics::thermal::ThermalModifier::write_state(&self, &mut alloc::vec::Vec<u8>)
