@@ -20,6 +20,10 @@ pub const LAW_ID_DOMAIN: &[u8] = b"alice-physics/law-id/v1";
 /// under the old one.
 pub const WORLD_LAW_KIND: &[u8] = b"physics-world/v1";
 
+/// The tag that opens row 17 of [`PhysicsWorld::law_id`] (the semantics
+/// identifiers participants declare).
+pub const PARTICIPANT_SEMANTICS_ROW: &[u8] = b"participant-semantics";
+
 use crate::force::ForceField;
 use crate::material::CombineRule;
 use crate::math::{Fix128, Vec3Fix};
@@ -173,10 +177,11 @@ impl PhysicsWorld {
     /// Two worlds with the same identifier, the same state and the same
     /// inputs step to the same bits, **provided the hooks, modifiers, SDF
     /// colliders and bridge they hold also behave the same**, since those are
-    /// outside the identifier. A participant contributes only its kind, step
-    /// rule and ports: two participants of one kind that differ in their
-    /// coefficients get the same identifier until participants expose their
-    /// coefficients. The converse does not hold either: worlds whose laws step
+    /// outside the identifier. A participant contributes its kind, step rule
+    /// and ports, and the semantics identifier it declares, if any
+    /// ([`crate::world_participant::Participant::semantics_id`]): two
+    /// participants of one kind that differ in their coefficients get the same
+    /// identifier until participants expose their coefficients. The converse does not hold either: worlds whose laws step
     /// identically may still differ here (for example two force fields
     /// declared in the other order), so this is not a deduplication key.
     /// One case of this: `config.solver_backend` is covered, but
@@ -223,6 +228,7 @@ impl PhysicsWorld {
     /// | 14 | pair overrides, sorted by `(mat_a, mat_b)` with `mat_a <= mat_b` | list of: `mat_a`, `mat_b` (`MaterialId`), `friction`, `restitution` (`Fix128`) |
     /// | 15 | force fields, in the order they were added | list of: `enabled` (`bool`), the bodies it is limited to (`Option` of a list of `u64`, sorted ascending without duplicates), then the field |
     /// | 16 | participants, in registration order | list of: kind (`u32`), step rule, ports |
+    /// | 17 | only when at least one participant declares a semantics identifier: [`PARTICIPANT_SEMANTICS_ROW`], then the declaring participants in registration order | byte string, then list of: registration index (`u64`), the 32 bytes (no length) |
     ///
     /// A field is its tag followed by its parameters in declaration order:
     /// `directional` (direction `Vec3Fix`, strength), `point` (center
@@ -235,6 +241,11 @@ impl PhysicsWorld {
     /// `follow-substep`, `fixed` followed by its `dt` (`Fix128`), or
     /// `subcycle`. A port is its id (`u32`) followed by the tag `read`,
     /// `write` or `read-committed`.
+    ///
+    /// Rows 1 to 16 end where their own lengths and counts say, so row 17 is
+    /// either absent (the encoding ends there) or follows; a world whose
+    /// participants declare no identifier has the encoding it had before row 17
+    /// existed.
     ///
     /// Sorting the pair overrides and the body lists keeps the identifier
     /// independent of the order they were registered in, which the step does
@@ -313,8 +324,35 @@ impl PhysicsWorld {
         }
 
         self.encode_participants(&mut e);
+        self.encode_participant_semantics(&mut e);
         e.0.finalize().into()
     }
+
+    /// Row 17: written only when a participant declares a semantics
+    /// identifier, so a world whose participants declare none keeps the
+    /// identifier it had before the row existed.
+    #[cfg(feature = "std")]
+    fn encode_participant_semantics(&self, e: &mut Encoder) {
+        let declared: Vec<(usize, [u8; 32])> = self
+            .participant_semantics_ids()
+            .into_iter()
+            .enumerate()
+            .filter_map(|(i, id)| id.map(|id| (i, id)))
+            .collect();
+        if declared.is_empty() {
+            return;
+        }
+        e.bytes(PARTICIPANT_SEMANTICS_ROW);
+        e.len(declared.len());
+        for (index, id) in declared {
+            e.u64(index as u64);
+            e.0.update(id);
+        }
+    }
+
+    /// Without `std` no participant can be registered: the row is never written.
+    #[cfg(not(feature = "std"))]
+    fn encode_participant_semantics(&self, _: &mut Encoder) {}
 
     #[cfg(feature = "std")]
     fn encode_participants(&self, e: &mut Encoder) {

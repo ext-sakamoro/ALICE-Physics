@@ -296,6 +296,15 @@ impl core::fmt::Display for WorldSnapshotError {
                 f,
                 "world snapshot participants differ from the target world's: {m:?}"
             ),
+            Self::ParticipantState {
+                index,
+                error: crate::world_participant::StateError::SemanticsMismatch { stored, expected },
+            } => write!(
+                f,
+                "participant {index} of the target world refused its snapshot payload: it was written under semantics {} and the participant runs under {}",
+                Hex(stored),
+                Hex(expected)
+            ),
             Self::ParticipantState { index, error } => write!(
                 f,
                 "participant {index} of the target world refused its snapshot payload: {error:?}"
