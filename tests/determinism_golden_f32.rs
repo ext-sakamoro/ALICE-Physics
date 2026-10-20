@@ -116,7 +116,7 @@ fn prand(i: u32) -> f32 {
 // 1. sim_field — ScalarField3D / VectorField3D (exp decay)
 // ---------------------------------------------------------------------------
 
-const GOLDEN_SIM_FIELD: &str = "4b1bf9a7eb709e37caf7bc0aa4499435bea0a6be693b29e6257daa31e1c60085";
+const GOLDEN_SIM_FIELD: &str = "9fbf34a32a6b33848b4119d6233b250c0ea7ea0cfc234b73a88d7ae9f0a64607";
 
 #[test]
 fn golden_sim_field() {
@@ -156,7 +156,7 @@ fn golden_sim_field() {
 // 2. fracture — crack pattern generation (sin/cos hash directions)
 // ---------------------------------------------------------------------------
 
-const GOLDEN_FRACTURE: &str = "3a45ff9e27d7a88bce3a46a87a1b3d79beebb368c29ac2bd44c3e543c6281dd2";
+const GOLDEN_FRACTURE: &str = "e0aae8970decf6c6e0fd3ec665bb5a735c24f38990636783fa9774d0e6e1dec8";
 
 #[test]
 fn golden_fracture() {
@@ -235,7 +235,7 @@ fn golden_rolling_contact() {
 // ---------------------------------------------------------------------------
 
 const GOLDEN_SDF_DESTRUCTION: &str =
-    "8072eb0449c1a0f89e5c73d79c76319db9d25960135b0c55411d1ddbfa52f692";
+    "5b6c33737d6033d71a323834353c3f1a3c2ea7220c71e1f3be11f5a4c950dd79";
 
 #[test]
 fn golden_sdf_destruction() {
@@ -298,7 +298,7 @@ fn golden_sdf_destruction() {
 // 5. privacy — Laplace (ln) + randomized response (exp), fixed seeds
 // ---------------------------------------------------------------------------
 
-const GOLDEN_PRIVACY: &str = "3d55a1ff0dc76b1d26dc6ed5fa3a86277361dee009ef8e7ba4a8c327c6ca5548";
+const GOLDEN_PRIVACY: &str = "f0b67c09fe5be41c5d0fa3973ff3c86a9ba02ca68bc53634bd2cd435f52f6944";
 
 #[test]
 fn golden_privacy() {
@@ -684,7 +684,7 @@ fn golden_sdf_soft_family() {
 // T + latent conserved) and a mass-conserving liquid flow transfer.
 // ---------------------------------------------------------------------------
 
-const GOLDEN_MODIFIERS: &str = "29b6e16660be28eaa83091a3a1d7bc246b9c1be880e3375d55f1d82c331a6417";
+const GOLDEN_MODIFIERS: &str = "4597581738153eda2c0cf0f92375e89f69d24d70e3216ed6618c3cd6363a4df0";
 
 #[test]
 fn golden_modifier_family() {

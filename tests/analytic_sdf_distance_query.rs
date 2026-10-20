@@ -4,9 +4,11 @@
 //! `(0, 1, 0)` where the gradient vanishes).
 //!
 //! 1. Bit identity with the central-difference formula, restated here in
-//!    f32 exactly as it stood in `ModifiedSdf::normal`,
+//!    f32 as it stood in `ModifiedSdf::normal`,
 //!    `SingleModifiedSdf::normal` and `DestructibleSdf::normal` before the
-//!    three copies were folded into one helper. The four entry points
+//!    three copies were folded into one helper, with the length written as a
+//!    product and a sum (two roundings) since the library stopped calling
+//!    `f32::mul_add` (ALICE-Law G3). The four entry points
 //!    (`DistanceSdfQuery` and the three wrappers) are each compared with
 //!    `assert_eq!` on the `f32` triple, so changing the shared helper turns
 //!    all four red.
@@ -74,7 +76,7 @@ fn reference_fd_normal(
     let dx = f(x + e, y, z) - f(x - e, y, z);
     let dy = f(x, y + e, z) - f(x, y - e, z);
     let dz = f(x, y, z + e) - f(x, y, z - e);
-    let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
+    let len = (dz * dz + (dx * dx + dy * dy)).sqrt();
     if len < 1e-10 {
         (0.0, 1.0, 0.0)
     } else {
