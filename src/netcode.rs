@@ -817,4 +817,92 @@ mod tests {
         assert!(sim.load_snapshot(20));
         assert_eq!(sim.frame(), 20);
     }
+
+    fn fractional_input() -> FrameInput {
+        FrameInput::new(7)
+            .with_movement(Vec3Fix::new(
+                Fix128::from_ratio(1, 3),
+                Fix128::from_ratio(-5, 7),
+                Fix128::from_raw(-2, 0x8000_0000_0000_0001),
+            ))
+            .with_actions(0x8000_0005)
+            .with_aim(Vec3Fix::new(
+                Fix128::from_ratio(2, 9),
+                Fix128::from_raw(i64::MIN, u64::MAX),
+                Fix128::from_ratio(-1, 11),
+            ))
+    }
+
+    #[test]
+    fn wire_layout_puts_every_word_at_its_offset() {
+        let input = fractional_input();
+        let wire = input.to_wire();
+        assert_eq!(wire.len(), FrameInput::WIRE_BYTES);
+        assert_eq!(wire[0], FrameInput::WIRE_VERSION);
+        assert_eq!(wire[1], 7);
+        let words = |v: Vec3Fix| [v.x, v.y, v.z];
+        for (k, v) in words(input.movement).into_iter().enumerate() {
+            let at = 2 + 16 * k;
+            assert_eq!(wire[at..at + 8], v.hi.to_le_bytes(), "movement {k} hi");
+            assert_eq!(wire[at + 8..at + 16], v.lo.to_le_bytes(), "movement {k} lo");
+        }
+        assert_eq!(wire[50..54], 0x8000_0005u32.to_le_bytes());
+        for (k, v) in words(input.aim_direction).into_iter().enumerate() {
+            let at = 54 + 16 * k;
+            assert_eq!(wire[at..at + 8], v.hi.to_le_bytes(), "aim {k} hi");
+            assert_eq!(wire[at + 8..at + 16], v.lo.to_le_bytes(), "aim {k} lo");
+        }
+    }
+
+    #[test]
+    fn wire_round_trip_keeps_the_fraction() {
+        let input = fractional_input();
+        assert_eq!(FrameInput::from_wire(&input.to_wire()), Ok(input));
+    }
+
+    #[test]
+    fn from_wire_refuses_every_other_length_and_version() {
+        let wire = fractional_input().to_wire();
+        assert_eq!(
+            FrameInput::from_wire(&wire[..FrameInput::LEGACY_BYTES]),
+            Err(WireError::Legacy)
+        );
+        for len in [0, 1, 19, 21, 101] {
+            assert_eq!(
+                FrameInput::from_wire(&wire[..len]),
+                Err(WireError::Length { found: len })
+            );
+        }
+        let mut long = [0u8; FrameInput::WIRE_BYTES + 1];
+        long[..FrameInput::WIRE_BYTES].copy_from_slice(&wire);
+        assert_eq!(
+            FrameInput::from_wire(&long),
+            Err(WireError::Length { found: 103 })
+        );
+        for version in [0u8, 2, u8::MAX] {
+            let mut other = wire;
+            other[0] = version;
+            assert_eq!(
+                FrameInput::from_wire(&other),
+                Err(WireError::Version { found: version })
+            );
+        }
+    }
+
+    #[test]
+    fn wire_error_text_names_what_was_refused() {
+        let legacy = format!("{}", WireError::Legacy);
+        assert!(
+            legacy.contains("20-byte") && legacy.contains("4.0.0"),
+            "{legacy}"
+        );
+        assert_eq!(
+            format!("{}", WireError::Length { found: 37 }),
+            "a frame input is 102 bytes, not 37"
+        );
+        assert_eq!(
+            format!("{}", WireError::Version { found: 9 }),
+            "frame input wire version 9, this build reads 1"
+        );
+    }
 }
