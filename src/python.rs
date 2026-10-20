@@ -7,7 +7,7 @@
 //! | L1 | GIL Release (`py.detach`) | Parallel physics stepping |
 //! | L2 | Zero-Copy NumPy (`into_pyarray`) | No memcpy for bulk data |
 //! | L3 | Batch API (positions/velocities) | FFI amortization |
-//! | L4 | `#[repr(C)]` FrameInput (20 bytes) | Direct buffer cast |
+//! | L4 | FrameInput wire form (102 bytes, `FrameInput::to_wire`) | Byte buffer |
 
 use numpy::{IntoPyArray, PyArray1, PyArray2, PyArrayMethods, PyReadonlyArray2};
 use pyo3::exceptions::{PyIndexError, PyValueError};
@@ -834,7 +834,7 @@ impl PyPhysicsWorld {
 /// Wraps PhysicsWorld with frame-based stepping, checksum verification,
 /// and snapshot save/restore for rollback.
 ///
-/// Only sync player inputs (~20 bytes/player/frame) instead of
+/// Only sync player inputs (102 bytes/player/frame) instead of
 /// full state (~160 bytes/body/frame) for 97.5% bandwidth savings.
 #[pyclass(name = "DeterministicSimulation")]
 pub struct PyDeterministicSimulation {
@@ -974,13 +974,13 @@ fn compute_checksum(py: Python<'_>, state_bytes: Vec<u8>) -> u64 {
     })
 }
 
-/// Encode a FrameInput to 20 bytes.
+/// Encode a FrameInput to its wire form (`FrameInput::to_wire`, 102 bytes).
 ///
 /// Args:
 ///     player_id, move_x, move_y, move_z, actions, aim_x, aim_y, aim_z
 ///
 /// Returns:
-///     bytes (20 bytes)
+///     bytes (102 bytes)
 #[pyfunction]
 #[pyo3(signature = (player_id, move_x=0.0, move_y=0.0, move_z=0.0, actions=0, aim_x=0.0, aim_y=0.0, aim_z=0.0))]
 #[allow(
@@ -1005,10 +1005,13 @@ fn encode_frame_input(
         ))
         .with_actions(actions)
         .with_aim(Vec3Fix::from_f32(aim_x as f32, aim_y as f32, aim_z as f32));
-    input.to_bytes().to_vec()
+    input.to_wire().to_vec()
 }
 
-/// Decode a FrameInput from 20 bytes.
+/// Decode a FrameInput from its wire form (`FrameInput::from_wire`).
+///
+/// Raises ValueError for the 20-byte form of releases before 4.0.0, another
+/// length or another wire version.
 ///
 /// Returns: (player_id, move_x, move_y, move_z, actions, aim_x, aim_y, aim_z)
 #[pyfunction]
@@ -1017,12 +1020,8 @@ fn encode_frame_input(
     reason = "returns the decoded FrameInput as a flat Python tuple of eight fields, which PyO3 converts to a native tuple"
 )]
 fn decode_frame_input(data: Vec<u8>) -> PyResult<(u8, f64, f64, f64, u32, f64, f64, f64)> {
-    if data.len() < 20 {
-        return Err(pyo3::exceptions::PyValueError::new_err("Need 20 bytes"));
-    }
-    let mut buf = [0u8; 20];
-    buf.copy_from_slice(&data[..20]);
-    let input = FrameInput::from_bytes(&buf);
+    let input = FrameInput::from_wire(&data)
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?;
     let (mx, my, mz) = input.movement.to_f32();
     let (ax, ay, az) = input.aim_direction.to_f32();
     Ok((
@@ -1067,8 +1066,8 @@ mod tests {
         let input = FrameInput::new(0)
             .with_movement(Vec3Fix::from_int(1, 0, -1))
             .with_actions(0x3);
-        let bytes = input.to_bytes();
-        let decoded = FrameInput::from_bytes(&bytes);
+        let bytes = input.to_wire();
+        let decoded = FrameInput::from_wire(&bytes).unwrap();
         assert_eq!(decoded.player_id, 0);
         assert_eq!(decoded.actions, 0x3);
     }

@@ -12,7 +12,7 @@
 //! counts, the simulation is fully deterministic. This means:
 //!
 //! - **No state synchronization needed** — only sync player inputs
-//! - **Bandwidth**: ~20 bytes/player/frame instead of ~160 bytes/body/frame
+//! - **Bandwidth**: 102 bytes/player/frame ([`FrameInput::to_wire`]) instead of ~160 bytes/body/frame
 //! - **Rollback**: Save/restore snapshots for client-side prediction
 //! - **Desync detection**: Compare state checksums across clients
 //!
@@ -58,7 +58,8 @@ use std::collections::VecDeque;
 /// Player input for a single simulation frame.
 ///
 /// Compact, deterministic representation of all player actions.
-/// Serialized size: ~20 bytes (`player_id` + movement + actions + `aim_yaw`).
+/// Wire size: [`FrameInput::WIRE_BYTES`] = 102 bytes, every bit of every field
+/// ([`FrameInput::to_wire`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FrameInput {
     /// Player identifier (0-based)
@@ -115,54 +116,134 @@ impl FrameInput {
         self.actions & bit != 0
     }
 
-    /// Serialize to bytes (deterministic, little-endian)
+    /// Version byte of [`Self::to_wire`].
+    pub const WIRE_VERSION: u8 = 1;
+
+    /// Length of [`Self::to_wire`]: version, player id, movement and aim as
+    /// three `Fix128` each (`hi` then `lo`, little-endian), actions.
+    pub const WIRE_BYTES: usize = 102;
+
+    /// Length of the pre-4.0.0 form, which kept only the integer part of
+    /// movement and aim; [`Self::from_wire`] refuses it.
+    pub const LEGACY_BYTES: usize = 20;
+
+    /// Encode every bit of the input (little-endian):
+    ///
+    /// | bytes | content |
+    /// |---|---|
+    /// | 0 | [`Self::WIRE_VERSION`] |
+    /// | 1 | `player_id` |
+    /// | 2..50 | `movement` x, y, z: `hi: i64`, `lo: u64` each |
+    /// | 50..54 | `actions: u32` |
+    /// | 54..102 | `aim_direction` x, y, z: `hi: i64`, `lo: u64` each |
+    ///
+    /// [`Self::from_wire`] of the result is `self`, so a peer that applies
+    /// its own input and sends this form stays in step with the peers that
+    /// decode it.
     #[must_use]
-    pub fn to_bytes(&self) -> [u8; 20] {
-        let mut buf = [0u8; 20];
-        buf[0] = self.player_id;
-        // movement as i16 x 3 (6 bytes) — truncated from Fix128 for network
-        debug_assert!(i16::try_from(self.movement.x.hi).is_ok());
-        debug_assert!(i16::try_from(self.movement.y.hi).is_ok());
-        debug_assert!(i16::try_from(self.movement.z.hi).is_ok());
-        let mx = self.movement.x.hi as i16;
-        let my = self.movement.y.hi as i16;
-        let mz = self.movement.z.hi as i16;
-        buf[1..3].copy_from_slice(&mx.to_le_bytes());
-        buf[3..5].copy_from_slice(&my.to_le_bytes());
-        buf[5..7].copy_from_slice(&mz.to_le_bytes());
-        // actions (4 bytes)
-        buf[7..11].copy_from_slice(&self.actions.to_le_bytes());
-        // aim as i16 x 3 (6 bytes)
-        let ax = self.aim_direction.x.hi as i16;
-        let ay = self.aim_direction.y.hi as i16;
-        let az = self.aim_direction.z.hi as i16;
-        buf[11..13].copy_from_slice(&ax.to_le_bytes());
-        buf[13..15].copy_from_slice(&ay.to_le_bytes());
-        buf[15..17].copy_from_slice(&az.to_le_bytes());
-        // padding
-        buf[17] = 0;
-        buf[18] = 0;
-        buf[19] = 0;
+    pub fn to_wire(&self) -> [u8; Self::WIRE_BYTES] {
+        fn put(buf: &mut [u8], at: &mut usize, bytes: &[u8]) {
+            buf[*at..*at + bytes.len()].copy_from_slice(bytes);
+            *at += bytes.len();
+        }
+        let mut buf = [0u8; Self::WIRE_BYTES];
+        let mut at = 0;
+        put(&mut buf, &mut at, &[Self::WIRE_VERSION, self.player_id]);
+        for v in [self.movement.x, self.movement.y, self.movement.z] {
+            put(&mut buf, &mut at, &v.hi.to_le_bytes());
+            put(&mut buf, &mut at, &v.lo.to_le_bytes());
+        }
+        put(&mut buf, &mut at, &self.actions.to_le_bytes());
+        for v in [
+            self.aim_direction.x,
+            self.aim_direction.y,
+            self.aim_direction.z,
+        ] {
+            put(&mut buf, &mut at, &v.hi.to_le_bytes());
+            put(&mut buf, &mut at, &v.lo.to_le_bytes());
+        }
+        debug_assert_eq!(at, Self::WIRE_BYTES);
         buf
     }
 
-    /// Deserialize from bytes
-    #[must_use]
-    pub const fn from_bytes(data: &[u8; 20]) -> Self {
-        let player_id = data[0];
-        let mx = i16::from_le_bytes([data[1], data[2]]);
-        let my = i16::from_le_bytes([data[3], data[4]]);
-        let mz = i16::from_le_bytes([data[5], data[6]]);
-        let actions = u32::from_le_bytes([data[7], data[8], data[9], data[10]]);
-        let ax = i16::from_le_bytes([data[11], data[12]]);
-        let ay = i16::from_le_bytes([data[13], data[14]]);
-        let az = i16::from_le_bytes([data[15], data[16]]);
+    /// Decode [`Self::to_wire`].
+    ///
+    /// # Errors
+    ///
+    /// [`WireError::Legacy`] for a [`Self::LEGACY_BYTES`]-byte input (the
+    /// pre-4.0.0 form, which lost the fraction: it is not read as a value);
+    /// [`WireError::Length`] for any other length than [`Self::WIRE_BYTES`];
+    /// [`WireError::Version`] when the version byte is not
+    /// [`Self::WIRE_VERSION`].
+    pub fn from_wire(data: &[u8]) -> Result<Self, WireError> {
+        if data.len() == Self::LEGACY_BYTES {
+            return Err(WireError::Legacy);
+        }
+        if data.len() != Self::WIRE_BYTES {
+            return Err(WireError::Length { found: data.len() });
+        }
+        if data[0] != Self::WIRE_VERSION {
+            return Err(WireError::Version { found: data[0] });
+        }
+        let word = |at: usize| {
+            let mut b = [0u8; 8];
+            b.copy_from_slice(&data[at..at + 8]);
+            b
+        };
+        let fix = |at: usize| {
+            Fix128::from_raw(
+                i64::from_le_bytes(word(at)),
+                u64::from_le_bytes(word(at + 8)),
+            )
+        };
+        let vec = |at: usize| Vec3Fix::new(fix(at), fix(at + 16), fix(at + 32));
+        let mut actions = [0u8; 4];
+        actions.copy_from_slice(&data[50..54]);
+        Ok(Self {
+            player_id: data[1],
+            movement: vec(2),
+            actions: u32::from_le_bytes(actions),
+            aim_direction: vec(54),
+        })
+    }
+}
 
-        Self {
-            player_id,
-            movement: Vec3Fix::from_int(mx as i64, my as i64, mz as i64),
-            actions,
-            aim_direction: Vec3Fix::from_int(ax as i64, ay as i64, az as i64),
+/// Why [`FrameInput::from_wire`] refused its input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum WireError {
+    /// The pre-4.0.0 20-byte form, which kept only the integer part of
+    /// movement and aim.
+    Legacy,
+    /// Neither [`FrameInput::WIRE_BYTES`] nor [`FrameInput::LEGACY_BYTES`] long.
+    Length {
+        /// The length given.
+        found: usize,
+    },
+    /// The version byte is not [`FrameInput::WIRE_VERSION`].
+    Version {
+        /// The version byte given.
+        found: u8,
+    },
+}
+
+impl core::fmt::Display for WireError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Legacy => write!(
+                f,
+                "a 20-byte frame input (the form before 4.0.0, without the fraction) is not read"
+            ),
+            Self::Length { found } => write!(
+                f,
+                "a frame input is {} bytes, not {found}",
+                FrameInput::WIRE_BYTES
+            ),
+            Self::Version { found } => write!(
+                f,
+                "frame input wire version {found}, this build reads {}",
+                FrameInput::WIRE_VERSION
+            ),
         }
     }
 }
@@ -674,8 +755,8 @@ mod tests {
             .with_actions(0x05)
             .with_aim(Vec3Fix::from_int(0, 1, 0));
 
-        let bytes = input.to_bytes();
-        let restored = FrameInput::from_bytes(&bytes);
+        let bytes = input.to_wire();
+        let restored = FrameInput::from_wire(&bytes).unwrap();
 
         assert_eq!(restored.player_id, 3);
         assert_eq!(restored.actions, 0x05);

@@ -898,7 +898,7 @@ pub use math::{simd_width, Fix128, Mat3Fix, QuatFix, Vec3Fix, SIMD_WIDTH};
 pub use motor::{JointMotor, MotorMode, PdController};
 pub use netcode::{
     DeterministicSimulation, FrameInput, InputApplicator, NetcodeConfig, SimulationChecksum,
-    SimulationSnapshot,
+    SimulationSnapshot, WireError,
 };
 pub use particle::{LandingEvent, LandingTarget, Particle, ParticleEmitter, ParticleSystem};
 #[cfg(feature = "std")]
