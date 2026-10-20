@@ -448,7 +448,7 @@ impl SdfTetMesh {
             let dx = pa[0] - pb[0];
             let dy = pa[1] - pb[1];
             let dz = pa[2] - pb[2];
-            let len_sq = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
+            let len_sq = dx * dx + (dy * dy + dz * dz);
             if len_sq <= limit_sq && !midpoints.contains_key(&key) {
                 continue;
             }
@@ -538,7 +538,7 @@ impl SdfTetMesh {
                 let dx = pa[0] - pb[0];
                 let dy = pa[1] - pb[1];
                 let dz = pa[2] - pb[2];
-                let len = dx.mul_add(dx, dy.mul_add(dy, dz * dz)).sqrt();
+                let len = (dx * dx + (dy * dy + dz * dz)).sqrt();
                 best = crate::det_math::max(best, len);
             }
         }

@@ -421,7 +421,7 @@ pub(crate) fn fd_normal<F: Fn(f32, f32, f32) -> f32>(
     let dy = f(x, y + e, z) - f(x, y - e, z);
     let dz = f(x, y, z + e) - f(x, y, z - e);
 
-    let len = dz.mul_add(dz, dx.mul_add(dx, dy * dy)).sqrt();
+    let len = (dz * dz + (dx * dx + dy * dy)).sqrt();
     if len < 1e-10 {
         (0.0, 1.0, 0.0)
     } else {

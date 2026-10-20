@@ -133,7 +133,7 @@ impl XorShift64 {
     // ALLOW-UNWIRED: wiring debt deprecated-privacy (deprecated, not private: kept for existing callers until the breaking release removes it), oracle tests/audit_privacy.rs
     #[inline]
     pub fn next_f64_range(&mut self, low: f64, high: f64) -> f64 {
-        (high - low).mul_add(self.next_f64(), low)
+        (high - low) * self.next_f64() + low
     }
 
     /// Generate a random boolean with given probability of true
@@ -212,7 +212,7 @@ impl LaplaceNoise {
         };
         let u = raw - 0.5;
         let sign = if u < 0.0 { -1.0 } else { 1.0 };
-        -sign * self.scale * crate::det_math::ln64(2.0f64.mul_add(-u.abs(), 1.0))
+        -sign * self.scale * crate::det_math::ln64(2.0f64 * -u.abs() + 1.0)
     }
 
     /// Add noise to a value
@@ -346,7 +346,7 @@ impl RandomizedResponse {
         // P(report=1) = p*true_rate + (1-p)*0.5
         // observed_rate = p*true_rate + 0.5 - 0.5*p
         // true_rate = (observed_rate - 0.5 + 0.5*p) / p
-        let true_rate = 0.5f64.mul_add(p_true, observed_rate - 0.5) / p_true;
+        let true_rate = (0.5f64 * p_true + (observed_rate - 0.5)) / p_true;
         crate::det_math::raw_clamp64(true_rate, 0.0, 1.0)
     }
 }

@@ -158,7 +158,7 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
                 let dx = pi[0] - pj[0];
                 let dy = pi[1] - pj[1];
                 let dz = pi[2] - pj[2];
-                let r_sq = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
+                let r_sq = dx * dx + (dy * dy + dz * dz);
                 if r_sq < h_sq {
                     rho += m * poly6(r_sq.sqrt(), h);
                 }
@@ -188,7 +188,7 @@ impl<'a, F: SdfField + ?Sized> SphSolver<'a, F> {
                 let dx = pi.position[0] - pj.position[0];
                 let dy = pi.position[1] - pj.position[1];
                 let dz = pi.position[2] - pj.position[2];
-                let r_sq = dx.mul_add(dx, dy.mul_add(dy, dz * dz));
+                let r_sq = dx * dx + (dy * dy + dz * dz);
                 if r_sq < 1.0e-8 || r_sq >= h_sq {
                     return;
                 }

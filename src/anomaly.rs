@@ -505,8 +505,7 @@ impl EwmaDetector {
         self.ewma += self.alpha * deviation;
 
         // Update variance EWMA
-        self.ewma_var =
-            (1.0 - self.alpha) * (self.alpha * deviation).mul_add(deviation, self.ewma_var);
+        self.ewma_var = (1.0 - self.alpha) * ((self.alpha * deviation) * deviation + self.ewma_var);
     }
 
     /// Check if a value is an anomaly (without updating)

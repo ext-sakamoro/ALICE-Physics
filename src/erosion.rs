@@ -141,7 +141,7 @@ impl ErosionModifier {
         let nz = self.exposure.nz;
 
         let (fx, fy, fz) = self.config.flow_direction;
-        let flow_len = fz.mul_add(fz, fx.mul_add(fx, fy * fy)).sqrt();
+        let flow_len = (fz * fz + (fx * fx + fy * fy)).sqrt();
         let (fx, fy, fz) = if flow_len > 1e-10 {
             (fx / flow_len, fy / flow_len, fz / flow_len)
         } else {
@@ -228,7 +228,7 @@ impl PhysicsModifier for ErosionModifier {
             if exp > 0.0 {
                 let rate = self.compute_rate(exp);
                 self.erosion_depth.data[i] =
-                    crate::det_math::min(rate.mul_add(dt, self.erosion_depth.data[i]), max_depth);
+                    crate::det_math::min(rate * dt + self.erosion_depth.data[i], max_depth);
             }
         }
 
@@ -362,7 +362,7 @@ impl Participant for ErosionModifier {
 /// `-(n · f)`, how much a surface with normal `n` faces a flow `f`
 ///
 /// Written with the negation on the operands, `(-n.z)·f.z + ((-n.x)·f.x +
-/// (-n.y)·f.y)` (two fused multiply-adds), not as the negated result
+/// (-n.y)·f.y)` (products and sums, each rounded once), not as the negated result
 /// `-(n.z·f.z + (n.x·f.x + n.y·f.y))`: the optimiser may rewrite a negated
 /// fused multiply-add into one with negated operands, and the two differ in the
 /// sign of a zero result, so the negated-result form gave -0 unoptimized and
@@ -376,7 +376,7 @@ impl Participant for ErosionModifier {
 /// change
 #[inline]
 fn windward_alignment(n: (f32, f32, f32), f: (f32, f32, f32)) -> f32 {
-    (-n.2).mul_add(f.2, (-n.0).mul_add(f.0, (-n.1) * f.1))
+    (-n.2) * f.2 + ((-n.0) * f.0 + (-n.1) * f.1)
 }
 
 #[cfg(test)]
@@ -386,7 +386,7 @@ mod tests {
     // the negated-result form, with the negation kept out of the optimiser's
     // reach (black_box), as the reference value
     fn negated_result(n: (f32, f32, f32), f: (f32, f32, f32)) -> f32 {
-        -core::hint::black_box(n.2.mul_add(f.2, n.0.mul_add(f.0, n.1 * f.1)))
+        -core::hint::black_box(n.2 * f.2 + (n.0 * f.0 + n.1 * f.1))
     }
 
     #[test]
