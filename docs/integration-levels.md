@@ -61,7 +61,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
-| `netcode` | binding | 0 / 0 / 25 / 4 / 0 | Python |
+| `netcode` | binding | 0 / 0 / 29 / 4 / 0 | Python |
 | `acoustic_wave` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `aeroelasticity` | standalone | 0 / 0 / 0 / 5 / 0 | — |
 | `analytics_bridge` | standalone | 0 / 0 / 0 / 14 / 0 | — |

@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5827 |
+| 🟢 Not ignored (run by CI) | 5834 |
 | 🔴 Red by design | 69 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5922** |
+| **Total** | **5929** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -149,7 +149,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5827)
+## 🟢 Not ignored (5834)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -477,6 +477,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_ccd_adaptive_substeps_wiring.rs` | 7 |
 | `analytic_coupled_wiring.rs` | 7 |
 | `analytic_electromagnetic_wiring.rs` | 7 |
+| `analytic_frame_input_wire.rs` | 7 |
 | `analytic_hyperelastic_degenerate.rs` | 7 |
 | `analytic_joint_reaction_per_type.rs` | 7 |
 | `analytic_multigrid.rs` | 7 |
