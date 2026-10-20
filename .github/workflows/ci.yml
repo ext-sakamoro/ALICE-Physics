@@ -661,10 +661,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
-      - name: Install Rust toolchain (with llvm-tools)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools
+      # llvm-nm / llvm-readobj come from the toolchain rust-toolchain.toml pins (its
+      # components list llvm-tools), which is the one the build runs on
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: facade-artifacts-${{ matrix.os }}
