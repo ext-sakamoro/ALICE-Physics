@@ -16,6 +16,7 @@ were introduced during that release window.
 ## [Unreleased]
 
 ### Changed
+- CI: `scripts/run_tests.sh` と試験 `scripts/test_run_tests.py` を ALICE-LLM と同じ bytes にし、`.github/shared-files-pin` を ALICE-Law の新しい版に移す 名前 `lib` を library の単体試験として数えるようになったが、この repository は `lib` を名指さないので各段の試験の名前と件数は変わらない 試験 `scripts/test_public_text.py` を ALICE-SDF と同じ版にした (公開する text の検査を pin の checker で走らせ、置いた note link を tree と commit message で検出すること、pin の 3 行目 `config-sha256` が設定を承認することを確かめる、network を使う) 公開 text の検査の pin は ALICE-Law ba724e1 の checker に移し、`.public-text.toml` の許可件数をその checker が数える行数に合わせて `config-sha256` で承認した (git の subcommand 名を引数の list に書いた行は数えない)
 - docs: `docs/PUB_AUDIT_ITERATION_1.md` から `_4.md` の下流調査の command の path を home directory 起点 (`~/ALICE-…`) でなく隣の checkout からの相対 path (`../ALICE-…`) で書く 調査の手順と結果は変えない
 - CI: 共有の `scripts/id_move_check.py` (ALICE-Law G9) の設定に任意の `base-package` を足した package の名前を変えた後も、release tag と crates.io の版はその名前で読み、probe は今の lib の名前で両方を指す (設定が無ければ挙動は変わらない) 試験 `scripts/test_id_move_check.py` に名前を変えた crate の 3 件 (旧い名前の tag を読む、key が無ければ release が見つからない、名前の形の検査)
 
