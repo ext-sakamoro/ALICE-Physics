@@ -39,6 +39,16 @@ Rust 向けの決定論的物理エンジン
 
 ## インストール
 
+crates.io の最新の版は 3.1.0 で、`cargo add alice-physics` はこれを入れる
+この repository の `main` は 4.0.0 で、crates.io には公開されておらず、3.1.0 からの破壊的変更を含む
+([CHANGELOG.md](CHANGELOG.md) の `[Unreleased]` に記載) この README の以降の説明は `main` のもの
+`main` を使うには commit を固定して repository に依存する:
+
+```toml
+[dependencies]
+alice-physics = { git = "https://github.com/ext-sakamoro/ALICE-Physics", rev = "<commit>" }
+```
+
 ```sh
 cargo add alice-physics
 ```

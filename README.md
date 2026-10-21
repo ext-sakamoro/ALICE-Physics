@@ -44,6 +44,17 @@ arithmetic costs time, and scenes with thousands of interacting bodies at
 
 ## Installation
 
+The latest release on crates.io is 3.1.0, and `cargo add alice-physics` installs it.
+The `main` branch of this repository is 4.0.0, which is not published to crates.io and
+has breaking changes from 3.1.0 (listed under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md)).
+The rest of this README describes `main`. To build against `main`, depend on the
+repository at a fixed commit:
+
+```toml
+[dependencies]
+alice-physics = { git = "https://github.com/ext-sakamoro/ALICE-Physics", rev = "<commit>" }
+```
+
 ```sh
 cargo add alice-physics
 ```
