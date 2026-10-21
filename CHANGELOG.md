@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 - CI (ALICE-Law G1): `clippy.toml` と `.github/clippy-lib/clippy.toml` が `f32::sin_cos` / `f64::sin_cos` を禁止する (他の platform libm の method と同じ理由、canary に 2 つの形を足し `scripts/clippy_lib_gate.toml` に登録) library の呼び出しは 0 件 (src の `sin_cos` は Fix128 の固定小数点のもの)、試験の f64 の 4 件 (`tests/analytic_shape_raycast.rs` 2 件 / `tests/audit_c_laminate.rs` / `tests/audit_sdf_force.rs`) は `alice_det_math::sin_cos64` にした G1 は pass
+- docs: `docs/PUB_AUDIT_ITERATION_1.md` から `_4.md` の下流調査の command の path を home directory 起点 (`~/ALICE-…`) でなく隣の checkout からの相対 path (`../ALICE-…`) で書く 調査の手順と結果は変えない
 - CI: 共有の `scripts/id_move_check.py` (ALICE-Law G9) の設定に任意の `base-package` を足した package の名前を変えた後も、release tag と crates.io の版はその名前で読み、probe は今の lib の名前で両方を指す (設定が無ければ挙動は変わらない) 試験 `scripts/test_id_move_check.py` に名前を変えた crate の 3 件 (旧い名前の tag を読む、key が無ければ release が見つからない、名前の形の検査)
 
 - `alice-law-conformance.toml`: evidence / mutant / note の行番号参照 19 件を anchor (`path#token`、ALICE-Law の roster が ref の file で 1 か所に解決するか確かめる) にした 行番号がずれて別の行を指していた参照 (ci.yml の clippy と entropy guard の step、clippy.toml の時計と RandomState の entry、canary の elapsed の形、src/solver/world_snapshot.rs の restore_world_checked と TGS の impulse cache の並べ替え) は文章が名指す構文 (step 名、fn、表の entry) に直した 測定の記録に出る行番号は、その行を名指す文に置き換えた 各 gate の status は変わらない

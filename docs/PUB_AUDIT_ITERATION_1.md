@@ -70,7 +70,7 @@ Before applying `pub(crate)` reductions in Iteration 2+, run:
 
 ```bash
 # Search downstream repos for actual usage patterns
-rg 'alice_physics::' ~/ALICE-Bamboo 2>/dev/null | grep -v '/target/'
+rg 'alice_physics::' ../ALICE-Bamboo 2>/dev/null | grep -v '/target/'
 ```
 
 Items referenced by downstream code must **not** be reduced without a
