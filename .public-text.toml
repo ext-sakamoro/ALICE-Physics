@@ -2,8 +2,7 @@
 #
 # scripts/docs_lint.py holds this repository's own list of words a public document
 # must not use, and scripts/test_docs_lint.py feeds that list the words it must
-# catch: both files name those words on purpose. scripts/land.py passes git
-# subcommand names to git as argument lists, and scripts/test_land.py tests the
+# catch: both files name those words on purpose. scripts/test_land.py tests the
 # landing tool's own commit message check. Each entry allows one kind of finding
 # in one file, with the exact number of lines; a different number fails the
 # check, so a new line of that kind in these files is a finding again.
@@ -13,7 +12,7 @@
 [[public-text.allow]]
 path = "scripts/docs_lint.py"
 class = "agent process"
-count = 6
+count = 5
 why = "the documentation linter's word list"
 
 [[public-text.allow]]
@@ -37,7 +36,7 @@ why = "the documentation linter's word list"
 [[public-text.allow]]
 path = "scripts/test_docs_lint.py"
 class = "agent process"
-count = 26
+count = 21
 why = "test inputs for the documentation linter"
 
 [[public-text.allow]]
@@ -81,12 +80,6 @@ path = "scripts/test_docs_lint.py"
 class = "session name"
 count = 3
 why = "test inputs for the documentation linter"
-
-[[public-text.allow]]
-path = "scripts/land.py"
-class = "agent process"
-count = 3
-why = "git subcommand names in the argument lists the landing tool passes to git"
 
 [[public-text.allow]]
 path = "scripts/test_land.py"
