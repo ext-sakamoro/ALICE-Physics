@@ -64,6 +64,14 @@ text = "x.sin()"
 path = "f32::sin"
 
 [[form]]
+text = "a.sin_cos()"
+path = "f32::sin_cos"
+
+[[form]]
+text = "f64::sin_cos(b)"
+path = "f64::sin_cos"
+
+[[form]]
 text = "started.elapsed()"
 path = "std::time::Instant::elapsed"
 

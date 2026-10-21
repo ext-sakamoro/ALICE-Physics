@@ -15,10 +15,11 @@
 # identifier into its own.
 
 [G1]
-status = "fail-known"
-evidence = ["clippy.toml", ".github/clippy-lib/clippy.toml", ".github/workflows/ci.yml clippy job"]
+status = "pass"
+evidence = ["clippy.toml (f32::sin_cos and f64::sin_cos banned with the other platform-libm methods)", ".github/clippy-lib/clippy.toml (generated from clippy.toml by scripts/clippy_lib_gate.py --write, the same list)", "scripts/clippy-lib-canary/src/lib.rs libm_sin_cos_f32 / libm_sin_cos_f64, with scripts/clippy_lib_gate.toml (each form must be flagged by its own path)", ".github/workflows/ci.yml clippy job (all targets, -D warnings, and the library code step)"]
+mutant = "measured 2026-10-21, reverted: a pub fn returning `x.sin_cos()` on f64 appended to src/lib.rs fails `cargo clippy --lib` with the library configuration and `cargo clippy --all-targets` with the root one (disallowed method f64::sin_cos); dropping either new canary form fails scripts/clippy_lib_gate.py"
 since = ""
-note = "both clippy configurations omit the combined f32::sin_cos / f64::sin_cos from the banned list (ALICE-Law's measure_conformance.py reports 'missing sin_cos' for clippy.toml and .github/clippy-lib/clippy.toml), which the G1 methods list marks banned. The production call sites that look like transcendentals are on Fix128 (ecc.sin_cos() in kepler.rs, theta.sin_cos() in anisotropic.rs / filament_db.rs / gyroscopic.rs are the crate's fixed-point sin_cos, not platform libm) and the f64 .sin()/.acos() in animation_blend.rs are a slerp oracle inside a test module carrying #[allow(clippy::disallowed_methods)] // the f64 libm values are the oracle on purpose; transcendentals in the Law path go through alice-det-math. So the gap is latent (no production f64::sin_cos call today) but the ban is required and absent, so a future f64::sin_cos would not be caught (C2). CI runs cargo clippy --all-targets -- -D warnings, so the lint fires; the list is short one method per width."
+note = "the two clippy configurations lacked the combined f32::sin_cos / f64::sin_cos that the G1 methods list marks banned. With the ban in place clippy found no library call (the sin_cos calls in src are Fix128's fixed-point sin_cos) and four f64 calls in tests (analytic_shape_raycast x2, audit_c_laminate, audit_sdf_force), now alice_det_math::sin_cos64, so the f64 references of those tests are the deterministic law too (the tests pass unchanged). The f64 .sin()/.acos() slerp oracle in animation_blend.rs (slerp_ref, in the test module) keeps its #[allow(clippy::disallowed_methods, reason = ...)] as an independent reference."
 reference_repo = ""
 
 [G2]

@@ -64,7 +64,7 @@ fn unit(a: V) -> V {
 }
 /// Rodrigues rotation of `v` about unit `axis` by `ang` (f64 reference).
 fn rot(axis: V, ang: f64, v: V) -> V {
-    let (s, c) = ang.sin_cos();
+    let (s, c) = alice_det_math::sin_cos64(ang);
     let kxv = cross(axis, v);
     let kdv = dot(axis, v);
     [

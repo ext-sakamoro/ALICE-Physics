@@ -30,6 +30,14 @@ pub fn libm_f32(x: f32) -> f32 {
     x.sin()
 }
 
+pub fn libm_sin_cos_f32(a: f32) -> (f32, f32) {
+    a.sin_cos()
+}
+
+pub fn libm_sin_cos_f64(b: f64) -> (f64, f64) {
+    f64::sin_cos(b)
+}
+
 // the wall clock read through `elapsed` (Instant and SystemTime): five forms
 use std::time::Instant as Clock;
 

@@ -189,7 +189,7 @@ fn box_corner_gap_is_hit_by_bounding_sphere_but_not_by_shape() {
 
 /// Independent `f64` slab test of a box turned about `Y` by `deg`.
 fn f64_turned_box(o: [f64; 3], d: [f64; 3], half: [f64; 3], deg: f64) -> (f64, [f64; 3]) {
-    let (s, c) = deg.to_radians().sin_cos();
+    let (s, c) = alice_det_math::sin_cos64(deg.to_radians());
     // Local = R(−θ) world about Y: x' = c·x − s·z, z' = s·x + c·z.
     let to_local = |v: [f64; 3]| [c * v[0] - s * v[2], v[1], s * v[0] + c * v[2]];
     let to_world = |v: [f64; 3]| [c * v[0] + s * v[2], v[1], -s * v[0] + c * v[2]];
@@ -459,7 +459,7 @@ fn torus_matches_closed_form() {
     // on the tube when (s cos a − 2)² + (s sin a)² = 0.25, i.e.
     // s² − 4s·cos a + 3.75 = 0, s = 2cos a − √(4cos²a − 3.75); the normal points
     // from the tube centre (2, 0, 0) to the hit.
-    let (sa, ca) = 10f64.to_radians().sin_cos();
+    let (sa, ca) = alice_det_math::sin_cos64(10f64.to_radians());
     let s = 2.0 * ca - (4.0 * ca * ca - 3.75).sqrt();
     assert_hit(
         cast(&w, [0.0, 0.0, 0.0], [ca, sa, 0.0], 100.0),

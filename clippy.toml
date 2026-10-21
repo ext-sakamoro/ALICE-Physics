@@ -6,6 +6,7 @@
 disallowed-methods = [
     { path = "f32::sin", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f32::cos", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
+    { path = "f32::sin_cos", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f32::tan", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f32::asin", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f32::acos", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
@@ -31,6 +32,7 @@ disallowed-methods = [
     { path = "f32::hypot", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f64::sin", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f64::cos", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
+    { path = "f64::sin_cos", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f64::tan", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f64::asin", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },
     { path = "f64::acos", reason = "platform libm is not cross-platform bit-exact; use alice_physics::det_math" },

@@ -51,7 +51,7 @@ fn q_material() -> [[[[f64; 2]; 2]; 2]; 2] {
 
 /// `(Q11, Q12, Q22, Q16, Q26, Q66)` in laminate axes by tensor rotation.
 fn q_bar_tensor(theta: f64) -> [f64; 6] {
-    let (s, c) = theta.sin_cos();
+    let (s, c) = alice_det_math::sin_cos64(theta);
     let r = [[c, -s], [s, c]];
     let cm = q_material();
     let mut out = [[[[0.0; 2]; 2]; 2]; 2];
