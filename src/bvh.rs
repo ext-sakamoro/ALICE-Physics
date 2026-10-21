@@ -216,7 +216,16 @@ fn fix128_floor_i32(v: Fix128) -> i32 {
 /// For max bounds: ceil ensures the AABB fully contains the original.
 #[inline]
 fn fix128_ceil_i32(v: Fix128) -> i32 {
-    let ceil = if v.lo > 0 { v.hi + 1 } else { v.hi };
+    // `hi = i64::MAX` with a fraction has its ceiling past `i64`: above the `i32`
+    // range like every other value there, so it clamps to `i32::MAX`
+    let ceil = if v.lo > 0 {
+        match v.hi.checked_add(1) {
+            Some(c) => c,
+            None => return i32::MAX,
+        }
+    } else {
+        v.hi
+    };
     ceil.max(i32::MIN as i64).min(i32::MAX as i64) as i32
 }
 
@@ -1937,6 +1946,57 @@ mod tests {
         let a = point_to_morton(Vec3Fix::from_int(1, 1, 1), &bounds);
         let b = point_to_morton(Vec3Fix::from_int(2, 1, 1), &bounds);
         assert!(a < b);
+    }
+
+    /// The ceiling of a value in the top integer word (`hi = i64::MAX` with a fraction)
+    /// is past `i64` and clamps to `i32::MAX`; the floor of the bottom one clamps to
+    /// `i32::MIN`. Adding 1 to `hi` there used to overflow: a panic in a debug build, and
+    /// in a release build a wrap to `i64::MIN`, which clamped the box's upper bound to
+    /// `i32::MIN`, below its lower bound.
+    #[test]
+    fn fix128_to_i32_clamps_at_the_ends_of_the_fix128_range() {
+        assert_eq!(
+            fix128_ceil_i32(Fix128 {
+                hi: i64::MAX,
+                lo: 1
+            }),
+            i32::MAX
+        );
+        assert_eq!(
+            fix128_ceil_i32(Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX
+            }),
+            i32::MAX
+        );
+        assert_eq!(
+            fix128_ceil_i32(Fix128 {
+                hi: i64::MAX,
+                lo: 0
+            }),
+            i32::MAX
+        );
+        assert_eq!(
+            fix128_floor_i32(Fix128 {
+                hi: i64::MAX,
+                lo: u64::MAX
+            }),
+            i32::MAX
+        );
+        assert_eq!(
+            fix128_floor_i32(Fix128 {
+                hi: i64::MIN,
+                lo: 0
+            }),
+            i32::MIN
+        );
+        assert_eq!(
+            fix128_ceil_i32(Fix128 {
+                hi: i64::MIN,
+                lo: 1
+            }),
+            i32::MIN
+        );
     }
 
     #[test]

@@ -17,8 +17,8 @@ src/privacy.rs:203: `sample` が浮動小数点の逆変換で noise を作っ�
 # === 群 2: 決定論が目的の PRNG (理由 marker を置けば解消する、置き換え不要) ===
 #   simulation の再現性のための PRNG は正しい設計 marker で意図を明示するだけ
 #   - src/rng.rs:63      ... 本 crate の決定論 PRNG (lockstep の再現性が目的)
-#   - src/bvh.rs:1278    ... 試験用の LCG が production の `src/` に居る
+#   - src/bvh.rs:1287    ... 試験用の LCG が production の `src/` に居る
 #                            ⚠️ `#[cfg(test)]` が付いていないので本番 build にも入る
 #                            marker を置くか、test module へ移すかの判断が要る
-src/bvh.rs:1278: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い
+src/bvh.rs:1287: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い
 src/rng.rs:63: 予測可能な PRNG の定義に `// DETERMINISTIC-RNG: <理由>` が無い

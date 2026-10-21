@@ -69,6 +69,10 @@ were introduced during that release window.
 - **Breaking:** 時計から seed を作る構築子 (ALICE-Law G10) `privacy::XorShift64::from_entropy` (std では時計を OS の乱数で鍵を作る hasher に通した値、no_std では固定値)、`impl Default for XorShift64`、`LaplaceNoise::new(sensitivity, epsilon)`、`Rappor::new(f, p, q)`、`Rappor::default_params()` を削除した 非推奨の `privacy` module の出力が時計に依存していた 移行: `XorShift64::new(seed)` / `LaplaceNoise::with_seed(sensitivity, epsilon, seed)` / `Rappor::with_seed(f, p, q, seed)` `Rappor::default_params` の「ε ≈ 2」の記述は誤りだった (AUD-A-S4W3-023、1 報告の ε は最大 3.07) ので、同じ値は `Rappor::with_seed(0.5, 0.75, 0.25, seed)` で明示する
 - `scripts/entropy_guard.py` と `scripts/allow_reason_guard.py` の `src/privacy.rs` の許可を外した (本番の code で時計と OS の乱数を読む箇所は 0 件、許可の表は空)
 
+### Fixed
+
+- **Behavior change:** `LinearBvh` (`Broadphase::Bvh` の broad-phase) が葉の箱を `i32` に量子化する時、上端の値が `Fix128` の最上位の整数 (`hi = i64::MAX`) で小数を持つと、切り上げの `hi + 1` が溢れていた debug build では panic し、release build では `i64::MIN` に wrap して上端が `i32::MIN` に clamp され、箱の上端が下端より下になって、範囲の端に届く body が候補の組から落ちることがあった 切り上げは `i32::MAX` に clamp する (`i32` の範囲より上の他の値と同じ) 範囲の内側の値の量子化は変わらない (golden と `PHYSICS_SEMANTICS_ID` は不変) 試験 `bvh::tests::fix128_to_i32_clamps_at_the_ends_of_the_fix128_range` と `tests/analytic_bvh_quantise_range.rs` (範囲の両端に届く箱で、重なる組が全て候補に入ることを総当たりの重なりと比べる)
+
 ## [3.1.0] - 2026-10-16
 
 ### Added
