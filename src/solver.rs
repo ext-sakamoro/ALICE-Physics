@@ -3631,10 +3631,15 @@ impl PhysicsWorld {
                         // A pair of two parked bodies never reaches the narrow-phase, which
                         // is where a radius sum past the `Fix128` range raises the flag for
                         // a staged pair. Check the sums against the parked bodies this box
-                        // meets here, once, when the body joins the tree: a sum past the
-                        // range means the two boxes meet (both boxes inside the range force
-                        // |xa - xb| <= 2^64 - (ra + rb) on every axis), or a box was cut at
-                        // the end of the range, which `left_range` already reports
+                        // meets here, once, when the body joins the tree. For two bodies
+                        // whose boxes are their sphere cubes (no collider), a sum past the
+                        // range means the two boxes meet (both cubes inside the range force
+                        // |xa - xb| <= 2^64 - (ra + rb) on every axis) or a cube was cut at
+                        // the end of the range, which `left_range` already reports, so this
+                        // check sees every such pair. A body with a collider has its box
+                        // clipped to the collider's own box, which the sum does not bound:
+                        // for such pairs the flag can still differ from the staged path
+                        // (not covered by this check)
                         let mut sum_left_range = false;
                         let radii = &self.body_collision_radii;
                         self.park.tree.query_callback(&aabb, |j| {
@@ -7232,6 +7237,11 @@ impl PhysicsWorld {
             // 未知の値は拒否 (silent に false へ倒すと undecided が消える)
             _ => return false,
         };
+        // The flag may have gone down with the loaded state; the tree of parked
+        // bodies (not part of this state) holds proxies whose insert raised it.
+        // Drop the parked set so the next step re-inserts every parked body and
+        // checks its box and radius sums again against the loaded flag.
+        self.park_generation = self.park_generation.wrapping_add(1);
 
         true
     }

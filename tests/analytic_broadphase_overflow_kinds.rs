@@ -348,3 +348,75 @@ fn parked_bodies_whose_radius_sum_leaves_the_range_raise_the_flag_like_staged_on
         differing.first().map_or("", String::as_str)
     );
 }
+
+/// The two parked bodies of [`parked_pair`] (radius sum past the range, boxes inside
+/// it), set back to a state taken before their first step (overflow flag down) and
+/// stepped once more. `via_snapshot` selects `snapshot_world` / `restore_world`
+/// instead of `serialize_state` / `deserialize_state`.
+fn stepped_after_rollback(kind: Broadphase, skip: bool, via_snapshot: bool) -> PhysicsWorld {
+    let xb = Fix128::from_int(1 << 40);
+    let r = Fix128::from_int(1 << 62);
+    let mut w = parked_pair(kind, skip, xb, r, 0);
+    let state = w.serialize_state();
+    let snapshot = w.snapshot_world();
+    assert!(
+        !w.overflow_detected(),
+        "the flag is down before the first step"
+    );
+    for _ in 0..3 {
+        w.step(Fix128::from_ratio(1, 60));
+    }
+    assert!(
+        w.overflow_detected(),
+        "{kind:?} skip={skip}: the radius sum raised the flag"
+    );
+    if via_snapshot {
+        w.restore_world(&snapshot).expect("the snapshot restores");
+    } else {
+        assert!(w.deserialize_state(&state), "the state loads");
+    }
+    assert!(!w.overflow_detected(), "the loaded state has the flag down");
+    w.step(Fix128::from_ratio(1, 60));
+    w
+}
+
+/// Oracle: the first step after a rollback raises the flag again in every world, as it
+/// did the first time: the radius sum is past the range whichever way the pair is
+/// visited. With the sleep skip on, the parked bodies' tree is not part of the loaded
+/// state, so the loading has to send them through the insert (and its check) again.
+#[test]
+fn a_rollback_below_the_flag_raises_it_again_on_the_next_step() {
+    let mut compared = 0usize;
+    let mut wrong: Vec<String> = Vec::new();
+    for via_snapshot in [false, true] {
+        let reference = stepped_after_rollback(Broadphase::Bvh, false, via_snapshot);
+        let reference_state = reference.serialize_state();
+        for (kind, skip) in [
+            (Broadphase::Bvh, false),
+            (Broadphase::Bvh, true),
+            (Broadphase::DynamicTree, false),
+            (Broadphase::DynamicTree, true),
+            (Broadphase::Hybrid, false),
+            (Broadphase::Hybrid, true),
+        ] {
+            let w = stepped_after_rollback(kind, skip, via_snapshot);
+            compared += 1;
+            if !w.overflow_detected() || w.serialize_state() != reference_state {
+                wrong.extend([format!(
+                    "{kind:?} skip={skip} via_snapshot={via_snapshot}: flag {}",
+                    w.overflow_detected()
+                )]);
+            }
+        }
+    }
+    assert_eq!(
+        compared, 12,
+        "2 ways to roll back x 3 kinds x skip on / off"
+    );
+    assert!(
+        wrong.is_empty(),
+        "{} of {compared} worlds differ after the rollback, first: {}",
+        wrong.len(),
+        wrong.first().map_or("", String::as_str)
+    );
+}

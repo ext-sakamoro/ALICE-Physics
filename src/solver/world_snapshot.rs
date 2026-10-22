@@ -2218,6 +2218,10 @@ impl PhysicsWorld {
         self.body_colliders = d.body_colliders;
         self.body_filters = d.body_filters;
         self.overflow_detected = d.overflow_detected;
+        // the tree of parked bodies is not in the snapshot: drop the parked set so
+        // the next step re-inserts every parked body and checks its box and radius
+        // sums against the restored flag (the same as `deserialize_state`)
+        self.park_generation = self.park_generation.wrapping_add(1);
         self.kinematic_substeps_left = 0;
 
         #[cfg(feature = "std")]
