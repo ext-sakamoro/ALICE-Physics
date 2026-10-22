@@ -331,10 +331,10 @@ fn parked_bodies_whose_boxes_leave_the_range_raise_the_flag_like_staged_ones() {
 /// Oracle: the staged world (sleep skip off), where the pair reaches the narrow-phase
 /// and the sum of the two radii (here past the range while both boxes stay inside it)
 /// raises the flag. With the skip on, a pair of two parked bodies never reaches the
-/// narrow-phase, so the sum is never formed and the flag stays down: the sleep skip is
-/// not bit-identical here (AUD-A-S6W1-011).
+/// narrow-phase; the insert into the tree of parked bodies checks the sums against
+/// the parked bodies the new box meets, so the flag is the same either way
+/// (AUD-A-S6W1-011, fixed).
 #[test]
-#[ignore = "known defect: AUD-A-S6W1-011: sleep skip radius sum: a pair of two parked bodies never reaches the narrow-phase, so a radius sum past the Fix128 range raises the overflow flag with the sleep skip off but not with it on"]
 fn parked_bodies_whose_radius_sum_leaves_the_range_raise_the_flag_like_staged_ones() {
     let (compared, differing) = compare_parked(false);
     assert!(

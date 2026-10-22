@@ -3628,7 +3628,23 @@ impl PhysicsWorld {
                     if recached || self.park.proxies[i].is_none() {
                         self.park.remove_proxy(i, &mut self.stage_work);
                         let (aabb, left_range) = self.broadphase_box_checked(i, r);
-                        if left_range {
+                        // A pair of two parked bodies never reaches the narrow-phase, which
+                        // is where a radius sum past the `Fix128` range raises the flag for
+                        // a staged pair. Check the sums against the parked bodies this box
+                        // meets here, once, when the body joins the tree: a sum past the
+                        // range means the two boxes meet (both boxes inside the range force
+                        // |xa - xb| <= 2^64 - (ra + rb) on every axis), or a box was cut at
+                        // the end of the range, which `left_range` already reports
+                        let mut sum_left_range = false;
+                        let radii = &self.body_collision_radii;
+                        self.park.tree.query_callback(&aabb, |j| {
+                            if let Some(rj) = radii.get(j as usize).and_then(|x| *x) {
+                                if r.checked_add(rj).is_none() {
+                                    sum_left_range = true;
+                                }
+                            }
+                        });
+                        if left_range || sum_left_range {
                             self.note_rigid_overflow();
                         }
                         self.park.proxies[i] = Some(self.park.tree.insert(aabb, i as u32));
@@ -6836,7 +6852,8 @@ impl PhysicsWorld {
     /// sticky flag を立てるのはこの関数だけ (積分の `v·dt` と位置の加算、
     /// 速度導出、球の接触の距離と半径和、角速度の大きさ、TGS の積分、
     /// TGS の関節投影の速度への繰り越し、broad-phase の箱が範囲の端で止まった時
-    /// ([`Self::broadphase_box_checked`]、staging と sleep の木への挿入)) 落とす経路は [`Self::reset_world`] と
+    /// ([`Self::broadphase_box_checked`]、staging と sleep の木への挿入)、sleep の
+    /// 木への挿入で箱が重なる park 済みの body との半径和) 落とす経路は [`Self::reset_world`] と
     /// 状態の復元だけ
     #[inline]
     pub(crate) fn note_rigid_overflow(&mut self) {
