@@ -288,10 +288,11 @@ impl DynamicAabbTree {
     // =========== Internal methods ===========
 
     fn fatten(&self, aabb: AABB) -> AABB {
-        // the margin is a clearance in `self.metric`; the box is Euclidean
+        // the margin is a clearance in `self.metric`; the box is Euclidean. A corner at
+        // the end of the `Fix128` range stops there instead of wrapping, so the proxy of
+        // a box at the end of the range still covers it (not turned inside out)
         let pad = self.metric.euclidean_radius(self.margin);
-        let m = Vec3Fix::new(pad, pad, pad);
-        AABB::new(aabb.min - m, aabb.max + m)
+        aabb.padded_saturating(pad)
     }
 
     fn alloc_node(&mut self) -> u32 {

@@ -50,8 +50,8 @@
 #   comparison in the same function, already killed by
 #   `slab_test_orders_times_and_handles_static_axis`'s exact-touch cases.)
 #
-# `replace < with <= in AABB::union` (src/collider.rs:172,177,182) and
-# `replace > with >= in AABB::union` (src/collider.rs:189,194,199): per-axis
+# `replace < with <= in AABB::union` (src/collider.rs:249,254,259) and
+# `replace > with >= in AABB::union` (src/collider.rs:266,271,276): per-axis
 #   min/max selection; same tie argument as swept_aabb above (these are the
 #   only `<`/`>` sites in this function, so no line-number restriction is
 #   needed here).

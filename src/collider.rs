@@ -123,6 +123,34 @@ pub(crate) fn hypot3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
     m * (x * x + y * y + z * z).sqrt()
 }
 
+/// The raw signed 128-bit value of a [`Fix128`]
+const fn fix_raw(v: Fix128) -> i128 {
+    ((v.hi as i128) << 64) | (v.lo as i128)
+}
+
+/// The [`Fix128`] with raw value `r`
+const fn from_fix_raw(r: i128) -> Fix128 {
+    Fix128::from_raw((r >> 64) as i64, r as u64)
+}
+
+/// `a + b`, stopping at the end of the `Fix128` range instead of wrapping, and whether
+/// it had to stop
+fn saturating_add(a: Fix128, b: Fix128) -> (Fix128, bool) {
+    match fix_raw(a).checked_add(fix_raw(b)) {
+        Some(s) => (from_fix_raw(s), false),
+        None => (from_fix_raw(fix_raw(a).saturating_add(fix_raw(b))), true),
+    }
+}
+
+/// `a - b`, stopping at the end of the `Fix128` range instead of wrapping, and whether
+/// it had to stop
+fn saturating_sub(a: Fix128, b: Fix128) -> (Fix128, bool) {
+    match fix_raw(a).checked_sub(fix_raw(b)) {
+        Some(s) => (from_fix_raw(s), false),
+        None => (from_fix_raw(fix_raw(a).saturating_sub(fix_raw(b))), true),
+    }
+}
+
 impl AABB {
     /// Create a new AABB from min and max corners
     #[must_use]
@@ -137,6 +165,55 @@ impl AABB {
             min: center - half,
             max: center + half,
         }
+    }
+
+    /// [`Self::from_center_half`] whose corners stop at the ends of the `Fix128` range
+    /// instead of wrapping, and whether a corner had to stop there
+    ///
+    /// `Fix128` addition wraps, so `center ± half` past the range comes out on the
+    /// other side and the box is inverted (its maximum below its minimum). Here such a
+    /// corner is the end of the range: the box still covers the whole ball, it is never
+    /// inverted, and the `true` tells the caller that the arithmetic left the range.
+    #[must_use]
+    pub(crate) fn from_center_half_saturating(center: Vec3Fix, half: Vec3Fix) -> (Self, bool) {
+        let (min_x, ox0) = saturating_sub(center.x, half.x);
+        let (min_y, oy0) = saturating_sub(center.y, half.y);
+        let (min_z, oz0) = saturating_sub(center.z, half.z);
+        let (max_x, ox1) = saturating_add(center.x, half.x);
+        let (max_y, oy1) = saturating_add(center.y, half.y);
+        let (max_z, oz1) = saturating_add(center.z, half.z);
+        (
+            Self {
+                min: Vec3Fix::new(min_x, min_y, min_z),
+                max: Vec3Fix::new(max_x, max_y, max_z),
+            },
+            ox0 || oy0 || oz0 || ox1 || oy1 || oz1,
+        )
+    }
+
+    /// This box grown by `pad` on every side, its corners stopping at the ends of the
+    /// `Fix128` range instead of wrapping (so a box at the end of the range is never
+    /// turned inside out by the padding)
+    #[must_use]
+    pub(crate) fn padded_saturating(&self, pad: Fix128) -> Self {
+        Self {
+            min: Vec3Fix::new(
+                saturating_sub(self.min.x, pad).0,
+                saturating_sub(self.min.y, pad).0,
+                saturating_sub(self.min.z, pad).0,
+            ),
+            max: Vec3Fix::new(
+                saturating_add(self.max.x, pad).0,
+                saturating_add(self.max.y, pad).0,
+                saturating_add(self.max.z, pad).0,
+            ),
+        }
+    }
+
+    /// Whether the maximum is below the minimum on some axis (a box no point lies in)
+    #[must_use]
+    pub(crate) fn is_inverted(&self) -> bool {
+        self.max.x < self.min.x || self.max.y < self.min.y || self.max.z < self.min.z
     }
 
     /// The tight box of the ball `{x : g(x − center) ≤ radius}` in the

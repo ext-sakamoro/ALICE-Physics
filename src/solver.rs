@@ -3627,7 +3627,10 @@ impl PhysicsWorld {
                     self.park.parked_list.push(i);
                     if recached || self.park.proxies[i].is_none() {
                         self.park.remove_proxy(i, &mut self.stage_work);
-                        let aabb = self.broadphase_box(i, r);
+                        let (aabb, left_range) = self.broadphase_box_checked(i, r);
+                        if left_range {
+                            self.note_rigid_overflow();
+                        }
                         self.park.proxies[i] = Some(self.park.tree.insert(aabb, i as u32));
                         self.park.proxy_live += 1;
                         self.stage_work.tree_inserts += 1;
@@ -6353,14 +6356,31 @@ impl PhysicsWorld {
     /// GJK on the collider (and on the plain side's sphere), which lies inside
     /// these boxes.
     fn broadphase_box(&self, i: usize, radius: Fix128) -> AABB {
+        self.broadphase_box_checked(i, radius).0
+    }
+
+    /// [`Self::broadphase_box`], and whether building it left the `Fix128` range
+    ///
+    /// A cube corner past the range stops at the end of the range instead of wrapping
+    /// to the other side, so the box is never inverted and every broad-phase kind sees
+    /// the same covering box; a collider box that comes out inverted (its own
+    /// arithmetic wrapped) is replaced by the cube. Either case returns `true`, which
+    /// the callers that may write to the world record in [`Self::overflow_detected`]
+    /// (`Fix128` arithmetic left its range). Inside the range the box is the same as
+    /// before.
+    fn broadphase_box_checked(&self, i: usize, radius: Fix128) -> (AABB, bool) {
         let pos = self.bodies[i].position;
-        let cube = AABB::from_center_half(pos, Vec3Fix::new(radius, radius, radius));
+        let (cube, cube_out) =
+            AABB::from_center_half_saturating(pos, Vec3Fix::new(radius, radius, radius));
         match self.body_colliders.get(i).and_then(Option::as_ref) {
             Some(collider) => {
                 let tight = collider.world_aabb(pos, self.bodies[i].rotation);
+                if tight.is_inverted() {
+                    return (cube, true);
+                }
                 let max = |x: Fix128, y: Fix128| if x > y { x } else { y };
                 let min = |x: Fix128, y: Fix128| if x < y { x } else { y };
-                AABB {
+                let clipped = AABB {
                     min: Vec3Fix::new(
                         max(tight.min.x, cube.min.x),
                         max(tight.min.y, cube.min.y),
@@ -6371,9 +6391,10 @@ impl PhysicsWorld {
                         min(tight.max.y, cube.max.y),
                         min(tight.max.z, cube.max.z),
                     ),
-                }
+                };
+                (clipped, cube_out)
             }
-            None => cube,
+            None => (cube, cube_out),
         }
     }
 
@@ -6480,8 +6501,12 @@ impl PhysicsWorld {
         for k in 0..count {
             let i = self.stage_body(k);
             if let Some(radius) = self.body_collision_radii.get(i).and_then(|r| *r) {
+                let (aabb, left_range) = self.broadphase_box_checked(i, radius);
+                if left_range {
+                    self.note_rigid_overflow();
+                }
                 primitives.push(BvhPrimitive {
-                    aabb: self.broadphase_box(i, radius),
+                    aabb,
                     index: i as u32,
                     morton: 0,
                 });
@@ -6810,7 +6835,8 @@ impl PhysicsWorld {
     ///
     /// sticky flag を立てるのはこの関数だけ (積分の `v·dt` と位置の加算、
     /// 速度導出、球の接触の距離と半径和、角速度の大きさ、TGS の積分、
-    /// TGS の関節投影の速度への繰り越し) 落とす経路は [`Self::reset_world`] と
+    /// TGS の関節投影の速度への繰り越し、broad-phase の箱が範囲の端で止まった時
+    /// ([`Self::broadphase_box_checked`]、staging と sleep の木への挿入)) 落とす経路は [`Self::reset_world`] と
     /// 状態の復元だけ
     #[inline]
     pub(crate) fn note_rigid_overflow(&mut self) {

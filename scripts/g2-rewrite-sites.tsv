@@ -241,8 +241,8 @@ src/shape_raycast.rs	segment_meets_box	assign	b < t1	fixed-point	operands are Fi
 src/sketch.rs	insert_hash	assign	rho > self . registers [idx]	integer	operands are u8 (integer, no signed zero or NaN)
 src/sketch.rs	merge	assign	src > dst	integer	operands are u8 (integer, no signed zero or NaN)
 src/solver.rs	<module>	macro	remap	macro-scanned	body parsed and scanned: rewrites body indices on an == match, no select between comparison operands
-src/solver.rs	broadphase_box	expr	x < y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
-src/solver.rs	broadphase_box	expr	x > y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	broadphase_box_checked	expr	x < y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/solver.rs	broadphase_box_checked	expr	x > y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	raycast	expr	origin . x < endpoint . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	raycast	expr	origin . x > endpoint . x	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/solver.rs	raycast	expr	origin . y < endpoint . y	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN

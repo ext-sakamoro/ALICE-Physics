@@ -21,7 +21,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | Module | Level | Items: step / world API / binding / standalone / unused | Reached from bindings |
 |--------|-------|----------------------------------------------------------|-----------------------|
 | `bvh` | step | 23 / 1 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
-| `collider` | step | 20 / 1 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
+| `collider` | step | 23 / 1 / 0 / 4 / 0 | C ABI, Python, WebAssembly |
 | `cone` | step | 5 / 2 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
 | `contact_cache` | step | 11 / 2 / 0 / 11 / 0 | C ABI, Python, WebAssembly |
 | `convex_mesh_builder` | step | 3 / 0 / 0 / 1 / 0 | C ABI, Python, WebAssembly |

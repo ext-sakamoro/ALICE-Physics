@@ -6,16 +6,16 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5836 |
-| 🔴 Red by design | 69 |
+| 🟢 Not ignored (run by CI) | 5839 |
+| 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5931** |
+| **Total** | **5935** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
 
-## 🔴 Red by design (69)
+## 🔴 Red by design (70)
 
 Oracles kept red on purpose: the implementation is not there yet, and a companion test pins
 today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected value is never loosened.
@@ -56,6 +56,7 @@ today's behaviour so CI coverage is not lost. The fix is in `src/`; the expected
 - `optimize_does_not_restore_material_carved_by_disjoint_craters` (audit_sdf_destruction.rs) — known defect: AUD-A-S5W3-009: optimize() is documented as removing shapes fully contained by newer ones, but d…
 - `origin_y_offsets_the_surface` (audit_heightfield.rs) — known defect: AUD-A-S4W3-006: origin.y is never read (sample_height / signed_distance / aabb use the stored he…
 - `out_of_range_quotient_keeps_its_sign_and_magnitude` (audit_math.rs) — known defect: AUD-A-S1W5-030: Fix128::div truncates an out-of-range integer quotient to its low 64 bits, so 1 …
+- `parked_bodies_whose_radius_sum_leaves_the_range_raise_the_flag_like_staged_ones` (analytic_broadphase_overflow_kinds.rs) — known defect: AUD-A-S6W1-011: sleep skip radius sum: a pair of two parked bodies never reaches the narrow-phas…
 - `pipeline_colliding_metric_names_do_not_corrupt_each_other` (audit_pipeline.rs) — known defect: AUD-A-S5W3-016: two metrics whose hashes agree modulo SLOTS share one slot: the second metric's …
 - `polar_rotation_is_idempotent_bit_for_bit_on_general_gradients` (audit_math.rs) — known defect: AUD-A-S1W5-027: polar_rotation is not idempotent for general (non-diagonal) gradients: 105 of 20…
 - `puck_pure_shear_above_s_is_inter_fibre_not_fibre_tension` (audit_laminate_failure.rs) — known defect: AUD-A-S4W2-005: sigma1 = 0, sigma2 = -50, tau = 75 (> S) の puck が FibreTension を返す (Hashin の fib…
@@ -149,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5836)
+## 🟢 Not ignored (5839)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -569,6 +570,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_axial_support.rs` | 3 |
 | `analytic_body_attachments.rs` | 3 |
 | `analytic_boundary_faces.rs` | 3 |
+| `analytic_broadphase_overflow_kinds.rs` | 3 |
 | `analytic_contact_filter_parallel_once.rs` | 3 |
 | `analytic_contact_filter_velocity_pass.rs` | 3 |
 | `analytic_electromagnetic_world_motion.rs` | 3 |
