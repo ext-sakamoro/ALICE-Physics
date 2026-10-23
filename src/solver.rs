@@ -7215,6 +7215,11 @@ impl PhysicsWorld {
             // 未知の値は拒否 (silent に false へ倒すと undecided が消える)
             _ => return false,
         };
+        // The flag may have gone down with the loaded state; the tree of parked
+        // bodies (not part of this state) holds proxies whose insert raised it.
+        // Drop the parked set so the next step re-inserts every parked body and
+        // checks its box again against the loaded flag.
+        self.park_generation = self.park_generation.wrapping_add(1);
 
         true
     }
