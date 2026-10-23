@@ -2934,6 +2934,22 @@ class ChildTools(Isolated):
         self.assertNotIn("No such file", text)
         self.assertIn(f"env-smoke: executed {executed}, skipped ", text)
 
+    def test_ci_runs_the_landing_tests_after_the_toolchain_install(self):
+        # every job of ci.yml that runs these tests installs the toolchain first: the child PATH
+        # holds the cargo directory, which a runner image may fill only at the install
+        import re
+        ci = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".github", "workflows", "ci.yml")
+        with open(ci, encoding="utf-8") as f:
+            text = f.read()
+        compared = 0
+        for block in re.split(r"\n  [A-Za-z0-9_-]+:\n", text):
+            names = re.findall(r"^\s+- name: (.+)$", block, re.M)
+            if "Landing script (tests)" in names:
+                self.assertIn("Install Rust toolchain", names, "a job runs the landing tests without a toolchain step")
+                self.assertGreater(names.index("Landing script (tests)"), names.index("Install Rust toolchain"))
+                compared += 1
+        self.assertGreater(compared, 0, "no job of ci.yml runs the landing tests (compared nothing)")
+
     def test_a_missing_toolchain_is_named_not_an_os_error(self):
         # an empty cargo directory: whatever the system directories hold, a tool that is not
         # found is reported with the directories searched, and counted as a failure

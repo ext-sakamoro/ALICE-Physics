@@ -249,13 +249,17 @@ jobs:
       # C ABI coverage, which needs no index (the module part runs in the scip job)
       - name: Integration levels (tests)
         run: python scripts/test_integration_levels.py
-      - name: Landing script (tests)
-        run: python scripts/test_land.py
       - name: C ABI declared by every consumer or listed with a reason
         run: python scripts/integration_levels.py --no-index --check
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+
+      # after the toolchain: land.py's children find cargo / rustc in the cargo directory, which
+      # some runner images have only once the toolchain is installed (scripts/test_land.py
+      # checks this order)
+      - name: Landing script (tests)
+        run: python scripts/test_land.py
 
       # the tools land.py's children need (python3 >= 3.11, bash, cargo, rustc, rust-analyzer
       # when installed, git) started the way a landing starts them, from a minimal environment;
