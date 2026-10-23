@@ -12,7 +12,10 @@
 #
 # Needs from the caller: ROOT, TRT, and the arrays failed and summary.
 trt_gpu_probe() {
-    local probe="$ROOT/trt-gpu-probe" log="$ROOT/logs/trt-gpu-probe.log"
+    # next to ALICE-TRT (its layout directory), so the probe's `../ALICE-TRT` resolves
+    local probe
+    probe="$(dirname "$TRT")/trt-gpu-probe"
+    local log="$ROOT/logs/trt-gpu-probe.log"
     local build_log="$ROOT/logs/trt-gpu-probe-build.log" out msg esc plain
     if [ "${TRT_GPU_PROBE:-1}" = 0 ]; then
         echo "trt: GPU probe skipped (TRT_GPU_PROBE=0); its GPU tests return early without an adapter"
