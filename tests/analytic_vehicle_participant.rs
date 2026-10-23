@@ -36,9 +36,12 @@ use alice_physics_core::world_participant::{
 };
 use alice_physics_core::{
     Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix, WorldSnapshotError,
-    PHYSICS_SEMANTICS_ID,
+    PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 use sha2::{Digest, Sha256};
+
+#[path = "support/snapshot_under_id.rs"]
+mod snapshot_under_id;
 
 const ACTIONS: PortId = PortId::new(0x5649_4e30);
 
@@ -623,11 +626,19 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2"
+        "e19518d89cdc614eed38c73c1f41b439ba415aa4833fee23b998ef5e92fa80a5"
     );
 }
 
 fn drive_digest(backend: SolverBackend) -> String {
+    drive_digest_with(backend, |w| w.snapshot_world())
+}
+
+/// [`drive_digest`] with the snapshot bytes taken by `snapshot`.
+fn drive_digest_with(
+    backend: SolverBackend,
+    snapshot: impl Fn(&PhysicsWorld) -> Vec<u8>,
+) -> String {
     let mut w = car(backend);
     for frame in 0..240 {
         match frame {
@@ -638,7 +649,7 @@ fn drive_digest(backend: SolverBackend) -> String {
         }
         w.try_step(dt60()).expect("step");
     }
-    let mut bytes = w.snapshot_world();
+    let mut bytes = snapshot(&w);
     bytes.extend(w.participant_state(0).expect("state"));
     Sha256::digest(&bytes)
         .iter()
@@ -646,8 +657,8 @@ fn drive_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const DRIVE_XPBD: &str = "068c8e0ede7a6c18f4158a1c97c6de57bcbbad8f740d14caee9bc5b5260bcc05";
-const DRIVE_TGS: &str = "f7081044c6ebf09159b01efabce848684eb736dd2b5de52e8c29bdd95083b42e";
+const DRIVE_XPBD: &str = "e91900abce19443a8553db483fefee7f76685ef77608ca02c55c801c9b53916f";
+const DRIVE_TGS: &str = "bcb9b917780a1d530783a312da0ab4db28a152458095ae202cee36c56291aa60";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
@@ -656,6 +667,29 @@ const DRIVE_TGS: &str = "f7081044c6ebf09159b01efabce848684eb736dd2b5de52e8c29bdd
 fn drive_digest_is_pinned() {
     assert_eq!(drive_digest(SolverBackend::Xpbd), DRIVE_XPBD);
     assert_eq!(drive_digest(SolverBackend::Tgs), DRIVE_TGS);
+}
+
+/// The values [`drive_digest_is_pinned`] held under `PREVIOUS_PHYSICS_SEMANTICS_IDS[0]`.
+const DRIVE_XPBD_UNDER_PREVIOUS_ID: &str =
+    "068c8e0ede7a6c18f4158a1c97c6de57bcbbad8f740d14caee9bc5b5260bcc05";
+const DRIVE_TGS_UNDER_PREVIOUS_ID: &str =
+    "f7081044c6ebf09159b01efabce848684eb736dd2b5de52e8c29bdd95083b42e";
+
+/// golden (determinism): the same drive, with the snapshot header written as the build
+/// of the previous identifier writes it, gives the digests pinned under that identifier:
+/// the identifier moved, the stepped state did not.
+#[test]
+fn drive_digest_under_the_previous_identifier_is_the_previous_pin() {
+    let previous = &PREVIOUS_PHYSICS_SEMANTICS_IDS[0];
+    let under = |w: &PhysicsWorld| snapshot_under_id::snapshot_under(w, previous);
+    assert_eq!(
+        drive_digest_with(SolverBackend::Xpbd, under),
+        DRIVE_XPBD_UNDER_PREVIOUS_ID
+    );
+    assert_eq!(
+        drive_digest_with(SolverBackend::Tgs, under),
+        DRIVE_TGS_UNDER_PREVIOUS_ID
+    );
 }
 
 /// oracle (parallel): `try_step_parallel` gives the same blob on 1, 2 and 8
