@@ -221,6 +221,8 @@ jobs:
           python scripts/ci_triggers_check.py
       - name: Downstream release-tag selection (tests)
         run: python scripts/test_downstream_select_tag.py
+      - name: Downstream repositories ALICE-LOL takes by path (tests)
+        run: python scripts/test_downstream_siblings.py
       # includes a cargo build of a small provider and consumer (offline, no dependencies)
       - name: Downstream major-bump requirement rewrite (tests)
         run: python scripts/test_downstream_major_rewrite.py

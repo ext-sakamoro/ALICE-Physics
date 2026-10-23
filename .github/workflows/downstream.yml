@@ -26,6 +26,7 @@ on:
       - 'scripts/downstream_trt_probe.sh'
       - 'scripts/downstream_resolve.sh'
       - 'scripts/downstream_select_tag.py'
+      - 'scripts/downstream_siblings.py'
       - 'scripts/downstream_major_rewrite.py'
       - 'scripts/downstream_path_rewrite.py'
       - 'scripts/downstream_test_counts.py'
@@ -100,25 +101,22 @@ jobs:
           vulkaninfo --summary || echo "vulkaninfo --summary failed (exit $?); the ALICE-TRT GPU probe decides"
 
       # fetched first so the cache below can key on the downstream manifests
-      # ALICE-SDF, ALICE-LOL and ALICE-TRT (with ALICE-ML, ALICE-DB and
-      # ALICE-Crypto, path dependencies of ALICE-TRT) at main; ALICE-LLM and
-      # ALICE-Zip at the newest
-      # release tag that fits ALICE-LOL both ways. ALICE-Kinematics at main: its
-      # only release tag requires alice-lol 0.3 and ALICE-LOL main is 0.4; drop
-      # this once a release tag accepts the current alice-lol
+      # one layout directory per consumer (sdf / lol / trt): ALICE-SDF, ALICE-LOL and
+      # ALICE-TRT at main, each with this checkout as ALICE-Physics and its other path
+      # siblings at the commit it pins in .github/alice-siblings (ALICE-TRT pins
+      # nothing yet: its siblings at main, named in the log)
       - name: Fetch downstream repositories
         env:
           DOWNSTREAM_ROOT: ${{ runner.temp }}/downstream
-          KINEMATICS_REF: main
         run: bash scripts/downstream_check.sh --fetch-only
 
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: downstream
           workspaces: |
-            ${{ runner.temp }}/downstream/ALICE-SDF -> ${{ runner.temp }}/downstream/target/sdf
-            ${{ runner.temp }}/downstream/ALICE-LOL -> ${{ runner.temp }}/downstream/target/lol
-            ${{ runner.temp }}/downstream/ALICE-TRT -> ${{ runner.temp }}/downstream/target/trt
+            ${{ runner.temp }}/downstream/sdf/ALICE-SDF -> ${{ runner.temp }}/downstream/target/sdf
+            ${{ runner.temp }}/downstream/lol/ALICE-LOL -> ${{ runner.temp }}/downstream/target/lol
+            ${{ runner.temp }}/downstream/trt/ALICE-TRT -> ${{ runner.temp }}/downstream/target/trt
 
       - name: Build and test downstream (requirements raised in the fetched copies on a major bump; fails on a requirement that rejects this version, a test binary with 0 tests or an ignored test, fewer than 3 downstream compared, an unpatched alice-physics or no GPU adapter for ALICE-TRT)
         env:

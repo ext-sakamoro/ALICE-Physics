@@ -195,6 +195,7 @@ python3 scripts/test_bench_counts_check.py
 python3 scripts/test_ci_load_check.py
 python3 scripts/ci_load_check.py
 python3 scripts/test_downstream_select_tag.py
+python3 scripts/test_downstream_siblings.py
 python3 scripts/test_downstream_major_rewrite.py
 python3 scripts/test_downstream_path_rewrite.py
 python3 scripts/test_downstream_test_counts.py

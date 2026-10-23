@@ -7,29 +7,35 @@
 #              checkout through `--config patch.crates-io.alice-physics.path`.
 #   ALICE-LOL  depends on it by path (`../../ALICE-Physics`, feature
 #              `physics`). Its workspace also needs ALICE-SDF, ALICE-Kinematics,
-#              ALICE-LLM and ALICE-Zip next to it, so all of them are fetched
-#              into one directory with this checkout linked in as ALICE-Physics.
+#              ALICE-LLM, ALICE-Zip and ALICE-Sign next to it, so all of them are
+#              fetched into one directory with this checkout linked in as
+#              ALICE-Physics.
 #   ALICE-TRT  depends on it by path (`../ALICE-Physics`, no version; feature
 #              `physics-solver`) and implements `gpu_bridge::GpuSolverBridge`.
 #              Its manifest also needs ALICE-ML, and ALICE-DB with ALICE-Crypto
 #              behind optional features (cargo reads every path dependency),
 #              placed at main: none of them is required with a version.
 #
-# Which version of each repository is placed:
+# Which version of each repository is placed: each consumer gets a layout directory
+# of its own ($DOWNSTREAM_ROOT/sdf, /lol, /trt) holding
 #
-#   ALICE-SDF, ALICE-LOL,  main (the code that depends on alice-physics)
-#   ALICE-TRT
-#   ALICE-LLM, ALICE-Zip   the newest release tag (pre-releases skipped) that
-#                          satisfies every requirement on the crate in the
-#                          ALICE-LOL manifests, and whose own manifests accept the
-#                          alice-physics of this checkout, the alice-lol /
-#                          alice-sdf / ... versions and the repositories selected
-#                          before it (scripts/downstream_select_tag.py); with no
-#                          such tag the check fails and lists the requirements
-#                          and tags
-#   ALICE-Kinematics       main for now (see the comment where it is fetched)
-#   ALICE-ML, ALICE-DB,    main (path dependencies of ALICE-TRT without a version)
-#   ALICE-Crypto
+#   the consumer          its main (ALICE-SDF, ALICE-LOL, ALICE-TRT)
+#   ALICE-Physics         this checkout, linked in (the candidate, in every layout)
+#   every other           the commit the consumer pins in its .github/alice-siblings,
+#   repository the        followed through the siblings' own path dependencies
+#   layout takes by path  (scripts/downstream_siblings.py, which fails on a path
+#                         dependency that is not pinned, a missing or empty pin
+#                         file, a malformed pin line, a placed repository that is
+#                         not at its pin, or ALICE-LOL / ALICE-TRT taking no path
+#                         dependency on alice-physics). ALICE-LOL: ALICE-SDF,
+#                         ALICE-Zip, ALICE-Kinematics, ALICE-LLM, ALICE-Sign.
+#                         ALICE-SDF takes none
+#   ALICE-TRT's siblings  main (ALICE-ML, ALICE-SDF and what they take by path):
+#                         ALICE-TRT has no .github/alice-siblings yet, and the log
+#                         names each repository placed at main for that reason
+#
+# A sibling two consumers pin at different commits (ALICE-SDF: main in its own
+# layout, ALICE-LOL's pin in the lol layout) is placed once per layout.
 #
 # Only the tests that reach alice-physics are run (the rest of each downstream
 # suite does not depend on this crate and is tested in its own repository):
@@ -89,12 +95,6 @@
 # Environment:
 #   DOWNSTREAM_ROOT   directory to fetch into (default: a new temporary directory)
 #   DOWNSTREAM_URL    base URL of the repositories (default https://github.com/ext-sakamoro)
-#   SDF_REF LOL_REF TRT_REF
-#                     branch, tag or commit of ALICE-SDF / ALICE-LOL / ALICE-TRT
-#                     (default main); ML_REF DB_REF CRYPTO_REF likewise
-#   LLM_REF ZIP_REF   ref of ALICE-LLM / ALICE-Zip, instead of the selected tag
-#   KINEMATICS_REF    ref of ALICE-Kinematics (default main; set it to the empty
-#                     string to select a release tag as for the other two)
 #   TRT_GPU_PROBE     1 (default): fail when ALICE-TRT finds no GPU adapter; 0:
 #                     run its tests without one (the GPU tests return early)
 #   DOWNSTREAM_TARGET_DIR
@@ -128,78 +128,90 @@ mkdir -p "$ROOT/logs"
 ROOT=$(cd "$ROOT" && pwd -P)
 URL=${DOWNSTREAM_URL:-https://github.com/ext-sakamoro}
 
+# one layout directory per consumer: each direct consumer at its main, the candidate
+# (this checkout) linked in as ALICE-Physics, and every repository the layout takes by
+# path at the commit the consumer pins in its .github/alice-siblings
+# (scripts/downstream_siblings.py). A sibling two consumers pin at different commits is
+# placed once per layout, so no consumer is built against another's pin
+LAYOUTS=(sdf lol trt)
+declare_layout() {
+    case $1 in
+        sdf) echo ALICE-SDF ;;
+        lol) echo ALICE-LOL ;;
+        trt) echo ALICE-TRT ;;
+    esac
+}
+# ALICE-LOL takes alice-physics by path, so a layout without it compared nothing;
+# ALICE-SDF takes it from crates.io (patched below) and needs no path sibling.
+# ALICE-TRT has no .github/alice-siblings yet: its siblings are placed at main, and
+# the script names each one in the job log
+layout_args() {
+    case $1 in
+        sdf) ;;
+        lol) echo --require ALICE-Physics ;;
+        trt) echo --require ALICE-Physics --unpinned-main ;;
+    esac
+}
+
 fetch() {
-    local name=$1 ref=$2 dir="$ROOT/$1"
+    local layout=$1 name=$2 ref=$3 dir="$ROOT/$1/$2"
     if [ ! -d "$dir/.git" ]; then
         git init -q "$dir"
         git -C "$dir" remote add origin "$URL/$name.git"
     fi
     git -C "$dir" fetch -q --depth 1 origin "$ref"
     git -C "$dir" checkout -q --detach FETCH_HEAD
-    echo "fetched $name $(git -C "$dir" rev-parse --short=12 HEAD) ($ref)"
+    echo "fetched $layout/$name $(git -C "$dir" rev-parse --short=12 HEAD) ($ref)"
 }
 
-# the packages placed so far, for the reverse check of the next selection
-providers=(--provider "$PHYSICS_DIR")
-
-fetch_sibling() {
-    local name=$1 crate=$2 override=$3 ref
-    if [ -n "$override" ]; then
-        echo "$crate: ${override} (given ref, no tag selection)"
-        ref=$override
-    else
-        ref=$(python3 "$PHYSICS_DIR/scripts/downstream_select_tag.py" --url "$URL/$name.git" \
-            --repo "$ROOT/$name" --crate "$crate" --workspace "$ROOT/ALICE-LOL" "${providers[@]}")
-    fi
-    fetch "$name" "$ref"
-    providers+=(--provider "$ROOT/$name")
+siblings() {
+    local layout=$1
+    shift
+    # shellcheck disable=SC2046
+    python3 "$PHYSICS_DIR/scripts/downstream_siblings.py" --layout "$ROOT/$layout" \
+        --consumer "$(declare_layout "$layout")" $(layout_args "$layout") "$@"
 }
 
-REPOS=(ALICE-SDF ALICE-LOL ALICE-TRT ALICE-ML ALICE-DB ALICE-Crypto ALICE-Kinematics ALICE-LLM ALICE-Zip)
-
-if [ "$mode" != run ]; then
-    fetch ALICE-SDF "${SDF_REF:-main}"
-    fetch ALICE-LOL "${LOL_REF:-main}"
-    fetch ALICE-TRT "${TRT_REF:-main}"
-    fetch ALICE-ML "${ML_REF:-main}"
-    fetch ALICE-DB "${DB_REF:-main}"
-    fetch ALICE-Crypto "${CRYPTO_REF:-main}"
-    for name in ALICE-SDF ALICE-LOL ALICE-TRT ALICE-ML ALICE-DB ALICE-Crypto; do
-        providers+=(--provider "$ROOT/$name")
-    done
-    # the other repositories ALICE-LOL needs next to it: the newest release tag
-    # that fits both ways (scripts/downstream_select_tag.py), unless a ref is given.
-    # ALICE-Kinematics defaults to main: its only release tag (0.1.0) requires
-    # alice-lol 0.3 while ALICE-LOL main is 0.4. Drop the default once a release
-    # tag accepts the current alice-lol.
-    fetch_sibling ALICE-Kinematics alice-kinematics "${KINEMATICS_REF-main}"
-    fetch_sibling ALICE-LLM alice-llm "${LLM_REF:-}"
-    fetch_sibling ALICE-Zip alice-zip "${ZIP_REF:-}"
-else
-    for name in "${REPOS[@]}"; do
-        if [ ! -d "$ROOT/$name/.git" ]; then
-            echo "error: --no-fetch but $ROOT/$name is missing" >&2
+for layout in "${LAYOUTS[@]}"; do
+    consumer=$(declare_layout "$layout")
+    mkdir -p "$ROOT/$layout"
+    link="$ROOT/$layout/ALICE-Physics"
+    if [ -e "$link" ] || [ -L "$link" ]; then
+        if [ "$(cd "$link" && pwd -P)" != "$PHYSICS_DIR" ]; then
+            echo "error: $link exists and is not this checkout ($PHYSICS_DIR)" >&2
             exit 1
         fi
-        echo "using $name $(git -C "$ROOT/$name" rev-parse --short=12 HEAD)"
-    done
-fi
-
-LINK="$ROOT/ALICE-Physics"
-if [ -e "$LINK" ] || [ -L "$LINK" ]; then
-    if [ "$(cd "$LINK" && pwd -P)" != "$PHYSICS_DIR" ]; then
-        echo "error: $LINK exists and is not this checkout ($PHYSICS_DIR)" >&2
+    else
+        ln -s "$PHYSICS_DIR" "$link"
+    fi
+    if [ "$mode" != run ]; then
+        fetch "$layout" "$consumer" main
+        # siblings can take further siblings by path: place until nothing is missing
+        for _ in 1 2 3 4 5 6 7 8; do
+            todo=$(siblings "$layout")
+            [ -n "$todo" ] || break
+            while read -r name ref; do
+                fetch "$layout" "$name" "$ref"
+            done <<< "$todo"
+        done
+    elif [ ! -d "$ROOT/$layout/$consumer/.git" ]; then
+        echo "error: --no-fetch but $ROOT/$layout/$consumer is missing" >&2
         exit 1
     fi
-else
-    ln -s "$PHYSICS_DIR" "$LINK"
-fi
+    # every needed sibling placed, each at the consumer's pin (or main, named in the log)
+    siblings "$layout" --verify
+    for d in "$ROOT/$layout"/*/; do
+        name=$(basename "$d")
+        [ "$name" = ALICE-Physics ] && continue
+        echo "using $layout/$name $(git -C "$d" rev-parse --short=12 HEAD)"
+    done
+done
 
 if [ "$mode" = fetch ]; then
     exit 0
 fi
 
-PATCH="patch.crates-io.alice-physics.path=\"$LINK/crates/alice-physics\""
+PATCH="patch.crates-io.alice-physics.path=\"$FACADE_DIR\""
 failed=()
 summary=()
 # downstream crates whose steps ran; fewer than the 3 at the end fails (a crate
@@ -208,21 +220,25 @@ compared=0
 
 # a major bump over the published release: raise the requirements that accept the
 # published release to this version in the fetched copies (no change otherwise)
-trees=()
-for name in "${REPOS[@]}"; do trees+=(--tree "$ROOT/$name"); done
-# a downstream path dependency written for the layout before the facade
-# (`path = "../ALICE-Physics"`, now the engine's directory) points at the facade
-# in the fetched copies, the edit each downstream repository makes itself
-echo "==> path dependencies on alice-physics that name this checkout's root"
-if ! python3 "$PHYSICS_DIR/scripts/downstream_path_rewrite.py" --provider "$LINK" "${trees[@]}"; then
-    echo "error: the path rewrite of the downstream dependencies failed" >&2
-    exit 1
-fi
-echo "==> requirements on alice-physics against the published release"
-if ! python3 "$PHYSICS_DIR/scripts/downstream_major_rewrite.py" --provider "$FACADE_DIR" "${trees[@]}"; then
-    echo "error: the major-bump rewrite of the downstream requirements failed" >&2
-    exit 1
-fi
+for layout in "${LAYOUTS[@]}"; do
+    trees=()
+    for d in "$ROOT/$layout"/*/; do
+        [ "$(basename "$d")" = ALICE-Physics ] || trees+=(--tree "${d%/}")
+    done
+    # a downstream path dependency written for the layout before the facade
+    # (`path = "../ALICE-Physics"`, now the engine's directory) points at the facade
+    # in the fetched copies, the edit each downstream repository makes itself
+    echo "==> $layout: path dependencies on alice-physics that name this checkout's root"
+    if ! python3 "$PHYSICS_DIR/scripts/downstream_path_rewrite.py" --provider "$ROOT/$layout/ALICE-Physics" "${trees[@]}"; then
+        echo "error: the path rewrite of the downstream dependencies failed ($layout)" >&2
+        exit 1
+    fi
+    echo "==> $layout: requirements on alice-physics against the published release"
+    if ! python3 "$PHYSICS_DIR/scripts/downstream_major_rewrite.py" --provider "$FACADE_DIR" "${trees[@]}"; then
+        echo "error: the major-bump rewrite of the downstream requirements failed ($layout)" >&2
+        exit 1
+    fi
+done
 
 # relock / check_resolved: scripts/downstream_resolve.sh (sourced, so its tests can
 # run them against a small crate that takes the package from a git source)
@@ -255,9 +271,9 @@ build() {
     fi
 }
 
-SDF="$ROOT/ALICE-SDF"
-LOL="$ROOT/ALICE-LOL"
-TRT="$ROOT/ALICE-TRT"
+SDF="$ROOT/sdf/ALICE-SDF"
+LOL="$ROOT/lol/ALICE-LOL"
+TRT="$ROOT/trt/ALICE-TRT"
 TARGET=${DOWNSTREAM_TARGET_DIR:-$ROOT/target}
 unset CARGO_TARGET_DIR
 

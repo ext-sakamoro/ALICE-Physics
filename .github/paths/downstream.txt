@@ -13,6 +13,7 @@ scripts/downstream_check.sh
 scripts/downstream_trt_probe.sh
 scripts/downstream_resolve.sh
 scripts/downstream_select_tag.py
+scripts/downstream_siblings.py
 # downstream_major_rewrite.py imports downstream_select_tag.py
 scripts/downstream_major_rewrite.py
 # downstream_path_rewrite.py points the fetched copies' path dependencies at the facade
