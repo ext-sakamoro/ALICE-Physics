@@ -38,6 +38,8 @@ scripts/line-coverage-baseline.txt
 # content cannot change what the job checks or builds
 scripts/package_contents_check.py
 scripts/test_package_contents_check.py
+scripts/package_git_patches.py
+scripts/test_package_git_patches.py
 LICENSE-AGPL
 LICENSE-COMMERCIAL.md
 # the changes and gate jobs
