@@ -444,7 +444,9 @@ Minimum supported Rust version: **1.85** (the `rust-version` in `Cargo.toml`). <
 A CI job builds the library with exactly this version for the default
 features, `no_std`, and `std,simd,parallel,ffi,gpu-solver-bridge`. Raising the
 MSRV is a minor-version change, never a patch. The `neural` and
-`analytics` features follow the MSRV of the crates they pull in.
+`analytics` features follow the MSRV of the crates they pull in. With the
+`privacy-crypto` feature the effective minimum is Rust 1.87 (its dependency
+`ctutils` 0.4.5 requires it); the default MSRV stays 1.85.
 
 ## Building and testing
 

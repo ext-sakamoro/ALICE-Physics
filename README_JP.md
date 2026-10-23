@@ -347,6 +347,7 @@ maturin build --release -m crates/alice-physics/Cargo.toml --features python
 CI でこのバージョンちょうどを使い、既定 feature、`no_std`、`std,simd,parallel,ffi,gpu-solver-bridge` のライブラリビルドを確認している
 MSRV の引き上げはマイナーバージョンの変更として扱い、パッチでは行わない
 `neural`、`analytics` は依存先 crate の MSRV に従う
+`privacy-crypto` を有効にした時の実質の最小は Rust 1.87 (依存の `ctutils` 0.4.5 が要る)、既定の MSRV は 1.85 のまま
 
 ## ビルドとテスト
 
