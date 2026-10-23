@@ -30,12 +30,28 @@ TEST_BINARIES = (
     "determinism_golden_f32",
     "determinism_golden_contacts",
     "determinism_golden_paths",
+    "determinism_golden_overflow_flag",
+    # reads the goldens' source (which paths they pin), no stepping of its own
+    "determinism_golden_coverage",
     "determinism_zero_tie",
     # the Law outputs (a golden per src file calling the Law max / min / clamp)
     "determinism_law_outputs",
 )
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 RESULT_RE = re.compile(r"^test result: (ok|FAILED)\. (\d+) passed", re.M)
+
+
+def unlisted_goldens(tests_dir: Path, listed: tuple[str, ...]) -> list[str]:
+    """errors for the `determinism_golden*.rs` files of `tests_dir` missing from `listed`
+
+    A golden added without a row here never runs optimised. Finding no such file at all
+    is an error too (a moved directory would otherwise compare nothing).
+    """
+    names = sorted(p.stem for p in tests_dir.glob("determinism_golden*.rs"))
+    if not names:
+        return [f"{tests_dir}: 0 files match determinism_golden*.rs (compared nothing)"]
+    return [f"tests/{n}.rs is not in TEST_BINARIES (it would not run optimised)"
+            for n in names if n not in listed]
 
 
 def results(text: str) -> list[tuple[str, int]]:
@@ -71,7 +87,7 @@ def main() -> int:
         stream.reconfigure(errors="backslashreplace")
     out_dir = Path(os.environ.get("CARGO_TARGET_DIR", ROOT / "target"))
     out_dir.mkdir(parents=True, exist_ok=True)
-    errors: list[str] = []
+    errors: list[str] = unlisted_goldens(ROOT / "tests", TEST_BINARIES)
     for term in LIB_TERMS:
         text, rc = run(["--lib", "--", term], out_dir / f"determinism-release-lib-{term}.log")
         errors += judge(f"--lib -- {term}", text, rc, 1)

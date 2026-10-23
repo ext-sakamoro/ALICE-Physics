@@ -41,7 +41,28 @@ class Judge(unittest.TestCase):
 
     def test_the_terms_and_binaries_are_listed(self):
         self.assertEqual(dr.LIB_TERMS, ("max_min_tests", "windward_alignment"))
-        self.assertEqual(len(dr.TEST_BINARIES), 6)
+        self.assertEqual(len(dr.TEST_BINARIES), 8)
+
+
+class EveryGoldenIsListed(unittest.TestCase):
+    def test_every_golden_file_of_the_tree_is_listed(self):
+        self.assertEqual(dr.unlisted_goldens(dr.ROOT / "tests", dr.TEST_BINARIES), [])
+
+    def test_a_golden_file_left_out_fails(self):
+        listed = tuple(n for n in dr.TEST_BINARIES if n != "determinism_golden_overflow_flag")
+        errors = dr.unlisted_goldens(dr.ROOT / "tests", listed)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("determinism_golden_overflow_flag", errors[0])
+
+    def test_main_runs_the_check(self):
+        # main runs cargo, so it is not called here; the check must be part of its errors
+        import inspect
+        self.assertIn("unlisted_goldens(ROOT / \"tests\", TEST_BINARIES)", inspect.getsource(dr.main))
+
+    def test_no_golden_file_found_fails(self):
+        errors = dr.unlisted_goldens(dr.ROOT / "scripts", dr.TEST_BINARIES)
+        self.assertEqual(len(errors), 1)
+        self.assertIn("0 files", errors[0])
 
 
 if __name__ == "__main__":

@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5839 |
+| 🟢 Not ignored (run by CI) | 5842 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5935** |
+| **Total** | **5938** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5839)
+## 🟢 Not ignored (5842)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -321,6 +321,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sensors.rs` | 14 |
 | `analytic_smoke_fire_wiring.rs` | 14 |
 | `analytic_thermal_wiring.rs` | 14 |
+| `analytic_vehicle_participant.rs` | 14 |
 | `analytic_vehicle_scenario.rs` | 14 |
 | `analytic_world_query_margins.rs` | 14 |
 | `audit_box_collider.rs` | 14 |
@@ -347,7 +348,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_sim_modifier_wiring.rs` | 13 |
 | `analytic_sketch_wiring.rs` | 13 |
 | `analytic_spring_joint.rs` | 13 |
-| `analytic_vehicle_participant.rs` | 13 |
 | `audit_dynamic_fem.rs` | 13 |
 | `audit_spatial.rs` | 13 |
 | `audit_wind_zone.rs` | 13 |
@@ -359,6 +359,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_contact_cache_wiring.rs` | 12 |
 | `analytic_deformable_wiring.rs` | 12 |
 | `analytic_layer_adhesion_wiring.rs` | 12 |
+| `analytic_nbody_participant.rs` | 12 |
 | `analytic_sdf_contact_record.rs` | 12 |
 | `analytic_structural_fatigue_buckling_wiring.rs` | 12 |
 | `analytic_sweep_sphere_inside.rs` | 12 |
@@ -381,7 +382,6 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_flow_viz_wiring.rs` | 11 |
 | `analytic_joint_break_world.rs` | 11 |
 | `analytic_mass_properties.rs` | 11 |
-| `analytic_nbody_participant.rs` | 11 |
 | `analytic_physics2d_tethers.rs` | 11 |
 | `analytic_polar_decomposition.rs` | 11 |
 | `analytic_pressure_wiring.rs` | 11 |
@@ -627,6 +627,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_world_query_near_contact.rs` | 1 |
 | `audit_c_plastic.rs` | 1 |
 | `determinism_cloth_step_digest.rs` | 1 |
+| `determinism_golden_overflow_flag.rs` | 1 |
 | `law_check_cast.rs` | 1 |
 
 ---

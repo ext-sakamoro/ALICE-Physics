@@ -31,10 +31,13 @@ use alice_physics_core::world_participant::{
 };
 use alice_physics_core::{
     BodyType, Fix128, PhysicsConfig, PhysicsWorld, RigidBody, SolverBackend, Vec3Fix,
-    WorldSnapshotError, PHYSICS_SEMANTICS_ID,
+    WorldSnapshotError, PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 use core::f64::consts::PI;
 use sha2::{Digest, Sha256};
+
+#[path = "support/snapshot_under_id.rs"]
+mod snapshot_under_id;
 
 fn fx(x: f64) -> Fix128 {
     Fix128::from_f64(x)
@@ -539,11 +542,19 @@ fn the_law_identifier_names_the_resident() {
 
 /// Digest of the three-body scene after 256 frames.
 fn three_body_digest(backend: SolverBackend) -> String {
+    three_body_digest_with(backend, |w| w.snapshot_world())
+}
+
+/// [`three_body_digest`] with the snapshot bytes taken by `snapshot`.
+fn three_body_digest_with(
+    backend: SolverBackend,
+    snapshot: impl Fn(&PhysicsWorld) -> Vec<u8>,
+) -> String {
     let mut world = three_bodies(4, backend);
     for _ in 0..256 {
         world.try_step(Fix128::from_ratio(1, 64)).expect("step");
     }
-    let mut bytes = world.snapshot_world();
+    let mut bytes = snapshot(&world);
     bytes.extend(world.participant_state(0).expect("state"));
     Sha256::digest(&bytes)
         .iter()
@@ -551,8 +562,8 @@ fn three_body_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const THREE_BODY_XPBD: &str = "361c58d20001c76f7e00276a23769dee546a41fb2f6a22d8a8325f5846fc4813";
-const THREE_BODY_TGS: &str = "4dd79b825a2610acc78be693f6c6e6b02d64402d323918b264ef97b89f3272b4";
+const THREE_BODY_XPBD: &str = "a700f04f058f36945141a97c4aa887b2656ab1851b8f42be01eb9873e684694b";
+const THREE_BODY_TGS: &str = "9270fd2ec8ab529254565b49e0e1db1bfe31b291c36a15adfa21cde69cbac1a1";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on
@@ -562,6 +573,30 @@ const THREE_BODY_TGS: &str = "4dd79b825a2610acc78be693f6c6e6b02d64402d323918b264
 fn three_body_scene_digest_is_pinned() {
     assert_eq!(three_body_digest(SolverBackend::Xpbd), THREE_BODY_XPBD);
     assert_eq!(three_body_digest(SolverBackend::Tgs), THREE_BODY_TGS);
+}
+
+/// The values [`three_body_scene_digest_is_pinned`] held under
+/// `PREVIOUS_PHYSICS_SEMANTICS_IDS[0]`.
+const THREE_BODY_XPBD_UNDER_PREVIOUS_ID: &str =
+    "361c58d20001c76f7e00276a23769dee546a41fb2f6a22d8a8325f5846fc4813";
+const THREE_BODY_TGS_UNDER_PREVIOUS_ID: &str =
+    "4dd79b825a2610acc78be693f6c6e6b02d64402d323918b264ef97b89f3272b4";
+
+/// golden (determinism): the same scene, with the snapshot header written as the build
+/// of the previous identifier writes it, gives the digests pinned under that identifier:
+/// the identifier moved, the stepped state did not.
+#[test]
+fn three_body_digest_under_the_previous_identifier_is_the_previous_pin() {
+    let previous = &PREVIOUS_PHYSICS_SEMANTICS_IDS[0];
+    let under = |w: &PhysicsWorld| snapshot_under_id::snapshot_under(w, previous);
+    assert_eq!(
+        three_body_digest_with(SolverBackend::Xpbd, under),
+        THREE_BODY_XPBD_UNDER_PREVIOUS_ID
+    );
+    assert_eq!(
+        three_body_digest_with(SolverBackend::Tgs, under),
+        THREE_BODY_TGS_UNDER_PREVIOUS_ID
+    );
 }
 
 /// oracle (parallel): `try_step_parallel` gives the same blob on 1, 2 and 8

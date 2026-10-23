@@ -23,7 +23,7 @@ use alice_physics_core::solver::{PhysicsConfig, PhysicsWorld, RigidBody, WorldSn
 use alice_physics_core::world_participant::{
     ObservationSink, Participant, ParticipantFault, ParticipantKind, StateError, SubstepCtx,
 };
-use alice_physics_core::{LegacyPolicy, PHYSICS_SEMANTICS_ID};
+use alice_physics_core::{LegacyPolicy, PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS};
 
 const KIND_TAGGED: ParticipantKind = ParticipantKind::new(0x5441_4747);
 
@@ -112,8 +112,14 @@ fn a_participant_semantics_id_changes_the_law_id() {
 fn participants_without_an_identifier_keep_the_law_id() {
     assert_eq!(
         hex(&law_id(&world(&[None, None]))),
+        "e7e91fa42a1bd35e5fde57dc57067cfb7a2c4476934ef1c87d18ab01707a5cc1",
+        "pinned from main 88f76d3b, re-recorded when PHYSICS_SEMANTICS_ID (which the law_id folds) moved to e19518d8"
+    );
+    // under the previous identifier the law_id is the value pinned before the move
+    assert_eq!(
+        hex(&world(&[None, None]).law_id(&PREVIOUS_PHYSICS_SEMANTICS_IDS[0])),
         "9d2b8645ed9796ec38fcf7d54eb86eae0c3abc22dcb113078fa79ab313299b6e",
-        "pinned from main 88f76d3b"
+        "the pin of main 88f76d3b, under the identifier of that time"
     );
 }
 

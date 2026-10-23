@@ -10,13 +10,13 @@
 //! # Hex form (with `alice-det-math` 0.5.1; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2
+//! e19518d89cdc614eed38c73c1f41b439ba415aa4833fee23b998ef5e92fa80a5
 //! ```
 //!
 //! # Entries
 //!
 //! [`PHYSICS_SEMANTICS_PINS`] has one entry per row of the `PINS` table of
-//! `tests/determinism_golden_coverage.rs` (23 rows), named by the
+//! `tests/determinism_golden_coverage.rs` (24 rows), named by the
 //! combination that row pins, with the SHA-256 golden of the test it names,
 //! plus one entry per Law output: the golden of
 //! `tests/determinism_law_outputs.rs` for each src file that calls the Law
@@ -177,6 +177,10 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "physics2d",
         hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
+    ),
+    (
+        "out-of-range radius sum",
+        hex32("4a6eddf45bd7413e5ab423cc589433ac76ff0fbd4ae534936480702d4832a430"),
     ),
     (
         "step_parallel shared-body order",
@@ -390,12 +394,12 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("a19e22d46dfd87d84d36b1e083332d03f43c2360253d294876fef83de1945b27"),
+        hex32("8fa9a2dd2ee866566eacc513f236fba5914a987cca4849211f1a81d192593430"),
     ),
     // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2"),
+        hex32("e19518d89cdc614eed38c73c1f41b439ba415aa4833fee23b998ef5e92fa80a5"),
     ),
 ];
 
@@ -405,7 +409,7 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.1):
-/// `7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2`.
+/// `e19518d89cdc614eed38c73c1f41b439ba415aa4833fee23b998ef5e92fa80a5`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 
@@ -450,7 +454,9 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 ///
 /// An identifier is listed only when the change that replaced it moved no
 /// determinism golden, so the stepping bits are the same under both. Each is
-/// a value of [`PHYSICS_SEMANTICS_BY_DET_MATH`] other than this build's:
+/// a value of [`PHYSICS_SEMANTICS_BY_DET_MATH`] other than this build's, or
+/// the fold of the same pins without the entries added since (no golden moved
+/// when they were added):
 ///
 /// * `79ca5297…` (3.1.0) and the 0.5.0-generation `cd9aa3b8…` (3.0.0 and
 ///   3.0.1, 3.1.0 with `alice-det-math` 0.5.0): replaced when the peer
@@ -459,7 +465,13 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 ///   to 0.5.1, which added `max` / `min` / `max64` / `min64` and left the
 ///   existing functions unchanged (`alice-det-math` 0.5.1 itself lists the
 ///   0.5.0 identifier in its `PREVIOUS_SEMANTICS_IDS`). No golden moved.
+/// * `7b24f99b…` (`alice-det-math` 0.5.1) and `a19e22d4…` (0.5.0): replaced
+///   when the golden of the out-of-range radius sum (the overflow flag, which
+///   the other goldens do not hash) was added as a pin. It records the bits
+///   those builds already stepped to, so no golden moved.
 pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[
+    hex32("7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2"),
+    hex32("a19e22d46dfd87d84d36b1e083332d03f43c2360253d294876fef83de1945b27"),
     hex32("79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108"),
     hex32("cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469"),
 ];
