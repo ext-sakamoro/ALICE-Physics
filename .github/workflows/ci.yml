@@ -786,17 +786,34 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: cargo check on MSRV (lib, default features)
-        run: cargo +1.85 check --lib
-      - name: cargo check on MSRV (lib, no_std)
-        run: cargo +1.85 build --lib --no-default-features
-      # Library only: dev-dependencies (criterion / serde_derive) and the
-      # sibling-crate bridge features (neural / analytics) follow
-      # their own MSRV, see README "Minimum supported Rust version".
-      - name: cargo check on MSRV (lib, core native feature set)
+      # built and the library tests run from the committed lock: --locked fails
+      # if the lock would need a version the toolchain cannot build
+      - name: MSRV (lib, no_std build)
+        run: cargo +1.85 build --lib --locked --no-default-features
+      - name: MSRV (lib tests, default features)
+        run: cargo +1.85 test --lib --locked
+      # Library only: the sibling-crate bridge features (neural / analytics) and
+      # privacy-crypto follow their own minimum, see README "Minimum supported
+      # Rust version" and the msrv-privacy-crypto job below.
+      - name: MSRV (lib tests, core native feature set)
         run: >-
-          cargo +1.85 check --lib
+          cargo +1.85 test --lib --locked
           --features "std,simd,parallel,ffi,gpu-solver-bridge"
+
+  # privacy-crypto's dependency ctutils 0.4.5 needs Rust 1.87: the effective
+  # minimum with that feature, built and tested from the committed lock
+  msrv-privacy-crypto:
+    if: github.event_name != 'schedule'
+    name: MSRV with privacy-crypto (Rust 1.87)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust 1.87
+        uses: dtolnay/rust-toolchain@1.87
+      - uses: Swatinem/rust-cache@v2
+      - name: privacy-crypto on 1.87 (lib tests)
+        run: cargo +1.87 test --lib --locked --features privacy-crypto
 
   fmt:
     if: github.event_name != 'schedule'

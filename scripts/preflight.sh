@@ -238,6 +238,29 @@ python3 scripts/build_flags_check.py -- cargo check --release --lib --no-default
 step "example runner oracle (scripts/run_examples.py, run in full mode and ci.yml job examples)"
 python3 scripts/test_run_examples.py
 
+# ci.yml jobs msrv and msrv-privacy-crypto: the declared rust-version (1.85)
+# without privacy-crypto, and the effective minimum with it (1.87, its
+# dependency ctutils), each built and its library tests run from the committed
+# lock (--locked). Same argument sets as CI; a missing toolchain fails the full
+# run and is skipped by --quick / --fast.
+step "MSRV lanes (1.85 without privacy-crypto, 1.87 with it, --locked)"
+if rustup toolchain list | grep -q '^1\.85' && rustup toolchain list | grep -q '^1\.87'; then
+  if [[ $quick -eq 0 && $fast -eq 0 ]]; then
+    cargo +1.85 build --lib --locked --no-default-features
+    cargo +1.85 test --lib --locked
+    cargo +1.85 test --lib --locked --features "std,simd,parallel,ffi,gpu-solver-bridge"
+    cargo +1.87 test --lib --locked --features privacy-crypto
+  else
+    cargo +1.85 check --lib --locked
+    cargo +1.87 check --lib --locked --features privacy-crypto
+  fi
+elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
+  echo "warn: rustup toolchains 1.85 and 1.87 are needed for the MSRV lanes (skipped)"
+else
+  echo "missing toolchain: rustup toolchain install 1.85 1.87" >&2
+  exit 1
+fi
+
 # Fast static gates that failed late in practice (no_std build, public API drift)
 step "no_std build, and a no_std dependent (consumers/no_std, warnings denied)"
 cargo build --lib --no-default-features
