@@ -2909,16 +2909,59 @@ class ChildTools(Isolated):
         self.assertTrue(os.path.dirname(got) == os.path.dirname(sys.executable)
                         or os.path.realpath(got) == os.path.realpath(sys.executable), (got, sys.executable))
 
+    def _expected_rust(self, lander):
+        """cargo / rustc found on the child PATH the way land.py resolves them (this step may run
+        before the CI installs a toolchain, so their presence is the machine's, not a given)"""
+        import shutil
+        path = lander.child_env()["PATH"]
+        return [t for t in ("cargo", "rustc") if shutil.which(t, path=path) is None]
+
     def test_the_env_smoke_executes_the_tools(self):
         lander = land.Lander(self.r.work, "T", log=lambda *_: None)
         executed, failed, lines = land.env_smoke(lander)
         text = "\n".join(lines)
-        self.assertGreaterEqual(executed, 4, text)
+        missing = self._expected_rust(lander)
+        self.assertGreaterEqual(executed, 4 - len(missing), text)
         self.assertTrue(any(l.startswith("ok   python3: ") for l in lines), text)
         self.assertTrue(any(l.startswith("ok   python-env: ") for l in lines), text)
         self.assertTrue(any(l.startswith("ok   git: git version") for l in lines), text)
-        self.assertEqual(failed, 0, text)
+        for tool in ("cargo", "rustc"):
+            if tool in missing:
+                self.assertIn(f"FAIL {tool}: {land.missing_tool_reason(tool)}", lines, text)
+            else:
+                self.assertTrue(any(l.startswith(f"ok   {tool}: ") for l in lines), text)
+        self.assertEqual(failed, len(missing), text)
+        self.assertNotIn("No such file", text)
         self.assertIn(f"env-smoke: executed {executed}, skipped ", text)
+
+    def test_a_missing_toolchain_is_named_not_an_os_error(self):
+        # an empty cargo directory: whatever the system directories hold, a tool that is not
+        # found is reported with the directories searched, and counted as a failure
+        import tempfile
+        with tempfile.TemporaryDirectory() as empty:
+            old = os.environ.get("CARGO_HOME")
+            os.environ["CARGO_HOME"] = empty
+            try:
+                lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+                missing = self._expected_rust(lander)
+                executed, failed, lines = land.env_smoke(lander, steps=("cargo", "rustc"))
+                reason = land.missing_tool_reason("cargo")
+            finally:
+                if old is None:
+                    del os.environ["CARGO_HOME"]
+                else:
+                    os.environ["CARGO_HOME"] = old
+        text = "\n".join(lines)
+        self.assertIn(empty, reason)
+        self.assertEqual(executed, 2 - len(missing), text)
+        # with both missing nothing ran, which is itself a failure (compared nothing)
+        self.assertEqual(failed, len(missing) + (executed == 0), text)
+        if executed == 0:
+            self.assertIn("env-smoke: nothing executed (compared nothing)", lines)
+        for tool in missing:
+            self.assertTrue(any(l.startswith(f"FAIL {tool}: not found on the child PATH (the cargo "
+                                             f"directory {empty}") for l in lines), text)
+        self.assertNotIn("No such file", text)
 
     def test_nothing_executed_fails(self):
         lander = land.Lander(self.r.work, "T", log=lambda *_: None)

@@ -278,6 +278,12 @@ def cargo_bin() -> str:
     return os.path.join(os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo"), "bin")
 
 
+def missing_tool_reason(tool: str) -> str:
+    """why a cargo child cannot start `tool`: the directories the child PATH searches for it"""
+    return (f"not found on the child PATH (the cargo directory {cargo_bin()}, then the system "
+            f"directories); install the Rust toolchain there or set CARGO_HOME")
+
+
 def safe_path(cargo: bool = False, with_git: bool = True) -> str:
     """the fixed PATH of a child process: the directory of the Python running land.py first
     (python3 for the scripts), the cargo directory for the cargo children, then the system
@@ -2069,8 +2075,14 @@ def env_smoke(lander: "Lander", steps: tuple[str, ...] | None = None) -> tuple[i
             exe = shutil.which("bash", path=path)
             run("bash", [exe or "bash", "--version"])
         elif step in ("cargo", "rustc"):
+            # resolved on the child PATH as every cargo child is; a tool that is not there is a
+            # failure that names where it was looked for, not the OS error of starting a bare name
             exe = shutil.which(step, path=path)
-            run(step, [exe or step, "-V"])
+            if exe is None:
+                failed += 1
+                lines.append(f"FAIL {step}: {missing_tool_reason(step)}")
+                continue
+            run(step, [exe, "-V"])
         elif step == "rust-analyzer":
             # installed or not is decided by rustup, not by reading an error message: with a
             # rustup on the cargo PATH, `rustup which rust-analyzer` (in the checkout, so its
