@@ -2803,7 +2803,10 @@ impl PhysicsWorld {
     /// found through a persistent tree of such bodies instead of rebuilding the
     /// broad-phase over it (see [`StageWork`]). The simulation is bit-identical
     /// either way: the skip only drops work whose result is already known (a body
-    /// at rest stays where it is, with the velocity it already has). Turning it off
+    /// at rest stays where it is, with the velocity it already has). The overflow flag
+    /// is the same too: it reports range excess in arithmetic the step performs, and
+    /// non-interacting pairs (filtered, static-static, both asleep) form no radius sum
+    /// whether they are skipped or not (see [`Self::overflow_detected`]). Turning it off
     /// drops the tree; it is rebuilt on the next step with the skip on.
     ///
     /// Only `step` with the XPBD backend and [`Broadphase::Bvh`] skips; the other
@@ -3628,28 +3631,11 @@ impl PhysicsWorld {
                     if recached || self.park.proxies[i].is_none() {
                         self.park.remove_proxy(i, &mut self.stage_work);
                         let (aabb, left_range) = self.broadphase_box_checked(i, r);
-                        // A pair of two parked bodies never reaches the narrow-phase, which
-                        // is where a radius sum past the `Fix128` range raises the flag for
-                        // a staged pair. Check the sums against the parked bodies this box
-                        // meets here, once, when the body joins the tree. For two bodies
-                        // whose boxes are their sphere cubes (no collider), a sum past the
-                        // range means the two boxes meet (both cubes inside the range force
-                        // |xa - xb| <= 2^64 - (ra + rb) on every axis) or a cube was cut at
-                        // the end of the range, which `left_range` already reports, so this
-                        // check sees every such pair. A body with a collider has its box
-                        // clipped to the collider's own box, which the sum does not bound:
-                        // for such pairs the flag can still differ from the staged path
-                        // (not covered by this check)
-                        let mut sum_left_range = false;
-                        let radii = &self.body_collision_radii;
-                        self.park.tree.query_callback(&aabb, |j| {
-                            if let Some(rj) = radii.get(j as usize).and_then(|x| *x) {
-                                if r.checked_add(rj).is_none() {
-                                    sum_left_range = true;
-                                }
-                            }
-                        });
-                        if left_range || sum_left_range {
+                        // The box is built here instead of at staging, so a box past the
+                        // range raises the flag here. A pair of two parked bodies forms no
+                        // radius sum (both sleep, see `detect_collisions`), so there is no
+                        // sum to check.
+                        if left_range {
                             self.note_rigid_overflow();
                         }
                         self.park.proxies[i] = Some(self.park.tree.insert(aabb, i as u32));
@@ -6380,6 +6366,29 @@ impl PhysicsWorld {
         self.broadphase_box_checked(i, radius).0
     }
 
+    /// Whether the step uses the sum of the collision radii of bodies `a` and `b`
+    /// (radii `radius_a`, `radius_b`): their broad-phase boxes overlap (closed
+    /// intervals, [`AABB::intersects`], the test every broad-phase kind keeps its
+    /// candidates by), the filters let them collide, and they can interact (not both
+    /// static, not both asleep). Pairs outside it form no sum, so a sum past the
+    /// `Fix128` range raises [`Self::overflow_detected`] exactly for the pairs this
+    /// returns `true` for, whichever broad-phase kind and sleep skip mode produced the
+    /// candidates. Only called when the sum leaves the range.
+    fn forms_radius_sum(&self, a: usize, b: usize, radius_a: Fix128, radius_b: Fix128) -> bool {
+        let filter = |i: usize| {
+            self.body_filters
+                .get(i)
+                .copied()
+                .unwrap_or(CollisionFilter::DEFAULT)
+        };
+        CollisionFilter::can_collide(&filter(a), &filter(b))
+            && !(self.bodies[a].is_static() && self.bodies[b].is_static())
+            && !(self.islands.is_sleeping(a) && self.islands.is_sleeping(b))
+            && self
+                .broadphase_box(a, radius_a)
+                .intersects(&self.broadphase_box(b, radius_b))
+    }
+
     /// [`Self::broadphase_box`], and whether building it left the `Fix128` range
     ///
     /// A cube corner past the range stops at the end of the range instead of wrapping
@@ -6610,8 +6619,13 @@ impl PhysicsWorld {
             let delta = self.bodies[a].position - self.bodies[b].position;
             // 半径和が `|·| ≥ 2⁶³` だと wrap して負になり、どの距離とも比べられない
             // (`velocity_of` が `self` を借りているので、印は loop の後で立てる)
+            // 印を立てるのは、この step が実際に半径和を使う組だけ
+            // ([`Self::forms_radius_sum`]) 候補に出たかどうか (broad-phase の
+            // 種類と sleep skip で違う) には依らない
             let Some(combined_radius) = radius_a.checked_add(radius_b) else {
-                radius_overflow = true;
+                if self.forms_radius_sum(a, b, radius_a, radius_b) {
+                    radius_overflow = true;
+                }
                 continue;
             };
             // Squared-distance early out *first*: the BVH candidate set is a
@@ -6843,6 +6857,13 @@ impl PhysicsWorld {
     /// 1 度立ったら `step` を重ねても落ちない 落ちると探索が
     /// 「未決定だった枝」を後の step で決定済と誤認する
     ///
+    /// # 立てる範囲
+    ///
+    /// その step が実際に行う演算の範囲外だけを報告する 相互作用しない組
+    /// (filter が衝突させない組、static どうし、両方が眠っている組) は衝突半径の
+    /// 和を作らないので、その和が範囲外でも立たない (どちらかが起きた step で
+    /// 立つ) broad-phase の種類と [`Self::set_sleep_skip`] の有無で同じ値になる
+    ///
     /// ⚠️ **flag は状態の一部**なので [`Self::serialize_state`] の被覆に
     /// 入れる必要がある (入れないと巻き戻した先で `undecided` が消える、
     /// doctrine B-12 の指摘) — **format v2 で収録済** (world ごと 1 byte、
@@ -6857,8 +6878,8 @@ impl PhysicsWorld {
     /// sticky flag を立てるのはこの関数だけ (積分の `v·dt` と位置の加算、
     /// 速度導出、球の接触の距離と半径和、角速度の大きさ、TGS の積分、
     /// TGS の関節投影の速度への繰り越し、broad-phase の箱が範囲の端で止まった時
-    /// ([`Self::broadphase_box_checked`]、staging と sleep の木への挿入)、sleep の
-    /// 木への挿入で箱が重なる park 済みの body との半径和) 落とす経路は [`Self::reset_world`] と
+    /// ([`Self::broadphase_box_checked`]、staging と sleep の木への挿入)) 半径和は
+    /// [`Self::forms_radius_sum`] の組だけ 落とす経路は [`Self::reset_world`] と
     /// 状態の復元だけ
     #[inline]
     pub(crate) fn note_rigid_overflow(&mut self) {
@@ -7240,7 +7261,7 @@ impl PhysicsWorld {
         // The flag may have gone down with the loaded state; the tree of parked
         // bodies (not part of this state) holds proxies whose insert raised it.
         // Drop the parked set so the next step re-inserts every parked body and
-        // checks its box and radius sums again against the loaded flag.
+        // checks its box again against the loaded flag.
         self.park_generation = self.park_generation.wrapping_add(1);
 
         true

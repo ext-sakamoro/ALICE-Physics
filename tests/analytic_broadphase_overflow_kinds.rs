@@ -283,9 +283,12 @@ fn compare_parked(boxes_leave: bool) -> (usize, Vec<String>) {
                 "xb={xb:?} r={r:?}: the bodies were not parked"
             );
             let reference = parked_pair(Broadphase::Bvh, false, xb, r, 3);
-            assert!(
+            // a box past the range raises the flag where it is built; two sleeping
+            // bodies form no radius sum, so a sum alone past the range raises nothing
+            assert_eq!(
                 reference.overflow_detected(),
-                "xb={xb:?} r={r:?}: a radius sum or a staged box leaves the range, so the flag is raised"
+                boxes_leave,
+                "xb={xb:?} r={r:?}: the flag is raised exactly when a staged box leaves the range"
             );
             let reference_state = reference.serialize_state();
             for (kind, skip) in [
@@ -328,14 +331,14 @@ fn parked_bodies_whose_boxes_leave_the_range_raise_the_flag_like_staged_ones() {
     );
 }
 
-/// Oracle: the staged world (sleep skip off), where the pair reaches the narrow-phase
-/// and the sum of the two radii (here past the range while both boxes stay inside it)
-/// raises the flag. With the skip on, a pair of two parked bodies never reaches the
-/// narrow-phase; the insert into the tree of parked bodies checks the sums against
-/// the parked bodies the new box meets, so the flag is the same either way
-/// (AUD-A-S6W1-011, fixed).
+/// Oracle: two sleeping bodies whose radius sum leaves the range while both boxes stay
+/// inside it. Two sleeping bodies do not interact, so the step forms no sum for the
+/// pair and the flag stays down: in the staged world (sleep skip off, where the pair
+/// reaches the narrow-phase), with the skip on (where it does not) and under every
+/// kind (AUD-A-S6W1-011, fixed by deciding the flag by the pair, not by the
+/// candidates).
 #[test]
-fn parked_bodies_whose_radius_sum_leaves_the_range_raise_the_flag_like_staged_ones() {
+fn parked_bodies_whose_radius_sum_alone_leaves_the_range_raise_no_flag_in_any_world() {
     let (compared, differing) = compare_parked(false);
     assert!(
         compared > 0,
@@ -349,13 +352,14 @@ fn parked_bodies_whose_radius_sum_leaves_the_range_raise_the_flag_like_staged_on
     );
 }
 
-/// The two parked bodies of [`parked_pair`] (radius sum past the range, boxes inside
-/// it), set back to a state taken before their first step (overflow flag down) and
-/// stepped once more. `via_snapshot` selects `snapshot_world` / `restore_world`
+/// The two parked bodies of [`parked_pair`] with the largest radius, so the second
+/// body's sphere box (`2^40 + r`) leaves the range, set back to a state taken before
+/// their first step (overflow flag down) and stepped once more. `via_snapshot` selects `snapshot_world` / `restore_world`
 /// instead of `serialize_state` / `deserialize_state`.
 fn stepped_after_rollback(kind: Broadphase, skip: bool, via_snapshot: bool) -> PhysicsWorld {
     let xb = Fix128::from_int(1 << 40);
-    let r = Fix128::from_int(1 << 62);
+    let r = Fix128::from_raw(i64::MAX, u64::MAX);
+    assert!(sphere_box_leaves(xb, r), "the second box leaves the range");
     let mut w = parked_pair(kind, skip, xb, r, 0);
     let state = w.serialize_state();
     let snapshot = w.snapshot_world();
@@ -368,7 +372,7 @@ fn stepped_after_rollback(kind: Broadphase, skip: bool, via_snapshot: bool) -> P
     }
     assert!(
         w.overflow_detected(),
-        "{kind:?} skip={skip}: the radius sum raised the flag"
+        "{kind:?} skip={skip}: the box past the range raised the flag"
     );
     if via_snapshot {
         w.restore_world(&snapshot).expect("the snapshot restores");
@@ -380,12 +384,13 @@ fn stepped_after_rollback(kind: Broadphase, skip: bool, via_snapshot: bool) -> P
     w
 }
 
-/// Oracle: the first step after a rollback raises the flag again in every world, as it
-/// did the first time: the radius sum is past the range whichever way the pair is
-/// visited. With the sleep skip on, the parked bodies' tree is not part of the loaded
-/// state, so the loading has to send them through the insert (and its check) again.
+/// Oracle: the flag after a rollback follows the loaded state the same way in every
+/// world: the first step after it raises the flag again, as the first step did, because
+/// the box past the range is built again. With the sleep skip on, the parked bodies'
+/// tree is not part of the loaded state, so the loading has to send them through the
+/// insert (and its box check) again.
 #[test]
-fn a_rollback_below_the_flag_raises_it_again_on_the_next_step() {
+fn a_rollback_below_the_flag_raises_it_again_through_the_box_on_the_next_step() {
     let mut compared = 0usize;
     let mut wrong: Vec<String> = Vec::new();
     for via_snapshot in [false, true] {
