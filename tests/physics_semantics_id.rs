@@ -51,7 +51,7 @@ use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2";
+const PINNED_ID_HEX: &str = "b2f47ce2f97291f5a21952919bf7267981e4c39a8d8cec723def4282d03806fd";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -868,26 +868,34 @@ fn the_identifier_is_the_row_of_the_resolved_det_math() {
     }
 }
 
+/// Pins added after the peer entries without moving any golden: the fold of
+/// the pins without them is an earlier identifier under the same stepping bits.
+const PINS_ADDED_WITHOUT_MOVING_A_GOLDEN: &[&str] = &["out-of-range radius sum"];
+
 /// Every earlier identifier the snapshot reader accepts is, never this
 /// build's, either the identifier of another known generation or the fold of
-/// the same pins without the peer entries and the Law output entries (before
-/// 4.0.0 neither was folded; no stepping golden moved when they were), under a
-/// known generation.
+/// the same pins without [`PINS_ADDED_WITHOUT_MOVING_A_GOLDEN`], optionally also
+/// without the peer entries and the Law output entries (before 4.0.0 neither
+/// was folded; no stepping golden moved when they were), under a known
+/// generation.
 #[test]
 fn previous_identifiers_are_rows_of_other_generations() {
     assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.is_empty());
-    let before_peers: Vec<[u8; 32]> = PHYSICS_SEMANTICS_BY_DET_MATH
-        .iter()
-        .map(|(det_math, _)| {
-            let pins: Vec<_> = pins_under(*det_math)
-                .into_iter()
-                .filter(|(n, _)| {
-                    !PHYSICS_PEER_IDS.iter().any(|p| p.0 == *n) && !n.starts_with(LAW_OUTPUT)
-                })
-                .collect();
-            fold(&pins).expect("folds")
-        })
-        .collect();
+    let mut before_peers: Vec<[u8; 32]> = Vec::new();
+    for (det_math, _) in PHYSICS_SEMANTICS_BY_DET_MATH {
+        let later: Vec<_> = pins_under(*det_math)
+            .into_iter()
+            .filter(|(n, _)| !PINS_ADDED_WITHOUT_MOVING_A_GOLDEN.contains(n))
+            .collect();
+        before_peers.push(fold(&later).expect("folds"));
+        let earlier: Vec<_> = later
+            .into_iter()
+            .filter(|(n, _)| {
+                !PHYSICS_PEER_IDS.iter().any(|p| p.0 == *n) && !n.starts_with(LAW_OUTPUT)
+            })
+            .collect();
+        before_peers.push(fold(&earlier).expect("folds"));
+    }
     for id in PREVIOUS_PHYSICS_SEMANTICS_IDS {
         assert_ne!(
             id, &PHYSICS_SEMANTICS_ID,

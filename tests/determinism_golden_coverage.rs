@@ -306,6 +306,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "golden_installed_bridge",
         "gpu-solver-bridge",
     ),
+    (
+        "out-of-range radius sum",
+        "determinism_golden_overflow_flag.rs",
+        "golden_out_of_range_radius_sum",
+        "",
+    ),
 ];
 
 /// Required combinations pinned by a relation to another pinned combination:
@@ -367,6 +373,18 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("physics2d", &["PhysicsWorld2D"], 1),
     // an installed bridge reroutes the contact solve of `step` / `substep`
     ("installed bridge", &["set_gpu_solver_bridge("], 1),
+    // collision radii whose sum leaves the `Fix128` range: the overflow flag,
+    // which the other goldens do not hash, under every broadphase kind and
+    // sleep skip mode
+    (
+        "out-of-range radius sum",
+        &[
+            "set_body_collision_radius(",
+            "overflow_detected(",
+            "set_sleep_skip(",
+        ],
+        1,
+    ),
     // two distance constraints share a body (joints are solved the same way
     // on both paths; the batched order applies to distance constraints and
     // contacts)
