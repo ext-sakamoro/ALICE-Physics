@@ -1111,7 +1111,8 @@ fn controller_config_default_velocity_passthrough_network_is_exact_and_clamped()
     let weight = FixedTernaryWeight::from_ternary_weight_with_scale(
         TernaryWeight::from_ternary(&values, n_out, n_in),
         Fix128::ONE,
-    );
+    )
+    .expect("the linked alice-ml is the one this build expects");
     let network = DeterministicNetwork::new(vec![weight], vec![Activation::None]);
     let mut controller = RagdollController::new(network, cfg.clone());
 

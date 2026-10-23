@@ -52,9 +52,12 @@ checksum = "2857e06dcc3838a2138f4c8ed7b30cf8515a223eeb6d5fbd068dd13d45cb4ff4"
 
 [[package]]
 name = "alice-ml"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2bda5d70d84e0c64ddcdd95bd34c90010ea080b8a7772bffc61cb08f23040836"
+version = "0.4.0"
+source = "git+https://github.com/ext-sakamoro/ALICE-ML?rev=5d45fb65de47a6a3b39a35f235a393ead8f2eb38#5d45fb65de47a6a3b39a35f235a393ead8f2eb38"
+dependencies = [
+ "alice-det-math",
+ "libm",
+]
 
 [[package]]
 name = "alice-physics"

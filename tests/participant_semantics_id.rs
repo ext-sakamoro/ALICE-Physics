@@ -106,14 +106,16 @@ fn a_participant_semantics_id_changes_the_law_id() {
     assert_eq!(a, law_id(&world(&[Some(ID_A), None])));
 }
 
-/// O2: a world whose participants declare no identifier keeps the law_id of main 88f76d3b
-/// (before the row existed), so the existing goldens and the version 4 snapshot headers stay
+/// O2: a world whose participants declare no identifier keeps the law_id it had before the row
+/// existed (main 88f76d3b, 9d2b8645… under PHYSICS_SEMANTICS_ID 7b24f99b…), so the existing
+/// goldens and the version 4 snapshot headers stay; the value below is the same world under the
+/// identifier that folds the alice-ml peer (a3f7eb24…), the only input that moved
 #[test]
 fn participants_without_an_identifier_keep_the_law_id() {
     assert_eq!(
         hex(&law_id(&world(&[None, None]))),
-        "9d2b8645ed9796ec38fcf7d54eb86eae0c3abc22dcb113078fa79ab313299b6e",
-        "pinned from main 88f76d3b"
+        "608b2fcb4a4ae40565c5ac1568e3aaf4144ac61c51e4badbd0ad190197e9ed4e",
+        "pinned from main 88f76d3b, then under the identifier with the alice-ml peer"
     );
 }
 
