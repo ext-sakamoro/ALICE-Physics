@@ -252,9 +252,11 @@ if rustup toolchain list | grep -q '^1\.85' && rustup toolchain list | grep -q '
     cargo +1.85 test --lib --locked
     cargo +1.85 test --lib --locked --features "std,simd,parallel,ffi,gpu-solver-bridge"
     cargo +1.87 test --lib --locked --features privacy-crypto
+    cargo +1.87 test --lib --locked --features neural
   else
     cargo +1.85 check --lib --locked
     cargo +1.87 check --lib --locked --features privacy-crypto
+    cargo +1.87 check --lib --locked --features neural
   fi
 elif [[ $quick -eq 1 || $fast -eq 1 ]]; then
   echo "warn: rustup toolchains 1.85 and 1.87 are needed for the MSRV lanes (skipped)"
@@ -402,7 +404,7 @@ step "semantics identifier (parallel + gpu-solver-bridge)"
 cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
 
 step "ALICE-Law G7 handshakes (analytics + gpu-solver-bridge)"
-scripts/run_tests.sh physics_semantics_id=20 -- cargo test --test physics_semantics_id --features "analytics"
+scripts/run_tests.sh physics_semantics_id=21 -- cargo test --test physics_semantics_id --features "analytics,neural"
 scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "analytics,gpu-solver-bridge"
 
 step "cargo test --lib (ffi module)"

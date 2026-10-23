@@ -47,11 +47,13 @@ fn forward_performs_no_heap_allocation_after_construction() {
     let l1 = FixedTernaryWeight::from_ternary_weight_with_scale(
         TernaryWeight::from_ternary(&[1, 0, -1, 0, 1, 1, -1, 0, 1, 1, 0, -1], 4, 3),
         Fix128::from_ratio(1, 2),
-    );
+    )
+    .expect("the linked alice-ml is the one this build expects");
     let l2 = FixedTernaryWeight::from_ternary_weight_with_scale(
         TernaryWeight::from_ternary(&[1, -1, 0, 1, 0, 1, -1, 1], 2, 4),
         Fix128::ONE,
-    );
+    )
+    .expect("the linked alice-ml is the one this build expects");
     let mut net = DeterministicNetwork::new(
         vec![l1, l2],
         vec![Activation::TanhApprox, Activation::HardTanh],
