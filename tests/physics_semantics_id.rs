@@ -51,7 +51,7 @@ use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "7b24f99b81c4a5e1369ea5e3f99e221fca0286e05c193ba8a453f3670ce087c2";
+const PINNED_ID_HEX: &str = "a3f7eb247574fcbac11839aeaf64f1bae826721f2a2e12e8b30fd22db70612c1";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -609,12 +609,12 @@ fn the_det_math_entry_is_the_det_math_identifier() {
 // ── (d') the peer entries ───────────────────────────────────────────────────
 
 /// Each peer's entry in the fold is its entry in PHYSICS_PEER_IDS, and the
-/// table names alice-analytics.
+/// table names alice-analytics and alice-ml.
 #[test]
 fn the_peer_entries_are_the_peer_table() {
     let t = table();
     let names: Vec<&str> = PHYSICS_PEER_IDS.iter().map(|p| p.0).collect();
-    assert_eq!(names, ["alice-analytics"]);
+    assert_eq!(names, ["alice-analytics", "alice-ml"]);
     for (peer, id) in PHYSICS_PEER_IDS {
         assert_eq!(t.get(peer).map(|d| hex(d)), Some(hex(id)), "{peer}");
     }
@@ -627,6 +627,17 @@ fn the_peer_entries_are_the_peer_table() {
 fn the_alice_analytics_entry_is_its_exported_identifier() {
     assert_eq!(
         check_peer("test", "alice-analytics", &alice_analytics::SEMANTICS_ID),
+        Ok(())
+    );
+}
+
+/// Under `neural`, the alice-ml entry is the identifier the resolved alice-ml
+/// exports.
+#[cfg(feature = "neural")]
+#[test]
+fn the_alice_ml_entry_is_its_exported_identifier() {
+    assert_eq!(
+        check_peer("test", "alice-ml", &alice_ml::semantics::ML_SEMANTICS_ID),
         Ok(())
     );
 }

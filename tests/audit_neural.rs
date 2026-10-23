@@ -47,6 +47,7 @@ fn identity_layer(n_out: usize, n_in: usize) -> FixedTernaryWeight {
         TernaryWeight::from_ternary(&vals, n_out, n_in),
         Fix128::ONE,
     )
+    .expect("the linked alice-ml is the one this build expects")
 }
 
 // ---------------------------------------------------------------------------
@@ -150,7 +151,8 @@ fn ternary_matvec_is_linear_in_the_input() {
     let w = FixedTernaryWeight::from_ternary_weight_with_scale(
         TernaryWeight::from_ternary(&vals, 2, 3),
         Fix128::from_ratio(1, 4),
-    );
+    )
+    .expect("the linked alice-ml is the one this build expects");
     let a = [
         Fix128::from_int(3),
         Fix128::from_int(-5),
@@ -206,7 +208,8 @@ fn network_accessors_and_activation_dispatch_follow_the_layer_list() {
     let l2 = FixedTernaryWeight::from_ternary_weight_with_scale(
         TernaryWeight::from_ternary(&[1, 0, 0, 0, 1, 0], 2, 3),
         Fix128::from_int(3),
-    );
+    )
+    .expect("the linked alice-ml is the one this build expects");
     let mut net =
         DeterministicNetwork::new(vec![l1, l2], vec![Activation::None, Activation::HardTanh]);
     assert_eq!(net.num_layers(), 2);
@@ -376,7 +379,8 @@ fn matvec_ignores_extra_input_columns_and_leaves_extra_output_slots_untouched() 
     let w = FixedTernaryWeight::from_ternary_weight_with_scale(
         TernaryWeight::from_ternary(&[1, 0, -1, 1, 1, 1], 2, 3),
         Fix128::ONE,
-    );
+    )
+    .expect("the linked alice-ml is the one this build expects");
     let input = [
         Fix128::from_int(5),
         Fix128::from_int(7),
@@ -444,7 +448,8 @@ fn matvec_output_is_the_floor_of_the_exact_product_of_the_sum_and_the_scale() {
     let w = FixedTernaryWeight::from_ternary_weight_with_scale(
         TernaryWeight::from_ternary(&[1], 1, 1),
         scale,
-    );
+    )
+    .expect("the linked alice-ml is the one this build expects");
     let mut out = [Fix128::ZERO];
     fix128_ternary_matvec(&[x], &w, &mut out);
     let raw = |v: Fix128| ((v.hi as i128) << 64) | i128::from(v.lo);

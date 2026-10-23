@@ -19,8 +19,8 @@
 //! use alice_ml::TernaryWeight;
 //!
 //! // Build network from ternary weights
-//! let w1 = FixedTernaryWeight::from_ternary_weight(layer1_weights);
-//! let w2 = FixedTernaryWeight::from_ternary_weight(layer2_weights);
+//! let w1 = FixedTernaryWeight::from_ternary_weight(layer1_weights)?; // PeerMismatch if alice-ml is not the expected one
+//! let w2 = FixedTernaryWeight::from_ternary_weight(layer2_weights)?; // PeerMismatch if alice-ml is not the expected one
 //!
 //! let network = DeterministicNetwork::new(
 //!     vec![w1, w2],
@@ -43,6 +43,7 @@
 //! Author: Moroya Sakamoto
 
 use crate::math::{Fix128, Vec3Fix};
+use crate::semantics::{check_peer, PeerMismatch};
 use crate::solver::RigidBody;
 use alice_ml::{Ternary, TernaryWeight};
 
@@ -68,20 +69,35 @@ impl FixedTernaryWeight {
     /// Create from an ALICE-ML TernaryWeight.
     ///
     /// Converts the f32 scale to Fix128 (one-time, deterministic).
-    pub fn from_ternary_weight(w: TernaryWeight) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`PeerMismatch`] naming both identifiers when the linked `alice-ml` is
+    /// not the one this build expects ([`crate::PHYSICS_PEER_IDS`]): its
+    /// weights are then not taken.
+    pub fn from_ternary_weight(w: TernaryWeight) -> Result<Self, PeerMismatch> {
+        check_peer("neural", "alice-ml", &alice_ml::semantics::ML_SEMANTICS_ID)?;
         let scale_fix = Fix128::from_f64(w.scale() as f64);
-        Self {
+        Ok(Self {
             weight: w,
             scale_fix,
-        }
+        })
     }
 
     /// Create with an explicit Fix128 scale (fully deterministic construction).
-    pub fn from_ternary_weight_with_scale(w: TernaryWeight, scale: Fix128) -> Self {
-        Self {
+    ///
+    /// # Errors
+    ///
+    /// [`PeerMismatch`], as [`Self::from_ternary_weight`].
+    pub fn from_ternary_weight_with_scale(
+        w: TernaryWeight,
+        scale: Fix128,
+    ) -> Result<Self, PeerMismatch> {
+        check_peer("neural", "alice-ml", &alice_ml::semantics::ML_SEMANTICS_ID)?;
+        Ok(Self {
             weight: w,
             scale_fix: scale,
-        }
+        })
     }
 
     /// Number of output features (rows).
@@ -609,7 +625,8 @@ mod tests {
         // [0, 0, 1]
         let values = [1i8, 0, 0, 0, 1, 0, 0, 0, 1];
         let tw = make_test_weight(3, 3, &values);
-        let ftw = FixedTernaryWeight::from_ternary_weight(tw);
+        let ftw = FixedTernaryWeight::from_ternary_weight(tw)
+            .expect("the linked alice-ml is the one this build expects");
 
         let input = [
             Fix128::from_int(10),
@@ -636,7 +653,8 @@ mod tests {
         let values = [1.0f32, -1.0, -1.0, 1.0];
         let (tw, _) = quantize_to_ternary(&values, 2, 2);
         let scale = Fix128::from_f64(tw.scale() as f64);
-        let ftw = FixedTernaryWeight::from_ternary_weight(tw);
+        let ftw = FixedTernaryWeight::from_ternary_weight(tw)
+            .expect("the linked alice-ml is the one this build expects");
 
         let a = Fix128::from_int(5);
         let b = Fix128::from_int(3);
@@ -732,8 +750,10 @@ mod tests {
 
         let (tw1, _) = quantize_to_ternary(&f32_w1, 3, 4);
         let (tw2, _) = quantize_to_ternary(&f32_w2, 2, 3);
-        let ftw1 = FixedTernaryWeight::from_ternary_weight(tw1);
-        let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2);
+        let ftw1 = FixedTernaryWeight::from_ternary_weight(tw1)
+            .expect("the linked alice-ml is the one this build expects");
+        let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2)
+            .expect("the linked alice-ml is the one this build expects");
 
         let mut net = DeterministicNetwork::new(
             vec![ftw1, ftw2],
@@ -770,13 +790,15 @@ mod tests {
         ];
 
         // Run 1
-        let ftw1 = FixedTernaryWeight::from_ternary_weight(tw.clone());
+        let ftw1 = FixedTernaryWeight::from_ternary_weight(tw.clone())
+            .expect("the linked alice-ml is the one this build expects");
         let mut net1 = DeterministicNetwork::new(vec![ftw1], vec![Activation::ReLU]);
         let out1: Vec<Fix128> = net1.forward(&input).to_vec();
 
         // Run 2 (fresh network, same weights)
         let (tw2, _) = quantize_to_ternary(&f32_w, 3, 3);
-        let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2);
+        let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2)
+            .expect("the linked alice-ml is the one this build expects");
         let mut net2 = DeterministicNetwork::new(vec![ftw2], vec![Activation::ReLU]);
         let out2: Vec<Fix128> = net2.forward(&input).to_vec();
 
@@ -814,8 +836,10 @@ mod tests {
 
         let (tw1, _) = quantize_to_ternary(&f32_w1, hidden_size, input_size);
         let (tw2, _) = quantize_to_ternary(&f32_w2, output_size, hidden_size);
-        let ftw1 = FixedTernaryWeight::from_ternary_weight(tw1);
-        let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2);
+        let ftw1 = FixedTernaryWeight::from_ternary_weight(tw1)
+            .expect("the linked alice-ml is the one this build expects");
+        let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2)
+            .expect("the linked alice-ml is the one this build expects");
 
         let network = DeterministicNetwork::new(
             vec![ftw1, ftw2],
@@ -874,8 +898,10 @@ mod tests {
         let make_controller = || {
             let (tw1, _) = quantize_to_ternary(&f32_w1, hidden_size, input_size);
             let (tw2, _) = quantize_to_ternary(&f32_w2, output_size, hidden_size);
-            let ftw1 = FixedTernaryWeight::from_ternary_weight(tw1);
-            let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2);
+            let ftw1 = FixedTernaryWeight::from_ternary_weight(tw1)
+                .expect("the linked alice-ml is the one this build expects");
+            let ftw2 = FixedTernaryWeight::from_ternary_weight(tw2)
+                .expect("the linked alice-ml is the one this build expects");
             let network = DeterministicNetwork::new(
                 vec![ftw1, ftw2],
                 vec![Activation::ReLU, Activation::HardTanh],
@@ -944,7 +970,8 @@ mod tests {
         let tw = TernaryWeight::from_ternary(&values, 2, 3);
         let scale = Fix128::from_ratio(3, 4); // 0.75, exact in Fix128
 
-        let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(tw.clone(), scale);
+        let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(tw.clone(), scale)
+            .expect("the linked alice-ml is the one this build expects");
         // The explicit scale is stored bit-for-bit, and the f32 scale of the
         // wrapped TernaryWeight (1.0 from `from_ternary`) is NOT consulted.
         assert_eq!(ftw.scale(), scale);
@@ -970,19 +997,22 @@ mod tests {
         let double = FixedTernaryWeight::from_ternary_weight_with_scale(
             tw.clone(),
             scale * Fix128::from_int(2),
-        );
+        )
+        .expect("the linked alice-ml is the one this build expects");
         let mut out2 = [Fix128::ZERO; 2];
         fix128_ternary_matvec(&input, &double, &mut out2);
         assert_eq!(out2[0], out[0] * Fix128::from_int(2));
         assert_eq!(out2[1], out[1] * Fix128::from_int(2));
 
         // Unit scale reproduces the raw ternary sums; zero scale zeroes output.
-        let unit = FixedTernaryWeight::from_ternary_weight_with_scale(tw.clone(), Fix128::ONE);
+        let unit = FixedTernaryWeight::from_ternary_weight_with_scale(tw.clone(), Fix128::ONE)
+            .expect("the linked alice-ml is the one this build expects");
         let mut out1 = [Fix128::ZERO; 2];
         fix128_ternary_matvec(&input, &unit, &mut out1);
         assert_eq!(out1[0], Fix128::from_int(2));
         assert_eq!(out1[1], Fix128::from_int(10));
-        let zero = FixedTernaryWeight::from_ternary_weight_with_scale(tw, Fix128::ZERO);
+        let zero = FixedTernaryWeight::from_ternary_weight_with_scale(tw, Fix128::ZERO)
+            .expect("the linked alice-ml is the one this build expects");
         let mut out0 = [Fix128::ONE; 2];
         fix128_ternary_matvec(&input, &zero, &mut out0);
         assert!(out0[0].is_zero() && out0[1].is_zero());

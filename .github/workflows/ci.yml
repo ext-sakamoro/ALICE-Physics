@@ -377,7 +377,7 @@ jobs:
       - name: Test (ALICE-Law G7 handshakes, analytics + gpu-solver-bridge)
         shell: bash
         run: |
-          scripts/run_tests.sh physics_semantics_id=20 -- cargo test --test physics_semantics_id --features "analytics"
+          scripts/run_tests.sh physics_semantics_id=21 -- cargo test --test physics_semantics_id --features "analytics,neural"
           scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "analytics,gpu-solver-bridge"
 
       # The alice-physics facade (crates/alice-physics): every importable item of the core's
@@ -814,6 +814,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: privacy-crypto on 1.87 (lib tests)
         run: cargo +1.87 test --lib --locked --features privacy-crypto
+      # neural takes alice-ml 0.4, whose rust-version is 1.87: the same lane
+      - name: neural on 1.87 (lib tests)
+        run: cargo +1.87 test --lib --locked --features neural
 
   fmt:
     if: github.event_name != 'schedule'
