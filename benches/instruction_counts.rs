@@ -8,24 +8,28 @@
 //!
 //! Linux only: `cargo bench --bench instruction_counts` needs Valgrind and the
 //! `gungraun-runner` binary of the same version as the `gungraun` dev-dependency.
+//! The benchmarks and the `gungraun` dev-dependency are compiled only with
+//! `RUSTFLAGS="--cfg alice_instruction_bench"` (set by bench-gate.yml), so a plain
+//! Linux `cargo test` does not build gungraun, whose minimum Rust is above the
+//! crate's `rust-version`; without the cfg this bench is an empty `main`.
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(all(target_os = "linux", alice_instruction_bench)))]
 fn main() {}
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 use alice_physics_core::bvh::BvhPrimitive;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 use alice_physics_core::collider::AABB;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 use alice_physics_core::{Fix128, LinearBvh, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix};
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 use gungraun::prelude::*;
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 use std::hint::black_box;
 
 /// A 3×3×3 stack of touching spheres on a static floor, 30 steps: broad phase,
 /// narrow phase and the contact solve in every substep.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 fn stacked_world() -> PhysicsWorld {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());
     world.add_body_with_radius(
@@ -45,7 +49,7 @@ fn stacked_world() -> PhysicsWorld {
     world
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 #[library_benchmark]
 #[bench::stack_27(setup = stacked_world)]
 fn world_step(mut world: PhysicsWorld) -> Vec3Fix {
@@ -56,7 +60,7 @@ fn world_step(mut world: PhysicsWorld) -> Vec3Fix {
     world.bodies[1].position
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 fn boxes() -> Vec<BvhPrimitive> {
     (0..256)
         .map(|i: i64| {
@@ -71,7 +75,7 @@ fn boxes() -> Vec<BvhPrimitive> {
         .collect()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 #[library_benchmark]
 #[bench::boxes_256(setup = boxes)]
 fn bvh_build_and_query(prims: Vec<BvhPrimitive>) -> usize {
@@ -80,7 +84,7 @@ fn bvh_build_and_query(prims: Vec<BvhPrimitive>) -> usize {
     bvh.query(&q).len()
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 #[library_benchmark]
 fn fixed_point_maths() -> Fix128 {
     let mut acc = Fix128::ZERO;
@@ -91,11 +95,11 @@ fn fixed_point_maths() -> Fix128 {
     black_box(acc)
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 library_benchmark_group!(
     name = hot_paths,
     benchmarks = [world_step, bvh_build_and_query, fixed_point_maths]
 );
 
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", alice_instruction_bench))]
 main!(library_benchmark_groups = hot_paths);

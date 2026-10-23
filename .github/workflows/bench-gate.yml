@@ -37,6 +37,9 @@ env:
   # finds the benchmark functions by symbol name, and with the symbols stripped it
   # collected nothing (every count read 0, so every comparison read "no change")
   CARGO_PROFILE_BENCH_STRIP: "false"
+  # benches/instruction_counts.rs and the `gungraun` dev-dependency are compiled only
+  # under this cfg (Cargo.toml), so the MSRV lanes on Linux never build gungraun
+  RUSTFLAGS: --cfg alice_instruction_bench
 
 jobs:
   # which files changed: a new or force-pushed branch is compared with merge-base(origin/main),

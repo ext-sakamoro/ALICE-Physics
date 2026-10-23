@@ -76,7 +76,7 @@ were introduced during that release window.
 
 ### Security
 
-- ctutils 0.4.5 (RUSTSEC-2026-0385: 0.4.4 より前の mask / u128 の比較は定数時間でない) `Cargo.lock` だけの変更 ctutils は `privacy-crypto` 機能 (alice-crypto → blake3 → digest) からだけ入り、0.4.5 は Rust 1.87 を要るので、`privacy-crypto` を有効にした時の実質の最小 Rust は 1.87 既定の MSRV は 1.85 のまま CI の `msrv` job は 1.85 で `privacy-crypto` なしの library を build して試験を走らせ、`msrv-privacy-crypto` job は 1.87 で `--features privacy-crypto` の試験を走らせる (どちらも `--locked`、`scripts/preflight.sh` も同じ引数で回す)
+- ctutils 0.4.5 (RUSTSEC-2026-0385: 0.4.4 より前の mask / u128 の比較は定数時間でない) `Cargo.lock` だけの変更 ctutils は `privacy-crypto` 機能 (alice-crypto → blake3 → digest) からだけ入り、0.4.5 は Rust 1.87 を要るので、`privacy-crypto` を有効にした時の実質の最小 Rust は 1.87 既定の MSRV は 1.85 のまま CI の `msrv` job は 1.85 で `privacy-crypto` なしの library を build して試験を走らせ、`msrv-privacy-crypto` job は 1.87 で `--features privacy-crypto` の試験を走らせる (どちらも `--locked`、`scripts/preflight.sh` も同じ引数で回す) Linux 専用の dev-dependency `gungraun` 0.20 は Rust 1.88 を要るので、`cfg(all(target_os = "linux", alice_instruction_bench))` の下に移した `--cfg alice_instruction_bench` を付けるのは bench-gate の job だけで、Linux の通常の `cargo test` は gungraun を build しない `benches/instruction_counts.rs` も同じ cfg の時だけ benchmark を持つ (それ以外は空の `main`)
 
 ## [3.1.0] - 2026-10-16
 

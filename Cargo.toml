@@ -121,7 +121,9 @@ alice-crypto = { version = "0.4", default-features = false, optional = true }
 # `PhysicsWorld::law_id` hashes the world's rules with SHA-256.
 sha2 = { version = "0.10", default-features = false }
 
-[target.'cfg(target_os = "linux")'.dev-dependencies]
+# Only bench-gate.yml sets `--cfg alice_instruction_bench`: gungraun 0.20 needs
+# Rust 1.88, above `rust-version`, so the MSRV test lanes on Linux must not build it
+[target.'cfg(all(target_os = "linux", alice_instruction_bench))'.dev-dependencies]
 gungraun = "0.20"
 
 [dev-dependencies]
@@ -696,7 +698,7 @@ codegen-units = 1
 
 [lints.rust]
 # `--cfg loom` selects the loom model tests (quality-deep `loom` job)
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)'] }
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(loom)', 'cfg(alice_instruction_bench)'] }
 
 [lints.clippy]
 # every `allow` / `expect` states why (`reason = "…"`); clippy checks the
