@@ -377,7 +377,7 @@ step "semantics identifier (parallel + gpu-solver-bridge)"
 cargo test --test physics_semantics_id --features "parallel,gpu-solver-bridge"
 
 step "ALICE-Law G7 handshakes (analytics + gpu-solver-bridge)"
-scripts/run_tests.sh physics_semantics_id=20 -- cargo test --test physics_semantics_id --features "analytics"
+scripts/run_tests.sh physics_semantics_id=21 -- cargo test --test physics_semantics_id --features "analytics,neural"
 scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "analytics,gpu-solver-bridge"
 
 step "cargo test --lib (ffi module)"

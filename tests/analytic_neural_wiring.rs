@@ -286,7 +286,8 @@ fn fix128_ternary_matvec_is_an_exact_dot_product() {
     // scale = 3/4 (exact power-of-two-denominator fraction) -> [3,6].
     let w = TernaryWeight::from_ternary(&[1, -1, 0, 0, 1, 1], 2, 3);
     let scale = Fix128::from_ratio(3, 4);
-    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, scale);
+    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, scale)
+        .expect("the linked alice-ml is the one this build expects");
     let input = [
         Fix128::from_int(7),
         Fix128::from_int(3),
@@ -300,7 +301,8 @@ fn fix128_ternary_matvec_is_an_exact_dot_product() {
 #[test]
 fn fix128_ternary_matvec_zero_sized_matrix_is_a_no_op() {
     let w = TernaryWeight::from_ternary(&[], 0, 0);
-    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::from_int(99));
+    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::from_int(99))
+        .expect("the linked alice-ml is the one this build expects");
     let input: [Fix128; 0] = [];
     let mut output: [Fix128; 0] = [];
     let r = catch_unwind(AssertUnwindSafe(|| {
@@ -316,7 +318,8 @@ fn fix128_ternary_matvec_short_output_buffer_computes_only_what_fits() {
     // the function silently stops at `.take(out_n)` clamped by the slice
     // length, it never panics or errors.
     let w = TernaryWeight::from_ternary(&[1, -1, 0, 0, 1, 1], 2, 3);
-    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::ONE);
+    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::ONE)
+        .expect("the linked alice-ml is the one this build expects");
     let input = [
         Fix128::from_int(7),
         Fix128::from_int(3),
@@ -337,7 +340,8 @@ fn fix128_ternary_matvec_short_input_treats_missing_columns_as_zero() {
     // columns contribute nothing to the sum (the same result as if they
     // had been zero-padded).
     let w = TernaryWeight::from_ternary(&[1, -1, 0, 0, 1, 1], 2, 3);
-    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::ONE);
+    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::ONE)
+        .expect("the linked alice-ml is the one this build expects");
     let input = [Fix128::from_int(7)]; // column 1 and 2 are "missing"
     let mut output = [Fix128::ZERO; 2];
     let r = catch_unwind(AssertUnwindSafe(|| {
@@ -368,7 +372,8 @@ fn fix128_ternary_matvec_extreme_magnitude_accumulation_wraps() {
     let expected_wrapped_sum = huge + huge;
 
     let w = TernaryWeight::from_ternary(&[1, 1], 1, 2);
-    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::ONE);
+    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::ONE)
+        .expect("the linked alice-ml is the one this build expects");
     let input = [huge, huge];
     let mut output = [Fix128::ZERO; 1];
     let r = catch_unwind(AssertUnwindSafe(|| {
@@ -387,14 +392,16 @@ fn from_ternary_weight_reads_the_wrapped_f32_scale_from_ternary_weight_with_scal
     let base = TernaryWeight::from_ternary(&[1, -1, 0, 0, 1, 1], 2, 3);
     let w_scaled = TernaryWeight::from_packed(base.packed().to_vec(), 2, 3, 2.5);
 
-    let ftw_a = FixedTernaryWeight::from_ternary_weight(w_scaled.clone());
+    let ftw_a = FixedTernaryWeight::from_ternary_weight(w_scaled.clone())
+        .expect("the linked alice-ml is the one this build expects");
     assert_eq!(
         ftw_a.scale(),
         Fix128::from_f64(2.5),
         "from_ternary_weight consults the wrapped f32 scale()"
     );
 
-    let ftw_b = FixedTernaryWeight::from_ternary_weight_with_scale(w_scaled, Fix128::from_int(7));
+    let ftw_b = FixedTernaryWeight::from_ternary_weight_with_scale(w_scaled, Fix128::from_int(7))
+        .expect("the linked alice-ml is the one this build expects");
     assert_eq!(
         ftw_b.scale(),
         Fix128::from_int(7),
@@ -429,10 +436,12 @@ fn from_ternary_weight_reads_the_wrapped_f32_scale_from_ternary_weight_with_scal
 fn build_tiny_relu_tanh_network() -> DeterministicNetwork {
     // Layer 1: 3 -> 2, ReLU. Row0 = [+1,0,0], Row1 = [0,0,-1].
     let w1 = TernaryWeight::from_ternary(&[1, 0, 0, 0, 0, -1], 2, 3);
-    let ftw1 = FixedTernaryWeight::from_ternary_weight(w1);
+    let ftw1 = FixedTernaryWeight::from_ternary_weight(w1)
+        .expect("the linked alice-ml is the one this build expects");
     // Layer 2: 2 -> 2, TanhApprox. Row0 = [+1,0], Row1 = [-1,0].
     let w2 = TernaryWeight::from_ternary(&[1, 0, -1, 0], 2, 2);
-    let ftw2 = FixedTernaryWeight::from_ternary_weight(w2);
+    let ftw2 = FixedTernaryWeight::from_ternary_weight(w2)
+        .expect("the linked alice-ml is the one this build expects");
     DeterministicNetwork::new(
         vec![ftw1, ftw2],
         vec![Activation::ReLU, Activation::TanhApprox],
@@ -473,7 +482,8 @@ fn deterministic_network_all_zero_weight_layer_outputs_zero_regardless_of_scale_
     // exists in this architecture), so the scaled output is exactly ZERO
     // no matter the scale or the input values.
     let w = TernaryWeight::from_ternary(&[0, 0, 0, 0, 0, 0], 2, 3);
-    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::from_int(1_000_000));
+    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, Fix128::from_int(1_000_000))
+        .expect("the linked alice-ml is the one this build expects");
     let mut net = DeterministicNetwork::new(vec![ftw], vec![Activation::None]);
 
     let input = [
@@ -501,7 +511,8 @@ fn build_controller_with_max_torque(max_torque: Fix128) -> RagdollController {
     w1_values[31] = -1; // row2 . velocity.z   (col 5, offset 26+5)
     w1_values[51] = 1; // row3 . angular_velocity.z (col 12, offset 39+12)
     let w1 = TernaryWeight::from_ternary(&w1_values, 4, 13);
-    let ftw1 = FixedTernaryWeight::from_ternary_weight(w1);
+    let ftw1 = FixedTernaryWeight::from_ternary_weight(w1)
+        .expect("the linked alice-ml is the one this build expects");
 
     // row1 depends on BOTH col1 and col2: col2 (hidden[2]) is 0 after a
     // correctly-applied ReLU on layer 1's negative raw value (-6), so this
@@ -510,7 +521,8 @@ fn build_controller_with_max_torque(max_torque: Fix128) -> RagdollController {
     // would be -6 instead of 0, changing this row's dot product).
     let w2_values = [1i8, 0, 0, 0, 0, -1, -1, 0, 0, 0, 0, -1];
     let w2 = TernaryWeight::from_ternary(&w2_values, 3, 4);
-    let ftw2 = FixedTernaryWeight::from_ternary_weight_with_scale(w2, Fix128::from_ratio(1, 8));
+    let ftw2 = FixedTernaryWeight::from_ternary_weight_with_scale(w2, Fix128::from_ratio(1, 8))
+        .expect("the linked alice-ml is the one this build expects");
 
     let network = DeterministicNetwork::new(
         vec![ftw1, ftw2],
@@ -606,7 +618,8 @@ fn ragdoll_controller_clamps_torque_to_max_torque() {
 fn ragdoll_controller_zero_joints_yields_empty_controller_output() {
     // out_features = 0 on the last layer => num_joints must be 0 (0 == 0*3).
     let w = TernaryWeight::from_ternary(&[], 0, 13);
-    let ftw = FixedTernaryWeight::from_ternary_weight(w);
+    let ftw = FixedTernaryWeight::from_ternary_weight(w)
+        .expect("the linked alice-ml is the one this build expects");
     let network = DeterministicNetwork::new(vec![ftw], vec![Activation::None]);
     let config = ControllerConfig {
         max_torque: Fix128::ONE,

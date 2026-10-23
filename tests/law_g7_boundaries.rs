@@ -32,8 +32,6 @@ enum Decision {
     },
     /// not a boundary of G7, for the stated reason
     NotABoundary(&'static str),
-    /// a boundary whose handshake waits for the peer's G6 identifier
-    Pending(&'static str),
 }
 
 const BOUNDARIES: &[(&str, Decision)] = &[
@@ -53,10 +51,10 @@ const BOUNDARIES: &[(&str, Decision)] = &[
     ),
     (
         "src/neural.rs",
-        Decision::Pending(
-            "alice-ml weights (TernaryWeight) become Fix128 weights here; the handshake needs \
-             alice-ml's own G6 identifier, which it does not export yet",
-        ),
+        Decision::Handshake {
+            check: "check_peer(",
+            fns: &["from_ternary_weight", "from_ternary_weight_with_scale"],
+        },
     ),
     (
         "src/privacy.rs",
@@ -230,11 +228,11 @@ fn every_handshake_constructor_checks_first() {
                 checked += 1;
             }
         }
-        if let Decision::NotABoundary(why) | Decision::Pending(why) = decision {
+        if let Decision::NotABoundary(why) = decision {
             assert!(why.len() > 40, "{file}: the reason is too short to be one");
         }
     }
-    assert_eq!(checked, 2, "handshake constructors checked");
+    assert_eq!(checked, 4, "handshake constructors checked");
 }
 
 #[test]

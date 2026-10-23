@@ -93,7 +93,8 @@ fn main() {
     // scale = 3/4 (exact power-of-two-denominator fraction) -> [3, 6].
     let w = TernaryWeight::from_ternary(&[1, -1, 0, 0, 1, 1], 2, 3);
     let scale = Fix128::from_ratio(3, 4);
-    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, scale);
+    let ftw = FixedTernaryWeight::from_ternary_weight_with_scale(w, scale)
+        .expect("the linked alice-ml is the one this build expects");
     let mv_input = [
         Fix128::from_int(7),
         Fix128::from_int(3),
@@ -121,7 +122,8 @@ fn main() {
     w1_values[28] = -1; // row2 . position.z   (col 2, offset 26+2)
     w1_values[48] = 1; // row3 . rotation.w   (col 9, offset 39+9)
     let w1 = TernaryWeight::from_ternary(&w1_values, 4, 13);
-    let ftw1 = FixedTernaryWeight::from_ternary_weight(w1);
+    let ftw1 = FixedTernaryWeight::from_ternary_weight(w1)
+        .expect("the linked alice-ml is the one this build expects");
     println!(
         "[neural] FixedTernaryWeight::from_ternary_weight layer1 scale = {} \
          (default from TernaryWeight::scale(), unscaled i8 input)",
@@ -132,7 +134,8 @@ fn main() {
     let w2_values = [1i8, 1, 0, -1, -1, 0, 0, 1, 0, -1, 1, 1];
     let w2 = TernaryWeight::from_ternary(&w2_values, 3, 4);
     let scale2 = Fix128::from_ratio(1, 4);
-    let ftw2 = FixedTernaryWeight::from_ternary_weight_with_scale(w2, scale2);
+    let ftw2 = FixedTernaryWeight::from_ternary_weight_with_scale(w2, scale2)
+        .expect("the linked alice-ml is the one this build expects");
 
     let mut network = DeterministicNetwork::new(
         vec![ftw1, ftw2],
