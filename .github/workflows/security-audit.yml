@@ -37,6 +37,8 @@ on:
       - 'scripts/line-coverage-baseline.txt'
       - 'scripts/package_contents_check.py'
       - 'scripts/test_package_contents_check.py'
+      - 'scripts/package_git_patches.py'
+      - 'scripts/test_package_git_patches.py'
       - 'LICENSE-AGPL'
       - 'LICENSE-COMMERCIAL.md'
       - 'scripts/changed_paths.py'
@@ -234,10 +236,24 @@ jobs:
           python3 scripts/test_package_contents_check.py
           python3 scripts/package_contents_check.py
 
+      # crates.io にまだ無い sibling は Cargo.toml が git + 40 桁 rev + version で引く
+      # cargo package は git と rev を落とすので、その rev への [patch.crates-io] を
+      # この job の中だけで --config で渡し、利用される形 (pin した rev) で .crate を build する
+      # 公開の前に sibling を publish して version だけに戻す (patch は 0 件になる)
+      - name: pin した git 依存の patch
+        run: |
+          set -euo pipefail
+          python3 scripts/test_package_git_patches.py
+          python3 scripts/package_git_patches.py args > "$RUNNER_TEMP/git-patches.args"
+          echo "patch arguments: $(grep -c '^--config$' "$RUNNER_TEMP/git-patches.args" || true)"
+
       - name: cargo package (.crate を作る)
         # --no-verify: 未 publish の sibling に path dep がある repo では verify step が
         #   registry 解決で落ちる 展開後の隔離 build が本体なので verify は不要
-        run: cargo package --no-verify --allow-dirty
+        run: |
+          set -euo pipefail
+          mapfile -t patches < "$RUNNER_TEMP/git-patches.args"
+          cargo package --no-verify --allow-dirty "${patches[@]}"
 
       - name: 展開して隔離 build
         # job の CARGO_TERM_COLOR: always のままだと Executable が色の escape で囲まれ
@@ -255,12 +271,18 @@ jobs:
           # 親 workspace を継承すると member 扱いになり、境界を越えた file が
           # 再び見えてしまう (検査の意味が消える) ので単独 package として build
           printf '\n[workspace]\n' >> Cargo.toml
+          mapfile -t patches < "$RUNNER_TEMP/git-patches.args"
+          # 展開した Cargo.lock が pin した rev で解決されているか (patch が効いていない /
+          # rev が Cargo.toml と違う / Cargo.toml が pin しない git source は fail)
+          python3 "$GITHUB_WORKSPACE/scripts/package_git_patches.py" verify Cargo.lock
           # wasm / ffi が排他 feature (src/lib.rs の compile_error!) なので --all-features は
           # 設計上必ず落ちる packaging 検査としては default features で成立する
-          cargo check
+          cargo check "${patches[@]}"
+          # neural は pin した alice-ml を build する feature (default では解決だけで build しない)
+          cargo check --locked --features neural "${patches[@]}"
           # test target (lib の unit test と #[path] / include_bytes! で取り込む file を含む)
           # も展開した crate だけで build できるかを見る build した test binary が 0 本なら fail
-          cargo test --tests --no-run --locked 2>&1 | tee "$tmp/test-build.log"
+          cargo test --tests --no-run --locked "${patches[@]}" 2>&1 | tee "$tmp/test-build.log"
           n=$(grep -c 'Executable ' "$tmp/test-build.log" || true)
           echo "test binaries built from the packaged crate: $n"
           [ "$n" -gt 0 ] || { echo "::error::展開した crate から test binary が 1 本も build されていない"; exit 1; }
