@@ -7886,6 +7886,38 @@ impl core::marker::Unpin for alice_physics_core::maxwell_fdtd::MaterialError
 impl core::marker::UnsafeUnpin for alice_physics_core::maxwell_fdtd::MaterialError
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::maxwell_fdtd::MaterialError
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::maxwell_fdtd::MaterialError
+#[non_exhaustive] pub enum alice_physics_core::maxwell_fdtd::YeeStateError
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Bool
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Bool::at: usize
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Dimensions
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Flags
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Flags::found: u8
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Trailing
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Trailing::extra: usize
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Truncated
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Truncated::left: usize
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Truncated::needed: usize
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Version
+pub alice_physics_core::maxwell_fdtd::YeeStateError::Version::found: u32
+impl core::clone::Clone for alice_physics_core::maxwell_fdtd::YeeStateError
+pub fn alice_physics_core::maxwell_fdtd::YeeStateError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::cmp::PartialEq for alice_physics_core::maxwell_fdtd::YeeStateError
+pub fn alice_physics_core::maxwell_fdtd::YeeStateError::eq(&self, &Self) -> bool
+impl core::error::Error for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::fmt::Debug for alice_physics_core::maxwell_fdtd::YeeStateError
+pub fn alice_physics_core::maxwell_fdtd::YeeStateError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics_core::maxwell_fdtd::YeeStateError
+pub fn alice_physics_core::maxwell_fdtd::YeeStateError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::marker::StructuralPartialEq for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::marker::Freeze for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::marker::Send for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::marker::Sync for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::marker::Unpin for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::marker::UnsafeUnpin for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::maxwell_fdtd::YeeStateError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::maxwell_fdtd::YeeStateError
 pub struct alice_physics_core::maxwell_fdtd::Material
 pub alice_physics_core::maxwell_fdtd::Material::eps_r: alice_physics_core::math::Fix128
 pub alice_physics_core::maxwell_fdtd::Material::mu_r: alice_physics_core::math::Fix128
@@ -7954,12 +7986,14 @@ pub fn alice_physics_core::maxwell_fdtd::YeeGrid::max_abs_field(&self) -> alice_
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::max_abs_gauss_residual(&self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::new(usize, usize, usize, alice_physics_core::math::Fix128) -> Self
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::new_with_absorber(usize, usize, usize, alice_physics_core::math::Fix128, alice_physics_core::maxwell_fdtd::Absorber) -> Self
+pub fn alice_physics_core::maxwell_fdtd::YeeGrid::read_state(&[u8]) -> core::result::Result<Self, alice_physics_core::maxwell_fdtd::YeeStateError>
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::set(&mut self, alice_physics_core::maxwell_fdtd::Component, usize, usize, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::set_charge(&mut self, usize, usize, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::set_current(&mut self, alice_physics_core::maxwell_fdtd::Component, usize, usize, usize, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::step(&mut self)
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::total_charge(&self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::with_materials(self, &alice_physics_core::maxwell_fdtd::MaterialMap) -> core::result::Result<Self, alice_physics_core::maxwell_fdtd::MaterialError>
+pub fn alice_physics_core::maxwell_fdtd::YeeGrid::write_state(&self, &mut alloc::vec::Vec<u8>)
 impl core::clone::Clone for alice_physics_core::maxwell_fdtd::YeeGrid
 pub fn alice_physics_core::maxwell_fdtd::YeeGrid::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::maxwell_fdtd::YeeGrid
@@ -7976,6 +8010,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::maxwell_fdtd::YeeGrid
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::maxwell_fdtd::YeeGrid
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::maxwell_fdtd::YeeGrid
 pub const alice_physics_core::maxwell_fdtd::COURANT_3D: alice_physics_core::math::Fix128
+pub const alice_physics_core::maxwell_fdtd::YEE_STATE_VERSION: u32
 pub fn alice_physics_core::maxwell_fdtd::cfl_limit_3d() -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::maxwell_fdtd::loss_coefficients(alice_physics_core::math::Fix128, alice_physics_core::math::Fix128) -> (alice_physics_core::math::Fix128, alice_physics_core::math::Fix128)
 pub fn alice_physics_core::maxwell_fdtd::theoretical_pml_reflection(usize, alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128

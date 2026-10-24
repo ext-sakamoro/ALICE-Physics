@@ -125,7 +125,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `linear_elastic_fem` | standalone (step 2 of 126 items) | 2 / 0 / 0 / 123 / 1 | C ABI, Python, WebAssembly |
 | `linear_solver` | standalone | 0 / 0 / 0 / 40 / 0 | — |
 | `math_util` | standalone | 0 / 0 / 0 / 5 / 0 | — |
-| `maxwell_fdtd` | standalone | 0 / 0 / 0 / 44 / 0 | — |
+| `maxwell_fdtd` | standalone | 0 / 0 / 0 / 48 / 0 | — |
 | `modal` | standalone | 0 / 0 / 0 / 6 / 0 | — |
 | `molecular_dynamics` | standalone | 0 / 0 / 0 / 37 / 0 | — |
 | `multiphase` | standalone | 0 / 0 / 0 / 16 / 0 | — |
