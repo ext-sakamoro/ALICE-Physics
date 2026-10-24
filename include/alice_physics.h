@@ -88,8 +88,17 @@ AlicePhysicsWorld* alice_physics_world_create_with_config(AlicePhysicsConfig con
 /** Destroy a physics world. */
 void alice_physics_world_destroy(AlicePhysicsWorld* world);
 
-/** Step the simulation by dt seconds. */
-void alice_physics_world_step(AlicePhysicsWorld* world, double dt);
+/** Step the simulation by dt seconds. Returns 1 when the step ran without a
+ * fault, 0 otherwise (null world, a faulted world: refused and unchanged, a
+ * fault raised during the step, or a panic: the world is then faulted). */
+uint8_t alice_physics_world_step(AlicePhysicsWorld* world, double dt);
+
+/** The world's recorded fault: 0 none, 1 participant, 2 rigid overflow,
+ * 3 participant force out of range, 4 field commit out of range, 5 a panic
+ * left a call part way through; 255 for a null world. While it is not 0 every
+ * call that changes the world is refused; reading calls still answer from a
+ * state that may be half-updated. Read what is needed, then destroy it. */
+uint8_t alice_physics_world_fault(const AlicePhysicsWorld* world);
 
 /** Step the simulation N times with fixed dt (batch stepping, amortizes FFI overhead). */
 uint8_t alice_physics_world_step_n(AlicePhysicsWorld* world, double dt, uint32_t steps);
