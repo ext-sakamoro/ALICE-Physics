@@ -37,6 +37,15 @@ on:
         required: false
         default: ''
         type: string
+      test_args:
+        # the tests the scoped job runs for each mutant (after `--` of cargo mutants);
+        # the default keeps the lib tests, and a scope whose oracles are an
+        # integration test names it, e.g. "--test maxwell_fdtd_state" (2026-10-24:
+        # --lib on such a scope missed 72 of 76 because nothing reached the code)
+        description: 'scoped 測定で各 mutant に走らせる試験 (cargo test の引数)、既定 --lib'
+        required: false
+        default: '--lib'
+        type: string
   pull_request:
     branches: [main]
     paths:
@@ -72,6 +81,9 @@ jobs:
       - name: Install cargo-mutants
         uses: taiki-e/install-action@cargo-mutants
       - name: Mutants (scoped)
+        env:
+          SCOPE: ${{ inputs.scope }}
+          TEST_ARGS: ${{ inputs.test_args }}
         run: |
           # --build-timeout + ulimit: a mutated `const fn` (math.rs CORDIC tables) can
           # send rustc const-eval into an unbounded loop that the test timeout never
@@ -80,17 +92,33 @@ jobs:
           # anything else (4 = unmutated baseline red, 1 = usage) fails the job —
           # a red baseline measured nothing and used to be hidden by `|| true`.
           ulimit -v 6291456
+          # scope and test_args are words of cargo flags, paths and names only (no
+          # shell characters), and each is split into words on purpose below
+          if [[ ! "$SCOPE" =~ ^[A-Za-z0-9_=./\ -]+$ ]]; then
+            echo "::error::scope must be cargo-mutants flags, paths and names, got '$SCOPE'"; exit 1
+          fi
+          if [[ -z "$TEST_ARGS" || ! "$TEST_ARGS" =~ ^[A-Za-z0-9_=.\ -]+$ ]]; then
+            echo "::error::test_args must be cargo test flags and target names, got '$TEST_ARGS'"; exit 1
+          fi
           set +e
-          cargo mutants ${{ inputs.scope }} --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
-            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- --lib
+          # shellcheck disable=SC2086  # SCOPE and TEST_ARGS are split into words on purpose
+          cargo mutants $SCOPE --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- $TEST_ARGS
           rc=$?
           set -e
           case $rc in 0|2|3) ;; *) echo "::error::cargo-mutants exit $rc (baseline red or usage error)"; exit $rc;; esac
+      # a run whose tests never reach the scope reports every mutant missed: that
+      # is a run that compared nothing, not a low score (scripts/mutants_scoped_guard.py)
+      - name: Mutants (scoped) measured something
+        run: python3 scripts/mutants_scoped_guard.py mutants.out
       - name: Summary
         if: always()
+        env:
+          SCOPE: ${{ inputs.scope }}
+          TEST_ARGS: ${{ inputs.test_args }}
         run: |
           {
-            echo "## cargo-mutants scoped: \`${{ inputs.scope }}\` (features: ${{ matrix.features == '' && 'default' || matrix.features }})"
+            echo "## cargo-mutants scoped: \`$SCOPE\` (features: ${{ matrix.features == '' && 'default' || matrix.features }}, tests: \`$TEST_ARGS\`)"
             if [ -f mutants.out/outcomes.json ]; then
               python3 - <<'PY'
           import json
@@ -270,7 +298,7 @@ jobs:
 
   loom:
     name: loom (batch colouring protocol, --cfg loom)
-    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
+    if: github.event.schedule != '30 17 * * 1-6' && (github.event_name != 'workflow_dispatch' || inputs.scope == '')  # the nightly run is the in-diff mutants only; a scoped dispatch is the mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -289,7 +317,7 @@ jobs:
 
   miri:
     name: Miri (UB 検出、parallel feature)
-    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
+    if: github.event.schedule != '30 17 * * 1-6' && (github.event_name != 'workflow_dispatch' || inputs.scope == '')  # the nightly run is the in-diff mutants only; a scoped dispatch is the mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 120
     steps:
@@ -333,7 +361,7 @@ jobs:
     # PR では走らせない (本 file の他 job と同じ方針): `runtime:` の 1 本だけで
     # CI Test job に +154..+309 s かかる実測がある (armaly_backward_step.rs の理由文)
     name: Ignored tests (runtime = must pass / src gap = must fail)
-    if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6'
+    if: github.event_name != 'pull_request' && github.event.schedule != '30 17 * * 1-6' && (github.event_name != 'workflow_dispatch' || inputs.scope == '')
     runs-on: ubuntu-latest
     timeout-minutes: 180
     steps:
@@ -358,7 +386,7 @@ jobs:
 
   bench-regress:
     name: Bench regression (criterion, informational)
-    if: github.event.schedule != '30 17 * * 1-6'  # the nightly run is the in-diff mutants only
+    if: github.event.schedule != '30 17 * * 1-6' && (github.event_name != 'workflow_dispatch' || inputs.scope == '')  # the nightly run is the in-diff mutants only; a scoped dispatch is the mutants only
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
