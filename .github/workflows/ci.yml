@@ -348,7 +348,7 @@ jobs:
       # (alice_physics_world_step, feature ffi): the world records a fault and refuses the next step
       - name: Test (participant panic leaves the world faulted, ffi)
         shell: bash
-        run: scripts/run_tests.sh participant_panic_leaves_world_faulted=2 -- cargo test --test participant_panic_leaves_world_faulted --features "ffi"
+        run: scripts/run_tests.sh participant_panic_leaves_world_faulted=2,faulted_world_refuses_changes=5 -- cargo test --test participant_panic_leaves_world_faulted --test faulted_world_refuses_changes --features "ffi"
 
       # The WebAssembly and Python bindings were compiled by no CI step: the
       # wasm unit tests run natively, the Python module (an extension module
