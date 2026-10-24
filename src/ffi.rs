@@ -31,6 +31,7 @@ use crate::solver::{PhysicsWorld, RigidBody, SolverConfig};
 /// null). Before 1.2.0 only `alice_physics_world_step` / `_step_n` were
 /// guarded (31 exported functions, 29 raw).
 mod guard {
+    use crate::solver::PhysicsWorld;
     use std::cell::RefCell;
     use std::panic::{catch_unwind, AssertUnwindSafe};
 
@@ -65,19 +66,72 @@ mod guard {
         match catch_unwind(AssertUnwindSafe(body)) {
             Ok(v) => v,
             Err(payload) => {
-                let msg = payload
-                    .downcast_ref::<&str>()
-                    .map(|s| (*s).to_string())
-                    .or_else(|| payload.downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "panic with non-string payload".to_string());
-                set_last_error(format!("alice-physics FFI panic: {msg}"));
+                set_last_error(format!(
+                    "alice-physics FFI panic: {}",
+                    panic_text(&*payload)
+                ));
                 default
             }
         }
     }
+
+    fn panic_text(payload: &(dyn std::any::Any + Send)) -> String {
+        payload
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| payload.downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "panic with non-string payload".to_string())
+    }
+
+    /// [`ffi_guard`] for a call that changes the world behind `world`: a
+    /// panic records [`crate::world_participant::WorldFault::Panicked`] on that world (it may have
+    /// changed part way), so every later changing call on it is refused
+    /// ([`writable`]) and the host can read why
+    /// ([`super::alice_physics_world_fault`]).
+    ///
+    /// # Safety
+    /// `world` must be null or a valid pointer from `alice_physics_world_create*`.
+    #[inline]
+    pub unsafe fn ffi_guard_world<T>(
+        world: *mut PhysicsWorld,
+        default: T,
+        body: impl FnOnce() -> T,
+    ) -> T {
+        match catch_unwind(AssertUnwindSafe(body)) {
+            Ok(v) => v,
+            Err(payload) => {
+                if let Some(w) = world.as_mut() {
+                    w.record_panic();
+                }
+                set_last_error(format!(
+                    "alice-physics FFI panic: {}; the world is faulted",
+                    panic_text(&*payload)
+                ));
+                default
+            }
+        }
+    }
+
+    /// The world behind `world` for a call that changes it, or `None` (the
+    /// call returns its failure value) when it is null or faulted. A faulted
+    /// world records why in the error message; such a world may be
+    /// half-updated, so the host reads what it needs and destroys it.
+    ///
+    /// # Safety
+    /// `world` must be null or a valid pointer from `alice_physics_world_create*`.
+    pub unsafe fn writable<'a>(world: *mut PhysicsWorld) -> Option<&'a mut PhysicsWorld> {
+        let w = world.as_mut()?;
+        if let Some(f) = w.fault() {
+            set_last_error(format!(
+                "alice-physics: the world is faulted ({f}); it is not changed, read it and destroy it"
+            ));
+            return None;
+        }
+        Some(w)
+    }
 }
 
-use guard::ffi_guard;
+use guard::{ffi_guard, ffi_guard_world, writable};
 
 /// Most recent panic message caught at the FFI boundary on this thread, as a
 /// heap-allocated C string, or null when there is none. Free it with
@@ -262,22 +316,34 @@ pub unsafe extern "C" fn alice_physics_world_destroy(world: *mut PhysicsWorld) {
 
 /// Step the simulation by dt seconds (as f64, converted to Fix128).
 ///
-/// Returns 1 on success, 0 on failure (null pointer or internal panic).
+/// Returns 1 when the step ran without a fault, 0 otherwise: a null pointer,
+/// a world already faulted (the step is refused and changes nothing), a fault
+/// raised during the step (a participant failed; the step ran to its end), or
+/// a panic (the world is then faulted). `alice_physics_last_error` says which,
+/// and `alice_physics_world_fault` gives the world's fault.
 ///
 /// # Safety
 /// `world` must be a valid pointer.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_step(world: *mut PhysicsWorld, dt: f64) -> u8 {
-    ffi_guard(0, || {
-        let w = match world.as_mut() {
-            Some(w) => w as *mut PhysicsWorld,
-            None => return 0,
+    ffi_guard_world(world, 0, || {
+        let Some(w) = writable(world) else {
+            return 0;
         };
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            (*w).step(Fix128::from_f64(dt));
-        }));
-        result.is_ok() as u8
+        step_result(w.try_step(Fix128::from_f64(dt)))
     })
+}
+
+/// 1 for a step that ran without a fault, else 0 with the reason recorded
+/// for `alice_physics_last_error`.
+fn step_result(r: Result<(), crate::world_participant::StepError>) -> u8 {
+    match r {
+        Ok(()) => 1,
+        Err(e) => {
+            guard::set_last_error(format!("alice-physics: {e}"));
+            0
+        }
+    }
 }
 
 /// Step the simulation N times with fixed dt (batch stepping).
@@ -293,18 +359,47 @@ pub unsafe extern "C" fn alice_physics_world_step_n(
     dt: f64,
     steps: u32,
 ) -> u8 {
-    ffi_guard(0, || {
-        let w = match world.as_mut() {
-            Some(w) => w as *mut PhysicsWorld,
-            None => return 0,
+    ffi_guard_world(world, 0, || {
+        let Some(w) = writable(world) else {
+            return 0;
         };
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            let dt_fix = Fix128::from_f64(dt);
-            for _ in 0..steps {
-                (*w).step(dt_fix);
+        let dt_fix = Fix128::from_f64(dt);
+        for _ in 0..steps {
+            if step_result(w.try_step(dt_fix)) == 0 {
+                return 0;
             }
-        }));
-        result.is_ok() as u8
+        }
+        1
+    })
+}
+
+/// The world's recorded fault, as the code the snapshot uses: 0 none, 1 a
+/// participant failed (its own fault, or it panicked), 2 the rigid
+/// integration left the range of Fix128, 3 a participant force left the
+/// range, 4 a field commit left the range, 5 a panic left a call on the world
+/// part way through. 255 for a null world.
+///
+/// Call this first after any call returned its failure value. While it is not
+/// 0, every call that changes the world is refused and changes nothing; the
+/// reading calls (positions, velocities, observations, casts, counts,
+/// `alice_physics_state_serialize`) still answer, from a state that may be
+/// half-updated. Read what is needed, then destroy the world.
+///
+/// # Safety
+/// `world` must be a valid pointer from `alice_physics_world_create*`, or null.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_fault(world: *const PhysicsWorld) -> u8 {
+    use crate::world_participant::WorldFault;
+    ffi_guard(u8::MAX, || match world.as_ref() {
+        Some(w) => match w.fault() {
+            None => 0,
+            Some(WorldFault::Participant { .. }) => 1,
+            Some(WorldFault::RigidOverflow) => 2,
+            Some(WorldFault::ForceOutOfRange { .. }) => 3,
+            Some(WorldFault::FieldOutOfRange { .. }) => 4,
+            Some(WorldFault::Panicked) => 5,
+        },
+        None => u8::MAX,
     })
 }
 
@@ -397,8 +492,8 @@ pub unsafe extern "C" fn alice_physics_world_set_velocities_batch(
     data: *const f64,
     count: u32,
 ) -> u8 {
-    ffi_guard(0, || {
-        let w = match world.as_mut() {
+    ffi_guard_world(world, 0, || {
+        let w = match writable(world) {
             Some(w) => w,
             None => return 0,
         };
@@ -433,8 +528,8 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulses_batch(
     data: *const f64,
     count: u32,
 ) -> u8 {
-    ffi_guard(0, || {
-        let w = match world.as_mut() {
+    ffi_guard_world(world, 0, || {
+        let w = match writable(world) {
             Some(w) => w,
             None => return 0,
         };
@@ -474,7 +569,7 @@ pub unsafe extern "C" fn alice_physics_body_add_dynamic(
     position: AliceVec3,
     mass: f64,
 ) -> u32 {
-    ffi_guard(u32::MAX, || match world.as_mut() {
+    ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
             let body = RigidBody::new_dynamic(position.to_vec3fix(), Fix128::from_f64(mass));
             w.add_body(body) as u32
@@ -492,7 +587,7 @@ pub unsafe extern "C" fn alice_physics_body_add_static(
     world: *mut PhysicsWorld,
     position: AliceVec3,
 ) -> u32 {
-    ffi_guard(u32::MAX, || match world.as_mut() {
+    ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
             let body = RigidBody::new_static(position.to_vec3fix());
             w.add_body(body) as u32
@@ -510,7 +605,7 @@ pub unsafe extern "C" fn alice_physics_body_add_sensor(
     world: *mut PhysicsWorld,
     position: AliceVec3,
 ) -> u32 {
-    ffi_guard(u32::MAX, || match world.as_mut() {
+    ffi_guard_world(world, u32::MAX, || match writable(world) {
         Some(w) => {
             let body = RigidBody::new_sensor(position.to_vec3fix());
             w.add_body(body) as u32
@@ -653,7 +748,7 @@ pub unsafe extern "C" fn alice_physics_body_set_position(
     body_id: u32,
     position: AliceVec3,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.position = position.to_vec3fix();
@@ -700,7 +795,7 @@ pub unsafe extern "C" fn alice_physics_body_set_velocity(
     body_id: u32,
     velocity: AliceVec3,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.velocity = velocity.to_vec3fix();
@@ -747,7 +842,7 @@ pub unsafe extern "C" fn alice_physics_body_set_restitution(
     body_id: u32,
     restitution: f64,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.restitution = Fix128::from_f64(restitution);
@@ -769,7 +864,7 @@ pub unsafe extern "C" fn alice_physics_body_set_friction(
     body_id: u32,
     friction: f64,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.friction = Fix128::from_f64(friction);
@@ -791,7 +886,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse(
     body_id: u32,
     impulse: AliceVec3,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.apply_impulse(impulse.to_vec3fix());
@@ -814,7 +909,7 @@ pub unsafe extern "C" fn alice_physics_body_apply_impulse_at(
     impulse: AliceVec3,
     point: AliceVec3,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => match w.bodies.get_mut(body_id as usize) {
             Some(b) => {
                 b.apply_impulse_at(impulse.to_vec3fix(), point.to_vec3fix());
@@ -868,8 +963,8 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
     y: f64,
     z: f64,
 ) {
-    ffi_guard((), || {
-        if let Some(w) = world.as_mut() {
+    ffi_guard_world(world, (), || {
+        if let Some(w) = writable(world) {
             w.config.gravity = Vec3Fix::new(
                 Fix128::from_f64(x),
                 Fix128::from_f64(y),
@@ -885,8 +980,8 @@ pub unsafe extern "C" fn alice_physics_world_set_gravity(
 /// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_world_set_substeps(world: *mut PhysicsWorld, substeps: u32) {
-    ffi_guard((), || {
-        if let Some(w) = world.as_mut() {
+    ffi_guard_world(world, (), || {
+        if let Some(w) = writable(world) {
             w.config.substeps = substeps as usize;
         }
     })
@@ -937,8 +1032,8 @@ pub unsafe extern "C" fn alice_physics_state_deserialize(
     data: *const u8,
     len: u32,
 ) -> u8 {
-    ffi_guard(0, || {
-        let w = match world.as_mut() {
+    ffi_guard_world(world, 0, || {
+        let w = match writable(world) {
             Some(w) => w,
             None => return 0,
         };
@@ -1043,7 +1138,7 @@ pub unsafe extern "C" fn alice_physics_body_set_collision_radius(
     body_id: u32,
     radius: f64,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => u8::from(binding_api::set_collision_radius(
             w,
             body_id as usize,
@@ -1063,7 +1158,7 @@ pub unsafe extern "C" fn alice_physics_body_clear_collision_radius(
     world: *mut PhysicsWorld,
     body_id: u32,
 ) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => u8::from(binding_api::clear_collision_radius(w, body_id as usize)),
         None => 0,
     })
@@ -1083,8 +1178,8 @@ pub unsafe extern "C" fn alice_physics_body_add_shaped(
     density: f64,
     position: AliceVec3,
 ) -> u32 {
-    ffi_guard(u32::MAX, || {
-        let Some(w) = world.as_mut() else {
+    ffi_guard_world(world, u32::MAX, || {
+        let Some(w) = writable(world) else {
             return u32::MAX;
         };
         let (Some(s), Some(p)) = (shape.to_shape(), vec3_arg(&position)) else {
@@ -1105,8 +1200,8 @@ pub unsafe extern "C" fn alice_physics_body_set_shape(
     body_id: u32,
     shape: AlicePhysicsShape,
 ) -> u8 {
-    ffi_guard(0, || {
-        let (Some(w), Some(s)) = (world.as_mut(), shape.to_shape()) else {
+    ffi_guard_world(world, 0, || {
+        let (Some(w), Some(s)) = (writable(world), shape.to_shape()) else {
             return 0;
         };
         u8::from(binding_api::set_body_shape(w, body_id as usize, s))
@@ -1125,8 +1220,8 @@ pub unsafe extern "C" fn alice_physics_static_add_plane(
     normal: AliceVec3,
     offset: f64,
 ) -> u32 {
-    ffi_guard(u32::MAX, || {
-        let (Some(w), Some(n)) = (world.as_mut(), vec3_arg(&normal)) else {
+    ffi_guard_world(world, u32::MAX, || {
+        let (Some(w), Some(n)) = (writable(world), vec3_arg(&normal)) else {
             return u32::MAX;
         };
         index_result(binding_api::add_static_plane(w, n, offset))
@@ -1150,8 +1245,8 @@ pub unsafe extern "C" fn alice_physics_static_add_heightfield(
     spacing: f64,
     origin: AliceVec3,
 ) -> u32 {
-    ffi_guard(u32::MAX, || {
-        let (Some(w), Some(o)) = (world.as_mut(), vec3_arg(&origin)) else {
+    ffi_guard_world(world, u32::MAX, || {
+        let (Some(w), Some(o)) = (writable(world), vec3_arg(&origin)) else {
             return u32::MAX;
         };
         let Some(count) = (width as usize).checked_mul(depth as usize) else {
@@ -1185,8 +1280,8 @@ pub unsafe extern "C" fn alice_physics_static_add_trimesh(
     indices: *const u32,
     index_count: u32,
 ) -> u32 {
-    ffi_guard(u32::MAX, || {
-        let Some(w) = world.as_mut() else {
+    ffi_guard_world(world, u32::MAX, || {
+        let Some(w) = writable(world) else {
             return u32::MAX;
         };
         if vertices.is_null() || indices.is_null() || vertex_count == 0 || index_count == 0 {
@@ -1208,7 +1303,7 @@ pub unsafe extern "C" fn alice_physics_static_add_trimesh(
 /// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_static_remove(world: *mut PhysicsWorld, index: u32) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => u8::from(binding_api::remove_static_collider(w, index as usize)),
         None => 0,
     })
@@ -1227,8 +1322,8 @@ pub unsafe extern "C" fn alice_physics_static_count(world: *const PhysicsWorld) 
 }
 
 unsafe fn add_joint_ffi(world: *mut PhysicsWorld, make: impl FnOnce() -> Option<Joint>) -> u32 {
-    ffi_guard(u32::MAX, || {
-        let Some(w) = world.as_mut() else {
+    ffi_guard_world(world, u32::MAX, || {
+        let Some(w) = writable(world) else {
             return u32::MAX;
         };
         match make() {
@@ -1384,7 +1479,7 @@ pub unsafe extern "C" fn alice_physics_joint_add_spring(
 /// `world` must be a valid pointer from `alice_physics_world_create*`.
 #[no_mangle]
 pub unsafe extern "C" fn alice_physics_joint_remove(world: *mut PhysicsWorld, index: u32) -> u8 {
-    ffi_guard(0, || match world.as_mut() {
+    ffi_guard_world(world, 0, || match writable(world) {
         Some(w) => u8::from(binding_api::remove_joint(w, index as usize)),
         None => 0,
     })

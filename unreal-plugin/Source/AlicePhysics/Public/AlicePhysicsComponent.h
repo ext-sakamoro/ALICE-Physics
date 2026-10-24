@@ -210,6 +210,13 @@ public:
     UFUNCTION(BlueprintCallable, Category = "ALICE Physics|Diagnostics")
     void ClearLastError();
 
+    /** The world's recorded fault: 0 none, 1 participant, 2 rigid overflow, 3 participant
+     *  force out of range, 4 field commit out of range, 5 a panic left a call part way
+     *  through, -1 without a world. While it is not 0 every call that changes the world is
+     *  refused; reads still answer from a state that may be half-updated. */
+    UFUNCTION(BlueprintCallable, Category = "ALICE Physics|Diagnostics")
+    int32 GetWorldFault() const;
+
     /** Library version string. */
     UFUNCTION(BlueprintCallable, Category = "ALICE Physics|Diagnostics")
     static FString GetLibraryVersion();
