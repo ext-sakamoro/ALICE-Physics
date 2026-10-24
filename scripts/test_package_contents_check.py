@@ -26,8 +26,7 @@ GOOD = [
     "tests/fixtures/world_snapshot_v1_stacked.bin",
     "tests/fixtures/world_snapshot_v2_stacked.bin",
     "README.md",
-    "LICENSE-AGPL",
-    "LICENSE-COMMERCIAL.md",
+    "LICENSE-Proprietary",
 ]
 TARGETS = ["src/lib.rs", "tests/snapshot.rs"]
 SOURCES = {
@@ -53,7 +52,7 @@ EXPECTED_FORBIDDEN_DIRS = [
     "target",
 ]
 EXPECTED_FORBIDDEN_FILES = ["rust-toolchain.toml", "rust-toolchain"]
-EXPECTED_REQUIRED = ["Cargo.toml", "src/lib.rs", "README.md", "LICENSE-AGPL", "LICENSE-COMMERCIAL.md"]
+EXPECTED_REQUIRED = ["Cargo.toml", "src/lib.rs", "README.md", "LICENSE-Proprietary"]
 
 
 def run(paths=GOOD, targets=TARGETS, sources=SOURCES, tracked=TRACKED):
@@ -95,6 +94,11 @@ class PackageContents(unittest.TestCase):
         for req in EXPECTED_REQUIRED:
             errs, _ = run(paths=[p for p in GOOD if p != req], targets=[t for t in TARGETS if t != req])
             self.assertEqual(errs, [f"required file missing from the package: {req}"], req)
+
+    def test_previous_licence_files_do_not_stand_in(self) -> None:
+        old = [p for p in GOOD if p != "LICENSE-Proprietary"] + ["LICENSE-AGPL", "LICENSE-COMMERCIAL.md"]
+        errs, _ = run(paths=old, tracked=[p for p in old if not p.startswith(("Cargo.toml.orig", "Cargo.lock"))])
+        self.assertEqual(errs, ["required file missing from the package: LICENSE-Proprietary"])
 
     def test_missing_target_fails(self) -> None:
         errs, _ = run(

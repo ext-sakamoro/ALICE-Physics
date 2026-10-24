@@ -34,4 +34,5 @@ Documentation, features and the determinism contract: see the
 
 ## License
 
-AGPL-3.0-or-later, or a commercial license (see `LICENSE-COMMERCIAL.md`).
+`LicenseRef-Proprietary` (see `LICENSE-Proprietary`). Versions published before keep
+the licence they were published under.
