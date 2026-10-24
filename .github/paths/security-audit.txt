@@ -40,8 +40,7 @@ scripts/package_contents_check.py
 scripts/test_package_contents_check.py
 scripts/package_git_patches.py
 scripts/test_package_git_patches.py
-LICENSE-AGPL
-LICENSE-COMMERCIAL.md
+LICENSE-Proprietary
 # the changes and gate jobs
 scripts/changed_paths.py
 .github/workflows/security-audit.yml

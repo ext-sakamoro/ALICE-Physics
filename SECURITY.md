@@ -12,7 +12,7 @@
 If you discover a security vulnerability in ALICE-Physics, please report it responsibly:
 
 1. **Do NOT** open a public GitHub issue for security vulnerabilities.
-2. Email: ext-sakamoro@github.com with subject `[SECURITY] ALICE-Physics: <brief description>`.
+2. Reports: https://extoria.co.jp/ (subject `[SECURITY] ALICE-Physics: <brief description>`).
 3. Include: version, steps to reproduce, potential impact.
 4. We will acknowledge receipt within 48 hours and provide a fix timeline.
 

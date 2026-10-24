@@ -79,4 +79,5 @@ publishes a new release changes nothing until the lock is updated.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under AGPL-3.0.
+By contributing, you agree that your contributions are distributed under
+`LicenseRef-Proprietary` (see [LICENSE-Proprietary](LICENSE-Proprietary)).

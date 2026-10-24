@@ -25,7 +25,7 @@
 //! `exposure` is re-read every frame and decays with a fixed `5 /s` when the
 //! caller stops supplying it. Making `n`, the prefactor and the exposure
 //! decay configurable adds fields to [`ErosionConfig`] and is scheduled for
-//! 2.0 (see `docs/ROADMAP.md`).
+//! 2.0.
 //!
 //! Author: Moroya Sakamoto
 
