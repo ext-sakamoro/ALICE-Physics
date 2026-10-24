@@ -75,6 +75,9 @@ void     alice_physics_world_destroy(AlicePhysicsWorldHandle world);
 uint8_t  alice_physics_world_step(AlicePhysicsWorldHandle world, double dt);
 uint8_t  alice_physics_world_step_n(AlicePhysicsWorldHandle world, double dt, uint32_t steps);
 uint32_t alice_physics_world_body_count(const AlicePhysicsWorldHandle world);
+/* 0 none, 1 participant, 2 rigid overflow, 3 force out of range, 4 field out of range,
+ * 5 a panic left a call part way through, 255 null; while not 0, changing calls are refused */
+uint8_t  alice_physics_world_fault(const AlicePhysicsWorldHandle world);
 
 // --- Batch accessors ---
 uint8_t  alice_physics_world_get_positions_batch(const AlicePhysicsWorldHandle world, double* out, uint32_t out_capacity);
@@ -220,6 +223,7 @@ public:
     bool Step(double Dt) { return alice_physics_world_step(Handle, Dt) != 0; }
     bool StepN(double Dt, uint32_t Steps) { return alice_physics_world_step_n(Handle, Dt, Steps) != 0; }
     uint32_t BodyCount() const { return alice_physics_world_body_count(Handle); }
+    uint8_t Fault() const { return alice_physics_world_fault(Handle); }
 
     // Body management
     uint32_t AddDynamic(AliceVec3 Pos, double Mass) { return alice_physics_body_add_dynamic(Handle, Pos, Mass); }

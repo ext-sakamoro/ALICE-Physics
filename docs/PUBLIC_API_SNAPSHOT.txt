@@ -4547,6 +4547,7 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_world_create() -> *mut alice_physics_core::solver::PhysicsWorld
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_world_create_with_config(alice_physics_core::ffi::AlicePhysicsConfig) -> *mut alice_physics_core::solver::PhysicsWorld
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_destroy(*mut alice_physics_core::solver::PhysicsWorld)
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_fault(*const alice_physics_core::solver::PhysicsWorld) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_get_positions_batch(*const alice_physics_core::solver::PhysicsWorld, *mut f64, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_get_velocities_batch(*const alice_physics_core::solver::PhysicsWorld, *mut f64, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_overlap_sphere(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryTarget, u32) -> u32
@@ -13545,7 +13546,7 @@ impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
 pub fn alice_physics_core::solver::PhysicsWorld::clear_fault(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::declare_field(&mut self, alice_physics_core::world_participant::PortId, alice_physics_core::world_participant::FieldLayout, alice_physics_core::world_participant::FieldMode) -> core::result::Result<(), alice_physics_core::solver::DeclareFieldError>
-pub const fn alice_physics_core::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics_core::world_participant::WorldFault>
+pub fn alice_physics_core::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics_core::world_participant::WorldFault>
 pub const fn alice_physics_core::solver::PhysicsWorld::fields(&self) -> &alice_physics_core::world_participant::FieldBoard
 pub fn alice_physics_core::solver::PhysicsWorld::observe_body_checked(&self, usize) -> core::option::Option<alice_physics_core::world_participant::Observed<alice_physics_core::solver::BodyObservation>>
 pub fn alice_physics_core::solver::PhysicsWorld::observe_participant(&self, usize) -> core::option::Option<alice_physics_core::world_participant::Observed<alice_physics_core::world_participant::ObservationSink>>
@@ -18325,7 +18326,7 @@ impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
 pub fn alice_physics_core::solver::PhysicsWorld::clear_fault(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::declare_field(&mut self, alice_physics_core::world_participant::PortId, alice_physics_core::world_participant::FieldLayout, alice_physics_core::world_participant::FieldMode) -> core::result::Result<(), alice_physics_core::solver::DeclareFieldError>
-pub const fn alice_physics_core::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics_core::world_participant::WorldFault>
+pub fn alice_physics_core::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics_core::world_participant::WorldFault>
 pub const fn alice_physics_core::solver::PhysicsWorld::fields(&self) -> &alice_physics_core::world_participant::FieldBoard
 pub fn alice_physics_core::solver::PhysicsWorld::observe_body_checked(&self, usize) -> core::option::Option<alice_physics_core::world_participant::Observed<alice_physics_core::solver::BodyObservation>>
 pub fn alice_physics_core::solver::PhysicsWorld::observe_participant(&self, usize) -> core::option::Option<alice_physics_core::world_participant::Observed<alice_physics_core::world_participant::ObservationSink>>
@@ -20471,6 +20472,7 @@ impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::world_particip
 #[non_exhaustive] pub enum alice_physics_core::world_participant::ParticipantFault
 pub alice_physics_core::world_participant::ParticipantFault::InvalidState
 pub alice_physics_core::world_participant::ParticipantFault::OutOfRange
+pub alice_physics_core::world_participant::ParticipantFault::Panicked
 impl alice_physics_core::world_participant::ParticipantFault
 pub const fn alice_physics_core::world_participant::ParticipantFault::from_tag(u8) -> core::option::Option<Self>
 pub const fn alice_physics_core::world_participant::ParticipantFault::tag(self) -> u8
@@ -20695,6 +20697,7 @@ pub alice_physics_core::world_participant::WorldFault::FieldOutOfRange::field: a
 pub alice_physics_core::world_participant::WorldFault::FieldOutOfRange::index: usize
 pub alice_physics_core::world_participant::WorldFault::ForceOutOfRange
 pub alice_physics_core::world_participant::WorldFault::ForceOutOfRange::body: usize
+pub alice_physics_core::world_participant::WorldFault::Panicked
 pub alice_physics_core::world_participant::WorldFault::Participant
 pub alice_physics_core::world_participant::WorldFault::Participant::fault: alice_physics_core::world_participant::ParticipantFault
 pub alice_physics_core::world_participant::WorldFault::Participant::index: usize
@@ -24999,7 +25002,7 @@ impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
 pub fn alice_physics_core::solver::PhysicsWorld::clear_fault(&mut self)
 pub fn alice_physics_core::solver::PhysicsWorld::declare_field(&mut self, alice_physics_core::world_participant::PortId, alice_physics_core::world_participant::FieldLayout, alice_physics_core::world_participant::FieldMode) -> core::result::Result<(), alice_physics_core::solver::DeclareFieldError>
-pub const fn alice_physics_core::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics_core::world_participant::WorldFault>
+pub fn alice_physics_core::solver::PhysicsWorld::fault(&self) -> core::option::Option<alice_physics_core::world_participant::WorldFault>
 pub const fn alice_physics_core::solver::PhysicsWorld::fields(&self) -> &alice_physics_core::world_participant::FieldBoard
 pub fn alice_physics_core::solver::PhysicsWorld::observe_body_checked(&self, usize) -> core::option::Option<alice_physics_core::world_participant::Observed<alice_physics_core::solver::BodyObservation>>
 pub fn alice_physics_core::solver::PhysicsWorld::observe_participant(&self, usize) -> core::option::Option<alice_physics_core::world_participant::Observed<alice_physics_core::world_participant::ObservationSink>>

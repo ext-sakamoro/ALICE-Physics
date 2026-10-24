@@ -45,7 +45,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `trimesh` | step | 11 / 0 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `world_participant` | step | 40 / 23 / 0 / 28 / 0 | C ABI, Python, WebAssembly |
+| `world_participant` | step | 40 / 23 / 0 / 29 / 0 | C ABI, Python, WebAssembly |
 | `audio_physics` | world API | 0 / 9 / 0 / 7 / 0 | — |
 | `contact_viz` | world API | 0 / 5 / 0 / 0 / 0 | — |
 | `debug_render` | world API | 0 / 23 / 0 / 5 / 0 | — |
@@ -57,7 +57,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sdf_ccd` | world API (step 2 of 6 items) | 2 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `sensors` | world API | 0 / 19 / 0 / 11 / 0 | — |
 | `shape` | world API (step 4 of 10 items) | 4 / 6 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
-| `solver` | world API (step 51 of 201 items) | 51 / 120 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
+| `solver` | world API (step 54 of 203 items) | 54 / 119 / 7 / 23 / 0 | C ABI, Python, WebAssembly |
 | `world_character` | world API | 0 / 2 / 0 / 0 / 0 | — |
 | `world_shape_query` | world API (step 3 of 7 items) | 3 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `ffi` | binding | 0 / 0 / 0 / 0 / 0 | — |
@@ -187,14 +187,14 @@ only an example calls is *standalone*, usable from Rust but not wired into
 
 ### C ABI (`--features ffi`)
 
-`src/ffi.rs` exports 55 `extern "C"` functions. Which consumers declare or call each one:
+`src/ffi.rs` exports 56 `extern "C"` functions. Which consumers declare or call each one:
 
 | Consumer | Functions used | Missing |
 |----------|---------------:|---------|
-| C header | 55 / 55 | — |
-| bindings header | 55 / 55 | — |
-| Unity C# | 55 / 55 | — |
-| Unreal Engine plugin | 43 / 55 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_set_velocities_batch` |
+| C header | 56 / 56 | — |
+| bindings header | 56 / 56 | — |
+| Unity C# | 56 / 56 | — |
+| Unreal Engine plugin | 44 / 56 | `alice_physics_body_apply_impulses_batch`, `alice_physics_body_get_info`, `alice_physics_body_get_position_fix128_raw`, `alice_physics_body_observe`, `alice_physics_world_cast_capsule`, `alice_physics_world_cast_ray`, `alice_physics_world_cast_sphere`, `alice_physics_world_create`, `alice_physics_world_get_positions_batch`, `alice_physics_world_get_velocities_batch`, `alice_physics_world_overlap_sphere`, `alice_physics_world_set_velocities_batch` |
 
 Why the missing functions are not wrapped (`scripts/abi-consumer-gaps.txt`):
 
