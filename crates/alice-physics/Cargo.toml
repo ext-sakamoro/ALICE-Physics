@@ -5,7 +5,8 @@ edition = "2021"
 resolver = "3"
 authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
 description = "Deterministic physics engine: 128-bit fixed-point rigid bodies with bit-exact, replayable results, typed observation and rollback for search and planning, plus FEM, CFD and 3D-print analysis modules (the API of alice-physics-core under its alice_physics paths)"
-license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
+license = "LicenseRef-Proprietary"
+publish = false
 repository = "https://github.com/ext-sakamoro/ALICE-Physics"
 homepage = "https://github.com/ext-sakamoro/ALICE-Physics"
 documentation = "https://docs.rs/alice-physics"
@@ -13,7 +14,7 @@ keywords = ["physics", "deterministic", "fixed-point", "xpbd", "simulation"]
 categories = ["game-development", "simulation", "science"]
 rust-version = "1.85"
 readme = "README.md"
-include = ["/src/**/*.rs", "/tests/**/*.rs", "/README.md", "/LICENSE-AGPL", "/LICENSE-COMMERCIAL.md"]
+include = ["/src/**/*.rs", "/tests/**/*.rs", "/README.md", "/LICENSE-Proprietary"]
 
 [lib]
 name = "alice_physics"

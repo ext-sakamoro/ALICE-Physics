@@ -51,8 +51,7 @@ REQUIRED = (
     "Cargo.toml",
     "src/lib.rs",
     "README.md",
-    "LICENSE-AGPL",
-    "LICENSE-COMMERCIAL.md",
+    "LICENSE-Proprietary",
 )
 
 EMBED_RE = re.compile(

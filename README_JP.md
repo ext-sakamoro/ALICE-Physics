@@ -9,7 +9,7 @@ Rust 向けの決定論的物理エンジン
 [![docs.rs](https://img.shields.io/docsrs/alice-physics)](https://docs.rs/alice-physics)
 [![MSRV](https://img.shields.io/crates/msrv/alice-physics)](#最小サポート-rust-バージョン)
 [![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
-[![License](https://img.shields.io/crates/l/alice-physics.svg)](#ライセンス)
+[![License](https://img.shields.io/badge/license-Proprietary-lightgrey)](LICENSE-Proprietary)
 
 ビット単位の再現が必須になる用途を想定している
 ロールバック / ロックステップ型のネットコード、サーバー側でのリプレイ検証、シミュレーションを分岐・巻き戻しながら進める探索・計画や世界モデル、再現性が求められる工学・研究計算などである
@@ -379,21 +379,16 @@ cargo bench --bench world_scale
 
 ## ライセンス
 
-`AGPL-3.0-or-later OR LicenseRef-Commercial` のデュアルライセンス
-どちらかを選んで使う
+この版から `LicenseRef-Proprietary`: ソースは閲覧用に公開しており、利用・複製・改変・配布には
+著作権者との書面での合意が必要 条文は [LICENSE-Proprietary](LICENSE-Proprietary)
+それより前に公開した版は、公開時のライセンスのまま
 
-| 選択肢 | 向いている場合 |
-|--------|---------------|
-| [AGPL-3.0-or-later](LICENSE-AGPL) | プロジェクト自体が AGPL 互換のオープンソース、または社内利用のみ |
-| [商用ライセンス](LICENSE-COMMERCIAL.md) | クローズドソース製品、プロプライエタリな SaaS、ファームウェア、エンジンプラグインの再配布 |
+ライセンスの問い合わせ: <contact@extoria.co.jp>
 
-AGPL は `alice-physics` をリンクするものすべてに及ぶ
-C ABI、Unity / Unreal バインディング、Python バインディング、WebAssembly ビルド経由のリンクも含む
-商用ライセンスの問い合わせ: <contact@extoria.co.jp>
-
-任意 feature の `neural` は、追加で AGPL ライセンスの crate を取り込む
-`analytics` と必須依存の `alice-det-math` は `Apache-2.0` (どちらも 0.5 から)、任意 feature の
-`privacy-crypto` が取り込む `alice-crypto` は本 crate と同じライセンス
+依存はこの crate が使う版のライセンスのまま: 任意 feature の `neural` は `alice-ml`
+(AGPL-3.0-or-later OR LicenseRef-Commercial) を、任意 feature の `privacy-crypto` は `alice-crypto`
+(AGPL-3.0-or-later OR LicenseRef-Commercial) を取り込む `analytics` と必須依存の
+`alice-det-math` は Apache-2.0
 
 Copyright (C) 2024-2026 Moroya Sakamoto
 
