@@ -413,7 +413,7 @@ step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
 
 step "participant panic leaves the world faulted (ffi)"
-scripts/run_tests.sh participant_panic_leaves_world_faulted=2,faulted_world_refuses_changes=5 -- cargo test --test participant_panic_leaves_world_faulted --test faulted_world_refuses_changes --features "ffi"
+scripts/run_tests.sh participant_panic_leaves_world_faulted=2,faulted_world_refuses_changes=5,panic_paths_fault_the_world=3,c_world_fault_codes=1 -- cargo test --test participant_panic_leaves_world_faulted --test faulted_world_refuses_changes --test panic_paths_fault_the_world --test c_world_fault_codes --features "ffi,gpu-solver-bridge"
 
 step "cargo test --lib (wasm module) + cargo check (python)"
 cargo test --lib --features "wasm" "wasm::"
