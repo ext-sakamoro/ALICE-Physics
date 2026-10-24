@@ -181,7 +181,6 @@ If a fixture matches on Mac aarch64 but fails on Linux x86 / Windows
 
 ## Related
 
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 Item E tracking.
 - [`docs/ECOSYSTEM_CONTRACTS.md`](./ECOSYSTEM_CONTRACTS.md) — partner-facing API freeze (Item H).
 - [`docs/MIGRATION_0.x_TO_1.0.md`](./MIGRATION_0.x_TO_1.0.md) — downstream migration guide (Item I).
 - `tests/determinism_golden.rs` — the tests themselves.

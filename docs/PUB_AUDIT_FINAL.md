@@ -92,4 +92,3 @@ Optional post-v1.0 work:
 - [`docs/PUB_AUDIT_ITERATION_5.md`](./PUB_AUDIT_ITERATION_5.md)
 - [`docs/PUB_AUDIT_ITERATION_6.md`](./PUB_AUDIT_ITERATION_6.md)
 - [`docs/PUBLIC_API_SNAPSHOT.txt`](./PUBLIC_API_SNAPSHOT.txt) — 19,406-item baseline post-Final
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 tracking
