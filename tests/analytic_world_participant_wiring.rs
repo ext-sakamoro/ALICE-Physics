@@ -455,19 +455,19 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
     }
 }
 
-/// The version 4 blob of a world without participants is the version 1
-/// payload followed by an empty `participants` section, no fault, an empty
-/// `fields` section and the continuous collision section of the default
-/// setting (off, threshold 1); besides the version, the length and the
-/// checksum, only the 64 identifier bytes of the version 4 header
-/// (`[16..80)`) are new, and the payload starts after them.
+/// The version 5 blob (the layout of version 4) of a world without
+/// participants is the version 1 payload followed by an empty `participants`
+/// section, no fault, an empty `fields` section and the continuous collision
+/// section of the default setting (off, threshold 1); besides the version,
+/// the length and the checksum, only the 64 identifier bytes of the header
+/// (`[16..80)`, from version 4) are new, and the payload starts after them.
 #[test]
-fn a_version_4_blob_extends_the_version_1_payload() {
+fn a_version_5_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = legacy_snapshot(v1);
     let v3 = w.snapshot_world();
     assert_eq!(&v3[0..4], &v1[0..4]);
-    assert_eq!(&v3[4..6], &4u16.to_le_bytes());
+    assert_eq!(&v3[4..6], &5u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let (l1, l3) = (len(v1), len(&v3));
     let mut tail = vec![0u8; 17];

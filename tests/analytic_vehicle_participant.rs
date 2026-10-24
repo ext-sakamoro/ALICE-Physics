@@ -646,8 +646,9 @@ fn drive_digest(backend: SolverBackend) -> String {
         .collect()
 }
 
-const DRIVE_XPBD: &str = "9d893d0e8f1b99f1f326dc85d3eff995032cf7670f73c8c713c34a5dcfd37388";
-const DRIVE_TGS: &str = "03aa00ef03909d5214eda8be72d7ee4c6363477edd54b5d7a7d77f2eed51b3bc";
+// world snapshot version 5: the version field and the checksum moved, the rest of the bytes did not
+const DRIVE_XPBD: &str = "754bc9904e05707949ef4192f25267481714f816b5f36922596560564ed3a485";
+const DRIVE_TGS: &str = "95aee663ac197f9caf0402ec452c4c566f1f011987720960731611dd7fe0f1a9";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every
