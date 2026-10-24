@@ -10,7 +10,7 @@ audit pass targets the P1 module category flagged in `PUB_AUDIT_ITERATION_1.md`:
 
 ## Roadmap adjustment vs Iteration 1 plan
 
-Iteration 1 listed `constraint` as a target under P1. **No such module exists** in the crate — the actual solver internals live in `solver.rs` plus the `solver_tgs*` family. This audit covers the real 9 modules; `docs/ROADMAP.md` Iteration 3+ targets have been updated accordingly.
+Iteration 1 listed `constraint` as a target under P1. **No such module exists** in the crate — the actual solver internals live in `solver.rs` plus the `solver_tgs*` family. This audit covers the real 9 modules.
 
 ## Findings summary
 
@@ -138,4 +138,3 @@ Result: **0 matches** for the P1 module-internal namespaces. `alice_physics::sol
 - [`docs/PUB_AUDIT_ITERATION_1.md`](./PUB_AUDIT_ITERATION_1.md) — priority-modules survey (0 changes)
 - [`docs/PUBLIC_API_SNAPSHOT.txt`](./PUBLIC_API_SNAPSHOT.txt) — 20,179-item baseline post-Iteration 2
 - [`docs/PUBLIC_API_SNAPSHOT.md`](./PUBLIC_API_SNAPSHOT.md) — regenerate + diff + roadmap wiring guide
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 Item B tracking

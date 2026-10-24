@@ -2,7 +2,7 @@
 // Unity C# Bindings (P/Invoke)
 //
 // Author: Moroya Sakamoto
-// License: AGPL-3.0
+// License: LicenseRef-Proprietary
 //
 // Usage:
 //   var world = new AlicePhysicsWorld();

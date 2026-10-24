@@ -31,9 +31,5 @@ file = "scripts/g2-rewrite-scan/Cargo.toml"
 reason = "syntax-tree scan run by scripts/g2_rewrite_check.py, not published (version 0.0.0)"
 
 [[historical]]
-file = "docs/ROADMAP.md"
-reason = "a dated log of past releases (0.14 previews, 1.0.0); the current version is in Cargo.toml and README"
-
-[[historical]]
 file = "docs/MIGRATION_0.x_TO_1.0.md"
 reason = "the 0.x to 1.0 migration guide shows the old and the new requirement on purpose"

@@ -124,7 +124,7 @@ $ cargo search alice-analytics
 
 ## OQ2 の 3 択 (α/β/γ) 実データからの判定
 
-ROADMAP.md OQ2 で挙げた 3 案:
+OQ2 で挙げた 3 案:
 
 ### 案 (a): 依存 chain publish 先行 (sibling を先に crates.io へ)
 
@@ -185,7 +185,7 @@ path dep import 4 箇所を fix する追加作業が **v0.14.0 stable landing �
 
 ## 実施タイムライン更新
 
-ROADMAP.md § v0.16.0 section に本 findings を反映、以下を追加:
+v0.16.0 の計画に本 findings を反映、以下を追加:
 
 - **J-1** (v0.14.0 内): B3 の path dep drift 4 箇所を修正 (sibling API を最新に追従)
 - **J-2** (v0.15.0 内): bridge feature の削除 preview commit (`neural` / `replay` / `analytics` 削除案の PR draft、CI で all-features build が pass することを確認)
@@ -200,6 +200,5 @@ ROADMAP.md § v0.16.0 section に本 findings を反映、以下を追加:
 
 ## 関連
 
-- ROADMAP.md § v0.16.0 / OQ2 (本 doc の受け皿)
 - ADR-002 (2026-09-12): v1.0.0 前に crates.io publish 事前試験実施
 - ALICE-SDF v1.7.7 CHANGELOG: bridge feature 削除 pattern の pre-experience source

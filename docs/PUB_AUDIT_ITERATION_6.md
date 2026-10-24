@@ -81,4 +81,3 @@ The mechanical "obvious internal leaks" cleanup phase of Item B is done.
 - [`docs/PUB_AUDIT_ITERATION_4.md`](./PUB_AUDIT_ITERATION_4.md) — P3 CFD internals (31 changes)
 - [`docs/PUB_AUDIT_ITERATION_5.md`](./PUB_AUDIT_ITERATION_5.md) — P4 structural internals (30 changes)
 - [`docs/PUBLIC_API_SNAPSHOT.txt`](./PUBLIC_API_SNAPSHOT.txt) — 19,956-item baseline post-Iteration 6
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 Item B tracking

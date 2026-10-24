@@ -5,9 +5,10 @@ edition = "2021"
 # MSRV-aware dependency resolution (cargo 1.84+); paired with the CI `msrv` job
 # that compiles with exactly `rust-version` (std + no_std) so the claim is verified.
 resolver = "3"
-authors = ["Moroya Sakamoto <sakamoro@alicelaw.net>"]
+authors = ["Moroya Sakamoto"]
 description = "Deterministic physics engine: 128-bit fixed-point rigid bodies with bit-exact, replayable results, typed observation and rollback for search and planning, plus FEM, CFD and 3D-print analysis modules"
-license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
+license = "LicenseRef-Proprietary"
+publish = false
 repository = "https://github.com/ext-sakamoro/ALICE-Physics"
 homepage = "https://github.com/ext-sakamoro/ALICE-Physics"
 documentation = "https://docs.rs/alice-physics-core"
@@ -35,8 +36,7 @@ include = [
     "/include/alice_physics.h",
     "/README.md",
     "/README_JP.md",
-    "/LICENSE-AGPL",
-    "/LICENSE-COMMERCIAL.md",
+    "/LICENSE-Proprietary",
     "/TRADEMARK_NOTICE",
     "/CHANGELOG.md",
     "/SECURITY.md",
@@ -116,8 +116,8 @@ alice-analytics = { version = ">=0.5, <0.7", optional = true, default-features =
 # gated on `std`.
 alice-det-math = { version = "0.5.1", default-features = false }
 # Differential privacy: keyed ChaCha20, discrete Laplace and randomized response
-# with integer sampling (privacy::*). Same licence (AGPL-3.0-or-later OR
-# commercial), so the dependency is allowed in this direction
+# with integer sampling (privacy::*). alice-crypto is AGPL-3.0-or-later OR
+# LicenseRef-Commercial at this version
 alice-crypto = { version = "0.4", default-features = false, optional = true }
 # `PhysicsWorld::law_id` hashes the world's rules with SHA-256.
 sha2 = { version = "0.10", default-features = false }
