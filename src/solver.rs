@@ -5616,7 +5616,7 @@ impl PhysicsWorld {
         dt: Fix128,
     ) -> Result<(), crate::PeerMismatch> {
         crate::gpu_bridge::check_bridge("step_with_bridge", bridge)?;
-        self.step_with_bridge_unchecked(bridge, dt);
+        self.recording_panics(|w| w.step_with_bridge_unchecked(bridge, dt));
         Ok(())
     }
 
@@ -5713,7 +5713,7 @@ impl PhysicsWorld {
         dt: Fix128,
     ) -> Result<(), crate::PeerMismatch> {
         crate::gpu_bridge::check_bridge("substep_with_bridge", bridge)?;
-        self.substep_with_bridge_unchecked(bridge, dt);
+        self.recording_panics(|w| w.substep_with_bridge_unchecked(bridge, dt));
         Ok(())
     }
 
