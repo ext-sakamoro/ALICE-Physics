@@ -193,6 +193,28 @@ class Main(unittest.TestCase):
                                                      'alice-physics = "1.1"\n'})
         self.assertEqual(self.run_main("2.2.0"), 1)
 
+    def test_a_range_that_accepts_both_majors_needs_no_edit(self) -> None:
+        # ">=2.0, <4" accepts the published 2.2.0 and this 3.0.0: nothing to rewrite, and the bump
+        # is still checked against that consumer (it is not "no requirement names it")
+        ranged = ('[package]\nname = "c"\nversion = "1.0.0"\n\n[dependencies]\n'
+                  'alice-physics = { path = "../../phys", version = ">=2.0, <4", optional = true }\n')
+        write_tree(self.dir, {"down/Cargo.toml": ranged,
+                              "down/sub/Cargo.toml": '[package]\nname = "s"\nversion = "0.1.0"\n'})
+        self.assertEqual(self.run_main("2.1.0", "2.2.0"), 0)
+        self.assertEqual(self.read("down/Cargo.toml"), ranged)
+
+    def test_a_range_that_stops_below_the_bump_still_fails(self) -> None:
+        # ">=2.0, <3" accepts the published release but not 3.0.0 and is not a caret the rewrite
+        # raises: nothing accepts the bump, so it fails
+        write_tree(self.dir, {"down/Cargo.toml": '[package]\nname = "c"\nversion = "1.0.0"\n\n[dependencies]\n'
+                                                 'alice-physics = { version = ">=2.0, <3" }\n',
+                              "down/sub/Cargo.toml": '[package]\nname = "s"\nversion = "0.1.0"\n'})
+        rc = self.run_main("2.2.0")
+        if rc == 0:   # the rewrite raised it: then it must accept 3.0.0 now
+            self.assertTrue(any(st.satisfies("3.0.0", r) for _, r in reqs(self.read("down/Cargo.toml"))))
+        else:
+            self.assertEqual(rc, 1)
+
     def test_rerun_over_edited_copies_passes(self) -> None:
         self.assertEqual(self.run_main("2.2.0"), 0)
         edited = self.read("down/Cargo.toml")

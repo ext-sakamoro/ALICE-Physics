@@ -24,9 +24,9 @@ requirement:
                  the requirement check that follows still fails on the former
 
 On a bump, at least one requirement in the trees must accept the new version
-and not the published one after the edit (the copies may already be edited by
-an earlier run); none fails, since the build would test the bump against no
-consumer. Each changed line is printed as a diff. After the edit the manifest is parsed
+after the edit (the copies may already be edited by an earlier run, and a range
+such as ">=3.0, <5" accepts both majors without an edit); none fails, since the
+build would test the bump against no consumer. Each changed line is printed as a diff. After the edit the manifest is parsed
 again and must equal the original with only those version fields replaced; a
 line that cannot be edited that way stops the script (exit 1) instead of
 leaving a requirement half-rewritten. A failure to read the index also exits
@@ -227,16 +227,17 @@ def main(argv: list[str] | None = None) -> int:
             n += sum(1 for r in report if r.startswith("+"))
             print("\n".join(report) if report else f"{os.path.basename(os.path.normpath(tree))}: no requirement rewritten")
         print(f"{n} requirement line(s) rewritten")
-        # after the edit (or on a rerun over copies already edited) the downstream must
-        # require the new major somewhere; none means nothing was rewritten that the build
-        # will test, and the bump would be checked against no consumer
+        # after the edit (or on a rerun over copies already edited) some downstream requirement
+        # must accept the new version; none means the bump would be checked against no
+        # consumer. A requirement that already accepts it (a range such as ">=3.0, <5", which
+        # accepts the published release too) counts: it needs no edit and the build tests it
         on_new = sum(1 for tree in args.tree for rel, text in st.manifests_on_disk(tree)
                      for _, req in st.dependency_requirements(text, crate, rel)
-                     if req is not None and st.satisfies(version, req) and not st.satisfies(published, req))
+                     if req is not None and st.satisfies(version, req))
         if on_new == 0:
-            raise ValueError(f"major bump to {version}, but no downstream requirement on {crate} names it "
-                             "(0 rewritten and none already raised)")
-        print(f"{on_new} downstream requirement(s) on {crate} accept {version} and not {published}")
+            raise ValueError(f"major bump to {version}, but no downstream requirement on {crate} accepts it "
+                             "(0 rewritten and none already accepting)")
+        print(f"{on_new} downstream requirement(s) on {crate} accept {version}")
     except (OSError, ValueError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
