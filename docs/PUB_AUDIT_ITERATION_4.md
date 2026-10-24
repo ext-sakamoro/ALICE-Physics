@@ -176,4 +176,3 @@ Result: **0 matches** for internal modules, 2 example refs to `multiphase::Grid3
 - [`docs/PUB_AUDIT_ITERATION_2.md`](./PUB_AUDIT_ITERATION_2.md) — P1 solver internals (4 changes)
 - [`docs/PUB_AUDIT_ITERATION_3.md`](./PUB_AUDIT_ITERATION_3.md) — P2 math / BVH / spatial (8 changes)
 - [`docs/PUBLIC_API_SNAPSHOT.txt`](./PUBLIC_API_SNAPSHOT.txt) — 20,064-item baseline post-Iteration 4
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 Item B tracking

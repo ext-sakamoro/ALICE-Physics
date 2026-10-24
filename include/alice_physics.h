@@ -4,7 +4,7 @@
  * C API Header
  *
  * Author: Moroya Sakamoto
- * License: AGPL-3.0
+ * License: LicenseRef-Proprietary
  */
 
 #pragma once

@@ -1,8 +1,8 @@
 # Public API Audit — Iteration 1 (Priority Modules)
 
 Ties into v1.0 roadmap **Item B** (Public API surface freeze). This first
-audit pass surveys the modules previously flagged as "priority" in
-`docs/ROADMAP.md` — the ones that landed most recently and were most likely
+audit pass surveys the modules previously flagged as "priority" — the
+ones that landed most recently and were most likely
 to have accidental `pub` exposure of internal helpers.
 
 **Date**: 2026-09-13
@@ -83,6 +83,4 @@ Iteration 1 completes the surveyed priority list without downstream-visible
 changes. The v0.14.0 stable ship gate for Item B is **now dependent on
 Iteration 2+** targeting the P1-P5 module categories above.
 
-See [`ROADMAP.md`](ROADMAP.md) § v0.14.0 stable — 継続開発 — the "B" line
-should now read "Iteration 2 P1 solver internals audit" as the next
-concrete work item.
+The next concrete work item is the Iteration 2 P1 solver internals audit.

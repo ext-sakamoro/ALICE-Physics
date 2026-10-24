@@ -2,7 +2,7 @@
 name = "clippy-lib-canary"
 version = "0.0.0"
 publish = false
-license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
+license = "LicenseRef-Proprietary"
 edition = "2021"
 description = "Calls every form .github/clippy-lib/clippy.toml forbids, so scripts/clippy_lib_gate.py can show the lint fires"
 
