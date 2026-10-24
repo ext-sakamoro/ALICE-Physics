@@ -725,7 +725,9 @@ use alice_physics::maxwell_fdtd::Material as _;
 use alice_physics::maxwell_fdtd::MaterialError as _;
 use alice_physics::maxwell_fdtd::MaterialMap as _;
 use alice_physics::maxwell_fdtd::YeeGrid as _;
+use alice_physics::maxwell_fdtd::YeeStateError as _;
 use alice_physics::maxwell_fdtd::COURANT_3D as _;
+use alice_physics::maxwell_fdtd::YEE_STATE_VERSION as _;
 use alice_physics::metric as _;
 use alice_physics::metric::MetricError as _;
 use alice_physics::metric::MetricWeights as _;
@@ -1935,7 +1937,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1917 paths, checked at compile time
+    // 1919 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

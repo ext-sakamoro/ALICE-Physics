@@ -570,6 +570,167 @@ impl fmt::Display for MaterialError {
 #[cfg(feature = "std")]
 impl std::error::Error for MaterialError {}
 
+/// Why [`YeeGrid::read_state`] refused a byte string.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum YeeStateError {
+    /// The leading version is not [`YEE_STATE_VERSION`].
+    Version {
+        /// Version found in the bytes.
+        found: u32,
+    },
+    /// A cell count is zero, or the lattice it describes does not fit in
+    /// `usize`.
+    Dimensions,
+    /// The option flags carry a bit this version does not define.
+    Flags {
+        /// Flag byte found in the bytes.
+        found: u8,
+    },
+    /// A flag sample is neither `0` nor `1`.
+    Bool {
+        /// Byte offset of the sample.
+        at: usize,
+    },
+    /// The bytes end before the state does.
+    Truncated {
+        /// Bytes the state needs from the offset where it ran out.
+        needed: usize,
+        /// Bytes that were left.
+        left: usize,
+    },
+    /// Bytes remain after the state.
+    Trailing {
+        /// Number of bytes left over.
+        extra: usize,
+    },
+}
+
+impl fmt::Display for YeeStateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Version { found } => write!(
+                f,
+                "lattice state version {found} is not {YEE_STATE_VERSION}"
+            ),
+            Self::Dimensions => write!(f, "lattice state has an empty or oversized lattice"),
+            Self::Flags { found } => write!(f, "lattice state flags {found:#04x} are not defined"),
+            Self::Bool { at } => write!(f, "lattice state byte {at} is a flag but not 0 or 1"),
+            Self::Truncated { needed, left } => write!(
+                f,
+                "lattice state is truncated: {needed} bytes needed, {left} left"
+            ),
+            Self::Trailing { extra } => {
+                write!(f, "lattice state has {extra} trailing bytes")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for YeeStateError {}
+
+/// Version written first by [`YeeGrid::write_state`].
+pub const YEE_STATE_VERSION: u32 = 1;
+
+const STATE_SOURCES: u8 = 1;
+const STATE_ABSORBER: u8 = 2;
+const STATE_MATERIALS: u8 = 4;
+
+fn put_u64(out: &mut Vec<u8>, v: u64) {
+    out.extend_from_slice(&v.to_le_bytes());
+}
+
+fn put_fixes(out: &mut Vec<u8>, values: &[Fix128]) {
+    for v in values {
+        out.extend_from_slice(&v.hi.to_le_bytes());
+        out.extend_from_slice(&v.lo.to_le_bytes());
+    }
+}
+
+fn put_bools(out: &mut Vec<u8>, values: &[bool]) {
+    out.extend(values.iter().map(|&b| u8::from(b)));
+}
+
+/// Reads a [`YeeGrid::write_state`] byte string front to back, checking the
+/// length before every allocation so a forged header cannot ask for more
+/// memory than the bytes it came with.
+struct StateReader<'a> {
+    bytes: &'a [u8],
+    at: usize,
+}
+
+impl<'a> StateReader<'a> {
+    fn take(&mut self, n: usize) -> Result<&'a [u8], YeeStateError> {
+        let left = self.bytes.len() - self.at;
+        if n > left {
+            return Err(YeeStateError::Truncated { needed: n, left });
+        }
+        let out = &self.bytes[self.at..self.at + n];
+        self.at += n;
+        Ok(out)
+    }
+
+    fn u8(&mut self) -> Result<u8, YeeStateError> {
+        Ok(self.take(1)?[0])
+    }
+
+    fn u32(&mut self) -> Result<u32, YeeStateError> {
+        let mut b = [0u8; 4];
+        b.copy_from_slice(self.take(4)?);
+        Ok(u32::from_le_bytes(b))
+    }
+
+    fn u64(&mut self) -> Result<u64, YeeStateError> {
+        let mut b = [0u8; 8];
+        b.copy_from_slice(self.take(8)?);
+        Ok(u64::from_le_bytes(b))
+    }
+
+    fn fixes(&mut self, n: usize) -> Result<Vec<Fix128>, YeeStateError> {
+        let len = n.checked_mul(16).ok_or(YeeStateError::Dimensions)?;
+        let raw = self.take(len)?;
+        Ok(raw
+            .chunks_exact(16)
+            .map(|c| {
+                let mut hi = [0u8; 8];
+                let mut lo = [0u8; 8];
+                hi.copy_from_slice(&c[..8]);
+                lo.copy_from_slice(&c[8..]);
+                Fix128 {
+                    hi: i64::from_le_bytes(hi),
+                    lo: u64::from_le_bytes(lo),
+                }
+            })
+            .collect())
+    }
+
+    fn fix(&mut self) -> Result<Fix128, YeeStateError> {
+        Ok(self.fixes(1)?[0])
+    }
+
+    fn bools(&mut self, n: usize) -> Result<Vec<bool>, YeeStateError> {
+        let start = self.at;
+        let raw = self.take(n)?;
+        raw.iter()
+            .enumerate()
+            .map(|(i, &b)| match b {
+                0 => Ok(false),
+                1 => Ok(true),
+                _ => Err(YeeStateError::Bool { at: start + i }),
+            })
+            .collect()
+    }
+
+    fn fixes3(&mut self, lens: [usize; 3]) -> Result<[Vec<Fix128>; 3], YeeStateError> {
+        Ok([
+            self.fixes(lens[0])?,
+            self.fixes(lens[1])?,
+            self.fixes(lens[2])?,
+        ])
+    }
+}
+
 /// Per-sample material coefficients, `[component axis][sample offset]`.
 ///
 /// ⚠️ Full lattice size whenever a map is installed, even an all-vacuum one:
@@ -1775,6 +1936,239 @@ impl YeeGrid {
                 }
             })
     }
+
+    // -- state: the exact lattice as bytes ------------------------------------
+
+    /// Append the whole lattice to `out`, every word of it.
+    ///
+    /// That is the six field components, and whichever of the current and
+    /// charge densities, the absorber's split half fields and loss
+    /// coefficients, and the material coefficients the lattice carries.
+    /// [`YeeGrid::read_state`] gives back a lattice equal to this one, so
+    /// both step to the same bits from then on.
+    ///
+    /// ⚠️ Rebuilding a lattice from [`YeeGrid::get`] and [`YeeGrid::set`]
+    /// does not do this when an absorber is present. Only the sum of a split
+    /// sample's two halves is visible, and `set` puts all of it in the first
+    /// half, so the rebuilt lattice takes different bits from its next step.
+    ///
+    /// Layout, little-endian: version `u32`, `nx` `ny` `nz` as `u64`, the
+    /// Courant number, an option byte (`1` sources, `2` absorber, `4`
+    /// materials), then `Ex Ey Ez Hx Hy Hz`. Then, if present: `Jx Jy Jz ρ`;
+    /// the twelve half fields in the order `Exy Exz Eyz Eyx Ezx Ezy Hxy Hxz Hyz Hyx Hzx Hzy` and, per axis, `C_a C_b` at
+    /// the `E` coordinates, `C_a C_b` at the `H` coordinates and the two
+    /// lossy flags; and, per axis, the `E` flags and `C_a C_b ε σ`, then the
+    /// `H` flags and `S/μ` `μ`. A [`Fix128`] is `hi` (`i64`) then `lo` (`u64`).
+    /// A flag is one byte, `0` or `1`.
+    pub fn write_state(&self, out: &mut Vec<u8>) {
+        out.extend_from_slice(&YEE_STATE_VERSION.to_le_bytes());
+        for n in [self.nx, self.ny, self.nz] {
+            put_u64(out, n as u64);
+        }
+        put_fixes(out, &[self.courant]);
+        let mut flags = 0u8;
+        if self.sources.is_some() {
+            flags |= STATE_SOURCES;
+        }
+        if self.absorber.is_some() {
+            flags |= STATE_ABSORBER;
+        }
+        if self.materials.is_some() {
+            flags |= STATE_MATERIALS;
+        }
+        out.push(flags);
+        for v in [&self.ex, &self.ey, &self.ez, &self.hx, &self.hy, &self.hz] {
+            put_fixes(out, v);
+        }
+        if let Some(src) = self.sources.as_deref() {
+            for v in [&src.jx, &src.jy, &src.jz, &src.rho] {
+                put_fixes(out, v);
+            }
+        }
+        if let Some(sp) = self.absorber.as_deref() {
+            for v in [
+                &sp.exy, &sp.exz, &sp.eyz, &sp.eyx, &sp.ezx, &sp.ezy, &sp.hxy, &sp.hxz, &sp.hyz,
+                &sp.hyx, &sp.hzx, &sp.hzy,
+            ] {
+                put_fixes(out, v);
+            }
+            for axis in 0..3 {
+                put_fixes(out, &sp.ca_e[axis]);
+                put_fixes(out, &sp.cb_e[axis]);
+                put_fixes(out, &sp.ca_h[axis]);
+                put_fixes(out, &sp.cb_h[axis]);
+                put_bools(out, &sp.lossy_e[axis]);
+                put_bools(out, &sp.lossy_h[axis]);
+            }
+        }
+        if let Some(mc) = self.materials.as_deref() {
+            for axis in 0..3 {
+                put_bools(out, &mc.e_active[axis]);
+                put_fixes(out, &mc.e_ca[axis]);
+                put_fixes(out, &mc.e_cb[axis]);
+                put_fixes(out, &mc.e_eps[axis]);
+                put_fixes(out, &mc.e_sigma[axis]);
+            }
+            for axis in 0..3 {
+                put_bools(out, &mc.h_active[axis]);
+                put_fixes(out, &mc.h_cb[axis]);
+                put_fixes(out, &mc.h_mu[axis]);
+            }
+        }
+    }
+
+    /// The lattice [`YeeGrid::write_state`] wrote into `bytes`.
+    ///
+    /// The bytes must be exactly one state: every length follows from the
+    /// cell counts and the option byte, and nothing may follow the state.
+    /// The coefficients are taken as written, not recomputed, so the lattice
+    /// is the writer's, word for word.
+    ///
+    /// # Errors
+    ///
+    /// A [`YeeStateError`] for a wrong version, an empty or oversized
+    /// lattice, an undefined option bit, a flag byte other than `0` or `1`,
+    /// bytes that end early, or bytes left over.
+    pub fn read_state(bytes: &[u8]) -> Result<Self, YeeStateError> {
+        let mut r = StateReader { bytes, at: 0 };
+        let version = r.u32()?;
+        if version != YEE_STATE_VERSION {
+            return Err(YeeStateError::Version { found: version });
+        }
+        let mut dims = [0usize; 3];
+        for d in &mut dims {
+            *d = usize::try_from(r.u64()?).map_err(|_| YeeStateError::Dimensions)?;
+        }
+        let [nx, ny, nz] = dims;
+        if nx == 0 || ny == 0 || nz == 0 {
+            return Err(YeeStateError::Dimensions);
+        }
+        let volume = |a: usize, b: usize, c: usize| {
+            a.checked_mul(b)
+                .and_then(|ab| ab.checked_mul(c))
+                .ok_or(YeeStateError::Dimensions)
+        };
+        let (px, py, pz) = (
+            nx.checked_add(1).ok_or(YeeStateError::Dimensions)?,
+            ny.checked_add(1).ok_or(YeeStateError::Dimensions)?,
+            nz.checked_add(1).ok_or(YeeStateError::Dimensions)?,
+        );
+        let e_len = [
+            volume(nx, py, pz)?,
+            volume(px, ny, pz)?,
+            volume(px, py, nz)?,
+        ];
+        let h_len = [
+            volume(px, ny, nz)?,
+            volume(nx, py, nz)?,
+            volume(nx, ny, pz)?,
+        ];
+        let courant = r.fix()?;
+        let flags = r.u8()?;
+        if flags & !(STATE_SOURCES | STATE_ABSORBER | STATE_MATERIALS) != 0 {
+            return Err(YeeStateError::Flags { found: flags });
+        }
+        let [ex, ey, ez] = r.fixes3(e_len)?;
+        let [hx, hy, hz] = r.fixes3(h_len)?;
+        let sources = if flags & STATE_SOURCES == 0 {
+            None
+        } else {
+            let [jx, jy, jz] = r.fixes3(e_len)?;
+            let rho = r.fixes(volume(nx - 1, ny - 1, nz - 1)?)?;
+            Some(Box::new(Sources { jx, jy, jz, rho }))
+        };
+        let absorber = if flags & STATE_ABSORBER == 0 {
+            None
+        } else {
+            let [exy, exz] = [r.fixes(e_len[0])?, r.fixes(e_len[0])?];
+            let [eyz, eyx] = [r.fixes(e_len[1])?, r.fixes(e_len[1])?];
+            let [ezx, ezy] = [r.fixes(e_len[2])?, r.fixes(e_len[2])?];
+            let [hxy, hxz] = [r.fixes(h_len[0])?, r.fixes(h_len[0])?];
+            let [hyz, hyx] = [r.fixes(h_len[1])?, r.fixes(h_len[1])?];
+            let [hzx, hzy] = [r.fixes(h_len[2])?, r.fixes(h_len[2])?];
+            let mut ca_e: [Vec<Fix128>; 3] = Default::default();
+            let mut cb_e: [Vec<Fix128>; 3] = Default::default();
+            let mut ca_h: [Vec<Fix128>; 3] = Default::default();
+            let mut cb_h: [Vec<Fix128>; 3] = Default::default();
+            let mut lossy_e: [Vec<bool>; 3] = Default::default();
+            let mut lossy_h: [Vec<bool>; 3] = Default::default();
+            for axis in 0..3 {
+                let n = dims[axis];
+                ca_e[axis] = r.fixes(n + 1)?;
+                cb_e[axis] = r.fixes(n + 1)?;
+                ca_h[axis] = r.fixes(n)?;
+                cb_h[axis] = r.fixes(n)?;
+                lossy_e[axis] = r.bools(n + 1)?;
+                lossy_h[axis] = r.bools(n)?;
+            }
+            Some(Box::new(Splits {
+                exy,
+                exz,
+                eyz,
+                eyx,
+                ezx,
+                ezy,
+                hxy,
+                hxz,
+                hyz,
+                hyx,
+                hzx,
+                hzy,
+                ca_e,
+                cb_e,
+                ca_h,
+                cb_h,
+                lossy_e,
+                lossy_h,
+            }))
+        };
+        let materials = if flags & STATE_MATERIALS == 0 {
+            None
+        } else {
+            let mut mc = MaterialCoeffs {
+                e_active: Default::default(),
+                e_ca: Default::default(),
+                e_cb: Default::default(),
+                e_eps: Default::default(),
+                e_sigma: Default::default(),
+                h_active: Default::default(),
+                h_cb: Default::default(),
+                h_mu: Default::default(),
+            };
+            for (axis, &len) in e_len.iter().enumerate() {
+                mc.e_active[axis] = r.bools(len)?;
+                mc.e_ca[axis] = r.fixes(len)?;
+                mc.e_cb[axis] = r.fixes(len)?;
+                mc.e_eps[axis] = r.fixes(len)?;
+                mc.e_sigma[axis] = r.fixes(len)?;
+            }
+            for (axis, &len) in h_len.iter().enumerate() {
+                mc.h_active[axis] = r.bools(len)?;
+                mc.h_cb[axis] = r.fixes(len)?;
+                mc.h_mu[axis] = r.fixes(len)?;
+            }
+            Some(Box::new(mc))
+        };
+        let extra = bytes.len() - r.at;
+        if extra != 0 {
+            return Err(YeeStateError::Trailing { extra });
+        }
+        Ok(Self {
+            nx,
+            ny,
+            nz,
+            courant,
+            ex,
+            ey,
+            ez,
+            hx,
+            hy,
+            hz,
+            sources,
+            absorber,
+            materials,
+        })
+    }
 }
 
 /// The 3-D Courant limit `1/√3 = 0.577350269…`, as a [`Fix128`].
@@ -1785,4 +2179,24 @@ impl YeeGrid {
 #[must_use]
 pub fn cfl_limit_3d() -> Fix128 {
     Fix128::ONE / Fix128::from_int(3).sqrt()
+}
+
+#[cfg(test)]
+mod state_header_tests {
+    use super::*;
+
+    /// The header holds the edge lengths as `u64` right after the version,
+    /// and a lattice read back from the bytes has the same edges.
+    #[test]
+    fn write_state_puts_the_edges_after_the_version() {
+        let g = YeeGrid::new(3, 4, 5, Fix128::from_ratio(1, 2));
+        let mut out = Vec::new();
+        g.write_state(&mut out);
+        assert_eq!(&out[0..4], &YEE_STATE_VERSION.to_le_bytes());
+        for (i, n) in [3u64, 4, 5].into_iter().enumerate() {
+            assert_eq!(&out[4 + 8 * i..12 + 8 * i], &n.to_le_bytes());
+        }
+        let back = YeeGrid::read_state(&out).expect("read back");
+        assert_eq!((back.nx, back.ny, back.nz), (3, 4, 5));
+    }
 }
