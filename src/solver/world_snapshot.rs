@@ -1625,8 +1625,13 @@ impl PhysicsWorld {
     /// in the header) without the semantics check, reported as
     /// [`LawCheck::Unpinned`] by [`Self::restore_world_checked`]; a blob of
     /// any other version is rejected with
-    /// [`WorldSnapshotError::UnsupportedVersion`].
-    pub const WORLD_SNAPSHOT_VERSION: u16 = 4;
+    /// [`WorldSnapshotError::UnsupportedVersion`]. Version 5 has the layout of
+    /// version 4 and adds the panic faults ([`WorldFault::Panicked`], code 5,
+    /// and the participant fault tag 3 of
+    /// [`crate::world_participant::ParticipantFault::Panicked`]), which a
+    /// version 4 blob cannot hold; a reader of version 4 refuses a version 5
+    /// blob by its version.
+    pub const WORLD_SNAPSHOT_VERSION: u16 = 5;
 
     /// Write every piece of state [`Self::step`] reads into one versioned blob
     /// with a checksum.
@@ -2580,7 +2585,7 @@ fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
             let len = r.len("participants", 1)?;
             participants.push((kind, r.take(len)?.to_vec()));
         }
-        (participants, r_fault(r)?, r_fields(r)?)
+        (participants, r_fault(r, version)?, r_fields(r)?)
     } else {
         let mut empty = Vec::new();
         crate::world_participant::FieldBoard::new().write_values(&mut empty);
@@ -2651,18 +2656,25 @@ fn w_fault(w: &mut W, fault: Option<WorldFault>) {
             w.u32(field.get());
             w.usize(index);
         }
+        Some(WorldFault::Panicked) => w.u8(5),
     }
 }
 
-fn r_fault(r: &mut R<'_>) -> Res<Option<WorldFault>> {
+/// The fault of a blob of format `version`; the panic faults (code 5 and the
+/// participant fault tag 3) exist from version 5 on.
+fn r_fault(r: &mut R<'_>, version: u16) -> Res<Option<WorldFault>> {
     const SECTION: &str = "fault";
+    let invalid = WorldSnapshotError::InvalidValue { section: SECTION };
     Ok(match r.u8()? {
         0 => None,
         1 => {
             let index = r.usize(SECTION)?;
             let kind = crate::world_participant::ParticipantKind::new(r.u32()?);
-            let fault = crate::world_participant::ParticipantFault::from_tag(r.u8()?)
-                .ok_or(WorldSnapshotError::InvalidValue { section: SECTION })?;
+            let fault =
+                crate::world_participant::ParticipantFault::from_tag(r.u8()?).ok_or(invalid)?;
+            if version < 5 && fault == crate::world_participant::ParticipantFault::Panicked {
+                return Err(invalid);
+            }
             Some(WorldFault::Participant { index, kind, fault })
         }
         2 => Some(WorldFault::RigidOverflow),
@@ -2673,7 +2685,8 @@ fn r_fault(r: &mut R<'_>) -> Res<Option<WorldFault>> {
             field: crate::world_participant::PortId::new(r.u32()?),
             index: r.usize(SECTION)?,
         }),
-        _ => return Err(WorldSnapshotError::InvalidValue { section: SECTION }),
+        5 if version >= 5 => Some(WorldFault::Panicked),
+        _ => return Err(invalid),
     })
 }
 
@@ -3680,7 +3693,8 @@ mod tests {
             super::r_combine(&mut reader(&[4])).err(),
             inv("material_table")
         );
-        assert_eq!(super::r_fault(&mut reader(&[5])).err(), inv("fault"));
+        assert_eq!(super::r_fault(&mut reader(&[5]), 4).err(), inv("fault"));
+        assert_eq!(super::r_fault(&mut reader(&[6]), 5).err(), inv("fault"));
         // config: a valid encoding with its backend tag replaced
         let mut w = super::W(Vec::new());
         super::w_config(&mut w, &SolverConfig::default());
@@ -3710,12 +3724,21 @@ mod tests {
                 field: PortId::new(9),
                 index: 21,
             }),
+            Some(WorldFault::Participant {
+                index: 2,
+                kind: ParticipantKind::new(0x1234),
+                fault: ParticipantFault::Panicked,
+            }),
+            Some(WorldFault::Panicked),
         ];
         for f in faults {
             let mut w = super::W(Vec::new());
             super::w_fault(&mut w, f);
             let mut r = reader(&w.0);
-            assert_eq!(super::r_fault(&mut r), Ok(f));
+            assert_eq!(
+                super::r_fault(&mut r, PhysicsWorld::WORLD_SNAPSHOT_VERSION),
+                Ok(f)
+            );
             assert_eq!(r.pos, w.0.len(), "{f:?} reads exactly what it wrote");
         }
         // a participant fault with an unknown fault tag
@@ -3725,9 +3748,25 @@ mod tests {
         w.u32(1);
         w.u8(0xEE);
         assert_eq!(
-            super::r_fault(&mut reader(&w.0)),
+            super::r_fault(&mut reader(&w.0), PhysicsWorld::WORLD_SNAPSHOT_VERSION),
             Err(WorldSnapshotError::InvalidValue { section: "fault" })
         );
+        // the panic faults do not exist in a version 4 blob
+        for f in [
+            Some(WorldFault::Panicked),
+            Some(WorldFault::Participant {
+                index: 0,
+                kind: ParticipantKind::new(1),
+                fault: ParticipantFault::Panicked,
+            }),
+        ] {
+            let mut w = super::W(Vec::new());
+            super::w_fault(&mut w, f);
+            assert_eq!(
+                super::r_fault(&mut reader(&w.0), 4),
+                Err(WorldSnapshotError::InvalidValue { section: "fault" })
+            );
+        }
     }
 
     // Version 4 header identifiers. oracle: the identifiers computed apart
@@ -3755,9 +3794,10 @@ mod tests {
         assert_eq!(super::header_len(1), 16);
         assert_eq!(super::header_len(3), 16);
         assert_eq!(super::header_len(4), 80);
+        assert_eq!(super::header_len(5), 80);
         let w = variant_world();
         let b = w.snapshot_world();
-        assert_eq!(&b[4..6], &4u16.to_le_bytes());
+        assert_eq!(&b[4..6], &5u16.to_le_bytes());
         assert_eq!(header_id(&b, 16), PHYSICS_SEMANTICS_ID);
         assert_eq!(header_id(&b, 48), w.law_id(&PHYSICS_SEMANTICS_ID));
         let len = u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
@@ -3877,12 +3917,12 @@ mod tests {
         );
 
         let mut x = blob.clone();
-        x[4..6].copy_from_slice(&5u16.to_le_bytes());
+        x[4..6].copy_from_slice(&6u16.to_le_bytes());
         assert_eq!(
             t.restore_world(&reseal(x)),
             Err(WorldSnapshotError::UnsupportedVersion {
-                found: 5,
-                supported: 4
+                found: 6,
+                supported: 5
             })
         );
         // a version 4 header cut inside its identifiers
