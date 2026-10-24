@@ -2,7 +2,7 @@
 name = "cfg-items"
 version = "0.0.0"
 publish = false
-license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
+license = "LicenseRef-Proprietary"
 edition = "2021"
 description = "Lists the cfg-gated items of Rust source files with their line spans (scripts/mutants_in_diff_plan.py)"
 

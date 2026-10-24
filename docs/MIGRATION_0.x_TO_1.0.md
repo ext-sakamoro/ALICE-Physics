@@ -263,7 +263,6 @@ Re-exposing a `pub(crate)` item to `pub` is a non-breaking change (semver-minor)
 
 ## Related docs
 
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 milestone tracking.
 - [`docs/PUB_AUDIT_FINAL.md`](./PUB_AUDIT_FINAL.md) — audit campaign summary + rationale.
 - [`docs/PUB_AUDIT_ITERATION_1.md`](./PUB_AUDIT_ITERATION_1.md) – [`docs/PUB_AUDIT_ITERATION_6.md`](./PUB_AUDIT_ITERATION_6.md) — per-iteration audit findings.
 - [`docs/PUBLIC_API_SNAPSHOT.txt`](./PUBLIC_API_SNAPSHOT.txt) — current 1.0-candidate public API surface (19,406 items).

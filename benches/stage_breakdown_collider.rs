@@ -12,8 +12,7 @@
 //! the delta between the two runs is the effective narrow-phase +
 //! post-collision solver cost.
 //!
-//! Per the [GPU offload roadmap](../docs/GPU_OFFLOAD_ROADMAP.md) Phase 3
-//! gating: narrow-phase GPU offload only justifies itself if the delta
+//! Gating rule: narrow-phase GPU offload only justifies itself if the delta
 //! exceeds 30% of total frame cost on a realistic workload. If the delta
 //! stays small, joint expansion (Phase 2.5) delivers more per unit effort.
 //!

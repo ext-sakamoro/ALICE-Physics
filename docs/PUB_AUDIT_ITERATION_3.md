@@ -10,7 +10,7 @@ audit pass targets the P2 module category flagged in `PUB_AUDIT_ITERATION_2.md`:
 
 ## Roadmap adjustment vs Iteration 2 plan
 
-Iteration 2 listed `broadphase*` as a target under P2. **No such module exists** in the crate as a top-level `pub mod` — the actual broadphase-adjacent code lives in `bvh` (Linear BVH + `BroadphaseHybrid`, a skeleton at the time, since completed and wired as `Broadphase::Hybrid`) and `spatial` (hash grid). This audit covers the real 3 modules; `docs/ROADMAP.md` Iteration 4+ targets have been updated accordingly.
+Iteration 2 listed `broadphase*` as a target under P2. **No such module exists** in the crate as a top-level `pub mod` — the actual broadphase-adjacent code lives in `bvh` (Linear BVH + `BroadphaseHybrid`, a skeleton at the time, since completed and wired as `Broadphase::Hybrid`) and `spatial` (hash grid). This audit covers the real 3 modules.
 
 ## Findings summary
 
@@ -129,4 +129,3 @@ Result: **4 matches**, all `alice_physics::math::Fix128` — protects `Fix128` c
 - [`docs/PUB_AUDIT_ITERATION_2.md`](./PUB_AUDIT_ITERATION_2.md) — P1 solver internals (4 changes, `solver_tgs*` deferred)
 - [`docs/PUBLIC_API_SNAPSHOT.txt`](./PUBLIC_API_SNAPSHOT.txt) — 20,155-item baseline post-Iteration 3
 - [`docs/PUBLIC_API_SNAPSHOT.md`](./PUBLIC_API_SNAPSHOT.md) — regenerate + diff + roadmap wiring guide
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 Item B tracking
