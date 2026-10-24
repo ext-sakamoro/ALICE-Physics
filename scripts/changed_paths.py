@@ -46,9 +46,11 @@ gate     the final job of a workflow: did the jobs that should have run succeed?
 sync     the trigger lint: no workflow filters `on.push` by paths unless the push runs on
          main only (main is never created by a push, so before..after holds), and the `pull_request`
          paths of a workflow equal its pattern file `.github/paths/<workflow>.txt`, which the
-         workflow passes to this script
+         workflow passes to this script; in such a workflow, the job that runs `gate` needs
+         `changes` and every other job (a job added later cannot run outside the gate)
     [ROOT]              the repository root (default: this script's parent's parent)
-  Fails when a pattern file was not compared with any workflow. Exit 0 / 1.
+  Fails when a pattern file was not compared with any workflow, or a workflow with a pattern
+  file has no gate job or no job besides `changes` and the gate. Exit 0 / 1.
 
 Patterns (a subset of GitHub's filter pattern syntax)
 -----------------------------------------------------
@@ -357,6 +359,73 @@ def push_branches(push: list[str]) -> list[str] | None:
     return None
 
 
+def jobs_needs(text: str) -> dict[str, tuple[list[str], bool]]:
+    """job id -> (its `needs`, whether it runs `changed_paths.py gate`), from the `jobs:` block"""
+    lines = text.splitlines()
+    try:
+        start = next(i for i, l in enumerate(lines) if re.match(r"^jobs:\s*$", l))
+    except StopIteration:
+        return {}
+    out: dict[str, tuple[list[str], bool]] = {}
+    cur: str | None = None
+    body: list[str] = []
+
+    def close() -> None:
+        if cur is None:
+            return
+        needs: list[str] = []
+        for i, l in enumerate(body):
+            m = re.match(r"^    needs:\s*(.*?)\s*$", l)
+            if not m:
+                continue
+            v = m.group(1)
+            if v.startswith("["):
+                needs = [x.strip().strip("'\"") for x in v.strip("[]").split(",") if x.strip()]
+            elif v:
+                needs = [v.strip("'\"")]
+            else:
+                sub = []
+                for b in body[i + 1:]:
+                    if b.strip() and not b.startswith("      "):
+                        break
+                    sub.append(b)
+                needs = list_items(sub)
+        gate_job = any(re.search(r"changed_paths\.py\s+gate\b", l) for l in body)
+        out[cur] = (needs, gate_job)
+
+    for l in lines[start + 1:]:
+        if re.match(r"^\S", l):
+            break
+        m = re.match(r"^  ([A-Za-z0-9_-]+):\s*$", l)
+        if m:
+            close()
+            cur, body = m.group(1), []
+        elif cur is not None:
+            body.append(l)
+    close()
+    return out
+
+
+def gate_cover(name: str, text: str) -> list[str]:
+    """the gate job needs `changes` and every other job of the workflow"""
+    jobs = jobs_needs(text)
+    gates = [j for j, (_, g) in jobs.items() if g]
+    if len(gates) != 1:
+        return [f"{name}: {len(gates)} jobs run `changed_paths.py gate` (want exactly 1)"]
+    gate_id = gates[0]
+    others = [j for j in jobs if j not in (gate_id, "changes")]
+    if "changes" not in jobs:
+        return [f"{name}: no `changes` job"]
+    if not others:
+        return [f"{name}: no job besides `changes` and the gate (the gate checks nothing)"]
+    need = set(jobs[gate_id][0])
+    missing = [j for j in ["changes", *others] if j not in need]
+    if missing:
+        return [f"{name}: the gate job `{gate_id}` does not need {missing} "
+                f"(a job outside the gate's needs can fail or be skipped unseen)"]
+    return []
+
+
 def sync(root: Path) -> tuple[list[str], int]:
     wf_dir, pat_dir = root / ".github" / "workflows", root / ".github" / "paths"
     errs: list[str] = []
@@ -378,6 +447,7 @@ def sync(root: Path) -> tuple[list[str], int]:
         compared += 1
         if f"--patterns-file {rel}" not in text:
             errs.append(f"{wf.name}: does not pass `--patterns-file {rel}` to changed_paths.py")
+        errs.extend(gate_cover(wf.name, text))
         try:
             pats = read_patterns(str(p), [])
             compile_patterns(pats)
@@ -428,7 +498,8 @@ def main(argv: list[str]) -> int:
         return 1
     if errs:
         return 1
-    print(f"ok: {compared} pattern files match their workflows; no on.push paths filter on a branch other than main")
+    print(f"ok: {compared} pattern files match their workflows, each gate needs every job; "
+          f"no on.push paths filter on a branch other than main")
     return 0
 
 

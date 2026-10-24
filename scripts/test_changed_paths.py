@@ -27,6 +27,8 @@ GIT_ENV = {
     "GIT_CONFIG_NOSYSTEM": "1",
 }
 
+FIXTURE_CONFIG = {"gc.auto": "0", "gc.autoDetach": "false", "maintenance.auto": "false"}
+
 
 class Repo:
     def __init__(self, path: Path):
@@ -34,12 +36,13 @@ class Repo:
         self.env = {**os.environ, **GIT_ENV, "HOME": str(path)}
         self.run("init", "-q", "-b", "main")
         self.run("config", "commit.gpgsign", "false")
-        # a commit starts `git maintenance run --auto --detach`, which can still write into .git
-        # while the temporary directory is removed (Directory not empty: 'info' on macOS)
-        self.run("config", "maintenance.auto", "false")
         # git for Windows refuses a tab, quote or control character in an index path by
         # default (core.protectNTFS); the fixture records such names without writing them
         self.run("config", "core.protectNTFS", "false")
+        # no automatic gc or maintenance: a detached one writes into .git while the fixture's
+        # directory is being removed, and the cleanup fails with "Directory not empty"
+        for key, value in FIXTURE_CONFIG.items():
+            self.run("config", key, value)
 
     def run(self, *args: str) -> str:
         p = subprocess.run(["git", "-C", str(self.path), *args], capture_output=True, text=True,
@@ -86,6 +89,15 @@ def args(repo_: Repo | None, **kw) -> SimpleNamespace:
                 repo=str(repo_.path) if repo_ else ".")
     base.update(kw)
     return SimpleNamespace(**base)
+
+
+class FixtureCases(unittest.TestCase):
+    def test_a_fixture_repository_runs_no_automatic_gc_or_maintenance(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = Repo(Path(d))
+            for key, value in FIXTURE_CONFIG.items():
+                self.assertEqual(r.run("config", "--get", key), value, key)
+            self.assertEqual(FIXTURE_CONFIG, {"gc.auto": "0", "gc.autoDetach": "false", "maintenance.auto": "false"})
 
 
 class PushCases(unittest.TestCase):
@@ -463,6 +475,21 @@ jobs:
   changes:
     steps:
       - run: python3 scripts/changed_paths.py decide --patterns-file .github/paths/x.txt
+  heavy:
+    needs: changes
+    steps:
+      - run: true
+  other:
+    needs:
+      - changes
+      - heavy
+    steps:
+      - run: true
+  gate:
+    if: always()
+    needs: [changes, heavy, other]
+    steps:
+      - run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"
 """
 
 
@@ -517,6 +544,35 @@ class Sync(unittest.TestCase):
         wf = WF_OK.replace("      - '.github/paths/x.txt'\n", "")
         errs, _ = cp.sync(self.tree(wf, "**/src/**\n"))
         self.assertTrue(any("does not list itself" in e for e in errs), errs)
+
+    def test_gate_missing_a_job_fails(self):
+        for need in ("[changes, heavy]", "[heavy, other]", "changes"):
+            errs, _ = cp.sync(self.tree(WF_OK.replace("[changes, heavy, other]", need)))
+            self.assertTrue(any("does not need" in e for e in errs), (need, errs))
+
+    def test_gate_needs_as_a_list_passes(self):
+        wf = WF_OK.replace("    needs: [changes, heavy, other]\n",
+                           "    needs:\n      - changes\n      - 'heavy'\n      - other\n")
+        self.assertEqual(cp.sync(self.tree(wf)), ([], 1))
+
+    def test_no_gate_job_fails(self):
+        wf = WF_OK.replace("changed_paths.py gate", "changed_paths.py gatex")
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("0 jobs run" in e for e in errs), errs)
+
+    def test_two_gate_jobs_fail(self):
+        wf = WF_OK.replace("  heavy:\n    needs: changes\n    steps:\n      - run: true\n",
+                           "  heavy:\n    needs: changes\n    steps:\n"
+                           "      - run: python3 scripts/changed_paths.py gate --needs-json x\n")
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("2 jobs run" in e for e in errs), errs)
+
+    def test_gate_with_no_heavy_job_fails(self):
+        wf = WF_OK.split("  heavy:\n")[0] + (
+            "  gate:\n    needs: [changes]\n    steps:\n"
+            "      - run: python3 scripts/changed_paths.py gate --needs-json x\n")
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("no job besides" in e for e in errs), errs)
 
     def test_nothing_compared_fails(self):
         root = self.tree(WF_OK, None)
