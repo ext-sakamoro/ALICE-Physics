@@ -23,7 +23,7 @@ checked mechanically:
                 have a default body (written `{ ... }` in the document)
 
 The development-process, tracker, instruction-source and device vocabulary is
-also checked in the text of every other tracked file (docs/ROADMAP.md, comments,
+also checked in the text of every other tracked file (docs/, comments,
 workflows, generated ledgers); private names are checked in every file path and
 text.
 

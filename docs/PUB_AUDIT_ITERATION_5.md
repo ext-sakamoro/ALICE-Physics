@@ -107,4 +107,3 @@ Regenerated via CI-canonical command on Mac aarch64.
 - [`docs/PUB_AUDIT_ITERATION_4.md`](./PUB_AUDIT_ITERATION_4.md) — P3 CFD internals (31 changes)
 - [`docs/PUB_AUDIT_ITERATION_6.md`](./PUB_AUDIT_ITERATION_6.md) — P5 I/O + serialization (0 changes)
 - [`docs/PUBLIC_API_SNAPSHOT.txt`](./PUBLIC_API_SNAPSHOT.txt) — 19,956-item baseline
-- [`docs/ROADMAP.md`](./ROADMAP.md) — v1.0 Item B tracking

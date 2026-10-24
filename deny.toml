@@ -3,7 +3,7 @@
 #
 # ALICE-SDF v1.7.7 (commit 52d26f9) の deny.toml を base に ALICE-Physics 用に調整
 #
-# ALICE-Physics 自体は AGPL-3.0 だが、target crate なので license check 対象外
+# ALICE-Physics 自体は LicenseRef-Proprietary (publish = false なので [licenses.private] で除外)
 # sibling stubs (alice-ml/alice-analytics) は alice-stubs action で
 # "MIT OR Apache-2.0" で生成される
 
@@ -54,6 +54,11 @@ allow = [
     "OpenSSL",
 ]
 
+# this crate is publish = false and LicenseRef-Proprietary: unpublished
+# workspace crates are not checked against the allow list
+[licenses.private]
+ignore = true
+
 [[licenses.clarify]]
 name = "ring"
 version = "*"
@@ -66,29 +71,8 @@ version = "*"
 expression = "ISC"
 license-files = [{ path = "LICENSE", hash = 0x001c7e6c }]
 
-# ALICE-Physics 自身 (target crate) が AGPL-3.0 だが cargo-deny は target も
-# license check 対象にするため exception で自己許可
-# (target-side 版)
-[[licenses.exceptions]]
-name = "alice-physics"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
-
-# the engine package (the repository root) under the facade's licence
-[[licenses.exceptions]]
-name = "alice-physics-core"
-allow = ["AGPL-3.0", "AGPL-3.0-only", "AGPL-3.0-or-later"]
-
-# scripts/cfg-items: the repository's own source parser for the scripts
-# (a separate workspace, never published), same licence as the crate
-[[licenses.exceptions]]
-name = "cfg-items"
-allow = ["AGPL-3.0-or-later"]
-
-# ALICE ecosystem sibling crates (J-4 bridge restoration in v0.14.0-preview.8)
-# 全て同 AGPL-3.0-or-later ライセンス、alice-ml / alice-analytics
-# は neural / analytics feature 有効時にのみ pull される optional deps
-# alice-crypto (privacy: keyed ChaCha20 and integer DP sampling) is
-# AGPL-3.0-or-later OR LicenseRef-Commercial; one allowed arm of the OR suffices
+# ALICE ecosystem dependency crates: each exception allows the licence that
+# dependency declares at the version this workspace resolves
 [[licenses.exceptions]]
 name = "alice-crypto"
 allow = ["AGPL-3.0-or-later"]

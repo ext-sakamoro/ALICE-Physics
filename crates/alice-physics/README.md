@@ -34,4 +34,6 @@ Documentation, features and the determinism contract: see the
 
 ## License
 
-AGPL-3.0-or-later, or a commercial license (see `LICENSE-COMMERCIAL.md`).
+`LicenseRef-Proprietary`. The text is [LICENSE-Proprietary](LICENSE-Proprietary).
+
+Enquiries: https://extoria.co.jp/

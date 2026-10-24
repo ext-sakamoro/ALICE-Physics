@@ -47,7 +47,7 @@ visible in code review.
 
 ## Roadmap wiring
 
-See [`ROADMAP.md`](ROADMAP.md) — Item B (Public API surface freeze) and Item C
+This file serves Item B (Public API surface freeze) and Item C
 (cargo-semver-checks / cargo-public-api CI). The snapshot is the input side of
 both items; the CI integration (Item C) will consume this file to detect
 breakage.

@@ -10,7 +10,7 @@ English | [日本語](README_JP.md)
 [![docs.rs](https://img.shields.io/docsrs/alice-physics)](https://docs.rs/alice-physics)
 [![MSRV](https://img.shields.io/crates/msrv/alice-physics)](#minimum-supported-rust-version)
 [![CI](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml/badge.svg)](https://github.com/ext-sakamoro/ALICE-Physics/actions/workflows/ci.yml)
-[![License](https://img.shields.io/crates/l/alice-physics.svg)](#license)
+[![License](https://img.shields.io/badge/license-Proprietary-lightgrey)](LICENSE-Proprietary)
 
 ALICE-Physics is built for cases where bit-exact replay is a requirement:
 rollback and lockstep netcode, server-side replay verification, search and
@@ -475,31 +475,21 @@ Keep a single version of `alice-det-math` in your dependency graph. Two
 versions mean two implementations of the same function, and determinism is
 lost. Check with `cargo tree -i alice-det-math`.
 
-Release history is in [`CHANGELOG.md`](CHANGELOG.md). Planned work is in
-[`docs/ROADMAP.md`](docs/ROADMAP.md).
+Release history is in [`CHANGELOG.md`](CHANGELOG.md).
 
 ## License
 
-Dual-licensed under `AGPL-3.0-or-later OR LicenseRef-Commercial`. Pick either.
+`LicenseRef-Proprietary`. The text is [LICENSE-Proprietary](LICENSE-Proprietary).
 
-| Option | Use it when |
-|--------|-------------|
-| [AGPL-3.0-or-later](LICENSE-AGPL) | your project is AGPL-compatible open source, or you use it internally |
-| [Commercial](LICENSE-COMMERCIAL.md) | closed-source products, proprietary SaaS, firmware, or engine plugin redistribution |
+Enquiries: https://extoria.co.jp/
 
-The AGPL applies to anything that links `alice-physics`, including through the
-C ABI, the Unity / Unreal bindings, the Python bindings or the WebAssembly
-build. Commercial licence enquiries: <contact@extoria.co.jp>
-
-The optional `neural` feature pulls in an additional AGPL-licensed
-crate. `analytics` and the required `alice-det-math` are `Apache-2.0` (both
-since their 0.5 releases); `alice-crypto`, pulled in by the optional
-`privacy-crypto` feature, has the same licence as this crate.
-
+Dependencies keep their own licences at the versions this crate uses: the
+optional `neural` feature pulls in `alice-ml` (AGPL-3.0-or-later OR LicenseRef-Commercial), the
+optional `privacy-crypto` feature pulls in `alice-crypto`
+(AGPL-3.0-or-later OR LicenseRef-Commercial), and `analytics` and the required
+`alice-det-math` are Apache-2.0.
 Copyright (C) 2024-2026 Moroya Sakamoto
-
 ### References
-
 - Müller et al., "XPBD: Position-Based Simulation of Compliant Constrained Dynamics"
 - Ericson, *Real-Time Collision Detection* (GJK / EPA)
 - Volder, "The CORDIC Trigonometric Computing Technique"

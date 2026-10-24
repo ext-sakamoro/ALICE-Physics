@@ -7,7 +7,7 @@ name = "g2-rewrite-scan"
 version = "0.0.0"
 edition = "2021"
 publish = false
-license = "AGPL-3.0-or-later OR LicenseRef-Commercial"
+license = "LicenseRef-Proprietary"
 description = "Syntax-tree scan for max / min / clamp written as comparisons (ALICE-Law G2), read by scripts/g2_rewrite_check.py"
 
 [[bin]]
