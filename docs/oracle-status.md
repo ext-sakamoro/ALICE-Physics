@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5847 |
+| 🟢 Not ignored (run by CI) | 5851 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5943** |
+| **Total** | **5947** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5847)
+## 🟢 Not ignored (5851)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -592,6 +592,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_privacy_noise_secrecy.rs` | 3 |
 | `indep_tgs_pendulum_static_plane.rs` | 3 |
 | `indep_world_try_step_snapshot.rs` | 3 |
+| `panic_paths_fault_the_world.rs` | 3 |
 | `parallel_batch_coloring.rs` | 3 |
 | `participant_semantics_id.rs` | 3 |
 | `sleep_skip_snapshot.rs` | 3 |
@@ -628,6 +629,7 @@ Per-file counts (the test names are in `tests/`):
 | `analytic_wind_zone_terminal_velocity.rs` | 1 |
 | `analytic_world_query_near_contact.rs` | 1 |
 | `audit_c_plastic.rs` | 1 |
+| `c_world_fault_codes.rs` | 1 |
 | `determinism_cloth_step_digest.rs` | 1 |
 | `law_check_cast.rs` | 1 |
 
