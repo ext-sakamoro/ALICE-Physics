@@ -421,6 +421,9 @@ scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries 
 step "cargo test --lib (ffi module)"
 cargo test --lib --features "ffi" "ffi::"
 
+step "participant panic leaves the world faulted (ffi)"
+scripts/run_tests.sh participant_panic_leaves_world_faulted=2 -- cargo test --test participant_panic_leaves_world_faulted --features "ffi"
+
 step "cargo test --lib (wasm module) + cargo check (python)"
 cargo test --lib --features "wasm" "wasm::"
 cargo check --lib --features "python"

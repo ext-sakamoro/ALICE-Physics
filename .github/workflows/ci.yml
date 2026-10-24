@@ -344,6 +344,12 @@ jobs:
         # (actionlint syntax-check; two pushes were red on this, 2026-09-15)
         run: 'cargo test --lib --features "ffi" "ffi::"'
 
+      # a participant panic inside a step, through the Rust step and through the C step
+      # (alice_physics_world_step, feature ffi): the world records a fault and refuses the next step
+      - name: Test (participant panic leaves the world faulted, ffi)
+        shell: bash
+        run: scripts/run_tests.sh participant_panic_leaves_world_faulted=2 -- cargo test --test participant_panic_leaves_world_faulted --features "ffi"
+
       # The WebAssembly and Python bindings were compiled by no CI step: the
       # wasm unit tests run natively, the Python module (an extension module
       # that links against the interpreter at import time) is type-checked
