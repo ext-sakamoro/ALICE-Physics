@@ -63,7 +63,7 @@ what land.py pushes, where, or as whom:
     programs git or ssh would run (GIT_SSH*, GIT_EXEC_PATH, GIT_PROXY_COMMAND, askpass,
     pager, editor), GIT_TRACE* and LD_* / DYLD_* dropped, and a fixed PATH (the system
     directories, /opt/homebrew/bin, /usr/local/bin; for preflight and cargo also
-    $CARGO_HOME/bin or ~/.cargo/bin);
+    LAND_CARGO_DIR when set, else $CARGO_HOME/bin or ~/.cargo/bin);
   - before the first fetch and before every push, the effective fetch and push URLs of
     the remote (after insteadOf / pushInsteadOf / pushurl) must be the GitHub URL of
     the owner/repo that gh is told (check_remote).
@@ -158,7 +158,7 @@ CHILD_PYTHON_ENV = {"PYTHONNOUSERSITE": "1", "PYTHONDONTWRITEBYTECODE": "1", "PY
 # and every child process gets a fixed PATH: a `git` or `ssh` placed earlier on the caller's
 # PATH is never run. /opt/homebrew/bin and /usr/local/bin are the package prefixes of the
 # machines that land; the preflight child (bash, python3, cargo, rustup) also gets the cargo
-# directory ($CARGO_HOME/bin, default ~/.cargo/bin).
+# directory (LAND_CARGO_DIR when the caller names it, else $CARGO_HOME/bin, default ~/.cargo/bin).
 GIT_CANDIDATES = ("/usr/bin/git", "/opt/homebrew/bin/git", "/usr/local/bin/git",
                   r"C:\Program Files\Git\cmd\git.exe")
 GH_CANDIDATES = ("/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh",
@@ -275,13 +275,20 @@ def python_dir() -> str:
 
 
 def cargo_bin() -> str:
+    """the cargo directory of the cargo children: LAND_CARGO_DIR when the caller names it (the
+    directory of the cargo it resolved, e.g. a toolchain manager that keeps its proxies outside
+    $CARGO_HOME/bin), else $CARGO_HOME/bin, default ~/.cargo/bin; the PATH is never searched here"""
+    named = os.environ.get("LAND_CARGO_DIR")
+    if named:
+        return named
     return os.path.join(os.environ.get("CARGO_HOME") or os.path.join(os.path.expanduser("~"), ".cargo"), "bin")
 
 
 def missing_tool_reason(tool: str) -> str:
     """why a cargo child cannot start `tool`: the directories the child PATH searches for it"""
     return (f"not found on the child PATH (the cargo directory {cargo_bin()}, then the system "
-            f"directories); install the Rust toolchain there or set CARGO_HOME")
+            f"directories); install the Rust toolchain there, set CARGO_HOME, or name the directory "
+            f"that holds cargo in LAND_CARGO_DIR")
 
 
 def safe_path(cargo: bool = False, with_git: bool = True) -> str:

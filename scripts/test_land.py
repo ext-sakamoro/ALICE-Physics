@@ -2979,6 +2979,60 @@ class ChildTools(Isolated):
                                              f"directory {empty}") for l in lines), text)
         self.assertNotIn("No such file", text)
 
+    @unittest.skipIf(os.name == "nt", "the stand-in tools are POSIX scripts")
+    def test_a_named_cargo_directory_is_where_the_cargo_children_look(self):
+        # a toolchain manager can keep its cargo outside $CARGO_HOME/bin (the CI image does);
+        # the caller names that directory and the cargo children use it, $CARGO_HOME/bin not
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as named, tempfile.TemporaryDirectory() as empty:
+            for tool in ("cargo", "rustc"):
+                exe = os.path.join(named, tool)
+                with open(exe, "w", encoding="utf-8") as f:
+                    f.write(f"#!/bin/sh\necho '{tool} 0.0.0 (stand-in)'\n")
+                os.chmod(exe, 0o755)
+            with mock.patch.dict(os.environ, {"LAND_CARGO_DIR": named, "CARGO_HOME": empty}):
+                self.assertEqual(land.cargo_bin(), named)
+                self.assertIn(named, land.safe_path(cargo=True).split(os.pathsep))
+                self.assertNotIn(os.path.join(empty, "bin"), land.safe_path(cargo=True).split(os.pathsep))
+                lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+                executed, failed, lines = land.env_smoke(lander, steps=("cargo", "rustc"))
+        self.assertEqual((executed, failed), (2, 0), lines)
+        self.assertTrue(any(l.startswith("ok   cargo: ") and "stand-in" in l for l in lines), lines)
+
+    def test_a_named_directory_without_cargo_is_named_in_the_failure(self):
+        import tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as empty:
+            with mock.patch.dict(os.environ, {"LAND_CARGO_DIR": empty}):
+                reason = land.missing_tool_reason("cargo")
+                lander = land.Lander(self.r.work, "T", log=lambda *_: None)
+                missing = self._expected_rust(lander)
+                executed, failed, lines = land.env_smoke(lander, steps=("cargo",))
+        self.assertIn(empty, reason)
+        self.assertIn("LAND_CARGO_DIR", reason)
+        if missing:   # no cargo in the system directories either
+            self.assertIn(f"FAIL cargo: {reason}", lines)
+
+    def test_the_env_smoke_step_names_the_cargo_it_resolved(self):
+        # the step starts land.py from an emptied environment: the cargo of the step's own PATH
+        # has to be passed by name, or a cargo outside $CARGO_HOME/bin is not found (ci.yml and
+        # the local preflight both)
+        import re
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        compared = 0
+        for rel in (os.path.join(".github", "workflows", "ci.yml"), os.path.join("scripts", "preflight.sh")):
+            with open(os.path.join(root, rel), encoding="utf-8") as f:
+                text = f.read()
+            calls = [l for l in text.splitlines() if "land.py --env-smoke" in l and "env -i" in l]
+            self.assertTrue(calls, f"{rel}: no env -i land.py --env-smoke line")
+            for line in calls:
+                self.assertRegex(line, r'LAND_CARGO_DIR="\$\{?cargo_dir\}?"', f"{rel}: {line.strip()}")
+                compared += 1
+            self.assertIn('command -v cargo', text, rel)
+            self.assertRegex(text, r"cargo is not on the PATH", rel)
+        self.assertGreaterEqual(compared, 3, "fewer env-smoke calls than ci.yml (2) + preflight (1)")
+
     def test_nothing_executed_fails(self):
         lander = land.Lander(self.r.work, "T", log=lambda *_: None)
         executed, failed, lines = land.env_smoke(lander, steps=())

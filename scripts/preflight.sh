@@ -144,7 +144,11 @@ python3 scripts/integration_levels.py --no-index --check
 # the landing script's tests and its child tools from a minimal environment, after the toolchain
 # (as ci.yml orders them on every OS)
 python3 scripts/test_land.py
-env -i HOME="$HOME" USER="${USER:-}" PATH=/usr/bin:/bin "$(python3 -c 'import sys; print(sys.executable)')" scripts/land.py --env-smoke
+# the cargo of this shell's PATH is named to land.py, as ci.yml does (the emptied environment
+# cannot find a cargo outside $CARGO_HOME/bin otherwise)
+cargo="$(command -v cargo)" || { echo "cargo is not on the PATH of this shell" >&2; exit 1; }
+cargo_dir="$(dirname "$cargo")"
+env -i HOME="$HOME" USER="${USER:-}" LAND_CARGO_DIR="$cargo_dir" PATH=/usr/bin:/bin "$(python3 -c 'import sys; print(sys.executable)')" scripts/land.py --env-smoke
 
 step "oracle ledger links (PIN / root external)"
 python3 scripts/gen-oracle-status.py --check

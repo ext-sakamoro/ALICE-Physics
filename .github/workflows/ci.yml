@@ -268,12 +268,17 @@ jobs:
       # seconds, and it fails when it executed nothing
       - name: Landing child environment (env-smoke)
         shell: bash
+        # the cargo of this step's PATH is named to land.py (LAND_CARGO_DIR): the image may keep it
+        # outside $CARGO_HOME/bin, and the emptied environment cannot find it otherwise
         run: |
           py="$(command -v python)"
+          cargo="$(command -v cargo)" || { echo "::error::cargo is not on the PATH of this step"; exit 1; }
+          cargo_dir="$(dirname "$cargo")"
           if [ "$RUNNER_OS" = "Windows" ]; then
-            env -i SYSTEMROOT="$SYSTEMROOT" USERPROFILE="$USERPROFILE" HOME="$HOME" PATH=/usr/bin "$py" scripts/land.py --env-smoke
+            cargo_dir="$(cygpath -w "$cargo_dir")"
+            env -i SYSTEMROOT="$SYSTEMROOT" USERPROFILE="$USERPROFILE" HOME="$HOME" LAND_CARGO_DIR="$cargo_dir" PATH=/usr/bin "$py" scripts/land.py --env-smoke
           else
-            env -i HOME="$HOME" USER="${USER:-runner}" PATH=/usr/bin:/bin "$py" scripts/land.py --env-smoke
+            env -i HOME="$HOME" USER="${USER:-runner}" LAND_CARGO_DIR="$cargo_dir" PATH=/usr/bin:/bin "$py" scripts/land.py --env-smoke
           fi
 
       - uses: Swatinem/rust-cache@v2
