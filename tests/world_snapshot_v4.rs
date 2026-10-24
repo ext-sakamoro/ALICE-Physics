@@ -111,12 +111,13 @@ fn checked(
     r
 }
 
+/// Version 5 keeps the layout of version 4 (it adds the panic fault codes).
 #[test]
-fn the_writer_emits_version_4() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 4);
+fn the_writer_emits_version_5() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 5);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &4u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &5u16.to_le_bytes());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's

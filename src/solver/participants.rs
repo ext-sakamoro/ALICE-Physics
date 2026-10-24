@@ -55,8 +55,8 @@ use crate::math::Fix128;
 use crate::math::Vec3Fix;
 #[cfg(feature = "std")]
 use crate::world_participant::{
-    run_substep_with_sdf_contacts, wakes_parked_body, ForceAccumulator, ObservationSink, Observed,
-    Participant, ParticipantKind, ParticipantPlan, StepRule, SubstepTime,
+    run_substep_tracked, wakes_parked_body, ForceAccumulator, ObservationSink, Observed,
+    Participant, ParticipantFault, ParticipantKind, ParticipantPlan, StepRule, SubstepTime,
 };
 use crate::world_participant::{
     FieldBoard, FieldError, FieldLayout, FieldMode, PortId, RegisterError, StepError, WorldFault,
@@ -215,7 +215,7 @@ impl PhysicsWorld {
     pub fn observe_participant(&self, index: usize) -> Option<Observed<ObservationSink>> {
         let list = self.lock_participants();
         let p = list.get(index)?;
-        if self.fault.is_some() {
+        if self.fault().is_some() {
             return Some(Observed::Undecided);
         }
         let mut sink = ObservationSink::new();
@@ -294,15 +294,58 @@ impl PhysicsWorld {
     /// The first fault recorded, if any. While one is recorded,
     /// [`Self::try_step`] refuses to run ([`StepError::Faulted`]) and the
     /// checked observations are undecided. It is part of the snapshot.
+    ///
+    /// A panic that left a participant call part way through is a fault too:
+    /// a participant that panics inside its substep is recorded as
+    /// [`WorldFault::Participant`] with [`ParticipantFault::Panicked`], and a
+    /// panic elsewhere in a step, or in a participant's `observe` /
+    /// `write_state` while the world holds its participants, as
+    /// [`WorldFault::Panicked`]. The latter is read from the participant
+    /// lock, so it is reported from the moment of the panic, also through a
+    /// shared reference.
     #[must_use]
-    pub const fn fault(&self) -> Option<WorldFault> {
-        self.fault
+    pub fn fault(&self) -> Option<WorldFault> {
+        self.fault.or_else(|| {
+            #[cfg(feature = "std")]
+            if self.participants.is_poisoned() {
+                return Some(WorldFault::Panicked);
+            }
+            None
+        })
     }
 
     /// Forget the recorded fault so that steps run again. The world's
     /// overflow flag ([`Self::overflow_detected`]) is not touched.
     pub fn clear_fault(&mut self) {
         self.fault = None;
+        #[cfg(feature = "std")]
+        self.participants.clear_poison();
+    }
+
+    /// Run `body` on the world; a panic out of it records
+    /// [`WorldFault::Panicked`] (unless a fault is already recorded, such as
+    /// the participant's own) and then continues to the caller.
+    pub(crate) fn recording_panics<T>(&mut self, body: impl FnOnce(&mut Self) -> T) -> T {
+        #[cfg(feature = "std")]
+        {
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| body(self))) {
+                Ok(v) => v,
+                Err(payload) => {
+                    self.record_panic();
+                    std::panic::resume_unwind(payload)
+                }
+            }
+        }
+        #[cfg(not(feature = "std"))]
+        {
+            body(self)
+        }
+    }
+
+    /// Record [`WorldFault::Panicked`] unless a fault is already recorded.
+    #[cfg(feature = "std")]
+    pub(crate) fn record_panic(&mut self) {
+        self.record_fault(WorldFault::Panicked);
     }
 
     /// The fault as stored (snapshot writer and reader).
@@ -325,7 +368,7 @@ impl PhysicsWorld {
         body_idx: usize,
     ) -> Option<crate::world_participant::Observed<BodyObservation>> {
         let o = self.observe_body(body_idx)?;
-        Some(if self.fault.is_some() || self.overflow_detected {
+        Some(if self.fault().is_some() || self.overflow_detected {
             crate::world_participant::Observed::Undecided
         } else {
             crate::world_participant::Observed::Exact(o)
@@ -413,7 +456,7 @@ impl PhysicsWorld {
         if !self.check_step(dt, self.participant_substep_width(dt))? {
             return Ok(());
         }
-        self.run_step(dt);
+        self.recording_panics(|w| w.run_step(dt));
         self.fault
             .map_or(Ok(()), |f| Err(StepError::FaultRaised(f)))
     }
@@ -435,7 +478,7 @@ impl PhysicsWorld {
         if !self.check_step(dt, Self::divided_substep_width(dt, self.config.substeps))? {
             return Ok(());
         }
-        self.run_step_parallel(dt);
+        self.recording_panics(|w| w.run_step_parallel(dt));
         self.fault
             .map_or(Ok(()), |f| Err(StepError::FaultRaised(f)))
     }
@@ -447,7 +490,7 @@ impl PhysicsWorld {
     /// [`Self::divided_substep_width`] on the paths that always run the XPBD
     /// substep loop); the step rules are checked against it.
     pub(super) fn check_step(&self, dt: Fix128, h: Fix128) -> Result<bool, StepError> {
-        if let Some(f) = self.fault {
+        if let Some(f) = self.fault() {
             return Err(StepError::Faulted(f));
         }
         if dt <= Fix128::ZERO {
@@ -540,16 +583,39 @@ impl PhysicsWorld {
                 return at_start;
             };
             let mut forces = ForceAccumulator::new(self.bodies.len());
-            let faults = run_substep_with_sdf_contacts(
-                list_mut(&mut self.participants),
-                plan,
-                frozen,
-                &self.bodies,
-                &mut self.fields,
-                &mut forces,
-                SubstepTime { index, count, h },
-                &self.sdf_contact_log,
-            );
+            let mut running = None;
+            let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run_substep_tracked(
+                    list_mut(&mut self.participants),
+                    plan,
+                    frozen,
+                    &self.bodies,
+                    &mut self.fields,
+                    &mut forces,
+                    SubstepTime { index, count, h },
+                    &self.sdf_contact_log,
+                    &mut running,
+                )
+            }));
+            let faults = match caught {
+                Ok(faults) => faults,
+                Err(payload) => {
+                    // the participant may have changed its own state before
+                    // the panic: record it as panicked, and let the panic go on
+                    if let Some(i) = running {
+                        let kind = list_mut(&mut self.participants)[i].kind();
+                        frozen[i] = true;
+                        self.record_fault(WorldFault::Participant {
+                            index: i,
+                            kind,
+                            fault: ParticipantFault::Panicked,
+                        });
+                    } else {
+                        self.record_panic();
+                    }
+                    std::panic::resume_unwind(payload)
+                }
+            };
             match faults {
                 Ok(faults) => {
                     for f in faults {

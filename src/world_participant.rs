@@ -420,6 +420,11 @@ pub enum ParticipantFault {
     OutOfRange,
     /// The participant found its own state inconsistent.
     InvalidState,
+    /// The participant panicked inside its substep. Unlike the other faults
+    /// the participant is not known to be unchanged: the panic may have come
+    /// after it changed its own state. The panic still reaches the caller of
+    /// the step; the world records the fault on the way out.
+    Panicked,
 }
 
 impl ParticipantFault {
@@ -429,6 +434,7 @@ impl ParticipantFault {
         match self {
             Self::OutOfRange => 1,
             Self::InvalidState => 2,
+            Self::Panicked => 3,
         }
     }
 
@@ -438,6 +444,7 @@ impl ParticipantFault {
         match tag {
             1 => Some(Self::OutOfRange),
             2 => Some(Self::InvalidState),
+            3 => Some(Self::Panicked),
             _ => None,
         }
     }
@@ -481,6 +488,12 @@ pub enum WorldFault {
         /// Registration index of the participant whose write left the range.
         index: usize,
     },
+    /// A panic left a call on the world part way through, outside a
+    /// participant's substep (the rigid step, a participant's `observe` or
+    /// `write_state` under the participant lock, or a call through the C
+    /// interface). The world's state may be half-updated; reads still work
+    /// but report the state as it was left.
+    Panicked,
 }
 
 /// Why a checked world step did not run normally.
@@ -544,6 +557,7 @@ impl core::fmt::Display for ParticipantFault {
         f.write_str(match self {
             Self::OutOfRange => "a value left its range",
             Self::InvalidState => "its state is inconsistent",
+            Self::Panicked => "it panicked",
         })
     }
 }
@@ -570,6 +584,7 @@ impl core::fmt::Display for WorldFault {
                 "committing field {} left the range of Fix128 at participant {index}",
                 field.get()
             ),
+            Self::Panicked => f.write_str("a panic left a call on the world part way through"),
         }
     }
 }
@@ -1776,6 +1791,37 @@ pub fn run_substep_with_sdf_contacts(
     time: SubstepTime,
     sdf_contacts: &[crate::sdf_collider::SdfContact],
 ) -> Result<Vec<WorldFault>, ExchangeError> {
+    run_substep_tracked(
+        participants,
+        plan,
+        frozen,
+        bodies,
+        board,
+        forces,
+        time,
+        sdf_contacts,
+        &mut None,
+    )
+}
+
+/// [`run_substep_with_sdf_contacts`], keeping in `running` the registration
+/// index of the participant whose substep is being called (`None` between
+/// calls), so a caller that catches a panic knows which participant raised it.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the arguments of run_substep_with_sdf_contacts plus the slot for the running participant"
+)]
+pub(crate) fn run_substep_tracked(
+    participants: &mut [Box<dyn Participant>],
+    plan: &ParticipantPlan,
+    frozen: &mut [bool],
+    bodies: &[RigidBody],
+    board: &mut FieldBoard,
+    forces: &mut ForceAccumulator,
+    time: SubstepTime,
+    sdf_contacts: &[crate::sdf_collider::SdfContact],
+    running: &mut Option<usize>,
+) -> Result<Vec<WorldFault>, ExchangeError> {
     let n = participants.len();
     if plan.order.len() != n {
         return Err(ExchangeError::Plan {
@@ -1820,7 +1866,10 @@ pub fn run_substep_with_sdf_contacts(
             let mut ctx = ctx
                 .with_fields(board, &mut stage, &plan.ports[i])
                 .with_sdf_contacts(sdf_contacts);
-            participants[i].substep(&mut ctx, time.h)
+            *running = Some(i);
+            let result = participants[i].substep(&mut ctx, time.h);
+            *running = None;
+            result
         };
         match result {
             Ok(()) => {

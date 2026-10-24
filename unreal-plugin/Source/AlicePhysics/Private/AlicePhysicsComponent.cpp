@@ -343,6 +343,12 @@ void UAlicePhysicsWorldComponent::ClearLastError()
     alice_physics_clear_last_error();
 }
 
+int32 UAlicePhysicsWorldComponent::GetWorldFault() const
+{
+    if (!World) return -1;
+    return static_cast<int32>(alice_physics_world_fault(World));
+}
+
 FString UAlicePhysicsWorldComponent::GetLibraryVersion()
 {
     const char* V = alice_physics_version();

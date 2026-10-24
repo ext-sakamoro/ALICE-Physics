@@ -179,7 +179,8 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern IntPtr alice_physics_world_create();
         [DllImport(DLL)] public static extern IntPtr alice_physics_world_create_with_config(AlicePhysicsConfig config);
         [DllImport(DLL)] public static extern void alice_physics_world_destroy(IntPtr world);
-        [DllImport(DLL)] public static extern void alice_physics_world_step(IntPtr world, double dt);
+        [DllImport(DLL)] public static extern byte alice_physics_world_step(IntPtr world, double dt);
+        [DllImport(DLL)] public static extern byte alice_physics_world_fault(IntPtr world);
         [DllImport(DLL)] public static extern uint alice_physics_world_body_count(IntPtr world);
 
         // Body management
@@ -313,6 +314,18 @@ namespace AlicePhysics
         public uint BodyCount
         {
             get { ThrowIfDisposed(); return Native.alice_physics_world_body_count(_ptr); }
+        }
+
+        /// <summary>
+        /// The world's recorded fault: 0 none, 1 participant, 2 rigid overflow,
+        /// 3 participant force out of range, 4 field commit out of range,
+        /// 5 a panic left a call part way through. While it is not 0, every call
+        /// that changes the world is refused; reads still answer from a state
+        /// that may be half-updated. Read what is needed, then dispose the world.
+        /// </summary>
+        public byte Fault
+        {
+            get { ThrowIfDisposed(); return Native.alice_physics_world_fault(_ptr); }
         }
 
         // -- Body creation --

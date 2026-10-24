@@ -5616,7 +5616,7 @@ impl PhysicsWorld {
         dt: Fix128,
     ) -> Result<(), crate::PeerMismatch> {
         crate::gpu_bridge::check_bridge("step_with_bridge", bridge)?;
-        self.step_with_bridge_unchecked(bridge, dt);
+        self.recording_panics(|w| w.step_with_bridge_unchecked(bridge, dt));
         Ok(())
     }
 
@@ -5702,6 +5702,9 @@ impl PhysicsWorld {
     /// gives the same bits as with [`SolverBackend::Xpbd`]. A bridge path for
     /// TGS does not exist yet; use [`Self::step`] for TGS.
     ///
+    /// A world with a recorded fault ([`Self::fault`]) is not stepped: the call
+    /// returns `Ok(())` and changes nothing, as [`Self::step_with_bridge`] does.
+    ///
     /// # Errors
     ///
     /// [`crate::PeerMismatch`] naming both identifiers when the bridge does not
@@ -5713,7 +5716,10 @@ impl PhysicsWorld {
         dt: Fix128,
     ) -> Result<(), crate::PeerMismatch> {
         crate::gpu_bridge::check_bridge("substep_with_bridge", bridge)?;
-        self.substep_with_bridge_unchecked(bridge, dt);
+        if self.fault().is_some() {
+            return Ok(());
+        }
+        self.recording_panics(|w| w.substep_with_bridge_unchecked(bridge, dt));
         Ok(())
     }
 
