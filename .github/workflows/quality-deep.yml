@@ -88,6 +88,10 @@ jobs:
           # --build-timeout + ulimit: a mutated `const fn` (math.rs CORDIC tables) can
           # send rustc const-eval into an unbounded loop that the test timeout never
           # reaches; the runner then dies of OOM (shard 7/8 twice, 2026-09-15).
+          # The scoped run bounds each mutant's build at 3x the unmutated build (a fixed
+          # 240 s under -j 2 timed out 72 of 76 maxwell_fdtd mutants whose baseline built
+          # in 118 s). --output . writes ./mutants.out (cargo-mutants puts mutants.out
+          # inside the directory it is given).
           # Exit codes: 0 all caught, 2 missed, 3 timeouts = measurement results;
           # anything else (4 = unmutated baseline red, 1 = usage) fails the job —
           # a red baseline measured nothing and used to be hidden by `|| true`.
@@ -102,7 +106,7 @@ jobs:
           fi
           set +e
           # shellcheck disable=SC2086  # SCOPE and TEST_ARGS are split into words on purpose
-          cargo mutants $SCOPE --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+          cargo mutants $SCOPE --timeout 300 --build-timeout-multiplier 3 -j 2 --output . \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} -- $TEST_ARGS
           rc=$?
           set -e
@@ -202,7 +206,7 @@ jobs:
           # cancelled with its missed mutants unreported.
           # shellcheck disable=SC2086
           timeout --signal=INT --kill-after=10m 270m \
-            cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output mutants.out \
+            cargo mutants --in-diff /tmp/planned.diff --timeout 300 --build-timeout 240 -j 2 --output . \
             ${features:+--features "$features"} --cargo-arg=--lib $tests
           rc=$?
           set -e
@@ -240,7 +244,7 @@ jobs:
         run: |
           ulimit -v 6291456
           set +e
-          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output mutants.out \
+          cargo mutants --shard ${{ matrix.shard }}/16 -j 2 --timeout 300 --build-timeout 240 --output . \
             ${{ matrix.features != '' && format('--features {0}', matrix.features) || '' }} \
             --file src/solver.rs --file src/solver_tgs.rs --file src/math.rs --file src/collider.rs \
             --file src/bvh.rs --file src/joint.rs --file src/contact_cache.rs --file src/ccd.rs \

@@ -17,7 +17,13 @@ used `--lib`). This fails the job when:
   phase (a timeout in the build phase, `--build-timeout`, measured nothing);
 - no mutant was caught (only missed ones, or only test-phase timeouts): the
   selected tests do not reach the scope; pick the test target that holds its
-  oracles.
+  oracles;
+- more mutants timed out building than were measured: the run measured too
+  little of the scope to stand for it (2026-10-24: 72 of 76 mutants of
+  `maxwell_fdtd` hit the build timeout, 1 was measured);
+- outcomes.json is one directory deeper than the directory given
+  (`cargo mutants --output X` writes `X/mutants.out/`): the job reads the
+  wrong directory and names the right one.
 
 The counts come from each mutant's outcome, not from the totals, since the
 totals do not say in which phase a timeout happened. A run with caught
@@ -38,6 +44,10 @@ def check(out: Path) -> tuple[list[str], str]:
     problems: list[str] = []
     path = out / "outcomes.json"
     if not path.is_file():
+        nested = out / "mutants.out" / "outcomes.json"
+        if nested.is_file():
+            return [f"{path}: missing, but {nested} exists: cargo-mutants was given --output {out} "
+                    f"(it writes <output>/mutants.out); give it the parent directory"], ""
         return [f"{path}: missing (cargo-mutants wrote no outcomes)"], ""
     doc = json.loads(path.read_text(encoding="utf-8"))
     outcomes = doc.get("outcomes", [])
@@ -78,6 +88,9 @@ def check(out: Path) -> tuple[list[str], str]:
     elif caught == 0:
         problems.append(f"no mutant was caught ({missed} missed, {test_timeout} test timeouts): "
                         "the selected tests do not reach the scope; choose the test target that holds its oracles")
+    if measured and build_timeout > measured:
+        problems.append(f"{build_timeout} mutants timed out building and {measured} were measured: "
+                        "the run measured too little of the scope (raise the build timeout or narrow the scope)")
     report = (f"mutants_scoped_guard: baseline ran {tests} tests; caught {caught} / missed {missed} / "
               f"test timeouts {test_timeout} / {build_timeout} build timeouts / unviable {unviable}")
     return problems, report

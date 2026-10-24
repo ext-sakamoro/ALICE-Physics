@@ -90,6 +90,26 @@ class Guard(unittest.TestCase):
         problems, _ = self.check({"caught": 0, "missed": 1, "timeout": 0, "unviable": 0}, build_timeouts=72)
         self.assertTrue(any("no mutant was caught" in p for p in problems), problems)
 
+    def test_more_build_timeouts_than_measured_fails(self):
+        # caught mutants do not make a run that built 5 of 15 mutants a measurement of the scope
+        problems, _ = self.check({"caught": 5, "missed": 0, "timeout": 0, "unviable": 0}, build_timeouts=10)
+        self.assertTrue(any("timed out building" in p for p in problems), problems)
+
+    def test_the_2026_10_24_negative_run_names_both_problems(self):
+        # 76 mutants: 1 missed, 3 unviable, 72 build timeouts
+        problems, _ = self.check({"caught": 0, "missed": 1, "timeout": 0, "unviable": 3}, build_timeouts=72)
+        self.assertTrue(any("no mutant was caught" in p for p in problems), problems)
+        self.assertTrue(any("72 mutants timed out building and 1 were measured" in p for p in problems), problems)
+
+    def test_outcomes_one_level_deeper_names_the_right_directory(self):
+        # cargo mutants --output mutants.out writes mutants.out/mutants.out/outcomes.json
+        with tempfile.TemporaryDirectory() as t:
+            outer = Path(t) / "mutants.out"
+            out_dir(outer, {"caught": 3, "missed": 0, "timeout": 0, "unviable": 0})
+            problems, _ = g.check(outer)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("mutants.out/mutants.out/outcomes.json exists", problems[0])
+
     def test_test_timeouts_alone_without_a_caught_mutant_fail(self):
         problems, _ = self.check({"caught": 0, "missed": 0, "timeout": 5, "unviable": 0})
         self.assertTrue(any("no mutant was caught" in p for p in problems), problems)
