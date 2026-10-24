@@ -12,7 +12,9 @@ so the .crate is checked against what it is consumed with.
                   - a pinned dependency is not in it, or is resolved from anywhere
                     but git at exactly the pinned rev (the patch was not applied),
                   - it holds a git source that Cargo.toml does not pin
-                    (a patch that does not come from Cargo.toml)
+                    (a patch that does not come from Cargo.toml); a package of the
+                    same repository at the pinned rev is pinned by it (a facade
+                    and the crates it reaches by path in that repository)
 
 Cargo.toml fails both modes when a dependency names `git` and `version` without
 a 40-hex `rev` (not pinned).
@@ -84,9 +86,10 @@ def verify(pinned: list[tuple[str, str, str]], lock_text: str) -> list[str]:
             problems.append(f"{name}: not in the packaged Cargo.lock")
         elif got != [source]:
             problems.append(f"{name}: resolved from {got}, not the pinned {source} (patch not applied)")
+    pinned_sources = set(want.values())
     for p in packages:
         source = p.get("source", "")
-        if source.startswith("git+") and want.get(p.get("name")) != source:
+        if source.startswith("git+") and source not in pinned_sources:
             problems.append(f"{p.get('name')}: git source {source} that Cargo.toml does not pin")
     return problems
 

@@ -92,6 +92,19 @@ class Verify(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn("does not pin", problems[0])
 
+    def test_another_crate_of_the_pinned_repository_at_the_pinned_rev_passes(self):
+        # a facade pinned by git reaches the crates of its repository by path: the lock
+        # gives them the facade's source
+        extra = f'\n[[package]]\nname = "sib-core"\nversion = "0.4.0"\nsource = "{GOOD_SOURCE}"\n'
+        self.assertEqual(pg.verify(self.PINNED, lock(GOOD_SOURCE, extra)), [])
+
+    def test_another_repository_at_the_pinned_rev_fails(self):
+        other_url = "https://example.invalid/other"
+        extra = f'\n[[package]]\nname = "sib-core"\nversion = "0.4.0"\nsource = "git+{other_url}?rev={REV}#{REV}"\n'
+        problems = pg.verify(self.PINNED, lock(GOOD_SOURCE, extra))
+        self.assertEqual(len(problems), 1)
+        self.assertIn("does not pin", problems[0])
+
     def test_with_nothing_pinned_a_stray_git_source_still_fails(self):
         self.assertTrue(pg.verify([], lock(GOOD_SOURCE)))
 
