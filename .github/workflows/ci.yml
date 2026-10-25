@@ -162,6 +162,11 @@ jobs:
         run: python scripts/test_tracked_binaries.py
       - name: Tracked binaries (no built binary is tracked)
         run: python scripts/tracked_binaries.py
+      # no shell pipeline in the scripts and workflows ends in grep -q (SIGPIPE under pipefail)
+      - name: Pipe into grep -q (tests)
+        run: python scripts/test_check_pipe_grep_q.py
+      - name: Pipe into grep -q (scripts and workflows)
+        run: python scripts/check_pipe_grep_q.py
       # coverage tables (docs/coverage/*.toml, hand-written): every cited test and
       # source symbol exists, oracles are not ignored, partial items and the
       # LIMITATION(<id>) comments in src/ point at each other
