@@ -75,8 +75,19 @@ A registry that cannot be read fails the run on the default branch, on tags and 
 is a warning on ci/ and wip/ branches and pull requests (an outage does not turn every branch
 red; the default branch still does not pass a check it did not run).
 
+`--print-siblings` prints, one "<Repo> <40-hex SHA>" line each, every sibling commit a base tree
+the check may build can need: every line of each base's .github/alice-siblings (the check refuses a
+sibling a base reaches by path without a pin there, so what it reaches, at any depth, is among
+them), and nothing for a base that reaches no sibling. It reads only this repository's history, so
+CI runs it before any sibling is cloned and gives the file to the alice-siblings action as `list:`,
+which clones the repositories with their full history and makes each commit present. It fails
+on a base whose tree path-depends on a sibling it does not pin, on a broken base (the pin file is
+in its first-parent history but not in its tree) and on a base from before the pin file that
+reaches a sibling: that base takes each sibling at its main as of a date, and which siblings those
+reach in turn is known only after cloning them.
+
 usage: scripts/id_move_check.py [--root DIR] [--base REF] [--base-from auto|registry|tag|bump] [--main REF]
-                                 [--print-base]
+                                 [--print-base | --print-siblings]
 config: scripts/id_move.toml
     package = "alice-zip"                 # the cargo package
     manifest = "Cargo.toml"               # its manifest, relative to the root
@@ -676,8 +687,13 @@ def listed_siblings(root: Path) -> tuple[dict[str, str], list[str]]:
     path = root / SIBLINGS_FILE
     if not path.is_file():
         return {}, [f"{SIBLINGS_FILE} is missing"]
+    return parse_siblings(path.read_text(encoding="utf-8"))
+
+
+def parse_siblings(text: str) -> tuple[dict[str, str], list[str]]:
+    """the lines of a .github/alice-siblings as {repo: sha}, and the lines that are not one pin"""
     listed, problems = {}, []
-    for no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for no, raw in enumerate(text.splitlines(), 1):
         line = " ".join(raw.split("#", 1)[0].split())
         if not line:
             continue
@@ -895,6 +911,71 @@ def materialize_pinned_siblings(tree: Path, real_parent: Path, work: Path,
             done.add(name)
             queue.append(dst)
     return resolved
+
+
+def _tree_sibling_path_deps(root: Path, ref: str) -> list[str]:
+    """the sibling repositories (`../<Repo>`) the manifests of the tree `ref` name by path, read out
+    of the repository's history (nothing is checked out)"""
+    repo = Path("/") / "tree" / root.resolve().name
+    names = []
+    for rel in git(root, "ls-tree", "-r", "--name-only", ref).splitlines():
+        if rel != "Cargo.toml" and not rel.endswith("/Cargo.toml"):
+            continue
+        if "target" in Path(rel).parts:
+            continue
+        try:
+            doc = tomllib.loads(git(root, "show", f"{ref}:{rel}"))
+        except tomllib.TOMLDecodeError as e:
+            raise CheckError(f"{ref}:{rel}: {e}") from e
+        m = repo / rel
+        for dep in _dep_paths(doc):
+            t = Path(os.path.normpath(m.parent / dep))
+            if t == repo or repo in t.parents:
+                continue
+            try:
+                name = t.relative_to(repo.parent).parts[0]
+            except ValueError:
+                raise CheckError(f"{ref}:{rel}: path dependency {dep!r} leaves the directory of the sibling "
+                                 f"repositories") from None
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def base_sibling_pins(root: Path, refs: list[str]) -> list[tuple[str, str]]:
+    """every (repository, commit) the base trees `refs` may build against: each base's
+    .github/alice-siblings in full (materialize_pinned_siblings refuses a sibling a base reaches
+    without a pin, so the siblings it reaches at any depth are among these pins); a base that
+    reaches no sibling contributes nothing"""
+    out: list[tuple[str, str]] = []
+    for ref in refs:
+        reached = _tree_sibling_path_deps(root, ref)
+        r = subprocess.run(["git", "-C", str(root), "show", f"{ref}:{SIBLINGS_FILE}"],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            touched = git(root, "log", "--first-parent", "--format=%H", ref, "--", SIBLINGS_FILE).split()
+            if touched:
+                raise CheckError(f"broken base {ref}: {SIBLINGS_FILE} is in the base's first-parent history "
+                                 f"(last changed in {touched[0][:12]}), but the base tree has none")
+            if reached:
+                raise CheckError(f"base {ref} predates {SIBLINGS_FILE} and path-depends on "
+                                 f"{', '.join('../' + n for n in reached)}: it takes each sibling at its main as of "
+                                 f"the base's date, and which siblings those reach is known only after cloning "
+                                 f"them, so they cannot be listed by commit")
+            continue
+        if not reached:
+            continue
+        pins, problems = parse_siblings(r.stdout)
+        if problems:
+            raise CheckError(f"base {ref}: " + "; ".join(problems))
+        unpinned = [n for n in reached if n != root.resolve().name and n not in pins]
+        if unpinned:
+            raise CheckError(f"base {ref} path-depends on {', '.join('../' + n for n in unpinned)} but its "
+                             f"{SIBLINGS_FILE} has no pin for it")
+        for pair in pins.items():
+            if pair not in out:
+                out.append(pair)
+    return sorted(out)
 
 
 def git_rev_dependency(root: Path, crate_dir: Path, crate: str) -> dict | str | None:
@@ -1312,8 +1393,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--main", default=MAIN_REF, help="the ref of main (a bump base is looked for on it)")
     ap.add_argument("--print-base", action="store_true",
                     help="print <package>-<version> of the base release (a cache key for its .crate) and exit")
+    ap.add_argument("--print-siblings", action="store_true",
+                    help="print '<Repo> <SHA>' for every sibling commit a base tree may build against and exit")
     a = ap.parse_args(argv)
     try:
+        if a.print_siblings:
+            cfg = load_config(Path(a.root))
+            bases = [(a.base, "tag")] if a.base is not None else choose_bases(Path(a.root), cfg, a.base_from, a.main)
+            for repo, sha in base_sibling_pins(Path(a.root), [ref for ref, kind in bases if kind != "introduced"]):
+                print(f"{repo} {sha}")
+            return 0
         if a.print_base:
             cfg = load_config(Path(a.root))
             ref, kind = (a.base, "tag") if a.base is not None else choose_base(Path(a.root), cfg, a.base_from, a.main)
