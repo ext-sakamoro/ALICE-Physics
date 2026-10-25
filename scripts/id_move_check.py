@@ -28,8 +28,11 @@ For each identifier that exists at the base and has another value now:
   clean, the list is located by the sibling's rustdoc span, and the value is taken out of a
   copy of the sibling laid out next to a copy of this crate (the real sibling is never
   changed). A re-export that does not resolve that way fails, with the reason;
-- otherwise (not in the list, or no list) the move is a change of meaning and the version must
-  be a breaking step from the base's (a major for 1.x and later, a minor or a major for 0.x);
+- otherwise (not in the list, or no list) the move is a change of meaning and it must be
+  announced to the consumers: the version is a breaking step from the base's (a major for 1.x
+  and later, a minor or a major for 0.x), or, while publication is frozen and the version does
+  not move, the `[Unreleased]` section of CHANGELOG.md has a `**Breaking:**` entry (a list item
+  that starts with it) naming both values (their first 8 hex digits) in that one entry;
 - in both cases CHANGELOG.md must name both values (their first 8 hex digits).
 
 An identifier missing at the base is new and passes. Comparing no identifier fails, and
@@ -454,7 +457,51 @@ def choose_base(root: Path, cfg: Config, base_from: str, main_ref: str = MAIN_RE
     return choose_bases(root, cfg, base_from, main_ref)[-1]
 
 
+CARGO_OUTPUT_PARSER = True
+
+# terminal escape sequences (CSI, character-set selectors, OSC): with CARGO_TERM_COLOR=always cargo
+# and libtest colour their words, so the output is read only after these are removed
+ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|[()*+][0-9A-Za-z]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
+
+
+def tests_ran(stdout: str) -> int:
+    """the tests a `cargo test` output reports as run (passed plus failed), read without colour"""
+    plain = ANSI.sub("", stdout)
+    return sum(int(x) for x in re.findall(r"test result: \w+\. (\d+) passed", plain)) + \
+        sum(int(x) for x in re.findall(r"(\d+) failed", plain))
+
+
 SECTION = re.compile(r"^##\s+\[?([^\]\s]+)\]?")
+ITEM = re.compile(r"^\s*[-*]\s+")
+
+
+def breaking_entries(text: str) -> list[str]:
+    """the list items of CHANGELOG.md's `[Unreleased]` section that start with `**Breaking:**`, each
+    with its continuation lines (up to the next item or heading)"""
+    items: list[str] = []
+    current: list[str] | None = None
+    unreleased = False
+    for line in text.split("\n"):
+        m = SECTION.match(line)
+        if m:
+            unreleased = m.group(1).lower() == "unreleased"
+            current = None
+            continue
+        if not unreleased:
+            continue
+        if line.startswith("#"):
+            current = None
+            continue
+        if ITEM.match(line):
+            body = ITEM.sub("", line, count=1)
+            current = [body] if body.startswith("**Breaking:**") else None
+            if current is not None:
+                items.append("")
+        elif current is not None and line.strip():
+            current.append(line)
+        if current is not None:
+            items[-1] = " ".join(current)
+    return items
 
 
 def changelog_sections(text: str, head_version: str) -> str:
@@ -615,8 +662,7 @@ def run_named_test(crate_dir: Path, ref: str, target_dir: Path, features: tuple[
     feat = ["--all-features"] if features is None else (["--features", ",".join(features)] if features else [])
     r = subprocess.run(["cargo", "test", "--quiet", "--manifest-path", str(crate_dir / "Cargo.toml"), *feat,
                         *sel, fn, "--", "--exact"], capture_output=True, text=True, env=env)
-    ran = sum(int(x) for x in re.findall(r"test result: \w+\. (\d+) passed", r.stdout)) + \
-        sum(int(x) for x in re.findall(r"(\d+) failed", r.stdout))
+    ran = tests_ran(r.stdout)
     return r.returncode == 0, ran, (r.stdout + r.stderr).strip()[-400:]
 
 
@@ -1132,16 +1178,22 @@ def judge(base_version: str, head_version: str, base: dict[str, dict | None],
                                 f"but no previous-tests entry showed it depends on the old value")
         else:
             report.append(f"{spec.path}: moved {old[:8]} -> {new[:8]}")
-        if not in_previous and not is_breaking(base_version, head_version):
+        announced = any(old[:8] in e and new[:8] in e for e in breaking_entries(changelog))
+        if not in_previous and not is_breaking(base_version, head_version) and announced:
+            report.append(f"{spec.path}: announced by a **Breaking:** entry of [Unreleased] naming "
+                          f"{old[:8]} and {new[:8]} (the version does not move while publication is frozen)")
+        elif not in_previous and not is_breaking(base_version, head_version):
             fix = next_breaking(base_version)
             if head_version == base_version:
                 problems.append(f"{spec.path}: moved {old[:8]} -> {new[:8]} at {head_version}, the version of the "
-                                f"release it is compared with: bump the version first (set version = \"{fix}\" in "
-                                f"{cfg.manifest}) and name {old[:8]} and {new[:8]} in CHANGELOG.md")
+                                f"release it is compared with: bump the version (set version = \"{fix}\" in "
+                                f"{cfg.manifest}), or name {old[:8]} and {new[:8]} in a **Breaking:** entry of "
+                                f"CHANGELOG.md's [Unreleased]")
             else:
                 problems.append(f"{spec.path}: moved {old[:8]} -> {new[:8]} but the version {base_version} -> "
                                 f"{head_version} is not a breaking step (a major, or a minor in 0.x): set "
-                                f"version = \"{fix}\" in {cfg.manifest}")
+                                f"version = \"{fix}\" in {cfg.manifest}, or name {old[:8]} and {new[:8]} in a "
+                                f"**Breaking:** entry of CHANGELOG.md's [Unreleased]")
         missing = [h[:8] for h in (old, new) if h[:8] not in changelog]
         if missing:
             problems.append(f"{spec.path}: moved, and CHANGELOG.md does not name {', '.join(missing)}")
