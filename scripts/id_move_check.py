@@ -56,11 +56,24 @@ The base's identifiers are read from the version as published (crates.io, `={ver
 which is what a stored value was stamped by; a version never published is read from the tag's
 tree instead (`--base-from tag` forces that, `--base-from registry` refuses the fallback).
 
+While publication is frozen, the version moves on main without a tag or a release: the base is
+then the commit before the newest version bump on main's first-parent line (scripts/
+release_baseline.py, a file shared with the other ALICE crates), read from its tree, and its
+version is the one HEAD's is judged against (`--base-from bump`). `auto` judges against both
+when the tag is an ancestor of the commit before the bump (the tag is what stored data in the
+wild was stamped by, the bump base the version line main moved on since), and a problem against
+either fails, named with the base it came from; on a tie, or when the tag is newer, the tag
+alone. Against a bump base every move must be named in CHANGELOG.md's `[Unreleased]`
+section or the section of HEAD's version (the release the move goes out in), not anywhere in
+the file; a crate absent at the commit before its first version on main has no base, and every
+identifier is new. `--main <ref>` names main (default `origin/main`; fetch it first).
+
 A registry that cannot be read fails the run on the default branch, on tags and locally, and
 is a warning on ci/ and wip/ branches and pull requests (an outage does not turn every branch
 red; the default branch still does not pass a check it did not run).
 
-usage: scripts/id_move_check.py [--root DIR] [--base REF] [--base-from auto|registry|tag] [--print-base]
+usage: scripts/id_move_check.py [--root DIR] [--base REF] [--base-from auto|registry|tag|bump] [--main REF]
+                                 [--print-base]
 config: scripts/id_move.toml
     package = "alice-zip"                 # the cargo package
     manifest = "Cargo.toml"               # its manifest, relative to the root
@@ -86,16 +99,24 @@ config: scripts/id_move.toml
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import tomllib
 from dataclasses import dataclass, replace
 from pathlib import Path
+from urllib.parse import urlparse
+
+# the base of a crate whose version moves on main without a release (a file shared with the other
+# ALICE crates, next to this one)
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import release_baseline  # noqa: E402
 
 CONFIG = "scripts/id_move.toml"
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$")
@@ -389,6 +410,66 @@ def release_base(root: Path, cfg: Config) -> tuple[str, str]:
                      f"at that version in {cfg.manifest} (nothing published to compare with; pass --base to name one)")
 
 
+MAIN_REF = "origin/main"
+
+
+def is_ancestor(root: Path, a: str, b: str) -> bool:
+    return subprocess.run(["git", "-C", str(root), "merge-base", "--is-ancestor", a, b],
+                          capture_output=True).returncode == 0
+
+
+def choose_bases(root: Path, cfg: Config, base_from: str, main_ref: str = MAIN_REF) -> list[tuple[str | None, str]]:
+    """the bases to judge against, each (ref, kind): kind "tag" (a release tag), "bump" (the commit
+    before the newest version bump on main) or "introduced" (no base: the crate came after the last
+    commit before its first version, ref None). `auto` judges against both the tag and the bump base
+    when the bump base is newer: the tag is what stored data in the wild was stamped by, the bump
+    base the version line main moved on since"""
+    if base_from in ("registry", "tag"):
+        return [(release_base(root, cfg)[0], "tag")]
+    tag, why_tag = None, ""
+    if base_from == "auto":
+        try:
+            tag = release_base(root, cfg)[0]
+        except CheckError as e:
+            why_tag = str(e)
+    try:
+        bump = release_baseline.bump_baseline(root, cfg.manifest, cfg.package, base_package=cfg.base_package,
+                                              main_ref=main_ref)
+    except release_baseline.BaselineError as e:
+        if tag is None:
+            raise CheckError(f"no base: {why_tag + '; ' if why_tag else ''}{e}") from None
+        return [(tag, "tag")]
+    if bump.introduced:
+        return [(tag, "tag")] if tag is not None else [(None, "introduced")]
+    if tag is None:
+        return [(bump.sha, "bump")]
+    tag_sha = git(root, "rev-parse", f"{tag}^{{commit}}").strip()
+    if tag_sha != bump.sha and is_ancestor(root, tag_sha, bump.sha):
+        return [(tag, "tag"), (bump.sha, "bump")]
+    return [(tag, "tag")]
+
+
+def choose_base(root: Path, cfg: Config, base_from: str, main_ref: str = MAIN_REF) -> tuple[str | None, str]:
+    """the newest of the bases (the one --print-base names)"""
+    return choose_bases(root, cfg, base_from, main_ref)[-1]
+
+
+SECTION = re.compile(r"^##\s+\[?([^\]\s]+)\]?")
+
+
+def changelog_sections(text: str, head_version: str) -> str:
+    """the `[Unreleased]` section and the section of `head_version` (each from its `## ` heading to
+    the next `## ` heading), where a move against a bump base goes out"""
+    out, keep = [], False
+    for line in text.split("\n"):
+        m = SECTION.match(line)
+        if m:
+            keep = m.group(1).lower() == "unreleased" or m.group(1).lstrip("v") == head_version
+        if keep:
+            out.append(line)
+    return "\n".join(out)
+
+
 def probe_source(cfg: Config, spec: IdSpec, with_previous: bool = True) -> str:
     lines = ["fn hex(b: &[u8; 32]) -> String { b.iter().map(|x| format!(\"{:02x}\", x)).collect() }",
              "fn main() {",
@@ -542,7 +623,6 @@ def run_named_test(crate_dir: Path, ref: str, target_dir: Path, features: tuple[
 # a POSIX string, not a Path: it appears in messages that must read the same on every OS
 SIBLINGS_FILE = ".github/alice-siblings"
 SIBLING_LINE = re.compile(r"(ALICE-[A-Za-z0-9-]+) ([0-9a-f]{40})")
-SIBLING_PATH = re.compile(r'path\s*=\s*"\.\./(ALICE-[A-Za-z0-9-]+)"')
 
 
 def listed_siblings(root: Path) -> tuple[dict[str, str], list[str]]:
@@ -606,6 +686,245 @@ def copy_tracked(src: Path, dst: Path) -> None:
             shutil.copy(s, d)
 
 
+def _dep_paths(node, deps: bool = False):
+    """the `path` of every dependency entry of a parsed manifest: under any table whose name ends in
+    `dependencies` (also `target.<cfg>.*` and `workspace.dependencies`) and under `[patch.*]`"""
+    if isinstance(node, dict):
+        if deps and isinstance(node.get("path"), str):
+            yield node["path"]
+            return
+        for k, v in node.items():
+            yield from _dep_paths(v, deps or k.endswith("dependencies") or k == "patch")
+    elif isinstance(node, list):
+        for v in node:
+            yield from _dep_paths(v, deps)
+
+
+def _manifests(repo: Path) -> list[Path]:
+    if (repo / ".git").exists():
+        out = subprocess.run(["git", "-C", str(repo), "ls-files", "-co", "--exclude-standard", "--", "Cargo.toml",
+                              "*/Cargo.toml"], capture_output=True, text=True, check=True).stdout.split("\n")
+        return [repo / f for f in out if f and (repo / f).is_file()]
+    return [m for m in repo.rglob("Cargo.toml") if "target" not in m.relative_to(repo).parts]
+
+
+def path_dep_siblings(copy_root: Path, real_parent: Path, copied: frozenset[str] = frozenset()) -> list[str]:
+    """the sibling repositories (`../<Repo>`) that the manifests of `copy_root` name as path
+    dependencies, and the ones their manifests name in turn: a sibling may point back at this
+    repository (`../<this repo>/<crate>`), so a copy is built under a fresh parent that holds the
+    copy under the repository's own name and a link to each of these, and every `../` resolves
+    inside it; a repository in `copied` is laid out next to the copy already and is read there"""
+    own, seen, queue = copy_root.name, set(), [copy_root]
+    while queue:
+        repo = queue.pop()
+        for m in _manifests(repo):
+            try:
+                doc = tomllib.loads(m.read_text(encoding="utf-8"))
+            except tomllib.TOMLDecodeError as e:
+                raise CheckError(f"{m}: {e}") from e
+            for dep in _dep_paths(doc):
+                t = Path(os.path.normpath(m.parent / dep))
+                if t == repo or repo in t.parents:
+                    continue
+                try:
+                    name = t.relative_to(repo.parent).parts[0]
+                except ValueError:
+                    raise CheckError(f"{m}: path dependency {dep!r} leaves the directory of the sibling "
+                                     f"repositories ({repo.parent})") from None
+                if name == own or name in seen:
+                    continue
+                if name in copied:
+                    seen.add(name)
+                    queue.append(copy_root.parent / name)
+                    continue
+                if not (real_parent / name).is_dir():
+                    raise CheckError(f"{m}: path dependency {dep!r} names ../{name}, which is not checked out "
+                                     f"next to the repository ({real_parent / name})")
+                seen.add(name)
+                queue.append(real_parent / name)
+    return sorted(seen)
+
+
+def link_siblings(copy_root: Path, real_parent: Path, copied: set[str]) -> None:
+    """links in the parent of `copy_root` to the siblings its manifests reach (except `copied`)"""
+    for name in path_dep_siblings(copy_root, real_parent, frozenset(copied)):
+        if name not in copied:
+            (copy_root.parent / name).symlink_to(real_parent / name, target_is_directory=True)
+
+
+def _sibling_path_deps(repo: Path) -> list[str]:
+    """the sibling repositories (`../<Repo>`) the manifests of the checkout `repo` name by path"""
+    names = []
+    for m in _manifests(repo):
+        try:
+            doc = tomllib.loads(m.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as e:
+            raise CheckError(f"{m}: {e}") from e
+        for dep in _dep_paths(doc):
+            t = Path(os.path.normpath(m.parent / dep))
+            if t == repo or repo in t.parents:
+                continue
+            try:
+                name = t.relative_to(repo.parent).parts[0]
+            except ValueError:
+                raise CheckError(f"{m}: path dependency {dep!r} leaves the directory of the sibling "
+                                 f"repositories ({repo.parent})") from None
+            if name not in names:
+                names.append(name)
+    return names
+
+
+def _sibling_at_date(name: str, real: Path, date: str) -> str:
+    """the newest commit of `real`'s origin main (first parent) whose committer date is not later
+    than `date`: what CI cloned before the repository pinned its siblings"""
+    if git(real, "rev-parse", "--is-shallow-repository").strip() == "true":
+        raise CheckError(f"../{name} is a shallow clone: its main as of {date} cannot be read")
+    subprocess.run(["git", "-C", str(real), "fetch", "-q", "origin"], capture_output=True)
+    r = subprocess.run(["git", "-C", str(real), "rev-list", "-1", "--first-parent", f"--before={date}",
+                        "origin/main"], capture_output=True, text=True)
+    sha = r.stdout.strip()
+    if r.returncode != 0 or not sha:
+        raise CheckError(f"../{name} has no commit of its origin main committed at or before {date} "
+                         f"(the base predates the sibling)")
+    return sha
+
+
+def materialize_pinned_siblings(tree: Path, real_parent: Path, work: Path,
+                                root: Path | None = None, base_ref: str | None = None) -> list[str]:
+    """write next to `tree` (a base tree under a fresh parent) every sibling its manifests reach by
+    path dependency, at the commit `tree`'s .github/alice-siblings pins, and the siblings those
+    reach in turn: the base is built against the siblings it was built against, not today's
+    checkouts (a sibling may since have taken another major version)
+
+    A base from before the repository had the pin file (no commit of `base_ref`'s first-parent
+    history has it) takes each sibling at its origin main as of the base commit's committer date;
+    a base that misses the file although its first-parent history has it is broken. Returns what was resolved, as
+    report lines"""
+    pins, problems = listed_siblings(tree)
+    as_of = None
+    if not (tree / SIBLINGS_FILE).is_file() and root is not None and base_ref is not None:
+        # the fallback is for a base from before the pins only: if any commit of the base's
+        # first-parent history has the file, the base lacks it because it was removed, and is broken
+        touched = git(root, "log", "--first-parent", "--format=%H", base_ref, "--", SIBLINGS_FILE).split()
+        if touched:
+            raise CheckError(f"broken base {base_ref}: {SIBLINGS_FILE} is in the base's first-parent history "
+                             f"(last changed in {touched[0][:12]}), but the base tree has none")
+        as_of = git(root, "show", "-s", "--format=%cI", base_ref).strip()
+    resolved = []
+    own, done, queue = tree.name, set(), [tree]
+    while queue:
+        repo = queue.pop()
+        for name in _sibling_path_deps(repo):
+            if name == own or name in done:
+                continue
+            real = real_parent / name
+            if as_of is not None:
+                if not (real / ".git").exists():
+                    raise CheckError(f"the base tree path-depends on ../{name}, which is not checked out next "
+                                     f"to the repository ({real})")
+                sha = _sibling_at_date(name, real, as_of)
+                resolved.append(f"../{name} at {sha[:12]} (sibling main as of {as_of}, base predates pins)")
+            elif name not in pins:
+                why = "; ".join(problems) if problems else f"{SIBLINGS_FILE} lists no {name}"
+                raise CheckError(f"the base tree path-depends on ../{name} but has no pin for it ({why})")
+            else:
+                sha = pins[name]
+                resolved.append(f"../{name} at {sha[:12]} (pinned by the base tree)")
+            if not (real / ".git").exists():
+                raise CheckError(f"the base tree pins ../{name} at {sha[:12]}, which is not checked out next "
+                                 f"to the repository ({real})")
+            if subprocess.run(["git", "-C", str(real), "cat-file", "-e", f"{sha}^{{commit}}"],
+                              capture_output=True).returncode != 0:
+                subprocess.run(["git", "-C", str(real), "fetch", "-q", "origin", sha], capture_output=True)
+                if subprocess.run(["git", "-C", str(real), "cat-file", "-e", f"{sha}^{{commit}}"],
+                                  capture_output=True).returncode != 0:
+                    raise CheckError(f"the base tree pins ../{name} at {sha[:12]}, which is not a commit of "
+                                     f"{real} (nor fetchable from its origin)")
+            dst = tree.parent / name
+            env = dict(os.environ, GIT_INDEX_FILE=str(work / f"sibling-{name}.index"))
+            for args in (["read-tree", sha], ["checkout-index", "--all", "--force", f"--prefix={dst}/"]):
+                r = subprocess.run(["git", "-C", str(real), *args], capture_output=True, text=True, env=env)
+                if r.returncode != 0:
+                    raise CheckError(f"git {args[0]} {sha[:12]} in ../{name}: {r.stderr.strip()}")
+            done.add(name)
+            queue.append(dst)
+    return resolved
+
+
+def git_rev_dependency(root: Path, crate_dir: Path, crate: str) -> dict | str | None:
+    """the `git` + `rev` source the manifests of the crate (and its workspace) give the dependency
+    `crate` (lib name), as {url, rev, package}; None when no manifest takes it from git"""
+    for m in dict.fromkeys([crate_dir / "Cargo.toml", root / "Cargo.toml"]):
+        if not m.is_file():
+            continue
+        doc = tomllib.loads(m.read_text(encoding="utf-8"))
+        tables = [doc.get("dependencies", {}), doc.get("workspace", {}).get("dependencies", {})]
+        tables += [t.get("dependencies", {}) for t in doc.get("target", {}).values() if isinstance(t, dict)]
+        for table in tables:
+            for key, spec in table.items():
+                if not isinstance(spec, dict) or "git" not in spec:
+                    continue
+                package = str(spec.get("package", key))
+                if package.replace("-", "_") != crate:
+                    continue
+                rev = spec.get("rev")
+                if not isinstance(rev, str) or not re.fullmatch(r"[0-9a-f]{40}", rev):
+                    return f"{m}: {key} is taken from git without a 40-hex `rev`"
+                return {"url": str(spec["git"]), "rev": rev, "package": package}
+    return None
+
+
+def checked_rev_clone(root: Path, source: dict, cache: Path | None = None) -> tuple[str, Path]:
+    """(repository name, local clone) for a git + rev source: the clone next to the repository, or
+    in the home directory, or (with neither, as on a CI runner) a partial bare repository under
+    `cache` whose origin is the source's url; the rev is fetched from its origin and must be on an
+    origin branch; a clone's HEAD and working tree are neither read nor moved"""
+    name = Path(urlparse(source["url"]).path).name.removesuffix(".git")
+    for clone in (root.resolve().parent / name, Path.home() / name):
+        if (clone / ".git").exists():
+            break
+    else:
+        if cache is None:
+            raise CheckError(f"{source['url']} rev {source['rev'][:12]}: no clone of {name} next to the "
+                             f"repository or in the home directory to read it from")
+        clone = cache / f"{name}.git"
+        if not (clone / "HEAD").is_file():
+            clone.mkdir(parents=True, exist_ok=True)
+            for args in (["init", "-q", "--bare"], ["remote", "add", "origin", source["url"]],
+                         ["config", "remote.origin.promisor", "true"],
+                         ["config", "remote.origin.partialclonefilter", "blob:none"]):
+                r = subprocess.run(["git", "-C", str(clone), *args], capture_output=True, text=True)
+                if r.returncode != 0:
+                    raise CheckError(f"{source['url']}: preparing a fetch of {name} failed: {r.stderr.strip()[-300:]}")
+        # no credential prompt: a url that needs credentials fails here instead of waiting
+        r = subprocess.run(["git", "-C", str(clone), "fetch", "-q", "--filter=blob:none", "origin",
+                            "+refs/heads/*:refs/remotes/origin/*"], capture_output=True, text=True,
+                           env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+        if r.returncode != 0:
+            raise CheckError(f"{source['url']}: fetching {name} failed: {r.stderr.strip()[-300:]}")
+    subprocess.run(["git", "-C", str(clone), "fetch", "-q", "origin"], capture_output=True,
+                   env=dict(os.environ, GIT_TERMINAL_PROMPT="0"))
+    rev = source["rev"]
+    if subprocess.run(["git", "-C", str(clone), "cat-file", "-e", f"{rev}^{{commit}}"],
+                      capture_output=True).returncode != 0:
+        raise CheckError(f"{source['url']} rev {rev[:12]} is not a commit of {clone}")
+    on = subprocess.run(["git", "-C", str(clone), "branch", "-r", "--contains", rev, "--list", "origin/*"],
+                        capture_output=True, text=True).stdout.strip()
+    if not on:
+        raise CheckError(f"{source['url']} rev {rev[:12]} is not on an origin branch of {clone}")
+    return name, clone
+
+
+def archive_rev(clone: Path, rev: str, dst: Path) -> None:
+    """the files of `rev` in `clone`, written to `dst` (git archive; the clone is not touched)"""
+    r = subprocess.run(["git", "-C", str(clone), "archive", "--format=tar", rev], capture_output=True)
+    if r.returncode != 0:
+        raise CheckError(f"git archive {rev[:12]} in {clone}: {r.stderr.decode(errors='replace').strip()}")
+    dst.mkdir(parents=True, exist_ok=True)
+    with tarfile.open(fileobj=io.BytesIO(r.stdout)) as tar:
+        tar.extractall(dst, filter="data")
+
+
 class PreviousVerifier:
     """runs each [[id]]'s previous-tests against a copy of the working tree with the old value
     taken out of the previous list; a list this crate re-exports from a sibling repository listed
@@ -630,10 +949,31 @@ class PreviousVerifier:
             return (f"{spec.previous} has no source span in the rustdoc JSON and is not a re-export of another "
                     f"crate's constant, so the old value cannot be taken out of it")
         crate, item_path = target
+        top = self.root.resolve()
+        crate_dir = (self.root / self.cfg.manifest).resolve().parent
+        source = git_rev_dependency(top, crate_dir, crate)
+        if isinstance(source, str):
+            return f"{spec.previous} re-exports {'::'.join(item_path)}: {source}"
+        if source is not None:
+            try:
+                repo, clone = checked_rev_clone(top, source, self.target / "id-move-git-sources")
+                scratch = top.parent / f".id-move-rev-{os.getpid()}"
+                try:
+                    archive_rev(clone, source["rev"], scratch / repo)
+                    sib_doc = rustdoc_json(scratch / repo,
+                                           replace(self.cfg, package=source["package"], doc_features=None))
+                finally:
+                    shutil.rmtree(scratch, ignore_errors=True)
+            except CheckError as e:
+                return f"{spec.previous} re-exports {'::'.join(item_path)}: {e}"
+            span = constant_span(sib_doc, item_path)
+            if span is None:
+                return (f"{spec.previous} re-exports {'::'.join(item_path)} from {source['url']} rev "
+                        f"{source['rev'][:12]}, but its rustdoc JSON has no constant there with a source span")
+            return repo, span, dict(source, clone=clone)
         listed, problems = listed_siblings(self.root)
         if problems:
             return f"{spec.previous} re-exports {'::'.join(item_path)}: " + "; ".join(problems)
-        top = self.root.resolve()
         for repo, sha in listed.items():
             manifest = top.parent / repo / "Cargo.toml"
             if not manifest.is_file():
@@ -653,7 +993,7 @@ class PreviousVerifier:
             if span is None:
                 return (f"{spec.previous} re-exports {'::'.join(item_path)} from ../{repo}, but its rustdoc JSON has "
                         f"no constant there with a source span")
-            return repo, span
+            return repo, span, None
         return (f"{spec.previous} re-exports {'::'.join(item_path)} from {crate}, which is not a sibling repository "
                 f"listed in {SIBLINGS_FILE} (checked out next to this one)")
 
@@ -674,39 +1014,60 @@ class PreviousVerifier:
         top = self.root.resolve()
         own = self._list_span(spec)
         if own is not None:
-            edit_repo, (rel, begin, end) = None, own
+            edit_repo, (rel, begin, end), source = None, own, None
         else:
             found = self._sibling_span(spec)
             if isinstance(found, str):
                 return [], [f"{spec.path}: {found}"]
-            edit_repo, (rel, begin, end) = found
-        if edit_repo is None:
-            # the copy sits next to the repository root so sibling path dependencies resolve
-            base = top.parent
-            copy = base / f".{top.name}.id-move-previous-{os.getpid()}"
-            cleanup = copy
-        else:
-            # a fresh parent holds the copy, the copy of the sibling to change, and links to the
-            # other siblings the manifests name, so `../<Repo>` resolves inside it
-            cleanup = top.parent / f".id-move-previous-{os.getpid()}"
-            base = cleanup
-            copy = base / top.name
+            edit_repo, (rel, begin, end), source = found
+        # a fresh parent holds the copy under the repository's own name, the copy of the sibling
+        # to change (if the list is a sibling's), and links to the other siblings the manifests
+        # reach, so every `../<Repo>` resolves inside it: a sibling that points back at this
+        # repository then reaches the copy, not the working tree (one package, not two)
+        cleanup = top.parent / f".id-move-previous-{os.getpid()}"
+        base = cleanup
+        copy = base / top.name
         try:
             copy_tracked(top, copy)
-            if edit_repo is not None:
-                named = set(listed_siblings(top)[0])
-                for m in (top / "Cargo.toml", top / "fuzz" / "Cargo.toml"):
-                    if m.is_file():
-                        named |= set(SIBLING_PATH.findall(m.read_text(encoding="utf-8")))
-                for repo in sorted(named - {edit_repo}):
-                    if (top.parent / repo).exists():
-                        (base / repo).symlink_to(top.parent / repo, target_is_directory=True)
+            if source is not None:
+                # the rev's files next to the copy, and the copy's git source of that package patched
+                # to them; the build must resolve the package there, not fetch the rev again
+                archive_rev(source["clone"], source["rev"], base / edit_repo)
+                with open(copy / "Cargo.toml", "a", encoding="utf-8") as f:
+                    f.write(f'\n[patch."{source["url"]}"]\n{source["package"]} = {{ path = "../{edit_repo}" }}\n')
+            elif edit_repo is not None:
                 copy_tracked(top.parent / edit_repo, base / edit_repo)
+            try:
+                link_siblings(copy, top.parent, {edit_repo} if edit_repo else set())
+            except CheckError as e:
+                return [], [f"{spec.path}: {e}"]
+            if source is not None:
+                meta = subprocess.run(["cargo", "metadata", "--format-version", "1", "--manifest-path",
+                                       str(copy / "Cargo.toml")], capture_output=True, text=True,
+                                      env=dict(os.environ, CARGO_TARGET_DIR=str(self.target)))
+                if meta.returncode != 0:
+                    return [], [f"{spec.path}: the copy with {edit_repo} patched in does not resolve: "
+                                f"{meta.stderr.strip()[-400:]}"]
+                used = [Path(pk["manifest_path"]).resolve().parent for pk in json.loads(meta.stdout)["packages"]
+                        if pk["name"] == source["package"]]
+                if used != [(base / edit_repo).resolve()]:
+                    return [], [f"{spec.path}: the copy resolves {source['package']} at {used}, not at the patched "
+                                f"../{edit_repo} (the old value would not be taken out of what is built)"]
+            if edit_repo is not None:
                 where = f"../{edit_repo}/{Path(rel).as_posix()}"
                 path = base / edit_repo / rel
             else:
-                where = rel
-                path = copy / crate_dir.relative_to(top) / rel
+                # rustdoc writes a span relative to the directory rustc ran in: the crate itself, or
+                # the workspace root for some members (a wrong pick fails closed: the old value is
+                # then not found in the block)
+                for under in (crate_dir, top):
+                    if (under / rel).is_file():
+                        break
+                else:
+                    return [], [f"{spec.path}: the span {rel} of {spec.previous} is neither under the repository "
+                                f"root nor under the crate"]
+                where = (under / rel).relative_to(top).as_posix()
+                path = copy / where
             copy_crate = copy / crate_dir.relative_to(top)
             for ref in spec.previous_tests:
                 ok, ran, out = run_named_test(copy_crate, ref, self.target, self.cfg.doc_features)
@@ -787,31 +1148,60 @@ def judge(base_version: str, head_version: str, base: dict[str, dict | None],
     return problems, report
 
 
-def check(root: Path, base_ref: str | None, base_from: str = "auto") -> tuple[list[str], list[str]]:
+def check(root: Path, base_ref: str | None, base_from: str = "auto",
+          main_ref: str = MAIN_REF) -> tuple[list[str], list[str]]:
     cfg = load_config(root)
     missing = completeness(cfg, id_constants((root / cfg.manifest).resolve().parent, cfg, root))
-    problems, report = check_values(root, base_ref, base_from)
+    problems, report = check_values(root, base_ref, base_from, main_ref)
     return missing + problems, report
 
 
-def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> tuple[list[str], list[str]]:
+def check_values(root: Path, base_ref: str | None, base_from: str = "auto",
+                 main_ref: str = MAIN_REF) -> tuple[list[str], list[str]]:
+    """judged against every base (`choose_bases`; one when `base_ref` names it): a problem against
+    any of them fails, and with two bases each problem names the one it came from"""
+    cfg = load_config(root)
+    bases = [(base_ref, "tag")] if base_ref is not None else choose_bases(root, cfg, base_from, main_ref)
+    problems, report = [], []
+    for ref, kind in bases:
+        p, r = check_against(root, ref, kind, base_from, main_ref)
+        if len(bases) > 1:
+            label = f"[{kind} base {ref if kind == 'tag' else (ref or '')[:12]}] "
+            p = [label + x for x in p]
+        problems += p
+        report += r
+    return problems, report
+
+
+def check_against(root: Path, base_ref: str | None, kind: str, base_from: str = "auto",
+                  main_ref: str = MAIN_REF) -> tuple[list[str], list[str]]:
     """`base_from`: "registry" reads the base version as published (what G9 is about: a path
     dependency of the tag's tree on a sibling repository would resolve against today's sibling,
     not the released one), "tag" builds the tag's tree, "auto" the registry and the tag when the
     version was never published"""
     cfg = load_config(root)
     head_version = package_version((root / cfg.manifest).read_text(encoding="utf-8"), cfg.package)
-    if base_ref is None:
-        base_ref, _ = release_base(root, cfg)
-    base_version = package_version(git(root, "show", f"{base_ref}:{cfg.manifest}"), cfg.base_pkg)
     changelog_path = (root / cfg.manifest).parent / "CHANGELOG.md"
     if not changelog_path.exists():
         changelog_path = root / "CHANGELOG.md"
     changelog = changelog_path.read_text(encoding="utf-8") if changelog_path.exists() else ""
     work = Path(tempfile.mkdtemp(prefix="id-move-"))
     target = Path(os.environ.get("ID_MOVE_TARGET_DIR") or (work / "target"))
+    if kind == "introduced":
+        try:
+            head = read_ids(root, cfg, target)
+            problems, report = judge(head_version, head_version, {}, head, changelog, cfg)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        report.insert(0, f"no base: {cfg.package} has no version on {main_ref} before its first, working tree "
+                         f"{head_version}")
+        return problems, report
+    base_version = package_version(git(root, "show", f"{base_ref}:{cfg.manifest}"), cfg.base_pkg)
+    if kind == "bump":
+        # the move goes out in HEAD's version: it is named where that release is described
+        changelog = changelog_sections(changelog, head_version)
     source = base_ref
-    if base_from in ("registry", "auto"):
+    if kind == "tag" and base_from in ("registry", "auto"):
         try:
             base = read_ids(base_version, cfg, target, with_previous=False, is_base=True)
             head = read_ids(root, cfg, target)
@@ -831,28 +1221,34 @@ def check_values(root: Path, base_ref: str | None, base_from: str = "auto") -> t
             shutil.rmtree(work, ignore_errors=True)
         report.insert(0, f"base {base_ref}: {source}, working tree {head_version}")
         return problems, report
-    # the base tree sits next to the root, at the same depth, so a path dependency on a
-    # sibling repository (`../ALICE-SDF`) resolves from it as it does from the root
-    wt = root.resolve().parent / f".{root.resolve().name}.id-move-base-{os.getpid()}"
+    # the base tree sits under a fresh parent with the repository's own name, next to each sibling
+    # it reaches by path dependency at the commit the base tree pins, so `../ALICE-SDF` resolves
+    # to what the base was built against
+    fresh = root.resolve().parent / f".id-move-base-{os.getpid()}"
+    wt = fresh / root.resolve().name
+    siblings: list[str] = []
     try:
         # every file of the tag, written through a throwaway index: the repository's own index and
         # checkout are not touched, nothing is registered, and unlike `git archive` no file marked
         # export-ignore in .gitattributes is left out of the build
-        wt.mkdir()
+        wt.mkdir(parents=True)
         env = dict(os.environ, GIT_INDEX_FILE=str(work / "base.index"))
         for args in (["read-tree", base_ref], ["checkout-index", "--all", "--force", f"--prefix={wt}/"]):
             r = subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, env=env)
             if r.returncode != 0:
                 raise CheckError(f"git {args[0]} {base_ref}: {r.stderr.strip()}")
+        siblings = materialize_pinned_siblings(wt, root.resolve().parent, work, root, base_ref)
         base = read_ids(wt, cfg, target, with_previous=False, is_base=True)
-        shutil.rmtree(wt, ignore_errors=True)
+        shutil.rmtree(fresh, ignore_errors=True)
         head = read_ids(root, cfg, target)
         problems, report = judge(base_version, head_version, base, head, changelog, cfg,
                                 PreviousVerifier(root, cfg, _DOC.get(str(root)), target))
     finally:
-        shutil.rmtree(wt, ignore_errors=True)
+        shutil.rmtree(fresh, ignore_errors=True)
         shutil.rmtree(work, ignore_errors=True)
-    report.insert(0, f"base {base_ref}: the tag's tree ({base_version}), working tree {head_version}")
+    what = ("the commit before the newest version bump on " + main_ref) if kind == "bump" else "the tag's tree"
+    report.insert(0, f"base {base_ref}: {what} ({base_version}), working tree {head_version}")
+    report.extend(f"base {base_ref} sibling {line}" for line in siblings)
     return problems, report
 
 
@@ -860,18 +1256,21 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=str(Path(__file__).resolve().parents[1]))
     ap.add_argument("--base")
-    ap.add_argument("--base-from", choices=["auto", "registry", "tag"], default="auto")
+    ap.add_argument("--base-from", choices=["auto", "registry", "tag", "bump"], default="auto")
+    ap.add_argument("--main", default=MAIN_REF, help="the ref of main (a bump base is looked for on it)")
     ap.add_argument("--print-base", action="store_true",
                     help="print <package>-<version> of the base release (a cache key for its .crate) and exit")
     a = ap.parse_args(argv)
     try:
         if a.print_base:
             cfg = load_config(Path(a.root))
-            version = release_base(Path(a.root), cfg)[1] if a.base is None else package_version(
-                git(Path(a.root), "show", f"{a.base}:{cfg.manifest}"), cfg.base_pkg)
-            print(f"{cfg.base_pkg}-{version}")
+            ref, kind = (a.base, "tag") if a.base is not None else choose_base(Path(a.root), cfg, a.base_from, a.main)
+            if kind == "introduced":
+                print(f"{cfg.base_pkg}-none")
+            else:
+                print(f"{cfg.base_pkg}-{package_version(git(Path(a.root), 'show', f'{ref}:{cfg.manifest}'), cfg.base_pkg)}")
             return 0
-        problems, report = check(Path(a.root), a.base, a.base_from)
+        problems, report = check(Path(a.root), a.base, a.base_from, a.main)
     except RegistryUnreachable as e:
         if unreadable_base_policy(dict(os.environ)) == "warn":
             print(f"id_move_check: WARNING (not checked on this ref): {e}", file=sys.stderr)
@@ -887,7 +1286,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"id_move_check: {p}", file=sys.stderr)
     if problems:
         return 1
-    print(f"id_move_check: {len(report) - 1} identifier(s) compared, 0 problems")
+    compared = [r for r in report if not r.startswith(("base ", "no base"))]
+    if not compared:
+        print("id_move_check: compared no identifier", file=sys.stderr)
+        return 1
+    # one header line per base ("base <ref>: ..." / "no base ..."); a sibling line names its base too
+    bases = sum(1 for r in report if r.startswith("no base") or re.match(r"base \S+: ", r))
+    print(f"id_move_check: {len(compared)} identifier comparison(s) against {bases} base(s), 0 problems")
     return 0
 
 

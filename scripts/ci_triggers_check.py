@@ -216,9 +216,8 @@ def leg_events(text: str, job: str, key: str, value: str,
                true_output: str | None = None) -> tuple[list[str], list[str]]:
     """(events whose run includes the leg, events the workflow is triggered by); every
     CONDITION_OUTPUTS output is 'false' except `true_output`"""
-    on = cp.on_block(text)
-    triggered = [label for label, _ev, _ref, trig in EVENTS if cp.sub_block(on, trig, 2) is not None
-                 or any(re.match(rf"^  {trig}:", l) for l in on)]
+    on = cp.triggers(cp.load_yaml(text))
+    triggered = [label for label, _ev, _ref, trig in EVENTS if trig in on]
     present = []
     for label, ev, ref, _trig in EVENTS:
         if label not in triggered:
@@ -231,33 +230,30 @@ def leg_events(text: str, job: str, key: str, value: str,
 
 def derive(name: str, text: str) -> dict[str, str]:
     """the cells of a workflow's row, from its file"""
-    on = cp.on_block(text)
-    push = cp.sub_block(on, "push", 2)
-    branches = cp.push_branches(push) if push is not None else None
-    if push is None:
+    on = cp.triggers(cp.load_yaml(text))
+    push = on.get("push") if "push" in on else None
+    if "push" not in on:
         push_cell, on_ci = "-", False
-    elif branches is not None:
+    elif isinstance(push, dict) and push.get("branches") is not None:
+        branches = cp.name_list(push["branches"], f"{name}: on.push.branches")
         push_cell, on_ci = ", ".join(branches), "ci/**" in branches
+    elif isinstance(push, dict) and push.get("tags") is not None:
+        tags = cp.name_list(push["tags"], f"{name}: on.push.tags")
+        push_cell, on_ci = "tags " + ", ".join(tags), False
     else:
-        tags = cp.sub_block(push, "tags", 4)
-        if tags is not None:
-            push_cell, on_ci = "tags " + ", ".join(cp.list_items(tags)), False
-        else:
-            push_cell, on_ci = "every branch", True
+        push_cell, on_ci = "every branch", True
     rel = f".github/paths/{name.rsplit('.', 1)[0]}.txt"
     gate = rel if f"--patterns-file {rel}" in text else "-"
-    pr = cp.sub_block(on, "pull_request", 2)
-    if pr is None:
+    if "pull_request" not in on:
         pr_cell = "-"
     else:
-        pr_branches = cp.list_items(cp.sub_block(pr, "branches", 4) or [])
-        m = next((re.match(r"^    branches:\s*\[(.*)\]", l) for l in pr if re.match(r"^    branches:\s*\[", l)), None)
-        if m:
-            pr_branches = [x.strip().strip("'\"") for x in m.group(1).split(",") if x.strip()]
+        pr = on.get("pull_request")
+        pr = pr if isinstance(pr, dict) else {}
+        pr_branches = cp.name_list(pr["branches"], f"{name}: on.pull_request.branches") if pr.get("branches") is not None else []
         pr_cell = ", ".join(pr_branches) or "every branch"
-        if cp.sub_block(pr, "paths", 4) is not None:
+        if pr.get("paths") is not None:
             pr_cell += " (paths)"
-    has = lambda key: any(re.match(rf"^  {key}:", l) for l in on)  # noqa: E731
+    has = lambda key: key in on  # noqa: E731
     ci_cell = "-" if not on_ci else ("runs when the paths match" if gate != "-" else "runs")
     return {
         "workflow": name,

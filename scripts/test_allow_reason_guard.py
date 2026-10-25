@@ -333,6 +333,22 @@ class Nothing(unittest.TestCase):
         root = tree({"Cargo.toml": DENY, "README.md": "x"})
         self.assertEqual(g.check(root, {})[1], 0)
 
+    def test_the_run_fails_when_it_compared_nothing(self):
+        # main itself, not only the count: a tree without any allow / expect attribute is a failure
+        import contextlib
+        import io
+        root = tree({"Cargo.toml": DENY, "README.md": "x"})
+        saved = g.ROOT
+        err = io.StringIO()
+        try:
+            g.ROOT = root
+            with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+                rc = g.main([])
+        finally:
+            g.ROOT = saved
+        self.assertEqual(rc, 1, err.getvalue())
+        self.assertIn("compared nothing", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -529,21 +529,26 @@ def expected_workflows(root: Path) -> list[dict]:
     out, errors = [], []
     for p in sorted((root / ".github" / "workflows").glob("*.yml")):
         text = p.read_text(encoding="utf-8")
-        on = cp.on_block(text)
-        push = cp.sub_block(on, "push", 2)
-        if push is None:
+        try:
+            on = cp.triggers(cp.load_yaml(text))
+        except cp.FormError as e:
+            errors.append(f"{p.name}: {e}")
             continue
-        branches = cp.push_branches(push)
+        if "push" not in on:
+            continue
+        trig = on.get("push") if isinstance(on.get("push"), dict) else {}
+        branches = (cp.name_list(trig["branches"], f"{p.name}: on.push.branches")
+                    if trig.get("branches") is not None else None)
         if branches is not None and "ci/**" not in branches:
             continue
-        if branches is None and cp.sub_block(push, "tags", 4) is not None:
+        if branches is None and trig.get("tags") is not None:
             continue
         cls = classes.get(p.name)
         if cls not in EXPECTED_CLASSES:
             errors.append(f"{p.name} runs on ci/** but its class in {EVIDENCE_FILE} is {cls!r}"
                           f" (expected one of {', '.join(EXPECTED_CLASSES)})")
             continue
-        if not any(re.match(r"^  workflow_dispatch:", l) for l in on):
+        if "workflow_dispatch" not in on:
             errors.append(f"{p.name} has no workflow_dispatch: a dropped run could not be re-created")
             continue
         name = _yaml_scalar(text, "name", 0)
