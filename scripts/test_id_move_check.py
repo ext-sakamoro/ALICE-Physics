@@ -3,8 +3,11 @@
 throwaway crate in a throwaway git repository (built with cargo)."""
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -959,6 +962,146 @@ class BaseTreeAtItsPins(unittest.TestCase):
         with self.assertRaises(imc.CheckError) as e:
             imc.check(self.d, None, "tag")
         self.assertIn("abababababab", str(e.exception))
+
+
+@unittest.skipUnless(shutil.which("git"), "needs git")
+class PrintSiblings(unittest.TestCase):
+    """--print-siblings lists, before any sibling is cloned, every sibling commit a base tree can be
+    built against: on a chain ALICE-Probe -> ALICE-Up -> ALICE-Mid -> ALICE-Low (each a path
+    dependency of the one before), the list holds all three levels, and every sibling the check's
+    own walk lays out next to the base is in it"""
+
+    ENV = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t",
+               GIT_COMMITTER_EMAIL="t@t", GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL=os.devnull)
+
+    def git(self, d: Path, *args: str) -> str:
+        return subprocess.run(["git", "-C", str(d), *args], check=True, env=self.ENV,
+                              capture_output=True, text=True).stdout.strip()
+
+    def repo(self, name: str, dep: str | None) -> str:
+        d = self.parent / name
+        (d / "src").mkdir(parents=True, exist_ok=True)
+        (d / "src" / "lib.rs").write_text("pub fn f() {}\n")
+        deps = f'\n[dependencies]\nnext = {{ path = "../{dep}" }}\n' if dep else ""
+        n = len(list(d.glob("rev-*")))
+        (d / f"rev-{n}").write_text("")
+        (d / "Cargo.toml").write_text(f'[package]\nname = "{name.lower()}"\nversion = "1.0.0"\n{deps}')
+        if not (d / ".git").exists():
+            self.git(d, "init", "-q", "-b", "main")
+        self.git(d, "add", "-A")
+        self.git(d, "commit", "-qm", name)
+        return self.git(d, "rev-parse", "HEAD")
+
+    def release(self, pins: str | None, dep: str | None = "ALICE-Up") -> str:
+        deps = f'\n[dependencies]\nup = {{ path = "../{dep}" }}\n' if dep else ""
+        (self.d / "Cargo.toml").write_text(f'[package]\nname = "probe-crate"\nversion = "0.3.0"\n{deps}')
+        f = self.d / ".github" / "alice-siblings"
+        if pins is None:
+            f.unlink(missing_ok=True)
+        else:
+            f.write_text(pins)
+        self.git(self.d, "add", "-A")
+        self.git(self.d, "commit", "-qm", "release", "--allow-empty")
+        self.git(self.d, "tag", "-f", "v0.3.0")
+        return self.git(self.d, "rev-parse", "HEAD")
+
+    def setUp(self):
+        self.parent = Path(tempfile.mkdtemp(prefix="id-move-print-siblings-"))
+        self.low = self.repo("ALICE-Low", None)
+        self.mid = self.repo("ALICE-Mid", "ALICE-Low")
+        self.up = self.repo("ALICE-Up", "ALICE-Mid")
+        self.d = self.parent / "ALICE-Probe"
+        (self.d / "scripts").mkdir(parents=True)
+        (self.d / ".github").mkdir()
+        (self.d / "scripts" / "id_move.toml").write_text(
+            'package = "probe-crate"\nmanifest = "Cargo.toml"\ntags = ["v{version}"]\n'
+            '[[id]]\npath = "probe_crate::SEMANTICS_ID"\n')
+        self.git(self.d, "init", "-q", "-b", "main")
+        self.pins = f"# siblings\nALICE-Up {self.up}\nALICE-Mid {self.mid}\nALICE-Low {self.low}\n"
+
+    def tearDown(self):
+        shutil.rmtree(self.parent, ignore_errors=True)
+
+    def printed(self, *extra: str) -> tuple[int, str, str]:
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = imc.main(["--root", str(self.d), "--base-from", "tag", "--print-siblings", *extra])
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_every_level_of_the_chain_is_listed(self):
+        self.release(self.pins)
+        rc, out, err = self.printed()
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(out.splitlines(), sorted([f"ALICE-Low {self.low}", f"ALICE-Mid {self.mid}",
+                                                   f"ALICE-Up {self.up}"]))
+
+    def test_the_list_holds_what_the_walk_lays_out(self):
+        # the check's own walk over the base tree, at depth 3: each sibling it writes next to the
+        # base, at the commit it took, is a line of the list
+        ref = self.release(self.pins)
+        listed = set(imc.base_sibling_pins(self.d, [ref]))
+        work = Path(tempfile.mkdtemp(prefix="id-move-print-siblings-work-"))
+        try:
+            fresh = work / "fresh"
+            wt = fresh / "ALICE-Probe"
+            wt.mkdir(parents=True)
+            env = dict(self.ENV, GIT_INDEX_FILE=str(work / "base.index"))
+            for args in (["read-tree", ref], ["checkout-index", "--all", "--force", f"--prefix={wt}/"]):
+                subprocess.run(["git", "-C", str(self.d), *args], check=True, env=env, capture_output=True)
+            lines = imc.materialize_pinned_siblings(wt, self.parent, work, self.d, ref)
+        finally:
+            shutil.rmtree(work, ignore_errors=True)
+        walked = set()
+        for line in lines:
+            m = re.match(r"\.\./(ALICE-[A-Za-z]+) at ([0-9a-f]{12})", line)
+            walked.add((m.group(1), m.group(2)))
+        self.assertEqual(len(walked), 3, lines)
+        self.assertEqual(walked, {(r, sha[:12]) for r, sha in listed})
+
+    def test_two_bases_are_listed_together_once(self):
+        first = self.release(self.pins)
+        mid2 = self.repo("ALICE-Mid", "ALICE-Low")
+        second = self.release(f"ALICE-Up {self.up}\nALICE-Mid {mid2}\nALICE-Low {self.low}\n")
+        got = imc.base_sibling_pins(self.d, [first, second])
+        self.assertEqual(got, sorted([("ALICE-Low", self.low), ("ALICE-Mid", self.mid), ("ALICE-Mid", mid2),
+                                      ("ALICE-Up", self.up)]))
+
+    def test_a_base_without_path_dependencies_lists_nothing(self):
+        self.release(None, dep=None)
+        rc, out, err = self.printed()
+        self.assertEqual((rc, out), (0, ""), err)
+
+    def test_a_reached_sibling_without_a_pin_fails(self):
+        self.release(f"ALICE-Mid {self.mid}\nALICE-Low {self.low}\n")
+        rc, out, err = self.printed()
+        self.assertEqual((rc, out), (1, ""))
+        self.assertIn("path-depends on ../ALICE-Up but its .github/alice-siblings has no pin", err)
+
+    def test_a_malformed_pin_fails(self):
+        self.release(self.pins + "ALICE-Low abc\n")
+        rc, _, err = self.printed()
+        self.assertEqual(rc, 1)
+        self.assertIn("not one '<ALICE-Repo> <40-hex SHA>' line", err)
+
+    def test_a_base_from_before_the_pin_file_that_reaches_a_sibling_fails(self):
+        self.release(None)
+        rc, out, err = self.printed()
+        self.assertEqual((rc, out), (1, ""))
+        self.assertIn("predates .github/alice-siblings and path-depends on ../ALICE-Up", err)
+
+    def test_a_base_whose_history_had_the_pin_file_fails(self):
+        self.release(self.pins)
+        self.release(None)
+        rc, _, err = self.printed()
+        self.assertEqual(rc, 1)
+        self.assertIn("broken base", err)
+
+    def test_base_names_the_base(self):
+        ref = self.release(self.pins)
+        self.release(None, dep=None)
+        rc, out, err = self.printed("--base", ref)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(len(out.splitlines()), 3)
 
 
 @unittest.skipUnless(shutil.which("cargo") and shutil.which("git"), "needs cargo and git")
