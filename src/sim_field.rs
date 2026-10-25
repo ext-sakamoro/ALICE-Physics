@@ -252,7 +252,7 @@ impl ScalarField3D {
                         let dist = dist_sq.sqrt();
                         // Smooth falloff (cubic)
                         let t = dist.mul_add(-inv_r, 1.0);
-                        let weight = t * t * 2.0f32.mul_add(-t, 3.0); // smoothstep
+                        let weight = t * t * (-2.0f32).mul_add(t, 3.0); // smoothstep (negate the factor, not the fma result)
                         let idx = self.index(ix, iy, iz);
                         self.data[idx] += value * weight;
                     }

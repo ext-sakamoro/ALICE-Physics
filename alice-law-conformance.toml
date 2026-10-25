@@ -31,10 +31,11 @@ note = "f32/f64 max/min go through the Law helpers crate::det_math::max / min (s
 reference_repo = ""
 
 [G3]
-status = "fail-known"
-evidence = ["`src/erosion.rs#(-n.2).mul_add(f.2, (-n.0).mul_add(f.0, (-n.1) * f.1))`", "tests/determinism_golden_f32.rs"]
+status = "pass"
+evidence = ["tools/no-outer-fneg-of-fma/src/main.rs", "scripts/no-outer-fneg-of-fma-allowlist.toml", "tools/fneg-fma-ir-probes", ".github/workflows/ci.yml test job", "`src/erosion.rs#(-n.2).mul_add(f.2, (-n.0).mul_add(f.0, (-n.1) * f.1))`", "tests/determinism_golden_f32.rs"]
+mutant = "write -(a.mul_add(b, c)) in src/ (e.g. revert src/erosion.rs or src/sim_field.rs to negate the fma result) -> the syntax-tree check fails; change expected-fma-calls / expected-src-fma-calls by one -> it fails; the tool's own tests check every negation shape against the shared probes"
 since = ""
-note = "f32/f64 mul_add is Law-bearing in this crate: it is used across the field modules README Determinism lists inside the guarantee (erosion, fracture, pressure, sim_field, sdf_*, thermal, ...), and the conforming operand-negation form is already written where a negation meets an fma (`src/erosion.rs#(-n.2).mul_add(f.2, (-n.0).mul_add(f.0, (-n.1) * f.1))`). The dynamic backstop exists and works -- the aarch64 release determinism leg (G4/G5, scripts/determinism_release.py) found the optimised-vs-unoptimised FMA signed-zero divergence that the erosion fix in CHANGELOG [Unreleased] closed. What is missing is the static mechanism this gate names: a syntax-tree checker over src that bans negating the whole result of an a.mul_add(b,c) in every form, with tests over each negation shape (C5). So an outer -(a.mul_add(b,c)) is caught only after it diverges on the release golden leg, not rejected at the source."
+note = "the syntax-tree check tools/no-outer-fneg-of-fma (byte-identical to ALICE-LOL's) parses src/ tests/ examples/ benches/ and fails on any negation of a whole mul_add / fma result in every form (unary minus, parentheses, .neg(), Neg::neg / UFCS paths, renamed imports, macro bodies), and when the fma-call counts differ from scripts/no-outer-fneg-of-fma-allowlist.toml (165 in all, 67 in the library code of src/) or nothing was compared. Its tests run each of the shared probes in tools/fneg-fma-ir-probes against its expected verdict. It runs in the CI test job on every OS and in preflight. src/ has no exception; src/sim_field.rs ScalarField3D::splat negates the factor ((-2.0f32).mul_add(t, 3.0)) instead of the fma result t. The release determinism leg (G4/G5) is the dynamic backstop. The optimised-IR half (scripts/fneg_fma_ir_check.py, g3-ir.yml in ALICE-Analytics / ALICE-LOL) is not carried here."
 reference_repo = ""
 
 [G4]

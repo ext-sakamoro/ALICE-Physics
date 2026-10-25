@@ -423,6 +423,16 @@ jobs:
         run: |
           scripts/run_tests.sh float_environment=2 -- cargo test --test float_environment
           scripts/run_tests.sh float_environment=2 -- cargo test --release --test float_environment
+      # ALICE-Law G3, syntax-tree check (tools/no-outer-fneg-of-fma, byte-identical to
+      # ALICE-LOL's, built with --locked): its own tests over the shared probes
+      # (tools/fneg-fma-ir-probes), then the check over src/ tests/ examples/ benches/ with
+      # the exact fma-call counts of scripts/no-outer-fneg-of-fma-allowlist.toml
+      - name: No negated fma result (syntax tree, format then tests then check)
+        shell: bash
+        run: |
+          cargo fmt --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --check
+          cargo test --quiet --locked --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml
+          cargo run --quiet --locked --release --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --root .
 
   # Every example is built in release and executed (scripts/run_examples.py):
   # the examples were compiled by clippy --all-targets but never run, so three

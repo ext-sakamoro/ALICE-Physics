@@ -60,6 +60,11 @@ python3 scripts/workflow_timeouts.py
 step "cargo fmt --check (every workspace member)"
 cargo fmt --all -- --check
 
+step "ci.yml / test: no negated fma result (G3, syntax tree)"
+cargo fmt --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --check
+cargo test --quiet --locked --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml
+cargo run --quiet --locked --release --manifest-path tools/no-outer-fneg-of-fma/Cargo.toml -- --root .
+
 step "facade check (features both ways, glob-only lib, generated path test)"
 python3 scripts/test_facade_check.py
 python3 scripts/facade_check.py

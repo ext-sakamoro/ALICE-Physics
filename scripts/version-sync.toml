@@ -30,6 +30,10 @@ reason = "fixture of scripts/clippy_lib_gate.py, not published (version 0.0.0)"
 file = "scripts/g2-rewrite-scan/Cargo.toml"
 reason = "syntax-tree scan run by scripts/g2_rewrite_check.py, not published (version 0.0.0)"
 
+[[independent]]
+file = "tools/no-outer-fneg-of-fma/Cargo.toml"
+reason = "syntax-tree check of ALICE-Law G3, byte-identical across ALICE crates, not published"
+
 [[historical]]
 file = "docs/MIGRATION_0.x_TO_1.0.md"
 reason = "the 0.x to 1.0 migration guide shows the old and the new requirement on purpose"

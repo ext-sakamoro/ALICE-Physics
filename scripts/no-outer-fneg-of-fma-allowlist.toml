@@ -1,0 +1,11 @@
+# tools/no-outer-fneg-of-fma (syntax-tree check), ALICE-Law G3. It reads this file.
+#
+# expected-fma-calls / expected-src-fma-calls: the fma-family calls the syntax-tree
+# check finds in every scanned file / in the library code of src/ (items under #[test] or
+# a cfg that holds only under test are not library code). Both must equal what it finds:
+# update them in the commit that adds or removes a call.
+expected-fma-calls = 165
+expected-src-fma-calls = 67
+
+# [[allow]]: a finding by path, exact trimmed line text and count, with a reason.
+# Only tests/ and examples/ can carry one; src/ has no exception.

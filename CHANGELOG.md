@@ -17,6 +17,7 @@ were introduced during that release window.
 
 ### Changed
 
+- CI (ALICE-Law G3): fma の結果全体の符号反転を構文木で検査する `tools/no-outer-fneg-of-fma` (ALICE-LOL ほかと同じ中身、共有の probe `tools/fneg-fma-ir-probes` で自己試験) を test job の全 OS と preflight で走らせる src/ tests/ examples/ benches/ の fma の呼び出し数 (165、src/ の library code 67) が `scripts/no-outer-fneg-of-fma-allowlist.toml` と違う時、比較 0 件の時も失敗する `ScalarField3D::splat` の smoothstep を、fma の結果でなく係数を符号反転する形にした (同じ値) `alice-law-conformance.toml` の G3 を pass にした
 - CI (ALICE-Law G5): release の決定論の leg (`scripts/determinism_release.py`) が `tests/determinism_*.rs` の 10 本すべてを走らせる (`determinism_semantic` / `determinism_physics2d_step_digest` / `determinism_cloth_step_digest` / `determinism_golden_coverage` を足した) 試験 `scripts/test_determinism_release.py` は release の集合が `tests/determinism_*.rs` と違えば失敗する `alice-law-conformance.toml` の G5 を pass にした
 - CI: `scripts/package_git_patches.py verify` は、Cargo.toml が pin した repository と rev の source を持つ package を pin 済みとして扱う (git で引く窓口の crate が同じ repository の crate を path で引くと、lock はそれらにも窓口と同じ source を付ける) 別の repository の同じ rev、同じ repository の別の rev は従来どおり失敗する 試験 `scripts/test_package_git_patches.py` に 2 件 (ALICE-SDF と同じ file) `.github/shared-files-pin` を ALICE-Law `d328a285` (この 2 file の新しい bytes を計画した表) に上げた
 - Licence: `AGPL-3.0-or-later OR LicenseRef-Commercial` → `LicenseRef-Proprietary`
