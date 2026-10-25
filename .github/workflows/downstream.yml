@@ -29,6 +29,7 @@ on:
       - 'scripts/downstream_siblings.py'
       - 'scripts/downstream_major_rewrite.py'
       - 'scripts/downstream_path_rewrite.py'
+      - 'scripts/downstream_patches.py'
       - 'scripts/downstream_test_counts.py'
       - 'scripts/ansi.py'
       - 'scripts/changed_paths.py'

@@ -2,8 +2,9 @@
 # Sourced by downstream_check.sh (and by test_downstream_resolve.py).
 #
 # relock moves a fetched copy's Cargo.lock to this checkout. ALICE-SDF takes
-# alice-physics from crates.io through the path patch (ALICE-LOL and ALICE-TRT
-# depend on it by path and re-resolve on their own). On a minor or patch over the
+# alice-physics from crates.io or a git source, through the path patch of that source
+# (downstream_patches.py; ALICE-LOL and ALICE-TRT depend on it by path and re-resolve
+# on their own). On a minor or patch over the
 # published release its requirement stays as fetched, so its committed Cargo.lock
 # still names the published alice-physics, and cargo keeps the locked version and
 # leaves the patch unused; `cargo update -p alice-physics` with the same patch

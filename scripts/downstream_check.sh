@@ -2,9 +2,11 @@
 # Build and test the downstream crates that depend on alice-physics against
 # this checkout, so a change here that breaks them fails here.
 #
-#   ALICE-SDF  depends on alice-physics from crates.io (`version = "1.1"`,
-#              feature `physics`); the registry copy is replaced with this
-#              checkout through `--config patch.crates-io.alice-physics.path`.
+#   ALICE-SDF  depends on alice-physics from crates.io or from a git source (the
+#              ALICE-Physics repository at a rev; feature `physics`); each source
+#              its Cargo.lock names, for alice-physics and alice-physics-core, is
+#              replaced with this checkout through `--config patch.<source>.<name>.path`
+#              (scripts/downstream_patches.py: `crates-io` or the quoted git URL).
 #   ALICE-LOL  depends on it by path (`../../ALICE-Physics`, feature
 #              `physics`). Its workspace also needs ALICE-SDF, ALICE-Kinematics,
 #              ALICE-LLM, ALICE-Zip and ALICE-Sign next to it, so all of them are
@@ -142,7 +144,7 @@ declare_layout() {
     esac
 }
 # ALICE-LOL takes alice-physics by path, so a layout without it compared nothing;
-# ALICE-SDF takes it from crates.io (patched below) and needs no path sibling.
+# ALICE-SDF takes it from crates.io or git (patched below) and needs no path sibling.
 # ALICE-TRT has no .github/alice-siblings yet: its siblings are placed at main, and
 # the script names each one in the job log
 layout_args() {
@@ -211,7 +213,6 @@ if [ "$mode" = fetch ]; then
     exit 0
 fi
 
-PATCH="patch.crates-io.alice-physics.path=\"$FACADE_DIR\""
 failed=()
 summary=()
 # downstream crates whose steps ran; fewer than the 3 at the end fails (a crate
@@ -295,15 +296,32 @@ physics_version() {
     sed -n 's/^version *= *"\(.*\)"/\1/p' "$PHYSICS_DIR/Cargo.toml" | head -n 1
 }
 
+# the patches of a downstream that takes alice-physics from crates.io or from a git
+# source: one per source and package its Cargo.lock names (scripts/downstream_patches.py),
+# because cargo applies a patch only to the source it names; none found fails
+patch_args() {
+    local label=$1 dir=$2 lines line
+    PATCHES=()
+    if ! lines=$(python3 "$PHYSICS_DIR/scripts/downstream_patches.py" "$dir" \
+            --package "alice-physics=$FACADE_DIR" --package "alice-physics-core=$PHYSICS_DIR"); then
+        failed+=("$label (patch)")
+        return 1
+    fi
+    while IFS= read -r line; do
+        PATCHES+=(--config "$line")
+    done <<<"$lines"
+    echo "$label: ${#PATCHES[@]} patch argument(s): ${PATCHES[*]}"
+}
+
 export CARGO_TARGET_DIR="$TARGET/sdf"
-if requirements_ok sdf "$SDF"; then
+if requirements_ok sdf "$SDF" && patch_args sdf "$SDF"; then
     compared=$((compared + 1))
-    relock sdf "$SDF" --config "$PATCH"
-    check_resolved sdf "$SDF" --features physics --config "$PATCH"
-    run sdf-lib "$SDF" cargo test --features physics --config "$PATCH" --lib -- physics_bridge:: sim_bridge::
-    run sdf-tests "$SDF" cargo test --features physics --config "$PATCH" \
+    relock sdf "$SDF" "${PATCHES[@]}"
+    check_resolved sdf "$SDF" --features physics "${PATCHES[@]}"
+    run sdf-lib "$SDF" cargo test --features physics "${PATCHES[@]}" --lib -- physics_bridge:: sim_bridge::
+    run sdf-tests "$SDF" cargo test --features physics "${PATCHES[@]}" \
         --test test_physics_bridge_determinism --test test_sim_bridge_oracle
-    build sdf-example "$SDF" cargo build --features physics --config "$PATCH" --example sim_bridge
+    build sdf-example "$SDF" cargo build --features physics "${PATCHES[@]}" --example sim_bridge
 fi
 
 export CARGO_TARGET_DIR="$TARGET/lol"

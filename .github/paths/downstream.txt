@@ -18,6 +18,8 @@ scripts/downstream_siblings.py
 scripts/downstream_major_rewrite.py
 # downstream_path_rewrite.py points the fetched copies' path dependencies at the facade
 scripts/downstream_path_rewrite.py
+# downstream_patches.py writes the patches of the downstream that takes this crate from a registry or git
+scripts/downstream_patches.py
 # downstream_test_counts.py imports ansi.py
 scripts/downstream_test_counts.py
 scripts/ansi.py

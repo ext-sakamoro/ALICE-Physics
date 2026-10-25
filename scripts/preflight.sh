@@ -212,6 +212,7 @@ python3 scripts/test_downstream_path_rewrite.py
 python3 scripts/test_downstream_test_counts.py
 python3 scripts/test_downstream_trt_probe.py
 python3 scripts/test_downstream_resolve.py
+python3 scripts/test_downstream_patches.py
 python3 scripts/test_coverage_refs_to_symbols.py
 python3 scripts/coverage_check.py
 

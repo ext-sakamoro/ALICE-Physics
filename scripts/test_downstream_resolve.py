@@ -26,6 +26,7 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from test_downstream_trt_probe import lf_copy, posix, resolve_bash  # noqa: E402
+import downstream_patches as dp  # noqa: E402
 
 RESOLVE = os.path.join(HERE, "downstream_resolve.sh")
 CHECK = os.path.join(HERE, "downstream_check.sh")
@@ -77,6 +78,7 @@ class Fixture:
             f.write("")
         subprocess.run(["cargo", "generate-lockfile", "-q"], cwd=self.consumer, check=True, capture_output=True)
         self.physics = posix(phys)
+        self.url = url
         self.patch = f'patch."{url}".alice-physics.path="{self.physics}"'
 
     def lock(self) -> str:
@@ -84,9 +86,9 @@ class Fixture:
             return f.read()
 
     def run(self, steps: str, directory: str | None = None, resolve: str = RESOLVE,
-            physics_dir: str | None = None) -> tuple[str, str]:
+            physics_dir: str | None = None, patch: str | None = None) -> tuple[str, str]:
         env = dict(os.environ, RESOLVE=posix(lf_copy(resolve)), DIR=posix(directory or self.consumer),
-                   PATCH=self.patch, STEPS=steps, PHYSICS_DIR=physics_dir or self.physics,
+                   PATCH=patch or self.patch, STEPS=steps, PHYSICS_DIR=physics_dir or self.physics,
                    PYTHON=posix(sys.executable))
         env.pop("CARGO_TARGET_DIR", None)
         p = subprocess.run([BASH, "-c", DRIVER], env=env, capture_output=True, text=True, check=False)
@@ -152,17 +154,41 @@ class Resolve(unittest.TestCase):
         self.assertEqual(failed, "c (resolve)", out)
 
 
+class SourceKinds(unittest.TestCase):
+    """The patch comes from the lock's source: a git consumer needs `patch."<url>"`, and the
+    crates-io patch alone (what downstream_check.sh wrote before) leaves it unpatched"""
+
+    def setUp(self) -> None:
+        self.fx = Fixture()
+
+    def tearDown(self) -> None:
+        self.fx.close()
+
+    def test_the_patch_built_from_the_lock_resolves_a_git_consumer(self):
+        lines = dp.patches(self.fx.lock(), {"alice-physics": self.fx.physics})
+        self.assertEqual(lines, [f'patch."{self.fx.url}".alice-physics.path="{self.fx.physics}"'])
+        failed, out = self.fx.run("relock resolve", patch=lines[0])
+        self.assertEqual(failed, "", out)
+        self.assertIn("v3.1.0", out)
+
+    def test_mutant_crates_io_patch_on_a_git_consumer_is_refused(self):
+        failed, out = self.fx.run("relock resolve",
+                                  patch=f'patch.crates-io.alice-physics.path="{self.fx.physics}"')
+        self.assertEqual(failed, "c (resolve)", out)
+        self.assertIn("3.0.1", out)
+
+
 def patched_steps(text: str) -> list[tuple[str, int, bool]]:
     """(label, line, relocked first) for every check_resolved that patches alice-physics."""
     lines = text.split("\n")
     out = []
     for i, line in enumerate(lines):
-        m = re.match(r'\s*check_resolved\s+(\S+)\s+(\S+).*--config\s+"\$PATCH"', line)
+        m = re.match(r'\s*check_resolved\s+(\S+)\s+(\S+).*"\$\{PATCHES\[@\]\}"', line)
         if not m:
             continue
         label, directory = m.groups()
         prev = next((lines[j] for j in range(i - 1, -1, -1) if lines[j].strip()), "")
-        relocked = bool(re.match(rf'\s*relock\s+{re.escape(label)}\s+{re.escape(directory)}\s+--config\s+"\$PATCH"\s*$', prev))
+        relocked = bool(re.match(rf'\s*relock\s+{re.escape(label)}\s+{re.escape(directory)}\s+"\$\{{PATCHES\[@\]\}}"\s*$', prev))
         out.append((label, i + 1, relocked))
     return out
 

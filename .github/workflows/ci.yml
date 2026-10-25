@@ -235,6 +235,8 @@ jobs:
       # a small consumer locked to an older version from a local git source (offline)
       - name: Downstream lock move and resolve guard (tests)
         run: python scripts/test_downstream_resolve.py
+      - name: Downstream patches per lock source (tests)
+        run: python scripts/test_downstream_patches.py
       - name: Coverage tables (docs/coverage vs src/ and tests/)
         run: python scripts/coverage_check.py
       # SCIP integration ledger (docs/integration-status.md): the analysis is
