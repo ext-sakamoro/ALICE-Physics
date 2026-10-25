@@ -383,12 +383,17 @@ cargo bench --bench world_scale
 
 Enquiries: https://extoria.co.jp/
 
+## 依存のライセンス
+
 依存はこの crate が使う版のライセンスのまま: 任意 feature の `neural` は `alice-ml`
 (AGPL-3.0-or-later OR LicenseRef-Commercial) を、任意 feature の `privacy-crypto` は `alice-crypto`
 (AGPL-3.0-or-later OR LicenseRef-Commercial) を取り込む `analytics` と必須依存の
 `alice-det-math` は Apache-2.0
-Copyright (C) 2024-2026 Moroya Sakamoto
-### 参考文献
+
+## 参考文献
+
 - Müller et al., "XPBD: Position-Based Simulation of Compliant Constrained Dynamics"
 - Ericson, *Real-Time Collision Detection* (GJK / EPA)
 - Volder, "The CORDIC Trigonometric Computing Technique"
+
+Copyright (C) 2024-2026 Moroya Sakamoto

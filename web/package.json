@@ -1,5 +1,6 @@
 {
   "name": "alice-physics-web",
+  "license": "LicenseRef-Proprietary",
   "version": "4.0.0",
   "description": "ALICE-Physics WebAssembly 3D Viewer",
   "private": true,

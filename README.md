@@ -483,13 +483,18 @@ Release history is in [`CHANGELOG.md`](CHANGELOG.md).
 
 Enquiries: https://extoria.co.jp/
 
+## Dependencies' licences
+
 Dependencies keep their own licences at the versions this crate uses: the
 optional `neural` feature pulls in `alice-ml` (AGPL-3.0-or-later OR LicenseRef-Commercial), the
 optional `privacy-crypto` feature pulls in `alice-crypto`
 (AGPL-3.0-or-later OR LicenseRef-Commercial), and `analytics` and the required
 `alice-det-math` are Apache-2.0.
-Copyright (C) 2024-2026 Moroya Sakamoto
-### References
+
+## References
+
 - Müller et al., "XPBD: Position-Based Simulation of Compliant Constrained Dynamics"
 - Ericson, *Real-Time Collision Detection* (GJK / EPA)
 - Volder, "The CORDIC Trigonometric Computing Technique"
+
+Copyright (C) 2024-2026 Moroya Sakamoto
