@@ -106,9 +106,44 @@ class Rules(unittest.TestCase):
 
     def test_the_bump_first_message_names_the_fix(self):
         problems = imc.judge("0.6.0", "0.6.0", ids(A), ids(B), self.LOG, CFG)[0]
-        self.assertTrue(any('bump the version first (set version = "0.7.0"' in p for p in problems), problems)
+        self.assertTrue(any('bump the version (set version = "0.7.0"' in p for p in problems), problems)
         problems = imc.judge("3.1.0", "3.1.2", ids(A), ids(B), self.LOG, CFG)[0]
         self.assertTrue(any('set version = "4.0.0"' in p for p in problems), problems)
+
+    # while publication is frozen the version does not move: a **Breaking:** entry of [Unreleased]
+    # naming both values is the announcement instead
+    BREAKING = f"## [Unreleased]\n\n### Changed\n\n- **Breaking:** clamp follows G2, SEMANTICS_ID moves {A[:8]} -> {B[:8]}\n\n## [0.6.0]\n"
+
+    def test_a_breaking_entry_naming_both_values_announces_the_move(self):
+        for base, head in (("0.6.0", "0.6.0"), ("0.5.1", "0.5.2")):
+            problems, report = imc.judge(base, head, ids(A), ids(B), self.BREAKING, CFG)
+            self.assertEqual(problems, [], (base, head))
+            self.assertTrue(any("announced by a **Breaking:** entry" in r for r in report), report)
+
+    def test_a_breaking_entry_that_wraps_onto_the_next_line_counts(self):
+        log = f"## [Unreleased]\n\n- **Breaking:** the identifier moves from {A[:8]}\n  to {B[:8]}\n"
+        self.assertEqual(imc.judge("0.6.0", "0.6.0", ids(A), ids(B), log, CFG)[0], [])
+
+    def test_without_a_breaking_entry_naming_both_the_move_fails(self):
+        for log in (
+            # an ordinary entry, not marked breaking
+            f"## [Unreleased]\n\n- SEMANTICS_ID moves {A[:8]} -> {B[:8]}\n",
+            # a breaking entry naming one value, the other named elsewhere
+            f"## [Unreleased]\n\n- **Breaking:** clamp moves to {B[:8]}\n- the old id was {A[:8]}\n",
+            # the breaking entry in a released section, not [Unreleased]
+            f"## [Unreleased]\n\n## [0.6.0]\n\n- **Breaking:** {A[:8]} -> {B[:8]}\n",
+            # the marker inside an entry, not at its start
+            f"## [Unreleased]\n\n- moves {A[:8]} -> {B[:8]} (**Breaking:** not the entry's start)\n",
+        ):
+            problems = imc.judge("0.6.0", "0.6.0", ids(A), ids(B), log, CFG)[0]
+            self.assertTrue(any("bump the version" in p for p in problems), (log, problems))
+
+    def test_a_coloured_cargo_test_output_is_counted(self):
+        # CARGO_TERM_COLOR=always: libtest colours `ok` / `FAILED`, cargo resets the charset
+        plain = "test result: ok. 3 passed; 0 failed; 0 ignored\n"
+        coloured = "test result: \x1b[32mok\x1b(B\x1b[m. 3 passed; 1 failed; 0 ignored\n"
+        self.assertEqual(imc.tests_ran(plain), 3)
+        self.assertEqual(imc.tests_ran(coloured), 4)
 
     def test_a_version_bump_without_a_move_passes(self):
         self.assertEqual(imc.judge("0.6.0", "0.7.0", ids(A), ids(A), "", CFG)[0], [])
