@@ -9,7 +9,6 @@
 #   - 出力 1 語で以降の列が確定する (`next_u64` が `self.state = x; x` で返り値 = 内部状態)
 #   - 浮動小数点の逆変換で noise を作っている (Mironov CCS 2012、snapping も離散 noise も無い)
 #   置き換え先は `alice_crypto::dp::{SecureRng, DpNoise}`
-#   ⚠️ license の向きが未決 (permissive → AGPL は引けない) なので置き場の判断が要る
 src/privacy.rs:81: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
 src/privacy.rs:122: 秘匿が要る経路に予測可能な PRNG がある (理由を書いても認めない — CSPRNG を使う)
 src/privacy.rs:203: `sample` が浮動小数点の逆変換で noise を作っている (Mironov CCS 2012) snapping / 離散 noise にするか `// FLOAT-DP-ACCEPTED: <理由>` を置く
