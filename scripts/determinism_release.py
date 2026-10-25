@@ -33,6 +33,11 @@ TEST_BINARIES = (
     "determinism_zero_tie",
     # the Law outputs (a golden per src file calling the Law max / min / clamp)
     "determinism_law_outputs",
+    # the semantics, step digests and golden coverage (the rest of the determinism suite)
+    "determinism_semantic",
+    "determinism_physics2d_step_digest",
+    "determinism_cloth_step_digest",
+    "determinism_golden_coverage",
 )
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 RESULT_RE = re.compile(r"^test result: (ok|FAILED)\. (\d+) passed", re.M)

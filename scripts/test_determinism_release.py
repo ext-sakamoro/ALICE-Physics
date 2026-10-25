@@ -41,7 +41,16 @@ class Judge(unittest.TestCase):
 
     def test_the_terms_and_binaries_are_listed(self):
         self.assertEqual(dr.LIB_TERMS, ("max_min_tests", "windward_alignment"))
-        self.assertEqual(len(dr.TEST_BINARIES), 6)
+        self.assertEqual(dr.TEST_BINARIES, (
+            "determinism_golden", "determinism_golden_f32", "determinism_golden_contacts",
+            "determinism_golden_paths", "determinism_zero_tie", "determinism_law_outputs",
+            "determinism_semantic", "determinism_physics2d_step_digest",
+            "determinism_cloth_step_digest", "determinism_golden_coverage"))
+
+    def test_every_determinism_test_file_is_a_release_binary(self):
+        tests = sorted(p.stem for p in (dr.ROOT / "tests").glob("determinism_*.rs"))
+        self.assertTrue(tests, "no tests/determinism_*.rs read")
+        self.assertEqual(sorted(dr.TEST_BINARIES), tests)
 
 
 if __name__ == "__main__":
