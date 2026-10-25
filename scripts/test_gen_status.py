@@ -11,7 +11,10 @@ run: python3 scripts/test_gen_status.py
 from __future__ import annotations
 
 import importlib.util
+import os
+import shutil
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -118,6 +121,8 @@ class WiringReport(unittest.TestCase):
 
 def fixture_tests(body: str) -> Path:
     root = Path(tempfile.mkdtemp(prefix="oracle-fixture-"))
+    # removed after this module's tests (the suite fails on anything left, see main)
+    unittest.addModuleCleanup(shutil.rmtree, root, True)
     (root / "tests").mkdir()
     (root / "tests" / "t.rs").write_text(textwrap.dedent(body), encoding="utf-8")
     return root / "tests" / "t.rs"
@@ -300,6 +305,7 @@ class OracleAuditLinks(unittest.TestCase):
 
     def test_without_cargo_lock_the_versions_come_from_cargo_metadata(self):
         root = Path(tempfile.mkdtemp())  # no Cargo.lock, like a CI checkout of this repository
+        self.addCleanup(shutil.rmtree, root, True)
         saved = oracle._cargo_metadata_versions
         try:
             oracle._cargo_metadata_versions = lambda r: {"alice-db": {"0.2.0-beta.3"}}
@@ -311,6 +317,7 @@ class OracleAuditLinks(unittest.TestCase):
 
     def test_with_cargo_lock_the_lock_is_read(self):
         root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
         (root / "Cargo.lock").write_text('[[package]]\nname = "alice-db"\nversion = "0.2.0-beta.9"\n', encoding="utf-8")
         self.assertEqual(oracle.resolved_versions(root)["alice-db"], {"0.2.0-beta.9"})
 
@@ -345,6 +352,7 @@ class OracleAuditLinks(unittest.TestCase):
 
     def test_cargo_lock_versions_are_parsed(self):
         root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, True)
         (root / "Cargo.lock").write_text('[[package]]\nname = "alice-db"\nversion = "0.2.0-beta.3"\nsource = "x"\n\n'
                                           '[[package]]\nname = "rayon"\nversion = "1.10.0"\n', encoding="utf-8")
         v = oracle.cargo_lock_versions(root)
@@ -363,5 +371,29 @@ class OracleAuditLinks(unittest.TestCase):
             oracle.TESTS_DIR = saved
 
 
+def main() -> int:
+    """the suite inside a temporary directory of its own (also the $TMPDIR of what it runs): a test
+    that leaves a file or directory behind fails the run, naming it"""
+    scratch = Path(tempfile.mkdtemp(prefix="test_gen_status-tests-"))
+    old_tempdir, old_env = tempfile.tempdir, os.environ.get("TMPDIR")
+    tempfile.tempdir = str(scratch)
+    os.environ["TMPDIR"] = str(scratch)
+    try:
+        ok = unittest.main(verbosity=2, exit=False).result.wasSuccessful()
+        left = sorted(p.name for p in scratch.iterdir())
+    finally:
+        tempfile.tempdir = old_tempdir
+        if old_env is None:
+            os.environ.pop("TMPDIR", None)
+        else:
+            os.environ["TMPDIR"] = old_env
+        shutil.rmtree(scratch, ignore_errors=True)
+    if left:
+        print(f"test_gen_status: the tests left {len(left)} entries in the temporary directory: {', '.join(left[:10])}",
+              file=sys.stderr)
+        return 1
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    sys.exit(main())

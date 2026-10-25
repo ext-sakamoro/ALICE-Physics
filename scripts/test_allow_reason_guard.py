@@ -5,6 +5,7 @@ production allows of the ban are counted, a wide allow over a clock read
 fails, the canary judgement needs every form flagged, and nothing compared
 fails."""
 import os
+import shutil
 import sys
 import tempfile
 import tomllib
@@ -22,6 +23,8 @@ DENY = '[lints.clippy]\nallow_attributes_without_reason = "deny"\n'
 
 def tree(files: dict[str, str]) -> Path:
     root = Path(tempfile.mkdtemp(prefix="allow-reason-guard-"))
+    # removed after this module's tests (the suite fails on anything left, see main)
+    unittest.addModuleCleanup(shutil.rmtree, root, True)
     for rel, text in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -350,5 +353,29 @@ class Nothing(unittest.TestCase):
         self.assertIn("compared nothing", err.getvalue())
 
 
+def main() -> int:
+    """the suite inside a temporary directory of its own (also the $TMPDIR of what it runs): a test
+    that leaves a file or directory behind fails the run, naming it"""
+    scratch = Path(tempfile.mkdtemp(prefix="test_allow_reason_guard-tests-"))
+    old_tempdir, old_env = tempfile.tempdir, os.environ.get("TMPDIR")
+    tempfile.tempdir = str(scratch)
+    os.environ["TMPDIR"] = str(scratch)
+    try:
+        ok = unittest.main(exit=False).result.wasSuccessful()
+        left = sorted(p.name for p in scratch.iterdir())
+    finally:
+        tempfile.tempdir = old_tempdir
+        if old_env is None:
+            os.environ.pop("TMPDIR", None)
+        else:
+            os.environ["TMPDIR"] = old_env
+        shutil.rmtree(scratch, ignore_errors=True)
+    if left:
+        print(f"test_allow_reason_guard: the tests left {len(left)} entries in the temporary directory: {', '.join(left[:10])}",
+              file=sys.stderr)
+        return 1
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
-    unittest.main()
+    sys.exit(main())

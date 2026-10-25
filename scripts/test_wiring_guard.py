@@ -11,6 +11,8 @@ run: python3 scripts/test_wiring_guard.py
 """
 from __future__ import annotations
 
+import os
+import shutil
 import sys
 import tempfile
 import textwrap
@@ -23,6 +25,8 @@ import wiring_guard as wg  # noqa: E402
 
 def crate(files: dict[str, str]) -> Path:
     root = Path(tempfile.mkdtemp(prefix="wiring-fixture-"))
+    # removed after this module's tests (the suite fails on anything left, see main)
+    unittest.addModuleCleanup(shutil.rmtree, root, True)
     for rel, body in files.items():
         p = root / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -906,5 +910,29 @@ class Workspace(unittest.TestCase):
         self.assertEqual(keys(vs), set())
 
 
+def main() -> int:
+    """the suite inside a temporary directory of its own (also the $TMPDIR of what it runs): a test
+    that leaves a file or directory behind fails the run, naming it"""
+    scratch = Path(tempfile.mkdtemp(prefix="test_wiring_guard-tests-"))
+    old_tempdir, old_env = tempfile.tempdir, os.environ.get("TMPDIR")
+    tempfile.tempdir = str(scratch)
+    os.environ["TMPDIR"] = str(scratch)
+    try:
+        ok = unittest.main(verbosity=2, exit=False).result.wasSuccessful()
+        left = sorted(p.name for p in scratch.iterdir())
+    finally:
+        tempfile.tempdir = old_tempdir
+        if old_env is None:
+            os.environ.pop("TMPDIR", None)
+        else:
+            os.environ["TMPDIR"] = old_env
+        shutil.rmtree(scratch, ignore_errors=True)
+    if left:
+        print(f"test_wiring_guard: the tests left {len(left)} entries in the temporary directory: {', '.join(left[:10])}",
+              file=sys.stderr)
+        return 1
+    return 0 if ok else 1
+
+
 if __name__ == "__main__":
-    unittest.main(verbosity=2)
+    sys.exit(main())
