@@ -27,6 +27,8 @@ GIT_ENV = {
     "GIT_CONFIG_NOSYSTEM": "1",
 }
 
+FIXTURE_CONFIG = {"gc.auto": "0", "gc.autoDetach": "false", "maintenance.auto": "false"}
+
 
 class Repo:
     def __init__(self, path: Path):
@@ -34,12 +36,13 @@ class Repo:
         self.env = {**os.environ, **GIT_ENV, "HOME": str(path)}
         self.run("init", "-q", "-b", "main")
         self.run("config", "commit.gpgsign", "false")
-        # a commit starts `git maintenance run --auto --detach`, which can still write into .git
-        # while the temporary directory is removed (Directory not empty: 'info' on macOS)
-        self.run("config", "maintenance.auto", "false")
         # git for Windows refuses a tab, quote or control character in an index path by
         # default (core.protectNTFS); the fixture records such names without writing them
         self.run("config", "core.protectNTFS", "false")
+        # no automatic gc or maintenance: a detached one writes into .git while the fixture's
+        # directory is being removed, and the cleanup fails with "Directory not empty"
+        for key, value in FIXTURE_CONFIG.items():
+            self.run("config", key, value)
 
     def run(self, *args: str) -> str:
         p = subprocess.run(["git", "-C", str(self.path), *args], capture_output=True, text=True,
@@ -86,6 +89,15 @@ def args(repo_: Repo | None, **kw) -> SimpleNamespace:
                 repo=str(repo_.path) if repo_ else ".")
     base.update(kw)
     return SimpleNamespace(**base)
+
+
+class FixtureCases(unittest.TestCase):
+    def test_a_fixture_repository_runs_no_automatic_gc_or_maintenance(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = Repo(Path(d))
+            for key, value in FIXTURE_CONFIG.items():
+                self.assertEqual(r.run("config", "--get", key), value, key)
+            self.assertEqual(FIXTURE_CONFIG, {"gc.auto": "0", "gc.autoDetach": "false", "maintenance.auto": "false"})
 
 
 class PushCases(unittest.TestCase):
@@ -463,6 +475,21 @@ jobs:
   changes:
     steps:
       - run: python3 scripts/changed_paths.py decide --patterns-file .github/paths/x.txt
+  heavy:
+    needs: changes
+    steps:
+      - run: true
+  other:
+    needs:
+      - changes
+      - heavy
+    steps:
+      - run: true
+  gate:
+    if: always()
+    needs: [changes, heavy, other]
+    steps:
+      - run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"
 """
 
 
@@ -518,10 +545,280 @@ class Sync(unittest.TestCase):
         errs, _ = cp.sync(self.tree(wf, "**/src/**\n"))
         self.assertTrue(any("does not list itself" in e for e in errs), errs)
 
+    def test_gate_missing_a_job_fails(self):
+        for need in ("[changes, heavy]", "[heavy, other]", "changes"):
+            errs, _ = cp.sync(self.tree(WF_OK.replace("[changes, heavy, other]", need)))
+            self.assertTrue(any("does not need" in e for e in errs), (need, errs))
+
+    def test_gate_needs_as_a_list_passes(self):
+        wf = WF_OK.replace("    needs: [changes, heavy, other]\n",
+                           "    needs:\n      - changes\n      - 'heavy'\n      - other\n")
+        self.assertEqual(cp.sync(self.tree(wf)), ([], 1))
+
+    def test_no_gate_job_fails(self):
+        wf = WF_OK.replace("changed_paths.py gate", "changed_paths.py gatex")
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("0 jobs run" in e for e in errs), errs)
+
+    def test_two_gate_jobs_fail(self):
+        wf = WF_OK.replace("  heavy:\n    needs: changes\n    steps:\n      - run: true\n",
+                           "  heavy:\n    needs: changes\n    steps:\n"
+                           "      - run: python3 scripts/changed_paths.py gate --needs-json x\n")
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("2 jobs run" in e for e in errs), errs)
+
+    def test_gate_with_no_heavy_job_fails(self):
+        wf = WF_OK.split("  heavy:\n")[0] + (
+            "  gate:\n    needs: [changes]\n    steps:\n"
+            "      - run: python3 scripts/changed_paths.py gate --needs-json x\n")
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("no job besides" in e for e in errs), errs)
+
     def test_nothing_compared_fails(self):
         root = self.tree(WF_OK, None)
         self.assertEqual(cp.sync(root)[1], 0)
         self.assertEqual(cp.main(["sync", str(root)]), 1)
+
+    # a YAML comment is not a key: at any indentation (column 0 included) it ends no block, so a
+    # job, a push filter or a pull_request path written after it is still read
+
+    UNGATED = "  late:\n    runs-on: x\n    steps:\n      - run: true\n"
+
+    def test_a_job_after_a_comment_is_still_gate_covered(self):
+        for comment in ("# a note\n", "  # a note\n", "      # a note\n"):
+            with self.subTest(comment=comment):
+                wf = WF_OK + comment + self.UNGATED
+                errs, _ = cp.sync(self.tree(wf))
+                self.assertTrue(any("does not need ['late']" in e for e in errs), errs)
+
+    def test_a_comment_inside_a_job_hides_no_later_job(self):
+        wf = WF_OK.replace("  heavy:\n    needs: changes\n",
+                           "  heavy:\n# a note\n    needs: changes\n") + self.UNGATED
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("does not need ['late']" in e for e in errs), errs)
+
+    def test_push_paths_after_a_comment_fail(self):
+        for comment in ("# a note\n", "  # a note\n", "    # a note\n"):
+            with self.subTest(comment=comment):
+                wf = WF_OK.replace("    branches: [main, 'ci/**']\n",
+                                   f"    branches: [main, 'ci/**']\n{comment}    paths:\n      - 'src/**'\n")
+                errs, _ = cp.sync(self.tree(wf))
+                self.assertTrue(any("on.push has `paths`" in e for e in errs), errs)
+
+    def test_a_push_block_after_a_comment_is_read(self):
+        wf = WF_OK.replace("on:\n  push:\n", "on:\n# a note\n  push:\n").replace(
+            "    branches: [main, 'ci/**']\n", "    branches: [main, 'ci/**']\n    paths:\n      - 'src/**'\n")
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("on.push has `paths`" in e for e in errs), errs)
+
+    def test_pull_request_paths_after_a_comment_are_compared(self):
+        wf = WF_OK.replace("      - '**/src/**'\n", "      - '**/src/**'\n# a note\n      - 'fuzz/**'\n")
+        # every item read: equal to a file that lists fuzz/** too, different from one that does not
+        self.assertEqual(cp.sync(self.tree(wf, "**/src/**\nfuzz/**\n.github/paths/x.txt\n")), ([], 1))
+        errs, _ = cp.sync(self.tree(wf))
+        self.assertTrue(any("differ" in e for e in errs), errs)
+
+    # a key is a key in either YAML style: a flow-style value (`paths: [...]`) is read like a block
+    # list, and a form this lint cannot read fails instead of passing
+
+    def test_flow_style_push_paths_fail(self):
+        for key, val in (("paths", '["src/**"]'), ("paths", "['src/**', 'fuzz/**']"), ("paths-ignore", "[a]")):
+            with self.subTest(key=key, val=val):
+                wf = WF_OK.replace("    branches: [main, 'ci/**']\n",
+                                   f"    branches: [main, 'ci/**']\n    {key}: {val}\n")
+                errs, _ = cp.sync(self.tree(wf))
+                self.assertTrue(any(f"on.push has `{key}`" in e for e in errs), errs)
+
+    def test_flow_style_push_paths_on_main_only_pass(self):
+        wf = WF_OK.replace("    branches: [main, 'ci/**']\n", "    branches: [main]\n    paths: ['src/**']\n")
+        self.assertEqual(cp.sync(self.tree(wf)), ([], 1))
+
+    def test_flow_style_pull_request_paths_are_compared(self):
+        flow = "    paths: ['**/src/**', '.github/paths/x.txt']\n"
+        block = "    paths:\n      - '**/src/**'\n      - '.github/paths/x.txt'\n"
+        self.assertEqual(cp.sync(self.tree(WF_OK.replace(block, flow))), ([], 1))
+        errs, _ = cp.sync(self.tree(WF_OK.replace(block, "    paths: ['**/src/**', 'fuzz/**', '.github/paths/x.txt']\n")))
+        self.assertTrue(any("differ" in e for e in errs), errs)
+
+    def test_an_unreadable_trigger_form_fails(self):
+        for push in ("  push: {branches: [main, 'ci/**'], paths: [src]}\n",
+                     "  push:\n    branches: [main, 'ci/**']\n    paths: src/**\n"):
+            with self.subTest(push=push):
+                wf = WF_OK.replace("  push:\n    branches: [main, 'ci/**']\n", push)
+                errs, _ = cp.sync(self.tree(wf))
+                self.assertTrue(errs, push)
+
+    def test_a_push_trigger_that_is_not_a_mapping_fails(self):
+        for push in ("  push: [main]\n", "  push: main\n"):
+            with self.subTest(push=push):
+                wf = WF_OK.replace("  push:\n    branches: [main, 'ci/**']\n", push)
+                errs, _ = cp.sync(self.tree(wf))
+                self.assertTrue(any("on.push is" in e for e in errs), errs)
+
+    def test_comments_everywhere_in_a_synced_workflow_pass(self):
+        wf = "\n".join(l + ("\n# c\n  # c" if l.strip() and not l.startswith("      - run") else "")
+                       for l in WF_OK.split("\n"))
+        self.assertEqual(cp.sync(self.tree(wf)), ([], 1), wf)
+
+
+class Reader(unittest.TestCase):
+    """the strict workflow reader: the tree yaml.safe_load builds (PyYAML 6.0.2 wrote each expected
+    value below), FormError outside the subset, and FormError for text that is not YAML"""
+
+    READ = [
+        ('literal blank lines', 'run: |\n  a\n\n  b\n\n\nx: 1\n',
+         {'run': 'a\n\nb\n', 'x': 1}),
+        ('literal keep', 'run: |+\n  a\n\n\nx: 1\n',
+         {'run': 'a\n\n\n', 'x': 1}),
+        ('literal strip', 'run: |-\n  a\n  b\n',
+         {'run': 'a\nb'}),
+        ('literal more indented', 'run: |\n  a\n    b\n  c\n',
+         {'run': 'a\n  b\nc\n'}),
+        ('literal comment on the header', 'run: | # c\n  a\n',
+         {'run': 'a\n'}),
+        ('folded', 'run: >\n  a\n  b\n\n  c\n',
+         {'run': 'a b\nc\n'}),
+        ('folded more indented', 'run: >\n  a\n    b\n  c\n  d\n',
+         {'run': 'a\n  b\nc d\n'}),
+        ('folded strip', 'run: >-\n  a\n  b\n',
+         {'run': 'a b'}),
+        ('folded more indented then blank', 'run: >\n  a\n    b\n\n  c\n',
+         {'run': 'a\n  b\n\nc\n'}),
+        ('sequence of mappings', 'steps:\n  - name: a\n    run: b\n  - uses: c\n    with:\n      k: v\n',
+         {'steps': [{'name': 'a', 'run': 'b'}, {'uses': 'c', 'with': {'k': 'v'}}]}),
+        ("sequence at the key's indent", 'k:\n- a\n- b\nz: 1\n',
+         {'k': ['a', 'b'], 'z': 1}),
+        ('nested sequence', 'a:\n  - - x\n    - y\n  - z\n',
+         {'a': [['x', 'y'], 'z']}),
+        ('on is the key True', 'on:\n  push:\n    branches: [main]\n',
+         {True: {'push': {'branches': ['main']}}}),
+        ('quoted on stays a string', "'on':\n  push: null\n",
+         {'on': {'push': None}}),
+        ('YAML 1.1 bools and nulls', 'a: yes\nb: No\nc: off\nd: ~\ne:\n',
+         {'a': True, 'b': False, 'c': False, 'd': None, 'e': None}),
+        ('ints and floats', 'a: 0\nb: -12\nc: 1_000\nd: 3.12\ne: 3.10\n',
+         {'a': 0, 'b': -12, 'c': 1000, 'd': 3.12, 'e': 3.1}),
+        ('strings that only look typed', "a: 3.12.1\nb: v1\nc: '0123'\nd: 1e3x\n",
+         {'a': '3.12.1', 'b': 'v1', 'c': '0123', 'd': '1e3x'}),
+        ('colons inside plain scalars', "if: github.ref == 'refs/heads/main'\nrun: echo a:b\nurl: http://x.y/z\n",
+         {'if': "github.ref == 'refs/heads/main'", 'run': 'echo a:b', 'url': 'http://x.y/z'}),
+        ('hash inside and after plain scalars', "a: b#c\nb: c # d\nc: '# e'\n",
+         {'a': 'b#c', 'b': 'c', 'c': '# e'}),
+        ('double-quoted escapes', 'a: "x\\ty\\n\\"z\\u00e9"\n',
+         {'a': 'x\ty\n"zé'}),
+        ('single-quoted escape', "a: 'it''s'\n",
+         {'a': "it's"}),
+        ('flow collections', 'a: [x, \'y\', "z", 1, true]\nb: []\nc: {k: v, n: [1, 2]}\nd: {}\n',
+         {'a': ['x', 'y', 'z', 1, True], 'b': [], 'c': {'k': 'v', 'n': [1, 2]}, 'd': {}}),
+        ('flow mappings as sequence items', 'm:\n  - {os: a, t: b}\n  - { os: c }\n',
+         {'m': [{'os': 'a', 't': 'b'}, {'os': 'c'}]}),
+        ('colons inside flow scalars', "a: [ci/**, 'x:y', a:b]\n",
+         {'a': ['ci/**', 'x:y', 'a:b']}),
+        ('comments at every indentation', '# top\na:\n# c0\n  b: 1\n  # c2\n  c: 2\n',
+         {'a': {'b': 1, 'c': 2}}),
+        ('document start', '---\na: 1\n',
+         {'a': 1}),
+        ('expressions', "if: ${{ github.event_name == 'push' }}\nx: ${{ matrix.os }}\n",
+         {'if': "${{ github.event_name == 'push' }}", 'x': '${{ matrix.os }}'}),
+        ('a leading byte order mark is not content', '\ufeffon:\n  push:\n    paths: [src]\n',
+         {True: {'push': {'paths': ['src']}}}),
+        ('a block scalar that ends the file without a line break', 'n: |\n i',
+         {'n': 'i'}),
+        ('a kept block scalar that ends the file without a line break', 'n: |+\n i',
+         {'n': 'i'}),
+        ('a key that ends with a colon', 's:: 1\n',
+         {'s:': 1}),
+    ]
+
+    REFUSE = [  # valid YAML outside the subset (PyYAML reads each one)
+        ('an anchor and an alias', 'a: &x 1\nb: *x\n'),
+        ('a merge key', 'a: {k: 1}\nb:\n  <<: {k: 2}\n'),
+        ('a tag', 'a: !!str 1\n'),
+        ('a multi-line plain scalar', 'a: b\n  c\n'),
+        ('a multi-line quoted scalar', "a: 'b\n  c'\n"),
+        ('a multi-line flow collection', 'a: [b,\n  c]\n'),
+        ('an indentation indicator', 'a: |2\n   b\n'),
+        ('a complex key', '? a\n: b\n'),
+        ('a duplicate key', 'a: 1\na: 2\n'),
+        ('an octal int', 'a: 0755\n'),
+        ('a hex int', 'a: 0x1f\n'),
+        ('a sexagesimal number', 'a: 1:30\n'),
+        ('a float with an exponent', 'a: 1.0e+3\n'),
+        ('an inf float', 'a: .inf\n'),
+        ('a timestamp', 'a: 2026-10-24\n'),
+        ('a tab in the indentation', 'a:\n\tb: 1\n'),
+        ('a NEL line break', 'a: [x] # c\x85b: 1\n'),
+        ('a line separator', 'on:\n  push:\n    branches: [x] # c\u2028    paths: [src]\n'),
+        ('a paragraph separator', 'a: 1\u2029b: 2\n'),
+    ]
+
+    INVALID = [  # not YAML (PyYAML rejects each one)
+        ('a colon-space inside a plain scalar', 'run: echo "a: b"\n'),
+        ('a mapping value after a plain scalar', 'a: b: c\n'),
+        ('a dedent that matches no level', 'a:\n  b: 1\n c: 2\n'),
+        ('an unclosed flow sequence', 'a: [x\n'),
+        ('an unclosed quote', "a: 'x\n"),
+        ('a key after a top-level sequence', '- a\nb: 1\n'),
+        ('two documents', 'a: 1\n---\nb: 2\n'),
+        ('a column-0 comment inside a literal block', 'a: |\n  x\n# c\n  y\n'),
+        ('a tab after the colon', 'a:\tb\n'),
+        ('a tab after the colon on a later line', 'a: 1\nb:\tc\n'),
+        ('a tab after a later sequence dash', 'a:\n  - 1\n  -\tx\n'),
+        ('a block sequence entry inside a flow sequence', 'a: [x, - y]\n'),
+        ('a leading blank line longer than the block scalar', 'a: |\n     \n  x\n'),
+        ('a control character', 'a: x\x07y\n'),
+        ('a NUL character', 'a: x\x00y\n'),
+        ('a key that starts with a colon', 's:\n: :\n'),
+        ('a value that starts with a closing brace', 'p: }\n'),
+        ('a value that starts with a closing bracket', 's: ]\n'),
+        ('a value that is a comma', 'l: ,\n'),
+        ('a tab on a blank line of a block scalar', 'n: |\n\t\n'),
+        ('a question mark inside a flow scalar', 's: [c?]\n'),
+        ('a flow scalar that starts with a colon', 's: [n,:"]\n'),
+    ]
+
+    def test_reads_the_tree_yaml_builds(self):
+        for name, src, want in self.READ:
+            with self.subTest(name):
+                self.assertEqual(cp.load_yaml(src), want)
+
+    def test_refuses_what_is_outside_the_subset(self):
+        for name, src in self.REFUSE:
+            with self.subTest(name):
+                with self.assertRaises(cp.FormError):
+                    cp.load_yaml(src)
+
+    def test_refuses_what_is_not_yaml(self):
+        for name, src in self.INVALID:
+            with self.subTest(name):
+                with self.assertRaises(cp.FormError):
+                    cp.load_yaml(src)
+
+    def test_a_crlf_file_reads_like_its_lf_form(self):
+        for name, src, want in self.READ:
+            with self.subTest(name):
+                self.assertEqual(cp.load_yaml(src.replace("\n", "\r\n")), want)
+        with self.assertRaises(cp.FormError):
+            cp.load_yaml("a: 1\rb: 2\n")
+
+    def test_sync_reads_a_workflow_with_a_byte_order_mark(self):
+        # the BOM is not part of the first key: `on` is still the trigger block
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / ".github" / "workflows" / "x.yml").write_text(
+                "\ufeffon:\n  " + "pu" + "sh:\n    paths: [src]\n", encoding="utf-8")
+            errs, _ = cp.sync(root)
+            self.assertTrue(any("has `paths`" in e for e in errs), errs)
+
+    def test_sync_reports_a_workflow_outside_the_subset(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / ".github" / "workflows").mkdir(parents=True)
+            (root / ".github" / "workflows" / "x.yml").write_text("on:\n  push: &p\n    branches: [a]\n",
+                                                                  encoding="utf-8")
+            errs, _ = cp.sync(root)
+            self.assertTrue(any("strict subset" in e for e in errs), errs)
 
 
 if __name__ == "__main__":

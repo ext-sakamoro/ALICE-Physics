@@ -1,0 +1,63 @@
+# ALICE-Law G11: this repository's own rows of conformance/g11.toml (the rows of the checkers the ALICE
+# crates share are generated from ALICE-Law). ALICE-Law's scripts/g11_table_gen.py writes conformance/g11.toml
+# from both.
+#
+# A test suite run by scripts/run_tests.sh has run_tests.sh's zero test as its compared-nothing test (it
+# fails a step when a named test binary ran no test, or fewer than its minimum), and a test of a binary the
+# leg names as its canary.
+
+[[row]]
+gate = "G3"
+checker = "tools/no-outer-fneg-of-fma/src/main.rs"
+canary = "tools/no-outer-fneg-of-fma/src/main.rs::parenthesised_outer_negation_is_caught"
+zero = "tools/no-outer-fneg-of-fma/src/main.rs::no_readable_src_file_fails"
+shared = ["tools/no-outer-fneg-of-fma/src/main.rs", "tools/no-outer-fneg-of-fma/Cargo.toml", "tools/no-outer-fneg-of-fma/Cargo.lock"]
+
+[[row]]
+gate = "G4"
+checker = ".github/workflows/ci.yml#- name: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)>scripts/run_tests.sh"
+canary = "tests/determinism_golden_f32.rs::golden_sim_field"
+zero = "scripts/test_run_tests.py::RunTests.test_a_named_file_that_ran_zero_fails"
+shared = ["scripts/run_tests.sh", "scripts/test_run_tests.py"]
+
+[[row]]
+gate = "G5"
+checker = "scripts/determinism_release.py"
+canary = "scripts/test_determinism_release.py::Judge.test_a_missing_binary_result_fails"
+zero = "scripts/test_determinism_release.py::Judge.test_a_term_that_matches_nothing_fails_on_its_own"
+shared = "n/a: this crate's release leg over its own tests/determinism_*.rs; no other crate carries it"
+
+[[row]]
+gate = "G6"
+checker = ".github/workflows/ci.yml#- name: Test (ALICE-Law G7 handshakes, analytics + gpu-solver-bridge)>scripts/run_tests.sh"
+canary = "tests/physics_semantics_id.rs::every_entry_is_the_golden_its_pin_names"
+zero = "scripts/test_run_tests.py::RunTests.test_a_named_file_that_ran_zero_fails"
+shared = ["scripts/run_tests.sh", "scripts/test_run_tests.py"]
+
+[[row]]
+gate = "G7"
+checker = ".github/workflows/ci.yml#- name: Test (ALICE-Law G7 handshakes, analytics + gpu-solver-bridge)>scripts/run_tests.sh law_g7_boundaries"
+canary = "tests/law_g7_boundaries.rs::a_bridge_of_another_semantics_is_refused_on_every_path"
+zero = "scripts/test_run_tests.py::RunTests.test_a_named_file_that_ran_zero_fails"
+shared = ["scripts/run_tests.sh", "scripts/test_run_tests.py"]
+
+[[row]]
+gate = "G8"
+checker = ".github/workflows/ci.yml#- name: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)>scripts/run_tests.sh"
+canary = "tests/world_snapshot_v4.rs::a_foreign_semantics_id_is_refused"
+zero = "scripts/test_run_tests.py::RunTests.test_a_named_file_that_ran_zero_fails"
+shared = ["scripts/run_tests.sh", "scripts/test_run_tests.py"]
+
+[[row]]
+gate = "G10"
+checker = "scripts/entropy_guard.py"
+canary = "scripts/test_entropy_guard.py::EntropyGuard.test_every_source_in_production_code_is_reported"
+zero = "scripts/test_entropy_guard.py::EntropyGuard.test_main_exits_1_when_it_scans_no_file"
+shared = "n/a: this crate's guard over src/ with its own allowed sites; no other crate carries it"
+
+[[row]]
+gate = "G13"
+checker = "scripts/entropy_guard.py"
+canary = "scripts/test_entropy_guard.py::EntropyGuard.test_every_source_in_production_code_is_reported"
+zero = "scripts/test_entropy_guard.py::EntropyGuard.test_main_exits_1_when_it_scans_no_file"
+shared = "n/a: this crate's guard over src/ with its own allowed sites; no other crate carries it"

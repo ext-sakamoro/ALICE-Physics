@@ -89,6 +89,7 @@ python3 scripts/test_version_sync.py
 python3 scripts/version_sync.py --check
 python3 scripts/test_shared_files.py
 scripts/shared_files.sh
+scripts/g11_table.sh
 python3 scripts/test_lib_test_gate.py
 python3 scripts/test_preflight_ci_parity.py
 python3 scripts/preflight_ci_parity.py
@@ -123,6 +124,10 @@ python3 scripts/docs_lint.py --check
 step "tracked binaries (no built library or executable is tracked)"
 python3 scripts/test_tracked_binaries.py
 python3 scripts/tracked_binaries.py
+
+step "no shell pipeline ends in grep -q"
+python3 scripts/test_check_pipe_grep_q.py
+python3 scripts/check_pipe_grep_q.py
 
 # security-audit.yml job deny, the same two commands (a package renamed without its
 # licence exception passed every other local gate and failed only there).
@@ -258,7 +263,8 @@ python3 scripts/test_run_examples.py
 # lock (--locked). Same argument sets as CI; a missing toolchain fails the full
 # run and is skipped by --quick / --fast.
 step "MSRV lanes (1.85 without privacy-crypto, 1.87 with it, --locked)"
-if rustup toolchain list | grep -q '^1\.85' && rustup toolchain list | grep -q '^1\.87'; then
+toolchains=$(rustup toolchain list)
+if grep -q '^1\.85' <<<"$toolchains" && grep -q '^1\.87' <<<"$toolchains"; then
   if [[ $quick -eq 0 && $fast -eq 0 ]]; then
     cargo +1.85 build --lib --locked --no-default-features
     cargo +1.85 test --lib --locked
@@ -356,13 +362,13 @@ step "allow reasons (canary for the manifest lint + clock reads under wide allow
 python3 scripts/allow_reason_guard.py --clippy
 
 step "wasm32-wasip1 golden tests build (dev-deps are built for the target too)"
-rustup target list --installed | grep -q wasm32-wasip1 || rustup target add wasm32-wasip1
+grep -q '^wasm32-wasip1$' <<<"$(rustup target list --installed)" || rustup target add wasm32-wasip1
 cargo test --test determinism_golden --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_f32 --target wasm32-wasip1 --no-run
 cargo test --test determinism_golden_contacts --target wasm32-wasip1 --no-run
 
 step "wasm32-unknown-unknown build with every browser feature (CI job js-binding)"
-rustup target list --installed | grep -q wasm32-unknown-unknown || rustup target add wasm32-unknown-unknown
+grep -q '^wasm32-unknown-unknown$' <<<"$(rustup target list --installed)" || rustup target add wasm32-unknown-unknown
 cargo build --lib --target wasm32-unknown-unknown
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features std
 cargo build --lib --target wasm32-unknown-unknown --no-default-features --features "std,wasm,neural,analytics,gpu-solver-bridge,simd"
@@ -390,6 +396,9 @@ fi
 
 step "cargo test (default features, all targets)"
 cargo test --no-fail-fast
+
+step "ci.yml / test: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)"
+scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4
 
 step "cargo test --lib (native feature set)"
 cargo test --lib --features "$NATIVE"

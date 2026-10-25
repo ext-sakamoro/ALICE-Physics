@@ -123,6 +123,12 @@ jobs:
         run: |
           python3 scripts/test_shared_files.py
           scripts/shared_files.sh
+      # ALICE-Law G11: every gate the manifest declares pass has a row in conformance/g11.toml naming its
+      # checker, the canary it must flag and the test that fails when it compared nothing (ALICE-Law's
+      # checker fetched at .github/g11-table-pin, SHA-256 pinned; 0 rows compared fails)
+      - name: G11 table matches the declared gates
+        shell: bash
+        run: scripts/g11_table.sh
       - name: Lib-test gate (tests)
         run: python scripts/test_lib_test_gate.py
       - name: Release determinism check (tests of the checker)
@@ -162,6 +168,11 @@ jobs:
         run: python scripts/test_tracked_binaries.py
       - name: Tracked binaries (no built binary is tracked)
         run: python scripts/tracked_binaries.py
+      # no shell pipeline in the scripts and workflows ends in grep -q (SIGPIPE under pipefail)
+      - name: Pipe into grep -q (tests)
+        run: python scripts/test_check_pipe_grep_q.py
+      - name: Pipe into grep -q (scripts and workflows)
+        run: python scripts/check_pipe_grep_q.py
       # coverage tables (docs/coverage/*.toml, hand-written): every cited test and
       # source symbol exists, oracles are not ignored, partial items and the
       # LIMITATION(<id>) comments in src/ point at each other
@@ -336,6 +347,12 @@ jobs:
 
       - name: Test (unit + integration + doc)
         run: cargo test
+
+      # ALICE-Law G4 / G8 (G11's compared-nothing test): the f32 goldens and the snapshot form by name,
+      # run_tests.sh failing unless each binary ran that many tests
+      - name: Test (ALICE-Law G4 goldens and G8 snapshot form, zero executed is red)
+        shell: bash
+        run: scripts/run_tests.sh determinism_golden_f32=13,world_snapshot_v4=12 -- cargo test --test determinism_golden_f32 --test world_snapshot_v4
 
       # 1.2.0: the C ABI consumers (Unity P/Invoke, unreal-plugin/) link the
       # cdylib / staticlib — assert both are actually produced, not just the rlib.
