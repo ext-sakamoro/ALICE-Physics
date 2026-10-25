@@ -239,6 +239,29 @@ class G2RewriteCheck(unittest.TestCase):
         self.assertEqual(rc, 1, out)
         self.assertIn("0 scanned", out)
 
+    def test_a_scan_that_succeeds_on_no_file_fails(self):
+        # the scanner refuses an empty tree itself; this is the checker's own guard behind it: a scan
+        # that exits 0 and reports 0 files fails even with --min-sites 0 and a written reason
+        import importlib.util
+        import contextlib
+        import io
+        spec = importlib.util.spec_from_file_location("g2_rewrite_check", SCRIPT)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        mod.scan = lambda root, scan_bin, dirs: ([], "scanned 0 files")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "alice-law-conformance.toml").write_text(
+                '[G2]\nno_comparison_sites_reason = "integer arithmetic only, no float type in the library"\n',
+                encoding="utf-8")
+            table = root / "sites.tsv"
+            table.write_text(HEADER, encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = mod.check(root, table, None, ["src"], 0)
+        self.assertEqual(rc, 1, out.getvalue())
+        self.assertIn("the scan read no file", out.getvalue())
+
     def test_test_only_items_and_other_comparisons_are_not_counted(self):
         rc, out = self.run_check({"t.rs": TEST_ONLY, "o.rs": NOT_A_REWRITE}, [])
         self.assertEqual(rc, 0, out)
