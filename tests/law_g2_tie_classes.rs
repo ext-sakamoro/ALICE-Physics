@@ -175,12 +175,12 @@ fn reduction_follows_maximum_number() {
 
 /// Class: clamp with a zero bound
 ///
-/// A clamp follows alice-det-math's clamp (the owner of the clamp Law), not
-/// the maximumNumber / minimumNumber tie rule of max and min: it compares, so
-/// `-0` against a `+0` low bound stays `-0`, and a NaN in any argument gives the
-/// canonical quiet NaN whatever its payload or sign.
+/// A clamp follows alice-det-math's clamp (the owner of the clamp Law). Since alice-det-math
+/// 0.5.2 at 39507d1b that is `min(max(x, low), high)` with the G2 max and min, so `-0`
+/// against a `+0` low bound gives `+0` (it compared before, and kept `-0`), and a NaN `x`
+/// gives the canonical quiet NaN whatever its payload or sign.
 #[test]
-fn class7_clamp_with_a_zero_bound_follows_det_math_0_5_clamp() {
+fn class7_clamp_with_a_zero_bound_follows_det_math_clamp() {
     let inputs = [
         -0.0f32,
         0.0,
@@ -201,7 +201,7 @@ fn class7_clamp_with_a_zero_bound_follows_det_math_0_5_clamp() {
         .map(|i| f.get(i, 0, 0).to_bits())
         .collect();
     let want = [
-        NEG,
+        POS,
         POS,
         CANONICAL_NAN,
         CANONICAL_NAN,

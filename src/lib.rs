@@ -331,10 +331,11 @@ pub mod det_math {
     // refuses a crate-local copy of the four
     pub(crate) use alice_det_math::{max, max64, min, min64};
     // `f32::clamp` passes a NaN payload through and panics on a NaN or inverted bound;
-    // alice-det-math's clamp gives the canonical NaN for a NaN in any argument and lets
-    // the low bound win when the bounds are inverted (ALICE-Law G2, the clamp owner is
-    // alice-det-math). It compares: clamp(-0, +0, hi) keeps -0. `f32::clamp` is banned in
-    // library code (`.github/clippy-lib/clippy.toml`)
+    // alice-det-math's clamp (ALICE-Law G2, the clamp owner is alice-det-math) is
+    // `min(max(x, low), high)` with the G2 max and min since 0.5.2 at 39507d1b: the
+    // canonical NaN for a NaN `x`, a NaN bound is no bound, the high bound wins when the
+    // bounds are inverted, and clamp(-0, +0, hi) is +0. `f32::clamp` is banned in library
+    // code (`.github/clippy-lib/clippy.toml`)
     pub(crate) use alice_det_math::metric::clamp;
 
     /// The f64 clamp sites call this one function: alice-det-math has no 64-bit
@@ -951,8 +952,8 @@ pub use sdf_manifold::ManifoldConfig;
 pub use sdf_manifold::SdfManifold;
 pub use semantics::{
     check_peer, expected_peer_id, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS,
-    PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
-    PREVIOUS_PHYSICS_SEMANTICS_IDS,
+    PHYSICS_PINS_BY_DET_MATH, PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID,
+    PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 pub use shape::{Shape, ShapeError};
 #[cfg(feature = "std")]

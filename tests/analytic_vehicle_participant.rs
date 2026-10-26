@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "a3f7eb247574fcbac11839aeaf64f1bae826721f2a2e12e8b30fd22db70612c1"
+        "d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2"
     );
 }
 
@@ -647,8 +647,8 @@ fn drive_digest(backend: SolverBackend) -> String {
 }
 
 // world snapshot version 5: the version field and the checksum moved, the rest of the bytes did not
-const DRIVE_XPBD: &str = "754bc9904e05707949ef4192f25267481714f816b5f36922596560564ed3a485";
-const DRIVE_TGS: &str = "95aee663ac197f9caf0402ec452c4c566f1f011987720960731611dd7fe0f1a9";
+const DRIVE_XPBD: &str = "8846031b85e125e82146f881596b10c08e231701807f1bf80a4918bed4110c58";
+const DRIVE_TGS: &str = "b6283e8b31fea75b3fdbcd84f127d6af1ca7aae72fb6443323ebfe089b22c309";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

@@ -44,14 +44,15 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use alice_physics_core::{
-    check_peer, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS, PHYSICS_SEMANTICS_BY_DET_MATH,
-    PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS, PREVIOUS_PHYSICS_SEMANTICS_IDS,
+    check_peer, semantics_id_for, PeerMismatch, PHYSICS_PEER_IDS, PHYSICS_PINS_BY_DET_MATH,
+    PHYSICS_SEMANTICS_BY_DET_MATH, PHYSICS_SEMANTICS_ID, PHYSICS_SEMANTICS_PINS,
+    PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "a3f7eb247574fcbac11839aeaf64f1bae826721f2a2e12e8b30fd22db70612c1";
+const PINNED_ID_HEX: &str = "d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -838,8 +839,61 @@ fn ignored() { assert_eq!("", A); }
 fn pins_under(det_math: [u8; 32]) -> Vec<(&'static str, [u8; 32])> {
     PHYSICS_SEMANTICS_PINS
         .iter()
-        .map(|&(n, d)| if n == DET_MATH { (n, det_math) } else { (n, d) })
+        .map(|&(n, d)| {
+            if n == DET_MATH {
+                return (n, det_math);
+            }
+            let recorded = PHYSICS_PINS_BY_DET_MATH
+                .iter()
+                .find(|(det, name, _)| *det == det_math && *name == n)
+                .map(|(_, _, digest)| *digest);
+            (n, recorded.unwrap_or(d))
+        })
         .collect()
+}
+
+/// The per-generation pins are well formed: there is at least one, each names a row of an
+/// earlier generation (not this build's) and an existing pin other than the det-math entry, no
+/// (generation, pin) appears twice, and each differs from the pin's current value (an entry equal
+/// to it would be no entry)
+#[test]
+fn the_pins_recorded_under_earlier_generations_are_well_formed() {
+    assert!(
+        !PHYSICS_PINS_BY_DET_MATH.is_empty(),
+        "no pin recorded under an earlier generation (compared nothing)"
+    );
+    let mut seen = BTreeSet::new();
+    for (det, name, digest) in PHYSICS_PINS_BY_DET_MATH {
+        assert!(
+            PHYSICS_SEMANTICS_BY_DET_MATH.iter().any(|(d, _)| d == det),
+            "{name}: det-math {} has no row",
+            hex(det)
+        );
+        assert_ne!(
+            *det,
+            alice_det_math::SEMANTICS_ID,
+            "{name}: recorded under this build's own generation"
+        );
+        assert_ne!(
+            *name, DET_MATH,
+            "the det-math entry is the generation itself"
+        );
+        let current = PHYSICS_SEMANTICS_PINS
+            .iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("{name} is not a pin"));
+        assert_ne!(
+            current.1,
+            *digest,
+            "{name}: the value recorded under det-math {} is the current one",
+            hex(det)
+        );
+        assert!(
+            seen.insert((*det, *name)),
+            "{name} twice under det-math {}",
+            hex(det)
+        );
+    }
 }
 
 /// Every row is the fold of the pins under its det-math generation, checked

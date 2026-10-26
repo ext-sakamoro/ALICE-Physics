@@ -7,10 +7,10 @@
 //! Two builds with the same identifier step every pinned path to the same
 //! bits; a build that steps any of them differently has a different value.
 //!
-//! # Hex form (with `alice-det-math` 0.5.1; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
+//! # Hex form (with `alice-det-math` 0.5.2 at 39507d1b; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! a3f7eb247574fcbac11839aeaf64f1bae826721f2a2e12e8b30fd22db70612c1
+//! d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2
 //! ```
 //!
 //! # Entries
@@ -214,7 +214,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "law output: pressure",
-        hex32("ced6e512e72ddfdda18be4db0eee969765011b3b38d9e54c268b053c1177635f"),
+        hex32("fa7e74bdbfd31d4fa3af532bdf570eea87a3c9fab7c5543ce6b85bd132bd6910"),
     ),
     (
         "law output: privacy",
@@ -230,7 +230,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "law output: sdf_destruction",
-        hex32("684e6d18da512f696f3620a1540adce95165550a37a97dbde8de60b30557a717"),
+        hex32("7fe6d5a96e1db4d542f40e6cedf8c188346b158db324406df32cf8fcf93fc488"),
     ),
     (
         "law output: sdf_fem_mesh",
@@ -250,7 +250,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "law output: sim_field",
-        hex32("98ea603b87edf5f774011a75b426b7545561e06d0870e72bc2275f0cfe41768d"),
+        hex32("d82a5defaf6faf93d983e47a3b5610cab839d6a31c081be11ec2c45c0dc80cce"),
     ),
     (
         "law output: sim_modifier observe",
@@ -295,15 +295,17 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 /// bridges compare the linked peer's identifier with its entry
 /// ([`check_peer`]) and refuse a peer whose identifier moved.
 pub const PHYSICS_PEER_IDS: &[(&str, [u8; 32])] = &[
-    // alice-analytics 0.5 / 0.6: `SEMANTICS_ID`, the alice-det-math 0.5.1 identifier it re-exports
+    // alice-analytics 0.7 at 48eae0ee: `SEMANTICS_ID`, the alice-det-math 0.5.2 (39507d1b)
+    // identifier it re-exports
     (
         "alice-analytics",
-        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
     ),
-    // alice-ml 0.4: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights `crate::neural` takes
+    // alice-ml 0.4 at 5309bc61: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights
+    // `crate::neural` takes
     (
         "alice-ml",
-        hex32("a547237044e8fdba9ab152f7af13c431f675e5382e4e8cb40aa8c83c46bb606b"),
+        hex32("8464fe594013020b37c94d790f15167244074f3892a99d3c9030bd66ba4ed982"),
     ),
 ];
 
@@ -385,12 +387,12 @@ pub fn check_peer(
 /// `alice-det-math` the build resolved, so the identifier is looked up here
 /// by it ([`semantics_id_for`]); a build against a generation with no row
 /// does not compile, rather than reporting an identifier of another
-/// generation. `alice-det-math` moves `SEMANTICS_ID` in patch releases when
-/// the old identifier is listed in its `PREVIOUS_SEMANTICS_IDS` and the
-/// existing functions are bit-identical (0.5.1 added `max` / `min`); this
-/// table maps each generation to this crate's identifier. A later release of
-/// that kind is selected by the `"0.5.1"` requirement and stops the compile
-/// here until this crate adds its row.
+/// generation. `alice-det-math` moves `SEMANTICS_ID` with a new generation:
+/// 0.5.1 added `max` / `min` and left the existing functions bit-identical,
+/// 0.5.2 at 39507d1b changed the clamp (the pins it moved are in
+/// [`PHYSICS_PINS_BY_DET_MATH`]); this table maps each generation to this
+/// crate's identifier. Another generation stops the compile here until this
+/// crate adds its row.
 /// `tests/physics_semantics_id.rs` recomputes every row from the pins in one
 /// build.
 pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
@@ -404,6 +406,81 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
         hex32("a3f7eb247574fcbac11839aeaf64f1bae826721f2a2e12e8b30fd22db70612c1"),
     ),
+    // alice-det-math 0.5.2 at 39507d1b (its clamp follows the G2 order: three Law outputs
+    // moved, see PHYSICS_PINS_BY_DET_MATH)
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        hex32("d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2"),
+    ),
+];
+
+/// The pins of [`PHYSICS_SEMANTICS_PINS`] whose recorded value differs under an earlier
+/// `alice-det-math` generation: `(det-math identifier, pin name, the digest recorded under it)`.
+///
+/// A row of [`PHYSICS_SEMANTICS_BY_DET_MATH`] is the fold of the pins with that generation's
+/// det-math identifier and, for the pins listed here for it, the value recorded under it (every
+/// other pin is the same in every generation). alice-det-math 0.5.2 at 39507d1b changed its
+/// clamp to `min(max(x, low), high)` with the G2 max and min, so `-0` against a `+0` bound
+/// gives `+0`: the Law outputs of `pressure`, `sdf_destruction` and `sim_field` moved (each one
+/// gives its earlier digest with only the clamp put back). The peers (`alice-analytics`,
+/// `alice-ml`) export identifiers that follow the det-math generation. `tests/physics_semantics_id.rs`
+/// refolds every row with these and checks each entry names a row other than this build's and an
+/// existing pin, and differs from the current value.
+pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
+    // alice-det-math 0.5.0: the three Law outputs before the clamp followed the G2 order, and the peer
+    // identifiers the peers exported over that generation
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "law output: pressure",
+        hex32("ced6e512e72ddfdda18be4db0eee969765011b3b38d9e54c268b053c1177635f"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "law output: sdf_destruction",
+        hex32("684e6d18da512f696f3620a1540adce95165550a37a97dbde8de60b30557a717"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "law output: sim_field",
+        hex32("98ea603b87edf5f774011a75b426b7545561e06d0870e72bc2275f0cfe41768d"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "alice-analytics",
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "alice-ml",
+        hex32("a547237044e8fdba9ab152f7af13c431f675e5382e4e8cb40aa8c83c46bb606b"),
+    ),
+    // alice-det-math 0.5.1: the three Law outputs before the clamp followed the G2 order, and the peer
+    // identifiers the peers exported over that generation
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "law output: pressure",
+        hex32("ced6e512e72ddfdda18be4db0eee969765011b3b38d9e54c268b053c1177635f"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "law output: sdf_destruction",
+        hex32("684e6d18da512f696f3620a1540adce95165550a37a97dbde8de60b30557a717"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "law output: sim_field",
+        hex32("98ea603b87edf5f774011a75b426b7545561e06d0870e72bc2275f0cfe41768d"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "alice-analytics",
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "alice-ml",
+        hex32("a547237044e8fdba9ab152f7af13c431f675e5382e4e8cb40aa8c83c46bb606b"),
+    ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
@@ -411,8 +488,8 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
 /// taken from [`PHYSICS_SEMANTICS_BY_DET_MATH`] by the resolved
 /// `alice-det-math`.
 ///
-/// Hex (with `alice-det-math` 0.5.1):
-/// `a3f7eb247574fcbac11839aeaf64f1bae826721f2a2e12e8b30fd22db70612c1`.
+/// Hex (with `alice-det-math` 0.5.2 at 39507d1b):
+/// `d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 

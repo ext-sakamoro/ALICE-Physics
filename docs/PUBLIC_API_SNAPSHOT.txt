@@ -17099,6 +17099,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::semantics::PeerMismatch
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::semantics::PeerMismatch
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::semantics::PeerMismatch
 pub const alice_physics_core::semantics::PHYSICS_PEER_IDS: &[(&str, [u8; 32])]
+pub const alice_physics_core::semantics::PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])]
 pub const alice_physics_core::semantics::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
 pub const alice_physics_core::semantics::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics_core::semantics::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
@@ -26691,6 +26692,7 @@ impl core::marker::UnsafeUnpin for alice_physics_core::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::anomaly::ZScoreDetector
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::anomaly::ZScoreDetector
 pub const alice_physics_core::PHYSICS_PEER_IDS: &[(&str, [u8; 32])]
+pub const alice_physics_core::PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])]
 pub const alice_physics_core::PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])]
 pub const alice_physics_core::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics_core::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]

@@ -423,7 +423,7 @@ jobs:
       - name: Test (ALICE-Law G7 handshakes, analytics + gpu-solver-bridge)
         shell: bash
         run: |
-          scripts/run_tests.sh physics_semantics_id=21 -- cargo test --test physics_semantics_id --features "analytics,neural"
+          scripts/run_tests.sh physics_semantics_id=22 -- cargo test --test physics_semantics_id --features "analytics,neural"
           scripts/run_tests.sh law_g7_boundaries=4 -- cargo test --test law_g7_boundaries --features "analytics,gpu-solver-bridge"
 
       # The alice-physics facade (crates/alice-physics): every importable item of the core's

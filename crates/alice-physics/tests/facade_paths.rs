@@ -1309,6 +1309,7 @@ use alice_physics::semantics::expected_peer_id as _;
 use alice_physics::semantics::semantics_id_for as _;
 use alice_physics::semantics::PeerMismatch as _;
 use alice_physics::semantics::PHYSICS_PEER_IDS as _;
+use alice_physics::semantics::PHYSICS_PINS_BY_DET_MATH as _;
 use alice_physics::semantics::PHYSICS_SEMANTICS_BY_DET_MATH as _;
 use alice_physics::semantics::PHYSICS_SEMANTICS_ID as _;
 use alice_physics::semantics::PHYSICS_SEMANTICS_PINS as _;
@@ -1843,6 +1844,7 @@ use alice_physics::XorShift64 as _;
 use alice_physics::ZScoreDetector as _;
 use alice_physics::AABB as _;
 use alice_physics::PHYSICS_PEER_IDS as _;
+use alice_physics::PHYSICS_PINS_BY_DET_MATH as _;
 use alice_physics::PHYSICS_SEMANTICS_BY_DET_MATH as _;
 use alice_physics::PHYSICS_SEMANTICS_ID as _;
 use alice_physics::PHYSICS_SEMANTICS_PINS as _;
@@ -1851,7 +1853,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1833 paths, checked at compile time
+    // 1835 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

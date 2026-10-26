@@ -23,9 +23,8 @@ dependencies = [
 
 [[package]]
 name = "alice-analytics"
-version = "0.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f88494dfa330a02ea22c5846d54ca0efe742f477db7c4894b9eaa6fb0d057e31"
+version = "0.7.0"
+source = "git+https://github.com/ext-sakamoro/ALICE-Analytics?rev=48eae0ee928042679c5aa8b2bcc965edfd61e577#48eae0ee928042679c5aa8b2bcc965edfd61e577"
 dependencies = [
  "alice-det-math",
  "libm",
@@ -46,14 +45,13 @@ dependencies = [
 
 [[package]]
 name = "alice-det-math"
-version = "0.5.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2857e06dcc3838a2138f4c8ed7b30cf8515a223eeb6d5fbd068dd13d45cb4ff4"
+version = "0.5.2"
+source = "git+https://github.com/ext-sakamoro/ALICE-DetMath?rev=39507d1b99960f260a0b760b3fba6cb60823340d#39507d1b99960f260a0b760b3fba6cb60823340d"
 
 [[package]]
 name = "alice-ml"
 version = "0.4.0"
-source = "git+https://github.com/ext-sakamoro/ALICE-ML?rev=5d45fb65de47a6a3b39a35f235a393ead8f2eb38#5d45fb65de47a6a3b39a35f235a393ead8f2eb38"
+source = "git+https://github.com/ext-sakamoro/ALICE-ML?rev=5309bc618f7f8a37beb3bfdf6802db6c6dbc28ea#5309bc618f7f8a37beb3bfdf6802db6c6dbc28ea"
 dependencies = [
  "alice-det-math",
  "libm",

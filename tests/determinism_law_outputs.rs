@@ -570,7 +570,7 @@ fn law_output_phase_change() {
 #[test]
 fn law_output_pressure() {
     const PRESSURE_GOLDEN: &str =
-        "ced6e512e72ddfdda18be4db0eee969765011b3b38d9e54c268b053c1177635f";
+        "fa7e74bdbfd31d4fa3af532bdf570eea87a3c9fab7c5543ce6b85bd132bd6910";
     let mut r = Record::default();
     for impulse in [-0.0f32, f32::NAN, 1.0e30, 0.5] {
         let mut m = PressureModifier::new(
@@ -667,7 +667,7 @@ fn law_output_sdf_collider() {
 #[test]
 fn law_output_sdf_destruction() {
     const SDF_DESTRUCTION_GOLDEN: &str =
-        "684e6d18da512f696f3620a1540adce95165550a37a97dbde8de60b30557a717";
+        "7fe6d5a96e1db4d542f40e6cedf8c188346b158db324406df32cf8fcf93fc488";
     let mut r = Record::default();
     let custom = |v: f32| DestructionShape {
         center: Vec3Fix::ZERO,
@@ -799,7 +799,7 @@ fn law_output_sdf_wind_field() {
 #[test]
 fn law_output_sim_field() {
     const SIM_FIELD_GOLDEN: &str =
-        "98ea603b87edf5f774011a75b426b7545561e06d0870e72bc2275f0cfe41768d";
+        "d82a5defaf6faf93d983e47a3b5610cab839d6a31c081be11ec2c45c0dc80cce";
     let mut r = Record::default();
     let inputs = [
         -0.0f32,

@@ -38,7 +38,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `motor` | step | 10 / 5 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
 | `plane_collider` | step | 4 / 0 / 1 / 4 / 0 | C ABI, Python, WebAssembly |
 | `sdf_collider` | step | 24 / 0 / 0 / 17 / 0 | C ABI, Python, WebAssembly |
-| `semantics` | step | 5 / 1 / 0 / 4 / 0 | — |
+| `semantics` | step | 5 / 1 / 0 / 5 / 0 | — |
 | `shape_raycast` | step | 28 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
