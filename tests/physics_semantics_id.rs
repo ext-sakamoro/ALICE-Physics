@@ -933,49 +933,62 @@ fn the_identifier_is_the_row_of_the_resolved_det_math() {
     }
 }
 
-/// Every earlier identifier the snapshot reader accepts is, never this
-/// build's, either the identifier of another known generation or the fold of
-/// the same pins without the peer entries and the Law output entries (before
-/// 4.0.0 neither was folded; no stepping golden moved when they were), under a
-/// known generation.
+/// The earlier identifiers a cross-version oracle covers: `(identifier, the test that restores a
+/// snapshot written by that release and steps it to the release's own bits)`. Empty: no oracle
+/// covers an earlier generation yet
+const COVERED_BY_A_CROSS_VERSION_ORACLE: &[(&str, &str)] = &[];
+
+/// An identifier of an earlier `alice-det-math` generation (a row of another generation, or the
+/// fold of its pins before the peer and Law output entries were folded, as 3.x stamped) is in
+/// `PREVIOUS_PHYSICS_SEMANTICS_IDS` only if a cross-version oracle covers it, and this build's own
+/// identifier never is
 #[test]
-fn previous_identifiers_are_rows_of_other_generations() {
-    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.is_empty());
-    let before_peers: Vec<[u8; 32]> = PHYSICS_SEMANTICS_BY_DET_MATH
-        .iter()
-        .map(|(det_math, _)| {
-            let pins: Vec<_> = pins_under(*det_math)
-                .into_iter()
-                .filter(|(n, _)| {
-                    !PHYSICS_PEER_IDS.iter().any(|p| p.0 == *n) && !n.starts_with(LAW_OUTPUT)
-                })
-                .collect();
-            fold(&pins).expect("folds")
-        })
-        .collect();
-    for id in PREVIOUS_PHYSICS_SEMANTICS_IDS {
-        assert_ne!(
-            id, &PHYSICS_SEMANTICS_ID,
-            "the current identifier is listed as previous"
-        );
-        assert!(
-            PHYSICS_SEMANTICS_BY_DET_MATH.iter().any(|r| r.1 == *id) || before_peers.contains(id),
-            "{} is not the identifier of a known generation",
-            hex(id)
-        );
+fn an_earlier_generation_id_is_previous_only_with_a_cross_version_oracle() {
+    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&PHYSICS_SEMANTICS_ID));
+    let mut earlier: Vec<[u8; 32]> = Vec::new();
+    for (det_math, row) in PHYSICS_SEMANTICS_BY_DET_MATH {
+        if *det_math == alice_det_math::SEMANTICS_ID {
+            continue;
+        }
+        earlier.push(*row);
+        let before_peers: Vec<_> = pins_under(*det_math)
+            .into_iter()
+            .filter(|(n, _)| {
+                !PHYSICS_PEER_IDS.iter().any(|p| p.0 == *n) && !n.starts_with(LAW_OUTPUT)
+            })
+            .collect();
+        earlier.push(fold(&before_peers).expect("folds"));
     }
-    // the identifiers 3.x reported are accepted
-    for old in [
+    // the identifiers the 3.x releases stamped are among them (3.1.0 and 3.0.x)
+    for released in [
         "79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108",
         "cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469",
     ] {
         assert!(
-            PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&unhex32(old)),
-            "{old}"
+            earlier.contains(&unhex32(released)),
+            "{released} is not an earlier generation's id"
         );
+    }
+    let mut compared = 0;
+    for id in &earlier {
+        let covered = COVERED_BY_A_CROSS_VERSION_ORACLE
+            .iter()
+            .any(|(h, _)| unhex32(h) == *id);
         assert!(
-            before_peers.contains(&unhex32(old)),
-            "{old} is not the fold without the peers and the Law outputs"
+            covered || !PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(id),
+            "{} is an earlier generation's identifier in PREVIOUS_PHYSICS_SEMANTICS_IDS with no cross-version oracle",
+            hex(id)
+        );
+        compared += 1;
+    }
+    assert!(compared > 0, "no earlier identifier compared");
+    for id in PREVIOUS_PHYSICS_SEMANTICS_IDS {
+        assert!(
+            COVERED_BY_A_CROSS_VERSION_ORACLE
+                .iter()
+                .any(|(h, _)| unhex32(h) == *id),
+            "{} is in PREVIOUS_PHYSICS_SEMANTICS_IDS with no cross-version oracle",
+            hex(id)
         );
     }
 }

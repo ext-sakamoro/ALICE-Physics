@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5854 |
+| 🟢 Not ignored (run by CI) | 5849 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5950** |
+| **Total** | **5945** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5854)
+## 🟢 Not ignored (5849)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -373,7 +373,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_wedge.rs` | 12 |
 | `indep_molecular_pair_potential.rs` | 12 |
 | `indep_orbit_kepler.rs` | 12 |
-| `world_snapshot_previous_semantics.rs` | 12 |
 | `world_snapshot_v4.rs` | 12 |
 | `analytic_animation_blend_wiring.rs` | 11 |
 | `analytic_contact_viz_wiring.rs` | 11 |
@@ -494,6 +493,7 @@ Per-file counts (the test names are in `tests/`):
 | `indep_aero_rotor.rs` | 7 |
 | `mesh_quality.rs` | 7 |
 | `wm07_reset_and_rollback_contract.rs` | 7 |
+| `world_snapshot_previous_semantics.rs` | 7 |
 | `analytic_analytics_bridge_wiring.rs` | 6 |
 | `analytic_bvh_leaf_aabb_wiring.rs` | 6 |
 | `analytic_geometry_helpers.rs` | 6 |

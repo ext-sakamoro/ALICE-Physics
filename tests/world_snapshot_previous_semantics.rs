@@ -1,6 +1,14 @@
 //! A version 4 world snapshot written under an earlier stepping semantics
-//! identifier that this build lists in `PREVIOUS_PHYSICS_SEMANTICS_IDS`
-//! restores, and one under any other identifier is refused.
+//! identifier restores only if this build lists it in
+//! `PREVIOUS_PHYSICS_SEMANTICS_IDS`; every other identifier is refused.
+//!
+//! The list is empty since `alice-det-math` 0.5.2 at 39507d1b: its clamp
+//! moved Law output bits, so this build is not shown to reproduce data
+//! stamped with an identifier of an earlier generation, and the two 3.x
+//! fixtures below are refused naming both identifiers, the target unchanged.
+//! An earlier identifier comes back only with a cross-version oracle (a
+//! snapshot written by that release, restored and stepped here, bit-equal to
+//! that release's own steps).
 //!
 //! `tests/fixtures/world_snapshot_v4_semantics_cd9aa3b8.bin` is `scene()`
 //! stepped 30 times by `dt()` and written by `snapshot_world`, once with the
@@ -16,17 +24,14 @@
 //! `snapshot_world`): 2136 bytes, sha256 `43eeb4be…`, semantics identifier
 //! `79ca5297…` (the 3.1.0 release value, the first entry of
 //! `PREVIOUS_PHYSICS_SEMANTICS_IDS`) and `law_id` `bb5c15c7…`, both printed by
-//! that build. It is the test that depends on that list entry: taking
-//! `79ca5297…` out of the list makes it fail.
+//! that build.
 //!
-//! oracle: the restored state is compared with `scene()` stepped 30 times
-//! by this build (the stepping bits did not change with the identifier: no
-//! determinism golden moved), and the identifiers with the values the
-//! writing build printed, not with anything this build derives from the
-//! blob.
+//! oracle: the identifiers are compared with the values the writing build
+//! printed, not with anything this build derives from the blob, and a
+//! refused restore leaves the target's snapshot bytes unchanged.
 
 use alice_physics_core::{
-    Fix128, LawCheck, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldSnapshotError,
+    Fix128, LegacyPolicy, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldSnapshotError,
     PHYSICS_SEMANTICS_ID, PREVIOUS_PHYSICS_SEMANTICS_IDS,
 };
 
@@ -109,19 +114,6 @@ fn with_id(at: usize, id: &[u8; 32]) -> Vec<u8> {
     b
 }
 
-fn same_bodies(a: &PhysicsWorld, b: &PhysicsWorld) {
-    assert_eq!(a.bodies.len(), b.bodies.len());
-    for (i, (x, y)) in a.bodies.iter().zip(&b.bodies).enumerate() {
-        assert_eq!(x.position, y.position, "body {i} position");
-        assert_eq!(x.velocity, y.velocity, "body {i} velocity");
-        assert_eq!(x.rotation, y.rotation, "body {i} rotation");
-        assert_eq!(
-            x.angular_velocity, y.angular_velocity,
-            "body {i} angular velocity"
-        );
-    }
-}
-
 #[test]
 fn the_fixture_header_is_what_the_writer_printed() {
     assert_eq!(&BLOB[4..6], &4u16.to_le_bytes(), "a version 4 blob");
@@ -140,22 +132,6 @@ fn the_fixture_header_is_what_the_writer_printed() {
     );
 }
 
-/// The 3.0.x blob restores into the scene and holds the state this build
-/// reaches by stepping the scene itself.
-#[test]
-fn a_blob_of_the_previous_semantics_restores() {
-    let mut target = scene();
-    target.restore_world(BLOB).expect("a 3.0.x blob restores");
-    same_bodies(&target, &stepped());
-    // and steps on as the original does
-    let mut original = stepped();
-    for _ in 0..10 {
-        target.step(dt());
-        original.step(dt());
-    }
-    same_bodies(&target, &original);
-}
-
 #[test]
 fn the_released_3_1_0_fixture_header_is_what_the_writer_printed() {
     assert_eq!(BLOB_3_1_0.len(), 2136);
@@ -172,32 +148,53 @@ fn the_released_3_1_0_fixture_header_is_what_the_writer_printed() {
     );
 }
 
-/// The blob the published 3.1.0 wrote restores (its identifier is the first
-/// entry of `PREVIOUS_PHYSICS_SEMANTICS_IDS`), holds the state this build
-/// reaches by stepping the scene, and the target's own `law_id` verifies it.
-#[test]
-fn a_blob_of_the_released_3_1_0_semantics_restores() {
+/// Every way of restoring `blob` (the plain restore, and the checked one with no expected id,
+/// the target's own `law_id` and the header's own, under both legacy policies) refuses it as a
+/// semantics mismatch naming `stored` and this build's identifier, and leaves the target unchanged
+fn refused_every_way(blob: &[u8], stored: &str) -> usize {
+    let want = || WorldSnapshotError::SemanticsMismatch {
+        stored: unhex(stored),
+        expected: PHYSICS_SEMANTICS_ID,
+    };
+    let mut compared = 0;
     let mut target = scene();
-    target
-        .restore_world(BLOB_3_1_0)
-        .expect("a blob written by the published 3.1.0 restores");
-    same_bodies(&target, &stepped());
+    let before = target.snapshot_world();
+    assert_eq!(target.restore_world(blob), Err(want()));
+    assert_eq!(target.snapshot_world(), before);
+    compared += 1;
+    let own = scene().law_id(&PHYSICS_SEMANTICS_ID);
+    let header: [u8; 32] = blob[LAW_AT..LAW_AT + 32].try_into().expect("32 bytes");
+    for expected in [None, Some(own), Some(header)] {
+        for policy in [LegacyPolicy::AcceptUnpinned, LegacyPolicy::RequirePinned] {
+            let mut target = scene();
+            let before = target.snapshot_world();
+            assert_eq!(
+                target.restore_world_checked(blob, expected.as_ref(), policy),
+                Err(want()),
+                "expected {expected:?}, policy {policy:?}"
+            );
+            assert_eq!(target.snapshot_world(), before);
+            compared += 1;
+        }
+    }
+    compared
+}
 
-    let mut checked = scene();
-    let expected = checked.law_id(&PHYSICS_SEMANTICS_ID);
-    assert_eq!(
-        checked.restore_world_checked(
-            BLOB_3_1_0,
-            Some(&expected),
-            alice_physics_core::LegacyPolicy::AcceptUnpinned
-        ),
-        Ok(LawCheck::VerifiedUnderPrevious)
-    );
-    same_bodies(&checked, &stepped());
+/// The blob of the 3.0.x semantics (`cd9aa3b8…`) is refused: its generation's clamp differs from
+/// this build's and no cross-version oracle covers it
+#[test]
+fn a_blob_of_the_3_0_semantics_is_refused() {
+    assert_eq!(refused_every_way(BLOB, WRITER_SEMANTICS), 7);
+}
+
+/// The blob the published 3.1.0 wrote (`79ca5297…`) is refused for the same reason
+#[test]
+fn a_blob_of_the_released_3_1_0_semantics_is_refused() {
+    assert_eq!(refused_every_way(BLOB_3_1_0, WRITER_3_1_0_SEMANTICS), 7);
 }
 
 /// An identifier that is neither this build's nor a listed earlier one is
-/// still refused, and the target is unchanged.
+/// refused, and the target is unchanged.
 #[test]
 fn a_semantics_id_outside_the_list_is_refused() {
     let foreign = [0x5a; 32];
@@ -214,108 +211,13 @@ fn a_semantics_id_outside_the_list_is_refused() {
     assert_eq!(target.snapshot_world(), before);
 }
 
-/// The list holds the 3.0.x identifier and never this build's own.
+/// The list holds neither 3.x identifier nor this build's own.
 #[test]
-fn the_list_holds_the_writer_semantics_and_not_the_current_one() {
-    assert!(PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&unhex(WRITER_SEMANTICS)));
-    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&PHYSICS_SEMANTICS_ID));
-}
-
-/// The documented use (the target's own `law_id` under this build's
-/// semantics, taken before the restore) verifies the 3.0.x blob.
-#[test]
-fn the_target_own_law_id_verifies_a_previous_blob() {
-    let mut target = scene();
-    let expected = target.law_id(&PHYSICS_SEMANTICS_ID);
-    assert_eq!(
-        target.restore_world_checked(
-            BLOB,
-            Some(&expected),
-            alice_physics_core::LegacyPolicy::AcceptUnpinned
-        ),
-        Ok(LawCheck::VerifiedUnderPrevious)
-    );
-    // the earlier identifier the blob was written under
-    assert_eq!(
-        PhysicsWorld::world_snapshot_ids(BLOB),
-        Ok(Some((unhex(WRITER_SEMANTICS), unhex(WRITER_LAW_ID))))
-    );
-    same_bodies(&target, &stepped());
-}
-
-#[test]
-fn without_an_expected_id_only_the_semantics_is_reported() {
-    let mut target = scene();
-    assert_eq!(
-        target.restore_world_checked(BLOB, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
-        Ok(LawCheck::SemanticsPrevious)
-    );
-}
-
-/// `expected` that is not the target's own current `law_id` is refused,
-/// even the header's own value (which would compare the blob with itself).
-#[test]
-fn an_expected_id_other_than_the_target_own_is_refused() {
-    for wrong in [[0x11; 32], unhex(WRITER_LAW_ID)] {
-        let mut target = scene();
-        let before = target.snapshot_world();
-        assert_eq!(
-            target.restore_world_checked(
-                BLOB,
-                Some(&wrong),
-                alice_physics_core::LegacyPolicy::AcceptUnpinned
-            ),
-            Err(WorldSnapshotError::LawIdMismatch {
-                stored: unhex(WRITER_LAW_ID),
-                expected: wrong,
-            })
-        );
-        assert_eq!(target.snapshot_world(), before);
+fn the_list_holds_no_3_x_identifier_and_not_the_current_one() {
+    for id in [WRITER_SEMANTICS, WRITER_3_1_0_SEMANTICS] {
+        assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&unhex(id)), "{id}");
     }
-}
-
-/// A target running another rule (another gravity) passes its own id, and
-/// the header is not that target's id under the earlier semantics.
-#[test]
-fn a_target_of_another_rule_is_refused() {
-    let mut target = scene();
-    target.config.gravity = Vec3Fix::from_int(0, -3, 0);
-    let expected = target.law_id(&PHYSICS_SEMANTICS_ID);
-    let before = target.snapshot_world();
-    assert_eq!(
-        target.restore_world_checked(
-            BLOB,
-            Some(&expected),
-            alice_physics_core::LegacyPolicy::AcceptUnpinned
-        ),
-        Err(WorldSnapshotError::LawIdMismatch {
-            stored: unhex(WRITER_LAW_ID),
-            expected: target.law_id(&unhex(WRITER_SEMANTICS)),
-        })
-    );
-    assert_eq!(target.snapshot_world(), before);
-}
-
-/// A header `law_id` that is not the scene's under the earlier semantics
-/// (here: the scene's under this build's semantics) is refused.
-#[test]
-fn a_header_law_id_not_under_the_earlier_semantics_is_refused() {
-    let current = scene().law_id(&PHYSICS_SEMANTICS_ID);
-    let blob = with_id(LAW_AT, &current);
-    let mut target = scene();
-    let before = target.snapshot_world();
-    assert_eq!(
-        target.restore_world_checked(
-            &blob,
-            Some(&current),
-            alice_physics_core::LegacyPolicy::AcceptUnpinned
-        ),
-        Err(WorldSnapshotError::LawIdMismatch {
-            stored: current,
-            expected: unhex(WRITER_LAW_ID),
-        })
-    );
-    assert_eq!(target.snapshot_world(), before);
+    assert!(!PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&PHYSICS_SEMANTICS_ID));
 }
 
 /// `world_snapshot_ids` reads the header without judging it: the 3.0.x blob,

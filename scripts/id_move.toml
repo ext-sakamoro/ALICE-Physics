@@ -15,5 +15,5 @@ RR_MAX_EPSILON_WHOLE = "alice-crypto's dp::RR_MAX_EPSILON_WHOLE (a u64 bound on 
 [[id]]
 path = "alice_physics_core::semantics::PHYSICS_SEMANTICS_ID"
 previous = "alice_physics_core::semantics::PREVIOUS_PHYSICS_SEMANTICS_IDS"
-# the 3.1.0 value (79ca5297) is kept: a world snapshot written by the published 3.1.0 restores
-previous-tests = ["tests/world_snapshot_previous_semantics.rs::a_blob_of_the_released_3_1_0_semantics_restores"]
+# the 3.1.0 value (79ca5297) is not kept: alice-det-math 0.5.2 changed the clamp, which moved Law
+# output bits, and no cross-version oracle covers a 3.1.0 snapshot yet; 4.0.0 is a major release

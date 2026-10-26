@@ -532,18 +532,10 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// [`crate::LawCheck::SemanticsPrevious`]); any other identifier is still
 /// [`crate::WorldSnapshotError::SemanticsMismatch`].
 ///
-/// An identifier is listed only when the change that replaced it moved no
-/// determinism golden, so the stepping bits are the same under both. Each is
-/// a value of [`PHYSICS_SEMANTICS_BY_DET_MATH`] other than this build's:
-///
-/// * `79ca5297…` (3.1.0) and the 0.5.0-generation `cd9aa3b8…` (3.0.0 and
-///   3.0.1, 3.1.0 with `alice-det-math` 0.5.0): replaced when the peer
-///   identifiers ([`PHYSICS_PEER_IDS`]) were folded in, which moved no golden.
-/// * `cd9aa3b8…` was itself replaced when `alice-det-math` went from 0.5.0
-///   to 0.5.1, which added `max` / `min` / `max64` / `min64` and left the
-///   existing functions unchanged (`alice-det-math` 0.5.1 itself lists the
-///   0.5.0 identifier in its `PREVIOUS_SEMANTICS_IDS`). No golden moved.
-pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[
-    hex32("79ca52976f404dfb453908970ebe45f584970ff9344a56a06aae3fc9c3c38108"),
-    hex32("cd9aa3b89257fc8b3e5d6714362ce4e52d4ff142baf30de2f80324e44bdd3469"),
-];
+/// Empty: every earlier identifier belongs to an `alice-det-math` generation
+/// whose clamp differs from this build's (0.5.2 at 39507d1b), and the clamp
+/// moved Law output bits. An earlier generation's identifier is listed only
+/// when a cross-version oracle covers it (a snapshot written by that release,
+/// restored and stepped here, bit-equal to that release's own steps); none
+/// does yet, so the 3.x snapshots (`79ca5297…`, `cd9aa3b8…`) are refused.
+pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[];
