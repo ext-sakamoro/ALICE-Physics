@@ -90,6 +90,15 @@ python3 scripts/version_sync.py --check
 python3 scripts/test_shared_files.py
 scripts/shared_files.sh
 scripts/g11_table.sh
+(
+  set -euo pipefail
+  rev=$(awk '$1 == "rev" { print $2 }' .github/shared-files-pin)
+  law=$(mktemp -d)
+  trap 'rm -rf "$law"' EXIT
+  git -c core.autocrlf=false clone --quiet --filter=blob:none https://github.com/ext-sakamoro/ALICE-Law.git "$law/alice-law"
+  git -C "$law/alice-law" checkout --quiet --detach "$rev"
+  python3 "$law/alice-law/scripts/g11_self_check.py" --repo . --name ALICE-Physics
+)
 python3 scripts/test_lib_test_gate.py
 python3 scripts/test_preflight_ci_parity.py
 python3 scripts/preflight_ci_parity.py
