@@ -1524,11 +1524,14 @@ class Lander:
             p = subprocess.run([sys.executable, script, "--candidate", f"{LAW_CANDIDATE}={self.root}@{sha}"],
                                cwd=law, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                env=law_state_env(gh[0] if len(gh) == 1 else None))
-            out = "\n".join(x for x in (p.stdout.strip(), p.stderr.strip()) if x)[:3000]
-            summary = next((x for x in reversed(out.splitlines()) if x.startswith("land_law_state:")), "")
+            full = "\n".join(x for x in (p.stdout.strip(), p.stderr.strip()) if x)
+            # the verdict is read from the whole output (the script prints its note lines first
+            # and the verdict last); only the text quoted in a message is cut, keeping its end
+            out = full if len(full) <= 3000 else "...\n" + full[-3000:]
+            summary = next((x for x in reversed(full.splitlines()) if x.startswith("land_law_state:")), "")
             # the exit code counts only with the script's own verdict line: an exit 1 from a
             # traceback is not a computed move, and an exit 0 that printed nothing is not "unmoved"
-            verdict = {ln.strip() for ln in out.splitlines()}
+            verdict = {ln.strip() for ln in full.splitlines()}
             said = {0: "land_law_state: state moves: no", 1: "land_law_state: state moves: yes"}.get(p.returncode)
             if said is not None and said not in verdict:
                 raise LandError(f"ALICE-Law's state for {sha[:7]} could not be computed (land_law_state exit "

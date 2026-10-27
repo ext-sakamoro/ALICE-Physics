@@ -266,6 +266,12 @@ if record:
                              "git": os.path.realpath(shutil.which("git") or ""),
                              "config": [[os.environ.get(f"GIT_CONFIG_KEY_{i}"), os.environ.get(f"GIT_CONFIG_VALUE_{i}")]
                                         for i in range(n)]}) + "\n")
+if rc in (20, 21):
+    # the real script's note lines (one per manifest) come before the verdict and run past
+    # 3000 bytes: the verdict is the last thing printed
+    for i in range(60):
+        print(f"note: ALICE-Crate{i:02d}: alice-law-conformance.toml: 82 anchor(s) checked (evidence 59, mutant 2, note 21)")
+    rc -= 20
 if rc in (10, 11):
     # an exit 0 / 1 without the verdict line (a crash before the comparison, a stray exit)
     print("Traceback (most recent call last):\n  File \"land_law_state.py\", line 1\nRuntimeError: boom", file=sys.stderr)
@@ -3417,6 +3423,25 @@ class LawState(Isolated):
                 self.assertNotIn("moves ALICE-Law's conformance state", text)
                 self.assertIn("nothing was pushed to main", text)
                 self.assertEqual(self.r.origin_head(), before)
+
+    def test_the_verdict_after_more_than_3000_bytes_of_notes_is_read(self):
+        # the verdict is the script's last line; a check that cut the output to a fixed length
+        # before looking for it refused an unmoved state as "could not be computed"
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(21)
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        text = str(cm.exception)
+        self.assertIn("moves ALICE-Law's conformance state", text)
+        self.assertIn("ALICE-Physics: pass 9 -> 10, unverified 3 -> 2", text)
+        self.assertEqual(self.r.origin_head(), before)
+        lander = self.r.lander()
+        lander.law_url = fake_law(20)
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        self.assertTrue(any(l.startswith("Law state: unmoved (compared with ALICE-Law main ") for l in lander.record),
+                        lander.record)
 
     def test_every_rebase_round_asks_again_with_the_sha_it_lands(self):
         # main moves after the first check: the second round's commit is a new SHA, and the
