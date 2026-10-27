@@ -11,7 +11,8 @@ from its parent particle, or, for a root, from an anchor point that the animatio
 are equal and only relative quantities enter, so no mass appears in the settings.
 
 Every step of length `dt` reads, for each particle, its **animated position** (where the pose alone
-would put it), and the anchor's translation since the last step. Then it updates the particles in
+would put it) and the **animated frame** of its bone (the world rotation the pose gives the bone),
+and the anchor's translation since the last step. Then it updates the particles in
 order, parents first. Each particle is updated once per step, using its parent's already updated
 position (a Gauss-Seidel sweep down the tree).
 
@@ -102,7 +103,11 @@ bit for bit.
 
 - **Bone length.** The particle is projected onto the sphere of radius `rest_length` around its
   parent. A particle already at that distance is left as it is.
-- **Angle limit.** The bone direction is projected onto the allowed set around the rest direction:
+- **Angle limit.** The bone direction is projected onto the allowed set around the rest direction.
+  The hinge axis and the polar reference axis are given in the bone's own frame. Each step turns
+  them to the world by the bone's animated frame, then by the parent link's turn from its pose. A
+  limit therefore follows the character when it turns, and follows a twist of the bone about its
+  own axis, which positions alone cannot show.
   - the cone boundary for `Angle`
   - the hinge plane, then the swing range, for `Hinge`
   - the ellipse boundary in the two angles, for `Polar`
@@ -132,6 +137,8 @@ It covers:
 - the fixed point of pull against gravity on the bone's circle, with and without falloff
 - pull and stiffness aiming from the simulated parent
 - inertia, `immobile`, every angle limit and the rest invariant
+- the hinge and polar axes under a turned character, under a twist about the bone, below a moved
+  parent, and with both turns at once (which also fixes their order)
 - the collider depth bound above
 - the refusal of out-of-range settings
 
