@@ -33,9 +33,13 @@
 
 use alice_physics_core::cfd_solver::CfdSolver;
 use alice_physics_core::cloth::Cloth;
+use alice_physics_core::collider::Capsule;
 use alice_physics_core::eulerian_grid::MacGrid;
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::sdf_collider::{ClosureSdf, SdfCollider};
+use alice_physics_core::secondary_chain::{
+    ChainConfig, ChainInput, ChainLimit, ChainParams, ChainParticle, SecondaryChain,
+};
 use alice_physics_core::solver::{DistanceConstraint, PhysicsConfig, PhysicsWorld, RigidBody};
 use alice_physics_core::trimesh::TriMesh;
 use sha2::{Digest, Sha256};
@@ -361,6 +365,135 @@ fn determinism_cloth_drape() {
 
     let hash = hash_cloth(&cloth);
     assert_golden("cloth_drape", hash, GOLDEN_CLOTH_DRAPE);
+}
+
+/// **Secondary chain**: four particles hanging from a moving anchor, one per limit kind (angle,
+/// hinge, polar, none; tight enough that each one acts), with gravity and its falloff, stiffness, an immobile share, a radius
+/// and a capsule the anchor sweeps the chain through, fitted to its rest first. The animated
+/// frames turn with the anchor, so the limit axes move. 180 steps at 1/60 s, two passes.
+const GOLDEN_SECONDARY_CHAIN: &str =
+    "8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f";
+
+fn r(n: i64, d: i64) -> Fix128 {
+    Fix128::from_ratio(n, d)
+}
+
+fn rv(x: (i64, i64), y: (i64, i64), z: (i64, i64)) -> Vec3Fix {
+    Vec3Fix::new(r(x.0, x.1), r(y.0, y.1), r(z.0, z.1))
+}
+
+/// The anchor at step `k`: a triangle wave along x (period 60) and z (period 90), y fixed
+fn chain_anchor(k: i64) -> Vec3Fix {
+    let tri = |k: i64, period: i64, amp: i64| {
+        let m = k % period;
+        let half = period / 2;
+        let u = if m < half { m } else { period - m };
+        r(amp * (2 * u - half), 100 * half)
+    };
+    Vec3Fix::new(tri(k, 60, 30), Fix128::ONE, tri(k, 90, 20))
+}
+
+#[test]
+fn determinism_secondary_chain() {
+    let base = ChainParams {
+        pull: r(1, 5),
+        momentum: r(3, 5),
+        stiffness: r(1, 4),
+        gravity: r(7, 10),
+        gravity_falloff: r(1, 2),
+        immobile: r(1, 10),
+        limit: ChainLimit::None,
+        radius: r(1, 50),
+        attached_inside: 0,
+    };
+    let limits = [
+        ChainLimit::Angle { max: r(1, 20) },
+        ChainLimit::Hinge {
+            axis: rv((1, 1), (0, 1), (0, 1)),
+            max: r(1, 20),
+        },
+        ChainLimit::Polar {
+            x_axis: rv((1, 1), (0, 1), (0, 1)),
+            max_x: r(1, 20),
+            max_z: r(1, 40),
+        },
+        ChainLimit::None,
+    ];
+    let anchor0 = chain_anchor(0);
+    // the rest pose: down and a little forward from the anchor, 0.1 apart
+    let pose: Vec<Vec3Fix> = (1..=4)
+        .map(|i| anchor0 + rv((0, 1), (-i, 10), (i, 50)))
+        .collect();
+    let parts: Vec<ChainParticle> = (0..4)
+        .map(|i| ChainParticle {
+            parent: if i == 0 { None } else { Some(i - 1) },
+            rest_length: (pose[i] - if i == 0 { anchor0 } else { pose[i - 1] }).length(),
+            params: ChainParams {
+                limit: limits[i],
+                ..base
+            },
+            p: pose[i],
+            q: pose[i],
+        })
+        .collect();
+    let cfg = ChainConfig {
+        gravity: rv((0, 1), (-981, 100), (0, 1)),
+        iterations: 2,
+    };
+    let mut chain = SecondaryChain::new(parts, cfg).unwrap();
+    // a capsule beside the chain's rest, and one the rest starts inside (masked by the fit)
+    let colliders = [
+        Capsule {
+            a: rv((8, 100), (6, 10), (-2, 10)),
+            b: rv((8, 100), (6, 10), (2, 10)),
+            radius: r(4, 100),
+        },
+        Capsule {
+            a: anchor0 + rv((0, 1), (1, 100), (0, 1)),
+            b: anchor0 + rv((0, 1), (-15, 100), (0, 1)),
+            radius: r(3, 100),
+        },
+    ];
+    chain.fit_to_rest(anchor0, &colliders).unwrap();
+    let dt = r(1, 60);
+    let mut prev = anchor0;
+    for k in 0..180 {
+        let a = chain_anchor(k);
+        let anim: Vec<Vec3Fix> = pose.iter().map(|&p| p - anchor0 + a).collect();
+        // the bone frames turn toward the anchor's offset from its start
+        let turn = QuatFix::from_to(
+            rv((0, 1), (-1, 1), (0, 1)),
+            (a - anchor0) + rv((0, 1), (-1, 1), (0, 1)),
+        );
+        let frames = vec![turn; anim.len()];
+        chain
+            .step(
+                dt,
+                &ChainInput {
+                    anchor: a,
+                    anim_anchor: a,
+                    anim: &anim,
+                    anim_frames: &frames,
+                    anchor_delta: a - prev,
+                    colliders: &colliders,
+                },
+            )
+            .unwrap();
+        prev = a;
+    }
+    let mut bytes = Vec::new();
+    for p in chain.particles() {
+        for v in [p.p, p.q] {
+            for f in [v.x, v.y, v.z] {
+                write_fix128(&mut bytes, f);
+            }
+        }
+    }
+    assert_golden(
+        "secondary_chain",
+        sha256_bytes(&bytes),
+        GOLDEN_SECONDARY_CHAIN,
+    );
 }
 
 /// Hash a `MacGrid`'s velocity + pressure fields.

@@ -289,6 +289,12 @@ const PINS: &[(&str, &str, &str, &str)] = &[
         "",
     ),
     (
+        "secondary chain",
+        "determinism_golden.rs",
+        "determinism_secondary_chain",
+        "",
+    ),
+    (
         "physics2d",
         "determinism_physics2d_step_digest.rs",
         "step_digest_is_unchanged",
@@ -364,6 +370,7 @@ const FEATURES: &[(&str, &[&str], usize)] = &[
     ("sleeping", &["is_sleeping("], 1),
     ("participant", &["add_participant("], 1),
     ("cloth", &["Cloth::"], 1),
+    ("secondary chain", &["SecondaryChain::"], 1),
     ("physics2d", &["PhysicsWorld2D"], 1),
     // an installed bridge reroutes the contact solve of `step` / `substep`
     ("installed bridge", &["set_gpu_solver_bridge("], 1),

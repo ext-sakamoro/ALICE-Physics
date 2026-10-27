@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6"
+        "31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a"
     );
 }
 
@@ -647,8 +647,10 @@ fn drive_digest(backend: SolverBackend) -> String {
 }
 
 // world snapshot version 5: the version field and the checksum moved, the rest of the bytes did not
-const DRIVE_XPBD: &str = "9fd3bbc419a13807b34b883a49f85dd775630e928936c1be4e311ecc13de5678";
-const DRIVE_TGS: &str = "89aa5400fab55bc1f16c131f054ee38cafc915bae9ea9ca195280e5457b5ffc6";
+// re-pinned when the secondary chain was pinned: the header's semantics identifier (88cf6f85… ->
+// 31eb4ab8…), its law_id and the checksum moved; the state did not (tests/world_snapshot_xv_88cf6f85.rs)
+const DRIVE_XPBD: &str = "f6d55dab8b44ffb39eef7d155f3a1324182647f7abb0317b63275496d2dc5cdb";
+const DRIVE_TGS: &str = "2b7a4f72891756f98e278e05276491387cd8e533f5144bc3918cf3ec557f84d3";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

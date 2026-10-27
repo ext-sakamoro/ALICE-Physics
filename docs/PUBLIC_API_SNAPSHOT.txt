@@ -7692,6 +7692,7 @@ impl alice_physics_core::math::QuatFix
 pub const alice_physics_core::math::QuatFix::IDENTITY: Self
 pub fn alice_physics_core::math::QuatFix::conjugate(self) -> Self
 pub fn alice_physics_core::math::QuatFix::from_axis_angle(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::math::QuatFix::from_to(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::math::QuatFix::length(self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::QuatFix::length_squared(self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::QuatFix::mul(self, Self) -> Self
@@ -13809,6 +13810,7 @@ impl alice_physics_core::math::QuatFix
 pub const alice_physics_core::math::QuatFix::IDENTITY: Self
 pub fn alice_physics_core::math::QuatFix::conjugate(self) -> Self
 pub fn alice_physics_core::math::QuatFix::from_axis_angle(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::math::QuatFix::from_to(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::math::QuatFix::length(self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::QuatFix::length_squared(self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::QuatFix::mul(self, Self) -> Self
@@ -17073,6 +17075,187 @@ impl<'a, F> core::marker::Unpin for alice_physics_core::sdf_wind_field::SdfWindF
 impl<'a, F> core::marker::UnsafeUnpin for alice_physics_core::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::marker::UnsafeUnpin, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::RefUnwindSafe, F: ?core::marker::Sized
 impl<'a, F> core::panic::unwind_safe::UnwindSafe for alice_physics_core::sdf_wind_field::SdfWindField<'a, F> where &'a F: core::panic::unwind_safe::UnwindSafe, F: ?core::marker::Sized
+pub mod alice_physics_core::secondary_chain
+pub enum alice_physics_core::secondary_chain::ChainError
+pub alice_physics_core::secondary_chain::ChainError::BadInput(&'static str)
+pub alice_physics_core::secondary_chain::ChainError::BadParam(usize, &'static str)
+pub alice_physics_core::secondary_chain::ChainError::BadParent(usize)
+pub alice_physics_core::secondary_chain::ChainError::NoIterations
+pub alice_physics_core::secondary_chain::ChainError::TooManyColliders(usize)
+impl core::clone::Clone for alice_physics_core::secondary_chain::ChainError
+pub fn alice_physics_core::secondary_chain::ChainError::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::secondary_chain::ChainError
+impl core::cmp::PartialEq for alice_physics_core::secondary_chain::ChainError
+pub fn alice_physics_core::secondary_chain::ChainError::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::secondary_chain::ChainError
+pub fn alice_physics_core::secondary_chain::ChainError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for alice_physics_core::secondary_chain::ChainError
+pub fn alice_physics_core::secondary_chain::ChainError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::secondary_chain::ChainError
+impl core::marker::Freeze for alice_physics_core::secondary_chain::ChainError
+impl core::marker::Send for alice_physics_core::secondary_chain::ChainError
+impl core::marker::Sync for alice_physics_core::secondary_chain::ChainError
+impl core::marker::Unpin for alice_physics_core::secondary_chain::ChainError
+impl core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::ChainError
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::ChainError
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::ChainError
+pub enum alice_physics_core::secondary_chain::ChainLimit
+pub alice_physics_core::secondary_chain::ChainLimit::Angle
+pub alice_physics_core::secondary_chain::ChainLimit::Angle::max: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainLimit::Hinge
+pub alice_physics_core::secondary_chain::ChainLimit::Hinge::axis: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::secondary_chain::ChainLimit::Hinge::max: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainLimit::None
+pub alice_physics_core::secondary_chain::ChainLimit::Polar
+pub alice_physics_core::secondary_chain::ChainLimit::Polar::max_x: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainLimit::Polar::max_z: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainLimit::Polar::x_axis: alice_physics_core::math::Vec3Fix
+impl core::clone::Clone for alice_physics_core::secondary_chain::ChainLimit
+pub fn alice_physics_core::secondary_chain::ChainLimit::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::secondary_chain::ChainLimit
+impl core::cmp::PartialEq for alice_physics_core::secondary_chain::ChainLimit
+pub fn alice_physics_core::secondary_chain::ChainLimit::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::secondary_chain::ChainLimit
+pub fn alice_physics_core::secondary_chain::ChainLimit::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::secondary_chain::ChainLimit
+impl core::marker::StructuralPartialEq for alice_physics_core::secondary_chain::ChainLimit
+impl core::marker::Freeze for alice_physics_core::secondary_chain::ChainLimit
+impl core::marker::Send for alice_physics_core::secondary_chain::ChainLimit
+impl core::marker::Sync for alice_physics_core::secondary_chain::ChainLimit
+impl core::marker::Unpin for alice_physics_core::secondary_chain::ChainLimit
+impl core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::ChainLimit
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::ChainLimit
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::ChainLimit
+pub struct alice_physics_core::secondary_chain::ChainConfig
+pub alice_physics_core::secondary_chain::ChainConfig::gravity: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::secondary_chain::ChainConfig::iterations: u32
+impl core::clone::Clone for alice_physics_core::secondary_chain::ChainConfig
+pub fn alice_physics_core::secondary_chain::ChainConfig::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::secondary_chain::ChainConfig
+impl core::cmp::PartialEq for alice_physics_core::secondary_chain::ChainConfig
+pub fn alice_physics_core::secondary_chain::ChainConfig::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::secondary_chain::ChainConfig
+pub fn alice_physics_core::secondary_chain::ChainConfig::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::secondary_chain::ChainConfig
+impl core::marker::StructuralPartialEq for alice_physics_core::secondary_chain::ChainConfig
+impl core::marker::Freeze for alice_physics_core::secondary_chain::ChainConfig
+impl core::marker::Send for alice_physics_core::secondary_chain::ChainConfig
+impl core::marker::Sync for alice_physics_core::secondary_chain::ChainConfig
+impl core::marker::Unpin for alice_physics_core::secondary_chain::ChainConfig
+impl core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::ChainConfig
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::ChainConfig
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::ChainConfig
+pub struct alice_physics_core::secondary_chain::ChainInput<'a>
+pub alice_physics_core::secondary_chain::ChainInput::anchor: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::secondary_chain::ChainInput::anchor_delta: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::secondary_chain::ChainInput::anim: &'a [alice_physics_core::math::Vec3Fix]
+pub alice_physics_core::secondary_chain::ChainInput::anim_anchor: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::secondary_chain::ChainInput::anim_frames: &'a [alice_physics_core::math::QuatFix]
+pub alice_physics_core::secondary_chain::ChainInput::colliders: &'a [alice_physics_core::collider::Capsule]
+impl<'a> core::clone::Clone for alice_physics_core::secondary_chain::ChainInput<'a>
+pub fn alice_physics_core::secondary_chain::ChainInput<'a>::clone(&self) -> Self
+impl<'a> core::fmt::Debug for alice_physics_core::secondary_chain::ChainInput<'a>
+pub fn alice_physics_core::secondary_chain::ChainInput<'a>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl<'a> core::marker::Copy for alice_physics_core::secondary_chain::ChainInput<'a>
+impl<'a> core::marker::Freeze for alice_physics_core::secondary_chain::ChainInput<'a>
+impl<'a> core::marker::Send for alice_physics_core::secondary_chain::ChainInput<'a>
+impl<'a> core::marker::Sync for alice_physics_core::secondary_chain::ChainInput<'a>
+impl<'a> core::marker::Unpin for alice_physics_core::secondary_chain::ChainInput<'a>
+impl<'a> core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::ChainInput<'a>
+impl<'a> core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::ChainInput<'a>
+impl<'a> core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::ChainInput<'a>
+pub struct alice_physics_core::secondary_chain::ChainParams
+pub alice_physics_core::secondary_chain::ChainParams::attached_inside: u64
+pub alice_physics_core::secondary_chain::ChainParams::gravity: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainParams::gravity_falloff: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainParams::immobile: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainParams::limit: alice_physics_core::secondary_chain::ChainLimit
+pub alice_physics_core::secondary_chain::ChainParams::momentum: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainParams::pull: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainParams::radius: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::ChainParams::stiffness: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::secondary_chain::ChainParams
+pub fn alice_physics_core::secondary_chain::ChainParams::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::secondary_chain::ChainParams
+impl core::cmp::PartialEq for alice_physics_core::secondary_chain::ChainParams
+pub fn alice_physics_core::secondary_chain::ChainParams::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::secondary_chain::ChainParams
+pub fn alice_physics_core::secondary_chain::ChainParams::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::secondary_chain::ChainParams
+impl core::marker::StructuralPartialEq for alice_physics_core::secondary_chain::ChainParams
+impl core::marker::Freeze for alice_physics_core::secondary_chain::ChainParams
+impl core::marker::Send for alice_physics_core::secondary_chain::ChainParams
+impl core::marker::Sync for alice_physics_core::secondary_chain::ChainParams
+impl core::marker::Unpin for alice_physics_core::secondary_chain::ChainParams
+impl core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::ChainParams
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::ChainParams
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::ChainParams
+pub struct alice_physics_core::secondary_chain::ChainParticle
+pub alice_physics_core::secondary_chain::ChainParticle::p: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::secondary_chain::ChainParticle::params: alice_physics_core::secondary_chain::ChainParams
+pub alice_physics_core::secondary_chain::ChainParticle::parent: core::option::Option<usize>
+pub alice_physics_core::secondary_chain::ChainParticle::q: alice_physics_core::math::Vec3Fix
+pub alice_physics_core::secondary_chain::ChainParticle::rest_length: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::secondary_chain::ChainParticle
+pub fn alice_physics_core::secondary_chain::ChainParticle::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::secondary_chain::ChainParticle
+impl core::cmp::PartialEq for alice_physics_core::secondary_chain::ChainParticle
+pub fn alice_physics_core::secondary_chain::ChainParticle::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::secondary_chain::ChainParticle
+pub fn alice_physics_core::secondary_chain::ChainParticle::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::secondary_chain::ChainParticle
+impl core::marker::StructuralPartialEq for alice_physics_core::secondary_chain::ChainParticle
+impl core::marker::Freeze for alice_physics_core::secondary_chain::ChainParticle
+impl core::marker::Send for alice_physics_core::secondary_chain::ChainParticle
+impl core::marker::Sync for alice_physics_core::secondary_chain::ChainParticle
+impl core::marker::Unpin for alice_physics_core::secondary_chain::ChainParticle
+impl core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::ChainParticle
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::ChainParticle
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::ChainParticle
+pub struct alice_physics_core::secondary_chain::CurveKey
+pub alice_physics_core::secondary_chain::CurveKey::in_slope: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::CurveKey::out_slope: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::CurveKey::time: alice_physics_core::math::Fix128
+pub alice_physics_core::secondary_chain::CurveKey::value: alice_physics_core::math::Fix128
+impl core::clone::Clone for alice_physics_core::secondary_chain::CurveKey
+pub fn alice_physics_core::secondary_chain::CurveKey::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::secondary_chain::CurveKey
+impl core::cmp::PartialEq for alice_physics_core::secondary_chain::CurveKey
+pub fn alice_physics_core::secondary_chain::CurveKey::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::secondary_chain::CurveKey
+pub fn alice_physics_core::secondary_chain::CurveKey::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for alice_physics_core::secondary_chain::CurveKey
+impl core::marker::StructuralPartialEq for alice_physics_core::secondary_chain::CurveKey
+impl core::marker::Freeze for alice_physics_core::secondary_chain::CurveKey
+impl core::marker::Send for alice_physics_core::secondary_chain::CurveKey
+impl core::marker::Sync for alice_physics_core::secondary_chain::CurveKey
+impl core::marker::Unpin for alice_physics_core::secondary_chain::CurveKey
+impl core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::CurveKey
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::CurveKey
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::CurveKey
+pub struct alice_physics_core::secondary_chain::SecondaryChain
+impl alice_physics_core::secondary_chain::SecondaryChain
+pub fn alice_physics_core::secondary_chain::SecondaryChain::attached_inside(&[alice_physics_core::secondary_chain::ChainParticle], &[alice_physics_core::math::Vec3Fix], alice_physics_core::math::Vec3Fix, &[alice_physics_core::collider::Capsule]) -> core::result::Result<alloc::vec::Vec<u64>, alice_physics_core::secondary_chain::ChainError>
+pub fn alice_physics_core::secondary_chain::SecondaryChain::fit_to_rest(&mut self, alice_physics_core::math::Vec3Fix, &[alice_physics_core::collider::Capsule]) -> core::result::Result<(), alice_physics_core::secondary_chain::ChainError>
+pub fn alice_physics_core::secondary_chain::SecondaryChain::new(alloc::vec::Vec<alice_physics_core::secondary_chain::ChainParticle>, alice_physics_core::secondary_chain::ChainConfig) -> core::result::Result<Self, alice_physics_core::secondary_chain::ChainError>
+pub fn alice_physics_core::secondary_chain::SecondaryChain::particles(&self) -> &[alice_physics_core::secondary_chain::ChainParticle]
+pub fn alice_physics_core::secondary_chain::SecondaryChain::step(&mut self, alice_physics_core::math::Fix128, &alice_physics_core::secondary_chain::ChainInput<'_>) -> core::result::Result<(), alice_physics_core::secondary_chain::ChainError>
+impl core::clone::Clone for alice_physics_core::secondary_chain::SecondaryChain
+pub fn alice_physics_core::secondary_chain::SecondaryChain::clone(&self) -> Self
+impl core::cmp::Eq for alice_physics_core::secondary_chain::SecondaryChain
+impl core::cmp::PartialEq for alice_physics_core::secondary_chain::SecondaryChain
+pub fn alice_physics_core::secondary_chain::SecondaryChain::eq(&self, &Self) -> bool
+impl core::fmt::Debug for alice_physics_core::secondary_chain::SecondaryChain
+pub fn alice_physics_core::secondary_chain::SecondaryChain::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for alice_physics_core::secondary_chain::SecondaryChain
+impl core::marker::Freeze for alice_physics_core::secondary_chain::SecondaryChain
+impl core::marker::Send for alice_physics_core::secondary_chain::SecondaryChain
+impl core::marker::Sync for alice_physics_core::secondary_chain::SecondaryChain
+impl core::marker::Unpin for alice_physics_core::secondary_chain::SecondaryChain
+impl core::marker::UnsafeUnpin for alice_physics_core::secondary_chain::SecondaryChain
+impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::secondary_chain::SecondaryChain
+impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::secondary_chain::SecondaryChain
+pub fn alice_physics_core::secondary_chain::curve_value(&[alice_physics_core::secondary_chain::CurveKey], alice_physics_core::math::Fix128) -> alice_physics_core::math::Fix128
 pub mod alice_physics_core::semantics
 pub struct alice_physics_core::semantics::PeerMismatch
 pub alice_physics_core::semantics::PeerMismatch::bridge: &'static str
@@ -25288,6 +25471,7 @@ impl alice_physics_core::math::QuatFix
 pub const alice_physics_core::math::QuatFix::IDENTITY: Self
 pub fn alice_physics_core::math::QuatFix::conjugate(self) -> Self
 pub fn alice_physics_core::math::QuatFix::from_axis_angle(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> Self
+pub fn alice_physics_core::math::QuatFix::from_to(alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> Self
 pub fn alice_physics_core::math::QuatFix::length(self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::QuatFix::length_squared(self) -> alice_physics_core::math::Fix128
 pub fn alice_physics_core::math::QuatFix::mul(self, Self) -> Self

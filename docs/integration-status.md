@@ -8,9 +8,9 @@ References are resolved to one definition each, so items that share a name are t
 | Level | Meaning | Count |
 |-------|---------|------:|
 | L0 | not reached by any non-test code, examples included | 31 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2602 |
-| live | reached without examples (crate-internal roots or a binding) | 613 |
-| | **total** | **3246** |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2617 |
+| live | reached without examples (crate-internal roots or a binding) | 614 |
+| | **total** | **3262** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -108,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2602)
+## L1 — example-only (2617)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -199,7 +199,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/linear_solver/precond.rs`: `BlockJacobiPreconditioner`, `BlockJacobiPreconditioner::from_dense`, `IdentityPreconditioner`, `IdentityPreconditioner::new`, `JacobiPreconditioner`, `JacobiPreconditioner::from_dense`, `JacobiPreconditioner::from_diagonal`
 - `src/mass_properties.rs`: `MassProperties`, `MassProperties::ZERO`, `box_mass_properties`, `capsule_mass_properties`, `convex_hull_mass_properties`, `cylinder_mass_properties`, `principal_axes`, `sphere_mass_properties`, `translate_inertia`
 - `src/material.rs`: `MaterialTable::combine`, `MaterialTable::is_empty`, `MaterialTable::len`, `MaterialTable::register_concrete`, `MaterialTable::register_ice`, `MaterialTable::register_metal`, `MaterialTable::register_rubber`, `MaterialTable::register_wood`, `MaterialTable::set_pair_override`, `PhysicsMaterial::with_combine_rules`, `PhysicsMaterial::with_static_friction`
-- `src/math.rs`: `Fix128::add_simd`, `Fix128::atan`, `Fix128::ceil`, `Fix128::checked_div`, `Fix128::cos`, `Fix128::exp`, `Fix128::ln`, `Fix128::sub_simd`, `Mat3Fix`, `Mat3Fix::IDENTITY`, `Mat3Fix::ZERO`, `Mat3Fix::determinant`, `Mat3Fix::diagonal`, `Mat3Fix::from_cols`, `Mat3Fix::inverse`, `Mat3Fix::max_abs_component`, `Mat3Fix::mul_mat`, `Mat3Fix::mul_vec`, `Mat3Fix::polar_rotation`, `Mat3Fix::polar_rotation_steps`, `Mat3Fix::scale`, `Mat3Fix::transpose`, `PolarError`, `SIMD_WIDTH`, `Vec3Fix::cross_simd`, `Vec3Fix::dot_batch_4`, `Vec3Fix::dot_simd`, `Vec3Fix::from_int`, `Vec3Fix::length_squared_simd`, `simd_width`
+- `src/math.rs`: `Fix128::add_simd`, `Fix128::atan`, `Fix128::ceil`, `Fix128::checked_div`, `Fix128::cos`, `Fix128::exp`, `Fix128::ln`, `Fix128::sub_simd`, `Mat3Fix`, `Mat3Fix::IDENTITY`, `Mat3Fix::ZERO`, `Mat3Fix::determinant`, `Mat3Fix::diagonal`, `Mat3Fix::from_cols`, `Mat3Fix::inverse`, `Mat3Fix::max_abs_component`, `Mat3Fix::mul_mat`, `Mat3Fix::mul_vec`, `Mat3Fix::polar_rotation`, `Mat3Fix::polar_rotation_steps`, `Mat3Fix::scale`, `Mat3Fix::transpose`, `PolarError`, `QuatFix::from_to`, `SIMD_WIDTH`, `Vec3Fix::cross_simd`, `Vec3Fix::dot_batch_4`, `Vec3Fix::dot_simd`, `Vec3Fix::from_int`, `Vec3Fix::length_squared_simd`, `simd_width`
 - `src/math_util.rs`: `EXP_OVERFLOW_SENTINEL`, `cbrt_fix`, `clamp_fix`, `exp_fix`, `pow_int`
 - `src/maxwell_fdtd.rs`: `Absorber`, `COURANT_3D`, `Component`, `Material`, `Material::VACUUM`, `Material::dielectric`, `Material::new`, `Material::refractive_index`, `MaterialError`, `MaterialMap`, `MaterialMap::dims`, `MaterialMap::fill`, `MaterialMap::get`, `MaterialMap::set`, `MaterialMap::vacuum`, `YeeGrid`, `YeeGrid::charge`, `YeeGrid::component_dims`, `YeeGrid::courant`, `YeeGrid::current`, `YeeGrid::dims`, `YeeGrid::div_b`, `YeeGrid::div_d`, `YeeGrid::div_e`, `YeeGrid::div_j`, `YeeGrid::effective_material`, `YeeGrid::gauss_residual`, `YeeGrid::get`, `YeeGrid::interior_node_dims`, `YeeGrid::is_absorbing`, `YeeGrid::max_abs_div_b`, `YeeGrid::max_abs_field`, `YeeGrid::max_abs_gauss_residual`, `YeeGrid::new`, `YeeGrid::new_with_absorber`, `YeeGrid::set`, `YeeGrid::set_charge`, `YeeGrid::set_current`, `YeeGrid::step`, `YeeGrid::total_charge`, `YeeGrid::with_materials`, `cfl_limit_3d`, `loss_coefficients`, `theoretical_pml_reflection`
 - `src/metric.rs`: `MetricError`, `MetricWeights::L1`, `MetricWeights::LINF`, `MetricWeights::axis_extent`, `MetricWeights::lipschitz`, `MetricWeights::new`, `MetricWeights::norm`, `MetricWeights::weights`
@@ -246,6 +246,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/sdf_manifold.rs`: `ManifoldConfig`, `SdfManifold`, `SdfManifold::deepest`, `SdfManifold::empty`, `SdfManifold::is_empty`, `SdfManifold::len`, `generate_sdf_manifold`
 - `src/sdf_sph.rs`: `SphConfig`, `SphConfig::water_like`, `SphParticle`, `SphParticle::at_rest`, `SphSolver`, `SphSolver::new`, `SphSolver::step`, `SphSolver::step_hashed`, `SphSpatialHash`, `SphSpatialHash::build`, `SphSpatialHash::cell_size`, `SphSpatialHash::for_each_neighbour`, `SphSpatialHash::populated_cell_count`, `poly6`, `spiky_grad`, `viscosity_lap`
 - `src/sdf_wind_field.rs`: `SdfWindField`, `SdfWindField::new`, `SdfWindField::sample`
+- `src/secondary_chain.rs`: `ChainConfig`, `ChainError`, `ChainInput`, `ChainLimit`, `ChainParams`, `ChainParticle`, `CurveKey`, `SecondaryChain`, `SecondaryChain::attached_inside`, `SecondaryChain::fit_to_rest`, `SecondaryChain::new`, `SecondaryChain::particles`, `SecondaryChain::step`, `curve_value`
 - `src/semantics.rs`: `PHYSICS_PEER_IDS`, `PHYSICS_PINS_BY_DET_MATH`, `PHYSICS_SEMANTICS_BY_DET_MATH`, `PHYSICS_SEMANTICS_ID`, `PHYSICS_SEMANTICS_PINS`, `PREVIOUS_PHYSICS_SEMANTICS_IDS`, `PeerMismatch`, `check_peer`, `expected_peer_id`, `hex32`, `semantics_id_for`
 - `src/sensors.rs`: `ContactReading`, `ContactSensor`, `ContactSensor::new`, `ContactSensor::read`, `ContactSensor::with_noise`, `GaussianNoise`, `GaussianNoise::apply`, `GaussianNoise::apply_vec`, `GaussianNoise::new`, `GaussianNoise::sample`, `Imu`, `Imu::new`, `Imu::sample`, `Imu::with_accel_noise`, `Imu::with_gyro_noise`, `ImuReading`, `Lidar`, `Lidar::directions`, `Lidar::new`, `Lidar::scan`, `Lidar::scan_from_body`, `Lidar::with_filter`, `Lidar::with_noise`, `Lidar::with_pose`, `LidarScan`, `LidarScan::range`, `PhysicsWorld::lidar_scan`, `PhysicsWorld::lidar_scan_from_body`, `PhysicsWorld::read_contact_sensor`, `PhysicsWorld::sample_imu`
 - `src/shape_raycast.rs`: `PhysicsWorld::cast_ray_all`, `PhysicsWorld::cast_ray_any`, `RayFilter::with_sdf_config`, `RayFilter::with_sensors`, `WorldRayCaster::all`, `WorldRayCaster::any`
