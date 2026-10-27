@@ -30,8 +30,8 @@
 use alice_physics_core::collider::Capsule;
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
 use alice_physics_core::secondary_chain::{
-    curve_value, ChainConfig, ChainError, ChainLimit, ChainParams, ChainParticle, CurveKey,
-    SecondaryChain,
+    curve_value, ChainConfig, ChainError, ChainInput, ChainLimit, ChainParams, ChainParticle,
+    CurveKey, SecondaryChain,
 };
 
 fn f(x: f64) -> Fix128 {
@@ -81,6 +81,11 @@ fn three(p: ChainParams) -> (SecondaryChain, Vec<Vec3Fix>) {
 
 const ANCHOR: (f64, f64, f64) = (0.0, 1.0, 0.0);
 
+/// No turn of any bone frame (the identity for every particle)
+fn idf(a: &[Vec3Fix]) -> Vec<QuatFix> {
+    vec![QuatFix::IDENTITY; a.len()]
+}
+
 fn anchor() -> Vec3Fix {
     v(ANCHOR.0, ANCHOR.1, ANCHOR.2)
 }
@@ -94,8 +99,18 @@ fn at_its_pose_without_gravity_a_chain_stays_put_bit_for_bit() {
     let (mut c, pose) = three(p);
     let start = c.particles().to_vec();
     for _ in 0..200 {
-        c.step(f(1.0 / 60.0), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
-            .unwrap();
+        c.step(
+            f(1.0 / 60.0),
+            &ChainInput {
+                anchor: anchor(),
+                anim_anchor: anchor(),
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: &[],
+            },
+        )
+        .unwrap();
     }
     for (a, b) in c.particles().iter().zip(&start) {
         assert_eq!(a.p, b.p);
@@ -179,8 +194,18 @@ fn a_small_offset_follows_the_linear_recurrence_of_pull_and_momentum() {
     let pose = [v(0.0, 0.9, 0.0)];
     let (mut prev, mut cur) = (e0, e0);
     for n in 0..40 {
-        c.step(f(1.0 / 60.0), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
-            .unwrap();
+        c.step(
+            f(1.0 / 60.0),
+            &ChainInput {
+                anchor: anchor(),
+                anim_anchor: anchor(),
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: &[],
+            },
+        )
+        .unwrap();
         let next = (1.0 - pp) * (cur + mm * (cur - prev));
         let got = c.particles()[0].p.x.to_f64();
         assert!((got - next).abs() < 1e-10, "step {n}: {got} vs {next}");
@@ -200,13 +225,33 @@ fn under_gravity_the_particle_settles_at_the_fixed_point_on_its_circle() {
     let pose = [v(r, 1.0, 0.0)];
     let mut c = one(p, pose[0], r);
     for _ in 0..4000 {
-        c.step(f(dt), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
-            .unwrap();
+        c.step(
+            f(dt),
+            &ChainInput {
+                anchor: anchor(),
+                anim_anchor: anchor(),
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: &[],
+            },
+        )
+        .unwrap();
     }
     let a = c.particles()[0].p;
     let mut c2 = c.clone();
-    c2.step(f(dt), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
-        .unwrap();
+    c2.step(
+        f(dt),
+        &ChainInput {
+            anchor: anchor(),
+            anim_anchor: anchor(),
+            anim: &pose,
+            anim_frames: &idf(&pose),
+            anchor_delta: Vec3Fix::ZERO,
+            colliders: &[],
+        },
+    )
+    .unwrap();
     let moved = to3(c2.particles()[0].p - a);
     assert!(
         moved.iter().all(|m| m.abs() < 1e-15),
@@ -282,8 +327,18 @@ fn gravity_falloff_scales_gravity_by_the_rest_direction_along_it() {
     )
     .unwrap();
     for _ in 0..4000 {
-        c.step(f(dt), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
-            .unwrap();
+        c.step(
+            f(dt),
+            &ChainInput {
+                anchor: anchor(),
+                anim_anchor: anchor(),
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: &[],
+            },
+        )
+        .unwrap();
     }
     let got = to3(c.particles()[0].p);
     let share = 1.0 - fall * (1.0 / 2f64.sqrt());
@@ -353,8 +408,18 @@ fn pull_and_stiffness_aim_from_the_simulated_parent() {
             },
         )
         .unwrap();
-        c.step(f(1.0 / 60.0), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
-            .unwrap();
+        c.step(
+            f(1.0 / 60.0),
+            &ChainInput {
+                anchor: anchor(),
+                anim_anchor: anchor(),
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: &[],
+            },
+        )
+        .unwrap();
         // the parent first: no pull, no momentum: it stays where it is, put on its rest length
         let a = [0.0, 1.0, 0.0];
         let pn = to3(parent_now);
@@ -410,7 +475,18 @@ fn the_rest_length_holds_after_every_step() {
     let mut prev = anchor();
     for k in 0..300 {
         let (a, pose) = whip(k);
-        c.step(f(1.0 / 60.0), a, a, &pose, a - prev, &[]).unwrap();
+        c.step(
+            f(1.0 / 60.0),
+            &ChainInput {
+                anchor: a,
+                anim_anchor: a,
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: a - prev,
+                colliders: &[],
+            },
+        )
+        .unwrap();
         prev = a;
         let ps = c.particles();
         for (i, pt) in ps.iter().enumerate() {
@@ -434,7 +510,18 @@ fn an_angle_limit_is_never_exceeded() {
     let mut worst = 0.0f64;
     for k in 0..300 {
         let (a, pose) = whip(k);
-        c.step(f(1.0 / 60.0), a, a, &pose, a - prev, &[]).unwrap();
+        c.step(
+            f(1.0 / 60.0),
+            &ChainInput {
+                anchor: a,
+                anim_anchor: a,
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: a - prev,
+                colliders: &[],
+            },
+        )
+        .unwrap();
         prev = a;
         // the first particle's rest direction is its pose link (it hangs from the anchor)
         let r = to3(pose[0] - a);
@@ -474,11 +561,14 @@ fn a_capsule_is_entered_at_most_by_a_bound_that_shrinks_with_the_passes() {
         for _ in 0..600 {
             c.step(
                 f(1.0 / 60.0),
-                anchor(),
-                anchor(),
-                &pose,
-                Vec3Fix::ZERO,
-                &[cap],
+                &ChainInput {
+                    anchor: anchor(),
+                    anim_anchor: anchor(),
+                    anim: &pose,
+                    anim_frames: &idf(&pose),
+                    anchor_delta: Vec3Fix::ZERO,
+                    colliders: &[cap],
+                },
             )
             .unwrap();
             let q = to3(c.particles()[0].p);
@@ -516,11 +606,14 @@ fn immobile_one_carries_the_chain_with_its_anchor_and_zero_leaves_it() {
     let moved: Vec<Vec3Fix> = pose.iter().map(|&x| x + shift).collect();
     c.step(
         f(1.0 / 60.0),
-        anchor() + shift,
-        anchor() + shift,
-        &moved,
-        shift,
-        &[],
+        &ChainInput {
+            anchor: anchor() + shift,
+            anim_anchor: anchor() + shift,
+            anim: &moved,
+            anim_frames: &idf(&moved),
+            anchor_delta: shift,
+            colliders: &[],
+        },
     )
     .unwrap();
     for (a, b) in c.particles().iter().zip(&before) {
@@ -533,11 +626,14 @@ fn immobile_one_carries_the_chain_with_its_anchor_and_zero_leaves_it() {
     let moved: Vec<Vec3Fix> = pose.iter().map(|&x| x + shift).collect();
     c.step(
         f(1.0 / 60.0),
-        anchor() + shift,
-        anchor() + shift,
-        &moved,
-        shift,
-        &[],
+        &ChainInput {
+            anchor: anchor() + shift,
+            anim_anchor: anchor() + shift,
+            anim: &moved,
+            anim_frames: &idf(&moved),
+            anchor_delta: shift,
+            colliders: &[],
+        },
     )
     .unwrap();
     let a = to3(anchor() + shift);
@@ -597,7 +693,18 @@ fn two_runs_give_the_same_bits() {
         let mut prev = anchor();
         for k in 0..200 {
             let (a, pose) = whip(k);
-            c.step(f(1.0 / 60.0), a, a, &pose, a - prev, &[]).unwrap();
+            c.step(
+                f(1.0 / 60.0),
+                &ChainInput {
+                    anchor: a,
+                    anim_anchor: a,
+                    anim: &pose,
+                    anim_frames: &idf(&pose),
+                    anchor_delta: a - prev,
+                    colliders: &[],
+                },
+            )
+            .unwrap();
             prev = a;
         }
         c.particles().to_vec()
@@ -663,8 +770,18 @@ fn bad_chains_and_inputs_are_refused() {
     );
     let mut c = SecondaryChain::new(vec![pt(None, params())], cfg).unwrap();
     assert_eq!(
-        c.step(f(0.01), anchor(), anchor(), &[], Vec3Fix::ZERO, &[])
-            .unwrap_err(),
+        c.step(
+            f(0.01),
+            &ChainInput {
+                anchor: anchor(),
+                anim_anchor: anchor(),
+                anim: &[],
+                anim_frames: &idf(&[]),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: &[]
+            }
+        )
+        .unwrap_err(),
         ChainError::BadInput("anim")
     );
 }
@@ -712,12 +829,312 @@ fn degenerate_inputs_do_not_panic_and_keep_the_chain_finite() {
     let pose = [anchor(), v(0.0, 1.1, 0.0), v(0.0, 1.2, 0.0)];
     for dt in [0.0, 1.0 / 60.0] {
         for _ in 0..10 {
-            c.step(f(dt), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[cap])
-                .unwrap();
+            c.step(
+                f(dt),
+                &ChainInput {
+                    anchor: anchor(),
+                    anim_anchor: anchor(),
+                    anim: &pose,
+                    anim_frames: &idf(&pose),
+                    anchor_delta: Vec3Fix::ZERO,
+                    colliders: &[cap],
+                },
+            )
+            .unwrap();
         }
     }
     for pt in c.particles() {
         let q = to3(pt.p);
         assert!(q.iter().all(|x| x.is_finite() && x.abs() < 10.0), "{q:?}");
     }
+}
+
+// --- limit axes live in the bone's animated frame ---------------------------------------------
+// oracle: the hinge projects the bone direction onto the plane perpendicular to its axis, the axis
+// being the local axis turned by the bone's animated frame (and, below a moved parent, by the
+// parent link's turn from its pose); computed here in f64 from those definitions
+
+fn qrot(axis: [f64; 3], angle: f64, p: [f64; 3]) -> [f64; 3] {
+    // Rodrigues' rotation
+    let n = (axis[0] * axis[0] + axis[1] * axis[1] + axis[2] * axis[2]).sqrt();
+    let k = [axis[0] / n, axis[1] / n, axis[2] / n];
+    let (s, c) = angle.sin_cos();
+    let kxp = [
+        k[1] * p[2] - k[2] * p[1],
+        k[2] * p[0] - k[0] * p[2],
+        k[0] * p[1] - k[1] * p[0],
+    ];
+    let kp = k[0] * p[0] + k[1] * p[1] + k[2] * p[2];
+    [0, 1, 2].map(|i| p[i] * c + kxp[i] * s + k[i] * kp * (1.0 - c))
+}
+
+fn unit(p: [f64; 3]) -> [f64; 3] {
+    let n = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+    [p[0] / n, p[1] / n, p[2] / n]
+}
+
+/// One constraint pass on a particle placed off its rest direction, nothing else acting
+fn limited_once(
+    link: [f64; 3],
+    start_dir: [f64; 3],
+    limit: ChainLimit,
+    frame: QuatFix,
+) -> [f64; 3] {
+    let mut p = params();
+    p.pull = Fix128::ZERO;
+    p.momentum = Fix128::ZERO;
+    p.limit = limit;
+    let a = anchor();
+    let len = (link[0] * link[0] + link[1] * link[1] + link[2] * link[2]).sqrt();
+    let d = unit(start_dir);
+    let start = a + v(d[0] * len, d[1] * len, d[2] * len);
+    let anim = [a + v(link[0], link[1], link[2])];
+    let mut c = SecondaryChain::new(
+        vec![ChainParticle {
+            parent: None,
+            rest_length: f(len),
+            params: p,
+            p: start,
+            q: start,
+        }],
+        ChainConfig {
+            gravity: Vec3Fix::ZERO,
+            iterations: 1,
+        },
+    )
+    .unwrap();
+    c.step(
+        f(1.0 / 60.0),
+        &ChainInput {
+            anchor: a,
+            anim_anchor: a,
+            anim: &anim,
+            anim_frames: &[frame],
+            anchor_delta: Vec3Fix::ZERO,
+            colliders: &[],
+        },
+    )
+    .unwrap();
+    let q = to3(c.particles()[0].p);
+    [q[0], q[1] - 1.0, q[2]]
+}
+
+fn hinge_expect(len: f64, start_dir: [f64; 3], axis_world: [f64; 3]) -> [f64; 3] {
+    let d = unit(start_dir);
+    let a = unit(axis_world);
+    let k = d[0] * a[0] + d[1] * a[1] + d[2] * a[2];
+    let ip = unit([d[0] - a[0] * k, d[1] - a[1] * k, d[2] - a[2] * k]);
+    [ip[0] * len, ip[1] * len, ip[2] * len]
+}
+
+fn close(a: [f64; 3], b: [f64; 3], tol: f64) -> bool {
+    (0..3).all(|i| (a[i] - b[i]).abs() < tol)
+}
+
+#[test]
+fn a_hinge_turns_with_the_bone_when_the_character_turns() {
+    // a bone held out sideways (+x), hinge axis local z: at rest the bone swings in the xy plane;
+    // the character turns 90° about the vertical, so the bone points along -z and the hinge axis
+    // along +x: the bone must swing in the yz plane
+    let turn = std::f64::consts::FRAC_PI_2;
+    let frame = QuatFix::from_axis_angle(v(0.0, 1.0, 0.0), f(turn));
+    let link = qrot([0.0, 1.0, 0.0], turn, [0.1, 0.0, 0.0]);
+    let start = qrot([0.0, 1.0, 0.0], turn, [1.0, -0.4, 0.5]);
+    let limit = ChainLimit::Hinge {
+        axis: v(0.0, 0.0, 1.0),
+        max: Fix128::PI,
+    };
+    let got = limited_once(link, start, limit, frame);
+    let want = hinge_expect(0.1, start, qrot([0.0, 1.0, 0.0], turn, [0.0, 0.0, 1.0]));
+    assert!(close(got, want, 1e-12), "{got:?} vs {want:?}");
+}
+
+#[test]
+fn a_hinge_follows_a_twist_of_the_bone_about_its_own_axis() {
+    // a hanging bone (-y), hinge axis local x; the frame twists 90° about the bone itself: the
+    // positions do not change, but the hinge axis becomes -z (rot_y(90°) x = -z)
+    let twist = std::f64::consts::FRAC_PI_2;
+    let frame = QuatFix::from_axis_angle(v(0.0, 1.0, 0.0), f(twist));
+    let start = [0.6, -1.0, 0.3];
+    let limit = ChainLimit::Hinge {
+        axis: v(1.0, 0.0, 0.0),
+        max: Fix128::PI,
+    };
+    let got = limited_once([0.0, -0.1, 0.0], start, limit, frame);
+    let want = hinge_expect(0.1, start, qrot([0.0, 1.0, 0.0], twist, [1.0, 0.0, 0.0]));
+    assert!(close(got, want, 1e-12), "{got:?} vs {want:?}");
+    // and without the twist the axis is x itself
+    let got0 = limited_once([0.0, -0.1, 0.0], start, limit, QuatFix::IDENTITY);
+    let want0 = hinge_expect(0.1, start, [1.0, 0.0, 0.0]);
+    assert!(close(got0, want0, 1e-12), "{got0:?} vs {want0:?}");
+}
+
+#[test]
+fn a_polar_limit_measures_its_angles_from_the_turned_reference_axis() {
+    // a hanging bone, polar limit with the reference axis local x, 0.3 rad toward it and 1.2 rad
+    // toward the other axis; the frame twists 60° about the bone, so the reference axis is
+    // rot_y(60°) x. A bone pushed 0.8 rad toward that axis is brought back to exactly 0.3 rad
+    // toward it (a 60° twist, unlike 90° or 180°, tells the frame from its inverse)
+    let twist = std::f64::consts::FRAC_PI_3;
+    let frame = QuatFix::from_axis_angle(v(0.0, 1.0, 0.0), f(twist));
+    let limit = ChainLimit::Polar {
+        x_axis: v(1.0, 0.0, 0.0),
+        max_x: f(0.3),
+        max_z: f(1.2),
+    };
+    let xa = qrot([0.0, 1.0, 0.0], twist, [1.0, 0.0, 0.0]);
+    let toward = |a: f64| [xa[0] * a.sin(), -a.cos(), xa[2] * a.sin()];
+    let start = toward(0.8);
+    let got = limited_once([0.0, -0.1, 0.0], start, limit, frame);
+    let want = toward(0.3).map(|c| c * 0.1);
+    assert!(close(got, want, 1e-12), "{got:?} vs {want:?}");
+}
+
+#[test]
+fn below_a_moved_parent_a_hinge_axis_also_takes_the_parent_links_turn() {
+    // two particles hanging (-y); the parent has swung to point along +x (its link turned by 90°
+    // about z); the child's hinge axis local x, frame identity: its axis is turned by the parent
+    // link's turn, rot_z(90°) x = +y
+    let mut pp = params();
+    pp.pull = Fix128::ZERO;
+    pp.momentum = Fix128::ZERO;
+    let mut pc = pp;
+    pc.limit = ChainLimit::Hinge {
+        axis: v(1.0, 0.0, 0.0),
+        max: Fix128::PI,
+    };
+    let a = anchor();
+    let parent_now = a + v(0.1, 0.0, 0.0);
+    let d = unit([1.0, 0.3, 0.5]);
+    let child_now = parent_now + v(d[0] * 0.1, d[1] * 0.1, d[2] * 0.1);
+    let anim = [a + v(0.0, -0.1, 0.0), a + v(0.0, -0.2, 0.0)];
+    let mut c = SecondaryChain::new(
+        vec![
+            ChainParticle {
+                parent: None,
+                rest_length: f(0.1),
+                params: pp,
+                p: parent_now,
+                q: parent_now,
+            },
+            ChainParticle {
+                parent: Some(0),
+                rest_length: f(0.1),
+                params: pc,
+                p: child_now,
+                q: child_now,
+            },
+        ],
+        ChainConfig {
+            gravity: Vec3Fix::ZERO,
+            iterations: 1,
+        },
+    )
+    .unwrap();
+    c.step(
+        f(1.0 / 60.0),
+        &ChainInput {
+            anchor: a,
+            anim_anchor: a,
+            anim: &anim,
+            anim_frames: &idf(&anim),
+            anchor_delta: Vec3Fix::ZERO,
+            colliders: &[],
+        },
+    )
+    .unwrap();
+    let q = to3(c.particles()[1].p);
+    let got = [q[0] - 1.0 * 0.1, q[1] - 1.0, q[2]];
+    let want = hinge_expect(0.1, d, [0.0, 1.0, 0.0]);
+    assert!(close(got, want, 1e-12), "{got:?} vs {want:?}");
+}
+
+#[test]
+fn a_frame_list_of_the_wrong_length_is_refused() {
+    let (mut c, pose) = three(params());
+    let r = c.step(
+        f(1.0 / 60.0),
+        &ChainInput {
+            anchor: anchor(),
+            anim_anchor: anchor(),
+            anim: &pose,
+            anim_frames: &[QuatFix::IDENTITY],
+            anchor_delta: Vec3Fix::ZERO,
+            colliders: &[],
+        },
+    );
+    assert_eq!(r, Err(ChainError::BadInput("anim_frames")));
+}
+
+#[test]
+fn the_parents_turn_is_taken_after_the_bones_own_frame() {
+    // as above (the parent swung from -y to +x, a turn of 90° about z), and the child's own frame
+    // twisted 90° about y: its axis is turn · frame · x = rot_z(90°) rot_y(90°) x = -z (the other
+    // order would give +y)
+    let mut pp = params();
+    pp.pull = Fix128::ZERO;
+    pp.momentum = Fix128::ZERO;
+    let mut pc = pp;
+    pc.limit = ChainLimit::Hinge {
+        axis: v(1.0, 0.0, 0.0),
+        max: Fix128::PI,
+    };
+    let a = anchor();
+    let parent_now = a + v(0.1, 0.0, 0.0);
+    let d = unit([1.0, 0.3, 0.5]);
+    let child_now = parent_now + v(d[0] * 0.1, d[1] * 0.1, d[2] * 0.1);
+    let anim = [a + v(0.0, -0.1, 0.0), a + v(0.0, -0.2, 0.0)];
+    let frames = [
+        QuatFix::IDENTITY,
+        QuatFix::from_axis_angle(v(0.0, 1.0, 0.0), f(std::f64::consts::FRAC_PI_2)),
+    ];
+    let mut c = SecondaryChain::new(
+        vec![
+            ChainParticle {
+                parent: None,
+                rest_length: f(0.1),
+                params: pp,
+                p: parent_now,
+                q: parent_now,
+            },
+            ChainParticle {
+                parent: Some(0),
+                rest_length: f(0.1),
+                params: pc,
+                p: child_now,
+                q: child_now,
+            },
+        ],
+        ChainConfig {
+            gravity: Vec3Fix::ZERO,
+            iterations: 1,
+        },
+    )
+    .unwrap();
+    c.step(
+        f(1.0 / 60.0),
+        &ChainInput {
+            anchor: a,
+            anim_anchor: a,
+            anim: &anim,
+            anim_frames: &frames,
+            anchor_delta: Vec3Fix::ZERO,
+            colliders: &[],
+        },
+    )
+    .unwrap();
+    let q = to3(c.particles()[1].p);
+    let got = [q[0] - 0.1, q[1] - 1.0, q[2]];
+    let axis = qrot(
+        [0.0, 0.0, 1.0],
+        std::f64::consts::FRAC_PI_2,
+        qrot(
+            [0.0, 1.0, 0.0],
+            std::f64::consts::FRAC_PI_2,
+            [1.0, 0.0, 0.0],
+        ),
+    );
+    assert!(close(axis, [0.0, 0.0, -1.0], 1e-12), "{axis:?}");
+    let want = hinge_expect(0.1, d, axis);
+    assert!(close(got, want, 1e-12), "{got:?} vs {want:?}");
 }
