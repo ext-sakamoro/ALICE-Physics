@@ -306,3 +306,4 @@ src/world_shape_query.rs	max_fix	expr	b > a	fixed-point	operands are Fix128, so 
 src/world_shape_query.rs	min_fix	expr	b < a	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/world_shape_query.rs	support	assign	d > best_dot	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
 src/world_shape_query.rs	trace	expr	gap <= tol	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
+src/secondary_chain.rs	fit_to_rest	assign	d - cap . radius < r	fixed-point	operands are Fix128, so the comparison is exact and has no signed zero or NaN
