@@ -110,12 +110,13 @@ fn a_participant_semantics_id_changes_the_law_id() {
 /// existed (main 88f76d3b, 9d2b8645… under PHYSICS_SEMANTICS_ID 7b24f99b…), so the existing
 /// goldens and the version 4 snapshot headers stay; the value below is the same world under the
 /// identifier with alice-det-math 0.5.2 at 39507d1b (d1bb3ee9…; before it a3f7eb24…, which folded
-/// the alice-ml peer), the only input that moved
+/// the alice-ml peer), re-pinned under the identifier with alice-det-math 0.5.2 at 2d01c63f
+/// (88cf6f85…; cf483f29… under d1bb3ee9…), the only input that moved
 #[test]
 fn participants_without_an_identifier_keep_the_law_id() {
     assert_eq!(
         hex(&law_id(&world(&[None, None]))),
-        "cf483f29f3f0269d46a2c1a2a9735b34cb4ffaa1b1c7076431ac2dafa6f9c0e8",
+        "5d580a3edab5a8346c9d3332a641adebab0f4784311f73c5aca74a02a01deb1b",
         "pinned from main 88f76d3b, then under the identifier with the alice-ml peer"
     );
 }

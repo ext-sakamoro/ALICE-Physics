@@ -7,10 +7,10 @@
 //! Two builds with the same identifier step every pinned path to the same
 //! bits; a build that steps any of them differently has a different value.
 //!
-//! # Hex form (with `alice-det-math` 0.5.2 at 39507d1b; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
+//! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2
+//! 88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6
 //! ```
 //!
 //! # Entries
@@ -295,17 +295,17 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
 /// bridges compare the linked peer's identifier with its entry
 /// ([`check_peer`]) and refuse a peer whose identifier moved.
 pub const PHYSICS_PEER_IDS: &[(&str, [u8; 32])] = &[
-    // alice-analytics 0.7 at 48eae0ee: `SEMANTICS_ID`, the alice-det-math 0.5.2 (39507d1b)
+    // alice-analytics 0.7 at c70ff043: `SEMANTICS_ID`, the alice-det-math 0.5.2 (2d01c63f)
     // identifier it re-exports
     (
         "alice-analytics",
-        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
     ),
-    // alice-ml 0.4 at 5309bc61: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights
+    // alice-ml 0.4 at 6e0dd060: `ML_SEMANTICS_ID` (`alice_ml::semantics`), the weights
     // `crate::neural` takes
     (
         "alice-ml",
-        hex32("8464fe594013020b37c94d790f15167244074f3892a99d3c9030bd66ba4ed982"),
+        hex32("14e0f0435562e1fa77ab0ce071c85c422fd3f64122aaaf2e73d110264b5356b6"),
     ),
 ];
 
@@ -412,6 +412,13 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
         hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
         hex32("d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2"),
     ),
+    // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13, powf of a negative base,
+    // powf64 as fdlibm e_pow, hypot of two subnormals; erf added): no pin moved, the det-math
+    // entry and the peers' identifiers did
+    (
+        hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
+        hex32("88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6"),
+    ),
 ];
 
 /// The pins of [`PHYSICS_SEMANTICS_PINS`] whose recorded value differs under an earlier
@@ -481,6 +488,18 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "alice-ml",
         hex32("a547237044e8fdba9ab152f7af13c431f675e5382e4e8cb40aa8c83c46bb606b"),
     ),
+    // alice-det-math 0.5.2 at 39507d1b: the peer identifiers the peers exported over that
+    // generation (alice-analytics re-exports det-math's, alice-ml 0.4 at 5309bc61)
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "alice-analytics",
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "alice-ml",
+        hex32("8464fe594013020b37c94d790f15167244074f3892a99d3c9030bd66ba4ed982"),
+    ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
@@ -489,7 +508,7 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.2 at 39507d1b):
-/// `d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2`.
+/// `88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 

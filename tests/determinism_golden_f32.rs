@@ -330,7 +330,8 @@ fn golden_privacy() {
 // 6. sketch — HyperLogLog (ln), DDSketch (ln/powf), CountMin (exp confidence)
 // ---------------------------------------------------------------------------
 
-const GOLDEN_SKETCH: &str = "2339dc43634fa99c1d25d6242d1590370f90b321ab35c0a30ec60732ffc7812d";
+// re-recorded for alice-det-math 0.5.2 at 2d01c63f: DDSketch reads `powf64` (now fdlibm e_pow)
+const GOLDEN_SKETCH: &str = "1b638996afdbf2f721f170dd54ddf88ba2c2162af68bc8f9ad918ad723e74ff1";
 
 #[test]
 fn golden_sketch() {

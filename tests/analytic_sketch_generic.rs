@@ -298,12 +298,16 @@ fn regression_pin_matches_pre_refactor_digests() {
     // sizes, which clamped it into bucket 0). With the rank change alone
     // reverted, 1024 and 2048 — whose data fits the old window — reproduce
     // the previous digests 0x2bb9_2c6e_9423_d87d / 0xf9bc_447b_7ba3_4b2f.
-    assert_eq!(dd_digest(DDSketch128::new(0.1)), 0x8f54_6624_6d75_e314);
-    assert_eq!(dd_digest(DDSketch256::new(0.05)), 0xc228_dd72_fb0a_36be);
-    assert_eq!(dd_digest(DDSketch512::new(0.02)), 0x10a5_004f_72c0_a6d7);
-    assert_eq!(dd_digest(DDSketch1024::new(0.02)), 0x10a3_004f_72bd_40d7);
-    assert_eq!(dd_digest(DDSketch2048::new(0.01)), 0xdf73_d5ae_becd_26e7);
-    assert_eq!(dd_digest(DDSketch::new(0.01)), 0xdf73_d5ae_becd_26e7);
+    // Re-pinned for alice-det-math 0.5.2 at 2d01c63f: the bucket bounds are `powf64(gamma, k)`,
+    // and `powf64` is now fdlibm `e_pow` (within 1 ulp of correctly rounded instead of up to 16),
+    // so the bucket edges and the quantiles that read them move; the HyperLogLog, CountMin and
+    // heavy-hitter digests (no `powf64`) are unchanged.
+    assert_eq!(dd_digest(DDSketch128::new(0.1)), 0x34ab_a5ee_5fe4_eb00);
+    assert_eq!(dd_digest(DDSketch256::new(0.05)), 0x1f27_0235_10bb_3471);
+    assert_eq!(dd_digest(DDSketch512::new(0.02)), 0xad19_fd7f_79a6_801d);
+    assert_eq!(dd_digest(DDSketch1024::new(0.02)), 0xad13_fd7f_799c_4e1d);
+    assert_eq!(dd_digest(DDSketch2048::new(0.01)), 0xb93f_2ea0_bfed_d0bf);
+    assert_eq!(dd_digest(DDSketch::new(0.01)), 0xb93f_2ea0_bfed_d0bf);
 
     assert_eq!(
         cms_digest(CountMinSketch1024x5::new()),
