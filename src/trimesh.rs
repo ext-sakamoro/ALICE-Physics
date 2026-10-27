@@ -1550,4 +1550,100 @@ mod tests {
         assert_eq!(hit.point, Vec3Fix::from_int(1, 0, -1));
         assert_eq!(hit.normal, Vec3Fix::UNIT_Y);
     }
+
+    /// The nearest hit by the loop over every triangle (ties: the smallest index)
+    fn loop_hit(mesh: &TriMesh, ray: &Ray, max_t: Fix128) -> Option<RayHit> {
+        let mut best: Option<RayHit> = None;
+        for (i, tri) in mesh.triangles.iter().enumerate() {
+            if let Some(mut h) = ray_triangle(ray, tri, max_t) {
+                h.body_index = i;
+                if best.is_none_or(|b| h.t < b.t) {
+                    best = Some(h);
+                }
+            }
+        }
+        best
+    }
+
+    /// A 12 × 12 grid of floor cells (two triangles each) at heights 0..3, so the BVH has
+    /// internal nodes: the walk (nearest hit, and the any-hit `occluded`) equals the loop over
+    /// every triangle for rays straight down onto each cell, slanted rays across the grid, rays
+    /// beside or away from it, a reach that stops above the floor, and a reach of 2^60 whose
+    /// slab products overflow (taken as a meet, so the triangles decide)
+    #[test]
+    fn the_walk_over_a_deep_tree_equals_the_loop_and_the_any_hit_query_agrees() {
+        let mut tris = Vec::new();
+        for i in 0..12_i64 {
+            for j in 0..12_i64 {
+                let y = (i * 3 + j * 5) % 4;
+                let (x0, z0) = (i * 2, j * 2);
+                let p = |x, z| Vec3Fix::from_int(x, y, z);
+                tris.push(Triangle::new(p(x0, z0), p(x0 + 2, z0), p(x0 + 2, z0 + 2)));
+                tris.push(Triangle::new(p(x0, z0), p(x0 + 2, z0 + 2), p(x0, z0 + 2)));
+            }
+        }
+        let mesh = TriMesh::from_triangles(tris);
+        assert!(
+            mesh.bvh.nodes.iter().any(|n| !n.is_leaf()),
+            "the tree has no internal node"
+        );
+        let down = Vec3Fix::new(Fix128::ZERO, Fix128::NEG_ONE, Fix128::ZERO);
+        let mut rays = Vec::new();
+        for i in 0..12_i64 {
+            for j in 0..12_i64 {
+                // straight down onto the cell's first triangle, and a slanted ray across cells
+                let o = Vec3Fix::new(
+                    Fix128::from_ratio(i * 4 + 3, 2),
+                    Fix128::from_int(10),
+                    Fix128::from_ratio(j * 4 + 1, 2),
+                );
+                rays.push(Ray::new(o, down));
+                let d = Vec3Fix::new(
+                    Fix128::from_ratio(i - 6, 7),
+                    Fix128::NEG_ONE,
+                    Fix128::from_ratio(5 - j, 9),
+                );
+                rays.push(Ray::new(o, d.normalize()));
+            }
+        }
+        // beside the grid along x, and pointing away from it
+        rays.push(Ray::new(Vec3Fix::from_int(-5, 1, 7), Vec3Fix::UNIT_Y));
+        rays.push(Ray::new(Vec3Fix::from_int(7, 10, 7), Vec3Fix::UNIT_Y));
+        // the fields are public: a direction of length 2^40 (not normalised), where the slab
+        // products with a reach of 2^60 overflow
+        rays.push(Ray {
+            origin: Vec3Fix::from_int(7, 10, 5),
+            direction: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-(1_i64 << 40)), Fix128::ZERO),
+        });
+        let mut hits = 0;
+        for ray in &rays {
+            for max_t in [
+                Fix128::from_int(5),
+                Fix128::from_int(100),
+                Fix128::from_int(1_i64 << 60),
+            ] {
+                let want = loop_hit(&mesh, ray, max_t);
+                let (got, visits) = mesh.raycast_visits(ray, max_t);
+                assert_eq!(got, want, "ray {ray:?} reach {max_t:?}");
+                assert_eq!(mesh.raycast(ray, max_t), want);
+                assert_eq!(
+                    mesh.occluded(ray, max_t),
+                    want.is_some(),
+                    "ray {ray:?} reach {max_t:?}"
+                );
+                assert!(visits >= 1);
+                hits += usize::from(want.is_some());
+            }
+        }
+        // every downward ray hits within 100, no unit-length ray within 5 of a start 10 above
+        // the floor (the last ray's t is in units of 2^40)
+        assert!(hits >= 2 * 144, "{hits} hits");
+        assert_eq!(
+            rays[..rays.len() - 1]
+                .iter()
+                .filter(|r| loop_hit(&mesh, r, Fix128::from_int(5)).is_some())
+                .count(),
+            0
+        );
+    }
 }
