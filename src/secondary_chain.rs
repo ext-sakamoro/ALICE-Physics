@@ -580,3 +580,8 @@ pub fn curve_value(keys: &[CurveKey], t: Fix128) -> Fix128 {
     }
     last.value
 }
+
+// the oracle of tests/ also runs as lib tests, so the lib coverage sees it
+#[cfg(all(test, feature = "std"))]
+#[path = "../tests/secondary_chain_oracle.rs"]
+mod oracle;
