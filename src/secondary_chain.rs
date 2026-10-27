@@ -155,6 +155,8 @@ impl core::fmt::Display for ChainError {
 pub struct SecondaryChain {
     particles: Vec<ChainParticle>,
     config: ChainConfig,
+    /// per particle, per collider: the radius at most (the rest clearance), after `fit_to_rest`
+    radius_caps: Vec<Vec<Fix128>>,
 }
 
 fn unit01(x: Fix128) -> bool {
@@ -213,7 +215,11 @@ impl SecondaryChain {
                 return Err(ChainError::BadParam(i, "limit angle"));
             }
         }
-        Ok(Self { particles, config })
+        Ok(Self {
+            particles,
+            config,
+            radius_caps: Vec::new(),
+        })
     }
 
     /// Which colliders the authored rest attaches each link inside: bit k of entry i is set when
@@ -253,6 +259,43 @@ impl SecondaryChain {
                 })
             })
             .collect())
+    }
+
+    /// Fits the chain, standing at its rest, to the colliders as the rest places them: the rest is
+    /// collision free. Each particle's mask gets the colliders that hold its parent end (as
+    /// [`SecondaryChain::attached_inside`]) or its own centre; against every other collider its
+    /// radius is at most its rest clearance (its rest distance to the capsule's surface). The
+    /// colliders are the step's list in the same order; a changed rest needs the fit again
+    ///
+    /// # Errors
+    ///
+    /// [`TooManyColliders`] for more than 64 colliders
+    pub fn fit_to_rest(
+        &mut self,
+        rest_anchor: Vec3Fix,
+        rest_colliders: &[Capsule],
+    ) -> Result<(), TooManyColliders> {
+        let rest: Vec<Vec3Fix> = self.particles.iter().map(|p| p.p).collect();
+        let masks = Self::attached_inside(&self.particles, &rest, rest_anchor, rest_colliders)?;
+        self.radius_caps = Vec::with_capacity(self.particles.len());
+        for (pt, m) in self.particles.iter_mut().zip(masks) {
+            let mut mask = m;
+            let mut caps = Vec::with_capacity(rest_colliders.len());
+            for (k, cap) in rest_colliders.iter().enumerate() {
+                let d = (pt.p - closest_on_segment(cap.a, cap.b, pt.p)).length();
+                let mut r = pt.params.radius;
+                if d <= cap.radius {
+                    // the rest puts the particle's centre inside: it lives in that body
+                    mask |= 1u64 << k;
+                } else if d - cap.radius < r {
+                    r = d - cap.radius;
+                }
+                caps.extend([r]);
+            }
+            pt.params.attached_inside = mask;
+            self.radius_caps.extend([caps]);
+        }
+        Ok(())
     }
 
     /// The particles
@@ -439,12 +482,18 @@ impl SecondaryChain {
     /// Out of every capsule, except the ones the authored rest attaches this link inside (its
     /// mask): a bone attached inside a body is not constrained by that body
     fn keep_out(&mut self, i: usize, colliders: &[Capsule]) {
-        let radius = self.particles[i].params.radius;
         let mask = self.particles[i].params.attached_inside;
         for (k, cap) in colliders.iter().enumerate() {
             if k < 64 && mask & (1u64 << k) != 0 {
                 continue;
             }
+            // at most the rest clearance against this collider (after `fit_to_rest`)
+            let radius = self
+                .radius_caps
+                .get(i)
+                .and_then(|c| c.get(k))
+                .copied()
+                .unwrap_or(self.particles[i].params.radius);
             let p = self.particles[i].p;
             let c = closest_on_segment(cap.a, cap.b, p);
             let reach = radius + cap.radius;
