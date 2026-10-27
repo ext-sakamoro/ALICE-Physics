@@ -22,6 +22,8 @@
 use crate::collider::Capsule;
 use crate::math::{Fix128, QuatFix, Vec3Fix};
 use crate::world_shape_query::closest_on_segment;
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
 /// How a particle's direction from its parent is limited, around its rest direction (the pose's
 /// link turned with the parent link's rotation from its pose)
