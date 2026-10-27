@@ -43,7 +43,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `sleeping` | step | 17 / 2 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `static_collider` | step | 2 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `torus` | step | 3 / 3 / 0 / 1 / 0 | C ABI, Python, WebAssembly |
-| `trimesh` | step | 11 / 0 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
+| `trimesh` | step | 13 / 0 / 0 / 6 / 0 | C ABI, Python, WebAssembly |
 | `wedge` | step | 6 / 2 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `world_participant` | step | 40 / 23 / 0 / 29 / 0 | C ABI, Python, WebAssembly |
 | `world_shape_query` | step | 4 / 4 / 0 / 0 / 0 | C ABI, Python, WebAssembly |

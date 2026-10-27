@@ -14785,7 +14785,9 @@ pub fn alice_physics_core::trimesh::TriMesh::collide_capsule(&self, alice_physic
 pub fn alice_physics_core::trimesh::TriMesh::collide_sphere(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::collider::Contact>
 pub fn alice_physics_core::trimesh::TriMesh::from_indexed(&[alice_physics_core::math::Vec3Fix], &[u32]) -> Self
 pub fn alice_physics_core::trimesh::TriMesh::from_triangles(alloc::vec::Vec<alice_physics_core::trimesh::Triangle>) -> Self
+pub fn alice_physics_core::trimesh::TriMesh::occluded(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> bool
 pub fn alice_physics_core::trimesh::TriMesh::raycast(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::raycast::RayHit>
+pub fn alice_physics_core::trimesh::TriMesh::raycast_visits(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> (core::option::Option<alice_physics_core::raycast::RayHit>, usize)
 pub fn alice_physics_core::trimesh::TriMesh::triangle_count(&self) -> usize
 impl core::marker::Freeze for alice_physics_core::trimesh::TriMesh
 impl core::marker::Send for alice_physics_core::trimesh::TriMesh
@@ -19269,7 +19271,9 @@ pub fn alice_physics_core::trimesh::TriMesh::collide_capsule(&self, alice_physic
 pub fn alice_physics_core::trimesh::TriMesh::collide_sphere(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::collider::Contact>
 pub fn alice_physics_core::trimesh::TriMesh::from_indexed(&[alice_physics_core::math::Vec3Fix], &[u32]) -> Self
 pub fn alice_physics_core::trimesh::TriMesh::from_triangles(alloc::vec::Vec<alice_physics_core::trimesh::Triangle>) -> Self
+pub fn alice_physics_core::trimesh::TriMesh::occluded(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> bool
 pub fn alice_physics_core::trimesh::TriMesh::raycast(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::raycast::RayHit>
+pub fn alice_physics_core::trimesh::TriMesh::raycast_visits(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> (core::option::Option<alice_physics_core::raycast::RayHit>, usize)
 pub fn alice_physics_core::trimesh::TriMesh::triangle_count(&self) -> usize
 impl core::marker::Freeze for alice_physics_core::trimesh::TriMesh
 impl core::marker::Send for alice_physics_core::trimesh::TriMesh
@@ -26479,7 +26483,9 @@ pub fn alice_physics_core::trimesh::TriMesh::collide_capsule(&self, alice_physic
 pub fn alice_physics_core::trimesh::TriMesh::collide_sphere(&self, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::collider::Contact>
 pub fn alice_physics_core::trimesh::TriMesh::from_indexed(&[alice_physics_core::math::Vec3Fix], &[u32]) -> Self
 pub fn alice_physics_core::trimesh::TriMesh::from_triangles(alloc::vec::Vec<alice_physics_core::trimesh::Triangle>) -> Self
+pub fn alice_physics_core::trimesh::TriMesh::occluded(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> bool
 pub fn alice_physics_core::trimesh::TriMesh::raycast(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> core::option::Option<alice_physics_core::raycast::RayHit>
+pub fn alice_physics_core::trimesh::TriMesh::raycast_visits(&self, &alice_physics_core::raycast::Ray, alice_physics_core::math::Fix128) -> (core::option::Option<alice_physics_core::raycast::RayHit>, usize)
 pub fn alice_physics_core::trimesh::TriMesh::triangle_count(&self) -> usize
 impl core::marker::Freeze for alice_physics_core::trimesh::TriMesh
 impl core::marker::Send for alice_physics_core::trimesh::TriMesh
