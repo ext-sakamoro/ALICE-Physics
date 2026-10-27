@@ -154,6 +154,10 @@ name = "basic_physics"
 required-features = ["std"]
 
 [[example]]
+name = "secondary_chain_hair"
+required-features = ["std"]
+
+[[example]]
 name = "world_participants"
 required-features = ["std"]
 

@@ -10,13 +10,13 @@
 //! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6
+//! 31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a
 //! ```
 //!
 //! # Entries
 //!
 //! [`PHYSICS_SEMANTICS_PINS`] has one entry per row of the `PINS` table of
-//! `tests/determinism_golden_coverage.rs` (23 rows), named by the
+//! `tests/determinism_golden_coverage.rs` (24 rows), named by the
 //! combination that row pins, with the SHA-256 golden of the test it names,
 //! plus one entry per Law output: the golden of
 //! `tests/determinism_law_outputs.rs` for each src file that calls the Law
@@ -177,6 +177,10 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     (
         "physics2d",
         hex32("9bf77c1406346913dd64841bddcb1e53c458259dd9314250ba33cc75a4216536"),
+    ),
+    (
+        "secondary chain",
+        hex32("8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f"),
     ),
     (
         "step_parallel shared-body order",
@@ -399,25 +403,25 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     // alice-det-math 0.5.0
     (
         hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
-        hex32("c961fad825ae8c53fef987946aed937bb1cff717585472e841946ee134e43223"),
+        hex32("843d34228f621e62bab094e3c9b579b0706396aebfc64e9237bf474694ae820b"),
     ),
     // alice-det-math 0.5.1 (adds `max` / `min` / `max64` / `min64`)
     (
         hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
-        hex32("a3f7eb247574fcbac11839aeaf64f1bae826721f2a2e12e8b30fd22db70612c1"),
+        hex32("5e6510a288012cabc82a3db6e8dfe0069d4f5a7aa5a39abb01d481e30427e4f0"),
     ),
     // alice-det-math 0.5.2 at 39507d1b (its clamp follows the G2 order: three Law outputs
     // moved, see PHYSICS_PINS_BY_DET_MATH)
     (
         hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
-        hex32("d1bb3ee9c54f6efed763b1cbabdf6ac07a4cfc2655198a66a848c691abe5dca2"),
+        hex32("9c29277a88e920b78d8d5e3f4d7089c3c8acc305b03f68ea9434fad2915f6e4b"),
     ),
     // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13, powf of a negative base,
     // powf64 as fdlibm e_pow, hypot of two subnormals; erf added): no pin moved, the det-math
     // entry and the peers' identifiers did
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
-        hex32("88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6"),
+        hex32("31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a"),
     ),
 ];
 
@@ -508,7 +512,7 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.2 at 2d01c63f):
-/// `88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6`.
+/// `31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 
@@ -551,10 +555,18 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// [`crate::LawCheck::SemanticsPrevious`]); any other identifier is still
 /// [`crate::WorldSnapshotError::SemanticsMismatch`].
 ///
-/// Empty: every earlier identifier belongs to an `alice-det-math` generation
-/// whose clamp differs from this build's (0.5.2 at 39507d1b), and the clamp
-/// moved Law output bits. An earlier generation's identifier is listed only
-/// when a cross-version oracle covers it (a snapshot written by that release,
-/// restored and stepped here, bit-equal to that release's own steps); none
-/// does yet, so the 3.x snapshots (`79ca5297…`, `cd9aa3b8…`) are refused.
-pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[];
+/// `88cf6f85…`: the identifier before the secondary chain was pinned (main
+/// `b672ff2e`, `alice-det-math` 0.5.2 at 2d01c63f). Pinning it added one entry
+/// and moved no other, and `tests/world_snapshot_xv_88cf6f85.rs` restores a
+/// snapshot written by that build, steps it here and gets that build's own
+/// steps byte for byte.
+///
+/// Not listed: every identifier of an `alice-det-math` generation whose clamp
+/// differs from this build's (0.5.2 at 39507d1b), since the clamp moved Law
+/// output bits. An earlier identifier is listed only when a cross-version
+/// oracle covers it (a snapshot written by that release, restored and stepped
+/// here, bit-equal to that release's own steps), so the 3.x snapshots
+/// (`79ca5297…`, `cd9aa3b8…`) are refused.
+pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[hex32(
+    "88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6",
+)];

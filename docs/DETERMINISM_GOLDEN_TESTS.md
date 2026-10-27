@@ -40,6 +40,7 @@ a hard-coded golden hash recorded on Mac aarch64.
 |----------|------:|----|-----------|-----------|
 | `joint_pendulum` | 240 | 1/60 s | solver + joints | `DistanceConstraint` iteration + gravity |
 | `cloth_drape` | 120 | 1/60 s | cloth (XPBD) | soft-body constraint iteration with pinned particles |
+| `secondary_chain` | 180 | 1/60 s | secondary chain | a strand from a moving anchor: pull, momentum, stiffness, gravity and falloff, immobile share, every limit kind (angle, hinge, polar), capsules after `fit_to_rest` |
 | `fluid_step` | 30 | 1/100 s | CFD (`CfdSolver` + `MacGrid`) | advection + diffusion + pressure projection |
 | `sdf_ccd_glance` | 90 | 1/60 s | SDF collider + speculative CCD | `f32`-based SDF distance + normal, glancing pass |
 | `trimesh_probe` | (5x5x5 samples) | — | trimesh collision | `TriMesh::collide_sphere` at 125 lattice points |
@@ -76,6 +77,7 @@ rotation change.
 | `cascade` | `0a9fb401dcc5fbf12ecd8ef36bd03caed7fb271b68d4035b764dbe24f6a47854` |
 | `joint_pendulum` | `d1d51ea466dd4c55c7e9c220afca66004e7401fb53a4a2781e40be3e4ba9ef8f` |
 | `cloth_drape` | `0df965eec802104c96168bf4eaf6e4096373343b39efe41bbfcdb3b3ef9d340c` |
+| `secondary_chain` | `8049913c69064a7cb87e5ed60469def3de0bb442c14031f44656a1e1075da54f` |
 | `fluid_step` | `20f4ba26edef79d64321fdd19c306e80d9e464707e86ba3a036769ff7b1cd3b7` |
 | `sdf_ccd_glance` | `822813e3a278e960c30acb54ece430b0c51ddda325aa4ebb72009b26a6f62a4e` |
 | `trimesh_probe` | `85fbff506a4cd8492163697b0d9cdb2252786d5171b0ff0c125c24a84dec485a` |
