@@ -559,24 +559,24 @@ const MT_PARALLEL_LOG2: u32 = 48;
 /// (det is a triple product of 129-bit differences, under 2^390), under 2^880.
 const EXACT_LIMBS: usize = 16;
 
-/// A two's-complement integer of 1024 bits: the ray / triangle test on the raw `Fix128` values
+/// A two's-complement integer of `64 · N` bits: the ray / triangle test on the raw `Fix128` values
 /// (each a 128-bit integer, the value times 2^64), without rounding. Every value formed stays far
 /// inside the range, so additions and products never wrap.
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct Exact([u64; EXACT_LIMBS]);
+struct Exact<const N: usize>([u64; N]);
 
-impl Exact {
+impl<const N: usize> Exact<N> {
     /// The raw integer of `x` (`hi · 2^64 + lo`)
     const fn from_fix(x: Fix128) -> Self {
         let ext = if x.hi < 0 { u64::MAX } else { 0 };
-        let mut w = [ext; EXACT_LIMBS];
+        let mut w = [ext; N];
         w[0] = x.lo;
         w[1] = x.hi as u64;
         Self(w)
     }
 
     const fn is_negative(&self) -> bool {
-        (self.0[EXACT_LIMBS - 1] as i64) < 0
+        (self.0[N - 1] as i64) < 0
     }
 
     fn is_zero(&self) -> bool {
@@ -584,7 +584,7 @@ impl Exact {
     }
 
     fn add(&self, o: &Self) -> Self {
-        let mut w = [0u64; EXACT_LIMBS];
+        let mut w = [0u64; N];
         let mut carry = 0u64;
         for (i, out) in w.iter_mut().enumerate() {
             let (s1, c1) = self.0[i].overflowing_add(o.0[i]);
@@ -596,11 +596,11 @@ impl Exact {
     }
 
     fn neg(&self) -> Self {
-        let mut inv = [0u64; EXACT_LIMBS];
+        let mut inv = [0u64; N];
         for (out, &l) in inv.iter_mut().zip(&self.0) {
             *out = !l;
         }
-        let mut one = [0u64; EXACT_LIMBS];
+        let mut one = [0u64; N];
         one[0] = 1;
         Self(inv).add(&Self(one))
     }
@@ -621,16 +621,27 @@ impl Exact {
     /// add up to fewer bits)
     fn mul(&self, o: &Self) -> Self {
         let (a, b) = (self.abs(), o.abs());
-        let mut w = [0u64; EXACT_LIMBS];
-        for i in 0..EXACT_LIMBS {
+        // limbs in use (the magnitudes' high limbs are 0)
+        let len = |x: &Self| x.0.iter().rposition(|&l| l != 0).map_or(0, |k| k + 1);
+        let (la, lb) = (len(&a), len(&b));
+        let mut w = [0u64; N];
+        for i in 0..la {
             if a.0[i] == 0 {
                 continue;
             }
             let mut carry = 0u128;
-            for j in 0..EXACT_LIMBS - i {
+            for j in 0..lb.min(N - i) {
                 let cur = u128::from(w[i + j]) + u128::from(a.0[i]) * u128::from(b.0[j]) + carry;
                 w[i + j] = cur as u64;
                 carry = cur >> 64;
+            }
+            // the carry out of the last used limb of b
+            let mut k = i + lb;
+            while carry != 0 && k < N {
+                let cur = u128::from(w[k]) + carry;
+                w[k] = cur as u64;
+                carry = cur >> 64;
+                k += 1;
             }
         }
         let p = Self(w);
@@ -644,8 +655,8 @@ impl Exact {
     /// `self` · 2^bits, for a non-negative value and bits < 1024
     fn shl(&self, bits: u32) -> Self {
         let (limbs, rest) = ((bits / 64) as usize, bits % 64);
-        let mut w = [0u64; EXACT_LIMBS];
-        for i in (limbs..EXACT_LIMBS).rev() {
+        let mut w = [0u64; N];
+        for i in (limbs..N).rev() {
             let lo = self.0[i - limbs];
             let below = if rest == 0 || i == limbs {
                 0
@@ -660,6 +671,28 @@ impl Exact {
     /// self < o
     fn lt(&self, o: &Self) -> bool {
         self.sub(o).is_negative()
+    }
+
+    /// floor(self / d) as [`Exact::div_floor_fix`], starting from a guess of the quotient and
+    /// correcting it by comparing exact products (q · d ≤ self < (q + 1) · d); a guess more than
+    /// 64 steps off falls back to the long division
+    fn div_floor_fix_near(&self, d: &Self, guess: Fix128) -> Fix128 {
+        let raw = |q: i128| Fix128::from_raw((q >> 64) as i64, q as u64);
+        let mut q = (i128::from(guess.hi) << 64) | i128::from(guess.lo);
+        for _ in 0..64 {
+            let below = Self::from_fix(raw(q)).mul(d);
+            if self.lt(&below) {
+                q -= 1;
+                continue;
+            }
+            let above = below.add(d);
+            if !self.lt(&above) {
+                q += 1;
+                continue;
+            }
+            return raw(q);
+        }
+        self.div_floor_fix(d)
     }
 
     /// floor(self / d) for self ≥ 0, d > 0 and a quotient below 2^127: the `Fix128` whose raw
@@ -680,9 +713,9 @@ impl Exact {
 
 /// A `Vec3Fix` on the raw integers
 #[derive(Clone, Copy)]
-struct ExactVec([Exact; 3]);
+struct ExactVec<const N: usize>([Exact<N>; 3]);
 
-impl ExactVec {
+impl<const N: usize> ExactVec<N> {
     const fn from_vec(v: Vec3Fix) -> Self {
         Self([Exact::from_fix(v.x), Exact::from_fix(v.y), Exact::from_fix(v.z)])
     }
@@ -691,7 +724,7 @@ impl ExactVec {
         Self([self.0[0].sub(&o.0[0]), self.0[1].sub(&o.0[1]), self.0[2].sub(&o.0[2])])
     }
 
-    fn dot(&self, o: &Self) -> Exact {
+    fn dot(&self, o: &Self) -> Exact<N> {
         self.0[0].mul(&o.0[0]).add(&self.0[1].mul(&o.0[1])).add(&self.0[2].mul(&o.0[2]))
     }
 
@@ -825,12 +858,183 @@ fn ray_meets_box(ray: &Ray, b: &AABB, max_t: Fix128) -> bool {
 /// and the mesh query disagreed with a loop over the triangles. The hit's t is the exact t
 /// floored to a step of 2^-64, its point `ray.at(t)` and its normal the triangle's unit normal
 /// turned to face the ray.
+///
+/// Most calls are decided by [`certainly_misses`] in `Fix128` arithmetic with a proven bound on
+/// its rounding; the rest (every hit, and every miss within the bound of an edge, of t = 0, of
+/// t = max_t or of the parallel threshold) run the exact test, so the answer and the t are the
+/// exact ones in every case.
 #[must_use]
 pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
-    let d = ExactVec::from_vec(ray.direction);
-    let v0 = ExactVec::from_vec(tri.v0);
-    let e1 = ExactVec::from_vec(tri.v1).sub(&v0);
-    let e2 = ExactVec::from_vec(tri.v2).sub(&v0);
+    match fast_test(ray, tri, max_t) {
+        Fast::Miss => None,
+        Fast::Hit { guess } => Some(hit_at(ray, tri, exact_hit_t(ray, tri, guess))),
+        Fast::Unsure => ray_triangle_exact(ray, tri, max_t),
+    }
+}
+
+/// One step of `Fix128`, 2^-64
+const ULP: Fix128 = Fix128 { hi: 0, lo: 1 };
+
+/// Coordinates (vertices, origin, direction) below 2^15 in magnitude keep every value the fast
+/// test forms below 2^51 (differences < 2^16, cross products < 2^33, dot products < 3 · 2^49),
+/// so no `Fix128` addition wraps; outside it the exact test runs
+const FAST_RANGE: i64 = 1 << 15;
+
+/// The fast test's bound on the rounding of a dot product `a · b` where `b` is a cross product,
+/// in steps of 2^-64. Every `Fix128` product is off by less than one step (it keeps the middle
+/// 128 bits of the 256-bit product); additions and subtractions are exact in range. A cross
+/// product's component is a difference of two products, off by less than 2 steps; the dot
+/// product a · b_rounded is off by less than Σ |a_i| · 2 (from b) + 3 (its own three products),
+/// so by less than 2 · ceil(‖a‖₁) + 3 steps. Taken as 2 · (⌊‖a‖₁⌋ + 1) + 3.
+fn dot_bound(a: Vec3Fix) -> Fix128 {
+    let l1 = a.x.abs() + a.y.abs() + a.z.abs();
+    Fix128::from_raw(0, 2 * (l1.hi as u64 + 1) + 3)
+}
+
+/// The fast test's verdict
+enum Fast {
+    /// The exact test certainly reports a miss
+    Miss,
+    /// The exact test certainly reports a hit; `guess` is the rounded t
+    Hit { guess: Fix128 },
+    /// Within a bound of a decision, or out of [`FAST_RANGE`]: the exact test decides
+    Unsure,
+}
+
+/// Coordinates in [`FAST_RANGE`]
+fn in_fast_range(ray: &Ray, tri: &Triangle) -> bool {
+    let small = |v: Vec3Fix| [v.x, v.y, v.z].iter().all(|c| c.hi > -FAST_RANGE && c.hi < FAST_RANGE);
+    small(ray.origin) && small(ray.direction) && small(tri.v0) && small(tri.v1) && small(tri.v2)
+}
+
+/// The exact test's verdict where the `Fix128` numerators decide it ([`dot_bound`]): `det` =
+/// e1 · (d × e2), `u` = s · (d × e2), `v` = d · (s × e1) and `t_num` = e2 · (s × e1), each within
+/// its bound of the exact value. When |det| exceeds its bound its sign is the exact sign; then a
+/// numerator beyond its bound on the wrong side of 0, of det (u, u + v, bounds added) or of
+/// max_t · det (t_num) fails that inequality exactly as well (a miss), and all of them beyond
+/// their bounds on the right side pass exactly (a hit, when the ray is also certainly not
+/// parallel). Anything nearer, or out of [`FAST_RANGE`], is [`Fast::Unsure`].
+fn fast_test(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Fast {
+    if !in_fast_range(ray, tri) {
+        return Fast::Unsure;
+    }
+    let d = ray.direction;
+    let e1 = tri.v1 - tri.v0;
+    let e2 = tri.v2 - tri.v0;
+    let s = ray.origin - tri.v0;
+    let h = d.cross(e2);
+    let det = e1.dot(h);
+    let det_bound = dot_bound(e1);
+    if det.abs() <= det_bound {
+        return Fast::Unsure;
+    }
+    let flip = det.is_negative();
+    let signed = |x: Fix128| if flip { -x } else { x };
+    let det = det.abs();
+    let (u, u_bound) = (signed(s.dot(h)), dot_bound(s));
+    if u < -u_bound || u - det > u_bound + det_bound {
+        return Fast::Miss;
+    }
+    let q = s.cross(e1);
+    let (v, v_bound) = (signed(d.dot(q)), dot_bound(d));
+    if v < -v_bound || u + v - det > u_bound + v_bound + det_bound {
+        return Fast::Miss;
+    }
+    let (t_num, t_bound) = (signed(e2.dot(q)), dot_bound(e2));
+    if t_num < -t_bound {
+        return Fast::Miss;
+    }
+    // t_num against max_t · det: the product floors by less than a step, and det's error scales
+    // by max_t (kept below 2^20 so it stays in range); a negative reach is decided exactly
+    if max_t.hi < 0 || max_t.hi >= (1 << 20) {
+        return Fast::Unsure;
+    }
+    let Some(limit) = max_t.checked_mul(det) else {
+        return Fast::Unsure;
+    };
+    let t_margin = t_bound + Fix128::from_raw(0, det_bound.lo * (max_t.hi as u64 + 1)) + ULP;
+    if t_num - limit > t_margin {
+        return Fast::Miss;
+    }
+    // a hit: every inequality clears its bound on the passing side ...
+    let clear = u > u_bound
+        && det - u > u_bound + det_bound
+        && v > v_bound
+        && det - u - v > u_bound + v_bound + det_bound
+        && t_num > t_bound
+        && limit - t_num > t_margin;
+    // ... and the ray is certainly not parallel: |det| > 2^-48 · |n| · |d| exactly, from
+    // |n| · |d| ≤ ‖n‖₁ · ‖d‖₁ with n = e1 × e2 rounded (each component within 2 steps, so ‖n‖₁
+    // within 6) and each floored product raised by a step
+    let l1 = |a: Vec3Fix| a.x.abs() + a.y.abs() + a.z.abs();
+    let n = e1.cross(e2);
+    let parallel_limit = (l1(n) + Fix128::from_raw(0, 6)) * l1(d) + ULP;
+    let parallel_limit = parallel_limit * Fix128::from_raw(0, 1 << (64 - MT_PARALLEL_LOG2)) + ULP;
+    if clear && det - det_bound > parallel_limit {
+        if let Some(guess) = t_num.checked_div(det) {
+            return Fast::Hit { guess };
+        }
+    }
+    Fast::Unsure
+}
+
+/// Limbs for the exact t of a hit decided by [`fast_test`]: with coordinates in [`FAST_RANGE`] the
+/// raw integers are below 2^79, det and t_num below 2^243, t_num · 2^64 below 2^307 and q · det
+/// (q ≤ max_t < 2^84 in raw steps) below 2^328, all inside 384 bits
+const HIT_LIMBS: usize = 6;
+
+/// The exact t of a hit the fast test decided: t_num · 2^64 / det floored, from the guess
+fn exact_hit_t(ray: &Ray, tri: &Triangle, guess: Fix128) -> Fix128 {
+    let d = ExactVec::<HIT_LIMBS>::from_vec(ray.direction);
+    let v0 = ExactVec::<HIT_LIMBS>::from_vec(tri.v0);
+    let e1 = ExactVec::<HIT_LIMBS>::from_vec(tri.v1).sub(&v0);
+    let e2 = ExactVec::<HIT_LIMBS>::from_vec(tri.v2).sub(&v0);
+    let s = ExactVec::<HIT_LIMBS>::from_vec(ray.origin).sub(&v0);
+    let det = e1.dot(&d.cross(&e2));
+    let t_num = e2.dot(&s.cross(&e1));
+    let (det, t_num) = if det.is_negative() { (det.neg(), t_num.neg()) } else { (det, t_num) };
+    t_num.shl(64).div_floor_fix_near(&det, guess)
+}
+
+/// The hit at t: the point `ray.at(t)` and the triangle's unit normal turned to face the ray
+fn hit_at(ray: &Ray, tri: &Triangle, t: Fix128) -> RayHit {
+    let normal = tri.unit_normal();
+    let normal = if normal.dot(ray.direction) > Fix128::ZERO {
+        -normal
+    } else {
+        normal
+    };
+    RayHit {
+        t,
+        point: ray.at(t),
+        normal,
+        body_index: 0,
+    }
+}
+
+/// A guess of the hit's t from the `Fix128` numerators (rounded), for coordinates in
+/// [`FAST_RANGE`] and a rounded det away from 0; only the starting point of the exact division
+fn rounded_t(ray: &Ray, tri: &Triangle) -> Option<Fix128> {
+    if !in_fast_range(ray, tri) {
+        return None;
+    }
+    let e1 = tri.v1 - tri.v0;
+    let e2 = tri.v2 - tri.v0;
+    let s = ray.origin - tri.v0;
+    let det = e1.dot(ray.direction.cross(e2));
+    if det.abs() <= dot_bound(e1) {
+        return None;
+    }
+    let t_num = e2.dot(s.cross(e1));
+    t_num.checked_div(det)
+}
+
+/// The exact ray / triangle test ([`ray_triangle`] without the fast filter)
+fn ray_triangle_exact(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
+    let d = ExactVec::<EXACT_LIMBS>::from_vec(ray.direction);
+    let v0 = ExactVec::<EXACT_LIMBS>::from_vec(tri.v0);
+    let e1 = ExactVec::<EXACT_LIMBS>::from_vec(tri.v1).sub(&v0);
+    let e2 = ExactVec::<EXACT_LIMBS>::from_vec(tri.v2).sub(&v0);
     let h = d.cross(&e2);
     let det = e1.dot(&h);
     // parallel: det² · 2^96 < |e1 × e2|² · |d|² (0 included)
@@ -841,9 +1045,9 @@ pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> 
 
     // the barycentric and distance numerators against det, its sign folded in
     let flip = det.is_negative();
-    let signed = |x: Exact| if flip { x.neg() } else { x };
+    let signed = |x: Exact<EXACT_LIMBS>| if flip { x.neg() } else { x };
     let det = det.abs();
-    let s = ExactVec::from_vec(ray.origin).sub(&v0);
+    let s = ExactVec::<EXACT_LIMBS>::from_vec(ray.origin).sub(&v0);
     let u = signed(s.dot(&h));
     if u.is_negative() || det.lt(&u) {
         return None;
@@ -856,24 +1060,14 @@ pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> 
     let t_num = signed(e2.dot(&q));
     // 0 <= t = t_num / det <= max_t, with t's raw integer t_num · 2^64 / det
     let scaled = t_num.shl(64);
-    if t_num.is_negative() || Exact::from_fix(max_t).mul(&det).lt(&scaled) {
+    if t_num.is_negative() || Exact::<EXACT_LIMBS>::from_fix(max_t).mul(&det).lt(&scaled) {
         return None;
     }
-    let t = scaled.div_floor_fix(&det);
-    let point = ray.at(t);
-    let normal = tri.unit_normal();
-    // Ensure normal faces the ray
-    let normal = if normal.dot(ray.direction) > Fix128::ZERO {
-        -normal
-    } else {
-        normal
+    let t = match rounded_t(ray, tri) {
+        Some(guess) => scaled.div_floor_fix_near(&det, guess),
+        None => scaled.div_floor_fix(&det),
     };
-    Some(RayHit {
-        t,
-        point,
-        normal,
-        body_index: 0,
-    })
+    Some(hit_at(ray, tri, t))
 }
 
 /// Closest pair `(point on segment, point on triangle)` between the segment

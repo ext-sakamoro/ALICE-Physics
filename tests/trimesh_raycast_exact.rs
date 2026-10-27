@@ -205,3 +205,101 @@ fn parallel_rays_do_not_hit() {
         assert_eq!(ray_triangle(&ray, &tri, max_t).map(|h| h.t), exact_t(&ray, &tri, max_t), "slope 2^-{}", k + 2);
     }
 }
+
+/// The surface of the cube [0, 1]³, each face 4 × 4 cells of two triangles (closed: every edge in
+/// two triangles)
+fn closed_cube() -> Vec<Triangle> {
+    let mut tris = Vec::new();
+    let g = |a: i64| Fix128::from_ratio(a, 4);
+    // a face: the axis it is normal to, and its side (0 or 4 in quarters)
+    for axis in 0..3 {
+        for side in [0i64, 4] {
+            let at = |a: i64, b: i64| {
+                let mut p = [Fix128::ZERO; 3];
+                p[axis] = g(side);
+                p[(axis + 1) % 3] = g(a);
+                p[(axis + 2) % 3] = g(b);
+                Vec3Fix::new(p[0], p[1], p[2])
+            };
+            for i in 0..4 {
+                for j in 0..4 {
+                    tris.extend([
+                        Triangle::new(at(i, j), at(i + 1, j), at(i + 1, j + 1)),
+                        Triangle::new(at(i, j), at(i + 1, j + 1), at(i, j + 1)),
+                    ]);
+                }
+            }
+        }
+    }
+    tris
+}
+
+/// Watertight: a ray from outside a closed mesh that passes exactly through a point of its surface
+/// (direction = target − origin, unnormalised, so the point is at t = 1) hits it, whether
+/// the point is inside a triangle, on an edge two triangles share (the cells' sides and
+/// diagonals) or at a vertex several share, including the cube's own edges and corners. Until the
+/// exact test, a crossing exactly on a shared edge could round outside both triangles and the ray
+/// passed through the closed mesh.
+#[test]
+fn rays_through_shared_edges_and_vertices_of_a_closed_mesh_hit_it() {
+    let tris = closed_cube();
+    let mesh = TriMesh::from_triangles(tris.clone());
+    let q = |a: i64| Fix128::from_ratio(a, 8);
+    let max_t = Fix128::from_int(100);
+    let mut rays = Vec::new();
+    // targets on the face z = 0 at every eighth (vertices, edge midpoints, diagonal midpoints,
+    // cell interiors), from origins below the cube in several directions
+    for a in 0..=8 {
+        for b in 0..=8 {
+            let target = Vec3Fix::new(q(a), q(b), Fix128::ZERO);
+            for o in [
+                Vec3Fix::new(Fix128::from_ratio(1, 3), Fix128::from_ratio(2, 7), -Fix128::ONE),
+                Vec3Fix::new(Fix128::from_int(-2), Fix128::from_ratio(5, 3), Fix128::from_ratio(-1, 9)),
+                Vec3Fix::new(Fix128::from_ratio(1, 2), Fix128::from_ratio(1, 2), Fix128::from_int(-3)),
+            ] {
+                // the direction target − o itself (not normalised): o + 1 · d is the target exactly
+                rays.extend([Ray { origin: o, direction: target - o }]);
+            }
+        }
+    }
+    let mut on_edges = 0;
+    for ray in &rays {
+        let want = exact_nearest(&tris, ray, max_t);
+        assert!(want.is_some(), "the reference misses the closed mesh: ray {ray:?}");
+        assert!(check_mesh(&mesh, ray, max_t, "closed cube"));
+        // how many triangles the exact crossing touches (more than one: an edge or a vertex)
+        let (t, _) = want.unwrap_or((Fix128::ZERO, 0));
+        on_edges += usize::from(tris.iter().filter(|tri| exact_t(ray, tri, max_t) == Some(t)).count() > 1);
+    }
+    assert_eq!(rays.len(), 81 * 3);
+    assert!(on_edges > 100, "only {on_edges} rays through a shared edge or vertex");
+
+    // the shadow rays of examples/trimesh_shadow_rays.rs: the roof [0, 1]² at y = 1 seen from the
+    // floor toward (−1, 2, 0) shades the points with x in [1/2, 3/2], z in [0, 1], 8 × 8 of the
+    // grid, and every one of those rays crosses the roof on a cell's shared diagonal
+    let v = |x: i64, y: i64, z: i64, d: i64| Vec3Fix::new(Fix128::from_ratio(x, d), Fix128::from_ratio(y, d), Fix128::from_ratio(z, d));
+    let mut roof = Vec::new();
+    for i in 0..32 {
+        for j in 0..32 {
+            let p = |a: i64, b: i64| v(a, 32, b, 32);
+            roof.extend([
+                Triangle::new(p(i, j), p(i + 1, j), p(i + 1, j + 1)),
+                Triangle::new(p(i, j), p(i + 1, j + 1), p(i, j + 1)),
+            ]);
+        }
+    }
+    let roof_mesh = TriMesh::from_triangles(roof);
+    let mut shaded = 0;
+    for i in 0..24 {
+        for j in 0..16 {
+            let ray = Ray::new(v(-64 + 5 + 8 * i, 0, -64 + 5 + 8 * j, 64), v(-1, 2, 0, 1));
+            let hit = check_mesh(&roof_mesh, &ray, Fix128::from_int(10), "roof");
+            let x = Fix128::from_ratio(-64 + 5 + 8 * i, 64);
+            let z = Fix128::from_ratio(-64 + 5 + 8 * j, 64);
+            let inside = x >= Fix128::from_ratio(1, 2) && x <= Fix128::from_ratio(3, 2) && z >= Fix128::ZERO && z <= Fix128::ONE;
+            assert_eq!(hit, inside, "floor point {i}, {j}");
+            shaded += usize::from(hit);
+        }
+    }
+    assert_eq!(shaded, 64);
+}
