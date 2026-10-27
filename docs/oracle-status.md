@@ -6,11 +6,11 @@ _Generated from `tests/*.rs` (no timestamp: the file changes only when its conte
 
 | Category | Count |
 |----------|-------|
-| 🟢 Not ignored (run by CI) | 5849 |
+| 🟢 Not ignored (run by CI) | 5886 |
 | 🔴 Red by design | 70 |
 | ⏱ Gated (runtime / diagnostic / manual) | 26 |
 | ⚪ Pending (bare `#[ignore]`) | 0 |
-| **Total** | **5945** |
+| **Total** | **5982** |
 
 `Not ignored` means only that the test carries no `#[ignore]`: this report does not run it.
 CI's `cargo test` is what says whether it passes.
@@ -150,7 +150,7 @@ Run them with `python3 scripts/run_ignored.py` or `cargo test --release -- --ign
 - `tolerance_measurement` (analytic_step_multigrid.rs) — diagnostic: the measurements the two tolerances above are fixed from
 - `x_1_time_trace` (armaly_backward_step.rs) — diagnostic: x_1(t) trace for one resolution and scheme, settings from ARM_NY / ARM_SCHEME / ARM_DT_RECIP / ARM…
 
-## 🟢 Not ignored (5849)
+## 🟢 Not ignored (5886)
 
 Per-file counts (the test names are in `tests/`):
 
@@ -172,6 +172,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_coupled_iteration.rs` | 35 |
 | `engineering_oracles_solid.rs` | 34 |
 | `audit_query.rs` | 33 |
+| `secondary_chain_oracle.rs` | 33 |
 | `audit_math.rs` | 32 |
 | `audit_raycast.rs` | 32 |
 | `analytic_world_character.rs` | 31 |
@@ -418,6 +419,7 @@ Per-file counts (the test names are in `tests/`):
 | `audit_filament_db.rs` | 10 |
 | `audit_smoke_fire.rs` | 10 |
 | `coupling_channel_inventory.rs` | 10 |
+| `determinism_golden.rs` | 10 |
 | `fix128_vs_f64_coupling_hypotheses.rs` | 10 |
 | `indep_aero_atmosphere.rs` | 10 |
 | `analytic_adaptive_dt.rs` | 9 |
@@ -440,7 +442,6 @@ Per-file counts (the test names are in `tests/`):
 | `audit_heatmap.rs` | 9 |
 | `audit_non_newtonian.rs` | 9 |
 | `audit_prestressed.rs` | 9 |
-| `determinism_golden.rs` | 9 |
 | `indep_crowd_social_force.rs` | 9 |
 | `law_g2_tie_classes.rs` | 9 |
 | `vehicle_dynamics_degenerate.rs` | 9 |
@@ -599,6 +600,7 @@ Per-file counts (the test names are in `tests/`):
 | `wm01_flag_survives_rollback.rs` | 3 |
 | `wm08_prev_state_coverage.rs` | 3 |
 | `wm08_state_coverage.rs` | 3 |
+| `world_snapshot_xv_88cf6f85.rs` | 3 |
 | `analytic_bvh_quantise_range.rs` | 2 |
 | `analytic_cast_large_direction.rs` | 2 |
 | `analytic_cfd_fractional_step_time_order.rs` | 2 |

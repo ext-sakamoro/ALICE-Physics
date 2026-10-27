@@ -552,8 +552,10 @@ fn three_body_digest(backend: SolverBackend) -> String {
 }
 
 // world snapshot version 5: the version field and the checksum moved, the rest of the bytes did not
-const THREE_BODY_XPBD: &str = "9ed60352a5b5acab163cf9a12db1f51297d848b8a8d497e1791871c6d22bc425";
-const THREE_BODY_TGS: &str = "8adde48dd1f6e7c4469b9df1786b211bd045641aa4890f07e681505c9dbe088f";
+// re-pinned when the secondary chain was pinned: the header's semantics identifier (88cf6f85… ->
+// 31eb4ab8…), its law_id and the checksum moved; the state did not (tests/world_snapshot_xv_88cf6f85.rs)
+const THREE_BODY_XPBD: &str = "d75cb7538d2202cd0cf69d63a8eeb662cc2f614c8b913bc764a92559805dae07";
+const THREE_BODY_TGS: &str = "7f8e8db9ea97fb2144c2944025dc5cd94007fc47f93b3ced427ec4f971107bf0";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on
