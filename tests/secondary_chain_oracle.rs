@@ -1319,3 +1319,102 @@ fn the_masks_use_the_capsules_own_radius_and_refuse_more_than_64() {
     assert!(SecondaryChain::attached_inside(&[probe], &[pose], a, &many).is_err());
     assert!(SecondaryChain::attached_inside(&[probe], &[pose], a, &many[..64]).is_ok());
 }
+
+// --- fit to rest: the authored rest is collision free -------------------------------------------
+// oracle: after `fit_to_rest`, a particle's radius against each collider is at most its rest
+// clearance (distance from its rest place to the capsule's surface), and a particle whose centre
+// the rest puts inside a capsule is masked from it; a chain at its rest then stays there bit for bit
+// with the colliders present, and a collider still acts on what comes closer than the rest did
+
+#[test]
+fn a_particle_within_reach_at_rest_keeps_its_rest_after_fitting() {
+    // the particle 0.035 from a capsule axis of radius 0.03 (clearance 0.005), its radius 0.01:
+    // unfitted, the capsule acts at rest; fitted, the chain moves bit for bit as a free chain
+    let a = anchor();
+    let pose = [a + v(0.1, 0.0, 0.0)];
+    let cap = Capsule::new(a + v(0.1, 0.035, -1.0), a + v(0.1, 0.035, 1.0), f(0.03));
+    let mut c = one(held_params(), pose[0], 0.1);
+    c.fit_to_rest(a, &[cap]).unwrap();
+    assert_eq!(c.particles()[0].params.attached_inside, 0);
+    let mut free = one(held_params(), pose[0], 0.1);
+    let mut unfitted = one(held_params(), pose[0], 0.1);
+    for _ in 0..30 {
+        step_with(&mut c, a, &pose, &[cap]);
+        step_with(&mut free, a, &pose, &[]);
+        step_with(&mut unfitted, a, &pose, &[cap]);
+        assert_eq!(c.particles()[0].p, free.particles()[0].p);
+    }
+    assert_ne!(
+        unfitted.particles()[0].p,
+        free.particles()[0].p,
+        "the scene does not make the capsule act unfitted"
+    );
+}
+
+#[test]
+fn a_fitted_collider_still_acts_on_what_comes_closer_than_the_rest_did() {
+    // fitted at rest with clearance 0.005 to the capsule's surface; in the posed frame the capsule
+    // has moved 0.004 toward the particle (the gap would be 0.001): the particle is moved back to the
+    // fitted reach, 0.03 + 0.005 from the axis (then back onto its circle, within the single
+    // pass's bound)
+    let a = anchor();
+    let pose = [a + v(0.1, 0.0, 0.0)];
+    let cap = Capsule::new(a + v(0.1, 0.035, -1.0), a + v(0.1, 0.035, 1.0), f(0.03));
+    let mut c = one(held_params(), pose[0], 0.1);
+    c.fit_to_rest(a, &[cap]).unwrap();
+    let near = Capsule::new(a + v(0.1, 0.031, -1.0), a + v(0.1, 0.031, 1.0), f(0.03));
+    step_with(&mut c, a, &pose, &[near]);
+    let q = to3(c.particles()[0].p);
+    let d = ((q[0] - 0.1).powi(2) + (q[1] - 1.031).powi(2)).sqrt();
+    assert!(
+        d > 0.035 - 1e-4,
+        "the capsule did not keep the fitted reach: {d}"
+    );
+    assert!(
+        d < 0.035 + 1e-3,
+        "the capsule used the unfitted radius: {d}"
+    );
+}
+
+#[test]
+fn a_particle_whose_centre_is_inside_a_capsule_at_rest_is_masked_from_it() {
+    // the particle's rest place inside the capsule (0.02 from an axis of radius 0.03), its parent
+    // end (the anchor) outside: the fit masks that capsule
+    let a = anchor();
+    let pose = a + v(0.1, 0.0, 0.0);
+    let cap = Capsule::new(a + v(0.1, 0.02, -1.0), a + v(0.1, 0.02, 1.0), f(0.03));
+    let far = Capsule::new(a + v(0.5, 0.5, -1.0), a + v(0.5, 0.5, 1.0), f(0.03));
+    let mut c = one(held_params(), pose, 0.1);
+    c.fit_to_rest(a, &[far, cap]).unwrap();
+    assert_eq!(c.particles()[0].params.attached_inside, 0b10);
+}
+
+#[test]
+fn a_far_collider_leaves_the_radius_and_the_mask_alone() {
+    // nothing near at rest: the fitted chain acts like the unfitted one against a capsule that
+    // comes close later
+    let a = anchor();
+    let pose = [a + v(0.1, 0.0, 0.0)];
+    let far = Capsule::new(a + v(0.5, 0.5, -1.0), a + v(0.5, 0.5, 1.0), f(0.03));
+    let mut fitted = one(held_params(), pose[0], 0.1);
+    fitted.fit_to_rest(a, &[far]).unwrap();
+    assert_eq!(fitted.particles()[0].params.attached_inside, 0);
+    let mut plain = one(held_params(), pose[0], 0.1);
+    let near = Capsule::new(a + v(0.1, 0.035, -1.0), a + v(0.1, 0.035, 1.0), f(0.03));
+    step_with(&mut fitted, a, &pose, &[near]);
+    step_with(&mut plain, a, &pose, &[near]);
+    assert_eq!(fitted.particles()[0].p, plain.particles()[0].p);
+}
+
+#[test]
+fn fitting_keeps_the_parent_end_rule_and_refuses_more_than_64() {
+    // the anchor inside the capsule: masked as by `attached_inside`
+    let a = anchor();
+    let pose = a + v(0.1, 0.0, 0.0);
+    let cap = Capsule::new(a + v(0.0, 0.0, -1.0), a + v(0.0, 0.0, 1.0), f(0.05));
+    let mut c = one(held_params(), pose, 0.1);
+    c.fit_to_rest(a, &[cap]).unwrap();
+    assert_eq!(c.particles()[0].params.attached_inside, 1);
+    let mut d = one(held_params(), pose, 0.1);
+    assert!(d.fit_to_rest(a, &vec![cap; 65]).is_err());
+}
