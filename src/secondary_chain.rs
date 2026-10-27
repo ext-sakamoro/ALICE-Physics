@@ -34,10 +34,11 @@ pub enum ChainLimit {
         /// The cone's half angle (0..=π)
         max: Fix128,
     },
-    /// In the plane through the rest direction perpendicular to `axis` (in the parent link's
-    /// frame, turned like the rest direction), within `max` of the rest direction
+    /// In the plane through the rest direction perpendicular to `axis`, within `max` of the rest
+    /// direction
     Hinge {
-        /// The hinge axis, at the pose
+        /// The hinge axis in the bone's own frame (turned each step by the bone's animated frame
+        /// and the parent link's turn from its pose)
         axis: Vec3Fix,
         /// The largest swing in the plane (0..=π)
         max: Fix128,
@@ -45,7 +46,7 @@ pub enum ChainLimit {
     /// Within an ellipse of angles: `(a_x / max_x)² + (a_z / max_z)² <= 1`, `a_x` and `a_z`
     /// the angles from the rest direction toward `x_axis` and toward `rest × x_axis`
     Polar {
-        /// The reference axis for `max_x`, at the pose
+        /// The reference axis for `max_x` in the bone's own frame (turned like the hinge axis)
         x_axis: Vec3Fix,
         /// The largest angle toward `x_axis` (> 0)
         max_x: Fix128,
@@ -98,6 +99,24 @@ pub struct ChainConfig {
     pub gravity: Vec3Fix,
     /// Constraint passes per step (>= 1)
     pub iterations: u32,
+}
+
+/// What one step reads: the anchor, the animated pose and the colliders now
+#[derive(Clone, Copy, Debug)]
+pub struct ChainInput<'a> {
+    /// Where each root particle's anchor point is now
+    pub anchor: Vec3Fix,
+    /// The animated anchor point (for the pose link of a root)
+    pub anim_anchor: Vec3Fix,
+    /// The animated position of every particle
+    pub anim: &'a [Vec3Fix],
+    /// The animated world rotation of every particle's bone (the frame its limit axes are given
+    /// in)
+    pub anim_frames: &'a [QuatFix],
+    /// The anchor's translation since the last step
+    pub anchor_delta: Vec3Fix,
+    /// The capsules now
+    pub colliders: &'a [Capsule],
 }
 
 /// What the chain refuses
@@ -196,29 +215,30 @@ impl SecondaryChain {
         &self.particles
     }
 
-    /// One step of `dt`: `anchor` is where each root particle's anchor point is now, `anim` the
-    /// animated position of every particle, `anim_anchor` the animated anchor point of each root
-    /// (for the pose link of a root), `anchor_delta` the anchor's translation since the last step,
-    /// `colliders` the capsules now
+    /// One step of `dt` under `input` (the anchor, the animated pose and the colliders now)
     ///
     /// # Errors
     ///
-    /// [`ChainError::BadInput`] when `anim` is not one position per particle
+    /// [`ChainError::BadInput`] when `input.anim` is not one position per particle or
+    /// `input.anim_frames` not one rotation per particle
     #[allow(
         clippy::too_many_lines,
         reason = "the five stages and the constraints, in order"
     )]
-    pub fn step(
-        &mut self,
-        dt: Fix128,
-        anchor: Vec3Fix,
-        anim_anchor: Vec3Fix,
-        anim: &[Vec3Fix],
-        anchor_delta: Vec3Fix,
-        colliders: &[Capsule],
-    ) -> Result<(), ChainError> {
+    pub fn step(&mut self, dt: Fix128, input: &ChainInput<'_>) -> Result<(), ChainError> {
+        let ChainInput {
+            anchor,
+            anim_anchor,
+            anim,
+            anim_frames,
+            anchor_delta,
+            colliders,
+        } = *input;
         if anim.len() != self.particles.len() {
             return Err(ChainError::BadInput("anim"));
+        }
+        if anim_frames.len() != self.particles.len() {
+            return Err(ChainError::BadInput("anim_frames"));
         }
         let g = self.config.gravity;
         let g_dir = g.try_normalize().unwrap_or(Vec3Fix::ZERO);
@@ -288,7 +308,7 @@ impl SecondaryChain {
             // 5. constraints: rest length > limit > colliders, then the rest length again
             for _ in 0..self.config.iterations {
                 self.keep_length(i, sim_parent);
-                self.keep_limit(i, sim_parent, rest_dir);
+                self.keep_limit(i, sim_parent, rest_dir, turn.mul(anim_frames[i]));
                 self.keep_out(i, colliders);
             }
             self.keep_length(i, sim_parent);
@@ -306,7 +326,9 @@ impl SecondaryChain {
         self.particles[i].p = parent + dir * pt.rest_length;
     }
 
-    fn keep_limit(&mut self, i: usize, parent: Vec3Fix, rest_dir: Vec3Fix) {
+    /// `frame` turns the limit's axes from the bone's frame to the world: the bone's animated frame,
+    /// then the parent link's turn from its pose
+    fn keep_limit(&mut self, i: usize, parent: Vec3Fix, rest_dir: Vec3Fix, frame: QuatFix) {
         let pt = self.particles[i];
         let Some(r) = rest_dir.try_normalize() else {
             return;
@@ -324,7 +346,7 @@ impl SecondaryChain {
                 turn_toward(r, dir, max)
             }
             ChainLimit::Hinge { axis, max } => {
-                let Some(ax) = axis.try_normalize() else {
+                let Some(ax) = frame.rotate_vec(axis).try_normalize() else {
                     return;
                 };
                 // in the plane perpendicular to the axis
@@ -347,6 +369,7 @@ impl SecondaryChain {
                 max_x,
                 max_z,
             } => {
+                let x_axis = frame.rotate_vec(x_axis);
                 let xa = (x_axis - r * x_axis.dot(r)).try_normalize();
                 let Some(xa) = xa else { return };
                 let za = r.cross(xa);
