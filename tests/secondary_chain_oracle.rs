@@ -1418,3 +1418,126 @@ fn fitting_keeps_the_parent_end_rule_and_refuses_more_than_64() {
     let mut d = one(held_params(), pose, 0.1);
     assert!(d.fit_to_rest(a, &vec![cap; 65]).is_err());
 }
+
+/// A step input for `three`: the chain's own pose, unmoved, with these colliders
+fn still<'a>(
+    pose: &'a [Vec3Fix],
+    frames: &'a [QuatFix],
+    colliders: &'a [Capsule],
+) -> ChainInput<'a> {
+    ChainInput {
+        anchor: anchor(),
+        anim_anchor: anchor(),
+        anim: pose,
+        anim_frames: frames,
+        anchor_delta: Vec3Fix::ZERO,
+        colliders,
+    }
+}
+
+/// A capsule far from the chain (it touches nothing)
+fn far() -> Capsule {
+    Capsule {
+        a: v(5.0, 0.0, 0.0),
+        b: v(5.0, 1.0, 0.0),
+        radius: f(0.01),
+    }
+}
+
+// oracle: a mask holds 64 colliders, so 0 and 64 are taken and 65 is refused by every entry
+// point that reads the list (the masks index it); after a fit the step takes exactly the fitted
+// count; the rest of `attached_inside` is one position per particle
+#[test]
+fn the_collider_list_is_at_most_64_and_after_a_fit_the_fitted_count() {
+    let (c0, pose) = three(params());
+    let frames = idf(&pose);
+    for n in [0usize, 64, 65] {
+        let caps = vec![far(); n];
+        let mut c = c0.clone();
+        let stepped = c.step(f(1.0 / 60.0), &still(&pose, &frames, &caps));
+        let masks = SecondaryChain::attached_inside(c0.particles(), &pose, anchor(), &caps);
+        let mut fitted = c0.clone();
+        let fit = fitted.fit_to_rest(anchor(), &caps);
+        if n <= 64 {
+            assert!(stepped.is_ok(), "{n}: {stepped:?}");
+            assert_eq!(masks.unwrap(), vec![0u64; 3], "{n}");
+            assert!(fit.is_ok(), "{n}: {fit:?}");
+        } else {
+            assert_eq!(stepped.unwrap_err(), ChainError::TooManyColliders(n));
+            assert_eq!(masks.unwrap_err(), ChainError::TooManyColliders(n));
+            assert_eq!(fit.unwrap_err(), ChainError::TooManyColliders(n));
+        }
+    }
+    // fitted to 2: 2 is taken, 1 and 3 are refused, and a refused step leaves the chain as it was
+    let mut c = c0.clone();
+    c.fit_to_rest(anchor(), &[far(), far()]).unwrap();
+    for n in [1usize, 3] {
+        let before = c.clone();
+        assert_eq!(
+            c.step(f(1.0 / 60.0), &still(&pose, &frames, &vec![far(); n]))
+                .unwrap_err(),
+            ChainError::BadInput("colliders")
+        );
+        assert_eq!(c, before);
+    }
+    assert!(c
+        .step(f(1.0 / 60.0), &still(&pose, &frames, &[far(), far()]))
+        .is_ok());
+    // the rest of `attached_inside`: one position per particle
+    for rest in [&pose[..2], &[pose[0], pose[1], pose[2], pose[2]][..]] {
+        assert_eq!(
+            SecondaryChain::attached_inside(c0.particles(), rest, anchor(), &[far()]).unwrap_err(),
+            ChainError::BadInput("rest")
+        );
+    }
+}
+
+// oracle: a zero hinge or polar axis names no plane; the chain does not panic, stays finite and
+// keeps its rest lengths (the limit is then no constraint it can apply)
+#[test]
+fn a_zero_limit_axis_does_not_panic_and_keeps_the_rest_lengths() {
+    for limit in [
+        ChainLimit::Hinge {
+            axis: Vec3Fix::ZERO,
+            max: f(0.3),
+        },
+        ChainLimit::Polar {
+            x_axis: Vec3Fix::ZERO,
+            max_x: f(0.3),
+            max_z: f(0.2),
+        },
+    ] {
+        let mut p = params();
+        p.gravity = f(0.7);
+        p.limit = limit;
+        let (mut c, _) = three(p);
+        for k in 0..120 {
+            let (a, pose) = whip(k);
+            c.step(
+                f(1.0 / 60.0),
+                &ChainInput {
+                    anchor: a,
+                    anim_anchor: a,
+                    anim: &pose,
+                    anim_frames: &idf(&pose),
+                    anchor_delta: Vec3Fix::ZERO,
+                    colliders: &[],
+                },
+            )
+            .unwrap();
+            let (a, _) = whip(k);
+            for (i, pt) in c.particles().iter().enumerate() {
+                let parent = pt.parent.map_or(a, |j| c.particles()[j].p);
+                let len = (pt.p - parent).length().to_f64();
+                assert!(
+                    len.is_finite(),
+                    "{limit:?} step {k}: particle {i} not finite"
+                );
+                assert!(
+                    (len - 0.1).abs() < 1e-9,
+                    "{limit:?} step {k}: particle {i} length {len}"
+                );
+            }
+        }
+    }
+}

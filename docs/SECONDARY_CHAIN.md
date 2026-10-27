@@ -133,6 +133,13 @@ bit for bit.
   A chain at its rest then stays there with its colliders present, and a collider still acts on
   anything that comes closer than the rest did. Like the masks, the caps are configuration
   derived from the rest; a changed rest needs the fit again.
+- **The collider list.** The masks index the step's collider list, so it holds at most 64 capsules:
+  `attached_inside`, `fit_to_rest` and `step` all refuse more (`ChainError::TooManyColliders`).
+  After a fit every step must pass as many colliders as the fit had (`ChainError::BadInput
+  ("colliders")` otherwise); their order is the caller's to keep, the chain cannot check it.
+  `attached_inside` takes one rest position per particle (`ChainError::BadInput("rest")`).
+- **State.** The fitted caps live in the chain value only. A chain is not part of a world snapshot
+  or of a world digest; a chain built again, or read back from elsewhere, is fitted again.
 - **Order and passes.** Length, limit and colliders run `iterations` times, then the length runs once
   more, so the bone length holds exactly after every step. That last pass can pull a pushed-out
   particle slightly back into a collider: the depth goes as `push² / (2 · rest_length)` and shrinks
@@ -158,6 +165,9 @@ It covers:
 - the hinge and polar axes under a turned character, under a twist about the bone, below a moved
   parent, and with both turns at once (which also fixes their order)
 - the collider depth bound above
+- the collider list: 0 and 64 taken, 65 refused by every entry point, a step after a fit refused
+  with another count (and left unchanged), a rest of the wrong length refused
+- a zero hinge or polar axis: no panic, finite, rest lengths kept
 - the masks: which colliders hold each link's parent end at rest; a masked capsule leaves the link
   bit for bit as a chain with no capsule; an unmasked one acts; masked at rest stays masked in a
   posed frame; unmasked still acts when it rises around the root; the capsule's own radius

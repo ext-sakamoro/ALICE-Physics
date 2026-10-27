@@ -122,10 +122,6 @@ pub struct ChainInput<'a> {
     pub colliders: &'a [Capsule],
 }
 
-/// More colliders than a mask holds (64)
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TooManyColliders(pub usize);
-
 /// What the chain refuses
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ChainError {
@@ -137,6 +133,8 @@ pub enum ChainError {
     BadParam(usize, &'static str),
     /// No constraint pass
     NoIterations,
+    /// More colliders than a mask holds (64)
+    TooManyColliders(usize),
 }
 
 impl core::fmt::Display for ChainError {
@@ -146,6 +144,7 @@ impl core::fmt::Display for ChainError {
             Self::BadInput(w) => write!(f, "input of the wrong length: {w}"),
             Self::BadParam(i, w) => write!(f, "particle {i}: {w} out of range"),
             Self::NoIterations => write!(f, "no constraint pass"),
+            Self::TooManyColliders(n) => write!(f, "{n} colliders, a mask holds 64"),
         }
     }
 }
@@ -157,6 +156,8 @@ pub struct SecondaryChain {
     config: ChainConfig,
     /// per particle, per collider: the radius at most (the rest clearance), after `fit_to_rest`
     radius_caps: Vec<Vec<Fix128>>,
+    /// the number of colliders `fit_to_rest` fitted to, which every later step must pass
+    fitted: Option<usize>,
 }
 
 fn unit01(x: Fix128) -> bool {
@@ -219,6 +220,7 @@ impl SecondaryChain {
             particles,
             config,
             radius_caps: Vec::new(),
+            fitted: None,
         })
     }
 
@@ -230,15 +232,19 @@ impl SecondaryChain {
     ///
     /// # Errors
     ///
-    /// [`TooManyColliders`] for more than 64 colliders
+    /// [`ChainError::TooManyColliders`] for more than 64 colliders, [`ChainError::BadInput`]
+    /// when `rest` is not one position per particle
     pub fn attached_inside(
         particles: &[ChainParticle],
         rest: &[Vec3Fix],
         rest_anchor: Vec3Fix,
         colliders: &[Capsule],
-    ) -> Result<Vec<u64>, TooManyColliders> {
+    ) -> Result<Vec<u64>, ChainError> {
         if colliders.len() > 64 {
-            return Err(TooManyColliders(colliders.len()));
+            return Err(ChainError::TooManyColliders(colliders.len()));
+        }
+        if rest.len() != particles.len() {
+            return Err(ChainError::BadInput("rest"));
         }
         Ok(particles
             .iter()
@@ -265,16 +271,20 @@ impl SecondaryChain {
     /// collision free. Each particle's mask gets the colliders that hold its parent end (as
     /// [`SecondaryChain::attached_inside`]) or its own centre; against every other collider its
     /// radius is at most its rest clearance (its rest distance to the capsule's surface). The
-    /// colliders are the step's list in the same order; a changed rest needs the fit again
+    /// colliders are the step's list in the same order: every later step must pass as many
+    /// colliders (it refuses another count; the order it cannot check), and a changed rest needs
+    /// the fit again. The fitted caps are state of this value only: the chain is not part of a
+    /// world snapshot or of a digest, so a chain built again (or read back from elsewhere) is
+    /// fitted again
     ///
     /// # Errors
     ///
-    /// [`TooManyColliders`] for more than 64 colliders
+    /// [`ChainError::TooManyColliders`] for more than 64 colliders
     pub fn fit_to_rest(
         &mut self,
         rest_anchor: Vec3Fix,
         rest_colliders: &[Capsule],
-    ) -> Result<(), TooManyColliders> {
+    ) -> Result<(), ChainError> {
         let rest: Vec<Vec3Fix> = self.particles.iter().map(|p| p.p).collect();
         let masks = Self::attached_inside(&self.particles, &rest, rest_anchor, rest_colliders)?;
         self.radius_caps = Vec::with_capacity(self.particles.len());
@@ -295,6 +305,7 @@ impl SecondaryChain {
             pt.params.attached_inside = mask;
             self.radius_caps.extend([caps]);
         }
+        self.fitted = Some(rest_colliders.len());
         Ok(())
     }
 
@@ -308,8 +319,10 @@ impl SecondaryChain {
     ///
     /// # Errors
     ///
-    /// [`ChainError::BadInput`] when `input.anim` is not one position per particle or
-    /// `input.anim_frames` not one rotation per particle
+    /// [`ChainError::BadInput`] when `input.anim` is not one position per particle,
+    /// `input.anim_frames` not one rotation per particle, or (after [`SecondaryChain::fit_to_rest`])
+    /// `input.colliders` not as many as the fit's; [`ChainError::TooManyColliders`] for more than
+    /// 64 colliders (a mask holds 64)
     #[allow(
         clippy::too_many_lines,
         reason = "the five stages and the constraints, in order"
@@ -328,6 +341,12 @@ impl SecondaryChain {
         }
         if anim_frames.len() != self.particles.len() {
             return Err(ChainError::BadInput("anim_frames"));
+        }
+        if colliders.len() > 64 {
+            return Err(ChainError::TooManyColliders(colliders.len()));
+        }
+        if self.fitted.is_some_and(|n| n != colliders.len()) {
+            return Err(ChainError::BadInput("colliders"));
         }
         let g = self.config.gravity;
         let g_dir = g.try_normalize().unwrap_or(Vec3Fix::ZERO);
@@ -484,7 +503,8 @@ impl SecondaryChain {
     fn keep_out(&mut self, i: usize, colliders: &[Capsule]) {
         let mask = self.particles[i].params.attached_inside;
         for (k, cap) in colliders.iter().enumerate() {
-            if k < 64 && mask & (1u64 << k) != 0 {
+            // at most 64 colliders: `step` refuses more
+            if mask & (1u64 << k) != 0 {
                 continue;
             }
             // at most the rest clearance against this collider (after `fit_to_rest`)
