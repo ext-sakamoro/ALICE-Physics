@@ -1138,3 +1138,163 @@ fn the_parents_turn_is_taken_after_the_bones_own_frame() {
     let want = hinge_expect(0.1, d, axis);
     assert!(close(got, want, 1e-12), "{got:?} vs {want:?}");
 }
+
+// --- start-inside: a link attached inside a collider is not pushed by it ----------------------
+// oracle: a capsule that holds the link's animated parent end cannot constrain that link (the bone
+// is attached inside the body); a capsule that does not hold it pushes the particle out as before
+
+#[test]
+fn a_link_whose_parent_end_is_inside_a_capsule_is_not_pushed_by_it() {
+    // a horizontal bone (+x) held at its pose by pull; a capsule along z through the anchor holds
+    // both the anchor and the particle: the particle stays at its pose exactly
+    let mut p = params();
+    p.pull = f(0.5);
+    p.momentum = Fix128::ZERO;
+    p.radius = f(0.01);
+    let a = anchor();
+    let pose = [a + v(0.1, 0.0, 0.0)];
+    let cap = Capsule::new(a + v(0.0, 0.0, -1.0), a + v(0.0, 0.0, 1.0), f(0.15));
+    // against the same chain with no capsule at all, bit for bit, while the particle stays
+    // within the capsule's reach (so the capsule had a particle to act on)
+    let mut c = one(p, pose[0], 0.1);
+    let mut free = one(p, pose[0], 0.1);
+    for _ in 0..30 {
+        for (ch, caps) in [(&mut c, &[cap][..]), (&mut free, &[][..])] {
+            ch.step(
+                f(1.0 / 60.0),
+                &ChainInput {
+                    anchor: a,
+                    anim_anchor: a,
+                    anim: &pose,
+                    anim_frames: &idf(&pose),
+                    anchor_delta: Vec3Fix::ZERO,
+                    colliders: caps,
+                },
+            )
+            .unwrap();
+        }
+        assert_eq!(c.particles()[0].p, free.particles()[0].p);
+        let q = to3(c.particles()[0].p);
+        assert!(
+            (q[0].powi(2) + (q[1] - 1.0).powi(2)).sqrt() < 0.15 + 0.01,
+            "{q:?} left the capsule's reach"
+        );
+    }
+}
+
+#[test]
+fn a_capsule_that_does_not_hold_the_parent_end_still_pushes() {
+    // the same bone, the capsule moved so that it holds the particle's place but not the anchor:
+    // the particle is pushed to the capsule's surface (then back onto its circle), so it ends
+    // outside the capsule's reach less the bound of the single pass
+    let mut p = params();
+    p.pull = f(0.5);
+    p.momentum = Fix128::ZERO;
+    p.radius = f(0.01);
+    let a = anchor();
+    let pose = [a + v(0.1, 0.0, 0.0)];
+    // the axis 1 cm above the particle's place (on the axis the push has no direction)
+    let cap = Capsule::new(a + v(0.1, 0.01, -1.0), a + v(0.1, 0.01, 1.0), f(0.03));
+    let mut c = one(p, pose[0], 0.1);
+    for _ in 0..30 {
+        c.step(
+            f(1.0 / 60.0),
+            &ChainInput {
+                anchor: a,
+                anim_anchor: a,
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: &[cap],
+            },
+        )
+        .unwrap();
+    }
+    let q = to3(c.particles()[0].p);
+    let d = ((q[0] - 0.1).powi(2) + (q[1] - 1.01).powi(2)).sqrt();
+    assert!(d > 0.035, "the particle stayed in the capsule: {d}");
+}
+
+#[test]
+fn start_inside_is_judged_at_the_animated_parent_end() {
+    // the anchor's animated place (0, 1) is inside a capsule along z of radius 0.25, its simulated
+    // place (0, 1.3) is not. The particle starts below the simulated anchor, (0, 1.2), and pull 0.5
+    // aims it at (0.1, 1.3): one step gives x = (0.05, 1.25), on its circle (0.0707…, 1.2292…),
+    // which is 0.24 from the capsule's axis, inside its reach 0.26. The rule follows the animated
+    // place, so the capsule leaves the particle alone: it is exactly there (f64 from the
+    // definitions)
+    let mut p = params();
+    p.pull = f(0.5);
+    p.momentum = Fix128::ZERO;
+    p.radius = f(0.01);
+    let anim_a = anchor();
+    let sim_a = anim_a + v(0.0, 0.3, 0.0);
+    let pose = [anim_a + v(0.1, 0.0, 0.0)];
+    let cap = Capsule::new(
+        anim_a + v(0.0, 0.0, -1.0),
+        anim_a + v(0.0, 0.0, 1.0),
+        f(0.25),
+    );
+    let start = sim_a + v(0.0, -0.1, 0.0);
+    let mut c = one(p, start, 0.1);
+    c.step(
+        f(1.0 / 60.0),
+        &ChainInput {
+            anchor: sim_a,
+            anim_anchor: anim_a,
+            anim: &pose,
+            anim_frames: &idf(&pose),
+            anchor_delta: Vec3Fix::ZERO,
+            colliders: &[cap],
+        },
+    )
+    .unwrap();
+    let x = [0.05f64, 1.25];
+    let d = [x[0], x[1] - 1.3];
+    let n = (d[0] * d[0] + d[1] * d[1]).sqrt();
+    let want = [d[0] / n * 0.1, 1.3 + d[1] / n * 0.1];
+    let q = to3(c.particles()[0].p);
+    assert!(
+        (want[0].powi(2) + (want[1] - 1.0).powi(2)).sqrt() < 0.26,
+        "the scene does not reach the capsule"
+    );
+    assert!(
+        (q[0] - want[0]).abs() < 1e-12 && (q[1] - want[1]).abs() < 1e-12,
+        "{q:?} vs {want:?}"
+    );
+}
+
+#[test]
+fn start_inside_uses_the_capsules_own_radius_not_the_particles() {
+    // the anchor 0.0354 from a capsule of radius 0.03 (outside the body, but within the body plus
+    // the particle's radius 0.01): the capsule does not hold the bone's attachment, so it acts on
+    // the particle sitting near its axis (the particle ends away from where a free chain would be)
+    let mut p = params();
+    p.pull = f(0.5);
+    p.momentum = Fix128::ZERO;
+    p.radius = f(0.01);
+    let a = anchor();
+    let pose = [a + v(0.1, 0.0, 0.0)];
+    let cap = Capsule::new(a + v(0.035, 0.005, 0.0), a + v(0.2, 0.005, 0.0), f(0.03));
+    let mut c = one(p, pose[0], 0.1);
+    let mut free = one(p, pose[0], 0.1);
+    for (ch, caps) in [(&mut c, &[cap][..]), (&mut free, &[][..])] {
+        ch.step(
+            f(1.0 / 60.0),
+            &ChainInput {
+                anchor: a,
+                anim_anchor: a,
+                anim: &pose,
+                anim_frames: &idf(&pose),
+                anchor_delta: Vec3Fix::ZERO,
+                colliders: caps,
+            },
+        )
+        .unwrap();
+    }
+    let (q, r) = (to3(c.particles()[0].p), to3(free.particles()[0].p));
+    assert!(
+        (q[1] - r[1]).abs() > 1e-3,
+        "the capsule did not act: {q:?} vs {r:?}"
+    );
+}
