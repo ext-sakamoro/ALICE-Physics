@@ -4,7 +4,9 @@
 //!   are pinned bit for bit to those of the implementation before the
 //!   short-distance precision changes: those apply below `|v| = 2⁻¹⁶`, to GJK
 //!   simplices with edges below `2⁻⁸` and to the support directions of rounded
-//!   solids, none of which these casts reach.
+//!   solids, none of which these casts reach. The mesh's ray / triangle test
+//!   later became exact (its t floored to 2^-64), which moved the mesh row's
+//!   bits but not its hits; that row is re-recorded on the exact test.
 //! - Against curved solids the results changed at every radius: small GJK
 //!   simplices (which a curved surface produces) are scaled up for their
 //!   barycentric weights, and an ellipsoid's support is given a direction
@@ -298,11 +300,15 @@ fn run(
     out
 }
 
-/// `(scene, casts, hits, digest)` recorded on the previous implementation.
+/// `(scene, casts, hits, digest)` recorded on the previous implementation. The
+/// mesh row is recorded on the exact ray / triangle test (`trimesh::ray_triangle`,
+/// t the exact crossing floored to 2^-64): the same 172 hits, the t of each
+/// one's last bits moved (the digest was 10_044_748_902_636_547_745 on the
+/// rounded test).
 const PREVIOUS: [(&str, usize, usize, u64); 4] = [
     ("box", 223, 123, 4_909_276_495_861_602_550),
     ("wedge", 217, 75, 8_396_969_157_840_317_528),
-    ("mesh", 233, 172, 10_044_748_902_636_547_745),
+    ("mesh", 233, 172, 13_342_793_484_799_962_654),
     ("plane", 231, 158, 10_948_560_710_893_612_363),
 ];
 

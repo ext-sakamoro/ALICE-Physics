@@ -673,6 +673,35 @@ impl<const N: usize> Exact<N> {
         self.sub(o).is_negative()
     }
 
+    /// self · q for self ≥ 0 and a product inside the width (two-limb schoolbook)
+    fn mul_u128(&self, q: u128) -> Self {
+        let (q0, q1) = (u128::from(q as u64), q >> 64);
+        let mut w = [0u64; N];
+        let mut carry = 0u128;
+        for (out, &limb) in w.iter_mut().zip(&self.0) {
+            let cur = u128::from(*out) + u128::from(limb) * q0 + carry;
+            *out = cur as u64;
+            carry = cur >> 64;
+        }
+        if q1 != 0 {
+            let mut carry = 0u128;
+            for i in 0..N - 1 {
+                let cur = u128::from(w[i + 1]) + u128::from(self.0[i]) * q1 + carry;
+                w[i + 1] = cur as u64;
+                carry = cur >> 64;
+            }
+        }
+        Self(w)
+    }
+
+    /// The same value in M limbs (sign-extended), M ≥ N
+    fn widen<const M: usize>(&self) -> Exact<M> {
+        let ext = if self.is_negative() { u64::MAX } else { 0 };
+        let mut w = [ext; M];
+        w[..N].copy_from_slice(&self.0);
+        Exact(w)
+    }
+
     /// floor(self / d) as [`Exact::div_floor_fix`], starting from a guess of the quotient and
     /// correcting it by comparing exact products (q · d ≤ self < (q + 1) · d); a guess more than
     /// 64 steps off falls back to the long division
@@ -717,15 +746,26 @@ struct ExactVec<const N: usize>([Exact<N>; 3]);
 
 impl<const N: usize> ExactVec<N> {
     const fn from_vec(v: Vec3Fix) -> Self {
-        Self([Exact::from_fix(v.x), Exact::from_fix(v.y), Exact::from_fix(v.z)])
+        Self([
+            Exact::from_fix(v.x),
+            Exact::from_fix(v.y),
+            Exact::from_fix(v.z),
+        ])
     }
 
     fn sub(&self, o: &Self) -> Self {
-        Self([self.0[0].sub(&o.0[0]), self.0[1].sub(&o.0[1]), self.0[2].sub(&o.0[2])])
+        Self([
+            self.0[0].sub(&o.0[0]),
+            self.0[1].sub(&o.0[1]),
+            self.0[2].sub(&o.0[2]),
+        ])
     }
 
     fn dot(&self, o: &Self) -> Exact<N> {
-        self.0[0].mul(&o.0[0]).add(&self.0[1].mul(&o.0[1])).add(&self.0[2].mul(&o.0[2]))
+        self.0[0]
+            .mul(&o.0[0])
+            .add(&self.0[1].mul(&o.0[1]))
+            .add(&self.0[2].mul(&o.0[2]))
     }
 
     fn cross(&self, o: &Self) -> Self {
@@ -903,7 +943,11 @@ enum Fast {
 
 /// Coordinates in [`FAST_RANGE`]
 fn in_fast_range(ray: &Ray, tri: &Triangle) -> bool {
-    let small = |v: Vec3Fix| [v.x, v.y, v.z].iter().all(|c| c.hi > -FAST_RANGE && c.hi < FAST_RANGE);
+    let small = |v: Vec3Fix| {
+        [v.x, v.y, v.z]
+            .iter()
+            .all(|c| c.hi > -FAST_RANGE && c.hi < FAST_RANGE)
+    };
     small(ray.origin) && small(ray.direction) && small(tri.v0) && small(tri.v1) && small(tri.v2)
 }
 
@@ -983,17 +1027,88 @@ fn fast_test(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Fast {
 /// (q ≤ max_t < 2^84 in raw steps) below 2^328, all inside 384 bits
 const HIT_LIMBS: usize = 6;
 
-/// The exact t of a hit the fast test decided: t_num · 2^64 / det floored, from the guess
+/// The exact t of a hit the fast test decided: t_num · 2^64 / det floored, from the guess. With
+/// coordinates in [`FAST_RANGE`] the raw differences fit `i128` (below 2^80), so the products are
+/// formed natively (u128 × u128 into four limbs) and only the sums and the final comparison use
+/// [`Exact`]
 fn exact_hit_t(ray: &Ray, tri: &Triangle, guess: Fix128) -> Fix128 {
-    let d = ExactVec::<HIT_LIMBS>::from_vec(ray.direction);
-    let v0 = ExactVec::<HIT_LIMBS>::from_vec(tri.v0);
-    let e1 = ExactVec::<HIT_LIMBS>::from_vec(tri.v1).sub(&v0);
-    let e2 = ExactVec::<HIT_LIMBS>::from_vec(tri.v2).sub(&v0);
-    let s = ExactVec::<HIT_LIMBS>::from_vec(ray.origin).sub(&v0);
-    let det = e1.dot(&d.cross(&e2));
-    let t_num = e2.dot(&s.cross(&e1));
-    let (det, t_num) = if det.is_negative() { (det.neg(), t_num.neg()) } else { (det, t_num) };
-    t_num.shl(64).div_floor_fix_near(&det, guess)
+    let raw = |x: Fix128| (i128::from(x.hi) << 64) | i128::from(x.lo);
+    let rv = |v: Vec3Fix| [raw(v.x), raw(v.y), raw(v.z)];
+    let sub = |a: [i128; 3], b: [i128; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let v0 = rv(tri.v0);
+    let (d, e1, e2, s) = (
+        rv(ray.direction),
+        sub(rv(tri.v1), v0),
+        sub(rv(tri.v2), v0),
+        sub(rv(ray.origin), v0),
+    );
+    let cross = |a: [i128; 3], b: [i128; 3]| {
+        [
+            mul_i128(a[1], b[2]).sub(&mul_i128(a[2], b[1])),
+            mul_i128(a[2], b[0]).sub(&mul_i128(a[0], b[2])),
+            mul_i128(a[0], b[1]).sub(&mul_i128(a[1], b[0])),
+        ]
+    };
+    let dot = |a: [i128; 3], c: [Exact<4>; 3]| {
+        mul_i128_exact(a[0], &c[0])
+            .add(&mul_i128_exact(a[1], &c[1]))
+            .add(&mul_i128_exact(a[2], &c[2]))
+    };
+    let det = dot(e1, cross(d, e2));
+    let t_num = dot(e2, cross(s, e1));
+    let (det, t_num) = if det.is_negative() {
+        (det.neg(), t_num.neg())
+    } else {
+        (det, t_num)
+    };
+    // t_num · 2^64 and det in six limbs; q · det for the candidate q ≥ 0
+    let scaled = t_num.widen::<HIT_LIMBS>().shl(64);
+    let det = det.widen::<HIT_LIMBS>();
+    let mut q = (i128::from(guess.hi) << 64) | i128::from(guess.lo);
+    for _ in 0..64 {
+        if q < 0 {
+            break;
+        }
+        let below = det.mul_u128(q as u128);
+        if scaled.lt(&below) {
+            q -= 1;
+            continue;
+        }
+        if !scaled.lt(&below.add(&det)) {
+            q += 1;
+            continue;
+        }
+        return Fix128::from_raw((q >> 64) as i64, q as u64);
+    }
+    scaled.div_floor_fix(&det)
+}
+
+/// a · b for |a|, |b| < 2^127, exact in four limbs
+fn mul_i128(a: i128, b: i128) -> Exact<4> {
+    let (x, y) = (a.unsigned_abs(), b.unsigned_abs());
+    let (x0, x1, y0, y1) = (x as u64 as u128, x >> 64, y as u64 as u128, y >> 64);
+    let (ll, lh, hl, hh) = (x0 * y0, x0 * y1, x1 * y0, x1 * y1);
+    let mid = (ll >> 64) + (lh as u64 as u128) + (hl as u64 as u128);
+    let w0 = ll as u64;
+    let w1 = mid as u64;
+    let top = hh + (lh >> 64) + (hl >> 64) + (mid >> 64);
+    let p = Exact([w0, w1, top as u64, (top >> 64) as u64]);
+    if (a < 0) != (b < 0) {
+        p.neg()
+    } else {
+        p
+    }
+}
+
+/// a · c for |a| < 2^127 and |a · c| < 2^255, exact in four limbs
+fn mul_i128_exact(a: i128, c: &Exact<4>) -> Exact<4> {
+    let neg = (a < 0) != c.is_negative();
+    let m = c.abs().mul_u128(a.unsigned_abs());
+    if neg {
+        m.neg()
+    } else {
+        m
+    }
 }
 
 /// The hit at t: the point `ray.at(t)` and the triangle's unit normal turned to face the ray
@@ -1031,23 +1146,45 @@ fn rounded_t(ray: &Ray, tri: &Triangle) -> Option<Fix128> {
 
 /// The exact ray / triangle test ([`ray_triangle`] without the fast filter)
 fn ray_triangle_exact(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
-    let d = ExactVec::<EXACT_LIMBS>::from_vec(ray.direction);
-    let v0 = ExactVec::<EXACT_LIMBS>::from_vec(tri.v0);
-    let e1 = ExactVec::<EXACT_LIMBS>::from_vec(tri.v1).sub(&v0);
-    let e2 = ExactVec::<EXACT_LIMBS>::from_vec(tri.v2).sub(&v0);
+    if in_fast_range(ray, tri) {
+        ray_triangle_exact_in::<FAST_EXACT_LIMBS>(ray, tri, max_t)
+    } else {
+        ray_triangle_exact_in::<EXACT_LIMBS>(ray, tri, max_t)
+    }
+}
+
+/// Limbs of the exact test for coordinates in [`FAST_RANGE`]: det is below 2^243 there, so its
+/// widest value det² · 2^96 is below 2^582, and |e1 × e2|² · |d|² below 2^484, inside 640 bits
+const FAST_EXACT_LIMBS: usize = 10;
+
+/// The exact test in `64 · N` bits (N large enough for the coordinates' magnitude)
+fn ray_triangle_exact_in<const N: usize>(
+    ray: &Ray,
+    tri: &Triangle,
+    max_t: Fix128,
+) -> Option<RayHit> {
+    let d = ExactVec::<N>::from_vec(ray.direction);
+    let v0 = ExactVec::<N>::from_vec(tri.v0);
+    let e1 = ExactVec::<N>::from_vec(tri.v1).sub(&v0);
+    let e2 = ExactVec::<N>::from_vec(tri.v2).sub(&v0);
     let h = d.cross(&e2);
     let det = e1.dot(&h);
     // parallel: det² · 2^96 < |e1 × e2|² · |d|² (0 included)
     let n = e1.cross(&e2);
-    if det.mul(&det).shl(2 * MT_PARALLEL_LOG2).lt(&n.dot(&n).mul(&d.dot(&d))) || det.is_zero() {
+    if det
+        .mul(&det)
+        .shl(2 * MT_PARALLEL_LOG2)
+        .lt(&n.dot(&n).mul(&d.dot(&d)))
+        || det.is_zero()
+    {
         return None;
     }
 
     // the barycentric and distance numerators against det, its sign folded in
     let flip = det.is_negative();
-    let signed = |x: Exact<EXACT_LIMBS>| if flip { x.neg() } else { x };
+    let signed = |x: Exact<N>| if flip { x.neg() } else { x };
     let det = det.abs();
-    let s = ExactVec::<EXACT_LIMBS>::from_vec(ray.origin).sub(&v0);
+    let s = ExactVec::<N>::from_vec(ray.origin).sub(&v0);
     let u = signed(s.dot(&h));
     if u.is_negative() || det.lt(&u) {
         return None;
@@ -1060,7 +1197,7 @@ fn ray_triangle_exact(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit
     let t_num = signed(e2.dot(&q));
     // 0 <= t = t_num / det <= max_t, with t's raw integer t_num · 2^64 / det
     let scaled = t_num.shl(64);
-    if t_num.is_negative() || Exact::<EXACT_LIMBS>::from_fix(max_t).mul(&det).lt(&scaled) {
+    if t_num.is_negative() || Exact::<N>::from_fix(max_t).mul(&det).lt(&scaled) {
         return None;
     }
     let t = match rounded_t(ray, tri) {
@@ -1198,11 +1335,16 @@ fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
 mod tests {
     use super::*;
 
-    /// A ray lying in the plane of a triangle 1e-9 m across, up to the rounding
-    /// of its direction, is parallel to it (a sine near 2^-64, far below
-    /// [`MT_PARALLEL_LOG2`]). Before the threshold 1 in 6 of such rays was a hit.
+    /// A ray in the plane of a triangle 1e-9 m across. Exactly in the plane (the
+    /// direction a + b of two edges, added without rounding) it is parallel and
+    /// never hits. With the direction normalised, its rounding (2^-64 against
+    /// edges of 1e-9) tilts it out of the plane by a sine near 5e-11, far above
+    /// [`MT_PARALLEL_LOG2`]: it crosses the plane, and the answer is the exact
+    /// test's (the filtered test equals the unfiltered exact one on every ray;
+    /// 308 of the 2000 cross the triangle). Before the exact test such rays were
+    /// ruled parallel by a floor on the rounded `det`.
     #[test]
-    fn a_ray_in_the_plane_of_a_tiny_triangle_is_parallel() {
+    fn a_ray_in_the_plane_of_a_tiny_triangle() {
         let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
         let mut rnd = || {
             seed ^= seed << 13;
@@ -1211,6 +1353,7 @@ mod tests {
             Fix128::from_raw(0, seed) - Fix128::from_ratio(1, 2)
         };
         let tiny = Fix128::from_f64(1e-9);
+        let max_t = Fix128::from_int(10);
         let mut hits = 0;
         for _ in 0..2000 {
             let v0 = Vec3Fix::new(rnd(), rnd(), rnd());
@@ -1221,19 +1364,24 @@ mod tests {
                 v1: v0 + a,
                 v2: v0 + b,
             };
+            let in_plane = Ray {
+                origin: v0 - (a + b),
+                direction: a + b,
+            };
+            assert!(ray_triangle(&in_plane, &tri, max_t).is_none());
             let direction = (a + b * Fix128::from_ratio(3, 10)).normalize();
             let ray = Ray {
                 origin: v0 + (a + b) * Fix128::from_ratio(1, 4) - direction,
                 direction,
             };
-            if ray_triangle(&ray, &tri, Fix128::from_int(10)).is_some() {
-                hits += 1;
-            }
+            let got = ray_triangle(&ray, &tri, max_t);
+            assert_eq!(
+                got.map(|h| h.t),
+                ray_triangle_exact_in::<EXACT_LIMBS>(&ray, &tri, max_t).map(|h| h.t)
+            );
+            hits += usize::from(got.is_some());
         }
-        assert_eq!(
-            hits, 0,
-            "{hits} of 2000 rays in a tiny triangle's plane hit it"
-        );
+        assert_eq!(hits, 308);
     }
 
     /// Whether a grazing ray counts as parallel depends on the angle alone: the

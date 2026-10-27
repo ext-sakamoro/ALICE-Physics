@@ -3,7 +3,9 @@
 //!
 //! The roof is the square [0, 1] x [0, 1] at height 1 over a floor at height 0, tiled in small
 //! triangles so the mesh has a real BVH; the light is toward (-1, 2, 0), so a floor point (x, 0, z)
-//! is in shadow when 0 < x - 1/2 < 1 and 0 < z < 1.
+//! is in shadow when 0 < x - 1/2 < 1 and 0 < z < 1: 64 of the 384 floor points below. Each of
+//! those rays meets the roof exactly on the diagonal two triangles of a cell share, and the
+//! closed triangle test counts that as a hit.
 //!
 //! Run: `cargo run --example trimesh_shadow_rays`
 
@@ -35,7 +37,7 @@ fn main() {
     let mut shadowed = 0;
     let mut visits = 0;
     let mut points = 0;
-    // floor points on a grid of 1/8 from an offset of 1/16 + 1/64 (none on a shadow edge)
+    // floor points on a grid of 1/8 from an offset of 1/16 + 1/64 (none on the shadow's border)
     for i in 0..24 {
         for j in 0..16 {
             let ray = Ray::new(v(-64 + 5 + 8 * i, 0, -64 + 5 + 8 * j, 64), toward_light);

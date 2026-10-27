@@ -41,7 +41,11 @@ impl Rng {
     }
 
     fn vec(&mut self, range: i64, denom: i64) -> Vec3Fix {
-        Vec3Fix::new(self.fix(range, denom), self.fix(range, denom), self.fix(range, denom))
+        Vec3Fix::new(
+            self.fix(range, denom),
+            self.fix(range, denom),
+            self.fix(range, denom),
+        )
     }
 }
 
@@ -54,11 +58,19 @@ fn v(x: Fix128, y: Fix128, z: Fix128) -> Vec3Fix {
 fn check_one(ray: &Ray, tri: &Triangle, max_t: Fix128, tag: &str) -> bool {
     let want = exact_t(ray, tri, max_t);
     let got = ray_triangle(ray, tri, max_t);
-    assert_eq!(got.map(|h| h.t), want, "{tag}: ray {ray:?} triangle {tri:?} reach {max_t:?}");
+    assert_eq!(
+        got.map(|h| h.t),
+        want,
+        "{tag}: ray {ray:?} triangle {tri:?} reach {max_t:?}"
+    );
     if let Some(h) = got {
         assert_eq!(h.point, ray.at(h.t), "{tag}: point");
         let n = tri.unit_normal();
-        let n = if n.dot(ray.direction) > Fix128::ZERO { -n } else { n };
+        let n = if n.dot(ray.direction) > Fix128::ZERO {
+            -n
+        } else {
+            n
+        };
         assert_eq!(h.normal, n, "{tag}: normal");
     }
     want.is_some()
@@ -68,18 +80,35 @@ fn check_one(ray: &Ray, tri: &Triangle, max_t: Fix128, tag: &str) -> bool {
 fn check_mesh(mesh: &TriMesh, ray: &Ray, max_t: Fix128, tag: &str) -> bool {
     let want = exact_nearest(&mesh.triangles, ray, max_t);
     let got = mesh.raycast(ray, max_t);
-    assert_eq!(got.map(|h| (h.t, h.body_index)), want, "{tag}: ray {ray:?} reach {max_t:?}");
-    assert_eq!(mesh.occluded(ray, max_t), want.is_some(), "{tag}: occluded, ray {ray:?} reach {max_t:?}");
+    assert_eq!(
+        got.map(|h| (h.t, h.body_index)),
+        want,
+        "{tag}: ray {ray:?} reach {max_t:?}"
+    );
+    assert_eq!(
+        mesh.occluded(ray, max_t),
+        want.is_some(),
+        "{tag}: occluded, ray {ray:?} reach {max_t:?}"
+    );
     want.is_some()
 }
 
 /// The grazing rays across one edge of the tilted triangle (tri 0 of the mesh)
 fn grazing() -> (Vec<Triangle>, Vec<Ray>) {
-    let (one, z, third, half) = (Fix128::ONE, Fix128::ZERO, Fix128::from_ratio(1, 3), Fix128::from_ratio(1, 2));
+    let (one, z, third, half) = (
+        Fix128::ONE,
+        Fix128::ZERO,
+        Fix128::from_ratio(1, 3),
+        Fix128::from_ratio(1, 2),
+    );
     let mut tris = vec![Triangle::new(v(z, z, z), v(one, z, z), v(z, one, third))];
     for k in 1..8i64 {
         let c = Fix128::from_int(10 * k);
-        tris.push(Triangle::new(v(c, c, c), v(c + one, c, c), v(c, c + one, c)));
+        tris.push(Triangle::new(
+            v(c, c, c),
+            v(c + one, c, c),
+            v(c, c + one, c),
+        ));
     }
     let mut rays = Vec::new();
     for eps_exp in 16..=46 {
@@ -122,7 +151,11 @@ fn the_walk_and_occluded_equal_the_exact_nearest_on_grazing_rays() {
     let mesh = TriMesh::from_triangles(tris);
     let mut hits = 0;
     for ray in &rays {
-        for max_t in [Fix128::from_int(100), Fix128::from_ratio(1, 4), Fix128::from_ratio(1, 8)] {
+        for max_t in [
+            Fix128::from_int(100),
+            Fix128::from_ratio(1, 4),
+            Fix128::from_ratio(1, 8),
+        ] {
             hits += usize::from(check_mesh(&mesh, ray, max_t, "grazing"));
         }
     }
@@ -135,13 +168,30 @@ fn the_walk_and_occluded_equal_the_exact_nearest_on_grazing_rays() {
 #[test]
 fn ray_triangle_and_the_walk_equal_the_exact_reference_on_random_scenes() {
     let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
-    let (mut compared, mut hits) = (0, 0);
+    let (mut compared, mut hits, mut big_hits) = (0, 0, 0);
     for scene in 0..40 {
-        let (range, denom, size) = if scene % 2 == 0 { (64, 64, 16) } else { (40, 1, 6) };
+        let (range, denom, size) = if scene % 2 == 0 {
+            (64, 64, 16)
+        } else {
+            (40, 1, 6)
+        };
+        // every fourth scene at 2^24 times the size: edges and distances above 2^25, where the
+        // products of the Fix128 numerators no longer fit (the exact test decides there)
+        let big = scene % 4 == 3;
+        let scale = if big {
+            Fix128::from_int(1 << 24)
+        } else {
+            Fix128::ONE
+        };
         let tris: Vec<Triangle> = (0..48)
             .map(|_| {
                 let c = rng.vec(range, denom);
-                Triangle::new(c + rng.vec(size, denom), c + rng.vec(size, denom), c + rng.vec(size, denom))
+                let tri = Triangle::new(
+                    c + rng.vec(size, denom),
+                    c + rng.vec(size, denom),
+                    c + rng.vec(size, denom),
+                );
+                Triangle::new(tri.v0 * scale, tri.v1 * scale, tri.v2 * scale)
             })
             .collect();
         let mesh = TriMesh::from_triangles(tris.clone());
@@ -149,60 +199,105 @@ fn ray_triangle_and_the_walk_equal_the_exact_reference_on_random_scenes() {
         for _ in 0..24 {
             let t = &tris[(rng.next() % tris.len() as u64) as usize];
             // a point inside the triangle by barycentric weights k/8
-            let (a, b) = (rng.int(4).unsigned_abs() as i64, rng.int(4).unsigned_abs() as i64);
-            let target = t.v0 + (t.v1 - t.v0) * Fix128::from_ratio(a, 8) + (t.v2 - t.v0) * Fix128::from_ratio(b, 8);
-            let o = rng.vec(range * 2, denom);
+            let (a, b) = (
+                rng.int(4).unsigned_abs() as i64,
+                rng.int(4).unsigned_abs() as i64,
+            );
+            let target = t.v0
+                + (t.v1 - t.v0) * Fix128::from_ratio(a, 8)
+                + (t.v2 - t.v0) * Fix128::from_ratio(b, 8);
+            let o = rng.vec(range * 2, denom) * scale;
             rays.push(Ray::new(o, target - o));
             rays.push(Ray::new(o, t.v1 - o));
-            rays.push(Ray::new(rng.vec(range * 2, denom), rng.vec(8, 8)));
+            rays.push(Ray::new(rng.vec(range * 2, denom) * scale, rng.vec(8, 8)));
             // nearly in the triangle's plane: along an edge, tilted by 2^-50 of the normal
             let n = (t.v1 - t.v0).cross(t.v2 - t.v0);
             let tilt = Fix128::from_ratio(1, 1i64 << 50);
-            rays.push(Ray::new(t.v0 - (t.v1 - t.v0) + n * tilt, (t.v1 - t.v0) - n * (tilt * Fix128::from_int(2))));
+            rays.push(Ray::new(
+                t.v0 - (t.v1 - t.v0) + n * tilt,
+                (t.v1 - t.v0) - n * (tilt * Fix128::from_int(2)),
+            ));
         }
         for ray in &rays {
-            for max_t in [Fix128::from_int(1000), Fix128::from_int(3)] {
+            for max_t in [Fix128::from_int(1000) * scale, Fix128::from_int(3) * scale] {
                 for (i, tri) in tris.iter().enumerate() {
-                    hits += usize::from(check_one(ray, tri, max_t, &format!("scene {scene} tri {i}")));
+                    let hit = usize::from(check_one(
+                        ray,
+                        tri,
+                        max_t,
+                        &format!("scene {scene} tri {i}"),
+                    ));
+                    hits += hit;
+                    big_hits += if big { hit } else { 0 };
                     compared += 1;
                 }
                 check_mesh(&mesh, ray, max_t, &format!("scene {scene}"));
             }
             // the reach ends one step (2^-64) past the floored nearest t, so past the exact t:
             // the same hit; at the floored t itself, the hit is kept only when t is on the grid
-            if let Some((t, i)) = exact_nearest(&tris, ray, Fix128::from_int(1000)) {
+            if let Some((t, i)) = exact_nearest(&tris, ray, Fix128::from_int(1000) * scale) {
                 let step = Fix128::from_raw(0, 1);
-                assert!(check_mesh(&mesh, ray, t + step, &format!("scene {scene} reach = t + step")));
-                assert_eq!(mesh.raycast(ray, t + step).map(|h| (h.t, h.body_index)), Some((t, i)));
+                assert!(check_mesh(
+                    &mesh,
+                    ray,
+                    t + step,
+                    &format!("scene {scene} reach = t + step")
+                ));
+                assert_eq!(
+                    mesh.raycast(ray, t + step).map(|h| (h.t, h.body_index)),
+                    Some((t, i))
+                );
                 check_mesh(&mesh, ray, t, &format!("scene {scene} reach = t"));
             }
         }
     }
     assert_eq!(compared, 40 * 24 * 4 * 2 * 48);
     assert!(hits > 1000, "{hits} hits");
+    assert!(
+        big_hits > 200,
+        "{big_hits} hits in the scenes at 2^24 times the size"
+    );
 }
 
 /// A ray parallel to the triangle's plane does not hit it, in the plane or off it, and neither
 /// does one tilted toward it by a sine below 2^-48; a sine above it hits
 #[test]
 fn parallel_rays_do_not_hit() {
-    let tri = Triangle::new(Vec3Fix::from_int(0, 0, 0), Vec3Fix::from_int(4, 0, 0), Vec3Fix::from_int(0, 0, 4));
+    let tri = Triangle::new(
+        Vec3Fix::from_int(0, 0, 0),
+        Vec3Fix::from_int(4, 0, 0),
+        Vec3Fix::from_int(0, 0, 4),
+    );
     for y in [0, 1, -1] {
         let ray = Ray::new(Vec3Fix::from_int(-1, y, 1), Vec3Fix::from_int(1, 0, 0));
         assert_eq!(exact_t(&ray, &tri, Fix128::from_int(100)), None);
-        assert!(ray_triangle(&ray, &tri, Fix128::from_int(100)).is_none(), "y {y}");
+        assert!(
+            ray_triangle(&ray, &tri, Fix128::from_int(100)).is_none(),
+            "y {y}"
+        );
     }
     // from y = 2^-k above the plane, aimed down by a slope of 2^-(k + 2) (sine ≈ slope)
     // (sine = slope / sqrt(1 + slope²), just below the slope: 2^-48 itself is below the threshold)
     for (k, hit) in [(44, true), (45, true), (47, false), (60, false)] {
         let y = Fix128::from_ratio(1, 1i64 << k);
         let ray = Ray {
-            origin: Vec3Fix::new(-Fix128::ONE, y, Fix128::ONE),
+            // crossing the plane at x = 3, z = 1/2: inside the triangle, off its edges
+            origin: Vec3Fix::new(-Fix128::ONE, y, Fix128::from_ratio(1, 2)),
             direction: Vec3Fix::new(Fix128::ONE, -(y / Fix128::from_int(4)), Fix128::ZERO),
         };
         let max_t = Fix128::from_int(100);
-        assert_eq!(exact_t(&ray, &tri, max_t).is_some(), hit, "reference, slope 2^-{}", k + 2);
-        assert_eq!(ray_triangle(&ray, &tri, max_t).map(|h| h.t), exact_t(&ray, &tri, max_t), "slope 2^-{}", k + 2);
+        assert_eq!(
+            exact_t(&ray, &tri, max_t).is_some(),
+            hit,
+            "reference, slope 2^-{}",
+            k + 2
+        );
+        assert_eq!(
+            ray_triangle(&ray, &tri, max_t).map(|h| h.t),
+            exact_t(&ray, &tri, max_t),
+            "slope 2^-{}",
+            k + 2
+        );
     }
 }
 
@@ -253,31 +348,63 @@ fn rays_through_shared_edges_and_vertices_of_a_closed_mesh_hit_it() {
         for b in 0..=8 {
             let target = Vec3Fix::new(q(a), q(b), Fix128::ZERO);
             for o in [
-                Vec3Fix::new(Fix128::from_ratio(1, 3), Fix128::from_ratio(2, 7), -Fix128::ONE),
-                Vec3Fix::new(Fix128::from_int(-2), Fix128::from_ratio(5, 3), Fix128::from_ratio(-1, 9)),
-                Vec3Fix::new(Fix128::from_ratio(1, 2), Fix128::from_ratio(1, 2), Fix128::from_int(-3)),
+                Vec3Fix::new(
+                    Fix128::from_ratio(1, 3),
+                    Fix128::from_ratio(2, 7),
+                    -Fix128::ONE,
+                ),
+                Vec3Fix::new(
+                    Fix128::from_int(-2),
+                    Fix128::from_ratio(5, 3),
+                    Fix128::from_ratio(-1, 9),
+                ),
+                Vec3Fix::new(
+                    Fix128::from_ratio(1, 2),
+                    Fix128::from_ratio(1, 2),
+                    Fix128::from_int(-3),
+                ),
             ] {
                 // the direction target − o itself (not normalised): o + 1 · d is the target exactly
-                rays.extend([Ray { origin: o, direction: target - o }]);
+                rays.extend([Ray {
+                    origin: o,
+                    direction: target - o,
+                }]);
             }
         }
     }
     let mut on_edges = 0;
     for ray in &rays {
         let want = exact_nearest(&tris, ray, max_t);
-        assert!(want.is_some(), "the reference misses the closed mesh: ray {ray:?}");
+        assert!(
+            want.is_some(),
+            "the reference misses the closed mesh: ray {ray:?}"
+        );
         assert!(check_mesh(&mesh, ray, max_t, "closed cube"));
         // how many triangles the exact crossing touches (more than one: an edge or a vertex)
         let (t, _) = want.unwrap_or((Fix128::ZERO, 0));
-        on_edges += usize::from(tris.iter().filter(|tri| exact_t(ray, tri, max_t) == Some(t)).count() > 1);
+        on_edges += usize::from(
+            tris.iter()
+                .filter(|tri| exact_t(ray, tri, max_t) == Some(t))
+                .count()
+                > 1,
+        );
     }
     assert_eq!(rays.len(), 81 * 3);
-    assert!(on_edges > 100, "only {on_edges} rays through a shared edge or vertex");
+    assert!(
+        on_edges > 100,
+        "only {on_edges} rays through a shared edge or vertex"
+    );
 
     // the shadow rays of examples/trimesh_shadow_rays.rs: the roof [0, 1]² at y = 1 seen from the
     // floor toward (−1, 2, 0) shades the points with x in [1/2, 3/2], z in [0, 1], 8 × 8 of the
     // grid, and every one of those rays crosses the roof on a cell's shared diagonal
-    let v = |x: i64, y: i64, z: i64, d: i64| Vec3Fix::new(Fix128::from_ratio(x, d), Fix128::from_ratio(y, d), Fix128::from_ratio(z, d));
+    let v = |x: i64, y: i64, z: i64, d: i64| {
+        Vec3Fix::new(
+            Fix128::from_ratio(x, d),
+            Fix128::from_ratio(y, d),
+            Fix128::from_ratio(z, d),
+        )
+    };
     let mut roof = Vec::new();
     for i in 0..32 {
         for j in 0..32 {
@@ -296,7 +423,10 @@ fn rays_through_shared_edges_and_vertices_of_a_closed_mesh_hit_it() {
             let hit = check_mesh(&roof_mesh, &ray, Fix128::from_int(10), "roof");
             let x = Fix128::from_ratio(-64 + 5 + 8 * i, 64);
             let z = Fix128::from_ratio(-64 + 5 + 8 * j, 64);
-            let inside = x >= Fix128::from_ratio(1, 2) && x <= Fix128::from_ratio(3, 2) && z >= Fix128::ZERO && z <= Fix128::ONE;
+            let inside = x >= Fix128::from_ratio(1, 2)
+                && x <= Fix128::from_ratio(3, 2)
+                && z >= Fix128::ZERO
+                && z <= Fix128::ONE;
             assert_eq!(hit, inside, "floor point {i}, {j}");
             shaded += usize::from(hit);
         }

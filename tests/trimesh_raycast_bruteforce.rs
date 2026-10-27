@@ -16,7 +16,7 @@ use alice_physics_core::trimesh::{TriMesh, Triangle};
 
 #[path = "support/exact_ray.rs"]
 mod exact_ray;
-use exact_ray::exact_t;
+use exact_ray::{exact_nearest, exact_t};
 
 /// xorshift64*: a fixed sequence, the same on every machine
 struct Rng(u64);
@@ -49,20 +49,16 @@ impl Rng {
 }
 
 fn brute(tris: &[Triangle], ray: &Ray, max_t: Fix128) -> Option<RayHit> {
-    let mut best: Option<(Fix128, usize)> = None;
-    for (i, tri) in tris.iter().enumerate() {
-        if let Some(t) = exact_t(ray, tri, max_t) {
-            if best.is_none_or(|(bt, _)| t < bt) {
-                best = Some((t, i));
-            }
-        }
-    }
-    best.map(|(t, i)| {
+    exact_nearest(tris, ray, max_t).map(|(t, i)| {
         let n = tris[i].unit_normal();
         RayHit {
             t,
             point: ray.at(t),
-            normal: if n.dot(ray.direction) > Fix128::ZERO { -n } else { n },
+            normal: if n.dot(ray.direction) > Fix128::ZERO {
+                -n
+            } else {
+                n
+            },
             body_index: i,
         }
     })
