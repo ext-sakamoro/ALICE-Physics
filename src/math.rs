@@ -1721,6 +1721,37 @@ impl QuatFix {
         Self { x, y, z, w }
     }
 
+    /// The shortest-arc rotation that turns the direction of `from` into the direction of `to`
+    ///
+    /// `(from × to, |from|·|to| + from · to)` normalised. Parallel directions give the identity;
+    /// opposite directions (the cross product is zero and the dot negative) give the half turn
+    /// about a fixed perpendicular of `from` (its cross product with the axis of `from`'s
+    /// smallest component); a zero input gives the identity.
+    #[must_use]
+    pub fn from_to(from: Vec3Fix, to: Vec3Fix) -> Self {
+        let (Some(a), Some(b)) = (from.try_normalize(), to.try_normalize()) else {
+            return Self::IDENTITY;
+        };
+        let c = a.cross(b);
+        let d = a.dot(b);
+        if c == Vec3Fix::ZERO {
+            if d.is_negative() {
+                let (ax, ay, az) = (a.x.abs(), a.y.abs(), a.z.abs());
+                let other = if ax <= ay && ax <= az {
+                    Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO)
+                } else if ay <= az {
+                    Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO)
+                } else {
+                    Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE)
+                };
+                let axis = a.cross(other).normalize();
+                return Self::new(axis.x, axis.y, axis.z, Fix128::ZERO);
+            }
+            return Self::IDENTITY;
+        }
+        Self::new(c.x, c.y, c.z, Fix128::ONE + d).normalize()
+    }
+
     /// Create from axis-angle representation
     #[must_use]
     pub fn from_axis_angle(axis: Vec3Fix, angle: Fix128) -> Self {
