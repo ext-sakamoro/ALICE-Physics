@@ -123,6 +123,16 @@ bit for bit.
   they hold in every frame whatever the pose does, and a changed rest (an edited skeleton) needs
   them computed again. A per-frame judgement would also free links whenever a pose lifts a body
   around them, for example a thigh rising around a skirt's root when sitting.
+- **Fit to the rest.** The rest the character was built in is collision free by definition.
+  `SecondaryChain::fit_to_rest` (called on a chain standing at its rest, with the colliders as the
+  rest places them) makes it so in the simulation:
+  - It masks, per particle, the colliders that hold its parent end (as above) or its own centre.
+  - It caps the particle's radius against each other collider at its rest clearance (its rest
+    distance to that capsule's surface).
+
+  A chain at its rest then stays there with its colliders present, and a collider still acts on
+  anything that comes closer than the rest did. Like the masks, the caps are configuration
+  derived from the rest; a changed rest needs the fit again.
 - **Order and passes.** Length, limit and colliders run `iterations` times, then the length runs once
   more, so the bone length holds exactly after every step. That last pass can pull a pushed-out
   particle slightly back into a collider: the depth goes as `push² / (2 · rest_length)` and shrinks
@@ -152,6 +162,10 @@ It covers:
   bit for bit as a chain with no capsule; an unmasked one acts; masked at rest stays masked in a
   posed frame; unmasked still acts when it rises around the root; the capsule's own radius
   decides; more than 64 colliders are refused
+- the fit: a particle within a collider's reach at rest keeps its rest bit for bit (while unfitted it
+  would be moved); a fitted collider still acts on what comes closer than the rest did, out to the
+  fitted reach; a centre inside a capsule at rest is masked; a far collider changes nothing; the
+  parent-end rule is kept; more than 64 colliders are refused
 - the refusal of out-of-range settings
 
 Each stage was broken on purpose (sign, missing factor, wrong target, skipped pass), and each
