@@ -268,12 +268,22 @@ fn gravity_falloff_scales_gravity_by_the_rest_direction_along_it() {
     let pose = [v(h, 1.0 - h, 0.0)];
     let rest = (pose[0] - anchor()).length();
     let mut c = SecondaryChain::new(
-        vec![ChainParticle { parent: None, rest_length: rest, params: p, p: pose[0], q: pose[0] }],
-        ChainConfig { gravity: v(0.0, -9.81, 0.0), iterations: 1 },
+        vec![ChainParticle {
+            parent: None,
+            rest_length: rest,
+            params: p,
+            p: pose[0],
+            q: pose[0],
+        }],
+        ChainConfig {
+            gravity: v(0.0, -9.81, 0.0),
+            iterations: 1,
+        },
     )
     .unwrap();
     for _ in 0..4000 {
-        c.step(f(dt), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[]).unwrap();
+        c.step(f(dt), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
+            .unwrap();
     }
     let got = to3(c.particles()[0].p);
     let share = 1.0 - fall * (1.0 / 2f64.sqrt());
@@ -289,11 +299,18 @@ fn gravity_falloff_scales_gravity_by_the_rest_direction_along_it() {
     let (mut lo, mut hi) = (std::f64::consts::FRAC_PI_4, std::f64::consts::FRAC_PI_2);
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
-        if cross(lo).signum() == cross(mid).signum() { lo = mid } else { hi = mid }
+        if cross(lo).signum() == cross(mid).signum() {
+            lo = mid
+        } else {
+            hi = mid
+        }
     }
     let ph = 0.5 * (lo + hi);
     let want = [r * ph.cos(), 1.0 - r * ph.sin(), 0.0];
-    assert!((0..3).all(|k| (got[k] - want[k]).abs() < 1e-12), "{got:?} vs {want:?}");
+    assert!(
+        (0..3).all(|k| (got[k] - want[k]).abs() < 1e-12),
+        "{got:?} vs {want:?}"
+    );
 }
 
 #[test]
@@ -315,37 +332,72 @@ fn pull_and_stiffness_aim_from_the_simulated_parent() {
         let child_now = parent_now + v(0.0, -0.1, 0.0);
         let mut c = SecondaryChain::new(
             vec![
-                ChainParticle { parent: None, rest_length: rest0, params: p, p: parent_now, q: parent_now },
-                ChainParticle { parent: Some(0), rest_length: rest1, params: pc, p: child_now, q: child_now },
+                ChainParticle {
+                    parent: None,
+                    rest_length: rest0,
+                    params: p,
+                    p: parent_now,
+                    q: parent_now,
+                },
+                ChainParticle {
+                    parent: Some(0),
+                    rest_length: rest1,
+                    params: pc,
+                    p: child_now,
+                    q: child_now,
+                },
             ],
-            ChainConfig { gravity: Vec3Fix::ZERO, iterations: 1 },
+            ChainConfig {
+                gravity: Vec3Fix::ZERO,
+                iterations: 1,
+            },
         )
         .unwrap();
-        c.step(f(1.0 / 60.0), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[]).unwrap();
+        c.step(f(1.0 / 60.0), anchor(), anchor(), &pose, Vec3Fix::ZERO, &[])
+            .unwrap();
         // the parent first: no pull, no momentum: it stays where it is, put on its rest length
         let a = [0.0, 1.0, 0.0];
         let pn = to3(parent_now);
         let d = [pn[0] - a[0], pn[1] - a[1], pn[2] - a[2]];
         let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-        let par = [a[0] + d[0] / n * 0.1, a[1] + d[1] / n * 0.1, a[2] + d[2] / n * 0.1];
+        let par = [
+            a[0] + d[0] / n * 0.1,
+            a[1] + d[1] / n * 0.1,
+            a[2] + d[2] / n * 0.1,
+        ];
         // the child's target: the parent (as simulated) plus the pose link (0, −0.1, 0), turned by
         // the rotation from the parent's pose link (0, −0.1, 0) to its simulated link for stiffness
         let link = [0.0, -0.1, 0.0];
         let target = if stiff > 0.0 {
             let u = [par[0] / 0.1 - 0.0, (par[1] - 1.0) / 0.1, par[2] / 0.1];
             // the pose link's direction is (0, −1, 0); turned onto u, (0, −0.1, 0) becomes 0.1 u
-            [par[0] + 0.1 * u[0], par[1] + 0.1 * u[1], par[2] + 0.1 * u[2]]
+            [
+                par[0] + 0.1 * u[0],
+                par[1] + 0.1 * u[1],
+                par[2] + 0.1 * u[2],
+            ]
         } else {
             [par[0] + link[0], par[1] + link[1], par[2] + link[2]]
         };
         let k = if stiff > 0.0 { stiff } else { pull };
         let cn = to3(child_now);
-        let x = [cn[0] + (target[0] - cn[0]) * k, cn[1] + (target[1] - cn[1]) * k, cn[2] + (target[2] - cn[2]) * k];
+        let x = [
+            cn[0] + (target[0] - cn[0]) * k,
+            cn[1] + (target[1] - cn[1]) * k,
+            cn[2] + (target[2] - cn[2]) * k,
+        ];
         let d = [x[0] - par[0], x[1] - par[1], x[2] - par[2]];
         let n = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-        let want = [par[0] + d[0] / n * 0.1, par[1] + d[1] / n * 0.1, par[2] + d[2] / n * 0.1];
+        let want = [
+            par[0] + d[0] / n * 0.1,
+            par[1] + d[1] / n * 0.1,
+            par[2] + d[2] / n * 0.1,
+        ];
         let got = to3(c.particles()[1].p);
-        assert!((0..3).all(|j| (got[j] - want[j]).abs() < 1e-12), "pull {pull} stiffness {stiff}: {got:?} vs {want:?}");
+        assert!(
+            (0..3).all(|j| (got[j] - want[j]).abs() < 1e-12),
+            "pull {pull} stiffness {stiff}: {got:?} vs {want:?}"
+        );
     }
 }
 
