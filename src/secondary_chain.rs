@@ -74,6 +74,9 @@ pub struct ChainParams {
     pub limit: ChainLimit,
     /// The particle's radius against the colliders (>= 0)
     pub radius: Fix128,
+    /// The colliders (bit k = the step's `colliders[k]`) that the authored rest attaches this link
+    /// inside: they do not act on it (see [`SecondaryChain::attached_inside`])
+    pub attached_inside: u64,
 }
 
 /// A particle of a chain
@@ -118,6 +121,10 @@ pub struct ChainInput<'a> {
     /// The capsules now
     pub colliders: &'a [Capsule],
 }
+
+/// More colliders than a mask holds (64)
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TooManyColliders(pub usize);
 
 /// What the chain refuses
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -207,6 +214,45 @@ impl SecondaryChain {
             }
         }
         Ok(Self { particles, config })
+    }
+
+    /// Which colliders the authored rest attaches each link inside: bit k of entry i is set when
+    /// `colliders[k]` holds the rest position of particle i's parent end (its parent's rest
+    /// position, or `rest_anchor` for a root) strictly within the capsule's own radius. The rest is
+    /// the pose the character was built in; masks are configuration derived from it, so a changed
+    /// rest skeleton needs them computed again
+    ///
+    /// # Errors
+    ///
+    /// [`TooManyColliders`] for more than 64 colliders
+    pub fn attached_inside(
+        particles: &[ChainParticle],
+        rest: &[Vec3Fix],
+        rest_anchor: Vec3Fix,
+        colliders: &[Capsule],
+    ) -> Result<Vec<u64>, TooManyColliders> {
+        if colliders.len() > 64 {
+            return Err(TooManyColliders(colliders.len()));
+        }
+        Ok(particles
+            .iter()
+            .zip(rest)
+            .map(|(pt, _)| {
+                let end = pt
+                    .parent
+                    .and_then(|p| rest.get(p).copied())
+                    .unwrap_or(rest_anchor);
+                colliders.iter().enumerate().fold(0u64, |m, (k, cap)| {
+                    let inside =
+                        (end - closest_on_segment(cap.a, cap.b, end)).length() < cap.radius;
+                    if inside {
+                        m | (1u64 << k)
+                    } else {
+                        m
+                    }
+                })
+            })
+            .collect())
     }
 
     /// The particles
@@ -309,7 +355,7 @@ impl SecondaryChain {
             for _ in 0..self.config.iterations {
                 self.keep_length(i, sim_parent);
                 self.keep_limit(i, sim_parent, rest_dir, turn.mul(anim_frames[i]));
-                self.keep_out(i, colliders, anim_parent);
+                self.keep_out(i, colliders);
             }
             self.keep_length(i, sim_parent);
         }
@@ -390,14 +436,13 @@ impl SecondaryChain {
         self.particles[i].p = parent + limited * len;
     }
 
-    /// Out of every capsule, except one that holds the link's animated parent end: a bone attached
-    /// inside a body is not constrained by that body
-    fn keep_out(&mut self, i: usize, colliders: &[Capsule], anim_parent: Vec3Fix) {
+    /// Out of every capsule, except the ones the authored rest attaches this link inside (its
+    /// mask): a bone attached inside a body is not constrained by that body
+    fn keep_out(&mut self, i: usize, colliders: &[Capsule]) {
         let radius = self.particles[i].params.radius;
-        for cap in colliders {
-            let holds_parent =
-                (anim_parent - closest_on_segment(cap.a, cap.b, anim_parent)).length() < cap.radius;
-            if holds_parent {
+        let mask = self.particles[i].params.attached_inside;
+        for (k, cap) in colliders.iter().enumerate() {
+            if k < 64 && mask & (1u64 << k) != 0 {
                 continue;
             }
             let p = self.particles[i].p;

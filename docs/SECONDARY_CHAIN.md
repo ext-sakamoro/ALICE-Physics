@@ -114,10 +114,15 @@ bit for bit.
 
   The length is kept.
 - **Colliders.** A particle closer than `radius + capsule radius` to a capsule's segment is pushed out
-  along the line from the closest point on the segment. A capsule that holds the link's animated parent end
-  (closer to its segment than the capsule's own radius) does not act on that link: the bone is
-  attached inside that body, and pushing its tip out would only lift it off its pose. The test
-  uses the animated parent end, so it does not change while the simulation moves the parent.
+  along the line from the closest point on the segment. A capsule that the authored rest attaches the link inside
+  does not act on that link: the bone is attached inside that body, and acting on it would only
+  lift it off its pose. "Attached inside" is judged once, at the rest the character was built in:
+  the link's parent end (its parent's rest place, or the anchor for a root) strictly within the
+  capsule's own radius. `SecondaryChain::attached_inside` computes these masks (one bit per
+  collider, at most 64) from the rest positions and the rest colliders. They are configuration:
+  they hold in every frame whatever the pose does, and a changed rest (an edited skeleton) needs
+  them computed again. A per-frame judgement would also free links whenever a pose lifts a body
+  around them, for example a thigh rising around a skirt's root when sitting.
 - **Order and passes.** Length, limit and colliders run `iterations` times, then the length runs once
   more, so the bone length holds exactly after every step. That last pass can pull a pushed-out
   particle slightly back into a collider: the depth goes as `push² / (2 · rest_length)` and shrinks
@@ -143,9 +148,10 @@ It covers:
 - the hinge and polar axes under a turned character, under a twist about the bone, below a moved
   parent, and with both turns at once (which also fixes their order)
 - the collider depth bound above
-- a capsule holding the link's attachment leaves it bit for bit as a chain with no capsule; one that
-  does not hold it still acts; the attachment is judged at its animated place; the capsule's own
-  radius decides (not plus the particle's)
+- the masks: which colliders hold each link's parent end at rest; a masked capsule leaves the link
+  bit for bit as a chain with no capsule; an unmasked one acts; masked at rest stays masked in a
+  posed frame; unmasked still acts when it rises around the root; the capsule's own radius
+  decides; more than 64 colliders are refused
 - the refusal of out-of-range settings
 
 Each stage was broken on purpose (sign, missing factor, wrong target, skipped pass), and each
