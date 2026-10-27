@@ -9,7 +9,7 @@ use crate::math::{Fix128, Vec3Fix};
 use crate::raycast::{Ray, RayHit};
 
 #[cfg(not(feature = "std"))]
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 
 /// A single triangle
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
