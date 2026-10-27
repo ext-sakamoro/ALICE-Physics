@@ -266,6 +266,9 @@ if record:
                              "git": os.path.realpath(shutil.which("git") or ""),
                              "config": [[os.environ.get(f"GIT_CONFIG_KEY_{i}"), os.environ.get(f"GIT_CONFIG_VALUE_{i}")]
                                         for i in range(n)]}) + "\n")
+trailing = rc in (30, 31)
+if trailing:
+    rc -= 30
 if rc in (20, 21):
     # the real script's note lines (one per manifest) come before the verdict and run past
     # 3000 bytes: the verdict is the last thing printed
@@ -284,6 +287,11 @@ elif rc == 2:
 else:
     print("land_law_state: state moves: no")
 print("land_law_state: 16 manifests read for 18 crates, 224 gates compared (candidates: ALICE-Physics)")
+if trailing:
+    # more than 3000 bytes on stderr after the verdict (warnings printed late): the verdict is
+    # then neither the last line nor within the last 3000 bytes of the combined output
+    for i in range(60):
+        print(f"warning: ALICE-Crate{i:02d}: a late note that runs past the verdict line (padding to 3000 bytes)", file=sys.stderr)
 sys.exit(rc)
 """
 
@@ -3440,6 +3448,26 @@ class LawState(Isolated):
         lander.law_url = fake_law(20)
         sha = lander.land()
         self.assertEqual(self.r.origin_head(), sha)
+        self.assertTrue(any(l.startswith("Law state: unmoved (compared with ALICE-Law main ") for l in lander.record),
+                        lander.record)
+
+    def test_the_verdict_before_more_than_3000_bytes_of_stderr_is_read(self):
+        # the verdict read from the whole output, not from the end that a message quotes
+        before = self.landing()
+        lander = self.r.lander()
+        lander.law_url = fake_law(31)
+        with self.assertRaises(land.LandError) as cm:
+            lander.land()
+        self.assertIn("moves ALICE-Law's conformance state", str(cm.exception))
+        self.assertEqual(self.r.origin_head(), before)
+        lander = self.r.lander()
+        lander.law_url = fake_law(30)
+        logged: list[str] = []
+        lander.log = logged.append
+        sha = lander.land()
+        self.assertEqual(self.r.origin_head(), sha)
+        # the summary line (the counts) is read from the whole output too
+        self.assertTrue(any("224 gates compared" in l for l in logged), logged)
         self.assertTrue(any(l.startswith("Law state: unmoved (compared with ALICE-Law main ") for l in lander.record),
                         lander.record)
 
