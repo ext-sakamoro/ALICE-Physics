@@ -204,7 +204,10 @@ impl SecondaryChain {
     /// # Errors
     ///
     /// [`ChainError::BadInput`] when `anim` is not one position per particle
-    #[allow(clippy::too_many_lines, reason = "the five stages and the constraints, in order")]
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the five stages and the constraints, in order"
+    )]
     pub fn step(
         &mut self,
         dt: Fix128,
@@ -379,7 +382,7 @@ impl SecondaryChain {
     }
 }
 
-/// A key of a curve (Unity's `AnimationCurve` keyframe, not weighted): time, value and the
+/// A key of a curve (a Hermite keyframe, not weighted): time, value and the
 /// slopes in and out
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CurveKey {
