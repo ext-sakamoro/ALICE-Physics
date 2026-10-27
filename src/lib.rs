@@ -719,6 +719,8 @@ pub mod rng;
 #[cfg(feature = "std")]
 pub mod rolling_contact;
 pub mod rope;
+// 二次運動の鎖 (髪・尻尾・リボン・スカート): pose を慣性・重力・pose への引き戻しで追う粒子、
+// 長さ > 角度の制限 > capsule の衝突 の順に拘束 (Fix128、CORDIC の三角関数)
 pub mod rope_attach;
 pub mod rotor;
 #[cfg(feature = "std")]
@@ -737,6 +739,7 @@ pub mod sdf_manifold;
 #[cfg(feature = "std")]
 pub mod sdf_sph;
 pub mod sdf_wind_field;
+pub mod secondary_chain;
 // Content hash of the stepping semantics; no `cfg`: the same value in every build.
 pub mod semantics;
 pub mod sensors;

@@ -398,7 +398,7 @@ fn clamp(x: Fix128, lo: Fix128, hi: Fix128) -> Fix128 {
 }
 
 /// The point of segment `a`–`b` nearest `p`.
-fn closest_on_segment(a: Vec3Fix, b: Vec3Fix, p: Vec3Fix) -> Vec3Fix {
+pub(crate) fn closest_on_segment(a: Vec3Fix, b: Vec3Fix, p: Vec3Fix) -> Vec3Fix {
     let ab = b - a;
     let len2 = ab.length_squared();
     if len2.is_zero() {
