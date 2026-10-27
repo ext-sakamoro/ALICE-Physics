@@ -309,7 +309,7 @@ impl SecondaryChain {
             for _ in 0..self.config.iterations {
                 self.keep_length(i, sim_parent);
                 self.keep_limit(i, sim_parent, rest_dir, turn.mul(anim_frames[i]));
-                self.keep_out(i, colliders);
+                self.keep_out(i, colliders, anim_parent);
             }
             self.keep_length(i, sim_parent);
         }
@@ -390,9 +390,16 @@ impl SecondaryChain {
         self.particles[i].p = parent + limited * len;
     }
 
-    fn keep_out(&mut self, i: usize, colliders: &[Capsule]) {
+    /// Out of every capsule, except one that holds the link's animated parent end: a bone attached
+    /// inside a body is not constrained by that body
+    fn keep_out(&mut self, i: usize, colliders: &[Capsule], anim_parent: Vec3Fix) {
         let radius = self.particles[i].params.radius;
         for cap in colliders {
+            let holds_parent =
+                (anim_parent - closest_on_segment(cap.a, cap.b, anim_parent)).length() < cap.radius;
+            if holds_parent {
+                continue;
+            }
             let p = self.particles[i].p;
             let c = closest_on_segment(cap.a, cap.b, p);
             let reach = radius + cap.radius;

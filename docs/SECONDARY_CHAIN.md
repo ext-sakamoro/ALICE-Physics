@@ -114,7 +114,10 @@ bit for bit.
 
   The length is kept.
 - **Colliders.** A particle closer than `radius + capsule radius` to a capsule's segment is pushed out
-  along the line from the closest point on the segment.
+  along the line from the closest point on the segment. A capsule that holds the link's animated parent end
+  (closer to its segment than the capsule's own radius) does not act on that link: the bone is
+  attached inside that body, and pushing its tip out would only lift it off its pose. The test
+  uses the animated parent end, so it does not change while the simulation moves the parent.
 - **Order and passes.** Length, limit and colliders run `iterations` times, then the length runs once
   more, so the bone length holds exactly after every step. That last pass can pull a pushed-out
   particle slightly back into a collider: the depth goes as `push² / (2 · rest_length)` and shrinks
@@ -140,6 +143,9 @@ It covers:
 - the hinge and polar axes under a turned character, under a twist about the bone, below a moved
   parent, and with both turns at once (which also fixes their order)
 - the collider depth bound above
+- a capsule holding the link's attachment leaves it bit for bit as a chain with no capsule; one that
+  does not hold it still acts; the attachment is judged at its animated place; the capsule's own
+  radius decides (not plus the particle's)
 - the refusal of out-of-range settings
 
 Each stage was broken on purpose (sign, missing factor, wrong target, skipped pass), and each
