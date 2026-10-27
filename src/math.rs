@@ -2563,6 +2563,27 @@ impl core::ops::Mul<Self> for Mat3Fix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // oracle (by hand): from x to y the shortest turn is a quarter turn about z,
+    // (0, 0, sin 45°, cos 45°); opposite directions give a half turn (w = 0) that
+    // takes `from` to `to`; parallel or zero inputs give the identity
+    #[test]
+    fn from_to_is_the_shortest_turn() {
+        let x = Vec3Fix::new(Fix128::ONE, Fix128::ZERO, Fix128::ZERO);
+        let y = Vec3Fix::new(Fix128::ZERO, Fix128::ONE, Fix128::ZERO);
+        let q = QuatFix::from_to(x, y);
+        let h = core::f64::consts::FRAC_1_SQRT_2;
+        for (got, want) in [(q.x, 0.0), (q.y, 0.0), (q.z, h), (q.w, h)] {
+            assert!((got.to_f64() - want).abs() < 1e-12, "{got:?} vs {want}");
+        }
+        let turned = q.rotate_vec(x);
+        assert!((turned - y).length().to_f64() < 1e-12);
+        let half = QuatFix::from_to(x, -x);
+        assert!(half.w.to_f64().abs() < 1e-12);
+        assert!((half.rotate_vec(x) + x).length().to_f64() < 1e-12);
+        assert_eq!(QuatFix::from_to(x, x + x), QuatFix::IDENTITY);
+        assert_eq!(QuatFix::from_to(Vec3Fix::ZERO, y), QuatFix::IDENTITY);
+    }
     #[cfg(not(feature = "std"))]
     use alloc::{format, vec::Vec};
 
