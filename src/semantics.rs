@@ -507,7 +507,7 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// taken from [`PHYSICS_SEMANTICS_BY_DET_MATH`] by the resolved
 /// `alice-det-math`.
 ///
-/// Hex (with `alice-det-math` 0.5.2 at 39507d1b):
+/// Hex (with `alice-det-math` 0.5.2 at 2d01c63f):
 /// `88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
