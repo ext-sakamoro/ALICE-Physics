@@ -1303,6 +1303,16 @@ use alice_physics::sdf_sph::SphSolver as _;
 use alice_physics::sdf_sph::SphSpatialHash as _;
 use alice_physics::sdf_wind_field as _;
 use alice_physics::sdf_wind_field::SdfWindField as _;
+use alice_physics::secondary_chain as _;
+use alice_physics::secondary_chain::curve_value as _;
+use alice_physics::secondary_chain::ChainConfig as _;
+use alice_physics::secondary_chain::ChainError as _;
+use alice_physics::secondary_chain::ChainInput as _;
+use alice_physics::secondary_chain::ChainLimit as _;
+use alice_physics::secondary_chain::ChainParams as _;
+use alice_physics::secondary_chain::ChainParticle as _;
+use alice_physics::secondary_chain::CurveKey as _;
+use alice_physics::secondary_chain::SecondaryChain as _;
 use alice_physics::semantics as _;
 use alice_physics::semantics::check_peer as _;
 use alice_physics::semantics::expected_peer_id as _;
@@ -1853,7 +1863,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1835 paths, checked at compile time
+    // 1845 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID
