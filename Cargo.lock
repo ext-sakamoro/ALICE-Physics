@@ -77,6 +77,8 @@ dependencies = [
  "gungraun",
  "js-sys",
  "loom",
+ "num-bigint",
+ "num-traits",
  "numpy",
  "pyo3",
  "rayon",
@@ -801,6 +803,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
  "windows-sys",
+]
+
+[[package]]
+name = "num-bigint"
+version = "0.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c89e69e7e0f03bea5ef08013795c25018e101932225a656383bd384495ecc367"
+dependencies = [
+ "num-integer",
+ "num-traits",
 ]
 
 [[package]]

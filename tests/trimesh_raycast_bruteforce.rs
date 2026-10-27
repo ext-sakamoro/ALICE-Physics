@@ -1,7 +1,9 @@
 //! `TriMesh::raycast` against a brute-force loop over every triangle.
 //!
-//! oracle (independent of the BVH): for a ray and a reach, test each triangle in index order with
-//! `ray_triangle` and keep the nearest hit, the smallest index on an exact tie of t. The mesh query
+//! oracle (independent of the BVH and of the crate's triangle test): for a ray and a reach, test
+//! each triangle in index order with the exact reference `support/exact_ray.rs` (big integers,
+//! Cramer's rule) and keep the nearest hit, the smallest index on an exact tie of t; the hit's
+//! point is `ray.at(t)` and its normal the triangle's unit normal turned to face the ray. The mesh query
 //! must report the same t, triangle index, point and normal, bit for bit, whatever acceleration it
 //! uses. Meshes are seeded random triangles at sub-unit scale (where a coarse node bound cannot
 //! separate anything) and at a scale of tens of units; rays are aimed at points inside triangles
@@ -10,7 +12,11 @@
 
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::raycast::{Ray, RayHit};
-use alice_physics_core::trimesh::{ray_triangle, TriMesh, Triangle};
+use alice_physics_core::trimesh::{TriMesh, Triangle};
+
+#[path = "support/exact_ray.rs"]
+mod exact_ray;
+use exact_ray::exact_t;
 
 /// xorshift64*: a fixed sequence, the same on every machine
 struct Rng(u64);
@@ -43,16 +49,23 @@ impl Rng {
 }
 
 fn brute(tris: &[Triangle], ray: &Ray, max_t: Fix128) -> Option<RayHit> {
-    let mut best: Option<RayHit> = None;
+    let mut best: Option<(Fix128, usize)> = None;
     for (i, tri) in tris.iter().enumerate() {
-        if let Some(mut h) = ray_triangle(ray, tri, max_t) {
-            h.body_index = i;
-            if best.is_none_or(|b| h.t < b.t) {
-                best = Some(h);
+        if let Some(t) = exact_t(ray, tri, max_t) {
+            if best.is_none_or(|(bt, _)| t < bt) {
+                best = Some((t, i));
             }
         }
     }
-    best
+    best.map(|(t, i)| {
+        let n = tris[i].unit_normal();
+        RayHit {
+            t,
+            point: ray.at(t),
+            normal: if n.dot(ray.direction) > Fix128::ZERO { -n } else { n },
+            body_index: i,
+        }
+    })
 }
 
 /// The nearest t and how many triangles reach it
@@ -61,7 +74,7 @@ fn ties(tris: &[Triangle], ray: &Ray, max_t: Fix128) -> usize {
         return 0;
     };
     tris.iter()
-        .filter(|t| ray_triangle(ray, t, max_t).is_some_and(|h| h.t == b.t))
+        .filter(|t| exact_t(ray, t, max_t) == Some(b.t))
         .count()
 }
 
@@ -261,7 +274,7 @@ fn the_walk_tests_few_nodes_and_the_any_hit_query_agrees() {
             total += visits;
             hits += usize::from(hit.is_some());
             // the any-hit answer against the brute-force loop (some triangle within reach or none)
-            let any = tris.iter().any(|t| ray_triangle(ray, t, max_t).is_some());
+            let any = tris.iter().any(|t| exact_t(ray, t, max_t).is_some());
             assert_eq!(mesh.occluded(ray, max_t), any);
         }
         let mean = total / rs.len();

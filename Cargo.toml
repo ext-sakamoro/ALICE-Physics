@@ -133,6 +133,10 @@ criterion = { version = "0.5", default-features = false }
 # v1.0 Item E: determinism golden tests hash by SHA-256 (platform-independent
 # canonical hash) — dev-only, does not affect production surface
 sha2 = "0.10"
+# exact ray / triangle reference for the raycast oracles (tests/support/exact_ray.rs): big-integer
+# arithmetic independent of the crate's own wide integers — dev-only
+num-bigint = "0.4"
+num-traits = "0.2"
 
 # loom model test of the graph-colouring invariant the batched solver's raw
 # pointer wrappers rely on (`--cfg loom`, quality-deep `loom` job, 1.2.0).

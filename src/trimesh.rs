@@ -546,26 +546,165 @@ fn triangle_box_overlap(
     Some(if up <= down { (up, n) } else { (down, -n) })
 }
 
-/// Moller-Trumbore parallel-check epsilon (2^-48), relative: the ray counts
-/// as parallel to the triangle when `|det| < MT_EPSILON * |e1 × e2| * |d|`,
-/// i.e. when the sine of the angle between the ray and the triangle's plane is
-/// below it, for any shape of triangle and any length of `d` (`det = −d · (e1 ×
-/// e2)`; a threshold on `|e1| |e2|` also scaled with the sine of the corner
-/// angle at `v0`, and dropped slivers seen head-on when `v0` was their sharp
-/// corner). It used to be 2^-24, which dropped real grazing hits: a sphere
-/// resting on a mesh floor and cast at a slope of 2^-31 found nothing, and a
-/// slope of 1e-8 ahead of it was skipped. A `det` of at most [`MT_DET_FLOOR`]
-/// is rounding whatever the triangle and also counts as parallel. The size is
-/// not free: for edges of about `1e-6` m and below the barycentric numerators
-/// are quantised at `2^-64`, so a grazing ray can still miss.
-const MT_EPSILON: Fix128 = Fix128 {
-    hi: 0,
-    lo: 0x0000_0000_0001_0000,
-};
+/// The parallel threshold of the ray / triangle test (2^-48), relative: the ray counts as
+/// parallel to the triangle when the sine of the angle between the ray and the triangle's plane
+/// is below it, |det| < 2^-48 · |e1 × e2| · |d| (`det = −d · (e1 × e2)`), for any shape of
+/// triangle and any length of `d`. Evaluated exactly, squared: det² · 2^96 < |e1 × e2|² · |d|².
+/// It used to be 2^-24, which dropped real grazing hits (a sphere resting on a mesh floor and cast
+/// at a slope of 2^-31 found nothing); a ray lying in a triangle's plane up to the rounding of its
+/// direction (a sine near 2^-64) is still parallel.
+const MT_PARALLEL_LOG2: u32 = 48;
 
-/// A `det` this small (8 steps of `2^-64`) is the rounding of the cross and dot
-/// products, not a direction: the ray is treated as parallel.
-const MT_DET_FLOOR: Fix128 = Fix128 { hi: 0, lo: 8 };
+/// Limbs of [`Exact`]: 1024 bits. The widest value the ray / triangle test forms is det² · 2^96
+/// (det is a triple product of 129-bit differences, under 2^390), under 2^880.
+const EXACT_LIMBS: usize = 16;
+
+/// A two's-complement integer of 1024 bits: the ray / triangle test on the raw `Fix128` values
+/// (each a 128-bit integer, the value times 2^64), without rounding. Every value formed stays far
+/// inside the range, so additions and products never wrap.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Exact([u64; EXACT_LIMBS]);
+
+impl Exact {
+    /// The raw integer of `x` (`hi · 2^64 + lo`)
+    const fn from_fix(x: Fix128) -> Self {
+        let ext = if x.hi < 0 { u64::MAX } else { 0 };
+        let mut w = [ext; EXACT_LIMBS];
+        w[0] = x.lo;
+        w[1] = x.hi as u64;
+        Self(w)
+    }
+
+    const fn is_negative(&self) -> bool {
+        (self.0[EXACT_LIMBS - 1] as i64) < 0
+    }
+
+    fn is_zero(&self) -> bool {
+        self.0.iter().all(|&l| l == 0)
+    }
+
+    fn add(&self, o: &Self) -> Self {
+        let mut w = [0u64; EXACT_LIMBS];
+        let mut carry = 0u64;
+        for (i, out) in w.iter_mut().enumerate() {
+            let (s1, c1) = self.0[i].overflowing_add(o.0[i]);
+            let (s2, c2) = s1.overflowing_add(carry);
+            *out = s2;
+            carry = u64::from(c1) + u64::from(c2);
+        }
+        Self(w)
+    }
+
+    fn neg(&self) -> Self {
+        let mut inv = [0u64; EXACT_LIMBS];
+        for (out, &l) in inv.iter_mut().zip(&self.0) {
+            *out = !l;
+        }
+        let mut one = [0u64; EXACT_LIMBS];
+        one[0] = 1;
+        Self(inv).add(&Self(one))
+    }
+
+    fn sub(&self, o: &Self) -> Self {
+        self.add(&o.neg())
+    }
+
+    fn abs(&self) -> Self {
+        if self.is_negative() {
+            self.neg()
+        } else {
+            *self
+        }
+    }
+
+    /// The product, schoolbook on the magnitudes, kept to 1024 bits (the operands' magnitudes
+    /// add up to fewer bits)
+    fn mul(&self, o: &Self) -> Self {
+        let (a, b) = (self.abs(), o.abs());
+        let mut w = [0u64; EXACT_LIMBS];
+        for i in 0..EXACT_LIMBS {
+            if a.0[i] == 0 {
+                continue;
+            }
+            let mut carry = 0u128;
+            for j in 0..EXACT_LIMBS - i {
+                let cur = u128::from(w[i + j]) + u128::from(a.0[i]) * u128::from(b.0[j]) + carry;
+                w[i + j] = cur as u64;
+                carry = cur >> 64;
+            }
+        }
+        let p = Self(w);
+        if self.is_negative() == o.is_negative() {
+            p
+        } else {
+            p.neg()
+        }
+    }
+
+    /// `self` · 2^bits, for a non-negative value and bits < 1024
+    fn shl(&self, bits: u32) -> Self {
+        let (limbs, rest) = ((bits / 64) as usize, bits % 64);
+        let mut w = [0u64; EXACT_LIMBS];
+        for i in (limbs..EXACT_LIMBS).rev() {
+            let lo = self.0[i - limbs];
+            let below = if rest == 0 || i == limbs {
+                0
+            } else {
+                self.0[i - limbs - 1] >> (64 - rest)
+            };
+            w[i] = if rest == 0 { lo } else { (lo << rest) | below };
+        }
+        Self(w)
+    }
+
+    /// self < o
+    fn lt(&self, o: &Self) -> bool {
+        self.sub(o).is_negative()
+    }
+
+    /// floor(self / d) for self ≥ 0, d > 0 and a quotient below 2^127: the `Fix128` whose raw
+    /// integer it is
+    fn div_floor_fix(&self, d: &Self) -> Fix128 {
+        let mut rem = *self;
+        let mut q = 0u128;
+        for bit in (0..127).rev() {
+            let shifted = d.shl(bit);
+            if !rem.lt(&shifted) {
+                rem = rem.sub(&shifted);
+                q |= 1 << bit;
+            }
+        }
+        Fix128::from_raw((q >> 64) as i64, q as u64)
+    }
+}
+
+/// A `Vec3Fix` on the raw integers
+#[derive(Clone, Copy)]
+struct ExactVec([Exact; 3]);
+
+impl ExactVec {
+    const fn from_vec(v: Vec3Fix) -> Self {
+        Self([Exact::from_fix(v.x), Exact::from_fix(v.y), Exact::from_fix(v.z)])
+    }
+
+    fn sub(&self, o: &Self) -> Self {
+        Self([self.0[0].sub(&o.0[0]), self.0[1].sub(&o.0[1]), self.0[2].sub(&o.0[2])])
+    }
+
+    fn dot(&self, o: &Self) -> Exact {
+        self.0[0].mul(&o.0[0]).add(&self.0[1].mul(&o.0[1])).add(&self.0[2].mul(&o.0[2]))
+    }
+
+    fn cross(&self, o: &Self) -> Self {
+        let [a, b, c] = &self.0;
+        let [x, y, z] = &o.0;
+        Self([
+            b.mul(z).sub(&c.mul(y)),
+            c.mul(x).sub(&a.mul(z)),
+            a.mul(y).sub(&b.mul(x)),
+        ])
+    }
+}
 
 /// Exact bounds of every BVH node: a leaf's are the min / max of its triangles' vertices, an
 /// internal node's the union of its children's (children are after their parent in the array, so
@@ -676,71 +815,65 @@ fn ray_meets_box(ray: &Ray, b: &AABB, max_t: Fix128) -> bool {
     true
 }
 
-/// Ray-Triangle intersection (Moller-Trumbore algorithm)
+/// Ray-Triangle intersection (Moller-Trumbore algorithm), exact
+///
+/// The ray hits the triangle exactly when its crossing with the triangle's plane lies in the
+/// closed triangle (edges and vertices included) at t in [0, max_t], and the ray is not parallel
+/// to the plane ([`MT_PARALLEL_LOG2`]). Every quantity is formed on the raw `Fix128` integers in
+/// [`Exact`], so nothing rounds: with the barycentric numerators rounded, a ray grazing an edge
+/// was accepted up to ~2^-63 / sinθ outside the triangle, farther than a node's padded bounds,
+/// and the mesh query disagreed with a loop over the triangles. The hit's t is the exact t
+/// floored to a step of 2^-64, its point `ray.at(t)` and its normal the triangle's unit normal
+/// turned to face the ray.
 #[must_use]
 pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
-    let e1 = tri.v1 - tri.v0;
-    let e2 = tri.v2 - tri.v0;
-    let h = ray.direction.cross(e2);
-    let det = e1.dot(h);
-    // relative to the triangle's area and the ray's length (an absolute
-    // threshold made every triangle below about 2.4e-4 m on a side invisible)
-    if det.abs() <= MT_DET_FLOOR
-        || det.abs() < MT_EPSILON * e1.cross(e2).length() * ray.direction.length()
-    {
+    let d = ExactVec::from_vec(ray.direction);
+    let v0 = ExactVec::from_vec(tri.v0);
+    let e1 = ExactVec::from_vec(tri.v1).sub(&v0);
+    let e2 = ExactVec::from_vec(tri.v2).sub(&v0);
+    let h = d.cross(&e2);
+    let det = e1.dot(&h);
+    // parallel: det² · 2^96 < |e1 × e2|² · |d|² (0 included)
+    let n = e1.cross(&e2);
+    if det.mul(&det).shl(2 * MT_PARALLEL_LOG2).lt(&n.dot(&n).mul(&d.dot(&d))) || det.is_zero() {
         return None;
     }
 
-    // Division-free: compare the barycentric and distance numerators with det
-    // (sign folded into det > 0) and divide once, after t <= max_t is known.
-    // 1/det does not fit Fix128 once |det| <= 2^-63 (a triangle 2^-20 m on a
-    // side met at a grazing angle), and its truncation to 0 used to put every
-    // such hit at t = 0, the ray origin
+    // the barycentric and distance numerators against det, its sign folded in
     let flip = det.is_negative();
-    let signed = |x: Fix128| if flip { -x } else { x };
+    let signed = |x: Exact| if flip { x.neg() } else { x };
     let det = det.abs();
-    let s = ray.origin - tri.v0;
-    let u = signed(s.dot(h));
-    if u < Fix128::ZERO || u > det {
+    let s = ExactVec::from_vec(ray.origin).sub(&v0);
+    let u = signed(s.dot(&h));
+    if u.is_negative() || det.lt(&u) {
         return None;
     }
-
-    let q = s.cross(e1);
-    let v = signed(ray.direction.dot(q));
-    if v < Fix128::ZERO || u + v > det {
+    let q = s.cross(&e1);
+    let v = signed(d.dot(&q));
+    if v.is_negative() || det.lt(&u.add(&v)) {
         return None;
     }
-
-    let t_num = signed(e2.dot(q));
-    // t_num <= max_t * det; when the product overflows it exceeds every t_num,
-    // and t_num / det < max_t still fits
-    let within = match max_t.checked_mul(det) {
-        Some(limit) => t_num <= limit,
-        None => true,
-    };
-    if t_num < Fix128::ZERO || !within {
+    let t_num = signed(e2.dot(&q));
+    // 0 <= t = t_num / det <= max_t, with t's raw integer t_num · 2^64 / det
+    let scaled = t_num.shl(64);
+    if t_num.is_negative() || Exact::from_fix(max_t).mul(&det).lt(&scaled) {
         return None;
     }
-    let t = t_num / det;
-
-    if t >= Fix128::ZERO && t <= max_t {
-        let point = ray.at(t);
-        let normal = tri.unit_normal();
-        // Ensure normal faces the ray
-        let normal = if normal.dot(ray.direction) > Fix128::ZERO {
-            -normal
-        } else {
-            normal
-        };
-        Some(RayHit {
-            t,
-            point,
-            normal,
-            body_index: 0,
-        })
+    let t = scaled.div_floor_fix(&det);
+    let point = ray.at(t);
+    let normal = tri.unit_normal();
+    // Ensure normal faces the ray
+    let normal = if normal.dot(ray.direction) > Fix128::ZERO {
+        -normal
     } else {
-        None
-    }
+        normal
+    };
+    Some(RayHit {
+        t,
+        point,
+        normal,
+        body_index: 0,
+    })
 }
 
 /// Closest pair `(point on segment, point on triangle)` between the segment
@@ -871,9 +1004,9 @@ fn max3(a: Fix128, b: Fix128, c: Fix128) -> Fix128 {
 mod tests {
     use super::*;
 
-    /// A ray lying in the plane of a triangle 1e-9 m across is parallel to it;
-    /// the rounding of `det` (a few steps of `2^-64`) must not read as a
-    /// direction. Without [`MT_DET_FLOOR`] 1 in 6 of such rays was a hit.
+    /// A ray lying in the plane of a triangle 1e-9 m across, up to the rounding
+    /// of its direction, is parallel to it (a sine near 2^-64, far below
+    /// [`MT_PARALLEL_LOG2`]). Before the threshold 1 in 6 of such rays was a hit.
     #[test]
     fn a_ray_in_the_plane_of_a_tiny_triangle_is_parallel() {
         let mut seed: u64 = 0x9E37_79B9_7F4A_7C15;
