@@ -130,6 +130,10 @@ pub struct TriMesh {
     pub(crate) bvh: LinearBvh,
     /// Overall AABB
     pub bounds: AABB,
+    /// Exact bounds of each BVH node (the min / max of its triangles' vertices, no rounding), in
+    /// the order of `bvh.nodes`: what a ray is tested against (the BVH's own node bounds are whole
+    /// units, too coarse to separate geometry smaller than a unit)
+    pub(crate) node_bounds: Vec<AABB>,
 }
 
 impl TriMesh {
@@ -162,11 +166,7 @@ impl TriMesh {
         let bvh = LinearBvh::build(bvh_prims);
         let bounds = bvh.bounds;
 
-        Self {
-            triangles,
-            bvh,
-            bounds,
-        }
+        Self::from_parts(triangles, bvh, bounds)
     }
 
     /// Build from raw triangles
@@ -185,32 +185,96 @@ impl TriMesh {
         let bvh = LinearBvh::build(bvh_prims);
         let bounds = bvh.bounds;
 
+        Self::from_parts(triangles, bvh, bounds)
+    }
+
+    /// A mesh from its triangles, their BVH and the overall bounds (the exact node bounds are
+    /// derived here, so a restored mesh carries them without storing them)
+    pub(crate) fn from_parts(triangles: Vec<Triangle>, bvh: LinearBvh, bounds: AABB) -> Self {
+        let node_bounds = refit_node_bounds(&bvh, &triangles);
         Self {
             triangles,
             bvh,
             bounds,
+            node_bounds,
         }
     }
 
-    /// Ray query: find closest triangle intersection
+    /// Ray query: the nearest triangle the ray meets within `max_t`. The BVH is walked along the
+    /// ray (a node is skipped when the ray cannot meet its exact bounds before the nearest hit so
+    /// far), so the answer is the one a test of every triangle in index order would give: the
+    /// smallest t, and on an exact tie of t the smallest triangle index
     #[must_use]
     pub fn raycast(&self, ray: &Ray, max_t: Fix128) -> Option<RayHit> {
-        let ray_aabb = ray_to_aabb(ray, max_t);
-        let candidates = self.bvh.query(&ray_aabb);
+        self.raycast_visits(ray, max_t).0
+    }
 
+    /// [`TriMesh::raycast`] with the number of BVH nodes whose bounds were tested (a measure of the
+    /// work done: far below the node count when the walk prunes)
+    #[must_use]
+    pub fn raycast_visits(&self, ray: &Ray, max_t: Fix128) -> (Option<RayHit>, usize) {
         let mut best: Option<RayHit> = None;
         let mut best_t = max_t;
-
-        for tri_idx in candidates {
-            let tri = &self.triangles[tri_idx as usize];
-            if let Some(mut hit) = ray_triangle(ray, tri, best_t) {
-                hit.body_index = tri_idx as usize;
-                best_t = hit.t;
-                best = Some(hit);
+        let mut visits = 0usize;
+        let nodes = &self.bvh.nodes;
+        let mut idx = 0usize;
+        while idx < nodes.len() {
+            let node = &nodes[idx];
+            visits += 1;
+            // inclusive at best_t: a triangle met at the same t may still have a smaller index
+            if ray_meets_box(ray, &self.node_bounds[idx], best_t) {
+                if node.is_leaf() {
+                    let start = node.first_child_or_prim as usize;
+                    for &prim in &self.bvh.primitives[start..start + node.prim_count() as usize] {
+                        let tri_idx = prim as usize;
+                        if let Some(mut hit) = ray_triangle(ray, &self.triangles[tri_idx], best_t) {
+                            let nearer = match &best {
+                                None => true,
+                                Some(b) => hit.t < b.t || (hit.t == b.t && tri_idx < b.body_index),
+                            };
+                            if nearer {
+                                hit.body_index = tri_idx;
+                                best_t = hit.t;
+                                best = Some(hit);
+                            }
+                        }
+                    }
+                    idx = node.escape_idx() as usize;
+                } else {
+                    idx = node.first_child_or_prim as usize;
+                }
+            } else {
+                idx = node.escape_idx() as usize;
             }
         }
+        (best, visits)
+    }
 
-        best
+    /// Whether the ray meets any triangle within `max_t` (a shadow ray): the same answer as
+    /// `raycast(ray, max_t).is_some()`, returning at the first triangle met
+    #[must_use]
+    pub fn occluded(&self, ray: &Ray, max_t: Fix128) -> bool {
+        let nodes = &self.bvh.nodes;
+        let mut idx = 0usize;
+        while idx < nodes.len() {
+            let node = &nodes[idx];
+            if ray_meets_box(ray, &self.node_bounds[idx], max_t) {
+                if node.is_leaf() {
+                    let start = node.first_child_or_prim as usize;
+                    for &prim in &self.bvh.primitives[start..start + node.prim_count() as usize] {
+                        if ray_triangle(ray, &self.triangles[prim as usize], max_t).is_some() {
+                            return true;
+                        }
+                    }
+                    idx = node.escape_idx() as usize;
+                } else {
+                    idx = node.first_child_or_prim as usize;
+                }
+            } else {
+                idx = node.escape_idx() as usize;
+            }
+        }
+        false
     }
 
     /// Closest point on mesh to a given point
@@ -503,6 +567,115 @@ const MT_EPSILON: Fix128 = Fix128 {
 /// products, not a direction: the ray is treated as parallel.
 const MT_DET_FLOOR: Fix128 = Fix128 { hi: 0, lo: 8 };
 
+/// Exact bounds of every BVH node: a leaf's are the min / max of its triangles' vertices, an
+/// internal node's the union of its children's (children are after their parent in the array, so
+/// one pass from the end has every child done before its parent; a node's children are its first
+/// child and that child's escape chain up to the node's own escape)
+fn refit_node_bounds(bvh: &LinearBvh, triangles: &[Triangle]) -> Vec<AABB> {
+    let nodes = &bvh.nodes;
+    let empty = AABB::new(Vec3Fix::ZERO, Vec3Fix::ZERO);
+    let mut out = vec![empty; nodes.len()];
+    for i in (0..nodes.len()).rev() {
+        let node = &nodes[i];
+        let mut acc: Option<AABB> = None;
+        let mut add = |b: AABB| {
+            acc = Some(match acc {
+                None => b,
+                Some(a) => AABB::new(
+                    Vec3Fix::new(
+                        min3(a.min.x, b.min.x, b.min.x),
+                        min3(a.min.y, b.min.y, b.min.y),
+                        min3(a.min.z, b.min.z, b.min.z),
+                    ),
+                    Vec3Fix::new(
+                        max3(a.max.x, b.max.x, b.max.x),
+                        max3(a.max.y, b.max.y, b.max.y),
+                        max3(a.max.z, b.max.z, b.max.z),
+                    ),
+                ),
+            });
+        };
+        if node.is_leaf() {
+            let start = node.first_child_or_prim as usize;
+            for &prim in &bvh.primitives[start..start + node.prim_count() as usize] {
+                add(triangles[prim as usize].aabb());
+            }
+        } else {
+            let end = node.escape_idx() as usize;
+            let mut c = node.first_child_or_prim as usize;
+            while c < nodes.len() && c != end && c > i {
+                add(out[c]);
+                c = nodes[c].escape_idx() as usize;
+            }
+        }
+        out[i] = acc.unwrap_or(empty);
+    }
+    out
+}
+
+/// How far a node's bounds are widened before a ray is tested against them: 2^-32 units, far
+/// below any geometry and far above the rounding of the triangle test, so a ray the triangle test
+/// accepts at a vertex or along an edge is never refused by its node
+const BOX_PAD: Fix128 = Fix128 { hi: 0, lo: 1 << 32 };
+
+/// The slack of a compared product: `Fix128` multiplication keeps the middle 128 bits of the
+/// 256-bit product, which floors (rounds toward negative infinity) by less than one step of
+/// 2^-64; each side of a comparison is off by less than one step, so a pad of 4 steps toward
+/// acceptance keeps the test conservative
+const PRODUCT_SLACK: Fix128 = Fix128 { hi: 0, lo: 4 };
+
+/// Whether the ray can meet the box at some t in [0, max_t] (conservative: true whenever the exact
+/// ray does). Per axis with a direction component d != 0 the ray is inside the slab for t between
+/// enter = (near - o) / |d| and exit = (far - o) / |d|; the ray meets the box when the largest
+/// enter is at most the smallest exit, 0 and max_t included. Without dividing: enter_k <= exit_m
+/// as enter_num_k * |d_m| <= exit_num_m * |d_k| for every pair of axes, enter_k <= max_t as
+/// enter_num_k <= max_t * |d_k|, exit_m >= 0 as exit_num_m >= 0. An axis with d = 0 needs the
+/// origin inside the slab (bounds included). A product that overflows counts as met
+fn ray_meets_box(ray: &Ray, b: &AABB, max_t: Fix128) -> bool {
+    let o = [ray.origin.x, ray.origin.y, ray.origin.z];
+    let d = [ray.direction.x, ray.direction.y, ray.direction.z];
+    let lo = [b.min.x - BOX_PAD, b.min.y - BOX_PAD, b.min.z - BOX_PAD];
+    let hi = [b.max.x + BOX_PAD, b.max.y + BOX_PAD, b.max.z + BOX_PAD];
+    // (enter numerator, exit numerator, |d|) of the axes that move
+    let mut axes: [(Fix128, Fix128, Fix128); 3] = [(Fix128::ZERO, Fix128::ZERO, Fix128::ZERO); 3];
+    let mut n = 0;
+    for k in 0..3 {
+        if d[k].is_zero() {
+            if o[k] < lo[k] || o[k] > hi[k] {
+                return false;
+            }
+        } else if d[k].is_negative() {
+            axes[n] = (o[k] - hi[k], o[k] - lo[k], -d[k]);
+            n += 1;
+        } else {
+            axes[n] = (lo[k] - o[k], hi[k] - o[k], d[k]);
+            n += 1;
+        }
+    }
+    let axes = &axes[..n];
+    let le = |a: Fix128, b: Fix128, c: Fix128, e: Fix128| -> bool {
+        // a * b <= c * e (with the slack toward true)
+        match (a.checked_mul(b), c.checked_mul(e)) {
+            (Some(l), Some(r)) => l <= r + PRODUCT_SLACK,
+            _ => true,
+        }
+    };
+    for &(enter, exit, dk) in axes {
+        if exit < -PRODUCT_SLACK {
+            return false;
+        }
+        if !le(enter, Fix128::ONE, max_t, dk) {
+            return false;
+        }
+        for &(_, exit_m, dm) in axes {
+            if !le(enter, dm, exit_m, dk) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 /// Ray-Triangle intersection (Moller-Trumbore algorithm)
 #[must_use]
 pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
@@ -568,48 +741,6 @@ pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> 
     } else {
         None
     }
-}
-
-/// Create an AABB enclosing a ray segment
-fn ray_to_aabb(ray: &Ray, max_t: Fix128) -> AABB {
-    let end = ray.at(max_t);
-    let one = Fix128::ONE;
-    AABB::new(
-        Vec3Fix::new(
-            if ray.origin.x < end.x {
-                ray.origin.x - one
-            } else {
-                end.x - one
-            },
-            if ray.origin.y < end.y {
-                ray.origin.y - one
-            } else {
-                end.y - one
-            },
-            if ray.origin.z < end.z {
-                ray.origin.z - one
-            } else {
-                end.z - one
-            },
-        ),
-        Vec3Fix::new(
-            if ray.origin.x > end.x {
-                ray.origin.x + one
-            } else {
-                end.x + one
-            },
-            if ray.origin.y > end.y {
-                ray.origin.y + one
-            } else {
-                end.y + one
-            },
-            if ray.origin.z > end.z {
-                ray.origin.z + one
-            } else {
-                end.z + one
-            },
-        ),
-    )
 }
 
 /// Closest pair `(point on segment, point on triangle)` between the segment

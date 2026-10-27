@@ -1068,11 +1068,11 @@ fn r_static_collider(r: &mut R<'_>) -> Res<StaticCollider> {
                 primitives,
                 bounds: r.aabb()?,
             };
-            StaticCollider::TriMesh(crate::trimesh::TriMesh {
+            StaticCollider::TriMesh(crate::trimesh::TriMesh::from_parts(
                 triangles,
                 bvh,
-                bounds: r.aabb()?,
-            })
+                r.aabb()?,
+            ))
         }
         _ => return Err(invalid(S)),
     })
