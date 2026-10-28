@@ -20,6 +20,8 @@ on:
       - 'rust-toolchain.toml'
       - 'crates/alice-physics/**'
       - 'scripts/build_wasm_pkg.sh'
+      - 'README.md'
+      - 'LICENSE*'
       - 'web/**'
       - 'scripts/changed_paths.py'
       - '.github/workflows/web.yml'

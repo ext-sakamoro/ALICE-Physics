@@ -10,6 +10,9 @@ rust-toolchain.toml
 # the wasm package is built from the facade
 crates/alice-physics/**
 scripts/build_wasm_pkg.sh
+# the package build copies these into the package (a rename or a delete breaks npm run build)
+README.md
+LICENSE*
 # the viewer, its lock file and the smoke test
 web/**
 # the changes and gate jobs

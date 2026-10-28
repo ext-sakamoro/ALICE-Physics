@@ -51,7 +51,9 @@ const BODY_COLORS: number[] = [
 
 const params = new URLSearchParams(window.location.search);
 const SEED = parseU32(params.get('seed'), 1);
-const TEST_STEPS = params.has('steps') ? parseU32(params.get('steps'), 0) : null;
+// an unreadable ?steps does not enter the test mode (it is reported instead)
+const TEST_STEPS = params.has('steps') ? parseU32(params.get('steps'), -1) : null;
+if (TEST_STEPS === -1) console.error(`[ALICE-Physics] ?steps=${params.get('steps')} is not a step count: test mode off`);
 
 function parseU32(text: string | null, fallback: number): number {
   if (text === null || !/^\d+$/.test(text)) return fallback;
@@ -365,7 +367,7 @@ async function init(): Promise<void> {
 
     console.log('[ALICE-Physics] WASM initialized, version:', wasm.alicePhysicsVersion());
 
-    if (TEST_STEPS !== null) runTestMode(wasm.alicePhysicsVersion(), TEST_STEPS);
+    if (TEST_STEPS !== null && TEST_STEPS >= 0) runTestMode(wasm.alicePhysicsVersion(), TEST_STEPS);
   } catch (e) {
     console.error('[ALICE-Physics] Failed to load WASM module:', e);
     elVersion.textContent = 'WASM ERROR';
