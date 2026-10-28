@@ -429,6 +429,23 @@ fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
                 s.vec3(moment);
                 s.fix(strength);
             }
+            ForceField::InducedDipole {
+                position,
+                moment,
+                radius,
+                material,
+                response,
+                density,
+            } => {
+                s.bytes(b"induced-dipole");
+                s.vec3(position);
+                s.vec3(moment);
+                s.fix(radius);
+                s.u64(u64::from(material));
+                s.fix(response.chi_eff);
+                s.fix(response.saturation_magnetization);
+                s.fix(density);
+            }
         }
     }
 
