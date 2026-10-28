@@ -26,7 +26,10 @@ fn scene() -> PhysicsWorld {
     let a = w.add_body(RigidBody::new_dynamic(v(0, 5, 0), Fix128::ONE));
     let b = w.add_body(RigidBody::new_dynamic(v(1, 5, 0), Fix128::from_int(2)));
     w.add_joint(Joint::Ball(BallJoint::new(a, b, v(0, 0, 0), v(-1, 0, 0))));
-    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(v(0, 1, 0), Fix128::ZERO)));
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+        v(0, 1, 0),
+        Fix128::ZERO,
+    )));
     w
 }
 
@@ -91,17 +94,41 @@ fn insertion_order_is_part_of_the_state() {
 fn every_parameter_a_replay_depends_on_changes_the_digest() {
     let base = scene().state_digest();
     let changes: Vec<(&str, Box<dyn Fn(&mut PhysicsWorld)>)> = vec![
-        ("body position", Box::new(|w| w.bodies[0].position = v(0, 6, 0))),
-        ("body velocity", Box::new(|w| w.bodies[1].velocity = v(0, 0, 1))),
-        ("body mass", Box::new(|w| w.bodies[1].inv_mass = Fix128::from_ratio(1, 3))),
-        ("body friction", Box::new(|w| w.bodies[0].friction = Fix128::from_ratio(1, 7))),
-        ("body restitution", Box::new(|w| w.bodies[0].restitution = Fix128::from_ratio(1, 7))),
-        ("joint added", Box::new(|w| {
-            w.add_joint(Joint::Ball(BallJoint::new(0, 1, v(0, 1, 0), v(0, 1, 0))));
-        })),
-        ("static collider added", Box::new(|w| {
-            w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(v(1, 0, 0), Fix128::ONE)));
-        })),
+        (
+            "body position",
+            Box::new(|w| w.bodies[0].position = v(0, 6, 0)),
+        ),
+        (
+            "body velocity",
+            Box::new(|w| w.bodies[1].velocity = v(0, 0, 1)),
+        ),
+        (
+            "body mass",
+            Box::new(|w| w.bodies[1].inv_mass = Fix128::from_ratio(1, 3)),
+        ),
+        (
+            "body friction",
+            Box::new(|w| w.bodies[0].friction = Fix128::from_ratio(1, 7)),
+        ),
+        (
+            "body restitution",
+            Box::new(|w| w.bodies[0].restitution = Fix128::from_ratio(1, 7)),
+        ),
+        (
+            "joint added",
+            Box::new(|w| {
+                w.add_joint(Joint::Ball(BallJoint::new(0, 1, v(0, 1, 0), v(0, 1, 0))));
+            }),
+        ),
+        (
+            "static collider added",
+            Box::new(|w| {
+                w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
+                    v(1, 0, 0),
+                    Fix128::ONE,
+                )));
+            }),
+        ),
         ("gravity", Box::new(|w| w.config.gravity = v(0, -5, 0))),
         ("substeps", Box::new(|w| w.config.substeps += 1)),
     ];
@@ -121,9 +148,15 @@ fn the_law_id_binding_value_is_the_world_law_under_this_build() {
     let w = scene();
     let mut other = scene();
     other.config.gravity = v(0, -1, 0);
-    assert_ne!(w.law_id(&PHYSICS_SEMANTICS_ID), other.law_id(&PHYSICS_SEMANTICS_ID));
+    assert_ne!(
+        w.law_id(&PHYSICS_SEMANTICS_ID),
+        other.law_id(&PHYSICS_SEMANTICS_ID)
+    );
     // the snapshot header carries it (bytes 48..80 of a version 4 blob)
-    assert_eq!(&w.snapshot_world()[48..80], &w.law_id(&PHYSICS_SEMANTICS_ID));
+    assert_eq!(
+        &w.snapshot_world()[48..80],
+        &w.law_id(&PHYSICS_SEMANTICS_ID)
+    );
     assert_eq!(&w.snapshot_world()[16..48], &PHYSICS_SEMANTICS_ID);
 }
 

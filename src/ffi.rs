@@ -1121,7 +1121,10 @@ pub unsafe extern "C" fn alice_physics_world_restore(
 /// # Safety
 /// `world` must be a valid pointer. `out` must point to 32 writable bytes.
 #[no_mangle]
-pub unsafe extern "C" fn alice_physics_state_digest(world: *const PhysicsWorld, out: *mut u8) -> u8 {
+pub unsafe extern "C" fn alice_physics_state_digest(
+    world: *const PhysicsWorld,
+    out: *mut u8,
+) -> u8 {
     ffi_guard(0, || {
         let (Some(w), false) = (world.as_ref(), out.is_null()) else {
             return 0;
