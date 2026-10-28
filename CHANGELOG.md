@@ -102,6 +102,7 @@ were introduced during that release window.
 - `scripts/entropy_guard.py` と `scripts/allow_reason_guard.py` の `src/privacy.rs` の許可を外した (本番の code で時計と OS の乱数を読む箇所は 0 件、許可の表は空)
 
 ### Fixed
+- ビューア (`web/`): body が床を突き抜けて落ち続けていた (4 秒後には画面に球が残らない) 床を静的な body 1 つ (`addStaticBody(0, -1, 0)`) から平面の当たり判定 `addStaticPlane(0, 1, 0, 0)` (描いている床 y = 0) にした 球の当たり判定の半径を描いている半径 0.5 に揃えた (`setCollisionRadius`) 床が body でなくなったので mesh と body の番号のずれ (+1) を外した `Web viewer` の smoke が 1200 step 後に全 body を床の上 (y ≥ 0.45、縦の速さ < 0.1) で確かめる
 - `trimesh::ray_triangle` / `TriMesh::raycast` / `TriMesh::occluded`: 2 つの三角形が共有する辺や頂点をちょうど通る ray が、丸めで両方の三角形の外に出て閉じた mesh を素通りしていた 例 `examples/trimesh_shadow_rays.rs` の床から屋根への 384 本のうち影になる 64 本 (どれも格子の対角を通る) を 0 本と数えていた 判定を厳密にして直した (上の Changed) 閉じた mesh の共有の辺と頂点を通る ray が当たる試験 `rays_through_shared_edges_and_vertices_of_a_closed_mesh_hit_it`
 
 - 試験: `scripts/` の 6 つの試験 (`test_wiring_guard.py` / `test_entropy_guard.py` / `test_no_private_minmax.py` / `test_allow_reason_guard.py` / `test_ledgers.py` / `test_gen_status.py`) が作った一時 dir を消さず、走らせるたびに一時 dir に残していた (実測 128 / 44 / 34 / 42 / 8 / 22 件) fixture を作る関数は module の試験の後に、試験の中で作る dir はその試験の後に消す 各試験は自分の一時 dir の中で走り (実行する command の `$TMPDIR` も同じ)、何かが残ると名前を挙げて失敗する

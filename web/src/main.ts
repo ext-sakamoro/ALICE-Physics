@@ -14,7 +14,8 @@ interface AlicePhysicsWasm {
 
 interface WasmPhysicsWorld {
   addDynamicBody(x: number, y: number, z: number, mass: number): number;
-  addStaticBody(x: number, y: number, z: number): number;
+  addStaticPlane(nx: number, ny: number, nz: number, offset: number): number | undefined;
+  setCollisionRadius(bodyId: number, radius: number): boolean;
   bodyCount(): number;
   step(dt: number): void;
   getPositions(): Float64Array;
@@ -194,6 +195,8 @@ function addBody(): void {
   const mass = 0.5 + random() * 2;
 
   const id = world.addDynamicBody(x, y, z, mass);
+  // the collision sphere is the drawn sphere
+  world.setCollisionRadius(id, SPHERE_RADIUS);
   world.setRestitution(id, 0.4 + random() * 0.4);
 
   const mesh = createBodyMesh(id);
@@ -233,8 +236,8 @@ function resetWorld(): void {
   world = new (world.constructor as new () => WasmPhysicsWorld)();
   world.setGravity(0, -9.81, 0);
 
-  // Add initial ground body (static)
-  world.addStaticBody(0, -1, 0);
+  // the floor: the static plane y = 0 (the drawn ground)
+  world.addStaticPlane(0, 1, 0, 0);
 }
 
 // ============================================================================
@@ -246,9 +249,9 @@ function syncMeshes(): void {
   const positions = world.getPositions();
   const n = world.bodyCount();
 
-  // Skip body 0 (static ground) — meshes start from dynamic bodies
+  // the floor is a static collider, not a body: mesh i is body i
   for (let i = 0; i < meshes.length; i++) {
-    const bodyIdx = i + 1; // offset by 1 for static ground
+    const bodyIdx = i;
     if (bodyIdx < n) {
       const base = bodyIdx * 3;
       meshes[i].position.set(
@@ -354,8 +357,8 @@ async function init(): Promise<void> {
     world = new wasm.WasmPhysicsWorld();
     world.setGravity(0, -9.81, 0);
 
-    // Add static ground body
-    world.addStaticBody(0, -1, 0);
+    // the floor: the static plane y = 0 (the drawn ground)
+    world.addStaticPlane(0, 1, 0, 0);
 
     // Add initial bodies
     addRain(10);
