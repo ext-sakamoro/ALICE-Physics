@@ -126,7 +126,7 @@ fn free_gap(d: f64, substeps: usize, k: usize, s: usize) -> f64 {
 #[test]
 fn a_vetoed_head_on_pair_moves_as_free_bodies() {
     let config = PhysicsConfig::default();
-    let d = config.damping.to_f64();
+    let d = (-config.damping_rate.to_f64() * DT).exp();
     let n = 120;
     let (x_want, v_want) = free(d, n);
     assert!(
@@ -164,7 +164,7 @@ fn a_vetoed_head_on_pair_moves_as_free_bodies() {
 #[test]
 fn an_accepted_head_on_pair_bounces_with_the_restitution() {
     let config = PhysicsConfig::default();
-    let d = config.damping.to_f64();
+    let d = (-config.damping_rate.to_f64() * DT).exp();
     let substeps = config.substeps;
     let (k, _) = (0..200)
         .flat_map(|k| (1..=substeps).map(move |s| (k, s)))

@@ -2393,7 +2393,8 @@ fn zero_participants_match_the_existing_step_and_golden() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(99, 100),
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
         ..Default::default()
     };
     let mut w = PhysicsWorld::new(config);
@@ -2402,7 +2403,8 @@ fn zero_participants_match_the_existing_step_and_golden() {
         w.add_body(
             RigidBody::new_dynamic(Vec3Fix::from_int(i, 5 + i * 2, 0), Fix128::ONE)
                 .with_restitution(Fix128::from_ratio(6, 10))
-                .with_linear_damping(Fix128::from_ratio(98, 100)),
+                // the loss per step of the former retention 0.98 at dt = 1/60
+                .with_linear_damping_rate(-Fix128::from_ratio(98, 100).ln() * Fix128::from_int(60)),
         );
     }
     for _ in 0..200 {
@@ -2444,7 +2446,8 @@ fn copied_cascade_golden_is_current() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(99, 100),
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
         ..Default::default()
     };
     let mut w = PhysicsWorld::new(config);
@@ -2453,7 +2456,8 @@ fn copied_cascade_golden_is_current() {
         w.add_body(
             RigidBody::new_dynamic(Vec3Fix::from_int(i, 5 + i * 2, 0), Fix128::ONE)
                 .with_restitution(Fix128::from_ratio(6, 10))
-                .with_linear_damping(Fix128::from_ratio(98, 100)),
+                // the loss per step of the former retention 0.98 at dt = 1/60
+                .with_linear_damping_rate(-Fix128::from_ratio(98, 100).ln() * Fix128::from_int(60)),
         );
     }
     for _ in 0..200 {

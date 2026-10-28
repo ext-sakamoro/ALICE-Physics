@@ -63,12 +63,12 @@ fn to3(v: Vec3Fix) -> [f64; 3] {
     [v.x.to_f64(), v.y.to_f64(), v.z.to_f64()]
 }
 
-fn config(substeps: usize, iterations: usize, damping: f64) -> SolverConfig {
+fn config(substeps: usize, iterations: usize, damping_rate: f64) -> SolverConfig {
     SolverConfig {
         substeps,
         iterations,
         gravity: Vec3Fix::ZERO,
-        damping: fx(damping),
+        damping_rate: fx(damping_rate),
         ..SolverConfig::default()
     }
 }
@@ -122,7 +122,7 @@ fn bound(x0: f64, v0: f64, omega: f64, h: f64) -> f64 {
 }
 
 /// The substep map iterated in `f64`: `frames` frames of `substeps` substeps,
-/// velocity scaled by `retain` after each frame (`SolverConfig::damping`).
+/// velocity scaled by `retain` after each frame (`exp(−SolverConfig::damping_rate·dt)`).
 /// Returns the position after every frame.
 fn reference(
     x0: f64,
@@ -171,7 +171,7 @@ fn critical_return_follows_the_closed_form_without_overshoot() {
     let substeps = 4;
     let h = DT / substeps as f64;
     let frames = 120;
-    let mut w = world(config(substeps, 1, 1.0));
+    let mut w = world(config(substeps, 1, 0.0));
     let body = add_spring_body(&mut w, m, omega, 1.0, [x0, 0.0, 0.0], [0.0; 3]);
     let got = run(&mut w, body, frames);
     let refx = reference(x0, 0.0, omega, 1.0, substeps, frames, 1.0);
@@ -207,7 +207,7 @@ fn tangential_velocity_is_damped_and_the_body_does_not_orbit() {
     let v0 = omega * r0; // the speed of a circular orbit under the spring alone
     let substeps = 4;
     let h = DT / substeps as f64;
-    let mut w = world(config(substeps, 1, 1.0));
+    let mut w = world(config(substeps, 1, 0.0));
     let body = add_spring_body(&mut w, m, omega, 1.0, [r0, 0.0, 0.0], [0.0, v0, 0.0]);
     let l0 = m * r0 * v0;
     let mut prev = [r0, 0.0, 0.0];
@@ -251,7 +251,7 @@ fn result_does_not_depend_on_substeps_or_iterations() {
     let mut runs = Vec::new();
     for substeps in [1usize, 4, 8] {
         let h = DT / substeps as f64;
-        let mut w = world(config(substeps, 1, 1.0));
+        let mut w = world(config(substeps, 1, 0.0));
         let body = add_spring_body(&mut w, m, omega, 1.0, [x0, 0.0, 0.0], [v0, 0.0, 0.0]);
         let got = run(&mut w, body, frames);
         let refx = reference(x0, v0, omega, 1.0, substeps, frames, 1.0);
@@ -285,7 +285,7 @@ fn result_does_not_depend_on_substeps_or_iterations() {
     }
 
     let bits = |iterations: usize| {
-        let mut w = world(config(4, iterations, 1.0));
+        let mut w = world(config(4, iterations, 0.0));
         let body = add_spring_body(&mut w, m, omega, 1.0, [x0, 0.3, 0.0], [v0, 0.0, 0.7]);
         (0..frames)
             .map(|_| {
@@ -306,7 +306,7 @@ fn springs_of_different_frequency_share_a_world() {
     let substeps = 4;
     let h = DT / substeps as f64;
     let frames = 90;
-    let mut w = world(config(substeps, 1, 1.0));
+    let mut w = world(config(substeps, 1, 0.0));
     let slow = add_spring_body(&mut w, 3.0, 5.0, 1.0, [0.0, 1.0, 0.0], [0.0; 3]);
     let fast = add_spring_body(&mut w, 0.5, 20.0, 1.0, [0.0, 0.0, -0.6], [0.0; 3]);
     let ref_slow = reference(1.0, 0.0, 5.0, 1.0, substeps, frames, 1.0);
@@ -323,7 +323,7 @@ fn springs_of_different_frequency_share_a_world() {
     }
 }
 
-/// (5) With the default `SolverConfig::damping = 0.99` and 4 substeps the
+/// (5) With a world damping rate whose loss per frame is 0.99 and 4 substeps the
 /// result is the same substep law with the velocity scaled by 0.99 after every
 /// frame, and differs measurably from the undamped world.
 #[test]
@@ -331,7 +331,12 @@ fn global_damping_multiplies_on_top_of_the_spring_law() {
     let (m, omega, x0) = (4.0, 1.0 / 0.12, 0.5);
     let substeps = 4;
     let frames = 90;
-    let mut w = world(config(substeps, 1, 0.99));
+    // the loss per step of the former retention 0.99 at dt = 1/60
+    let mut w = world(config(
+        substeps,
+        1,
+        (-Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60)).to_f64(),
+    ));
     let body = add_spring_body(&mut w, m, omega, 1.0, [x0, 0.0, 0.0], [0.0; 3]);
     let got = run(&mut w, body, frames);
     let damped = reference(x0, 0.0, omega, 1.0, substeps, frames, 0.99);
@@ -404,7 +409,7 @@ fn tgs_backend_follows_the_same_law() {
     let frames = 90;
     let mut w = world(SolverConfig {
         solver_backend: SolverBackend::Tgs,
-        ..config(substeps, 1, 1.0)
+        ..config(substeps, 1, 0.0)
     });
     let body = add_spring_body(&mut w, m, omega, 1.0, [x0, 0.0, 0.0], [0.0, v0, 0.0]);
     let refx = reference(x0, 0.0, omega, 1.0, substeps, frames, 1.0);
@@ -439,7 +444,7 @@ fn parallel_step_follows_the_same_law() {
     let substeps = 4;
     let frames = 90;
     let make = || {
-        let mut w = world(config(substeps, 1, 1.0));
+        let mut w = world(config(substeps, 1, 0.0));
         let body = add_spring_body(&mut w, m, omega, 1.0, [x0, 0.0, 0.0], [0.0, v0, 0.0]);
         (w, body)
     };
@@ -473,7 +478,7 @@ fn hanging_body_settles_at_the_static_extension() {
             let mut w = world(SolverConfig {
                 gravity: v3(0.0, -g, 0.0),
                 solver_backend: backend,
-                ..config(4, 1, 1.0)
+                ..config(4, 1, 0.0)
             });
             let top = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
             let body = w.add_body(RigidBody::new_dynamic(v3(0.0, -rest - 0.1, 0.0), fx(m)));
@@ -508,7 +513,7 @@ fn damper_acts_on_relative_velocity_of_a_moving_anchor() {
     let (m, omega, speed) = (5.0, 1.0 / 0.12, 3.0);
     let substeps = 4;
     let h = DT / substeps as f64;
-    let mut w = world(config(substeps, 1, 1.0));
+    let mut w = world(config(substeps, 1, 0.0));
     let anchor = w.add_body(RigidBody::new_kinematic(Vec3Fix::ZERO));
     let body = w.add_body(RigidBody::new_dynamic(v3(0.0, 0.4, 0.0), fx(m)));
     w.add_joint(Joint::Spring(SpringJoint::new(
@@ -553,7 +558,7 @@ fn damper_acts_on_relative_velocity_of_a_moving_anchor() {
 #[test]
 fn positive_rest_length_damps_along_the_axis_only() {
     let (m, omega, rest, speed) = (1.0, 8.0, 1.0, 2.0);
-    let mut w = world(config(4, 1, 1.0));
+    let mut w = world(config(4, 1, 0.0));
     let anchor = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
     let mut b = RigidBody::new_dynamic(v3(rest, 0.0, 0.0), fx(m));
     b.velocity = v3(0.0, speed, 0.0);

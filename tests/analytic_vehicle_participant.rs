@@ -104,7 +104,7 @@ fn single_wheel(mass: i64, backend: SolverBackend) -> PhysicsWorld {
 /// closed forms hold without a per-frame velocity factor.
 fn car(backend: SolverBackend) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     world.config.solver_backend = backend;
@@ -274,7 +274,7 @@ fn suspension_rests_with_zero_frame_end_velocity() {
 fn coast(substeps: usize) -> f64 {
     let mut world = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         ..PhysicsConfig::default()
     });

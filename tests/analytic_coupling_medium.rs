@@ -80,7 +80,7 @@ fn to_f(v: Vec3Fix) -> [f64; 3] {
 fn world(backend: SolverBackend, substeps: usize) -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         solver_backend: backend,
         ..PhysicsConfig::default()
@@ -431,7 +431,7 @@ fn a_ball_on_a_frictionless_floor_reaches_the_common_velocity() {
     for backend in BACKENDS {
         let mut w = PhysicsWorld::new(PhysicsConfig {
             gravity: v3(0.0, -10.0, 0.0),
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             substeps: 4,
             solver_backend: backend,
             ..PhysicsConfig::default()
@@ -950,7 +950,7 @@ fn momentum_is_conserved_while_coupled_bodies_sleep() {
     for backend in BACKENDS {
         let mut w = PhysicsWorld::new(PhysicsConfig {
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             substeps: 4,
             solver_backend: backend,
             ..PhysicsConfig::default()
@@ -985,7 +985,7 @@ fn a_medium_at_rest_relative_to_the_bodies_lets_them_sleep() {
     for backend in BACKENDS {
         let mut w = PhysicsWorld::new(PhysicsConfig {
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             substeps: 4,
             solver_backend: backend,
             ..PhysicsConfig::default()

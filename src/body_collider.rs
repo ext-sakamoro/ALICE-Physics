@@ -15,13 +15,18 @@ use crate::collider::{contact, gjk, Contact, Sphere, Support, AABB};
 #[cfg(feature = "std")]
 use crate::compound::ShapeRef;
 use crate::compound::{CompoundChild, CompoundShape};
+use crate::heightfield::HeightField;
 use crate::math::{Fix128, Mat3Fix, QuatFix, Vec3Fix};
+use crate::plane_collider::PlaneCollider;
 #[cfg(feature = "std")]
 use crate::sdf_collider::{
     box_sample_points, collide_aabb_sdf, collide_capsule_sdf, collide_point_sdf,
     collide_points_sdf, collide_sphere_sdf, SdfCollider,
 };
 use crate::shape::{PosedShape, Shape};
+use crate::static_collider::StaticCollider;
+use crate::trimesh::TriMesh;
+use crate::world_shape_query::TriangleSupport;
 
 #[cfg(not(feature = "std"))]
 use alloc::{vec, vec::Vec};
@@ -448,6 +453,137 @@ pub(crate) fn quat_from_rotation(m: Mat3Fix) -> QuatFix {
         )
     };
     q.normalize()
+}
+
+/// How many times the tangent plane under a piece is taken again at the piece's
+/// lowest point, against a height field.
+const FIELD_SUPPORT_ITERATIONS: usize = 2;
+
+impl BodyCollider {
+    /// The deepest contact of this collider, for a body at `position` turned by
+    /// `rotation`, with a static collider, or `None` when no piece reaches into it.
+    /// The normal points from the surface toward the body; translating the body by
+    /// `depth · normal` moves the deepest piece out.
+    ///
+    /// - **Plane**: closed form. The plane is two-sided, as for a sphere: the side
+    ///   is the one the body's centre of mass is on, and the piece's support point
+    ///   against that side's normal is its deepest point.
+    /// - **Triangle mesh**: GJK/EPA of each piece with every triangle whose box
+    ///   meets the piece's box (the mesh's BVH), the deepest kept.
+    /// - **Height field**: the tangent plane of the field under the piece's lowest
+    ///   point, taken again at the new lowest point ([`FIELD_SUPPORT_ITERATIONS`]),
+    ///   as for a sphere (the distance along the surface normal). Exact where the
+    ///   field is planar under the piece (flat, or one constant slope).
+    // LIMITATION(COV-RIGID-065): a height field whose bilinear cells curve under a piece is met at the tangent plane under its lowest point
+    pub(crate) fn static_contact(
+        &self,
+        position: Vec3Fix,
+        rotation: QuatFix,
+        collider: &StaticCollider,
+    ) -> Option<Contact> {
+        let own = self.world_aabb(position, rotation);
+        let mut best: Option<Contact> = None;
+        for (piece, piece_box) in self.pieces(position, rotation, &own) {
+            let hit = match collider {
+                StaticCollider::Plane(plane) => plane_piece_contact(&piece, position, plane),
+                StaticCollider::TriMesh(mesh) => mesh_piece_contact(&piece, &piece_box, mesh),
+                StaticCollider::HeightField(field) => {
+                    field_piece_contact(&piece, &piece_box, field)
+                }
+            };
+            if let Some(c) = hit {
+                if best.is_none_or(|b| c.depth > b.depth) {
+                    best = Some(c);
+                }
+            }
+        }
+        best
+    }
+}
+
+/// A convex piece against a two-sided plane: the side is the one `reference` (the
+/// body's centre of mass) is on.
+fn plane_piece_contact(
+    piece: &Piece<'_>,
+    reference: Vec3Fix,
+    plane: &PlaneCollider,
+) -> Option<Contact> {
+    let side = if plane.distance_to_point(reference) < Fix128::ZERO {
+        -plane.normal
+    } else {
+        plane.normal
+    };
+    let lowest = piece.support(-side);
+    // the signed height of the lowest point over the plane, on the body's side
+    let height = if side == plane.normal {
+        plane.distance_to_point(lowest)
+    } else {
+        -plane.distance_to_point(lowest)
+    };
+    (height < Fix128::ZERO).then(|| Contact {
+        depth: -height,
+        normal: side,
+        point_a: lowest,
+        point_b: lowest - side * height,
+    })
+}
+
+/// A convex piece against a triangle mesh: GJK/EPA with each candidate triangle.
+fn mesh_piece_contact(piece: &Piece<'_>, piece_box: &AABB, mesh: &TriMesh) -> Option<Contact> {
+    let mut best: Option<Contact> = None;
+    for index in mesh.bvh.query(piece_box) {
+        let Some(triangle) = mesh.triangles.get(index as usize) else {
+            continue;
+        };
+        if !triangle.aabb().intersects(piece_box) {
+            continue;
+        }
+        if let Some(hit) = contact(piece, &TriangleSupport(triangle)) {
+            if hit.depth > Fix128::ZERO && best.is_none_or(|d| hit.depth > d.depth) {
+                best = Some(hit);
+            }
+        }
+    }
+    best
+}
+
+/// A convex piece against a height field, at the tangent plane under its lowest
+/// point. Outside the grid (by more than the 2 cells a sphere is also tested in)
+/// there is no surface.
+fn field_piece_contact(
+    piece: &Piece<'_>,
+    piece_box: &AABB,
+    field: &HeightField,
+) -> Option<Contact> {
+    if field.width == 0 || field.depth == 0 || field.spacing <= Fix128::ZERO {
+        return None;
+    }
+    let mid = (piece_box.min + piece_box.max) * Fix128::from_ratio(1, 2);
+    let mut normal = field.sample_normal(mid.x, mid.z);
+    let mut lowest = piece.support(-normal);
+    for _ in 0..FIELD_SUPPORT_ITERATIONS {
+        normal = field.sample_normal(lowest.x, lowest.z);
+        lowest = piece.support(-normal);
+    }
+    let (gx, gz) = field.world_to_grid(lowest);
+    let margin = Fix128::from_int(2);
+    let last = |n: u32| Fix128::from_int(i64::from(n) - 1);
+    if gx < -margin
+        || gx > last(field.width) + margin
+        || gz < -margin
+        || gz > last(field.depth) + margin
+    {
+        return None;
+    }
+    let ground = field.sample_height(lowest.x, lowest.z);
+    // distance from the lowest point to the tangent plane at the point below it
+    let height = (lowest.y - ground) * normal.y;
+    (height < Fix128::ZERO).then(|| Contact {
+        depth: -height,
+        normal,
+        point_a: lowest,
+        point_b: lowest - normal * height,
+    })
 }
 
 #[cfg(test)]

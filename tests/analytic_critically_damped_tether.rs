@@ -1,8 +1,8 @@
 //! Oracles for a critically damped tether built from existing 3D pieces: a static anchor,
 //! a `DistanceConstraint` of rest length 0 and compliance `1 / (m ω²)`, and the body's
-//! `linear_damping` at the discrete critical value (see `examples/critically_damped_tether.rs`).
+//! `linear_damping_rate` at `−ln(d) / dt` for the discrete critical value `d` (see `examples/critically_damped_tether.rs`).
 //!
-//! Discrete law (substeps 1, iterations 1, `SolverConfig::damping = 1`, a = ω·dt):
+//! Discrete law (substeps 1, iterations 1, `SolverConfig::damping_rate = 0`, a = ω·dt):
 //! `x' = (x + dt·v) / (1 + a²)`, `v' = d·(x' − x) / dt` with `d = 1 + 2a² − 2a·sqrt(1 + a²)`.
 //! The step matrix has trace `(1 + d) / (1 + a²)` and determinant `d / (1 + a²)`; this `d`
 //! makes the discriminant zero, so both eigenvalues are `λ = 1 − a / sqrt(1 + a²)` and every
@@ -31,7 +31,7 @@ fn tether_world() -> PhysicsWorld {
         substeps: 1,
         iterations: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..SolverConfig::default()
     });
     // the default sleep rule (|v| < 0.01 for 60 frames) freezes the tail of the decay;
@@ -53,8 +53,8 @@ fn add_tether(
     dt: Fix128,
 ) -> usize {
     let anchor = world.add_body(RigidBody::new_static(target));
-    let mut body =
-        RigidBody::new_dynamic(start, mass).with_linear_damping(critical_retention(omega, dt));
+    let mut body = RigidBody::new_dynamic(start, mass)
+        .with_linear_damping_rate(-critical_retention(omega, dt).ln() / dt);
     body.velocity = velocity;
     let body = world.add_body(body);
     world.add_distance_constraint(

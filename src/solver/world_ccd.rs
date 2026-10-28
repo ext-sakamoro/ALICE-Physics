@@ -739,7 +739,7 @@ mod tests {
         let mut w = PhysicsWorld::new(PhysicsConfig {
             substeps: 1,
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..PhysicsConfig::default()
         });
         w.set_continuous_collision(config);

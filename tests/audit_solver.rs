@@ -70,8 +70,8 @@ fn new_body_has_inverse_mass_and_unit_sphere_inverse_inertia() {
     assert_eq!(b.restitution, Fix128::from_ratio(3, 10));
     assert_eq!(b.friction, Fix128::from_ratio(5, 10));
     assert_eq!(b.gravity_scale, Fix128::ONE);
-    assert_eq!(b.linear_damping, Fix128::ONE);
-    assert_eq!(b.angular_damping, Fix128::ONE);
+    assert_eq!(b.linear_damping_rate, Fix128::ZERO);
+    assert_eq!(b.angular_damping_rate, Fix128::ZERO);
 }
 
 /// Zero mass: inverse mass and inverse inertia are zero (static), not NaN-like.

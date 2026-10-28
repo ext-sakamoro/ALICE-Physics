@@ -68,7 +68,7 @@ fn paths() -> Vec<Path> {
 /// Gravity magnitude and frame-damping rate of `PhysicsConfig::default()`.
 fn g_and_beta() -> (f64, f64) {
     let d = PhysicsConfig::default();
-    (-d.gravity.y.to_f64(), -(d.damping.to_f64()).ln() / DT)
+    (-d.gravity.y.to_f64(), d.damping_rate.to_f64())
 }
 
 fn sliding_velocity(v0: f64, mu: f64, t: f64) -> f64 {

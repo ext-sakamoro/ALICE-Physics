@@ -206,7 +206,7 @@ fn config_substeps() -> usize {
 
 fn hover_world() -> (PhysicsWorld, usize, f64) {
     let config = SolverConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..SolverConfig::default()
     };
     let g = -config.gravity.y.to_f64();

@@ -95,7 +95,7 @@ fn solver_config_default_projectile_matches_discrete_closed_form_and_is_substep_
         PhysicsConfig::default(),
         "PhysicsConfig is an alias of SolverConfig"
     );
-    let (d, vx0) = (default.damping.to_f64(), 3.0);
+    let (d, vx0) = ((-default.damping_rate.to_f64() * DT60).exp(), 3.0);
     let mut x_ref = 0.0;
     let mut vx = vx0;
     for _ in 0..60 {
@@ -735,7 +735,7 @@ fn engine_config_default_full_throttle_accelerates_by_closed_form_first_frame() 
     // 93 m/s): the world damping, not aero drag, limits the default car.
     let (c_d, d) = (
         vehicle_cfg.aero_drag.to_f64(),
-        PhysicsConfig::default().damping.to_f64(),
+        (-PhysicsConfig::default().damping_rate.to_f64() * DT60).exp(),
     );
     let mut v_ref = 0.0;
     for _ in 0..121 {

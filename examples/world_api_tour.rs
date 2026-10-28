@@ -92,7 +92,8 @@ fn builders_and_mutators() {
             .with_rotation(yaw_180)
             .with_gravity_scale(Fix128::ONE)
             .with_friction(Fix128::from_ratio(1, 4))
-            .with_angular_damping(Fix128::ZERO),
+            // its spin dies out at 2 per second: ω·e^{−2t}
+            .with_angular_damping_rate(Fix128::from_int(2)),
     );
     // A buoy that ignores gravity entirely.
     let buoy = world.add_body(

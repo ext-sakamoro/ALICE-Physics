@@ -558,7 +558,7 @@ fn xpbd_keeps_the_predicted_velocity_when_the_position_add_overflows() {
     let vy = -pow2(50);
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     let mut b = RigidBody::new(Vec3Fix::new(Fix128::ZERO, y0, Fix128::ZERO), Fix128::ONE);
@@ -574,7 +574,7 @@ fn xpbd_keeps_the_predicted_velocity_when_the_position_add_overflows() {
     // 対照: 範囲の内側を同じ速度で進む物体は位置が動き、速度も保たれる
     let mut near = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     let mut c = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);

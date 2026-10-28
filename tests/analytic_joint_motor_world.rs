@@ -111,8 +111,8 @@ fn hinge_world() -> (PhysicsWorld, usize) {
 }
 
 fn frame_damping(config: &PhysicsConfig) -> f64 {
-    // angular_damping of a new body is 1
-    config.damping.to_f64()
+    // a new body has no angular damping rate of its own
+    (-config.damping_rate.to_f64() * dt_f()).exp()
 }
 
 fn omega_z(w: &PhysicsWorld) -> f64 {
@@ -194,7 +194,7 @@ fn hinge_velocity_motor_follows_first_order_response() {
 
     // no frame damping: the first-order response and its continuous limit
     let cfg1 = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let (mut w1, j1) = world_with(cfg1, true);
@@ -268,7 +268,7 @@ fn pd_reference(kp: f64, kd: f64, i: f64, n: usize, target: f64, frames: usize) 
 #[test]
 fn hinge_position_pd_follows_critically_damped_closed_form() {
     let cfg = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let (mut w, j) = world_with(cfg, true);
@@ -360,7 +360,7 @@ fn ball_rotation_motor_converges_with_analytic_error_decay() {
 
     // linearised decay (d = 1): φ(t) = φ_t (1 - (1 + w t) e^{-w t}) to O(h + φ²)
     let cfg1 = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let (mut w1, j1) = world_with(cfg1, false);

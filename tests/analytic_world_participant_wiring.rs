@@ -158,7 +158,7 @@ fn free_config(backend: SolverBackend) -> PhysicsConfig {
         substeps: 4,
         iterations: 4,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         solver_backend: backend,
         ..Default::default()
     }
@@ -1046,11 +1046,11 @@ fn a_torque_changes_the_angular_velocity_by_inv_inertia_tau_h() {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         substeps: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..Default::default()
     });
     let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
-    b.angular_damping = Fix128::ONE;
+    b.angular_damping_rate = Fix128::ZERO;
     w.add_body(b);
     let inv_i = w.bodies[0].inv_inertia.x;
     assert!(inv_i > Fix128::ZERO, "fixture: a body that can turn");
@@ -1114,11 +1114,11 @@ fn a_torque_on_a_rotated_anisotropic_body_follows_r_diag_rt() {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         substeps: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..Default::default()
     });
     let mut b = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
-    b.angular_damping = Fix128::ONE;
+    b.angular_damping_rate = Fix128::ZERO;
     b.inv_inertia = Vec3Fix::from_int(1, 2, 4);
     b.rotation = QuatFix::from_axis_angle(Vec3Fix::from_int(1, 2, 3), Fix128::from_ratio(7, 10));
     b.prev_rotation = b.rotation;

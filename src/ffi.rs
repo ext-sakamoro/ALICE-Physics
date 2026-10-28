@@ -209,8 +209,11 @@ pub struct AlicePhysicsConfig {
     pub gravity_y: f64,
     /// Gravity Z component (m/s^2)
     pub gravity_z: f64,
-    /// Velocity damping factor (0..1)
-    pub damping: f64,
+    /// World damping rate in 1/s (0 = none): velocities are multiplied by
+    /// `exp(−damping_rate·dt)` once per step. (Was `damping`, a retention factor
+    /// per step; renamed so that a caller that set a factor fails to compile
+    /// instead of passing it as a rate.)
+    pub damping_rate: f64,
 }
 
 /// C-compatible body info (read-only snapshot)
@@ -293,7 +296,7 @@ pub extern "C" fn alice_physics_world_create_with_config(
                 Fix128::from_f64(config.gravity_y),
                 Fix128::from_f64(config.gravity_z),
             ),
-            damping: Fix128::from_f64(config.damping),
+            damping_rate: Fix128::from_f64(config.damping_rate),
             ..Default::default()
         };
         let world = PhysicsWorld::new(solver_config);
@@ -936,7 +939,7 @@ pub extern "C" fn alice_physics_config_default() -> AlicePhysicsConfig {
             gravity_x: 0.0,
             gravity_y: 0.0,
             gravity_z: 0.0,
-            damping: 0.0,
+            damping_rate: 0.0,
         },
         || {
             let cfg = SolverConfig::default();
@@ -946,7 +949,7 @@ pub extern "C" fn alice_physics_config_default() -> AlicePhysicsConfig {
                 gravity_x: cfg.gravity.x.to_f64(),
                 gravity_y: cfg.gravity.y.to_f64(),
                 gravity_z: cfg.gravity.z.to_f64(),
-                damping: cfg.damping.to_f64(),
+                damping_rate: cfg.damping_rate.to_f64(),
             }
         },
     )

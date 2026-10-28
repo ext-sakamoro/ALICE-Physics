@@ -439,7 +439,7 @@ impl Support for SegmentSupport {
 }
 
 /// A triangle, for GJK.
-struct TriangleSupport<'a>(&'a Triangle);
+pub(crate) struct TriangleSupport<'a>(pub(crate) &'a Triangle);
 
 impl Support for TriangleSupport<'_> {
     fn support(&self, direction: Vec3Fix) -> Vec3Fix {

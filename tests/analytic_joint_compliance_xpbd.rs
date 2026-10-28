@@ -71,7 +71,8 @@ fn hanging(kind: Kind, substeps: usize, iterations: usize) -> (PhysicsWorld, usi
     let a = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
     let b = w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     // settle the oscillation; damping has no effect on the rest state (v = 0)
-    w.bodies[b].linear_damping = fx(0.9);
+    // the loss per step of the former retention 0.9 at dt = 1/60
+    w.bodies[b].linear_damping_rate = fx(-(0.9f64).ln() / (1.0 / 60.0));
     let joint = match kind {
         Kind::Ball => Joint::Ball(
             BallJoint::new(a, b, Vec3Fix::ZERO, Vec3Fix::ZERO).with_compliance(fx(ALPHA)),

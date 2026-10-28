@@ -71,7 +71,7 @@ fn config(backend: SolverBackend, substeps: usize, gravity: Vec3Fix) -> SolverCo
         gravity,
         // A retention of exactly 1: `v · 1` is exact in `Fix128`, so frame
         // damping does not touch the velocity.
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         solver_backend: backend,
         ..SolverConfig::default()
     }

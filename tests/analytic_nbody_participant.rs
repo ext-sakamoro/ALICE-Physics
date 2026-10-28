@@ -68,7 +68,7 @@ fn resident(g: f64, eps: f64) -> Box<NBodyParticipant> {
 fn empty_world(substeps: usize, backend: SolverBackend) -> PhysicsWorld {
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         ..PhysicsConfig::default()
     };
@@ -413,7 +413,7 @@ fn a_slow_attraction_keeps_bodies_awake() {
     }
     let t = f64::from(frames) / 60.0;
     let want = 2.5e-5 * t * t / 2.0;
-    let damping = f64_of(PhysicsConfig::default().damping);
+    let damping = f64_of((-(PhysicsConfig::default().damping_rate / Fix128::from_int(60))).exp());
     let moved = f64_of(world.bodies[0].position.x) + 1.0;
     // the default frame damping scales the velocity each frame; with it the
     // displacement is the damped sum, computed here the same way

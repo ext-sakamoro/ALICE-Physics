@@ -136,7 +136,8 @@ fn determinism_cascade() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(99, 100),
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
         ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);
@@ -160,7 +161,8 @@ fn determinism_cascade() {
             Fix128::ONE,
         )
         .with_restitution(Fix128::from_ratio(6, 10))
-        .with_linear_damping(Fix128::from_ratio(98, 100));
+        // the loss per step of the former retention 0.98 at dt = 1/60
+        .with_linear_damping_rate(-Fix128::from_ratio(98, 100).ln() * Fix128::from_int(60));
         world.add_body(ball);
     }
 
@@ -187,7 +189,7 @@ fn determinism_freefall() {
         substeps: 1,
         iterations: 1,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::ONE, // no damping
+        damping_rate: Fix128::ZERO, // no damping
         ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);
@@ -230,7 +232,7 @@ fn determinism_kinematic_drift() {
         substeps: 1,
         iterations: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);
@@ -288,7 +290,8 @@ fn determinism_joint_pendulum() {
         substeps: 2,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(999, 1000),
+        // the loss per step of the former retention 0.999 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(999, 1000).ln() * Fix128::from_int(60),
         ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);
@@ -298,7 +301,8 @@ fn determinism_joint_pendulum() {
         Vec3Fix::new(Fix128::ZERO, Fix128::from_int(10), Fix128::ZERO),
         Fix128::from_int(1_000),
     )
-    .with_linear_damping(Fix128::from_ratio(1, 100));
+    // the loss per step of the former retention 0.01 at dt = 1/60
+    .with_linear_damping_rate(-Fix128::from_ratio(1, 100).ln() * Fix128::from_int(60));
     let pivot_idx = world.add_body(pivot);
 
     // Bob: lighter body offset in x, will swing under gravity.
@@ -579,7 +583,7 @@ fn determinism_sdf_ccd_glance() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);

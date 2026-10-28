@@ -64,7 +64,7 @@ fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 fn cfg(backend: SolverBackend) -> PhysicsConfig {
     PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: SUBSTEPS,
         solver_backend: backend,
         ..PhysicsConfig::default()

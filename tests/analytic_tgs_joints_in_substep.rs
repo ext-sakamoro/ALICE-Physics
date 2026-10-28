@@ -70,7 +70,7 @@ fn tgs(substeps: usize) -> SolverConfig {
 /// Gravity magnitude and frame-damping rate of `SolverConfig::default()`.
 fn g_and_beta() -> (f64, f64) {
     let d = SolverConfig::default();
-    (-d.gravity.y.to_f64(), -(d.damping.to_f64()).ln() / DT)
+    (-d.gravity.y.to_f64(), d.damping_rate.to_f64())
 }
 
 /// Displacement along an axis with constant acceleration `a` from rest under

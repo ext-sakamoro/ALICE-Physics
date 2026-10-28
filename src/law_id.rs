@@ -262,7 +262,7 @@ impl PhysicsWorld {
         e.u64(c.substeps as u64);
         e.u64(c.iterations as u64);
         e.vec3(c.gravity);
-        e.fix(c.damping);
+        e.fix(c.damping_rate);
         e.bytes(match c.solver_backend {
             SolverBackend::Xpbd => b"xpbd",
             SolverBackend::Tgs => b"tgs",

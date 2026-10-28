@@ -136,7 +136,7 @@ fn a_hook_runs_once_per_substep_in_both_paths() {
             iterations,
             ..PhysicsConfig::default()
         };
-        let d = config.damping.to_f64();
+        let d = (-config.damping_rate.to_f64() * DT).exp();
         let n = 120;
         let want = overlapping_substeps(d, config.substeps, n);
         assert!(want > 0);

@@ -133,12 +133,14 @@ pub struct RigidBody {
     pub friction: Fix128,
     /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
     pub gravity_scale: Fix128,
-    /// Per-body linear damping factor (1.0 = no damping, 0.0 = full damping)
-    /// Multiplied with the global damping, applied once per frame (`step()`).
-    pub linear_damping: Fix128,
-    /// Per-body angular damping factor (1.0 = no damping, 0.0 = full damping)
-    /// Multiplied with the global damping, applied once per frame (`step()`).
-    pub angular_damping: Fix128,
+    /// Per-body linear damping rate in 1/s (0 = none): added to the world's
+    /// [`SolverConfig::damping_rate`], the velocity is multiplied by
+    /// `exp(−(c_world + c_body)·dt)` once per `step(dt)`, so the loss over a
+    /// second is the same at every step size.
+    pub linear_damping_rate: Fix128,
+    /// Per-body angular damping rate in 1/s (0 = none), applied as the linear
+    /// one to the angular velocity.
+    pub angular_damping_rate: Fix128,
     /// Whether this body is a sensor/trigger (detects overlap but no physics response)
     pub is_sensor: bool,
     /// Body type (Dynamic, Static, Kinematic)
@@ -288,8 +290,8 @@ impl RigidBody {
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ONE,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Dynamic,
             kinematic_target: None,
@@ -318,8 +320,8 @@ impl RigidBody {
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Static,
             kinematic_target: None,
@@ -341,8 +343,8 @@ impl RigidBody {
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
             gravity_scale: Fix128::ZERO,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: true,
             body_type: BodyType::Static,
             kinematic_target: None,
@@ -367,8 +369,8 @@ impl RigidBody {
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Kinematic,
             kinematic_target: None,
@@ -565,19 +567,19 @@ impl RigidBody {
         self.velocity.length()
     }
 
-    /// Set per-body linear damping (1.0 = no extra damping)
+    /// Set the per-body linear damping rate in 1/s (0 = none)
     #[inline]
     #[must_use]
-    pub const fn with_linear_damping(mut self, damping: Fix128) -> Self {
-        self.linear_damping = damping;
+    pub const fn with_linear_damping_rate(mut self, rate: Fix128) -> Self {
+        self.linear_damping_rate = rate;
         self
     }
 
-    /// Set per-body angular damping (1.0 = no extra damping)
+    /// Set the per-body angular damping rate in 1/s (0 = none)
     #[inline]
     #[must_use]
-    pub const fn with_angular_damping(mut self, damping: Fix128) -> Self {
-        self.angular_damping = damping;
+    pub const fn with_angular_damping_rate(mut self, rate: Fix128) -> Self {
+        self.angular_damping_rate = rate;
         self
     }
 
@@ -1248,10 +1250,13 @@ pub struct SolverConfig {
     pub iterations: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
-    /// Global velocity-retention factor, applied **once per frame** (`step()`),
-    /// independent of `substeps` (1.0 = no damping). Before 1.2.0 it was applied
-    /// per substep, which made the result depend on `substeps`.
-    pub damping: Fix128,
+    /// World damping rate in 1/s (0 = none, the default): every dynamic body's
+    /// linear and angular velocity is multiplied by `exp(−(c_world + c_body)·dt)`
+    /// once per `step(dt)` (`c_body` its own rate), so the loss over a second
+    /// does not depend on the step size or on `substeps`. Before this it was a
+    /// retention factor per `step()` (default 0.99), so the loss over a second
+    /// depended on the step size.
+    pub damping_rate: Fix128,
     /// **No effect since 1.2.0** (kept for struct compatibility).
     ///
     /// Distance constraints follow standard XPBD (`lambda = 0` at substep
@@ -1289,7 +1294,7 @@ impl Default for SolverConfig {
                 Fix128::from_int(-10), // -10 m/s^2
                 Fix128::ZERO,
             ),
-            damping: Fix128::from_ratio(99, 100), // 0.99 velocity retention
+            damping_rate: Fix128::ZERO,
             warm_start_factor: Fix128::from_ratio(85, 100), // 0.85
             solver_backend: SolverBackend::Xpbd,
         }
@@ -1665,6 +1670,11 @@ pub struct PhysicsWorld {
     /// `contact_constraints`; an index past the end counts as kept)
     #[cfg(feature = "std")]
     contact_discarded: Vec<bool>,
+    /// Per contact constraint of the last substep: the part of its separation
+    /// that undid overlap the pair started the substep with
+    /// ([`Self::discount_contact_overlap`]); it moved the bodies but changed no
+    /// momentum, so it is not part of the contact's force.
+    contact_overlap: Vec<Fix128>,
     /// Pre-solve normal velocity `v̄_n` of each contact constraint in the
     /// current substep (indexed like `contact_constraints`), recorded by
     /// [`Self::update_velocities`] before it derives the post-solve
@@ -1900,6 +1910,7 @@ impl PhysicsWorld {
             contact_modifiers: Vec::new(),
             #[cfg(feature = "std")]
             contact_discarded: Vec::new(),
+            contact_overlap: Vec::new(),
             contact_pre_vn: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
@@ -2926,7 +2937,8 @@ impl PhysicsWorld {
         dt: Fix128,
     ) -> Option<Fix128> {
         let h = self.substep_dt(dt);
-        self.contact_force(c, h * h).map(|(_, _, force)| force)
+        self.contact_force(c, self.overlap_of(c), h * h)
+            .map(|(_, _, force)| force)
     }
 
     /// Cast a ray against all body collision spheres, returns (`body_index`, distance).
@@ -3462,7 +3474,7 @@ impl PhysicsWorld {
         self.park.first_substep = false;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
         self.update_sleep_states();
@@ -4200,7 +4212,7 @@ impl PhysicsWorld {
         // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
         // per-substep gravity/impulse integration does not apply the global
         // `damping` factor, so this still needs to run here).
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping (identical call to `step`).
         self.islands.update_sleep(&self.bodies);
@@ -4314,7 +4326,7 @@ impl PhysicsWorld {
         self.sdf_contact_substep = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
@@ -4374,6 +4386,7 @@ impl PhysicsWorld {
         //    `solve_joints`).
         self.solve_joints_dispatch(dt);
 
+        self.discount_contact_overlap();
         self.update_velocities(dt);
     }
 
@@ -4421,6 +4434,7 @@ impl PhysicsWorld {
         //    `solve_joints`).
         self.solve_joints_dispatch(dt);
 
+        self.discount_contact_overlap();
         self.update_velocities(dt);
     }
 
@@ -4662,8 +4676,18 @@ impl PhysicsWorld {
     /// speed. A precision parameter must not change the physics, so damping
     /// now runs after the substep loop, on the velocities derived by the last
     /// `update_velocities`. Static / kinematic / sleeping bodies are skipped.
-    fn apply_frame_damping(&mut self) {
-        let damping = self.config.damping;
+    fn apply_frame_damping(&mut self, dt: Fix128) {
+        let world = self.config.damping_rate;
+        // `exp(−c·dt)`: exactly 1 for no damping (no rounding of an undamped
+        // body), else the deterministic `Fix128::exp`
+        let factor = |rate: Fix128| {
+            let c = world + rate;
+            if c.is_zero() {
+                Fix128::ONE
+            } else {
+                (-(c * dt)).exp()
+            }
+        };
         let count = self.stage_count();
         for k in 0..count {
             let i = self.stage_body(k);
@@ -4672,8 +4696,69 @@ impl PhysicsWorld {
                 continue;
             }
             let body = &mut self.bodies[i];
-            body.velocity = body.velocity * damping * body.linear_damping;
-            body.angular_velocity = body.angular_velocity * damping * body.angular_damping;
+            body.velocity = body.velocity * factor(body.linear_damping_rate);
+            body.angular_velocity = body.angular_velocity * factor(body.angular_damping_rate);
+        }
+    }
+
+    /// The part of each body–body contact's separation that undoes overlap the
+    /// pair started the substep with is not motion: it is taken out of the
+    /// velocity the substep derives, by moving the pair's `prev_position` and
+    /// predicted position with it, shared by inverse mass as the separation was.
+    /// Only the part that cancels the pair's approach this substep (how far it
+    /// moved toward each other by anything but this contact) stays velocity. The same
+    /// rule as a static collider's push-out ([`Self::resolve_static_collisions`]).
+    /// Runs after the position solve, on the separation the solve applied
+    /// (`cached_lambda`), so a contact a hook discarded or a sensor moves nothing.
+    fn discount_contact_overlap(&mut self) {
+        self.contact_overlap.clear();
+        self.contact_overlap
+            .resize(self.contact_constraints.len(), Fix128::ZERO);
+        for (k, constraint) in self.contact_constraints.iter().enumerate() {
+            if self.contact_discarded.get(k).copied().unwrap_or(false) {
+                continue;
+            }
+            let (a, b) = (constraint.body_a, constraint.body_b);
+            let (Some(body_a), Some(body_b)) = (self.bodies.get(a), self.bodies.get(b)) else {
+                continue;
+            };
+            if body_a.is_sensor || body_b.is_sensor {
+                continue;
+            }
+            let (wa, wb) = (body_a.inv_mass, body_b.inv_mass);
+            let w_sum = wa + wb;
+            if w_sum < W_SUM_EPSILON || constraint.cached_lambda <= Fix128::ZERO {
+                continue;
+            }
+            let normal = constraint.contact.normal;
+            // How far the pair moved toward each other this substep by anything
+            // but this contact: the relative motion since the start of the
+            // substep (integration, other contacts and joints, this contact's
+            // own separation) minus the separation this contact applied. The
+            // rest of the depth was overlap the pair started the substep with.
+            let relative =
+                (body_a.position - body_a.prev_position) - (body_b.position - body_b.prev_position);
+            let approach = constraint.cached_lambda - relative.dot(normal);
+            let moved = approach.max(Fix128::ZERO).min(constraint.contact.depth);
+            let overlap = (constraint.contact.depth - moved).min(constraint.cached_lambda);
+            if overlap <= Fix128::ZERO {
+                continue;
+            }
+            self.contact_overlap[k] = overlap;
+            let shift = normal * overlap;
+            let inv_w_sum = Fix128::ONE / w_sum;
+            for (i, share) in [
+                (a, shift * (wa * inv_w_sum)),
+                (b, -(shift * (wb * inv_w_sum))),
+            ] {
+                if self.bodies[i].inv_mass.is_zero() {
+                    continue;
+                }
+                self.bodies[i].prev_position = self.bodies[i].prev_position + share;
+                if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
+                    *x = *x + share;
+                }
+            }
         }
     }
 
@@ -5570,7 +5655,7 @@ impl PhysicsWorld {
         self.sdf_contact_substep = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
@@ -5672,6 +5757,7 @@ impl PhysicsWorld {
             self.break_overloaded_joints(&forces);
         }
 
+        self.discount_contact_overlap();
         self.update_velocities(dt);
     }
 
@@ -6174,8 +6260,29 @@ impl PhysicsWorld {
         let h2 = self.substep_dt(dt) * self.substep_dt(dt);
         self.contact_constraints
             .iter()
-            .filter_map(|c| self.contact_force(c, h2))
+            .enumerate()
+            .filter_map(|(k, c)| {
+                let overlap = self.contact_overlap.get(k).copied().unwrap_or(Fix128::ZERO);
+                self.contact_force(c, overlap, h2)
+            })
             .collect()
+    }
+
+    /// The overlap [`Self::discount_contact_overlap`] took out of contact `c` (one
+    /// of [`Self::contact_constraints`], found by its place in that list), or
+    /// zero for a constraint that is not in it.
+    fn overlap_of(&self, c: &ContactConstraint) -> Fix128 {
+        let base = self.contact_constraints.as_ptr() as usize;
+        let size = core::mem::size_of::<ContactConstraint>().max(1);
+        let at = (c as *const ContactConstraint as usize).wrapping_sub(base) / size;
+        match self.contact_constraints.get(at) {
+            Some(x) if core::ptr::eq(x, c) => self
+                .contact_overlap
+                .get(at)
+                .copied()
+                .unwrap_or(Fix128::ZERO),
+            _ => Fix128::ZERO,
+        }
     }
 
     /// The length `h` of one substep of a frame of `dt`.
@@ -6187,6 +6294,7 @@ impl PhysicsWorld {
     fn contact_force(
         &self,
         c: &ContactConstraint,
+        overlap: Fix128,
         h2: Fix128,
     ) -> Option<(Vec3Fix, Vec3Fix, Fix128)> {
         let w = self.bodies.get(c.body_a)?.inv_mass + self.bodies.get(c.body_b)?.inv_mass;
@@ -6196,7 +6304,7 @@ impl PhysicsWorld {
         Some((
             c.contact.point_a,
             c.contact.normal,
-            c.cached_lambda / (w * h2),
+            (c.cached_lambda - overlap) / (w * h2),
         ))
     }
 
@@ -6216,7 +6324,7 @@ impl PhysicsWorld {
         let h2 = self.substep_dt(dt) * self.substep_dt(dt);
         self.contact_constraints
             .iter()
-            .filter_map(|c| Some((self.contact_force(c, h2)?, c.friction)))
+            .filter_map(|c| Some((self.contact_force(c, self.overlap_of(c), h2)?, c.friction)))
             .flat_map(|(force, mu)| crate::contact_viz::generate_friction_arrows(&[force], mu))
             .collect()
     }
@@ -6228,7 +6336,7 @@ impl PhysicsWorld {
         let h2 = self.substep_dt(dt) * self.substep_dt(dt);
         self.contact_constraints
             .iter()
-            .filter_map(|c| Some((self.contact_force(c, h2)?, c.friction)))
+            .filter_map(|c| Some((self.contact_force(c, self.overlap_of(c), h2)?, c.friction)))
             .flat_map(|(force, mu)| crate::contact_viz::generate_friction_cones(&[force], mu))
             .collect()
     }
@@ -6292,13 +6400,37 @@ impl PhysicsWorld {
                 .get(i)
                 .and_then(|r| *r)
                 .unwrap_or(default_radius);
+            let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
             for collider in &self.static_colliders {
-                if let Some(contact) = collider.collide_sphere(body.position, radius) {
+                let hit = match shaped {
+                    Some(c) => c.static_contact(body.position, body.rotation, collider),
+                    None => collider.collide_sphere(body.position, radius),
+                };
+                if let Some(contact) = hit {
+                    // How far the body moved into the surface this substep: the
+                    // part of the push-out that cancels it is the body's motion
+                    // and becomes velocity; the rest is overlap it started the
+                    // substep with, and moving `prev_position` with it keeps that
+                    // part from becoming velocity.
+                    let approach = -(body.position - body.prev_position).dot(contact.normal);
                     body.position = body.position + contact.normal * contact.depth;
                     if remove_approach {
                         let vn = body.velocity.dot(contact.normal);
                         if vn < Fix128::ZERO {
                             body.velocity = body.velocity - contact.normal * vn;
+                        }
+                    } else {
+                        let moved = approach.max(Fix128::ZERO).min(contact.depth);
+                        let overlap = contact.depth - moved;
+                        if overlap > Fix128::ZERO {
+                            // the velocity is derived from the change against the
+                            // predicted position when there is one, else against
+                            // `prev_position`: both move with the overlap
+                            let shift = contact.normal * overlap;
+                            body.prev_position = body.prev_position + shift;
+                            if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
+                                *x = *x + shift;
+                            }
                         }
                     }
                 }
@@ -8201,7 +8333,7 @@ mod tests {
     fn quiet_world() -> PhysicsWorld {
         let config = SolverConfig {
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..SolverConfig::default()
         };
         PhysicsWorld::new(config)
@@ -9205,12 +9337,13 @@ mod tests {
         let run = |iters: usize| {
             let mut world = quiet_world();
             world.config.gravity = v3(0, -10, 0);
-            world.config.damping = Fix128::ONE;
+            world.config.damping_rate = Fix128::ZERO;
             world.config.substeps = 4;
             world.config.iterations = iters;
             let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
             let b = world.add_body(RigidBody::new_dynamic(v3(0, -1, 0), Fix128::ONE));
-            world.bodies[b].linear_damping = r(9, 10); // settle the oscillation
+            // the loss per step of the former retention 0.9 at dt = 1/60
+            world.bodies[b].linear_damping_rate = -r(9, 10).ln() * Fix128::from_int(60); // settle the oscillation
             let mut c = dc(a, b);
             c.target_distance = Fix128::ONE;
             c.compliance = r(1, 100);
@@ -9746,11 +9879,13 @@ mod tests {
     fn integrate_positions_applies_gravity_damping_and_predicts_position() {
         let mut world = quiet_world();
         world.config.gravity = v3(0, -8, 0);
-        world.config.damping = r(1, 2);
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        world.config.damping_rate = -r(1, 2).ln() * Fix128::from_int(4);
         let i = world.add_body(RigidBody::new_dynamic(v3(1, 1, 1), Fix128::ONE));
         world.bodies[i].velocity = v3(4, 0, 0);
         world.bodies[i].gravity_scale = r(1, 2);
-        world.bodies[i].linear_damping = r(1, 2);
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        world.bodies[i].linear_damping_rate = -r(1, 2).ln() * Fix128::from_int(4);
         let dt = r(1, 4);
 
         world.integrate_positions(dt);
@@ -9769,7 +9904,7 @@ mod tests {
         assert_eq!(b.prev_position, v3(1, 1, 1));
 
         // frame damping: global 1/2 * per-body 1/2 → (1, -1/4, 0)
-        world.apply_frame_damping();
+        world.apply_frame_damping(dt);
         assert_eq!(
             world.bodies[i].velocity,
             Vec3Fix::new(Fix128::ONE, -r(1, 4), Fix128::ZERO)
@@ -9779,10 +9914,11 @@ mod tests {
     #[test]
     fn integrate_positions_angular_damping_and_rotation_prediction() {
         let mut world = quiet_world();
-        world.config.damping = Fix128::ONE;
+        world.config.damping_rate = Fix128::ZERO;
         let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         world.bodies[i].angular_velocity = v3(0, 0, 2);
-        world.bodies[i].angular_damping = r(1, 2); // frame damping → (0,0,1)
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        world.bodies[i].angular_damping_rate = -r(1, 2).ln() * Fix128::from_int(4); // frame damping → (0,0,1)
         let dt = r(1, 4);
 
         world.integrate_positions(dt);
@@ -9797,14 +9933,14 @@ mod tests {
         assert_eq!(b.rotation, expected);
         assert_eq!(b.prev_rotation, QuatFix::IDENTITY);
         assert!(b.rotation != QuatFix::IDENTITY);
-        world.apply_frame_damping();
+        world.apply_frame_damping(dt);
         assert_eq!(world.bodies[i].angular_velocity, v3(0, 0, 1));
     }
 
     #[test]
     fn apply_frame_damping_skips_static_kinematic_and_sleeping() {
         let mut world = quiet_world();
-        world.config.damping = r(1, 2);
+        world.config.damping_rate = Fix128::ONE;
         let st = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
         let mut kin = RigidBody::new_static(Vec3Fix::ZERO);
         kin.body_type = BodyType::Kinematic;
@@ -9814,11 +9950,19 @@ mod tests {
             world.bodies[i].velocity = v3(2, 0, 0);
             world.bodies[i].angular_velocity = v3(0, 4, 0);
         }
-        world.apply_frame_damping();
+        // one step of 1 s at rate 1/s: the dynamic body keeps e^-1 of each
+        // velocity, the static and kinematic bodies are not touched
+        let dt = Fix128::ONE;
+        world.apply_frame_damping(dt);
+        let keep = (-(world.config.damping_rate * dt)).exp();
         assert_eq!(world.bodies[st].velocity, v3(2, 0, 0));
         assert_eq!(world.bodies[ki].velocity, v3(2, 0, 0));
-        assert_eq!(world.bodies[dy].velocity, v3(1, 0, 0));
-        assert_eq!(world.bodies[dy].angular_velocity, v3(0, 2, 0));
+        assert_eq!(world.bodies[dy].velocity, v3(2, 0, 0) * keep);
+        assert_eq!(world.bodies[dy].angular_velocity, v3(0, 4, 0) * keep);
+        assert!(
+            (keep.to_f64() - 0.367_879_441_171_442_3).abs() < 1e-6,
+            "e^-1"
+        );
     }
 
     #[test]
@@ -9828,7 +9972,7 @@ mod tests {
         let fall = |substeps: usize| {
             let mut world = quiet_world();
             world.config.gravity = v3(0, -10, 0);
-            world.config.damping = Fix128::ONE;
+            world.config.damping_rate = Fix128::ZERO;
             world.config.substeps = substeps;
             let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
             for _ in 0..60 {
@@ -9890,7 +10034,7 @@ mod tests {
         // 半陰的 Euler: v_k = -8 * k/4、x_k = x_{k-1} + v_k/4 → 1 step 後 v = -8、x = -(2+4+6+8)/4 = -5
         let mut world = quiet_world();
         world.config.gravity = v3(0, -8, 0);
-        world.config.damping = Fix128::ONE;
+        world.config.damping_rate = Fix128::ZERO;
         world.config.substeps = 4;
         world.config.iterations = 1;
         let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -9902,7 +10046,7 @@ mod tests {
         // substeps 1 なら x = -8 (1 回で落ちる)
         let mut single = quiet_world();
         single.config.gravity = v3(0, -8, 0);
-        single.config.damping = Fix128::ONE;
+        single.config.damping_rate = Fix128::ZERO;
         single.config.substeps = 1;
         let j = single.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         single.step(Fix128::ONE);
@@ -10057,9 +10201,12 @@ mod tests {
 
     #[test]
     fn with_angular_damping_is_stored_and_applied_once_per_frame_by_step() {
-        let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_angular_damping(r(1, 2));
-        assert_eq!(body.angular_damping, r(1, 2));
-        assert_eq!(body.linear_damping, Fix128::ONE);
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        let rate = -r(1, 2).ln() * Fix128::from_int(4);
+        let body =
+            RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_angular_damping_rate(rate);
+        assert_eq!(body.angular_damping_rate, rate);
+        assert_eq!(body.linear_damping_rate, Fix128::ZERO);
 
         // substeps を変えても damping は frame 毎に 1 回だけ: ω_damped == ω_undamped * 1 * 1/2
         // (substep 毎なら substeps=4 で 1/16 になる)
@@ -10076,7 +10223,7 @@ mod tests {
             let d = damped.add_body(
                 RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE)
                     .with_velocity(v3(3, 0, 0))
-                    .with_angular_damping(r(1, 2)),
+                    .with_angular_damping_rate(rate),
             );
             damped.bodies[d].set_angular_velocity(v3(0, 0, 2));
 
@@ -11290,7 +11437,7 @@ mod tests {
             for fail in [false, true] {
                 let mut world = PhysicsWorld::new(SolverConfig {
                     gravity: Vec3Fix::ZERO,
-                    damping: Fix128::ONE,
+                    damping_rate: Fix128::ZERO,
                     solver_backend: SolverBackend::Tgs,
                     ..Default::default()
                 });

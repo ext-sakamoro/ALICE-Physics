@@ -112,7 +112,7 @@ fn condition() -> RoadCondition {
 
 fn world() -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig::default());
-    w.config.damping = Fix128::ONE;
+    w.config.damping_rate = Fix128::ZERO;
     w
 }
 

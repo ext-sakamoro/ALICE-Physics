@@ -46,10 +46,10 @@ fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(fx(x), fx(y), fx(z))
 }
 
-fn tgs(substeps: usize, damping: Fix128) -> SolverConfig {
+fn tgs(substeps: usize, damping_rate: Fix128) -> SolverConfig {
     SolverConfig {
         substeps,
-        damping,
+        damping_rate,
         solver_backend: SolverBackend::Tgs,
         ..SolverConfig::default()
     }
@@ -130,8 +130,8 @@ fn mean_period(c: &[f64]) -> f64 {
 fn the_damped_pendulum_period_is_the_closed_form_with_amplitude_correction() {
     let l = 1.0;
     let theta0: f64 = 0.1;
-    let d = SolverConfig::default().damping;
-    let beta = -d.to_f64().ln() / DT;
+    let d = SolverConfig::default().damping_rate;
+    let beta = d.to_f64();
     let w0_sq = g() * l / (I_BOB + l * l);
     let t_damped = 2.0 * std::f64::consts::PI / (w0_sq - beta * beta / 4.0).sqrt();
     assert!(
@@ -220,7 +220,7 @@ fn the_undamped_large_amplitude_period_is_the_elliptic_closed_form() {
     let mut failures = Vec::new();
     for kind in [Kind::Ball, Kind::Hinge] {
         for substeps in [4, 8] {
-            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ONE), l, theta0);
+            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ZERO), l, theta0);
             let runs = periods_and_amplitudes(&mut w, bob, 5.5 * t0);
             assert!(
                 runs.len() >= 3,
@@ -258,7 +258,7 @@ fn the_undamped_pendulum_keeps_its_amplitude() {
     let mut failures = Vec::new();
     for kind in [Kind::Ball, Kind::Hinge] {
         for substeps in [4, 8] {
-            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ONE), l, theta0);
+            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ZERO), l, theta0);
             let runs = periods_and_amplitudes(&mut w, bob, 4.5 * t0);
             let last = runs.last().expect("a period").1;
             if (last - theta0).abs() > 1e-3 {
@@ -284,7 +284,7 @@ fn a_ball_on_a_tilted_static_plane_stays_at_its_radius_under_tgs() {
     let n = [-theta.sin(), theta.cos(), 0.0];
     let mut failures = Vec::new();
     for substeps in [1, 4, 8] {
-        let mut w = PhysicsWorld::new(tgs(substeps, Fix128::ONE));
+        let mut w = PhysicsWorld::new(tgs(substeps, Fix128::ZERO));
         w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
             v3(n[0], n[1], n[2]),
             Fix128::ZERO,

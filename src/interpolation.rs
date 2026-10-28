@@ -380,7 +380,7 @@ mod tests {
         // 重力なし、速度一定 → 1 step (dt 1/4、damping 1) で位置が exact に v/4 進む
         let config = PhysicsConfig {
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..PhysicsConfig::default()
         };
         let mut world = PhysicsWorld::new(config);

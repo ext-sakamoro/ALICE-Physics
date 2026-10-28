@@ -121,7 +121,7 @@ impl Laws {
             substeps: 5,
             iterations: 7,
             gravity: v3(1, -3, 2),
-            damping: fx(97, 100),
+            damping_rate: fx(3, 2),
             solver_backend: SolverBackend::Tgs,
             warm_start_factor: fx(1, 3),
         };
@@ -304,7 +304,7 @@ fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
     s.u64(c.substeps as u64);
     s.u64(c.iterations as u64);
     s.vec3(c.gravity);
-    s.fix(c.damping);
+    s.fix(c.damping_rate);
     s.bytes(match c.solver_backend {
         SolverBackend::Xpbd => b"xpbd",
         SolverBackend::Tgs => b"tgs",
@@ -654,7 +654,7 @@ fn every_covered_field_moves_the_law_id() {
         ("substeps", Box::new(|w| w.config.substeps += 1)),
         ("iterations", Box::new(|w| w.config.iterations += 1)),
         ("gravity", Box::new(|w| w.config.gravity.x = Fix128::ONE)),
-        ("damping", Box::new(|w| w.config.damping = Fix128::ONE)),
+        ("damping", Box::new(|w| w.config.damping_rate = Fix128::ONE)),
         (
             "backend",
             Box::new(|w| w.config.solver_backend = SolverBackend::Tgs),
