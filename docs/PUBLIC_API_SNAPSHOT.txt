@@ -4530,7 +4530,9 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_joint_count(*const alice_physics_core::solver::PhysicsWorld) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_joint_remove(*mut alice_physics_core::solver::PhysicsWorld, u32) -> u8
 #[no_mangle] pub c fn alice_physics_core::ffi::alice_physics_last_error() -> *mut std::os::raw::c_char
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_law_id(*const alice_physics_core::solver::PhysicsWorld, *mut u8) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_state_deserialize(*mut alice_physics_core::solver::PhysicsWorld, *const u8, u32) -> u8
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_state_digest(*const alice_physics_core::solver::PhysicsWorld, *mut u8) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_state_free(*mut u8, u32)
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_state_serialize(*const alice_physics_core::solver::PhysicsWorld, *mut u32) -> *mut u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_static_add_heightfield(*mut alice_physics_core::solver::PhysicsWorld, *const f64, u32, u32, f64, alice_physics_core::ffi::AliceVec3) -> u32
@@ -4551,9 +4553,11 @@ pub const alice_physics_core::ffi::ALICE_PHYSICS_NO_BODY: u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_get_positions_batch(*const alice_physics_core::solver::PhysicsWorld, *mut f64, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_get_velocities_batch(*const alice_physics_core::solver::PhysicsWorld, *mut f64, u32) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_overlap_sphere(*const alice_physics_core::solver::PhysicsWorld, alice_physics_core::ffi::AliceVec3, f64, u32, *mut alice_physics_core::ffi::AliceQueryTarget, u32) -> u32
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_restore(*mut alice_physics_core::solver::PhysicsWorld, *const u8, u32) -> u32
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_gravity(*mut alice_physics_core::solver::PhysicsWorld, f64, f64, f64)
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_substeps(*mut alice_physics_core::solver::PhysicsWorld, u32)
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_set_velocities_batch(*mut alice_physics_core::solver::PhysicsWorld, *const f64, u32) -> u8
+#[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_snapshot(*const alice_physics_core::solver::PhysicsWorld, *mut u32) -> *mut u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_step(*mut alice_physics_core::solver::PhysicsWorld, f64) -> u8
 #[no_mangle] pub unsafe c fn alice_physics_core::ffi::alice_physics_world_step_n(*mut alice_physics_core::solver::PhysicsWorld, f64, u32) -> u8
 pub mod alice_physics_core::filament_db
@@ -10460,6 +10464,9 @@ pub alice_physics_core::prelude::WorldSnapshotError::Unpinned
 pub alice_physics_core::prelude::WorldSnapshotError::UnsupportedVersion
 pub alice_physics_core::prelude::WorldSnapshotError::UnsupportedVersion::found: u16
 pub alice_physics_core::prelude::WorldSnapshotError::UnsupportedVersion::supported: u16
+impl alice_physics_core::WorldSnapshotError
+pub fn alice_physics_core::WorldSnapshotError::code(&self) -> u32
+pub fn alice_physics_core::WorldSnapshotError::kind(&self) -> &'static str
 impl core::clone::Clone for alice_physics_core::WorldSnapshotError
 pub fn alice_physics_core::WorldSnapshotError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::WorldSnapshotError
@@ -13542,6 +13549,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> c
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
@@ -18252,6 +18260,9 @@ pub alice_physics_core::solver::WorldSnapshotError::Unpinned
 pub alice_physics_core::solver::WorldSnapshotError::UnsupportedVersion
 pub alice_physics_core::solver::WorldSnapshotError::UnsupportedVersion::found: u16
 pub alice_physics_core::solver::WorldSnapshotError::UnsupportedVersion::supported: u16
+impl alice_physics_core::WorldSnapshotError
+pub fn alice_physics_core::WorldSnapshotError::code(&self) -> u32
+pub fn alice_physics_core::WorldSnapshotError::kind(&self) -> &'static str
 impl core::clone::Clone for alice_physics_core::WorldSnapshotError
 pub fn alice_physics_core::WorldSnapshotError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::WorldSnapshotError
@@ -18507,6 +18518,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> c
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
@@ -18739,6 +18751,7 @@ impl core::marker::Unpin for alice_physics_core::WorldCcdConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::WorldCcdConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::WorldCcdConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::WorldCcdConfig
+pub const alice_physics_core::solver::STATE_DIGEST_DOMAIN: &[u8]
 pub trait alice_physics_core::solver::ContactModifier: core::marker::Send + core::marker::Sync
 pub fn alice_physics_core::solver::ContactModifier::modify_contact(&self, usize, usize, &mut alice_physics_core::collider::Contact, &mut alice_physics_core::math::Fix128, &mut alice_physics_core::math::Fix128) -> bool
 pub type alice_physics_core::solver::PhysicsConfig = alice_physics_core::solver::SolverConfig
@@ -22027,6 +22040,9 @@ pub alice_physics_core::WorldSnapshotError::Unpinned
 pub alice_physics_core::WorldSnapshotError::UnsupportedVersion
 pub alice_physics_core::WorldSnapshotError::UnsupportedVersion::found: u16
 pub alice_physics_core::WorldSnapshotError::UnsupportedVersion::supported: u16
+impl alice_physics_core::WorldSnapshotError
+pub fn alice_physics_core::WorldSnapshotError::code(&self) -> u32
+pub fn alice_physics_core::WorldSnapshotError::kind(&self) -> &'static str
 impl core::clone::Clone for alice_physics_core::WorldSnapshotError
 pub fn alice_physics_core::WorldSnapshotError::clone(&self) -> Self
 impl core::cmp::Eq for alice_physics_core::WorldSnapshotError
@@ -25185,6 +25201,7 @@ pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> c
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
 pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
 pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
@@ -26888,6 +26905,7 @@ pub const alice_physics_core::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics_core::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
 pub const alice_physics_core::PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]]
 pub const alice_physics_core::SIMD_WIDTH: usize
+pub const alice_physics_core::STATE_DIGEST_DOMAIN: &[u8]
 pub trait alice_physics_core::AnomalyCallback
 pub fn alice_physics_core::AnomalyCallback::on_anomaly(&mut self, alice_physics_core::anomaly::AnomalyEvent)
 pub trait alice_physics_core::ContactModifier: core::marker::Send + core::marker::Sync
