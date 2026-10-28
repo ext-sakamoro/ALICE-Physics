@@ -892,17 +892,19 @@ fn ray_meets_box(ray: &Ray, b: &AABB, max_t: Fix128) -> bool {
 ///
 /// The ray hits the triangle exactly when its crossing with the triangle's plane lies in the
 /// closed triangle (edges and vertices included) at t in [0, max_t], and the ray is not parallel
-/// to the plane ([`MT_PARALLEL_LOG2`]). Every quantity is formed on the raw `Fix128` integers in
-/// [`Exact`], so nothing rounds: with the barycentric numerators rounded, a ray grazing an edge
-/// was accepted up to ~2^-63 / sinθ outside the triangle, farther than a node's padded bounds,
-/// and the mesh query disagreed with a loop over the triangles. The hit's t is the exact t
-/// floored to a step of 2^-64, its point `ray.at(t)` and its normal the triangle's unit normal
-/// turned to face the ray.
+/// to the plane (the sine of its angle with the plane below 2^-48 counts as parallel). The answer
+/// is the one exact arithmetic on the raw `Fix128` integers gives: with the barycentric
+/// numerators rounded, a ray grazing an edge was accepted up to ~2^-63 / sinθ outside the
+/// triangle (farther than a node's padded bounds, so the mesh query disagreed with a loop over
+/// the triangles), and a ray exactly through an edge two triangles share could round outside
+/// both. The hit's t is the exact t floored to a step of 2^-64, its point `ray.at(t)` and its
+/// normal the triangle's unit normal turned to face the ray.
 ///
-/// Most calls are decided by [`certainly_misses`] in `Fix128` arithmetic with a proven bound on
-/// its rounding; the rest (every hit, and every miss within the bound of an edge, of t = 0, of
-/// t = max_t or of the parallel threshold) run the exact test, so the answer and the t are the
-/// exact ones in every case.
+/// Most calls are decided in `Fix128` arithmetic with a proven bound on its rounding (a miss
+/// returns at once; a hit computes only its exact t, in 384-bit integers). Calls within the bound
+/// of an edge, of t = 0, of t = max_t or of the parallel threshold, and coordinates of 2^15 or
+/// more, run the exact test in 640- or 1024-bit integers, so the answer and the t are the exact
+/// ones in every case.
 #[must_use]
 pub fn ray_triangle(ray: &Ray, tri: &Triangle, max_t: Fix128) -> Option<RayHit> {
     match fast_test(ray, tri, max_t) {
