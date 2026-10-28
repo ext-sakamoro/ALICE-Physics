@@ -143,6 +143,23 @@ impl Encoder {
                 self.vec3(moment);
                 self.fix(strength);
             }
+            ForceField::InducedDipole {
+                position,
+                moment,
+                radius,
+                material,
+                response,
+                density,
+            } => {
+                self.bytes(b"induced-dipole");
+                self.vec3(position);
+                self.vec3(moment);
+                self.fix(radius);
+                self.u64(u64::from(material));
+                self.fix(response.chi_eff);
+                self.fix(response.saturation_magnetization);
+                self.fix(density);
+            }
         }
     }
 }

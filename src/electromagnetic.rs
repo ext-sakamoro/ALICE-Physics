@@ -117,6 +117,172 @@ pub fn lorentz_force_sum(charged: ChargedBody, body: &RigidBody, sources: &[EmSo
     })
 }
 
+// ---------------------------------------------------------------------------
+// Magnetisable bodies in the field of permanent magnets
+// ---------------------------------------------------------------------------
+
+/// `μ0 / (4π)` in T·m/A (exactly `1e-7` by the SI definition before 2019, the value
+/// [`EmSource::MagneticDipole`] uses)
+fn mu0_over_4pi() -> Fix128 {
+    Fix128::from_ratio(1, 10_000_000)
+}
+
+/// `μ0 = 4π·1e-7` T·m/A, to ten significant digits
+fn mu0() -> Fix128 {
+    Fix128::from_ratio(12_566_370_614, 10_000_000_000_000_000)
+}
+
+/// The field of the magnets at a point and its spatial derivative: `field` is `B` (T) and
+/// `jacobian[j]` is `∂B/∂x_j` (T/m). The field of a point dipole is curl-free and
+/// divergence-free there, so the Jacobian is symmetric and traceless. Samples of several magnets
+/// add (`a + b`): the fields superpose, and the response of a body is taken of the sum.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DipoleSample {
+    /// The magnetic field `B` (T)
+    pub field: Vec3Fix,
+    /// `jacobian[j] = ∂B/∂x_j` (T/m)
+    pub jacobian: [Vec3Fix; 3],
+}
+
+impl DipoleSample {
+    /// No field
+    pub const ZERO: Self = Self {
+        field: Vec3Fix::ZERO,
+        jacobian: [Vec3Fix::ZERO; 3],
+    };
+}
+
+impl core::ops::Add for DipoleSample {
+    type Output = Self;
+    fn add(self, rhs: Self) -> Self {
+        Self {
+            field: self.field + rhs.field,
+            jacobian: [
+                self.jacobian[0] + rhs.jacobian[0],
+                self.jacobian[1] + rhs.jacobian[1],
+                self.jacobian[2] + rhs.jacobian[2],
+            ],
+        }
+    }
+}
+
+/// The field of an ideal magnetic dipole of moment `moment` (A·m²) at `position`, and its
+/// Jacobian, at `point`: `B = μ0/4π · (3(m·r̂)r̂ − m)/r³` and
+/// `∂B_i/∂x_j = μ0/4π · (3(m_j r̂_i + m_i r̂_j + (m·r̂)δ_ij) − 15(m·r̂) r̂_i r̂_j)/r⁴`.
+///
+/// Computed with the unit vector `r̂` and the powers of `1/r`, so the terms stay of order one at
+/// millimetre distances in fixed point. At the dipole itself (`r = 0`) there is no field.
+#[must_use]
+pub fn dipole_sample(position: Vec3Fix, moment: Vec3Fix, point: Vec3Fix) -> DipoleSample {
+    let (r_hat, r) = (point - position).normalize_with_length();
+    if r.is_zero() {
+        return DipoleSample::ZERO;
+    }
+    let inv_r = Fix128::ONE / r;
+    let k_r3 = mu0_over_4pi() * inv_r * inv_r * inv_r;
+    let k_r4 = k_r3 * inv_r;
+    let three = Fix128::from_int(3);
+    let fifteen = Fix128::from_int(15);
+    let m_dot_r = moment.dot(r_hat);
+    let field = (r_hat * (three * m_dot_r) - moment) * k_r3;
+    let r_c = [r_hat.x, r_hat.y, r_hat.z];
+    let m_c = [moment.x, moment.y, moment.z];
+    let column = |j: usize| -> Vec3Fix {
+        let entry = |i: usize| -> Fix128 {
+            let delta = if i == j { m_dot_r } else { Fix128::ZERO };
+            (three * (m_c[j] * r_c[i] + m_c[i] * r_c[j] + delta)
+                - fifteen * m_dot_r * r_c[i] * r_c[j])
+                * k_r4
+        };
+        Vec3Fix::new(entry(0), entry(1), entry(2))
+    };
+    DipoleSample {
+        field,
+        jacobian: [column(0), column(1), column(2)],
+    }
+}
+
+/// The magnetic response of a soft ferromagnetic body: in a field `B` it takes the moment
+/// `min(chi_eff·V·|B|/μ0, saturation_magnetization·V)·B̂` (`V` its volume)
+///
+/// `chi_eff` is the susceptibility of the body's shape (a sphere of a material with a large
+/// susceptibility χ has `3χ/(χ+3) ≈ 3`, steel 3), `saturation_magnetization` is `M_s` (A/m, iron
+/// and steel about 1.7e6, which with `chi_eff = 3` saturates at `B_s ≈ 0.71 T`). A body that does
+/// not magnetise (rubber, glass) has both zero.
+///
+/// The body is a point dipole: valid while the field changes over lengths much larger than the
+/// body, approximate within about two or three body radii of a magnet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MagneticResponse {
+    /// Effective (shape) susceptibility, dimensionless
+    pub chi_eff: Fix128,
+    /// Saturation magnetisation `M_s` (A/m)
+    pub saturation_magnetization: Fix128,
+}
+
+impl MagneticResponse {
+    /// The field magnitude above which the body is saturated: `B_s = μ0·M_s/χ_eff` (`None` for a
+    /// body that does not magnetise)
+    fn saturation_field(&self) -> Option<Fix128> {
+        if self.chi_eff <= Fix128::ZERO || self.saturation_magnetization <= Fix128::ZERO {
+            None
+        } else {
+            Some(mu0() * self.saturation_magnetization / self.chi_eff)
+        }
+    }
+}
+
+/// The energy (J) of a magnetisable body of volume `volume` (m³) in the field `field`:
+/// `U = −χ_eff·V·|B|²/(2μ0)` below the saturation field `B_s`, `U = −M_s·V·|B| + M_s·V·B_s/2`
+/// above it (equal at `B_s`). Zero for a body that does not magnetise.
+#[must_use]
+pub fn induced_dipole_energy(
+    field: Vec3Fix,
+    response: &MagneticResponse,
+    volume: Fix128,
+) -> Fix128 {
+    let Some(b_s) = response.saturation_field() else {
+        return Fix128::ZERO;
+    };
+    let b_sq = field.length_squared();
+    let two = Fix128::from_int(2);
+    if b_sq <= b_s * b_s {
+        // χ_eff/(2μ0) first (about 1e6), then |B|² and V: a product of the small factors first
+        // (χ_eff·V·|B|² ≈ 1e-17) would keep only a few digits in fixed point
+        -(response.chi_eff / (two * mu0()) * b_sq * volume)
+    } else {
+        let m_sat = response.saturation_magnetization * volume;
+        -(m_sat * b_sq.sqrt()) + m_sat * b_s / two
+    }
+}
+
+/// The force (N) on a magnetisable body of volume `volume` (m³) where the magnets' field and its
+/// Jacobian are `sample`: `F = −∇U` of [`induced_dipole_energy`], that is
+/// `(χ_eff·V/μ0)·JᵀB` below the saturation field and `M_s·V·JᵀB/|B|` above it (`J` the Jacobian,
+/// `JᵀB = ∇(|B|²/2)`). Zero for a body that does not magnetise.
+#[must_use]
+pub fn induced_dipole_force(
+    sample: &DipoleSample,
+    response: &MagneticResponse,
+    volume: Fix128,
+) -> Vec3Fix {
+    let Some(b_s) = response.saturation_field() else {
+        return Vec3Fix::ZERO;
+    };
+    let b = sample.field;
+    let grad_half_b_sq = Vec3Fix::new(
+        sample.jacobian[0].dot(b),
+        sample.jacobian[1].dot(b),
+        sample.jacobian[2].dot(b),
+    );
+    let b_sq = b.length_squared();
+    if b_sq <= b_s * b_s {
+        grad_half_b_sq * (response.chi_eff * volume / mu0())
+    } else {
+        grad_half_b_sq * (response.saturation_magnetization * volume / b_sq.sqrt())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
