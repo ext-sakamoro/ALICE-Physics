@@ -31,12 +31,23 @@ use alice_physics_core::world_participant::{
     StepRule, SubstepCtx, SubstepTime, Verdict, WorldFault,
 };
 
-/// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
-/// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
+/// A version 1 to 3 blob of the build where damping was a retention per
+/// step (the fixture holds 0.99 in the world, 1 = none in every body, and
+/// was written stepping by `dt()`). Without the step it is refused, naming
+/// that retention; `restore_world_legacy_damping` with the writer's step
+/// reads it as legacy data with no identifiers (`Unpinned`, ALICE-Law G8).
 fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(alice_physics_core::solver::PhysicsConfig::default());
     assert_eq!(
         world.restore_world_checked(blob, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
+        Err(
+            alice_physics_core::WorldSnapshotError::LegacyDampingNeedsStep {
+                retention: Fix128::from_ratio(99, 100)
+            }
+        )
+    );
+    assert_eq!(
+        world.restore_world_legacy_damping(blob, dt()),
         Ok(alice_physics_core::LawCheck::Unpinned)
     );
     world
@@ -2077,10 +2088,12 @@ fn version_1_blob_reads_as_zero_participants() {
     assert!(world::participant_kinds(&restored).is_empty());
     let mut target = scene();
     world::add_participant(&mut target, Box::new(Tether::new(0, 1))).expect("register");
-    // a version 1 blob is legacy data: read under AcceptUnpinned, it reaches the participant check
+    // a version 1 blob is legacy data: read under AcceptUnpinned with the
+    // writer's step (its damping is a retention per step), it reaches the
+    // participant check
     let before = target.snapshot_world();
     let err = target
-        .restore_world_checked(v1, None, alice_physics_core::LegacyPolicy::AcceptUnpinned)
+        .restore_world_legacy_damping(v1, dt())
         .expect_err("a version 1 blob with no participants into a world with one");
     assert_eq!(
         target.snapshot_world(),

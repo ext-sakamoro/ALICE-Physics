@@ -39,14 +39,86 @@ use alice_physics_core::world_participant::{
     WorldFault,
 };
 
-/// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
-/// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
+/// The step `tests/fixtures/world_snapshot_v1_stacked.bin` was written with:
+/// the scene was stepped by 1/60 s, and damping, then a velocity retention
+/// per `step()` call, was applied once per step of that width.
+fn writer_step() -> Fix128 {
+    Fix128::from_ratio(1, 60)
+}
+
+/// The world damping retention per step the fixture holds (the default of
+/// the build that wrote it; every body holds 1, no damping).
+fn writer_retention() -> Fix128 {
+    Fix128::from_ratio(99, 100)
+}
+
+/// Offset of the world damping value in a snapshot payload: `substeps` and
+/// `iterations` (u64 each) and `gravity` (three `Fix128`) come first.
+const CONFIG_DAMPING: usize = 64;
+
+/// The version 1 payload `p1` of the fixture as version 6 writes it: the
+/// world damping slot holding `rate` instead of the retention 0.99, and each
+/// body's linear and angular slot holding rate 0 instead of the retention 1.
+/// The bodies follow the config (97 bytes) and their count (u64); a body
+/// without a kinematic target is 467 bytes, its damping slots at 432 and 448.
+/// The stored retentions are checked at every slot, so a wrong offset fails.
+fn as_version_6_payload(p1: &[u8], bodies: usize, rate: Fix128) -> Vec<u8> {
+    let mut p = p1.to_vec();
+    let mut put = |at: usize, was: Fix128, now: Fix128| {
+        assert_eq!(&p[at..at + 16], &fix_bytes(was)[..], "slot at {at}");
+        p[at..at + 16].copy_from_slice(&fix_bytes(now));
+    };
+    put(CONFIG_DAMPING, writer_retention(), rate);
+    for i in 0..bodies {
+        let body = 105 + 467 * i;
+        assert_eq!(p1[body + 466], 0, "body {i} has no kinematic target");
+        put(body + 432, Fix128::ONE, Fix128::ZERO);
+        put(body + 448, Fix128::ONE, Fix128::ZERO);
+    }
+    p
+}
+
+/// The bytes of a `Fix128` as the snapshot writes it (`hi`, then `lo`).
+fn fix_bytes(x: Fix128) -> Vec<u8> {
+    let mut b = x.hi.to_le_bytes().to_vec();
+    b.extend_from_slice(&x.lo.to_le_bytes());
+    b
+}
+
+/// The rate a retention `r` per step `dt` is: `e^(−c·dt) = r`, so
+/// `c = −ln(r)/dt`; checked against the value computed apart, not the reader's formula.
+fn assert_converted_rate(rate: Fix128) {
+    let want = 0.603_020_151_210_086_5; // −ln(0.99)·60, closed form
+    assert!(
+        (rate.to_f64() - want).abs() < 1e-12,
+        "rate {} is not −ln(0.99)·60 = {want}",
+        rate.to_f64()
+    );
+}
+
+/// A version 1 to 3 blob of the build where damping was a retention per
+/// step. Without the step it is refused, naming the retention it holds;
+/// `restore_world_legacy_damping` with the writer's step reads it, as legacy
+/// data with no identifiers (`Unpinned`, ALICE-Law G8), with the world
+/// retention 0.99 converted to the rate −ln(0.99)/step and the bodies'
+/// retention 1 read as rate 0.
 fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(alice_physics_core::solver::PhysicsConfig::default());
     assert_eq!(
         world.restore_world_checked(blob, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
+        Err(WorldSnapshotError::LegacyDampingNeedsStep {
+            retention: writer_retention()
+        })
+    );
+    assert_eq!(
+        world.restore_world_legacy_damping(blob, writer_step()),
         Ok(alice_physics_core::LawCheck::Unpinned)
     );
+    assert_converted_rate(world.config.damping_rate);
+    for b in &world.bodies {
+        assert_eq!(b.linear_damping_rate, Fix128::ZERO);
+        assert_eq!(b.angular_damping_rate, Fix128::ZERO);
+    }
     world
 }
 
@@ -455,41 +527,58 @@ fn zero_participants_are_the_unchecked_step_byte_for_byte() {
     }
 }
 
-/// The version 5 blob (the layout of version 4) of a world without
+/// The version 6 blob (the layout of version 4) of a world without
 /// participants is the version 1 payload followed by an empty `participants`
 /// section, no fault, an empty `fields` section and the continuous collision
 /// section of the default setting (off, threshold 1); besides the version,
 /// the length and the checksum, only the 64 identifier bytes of the header
 /// (`[16..80)`, from version 4) are new, and the payload starts after them.
+///
+/// The damping values inside the version 1 payload are re-expressed rather
+/// than kept: from version 6 damping is stored as a rate per second, so the
+/// world damping slot holds −ln(0.99)/(1/60) where the version 1 payload held
+/// the retention 0.99 per step, and each body slot holds rate 0 where it held
+/// retention 1 (no damping in both forms). Every other byte of the version 1
+/// payload is kept.
 #[test]
-fn a_version_5_blob_extends_the_version_1_payload() {
+fn a_version_6_blob_extends_the_version_1_payload() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let w = legacy_snapshot(v1);
-    let v3 = w.snapshot_world();
-    assert_eq!(&v3[0..4], &v1[0..4]);
-    assert_eq!(&v3[4..6], &5u16.to_le_bytes());
+    let v6 = w.snapshot_world();
+    assert_eq!(&v6[0..4], &v1[0..4]);
+    assert_eq!(&v6[4..6], &6u16.to_le_bytes());
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
-    let (l1, l3) = (len(v1), len(&v3));
+    let (l1, l6) = (len(v1), len(&v6));
     let mut tail = vec![0u8; 17];
     tail.push(0); // continuous collision off
     tail.extend_from_slice(&1i64.to_le_bytes()); // threshold 1: hi
     tail.extend_from_slice(&0u64.to_le_bytes()); // lo
-    assert_eq!(l3, l1 + tail.len());
-    assert_eq!(&v3[80..80 + l1], &v1[16..16 + l1]);
-    assert_eq!(&v3[80 + l1..80 + l3], &tail[..]);
+    assert_eq!(l6, l1 + tail.len());
+    let (p1, p6) = (&v1[16..16 + l1], &v6[80..80 + l1]);
+    assert_eq!(
+        p6,
+        &as_version_6_payload(p1, w.bodies.len(), w.config.damping_rate)[..]
+    );
+    assert_converted_rate(w.config.damping_rate);
+    assert_eq!(&v6[80 + l1..80 + l6], &tail[..]);
 }
 
 /// The version 1 fixture still reads as the world it was taken from (a static
 /// body at y = −1 and three unit spheres at rest at y = 1, 3, 5, substeps 4,
-/// iterations 4, gravity −10, stepped once by 1/60 s, written while
-/// `snapshot_world` wrote version 1): the restored world has that world's configuration and bodies, writing
-/// it again reproduces the fixture's payload byte for byte, and it steps on
-/// exactly like the same state restored from its own version 2 blob.
+/// iterations 4, gravity −10, damping retention 0.99 per step, stepped once
+/// by 1/60 s, written while `snapshot_world` wrote version 1): read with the
+/// writer's step, the restored world has that world's configuration (the
+/// damping as the rate −ln(0.99)·60) and bodies, writing it again reproduces
+/// the fixture's payload byte for byte except the damping slots, which hold
+/// rates, and it steps on exactly like the same state restored from its
+/// own current blob.
 ///
 /// The fixture holds the state of the solver it was written with, and the
 /// writer no longer emits version 1, so the comparison is against the
 /// fixture's own content rather than against a world stepped again today
-/// (the solver's rounding has changed since).
+/// (the solver's rounding has changed since, and the stepping semantics
+/// changed with the damping law, so the restored world is a new starting
+/// state, not a continuation of the run that wrote the fixture).
 #[test]
 fn a_version_1_blob_restores_the_world_it_was_taken_from() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
@@ -524,12 +613,20 @@ fn a_version_1_blob_restores_the_world_it_was_taken_from() {
         );
     }
 
-    // Writing it again keeps every byte of the version 1 payload
+    assert_converted_rate(config.damping_rate);
+
+    // Writing it again keeps every byte of the version 1 payload but the
+    // damping slots, which now hold rates (version 6 stores rates): the
+    // world's −ln(0.99)·60, the bodies' 0
     let v2 = restored.snapshot_world();
     let len = |b: &[u8]| u64::from_le_bytes(b[8..16].try_into().expect("8 bytes")) as usize;
     let l1 = len(v1);
     // (the version 4 payload starts after the 80-byte header)
-    assert_eq!(&v2[80..80 + l1], &v1[16..16 + l1]);
+    let (p1, p6) = (&v1[16..16 + l1], &v2[80..80 + l1]);
+    assert_eq!(
+        p6,
+        &as_version_6_payload(p1, restored.bodies.len(), restored.config.damping_rate)[..]
+    );
 
     // It steps on like the same state restored from the blob written today
     let mut again = PhysicsWorld::from_world_snapshot(&v2).expect("v2 blob");

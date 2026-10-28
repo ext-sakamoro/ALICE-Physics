@@ -8,9 +8,15 @@
 //! written from the scene's geometry, never obtained by running the solver:
 //!
 //! * frame damping: each `step` of `dt` multiplies every dynamic body's
-//!   velocity by `d = config.damping` once, so a body with no contact moving
-//!   at `v₀` along `x` has `v_n = v₀ dⁿ` and
-//!   `x_n = x₀ + v₀ dt (1 − dⁿ) / (1 − d)` after `n` steps;
+//!   velocity by `d = exp(−c·dt)` once (`c = config.damping_rate`, `d`
+//!   computed in `Fix128` exactly as the engine does, so the `1e-9`
+//!   tolerances below need no allowance for `Fix128::exp`'s error), so a body
+//!   with no contact moving at `v₀` along `x` has `v_n = v₀ dⁿ` and
+//!   `x_n = x₀ + v₀ dt Σ_{k<n} dᵏ` after `n` steps (the sum is taken term by
+//!   term, so the undamped limit `d = 1`, `x_n = x₀ + v₀ n dt`, is exact and
+//!   there is no `0/0` from `(1 − dⁿ)/(1 − d)`). The damping-dependent
+//!   oracles run at `c = 0` (the default) and at `c = −ln(0.99)·60` (the old
+//!   per-step retention 0.99 at `dt = 1/60` as a rate);
 //! * two equal spheres of radius `r` closing head-on at `±v` first overlap in
 //!   the substep (length `h = dt / substeps`) whose predicted gap is
 //!   negative; Newton restitution `e` on that approach leaves each body at
@@ -29,6 +35,10 @@ use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{both_rates, engine_retention, geometric_sum};
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -105,7 +115,7 @@ fn head_on(
 /// Free motion of body `a` after `n` steps: `(x_n, v_n)`.
 fn free(d: f64, n: usize) -> (f64, f64) {
     let dn = d.powi(n as i32);
-    (-X0 + V0 * DT * (1.0 - dn) / (1.0 - d), V0 * dn)
+    (-X0 + V0 * DT * geometric_sum(d, n), V0 * dn)
 }
 
 /// Predicted gap of the free pair at the end of substep `s` (1-based) of
@@ -125,31 +135,36 @@ fn free_gap(d: f64, substeps: usize, k: usize, s: usize) -> f64 {
 /// position update and the velocity re-derivation (`~1e-30` per operation).
 #[test]
 fn a_vetoed_head_on_pair_moves_as_free_bodies() {
-    let config = PhysicsConfig::default();
-    let d = (-config.damping_rate.to_f64() * DT).exp();
-    let n = 120;
-    let (x_want, v_want) = free(d, n);
-    assert!(
-        x_want > 0.0,
-        "the scene must carry a past b: x_a = {x_want}"
-    );
-    for path in paths() {
-        let calls = Arc::new(AtomicUsize::new(0));
-        let (mut w, a, b) = head_on(config, Some((false, Arc::clone(&calls))));
-        advance(&mut w, path, n);
-        let ba = w.get_body(a).expect("a");
-        let bb = w.get_body(b).expect("b");
-        assert!(calls.load(Ordering::SeqCst) > 0, "{path:?}: no contact");
-        for (got, want, what) in [
-            (ba.position.x.to_f64(), x_want, "x_a"),
-            (bb.position.x.to_f64(), -x_want, "x_b"),
-            (ba.velocity.x.to_f64(), v_want, "v_a"),
-            (bb.velocity.x.to_f64(), -v_want, "v_b"),
-        ] {
-            assert!(
-                (got - want).abs() < 1e-9,
-                "{path:?}: {what} = {got:.12}, free motion {want:.12}"
-            );
+    for rate in both_rates() {
+        let config = PhysicsConfig {
+            damping_rate: rate,
+            ..PhysicsConfig::default()
+        };
+        let d = engine_retention(rate, fx(DT)).to_f64();
+        let n = 120;
+        let (x_want, v_want) = free(d, n);
+        assert!(
+            x_want > 0.0,
+            "the scene must carry a past b: x_a = {x_want}"
+        );
+        for path in paths() {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let (mut w, a, b) = head_on(config, Some((false, Arc::clone(&calls))));
+            advance(&mut w, path, n);
+            let ba = w.get_body(a).expect("a");
+            let bb = w.get_body(b).expect("b");
+            assert!(calls.load(Ordering::SeqCst) > 0, "{path:?}: no contact");
+            for (got, want, what) in [
+                (ba.position.x.to_f64(), x_want, "x_a"),
+                (bb.position.x.to_f64(), -x_want, "x_b"),
+                (ba.velocity.x.to_f64(), v_want, "v_a"),
+                (bb.velocity.x.to_f64(), -v_want, "v_b"),
+            ] {
+                assert!(
+                    (got - want).abs() < 1e-9,
+                    "{path:?}, rate {rate:?}: {what} = {got:.12}, free motion {want:.12}"
+                );
+            }
         }
     }
 }
@@ -163,33 +178,38 @@ fn a_vetoed_head_on_pair_moves_as_free_bodies() {
 /// `1e-9` as above.
 #[test]
 fn an_accepted_head_on_pair_bounces_with_the_restitution() {
-    let config = PhysicsConfig::default();
-    let d = (-config.damping_rate.to_f64() * DT).exp();
-    let substeps = config.substeps;
-    let (k, _) = (0..200)
-        .flat_map(|k| (1..=substeps).map(move |s| (k, s)))
-        .find(|&(k, s)| free_gap(d, substeps, k, s) < 0.0)
-        .expect("impact");
-    let n = 60;
-    assert!(k < n, "impact frame {k} must be inside the run");
-    for (e, modified) in [(0.3, false), (0.8, true)] {
-        let leave = -e * free(d, k).1;
-        let v_want = leave * d.powi((n - k) as i32);
-        for path in paths() {
-            let (mut w, a, b) = head_on(config, None);
-            if modified {
-                w.add_contact_modifier(Box::new(Absolute {
-                    friction: fx(0.5),
-                    restitution: fx(e),
-                }));
+    for rate in both_rates() {
+        let config = PhysicsConfig {
+            damping_rate: rate,
+            ..PhysicsConfig::default()
+        };
+        let d = engine_retention(rate, fx(DT)).to_f64();
+        let substeps = config.substeps;
+        let (k, _) = (0..200)
+            .flat_map(|k| (1..=substeps).map(move |s| (k, s)))
+            .find(|&(k, s)| free_gap(d, substeps, k, s) < 0.0)
+            .expect("impact");
+        let n = 60;
+        assert!(k < n, "impact frame {k} must be inside the run");
+        for (e, modified) in [(0.3, false), (0.8, true)] {
+            let leave = -e * free(d, k).1;
+            let v_want = leave * d.powi((n - k) as i32);
+            for path in paths() {
+                let (mut w, a, b) = head_on(config, None);
+                if modified {
+                    w.add_contact_modifier(Box::new(Absolute {
+                        friction: fx(0.5),
+                        restitution: fx(e),
+                    }));
+                }
+                advance(&mut w, path, n);
+                let va = w.get_body(a).expect("a").velocity.x.to_f64();
+                let vb = w.get_body(b).expect("b").velocity.x.to_f64();
+                assert!(
+                    (va - v_want).abs() < 1e-9 && (vb + v_want).abs() < 1e-9,
+                    "{path:?}, rate {rate:?}, e = {e}: v_a = {va:.12}, v_b = {vb:.12}, closed form ±{v_want:.12}"
+                );
             }
-            advance(&mut w, path, n);
-            let va = w.get_body(a).expect("a").velocity.x.to_f64();
-            let vb = w.get_body(b).expect("b").velocity.x.to_f64();
-            assert!(
-                (va - v_want).abs() < 1e-9 && (vb + v_want).abs() < 1e-9,
-                "{path:?}, e = {e}: v_a = {va:.12}, v_b = {vb:.12}, closed form ±{v_want:.12}"
-            );
         }
     }
 }

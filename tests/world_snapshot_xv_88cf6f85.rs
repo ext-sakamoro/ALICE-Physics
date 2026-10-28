@@ -116,21 +116,28 @@ fn the_fixtures_are_what_the_writer_wrote() {
     assert_eq!(hex(&A[LAW_AT..LAW_AT + 32]), WRITER_LAW_ID);
     let writer: [u8; 32] = A[SEMANTICS_AT..SEMANTICS_AT + 32].try_into().unwrap();
     assert_ne!(writer, PHYSICS_SEMANTICS_ID);
-    assert_eq!(scene().law_id(&writer), A[LAW_AT..LAW_AT + 32]);
+    // the writer's world damping field was a retention per step (0.99 by
+    // default) where this build's is a rate per second (0 by default);
+    // `law_id` encodes the field's value, so the writer's id is recomputed
+    // from the value the writer held (the raw value, not used as a rate)
+    let mut writer_scene = scene();
+    writer_scene.config.damping_rate = Fix128::from_ratio(99, 100);
+    assert_eq!(writer_scene.law_id(&writer), A[LAW_AT..LAW_AT + 32]);
+    assert_ne!(scene().law_id(&writer), A[LAW_AT..LAW_AT + 32]);
     assert!(PREVIOUS_PHYSICS_SEMANTICS_IDS.contains(&writer));
 }
 
 #[test]
 fn a_snapshot_of_the_earlier_build_steps_here_to_that_builds_own_steps() {
     let mut here = scene();
-    here.restore_world(A)
+    here.restore_world_legacy_damping(A, dt())
         .expect("an earlier identifier this build lists");
     for _ in 0..30 {
         here.step(dt());
     }
     let mut theirs = scene();
     theirs
-        .restore_world(B)
+        .restore_world_legacy_damping(B, dt())
         .expect("an earlier identifier this build lists");
     let (h, t) = (here.snapshot_world(), theirs.snapshot_world());
     assert!(h.len() > 1000, "a snapshot of the scene, {} bytes", h.len());
@@ -138,6 +145,6 @@ fn a_snapshot_of_the_earlier_build_steps_here_to_that_builds_own_steps() {
     assert_eq!(h, t);
     // and the 30 steps moved the world (the comparison is not of two unmoved worlds)
     let mut a_only = scene();
-    a_only.restore_world(A).unwrap();
+    a_only.restore_world_legacy_damping(A, dt()).unwrap();
     assert_ne!(a_only.snapshot_world(), t);
 }

@@ -117,26 +117,37 @@ fn free_fall_matches_analytic_and_is_substep_independent() {
 
 #[test]
 fn default_config_free_fall_reaches_analytic_within_frame_damping() {
-    let mut world = PhysicsWorld::new(PhysicsConfig::default());
-    let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
-    run(&mut world, 60, r(1, 60));
-    let y = world.bodies[b].position.y.to_f64();
-    // Discrete closed form of the 1.2.0 scheme with s substeps and frame damping d:
-    //   y_{n+1} = y_n + v_n dt + g dt^2 (s+1)/(2s)   (symplectic Euler inside the frame)
-    //   v_{n+1} = (v_n + g dt) d                       (damping once per frame)
-    // → y_60 = -4.1406 (undamped -5.083); pre-1.2.0 gave -1.641.
-    let (g, d, dt, s) = (10.0, 0.99, DT60, 8.0);
-    let mut y_ref = 0.0;
-    let mut v = 0.0;
-    for _ in 0..60 {
-        y_ref -= v * dt + g * dt * dt * (s + 1.0) / (2.0 * s);
-        v = (v + g * dt) * d;
+    // The default config (damping rate 0) and the default config with the old
+    // 0.99-per-frame loss set as a rate, `c = −ln(0.99)·60`.
+    let old_rate = -r(99, 100).ln() * Fix128::from_int(60);
+    for rate in [Fix128::ZERO, old_rate] {
+        let mut world = PhysicsWorld::new(PhysicsConfig {
+            damping_rate: rate,
+            ..PhysicsConfig::default()
+        });
+        let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        run(&mut world, 60, r(1, 60));
+        let y = world.bodies[b].position.y.to_f64();
+        // Discrete closed form of the 1.2.0 scheme with s substeps and frame damping d:
+        //   y_{n+1} = y_n + v_n dt + g dt^2 (s+1)/(2s)   (symplectic Euler inside the frame)
+        //   v_{n+1} = (v_n + g dt) d                       (damping once per frame)
+        // with d = exp(−c·dt) computed in Fix128 exactly as `step` does (d = 1
+        // at rate 0), so the 1e-6 tolerance carries no `Fix128::exp` error
+        // → y_60 = -5.083 undamped, -4.1406 at the old rate; pre-1.2.0 gave -1.641.
+        let d = (-(rate * r(1, 60))).exp().to_f64();
+        let (g, dt, s) = (10.0, DT60, 8.0);
+        let mut y_ref = 0.0;
+        let mut v = 0.0;
+        for _ in 0..60 {
+            y_ref -= v * dt + g * dt * dt * (s + 1.0) / (2.0 * s);
+            v = (v + g * dt) * d;
+        }
+        assert!(
+            (y - y_ref).abs() < 1e-6,
+            "rate {rate:?}: y = {y}, closed-form {y_ref} (pre-1.2.0 gave -1.64)"
+        );
+        assert!(y < -3.5, "rate {rate:?}: fell only to {y}");
     }
-    assert!(
-        (y - y_ref).abs() < 1e-6,
-        "default config y = {y}, closed-form {y_ref} (pre-1.2.0 gave -1.64)"
-    );
-    assert!(y < -3.5, "default config fell only to {y}");
 }
 
 // ---------------------------------------------------------------------------

@@ -9810,11 +9810,27 @@ mod tests {
         );
         assert_eq!(b.prev_position, v3(1, 1, 1));
 
-        // frame damping: global 1/2 * per-body 1/2 → (1, -1/4, 0)
+        // frame damping: rates c = ln2/dt (world) + ln2/dt (body), so the factor
+        // is exp(−2 ln 2) = 1/4 in exact arithmetic → (1, -1/4, 0). Fix128::exp
+        // is not exact (exp(−2 ln 2) = 1/4 · (1 + 4.1e-8) here), so the exact
+        // check is against the factor computed the same way as
+        // `apply_frame_damping` (sum of the rates, times dt, negated, exp)…
+        let v_before = world.bodies[i].velocity;
+        let factor =
+            (-((world.config.damping_rate + world.bodies[i].linear_damping_rate) * dt)).exp();
         world.apply_frame_damping(dt);
-        assert_eq!(
-            world.bodies[i].velocity,
-            Vec3Fix::new(Fix128::ONE, -r(1, 4), Fix128::ZERO)
+        assert_eq!(world.bodies[i].velocity, v_before * factor);
+        // …and the factor is within Fix128::exp's documented relative error
+        // (≲ 1e-6, `math::tests::exp_matches_f64_reference`; Fix128::ln of 1/2
+        // adds < 1e-16) of the exact 1/4
+        let rel = ((factor - r(1, 4)) / r(1, 4)).to_f64().abs();
+        assert!(rel < 1e-6, "exp(−2 ln 2) off 1/4 by {rel:e} relative");
+        // so |v − (1, −1/4, 0)| ≤ |v_before| · 1/4 · 1e-6
+        let want = Vec3Fix::new(Fix128::ONE, -r(1, 4), Fix128::ZERO);
+        let off = (world.bodies[i].velocity - want).length().to_f64();
+        assert!(
+            off <= v_before.length().to_f64() * 0.25 * 1e-6,
+            "off {off:e}"
         );
     }
 
@@ -9840,8 +9856,21 @@ mod tests {
         assert_eq!(b.rotation, expected);
         assert_eq!(b.prev_rotation, QuatFix::IDENTITY);
         assert!(b.rotation != QuatFix::IDENTITY);
+        // rate c = ln2/dt: exp(−ln 2) = 1/2 in exact arithmetic → (0,0,1). Fix128::exp
+        // gives 1/2 · (1 + 4.1e-8), so the exact check is against the factor
+        // computed the same way as `apply_frame_damping`…
+        let factor =
+            (-((world.config.damping_rate + world.bodies[i].angular_damping_rate) * dt)).exp();
         world.apply_frame_damping(dt);
-        assert_eq!(world.bodies[i].angular_velocity, v3(0, 0, 1));
+        assert_eq!(world.bodies[i].angular_velocity, v3(0, 0, 2) * factor);
+        // …within Fix128::exp's documented relative error (≲ 1e-6) of the exact 1/2,
+        // so ω_z is within 2 · 1/2 · 1e-6 of 1
+        let rel = ((factor - r(1, 2)) / r(1, 2)).to_f64().abs();
+        assert!(rel < 1e-6, "exp(−ln 2) off 1/2 by {rel:e} relative");
+        let off = (world.bodies[i].angular_velocity.z - Fix128::ONE)
+            .to_f64()
+            .abs();
+        assert!(off <= 1e-6, "ω_z off 1 by {off:e}");
     }
 
     #[test]
@@ -10115,8 +10144,12 @@ mod tests {
         assert_eq!(body.angular_damping_rate, rate);
         assert_eq!(body.linear_damping_rate, Fix128::ZERO);
 
-        // substeps を変えても damping は frame 毎に 1 回だけ: ω_damped == ω_undamped * 1 * 1/2
-        // (substep 毎なら substeps=4 で 1/16 になる)
+        // substeps を変えても damping は frame 毎に 1 回だけ: ω_damped == ω_undamped * exp(−c·dt)
+        // (c·dt = ln 2、厳密には 1/2; substep 毎なら substeps=4 で 1/16 になる)
+        // Fix128::exp は exp(−ln 2) = 1/2 · (1 + 4.1e-8) を返すので、bit 一致は
+        // step と同じ計算 (world rate + body rate、× dt、符号反転、exp) の係数と取る
+        let dt = r(1, 4);
+        let factor = (-((quiet_world().config.damping_rate + rate) * dt)).exp();
         for substeps in [1usize, 4] {
             let mut undamped = quiet_world();
             undamped.config.substeps = substeps;
@@ -10134,10 +10167,10 @@ mod tests {
             );
             damped.bodies[d].set_angular_velocity(v3(0, 0, 2));
 
-            undamped.step(r(1, 4));
-            damped.step(r(1, 4));
+            undamped.step(dt);
+            damped.step(dt);
 
-            let expected = undamped.bodies[u].angular_velocity * Fix128::ONE * r(1, 2);
+            let expected = undamped.bodies[u].angular_velocity * factor;
             assert_eq!(
                 damped.bodies[d].angular_velocity, expected,
                 "substeps {substeps}"
@@ -10147,10 +10180,13 @@ mod tests {
                 damped.bodies[d].velocity, undamped.bodies[u].velocity,
                 "substeps {substeps}"
             );
+            // 厳密な 1/2 との差は Fix128::exp の相対誤差 (≲ 1e-6、
+            // `math::tests::exp_matches_f64_reference`) と f64 除算の丸め (≲ 1e-16) で抑えられる:
+            // |ratio − 1/2| ≤ 1/2 · 1e-6 (per-substep なら 1/16 で 0.44 離れる)
             let ratio = damped.bodies[d].angular_velocity.z.to_f64()
                 / undamped.bodies[u].angular_velocity.z.to_f64();
             assert!(
-                (ratio - 0.5).abs() < 1e-9,
+                (ratio - 0.5).abs() < 0.5e-6,
                 "substeps {substeps}: ratio {ratio}"
             );
         }

@@ -324,22 +324,26 @@ fn springs_of_different_frequency_share_a_world() {
 }
 
 /// (5) With a world damping rate whose loss per frame is 0.99 and 4 substeps the
-/// result is the same substep law with the velocity scaled by 0.99 after every
-/// frame, and differs measurably from the undamped world.
+/// result is the same substep law with the velocity scaled by the engine's
+/// per-frame factor `exp(−c·dt)` after every frame, and differs measurably from
+/// the undamped world. The rate is made with Fix128 `ln`, and `ln` then `exp`
+/// is not an exact round trip (`exp(−c·dt)` is `0.99 + 1.7e-8` here), so the
+/// factor of the reference is computed exactly as `step` computes it, from the
+/// same `Fix128` rate and `dt`; the `1e-9` tolerance then covers only the
+/// fixed-point rounding of the step, as for the other discrete-law checks.
 #[test]
 fn global_damping_multiplies_on_top_of_the_spring_law() {
     let (m, omega, x0) = (4.0, 1.0 / 0.12, 0.5);
     let substeps = 4;
     let frames = 90;
     // the loss per step of the former retention 0.99 at dt = 1/60
-    let mut w = world(config(
-        substeps,
-        1,
-        (-Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60)).to_f64(),
-    ));
+    let rate = (-Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60)).to_f64();
+    let cfg = config(substeps, 1, rate);
+    let retain = (-(cfg.damping_rate * fx(DT))).exp().to_f64();
+    let mut w = world(cfg);
     let body = add_spring_body(&mut w, m, omega, 1.0, [x0, 0.0, 0.0], [0.0; 3]);
     let got = run(&mut w, body, frames);
-    let damped = reference(x0, 0.0, omega, 1.0, substeps, frames, 0.99);
+    let damped = reference(x0, 0.0, omega, 1.0, substeps, frames, retain);
     let plain = reference(x0, 0.0, omega, 1.0, substeps, frames, 1.0);
     let mut max_gap: f64 = 0.0;
     for n in 0..frames {

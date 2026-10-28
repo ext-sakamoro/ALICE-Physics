@@ -118,11 +118,35 @@ fn tether_from_rest_tracks_the_closed_form_within_the_derived_bound() {
     }
 }
 
+/// The body's rate is `c = −ln(d)/dt` (Fix128 `ln`) and `step` applies
+/// `d_e = exp(−c·dt)` (Fix128 `exp`), which is not an exact round trip:
+/// `d_e = d + δd`. The tolerance is derived from that `δd`, computed here
+/// exactly as the engine computes `d_e`:
+///
+/// Each component obeys `x_{n+1} = T x_n − D x_{n−1}` for `n ≥ 1`, with
+/// `T = (1 + d)/(1 + a²)`, `D = d/(1 + a²)` (substitute `v_n = d (x_n −
+/// x_{n−1})/dt` into `x_{n+1} = (x_n + dt·v_n)/(1 + a²)`), and `x_1` does not
+/// depend on `d`. Replacing `d` by `d + δd` adds the forcing
+/// `δd (x_n − x_{n−1})/(1 + a²)`, whose response through the double root `λ`
+/// has the impulse response `(m + 1) λ^m`, summing to `1/(1 − λ)²`. So to
+/// first order in `δd`
+/// `|x_n(d_e) − x_n(d)| ≤ |δd| / ((1 + a²)(1 − λ)²) · max_k |x_k − x_{k−1}|`,
+/// with `x_k` the closed form itself. The tolerance is that bound plus the
+/// former `1e-9` for the fixed-point rounding of the step; `|δd|` itself is
+/// asserted to be within `Fix128::exp`'s documented `1e-6` relative error.
 #[test]
 fn tether_follows_the_discrete_closed_form_including_tangential_velocity() {
     // initial velocity perpendicular to the displacement: a radial-only damper would orbit
     let dt = Fix128::from_ratio(1, 60);
     let (h, w): (f64, f64) = (1.0 / 60.0, 6.0);
+    let d_crit = critical_retention(Fix128::from_int(6), dt);
+    let rate = -d_crit.ln() / dt;
+    let d_engine = (-(rate * dt)).exp(); // as `step` computes it (world rate 0)
+    let delta_d = (d_engine - d_crit).to_f64();
+    assert!(
+        delta_d.abs() <= 1e-6 * d_crit.to_f64(),
+        "ln/exp round trip off by {delta_d:e}, beyond Fix128::exp's 1e-6"
+    );
     let mut world = tether_world();
     let target = Vec3Fix::from_int(2, 1, -1);
     let b = add_tether(
@@ -149,16 +173,28 @@ fn tether_follows_the_discrete_closed_form_including_tangential_velocity() {
             (x0[c], x1 / lambda - x0[c])
         })
         .collect();
+    let closed = |c: usize, n: i32| {
+        let (aa, bb) = coef[c];
+        (aa + bb * f64::from(n)) * powf64(lambda, f64::from(n))
+    };
+    let tol: Vec<f64> = (0..3)
+        .map(|c| {
+            let max_step = (1..=240)
+                .map(|n| (closed(c, n) - closed(c, n - 1)).abs())
+                .fold(0.0_f64, f64::max);
+            1e-9 + delta_d.abs() / ((1.0 + a * a) * (1.0 - lambda) * (1.0 - lambda)) * max_step
+        })
+        .collect();
     for n in 1..=240 {
         world.step(dt);
         let p = f64v(world.bodies[b].position);
         for c in 0..3 {
-            let (aa, bb) = coef[c];
-            let discrete = (aa + bb * n as f64) * powf64(lambda, f64::from(n));
+            let discrete = closed(c, n);
             assert!(
-                (p[c] - tgt[c] - discrete).abs() < 1e-9,
-                "n {n} component {c}: {} vs {discrete}",
-                p[c] - tgt[c]
+                (p[c] - tgt[c] - discrete).abs() < tol[c],
+                "n {n} component {c}: {} vs {discrete} (tol {:e}, δd {delta_d:e})",
+                p[c] - tgt[c],
+                tol[c]
             );
         }
     }
