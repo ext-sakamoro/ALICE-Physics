@@ -995,6 +995,8 @@ jobs:
         run: |
           python3 scripts/test_workflow_timeouts.py
           python3 scripts/workflow_timeouts.py
+          # the pass / fail rules of verify.yml's mutant jobs
+          python3 scripts/test_verify_mutants_check.py
 
   feature-powerset:
     if: github.event_name != 'schedule'

@@ -1,0 +1,273 @@
+# verify — on demand, at one commit: the full local preflight and the release test suite
+# (suite full), and the mutation testing of the commit's diff (suite mutants)
+#
+# Dispatch only (no push, no schedule): it runs what otherwise runs on a developer
+# machine before a landing, on a GitHub runner, for a commit that is already on a
+# ci/** branch:
+#
+#   gh workflow run verify.yml --ref ci/<id> -f sha=<40-hex> -f suite=both
+#   gh run list --workflow verify.yml --json displayTitle,status,conclusion
+#
+# The run is named after the SHA (`verify <sha> <suite>`: a dispatch's head SHA is the
+# tip of the dispatched branch, so the name is how a run is found for a commit).
+# Inputs are checked first: the SHA must be 40 lowercase hex and reachable from a
+# ci/** branch of this repository (a commit that was never pushed for its CI is not
+# verified here), and the checkout must be that SHA.
+#
+# Every job refuses to report success on nothing: suite full fails when no test
+# result line was read; suite mutants fails when the diff changes src/ but no mutant
+# was generated (an empty reading of a source change), when cargo-mutants exits with a
+# code that is not a result (a bad --features, a red unmutated tree), when an axis tested
+# no mutant, on any missed mutant and on a run that did not finish
+# (scripts/verify_mutants_check.py).
+#
+# Load: one run per SHA at a time (the group is the SHA: dispatches for other commits do
+# not replace each other's waiting run; a second one for the same SHA waits), mutant jobs
+# at most four at once per run (the runner pool is shared by the account), and the first
+# step waits (at most 30 min) while main's CI is queued, so a verify run does not take the
+# runners a landing needs.
+name: Verify
+
+run-name: verify ${{ inputs.sha }} ${{ inputs.suite }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'the commit to verify (40 hex, reachable from a ci/** branch)'
+        required: true
+        type: string
+      suite:
+        description: 'full (preflight + release tests), mutants (the diff), or both'
+        required: true
+        default: both
+        type: choice
+        options: [full, mutants, both]
+      base:
+        description: 'mutants: the diff base (empty = the merge-base of the SHA and origin/main)'
+        required: false
+        default: ''
+        type: string
+      shards:
+        description: 'mutants: number of shards per feature axis (1-8)'
+        required: false
+        default: '1'
+        type: string
+
+concurrency:
+  group: verify-${{ inputs.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  inputs:
+    name: Check the inputs, wait for main's queue
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      base: ${{ steps.base.outputs.base }}
+      src_changed: ${{ steps.base.outputs.src_changed }}
+      shards: ${{ steps.shards.outputs.list }}
+    steps:
+      - name: The SHA is 40 hex
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be 40 lowercase hex, got '$SHA'"; exit 1; }
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+      - name: The SHA is reachable from a ci/** branch
+        env:
+          SHA: ${{ inputs.sha }}
+        run: |
+          git fetch -q origin '+refs/heads/ci/*:refs/remotes/origin/ci/*' '+refs/heads/main:refs/remotes/origin/main'
+          n=$(git for-each-ref --format='%(refname)' refs/remotes/origin/ci/ | wc -l)
+          [ "$n" -gt 0 ] || { echo "::error::no ci/** branch on origin (read 0)"; exit 1; }
+          on=$(git for-each-ref --contains "$SHA" --format='%(refname:short)' refs/remotes/origin/ci/)
+          [ -n "$on" ] || { echo "::error::$SHA is on none of the $n ci/** branches: push it to ci/<id> first"; exit 1; }
+          echo "on: $on"
+          [ "$(git rev-parse HEAD)" = "$SHA" ] || { echo "::error::the checkout is not $SHA"; exit 1; }
+      - name: The diff base
+        id: base
+        env:
+          SHA: ${{ inputs.sha }}
+          BASE: ${{ inputs.base }}
+        run: |
+          if [ -n "$BASE" ]; then
+            base=$(git rev-parse --verify -q "$BASE^{commit}") || { echo "::error::base '$BASE' is not a commit"; exit 1; }
+            git merge-base --is-ancestor "$base" "$SHA" || { echo "::error::base $base is not an ancestor of $SHA"; exit 1; }
+          else
+            base=$(git merge-base origin/main "$SHA")
+          fi
+          n=$(git diff --name-only "$base" "$SHA" -- src crates | grep -c . || true)
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "src_changed=$([ "$n" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "base $base, $n changed file(s) under src/ crates/" | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: The shard list
+        id: shards
+        env:
+          SHARDS: ${{ inputs.shards }}
+        run: |
+          [[ "$SHARDS" =~ ^[1-8]$ ]] || { echo "::error::shards must be 1-8, got '$SHARDS'"; exit 1; }
+          echo "list=$(python3 -c "import json,sys; print(json.dumps(list(range(int(sys.argv[1])))))" "$SHARDS")" >> "$GITHUB_OUTPUT"
+      - name: Wait while main's CI is queued (at most 30 min)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for _ in $(seq 1 60); do
+            q=$(gh run list -R "$GITHUB_REPOSITORY" --branch main --status queued --json databaseId --jq length)
+            [ "$q" = "0" ] && { echo "main has no queued run"; exit 0; }
+            echo "$(date -u +%H:%M:%S) main has $q queued run(s): waiting"
+            sleep 30
+          done
+          echo "::warning::main still has queued runs after 30 min: going on"
+
+  full:
+    name: Full preflight + release test suite
+    needs: inputs
+    if: inputs.suite == 'full' || inputs.suite == 'both'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+      # rust-toolchain.toml pins the toolchain; rustup installs it on the first cargo call
+      - name: Toolchain and the tools the full preflight needs
+        run: |
+          rustup show active-toolchain
+          rustup component add rust-analyzer
+          rustup target add wasm32-wasip1 wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: wasm-bindgen version of Cargo.lock
+        id: wbg
+        run: |
+          v=$(awk '/^\[\[package\]\]/{p=0} $0=="name = \"wasm-bindgen\""{p=1} p&&/^version = /{gsub(/"/,"",$3); print $3; exit}' Cargo.lock)
+          [ -n "$v" ] || { echo "::error::no wasm-bindgen in Cargo.lock"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny,cargo-mutants,wasm-bindgen@${{ steps.wbg.outputs.version }}
+      - name: scripts/preflight.sh (full)
+        run: bash scripts/preflight.sh 2>&1 | tee preflight.log; exit "${PIPESTATUS[0]}"
+      - name: cargo test --release --workspace
+        run: |
+          set -o pipefail
+          cargo test --release --workspace 2>&1 | tee test.log
+          # a run that read no test result line verified nothing
+          passed=$(grep -E '^test result: ' test.log | sed -E 's/.* ([0-9]+) passed.*/\1/' | awk '{s+=$1} END {print s+0}')
+          lines=$(grep -c '^test result: ' test.log || true)
+          echo "release suite: $lines result line(s), $passed test(s) passed" | tee -a "$GITHUB_STEP_SUMMARY"
+          [ "${lines:-0}" -gt 0 ] && [ "${passed:-0}" -gt 0 ] || { echo "::error::no test ran (0 result lines or 0 passed)"; exit 1; }
+          if grep -q '^test result: FAILED' test.log; then echo "::error::a test failed"; exit 1; fi
+      - name: Preflight summary
+        if: always()
+        run: |
+          steps=$(grep -c '^==> ' preflight.log 2>/dev/null || true)
+          echo "preflight: ${steps:-0} step(s) started" >> "$GITHUB_STEP_SUMMARY"
+
+  mutants:
+    name: Mutants of the diff (shard ${{ matrix.shard }}, ${{ matrix.features == '' && 'default' || matrix.features }})
+    needs: inputs
+    if: inputs.suite == 'mutants' || inputs.suite == 'both'
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        shard: ${{ fromJSON(needs.inputs.outputs.shards) }}
+        features: ['', 'parallel,gpu-solver-bridge,simd']
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@cargo-mutants
+      - name: Mutants (in-diff against the base, a missed mutant fails)
+        env:
+          BASE: ${{ needs.inputs.outputs.base }}
+          SRC_CHANGED: ${{ needs.inputs.outputs.src_changed }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ inputs.shards }}
+          FEATURES: ${{ matrix.features }}
+        run: |
+          if [ "$SRC_CHANGED" != true ]; then
+            echo "no change under src/ crates/ between $BASE and HEAD: nothing to mutate" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git diff "$BASE" HEAD -- src crates Cargo.toml > /tmp/change.diff
+          plan=$(python3 scripts/mutants_in_diff_plan.py /tmp/change.diff --features "$FEATURES" --out /tmp/planned.diff)
+          echo "plan: $plan"
+          # the source changed: a plan that holds nothing is a reading that failed
+          mkdir -p counts
+          [ -s /tmp/planned.diff ] || { echo "::error::src/ changed but the planned diff is empty"; exit 1; }
+          features=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(",".join(json.load(sys.stdin)["features"]))')
+          tests=$(printf '%s' "$plan" | python3 -c 'import json,sys; print(" ".join("--cargo-arg=--test=" + t for t in json.load(sys.stdin)["tests"]))')
+          ulimit -v 6291456
+          set +e
+          # shellcheck disable=SC2086
+          timeout --signal=INT --kill-after=10m 270m \
+            cargo mutants --in-diff /tmp/planned.diff --shard "$SHARD/$SHARDS" --timeout 300 --build-timeout 240 -j 2 \
+            --output mutants.out ${features:+--features "$features"} --cargo-arg=--lib $tests
+          rc=$?
+          set -e
+          # the shard's rules (scripts/verify_mutants_check.py): an exit that is not a result
+          # (a bad --features, a red unmutated tree) fails, and so does a single shard of a
+          # non-empty plan with no mutant; the count goes to the total job, which needs every
+          # axis to have tested some
+          axis=${FEATURES:+features}; axis=${axis:-default}
+          python3 scripts/verify_mutants_check.py shard --rc "$rc" --out mutants.out --shards "$SHARDS" \
+            --planned /tmp/planned.diff --axis "$axis" --shard "$SHARD" --count "counts/${SHARD}-${axis}" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          check=${PIPESTATUS[0]}
+          [ "$check" -eq 0 ] || exit 1
+          root=mutants.out; [ -d mutants.out/mutants.out ] && root=mutants.out/mutants.out
+          if [ -f "$root/mutants.json" ]; then
+            touch "$root/missed.txt"
+            python3 scripts/mutants_equivalent.py --filter "$root/missed.txt" > missed-real.txt
+            missed=$(grep -c . missed-real.txt || true)
+            [ "${missed:-0}" -eq 0 ] || { echo "::error::$missed mutant(s) of the diff were missed"; cat missed-real.txt; exit 1; }
+            python3 scripts/mutants_ratchet.py --out mutants.out --complete-only \
+              || { echo "::error::the run did not finish: not every mutant was tested (exit $rc)"; exit 1; }
+          fi
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: mutant-counts-${{ matrix.shard }}-${{ matrix.features == '' && 'default' || 'features' }}
+          path: counts/
+          if-no-files-found: ignore
+
+  mutants-total:
+    name: Mutants tested per axis (0 on an axis for a source change fails)
+    needs: [inputs, mutants]
+    if: always() && (inputs.suite == 'mutants' || inputs.suite == 'both') && needs.inputs.outputs.src_changed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # (checkout first: it cleans the workspace)
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: mutant-counts-*
+          path: counts
+          merge-multiple: true
+      - name: Every axis tested some mutant
+        run: |
+          python3 scripts/verify_mutants_check.py total --dir counts --axes default,features | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "${PIPESTATUS[0]}"

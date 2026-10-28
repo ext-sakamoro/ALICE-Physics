@@ -28,6 +28,7 @@
 "release.yml" = "tag-only"
 "security-audit.yml" = "landing"
 "unsafe-and-parallel.yml" = "after-landing"
+"verify.yml" = "schedule-only"
 "web.yml" = "landing"
 "wiring-status.yml" = "landing"
 
