@@ -53,9 +53,7 @@ mod world_ccd;
 mod world_snapshot;
 pub use participants::DeclareFieldError;
 pub use world_ccd::WorldCcdConfig;
-pub use world_snapshot::{
-    LawCheck, LegacyPolicy, SnapshotIds, WorldSnapshotError, STATE_DIGEST_DOMAIN,
-};
+pub use world_snapshot::{LawCheck, LegacyPolicy, SnapshotIds, WorldSnapshotError};
 
 // ============================================================================
 // Body Type

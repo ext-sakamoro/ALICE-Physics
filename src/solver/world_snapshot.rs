@@ -1662,10 +1662,6 @@ struct Decoded {
 /// kept apart from body indices so the blob is the same on 32- and 64-bit targets.
 const SDF_STATIC_TAG: u8 = 0;
 
-/// Domain separation of [`PhysicsWorld::state_digest`], published so that an
-/// independent implementation can reproduce a digest byte for byte.
-pub const STATE_DIGEST_DOMAIN: &[u8] = b"alice-physics/state-digest/v1";
-
 impl PhysicsWorld {
     /// Magic of a [`Self::snapshot_world`] blob (`b"APWS"`, distinct from
     /// [`Self::STATE_MAGIC`] of the rollback blob).
@@ -2022,11 +2018,15 @@ impl PhysicsWorld {
         data
     }
 
+    /// Domain separation of [`Self::state_digest`], published so that an
+    /// independent implementation can reproduce a digest byte for byte.
+    pub const STATE_DIGEST_DOMAIN: &'static [u8] = b"alice-physics/state-digest/v1";
+
     /// SHA-256 of [`Self::snapshot_world`]: one value that two runs agree on
     /// exactly when their worlds are in the same state under the same rules,
     /// for a replay or a shared solution to be checked by its result.
     ///
-    /// The input is the length of [`STATE_DIGEST_DOMAIN`] as a big-endian `u64`,
+    /// The input is the length of [`Self::STATE_DIGEST_DOMAIN`] as a big-endian `u64`,
     /// the domain, then the snapshot bytes (so an independent implementation can
     /// recompute it from `snapshot_world` with any SHA-256). The snapshot's header
     /// holds [`crate::PHYSICS_SEMANTICS_ID`] and [`Self::law_id`], so the digest
@@ -2041,8 +2041,8 @@ impl PhysicsWorld {
     pub fn state_digest(&self) -> [u8; 32] {
         use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
-        h.update((STATE_DIGEST_DOMAIN.len() as u64).to_be_bytes());
-        h.update(STATE_DIGEST_DOMAIN);
+        h.update((Self::STATE_DIGEST_DOMAIN.len() as u64).to_be_bytes());
+        h.update(Self::STATE_DIGEST_DOMAIN);
         h.update(self.snapshot_world());
         h.finalize().into()
     }

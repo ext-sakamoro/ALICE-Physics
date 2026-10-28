@@ -13450,6 +13450,16 @@ pub alice_physics_core::prelude::PhysicsWorld::material_table: alice_physics_cor
 pub alice_physics_core::prelude::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics_core::sdf_collider::SdfCollider>
 pub alice_physics_core::prelude::PhysicsWorld::sdf_collision_radius: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::PhysicsWorld
+pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: &'static [u8]
+pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
+pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
+pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
+pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
+impl alice_physics_core::solver::PhysicsWorld
 pub const alice_physics_core::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
 pub const alice_physics_core::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usize
@@ -13542,15 +13552,6 @@ pub fn alice_physics_core::solver::PhysicsWorld::take_gpu_solver_bridge(&mut sel
 pub fn alice_physics_core::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics_core::solver::TgsCacheStats
 pub fn alice_physics_core::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
 pub fn alice_physics_core::solver::PhysicsWorld::wake_body(&mut self, usize)
-impl alice_physics_core::solver::PhysicsWorld
-pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
-pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
-pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
-pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
-pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
 pub fn alice_physics_core::solver::PhysicsWorld::clear_fault(&mut self)
@@ -18419,6 +18420,16 @@ pub alice_physics_core::solver::PhysicsWorld::material_table: alice_physics_core
 pub alice_physics_core::solver::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics_core::sdf_collider::SdfCollider>
 pub alice_physics_core::solver::PhysicsWorld::sdf_collision_radius: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::PhysicsWorld
+pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: &'static [u8]
+pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
+pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
+pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
+pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
+impl alice_physics_core::solver::PhysicsWorld
 pub const alice_physics_core::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
 pub const alice_physics_core::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usize
@@ -18511,15 +18522,6 @@ pub fn alice_physics_core::solver::PhysicsWorld::take_gpu_solver_bridge(&mut sel
 pub fn alice_physics_core::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics_core::solver::TgsCacheStats
 pub fn alice_physics_core::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
 pub fn alice_physics_core::solver::PhysicsWorld::wake_body(&mut self, usize)
-impl alice_physics_core::solver::PhysicsWorld
-pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
-pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
-pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
-pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
-pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
 pub fn alice_physics_core::solver::PhysicsWorld::clear_fault(&mut self)
@@ -18751,7 +18753,6 @@ impl core::marker::Unpin for alice_physics_core::WorldCcdConfig
 impl core::marker::UnsafeUnpin for alice_physics_core::WorldCcdConfig
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::WorldCcdConfig
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::WorldCcdConfig
-pub const alice_physics_core::solver::STATE_DIGEST_DOMAIN: &[u8]
 pub trait alice_physics_core::solver::ContactModifier: core::marker::Send + core::marker::Sync
 pub fn alice_physics_core::solver::ContactModifier::modify_contact(&self, usize, usize, &mut alice_physics_core::collider::Contact, &mut alice_physics_core::math::Fix128, &mut alice_physics_core::math::Fix128) -> bool
 pub type alice_physics_core::solver::PhysicsConfig = alice_physics_core::solver::SolverConfig
@@ -25102,6 +25103,16 @@ pub alice_physics_core::PhysicsWorld::material_table: alice_physics_core::materi
 pub alice_physics_core::PhysicsWorld::sdf_colliders: alloc::vec::Vec<alice_physics_core::sdf_collider::SdfCollider>
 pub alice_physics_core::PhysicsWorld::sdf_collision_radius: alice_physics_core::math::Fix128
 impl alice_physics_core::solver::PhysicsWorld
+pub const alice_physics_core::solver::PhysicsWorld::STATE_DIGEST_DOMAIN: &'static [u8]
+pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
+pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
+pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
+pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
+pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
+pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
+impl alice_physics_core::solver::PhysicsWorld
 pub const alice_physics_core::solver::PhysicsWorld::STATE_MAGIC: [u8; 4]
 pub const alice_physics_core::solver::PhysicsWorld::STATE_VERSION: u16
 pub fn alice_physics_core::solver::PhysicsWorld::active_body_count(&self) -> usize
@@ -25194,15 +25205,6 @@ pub fn alice_physics_core::solver::PhysicsWorld::take_gpu_solver_bridge(&mut sel
 pub fn alice_physics_core::solver::PhysicsWorld::tgs_cache_stats(&self) -> alice_physics_core::solver::TgsCacheStats
 pub fn alice_physics_core::solver::PhysicsWorld::trigger_events(&self) -> &[alice_physics_core::event::TriggerEvent]
 pub fn alice_physics_core::solver::PhysicsWorld::wake_body(&mut self, usize)
-impl alice_physics_core::solver::PhysicsWorld
-pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_MAGIC: [u8; 4]
-pub const alice_physics_core::solver::PhysicsWorld::WORLD_SNAPSHOT_VERSION: u16
-pub fn alice_physics_core::solver::PhysicsWorld::from_world_snapshot(&[u8]) -> core::result::Result<Self, alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::restore_world(&mut self, &[u8]) -> core::result::Result<(), alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::restore_world_checked(&mut self, &[u8], core::option::Option<&[u8; 32]>, alice_physics_core::LegacyPolicy) -> core::result::Result<alice_physics_core::LawCheck, alice_physics_core::WorldSnapshotError>
-pub fn alice_physics_core::solver::PhysicsWorld::snapshot_world(&self) -> alloc::vec::Vec<u8>
-pub fn alice_physics_core::solver::PhysicsWorld::state_digest(&self) -> [u8; 32]
-pub fn alice_physics_core::solver::PhysicsWorld::world_snapshot_ids(&[u8]) -> core::result::Result<core::option::Option<alice_physics_core::SnapshotIds>, alice_physics_core::WorldSnapshotError>
 impl alice_physics_core::solver::PhysicsWorld
 pub fn alice_physics_core::solver::PhysicsWorld::add_participant(&mut self, alloc::boxed::Box<dyn alice_physics_core::world_participant::Participant>) -> core::result::Result<usize, alice_physics_core::world_participant::RegisterError>
 pub fn alice_physics_core::solver::PhysicsWorld::clear_fault(&mut self)
@@ -26905,7 +26907,6 @@ pub const alice_physics_core::PHYSICS_SEMANTICS_ID: [u8; 32]
 pub const alice_physics_core::PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])]
 pub const alice_physics_core::PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]]
 pub const alice_physics_core::SIMD_WIDTH: usize
-pub const alice_physics_core::STATE_DIGEST_DOMAIN: &[u8]
 pub trait alice_physics_core::AnomalyCallback
 pub fn alice_physics_core::AnomalyCallback::on_anomaly(&mut self, alice_physics_core::anomaly::AnomalyEvent)
 pub trait alice_physics_core::ContactModifier: core::marker::Send + core::marker::Sync
