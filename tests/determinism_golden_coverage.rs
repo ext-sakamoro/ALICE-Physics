@@ -112,6 +112,7 @@ const NOT_STEP: &[&str] = &[
     "add_contact_with_material",
     "add_distance_constraint",
     "add_force_field",
+    "try_add_force_field",
     "add_joint",
     "add_joint_motor",
     "add_joint_motor_3d",
