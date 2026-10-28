@@ -1670,11 +1670,6 @@ pub struct PhysicsWorld {
     /// `contact_constraints`; an index past the end counts as kept)
     #[cfg(feature = "std")]
     contact_discarded: Vec<bool>,
-    /// Per contact constraint of the last substep: the part of its separation
-    /// that undid overlap the pair started the substep with
-    /// ([`Self::discount_contact_overlap`]); it moved the bodies but changed no
-    /// momentum, so it is not part of the contact's force.
-    contact_overlap: Vec<Fix128>,
     /// Pre-solve normal velocity `v̄_n` of each contact constraint in the
     /// current substep (indexed like `contact_constraints`), recorded by
     /// [`Self::update_velocities`] before it derives the post-solve
@@ -1910,7 +1905,6 @@ impl PhysicsWorld {
             contact_modifiers: Vec::new(),
             #[cfg(feature = "std")]
             contact_discarded: Vec::new(),
-            contact_overlap: Vec::new(),
             contact_pre_vn: Vec::new(),
             free_rotation: Vec::new(),
             predicted_pose: Vec::new(),
@@ -2937,8 +2931,7 @@ impl PhysicsWorld {
         dt: Fix128,
     ) -> Option<Fix128> {
         let h = self.substep_dt(dt);
-        self.contact_force(c, self.overlap_of(c), h * h)
-            .map(|(_, _, force)| force)
+        self.contact_force(c, h * h).map(|(_, _, force)| force)
     }
 
     /// Cast a ray against all body collision spheres, returns (`body_index`, distance).
@@ -4386,7 +4379,6 @@ impl PhysicsWorld {
         //    `solve_joints`).
         self.solve_joints_dispatch(dt);
 
-        self.discount_contact_overlap();
         self.update_velocities(dt);
     }
 
@@ -4434,7 +4426,6 @@ impl PhysicsWorld {
         //    `solve_joints`).
         self.solve_joints_dispatch(dt);
 
-        self.discount_contact_overlap();
         self.update_velocities(dt);
     }
 
@@ -4698,67 +4689,6 @@ impl PhysicsWorld {
             let body = &mut self.bodies[i];
             body.velocity = body.velocity * factor(body.linear_damping_rate);
             body.angular_velocity = body.angular_velocity * factor(body.angular_damping_rate);
-        }
-    }
-
-    /// The part of each body–body contact's separation that undoes overlap the
-    /// pair started the substep with is not motion: it is taken out of the
-    /// velocity the substep derives, by moving the pair's `prev_position` and
-    /// predicted position with it, shared by inverse mass as the separation was.
-    /// Only the part that cancels the pair's approach this substep (how far it
-    /// moved toward each other by anything but this contact) stays velocity. The same
-    /// rule as a static collider's push-out ([`Self::resolve_static_collisions`]).
-    /// Runs after the position solve, on the separation the solve applied
-    /// (`cached_lambda`), so a contact a hook discarded or a sensor moves nothing.
-    fn discount_contact_overlap(&mut self) {
-        self.contact_overlap.clear();
-        self.contact_overlap
-            .resize(self.contact_constraints.len(), Fix128::ZERO);
-        for (k, constraint) in self.contact_constraints.iter().enumerate() {
-            if self.contact_discarded.get(k).copied().unwrap_or(false) {
-                continue;
-            }
-            let (a, b) = (constraint.body_a, constraint.body_b);
-            let (Some(body_a), Some(body_b)) = (self.bodies.get(a), self.bodies.get(b)) else {
-                continue;
-            };
-            if body_a.is_sensor || body_b.is_sensor {
-                continue;
-            }
-            let (wa, wb) = (body_a.inv_mass, body_b.inv_mass);
-            let w_sum = wa + wb;
-            if w_sum < W_SUM_EPSILON || constraint.cached_lambda <= Fix128::ZERO {
-                continue;
-            }
-            let normal = constraint.contact.normal;
-            // How far the pair moved toward each other this substep by anything
-            // but this contact: the relative motion since the start of the
-            // substep (integration, other contacts and joints, this contact's
-            // own separation) minus the separation this contact applied. The
-            // rest of the depth was overlap the pair started the substep with.
-            let relative =
-                (body_a.position - body_a.prev_position) - (body_b.position - body_b.prev_position);
-            let approach = constraint.cached_lambda - relative.dot(normal);
-            let moved = approach.max(Fix128::ZERO).min(constraint.contact.depth);
-            let overlap = (constraint.contact.depth - moved).min(constraint.cached_lambda);
-            if overlap <= Fix128::ZERO {
-                continue;
-            }
-            self.contact_overlap[k] = overlap;
-            let shift = normal * overlap;
-            let inv_w_sum = Fix128::ONE / w_sum;
-            for (i, share) in [
-                (a, shift * (wa * inv_w_sum)),
-                (b, -(shift * (wb * inv_w_sum))),
-            ] {
-                if self.bodies[i].inv_mass.is_zero() {
-                    continue;
-                }
-                self.bodies[i].prev_position = self.bodies[i].prev_position + share;
-                if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
-                    *x = *x + share;
-                }
-            }
         }
     }
 
@@ -5757,7 +5687,6 @@ impl PhysicsWorld {
             self.break_overloaded_joints(&forces);
         }
 
-        self.discount_contact_overlap();
         self.update_velocities(dt);
     }
 
@@ -6260,29 +6189,8 @@ impl PhysicsWorld {
         let h2 = self.substep_dt(dt) * self.substep_dt(dt);
         self.contact_constraints
             .iter()
-            .enumerate()
-            .filter_map(|(k, c)| {
-                let overlap = self.contact_overlap.get(k).copied().unwrap_or(Fix128::ZERO);
-                self.contact_force(c, overlap, h2)
-            })
+            .filter_map(|c| self.contact_force(c, h2))
             .collect()
-    }
-
-    /// The overlap [`Self::discount_contact_overlap`] took out of contact `c` (one
-    /// of [`Self::contact_constraints`], found by its place in that list), or
-    /// zero for a constraint that is not in it.
-    fn overlap_of(&self, c: &ContactConstraint) -> Fix128 {
-        let base = self.contact_constraints.as_ptr() as usize;
-        let size = core::mem::size_of::<ContactConstraint>().max(1);
-        let at = (c as *const ContactConstraint as usize).wrapping_sub(base) / size;
-        match self.contact_constraints.get(at) {
-            Some(x) if core::ptr::eq(x, c) => self
-                .contact_overlap
-                .get(at)
-                .copied()
-                .unwrap_or(Fix128::ZERO),
-            _ => Fix128::ZERO,
-        }
     }
 
     /// The length `h` of one substep of a frame of `dt`.
@@ -6294,7 +6202,6 @@ impl PhysicsWorld {
     fn contact_force(
         &self,
         c: &ContactConstraint,
-        overlap: Fix128,
         h2: Fix128,
     ) -> Option<(Vec3Fix, Vec3Fix, Fix128)> {
         let w = self.bodies.get(c.body_a)?.inv_mass + self.bodies.get(c.body_b)?.inv_mass;
@@ -6304,7 +6211,7 @@ impl PhysicsWorld {
         Some((
             c.contact.point_a,
             c.contact.normal,
-            (c.cached_lambda - overlap) / (w * h2),
+            c.cached_lambda / (w * h2),
         ))
     }
 
@@ -6324,7 +6231,7 @@ impl PhysicsWorld {
         let h2 = self.substep_dt(dt) * self.substep_dt(dt);
         self.contact_constraints
             .iter()
-            .filter_map(|c| Some((self.contact_force(c, self.overlap_of(c), h2)?, c.friction)))
+            .filter_map(|c| Some((self.contact_force(c, h2)?, c.friction)))
             .flat_map(|(force, mu)| crate::contact_viz::generate_friction_arrows(&[force], mu))
             .collect()
     }
@@ -6336,7 +6243,7 @@ impl PhysicsWorld {
         let h2 = self.substep_dt(dt) * self.substep_dt(dt);
         self.contact_constraints
             .iter()
-            .filter_map(|c| Some((self.contact_force(c, self.overlap_of(c), h2)?, c.friction)))
+            .filter_map(|c| Some((self.contact_force(c, h2)?, c.friction)))
             .flat_map(|(force, mu)| crate::contact_viz::generate_friction_cones(&[force], mu))
             .collect()
     }

@@ -13,12 +13,12 @@
 //!   `height / 3`; an ellipsoid: the semi-axis along up; a torus lying flat: the
 //!   tube radius). The floor is a plane, a triangle mesh and a flat height field,
 //!   the three kinds of static collider, and the answer is the same on each.
-//! - **No launch from overlap.** A body that starts overlapping a surface or
-//!   another body is separated, and the separation injects no velocity: the
-//!   overlap was there before the step, so moving out of it is not motion the
-//!   body made. Only the part of a correction that cancels an approach changes the
-//!   velocity. A body set down overlapping a floor by δ with no gravity and no
-//!   velocity ends on the floor at rest.
+//! - **No launch from overlap.** A body that starts overlapping a static surface
+//!   is moved out of it, and that correction injects no velocity: the overlap was
+//!   there before the substep, so moving out of it is not motion the body made.
+//!   Only the part of the correction that cancels the body's approach this
+//!   substep changes the velocity. A body set down overlapping a floor by δ with
+//!   no gravity and no velocity ends on the floor at rest.
 //! - **Replay.** The same scene stepped twice gives the same bits.
 //!
 //! Author: Moroya Sakamoto
@@ -263,31 +263,6 @@ fn a_box_set_into_a_floor_is_moved_out_and_left_at_rest() {
             "{floor_name}: cube (half 0.25) set at 0.15: after one step y {y1} speed {v1}, after 2 s y {y2} speed {v2} (want y 0.25, speed 0)"
         );
     }
-}
-
-/// Two spheres set overlapping, at rest and without gravity, are moved apart and
-/// left at rest: the same rule between bodies as against a static surface.
-#[test]
-fn two_bodies_set_overlapping_are_moved_apart_and_left_at_rest() {
-    let mut w = PhysicsWorld::new(config(0.0));
-    let a = w.add_body_with_radius(
-        RigidBody::new_dynamic(v3(-0.4, 3.0, 0.0), Fix128::ONE),
-        fx(0.5),
-    );
-    let b = w.add_body_with_radius(
-        RigidBody::new_dynamic(v3(0.4, 3.0, 0.0), Fix128::ONE),
-        fx(0.5),
-    );
-    for _ in 0..120 {
-        w.step(fx(1.0 / 60.0));
-    }
-    let (pa, pb) = (w.get_body(a).expect("a"), w.get_body(b).expect("b"));
-    let gap = (pb.position.x - pa.position.x).to_f64();
-    let (va, vb) = (pa.velocity.length().to_f64(), pb.velocity.length().to_f64());
-    assert!(
-        gap >= 1.0 - 1e-9 && va <= 1e-9 && vb <= 1e-9,
-        "overlap 0.2 at rest: centres {gap} apart (want at least 1.0), speeds {va} {vb} (want 0)"
-    );
 }
 
 /// The same scene stepped twice ends in the same bits.
