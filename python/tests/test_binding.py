@@ -46,6 +46,45 @@ def test_a_static_body_does_not_move():
     assert w.get_position(s) == (1.0, 2.0, 3.0)
 
 
+def _jointed_scene():
+    w = ap.PhysicsWorld()
+    w.add_static_plane(0.0, 1.0, 0.0, 0.0)
+    a = w.add_dynamic_body(0.0, 5.0, 0.0, 1.0)
+    b = w.add_dynamic_body(1.0, 5.0, 0.0, 2.0)
+    w.add_ball_joint(a, b, (0.0, 0.0, 0.0), (-1.0, 0.0, 0.0))
+    return w
+
+
+def test_state_digest_is_sha256_of_the_domain_and_the_snapshot():
+    # oracle: hashlib over the BE u64 length of the domain, the domain, then snapshot_world()
+    import hashlib
+    w = _jointed_scene()
+    for _ in range(30):
+        w.step(1.0 / 60.0)
+    domain = b"alice-physics/state-digest/v1"
+    want = hashlib.sha256(len(domain).to_bytes(8, "big") + domain + bytes(w.snapshot_world())).digest()
+    assert bytes(w.state_digest()) == want
+    assert len(bytes(w.law_id())) == 32
+
+
+def test_restore_world_brings_back_the_joint_and_refuses_with_its_kind():
+    w = _jointed_scene()
+    blob = bytes(w.snapshot_world())
+    fresh = ap.PhysicsWorld()
+    fresh.restore_world(blob)
+    assert bytes(fresh.state_digest()) == bytes(w.state_digest())
+    bad = bytearray(blob)
+    bad[-20] ^= 1
+    before = bytes(fresh.state_digest())
+    try:
+        fresh.restore_world(bytes(bad))
+    except ValueError as e:
+        assert str(e).startswith("ChecksumMismatch:"), e
+    else:
+        raise AssertionError("a corrupted snapshot was accepted")
+    assert bytes(fresh.state_digest()) == before
+
+
 def test_serialized_state_replays_bit_for_bit():
     a = ap.PhysicsWorld()
     for i in range(4):

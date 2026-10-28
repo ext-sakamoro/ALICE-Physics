@@ -114,6 +114,10 @@ void     alice_physics_world_set_substeps(AlicePhysicsWorldHandle world, uint32_
 uint8_t* alice_physics_state_serialize(const AlicePhysicsWorldHandle world, uint32_t* out_len);
 uint8_t  alice_physics_state_deserialize(AlicePhysicsWorldHandle world, const uint8_t* data, uint32_t len);
 void     alice_physics_state_free(uint8_t* data, uint32_t len);
+uint8_t* alice_physics_world_snapshot(const AlicePhysicsWorldHandle world, uint32_t* out_len);
+uint32_t alice_physics_world_restore(AlicePhysicsWorldHandle world, const uint8_t* data, uint32_t len);
+uint8_t  alice_physics_state_digest(const AlicePhysicsWorldHandle world, uint8_t* out);
+uint8_t  alice_physics_law_id(const AlicePhysicsWorldHandle world, uint8_t* out);
 
 // --- Collision radius, shapes, static colliders, joints ---
 // kind: 0 box (a,b,c half extents), 1 cylinder (a radius, b half height),

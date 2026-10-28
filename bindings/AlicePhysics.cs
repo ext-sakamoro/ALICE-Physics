@@ -213,6 +213,10 @@ namespace AlicePhysics
         [DllImport(DLL)] public static extern IntPtr alice_physics_state_serialize(IntPtr world, out uint len);
         [DllImport(DLL)] public static extern byte alice_physics_state_deserialize(IntPtr world, IntPtr data, uint len);
         [DllImport(DLL)] public static extern void alice_physics_state_free(IntPtr data, uint len);
+        [DllImport(DLL)] public static extern IntPtr alice_physics_world_snapshot(IntPtr world, out uint len);
+        [DllImport(DLL)] public static extern uint alice_physics_world_restore(IntPtr world, IntPtr data, uint len);
+        [DllImport(DLL)] public static extern byte alice_physics_state_digest(IntPtr world, byte[] out32);
+        [DllImport(DLL)] public static extern byte alice_physics_law_id(IntPtr world, byte[] out32);
 
         // Collision radius, shapes, static colliders, joints
         [DllImport(DLL)] public static extern byte alice_physics_body_set_collision_radius(IntPtr world, uint bodyId, double radius);
@@ -525,6 +529,58 @@ namespace AlicePhysics
             {
                 Marshal.FreeHGlobal(buf);
             }
+        }
+
+        /// <summary>The whole world as bytes (bodies, joints, constraints, static colliders, materials).</summary>
+        public byte[] SnapshotWorld()
+        {
+            ThrowIfDisposed();
+            uint len;
+            IntPtr data = Native.alice_physics_world_snapshot(_ptr, out len);
+            if (data == IntPtr.Zero || len == 0) return Array.Empty<byte>();
+
+            byte[] result = new byte[len];
+            Marshal.Copy(data, result, 0, (int)len);
+            Native.alice_physics_state_free(data, len);
+            return result;
+        }
+
+        /// <summary>Restore the whole world from SnapshotWorld's bytes. Returns 0 on success, else the
+        /// WorldSnapshotError code (15 = SemanticsMismatch, 7 = ChecksumMismatch, ...; 255 = no data);
+        /// a refused blob leaves the world unchanged.</summary>
+        public uint RestoreWorld(byte[] data)
+        {
+            ThrowIfDisposed();
+            if (data == null || data.Length == 0) return 255;
+
+            IntPtr buf = Marshal.AllocHGlobal(data.Length);
+            try
+            {
+                Marshal.Copy(data, 0, buf, data.Length);
+                return Native.alice_physics_world_restore(_ptr, buf, (uint)data.Length);
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buf);
+            }
+        }
+
+        /// <summary>SHA-256 of the world snapshot (32 bytes).</summary>
+        public byte[] StateDigest()
+        {
+            ThrowIfDisposed();
+            var out32 = new byte[32];
+            Native.alice_physics_state_digest(_ptr, out32);
+            return out32;
+        }
+
+        /// <summary>The world's law identifier under this build's semantics (32 bytes).</summary>
+        public byte[] LawId()
+        {
+            ThrowIfDisposed();
+            var out32 = new byte[32];
+            Native.alice_physics_law_id(_ptr, out32);
+            return out32;
         }
 
         // -- Version --

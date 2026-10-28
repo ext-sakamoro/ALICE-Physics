@@ -1059,6 +1059,95 @@ pub unsafe extern "C" fn alice_physics_state_free(data: *mut u8, len: u32) {
     })
 }
 
+/// The whole world as bytes (`PhysicsWorld::snapshot_world`: bodies, joints,
+/// constraints, static colliders, materials, under the header's semantics and
+/// law identifiers). Returns the buffer and writes its length to `out_len`;
+/// free it with `alice_physics_state_free`. A null `world` returns null and
+/// length 0.
+///
+/// # Safety
+/// `world` must be a valid pointer. `out_len` must point to a valid `u32`.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_snapshot(
+    world: *const PhysicsWorld,
+    out_len: *mut u32,
+) -> *mut u8 {
+    ffi_guard(std::ptr::null_mut(), || {
+        let Some(w) = world.as_ref() else {
+            if let Some(len) = out_len.as_mut() {
+                *len = 0;
+            }
+            return std::ptr::null_mut();
+        };
+        let blob = w.snapshot_world();
+        if let Some(out) = out_len.as_mut() {
+            *out = blob.len() as u32;
+        }
+        Box::into_raw(blob.into_boxed_slice()) as *mut u8
+    })
+}
+
+/// Restore the whole world from `alice_physics_world_snapshot`'s bytes.
+/// Returns 0 on success; a refused blob returns `WorldSnapshotError::code`
+/// (1 to 16, e.g. 15 = SemanticsMismatch, 7 = ChecksumMismatch) and leaves the
+/// world unchanged; 255 for a null pointer or a zero length.
+///
+/// # Safety
+/// `world` must be a valid pointer. `data` must point to `len` valid bytes.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_world_restore(
+    world: *mut PhysicsWorld,
+    data: *const u8,
+    len: u32,
+) -> u32 {
+    ffi_guard_world(world, 255, || {
+        let Some(w) = writable(world) else {
+            return 255;
+        };
+        if data.is_null() || len == 0 {
+            return 255;
+        }
+        let slice = std::slice::from_raw_parts(data, len as usize);
+        match w.restore_world(slice) {
+            Ok(()) => 0,
+            Err(e) => e.code(),
+        }
+    })
+}
+
+/// Write `PhysicsWorld::state_digest` (32 bytes, SHA-256 of the world snapshot)
+/// to `out`. Returns 1, or 0 when a pointer is null.
+///
+/// # Safety
+/// `world` must be a valid pointer. `out` must point to 32 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_state_digest(world: *const PhysicsWorld, out: *mut u8) -> u8 {
+    ffi_guard(0, || {
+        let (Some(w), false) = (world.as_ref(), out.is_null()) else {
+            return 0;
+        };
+        std::ptr::copy_nonoverlapping(w.state_digest().as_ptr(), out, 32);
+        1
+    })
+}
+
+/// Write the world's law identifier under this build's semantics
+/// (`PhysicsWorld::law_id(&PHYSICS_SEMANTICS_ID)`, 32 bytes) to `out`.
+/// Returns 1, or 0 when a pointer is null.
+///
+/// # Safety
+/// `world` must be a valid pointer. `out` must point to 32 writable bytes.
+#[no_mangle]
+pub unsafe extern "C" fn alice_physics_law_id(world: *const PhysicsWorld, out: *mut u8) -> u8 {
+    ffi_guard(0, || {
+        let (Some(w), false) = (world.as_ref(), out.is_null()) else {
+            return 0;
+        };
+        std::ptr::copy_nonoverlapping(w.law_id(&crate::PHYSICS_SEMANTICS_ID).as_ptr(), out, 32);
+        1
+    })
+}
+
 // ============================================================================
 // Version
 // ============================================================================
