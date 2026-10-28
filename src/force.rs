@@ -90,6 +90,40 @@ pub enum ForceField {
         /// Overall field strength multiplier
         strength: Fix128,
     },
+    /// A permanent magnet (an ideal dipole) pulling the magnetisable bodies of one material
+    ///
+    /// The physical law (unlike [`Self::Magnetic`], a game approximation): the magnet's field is the
+    /// dipole field [`crate::electromagnetic::dipole_sample`], the bodies whose material is
+    /// `material` take the induced moment of `response` and are pulled with
+    /// [`crate::electromagnetic::induced_dipole_force`], their volume being their mass over
+    /// `density`. Every magnet naming one material is evaluated together: their fields add first
+    /// and the response is taken of the sum (the response is not linear). The field is taken no
+    /// nearer than the contact distance, `radius` plus the body's collision radius (the dipole
+    /// field diverges at its centre). Bodies of other materials feel nothing.
+    ///
+    /// Regime: a body is treated as a point dipole, which holds while the field changes over
+    /// lengths much larger than the body; within about two or three body radii of the magnet the
+    /// force is an approximation.
+    ///
+    /// `response` and `density` are a copy of the magnetic properties of `material`: every
+    /// `InducedDipole` naming one material must carry the same ones
+    /// ([`crate::PhysicsWorld::try_add_force_field`] and the snapshot reader refuse a second,
+    /// different copy).
+    InducedDipole {
+        /// The magnet's position in world space
+        position: Vec3Fix,
+        /// Its dipole moment `m` (A·m²)
+        moment: Vec3Fix,
+        /// Its own radius (m); with a body's collision radius it makes the contact distance the
+        /// field is taken no nearer than
+        radius: Fix128,
+        /// The material whose bodies it pulls
+        material: crate::material::MaterialId,
+        /// The magnetic response of that material
+        response: crate::electromagnetic::MagneticResponse,
+        /// The density of that material (kg/m³), giving a body's volume from its mass
+        density: Fix128,
+    },
 }
 
 /// A force field with optional body filter
@@ -389,6 +423,9 @@ pub fn field_force_at(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) 
             direction * (*strength * falloff)
         }
 
+        // evaluated per material by `force_field_velocity` (it needs the body's material and every
+        // magnet naming it); alone it gives nothing
+        ForceField::InducedDipole { .. } => Vec3Fix::ZERO,
         ForceField::Magnetic {
             position: dipole,
             moment,
@@ -482,21 +519,40 @@ pub fn field_force_at(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) 
 }
 
 /// Apply all force fields to all bodies for one timestep
+///
+/// Without the bodies' materials, [`ForceField::InducedDipole`] pulls nothing; the world steps
+/// with [`apply_force_fields_with_materials`].
 pub fn apply_force_fields(fields: &[ForceFieldInstance], bodies: &mut [RigidBody], dt: Fix128) {
+    apply_force_fields_with_materials(fields, &[], &[], bodies, dt);
+}
+
+/// [`apply_force_fields`] with the material and the collision radius of each body (`materials[i]`
+/// and `radii[i]` for body `i`), so the magnets ([`ForceField::InducedDipole`]) pull the bodies of
+/// the material they name, each no nearer than its own contact distance
+pub fn apply_force_fields_with_materials(
+    fields: &[ForceFieldInstance],
+    materials: &[crate::material::MaterialId],
+    radii: &[Option<Fix128>],
+    bodies: &mut [RigidBody],
+    dt: Fix128,
+) {
     for (body_idx, body) in bodies.iter_mut().enumerate() {
         if body.is_static() {
             continue;
         }
 
-        body.velocity = force_field_velocity(fields, body_idx, body, dt);
+        body.velocity = force_field_velocity(fields, materials, radii, body_idx, body, dt);
     }
 }
 
-/// The velocity [`apply_force_fields`] gives body `body_idx` (`body` itself is
-/// not changed): `v + (Σ F · inv_mass) · dt` over the fields that affect it.
+/// The velocity [`apply_force_fields_with_materials`] gives body `body_idx` (`body` itself is
+/// not changed): `v + (Σ F · inv_mass) · dt` over the fields that affect it, the magnets naming
+/// its material counted together ([`magnet_force`]).
 #[must_use]
 pub(crate) fn force_field_velocity(
     fields: &[ForceFieldInstance],
+    materials: &[crate::material::MaterialId],
+    radii: &[Option<Fix128>],
     body_idx: usize,
     body: &RigidBody,
     dt: Fix128,
@@ -509,10 +565,89 @@ pub(crate) fn force_field_velocity(
         }
         total_force = total_force + compute_force(&field_inst.field, body);
     }
+    if let Some(&material) = materials.get(body_idx) {
+        let body_radius = radii
+            .get(body_idx)
+            .copied()
+            .flatten()
+            .unwrap_or(Fix128::ZERO);
+        total_force = total_force + magnet_force(fields, material, body_radius, body_idx, body);
+    }
 
     // F = ma, a = F * inv_mass, v += a * dt
     let acceleration = total_force * body.inv_mass;
     body.velocity + acceleration * dt
+}
+
+/// The pull of every magnet naming `material` on a body of that material: their fields and
+/// Jacobians summed at the body, then [`crate::electromagnetic::induced_dipole_force`] of the sum
+/// with the response and density of the first of them (all carry the same,
+/// [`induced_dipole_fields_agree`]). Zero when no magnet names it or the body has no mass.
+fn magnet_force(
+    fields: &[ForceFieldInstance],
+    material: crate::material::MaterialId,
+    body_radius: Fix128,
+    body_idx: usize,
+    body: &RigidBody,
+) -> Vec3Fix {
+    use crate::electromagnetic::{dipole_sample, induced_dipole_force, DipoleSample};
+    let mut sample = DipoleSample::ZERO;
+    let mut properties = None;
+    for f in fields {
+        let ForceField::InducedDipole {
+            position,
+            moment,
+            radius,
+            material: m,
+            response,
+            density,
+        } = f.field
+        else {
+            continue;
+        };
+        if m != material || !f.affects(body_idx) {
+            continue;
+        }
+        properties.get_or_insert((response, density));
+        let (dir, dist) = (body.position - position).normalize_with_length();
+        // nearer than the contact distance the field is taken at it, along the same direction
+        let contact = radius + body_radius;
+        let at = if dist < contact && !dist.is_zero() {
+            position + dir * contact
+        } else {
+            body.position
+        };
+        sample = sample + dipole_sample(position, moment, at);
+    }
+    let Some((response, density)) = properties else {
+        return Vec3Fix::ZERO;
+    };
+    if body.inv_mass.is_zero() || density <= Fix128::ZERO {
+        return Vec3Fix::ZERO;
+    }
+    let volume = Fix128::ONE / (body.inv_mass * density);
+    induced_dipole_force(&sample, &response, volume)
+}
+
+/// Whether every [`ForceField::InducedDipole`] naming one material carries the same response
+/// and density (each is a copy of that material's magnetic properties)
+#[must_use]
+pub fn induced_dipole_fields_agree(fields: &[ForceFieldInstance]) -> bool {
+    let props = |f: &ForceFieldInstance| match f.field {
+        ForceField::InducedDipole {
+            material,
+            response,
+            density,
+            ..
+        } => Some((material, response, density)),
+        _ => None,
+    };
+    let all: Vec<_> = fields.iter().filter_map(props).collect();
+    all.iter().enumerate().all(|(i, a)| {
+        all[..i]
+            .iter()
+            .all(|b| b.0 != a.0 || (b.1 == a.1 && b.2 == a.2))
+    })
 }
 
 #[cfg(all(test, feature = "std"))]

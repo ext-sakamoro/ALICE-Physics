@@ -895,6 +895,23 @@ fn w_force_field(w: &mut W, f: &ForceFieldInstance) {
             w.vec3(moment);
             w.fix(strength);
         }
+        ForceField::InducedDipole {
+            position,
+            moment,
+            radius,
+            material,
+            response,
+            density,
+        } => {
+            w.u8(7);
+            w.vec3(position);
+            w.vec3(moment);
+            w.fix(radius);
+            w.u16(material);
+            w.fix(response.chi_eff);
+            w.fix(response.saturation_magnetization);
+            w.fix(density);
+        }
     }
     match &f.affected_bodies {
         Some(list) => {
@@ -946,6 +963,17 @@ fn r_force_field(r: &mut R<'_>) -> Res<ForceFieldInstance> {
             position: r.vec3()?,
             moment: r.vec3()?,
             strength: r.fix()?,
+        },
+        7 => ForceField::InducedDipole {
+            position: r.vec3()?,
+            moment: r.vec3()?,
+            radius: r.fix()?,
+            material: r.u16()?,
+            response: crate::electromagnetic::MagneticResponse {
+                chi_eff: r.fix()?,
+                saturation_magnetization: r.fix()?,
+            },
+            density: r.fix()?,
         },
         _ => return Err(invalid(S)),
     };
@@ -2507,6 +2535,11 @@ fn decode_payload(r: &mut R<'_>, version: u16) -> Res<Decoded> {
     for _ in 0..n {
         force_fields.push(r_force_field(r)?);
     }
+    // every magnet naming one material carries a copy of its magnetic properties: two different
+    // copies were not written by `snapshot_world` of a world built through its API
+    if !crate::force::induced_dipole_fields_agree(&force_fields) {
+        return Err(invalid("force_fields"));
+    }
 
     let events = r_events(r)?;
 
@@ -3685,7 +3718,7 @@ mod tests {
             inv("body_colliders")
         );
         assert_eq!(
-            super::r_force_field(&mut reader(&[7])).err(),
+            super::r_force_field(&mut reader(&[8])).err(),
             inv("force_fields")
         );
         assert_eq!(super::r_d6_motion(&mut reader(&[3])).err(), inv("joints"));
