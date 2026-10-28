@@ -21,7 +21,7 @@ use crate::bvh::{BroadphaseHybrid, BvhPrimitive, LinearBvh};
 use crate::collider::{Contact, AABB};
 use crate::event::EventCollector;
 use crate::filter::CollisionFilter;
-use crate::force::{apply_force_fields, ForceFieldInstance};
+use crate::force::ForceFieldInstance;
 use crate::joint::{solve_joints, Joint};
 use crate::math::{select_vec3, Fix128, QuatFix, Vec3Fix};
 use crate::sdf_collider::SdfCollider;
@@ -2724,10 +2724,39 @@ impl PhysicsWorld {
     // ── Force Field Management ────────────────────────────────────────
 
     /// Add a force field, returns field index
+    ///
+    /// # Panics
+    ///
+    /// When `field` is a [`crate::ForceField::InducedDipole`] whose response or density differs
+    /// from another magnet naming the same material ([`Self::try_add_force_field`] returns the
+    /// error instead).
     pub fn add_force_field(&mut self, field: ForceFieldInstance) -> usize {
-        let idx = self.force_fields.len();
+        match self.try_add_force_field(field) {
+            Ok(idx) => idx,
+            Err(e) => panic!("add_force_field: {e}"),
+        }
+    }
+
+    /// Add a force field, returns field index
+    ///
+    /// # Errors
+    ///
+    /// [`PhysicsError::InvalidConfiguration`] when `field` is a
+    /// [`crate::ForceField::InducedDipole`] whose response or density differs from another
+    /// magnet naming the same material (each carries a copy of that material's magnetic
+    /// properties); the field is not added.
+    pub fn try_add_force_field(
+        &mut self,
+        field: ForceFieldInstance,
+    ) -> Result<usize, crate::error::PhysicsError> {
         self.force_fields.push(field);
-        idx
+        if !crate::force::induced_dipole_fields_agree(&self.force_fields) {
+            self.force_fields.pop();
+            return Err(crate::error::PhysicsError::InvalidConfiguration {
+                reason: "an induced-dipole field names a material with another magnetic response",
+            });
+        }
+        Ok(self.force_fields.len() - 1)
     }
 
     /// Remove a force field by index
@@ -3431,12 +3460,24 @@ impl PhysicsWorld {
                         continue;
                     }
                     self.stage_work.force_field_bodies += 1;
-                    body.velocity =
-                        crate::force::force_field_velocity(&self.force_fields, i, body, dt);
+                    body.velocity = crate::force::force_field_velocity(
+                        &self.force_fields,
+                        &self.body_materials,
+                        &self.body_collision_radii,
+                        i,
+                        body,
+                        dt,
+                    );
                 }
             } else {
                 self.stage_work.force_field_bodies += self.bodies.len() as u64;
-                apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+                crate::force::apply_force_fields_with_materials(
+                    &self.force_fields,
+                    &self.body_materials,
+                    &self.body_collision_radii,
+                    &mut self.bodies,
+                    dt,
+                );
             }
         }
 
@@ -3932,7 +3973,13 @@ impl PhysicsWorld {
         // Phase 1: Apply force fields (identical call to `step`), then
         // advance kinematic targets before contacts are detected below.
         if !self.force_fields.is_empty() {
-            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+            crate::force::apply_force_fields_with_materials(
+                &self.force_fields,
+                &self.body_materials,
+                &self.body_collision_radii,
+                &mut self.bodies,
+                dt,
+            );
         }
         // Joint motors: once per tick with the full `dt`, like the force
         // fields (TGS owns its sub-stepping, see the method doc).
@@ -4294,7 +4341,13 @@ impl PhysicsWorld {
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
-            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+            crate::force::apply_force_fields_with_materials(
+                &self.force_fields,
+                &self.body_materials,
+                &self.body_collision_radii,
+                &mut self.bodies,
+                dt,
+            );
         }
 
         // Phase 2 (collision detection) is per substep since 1.2.0, see `step`.
@@ -5551,7 +5604,13 @@ impl PhysicsWorld {
 
         // Phase 1: Apply force fields
         if !self.force_fields.is_empty() {
-            apply_force_fields(&self.force_fields, &mut self.bodies, dt);
+            crate::force::apply_force_fields_with_materials(
+                &self.force_fields,
+                &self.body_materials,
+                &self.body_collision_radii,
+                &mut self.bodies,
+                dt,
+            );
         }
 
         // Phase 2 (collision detection) is per substep since 1.2.0, see `step`.
@@ -6546,7 +6605,14 @@ impl PhysicsWorld {
                 && self.park.is_parked(i)
                 && !body.is_static()
             {
-                crate::force::force_field_velocity(&self.force_fields, i, body, self.park.frame_dt)
+                crate::force::force_field_velocity(
+                    &self.force_fields,
+                    &self.body_materials,
+                    &self.body_collision_radii,
+                    i,
+                    body,
+                    self.park.frame_dt,
+                )
             } else {
                 body.velocity
             }
