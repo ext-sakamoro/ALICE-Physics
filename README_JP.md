@@ -304,6 +304,8 @@ maturin build --release -m crates/alice-physics/Cargo.toml --features python
 ```
 <!-- /binding-build-commands -->
 
+`web/` のビューアは `cd web && npm ci && npm run build` で作り、`web/dist` を配信して開く (または `npm run dev`) シーンは seed 付きの乱数で作るので、同じ `?seed=<n>` (既定 1) なら読み込むたび・どの端末でも同じ body になる `?steps=<n>` は試験用の mode で、付けた時だけ有効: n step を一度に進めて止まり、状態を `window.__alicePhysicsViewer` に出す 付けなければその global は作らない `npm run smoke` はこの mode でビルドを Chrome で動かす (body が床の上で止まる、同じ seed の 2 回の読み込みが bit で一致する、別の seed では違う) `Web viewer` の workflow はエンジン・パッケージ・ビューアが変わるたびに同じことを走らせる
+
 ## 性能
 
 `cargo bench --bench physics_bench` (criterion、release プロファイル) を Apple シリコン上、バージョン 1.2.0 で測定した値

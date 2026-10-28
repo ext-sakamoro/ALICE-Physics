@@ -393,6 +393,15 @@ maturin build --release -m crates/alice-physics/Cargo.toml --features python
 ```
 <!-- /binding-build-commands -->
 
+The viewer in `web/` is built and opened with `cd web && npm ci && npm run build` (then serve
+`web/dist`, or `npm run dev`). Its scene comes from a seeded generator, so the same `?seed=<n>`
+(default 1) gives the same bodies on every load and every device. `?steps=<n>` is a test mode, off
+unless given: the page runs n steps at once, pauses and publishes the state as
+`window.__alicePhysicsViewer`; without it the page sets no such global. `npm run smoke` runs the
+build in Chrome through that mode (the bodies rest on the floor, two loads of a seed are bit-equal,
+another seed differs), and the `Web viewer` workflow runs the same on every change to the engine,
+the package or the viewer.
+
 ## Performance
 
 Measured with `cargo bench --bench physics_bench` (criterion, release profile)

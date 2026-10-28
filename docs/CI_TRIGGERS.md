@@ -68,6 +68,7 @@ ledgers, `#[path]` and `include_*!` targets, the workflow and the list itself).
 | `release.yml` | `tags v*` | - | - | - | - | - | tag-only |
 | `security-audit.yml` | `main, ci/**` | `.github/paths/security-audit.txt` | `main (paths)` | yes | yes | runs when the paths match | landing |
 | `unsafe-and-parallel.yml` | `main, ci/**` | `.github/paths/unsafe-and-parallel.txt` | - | - | yes | runs when the paths match | after-landing |
+| `web.yml` | `main, ci/**` | `.github/paths/web.txt` | `main (paths)` | - | yes | runs when the paths match | landing |
 | `wiring-status.yml` | `main, ci/**` | `.github/paths/wiring-status.txt` | - | - | yes | runs when the paths match | landing |
 <!-- ci-triggers:workflows:end -->
 
@@ -204,6 +205,7 @@ only by the fast-forward-only push to `main` and the re-evidence loop above.
 | `reexport_check.yml` | landing | success |
 | `security-audit.yml` | landing | success |
 | `unsafe-and-parallel.yml` | after-landing | started: heavy jobs started, or all skipped by the changes job |
+| `web.yml` | landing | success |
 | `wiring-status.yml` | landing | success |
 <!-- ci-triggers:landing-waits:end -->
 
@@ -281,6 +283,7 @@ workflow must be among them (`scripts/ci_triggers_check.py` fails otherwise):
 | `reexport_check.yml` |
 | `security-audit.yml` |
 | `unsafe-and-parallel.yml` |
+| `web.yml` |
 | `wiring-status.yml` |
 <!-- ci-triggers:dispatchable:end -->
 

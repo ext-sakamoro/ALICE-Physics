@@ -466,6 +466,10 @@ rm -rf "$py_target/python-wheels"
 "$py_venv/bin/pip" install -q --force-reinstall "$py_target"/python-wheels/*.whl
 "$py_venv/bin/python" python/tests/test_binding.py
 
+step "web viewer in Chrome (npm ci + npm run build + web/tests/smoke.mjs; CI web.yml)"
+command -v npm >/dev/null || { echo "npm (node 18+) is needed for the web viewer" >&2; exit 1; }
+(cd web && npm ci --no-audit --no-fund && npm run build && npm run smoke)
+
 step "cargo test --lib (neural / analytics via crates.io siblings)"
 cargo test --lib --features "neural,analytics"
 

@@ -28,6 +28,7 @@
 "release.yml" = "tag-only"
 "security-audit.yml" = "landing"
 "unsafe-and-parallel.yml" = "after-landing"
+"web.yml" = "landing"
 "wiring-status.yml" = "landing"
 
 # legs of a landing workflow whose result is not read before the landing: the job id, the

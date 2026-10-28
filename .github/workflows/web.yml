@@ -1,0 +1,128 @@
+# Web viewer: build the browser package and the Three.js viewer (web/) as a visitor gets
+# them (npm ci + npm run build, release wasm) and run web/tests/smoke.mjs against the build
+# in Chrome: the bodies come to rest on the floor, two loads of the same seed are bit-equal,
+# another seed differs. One ubuntu job, only when the engine, the package or the viewer change.
+name: Web viewer
+
+on:
+  push:
+    # no paths here: a branch created at a SHA another ref already has gets an empty
+    # diff from GitHub's filter and the run is skipped; the changes job below compares
+    # with merge-base(origin/main) instead (patterns: .github/paths/web.txt)
+    # ci/**: the same checks on the ci/<id> branch before main is fast-forwarded to it
+    branches: [main, 'ci/**']
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'crates/alice-physics/**'
+      - 'scripts/build_wasm_pkg.sh'
+      - 'web/**'
+      - 'scripts/changed_paths.py'
+      - '.github/workflows/web.yml'
+      - '.github/paths/web.txt'
+  # a run dropped by the one-pending-run-per-group rule is re-created on the ci/<id> SHA
+  # with `gh workflow run <workflow> --ref ci/<id>` (docs/CI_TRIGGERS.md, dropped runs)
+  workflow_dispatch:
+
+concurrency:
+  # one group per ref; a newer push cancels the older run of its branch, never a main run
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # which files changed: a new or force-pushed branch is compared with merge-base(origin/main),
+  # another push with before..after, a pull request with base...head; schedule and manual
+  # runs always run; any error runs (fail-closed) — scripts/changed_paths.py
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: decide
+        id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.event.after || github.sha }}
+          CREATED: ${{ github.event.created }}
+          FORCED: ${{ github.event.forced }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: >-
+          python3 scripts/changed_paths.py decide --event "$EVENT"
+          --before "$BEFORE" --after "$AFTER" --created "$CREATED" --forced "$FORCED"
+          --base "$PR_BASE" --head "$PR_HEAD"
+          --patterns-file .github/paths/web.txt
+
+  smoke:
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    name: Build the viewer and run it in Chrome
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Rust toolchain (with wasm32-unknown-unknown)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Ensure wasm32-unknown-unknown rust-std is installed
+        run: rustup target add wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: web-viewer
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+      # the CLI must be the version of the wasm-bindgen crate in Cargo.lock
+      # (scripts/build_wasm_pkg.sh fails on a mismatch)
+      - name: wasm-bindgen version of Cargo.lock
+        id: wbg
+        shell: bash
+        run: |
+          set -euo pipefail
+          v=$(awk '/^\[\[package\]\]/{p=0} $0=="name = \"wasm-bindgen\""{p=1} p&&/^version = /{gsub(/"/,"",$3); print $3; exit}' Cargo.lock)
+          [ -n "$v" ] || { echo "error: no wasm-bindgen in Cargo.lock" >&2; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - name: Install the wasm-bindgen CLI
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@${{ steps.wbg.outputs.version }}
+      - name: Install the viewer's dependencies (package-lock.json)
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: Build the wasm package and the viewer (npm run build)
+        working-directory: web
+        run: npm run build
+      # Google Chrome is on the ubuntu image; the smoke drives it through playwright-core
+      - name: Run the viewer in Chrome (web/tests/smoke.mjs)
+        working-directory: web
+        run: npm run smoke
+
+  # one result for the workflow: run=true needs every job above to succeed, run=false needs
+  # them skipped (a skipped, cancelled or failed job after run=true is red)
+  # not a required status check: a pull request that touches none of the paths has no run
+  gate:
+    name: Gate
+    if: always()
+    needs: [changes, smoke]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: gate
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/changed_paths.py gate --needs-json "$NEEDS"

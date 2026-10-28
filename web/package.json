@@ -8,7 +8,8 @@
     "build:wasm": "cd .. && bash scripts/build_wasm_pkg.sh web web/pkg",
     "dev": "vite",
     "build": "npm run build:wasm && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "smoke": "node tests/smoke.mjs"
   },
   "dependencies": {
     "three": "^0.170.0"
@@ -16,6 +17,7 @@
   "devDependencies": {
     "@types/three": "^0.170.0",
     "typescript": "^5.6.0",
-    "vite": "^6.0.0"
+    "vite": "^6.0.0",
+    "playwright-core": "1.56.1"
   }
 }

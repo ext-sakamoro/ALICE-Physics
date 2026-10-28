@@ -1,0 +1,18 @@
+# the paths that run .github/workflows/web.yml (scripts/changed_paths.py decide)
+# on.pull_request.paths of the workflow, when it has one, must list the same patterns in
+# the same order (scripts/changed_paths.py sync)
+# every file a job of the workflow executes or reads is listed: a missing one skips the
+# job on a change that alters it
+src/**
+Cargo.toml
+Cargo.lock
+rust-toolchain.toml
+# the wasm package is built from the facade
+crates/alice-physics/**
+scripts/build_wasm_pkg.sh
+# the viewer, its lock file and the smoke test
+web/**
+# the changes and gate jobs
+scripts/changed_paths.py
+.github/workflows/web.yml
+.github/paths/web.txt

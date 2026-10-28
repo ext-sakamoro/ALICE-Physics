@@ -19,6 +19,7 @@ interface WasmPhysicsWorld {
   step(dt: number): void;
   getPositions(): Float64Array;
   getRotations(): Float64Array;
+  getVelocities(): Float64Array;
   applyImpulse(bodyId: number, ix: number, iy: number, iz: number): void;
   setRestitution(bodyId: number, r: number): void;
   setGravity(x: number, y: number, z: number): void;
@@ -38,9 +39,42 @@ const BODY_COLORS: number[] = [
 ];
 
 // ============================================================================
+// Query parameters
+// ============================================================================
+//
+// ?seed=<u32>   seed of the scene's random numbers (default 1): the same seed gives the
+//               same bodies, restitutions and impulses on every load and every device
+// ?steps=<n>    test mode, off unless given: after the initial bodies are added, run n
+//               steps at once, pause, and publish the state as window.__alicePhysicsViewer
+//               (read by web/tests/smoke.mjs); without it the page never sets that global
+
+const params = new URLSearchParams(window.location.search);
+const SEED = parseU32(params.get('seed'), 1);
+const TEST_STEPS = params.has('steps') ? parseU32(params.get('steps'), 0) : null;
+
+function parseU32(text: string | null, fallback: number): number {
+  if (text === null || !/^\d+$/.test(text)) return fallback;
+  const n = Number(text);
+  return n <= 0xffffffff ? n : fallback;
+}
+
+// mulberry32: a small 32-bit generator that is the same in every browser (integer ops only)
+function makeRandom(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ============================================================================
 // State
 // ============================================================================
 
+let random = makeRandom(SEED);
 let world: WasmPhysicsWorld | null = null;
 let paused = false;
 let frameCount = 0;
@@ -154,13 +188,13 @@ function createBodyMesh(colorIndex: number): THREE.Mesh {
 
 function addBody(): void {
   if (!world) return;
-  const x = (Math.random() - 0.5) * 8;
-  const y = 8 + Math.random() * 10;
-  const z = (Math.random() - 0.5) * 8;
-  const mass = 0.5 + Math.random() * 2;
+  const x = (random() - 0.5) * 8;
+  const y = 8 + random() * 10;
+  const z = (random() - 0.5) * 8;
+  const mass = 0.5 + random() * 2;
 
   const id = world.addDynamicBody(x, y, z, mass);
-  world.setRestitution(id, 0.4 + Math.random() * 0.4);
+  world.setRestitution(id, 0.4 + random() * 0.4);
 
   const mesh = createBodyMesh(id);
   mesh.position.set(x, y, z);
@@ -178,9 +212,9 @@ function impulseAll(): void {
   const n = world.bodyCount();
   for (let i = 0; i < n; i++) {
     if (world.getBodyType(i) === 0) {
-      const ix = (Math.random() - 0.5) * 20;
-      const iy = 10 + Math.random() * 15;
-      const iz = (Math.random() - 0.5) * 20;
+      const ix = (random() - 0.5) * 20;
+      const iy = 10 + random() * 15;
+      const iz = (random() - 0.5) * 20;
       world.applyImpulse(i, ix, iy, iz);
     }
   }
@@ -279,6 +313,28 @@ function setupControls(): void {
 }
 
 // ============================================================================
+// Test mode (?steps=<n>, opt-in)
+// ============================================================================
+
+function runTestMode(version: string, steps: number): void {
+  if (!world) return;
+  for (let i = 0; i < steps; i++) world.step(DT);
+  paused = true;
+  const n = world.bodyCount();
+  const state = {
+    version,
+    seed: SEED,
+    steps,
+    bodyTypes: Array.from({ length: n }, (_, i) => world!.getBodyType(i)),
+    positions: Array.from(world.getPositions()),
+    rotations: Array.from(world.getRotations()),
+    velocities: Array.from(world.getVelocities()),
+  };
+  (window as unknown as { __alicePhysicsViewer: typeof state }).__alicePhysicsViewer = Object.freeze(state);
+  console.log(`[ALICE-Physics] test mode: ${steps} steps, ${n} bodies, paused`);
+}
+
+// ============================================================================
 // WASM Initialization
 // ============================================================================
 
@@ -305,6 +361,8 @@ async function init(): Promise<void> {
     addRain(10);
 
     console.log('[ALICE-Physics] WASM initialized, version:', wasm.alicePhysicsVersion());
+
+    if (TEST_STEPS !== null) runTestMode(wasm.alicePhysicsVersion(), TEST_STEPS);
   } catch (e) {
     console.error('[ALICE-Physics] Failed to load WASM module:', e);
     elVersion.textContent = 'WASM ERROR';
