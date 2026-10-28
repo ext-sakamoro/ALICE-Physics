@@ -486,7 +486,9 @@ impl BodyCollider {
         for (piece, piece_box) in self.pieces(position, rotation, &own) {
             let hit = match collider {
                 StaticCollider::Plane(plane) => plane_piece_contact(&piece, position, plane),
-                StaticCollider::TriMesh(mesh) => mesh_piece_contact(&piece, &piece_box, mesh),
+                StaticCollider::TriMesh(mesh) => {
+                    mesh_piece_contact(&piece, &piece_box, position, mesh)
+                }
                 StaticCollider::HeightField(field) => {
                     field_piece_contact(&piece, &piece_box, field)
                 }
@@ -529,7 +531,12 @@ fn plane_piece_contact(
 }
 
 /// A convex piece against a triangle mesh: GJK/EPA with each candidate triangle.
-fn mesh_piece_contact(piece: &Piece<'_>, piece_box: &AABB, mesh: &TriMesh) -> Option<Contact> {
+fn mesh_piece_contact(
+    piece: &Piece<'_>,
+    piece_box: &AABB,
+    reference: Vec3Fix,
+    mesh: &TriMesh,
+) -> Option<Contact> {
     let mut best: Option<Contact> = None;
     for index in mesh.bvh.query(piece_box) {
         let Some(triangle) = mesh.triangles.get(index as usize) else {
@@ -538,13 +545,73 @@ fn mesh_piece_contact(piece: &Piece<'_>, piece_box: &AABB, mesh: &TriMesh) -> Op
         if !triangle.aabb().intersects(piece_box) {
             continue;
         }
-        if let Some(hit) = contact(piece, &TriangleSupport(triangle)) {
+        let hit = match triangle_face_contact(piece, reference, triangle) {
+            Face::Clear => None,
+            Face::Hit(c) => Some(c),
+            Face::Outside => contact(piece, &TriangleSupport(triangle)),
+        };
+        if let Some(hit) = hit {
             if hit.depth > Fix128::ZERO && best.is_none_or(|d| hit.depth > d.depth) {
                 best = Some(hit);
             }
         }
     }
     best
+}
+
+/// How a convex piece meets one triangle's face
+enum Face {
+    /// The piece lies wholly on the reference's side of the triangle's plane: it
+    /// cannot meet the triangle
+    Clear,
+    /// The piece's deepest point below the plane projects inside the triangle:
+    /// the contact is the face's, exactly (the face normal, the depth below it)
+    Hit(Contact),
+    /// The deepest point projects outside the triangle: an edge or a corner is
+    /// met, left to GJK/EPA
+    Outside,
+}
+
+/// A convex piece against the face of one triangle, two-sided like a plane (the
+/// side is the one `reference`, the body's centre of mass, is on). On a face the
+/// answer is exact: GJK/EPA on a curved piece only bounds the depth and its
+/// normal, and a normal a little off the face's pushes a body resting on a mesh
+/// sideways every substep.
+fn triangle_face_contact(
+    piece: &Piece<'_>,
+    reference: Vec3Fix,
+    triangle: &crate::trimesh::Triangle,
+) -> Face {
+    let n = triangle.unit_normal();
+    if n.length_squared().is_zero() {
+        return Face::Outside;
+    }
+    let above = |p: Vec3Fix| (p - triangle.v0).dot(n);
+    let side = if above(reference) < Fix128::ZERO {
+        -n
+    } else {
+        n
+    };
+    let lowest = piece.support(-side);
+    let height = (lowest - triangle.v0).dot(side);
+    if height >= Fix128::ZERO {
+        return Face::Clear;
+    }
+    let on_plane = lowest - side * height;
+    let (a, b, c) = (triangle.v0, triangle.v1, triangle.v2);
+    let inside = [(a, b), (b, c), (c, a)]
+        .iter()
+        .all(|&(p, q)| (q - p).cross(on_plane - p).dot(n) >= Fix128::ZERO);
+    if inside {
+        Face::Hit(Contact {
+            depth: -height,
+            normal: side,
+            point_a: lowest,
+            point_b: on_plane,
+        })
+    } else {
+        Face::Outside
+    }
 }
 
 /// A convex piece against a height field, at the tangent plane under its lowest
