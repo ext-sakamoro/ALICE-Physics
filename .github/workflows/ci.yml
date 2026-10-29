@@ -815,6 +815,10 @@ jobs:
       # crates). A registry that cannot be read fails on main and warns on ci/ branches and PRs
       - name: Identifier moves (tests)
         run: python3 scripts/test_id_move_check.py
+      # scripts/build_neutral_pkg.sh: the renaming, overwriting and leak check of the browser
+      # package without names (the build itself needs a Keychain key and runs by hand)
+      - name: Browser package without names (scripts)
+        run: python3 scripts/test_neutral_pkg.py
       - name: Identifier moves (the release compared with)
         id: id-base
         run: echo "crate=$(python3 scripts/id_move_check.py --print-base)" >> "$GITHUB_OUTPUT"
