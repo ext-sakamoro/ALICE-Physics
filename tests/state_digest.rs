@@ -193,3 +193,54 @@ fn a_refused_restore_names_its_kind_and_leaves_the_world_unchanged() {
     assert_eq!((err.kind(), err.code()), ("SemanticsMismatch", 15));
     assert_eq!(w.state_digest(), before);
 }
+
+/// The scene `jointedScene()` of tests/js/bindings.test.mjs builds through the WebAssembly binding,
+/// value for value: `withConfig(0, -10, 0, 8, 4)` (its damping 0.99), a static plane y = 0, two
+/// dynamic bodies, a ball joint, every number through `Fix128::from_f64` as the binding converts it,
+/// and `step(1 / 60)` as `Fix128::from_f64(1.0 / 60.0)`.
+fn binding_scene() -> PhysicsWorld {
+    let f = Fix128::from_f64;
+    let v = |x: f64, y: f64, z: f64| Vec3Fix::new(f(x), f(y), f(z));
+    let mut w = PhysicsWorld::new(PhysicsConfig {
+        substeps: 8,
+        iterations: 4,
+        gravity: v(0.0, -10.0, 0.0),
+        damping: Fix128::from_ratio(99, 100),
+        ..PhysicsConfig::default()
+    });
+    let n = v(0.0, 1.0, 0.0).try_normalize().expect("unit normal");
+    w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(n, f(0.0))));
+    let a = w.add_body(RigidBody::new_dynamic(v(0.0, 5.0, 0.0), f(1.0)));
+    let b = w.add_body(RigidBody::new_dynamic(v(1.0, 5.0, 0.0), f(2.0)));
+    w.add_joint(Joint::Ball(BallJoint::new(
+        a,
+        b,
+        v(0.0, 0.0, 0.0),
+        v(-1.0, 0.0, 0.0),
+    )));
+    for _ in 0..120 {
+        w.step(f(1.0 / 60.0));
+    }
+    w
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// golden (regenerated on purpose only): the digest and the law identifier of `binding_scene` after
+/// 120 steps. Every platform must compute these exact bytes — the 5 native OS of the CI matrix here,
+/// and WebAssembly in tests/js/bindings.test.mjs, which asserts the same two constants for the same
+/// scene built through the binding. They move when PHYSICS_SEMANTICS_ID moves (the step or the
+/// arithmetic changes) or when the snapshot format changes; that is a deliberate golden change,
+/// named in the CHANGELOG with both values.
+const GOLDEN_STATE_DIGEST: &str =
+    "03f37fd6f8944cc59b22bfc34a0b9cceaf0118eb2569e7769348ef06c01ce399";
+const GOLDEN_LAW_ID: &str = "fa916a29691fb926a39073ef014f04bd42e0a6a001efe80c1d54efde621059fb";
+
+#[test]
+fn the_digest_of_the_binding_scene_is_the_golden_on_every_platform() {
+    let w = binding_scene();
+    assert_eq!(hex(&w.state_digest()), GOLDEN_STATE_DIGEST);
+    assert_eq!(hex(&w.law_id(&PHYSICS_SEMANTICS_ID)), GOLDEN_LAW_ID);
+}
