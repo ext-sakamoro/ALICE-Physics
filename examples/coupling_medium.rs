@@ -40,7 +40,7 @@ fn total(w: &PhysicsWorld) -> Vec3Fix {
 fn run(backend: SolverBackend) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: 4,
         solver_backend: backend,
         ..PhysicsConfig::default()

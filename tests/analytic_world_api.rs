@@ -72,7 +72,7 @@ fn weightless() -> PhysicsConfig {
 fn weightless_undamped() -> PhysicsConfig {
     PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     }
 }
@@ -105,7 +105,14 @@ fn free_fall_one_frame(gravity_scale: i64) -> Fix128 {
 
 /// The frame-end velocity of a body whose derived velocity is `v`.
 fn damped(v: Fix128) -> Fix128 {
-    v * PhysicsConfig::default().damping * Fix128::ONE
+    // the per-frame factor exp(−rate·dt), exactly 1 for a zero rate
+    let rate = PhysicsConfig::default().damping_rate;
+    let factor = if rate.is_zero() {
+        Fix128::ONE
+    } else {
+        (-(rate * dt())).exp()
+    };
+    v * factor
 }
 
 fn plane_floor() -> SdfCollider {
@@ -325,24 +332,29 @@ fn with_rotation_sets_rotation_and_prev_rotation() {
     assert_eq!(world.bodies[idx].rotation, yaw_180);
 }
 
-/// Oracle (default config): the frame-end angular velocity is
-/// `ω' * damping * angular_damping`, where `ω'` is the velocity derived from
-/// the integrated rotation by the exact logarithm of the rotation, so a free
-/// isotropic spin keeps `ω' = ω`. Hence `angular_damping = 0` gives exactly
-/// zero, `= 2` gives exactly twice the `= 1` body (doubling is exact in fixed
-/// point), and the `= 1` body reads `0.99 ω = 0.99` for `ω = 1`. Tolerance:
-/// the predicted rotation uses CORDIC `sin_cos` (absolute error `≤ 2⁻⁴⁸` on
-/// `sin(h/2)`, i.e. `2⁻⁴⁸ / (h/2) = 2⁻³⁸ ≈ 3.6e-12` relative per substep at
-/// `h = 1/512`), over 8 substeps `≤ 3e-11`; the oracle allows `1e-10`.
+/// Oracle (default config, world rate 0): the frame-end angular velocity is
+/// `ω' · exp(−c·dt)` for a body's angular damping rate `c`, where `ω'` is the
+/// velocity derived from the integrated rotation by the exact logarithm of the
+/// rotation, so a free isotropic spin keeps `ω' = ω`. Hence rate 0 gives exactly
+/// `ω` (no factor is applied), rate `c` gives `e^{−c·dt}·ω` and rate `2c` its square
+/// `e^{−2c·dt}·ω`. Tolerance: the predicted rotation uses CORDIC `sin_cos` (absolute
+/// error `≤ 2⁻⁴⁸` on `sin(h/2)`, i.e. `2⁻³⁸ ≈ 3.6e-12` relative per substep at
+/// `h = 1/512`, `≤ 3e-11` over 8 substeps) and `Fix128::exp` is within a relative
+/// `1e-6` (`math::tests::exp_matches_f64_reference`); the oracle allows `2e-6`.
 #[test]
-fn with_angular_damping_scales_frame_end_angular_velocity() {
+#[allow(
+    clippy::disallowed_methods,
+    reason = "analytic reference: f64 e^(-c h) is the closed form of one step's factor"
+)]
+fn with_angular_damping_rate_scales_frame_end_angular_velocity() {
     let mut world = PhysicsWorld::new(PhysicsConfig::default());
     let spin = Vec3Fix::from_int(0, 1, 0);
-    let ids: Vec<usize> = [Fix128::ZERO, Fix128::ONE, Fix128::from_int(2)]
+    let c = Fix128::from_int(3);
+    let ids: Vec<usize> = [Fix128::ZERO, c, c + c]
         .into_iter()
-        .map(|d| {
+        .map(|rate| {
             let idx = world.add_body(
-                RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_angular_damping(d),
+                RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_angular_damping_rate(rate),
             );
             world
                 .get_body_mut(idx)
@@ -352,14 +364,24 @@ fn with_angular_damping_scales_frame_end_angular_velocity() {
         })
         .collect();
     world.step(dt());
-    let w0 = world.bodies[ids[0]].angular_velocity;
-    let w1 = world.bodies[ids[1]].angular_velocity;
-    let w2 = world.bodies[ids[2]].angular_velocity;
-    assert_eq!(w0, Vec3Fix::ZERO, "angular_damping 0 zeroes the spin");
-    assert_eq!(w2, w1 + w1, "angular_damping 2 is exactly twice 1");
-    let err = (w1.y - r(99, 100)).abs().to_f64();
-    assert!(err < 1e-10, "ω_y = {} (want 0.99 ± 1e-10)", w1.y.to_f64());
-    assert_eq!((w1.x, w1.z), (Fix128::ZERO, Fix128::ZERO));
+    let w = |k: usize| world.bodies[ids[k]].angular_velocity.y.to_f64();
+    let h = dt().to_f64();
+    let (want1, want2) = ((-3.0 * h).exp(), (-6.0 * h).exp());
+    assert!(
+        (w(0) - 1.0).abs() < 1e-10,
+        "rate 0 keeps the spin: {}",
+        w(0)
+    );
+    assert!(
+        (w(1) / want1 - 1.0).abs() < 2e-6,
+        "rate 3/s for one step of {h}: {} want e^(-3h) = {want1}",
+        w(1)
+    );
+    assert!(
+        (w(2) / want2 - 1.0).abs() < 2e-6,
+        "rate 6/s for one step of {h}: {} want e^(-6h) = {want2}",
+        w(2)
+    );
 }
 
 /// Oracle: `with_friction` documents "set friction coefficient" — a field

@@ -104,7 +104,7 @@ const BOB: usize = 4;
 fn path_scene(backend: SolverBackend) -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         solver_backend: backend,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     w.set_sleep_config(SleepConfig {
@@ -470,12 +470,15 @@ fn golden_path_tgs_try_step() {
 
 /// Balls dropped onto the ground with sleeping on: after they settle every
 /// dynamic body is asleep, and the digest pins the state the sleep decision left.
-const GOLDEN_SLEEPING: &str = "2d2fbb89f587cd27872e85f4ed2d856c72bb3f0d62a3d0d5d2f5360260ac7a86";
+/// Re-recorded when damping became a rate per second: the scene's retention 0.9
+/// per step of 1/60 s is now the rate `-ln(0.9)·60`, applied in closed form.
+const GOLDEN_SLEEPING: &str = "3a957dad9eb5a24328f0b82dcc831b2eb95fa8c8abda46e85920a9363805d229";
 
 #[test]
 fn golden_sleeping() {
     let mut w = PhysicsWorld::new(PhysicsConfig {
-        damping: Fix128::from_ratio(9, 10),
+        // the loss per step of the former retention 0.9 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(9, 10).ln() * Fix128::from_int(60),
         ..PhysicsConfig::default()
     });
     w.set_sleep_config(SleepConfig {
@@ -517,7 +520,7 @@ fn golden_continuous_collision() {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         substeps: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     w.set_continuous_collision(WorldCcdConfig::on());
@@ -597,7 +600,7 @@ const GOLDEN_PARTICIPANT: &str = "3de49332adc74a203ca1c416e3bc162bc432aa692ff5b6
 fn golden_participant() {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     let mut a = RigidBody::new_dynamic(Vec3Fix::from_int(-2, 0, 0), Fix128::from_int(2));

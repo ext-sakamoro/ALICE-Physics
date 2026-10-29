@@ -359,7 +359,7 @@ fn figure_eight_three_body_orbit_is_periodic() {
 fn orbit_world(substeps: usize) -> PhysicsWorld {
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         ..PhysicsConfig::default()
     };
@@ -469,7 +469,7 @@ fn frame_head_kick_is_first_order() {
 fn step_world_keeps_slow_bodies_awake() {
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut world = PhysicsWorld::new(config);

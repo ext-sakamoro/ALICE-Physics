@@ -48,7 +48,7 @@ fn pd_controlled_mass_overshoot_matches_second_order_closed_form() {
     // analytic_electromagnetic_world_motion.rs's SleepConfig finding.
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut world = PhysicsWorld::new(config);

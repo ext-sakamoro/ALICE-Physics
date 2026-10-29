@@ -20,7 +20,10 @@
 //!   A solver that moved the bob as a point mass (ignoring its rotation) would
 //!   give `ω₀² = g / L`, a period about 18 % shorter at `L = 1`;
 //! * a body on a frictionless axis with acceleration `a` along it:
-//!   `x(t) = (a/β) t − (a/β²)(1 − e^{−βt})`;
+//!   `x(t) = (a/β) t − (a/β²)(1 − e^{−βt}) = a t² φ₂(βt)`,
+//!   `φ₂(z) = (z − 1 + e^{−z})/z²`, `φ₂(0) = 1/2`, so the undamped limit is
+//!   exactly `a t²/2` (`tests/support/damped_limits.rs` derives the series
+//!   threshold);
 //! * a damped harmonic oscillator: period `2π / √(k/m − β²/4)`.
 //!
 //! The tolerances state their own budget next to each assert.
@@ -44,6 +47,10 @@ use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 use alice_physics_core::static_collider::StaticCollider;
 use alice_physics_core::trimesh::{TriMesh, Triangle};
 use alice_physics_core::SolverBackend;
+
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{both_rates, damped_displacement, engine_beta};
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -70,13 +77,7 @@ fn tgs(substeps: usize) -> SolverConfig {
 /// Gravity magnitude and frame-damping rate of `SolverConfig::default()`.
 fn g_and_beta() -> (f64, f64) {
     let d = SolverConfig::default();
-    (-d.gravity.y.to_f64(), -(d.damping.to_f64()).ln() / DT)
-}
-
-/// Displacement along an axis with constant acceleration `a` from rest under
-/// the frame damping `beta`, after `t` seconds.
-fn damped_displacement(a: f64, beta: f64, t: f64) -> f64 {
-    (a / beta) * t - (a / (beta * beta)) * (1.0 - (-beta * t).exp())
+    (-d.gravity.y.to_f64(), d.damping_rate.to_f64())
 }
 
 // ---------------------------------------------------------------------------
@@ -270,19 +271,27 @@ fn a_fixed_joint_holds_the_relative_pose() {
 
 /// A slider along `x` lets the body move only along `x`. With gravity tilted
 /// to `(a, −g, 0)` the body slides along the axis by the damped closed form
-/// `x(t) = (a/β) t − (a/β²)(1 − e^{−βt})` and stays on the axis.
+/// `x(t) = a t² φ₂(βt)` (`a t²/2` undamped) and stays on the axis. Runs at
+/// damping rate 0 (default) and at the old 0.99-per-step loss as a rate,
+/// with `β` matched to the engine's `Fix128` factor (`engine_beta`).
 ///
 /// Budget for the 2 % tolerance on `x`: the symplectic sub-step integration
-/// adds `a·t·h/2` (`h = dt/substeps`, at most `1.25e-2·t` here, 1.3 % of
-/// `x(1 s) ≈ 1.2`), per-frame damping `O(β·dt)` of the damping term. Off the
-/// axis the body may drift `1e-2`; unconstrained it would fall `≈ 4.8 m`.
+/// adds `a·t·h/2` (`h = dt/substeps`, at most `6.25e-3·t` here, 0.5 % of
+/// `x(1 s) ≈ 1.2` damped / 0.4 % of `1.5` undamped), per-frame damping
+/// `O(β·dt)` of the damping term (0 at rate 0). Off the axis the body may
+/// drift `1e-2`; unconstrained it would fall `≈ 4.8 m`.
 #[test]
 fn a_slider_keeps_the_motion_on_its_axis() {
-    let (g, beta) = g_and_beta();
+    let (g, _) = g_and_beta();
     let a = 3.0;
-    for substeps in [4, 8] {
+    for (rate, substeps) in both_rates()
+        .into_iter()
+        .flat_map(|r| [4, 8].map(|s| (r, s)))
+    {
+        let beta = engine_beta(rate, DT);
         let mut w = PhysicsWorld::new(SolverConfig {
             gravity: v3(a, -g, 0.0),
+            damping_rate: rate,
             ..tgs(substeps)
         });
         let base = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
@@ -304,11 +313,11 @@ fn a_slider_keeps_the_motion_on_its_axis() {
         let want = damped_displacement(a, beta, 1.0);
         assert!(
             (x - want).abs() < 2e-2 * want,
-            "substeps {substeps}: x = {x:.5}, closed form {want:.5}"
+            "rate {rate:?}, substeps {substeps}: x = {x:.5}, closed form {want:.5}"
         );
         assert!(
             off_axis < 1e-2,
-            "substeps {substeps}: the slider body left its axis by {off_axis:.3e}"
+            "rate {rate:?}, substeps {substeps}: the slider body left its axis by {off_axis:.3e}"
         );
     }
 }

@@ -172,7 +172,7 @@ fn two_ball_world(
 ) -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: v3(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         solver_backend: backend,
         ..PhysicsConfig::default()
     });
