@@ -52,7 +52,7 @@ use sha2::{Digest, Sha256};
 
 /// The identifier, pinned. A change here is a change of the stepping
 /// semantics (a golden moved, a gap was filled, or det-math changed).
-const PINNED_ID_HEX: &str = "31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a";
+const PINNED_ID_HEX: &str = "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6";
 
 const DET_MATH: &str = "alice-det-math";
 
@@ -934,12 +934,12 @@ fn the_identifier_is_the_row_of_the_resolved_det_math() {
 }
 
 /// The earlier identifiers a cross-version oracle covers: `(identifier, the test that restores a
-/// snapshot written by that release and steps it to the release's own bits). `88cf6f85…` is the
-/// identifier before the secondary chain was pinned (same det-math generation, one pin fewer)
-const COVERED_BY_A_CROSS_VERSION_ORACLE: &[(&str, &str)] = &[(
-    "88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6",
-    "tests/world_snapshot_xv_88cf6f85.rs",
-)];
+/// snapshot written by that release and steps it to the release's own bits). None now:
+/// `88cf6f85…` (the identifier before the secondary chain was pinned) was covered by
+/// `tests/world_snapshot_xv_88cf6f85.rs` until the stepping changed (shaped bodies against static
+/// colliders, static overlap pushed out without velocity, damping as a rate per second); that file
+/// now checks its snapshots are refused
+const COVERED_BY_A_CROSS_VERSION_ORACLE: &[(&str, &str)] = &[];
 
 /// Stepping paths pinned after the 3.x releases (their folds did not hold them), left out of the
 /// fold that reproduces the identifiers 3.x stamped, as the peer and Law output entries are

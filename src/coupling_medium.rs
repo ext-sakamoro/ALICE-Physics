@@ -643,7 +643,7 @@ mod tests {
         let mut world = crate::solver::PhysicsWorld::new(crate::solver::SolverConfig {
             substeps: 1,
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..Default::default()
         });
         let body = world.add_body(RigidBody::new(Vec3Fix::ZERO, Fix128::ONE));

@@ -262,7 +262,7 @@ impl PhysicsWorld {
         e.u64(c.substeps as u64);
         e.u64(c.iterations as u64);
         e.vec3(c.gravity);
-        e.fix(c.damping);
+        e.fix(c.damping_rate);
         e.bytes(match c.solver_backend {
             SolverBackend::Xpbd => b"xpbd",
             SolverBackend::Tgs => b"tgs",
@@ -422,7 +422,7 @@ mod semantics_decoder {
     /// The published identifier decodes to the hex its documentation shows.
     #[test]
     fn the_identifier_matches_its_documented_hex() {
-        let doc = "31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a";
+        let doc = "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6";
         assert_eq!(hex(&PHYSICS_SEMANTICS_ID), doc);
         assert_eq!(hex32(doc), PHYSICS_SEMANTICS_ID);
         assert!(PHYSICS_SEMANTICS_PINS

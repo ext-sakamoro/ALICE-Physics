@@ -39,7 +39,7 @@ fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
 fn world(backend: SolverBackend, substeps: usize, body: RigidBody) -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         solver_backend: backend,
         ..PhysicsConfig::default()

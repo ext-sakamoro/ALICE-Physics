@@ -558,7 +558,7 @@ fn xpbd_keeps_the_predicted_velocity_when_the_position_add_overflows() {
     let vy = -pow2(50);
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     let mut b = RigidBody::new(Vec3Fix::new(Fix128::ZERO, y0, Fix128::ZERO), Fix128::ONE);
@@ -574,7 +574,7 @@ fn xpbd_keeps_the_predicted_velocity_when_the_position_add_overflows() {
     // 対照: 範囲の内側を同じ速度で進む物体は位置が動き、速度も保たれる
     let mut near = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     let mut c = RigidBody::new(Vec3Fix::ZERO, Fix128::ONE);
@@ -1703,18 +1703,22 @@ fn in_range_scenes_are_bit_identical_to_the_previous_solver() {
 /// 等方の慣性の `I⁻¹` を回転せず `c·τ` で適用するようになった solver で取り直した
 /// (関節と接触の角の応答の丸めが変わる、範囲の検査とは無関係) 他の 9 件は
 /// その変更で不変 (短絡を外すと 13 件すべてが直前の値に戻る)
+///
+/// 減衰を 1 秒あたりの率 (既定 0、以前の既定は 1 step あたり 0.99 の保持) にした時に
+/// 取り直した 全 scene が `PhysicsConfig::default()` なので、動く体のある 12 件が動いた
+/// scene 3 の TGS (静止から始まる重なった 2 球) だけは不変だった
 const PREVIOUS_FINGERPRINTS: [(u32, SolverBackend, u64); 13] = [
-    (0, SolverBackend::Xpbd, 0x79d933c173a1a0c7_u64),
-    (1, SolverBackend::Xpbd, 0x51b5e2b44f42b2ff_u64),
-    (2, SolverBackend::Xpbd, 0x589d4e7a2f6fc4e5_u64),
-    (3, SolverBackend::Xpbd, 0x8bcfaa14ace2278a_u64),
-    (4, SolverBackend::Xpbd, 0xce2cc8f59fbec9ad_u64),
-    (5, SolverBackend::Xpbd, 0x1d1e32ac5820cda0_u64),
-    (6, SolverBackend::Xpbd, 0x889f5af1eee580f3_u64),
-    (0, SolverBackend::Tgs, 0x7b82f390329a7bfc_u64),
-    (1, SolverBackend::Tgs, 0x8e94b5381f0f500a_u64),
-    (2, SolverBackend::Tgs, 0xcbe984649e141396_u64),
+    (0, SolverBackend::Xpbd, 0xe1cf59847572e985_u64),
+    (1, SolverBackend::Xpbd, 0x36b5104395c14228_u64),
+    (2, SolverBackend::Xpbd, 0xe1887bfb14a87bee_u64),
+    (3, SolverBackend::Xpbd, 0x807206918944a242_u64),
+    (4, SolverBackend::Xpbd, 0x4baa81e4627924fb_u64),
+    (5, SolverBackend::Xpbd, 0xdd401c85f62e8f51_u64),
+    (6, SolverBackend::Xpbd, 0x6bfad6246e7bc457_u64),
+    (0, SolverBackend::Tgs, 0x915631b49ab58b1b_u64),
+    (1, SolverBackend::Tgs, 0x11757b14dcf526d0_u64),
+    (2, SolverBackend::Tgs, 0xe1887bfb14a87bee_u64),
     (3, SolverBackend::Tgs, 0xa26ed4428533826f_u64),
-    (4, SolverBackend::Tgs, 0xb9822fcdacf1a6e6_u64),
-    (5, SolverBackend::Tgs, 0x325cfe392ac7b7b0_u64),
+    (4, SolverBackend::Tgs, 0x97cb05c4e5a8543c_u64),
+    (5, SolverBackend::Tgs, 0x73151ef6173670a7_u64),
 ];

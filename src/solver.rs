@@ -133,12 +133,14 @@ pub struct RigidBody {
     pub friction: Fix128,
     /// Gravity scale multiplier (1.0 = normal, 0.0 = no gravity, 2.0 = double)
     pub gravity_scale: Fix128,
-    /// Per-body linear damping factor (1.0 = no damping, 0.0 = full damping)
-    /// Multiplied with the global damping, applied once per frame (`step()`).
-    pub linear_damping: Fix128,
-    /// Per-body angular damping factor (1.0 = no damping, 0.0 = full damping)
-    /// Multiplied with the global damping, applied once per frame (`step()`).
-    pub angular_damping: Fix128,
+    /// Per-body linear damping rate in 1/s (0 = none): added to the world's
+    /// [`SolverConfig::damping_rate`], the velocity is multiplied by
+    /// `exp(−(c_world + c_body)·dt)` once per `step(dt)`, so the loss over a
+    /// second is the same at every step size.
+    pub linear_damping_rate: Fix128,
+    /// Per-body angular damping rate in 1/s (0 = none), applied as the linear
+    /// one to the angular velocity.
+    pub angular_damping_rate: Fix128,
     /// Whether this body is a sensor/trigger (detects overlap but no physics response)
     pub is_sensor: bool,
     /// Body type (Dynamic, Static, Kinematic)
@@ -288,8 +290,8 @@ impl RigidBody {
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ONE,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Dynamic,
             kinematic_target: None,
@@ -318,8 +320,8 @@ impl RigidBody {
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Static,
             kinematic_target: None,
@@ -341,8 +343,8 @@ impl RigidBody {
             restitution: Fix128::ZERO,
             friction: Fix128::ZERO,
             gravity_scale: Fix128::ZERO,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: true,
             body_type: BodyType::Static,
             kinematic_target: None,
@@ -367,8 +369,8 @@ impl RigidBody {
             restitution: DEFAULT_BODY_RESTITUTION,
             friction: DEFAULT_BODY_FRICTION,
             gravity_scale: Fix128::ZERO,
-            linear_damping: Fix128::ONE,
-            angular_damping: Fix128::ONE,
+            linear_damping_rate: Fix128::ZERO,
+            angular_damping_rate: Fix128::ZERO,
             is_sensor: false,
             body_type: BodyType::Kinematic,
             kinematic_target: None,
@@ -565,19 +567,19 @@ impl RigidBody {
         self.velocity.length()
     }
 
-    /// Set per-body linear damping (1.0 = no extra damping)
+    /// Set the per-body linear damping rate in 1/s (0 = none)
     #[inline]
     #[must_use]
-    pub const fn with_linear_damping(mut self, damping: Fix128) -> Self {
-        self.linear_damping = damping;
+    pub const fn with_linear_damping_rate(mut self, rate: Fix128) -> Self {
+        self.linear_damping_rate = rate;
         self
     }
 
-    /// Set per-body angular damping (1.0 = no extra damping)
+    /// Set the per-body angular damping rate in 1/s (0 = none)
     #[inline]
     #[must_use]
-    pub const fn with_angular_damping(mut self, damping: Fix128) -> Self {
-        self.angular_damping = damping;
+    pub const fn with_angular_damping_rate(mut self, rate: Fix128) -> Self {
+        self.angular_damping_rate = rate;
         self
     }
 
@@ -1248,10 +1250,13 @@ pub struct SolverConfig {
     pub iterations: usize,
     /// Gravity vector
     pub gravity: Vec3Fix,
-    /// Global velocity-retention factor, applied **once per frame** (`step()`),
-    /// independent of `substeps` (1.0 = no damping). Before 1.2.0 it was applied
-    /// per substep, which made the result depend on `substeps`.
-    pub damping: Fix128,
+    /// World damping rate in 1/s (0 = none, the default): every dynamic body's
+    /// linear and angular velocity is multiplied by `exp(−(c_world + c_body)·dt)`
+    /// once per `step(dt)` (`c_body` its own rate), so the loss over a second
+    /// does not depend on the step size or on `substeps`. Before this it was a
+    /// retention factor per `step()` (default 0.99), so the loss over a second
+    /// depended on the step size.
+    pub damping_rate: Fix128,
     /// **No effect since 1.2.0** (kept for struct compatibility).
     ///
     /// Distance constraints follow standard XPBD (`lambda = 0` at substep
@@ -1289,7 +1294,7 @@ impl Default for SolverConfig {
                 Fix128::from_int(-10), // -10 m/s^2
                 Fix128::ZERO,
             ),
-            damping: Fix128::from_ratio(99, 100), // 0.99 velocity retention
+            damping_rate: Fix128::ZERO,
             warm_start_factor: Fix128::from_ratio(85, 100), // 0.85
             solver_backend: SolverBackend::Xpbd,
         }
@@ -3462,7 +3467,7 @@ impl PhysicsWorld {
         self.park.first_substep = false;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
         self.update_sleep_states();
@@ -4200,7 +4205,7 @@ impl PhysicsWorld {
         // Phase 3.5: Frame-level damping (identical call to `step`; TGS's own
         // per-substep gravity/impulse integration does not apply the global
         // `damping` factor, so this still needs to run here).
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping (identical call to `step`).
         self.islands.update_sleep(&self.bodies);
@@ -4314,7 +4319,7 @@ impl PhysicsWorld {
         self.sdf_contact_substep = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
@@ -4662,8 +4667,18 @@ impl PhysicsWorld {
     /// speed. A precision parameter must not change the physics, so damping
     /// now runs after the substep loop, on the velocities derived by the last
     /// `update_velocities`. Static / kinematic / sleeping bodies are skipped.
-    fn apply_frame_damping(&mut self) {
-        let damping = self.config.damping;
+    fn apply_frame_damping(&mut self, dt: Fix128) {
+        let world = self.config.damping_rate;
+        // `exp(−c·dt)`: exactly 1 for no damping (no rounding of an undamped
+        // body), else the deterministic `Fix128::exp`
+        let factor = |rate: Fix128| {
+            let c = world + rate;
+            if c.is_zero() {
+                Fix128::ONE
+            } else {
+                (-(c * dt)).exp()
+            }
+        };
         let count = self.stage_count();
         for k in 0..count {
             let i = self.stage_body(k);
@@ -4672,8 +4687,8 @@ impl PhysicsWorld {
                 continue;
             }
             let body = &mut self.bodies[i];
-            body.velocity = body.velocity * damping * body.linear_damping;
-            body.angular_velocity = body.angular_velocity * damping * body.angular_damping;
+            body.velocity = body.velocity * factor(body.linear_damping_rate);
+            body.angular_velocity = body.angular_velocity * factor(body.angular_damping_rate);
         }
     }
 
@@ -5570,7 +5585,7 @@ impl PhysicsWorld {
         self.sdf_contact_substep = 0;
 
         // Phase 3.5: Frame-level damping (1.2.0, was per substep)
-        self.apply_frame_damping();
+        self.apply_frame_damping(dt);
 
         // Phase 4: Update sleeping
         self.islands.update_sleep(&self.bodies);
@@ -6292,13 +6307,37 @@ impl PhysicsWorld {
                 .get(i)
                 .and_then(|r| *r)
                 .unwrap_or(default_radius);
+            let shaped = self.body_colliders.get(i).and_then(Option::as_ref);
             for collider in &self.static_colliders {
-                if let Some(contact) = collider.collide_sphere(body.position, radius) {
+                let hit = match shaped {
+                    Some(c) => c.static_contact(body.position, body.rotation, collider),
+                    None => collider.collide_sphere(body.position, radius),
+                };
+                if let Some(contact) = hit {
+                    // How far the body moved into the surface this substep: the
+                    // part of the push-out that cancels it is the body's motion
+                    // and becomes velocity; the rest is overlap it started the
+                    // substep with, and moving `prev_position` with it keeps that
+                    // part from becoming velocity.
+                    let approach = -(body.position - body.prev_position).dot(contact.normal);
                     body.position = body.position + contact.normal * contact.depth;
                     if remove_approach {
                         let vn = body.velocity.dot(contact.normal);
                         if vn < Fix128::ZERO {
                             body.velocity = body.velocity - contact.normal * vn;
+                        }
+                    } else {
+                        let moved = approach.max(Fix128::ZERO).min(contact.depth);
+                        let overlap = contact.depth - moved;
+                        if overlap > Fix128::ZERO {
+                            // the velocity is derived from the change against the
+                            // predicted position when there is one, else against
+                            // `prev_position`: both move with the overlap
+                            let shift = contact.normal * overlap;
+                            body.prev_position = body.prev_position + shift;
+                            if let Some(Some((x, _))) = self.predicted_pose.get_mut(i) {
+                                *x = *x + shift;
+                            }
                         }
                     }
                 }
@@ -8201,7 +8240,7 @@ mod tests {
     fn quiet_world() -> PhysicsWorld {
         let config = SolverConfig {
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..SolverConfig::default()
         };
         PhysicsWorld::new(config)
@@ -9205,12 +9244,13 @@ mod tests {
         let run = |iters: usize| {
             let mut world = quiet_world();
             world.config.gravity = v3(0, -10, 0);
-            world.config.damping = Fix128::ONE;
+            world.config.damping_rate = Fix128::ZERO;
             world.config.substeps = 4;
             world.config.iterations = iters;
             let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
             let b = world.add_body(RigidBody::new_dynamic(v3(0, -1, 0), Fix128::ONE));
-            world.bodies[b].linear_damping = r(9, 10); // settle the oscillation
+            // the loss per step of the former retention 0.9 at dt = 1/60
+            world.bodies[b].linear_damping_rate = -r(9, 10).ln() * Fix128::from_int(60); // settle the oscillation
             let mut c = dc(a, b);
             c.target_distance = Fix128::ONE;
             c.compliance = r(1, 100);
@@ -9746,11 +9786,13 @@ mod tests {
     fn integrate_positions_applies_gravity_damping_and_predicts_position() {
         let mut world = quiet_world();
         world.config.gravity = v3(0, -8, 0);
-        world.config.damping = r(1, 2);
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        world.config.damping_rate = -r(1, 2).ln() * Fix128::from_int(4);
         let i = world.add_body(RigidBody::new_dynamic(v3(1, 1, 1), Fix128::ONE));
         world.bodies[i].velocity = v3(4, 0, 0);
         world.bodies[i].gravity_scale = r(1, 2);
-        world.bodies[i].linear_damping = r(1, 2);
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        world.bodies[i].linear_damping_rate = -r(1, 2).ln() * Fix128::from_int(4);
         let dt = r(1, 4);
 
         world.integrate_positions(dt);
@@ -9768,21 +9810,38 @@ mod tests {
         );
         assert_eq!(b.prev_position, v3(1, 1, 1));
 
-        // frame damping: global 1/2 * per-body 1/2 → (1, -1/4, 0)
-        world.apply_frame_damping();
-        assert_eq!(
-            world.bodies[i].velocity,
-            Vec3Fix::new(Fix128::ONE, -r(1, 4), Fix128::ZERO)
+        // frame damping: rates c = ln2/dt (world) + ln2/dt (body), so the factor
+        // is exp(−2 ln 2) = 1/4 in exact arithmetic → (1, -1/4, 0). Fix128::exp
+        // is not exact (exp(−2 ln 2) = 1/4 · (1 + 4.1e-8) here), so the exact
+        // check is against the factor computed the same way as
+        // `apply_frame_damping` (sum of the rates, times dt, negated, exp)…
+        let v_before = world.bodies[i].velocity;
+        let factor =
+            (-((world.config.damping_rate + world.bodies[i].linear_damping_rate) * dt)).exp();
+        world.apply_frame_damping(dt);
+        assert_eq!(world.bodies[i].velocity, v_before * factor);
+        // …and the factor is within Fix128::exp's documented relative error
+        // (≲ 1e-6, `math::tests::exp_matches_f64_reference`; Fix128::ln of 1/2
+        // adds < 1e-16) of the exact 1/4
+        let rel = ((factor - r(1, 4)) / r(1, 4)).to_f64().abs();
+        assert!(rel < 1e-6, "exp(−2 ln 2) off 1/4 by {rel:e} relative");
+        // so |v − (1, −1/4, 0)| ≤ |v_before| · 1/4 · 1e-6
+        let want = Vec3Fix::new(Fix128::ONE, -r(1, 4), Fix128::ZERO);
+        let off = (world.bodies[i].velocity - want).length().to_f64();
+        assert!(
+            off <= v_before.length().to_f64() * 0.25 * 1e-6,
+            "off {off:e}"
         );
     }
 
     #[test]
     fn integrate_positions_angular_damping_and_rotation_prediction() {
         let mut world = quiet_world();
-        world.config.damping = Fix128::ONE;
+        world.config.damping_rate = Fix128::ZERO;
         let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         world.bodies[i].angular_velocity = v3(0, 0, 2);
-        world.bodies[i].angular_damping = r(1, 2); // frame damping → (0,0,1)
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        world.bodies[i].angular_damping_rate = -r(1, 2).ln() * Fix128::from_int(4); // frame damping → (0,0,1)
         let dt = r(1, 4);
 
         world.integrate_positions(dt);
@@ -9797,14 +9856,27 @@ mod tests {
         assert_eq!(b.rotation, expected);
         assert_eq!(b.prev_rotation, QuatFix::IDENTITY);
         assert!(b.rotation != QuatFix::IDENTITY);
-        world.apply_frame_damping();
-        assert_eq!(world.bodies[i].angular_velocity, v3(0, 0, 1));
+        // rate c = ln2/dt: exp(−ln 2) = 1/2 in exact arithmetic → (0,0,1). Fix128::exp
+        // gives 1/2 · (1 + 4.1e-8), so the exact check is against the factor
+        // computed the same way as `apply_frame_damping`…
+        let factor =
+            (-((world.config.damping_rate + world.bodies[i].angular_damping_rate) * dt)).exp();
+        world.apply_frame_damping(dt);
+        assert_eq!(world.bodies[i].angular_velocity, v3(0, 0, 2) * factor);
+        // …within Fix128::exp's documented relative error (≲ 1e-6) of the exact 1/2,
+        // so ω_z is within 2 · 1/2 · 1e-6 of 1
+        let rel = ((factor - r(1, 2)) / r(1, 2)).to_f64().abs();
+        assert!(rel < 1e-6, "exp(−ln 2) off 1/2 by {rel:e} relative");
+        let off = (world.bodies[i].angular_velocity.z - Fix128::ONE)
+            .to_f64()
+            .abs();
+        assert!(off <= 1e-6, "ω_z off 1 by {off:e}");
     }
 
     #[test]
     fn apply_frame_damping_skips_static_kinematic_and_sleeping() {
         let mut world = quiet_world();
-        world.config.damping = r(1, 2);
+        world.config.damping_rate = Fix128::ONE;
         let st = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
         let mut kin = RigidBody::new_static(Vec3Fix::ZERO);
         kin.body_type = BodyType::Kinematic;
@@ -9814,11 +9886,19 @@ mod tests {
             world.bodies[i].velocity = v3(2, 0, 0);
             world.bodies[i].angular_velocity = v3(0, 4, 0);
         }
-        world.apply_frame_damping();
+        // one step of 1 s at rate 1/s: the dynamic body keeps e^-1 of each
+        // velocity, the static and kinematic bodies are not touched
+        let dt = Fix128::ONE;
+        world.apply_frame_damping(dt);
+        let keep = (-(world.config.damping_rate * dt)).exp();
         assert_eq!(world.bodies[st].velocity, v3(2, 0, 0));
         assert_eq!(world.bodies[ki].velocity, v3(2, 0, 0));
-        assert_eq!(world.bodies[dy].velocity, v3(1, 0, 0));
-        assert_eq!(world.bodies[dy].angular_velocity, v3(0, 2, 0));
+        assert_eq!(world.bodies[dy].velocity, v3(2, 0, 0) * keep);
+        assert_eq!(world.bodies[dy].angular_velocity, v3(0, 4, 0) * keep);
+        assert!(
+            (keep.to_f64() - 0.367_879_441_171_442_3).abs() < 1e-6,
+            "e^-1"
+        );
     }
 
     #[test]
@@ -9828,7 +9908,7 @@ mod tests {
         let fall = |substeps: usize| {
             let mut world = quiet_world();
             world.config.gravity = v3(0, -10, 0);
-            world.config.damping = Fix128::ONE;
+            world.config.damping_rate = Fix128::ZERO;
             world.config.substeps = substeps;
             let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
             for _ in 0..60 {
@@ -9890,7 +9970,7 @@ mod tests {
         // 半陰的 Euler: v_k = -8 * k/4、x_k = x_{k-1} + v_k/4 → 1 step 後 v = -8、x = -(2+4+6+8)/4 = -5
         let mut world = quiet_world();
         world.config.gravity = v3(0, -8, 0);
-        world.config.damping = Fix128::ONE;
+        world.config.damping_rate = Fix128::ZERO;
         world.config.substeps = 4;
         world.config.iterations = 1;
         let i = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
@@ -9902,7 +9982,7 @@ mod tests {
         // substeps 1 なら x = -8 (1 回で落ちる)
         let mut single = quiet_world();
         single.config.gravity = v3(0, -8, 0);
-        single.config.damping = Fix128::ONE;
+        single.config.damping_rate = Fix128::ZERO;
         single.config.substeps = 1;
         let j = single.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         single.step(Fix128::ONE);
@@ -10057,12 +10137,19 @@ mod tests {
 
     #[test]
     fn with_angular_damping_is_stored_and_applied_once_per_frame_by_step() {
-        let body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_angular_damping(r(1, 2));
-        assert_eq!(body.angular_damping, r(1, 2));
-        assert_eq!(body.linear_damping, Fix128::ONE);
+        // the loss per step of the former retention 1/2 at dt = 1/4
+        let rate = -r(1, 2).ln() * Fix128::from_int(4);
+        let body =
+            RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE).with_angular_damping_rate(rate);
+        assert_eq!(body.angular_damping_rate, rate);
+        assert_eq!(body.linear_damping_rate, Fix128::ZERO);
 
-        // substeps を変えても damping は frame 毎に 1 回だけ: ω_damped == ω_undamped * 1 * 1/2
-        // (substep 毎なら substeps=4 で 1/16 になる)
+        // substeps を変えても damping は frame 毎に 1 回だけ: ω_damped == ω_undamped * exp(−c·dt)
+        // (c·dt = ln 2、厳密には 1/2; substep 毎なら substeps=4 で 1/16 になる)
+        // Fix128::exp は exp(−ln 2) = 1/2 · (1 + 4.1e-8) を返すので、bit 一致は
+        // step と同じ計算 (world rate + body rate、× dt、符号反転、exp) の係数と取る
+        let dt = r(1, 4);
+        let factor = (-((quiet_world().config.damping_rate + rate) * dt)).exp();
         for substeps in [1usize, 4] {
             let mut undamped = quiet_world();
             undamped.config.substeps = substeps;
@@ -10076,14 +10163,14 @@ mod tests {
             let d = damped.add_body(
                 RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE)
                     .with_velocity(v3(3, 0, 0))
-                    .with_angular_damping(r(1, 2)),
+                    .with_angular_damping_rate(rate),
             );
             damped.bodies[d].set_angular_velocity(v3(0, 0, 2));
 
-            undamped.step(r(1, 4));
-            damped.step(r(1, 4));
+            undamped.step(dt);
+            damped.step(dt);
 
-            let expected = undamped.bodies[u].angular_velocity * Fix128::ONE * r(1, 2);
+            let expected = undamped.bodies[u].angular_velocity * factor;
             assert_eq!(
                 damped.bodies[d].angular_velocity, expected,
                 "substeps {substeps}"
@@ -10093,10 +10180,13 @@ mod tests {
                 damped.bodies[d].velocity, undamped.bodies[u].velocity,
                 "substeps {substeps}"
             );
+            // 厳密な 1/2 との差は Fix128::exp の相対誤差 (≲ 1e-6、
+            // `math::tests::exp_matches_f64_reference`) と f64 除算の丸め (≲ 1e-16) で抑えられる:
+            // |ratio − 1/2| ≤ 1/2 · 1e-6 (per-substep なら 1/16 で 0.44 離れる)
             let ratio = damped.bodies[d].angular_velocity.z.to_f64()
                 / undamped.bodies[u].angular_velocity.z.to_f64();
             assert!(
-                (ratio - 0.5).abs() < 1e-9,
+                (ratio - 0.5).abs() < 0.5e-6,
                 "substeps {substeps}: ratio {ratio}"
             );
         }
@@ -11290,7 +11380,7 @@ mod tests {
             for fail in [false, true] {
                 let mut world = PhysicsWorld::new(SolverConfig {
                     gravity: Vec3Fix::ZERO,
-                    damping: Fix128::ONE,
+                    damping_rate: Fix128::ZERO,
                     solver_backend: SolverBackend::Tgs,
                     ..Default::default()
                 });

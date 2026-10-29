@@ -62,7 +62,7 @@ fn bits(v: Vec3Fix) -> [(i64, u64); 3] {
 fn bare_world(backend: SolverBackend, substeps: usize) -> PhysicsWorld {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         iterations: 3,
         solver_backend: backend,

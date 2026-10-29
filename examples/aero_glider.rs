@@ -90,7 +90,7 @@ fn main() {
     let gamma = (cd_ref / cl_ref).atan();
     let mass = 2.0_f64;
     let config = SolverConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..SolverConfig::default()
     };
     let g = -config.gravity.y.to_f64();

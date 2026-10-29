@@ -123,7 +123,7 @@ fn free_fall_matches_semi_implicit_euler_exactly_on_both_backends() {
         // `semi_implicit_euler_free_fall`'s loop one-for-one.
         let cfg = PhysicsConfig {
             gravity: Vec3Fix::new(Fix128::ZERO, g, Fix128::ZERO),
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             substeps: 1,
             solver_backend: backend,
             ..PhysicsConfig::default()
@@ -194,10 +194,12 @@ fn single_free_body_with_no_contacts_still_falls_under_tgs() {
 /// calling `step`.
 #[test]
 fn tgs_frame_damping_is_applied_exactly_once_per_step() {
-    let damping = r(99, 100);
+    // the loss per step of the former retention 0.99 at dt = 1/60
+    let damping_rate = -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60);
+    let damping = (-(damping_rate * r(1, 60))).exp();
     let cfg = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping,
+        damping_rate,
         substeps: 4,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()
@@ -366,7 +368,7 @@ fn tgs_joint_scene_keeps_the_orbiter_near_target_distance() {
     let dt = r(1, 60);
     let (mut w, anchor, orbiter) = joint_scene(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()
@@ -402,7 +404,7 @@ fn xpbd_joint_scene_keeps_the_orbiter_near_target_distance() {
     let dt = r(1, 60);
     let (mut w, anchor, orbiter) = joint_scene(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         solver_backend: SolverBackend::Xpbd,
         ..PhysicsConfig::default()
@@ -433,7 +435,7 @@ fn tgs_joint_already_at_target_distance_with_zero_velocity_stays_bit_exact() {
     let dt = r(1, 60);
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: 8,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()
@@ -479,7 +481,7 @@ fn tgs_joint_starting_violated_with_zero_velocity_is_corrected_by_position_pass(
     let dt = r(1, 60);
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: 8,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()
@@ -528,7 +530,7 @@ fn tgs_joint_with_coincident_anchors_does_not_panic() {
     let dt = r(1, 60);
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::from_int(0, -10, 0),
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: 8,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()
@@ -738,7 +740,7 @@ fn tgs_body_falling_onto_sdf_ground_is_stopped_near_the_surface() {
     let dt = r(1, 60);
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::from_int(0, -10, 0),
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: 8,
         solver_backend: SolverBackend::Tgs,
         ..PhysicsConfig::default()

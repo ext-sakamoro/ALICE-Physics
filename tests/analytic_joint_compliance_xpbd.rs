@@ -31,6 +31,7 @@ use alice_physics_core::joint::solve_joints_breakable;
 use alice_physics_core::joint::{solve_joints, BallJoint, FixedJoint, HingeJoint, Joint};
 use alice_physics_core::joint_extra::{solve_extra_joints, ExtraJoint, WeldJoint};
 use alice_physics_core::math::{Fix128, QuatFix, Vec3Fix};
+use alice_physics_core::sleeping::SleepConfig;
 use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 
 const G: f64 = 10.0;
@@ -68,10 +69,21 @@ fn hanging(kind: Kind, substeps: usize, iterations: usize) -> (PhysicsWorld, usi
         gravity: v3(0.0, -G, 0.0),
         ..SolverConfig::default()
     });
+    // Sleep off: the rest-state oracle is about the XPBD law, not the sleep
+    // rule. With `SleepConfig::default()` the body is frozen once `|v|` stays
+    // below 0.01 m/s for 60 frames, i.e. while it may still oscillate with an
+    // amplitude up to `v / ω = 0.01 / √(1/α) ≈ 3.2e-4 m`, 3.2 % of `F·α`, so
+    // the frozen point depends on where in the decay the body fell asleep
+    // (measured: 0.93 % off at 4 substeps), not on the compliance.
+    w.set_sleep_config(SleepConfig {
+        frames_to_sleep: u32::MAX,
+        ..SleepConfig::default()
+    });
     let a = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));
     let b = w.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
     // settle the oscillation; damping has no effect on the rest state (v = 0)
-    w.bodies[b].linear_damping = fx(0.9);
+    // the loss per step of the former retention 0.9 at dt = 1/60
+    w.bodies[b].linear_damping_rate = fx(-(0.9f64).ln() / (1.0 / 60.0));
     let joint = match kind {
         Kind::Ball => Joint::Ball(
             BallJoint::new(a, b, Vec3Fix::ZERO, Vec3Fix::ZERO).with_compliance(fx(ALPHA)),
@@ -120,9 +132,14 @@ fn compliant_joint_stretch_is_iteration_independent_and_equals_f_alpha() {
                     "{kind:?} substeps {substeps}: iterations {iterations} differs from 1"
                 );
             }
-            // Budget: after 10 s the residual of the decaying oscillation is
-            // below 0.1 % of F·α at 4 and 8 substeps (measured 2.3e-4 and
-            // 7.5e-4 relative). With 1 substep the default frame damping
+            // Budget: the discrete XPBD fixed point is exactly F·α (gravity
+            // adds `g h²` per substep, the compliant row removes
+            // `C / (1 + α̃)` with `α̃ = α / h²`, balanced at `C = g α`), and
+            // the oscillation (ω = √(1/α) ≈ 31.6 rad/s) decays with the body's
+            // rate `c = −ln(0.9)·60 ≈ 6.3 /s` as `e^{−c t/2}` ≈ 2e-14 after
+            // 10 s, so the residual is far below the 0.1 % tolerance at 4
+            // and 8 substeps (measured < 1e-15 relative with sleep off). With
+            // 1 substep the default frame damping
             // removes part of each substep's gravity velocity, which shifts
             // the rest point; that case is pinned only for independence.
             if substeps > 1 {

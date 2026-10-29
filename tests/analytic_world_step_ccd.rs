@@ -32,14 +32,41 @@ use alice_physics_core::trimesh::TriMesh;
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, WorldCcdConfig};
 use sha2::{Digest, Sha256};
 
-/// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
-/// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
+/// The step `tests/fixtures/world_snapshot_v{1,2}_stacked.bin` were written
+/// with: the scene was stepped by 1/60 s, and damping, then a velocity
+/// retention per `step()` call, was applied once per step of that width.
+fn writer_step() -> Fix128 {
+    Fix128::from_ratio(1, 60)
+}
+
+/// The world damping rate the fixtures' retention 0.99 per step of 1/60 s
+/// is: `e^(−c·dt) = r`, so `c = −ln(0.99)·60`.
+fn writer_rate() -> Fix128 {
+    -Fix128::from_ratio(99, 100).ln() / writer_step()
+}
+
+/// A version 1 to 3 blob of the build where damping was a retention per
+/// step (0.99 in the world, 1 = none in every body). Without the step it is
+/// refused, naming that retention; `restore_world_legacy_damping` with the
+/// writer's step reads it as legacy data with no identifiers (`Unpinned`,
+/// ALICE-Law G8), the retention converted to the rate −ln(0.99)/step
+/// (checked against −ln(0.99)·60 = 0.60302015121…, computed apart).
 fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(alice_physics_core::solver::PhysicsConfig::default());
     assert_eq!(
         world.restore_world_checked(blob, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
+        Err(
+            alice_physics_core::WorldSnapshotError::LegacyDampingNeedsStep {
+                retention: Fix128::from_ratio(99, 100)
+            }
+        )
+    );
+    assert_eq!(
+        world.restore_world_legacy_damping(blob, writer_step()),
         Ok(alice_physics_core::LawCheck::Unpinned)
     );
+    let want = 0.603_020_151_210_086_5; // −ln(0.99)·60, closed form
+    assert!((world.config.damping_rate.to_f64() - want).abs() < 1e-12);
     world
 }
 
@@ -83,7 +110,7 @@ fn bare(ccd: bool) -> PhysicsWorld {
     let config = PhysicsConfig {
         substeps: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut w = PhysicsWorld::new(config);
@@ -917,7 +944,10 @@ fn crowd_hash(parallel: bool) -> String {
 
 /// The `serialize_state` of [`crowd`] after 60 steps, recorded once: the same
 /// with and without `--features parallel`, with `step` and `step_parallel`.
-const GOLDEN_CROWD: &str = "89174ad11a5f97b3903204c827be2f7f17f8966dae90436af74b47742ed0e943";
+/// Re-recorded (from `89174ad1…`) when damping became a rate per second with
+/// default 0 (the scene's default config had damped every body by a retention
+/// 0.99 per step).
+const GOLDEN_CROWD: &str = "20919b007c36afc242d04aac6b6c92a18eff0828d8c26518c97ef231633fc5cc";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {
@@ -967,8 +997,16 @@ fn stacked() -> PhysicsWorld {
 }
 
 /// A version 1 or 2 blob has no continuous collision section: it is read as
-/// the setting off, and the restored world is the world it was taken from,
-/// byte for byte, now and after 60 more steps.
+/// the setting off, and the restored world (read with the writer's step, its
+/// damping retention 0.99 per step becoming the rate −ln(0.99)·60) is the
+/// world it was taken from with that rate, byte for byte, now and after 60
+/// more steps of both under today's engine.
+///
+/// Both sides of the comparison step under today's semantics from the same
+/// state, so they agree bit for bit; neither is compared with what the
+/// writer's build would have stepped to, which no longer holds (the stepping
+/// semantics changed with the damping law, so a restored old blob is a new
+/// starting state, not a continuation of the old run).
 #[test]
 fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
     let fixtures: [(&str, &[u8]); 2] = [
@@ -989,6 +1027,7 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
             "{name}"
         );
         let mut original = stacked();
+        original.config.damping_rate = writer_rate();
         assert_eq!(
             restored.snapshot_world(),
             original.snapshot_world(),
@@ -1011,7 +1050,7 @@ fn old_snapshots_read_as_off_and_match_the_world_they_came_from() {
     }
 }
 
-/// A version 5 blob carries the setting (its section was added in version
+/// A version 6 blob carries the setting (its section was added in version
 /// 3): a branch restored mid-flight keeps
 /// sweeping and stays bit-identical to the original.
 #[test]
@@ -1021,9 +1060,9 @@ fn snapshot_carries_the_setting() {
     w.set_continuous_collision(config);
     w.step(Fix128::from_ratio(1, 60));
     let blob = w.snapshot_world();
-    // version 5 (the panic fault code); the layout is version 4's
-    assert_eq!(&blob[4..6], &5u16.to_le_bytes());
-    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v5 blob");
+    // version 6 (damping as rates per second); the layout is version 4's
+    assert_eq!(&blob[4..6], &6u16.to_le_bytes());
+    let mut branch = PhysicsWorld::from_world_snapshot(&blob).expect("v6 blob");
     assert_eq!(branch.continuous_collision(), config);
     for _ in 0..20 {
         w.step(Fix128::from_ratio(1, 60));

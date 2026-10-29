@@ -253,7 +253,7 @@ fn lidar_with_an_empty_grid_scans_nothing() {
 fn undamped(gravity: Vec3Fix) -> PhysicsWorld {
     PhysicsWorld::new(SolverConfig {
         gravity,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..SolverConfig::default()
     })
 }

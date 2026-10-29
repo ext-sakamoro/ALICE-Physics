@@ -135,7 +135,7 @@ axis = "dynamics"
 item = "linear and angular damping"
 source = "Bullet btRigidBody damping; PhysX linearDamping / angularDamping"
 status = "implemented+oracle"
-evidence = "tests/analytic_physics.rs::terminal_velocity_under_frame_damping_matches_closed_form tests/analytic_world_api.rs::with_angular_damping_scales_frame_end_angular_velocity"
+evidence = "tests/analytic_physics.rs::terminal_velocity_under_frame_damping_matches_closed_form tests/analytic_world_api.rs::with_angular_damping_rate_scales_frame_end_angular_velocity tests/analytic_damping_rate.rs::a_world_rate_loses_the_same_share_per_second_at_every_step_size"
 oracle_candidate = ""
 limitation = ""
 

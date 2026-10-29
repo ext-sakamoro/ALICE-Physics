@@ -121,7 +121,7 @@ impl Laws {
             substeps: 5,
             iterations: 7,
             gravity: v3(1, -3, 2),
-            damping: fx(97, 100),
+            damping_rate: fx(3, 2),
             solver_backend: SolverBackend::Tgs,
             warm_start_factor: fx(1, 3),
         };
@@ -304,7 +304,7 @@ fn spec_bytes(laws: &Laws, semantics: &[u8; 32]) -> Vec<u8> {
     s.u64(c.substeps as u64);
     s.u64(c.iterations as u64);
     s.vec3(c.gravity);
-    s.fix(c.damping);
+    s.fix(c.damping_rate);
     s.bytes(match c.solver_backend {
         SolverBackend::Xpbd => b"xpbd",
         SolverBackend::Tgs => b"tgs",
@@ -620,8 +620,11 @@ fn a_world_that_sets_every_covered_field_is_encoded_as_documented() {
 /// identifier so that it pins the encoding alone: it moves when the encoding
 /// or a default of a covered field moves, not when `PHYSICS_SEMANTICS_ID`
 /// does (that path is covered by `the_default_world_is_encoded_as_documented`).
+/// Re-pinned (from `95e0102b…`) when the world damping field became a rate
+/// per second with default 0, where it had been a retention per step with
+/// default 0.99: a default of a covered field moved.
 const GOLDEN_DEFAULT_LAW_ID: &str =
-    "95e0102b9a68da440561011710aad4983b68edb8ad7f338b7f8da6da1aad53f1";
+    "b6e7575203a211bb33c37d9e2e133f148b9a52035ef9dc8ac2a4ef8b2a51a55a";
 
 #[test]
 fn golden_default_world_law_id() {
@@ -654,7 +657,7 @@ fn every_covered_field_moves_the_law_id() {
         ("substeps", Box::new(|w| w.config.substeps += 1)),
         ("iterations", Box::new(|w| w.config.iterations += 1)),
         ("gravity", Box::new(|w| w.config.gravity.x = Fix128::ONE)),
-        ("damping", Box::new(|w| w.config.damping = Fix128::ONE)),
+        ("damping", Box::new(|w| w.config.damping_rate = Fix128::ONE)),
         (
             "backend",
             Box::new(|w| w.config.solver_backend = SolverBackend::Tgs),

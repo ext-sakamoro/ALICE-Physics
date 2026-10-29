@@ -77,10 +77,48 @@ fn payload_len(b: &[u8]) -> usize {
 
 /// The version 3 form of a version 4 blob: the same payload behind the
 /// 16-byte header (no identifiers).
-fn as_version_3(v4: &[u8]) -> Vec<u8> {
-    let mut out = v4[..SEMANTICS_AT].to_vec();
+/// The version 3 form of the blob of `make()` (which must hold damping rate
+/// 0 everywhere): the same payload under a 16-byte header, with every
+/// damping slot (the config's and each body's linear and angular one)
+/// holding the retention 1 per step (no damping) that a version 1 to 5
+/// writer stored where version 6 stores the rate 0.
+///
+/// The slots are found by writing the same world with a sentinel rate in
+/// each and taking the offsets where the sentinel's bytes appear; their
+/// count is checked, so a slot the writer moves or adds cannot be missed.
+fn as_version_3(make: fn() -> PhysicsWorld) -> Vec<u8> {
+    let fix = |x: Fix128| {
+        let mut b = x.hi.to_le_bytes().to_vec();
+        b.extend_from_slice(&x.lo.to_le_bytes());
+        b
+    };
+    let v6 = make().snapshot_world();
+    let mut marked = make();
+    let sentinel = Fix128::from_ratio(987_654_321, 1_000_003);
+    marked.config.damping_rate = sentinel;
+    for b in &mut marked.bodies {
+        b.linear_damping_rate = sentinel;
+        b.angular_damping_rate = sentinel;
+    }
+    let slots = 1 + 2 * marked.bodies.len();
+    let marked = marked.snapshot_world();
+    assert_eq!(marked.len(), v6.len());
+    let (needle, one) = (fix(sentinel), fix(Fix128::ONE));
+    let mut payload = v6[PAYLOAD_AT..v6.len() - CHECKSUM].to_vec();
+    let hits: Vec<usize> = marked[PAYLOAD_AT..marked.len() - CHECKSUM]
+        .windows(16)
+        .enumerate()
+        .filter(|(_, w)| *w == needle.as_slice())
+        .map(|(i, _)| i)
+        .collect();
+    assert_eq!(hits.len(), slots, "damping slots found: {hits:?}");
+    for at in hits {
+        assert_eq!(payload[at..at + 16], fix(Fix128::ZERO)[..], "rate 0");
+        payload[at..at + 16].copy_from_slice(&one);
+    }
+    let mut out = v6[..SEMANTICS_AT].to_vec();
     out[VERSION_AT..VERSION_AT + 2].copy_from_slice(&3u16.to_le_bytes());
-    out.extend_from_slice(&v4[PAYLOAD_AT..v4.len() - CHECKSUM]);
+    out.extend_from_slice(&payload);
     out.extend_from_slice(&[0; CHECKSUM]);
     reseal(out)
 }
@@ -111,13 +149,14 @@ fn checked(
     r
 }
 
-/// Version 5 keeps the layout of version 4 (it adds the panic fault codes).
+/// Version 6 keeps the layout of version 4 (version 5 added the panic fault
+/// codes, version 6 stores damping as rates per second).
 #[test]
-fn the_writer_emits_version_5() {
-    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 5);
+fn the_writer_emits_version_6() {
+    assert_eq!(PhysicsWorld::WORLD_SNAPSHOT_VERSION, 6);
     let b = scene().snapshot_world();
     assert_eq!(&b[..MAGIC_END], b"APWS");
-    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &5u16.to_le_bytes());
+    assert_eq!(&b[VERSION_AT..VERSION_AT + 2], &6u16.to_le_bytes());
 }
 
 /// The header holds `PHYSICS_SEMANTICS_ID` at `[16..48)` and the world's
@@ -279,20 +318,37 @@ fn a_foreign_semantics_id_is_refused() {
 /// `LegacyPolicy::AcceptUnpinned` they are read and reported as `Unpinned`,
 /// whether or not an identifier is expected (it cannot be compared), and
 /// `restore_world`, which reports no status, refuses them (ALICE-Law G8).
+///
+/// Damping in these versions is a retention per step. The version 3 form of
+/// an undamped world (retention 1) is read by `restore_world_checked` as
+/// rate 0 and refused by `restore_world` as `Unpinned`. The version 1 and 2
+/// fixtures hold the world retention 0.99 per step, which has no rate
+/// without the step it was applied per: every reader without a step refuses
+/// them naming that retention (so `restore_world` still refuses them, now
+/// before the identifier check), and `restore_world_legacy_damping` with the
+/// writer's step (`dt()`, the fixtures' scene was stepped by 1/60 s) reads
+/// them as `Unpinned`.
 #[test]
 fn older_versions_are_accepted_as_unpinned() {
     let v1: &[u8] = include_bytes!("fixtures/world_snapshot_v1_stacked.bin");
     let v2: &[u8] = include_bytes!("fixtures/world_snapshot_v2_stacked.bin");
     let a = scene();
-    let v3 = as_version_3(&a.snapshot_world());
+    let v3 = as_version_3(scene);
     let some = a.law_id(&PHYSICS_SEMANTICS_ID);
-    for (version, blob) in [(1u16, v1), (2, v2), (3, &v3[..])] {
+    let damped = WorldSnapshotError::LegacyDampingNeedsStep {
+        retention: Fix128::from_ratio(99, 100),
+    };
+    for (version, blob, read) in [
+        (1u16, v1, Err(damped)),
+        (2, v2, Err(damped)),
+        (3, &v3[..], Ok(LawCheck::Unpinned)),
+    ] {
         assert_eq!(&blob[VERSION_AT..VERSION_AT + 2], &version.to_le_bytes());
         for expected in [None, Some(&some), Some(&[0xAB; 32])] {
             let mut t = PhysicsWorld::new(PhysicsConfig::default());
             assert_eq!(
                 checked(&mut t, blob, expected),
-                Ok(LawCheck::Unpinned),
+                read,
                 "version {version}, {expected:?}"
             );
         }
@@ -300,7 +356,7 @@ fn older_versions_are_accepted_as_unpinned() {
         let before = t.snapshot_world();
         assert_eq!(
             t.restore_world(blob),
-            Err(alice_physics_core::solver::WorldSnapshotError::Unpinned),
+            Err(read.err().unwrap_or(WorldSnapshotError::Unpinned)),
             "version {version}"
         );
         assert_eq!(
@@ -308,8 +364,14 @@ fn older_versions_are_accepted_as_unpinned() {
             before,
             "version {version}: a refused blob changed the target"
         );
+        let mut t = PhysicsWorld::new(PhysicsConfig::default());
+        assert_eq!(
+            t.restore_world_legacy_damping(blob, dt()),
+            Ok(LawCheck::Unpinned),
+            "version {version}"
+        );
     }
-    // the version 3 form holds the same world as the version 4 blob
+    // the version 3 form holds the same world as the version 6 blob
     let mut b = PhysicsWorld::new(PhysicsConfig::default());
     assert_eq!(checked(&mut b, &v3, None), Ok(LawCheck::Unpinned));
     assert_eq!(b.snapshot_world(), a.snapshot_world());

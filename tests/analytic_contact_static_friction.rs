@@ -12,8 +12,15 @@
 //! * a body that cannot rotate, pressed on level ground by `g_n` and pulled
 //!   along it by `a_t` per unit mass, with friction `μ`: it stays at rest if
 //!   `a_t < μ g_n`, otherwise it accelerates at `a = a_t − μ g_n`, and with
-//!   the frame damping (`β = −ln(d) / dt`) from rest
-//!   `x(t) = (a/β) t − (a/β²)(1 − e^{−βt})`;
+//!   the frame damping (`β = −ln(d) / dt`, `d = exp(−c·dt)` the engine's
+//!   `Fix128` per-step factor for the damping rate `c`, so `Fix128::exp`'s
+//!   error does not enter) from rest
+//!   `x(t) = (a/β) t − (a/β²)(1 − e^{−βt}) = a t² φ₂(βt)` with
+//!   `φ₂(z) = (z − 1 + e^{−z})/z²`, `φ₂(0) = 1/2`, so the undamped limit is
+//!   exactly `a t²/2` (`tests/support/damped_limits.rs` derives the series
+//!   threshold). The damping-dependent oracles run at `c = 0` (the default)
+//!   and at `c = −ln(0.99)·60` (the old per-step retention 0.99 at
+//!   `dt = 1/60` as a rate);
 //! * a slope of angle `θ` is the same problem with `g_n = g cos θ` and
 //!   `a_t = g sin θ` (the gravity is tilted against a level ground);
 //! * a horizontal push `F` on level ground is the same problem with
@@ -33,6 +40,10 @@
 use alice_physics_core::collider::Contact;
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{both_rates, damped_displacement, engine_beta};
 
 const DT: f64 = 1.0 / 60.0;
 const FRAMES: usize = 60;
@@ -64,14 +75,9 @@ fn paths() -> Vec<Path> {
     }
 }
 
-/// Gravity magnitude and frame-damping rate of `PhysicsConfig::default()`.
-fn g_and_beta() -> (f64, f64) {
-    let d = PhysicsConfig::default();
-    (-d.gravity.y.to_f64(), -(d.damping.to_f64()).ln() / DT)
-}
-
-fn damped_displacement(a: f64, beta: f64, t: f64) -> f64 {
-    (a / beta) * t - (a / (beta * beta)) * (1.0 - (-beta * t).exp())
+/// Gravity magnitude of `PhysicsConfig::default()`.
+fn g() -> f64 {
+    -PhysicsConfig::default().gravity.y.to_f64()
 }
 
 /// Sets every contact's friction to an absolute value.
@@ -101,11 +107,19 @@ enum Filter {
 /// A ball of radius `0.5` that cannot rotate, resting at rest on a large
 /// static sphere whose top is the plane `y = 0` (radius `1e4`), both with a
 /// material of friction `mu` and restitution `0`. The gravity is
-/// `(a_t, −g_n, 0)`. Returns the ball's position and velocity after one
-/// second.
-fn run(mu: f64, a_t: f64, g_n: f64, filter: Filter, path: Path) -> (Vec3Fix, Vec3Fix) {
+/// `(a_t, −g_n, 0)`, the world damping rate `rate`. Returns the ball's
+/// position and velocity after one second.
+fn run(
+    mu: f64,
+    a_t: f64,
+    g_n: f64,
+    rate: Fix128,
+    filter: Filter,
+    path: Path,
+) -> (Vec3Fix, Vec3Fix) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: v3(a_t, -g_n, 0.0),
+        damping_rate: rate,
         ..PhysicsConfig::default()
     });
     let big = 1.0e4;
@@ -160,10 +174,17 @@ const HOLD_TOL: f64 = 1e-12;
 /// On a slope with `tan θ = 0.3 < μ = 0.5` the ball stays put.
 #[test]
 fn a_ball_on_a_slope_below_the_friction_angle_stays_put() {
-    let (g, _) = g_and_beta();
+    let g = g();
     let theta = 0.3f64.atan();
     for path in paths() {
-        let (p, v) = run(0.5, g * theta.sin(), g * theta.cos(), Filter::None, path);
+        let (p, v) = run(
+            0.5,
+            g * theta.sin(),
+            g * theta.cos(),
+            Fix128::ZERO,
+            Filter::None,
+            path,
+        );
         let x = p.x.to_f64();
         println!("{path:?}: slope hold x = {x:.3e}");
         assert!(
@@ -176,74 +197,86 @@ fn a_ball_on_a_slope_below_the_friction_angle_stays_put() {
 
 /// A horizontal push of `0.8 μ m g` leaves the ball at rest; a push of
 /// `1.2 μ m g` makes it slide at `a = F/m − μ g` (`x(1 s) ≈ 0.41 m`,
-/// tolerance [`slide_tol`] `≈ 2.5e-2 m`).
+/// tolerance [`slide_tol`] `≈ 2.5e-2 m`), at damping rate 0 and at the old
+/// 0.99-per-step loss as a rate.
 #[test]
 fn a_push_below_mu_m_g_holds_and_above_it_slides() {
-    let (g, beta) = g_and_beta();
+    let g = g();
     let mu = 0.5;
-    for path in paths() {
-        let (p, v) = run(mu, 0.8 * mu * g, g, Filter::None, path);
-        assert!(
-            p.x.to_f64().abs() < HOLD_TOL && v.x.to_f64().abs() < HOLD_TOL,
-            "{path:?}: push 0.8 μ m g moved the ball to x = {:.3e}",
-            p.x.to_f64()
-        );
-        let want = damped_displacement(0.2 * mu * g, beta, 1.0);
-        let tol = slide_tol(mu, g, 0.2 * mu * g, 1.0);
-        let (p, _) = run(mu, 1.2 * mu * g, g, Filter::None, path);
-        let x = p.x.to_f64();
-        assert!(
-            (x - want).abs() < tol,
-            "{path:?}: push 1.2 μ m g: x = {x:.5}, closed form {want:.5}"
-        );
+    for rate in both_rates() {
+        for path in paths() {
+            let (p, v) = run(mu, 0.8 * mu * g, g, rate, Filter::None, path);
+            assert!(
+                p.x.to_f64().abs() < HOLD_TOL && v.x.to_f64().abs() < HOLD_TOL,
+                "{path:?} rate {rate:?}: push 0.8 μ m g moved the ball to x = {:.3e}",
+                p.x.to_f64()
+            );
+            let want = damped_displacement(0.2 * mu * g, engine_beta(rate, DT), 1.0);
+            let tol = slide_tol(mu, g, 0.2 * mu * g, 1.0);
+            let (p, _) = run(mu, 1.2 * mu * g, g, rate, Filter::None, path);
+            let x = p.x.to_f64();
+            assert!(
+                (x - want).abs() < tol,
+                "{path:?} rate {rate:?}: push 1.2 μ m g: x = {x:.5}, closed form {want:.5}"
+            );
+        }
     }
 }
 
 /// The static friction uses the modifier's friction: a modifier `μ = 0.5`
 /// over a material `μ = 0.1` holds the ball on the `tan θ = 0.3` slope, and
 /// a modifier `μ = 0.1` over a material `μ = 0.5` lets it slide at
-/// `a = g (sin θ − 0.1 cos θ)` (tolerance [`slide_tol`]).
+/// `a = g (sin θ − 0.1 cos θ)` (tolerance [`slide_tol`]), at both rates.
 #[test]
 fn the_static_friction_uses_the_modified_friction() {
-    let (g, beta) = g_and_beta();
+    let g = g();
     let theta = 0.3f64.atan();
     let (a_t, g_n) = (g * theta.sin(), g * theta.cos());
-    for path in paths() {
-        let (p, _) = run(0.1, a_t, g_n, Filter::Friction(0.5), path);
-        assert!(
-            p.x.to_f64().abs() < HOLD_TOL,
-            "{path:?}: modifier μ 0.5: x = {:.3e}",
-            p.x.to_f64()
-        );
-        let want = damped_displacement(a_t - 0.1 * g_n, beta, 1.0);
-        let tol = slide_tol(0.1, g_n, a_t - 0.1 * g_n, 1.0);
-        let (p, _) = run(0.5, a_t, g_n, Filter::Friction(0.1), path);
-        let x = p.x.to_f64();
-        assert!(
-            (x - want).abs() < tol,
-            "{path:?}: modifier μ 0.1: x = {x:.5}, closed form {want:.5}"
-        );
+    for rate in both_rates() {
+        for path in paths() {
+            let (p, _) = run(0.1, a_t, g_n, rate, Filter::Friction(0.5), path);
+            assert!(
+                p.x.to_f64().abs() < HOLD_TOL,
+                "{path:?} rate {rate:?}: modifier μ 0.5: x = {:.3e}",
+                p.x.to_f64()
+            );
+            let want = damped_displacement(a_t - 0.1 * g_n, engine_beta(rate, DT), 1.0);
+            let tol = slide_tol(0.1, g_n, a_t - 0.1 * g_n, 1.0);
+            let (p, _) = run(0.5, a_t, g_n, rate, Filter::Friction(0.1), path);
+            let x = p.x.to_f64();
+            assert!(
+                (x - want).abs() < tol,
+                "{path:?} rate {rate:?}: modifier μ 0.1: x = {x:.5}, closed form {want:.5}"
+            );
+        }
     }
 }
 
 /// A vetoed contact gets neither a normal nor a static friction response:
 /// on the `tan θ = 0.3` slope with `μ = 0.5` the ball moves freely,
 /// `x(t)` with `a = g sin θ` and `y(t)` with `a = −g cos θ` (tolerance
-/// `2e-2 m`: the sub-step integration offset `a t h / 2 ≤ 1e-2`).
+/// `2e-2 m`: the sub-step integration offset `a t h / 2 ≤ 1e-2`; per-frame
+/// rather than continuous damping changes the damping term
+/// `a t²(1/2 − φ₂(βt)) ≈ a β t³/6` (`≤ 0.95 m`, for `y`) by `≈ β·dt/2 = 5e-3`
+/// of it, `≤ 5e-3 m`; `≤ 1.5e-2` in all, and the damping part is 0 at rate
+/// 0), at both rates.
 #[test]
 fn a_vetoed_contact_gets_no_static_friction() {
-    let (g, beta) = g_and_beta();
+    let g = g();
     let theta = 0.3f64.atan();
     let (a_t, g_n) = (g * theta.sin(), g * theta.cos());
-    let want_x = damped_displacement(a_t, beta, 1.0);
-    let want_y = 0.5 + damped_displacement(-g_n, beta, 1.0);
-    for path in paths() {
-        let (p, _) = run(0.5, a_t, g_n, Filter::Veto, path);
-        let (x, y) = (p.x.to_f64(), p.y.to_f64());
-        assert!(
-            (x - want_x).abs() < 2e-2 && (y - want_y).abs() < 2e-2,
-            "{path:?}: ({x:.5}, {y:.5}), free motion ({want_x:.5}, {want_y:.5})"
-        );
+    for rate in both_rates() {
+        let beta = engine_beta(rate, DT);
+        let want_x = damped_displacement(a_t, beta, 1.0);
+        let want_y = 0.5 + damped_displacement(-g_n, beta, 1.0);
+        for path in paths() {
+            let (p, _) = run(0.5, a_t, g_n, rate, Filter::Veto, path);
+            let (x, y) = (p.x.to_f64(), p.y.to_f64());
+            assert!(
+                (x - want_x).abs() < 2e-2 && (y - want_y).abs() < 2e-2,
+                "{path:?} rate {rate:?}: ({x:.5}, {y:.5}), free motion ({want_x:.5}, {want_y:.5})"
+            );
+        }
     }
 }
 
@@ -314,7 +347,7 @@ mod bridge {
 
     #[test]
     fn a_ball_on_a_slope_below_the_friction_angle_stays_put_through_the_bridge() {
-        let (g, _) = g_and_beta();
+        let g = g();
         let theta = 0.3f64.atan();
         let mut w = PhysicsWorld::new(PhysicsConfig {
             gravity: v3(g * theta.sin(), -g * theta.cos(), 0.0),

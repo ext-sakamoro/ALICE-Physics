@@ -32,7 +32,7 @@ fn world(backend: SolverBackend) -> PhysicsWorld {
     let config = SolverConfig {
         substeps: 1,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-8), Fix128::ZERO),
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         solver_backend: backend,
         ..SolverConfig::default()
     };
@@ -261,7 +261,7 @@ fn chain(
     let mut w = PhysicsWorld::new(SolverConfig {
         substeps,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-8), Fix128::ZERO),
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         solver_backend: backend,
         ..SolverConfig::default()
     });

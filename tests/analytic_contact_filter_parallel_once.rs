@@ -9,9 +9,14 @@
 //! written from the scene's geometry, never obtained by running the solver:
 //!
 //! * frame damping: each `step` of `dt` multiplies every dynamic body's
-//!   velocity by `d = config.damping` once, so a body with no contact moving
-//!   at `v₀` along `x` has `v_n = v₀ dⁿ` and
-//!   `x_n = x₀ + v₀ dt (1 − dⁿ) / (1 − d)` after `n` steps;
+//!   velocity by `d = exp(−c·dt)` once (`c = config.damping_rate`, `d`
+//!   computed in `Fix128` exactly as the engine does), so a body with no
+//!   contact moving at `v₀` along `x` has `v_n = v₀ dⁿ` and
+//!   `x_n = x₀ + v₀ dt Σ_{k<n} dᵏ` after `n` steps (the sum is taken term by
+//!   term, so the undamped limit `d = 1`, `x_n = x₀ + v₀ n dt`, is exact and
+//!   there is no `0/0` from `(1 − dⁿ)/(1 − d)`). The damping-dependent oracle
+//!   runs at `c = 0` (the default) and at `c = −ln(0.99)·60` (the old per-step
+//!   retention 0.99 at `dt = 1/60` as a rate);
 //! * a hook that rejects every contact leaves the pair free, so the number of
 //!   substeps in which it overlaps follows from that free motion;
 //! * a modifier `friction *= 1/2` applied once gives `μ_eff = μ/2`, the same
@@ -30,6 +35,10 @@ use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{both_rates, engine_retention, geometric_sum};
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -75,7 +84,13 @@ fn advance(w: &mut PhysicsWorld, path: Path, steps: usize) {
 // ---------------------------------------------------------------------------
 
 const R: f64 = 0.5;
-const X0: f64 = 1.0;
+/// `1 + dt/32`: half a default substep (`h = dt/8`) beyond `1`, so that no
+/// substep ends at a tangency. With `X0 = 1` and no damping the free pair
+/// reaches `x_a = ∓R` exactly at the end of substeps 240 and 720 (gap 0), and
+/// whether a zero gap counts as a contact is decided by the last bit of the
+/// rounding, not by the law. With the offset every substep end is at least
+/// `2 · V0 · h/2 ≈ 2e-3` from tangency at rate 0.
+const X0: f64 = 1.0 + DT / 32.0;
 const V0: f64 = 1.0;
 
 /// Two unit-mass spheres of radius `R` at `x = ∓X0` closing at `±V0` (default
@@ -106,16 +121,19 @@ fn head_on(
 /// Free motion of body `a` after `n` steps: `(x_n, v_n)`.
 fn free(d: f64, n: usize) -> (f64, f64) {
     let dn = d.powi(n as i32);
-    (-X0 + V0 * DT * (1.0 - dn) / (1.0 - d), V0 * dn)
+    (-X0 + V0 * DT * geometric_sum(d, n), V0 * dn)
 }
 
 /// Predicted gap of the free pair at the end of substep `s` (1-based) of
-/// frame `k` (0-based).
+/// frame `k` (0-based). The centres are at `±x_a`, so the gap is
+/// `|2 x_a| − 2R`: undamped, the free pair passes right through (`x_a` runs
+/// from `−1` to `+1` in 120 steps) and separates again past `x_a = R`, which
+/// `−2 x_a − 2R` (valid only while `a` is left of `b`) would miss.
 fn free_gap(d: f64, substeps: usize, k: usize, s: usize) -> f64 {
     let h = DT / substeps as f64;
     let (x_start, v) = free(d, k);
     let xa = x_start + v * s as f64 * h;
-    -2.0 * xa - 2.0 * R
+    (2.0 * xa).abs() - 2.0 * R
 }
 
 /// Number of substeps in the first `n` steps in which the free pair overlaps.
@@ -128,27 +146,31 @@ fn overlapping_substeps(d: f64, substeps: usize, n: usize) -> usize {
 
 /// A hook runs once per contact per substep in both paths, whatever the
 /// iteration count: with a rejecting hook the pair moves freely, so the call
-/// count is the number of substeps in which the free pair overlaps.
+/// count is the number of substeps in which the free pair overlaps. Runs at
+/// damping rate 0 (default) and at the old 0.99-per-step loss as a rate.
 #[test]
 fn a_hook_runs_once_per_substep_in_both_paths() {
-    for iterations in [1usize, 4] {
-        let config = PhysicsConfig {
-            iterations,
-            ..PhysicsConfig::default()
-        };
-        let d = config.damping.to_f64();
-        let n = 120;
-        let want = overlapping_substeps(d, config.substeps, n);
-        assert!(want > 0);
-        for path in paths() {
-            let calls = Arc::new(AtomicUsize::new(0));
-            let (mut w, _, _) = head_on(config, Some((false, Arc::clone(&calls))));
-            advance(&mut w, path, n);
-            assert_eq!(
-                calls.load(Ordering::SeqCst),
-                want,
-                "{path:?}, iterations {iterations}: hook calls"
-            );
+    for rate in both_rates() {
+        for iterations in [1usize, 4] {
+            let config = PhysicsConfig {
+                iterations,
+                damping_rate: rate,
+                ..PhysicsConfig::default()
+            };
+            let d = engine_retention(rate, fx(DT)).to_f64();
+            let n = 120;
+            let want = overlapping_substeps(d, config.substeps, n);
+            assert!(want > 0);
+            for path in paths() {
+                let calls = Arc::new(AtomicUsize::new(0));
+                let (mut w, _, _) = head_on(config, Some((false, Arc::clone(&calls))));
+                advance(&mut w, path, n);
+                assert_eq!(
+                    calls.load(Ordering::SeqCst),
+                    want,
+                    "{path:?}, rate {rate:?}, iterations {iterations}: hook calls"
+                );
+            }
         }
     }
 }

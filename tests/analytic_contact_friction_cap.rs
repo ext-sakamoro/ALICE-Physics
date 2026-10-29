@@ -12,12 +12,21 @@
 //! closed forms, never obtained by running the solver:
 //!
 //! * frame damping: `step` multiplies every dynamic body's velocity by
-//!   `d = 0.99` once per frame of `dt`, i.e. a decay rate `β = −ln(d) / dt`
-//!   per second in the continuous limit;
+//!   `d = exp(−c·dt)` once per frame of `dt` (`c = config.damping_rate`), i.e.
+//!   a decay rate `β = −ln(d) / dt` per second in the continuous limit; `β`
+//!   is taken from the engine's own `Fix128` factor `d` (`engine_beta`), so
+//!   `Fix128::exp`'s error does not enter. Every oracle runs at `c = 0` (the
+//!   default) and at `c = −ln(0.99)·60` (the old per-step retention 0.99 at
+//!   `dt = 1/60` as a rate);
 //! * a body that cannot rotate sliding under kinetic friction `μ`:
-//!   `v(t) = (v₀ + μg/β) e^{−βt} − μg/β` while `v > 0`;
+//!   `v(t) = (v₀ + μg/β) e^{−βt} − μg/β = v₀ e^{−βt} − μg t φ₁(βt)` while
+//!   `v > 0`, with `φ₁(z) = (1 − e^{−z})/z`, `φ₁(0) = 1`, so the undamped limit
+//!   is exactly `v₀ − μg t` (`tests/support/damped_limits.rs` derives the
+//!   series threshold);
 //! * a body on a slope of angle `θ` with `tan θ > μ`, from rest:
-//!   `a = g (sin θ − μ cos θ)` and `x(t) = (a/β) t − (a/β²)(1 − e^{−βt})`;
+//!   `a = g (sin θ − μ cos θ)` and
+//!   `x(t) = (a/β) t − (a/β²)(1 − e^{−βt}) = a t² φ₂(βt)`, `φ₂(0) = 1/2`, so
+//!   the undamped limit is exactly `a t²/2`;
 //!   holding below the friction angle is covered by
 //!   `tests/analytic_contact_static_friction.rs`.
 //!
@@ -35,6 +44,10 @@
 use alice_physics_core::collider::Contact;
 use alice_physics_core::math::{Fix128, Vec3Fix};
 use alice_physics_core::solver::{ContactModifier, PhysicsConfig, PhysicsWorld, RigidBody};
+
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{both_rates, damped_displacement, damped_velocity, engine_beta};
 
 const DT: f64 = 1.0 / 60.0;
 
@@ -65,19 +78,15 @@ fn paths() -> Vec<Path> {
     }
 }
 
-/// Gravity magnitude and frame-damping rate of `PhysicsConfig::default()`.
-fn g_and_beta() -> (f64, f64) {
-    let d = PhysicsConfig::default();
-    (-d.gravity.y.to_f64(), -(d.damping.to_f64()).ln() / DT)
+/// Gravity magnitude of `PhysicsConfig::default()`.
+fn g() -> f64 {
+    -PhysicsConfig::default().gravity.y.to_f64()
 }
 
-fn sliding_velocity(v0: f64, mu: f64, t: f64) -> f64 {
-    let (g, beta) = g_and_beta();
-    (v0 + mu * g / beta) * (-beta * t).exp() - mu * g / beta
-}
-
-fn damped_displacement(a: f64, beta: f64, t: f64) -> f64 {
-    (a / beta) * t - (a / (beta * beta)) * (1.0 - (-beta * t).exp())
+/// `v₀ e^{−βt} − μg t φ₁(βt)` with `β` matched to the engine's factor for
+/// the damping rate `rate`.
+fn sliding_velocity(v0: f64, mu: f64, rate: Fix128, t: f64) -> f64 {
+    damped_velocity(v0, mu * g(), engine_beta(rate, DT), t)
 }
 
 /// Sets every contact's friction to an absolute value.
@@ -117,20 +126,22 @@ impl ContactModifier for ScaleFriction {
 /// A ball of radius `0.5` that cannot rotate, touching a large static sphere
 /// whose top is the plane `y = 0` (radius `1e4`: over the metres covered the
 /// surface tilts by under `3e-4 rad`), both with a material of friction `mu`
-/// and restitution `0`. Gravity is `|g|` tilted by `theta` towards `+x`.
-/// The ball starts at `v0` along `x`; returns the ball's `x` position and
-/// velocity after `frames` steps.
+/// and restitution `0`. Gravity is `|g|` tilted by `theta` towards `+x`, the
+/// world damping rate is `rate`. The ball starts at `v0` along `x`; returns
+/// the ball's `x` position and velocity after `frames` steps.
 fn run(
     mu: f64,
     theta: f64,
     v0: f64,
     frames: usize,
+    rate: Fix128,
     modifier: Option<Box<dyn ContactModifier>>,
     path: Path,
 ) -> (f64, f64) {
-    let (g, _) = g_and_beta();
+    let g = g();
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: v3(g * theta.sin(), -g * theta.cos(), 0.0),
+        damping_rate: rate,
         ..PhysicsConfig::default()
     });
     let big = 1.0e4;
@@ -168,7 +179,9 @@ fn run(
 /// a substep is `μ` times the normal impulse `m g h` up to the surface tilt
 /// (`< 3e-4` relative); per-frame rather than continuous damping changes `v`
 /// by `O(β·dt)` (`1e-2`) of the damping term `μg/β (1 − e^{−βt})`
-/// (`≤ 2.5` here, so `≤ 2.5e-2`).
+/// (`≤ 2.5` here, so `≤ 2.5e-2`). At rate 0 the damping term is 0 and the
+/// budget is the friction-impulse part alone. `β` is matched to the engine's
+/// `Fix128` factor (`engine_beta`), so `Fix128::exp`'s error adds nothing.
 const SLIDE_TOL: f64 = 3e-2;
 
 /// `(μ, v₀, frames)` of the sliding scenes, chosen so the ball is still
@@ -176,69 +189,80 @@ const SLIDE_TOL: f64 = 3e-2;
 const SLIDES: [(f64, f64, usize); 2] = [(0.1, 3.0, 60), (0.4, 5.0, 30)];
 
 /// A ball sliding on level ground under the material friction `μ` follows
-/// `v(t) = (v₀ + μg/β) e^{−βt} − μg/β`.
+/// `v(t) = v₀ e^{−βt} − μg t φ₁(βt)` (`v₀ − μg t` undamped), at rate 0 and
+/// at the old 0.99-per-step loss as a rate.
 #[test]
 fn a_sliding_ball_decelerates_at_mu_g() {
-    for path in paths() {
-        for (mu, v0, frames) in SLIDES {
-            let want = sliding_velocity(v0, mu, frames as f64 * DT);
-            assert!(want > 0.5);
-            let (_, v) = run(mu, 0.0, v0, frames, None, path);
-            assert!(
-                (v - want).abs() < SLIDE_TOL,
-                "{path:?} μ {mu}: v = {v:.5}, closed form {want:.5}"
-            );
+    for rate in both_rates() {
+        for path in paths() {
+            for (mu, v0, frames) in SLIDES {
+                let want = sliding_velocity(v0, mu, rate, frames as f64 * DT);
+                assert!(want > 0.5);
+                let (_, v) = run(mu, 0.0, v0, frames, rate, None, path);
+                assert!(
+                    (v - want).abs() < SLIDE_TOL,
+                    "{path:?} rate {rate:?} μ {mu}: v = {v:.5}, closed form {want:.5}"
+                );
+            }
         }
     }
 }
 
 /// A modifier that sets `μ = 0.1` over a material of `μ = 0.5` gives the
-/// sliding closed form of `μ = 0.1`.
+/// sliding closed form of `μ = 0.1`, at both rates.
 #[test]
 fn an_absolute_friction_modifier_sets_the_sliding_deceleration() {
-    let want = sliding_velocity(3.0, 0.1, 1.0);
-    for path in paths() {
-        let m = AbsoluteFriction(fx(0.1));
-        let (_, v) = run(0.5, 0.0, 3.0, 60, Some(Box::new(m)), path);
-        assert!(
-            (v - want).abs() < SLIDE_TOL,
-            "{path:?}: v = {v:.5}, closed form {want:.5}"
-        );
+    for rate in both_rates() {
+        let want = sliding_velocity(3.0, 0.1, rate, 1.0);
+        for path in paths() {
+            let m = AbsoluteFriction(fx(0.1));
+            let (_, v) = run(0.5, 0.0, 3.0, 60, rate, Some(Box::new(m)), path);
+            assert!(
+                (v - want).abs() < SLIDE_TOL,
+                "{path:?} rate {rate:?}: v = {v:.5}, closed form {want:.5}"
+            );
+        }
     }
 }
 
 /// A modifier `friction *= 1/2` over a material of `μ = 0.4` gives the
-/// sliding closed form of `μ_eff = 0.2`.
+/// sliding closed form of `μ_eff = 0.2`, at both rates.
 #[test]
 fn a_relative_friction_modifier_halves_the_sliding_deceleration() {
-    let want = sliding_velocity(5.0, 0.2, 0.5);
-    for path in paths() {
-        let m = ScaleFriction(Fix128::from_ratio(1, 2));
-        let (_, v) = run(0.4, 0.0, 5.0, 30, Some(Box::new(m)), path);
-        assert!(
-            (v - want).abs() < SLIDE_TOL,
-            "{path:?}: v = {v:.5}, closed form {want:.5}"
-        );
+    for rate in both_rates() {
+        let want = sliding_velocity(5.0, 0.2, rate, 0.5);
+        for path in paths() {
+            let m = ScaleFriction(Fix128::from_ratio(1, 2));
+            let (_, v) = run(0.4, 0.0, 5.0, 30, rate, Some(Box::new(m)), path);
+            assert!(
+                (v - want).abs() < SLIDE_TOL,
+                "{path:?} rate {rate:?}: v = {v:.5}, closed form {want:.5}"
+            );
+        }
     }
 }
 
 /// On a slope with `tan θ = 0.6 > μ = 0.2` the ball slides down with
-/// `a = g (sin θ − μ cos θ)` from rest: `x(t) = (a/β) t − (a/β²)(1 − e^{−βt})`
-/// after one second. Tolerance 2 % of `x ≈ 2.0 m`: the symplectic sub-step
+/// `a = g (sin θ − μ cos θ)` from rest: `x(t) = a t² φ₂(βt)` (`a t²/2`
+/// undamped) after one second, at both rates. Tolerance 2 % of
+/// `x ≈ 2.0 m` (damped) / `2.1 m` (undamped): the symplectic sub-step
 /// integration offsets `x` by `a t h / 2` (`≈ 2e-3`), per-frame damping by
-/// `O(β·dt)` of the damping term, and the surface tilt by `< 3e-4`.
+/// `O(β·dt)` of the damping term (0 at rate 0), and the surface tilt by
+/// `< 3e-4`.
 #[test]
 fn a_ball_on_a_slope_above_the_friction_angle_slides_at_the_kinetic_rate() {
-    let (g, beta) = g_and_beta();
+    let g = g();
     let theta = 0.6f64.atan();
     let mu = 0.2;
     let a = g * (theta.sin() - mu * theta.cos());
-    let want = damped_displacement(a, beta, 1.0);
-    for path in paths() {
-        let (x, _) = run(mu, theta, 0.0, 60, None, path);
-        assert!(
-            (x - want).abs() < 2e-2 * want,
-            "{path:?}: x = {x:.5}, closed form {want:.5}"
-        );
+    for rate in both_rates() {
+        let want = damped_displacement(a, engine_beta(rate, DT), 1.0);
+        for path in paths() {
+            let (x, _) = run(mu, theta, 0.0, 60, rate, None, path);
+            assert!(
+                (x - want).abs() < 2e-2 * want,
+                "{path:?} rate {rate:?}: x = {x:.5}, closed form {want:.5}"
+            );
+        }
     }
 }

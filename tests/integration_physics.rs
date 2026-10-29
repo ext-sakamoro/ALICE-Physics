@@ -2384,7 +2384,8 @@ fn test_per_body_damping() {
     // Body B: heavy damping (0.5 = 50% velocity retained per substep)
     let body_b = RigidBody::new_dynamic(Vec3Fix::from_int(0, 10, 10), Fix128::ONE)
         .with_velocity(Vec3Fix::from_int(10, 0, 0))
-        .with_linear_damping(Fix128::from_ratio(5, 10));
+        // the loss per step of the former retention 0.5 at dt = 1/60
+        .with_linear_damping_rate(-Fix128::from_ratio(1, 2).ln() * Fix128::from_int(60));
     world.add_body(body_b);
 
     let dt = Fix128::from_ratio(1, 60);

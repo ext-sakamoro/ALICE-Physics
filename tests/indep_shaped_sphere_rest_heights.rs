@@ -264,7 +264,7 @@ fn a_shaped_box_and_a_compound_rest_on_top_of_a_plain_static_sphere() {
 fn a_ball_passes_the_rod_inside_its_bounding_sphere_and_stops_on_the_rod_itself() {
     let run = |z: f64| {
         let mut w = PhysicsWorld::new(SolverConfig {
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..SolverConfig::default()
         });
         static_shape(

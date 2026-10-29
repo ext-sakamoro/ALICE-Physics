@@ -186,7 +186,9 @@ fn tolerance(p: Pair) -> f64 {
 /// closed-form velocity, in both paths.
 #[test]
 fn the_separation_speed_is_e_times_the_approach_speed_at_every_phase() {
-    let d = PhysicsConfig::default().damping.to_f64();
+    let d = (-(PhysicsConfig::default().damping_rate * Fix128::from_f64(DT)))
+        .exp()
+        .to_f64();
     let mut failures = Vec::new();
     for path in paths() {
         for (name, p) in cases() {
@@ -221,7 +223,9 @@ fn the_separation_speed_is_e_times_the_approach_speed_at_every_phase() {
 /// d (m_a v_a + m_b v_b)` for two dynamic bodies.
 #[test]
 fn the_impact_conserves_momentum_at_every_phase() {
-    let d = PhysicsConfig::default().damping.to_f64();
+    let d = (-(PhysicsConfig::default().damping_rate * Fix128::from_f64(DT)))
+        .exp()
+        .to_f64();
     for path in paths() {
         for (name, p) in cases() {
             let Some(m_b) = p.m_b else { continue };
@@ -246,7 +250,9 @@ fn the_impact_conserves_momentum_at_every_phase() {
 #[test]
 fn approaches_below_the_restitution_threshold_do_not_bounce() {
     let config = PhysicsConfig::default();
-    let d = config.damping.to_f64();
+    let d = (-(config.damping_rate * Fix128::from_f64(DT)))
+        .exp()
+        .to_f64();
     let g = -config.gravity.y.to_f64();
     let h = DT / config.substeps as f64;
     for path in paths() {

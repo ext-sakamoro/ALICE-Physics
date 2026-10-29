@@ -68,7 +68,7 @@ fn resident(g: f64, eps: f64) -> Box<NBodyParticipant> {
 fn empty_world(substeps: usize, backend: SolverBackend) -> PhysicsWorld {
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         ..PhysicsConfig::default()
     };
@@ -413,7 +413,7 @@ fn a_slow_attraction_keeps_bodies_awake() {
     }
     let t = f64::from(frames) / 60.0;
     let want = 2.5e-5 * t * t / 2.0;
-    let damping = f64_of(PhysicsConfig::default().damping);
+    let damping = f64_of((-(PhysicsConfig::default().damping_rate / Fix128::from_int(60))).exp());
     let moved = f64_of(world.bodies[0].position.x) + 1.0;
     // the default frame damping scales the velocity each frame; with it the
     // displacement is the damped sum, computed here the same way
@@ -554,8 +554,12 @@ fn three_body_digest(backend: SolverBackend) -> String {
 // world snapshot version 5: the version field and the checksum moved, the rest of the bytes did not
 // re-pinned when the secondary chain was pinned: the header's semantics identifier (88cf6f85… ->
 // 31eb4ab8…), its law_id and the checksum moved; the state did not (tests/world_snapshot_xv_88cf6f85.rs)
-const THREE_BODY_XPBD: &str = "d75cb7538d2202cd0cf69d63a8eeb662cc2f614c8b913bc764a92559805dae07";
-const THREE_BODY_TGS: &str = "7f8e8db9ea97fb2144c2944025dc5cd94007fc47f93b3ced427ec4f971107bf0";
+// re-pinned for world snapshot version 6 (damping a rate per second, body rates in the blob) and
+// the semantics identifier e90000da…: the header, the version, the damping fields and the checksum
+// moved; the bodies and the participant payload did not (no damping, no static collider here; the
+// body state and payload after 256 frames hash the same as the build before that change)
+const THREE_BODY_XPBD: &str = "86851a66c8670a77b7c3d8862bbfb11a2130b794a7987a2c195ac5c003832dc0";
+const THREE_BODY_TGS: &str = "43c48a9f25149e94911785cfe967fe362e44af5d96add71c5a1227f1d7ed737c";
 
 /// golden (determinism): the world snapshot and the participant payload of
 /// the three-body scene after 256 frames, for each backend. CI runs this on

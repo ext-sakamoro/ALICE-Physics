@@ -2203,16 +2203,17 @@ mod tests {
     /// `PhysicsWorld` and return the displacement of the chassis along the
     /// slope over `frames` frames after a settling phase.
     fn slope_drift(grade: Fix128, frames: usize) -> Fix128 {
-        slope_run(grade, frames, fx(99, 100), false).0
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        slope_run(grade, frames, -fx(99, 100).ln() / dt60(), false).0
     }
 
     /// `(drift along the car's forward axis over `frames`, forward velocity at
-    /// the end)` after a 120-frame settle, world damping `damping`; the car
+    /// the end)` after a 120-frame settle, world damping rate `damping_rate`; the car
     /// faces up the slope, or down it with `facing_down`.
     fn slope_run(
         grade: Fix128,
         frames: usize,
-        damping: Fix128,
+        damping_rate: Fix128,
         facing_down: bool,
     ) -> (Fix128, Fix128) {
         use crate::sleeping::SleepConfig;
@@ -2227,7 +2228,7 @@ mod tests {
             normal,
         };
         let mut world = PhysicsWorld::new(SolverConfig {
-            damping,
+            damping_rate,
             ..SolverConfig::default()
         });
         world.set_sleep_config(SleepConfig {
@@ -2312,8 +2313,8 @@ mod tests {
         let frames = 120;
         // facing down the slope so the locked wheel slides forward (κ = −1,
         // the brush contract's exact full-sliding point)
-        let (_, v1) = slope_run(grade, 0, Fix128::ONE, true);
-        let (_, v2) = slope_run(grade, frames, Fix128::ONE, true);
+        let (_, v1) = slope_run(grade, 0, Fix128::ZERO, true);
+        let (_, v2) = slope_run(grade, frames, Fix128::ZERO, true);
         let a = (v2 - v1) / (dt60() * Fix128::from_int(frames as i64));
         let theta = grade.atan();
         let (sn, cs) = theta.sin_cos();
@@ -2330,7 +2331,7 @@ mod tests {
     fn braked_car_holds_on_slope() {
         // tan θ = 0.3 < μ (1.1 dry asphalt)
         let drift = slope_drift(fx(3, 10), 600);
-        let drift_undamped = slope_run(fx(3, 10), 600, Fix128::ONE, false).0;
+        let drift_undamped = slope_run(fx(3, 10), 600, Fix128::ZERO, false).0;
         assert!(drift_undamped.abs() <= fx(1, 1000), "{drift_undamped:?}");
         assert!(
             drift.abs() <= fx(1, 1000),

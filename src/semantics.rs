@@ -10,7 +10,7 @@
 //! # Hex form (with `alice-det-math` 0.5.2 at 2d01c63f; other generations in [`PHYSICS_SEMANTICS_BY_DET_MATH`])
 //!
 //! ```text
-//! 31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a
+//! e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6
 //! ```
 //!
 //! # Entries
@@ -140,7 +140,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "distance constraint",
-        hex32("4c28a6fb32ae076f393c762e590466e9d2e9786a5efacc2c1a114cdc66be5978"),
+        hex32("8fe963f2a89fbd96956eaee1c3651e94401f0511e8629b722070be6e3f12d793"),
     ),
     (
         "joint",
@@ -152,7 +152,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "sleeping",
-        hex32("2d2fbb89f587cd27872e85f4ed2d856c72bb3f0d62a3d0d5d2f5360260ac7a86"),
+        hex32("3a957dad9eb5a24328f0b82dcc831b2eb95fa8c8abda46e85920a9363805d229"),
     ),
     (
         "broadphase Bvh",
@@ -266,7 +266,7 @@ pub const PHYSICS_SEMANTICS_PINS: &[(&str, [u8; 32])] = &[
     ),
     (
         "law output: tgs oriented 6dof hooks",
-        hex32("79144576c7e17440faaaa14e5e1496c501bd5e929e83ebbdaece82ad87f115ff"),
+        hex32("cbe9a2a9302e78743540b94adfb4331febf1fa49067db1178ebc617b02b83509"),
     ),
     (
         "law output: thermal",
@@ -418,10 +418,13 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
     ),
     // alice-det-math 0.5.2 at 2d01c63f (sin / cos at |x| >= 2^13, powf of a negative base,
     // powf64 as fdlibm e_pow, hypot of two subnormals; erf added): no pin moved, the det-math
-    // entry and the peers' identifiers did
+    // entry and the peers' identifiers did (31eb4ab8… once the secondary chain was pinned);
+    // then the stepping change (damping a rate per second, shaped bodies against static
+    // colliders, static overlap pushed out without velocity) moved three pins
+    // (PHYSICS_PINS_BY_DET_MATH keeps their earlier digests for the earlier generations)
     (
         hex32("a2a11b9b826227fa7a9ed8ab2c1ce63dbb07ad4c39aa2c46a363ddea6b47dbe9"),
-        hex32("31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a"),
+        hex32("e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6"),
     ),
 ];
 
@@ -434,7 +437,12 @@ pub const PHYSICS_SEMANTICS_BY_DET_MATH: &[([u8; 32], [u8; 32])] = &[
 /// clamp to `min(max(x, low), high)` with the G2 max and min, so `-0` against a `+0` bound
 /// gives `+0`: the Law outputs of `pressure`, `sdf_destruction` and `sim_field` moved (each one
 /// gives its earlier digest with only the clamp put back). The peers (`alice-analytics`,
-/// `alice-ml`) export identifiers that follow the det-math generation. `tests/physics_semantics_id.rs`
+/// `alice-ml`) export identifiers that follow the det-math generation. Three pins moved after
+/// every earlier generation, when the stepping changed (shaped bodies against static colliders,
+/// static overlap pushed out without velocity, damping a rate per second with default 0):
+/// `distance constraint`, `sleeping` and `law output: tgs oriented 6dof hooks`; each earlier
+/// generation keeps the digests those pins had before that change, so its row stays as it was
+/// recorded. `tests/physics_semantics_id.rs`
 /// refolds every row with these and checks each entry names a row other than this build's and an
 /// existing pin, and differs from the current value.
 pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
@@ -465,6 +473,22 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "alice-ml",
         hex32("a547237044e8fdba9ab152f7af13c431f675e5382e4e8cb40aa8c83c46bb606b"),
     ),
+    // and the three pins from before the stepping change (damping as a rate)
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "distance constraint",
+        hex32("4c28a6fb32ae076f393c762e590466e9d2e9786a5efacc2c1a114cdc66be5978"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "sleeping",
+        hex32("2d2fbb89f587cd27872e85f4ed2d856c72bb3f0d62a3d0d5d2f5360260ac7a86"),
+    ),
+    (
+        hex32("135c407d4249c1c200e4d1be79a12e848ce5c355fc3a918da965849e697ef000"),
+        "law output: tgs oriented 6dof hooks",
+        hex32("79144576c7e17440faaaa14e5e1496c501bd5e929e83ebbdaece82ad87f115ff"),
+    ),
     // alice-det-math 0.5.1: the three Law outputs before the clamp followed the G2 order, and the peer
     // identifiers the peers exported over that generation
     (
@@ -492,6 +516,22 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "alice-ml",
         hex32("a547237044e8fdba9ab152f7af13c431f675e5382e4e8cb40aa8c83c46bb606b"),
     ),
+    // and the three pins from before the stepping change (damping as a rate)
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "distance constraint",
+        hex32("4c28a6fb32ae076f393c762e590466e9d2e9786a5efacc2c1a114cdc66be5978"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "sleeping",
+        hex32("2d2fbb89f587cd27872e85f4ed2d856c72bb3f0d62a3d0d5d2f5360260ac7a86"),
+    ),
+    (
+        hex32("85e0884623b154a3b2b264374907b6cbac09307ca3f9a08339e48c567d3cb315"),
+        "law output: tgs oriented 6dof hooks",
+        hex32("79144576c7e17440faaaa14e5e1496c501bd5e929e83ebbdaece82ad87f115ff"),
+    ),
     // alice-det-math 0.5.2 at 39507d1b: the peer identifiers the peers exported over that
     // generation (alice-analytics re-exports det-math's, alice-ml 0.4 at 5309bc61)
     (
@@ -504,6 +544,22 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
         "alice-ml",
         hex32("8464fe594013020b37c94d790f15167244074f3892a99d3c9030bd66ba4ed982"),
     ),
+    // and the three pins from before the stepping change (damping as a rate)
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "distance constraint",
+        hex32("4c28a6fb32ae076f393c762e590466e9d2e9786a5efacc2c1a114cdc66be5978"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "sleeping",
+        hex32("2d2fbb89f587cd27872e85f4ed2d856c72bb3f0d62a3d0d5d2f5360260ac7a86"),
+    ),
+    (
+        hex32("a2e46794a49b62730d8eb75d10e6dbfdd59d6562a985ae94c716fc637a57e3cf"),
+        "law output: tgs oriented 6dof hooks",
+        hex32("79144576c7e17440faaaa14e5e1496c501bd5e929e83ebbdaece82ad87f115ff"),
+    ),
 ];
 
 /// Content hash of the stepping semantics: the fold of
@@ -512,7 +568,7 @@ pub const PHYSICS_PINS_BY_DET_MATH: &[([u8; 32], &str, [u8; 32])] = &[
 /// `alice-det-math`.
 ///
 /// Hex (with `alice-det-math` 0.5.2 at 2d01c63f):
-/// `31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a`.
+/// `e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6`.
 /// The same value in every build, whatever cargo features are enabled.
 pub const PHYSICS_SEMANTICS_ID: [u8; 32] = semantics_id_for(&alice_det_math::SEMANTICS_ID);
 
@@ -555,18 +611,22 @@ const fn same32(a: &[u8; 32], b: &[u8; 32]) -> bool {
 /// [`crate::LawCheck::SemanticsPrevious`]); any other identifier is still
 /// [`crate::WorldSnapshotError::SemanticsMismatch`].
 ///
-/// `88cf6f85…`: the identifier before the secondary chain was pinned (main
-/// `b672ff2e`, `alice-det-math` 0.5.2 at 2d01c63f). Pinning it added one entry
-/// and moved no other, and `tests/world_snapshot_xv_88cf6f85.rs` restores a
-/// snapshot written by that build, steps it here and gets that build's own
-/// steps byte for byte.
+/// An earlier identifier is listed only when a cross-version oracle covers it
+/// (a snapshot written by that release, restored and stepped here, bit-equal
+/// to that release's own steps). The list is empty:
 ///
-/// Not listed: every identifier of an `alice-det-math` generation whose clamp
-/// differs from this build's (0.5.2 at 39507d1b), since the clamp moved Law
-/// output bits. An earlier identifier is listed only when a cross-version
-/// oracle covers it (a snapshot written by that release, restored and stepped
-/// here, bit-equal to that release's own steps), so the 3.x snapshots
-/// (`79ca5297…`, `cd9aa3b8…`) are refused.
-pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[hex32(
-    "88cf6f85f1943db5d348d22275e4962602082837a0213c4ca3219d105e1fe7a6",
-)];
+/// * `88cf6f85…` (main `b672ff2e`, before the secondary chain was pinned) was
+///   listed while pinning the chain had moved no other pin and
+///   `tests/world_snapshot_xv_88cf6f85.rs` stepped a snapshot of that build
+///   here to that build's own steps. It was taken out when the stepping
+///   changed (shaped bodies collide with static colliders by their shape, an
+///   overlap with a static surface at the start of a substep is pushed out
+///   without becoming velocity, damping is a rate per second with default 0):
+///   several pins moved, so this build no longer steps such a snapshot to that
+///   build's bits, and that file now checks its snapshots are refused.
+/// * `31eb4ab8…`, the identifier just before that change, is not listed for
+///   the same reason.
+/// * every identifier of an `alice-det-math` generation whose clamp differs
+///   from this build's (0.5.2 at 39507d1b), since the clamp moved Law output
+///   bits; so the 3.x snapshots (`79ca5297…`, `cd9aa3b8…`) are refused.
+pub const PREVIOUS_PHYSICS_SEMANTICS_IDS: &[[u8; 32]] = &[];

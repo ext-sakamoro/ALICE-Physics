@@ -7,10 +7,10 @@
 //! - a static (or kinematic) anchor body at the target,
 //! - a [`DistanceConstraint`] of rest length 0 and compliance `1 / (m ω²)` (an isotropic
 //!   linear spring of stiffness `m ω²`, solved implicitly by XPBD),
-//! - the body's `linear_damping` set to the discrete critical value
-//!   `d = 1 + 2a² − 2a·sqrt(1 + a²)`, `a = ω·dt`.
+//! - the body's `linear_damping_rate` set to `−ln(d) / dt`, whose loss per step is the
+//!   discrete critical value `d = 1 + 2a² − 2a·sqrt(1 + a²)`, `a = ω·dt`.
 //!
-//! With `substeps = 1`, `iterations = 1` and `SolverConfig::damping = 1`, one step maps
+//! With `substeps = 1`, `iterations = 1` and `SolverConfig::damping_rate = 0`, one step maps
 //! `(x, v)` to `x' = (x + dt·v) / (1 + a²)`, `v' = d·(x' − x) / dt`, whose two eigenvalues
 //! coincide at `λ = 1 − a / sqrt(1 + a²) ∈ (0, 1)`: the discrete solution has the same
 //! `(A + B·n)·λⁿ` form as the closed form `x(t) = (x0 + (v0 + ω x0) t)·e^(−ωt)`, never
@@ -48,7 +48,8 @@ fn add_tether(
 ) -> usize {
     let anchor = world.add_body(RigidBody::new_static(target));
     let body = world.add_body(
-        RigidBody::new_dynamic(start, mass).with_linear_damping(critical_retention(omega, dt)),
+        RigidBody::new_dynamic(start, mass)
+            .with_linear_damping_rate(-critical_retention(omega, dt).ln() / dt),
     );
     let stiffness = mass * omega * omega;
     world.add_distance_constraint(
@@ -64,7 +65,7 @@ fn main() {
         substeps: 1,
         iterations: 1,
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..SolverConfig::default()
     });
     world.set_sleep_config(SleepConfig {

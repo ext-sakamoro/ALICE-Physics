@@ -86,7 +86,7 @@ fn substep() -> f64 {
 /// a ball of radius `R` at `ball_at`; both use one material `(μ, e)`.
 fn scene(mu: f64, e: f64, ball_at: Vec3Fix) -> (PhysicsWorld, usize) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     let ground = w.add_body_with_radius(RigidBody::new_static(v3(0.0, -BIG, 0.0)), fx(BIG));
@@ -288,7 +288,7 @@ fn a_solid_ball_slides_then_rolls_at_five_sevenths_of_its_launch_speed() {
 /// `frames`.
 fn incline(mu: f64, theta: f64, frames: usize, path: Path) -> f64 {
     let mut w = PhysicsWorld::new(PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     let slab = w.add_body(RigidBody::new_static(Vec3Fix::ZERO));

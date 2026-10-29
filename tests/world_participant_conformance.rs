@@ -31,12 +31,23 @@ use alice_physics_core::world_participant::{
     StepRule, SubstepCtx, SubstepTime, Verdict, WorldFault,
 };
 
-/// A version 1 to 3 blob read as legacy data: it carries no identifiers, so only
-/// `LegacyPolicy::AcceptUnpinned` reads it, reporting `Unpinned` (ALICE-Law G8)
+/// A version 1 to 3 blob of the build where damping was a retention per
+/// step (the fixture holds 0.99 in the world, 1 = none in every body, and
+/// was written stepping by `dt()`). Without the step it is refused, naming
+/// that retention; `restore_world_legacy_damping` with the writer's step
+/// reads it as legacy data with no identifiers (`Unpinned`, ALICE-Law G8).
 fn legacy_snapshot(blob: &[u8]) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(alice_physics_core::solver::PhysicsConfig::default());
     assert_eq!(
         world.restore_world_checked(blob, None, alice_physics_core::LegacyPolicy::AcceptUnpinned),
+        Err(
+            alice_physics_core::WorldSnapshotError::LegacyDampingNeedsStep {
+                retention: Fix128::from_ratio(99, 100)
+            }
+        )
+    );
+    assert_eq!(
+        world.restore_world_legacy_damping(blob, dt()),
         Ok(alice_physics_core::LawCheck::Unpinned)
     );
     world
@@ -2077,10 +2088,12 @@ fn version_1_blob_reads_as_zero_participants() {
     assert!(world::participant_kinds(&restored).is_empty());
     let mut target = scene();
     world::add_participant(&mut target, Box::new(Tether::new(0, 1))).expect("register");
-    // a version 1 blob is legacy data: read under AcceptUnpinned, it reaches the participant check
+    // a version 1 blob is legacy data: read under AcceptUnpinned with the
+    // writer's step (its damping is a retention per step), it reaches the
+    // participant check
     let before = target.snapshot_world();
     let err = target
-        .restore_world_checked(v1, None, alice_physics_core::LegacyPolicy::AcceptUnpinned)
+        .restore_world_legacy_damping(v1, dt())
         .expect_err("a version 1 blob with no participants into a world with one");
     assert_eq!(
         target.snapshot_world(),
@@ -2393,7 +2406,8 @@ fn zero_participants_match_the_existing_step_and_golden() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(99, 100),
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
         ..Default::default()
     };
     let mut w = PhysicsWorld::new(config);
@@ -2402,7 +2416,8 @@ fn zero_participants_match_the_existing_step_and_golden() {
         w.add_body(
             RigidBody::new_dynamic(Vec3Fix::from_int(i, 5 + i * 2, 0), Fix128::ONE)
                 .with_restitution(Fix128::from_ratio(6, 10))
-                .with_linear_damping(Fix128::from_ratio(98, 100)),
+                // the loss per step of the former retention 0.98 at dt = 1/60
+                .with_linear_damping_rate(-Fix128::from_ratio(98, 100).ln() * Fix128::from_int(60)),
         );
     }
     for _ in 0..200 {
@@ -2412,8 +2427,10 @@ fn zero_participants_match_the_existing_step_and_golden() {
 }
 
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
-/// solve did not move (`v = v_pred + Δx_corr / h`).
-const GOLDEN_CASCADE: &str = "95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381";
+/// solve did not move (`v = v_pred + Δx_corr / h`), and again when damping
+/// became a rate per second (a copy of `GOLDEN_CASCADE` in
+/// `tests/determinism_golden.rs`).
+const GOLDEN_CASCADE: &str = "39f0e6fd03588f095f01fbd8fd912c51a5cc8107be89a75deaefdc4cb42baade";
 
 fn cascade_hash(w: &PhysicsWorld) -> String {
     use sha2::{Digest, Sha256};
@@ -2444,7 +2461,8 @@ fn copied_cascade_golden_is_current() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(99, 100),
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
         ..Default::default()
     };
     let mut w = PhysicsWorld::new(config);
@@ -2453,7 +2471,8 @@ fn copied_cascade_golden_is_current() {
         w.add_body(
             RigidBody::new_dynamic(Vec3Fix::from_int(i, 5 + i * 2, 0), Fix128::ONE)
                 .with_restitution(Fix128::from_ratio(6, 10))
-                .with_linear_damping(Fix128::from_ratio(98, 100)),
+                // the loss per step of the former retention 0.98 at dt = 1/60
+                .with_linear_damping_rate(-Fix128::from_ratio(98, 100).ln() * Fix128::from_int(60)),
         );
     }
     for _ in 0..200 {

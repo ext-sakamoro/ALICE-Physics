@@ -105,7 +105,7 @@ fn world_with_ground(
 ) -> (PhysicsWorld, alice_physics_core::MaterialId) {
     let mut w = PhysicsWorld::new(PhysicsConfig {
         gravity: g,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     w.set_sleep_config(SleepConfig {

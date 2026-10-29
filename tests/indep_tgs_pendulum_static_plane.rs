@@ -5,13 +5,19 @@
 //!
 //! - a body pendulum: unit-mass bob of central moment `I = 0.4` at arm `L`
 //!   from a fixed pivot. Small oscillations obey
-//!   `θ'' + β θ' + ω₀² θ = 0` with `ω₀² = m g L / (I + m L²)` and
-//!   `β = −ln(d) / Δt` the per-frame damping `d` as a rate, so
-//!   `T = 2π / √(ω₀² − β²/4)`; at `L = 1`, `g = 10`, `d = 0.99`, `Δt = 1/60`
-//!   this is `2.36606` s. The finite amplitude `θ` lengthens the period by
-//!   `θ²/16` to leading order; with damping the amplitude decays as
-//!   `θ₀ e^{−βt/2}`, so the correction over a window is
-//!   `(θ₀²/16) · mean(e^{−βt})`;
+//!   `θ'' + β θ' + ω₀² θ = 0` with `ω₀² = m g L / (I + m L²)` and `β` the
+//!   damping rate (`exp(−β Δt)` per frame), so `T = 2π / √(ω₀² − β²/4)`. At
+//!   `L = 1`, `g = 10` (`ω₀² = 10/1.4`): with `β = −ln(0.99)·60 = 0.603020`
+//!   (the old retention 0.99 per frame of `Δt = 1/60`, set explicitly in the
+//!   scene) this is `2π / √(7.142857 − 0.090909) = 2.36606` s, and undamped
+//!   (`β = 0`, the default) it is `2π / √(10/1.4) = 2.35095` s. The finite
+//!   amplitude `θ` lengthens the period by `θ²/16` to leading order; with
+//!   damping the amplitude decays as `θ₀ e^{−βt/2}`, so the correction over a
+//!   window `[t₀, t₁]` is `(θ₀²/16) · mean(e^{−βt})` with
+//!   `mean(e^{−βt}) = (e^{−βt₀} − e^{−βt₁}) / (β (t₁ − t₀)) =
+//!   e^{−βt₀} φ₁(β (t₁ − t₀))`, `φ₁(z) = (1 − e^{−z})/z`, `φ₁(0) = 1` (exactly
+//!   1 undamped; `tests/support/damped_limits.rs` derives the series
+//!   threshold);
 //! - without damping, the exact period of the physical pendulum at amplitude
 //!   `θ₀` is `T = 4 √((I + m L²) / (m g L)) · K(sin(θ₀/2))` with `K` the
 //!   complete elliptic integral of the first kind (by the arithmetic-geometric
@@ -35,6 +41,10 @@ use alice_physics_core::solver::{PhysicsWorld, RigidBody, SolverConfig};
 use alice_physics_core::static_collider::StaticCollider;
 use alice_physics_core::SolverBackend;
 
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{engine_beta, old_default_rate, phi1};
+
 const DT: f64 = 1.0 / 60.0;
 const I_BOB: f64 = 0.4;
 
@@ -46,10 +56,10 @@ fn v3(x: f64, y: f64, z: f64) -> Vec3Fix {
     Vec3Fix::new(fx(x), fx(y), fx(z))
 }
 
-fn tgs(substeps: usize, damping: Fix128) -> SolverConfig {
+fn tgs(substeps: usize, damping_rate: Fix128) -> SolverConfig {
     SolverConfig {
         substeps,
-        damping,
+        damping_rate,
         solver_backend: SolverBackend::Tgs,
         ..SolverConfig::default()
     }
@@ -121,41 +131,46 @@ fn mean_period(c: &[f64]) -> f64 {
     (c[c.len() - 1] - c[0]) / (c.len() - 1) as f64
 }
 
-/// The claim's scene (L = 1, θ₀ = 0.1, default damping) at substeps 4 and 8.
+/// The claim's scene (L = 1, θ₀ = 0.1) at substeps 4 and 8, with the damping
+/// rate set explicitly in the scene: `β = −ln(0.99)·60` (stated period
+/// `2.36606` s) and `β = 0`, the default (stated period `2.35095` s).
 /// Budget `1.5e-3` relative: crossing interpolation (`< dt²` per crossing,
 /// `1e-4` relative over 3 periods) and the per-frame instead of continuous
-/// damping (`O(β Δt)` of the `β²/4` term, `1e-4`). Dropping the bob's
-/// rotation (`ω₀² = g / L`) moves the period by 18 %.
+/// damping (`O(β Δt)` of the `β²/4` term, `1e-4`; 0 at `β = 0`). `β` is
+/// matched to the engine's `Fix128` factor (`engine_beta`), so
+/// `Fix128::exp`'s error does not enter. Dropping the bob's rotation
+/// (`ω₀² = g / L`) moves the period by 18 %.
 #[test]
 fn the_damped_pendulum_period_is_the_closed_form_with_amplitude_correction() {
     let l = 1.0;
     let theta0: f64 = 0.1;
-    let d = SolverConfig::default().damping;
-    let beta = -d.to_f64().ln() / DT;
     let w0_sq = g() * l / (I_BOB + l * l);
-    let t_damped = 2.0 * std::f64::consts::PI / (w0_sq - beta * beta / 4.0).sqrt();
-    assert!(
-        (t_damped - 2.366).abs() < 1e-3,
-        "derivation: {t_damped} vs the stated 2.366"
-    );
     let mut failures = Vec::new();
-    for kind in [Kind::Ball, Kind::Hinge] {
-        for substeps in [4, 8] {
-            let (mut w, bob) = pendulum(kind, tgs(substeps, d), l, theta0);
-            let (c, _) = crossings(&mut w, bob, l, 3.5 * t_damped);
-            let period = mean_period(&c);
-            // amplitude correction averaged over the measured window
-            let (t0, t1) = (c[0], c[c.len() - 1]);
-            let mean_decay = ((-beta * t0).exp() - (-beta * t1).exp()) / (beta * (t1 - t0));
-            let want = t_damped * (1.0 + theta0 * theta0 / 16.0 * mean_decay);
-            let rel = (period - want).abs() / want;
-            eprintln!(
-                "{kind:?} s={substeps}: period {period:.6}, closed form {want:.6}, rel {rel:.2e}"
-            );
-            if rel > 1.5e-3 {
-                failures.push(format!(
-                    "{kind:?} s={substeps}: period {period:.6}, closed form {want:.6} (rel {rel:.2e})"
-                ));
+    for (rate, stated) in [(old_default_rate(), 2.36606), (Fix128::ZERO, 2.35095)] {
+        let beta = engine_beta(rate, DT);
+        let t_damped = 2.0 * std::f64::consts::PI / (w0_sq - beta * beta / 4.0).sqrt();
+        assert!(
+            (t_damped - stated).abs() < 1e-5,
+            "derivation: {t_damped} vs the stated {stated}"
+        );
+        for kind in [Kind::Ball, Kind::Hinge] {
+            for substeps in [4, 8] {
+                let (mut w, bob) = pendulum(kind, tgs(substeps, rate), l, theta0);
+                let (c, _) = crossings(&mut w, bob, l, 3.5 * t_damped);
+                let period = mean_period(&c);
+                // amplitude correction averaged over the measured window
+                let (t0, t1) = (c[0], c[c.len() - 1]);
+                let mean_decay = (-beta * t0).exp() * phi1(beta * (t1 - t0));
+                let want = t_damped * (1.0 + theta0 * theta0 / 16.0 * mean_decay);
+                let rel = (period - want).abs() / want;
+                eprintln!(
+                    "β {beta:.6} {kind:?} s={substeps}: period {period:.6}, closed form {want:.6}, rel {rel:.2e}"
+                );
+                if rel > 1.5e-3 {
+                    failures.push(format!(
+                        "β {beta:.6} {kind:?} s={substeps}: period {period:.6}, closed form {want:.6} (rel {rel:.2e})"
+                    ));
+                }
             }
         }
     }
@@ -220,7 +235,7 @@ fn the_undamped_large_amplitude_period_is_the_elliptic_closed_form() {
     let mut failures = Vec::new();
     for kind in [Kind::Ball, Kind::Hinge] {
         for substeps in [4, 8] {
-            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ONE), l, theta0);
+            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ZERO), l, theta0);
             let runs = periods_and_amplitudes(&mut w, bob, 5.5 * t0);
             assert!(
                 runs.len() >= 3,
@@ -258,7 +273,7 @@ fn the_undamped_pendulum_keeps_its_amplitude() {
     let mut failures = Vec::new();
     for kind in [Kind::Ball, Kind::Hinge] {
         for substeps in [4, 8] {
-            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ONE), l, theta0);
+            let (mut w, bob) = pendulum(kind, tgs(substeps, Fix128::ZERO), l, theta0);
             let runs = periods_and_amplitudes(&mut w, bob, 4.5 * t0);
             let last = runs.last().expect("a period").1;
             if (last - theta0).abs() > 1e-3 {
@@ -284,7 +299,7 @@ fn a_ball_on_a_tilted_static_plane_stays_at_its_radius_under_tgs() {
     let n = [-theta.sin(), theta.cos(), 0.0];
     let mut failures = Vec::new();
     for substeps in [1, 4, 8] {
-        let mut w = PhysicsWorld::new(tgs(substeps, Fix128::ONE));
+        let mut w = PhysicsWorld::new(tgs(substeps, Fix128::ZERO));
         w.add_static_collider(StaticCollider::Plane(PlaneCollider::new(
             v3(n[0], n[1], n[2]),
             Fix128::ZERO,

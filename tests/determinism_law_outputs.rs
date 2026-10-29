@@ -922,8 +922,10 @@ fn law_output_transient_thermal() {
 /// floor of that scale)
 #[test]
 fn law_output_tgs_oriented_6dof_hooks() {
+    // re-recorded (from 79144576…) when damping became a rate per second with
+    // default 0: this scene's default config had damped by a retention 0.99 per step
     const TGS_ORIENTED_6DOF_HOOKS_GOLDEN: &str =
-        "79144576c7e17440faaaa14e5e1496c501bd5e929e83ebbdaece82ad87f115ff";
+        "cbe9a2a9302e78743540b94adfb4331febf1fa49067db1178ebc617b02b83509";
     let mut r = Record::default();
     let mut w = PhysicsWorld::new(SolverConfig {
         substeps: 4,

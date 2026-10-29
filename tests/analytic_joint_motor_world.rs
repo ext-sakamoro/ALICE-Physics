@@ -13,8 +13,9 @@
 //! centre, so the joint's positional correction acts through the centre and
 //! never changes the angular velocity; gravity (default config) does not
 //! torque body 1 either. The joint's twist about `z` is then driven only by
-//! the motor and by the per-frame damping `d = config.damping *
-//! angular_damping`.
+//! the motor and by the per-frame damping `d = exp(−(c_world + c_body)·dt)`
+//! (`config.damping_rate`, the body's `angular_damping_rate`; `d = 1` at the
+//! default rate 0), computed here in `Fix128` exactly as `step` does.
 //!
 //! # Closed forms
 //!
@@ -31,7 +32,9 @@
 //!   `ω_t (1 - exp(-kp t / I))`.
 //! * **Torque cap** (`kp |ω_t - ω| > τ_max`): the acceleration is
 //!   `τ_max / I`, so per frame `ω' = d (ω + τ_max dt / I)` and
-//!   `ω_k = c (1 - d^k)`, `c = d τ_max dt / (I (1 - d))`.
+//!   `ω_k = (d τ_max dt / I) Σ_{j<k} d^j`, which is `c (1 - d^k)`,
+//!   `c = d τ_max dt / (I (1 - d))`, for `d < 1` and `k τ_max dt / I` at
+//!   `d = 1` (the sum is evaluated term by term, no `0/0`).
 //! * **Position PD on a hinge** (`τ = kp (θ_t - θ) - kd ω`, `d = 1`): the
 //!   substep is semi-implicit Euler, `ω' = ω + h τ / I`, `θ' = θ + h ω'`, a
 //!   linear map whose `k`-th power is the discrete closed form. Its
@@ -63,6 +66,10 @@
 use alice_physics_core::joint::{BallJoint, HingeJoint, Joint};
 use alice_physics_core::motor::{MotorMode, PdController};
 use alice_physics_core::{Fix128, PhysicsConfig, PhysicsWorld, QuatFix, RigidBody, Vec3Fix};
+
+#[path = "support/damped_limits.rs"]
+mod damped_limits;
+use damped_limits::{both_rates, engine_retention, geometric_sum};
 
 const DT: (i64, i64) = (1, 60);
 
@@ -110,9 +117,12 @@ fn hinge_world() -> (PhysicsWorld, usize) {
     world_with(PhysicsConfig::default(), true)
 }
 
+/// The per-frame factor `d`, computed in `Fix128` exactly as `step` does
+/// (`exp(−c·dt)`; a new body has no angular damping rate of its own), so the
+/// `1e-9` reference checks carry no `Fix128::exp` error. `d = 1` exactly at
+/// rate 0.
 fn frame_damping(config: &PhysicsConfig) -> f64 {
-    // angular_damping of a new body is 1
-    config.damping.to_f64()
+    engine_retention(config.damping_rate, dt()).to_f64()
 }
 
 fn omega_z(w: &PhysicsWorld) -> f64 {
@@ -194,7 +204,7 @@ fn hinge_velocity_motor_follows_first_order_response() {
 
     // no frame damping: the first-order response and its continuous limit
     let cfg1 = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let (mut w1, j1) = world_with(cfg1, true);
@@ -216,35 +226,43 @@ fn hinge_velocity_motor_follows_first_order_response() {
 }
 
 /// oracle: with the cap reached the angular acceleration is τ_max / I:
-/// ω_k = c (1 - d^k), c = d τ_max dt / (I (1 - d)).
+/// ω_k = d τ_max dt / I · Σ_{j<k} d^j (= c (1 - d^k), c = d τ_max dt /
+/// (I (1 - d)), for d < 1; the sum is taken term by term so the undamped
+/// limit ω_k = k τ_max dt / I is exact, with no 0/0). Runs at damping rate 0
+/// (default) and at the old 0.99-per-step loss as a rate.
 #[test]
 fn hinge_motor_torque_cap_limits_acceleration_to_max_over_inertia() {
-    let (mut w, j) = hinge_world();
-    let d = frame_damping(&w.config);
-    let tau_max = 0.5;
-    w.add_joint_motor(j, velocity_pd(1000.0, tau_max, 10.0));
-    let c = d * tau_max * dt_f() / (1.0 - d);
-    let n = w.config.substeps;
-    let reference = velocity_reference(1000.0, tau_max, d, n, 10.0, 0.0, 60);
-    for k in 1..=60 {
-        w.step(dt());
-        let want = c * (1.0 - d.powi(k));
-        let got = omega_z(&w);
-        let r = reference[k as usize - 1];
-        assert!(
-            (got - r).abs() < 1e-9,
-            "frame {k}: ω = {got}, reference {r}"
-        );
-        assert!(
-            (got - want).abs() < 1e-5,
-            "frame {k}: ω = {got}, capped {want}"
-        );
+    for rate in both_rates() {
+        let cfg = PhysicsConfig {
+            damping_rate: rate,
+            ..PhysicsConfig::default()
+        };
+        let (mut w, j) = world_with(cfg, true);
+        let d = frame_damping(&w.config);
+        let tau_max = 0.5;
+        w.add_joint_motor(j, velocity_pd(1000.0, tau_max, 10.0));
+        let n = w.config.substeps;
+        let reference = velocity_reference(1000.0, tau_max, d, n, 10.0, 0.0, 60);
+        for k in 1..=60 {
+            w.step(dt());
+            let want = d * tau_max * dt_f() * geometric_sum(d, k);
+            let got = omega_z(&w);
+            let r = reference[k - 1];
+            assert!(
+                (got - r).abs() < 1e-9,
+                "rate {rate:?}, frame {k}: ω = {got}, reference {r}"
+            );
+            assert!(
+                (got - want).abs() < 1e-5,
+                "rate {rate:?}, frame {k}: ω = {got}, capped {want}"
+            );
+        }
+        // the first frame's change is (τ_max / I) dt, times d
+        let (mut w2, j2) = world_with(cfg, true);
+        w2.add_joint_motor(j2, velocity_pd(1000.0, tau_max, 10.0));
+        w2.step(dt());
+        assert!((omega_z(&w2) - d * tau_max * dt_f()).abs() < 1e-9);
     }
-    // the first frame's change is (τ_max / I) dt, times d
-    let (mut w2, j2) = hinge_world();
-    w2.add_joint_motor(j2, velocity_pd(1000.0, tau_max, 10.0));
-    w2.step(dt());
-    assert!((omega_z(&w2) - d * tau_max * dt_f()).abs() < 1e-9);
 }
 
 /// Semi-implicit Euler reference of the hinge PD substep map, `frames` frames.
@@ -268,7 +286,7 @@ fn pd_reference(kp: f64, kd: f64, i: f64, n: usize, target: f64, frames: usize) 
 #[test]
 fn hinge_position_pd_follows_critically_damped_closed_form() {
     let cfg = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let (mut w, j) = world_with(cfg, true);
@@ -360,7 +378,7 @@ fn ball_rotation_motor_converges_with_analytic_error_decay() {
 
     // linearised decay (d = 1): φ(t) = φ_t (1 - (1 + w t) e^{-w t}) to O(h + φ²)
     let cfg1 = PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let (mut w1, j1) = world_with(cfg1, false);
@@ -654,38 +672,50 @@ fn tgs_backend_applies_the_velocity_motor_once_per_tick() {
 
 /// oracle: the 3-axis motor's torque magnitude is capped at max_torque, so
 /// far from the target the rotation accelerates at τ_max / I about the error
-/// axis: ω_k = c (1 - d^k), c = d τ_max dt / (I (1 - d)).
+/// axis: ω_k = d τ_max dt / I · Σ_{j<k} d^j (= c (1 - d^k), c = d τ_max dt /
+/// (I (1 - d)), for d < 1; summed term by term, so the undamped limit
+/// k τ_max dt / I is exact). Runs at damping rate 0 (default) and at the old
+/// 0.99-per-step loss as a rate.
 #[test]
 fn ball_rotation_motor_torque_cap_limits_acceleration() {
-    let (mut w, j) = world_with(PhysicsConfig::default(), false);
-    let d = frame_damping(&w.config);
-    let n = w.config.substeps;
-    let tau_max = 0.25;
-    let m = w.add_joint_motor_3d(
-        j,
-        Vec3Fix::from_int(1000, 1000, 1000),
-        Vec3Fix::ZERO,
-        f(tau_max),
-    );
-    let axis = Vec3Fix::new(Fix128::ZERO, f(0.6), f(0.8));
-    w.set_joint_motor_3d_rotation_target(m, QuatFix::from_axis_angle(axis, f(1.0)));
-    let c = d * tau_max * dt_f() / (1.0 - d);
-    let reference = velocity_reference(1e9, tau_max, d, n, 1e9, 0.0, 30);
-    for k in 1..=30 {
-        w.step(dt());
-        let wv = w.bodies[1].angular_velocity;
-        let along = wv.dot(axis).to_f64();
-        let off = (wv - axis * wv.dot(axis)).length().to_f64();
-        let r = reference[k as usize - 1];
-        assert!(off < 1e-9, "frame {k}: ω left the axis ({off})");
-        assert!(
-            (along - r).abs() < 1e-9,
-            "frame {k}: ω = {along}, reference {r}"
+    for rate in both_rates() {
+        let cfg = PhysicsConfig {
+            damping_rate: rate,
+            ..PhysicsConfig::default()
+        };
+        let (mut w, j) = world_with(cfg, false);
+        let d = frame_damping(&w.config);
+        let n = w.config.substeps;
+        let tau_max = 0.25;
+        let m = w.add_joint_motor_3d(
+            j,
+            Vec3Fix::from_int(1000, 1000, 1000),
+            Vec3Fix::ZERO,
+            f(tau_max),
         );
-        assert!(
-            (along - c * (1.0 - d.powi(k))).abs() < 1e-5,
-            "frame {k}: ω = {along}"
-        );
+        let axis = Vec3Fix::new(Fix128::ZERO, f(0.6), f(0.8));
+        w.set_joint_motor_3d_rotation_target(m, QuatFix::from_axis_angle(axis, f(1.0)));
+        let reference = velocity_reference(1e9, tau_max, d, n, 1e9, 0.0, 30);
+        for k in 1..=30 {
+            w.step(dt());
+            let wv = w.bodies[1].angular_velocity;
+            let along = wv.dot(axis).to_f64();
+            let off = (wv - axis * wv.dot(axis)).length().to_f64();
+            let r = reference[k - 1];
+            let want = d * tau_max * dt_f() * geometric_sum(d, k);
+            assert!(
+                off < 1e-9,
+                "rate {rate:?}, frame {k}: ω left the axis ({off})"
+            );
+            assert!(
+                (along - r).abs() < 1e-9,
+                "rate {rate:?}, frame {k}: ω = {along}, reference {r}"
+            );
+            assert!(
+                (along - want).abs() < 1e-5,
+                "rate {rate:?}, frame {k}: ω = {along}, capped {want}"
+            );
+        }
     }
 }
 

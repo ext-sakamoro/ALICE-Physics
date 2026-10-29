@@ -589,7 +589,7 @@ fn bench_world_is_bit_identical() {
     let build = || {
         let config = PhysicsConfig {
             gravity: Vec3Fix::ZERO,
-            damping: Fix128::ONE,
+            damping_rate: Fix128::ZERO,
             ..PhysicsConfig::default()
         };
         let mut w = PhysicsWorld::new(config);

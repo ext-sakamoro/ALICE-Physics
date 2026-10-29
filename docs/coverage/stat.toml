@@ -724,7 +724,7 @@ axis = "stochastic-dynamics"
 item = "Langevin heat bath on the bodies of the rigid world (friction plus a seeded random impulse per step with the fluctuation-dissipation amplitude)"
 source = "Frenkel-Smit, Understanding Molecular Simulation; LAMMPS fix langevin"
 status = "missing"
-evidence = "world は線形減衰 ( src/solver.rs::with_linear_damping ) を持つが揺動の項は無い 乱数の部品は src/rng.rs::DeterministicRng"
+evidence = "world は線形減衰 ( src/solver.rs::with_linear_damping_rate ) を持つが揺動の項は無い 乱数の部品は src/rng.rs::DeterministicRng"
 oracle_candidate = "自由剛体の並進運動エネルギーの平均が 3 k T / 2 になること"
 limitation = ""
 

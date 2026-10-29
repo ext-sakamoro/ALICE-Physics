@@ -146,6 +146,9 @@ const NOT_STEP: &[&str] = &[
     "reset_world",
     "restore_world",
     "restore_world_checked",
+    // state transfer: restore_world_checked for a version 1 to 5 blob, its
+    // damping retentions converted to rates; it steps nothing
+    "restore_world_legacy_damping",
     "set_body_collision_radius",
     "set_body_filter",
     "set_body_material",

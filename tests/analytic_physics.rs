@@ -36,10 +36,10 @@ fn r(n: i64, d: i64) -> Fix128 {
     Fix128::from_ratio(n, d)
 }
 
-fn cfg(gravity_y: i64, damping: Fix128, substeps: usize, iterations: usize) -> PhysicsConfig {
+fn cfg(gravity_y: i64, damping_rate: Fix128, substeps: usize, iterations: usize) -> PhysicsConfig {
     PhysicsConfig {
         gravity: Vec3Fix::from_int(0, gravity_y, 0),
-        damping,
+        damping_rate,
         substeps,
         iterations,
         ..PhysicsConfig::default()
@@ -90,7 +90,7 @@ fn period_from_zero_crossings(samples: &[f64], dt: f64) -> f64 {
 fn free_fall_matches_analytic_and_is_substep_independent() {
     let mut ys = Vec::new();
     for substeps in [1usize, 2, 4, 8, 16] {
-        let mut world = PhysicsWorld::new(cfg(-10, Fix128::ONE, substeps, 4));
+        let mut world = PhysicsWorld::new(cfg(-10, Fix128::ZERO, substeps, 4));
         let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         run(&mut world, 60, r(1, 60));
         ys.push(world.bodies[b].position.y.to_f64());
@@ -117,26 +117,37 @@ fn free_fall_matches_analytic_and_is_substep_independent() {
 
 #[test]
 fn default_config_free_fall_reaches_analytic_within_frame_damping() {
-    let mut world = PhysicsWorld::new(PhysicsConfig::default());
-    let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
-    run(&mut world, 60, r(1, 60));
-    let y = world.bodies[b].position.y.to_f64();
-    // Discrete closed form of the 1.2.0 scheme with s substeps and frame damping d:
-    //   y_{n+1} = y_n + v_n dt + g dt^2 (s+1)/(2s)   (symplectic Euler inside the frame)
-    //   v_{n+1} = (v_n + g dt) d                       (damping once per frame)
-    // → y_60 = -4.1406 (undamped -5.083); pre-1.2.0 gave -1.641.
-    let (g, d, dt, s) = (10.0, 0.99, DT60, 8.0);
-    let mut y_ref = 0.0;
-    let mut v = 0.0;
-    for _ in 0..60 {
-        y_ref -= v * dt + g * dt * dt * (s + 1.0) / (2.0 * s);
-        v = (v + g * dt) * d;
+    // The default config (damping rate 0) and the default config with the old
+    // 0.99-per-frame loss set as a rate, `c = −ln(0.99)·60`.
+    let old_rate = -r(99, 100).ln() * Fix128::from_int(60);
+    for rate in [Fix128::ZERO, old_rate] {
+        let mut world = PhysicsWorld::new(PhysicsConfig {
+            damping_rate: rate,
+            ..PhysicsConfig::default()
+        });
+        let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
+        run(&mut world, 60, r(1, 60));
+        let y = world.bodies[b].position.y.to_f64();
+        // Discrete closed form of the 1.2.0 scheme with s substeps and frame damping d:
+        //   y_{n+1} = y_n + v_n dt + g dt^2 (s+1)/(2s)   (symplectic Euler inside the frame)
+        //   v_{n+1} = (v_n + g dt) d                       (damping once per frame)
+        // with d = exp(−c·dt) computed in Fix128 exactly as `step` does (d = 1
+        // at rate 0), so the 1e-6 tolerance carries no `Fix128::exp` error
+        // → y_60 = -5.083 undamped, -4.1406 at the old rate; pre-1.2.0 gave -1.641.
+        let d = (-(rate * r(1, 60))).exp().to_f64();
+        let (g, dt, s) = (10.0, DT60, 8.0);
+        let mut y_ref = 0.0;
+        let mut v = 0.0;
+        for _ in 0..60 {
+            y_ref -= v * dt + g * dt * dt * (s + 1.0) / (2.0 * s);
+            v = (v + g * dt) * d;
+        }
+        assert!(
+            (y - y_ref).abs() < 1e-6,
+            "rate {rate:?}: y = {y}, closed-form {y_ref} (pre-1.2.0 gave -1.64)"
+        );
+        assert!(y < -3.5, "rate {rate:?}: fell only to {y}");
     }
-    assert!(
-        (y - y_ref).abs() < 1e-6,
-        "default config y = {y}, closed-form {y_ref} (pre-1.2.0 gave -1.64)"
-    );
-    assert!(y < -3.5, "default config fell only to {y}");
 }
 
 // ---------------------------------------------------------------------------
@@ -145,7 +156,7 @@ fn default_config_free_fall_reaches_analytic_within_frame_damping() {
 
 #[test]
 fn projectile_follows_parabola() {
-    let mut world = PhysicsWorld::new(cfg(-10, Fix128::ONE, 8, 4));
+    let mut world = PhysicsWorld::new(cfg(-10, Fix128::ZERO, 8, 4));
     let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
     body.velocity = Vec3Fix::from_int(3, 4, 0);
     let b = world.add_body(body);
@@ -163,7 +174,9 @@ fn projectile_follows_parabola() {
 #[test]
 fn terminal_velocity_under_frame_damping_matches_closed_form() {
     for substeps in [1usize, 8] {
-        let mut world = PhysicsWorld::new(cfg(-10, r(99, 100), substeps, 4));
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        let rate = Fix128::from_f64(-(0.99f64).ln() / DT60);
+        let mut world = PhysicsWorld::new(cfg(-10, rate, substeps, 4));
         let b = world.add_body(RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE));
         run(&mut world, 1200, r(1, 60));
         let v = -world.bodies[b].velocity.y.to_f64();
@@ -184,10 +197,11 @@ fn terminal_velocity_under_frame_damping_matches_closed_form() {
 fn compliant_constraint_static_extension_is_iteration_independent() {
     let mut exts = Vec::new();
     for iterations in [1usize, 2, 4, 8, 16] {
-        let mut world = PhysicsWorld::new(cfg(-10, Fix128::ONE, 4, iterations));
+        let mut world = PhysicsWorld::new(cfg(-10, Fix128::ZERO, 4, iterations));
         let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
         let mut hanging = RigidBody::new_dynamic(Vec3Fix::from_int(0, -1, 0), Fix128::ONE);
-        hanging.linear_damping = r(9, 10); // settle the transient
+        // the loss per step of the former retention 0.9 at dt = 1/60
+        hanging.linear_damping_rate = Fix128::from_f64(-(0.9f64).ln() / DT60); // settle the transient
         let b = world.add_body(hanging);
         world.add_distance_constraint(rod(a, b, Fix128::ONE, r(1, 100))); // k = 100 N/m
         run(&mut world, 600, r(1, 60));
@@ -207,7 +221,7 @@ fn compliant_constraint_static_extension_is_iteration_independent() {
 
 #[test]
 fn compliant_constraint_oscillates_at_natural_period() {
-    let mut world = PhysicsWorld::new(cfg(0, Fix128::ONE, 8, 1));
+    let mut world = PhysicsWorld::new(cfg(0, Fix128::ZERO, 8, 1));
     let a = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
     // rest length 1, k = 100 N/m, m = 1 → ω = 10, T = 0.6283 s; start stretched by 0.1
     let b = world.add_body(RigidBody::new_dynamic(
@@ -235,7 +249,7 @@ fn compliant_constraint_oscillates_at_natural_period() {
 
 #[test]
 fn rigid_pendulum_small_angle_period() {
-    let mut world = PhysicsWorld::new(cfg(-10, Fix128::ONE, 8, 4));
+    let mut world = PhysicsWorld::new(cfg(-10, Fix128::ZERO, 8, 4));
     let pivot = world.add_body(RigidBody::new_static(Vec3Fix::ZERO));
     // L = 1, θ0 = 0.05 rad → x0 = sin θ0, y0 = -cos θ0
     let theta0 = 0.05f64;
@@ -273,7 +287,7 @@ fn rigid_pendulum_small_angle_period() {
 
 #[test]
 fn head_on_collision_conserves_momentum() {
-    let mut world = PhysicsWorld::new(cfg(0, Fix128::ONE, 8, 4));
+    let mut world = PhysicsWorld::new(cfg(0, Fix128::ZERO, 8, 4));
     let mut a = RigidBody::new_dynamic(Vec3Fix::from_int(-3, 0, 0), Fix128::ONE);
     a.velocity = Vec3Fix::from_int(4, 0, 0);
     let mut b = RigidBody::new_dynamic(Vec3Fix::from_int(3, 0, 0), Fix128::from_int(2));
@@ -338,7 +352,7 @@ fn kinematic_body_reaches_target_exactly() {
 #[test]
 fn torque_free_rotation_angle_equals_omega_t() {
     for substeps in [1usize, 4, 16] {
-        let mut world = PhysicsWorld::new(cfg(0, Fix128::ONE, substeps, 4));
+        let mut world = PhysicsWorld::new(cfg(0, Fix128::ZERO, substeps, 4));
         let mut body = RigidBody::new_dynamic(Vec3Fix::ZERO, Fix128::ONE);
         body.angular_velocity = Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, r(1, 2)); // 0.5 rad/s
         let b = world.add_body(body);

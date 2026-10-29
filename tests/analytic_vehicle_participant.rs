@@ -104,7 +104,7 @@ fn single_wheel(mass: i64, backend: SolverBackend) -> PhysicsWorld {
 /// closed forms hold without a per-frame velocity factor.
 fn car(backend: SolverBackend) -> PhysicsWorld {
     let mut world = PhysicsWorld::new(PhysicsConfig {
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     });
     world.config.solver_backend = backend;
@@ -274,7 +274,7 @@ fn suspension_rests_with_zero_frame_end_velocity() {
 fn coast(substeps: usize) -> f64 {
     let mut world = PhysicsWorld::new(PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps,
         ..PhysicsConfig::default()
     });
@@ -623,7 +623,7 @@ fn identity_names_the_resident_and_semantics_are_unmoved() {
         .collect();
     assert_eq!(
         hex,
-        "31eb4ab87866d58361e47c235c7b71434f844106e91af2f3478cbb8f718e9f2a"
+        "e90000da9e7073b2c82c1851e78a9c08d1640298bb3dc4e11ea91fb0b8ad01d6"
     );
 }
 
@@ -649,8 +649,13 @@ fn drive_digest(backend: SolverBackend) -> String {
 // world snapshot version 5: the version field and the checksum moved, the rest of the bytes did not
 // re-pinned when the secondary chain was pinned: the header's semantics identifier (88cf6f85… ->
 // 31eb4ab8…), its law_id and the checksum moved; the state did not (tests/world_snapshot_xv_88cf6f85.rs)
-const DRIVE_XPBD: &str = "f6d55dab8b44ffb39eef7d155f3a1324182647f7abb0317b63275496d2dc5cdb";
-const DRIVE_TGS: &str = "2b7a4f72891756f98e278e05276491387cd8e533f5144bc3918cf3ec557f84d3";
+// re-pinned for world snapshot version 6 (damping a rate per second, body rates in the blob) and
+// the semantics identifier e90000da…: the header, the version, the damping fields and the checksum
+// moved; the chassis and the participant payload did not (no damping, the ground is the vehicle's
+// own plane, not a static collider; the chassis state and payload after 240 frames hash the same
+// as the build before that change)
+const DRIVE_XPBD: &str = "3b0a4232d223b6a393c5561b4518265c597f2b9d2e45d247d48c9ccea12fd005";
+const DRIVE_TGS: &str = "489d4bb5288ef5a151c31a9250d7541f0260d64c66889ec3e31e60668cc01431";
 
 /// golden (determinism): settle, accelerate, turn, brake; the world and the
 /// participant payload after 240 frames, per backend (CI runs it on every

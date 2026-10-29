@@ -16,7 +16,8 @@ fn main() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(99, 100),
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
         ..Default::default()
     });
 

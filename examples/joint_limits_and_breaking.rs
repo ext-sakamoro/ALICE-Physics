@@ -186,7 +186,7 @@ fn main() {
             let mut world = PhysicsWorld::new(PhysicsConfig {
                 substeps: 1,
                 gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-8), Fix128::ZERO),
-                damping: Fix128::ONE,
+                damping_rate: Fix128::ZERO,
                 ..PhysicsConfig::default()
             });
             world.add_body(RigidBody::new_static(o));

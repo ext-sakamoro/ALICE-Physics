@@ -87,7 +87,7 @@ fn norm(a: [f64; 3]) -> f64 {
 fn world(substeps: usize, inv_inertia: Vec3Fix) -> (PhysicsWorld, usize) {
     let config = PhysicsConfig {
         substeps,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         gravity: Vec3Fix::ZERO,
         ..PhysicsConfig::default()
     };

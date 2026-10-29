@@ -101,7 +101,7 @@ impl<R: RoadSurface> Sim<R> {
         rot: QuatFix,
     ) -> Self {
         let mut world = PhysicsWorld::new(PhysicsConfig::default());
-        world.config.damping = Fix128::ONE;
+        world.config.damping_rate = Fix128::ZERO;
         let mut body = RigidBody::new_dynamic(pos, fx(MASS));
         body.rotation = rot;
         body.prev_rotation = rot;

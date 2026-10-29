@@ -111,7 +111,7 @@ namespace AlicePhysics
         public double gravityX;
         public double gravityY;
         public double gravityZ;
-        public double damping;
+        public double damping_rate; // 1/s, 0 = none: velocity *= exp(-damping_rate*dt) per step
     }
 
     [StructLayout(LayoutKind.Sequential)]

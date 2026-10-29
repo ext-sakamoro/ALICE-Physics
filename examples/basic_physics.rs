@@ -16,7 +16,8 @@ fn main() {
         substeps: 4,
         iterations: 8,
         gravity: Vec3Fix::new(Fix128::ZERO, Fix128::from_int(-10), Fix128::ZERO),
-        damping: Fix128::from_ratio(99, 100),
+        // the loss per step of the former retention 0.99 at dt = 1/60
+        damping_rate: -Fix128::from_ratio(99, 100).ln() * Fix128::from_int(60),
         ..Default::default()
     };
     let mut world = PhysicsWorld::new(config);
@@ -42,7 +43,8 @@ fn main() {
         Fix128::from_int(2), // 2 kg
     )
     .with_restitution(Fix128::from_ratio(8, 10))
-    .with_linear_damping(Fix128::from_ratio(95, 100));
+    // the loss per step of the former retention 0.95 at dt = 1/60
+    .with_linear_damping_rate(-Fix128::from_ratio(95, 100).ln() * Fix128::from_int(60));
     world.add_body(ball2);
 
     println!("ALICE-Physics Basic Example");

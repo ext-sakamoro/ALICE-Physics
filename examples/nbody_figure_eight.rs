@@ -69,7 +69,7 @@ fn main() {
     // 2. a circular pair in PhysicsWorld (no uniform gravity, no damping)
     let config = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         ..PhysicsConfig::default()
     };
     let mut world = PhysicsWorld::new(config);

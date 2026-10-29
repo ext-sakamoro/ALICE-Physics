@@ -48,7 +48,7 @@ fn scene_free_fall(backend: SolverBackend) {
 
     let cfg = PhysicsConfig {
         gravity: Vec3Fix::new(Fix128::ZERO, g, Fix128::ZERO),
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: 1,
         solver_backend: backend,
         ..PhysicsConfig::default()
@@ -119,7 +119,7 @@ fn scene_resting_contact(backend: SolverBackend) {
 fn scene_joint(backend: SolverBackend) {
     let cfg = PhysicsConfig {
         gravity: Vec3Fix::ZERO,
-        damping: Fix128::ONE,
+        damping_rate: Fix128::ZERO,
         substeps: 1,
         solver_backend: backend,
         ..PhysicsConfig::default()
