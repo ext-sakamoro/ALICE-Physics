@@ -2,7 +2,7 @@
 //! whole-world snapshot it hashes round-trips byte for byte.
 //!
 //! oracle: the digest's definition in its doc (SHA-256 over the BE u64 length
-//! of `STATE_DIGEST_DOMAIN`, the domain, then `snapshot_world`), recomputed here
+//! of `PhysicsWorld::STATE_DIGEST_DOMAIN`, the domain, then `snapshot_world`), recomputed here
 //! with `sha2` directly; the JavaScript test recomputes it with WebCrypto and the
 //! Python test with hashlib, each from the snapshot bytes.
 
@@ -11,7 +11,6 @@ use alice_physics_core::plane_collider::PlaneCollider;
 use alice_physics_core::static_collider::StaticCollider;
 use alice_physics_core::{
     Fix128, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix, PHYSICS_SEMANTICS_ID,
-    STATE_DIGEST_DOMAIN,
 };
 use sha2::{Digest, Sha256};
 
@@ -41,12 +40,15 @@ fn dt() -> Fix128 {
 fn the_digest_is_sha256_of_the_domain_and_the_snapshot() {
     let w = scene();
     let mut h = Sha256::new();
-    h.update((STATE_DIGEST_DOMAIN.len() as u64).to_be_bytes());
-    h.update(STATE_DIGEST_DOMAIN);
+    h.update((PhysicsWorld::STATE_DIGEST_DOMAIN.len() as u64).to_be_bytes());
+    h.update(PhysicsWorld::STATE_DIGEST_DOMAIN);
     h.update(w.snapshot_world());
     let want: [u8; 32] = h.finalize().into();
     assert_eq!(w.state_digest(), want);
-    assert_eq!(STATE_DIGEST_DOMAIN, b"alice-physics/state-digest/v1");
+    assert_eq!(
+        PhysicsWorld::STATE_DIGEST_DOMAIN,
+        b"alice-physics/state-digest/v1"
+    );
 }
 
 #[test]
