@@ -172,6 +172,92 @@ FORCED_GIT_CONFIG = ("-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=fal
                      "-c", f"core.sshCommand={SSH}", "-c", "protocol.ext.allow=never")
 
 
+# the account's global hooks checkout (2026-10-29): land.py runs git with core.hooksPath=/dev/null (no repository
+# hook runs), so it runs the account's own pre-push gate itself, with the exact lines git would hand that hook, and its
+# preflight through that checkout's run-preflight.sh, which writes the receipt the gate asks for. The checkout is the
+# one git itself would use: the repository holding the account's global core.hooksPath, read from <home>/.gitconfig
+# as a file (the home from the user database, not $HOME; a missing file, a missing hooksPath or an include refuses).
+# It is trusted only when its .git/config's origin is on HOOKS_OWNER with a repository name whose SHA-256 is
+# HOOKS_REPO_SHA256 (the name is not written here), and a tool is used only when its real path stays inside it.
+# Module constants, not options or variables: no caller can point a landing at another gate (the tests set them).
+HOOKS_OWNER = "ext-sakamoro"
+HOOKS_REPO_SHA256 = "e78a14d392a171bb45a5bcb8d6d4e3a685893ea6e1a04b811066c34873e0c311"
+HOOKS_HOME: Path | None = None  # (None: the account's home from the user database)
+HOOKS_HOW = "set the account's global core.hooksPath to the hooks checkout's hooks/git-hooks"
+
+
+def hooks_home() -> Path:
+    home = account_home()
+    return HOOKS_HOME or Path(home if home else os.path.expanduser("~"))
+
+
+def global_hooks_path() -> Path:
+    """core.hooksPath of the account's global git config (<home>/.gitconfig, read as a file); LandError when it
+    cannot be read exactly (missing, no hooksPath, an include that may change it)"""
+    cfg = hooks_home() / ".gitconfig"
+    try:
+        text = cfg.read_text(errors="replace")
+    except OSError:
+        raise LandError(f"{cfg} cannot be read: the pre-push gate cannot be found ({HOOKS_HOW})") from None
+    section, value = "", None
+    for raw in text.splitlines():
+        line = raw.split("#", 1)[0].split(";", 1)[0].strip()
+        if not line:
+            continue
+        head = re.fullmatch(r"\[\s*([A-Za-z0-9.-]+)(?:\s+\"[^\"]*\")?\s*\]", line)
+        if head:
+            section = head.group(1).lower()
+            if section in ("include", "includeif"):
+                raise LandError(f"{cfg} has an include (it may change core.hooksPath): refusing to guess the gate")
+            continue
+        if line.startswith("["):
+            if re.match(r"\[\s*include", line, re.I):
+                raise LandError(f"{cfg} has an include (it may change core.hooksPath): refusing to guess the gate")
+            section = ""
+            continue
+        key, eq, val = line.partition("=")
+        if section == "core" and eq and key.strip().lower() == "hookspath":
+            value = val.strip().strip('"')
+    if not value:
+        raise LandError(f"{cfg} sets no core.hooksPath: the pre-push gate cannot be found ({HOOKS_HOW})")
+    return Path(os.path.expanduser(value))
+
+
+def hooks_checkout() -> Path:
+    """the real path of the repository holding the global core.hooksPath, when its origin is the trusted one"""
+    try:
+        hp = global_hooks_path().resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise LandError(f"the global core.hooksPath does not exist: the pre-push gate cannot be found ({HOOKS_HOW})") from None
+    repo = next((d for d in (hp, *hp.parents) if (d / ".git").is_dir()), None)
+    if repo is None:
+        raise LandError(f"the global core.hooksPath ({hp}) is in no repository: refusing it")
+    config = repo / ".git" / "config"
+    try:
+        text = config.read_text(errors="replace")
+    except OSError:
+        raise LandError(f"{config} cannot be read: refusing the hooks checkout") from None
+    origin = re.search(r'\[remote "origin"\][^\[]*?\burl\s*=\s*(\S+)', text)
+    m = re.search(r"(?:^|[:/])([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+?)(?:\.git)?/?$", origin.group(1)) if origin else None
+    import hashlib
+
+    if not m or m.group(1) != HOOKS_OWNER or hashlib.sha256(m.group(2).lower().encode()).hexdigest() != HOOKS_REPO_SHA256:
+        raise LandError(f"{repo}'s origin is not the trusted hooks repository: refusing its gate")
+    return repo
+
+
+def hooks_tool(rel: str) -> Path:
+    """the real path of the hooks checkout's `rel`, or LandError naming why it cannot be trusted"""
+    repo = hooks_checkout()
+    try:
+        tool = (repo / rel).resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise LandError(f"the hooks checkout has no {rel} ({repo}): refusing the landing") from None
+    if repo not in tool.parents or not tool.is_file():
+        raise LandError(f"the hooks checkout's {rel} resolves outside {repo} ({tool}): refusing it")
+    return tool
+
+
 # the oldest git that has every option land.py passes; the candidates are tried in order and
 # the first one at least this new is used (an older system git, such as Apple's git on some
 # macOS images, is skipped, never run with an option it rejects). Raise it with the option:
@@ -996,6 +1082,7 @@ class Lander:
         # code, never from the environment)
         self.law_url = LAW_URL
         self.preflight_runs = 0
+        self.preflighted_tree = ""
         self.poll_seconds = 30
         self.gh_cmd: list[str] | None = None   # the pinned gh on first use; tests run a fake gh script here
         # the delays before asking a read again after a transient GitHub failure (GH_TRANSIENT)
@@ -1084,8 +1171,34 @@ class Lander:
             raise LandError("lib-test gate failed:\n  " + "\n  ".join(errors or [r.stderr.strip()]))
 
     def run_preflight(self) -> None:
+        """scripts/preflight.sh --fast through the hooks checkout's run-preflight.sh, which writes the receipt of this
+        tree that the pre-push gate asks for (one preflight, the same standard as a plain push)"""
         self.preflight_runs += 1
-        self.sh("bash", "scripts/preflight.sh", "--fast")
+        runner = hooks_tool("scripts/run-preflight.sh")
+        self.sh("bash", str(runner), str(self.root), "--fast", "--class", "land")
+
+    def run_gate(self, lines: list[str]) -> None:
+        """the hooks checkout's git pre-push gate (hooks/git_pre_push.py, not the git-hooks/ wrapper: that also runs the
+        repository's own hook) on the exact ref lines git would hand a pre-push hook for the push that follows; a
+        refusal, a failure or a missing gate stops the landing before anything is sent"""
+        gate = hooks_tool("hooks/git_pre_push.py")
+        url = self.git("remote", "get-url", "--push", self.remote)
+        try:
+            r = subprocess.run([sys.executable, str(gate), self.remote, url], input="".join(f"{ln}\n" for ln in lines),
+                               cwd=self.root, capture_output=True, text=True, timeout=1800,
+                               env={**clean_env(), "HOME": str(hooks_home())})
+        except (OSError, subprocess.SubprocessError) as e:
+            raise LandError(f"the pre-push gate could not run ({type(e).__name__}: {e}): nothing pushed") from None
+        for line in (r.stdout + r.stderr).splitlines():
+            self.log(f"gate: {line}")
+        if r.returncode != 0:
+            raise LandError(f"the pre-push gate refused the push (exit {r.returncode}): nothing pushed\n  "
+                            + "\n  ".join((r.stderr or r.stdout).strip().splitlines()[-12:]))
+
+    def hook_remote_sha(self, full_ref: str) -> str:
+        """the remote's current sha of `full_ref` (all zeros when it has none), as git hands it to a pre-push hook"""
+        out = self.git("ls-remote", self.remote, full_ref).split()
+        return out[0] if out else "0" * 40
 
     def run_compile_check(self) -> None:
         # clippy with -D warnings, as CI: a caller removed on each side can leave
@@ -1604,8 +1717,13 @@ class Lander:
         self.regenerate()
         self.commit_regenerated()
         self.run_checks()
-        if verify == "preflight":
+        # every tree land.py pushes has the receipt of a preflight run on it (the pre-push gate's receipt step asks for
+        # it): a rebase makes a new tree, so after one the preflight runs whatever `verify` chose (2026-10-29: a
+        # documents-only or compile-only rebase used to push a tree no preflight had run on)
+        tree = self.git("rev-parse", "HEAD^{tree}")
+        if tree != self.preflighted_tree:
             self.run_preflight()
+            self.preflighted_tree = tree
         elif verify == "compile":
             self.run_compile_check()
         return self.git("rev-parse", "HEAD")
@@ -1675,6 +1793,7 @@ class Lander:
         self.check_messages()
         if self.git("rev-parse", "HEAD") != sha:
             raise LandError(f"HEAD is not the prepared {sha[:7]}: nothing pushed to {ref}")
+        self.run_gate([f"{sha} {sha} refs/heads/{ref} {self.hook_remote_sha(f'refs/heads/{ref}')}"])
         self.git("push", "-q", "--force", self.remote, f"{sha}:refs/heads/{ref}")
         self.wait_evidence(ref, sha)
 
@@ -1917,6 +2036,7 @@ class Lander:
             if self.git("rev-parse", "HEAD") != sha:
                 raise LandError(f"land.py's working copy moved from the prepared {sha[:7]}: nothing pushed to main")
             rule = self.evidence_rule(lane, evidence_sha, evidence_base, rounds, sha)
+            self.run_gate([f"{sha} {sha} refs/heads/{self.branch} {self.hook_remote_sha(f'refs/heads/{self.branch}')}"])
             r = subprocess.run([*self.git_argv, "push", "-q", self.remote, f"{sha}:refs/heads/{self.branch}"],
                                cwd=self.root, capture_output=True, text=True, env=self.git_env)
             self.fetch()
@@ -1932,7 +2052,12 @@ class Lander:
                 for line in self.record:
                     self.log(f"  {line}")
                 if lane == "ci":
-                    self.git("push", "-q", self.remote, f":refs/heads/ci/{self.id}", check=False)
+                    ci_ref = f"refs/heads/ci/{self.id}"
+                    try:
+                        self.run_gate([f"(delete) {'0' * 40} {ci_ref} {self.hook_remote_sha(ci_ref)}"])
+                        self.git("push", "-q", self.remote, f":{ci_ref}", check=False)
+                    except LandError as e:
+                        self.log(f"ci/{self.id} left in place: {e}")  # (the landing is done; the branch is only a leftover)
                 self.evidence_line = f"EVIDENCE {evidence_sha or '-'} LANDED {sha} RULE {rule}"
                 self.log(self.evidence_line)
                 return sha

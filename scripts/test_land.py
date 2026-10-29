@@ -12,6 +12,7 @@ import atexit
 import json
 import os
 import re
+import hashlib
 import shutil
 import subprocess
 import sys
@@ -166,6 +167,38 @@ AMBIENT_ENV_RE = re.compile(
 DEFAULT_IDENTITY = f"{NAME} <{EMAIL}>"
 
 
+GATE_STAND_IN = """import os, sys
+from pathlib import Path
+log = Path(__file__).resolve().parent.parent / "gate.log"
+with log.open("a") as f:
+    f.write("ARGV " + " ".join(sys.argv[1:]) + "\\n" + sys.stdin.read())
+sys.exit(int(os.environ.get("GATE_STAND_IN_RC", (Path(__file__).resolve().parent / "rc").read_text().strip()
+             if (Path(__file__).resolve().parent / "rc").exists() else "0")))
+"""
+RUN_PREFLIGHT_STAND_IN = """#!/usr/bin/env bash
+echo "$*" >> "$(cd "$(dirname "$0")/.." && pwd)/run-preflight.log"
+"""
+
+
+STAND_IN_REPO = "hooks-stand-in"
+
+
+def stand_in_hooks_checkout(d: Path) -> Path:
+    """an account home (d/home) whose .gitconfig sets core.hooksPath into a hooks checkout (d/hooks-checkout) that
+    land.py trusts: origin on land.HOOKS_OWNER with the repository name STAND_IN_REPO (the tests set
+    land.HOOKS_REPO_SHA256 to its hash), a recording pre-push gate, a recording run-preflight.sh; returns the checkout"""
+    cc = d / "hooks-checkout"
+    (cc / ".git").mkdir(parents=True)
+    (cc / ".git" / "config").write_text(f'[remote "origin"]\n\turl = git@github.com:{land.HOOKS_OWNER}/{STAND_IN_REPO}.git\n')
+    (cc / "hooks" / "git-hooks").mkdir(parents=True)
+    (cc / "hooks" / "git_pre_push.py").write_text(GATE_STAND_IN)
+    (cc / "scripts").mkdir()
+    (cc / "scripts" / "run-preflight.sh").write_text(RUN_PREFLIGHT_STAND_IN)
+    (d / "home").mkdir()
+    (d / "home" / ".gitconfig").write_text(f"[core]\n\thooksPath = {cc / 'hooks' / 'git-hooks'}\n")
+    return cc
+
+
 class Isolated(unittest.TestCase):
     """Runs each test without the ambient git identity / repository variables and with
     land.py's default identity, whatever the shell exports."""
@@ -188,6 +221,17 @@ class Isolated(unittest.TestCase):
         self.r = Repo()
         self.addCleanup(lambda: self.r.close())
         assert_local_origin(self.r.work, self.r.dir)
+        # a stand-in hooks checkout (the real one is the account's; CI has none), found through a stand-in home's
+        # global core.hooksPath: its pre-push gate records the lines it is handed and passes, its run-preflight.sh
+        # records its arguments and passes
+        cc_dir = Path(tempfile.mkdtemp(prefix="land-hooks-"))
+        self.addCleanup(shutil.rmtree, cc_dir, True)
+        self.cc = stand_in_hooks_checkout(cc_dir)
+        self.home = cc_dir / "home"
+        saved_hooks = (getattr(land, "HOOKS_HOME", None), getattr(land, "HOOKS_REPO_SHA256", None))
+        land.HOOKS_HOME = self.home
+        land.HOOKS_REPO_SHA256 = hashlib.sha256(STAND_IN_REPO.encode()).hexdigest()
+        self.addCleanup(lambda: (setattr(land, "HOOKS_HOME", saved_hooks[0]), setattr(land, "HOOKS_REPO_SHA256", saved_hooks[1])))
 
     def check_tripwire(self):
         if TRIPWIRE.exists():
@@ -795,12 +839,14 @@ class Landing(Isolated):
         landed = git(self.r.work, "show", "HEAD:docs/integration-status.md")
         self.assertIn("b.rs", landed)
 
-    def test_docs_only_upstream_does_not_rerun_preflight(self):
+    def test_docs_only_upstream_reruns_preflight_on_the_rebased_tree(self):
+        # (2026-10-29: was "does not rerun". Every tree land.py pushes needs the receipt of a preflight run on it,
+        # which the pre-push gate asks for: the documents-only rebase makes a new tree, so the preflight runs again)
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         lander = self.r.lander(before_push=lambda: self.r.push_upstream({"docs/oracle-status.md": "regenerated\n"},
                                                                          "docs: oracle-status"))
         sha = lander.land()
-        self.assertEqual(lander.preflight_runs, 1)
+        self.assertEqual(lander.preflight_runs, 2)
         self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 1)
         self.assertNotIn("compile", lander.calls)
         self.assertIn("reason: docs-only-moved", lander.record)
@@ -1148,12 +1194,14 @@ class Landing(Isolated):
         self.assertIn("reason: docs-only-moved", lander.record)
         self.assertIn("docs-only-moved: main changed no path outside the ledgers (0 compared)", logged)
 
-    def test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight(self):
+    def test_code_upstream_in_other_files_reruns_preflight_on_the_rebased_tree(self):
+        # (2026-10-29: was "compiles but does not rerun". The rebased tree needs its own receipt, so the preflight,
+        # which covers the compile check, runs in place of it)
         commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
         lander = self.r.lander(before_push=lambda: self.r.push_upstream({"src/c.rs": "fn c() {}\n"}, "feat: c"))
         sha = lander.land()
-        self.assertEqual(lander.preflight_runs, 1)
-        self.assertIn("compile", lander.calls)
+        self.assertEqual(lander.preflight_runs, 2)
+        self.assertNotIn("compile", lander.calls)
         self.assertEqual(lander.calls.count("wait_evidence ci/T-1"), 2)
         self.assertEqual(lander.evidenced[-1], sha)
         self.assertIn("reason: re-evidenced (evidence rounds 2)", lander.record)
@@ -1664,6 +1712,120 @@ ROOT = Path(__file__).resolve().parent.parent
 def ok_run(name: str, rid: int, **k) -> dict:
     return {"workflowName": name, "headSha": SHA, "databaseId": rid, "status": "completed",
             "conclusion": "success", "event": "push", "createdAt": "2026-10-12T00:00:00Z", **k}
+
+
+class GlobalGate(Isolated):
+    """land.py runs git with core.hooksPath=/dev/null (no repository hook runs), so before each push it runs the
+    account's pre-push gate itself (found through the global core.hooksPath) with the exact lines git would hand that
+    hook, and its preflight through the hooks checkout's run-preflight.sh (which writes the receipt the gate asks for);
+    a gate that refuses, is missing or cannot be trusted stops the landing before anything is sent (2026-10-29)"""
+
+    def gate_lines(self) -> list[str]:
+        log = self.cc / "gate.log"
+        return log.read_text().splitlines() if log.exists() else []
+
+    def land_b(self, **k):
+        commit(self.r.work, {"src/b.rs": "x\n", "CHANGELOG.md": "# Changelog\n\n## [Unreleased]\n\n- start\n- b\n"}, "feat: b")
+        return self.r.lander(**k)
+
+    def origin_main(self) -> str:
+        return subprocess.run(["git", "--git-dir", str(self.r.origin), "rev-parse", "main"], capture_output=True,
+                              text=True).stdout.strip()
+
+    def test_the_gate_gets_git_s_lines_for_every_push(self):
+        lander = self.land_b()
+        before = self.origin_main()
+        sha = lander.land()
+        url = lander.git("remote", "get-url", "--push", "origin")
+        zeros = "0" * 40
+        self.assertEqual(self.gate_lines(), [
+            f"ARGV origin {url}", f"{sha} {sha} refs/heads/ci/T-1 {zeros}",   # the evidence push
+            f"ARGV origin {url}", f"{sha} {sha} refs/heads/main {before}",      # the landing
+            f"ARGV origin {url}", f"(delete) {zeros} refs/heads/ci/T-1 {sha}",  # the evidence branch removed
+        ])
+
+    def test_the_lines_are_the_ones_git_hands_a_hook(self):
+        # a recording hook that refuses: git hands it its lines for the same push and sends nothing
+        rec = self.r.dir / "rec"
+        rec.mkdir()
+        (rec / "pre-push").write_text("#!/bin/sh\necho \"ARGV $1 $2\" >> \"$(dirname \"$0\")/got\"\ncat >> \"$(dirname \"$0\")/got\"\nexit 1\n")
+        (rec / "pre-push").chmod(0o755)
+        lander = self.land_b()
+        before = self.origin_main()
+        sha = lander.land()
+        subprocess.run(["git", "-C", str(self.r.work), "update-ref", "refs/heads/probe", sha], check=True)
+        subprocess.run(["git", "--git-dir", str(self.r.origin), "update-ref", "refs/heads/main", before], check=True)
+        subprocess.run(["git", "-C", str(self.r.work), "-c", f"core.hooksPath={rec}", "push", "-q", "origin",
+                        f"{sha}:refs/heads/main"], capture_output=True)
+        got = (rec / "got").read_text().splitlines()
+        self.assertEqual(got, self.gate_lines()[2:4], "land.py's line for the landing is not the one git hands a hook")
+
+    def test_a_refusing_gate_sends_nothing(self):
+        (self.cc / "hooks" / "rc").write_text("1\n")
+        lander = self.land_b()
+        before = self.origin_main()
+        with self.assertRaises(land.LandError) as e:
+            lander.land()
+        self.assertIn("gate refused", str(e.exception))
+        self.assertEqual(self.origin_main(), before, "main moved although the gate refused")
+
+    def test_a_missing_gate_refuses_before_any_push(self):
+        (self.cc / "hooks" / "git_pre_push.py").unlink()
+        lander = self.land_b()
+        before = self.origin_main()
+        with self.assertRaises(land.LandError) as e:
+            lander.land()
+        self.assertIn("hooks checkout", str(e.exception))
+        self.assertEqual(self.origin_main(), before)
+
+    def test_another_owner_is_refused(self):
+        (self.cc / ".git" / "config").write_text(f'[remote "origin"]\n\turl = git@github.com:someone/{STAND_IN_REPO}.git\n')
+        with self.assertRaises(land.LandError) as e:
+            land.hooks_tool("hooks/git_pre_push.py")
+        self.assertIn("origin", str(e.exception))
+
+    def test_a_repository_name_hash_mismatch_is_refused(self):
+        (self.cc / ".git" / "config").write_text(f'[remote "origin"]\n\turl = git@github.com:{land.HOOKS_OWNER}/other-repo.git\n')
+        with self.assertRaises(land.LandError) as e:
+            land.hooks_tool("hooks/git_pre_push.py")
+        self.assertIn("origin", str(e.exception))
+
+    def test_an_include_in_the_global_config_is_refused(self):
+        with (self.home / ".gitconfig").open("a") as f:
+            f.write("[include]\n\tpath = ~/.gitconfig.local\n")
+        with self.assertRaises(land.LandError) as e:
+            land.hooks_tool("hooks/git_pre_push.py")
+        self.assertIn("include", str(e.exception))
+
+    def test_a_missing_global_hooks_path_is_refused(self):
+        (self.home / ".gitconfig").write_text("[user]\n\tname = x\n")
+        with self.assertRaises(land.LandError) as e:
+            land.hooks_tool("hooks/git_pre_push.py")
+        self.assertIn("core.hooksPath", str(e.exception))
+
+    def test_a_hooks_path_outside_any_repository_is_refused(self):
+        # the hooks path is moved out of the trusted checkout into a directory no repository holds
+        loose = self.r.dir / "loose-hooks"
+        (loose / "git-hooks").mkdir(parents=True)
+        (self.home / ".gitconfig").write_text(f"[core]\n\thooksPath = {loose / 'git-hooks'}\n")
+        with self.assertRaises(land.LandError) as e:
+            land.hooks_tool("hooks/git_pre_push.py")
+        self.assertIn("no repository", str(e.exception))
+
+    def test_a_gate_linked_from_outside_is_refused(self):
+        outside = self.r.dir / "elsewhere.py"
+        outside.write_text("import sys; sys.exit(0)\n")
+        gate = self.cc / "hooks" / "git_pre_push.py"
+        gate.unlink()
+        gate.symlink_to(outside)
+        with self.assertRaises(land.LandError) as e:
+            land.hooks_tool("hooks/git_pre_push.py")
+        self.assertIn("outside", str(e.exception))
+
+    def test_the_preflight_runs_through_run_preflight_fast(self):
+        lander = self.r.lander()
+        land.Lander.run_preflight(lander)
+        self.assertEqual((self.cc / "run-preflight.log").read_text().split(), [str(lander.root), "--fast", "--class", "land"])
 
 
 class WaitEvidence(Isolated):
@@ -3249,7 +3411,7 @@ class AmbientEnv(Isolated):
            "Landing.test_an_ambient_git_env_does_not_force_a_rebase",
            "Landing.test_landed_commits_carry_the_fixed_committer",
            "Landing.test_a_src_only_change_takes_the_ci_lane",
-           "Landing.test_code_upstream_in_other_files_compiles_but_does_not_rerun_preflight",
+           "Landing.test_code_upstream_in_other_files_reruns_preflight_on_the_rebased_tree",
            "Landing.test_wrong_author_is_refused",
            "Identity.test_the_override_is_refused",
            "WaitEvidence.test_all_green_passes",
