@@ -522,6 +522,7 @@ pub fn field_force_at(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) 
 ///
 /// Without the bodies' materials, [`ForceField::InducedDipole`] pulls nothing; the world steps
 /// with [`apply_force_fields_with_materials`].
+// ALLOW-UNWIRED: wiring debt force-fields-without-materials (kept for existing callers; magnets need the materials form), oracle tests/audit_force.rs
 pub fn apply_force_fields(fields: &[ForceFieldInstance], bodies: &mut [RigidBody], dt: Fix128) {
     apply_force_fields_with_materials(fields, &[], &[], bodies, dt);
 }

@@ -56,7 +56,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 54 of 203 items) |
+| `solver` | `PhysicsWorld`, `RigidBody`, XPBD solver (default) or temporal Gauss-Seidel backend, constraint batching, rollback state |  | [`basic_physics`](../examples/basic_physics.rs) | world API (step 54 of 204 items) |
 | `shape` | solid shapes with mass properties, and bodies built from them |  | [`shaped_bodies`](../examples/shaped_bodies.rs) | world API (step 4 of 10 items) |
 | `static_collider` | immovable planes, height fields and triangle meshes for a `PhysicsWorld` |  | [`static_colliders`](../examples/static_colliders.rs) | step |
 | `mass_properties` | mass, centre of mass and inertia tensors for primitive shapes and convex hulls |  |  | world API |
@@ -236,7 +236,7 @@ this file or listed twice, or when a linked example or test does not exist.
 
 | Module | Summary | Feature | Example | Integration |
 |--------|---------|---------|---------|-------------|
-| `electromagnetic` | Lorentz force on charged rigid bodies |  | [`em_lorentz_cyclotron`](../examples/em_lorentz_cyclotron.rs) | standalone |
+| `electromagnetic` | Lorentz force on charged rigid bodies |  | [`em_lorentz_cyclotron`](../examples/em_lorentz_cyclotron.rs) | standalone (step 5 of 12 items) |
 | `maxwell_fdtd` | Maxwell solver on a Yee lattice with sources, per-cell materials and a PML absorber |  | [`maxwell_sources_and_absorber`](../examples/maxwell_sources_and_absorber.rs), [`maxwell_dielectric_slab`](../examples/maxwell_dielectric_slab.rs) | standalone |
 | `piezoelectric` | piezoelectric force and voltage coupling | std | [`piezoelectric_materials`](../examples/piezoelectric_materials.rs) | standalone |
 
