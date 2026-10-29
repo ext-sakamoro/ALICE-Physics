@@ -620,10 +620,11 @@ mod tests {
         }
         let b = &w.bodies[0];
         let q = b.rotation;
-        let angle = 2.0 * q.z.to_f64().abs().atan2(q.w.to_f64().abs());
+        // a half turn: |qz| = sin(pi/2) = 1 and qw = cos(pi/2) = 0, compared in the
+        // quaternion (no platform transcendental in a test either)
         assert!(
-            (angle - core::f64::consts::PI).abs() < 1e-3,
-            "turned {angle} rad, want pi ({q:?})"
+            (q.z.to_f64().abs() - 1.0).abs() < 1e-6 && q.w.to_f64().abs() < 1e-3,
+            "{q:?}"
         );
         assert!(q.x.to_f64().abs() < 1e-9 && q.y.to_f64().abs() < 1e-9);
         assert!((b.angular_velocity.z.to_f64() - core::f64::consts::PI).abs() < 1e-6);
