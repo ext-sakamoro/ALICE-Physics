@@ -375,7 +375,16 @@ predictions. [`docs/MODULES.md`](docs/MODULES.md) marks them.
 
 The bindings cover what you need to build and step a scene (bodies, collision radius and shapes,
 static colliders, joints, impulses, state serialization), not every module: the standalone modules
-in the table above are Rust only. CI checks the C ABI against its consumers
+in the table above are Rust only. Two state forms are bound: body motion only
+(`serializeState` / `serialize_state` / `alice_physics_state_serialize`, for rollback) and the
+whole world (`snapshotWorld` / `restoreWorld`, `snapshot_world` / `restore_world`,
+`alice_physics_world_snapshot` / `alice_physics_world_restore`: joints, constraints, static
+colliders and materials too, under the build's semantics and law identifiers; a refused blob is
+named by its `WorldSnapshotError` kind and leaves the world unchanged). `stateDigest` (32 bytes,
+SHA-256 of the length-prefixed domain `alice-physics/state-digest/v1` and the whole-world snapshot)
+and `lawId` (the world's rules under this build's semantics) let a replay or a shared solution be
+checked by its result; the order bodies, joints and colliders were added in is part of the state.
+CI checks the C ABI against its consumers
 (`scripts/integration_levels.py`): the C header, `bindings/AlicePhysics.h` and the Unity bindings
 declare every exported function; the Unreal Engine component wraps part of them, and the functions
 it does not wrap are listed with the reason in
