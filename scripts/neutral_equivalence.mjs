@@ -162,6 +162,17 @@ function wide(a) {
   out.after = a.call(w, "serializeState");
   out.loaded = val(a.call(w, "deserializeState", saved), "deserializeState");
   out.reloaded = a.call(w, "serializeState");
+  // the whole-world snapshot and its identifiers, then a restore after more steps: the steps must move
+  // the digest (a restore that does nothing would otherwise compare as equal on both sides)
+  const snap = a.call(w, "snapshotWorld");
+  out.snapshot = snap;
+  out.digest = a.call(w, "stateDigest");
+  out.lawId = a.call(w, "lawId");
+  for (let i = 0; i < 10; i++) a.call(w, "step", 1 / 60);
+  out.movedDigest = a.call(w, "stateDigest");
+  if (out.movedDigest.every((x, i) => x === out.digest[i])) throw new Error("the steps after snapshotWorld did not move the digest");
+  if (a.call(w, "restoreWorld", snap) !== undefined) throw new Error("restoreWorld returned a value");
+  out.restoredDigest = a.call(w, "stateDigest");
   const version = a.free("alicePhysicsVersion");
   if (typeof version !== "string") throw new Error(`alicePhysicsVersion gave ${version}`);
   out.version = new TextEncoder().encode(version);

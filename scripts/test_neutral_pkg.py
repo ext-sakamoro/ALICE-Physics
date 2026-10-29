@@ -372,6 +372,15 @@ def fake_glue(names: list[str], rename, overrides: dict[str, str] = {}, extra: s
             return "return 0;"
         if n in ("serializeState",):
             return "return new Uint8Array([1, 2, this.ids]);"
+        # the whole-world state follows a step counter, so a digest moves with steps and a restore rewinds it
+        if n == "step":
+            return "this.steps = (this.steps || 0) + 1;"
+        if n in ("snapshotWorld", "stateDigest"):
+            return "return new Uint8Array([7, this.steps || 0]);"
+        if n == "lawId":
+            return "return new Uint8Array(32).fill(3);"
+        if n == "restoreWorld":
+            return "this.steps = a[0][1];"
         if n.startswith(("get", "cast", "observe", "raycast", "overlap")):
             return "return new Float64Array([this.ids, 0.5]);"
         if n.endswith("Count"):
