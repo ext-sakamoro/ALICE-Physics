@@ -11,6 +11,10 @@
 //! ```
 
 use alice_physics_core::electromagnetic::{dipole_sample, induced_dipole_energy, MagneticResponse};
+use alice_physics_core::error::PhysicsError;
+use alice_physics_core::force::{
+    apply_force_fields, try_apply_force_fields, MAGNET_NEEDS_MATERIALS,
+};
 use alice_physics_core::{
     Fix128, ForceField, ForceFieldInstance, PhysicsConfig, PhysicsWorld, RigidBody, Vec3Fix,
 };
@@ -79,4 +83,31 @@ fn main() {
         }
         world.step(dt);
     }
+
+    // Outside a world the force fields act on a slice of bodies. A magnet pulls the bodies of one
+    // material, so it needs their materials (`apply_force_fields_with_materials`, which the world
+    // uses); the entry point without them refuses it instead of pulling nothing.
+    let mut bodies = world.bodies.clone();
+    let refused = try_apply_force_fields(&world.force_fields, &mut bodies, dt);
+    assert_eq!(
+        refused,
+        Err(PhysicsError::InvalidConfiguration {
+            reason: MAGNET_NEEDS_MATERIALS
+        })
+    );
+    println!(
+        "a magnet without the bodies' materials: {}",
+        MAGNET_NEEDS_MATERIALS
+    );
+
+    // Fields that pull every body alike need no materials: a 1 N wind along +z for one step
+    let wind = ForceFieldInstance::new(ForceField::Directional {
+        direction: Vec3Fix::new(Fix128::ZERO, Fix128::ZERO, Fix128::ONE),
+        strength: Fix128::ONE,
+    });
+    apply_force_fields(&[wind], &mut bodies, dt);
+    println!(
+        "after one step of wind: v_z = {:.4} m/s",
+        bodies[b].velocity.z.to_f64()
+    );
 }

@@ -326,10 +326,15 @@ use alice_physics::dynamic_fem::DynamicsConfig as _;
 use alice_physics::dynamic_fem::MassLumping as _;
 use alice_physics::dynamic_fem::TransientSolver as _;
 use alice_physics::electromagnetic as _;
+use alice_physics::electromagnetic::dipole_sample as _;
+use alice_physics::electromagnetic::induced_dipole_energy as _;
+use alice_physics::electromagnetic::induced_dipole_force as _;
 use alice_physics::electromagnetic::lorentz_force as _;
 use alice_physics::electromagnetic::lorentz_force_sum as _;
 use alice_physics::electromagnetic::ChargedBody as _;
+use alice_physics::electromagnetic::DipoleSample as _;
 use alice_physics::electromagnetic::EmSource as _;
+use alice_physics::electromagnetic::MagneticResponse as _;
 use alice_physics::ellipsoid as _;
 use alice_physics::ellipsoid::Ellipsoid as _;
 use alice_physics::erosion as _;
@@ -436,10 +441,14 @@ use alice_physics::fluid_netcode::FluidDelta as _;
 use alice_physics::fluid_netcode::FluidSnapshot as _;
 use alice_physics::force as _;
 use alice_physics::force::apply_force_fields as _;
+use alice_physics::force::apply_force_fields_with_materials as _;
 use alice_physics::force::compute_force as _;
 use alice_physics::force::field_force_at as _;
+use alice_physics::force::induced_dipole_fields_agree as _;
+use alice_physics::force::try_apply_force_fields as _;
 use alice_physics::force::ForceField as _;
 use alice_physics::force::ForceFieldInstance as _;
+use alice_physics::force::MAGNET_NEEDS_MATERIALS as _;
 use alice_physics::fracture as _;
 use alice_physics::fracture::Crack as _;
 use alice_physics::fracture::FractureConfig as _;
@@ -1863,7 +1872,7 @@ use alice_physics::SIMD_WIDTH as _;
 
 #[test]
 fn every_core_item_resolves_through_the_facade() {
-    // 1845 paths, checked at compile time
+    // 1854 paths, checked at compile time
     assert_eq!(
         alice_physics::PHYSICS_SEMANTICS_ID,
         alice_physics_core::PHYSICS_SEMANTICS_ID

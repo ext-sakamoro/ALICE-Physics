@@ -518,13 +518,46 @@ pub fn field_force_at(field: &ForceField, position: Vec3Fix, velocity: Vec3Fix) 
     }
 }
 
+/// Why [`try_apply_force_fields`] refuses a magnet: it has no body materials to pull
+pub const MAGNET_NEEDS_MATERIALS: &str =
+    "an induced-dipole field needs the bodies' materials: use apply_force_fields_with_materials";
+
 /// Apply all force fields to all bodies for one timestep
 ///
-/// Without the bodies' materials, [`ForceField::InducedDipole`] pulls nothing; the world steps
-/// with [`apply_force_fields_with_materials`].
+/// # Panics
+///
+/// With a [`ForceField::InducedDipole`] among `fields`: a magnet pulls the bodies of one material,
+/// and this entry point has no materials (see [`try_apply_force_fields`] and
+/// [`apply_force_fields_with_materials`]).
 // ALLOW-UNWIRED: wiring debt force-fields-without-materials (kept for existing callers; magnets need the materials form), oracle tests/audit_force.rs
 pub fn apply_force_fields(fields: &[ForceFieldInstance], bodies: &mut [RigidBody], dt: Fix128) {
+    if let Err(e) = try_apply_force_fields(fields, bodies, dt) {
+        panic!("{e}");
+    }
+}
+
+/// [`apply_force_fields`] that returns an error instead of panicking when `fields` holds a
+/// [`ForceField::InducedDipole`] (the bodies are left untouched then): a magnet needs the bodies'
+/// materials, which [`apply_force_fields_with_materials`] takes
+///
+/// # Errors
+///
+/// [`crate::error::PhysicsError::InvalidConfiguration`] with [`MAGNET_NEEDS_MATERIALS`].
+pub fn try_apply_force_fields(
+    fields: &[ForceFieldInstance],
+    bodies: &mut [RigidBody],
+    dt: Fix128,
+) -> Result<(), crate::error::PhysicsError> {
+    if fields
+        .iter()
+        .any(|f| matches!(f.field, ForceField::InducedDipole { .. }))
+    {
+        return Err(crate::error::PhysicsError::InvalidConfiguration {
+            reason: MAGNET_NEEDS_MATERIALS,
+        });
+    }
     apply_force_fields_with_materials(fields, &[], &[], bodies, dt);
+    Ok(())
 }
 
 /// [`apply_force_fields`] with the material and the collision radius of each body (`materials[i]`

@@ -20,9 +20,13 @@
 use alice_physics_core::electromagnetic::{
     dipole_sample, induced_dipole_energy, induced_dipole_force, MagneticResponse,
 };
+use alice_physics_core::force::{
+    apply_force_fields, apply_force_fields_with_materials, try_apply_force_fields,
+    MAGNET_NEEDS_MATERIALS,
+};
 use alice_physics_core::{
-    Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig, PhysicsWorld, RigidBody,
-    Vec3Fix,
+    error::PhysicsError, Fix128, ForceField, ForceFieldInstance, MaterialId, PhysicsConfig,
+    PhysicsWorld, RigidBody, Vec3Fix,
 };
 
 fn fx(n: i64, d: i64) -> Fix128 {
@@ -411,4 +415,51 @@ fn two_magnets_naming_one_material_must_carry_the_same_response() {
         "restore refuses the disagreeing fields"
     );
     assert!(target.restore_world(&good).is_ok());
+}
+
+/// The entry point without body materials cannot say which bodies a magnet pulls, so it refuses
+/// a magnet instead of pulling nothing: `try_apply_force_fields` returns the error naming the
+/// materials form and leaves the bodies untouched, `apply_force_fields` panics with it. Without
+/// a magnet both apply the fields exactly as the materials form does.
+#[test]
+fn the_entry_point_without_materials_refuses_a_magnet() {
+    let (w, b, metal) = world_with_ball(false, Vec3Fix::from_int(0, -1, 0), Vec3Fix::ZERO);
+    let mag = magnet(Vec3Fix::ZERO, Vec3Fix::from_int(0, 1, 0), metal);
+    let wind = ForceFieldInstance::new(ForceField::Directional {
+        direction: Vec3Fix::from_int(1, 0, 0),
+        strength: Fix128::ONE,
+    });
+    let dt = fx(1, 60);
+
+    let mut bodies = w.bodies.clone();
+    let before = bodies[b].velocity;
+    let err = try_apply_force_fields(&[wind.clone(), mag.clone()], &mut bodies, dt);
+    assert_eq!(
+        err,
+        Err(PhysicsError::InvalidConfiguration {
+            reason: MAGNET_NEEDS_MATERIALS
+        })
+    );
+    assert!(MAGNET_NEEDS_MATERIALS.contains("apply_force_fields_with_materials"));
+    assert_eq!(bodies[b].velocity, before, "the bodies are left untouched");
+
+    let panicked = std::panic::catch_unwind(|| {
+        let mut bodies = w.bodies.clone();
+        apply_force_fields(&[mag.clone()], &mut bodies, dt);
+    });
+    let msg = panicked.expect_err("a magnet without materials panics");
+    let msg = msg
+        .downcast_ref::<String>()
+        .map(String::as_str)
+        .unwrap_or_default();
+    assert!(msg.contains(MAGNET_NEEDS_MATERIALS), "panic message: {msg}");
+
+    let (mut plain, mut reference) = (w.bodies.clone(), w.bodies.clone());
+    assert_eq!(
+        try_apply_force_fields(&[wind.clone()], &mut plain, dt),
+        Ok(())
+    );
+    apply_force_fields_with_materials(&[wind], &[], &[], &mut reference, dt);
+    assert_eq!(plain[b].velocity, reference[b].velocity);
+    assert_ne!(plain[b].velocity, before, "the wind did act");
 }

@@ -72,6 +72,7 @@ were introduced during that release window.
 - `electromagnetic::{dipole_sample, DipoleSample, MagneticResponse, induced_dipole_energy, induced_dipole_force}`: 点双極子の場と Jacobian、誘導双極子のエネルギーと力
 - `PhysicsWorld::try_add_force_field`: 同じ材料に異なる磁気応答を持つ磁石を足すと `Err` を返す (`add_force_field` は panic) snapshot の復元も同じ不整合を拒む
 - `force::apply_force_fields_with_materials`: 剛体の材料と衝突半径を受け取る力場の適用 (world の step はこちらを使う)
+- `force::try_apply_force_fields`: 材料を取らない力場の適用で、磁石 (`InducedDipole`) があれば `InvalidConfiguration` を返し剛体に触れない (文言 `MAGNET_NEEDS_MATERIALS` は `apply_force_fields_with_materials` を案内する) `apply_force_fields` は signature を保ち、磁石があれば同じ文言で panic する (磁石を黙って無視しない)
 - 例 `magnet_induced_dipole` と oracle `analytic_magnet_induced_dipole` (9 本) / `analytic_magnet_world` (7 本)
 - snapshot: 磁石がある時だけ tag 7 を書くので、磁石の無い world の snapshot と golden は変わらない
 - `secondary_chain`: 二次運動の鎖 (髪・服・尻尾の揺れ) `SecondaryChain::step` は取り付け点に追従する引き (pull)・慣性 (momentum)・姿勢への戻り (stiffness)・重力とその rest 方向による減衰 (gravity / gravity_falloff)・取り付け点と一緒に動く割合 (immobile) を `Fix128` で積分し、骨の長さ・角度の制限 (円錐 / hinge / polar、制限軸は骨の動きの座標系で回す)・capsule の衝突体を順に満たす 衝突体は rest で取り付け点を含むものを mask し (`SecondaryChain::attached_inside`)、`fit_to_rest` で rest を衝突なしにする (粒子の半径を rest の隙間で頭打ち) 衝突体の一覧は 64 個まで、fit した後は fit と同じ個数 仕様は `docs/SECONDARY_CHAIN.md`、例は `examples/secondary_chain_hair.rs`

@@ -4981,11 +4981,13 @@ impl core::marker::Unpin for alice_physics_core::force::ForceFieldInstance
 impl core::marker::UnsafeUnpin for alice_physics_core::force::ForceFieldInstance
 impl core::panic::unwind_safe::RefUnwindSafe for alice_physics_core::force::ForceFieldInstance
 impl core::panic::unwind_safe::UnwindSafe for alice_physics_core::force::ForceFieldInstance
+pub const alice_physics_core::force::MAGNET_NEEDS_MATERIALS: &str
 pub fn alice_physics_core::force::apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::force::apply_force_fields_with_materials(&[alice_physics_core::force::ForceFieldInstance], &[alice_physics_core::material::MaterialId], &[core::option::Option<alice_physics_core::math::Fix128>], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128)
 pub fn alice_physics_core::force::compute_force(&alice_physics_core::force::ForceField, &alice_physics_core::solver::RigidBody) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::force::field_force_at(&alice_physics_core::force::ForceField, alice_physics_core::math::Vec3Fix, alice_physics_core::math::Vec3Fix) -> alice_physics_core::math::Vec3Fix
 pub fn alice_physics_core::force::induced_dipole_fields_agree(&[alice_physics_core::force::ForceFieldInstance]) -> bool
+pub fn alice_physics_core::force::try_apply_force_fields(&[alice_physics_core::force::ForceFieldInstance], &mut [alice_physics_core::solver::RigidBody], alice_physics_core::math::Fix128) -> core::result::Result<(), alice_physics_core::error::PhysicsError>
 pub mod alice_physics_core::fracture
 pub struct alice_physics_core::fracture::Crack
 pub alice_physics_core::fracture::Crack::active: bool

@@ -29,7 +29,7 @@ only an example calls is *standalone*, usable from Rust but not wired into
 | `dynamic_bvh` | step | 9 / 4 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `error` | step | 1 / 0 / 0 / 0 / 0 | C ABI, Python, WebAssembly |
 | `event` | step | 11 / 4 / 0 / 3 / 0 | C ABI, Python, WebAssembly |
-| `force` | step | 6 / 1 / 0 / 2 / 1 | C ABI, Python, WebAssembly |
+| `force` | step | 6 / 1 / 0 / 5 / 0 | C ABI, Python, WebAssembly |
 | `gpu_bridge` | step | 2 / 0 / 0 / 2 / 0 | C ABI, Python, WebAssembly |
 | `heightfield` | step | 6 / 0 / 1 / 3 / 0 | C ABI, Python, WebAssembly |
 | `material` | step | 15 / 0 / 0 / 11 / 0 | C ABI, Python, WebAssembly |

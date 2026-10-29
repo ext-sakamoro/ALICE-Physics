@@ -7,10 +7,10 @@ References are resolved to one definition each, so items that share a name are t
 
 | Level | Meaning | Count |
 |-------|---------|------:|
-| L0 | not reached by any non-test code, examples included | 32 |
-| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2620 |
+| L0 | not reached by any non-test code, examples included | 31 |
+| L1 | reached only from `examples/` / `benches/` / `fuzz/` | 2623 |
 | live | reached without examples (crate-internal roots or a binding) | 622 |
-| | **total** | **3274** |
+| | **total** | **3276** |
 
 L1 is a label, not a defect: a module users call directly is example-only inside this crate.
 It does mean the item is not reached from `PhysicsWorld`, another module, or a binding.
@@ -19,14 +19,13 @@ It does mean the item is not reached from `PhysicsWorld`, another module, or a b
 
 `scripts/wiring-baseline.txt` lists 2 unwired items.
 
-### L0 here but not in the baseline (30)
+### L0 here but not in the baseline (29)
 
 The name-based guard counts these as wired; resolved references find no caller.
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
-- `src/force.rs::apply_force_fields`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
@@ -60,12 +59,11 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 
 - (none)
 
-## L0 — unreached (32)
+## L0 — unreached (31)
 
 - `src/coupled_iteration.rs::ContractionMonitor::best_residual`
 - `src/coupled_iteration.rs::EquilibrationScale::round_trip_bound`
 - `src/creep_longterm.rs::FindleyParameters::petg_25c_moderate`
-- `src/force.rs::apply_force_fields`
 - `src/linear_elastic_fem.rs::ThermalExpansion::new`
 - `src/plastic.rs::NortonCreep::petg_room_temp`
 - `src/privacy.rs::LaplaceNoise`
@@ -110,7 +108,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - Methods are listed as `file::Type::method`, so same-named methods of different types in one file are told apart.
 - Items in `src/ffi.rs`, `src/python.rs` and `src/wasm.rs` are roots and are not listed.
 
-## L1 — example-only (2620)
+## L1 — example-only (2623)
 
 - `src/acoustic_wave.rs`: `AIR_20C`, `CONCRETE_LONGITUDINAL`, `STEEL_LONGITUDINAL`, `WATER_25C`, `leapfrog_step`, `stable_dt`
 - `src/aeroelasticity.rs`: `VivParameters`, `VivParameters::facchinetti_reference`, `VivState`, `VivState::seeded`, `viv_step`
@@ -171,7 +169,7 @@ The guard lists these as unwired; a resolved reference reaches them (level in br
 - `src/flow_viz.rs`: `FlowArrow`, `FlowVizConfig`, `Streamlines`, `Streamlines::is_empty`, `Streamlines::len`, `Streamlines::line`, `generate_flow_arrows`, `generate_streamlines`
 - `src/fluid.rs`: `Fluid`, `Fluid::new`, `Fluid::new_block`, `Fluid::particle_count`, `Fluid::step`, `Fluid::step_with_sdf`, `FluidConfig`
 - `src/fluid_netcode.rs`: `FluidDelta`, `FluidDelta::apply`, `FluidDelta::changed_count`, `FluidDelta::compression_ratio`, `FluidDelta::compute`, `FluidSnapshot`, `FluidSnapshot::capture`, `FluidSnapshot::restore`, `FluidSnapshot::size_bytes`, `FluidSnapshot::verify`
-- `src/force.rs`: `ForceFieldInstance::new`, `ForceFieldInstance::with_affected_bodies`, `induced_dipole_fields_agree`
+- `src/force.rs`: `ForceFieldInstance::new`, `ForceFieldInstance::with_affected_bodies`, `MAGNET_NEEDS_MATERIALS`, `apply_force_fields`, `induced_dipole_fields_agree`, `try_apply_force_fields`
 - `src/fracture.rs`: `Crack`, `FractureConfig`, `FractureModifier`, `FractureModifier::PARTICIPANT_KIND`, `FractureModifier::active_crack_count`, `FractureModifier::apply_stress_at`, `FractureModifier::new`, `FractureModifier::stress_at`
 - `src/fsi_advanced.rs`: `SolidSample`, `aggregate_forces`, `buoyancy_force`, `drag_force`, `react_back_pressure`
 - `src/gpu_bridge.rs`: `DiffFixture`, `GpuDivergence`, `check_bridge`
