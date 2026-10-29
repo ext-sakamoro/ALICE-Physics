@@ -127,8 +127,12 @@ fn assert_golden(scenario: &str, actual: [u8; 32], expected_hex: &str) {
 /// runs with default features).
 ///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
-/// solve did not move (`v = v_pred + Δx_corr / h`).
-const GOLDEN_CASCADE: &str = "95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381";
+/// solve did not move (`v = v_pred + Δx_corr / h`), and again when damping
+/// became a rate per second: the scene's retentions 0.99 (world) and 0.98
+/// (per body) per step of 1/60 s are now the rates `-ln(r)·60`, applied in
+/// closed form, which rounds differently from the per-step product.
+/// `tests/world_participant_conformance.rs` holds a copy.
+const GOLDEN_CASCADE: &str = "39f0e6fd03588f095f01fbd8fd912c51a5cc8107be89a75deaefdc4cb42baade";
 
 #[test]
 fn determinism_cascade() {
@@ -280,9 +284,11 @@ fn sha256_bytes(bytes: &[u8]) -> [u8; 32] {
 /// gravity for 240 steps.
 ///
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
-/// solve did not move (`v = v_pred + Δx_corr / h`).
+/// solve did not move (`v = v_pred + Δx_corr / h`), and again when damping
+/// became a rate per second: the scene's retentions 0.999 (world) and 0.01
+/// (pivot) per step of 1/60 s are now the rates `-ln(r)·60`.
 const GOLDEN_JOINT_PENDULUM: &str =
-    "4c28a6fb32ae076f393c762e590466e9d2e9786a5efacc2c1a114cdc66be5978";
+    "8fe963f2a89fbd96956eaee1c3651e94401f0511e8629b722070be6e3f12d793";
 
 #[test]
 fn determinism_joint_pendulum() {

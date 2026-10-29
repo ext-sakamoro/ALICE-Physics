@@ -944,7 +944,10 @@ fn crowd_hash(parallel: bool) -> String {
 
 /// The `serialize_state` of [`crowd`] after 60 steps, recorded once: the same
 /// with and without `--features parallel`, with `step` and `step_parallel`.
-const GOLDEN_CROWD: &str = "89174ad11a5f97b3903204c827be2f7f17f8966dae90436af74b47742ed0e943";
+/// Re-recorded (from `89174ad1…`) when damping became a rate per second with
+/// default 0 (the scene's default config had damped every body by a retention
+/// 0.99 per step).
+const GOLDEN_CROWD: &str = "20919b007c36afc242d04aac6b6c92a18eff0828d8c26518c97ef231633fc5cc";
 
 #[test]
 fn on_is_deterministic_and_independent_of_the_parallel_feature() {

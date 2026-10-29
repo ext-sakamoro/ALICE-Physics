@@ -2,10 +2,12 @@
 //! identifier restores only if this build lists it in
 //! `PREVIOUS_PHYSICS_SEMANTICS_IDS`; every other identifier is refused.
 //!
-//! The list is empty since `alice-det-math` 0.5.2 at 39507d1b: its clamp
-//! moved Law output bits, so this build is not shown to reproduce data
+//! No 3.x identifier is listed since `alice-det-math` 0.5.2 at 39507d1b: its
+//! clamp moved Law output bits, so this build is not shown to reproduce data
 //! stamped with an identifier of an earlier generation, and the two 3.x
 //! fixtures below are refused naming both identifiers, the target unchanged.
+//! (The list is empty: the one later identifier it held, `88cf6f85…`, left it
+//! when the stepping changed; see `tests/world_snapshot_xv_88cf6f85.rs`.)
 //! An earlier identifier comes back only with a cross-version oracle (a
 //! snapshot written by that release, restored and stepped here, bit-equal to
 //! that release's own steps).
@@ -22,7 +24,7 @@
 //! and steps written by the published `alice-physics` 3.1.0 (a crate that
 //! depends on `alice-physics = "=3.1.0"` from crates.io and calls
 //! `snapshot_world`): 2136 bytes, sha256 `43eeb4be…`, semantics identifier
-//! `79ca5297…` (the 3.1.0 release value, the first entry of
+//! `79ca5297…` (the 3.1.0 release value, once the first entry of
 //! `PREVIOUS_PHYSICS_SEMANTICS_IDS`) and `law_id` `bb5c15c7…`, both printed by
 //! that build.
 //!

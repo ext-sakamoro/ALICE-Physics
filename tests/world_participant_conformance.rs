@@ -2427,8 +2427,10 @@ fn zero_participants_match_the_existing_step_and_golden() {
 }
 
 /// Re-recorded when XPBD began keeping the predicted velocity of bodies the
-/// solve did not move (`v = v_pred + Δx_corr / h`).
-const GOLDEN_CASCADE: &str = "95d1f0805b7b5b2cae4030ba7bd74749cfe7bc60869d1478eeeac67fab27d381";
+/// solve did not move (`v = v_pred + Δx_corr / h`), and again when damping
+/// became a rate per second (a copy of `GOLDEN_CASCADE` in
+/// `tests/determinism_golden.rs`).
+const GOLDEN_CASCADE: &str = "39f0e6fd03588f095f01fbd8fd912c51a5cc8107be89a75deaefdc4cb42baade";
 
 fn cascade_hash(w: &PhysicsWorld) -> String {
     use sha2::{Digest, Sha256};

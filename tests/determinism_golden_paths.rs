@@ -470,7 +470,9 @@ fn golden_path_tgs_try_step() {
 
 /// Balls dropped onto the ground with sleeping on: after they settle every
 /// dynamic body is asleep, and the digest pins the state the sleep decision left.
-const GOLDEN_SLEEPING: &str = "2d2fbb89f587cd27872e85f4ed2d856c72bb3f0d62a3d0d5d2f5360260ac7a86";
+/// Re-recorded when damping became a rate per second: the scene's retention 0.9
+/// per step of 1/60 s is now the rate `-ln(0.9)·60`, applied in closed form.
+const GOLDEN_SLEEPING: &str = "3a957dad9eb5a24328f0b82dcc831b2eb95fa8c8abda46e85920a9363805d229";
 
 #[test]
 fn golden_sleeping() {
