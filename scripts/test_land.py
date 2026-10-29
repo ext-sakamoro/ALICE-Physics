@@ -1841,11 +1841,118 @@ class GlobalGate(Isolated):
             self.assertTrue(k in land.GATE_ENV_KEYS or k == "HOME" or k.startswith("LC_") or k == "__CF_USER_TEXT_ENCODING",
                             f"{k} is not on the gate's allowlist")
 
+    def test_the_preflight_starts_the_bash_bash_program_names(self):
+        # (on Windows that is Git's bash, not System32's WSL launcher: the call must go through bash_program)
+        stub = self.r.dir / "bash-stub"
+        stub.write_text(f"#!/bin/sh\necho stub >> {self.r.dir / 'stub.log'}\nexec bash \"$@\"\n")
+        stub.chmod(0o755)
+        old = land.bash_program
+        land.bash_program = lambda *a, **k: str(stub)
+        self.addCleanup(setattr, land, "bash_program", old)
+        land.Lander.run_preflight(self.r.lander())
+        self.assertTrue((self.r.dir / "stub.log").exists(), "the preflight did not start bash_program()'s bash")
+
     def test_the_preflight_runs_through_run_preflight_fast(self):
         lander = self.r.lander()
         land.Lander.run_preflight(lander)
         self.assertEqual((self.cc / "run-preflight.log").read_text().split(),
                          [Path(lander.root).as_posix(), "--fast", "--class", "land"])
+
+
+class BashProgram(unittest.TestCase):
+    """the bash land.py starts its shell children with (scripts/bash_path.find_bash): Git's on Windows, never System32's
+    bash.exe, which is the WSL launcher and runs no script (2026-10-30: the landing's preflight failed on Windows)"""
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp(prefix="bash-path-"))
+        self.addCleanup(shutil.rmtree, self.d, True)
+
+    def test_git_s_bash_next_to_git_on_windows(self):
+        git = self.d / "Git" / "cmd" / "git.exe"
+        bash = self.d / "Git" / "bin" / "bash.exe"
+        for f in (git, bash):
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("")
+        self.assertEqual(land.find_bash(str(git), is_windows=True, which=lambda _: r"C:\Windows\System32\bash.exe"),
+                         str(bash))
+
+    def test_the_system32_launcher_is_refused(self):
+        found = land.find_bash(str(self.d / "nogit" / "cmd" / "git.exe"), is_windows=True,
+                               which=lambda name: r"C:\Windows\System32\bash.exe" if name == "bash" else None)
+        self.assertIsNone(found, "System32's WSL launcher was taken as the bash")
+
+    def test_another_bash_on_path_is_taken_on_windows(self):
+        found = land.find_bash(str(self.d / "nogit" / "cmd" / "git.exe"), is_windows=True,
+                               which=lambda name: r"C:\msys64\usr\bin\bash.exe" if name == "bash" else None)
+        self.assertEqual(found, r"C:\msys64\usr\bin\bash.exe")
+
+    def test_no_git_bash_stops_the_landing_on_windows(self):
+        old = land.find_bash
+        land.find_bash = lambda *a, **k: None
+        self.addCleanup(setattr, land, "find_bash", old)
+        with self.assertRaises(land.LandError) as e:
+            land.bash_program(is_windows=True)
+        self.assertIn("WSL", str(e.exception))
+
+    def test_bash_on_the_fixed_path_elsewhere(self):
+        self.assertEqual(land.bash_program(is_windows=False), "bash")
+
+
+class BashParity(unittest.TestCase):
+    """scripts/bash_path.find_bash (land.py's) and scripts/test_run_tests.py's find_bash (a shared file, so its own
+    copy) give the same answer on the same inputs: Git's bash next to git, System32's launcher refused, nothing found"""
+
+    def setUp(self):
+        self.d = Path(tempfile.mkdtemp(prefix="bash-parity-"))
+        self.addCleanup(shutil.rmtree, self.d, True)
+        import test_run_tests  # (the registered copy)
+
+        self.module = test_run_tests
+
+    def both(self, which) -> tuple:
+        """(the registered copy's answer, bash_path's answer), each on Windows with this `which`: only the registered
+        copy's own module names `os` and `shutil` are replaced (pathlib keeps the real os, so paths stay native)"""
+        import types
+        from unittest import mock
+
+        fake_os = types.SimpleNamespace(name="nt")
+        fake_shutil = types.SimpleNamespace(which=which)
+        with mock.patch.object(self.module, "os", fake_os), mock.patch.object(self.module, "shutil", fake_shutil):
+            registered = self.module.find_bash()
+        return registered, land.find_bash(None, is_windows=True, which=which)
+
+    def git_with(self, *bash_rel: str) -> str:
+        git = self.d / "Git" / "cmd" / "git.exe"
+        git.parent.mkdir(parents=True, exist_ok=True)
+        git.write_text("")
+        for rel in bash_rel:
+            f = self.d / "Git" / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text("")
+        return str(git)
+
+    def test_the_two_copies_agree(self):
+        system32 = r"C:\Windows\System32\bash.exe"
+        cases = {
+            "git's bin/bash.exe": (self.git_with("bin/bash.exe"), system32),
+        }
+        for name, (git, bash) in cases.items():
+            with self.subTest(case=name):
+                which = lambda n, git=git, bash=bash: git if n == "git" else bash  # noqa: E731
+                a, b = self.both(which)
+                self.assertEqual(a, b)
+                self.assertTrue(b and b.endswith("bash.exe") and "System32" not in b, b)
+        shutil.rmtree(self.d / "Git")
+        git = self.git_with("usr/bin/bash.exe")
+        a, b = self.both(lambda n: git if n == "git" else system32)
+        self.assertEqual(a, b)
+        self.assertTrue(b and b.endswith("usr/bin/bash.exe".replace("/", os.sep)) or b.endswith("bash.exe"), b)
+        shutil.rmtree(self.d / "Git")
+        git = self.git_with()
+        a, b = self.both(lambda n: git if n == "git" else system32)
+        self.assertEqual((a, b), (None, None), "System32's launcher was taken")
+        a, b = self.both(lambda n: None)
+        self.assertEqual((a, b), (None, None), "a bash was found where there is none")
 
 
 class WaitEvidence(Isolated):
